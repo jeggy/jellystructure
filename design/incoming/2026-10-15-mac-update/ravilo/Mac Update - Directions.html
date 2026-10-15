@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Mac update: directions (round mac-update)</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="mac-update.css">
+</head>
+<body>
+<!-- ============ 0 · what is fixed ============ -->
+<div class="lbl w3" style="left:60px;top:40px"><span class="tag">Round · mac-update · no phase number</span><h2>Mac update — where a ready update waits, and what Settings says</h2><small>The Mac app only, in both families: <b>Desktop</b> (600 dp and wider: sidebar, rail) and <b>Mobile</b> (narrower: the phone’s own screens, its bottom bar, its Profile page). Read top to bottom: what is fixed → the named directions → how they compare → every state the recommended direction holds → the four decisions → new strings. Nothing on this canvas is a TV, phone, web, cast or Tizen surface.</small></div>
+<div class="panel" style="left:60px;top:200px;width:1400px"><h2>What is fixed — drawn as given, not reopened</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 40px"><ul>
+<li><b>Two families, never a fourth layout.</b> Every direction is drawn in the desktop family (sidebar at 1000 px, rail at 720 px) and in the mobile family (a 400 px window, the phone’s screens unchanged under a 32 px strip).</li>
+<li><b>Type.</b> The system font in the chrome — the Settings window, the sidebar, the rail, the capsule. Sora + Space Grotesk in titles and tiles, and throughout the phone layout, which keeps its own type.</li>
+<li><b>Light and dark.</b> Every state is drawn in Aurora (dark); the ready block and the ready notice are drawn again in Daylight (light), so the prominent state is proven on both grounds. <span class="mono">--ok</span>, <span class="mono">--warn</span>, <span class="mono">--bad</span> carry success, the cannot-update state and failure.</li>
+<li><b>What ships today</b> is a line in Settings ▸ Account between <i>Signed in as</i> and <i>Change password</i>: <b>Ravilo {version} for Mac is available</b> · <b>Download</b> · a sentence about where to install it. Shown when the server is newer, never on a development build. It is drawn as it ships in Block B.</li>
+</ul><ul>
+<li><b>Sparkle 2 does the work.</b> Its own windows do download progress (when it shows one), the administrator password and <i>Install and Relaunch</i>. None of them is drawn; the handover point is drawn and stops there.</li>
+<li><b>Check daily, download in the background, ask once: Restart to update. Never interrupt playback.</b> Nothing modal, nothing that takes focus, nothing that pauses. While something plays, no control that would stop it is on screen.</li>
+<li><b>Never past the server.</b> “A newer version exists but your server has not got it” is its own state with its own words.</li>
+<li><b>An app that cannot update itself says so</b>, in the shipped words, with <b>Quit Ravilo</b> as its only action. macOS’s own labels stay macOS’s; no internal names, no bundle talk, no version jargon.</li>
+</ul></div>
+<div class="good"><b>How the tension is held.</b> The ready state is the only state with a filled accent button and an accent edge, and it is the only state that reaches outside Settings — as a dot on the Settings entry and one row at the sidebar’s foot (on the phone: a dot on Profile and one row on the Profile page). Both sit where the eye goes <i>between</i> things, never over content, and neither moves, animates or takes focus. While something plays, the same row stays but its <i>Restart</i> becomes the words “After playback”: still visible, nothing to trip over.</div>
+</div>
+
+<div id="canvas"></div>
+<script>
+(function(){
+const C=document.getElementById('canvas'),H=[];
+const lbl=(x,y,tag,h3,small,w)=>H.push(`<div class="lbl${w?' '+w:''}" style="left:${x}px;top:${y}px">${tag}<h3>${h3}</h3>${small?`<small>${small}</small>`:''}</div>`);
+const frm=(x,y,id,spec,extra)=>H.push(`<div class="frm" style="left:${x}px;top:${y}px" id="${id}" data-screen-label="${id}"><div data-mu="${spec}"></div>${extra||''}</div><div class="cap" style="left:${x}px;top:${y-22}px">${id.startsWith('s1-')?'= '+id.slice(14)+'.png':id+'.png'}</div>`);
+const sec=(y,h,s)=>H.push(`<div class="sec" style="left:60px;top:${y}px">${h}<small>${s}</small></div>`);
+const TP='<span class="tag pick">Decided</span>',TD='<span class="tag">Direction</span>',TN='<span class="tag new">State</span>',TA='<span class="tag no">Alternative</span>';
+const N='mac-update-';
+/* ---- 1 · directions ---- */
+sec(900,'1 · The named directions','where the block lives · the ready notice · release notes — each drawn in both families');
+lbl(60,970,TP,'Block A · Software update, at the top of Settings ▸ About','Its own block, because it is not an account fact and it now has twelve states. About already holds the version and the server; the block sits above them and grows only as tall as its state needs. The toggle lives inside the block, under the status, so “what is happening” and “what I chose” are read together.','w2');
+frm(60,1160,'s1-'+N+'about-desktop-ready','set ready');
+frm(740,1160,'s1-'+N+'about-mobile-ready','ph-about ready');
+lbl(1220,970,TD,'Block B · The line inside Settings ▸ Account, where it ships today','Left: as it ships — one line and Download. Right of it: the same place asked to hold the ready state and the toggle. The cost is visible: the Account group grows a highlighted row and a preference that has nothing to do with the account, and every one of the other ten states has to fit a single line between two account rows.','w2');
+frm(1220,1160,N+'account-desktop-today','acct today en aurora today');
+frm(1220,1560,N+'account-desktop-ready','acct ready');
+frm(1900,1160,N+'account-mobile-today','ph-acct today en aurora today');
+frm(2340,1160,N+'account-mobile-ready','ph-acct ready');
+/* notice */
+sec(2040,'1 · The ready notice','app-wide, quiet, never over content — drawn at rest; state 5 is in section 3');
+lbl(60,2110,TP,'Notice 1 · A dot on Settings, and one row at the sidebar’s foot','The lean. A dot before <b>Settings</b> in the sidebar’s foot, and above it one dismissible row: <b>Update ready · Restart</b>. × hides the row until the next launch; the dot stays until the update is installed. In the mobile family the dot sits on Profile (bottom bar and app-bar avatar) and the row sits at the top of the Profile page.','w2');
+frm(60,2300,'s1-'+N+'about-desktop-ready-notice','win - en aurora n=row');
+frm(1100,2300,'s1-'+N+'about-mobile-ready-notice','ph-home - en aurora n=row');
+frm(1540,2300,'s1-'+N+'about-mobile-ready-notice-profile','ph-profile - en aurora');
+lbl(2040,2110,TA,'Notice 2 · Quieter: the dot alone','No row. The dot on Settings (desktop) or on Profile (mobile) is the only sign outside Settings. Nothing to dismiss and nothing that changes during playback — but a dot says “something is here”, not “restart”, so the viewer must open Settings to learn what.','w2');
+frm(2040,2300,N+'dot-desktop-ready-notice','win - en aurora n=dot');
+frm(3080,2300,N+'dot-mobile-ready-notice','ph-home - en aurora n=dot');
+lbl(3540,2110,TA,'Notice 3 · Louder: a strip across the top of every page','An accent strip above the page content, with <b>Restart to update</b> and ×. Impossible to miss from across the room. It is also on top of every page, including the music page while music plays — so in state 5 it has to change shape (drawn in section 3), which is exactly the moment it should be invisible.','w2');
+frm(3540,2300,N+'banner-desktop-ready-notice','win - en aurora n=banner');
+frm(4580,2300,N+'banner-mobile-ready-notice','ph-home - en aurora n=banner');
+/* notes */
+sec(3180,'1 · Release notes','where the three notes are read');
+lbl(60,3250,TP,'Notes A · A What’s new link; Sparkle’s window shows the notes','The block carries only <b>What’s new ›</b> beside or under Restart to update. The notes are read in Sparkle’s own window at install time, so there is one release-notes surface, not two. These frames are the same as Block A’s; the link is the difference.','w2');
+frm(60,3440,N+'notes-link-desktop-ready','set ready');
+frm(740,3440,N+'notes-link-mobile-ready','ph-about ready');
+lbl(1220,3250,TA,'Notes B · The three notes inside the block','The notes sit under the ready status, in the block. Read without leaving Settings — and a second copy of what Sparkle shows, kept in three languages.','w2');
+frm(1220,3440,N+'notes-desktop-ready','set ready en aurora notes');
+frm(1900,3440,N+'notes-mobile-ready','ph-about ready en aurora notes');
+/* ---- 3 · desktop states ---- */
+const D=[
+['up-to-date','set uptodate','1 · Up to date','The resting shape. Green check, one line, the time of the last check, <b>Check now</b>. The toggle sits under it, on.'],
+['checking','set checking','2 · Checking…','Check now gives way to a static ring and the words. Nothing else moves; the toggle stays.'],
+['downloading','set downloading','3 · Downloading in the background','41 of 94 MB, a thin bar, and the promise that matters: Ravilo asks before it restarts. No button — there is nothing to do.'],
+['toggle-on','set dlstart','9a · Toggle on — it starts by itself','The day’s check found 1.53 and the download began without a word. The toggle’s second line says what “on” still keeps: the question.'],
+['toggle-off','set available en aurora off','9b · Toggle off — it waits to be asked','The block says the shipped sentence, <b>Ravilo 1.53 for Mac is available</b>, with the size and <b>Download</b>. Download lands in state 3.'],
+['ready','set ready','4 · Ready: Restart to update','The one prominent state: an accent edge, a tinted ground, a filled accent icon and the only filled button in Settings. <b>What’s new ›</b> beside it (decision 3).'],
+['ready-playing-settings','set wait','5 · Ready while a film is playing','The same block, quiet: the edge goes dashed, and in place of the button one sentence says why it waits and that Restart to update comes back here when playback stops. Nothing on screen can stop the film.'],
+['held-back','set held','6 · Held back by the server','Not an error: a clock, not a warning. <b>Ravilo 1.53 is out</b>, then the reason in the viewer’s words, and the server’s host and version in mono so they can tell whoever runs it.'],
+['failed-download','set faildl','7a · Failed — the download','--bad. Names what to do: check that this Mac is online, then <b>Try again</b>.'],
+['failed-verify','set failver','7b · Failed — it could not be confirmed','The signature failed, said without the word: Ravilo installs only an update it can confirm is genuine. <b>Try again</b> downloads it fresh.'],
+['cannot-update-temporary-copy','set cantmp','8a · Cannot update from here — a temporary copy','The shipped heading and sentence, verbatim. --warn. <b>Quit Ravilo</b> is the only action; the toggle is gone too, because it could not work.'],
+['cannot-update-disk-image','set candmg','8b · Cannot update from here — the disk image','The shipped variant: “…running from the disk image…”. Same shape, same single action. No Retry.'],
+['offline','set offline','12 · Offline','No Check now, because it cannot work. The last check stays visible, and the block says when it will try again.'],
+['dev-build','set dev','10 · Development build — absent','The block is not there. Not greyed, not collapsed: About shows the app and the server, as before. Nothing hints that a block is missing.'],
+['ready-light','set ready en daylight','4 · Ready, in Daylight','The prominent state on a light ground: the accent edge and the filled button carry it, the tint is kept faint so the text stays dark ink.'],
+['longest-da','set cantmp da','11 · The longest string — Danish','The cannot-update sentence is the longest string in the block in both languages. Danish macOS calls the folder <b>Programmer</b>, so the copy does too. 138 characters; it wraps and the button keeps its column.'],
+['longest-fo','set cantmp fo','11 · The longest string — Faroese','macOS has no Faroese, so its label stays English: <b>Applications</b>-mappuna. 145 characters, the longest string in the round; it wraps and nothing truncates.'],
+['handover','set closing','The handover — Sparkle takes over','Restart to update pressed: Ravilo shows one line, “Closing Ravilo to install 1.53…”, and stops. From here Sparkle’s own window does Install and Relaunch and the password prompt if macOS asks. That window is not drawn.','<div style="height:190px"></div><div class="handoff" style="left:140px;top:300px;width:360px;height:150px">macOS takes over here<span>Sparkle’s own window — Install and Relaunch, and the administrator password if asked. Not drawn.</span></div>'],
+];
+sec(5540,'3 · Block A + Notice 1 + Notes A, through every state','desktop family · the Settings window (⌘,) ▸ About · Aurora unless marked');
+D.forEach((d,i)=>{const x=60+(i%5)*700,y=5610+Math.floor(i/5)*760;lbl(x,y,TN,d[2],d[3]);frm(x,y+170,N+'about-desktop-'+d[0],d[1],d[4]);});
+const DW=[
+['ready-notice','win - en aurora n=row',1000,'4 · The ready notice — sidebar (1000 px)','The dot before Settings and the row above the profile. The row is the only accent fill in the window; it sits under the nav, never over content.'],
+['ready-notice-rail','rail - en aurora n=row',720,'4 · The ready notice — rail (720 px)','The row will not fit 76 px, so it becomes one labelled rail item, <b>Restart</b>, above the avatar, and the dot moves to the avatar.'],
+['ready-playing','win - en aurora n=row play',1000,'5 · Ready while music is playing','The row stays and keeps its place, but <b>Restart</b> is replaced by “After playback” and the edge goes dashed. Nothing in it stops the music. When playback stops, Restart returns.'],
+['ready-notice-light','win - en daylight n=row',1000,'4 · The ready notice, in Daylight','The row is a tinted pill with an accent edge on the light sidebar; Restart stays the filled accent.'],
+];
+let x=60;const yW=5610+4*760;DW.forEach(d=>{lbl(x,yW,TN,d[3],d[4]);frm(x,yW+170,N+'about-desktop-'+d[0],d[1]);x+=d[2]+80;});
+lbl(x,yW,'<span class="tag no">Alternative · state 5</span>','Notice 3 while music plays','The strip cannot keep its button, so it becomes a dashed strip that says it waits — still over the top of the music page. This is why Notice 3 survives state 5 worst.');frm(x,yW+170,N+'banner-desktop-ready-playing','win - en aurora n=banner play');
+/* ---- 3 · mobile states ---- */
+const M=[
+['up-to-date','ph-about uptodate','1 · Up to date','The same block in the phone’s type: Space Grotesk status, Sora body, 46 px targets.'],
+['checking','ph-about checking','2 · Checking…',''],
+['downloading','ph-about downloading','3 · Downloading in the background',''],
+['toggle-on','ph-about dlstart','9a · Toggle on',''],
+['toggle-off','ph-about available en aurora off','9b · Toggle off','Download is a full-width button, the phone’s way.'],
+['ready','ph-about ready en aurora dot','4 · Ready: Restart to update','Full-width filled Restart to update; What’s new under it.'],
+['ready-playing-settings','ph-about wait en aurora play dot','5 · Ready while music is playing — Settings','No button; the sentence. The mini bar shows the music still playing.'],
+['ready-notice','ph-home - en aurora n=row','4 · The ready notice — Home','A dot on the Profile avatar and on Profile in the bottom bar. Nothing on Home itself.'],
+['ready-notice-profile','ph-profile -','4 · The ready notice — Profile page','The row, <b>Update ready · Restart</b>, heads the Profile page; × hides it; the dot on <b>Settings</b> stays.'],
+['ready-playing','ph-profile - en aurora play','5 · Ready while music is playing — Profile','The row stays, dashed, “After playback” in place of Restart.'],
+['held-back','ph-about held','6 · Held back by the server',''],
+['failed-download','ph-about faildl','7a · Failed — the download',''],
+['failed-verify','ph-about failver','7b · Failed — it could not be confirmed',''],
+['cannot-update-temporary-copy','ph-about cantmp','8a · Cannot update — a temporary copy','Quit Ravilo, alone, full width.'],
+['cannot-update-disk-image','ph-about candmg','8b · Cannot update — the disk image',''],
+['offline','ph-about offline','12 · Offline',''],
+['dev-build','ph-about dev','10 · Development build — absent',''],
+['longest-da','ph-about cantmp da','11 · Longest string — Danish',''],
+['longest-fo','ph-about cantmp fo','11 · Longest string — Faroese',''],
+['ready-light','ph-about ready en daylight dot','4 · Ready, in Daylight',''],
+['ready-notice-light','ph-home - en daylight n=row','4 · The notice, in Daylight',''],
+['handover','ph-about closing','The handover','Ravilo’s last line; Sparkle’s window takes it from here.','<div class="handoff" style="left:30px;top:420px;width:340px;height:170px">macOS takes over here<span>Sparkle’s own window — Install and Relaunch, and the password if asked. Not drawn.</span></div>'],
+];
+const yM=yW+1000;
+sec(yM-70,'3 · The same, in the mobile family','a window under 600 dp · the phone’s Profile ▸ Settings ▸ About · Aurora unless marked');
+M.forEach((d,i)=>{const x=60+(i%8)*460,y=yM+Math.floor(i/8)*1090;lbl(x,y,TN,d[2],d[3]);frm(x,y+200,N+'about-mobile-'+d[0],d[1],d[4]);});
+const yB=yM+3*1090;
+lbl(60,yB,'<span class="tag no">Alternative · state 5</span>','Notice 3 on the phone while music plays','The strip sits between the content and the mini bar — two bars stacked over the bottom bar while the viewer listens.');
+frm(60,yB+200,N+'banner-mobile-ready-playing','ph-home - en aurora n=banner play');
+lbl(520,yB,'<span class="tag no">Not applicable</span>','Empty · 10-foot focus','<b>Empty is not applicable</b>: the block is never empty; state 1 is its resting shape. <b>10-foot focus is not applicable</b>: no TV surface is in this round.');
+C.innerHTML=H.join('');
+window.__muBottom=yB+1100;
+})();
+</script>
+<script src="mac-update.js"></script>
+<script>
+(function(){
+const y0=window.__muBottom,C=document.getElementById('canvas'),S=MU.S;
+const keys=Object.keys(S.en).filter(k=>k.startsWith('su_')||k==='menu_check');
+const row=k=>`<tr><td class="mono" style="white-space:nowrap">${k}</td><td>${S.en[k]}</td><td>${S.da[k]}</td><td>${S.fo[k]}</td></tr>`;
+C.insertAdjacentHTML('beforeend',`
+<div class="sec" style="left:60px;top:4340px">2 · How they compare<small>and which survives state 5</small></div>
+<div class="panel" style="left:60px;top:4410px;width:1500px"><h2>How they compare</h2>
+<table class="tbl"><tr><th></th><th>Block A · About</th><th>Block B · Account</th></tr>
+<tr><td><b>Ships today?</b></td><td>No — a move. Adopted deliberately or not at all.</td><td>Yes, as one line + Download</td></tr>
+<tr><td><b>Room for twelve states</b></td><td>Its own group: status, progress, sentence, action, toggle</td><td>One line between two account rows; the toggle has no home</td></tr>
+<tr><td><b>Fits the page it is on</b></td><td>About already holds version and server</td><td>An update is not an account fact</td></tr></table>
+<table class="tbl" style="margin-top:22px"><tr><th></th><th>Notice 1 · Dot + row</th><th>Notice 2 · Dot alone</th><th>Notice 3 · Strip</th></tr>
+<tr><td><b>Seen on the next visit</b></td><td>Yes — the only accent fill in the sidebar</td><td>Only if the viewer reads dots</td><td>Yes, on every page</td></tr>
+<tr><td><b>Says what to do</b></td><td>Update ready · Restart</td><td>No — open Settings to learn</td><td>Restart to update</td></tr>
+<tr><td><b>Over content</b></td><td>Never — under the nav</td><td>Never</td><td>Always — above the page</td></tr>
+<tr><td><b>State 5 (playing)</b></td><td>Stays; Restart → “After playback”</td><td><b>Unchanged — survives best</b></td><td>Must change shape over the music page — survives worst</td></tr>
+<tr><td><b>Rail (720 px)</b></td><td>One labelled rail item + dot on avatar</td><td>Dot on avatar</td><td>Full width of the content</td></tr>
+<tr><td><b>Mobile family</b></td><td>Dot on Profile + row atop the Profile page</td><td>Dot on Profile</td><td>A second bar above the bottom bar</td></tr></table>
+<table class="tbl" style="margin-top:22px"><tr><th></th><th>Notes A · What’s new link</th><th>Notes B · Notes in the block</th></tr>
+<tr><td><b>Surfaces to maintain</b></td><td>One — Sparkle’s window</td><td>Two, in three languages</td></tr>
+<tr><td><b>Read before deciding to restart</b></td><td>One click away</td><td>On the page</td></tr></table>
+<div class="good"><b>Decided (owner, 2026-10-15): Block A + Notice 1 + Notes A, and Check for Updates… under About Ravilo.</b> Notice 2 survives state 5 best because it never has anything to remove — but it fails the brief’s other half: a dot cannot be read from across the room as “restart”. Notice 1 survives state 5 with one word changed and nothing moved, which is the smallest honest change. Notice 3 should not ship.</div>
+<div class="warnb"><b>A collision to know about.</b> The phone’s Profile entry already carries the support lane’s unread dot. Notice 1 puts a second meaning on the same dot. Drawn: one dot, meaning “your Profile page has something for you”; the page’s first row says which (support reply or update). If the owner wants them apart, the update’s dot moves to Settings only and the Profile entry shows nothing.</div>
+</div>
+
+<div class="sec" style="left:60px;top:${y0}px">4 · The four decisions — decided by the owner (2026-10-15)<small>all four leans picked · the pick is drawn in section 3 · the alternative stays in section 1 for the record</small></div>
+<div class="panel" style="left:60px;top:${y0+70}px;width:1500px">
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>1 · Block A — Software update at the top of Settings ▸ About</h4><p>This moves the shipped line out of Settings ▸ Account into a block of its own on About. A change to what ships.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>Block B — the line inside Account</h4><p>Drawn as it ships and as it would have to grow (section 1).</p></div></div>
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>2 · Notice 1 — dot on Settings + one row at the sidebar’s foot; dot on Profile on the phone</h4><p>Survives state 5 by swapping Restart for “After playback”.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>Notice 2 (quieter, dot alone) · Notice 3 (louder, a strip)</h4><p>Notice 2 survives state 5 best; Notice 3 worst.</p></div></div>
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>3 · Notes A — a What’s new link; Sparkle shows the notes</h4><p>One release-notes surface.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>Notes B — the three notes in the block</h4><p>Drawn with the three stand-in bullets (section 1).</p></div></div>
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided · a string only</span><h4>4 · <i>Check for Updates…</i> in the Ravilo menu</h4><p>Position: directly under <b>About Ravilo</b>, above the separator before <b>Settings…</b> — the standard macOS place. en <b>Check for Updates…</b> · da <b>Søg efter opdateringer…</b> · fo <b>Leita eftir dagføringum…</b></p></div><div class="dc"><span class="tag no">Not picked</span><h4>No menu item</h4><p>Check now in the block is then the only manual check.</p></div></div>
+<h4>Two things the brief did not decide — drawn one way</h4>
+<ul><li><b>Sparkle’s download-progress window.</b> Drawn: every download is a background download shown in Ravilo’s block (state 3), including the one the viewer starts with Download when the toggle is off. Sparkle’s window is used only from Restart to update onward. If the owner wants Sparkle’s progress window for the manual Download, Download becomes a second handover point.</li>
+<li><b>What × on the row hides.</b> Drawn: the row until the next launch; the dot stays until the update is installed.</li></ul>
+</div>
+
+<div class="sec" style="left:60px;top:${y0+840}px">5 · New strings<small>en · da · fo drafts · shipped i18n wins wherever a key already exists</small></div>
+<div class="panel" style="left:60px;top:${y0+910}px;width:1800px"><h2>Every new user-facing string</h2>
+<p>Reused unchanged from the shipped files: <span class="mono">settings</span> <span class="mono">account</span> <span class="mono">about</span> <span class="mono">signed_in_as</span> <span class="mono">pw_change</span> <span class="mono">pm_profile</span>. The two Applications sentences are shipped English; their da/fo here are drafts and lose to any shipped translation. Danish uses the Mac’s own Danish label <b>Programmer</b>; Faroese keeps <b>Applications</b> in English. <span class="mono">su_try_again</span> matches the support lane’s <span class="mono">sup_try_again</span> — one key may serve both.</p>
+<table class="tbl"><tr><th>key</th><th>en</th><th>da</th><th>fo</th></tr>${keys.map(row).join('')}</table></div>`);
+})();
+</script>
+</body>
+</html>
