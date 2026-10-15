@@ -60,10 +60,10 @@ async function login(page: Page) {
 }
 
 /** A page on the Suggestions route with the three calls stubbed; `posts` collects every download POST's body. */
-async function openSuggestions(ctx: BrowserContext, posts: any[]): Promise<Page> {
+async function openSuggestions(ctx: BrowserContext, posts: any[], options: unknown = OPTIONS): Promise<Page> {
   const page = await ctx.newPage();
   await page.route(/\/api\/suggestions\/summary/, (r) => r.fulfill({ json: { waiting: 2, new_count: 0, top_clusters: [] } }));
-  await page.route(/\/api\/suggestions\/request-options/, (r) => r.fulfill({ json: OPTIONS }));
+  await page.route(/\/api\/suggestions\/request-options/, (r) => r.fulfill({ json: options }));
   await page.route(/\/api\/suggestions\/\d+\/download/, async (r) => {
     const id = Number(r.request().url().match(/suggestions\/(\d+)\/download/)![1]);
     posts.push({ id, ...(r.request().postDataJSON() ?? {}) });
@@ -86,6 +86,13 @@ async function openDialog(page: Page, tmdbId = 101) {
   await expect(dialog(page)).toBeVisible();
   await expect(row(page, 10)).toHaveCount(1); // the options have arrived
 }
+
+/** The same server with the last profile named as long as a real Radarr "quality — language — source" profile can be. */
+const LONG_NAME = "Stand-in long profile name — 2160p remux HDR10 with Dolby Vision, lossless audio and every subtitle track";
+const OPTIONS_LONG = {
+  ...OPTIONS,
+  servers: [{ ...OPTIONS.servers[0], profiles: PROFILES.map((p) => (p.id === 10 ? { ...p, name: LONG_NAME } : p)) }],
+};
 
 const VIEWPORTS = [
   { name: "phone 412px", viewport: { width: 412, height: 700 }, mobile: true },
@@ -147,6 +154,39 @@ test.describe.serial("Suggestions — the Download dialog answers its controls (
         await expect(row(page, 9)).toHaveAttribute("aria-checked", "true");
         await expect(page.locator("[data-dlgo]")).toContainText("Download in Stand-in profile 9");
         expect(await scrollTop(page)).toBe(before);
+        expect(posts).toHaveLength(0);
+      });
+
+      test("1b — a long-named profile's pick keeps the dialog in the viewport, with the primary reachable (FR-274-18)", async () => {
+        await page.close();
+        page = await openSuggestions(ctx, posts, OPTIONS_LONG);
+        await openDialog(page);
+        // A phone browser's fixed box is shorter than 100vh while its toolbar shows. Headless Chromium has no
+        // toolbar, so take the same 100 px off the bottom of the backdrop to get that geometry.
+        await page.locator("#sg-dlroot .sg-dlb").evaluate((el) => { (el as HTMLElement).style.bottom = "100px"; });
+        const inside = async () => {
+          const b = (await page.locator("#sg-dlroot .sg-dlb").boundingBox())!;
+          const d = (await dialog(page).boundingBox())!;
+          expect(d.y).toBeGreaterThanOrEqual(b.y - 0.5);
+          expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height + 0.5);
+        };
+        await inside();
+        await dialog(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
+        const before = await scrollTop(page);
+
+        await row(page, 10).tap();
+        await expect(row(page, 10)).toHaveAttribute("aria-checked", "true");
+        await expect(page.locator("[data-dlgo]")).toContainText(LONG_NAME);
+        expect(await scrollTop(page)).toBe(before);
+        await inside();
+
+        // Scrolled to its end, the dialog shows the whole primary inside the viewport.
+        await dialog(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
+        const go = (await page.locator("[data-dlgo]").boundingBox())!;
+        const d = (await dialog(page).boundingBox())!;
+        expect(go.y).toBeGreaterThanOrEqual(d.y);
+        expect(go.y + go.height).toBeLessThanOrEqual(d.y + d.height);
+        expect(go.y + go.height).toBeLessThanOrEqual(vp.viewport.height - 100);
         expect(posts).toHaveLength(0);
       });
 
