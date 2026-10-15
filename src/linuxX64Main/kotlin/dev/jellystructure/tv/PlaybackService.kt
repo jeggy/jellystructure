@@ -66,6 +66,13 @@ private const val TOKEN_NEGATIVE_TTL_MS = 10 * 60_000L // ~10 minutes, per spec 
 // cache miss (every 5 min per token) that is not a timeout, it is the absence of one. A wedged Jellyfin
 // could otherwise hold a TV request for two minutes with nothing in between to stop it.
 private const val TOKEN_CHECK_TIMEOUT_MS = 5_000L
+// Phase 300 (FR-300-10) — when a token was last forgotten or rejected, as a ticket from [tokenTicket] taken under
+// [tokenCacheMutex]. A probe takes a ticket at its cache miss; its VALID verdict is stored only if no event for that
+// token carries a later one. The timestamp is only for pruning: no probe outlives two bounded checks and FR-194-5's
+// pause, so an event older than that (plus a second's slack) can no longer be racing anything.
+private var tokenTicket = 0L
+private val tokenEventTicket = HashMap<String, Pair<Long, Long>>() // token -> (ticket, atMs)
+private const val TOKEN_EVENT_RETAIN_MS = 2 * TOKEN_CHECK_TIMEOUT_MS + 500L + 1_000L
 private const val TICKS_PER_MS = 10_000L
 
 /** 308 — query keys a logged stream URL never shows (credentials and Jellyfin's cache tag), compared by name. */
@@ -2268,11 +2275,13 @@ private suspend fun JellyfinClient.cachedTokenCheck(baseUrl: String, device: Dev
     dev.jellystructure.auth.DeviceIdentityRegistry.remember(device)
     val userToken = device.jellyfinUserToken
     val now = nowMs()
-    tokenCacheMutex.withLock {
+    // FR-300-10 — the ticket is taken at the miss, under the same lock that read the cache.
+    val probeTicket: Long = tokenCacheMutex.withLock {
         // Fast path: token was recently validated — skip the Jellyfin round-trip.
         tokenValidUntil[userToken]?.let { if (it > now) return TokenCheck.VALID }
         // Phase 110: negative-cached — known-dead as of a recent check, skip the round-trip too.
         tokenInvalidUntil[userToken]?.let { if (it > now) return TokenCheck.REJECTED }
+        ++tokenTicket
     }
     // Slow path: check with Jellyfin. Phase 205 (FR-205-4) — bounded well under the client's own 120s
     // default; a timeout here is UNKNOWN (Jellyfin didn't answer), never REJECTED (that would escalate
@@ -2289,13 +2298,18 @@ private suspend fun JellyfinClient.cachedTokenCheck(baseUrl: String, device: Dev
     }
     when (result.outcome) {
         TokenCheck.VALID -> tokenCacheMutex.withLock {
-            tokenValidUntil[userToken] = nowMs() + TOKEN_VALID_TTL_MS
-            tokenInvalidUntil.remove(userToken)
-            tokenRejectionLogged.remove(userToken)
+            // FR-300-10 — a 200 that left before a forget, or before a rejection was recorded, is what Jellyfin said
+            // for that request: it is returned below, but it does not outlive the event that came after it.
+            if ((tokenEventTicket[userToken]?.first ?: 0L) <= probeTicket) {
+                tokenValidUntil[userToken] = nowMs() + TOKEN_VALID_TTL_MS
+                tokenInvalidUntil.remove(userToken)
+                tokenRejectionLogged.remove(userToken)
+            }
         }
         TokenCheck.REJECTED -> tokenCacheMutex.withLock {
             tokenValidUntil.remove(userToken)
             tokenInvalidUntil[userToken] = nowMs() + TOKEN_NEGATIVE_TTL_MS
+            recordTokenEvent(userToken)
         }
         // FR-194-2 — cache nothing, clear nothing. The next call re-probes. Crucially this must not
         // drop an existing positive entry either: the old `else` branch did, so one blip also threw
@@ -2349,7 +2363,14 @@ internal suspend fun isTokenKnownDead(token: String): Boolean =
     token.isNotBlank() && tokenCacheMutex.withLock { (tokenInvalidUntil[token] ?: 0L) > nowMs() }
 
 /** Phase 300 (FR-300-5) — [token] was replaced on its device: check it again before it is trusted. The negative entry stays. */
-suspend fun forgetTokenValidity(token: String) = tokenCacheMutex.withLock { tokenValidUntil.remove(token); Unit }
+suspend fun forgetTokenValidity(token: String) = tokenCacheMutex.withLock { tokenValidUntil.remove(token); recordTokenEvent(token) }
+
+/** FR-300-10 — call under [tokenCacheMutex]: [token] was forgotten or rejected now; older probes may not store a VALID. */
+private fun recordTokenEvent(token: String) {
+    val now = nowMs()
+    tokenEventTicket.entries.removeAll { now - it.value.second > TOKEN_EVENT_RETAIN_MS }
+    tokenEventTicket[token] = ++tokenTicket to now
+}
 
 /**
  * Phase 300 (FR-300-4) — [device] borrows its token (a Cast receiver, a screen) and Jellyfin rejected it. First the

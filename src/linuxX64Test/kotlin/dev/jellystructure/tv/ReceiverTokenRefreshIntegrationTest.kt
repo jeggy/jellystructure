@@ -59,6 +59,7 @@ class ReceiverTokenRefreshIntegrationTest {
         suspend fun revoke(token: String) = lock.withLock { live.remove(token); Unit }
         suspend fun issue(token: String) = lock.withLock { live.add(token); Unit }
         suspend fun opened(line: String) = lock.withLock { line in opens }
+        suspend fun openCount(line: String) = lock.withLock { opens.count { it == line } }
     }
 
     private suspend fun waitFor(what: String, timeoutMs: Long = 15_000, check: suspend () -> Boolean) {
@@ -154,6 +155,10 @@ class ReceiverTokenRefreshIntegrationTest {
             val macNow = assertNotNull(devices.listSessions("mac-1").firstOrNull())
             assertNotNull(cast.redeem(cast.mint(macNow).code, "Stue", recv.deviceId))
             assertEquals(t("mac2"), receiverPlaysWith(recvDt))
+            // FR-300-10 — the hand-off just restarted the bridge on A's token (FR-300-6), and that restart is a token
+            // check in flight. The step below models a receiver with no hand-off pending, so let the restart land
+            // first (the bridge has now opened on A's token a second time); the race itself is TokenCheckRaceTest's.
+            waitFor("the bridge reopens on A's token after the second hand-off") { fake.openCount("$jfId ${t("mac2")}") >= 2 }
 
             // FR-300-4 — the production state: the receiver holds a copy no row holds any more (A's token revoked with
             // no re-sign-in we saw, and no hand-off yet). Its next request heals from the user's live device.
