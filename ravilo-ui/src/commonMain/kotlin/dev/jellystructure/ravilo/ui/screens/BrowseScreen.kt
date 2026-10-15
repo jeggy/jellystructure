@@ -9,6 +9,7 @@ import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
 import androidx.compose.ui.platform.LocalFocusManager
 import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
 import dev.jellystructure.ravilo.ui.focus.FollowGridRefresh
+import dev.jellystructure.ravilo.ui.focus.RestoreOnReturn
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
@@ -489,13 +490,8 @@ private fun BrowseGrid(
     val keys = remember(items) { items.map { it.id } }
     val gridScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
-    var restoredOnce by remember { mutableStateOf(false) }
-    LaunchedEffect(items) {
-        if (restoredOnce || restoreItemKey == null) return@LaunchedEffect
-        restoredOnce = true
-        onRestoreResolved()
-        if (!gridFocus.restore(keys, restoreItemKey, restoreItemIndex)) onEmpty()
-    }
+    // R361 (FR-R361-7) — spent when focus lands, and started again if the refetch changes the list meanwhile.
+    RestoreOnReturn(gridFocus, keys, restoreItemKey, restoreItemIndex, onResolved = onRestoreResolved, onEmpty = onEmpty)
     // R361 (FR-R361-3 for grids, R364 review item 4) — a refresh that drops the focused cell: the cell now there.
     FollowGridRefresh(gridFocus, keys, onEmpty = onEmpty)
 

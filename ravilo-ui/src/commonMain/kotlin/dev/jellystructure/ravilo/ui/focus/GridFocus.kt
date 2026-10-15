@@ -39,6 +39,10 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
     private val targetFR = FocusRequester()
     private var targetKey by mutableStateOf<Any?>(null)
 
+    /** R361 (FR-R361-7) — a Back-return restore that has not landed yet. A refresh that arrives while it is set is
+     *  the restore's to resolve (it starts again on the new list), not [followRefresh]'s. */
+    internal var restorePending = false
+
     /** The key and index of the tile that last held focus in this grid (-1: none since it last left). */
     internal var focusedKey: Any? = null
         private set
@@ -63,11 +67,14 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
     suspend fun focusIndex(keys: List<Any>, index: Int): Boolean {
         if (index !in keys.indices) return false
         targetKey = keys[index]
-        withFrameNanos { }
-        bringIndexIn(index)
-        val ok = targetFR.requestFocusAwaiting()
-        targetKey = null
-        return ok
+        // R361 (FR-R361-7.2) — a cancelled attempt (the list changed under it) leaves no requester armed.
+        try {
+            withFrameNanos { }
+            bringIndexIn(index)
+            return targetFR.requestFocusAwaiting()
+        } finally {
+            if (targetKey == keys[index]) targetKey = null
+        }
     }
 
     private suspend fun bringIndexIn(index: Int) {
@@ -98,8 +105,11 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
     }
 
     /** R361 (FR-R361-3 for grids) — the focused tile left the list in a refresh: the tile now at its position. */
-    internal suspend fun followRefresh(prev: List<Any>, now: List<Any>, hadFocus: Boolean, onEmpty: () -> Unit) {
-        val key = focusedKey ?: return
+    internal suspend fun followRefresh(
+        prev: List<Any>, now: List<Any>, hadFocus: Boolean, focusedAtSwap: Any?, onEmpty: () -> Unit,
+    ) {
+        if (restorePending) return
+        val key = focusedAtSwap ?: return
         if (!hadFocus || prev == now || key in now) return
         val prevIdx = prev.indexOf(key).coerceAtLeast(0)
         focusedKey = null
@@ -144,6 +154,39 @@ fun Modifier.gridColumnKeys(
 }
 
 /**
+ * R361 (FR-R361-7) — a Back-return to a grid: focus the opened tile ([restoreKey]) or the tile now at
+ * [restoreIndex], and spend the restore only when it lands (or the empty target has been asked for focus), never
+ * when it starts. The kept store shows its old list and then refetches, so [keys] can change while the restore is
+ * in flight; the restore then starts again on the new list, with the key and index captured at arrival (the
+ * store's own are cleared by [onResolved]). The bounded retry is counted from the last change of [keys].
+ *
+ * [emptyIsHandled]: the grid has something else to show or focus when [keys] is empty, so [onEmpty] is not asked.
+ * Declare this before [FollowGridRefresh], which leaves a pending restore to this effect.
+ */
+@Composable
+fun RestoreOnReturn(
+    gridFocus: GridFocus,
+    keys: List<Any>,
+    restoreKey: String?,
+    restoreIndex: Int,
+    onResolved: () -> Unit,
+    onEmpty: () -> Unit,
+    emptyIsHandled: Boolean = false,
+) {
+    val arrival = remember(gridFocus) {
+        restoreKey?.let { it to restoreIndex }.also { gridFocus.restorePending = it != null }
+    }
+    LaunchedEffect(keys) {
+        val (key, index) = arrival ?: return@LaunchedEffect
+        if (!gridFocus.restorePending) return@LaunchedEffect
+        val landed = gridFocus.restore(keys, key, index)
+        gridFocus.restorePending = false
+        onResolved()
+        if (!landed && !emptyIsHandled) onEmpty()
+    }
+}
+
+/**
  * R361 — call from the grid composable with its current keys: when a refresh drops the focused tile while the grid
  * holds focus, focus moves to the tile now at its position ([onEmpty] when nothing is left). The "had focus" flag is
  * read during the composition that applies the new keys, before the removed tile's detach clears focus.
@@ -152,9 +195,12 @@ fun Modifier.gridColumnKeys(
 fun FollowGridRefresh(gridFocus: GridFocus, keys: List<Any>, onEmpty: () -> Unit) {
     val prevKeys = remember(gridFocus) { mutableStateOf(keys) }
     val hadFocusAtSwap = gridFocus.gridFocused
+    // Read with the flag: once the removed tile detaches, Compose's own recovery can focus another tile at once, and
+    // that overwrites `focusedKey` before this effect runs.
+    val focusedAtSwap = gridFocus.focusedKey
     LaunchedEffect(keys) {
         val prev = prevKeys.value
         prevKeys.value = keys
-        gridFocus.followRefresh(prev, keys, hadFocusAtSwap, onEmpty)
+        gridFocus.followRefresh(prev, keys, hadFocusAtSwap, focusedAtSwap, onEmpty)
     }
 }

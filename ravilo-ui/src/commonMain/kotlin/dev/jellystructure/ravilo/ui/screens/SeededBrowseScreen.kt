@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.SideEffect
 import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
 import dev.jellystructure.ravilo.ui.focus.FollowGridRefresh
+import dev.jellystructure.ravilo.ui.focus.RestoreOnReturn
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.input.key.type
@@ -1118,13 +1119,11 @@ private fun BrowseCardGrid(
     val keys = remember(items) { items.map { it.id } }
     val gridScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
-    var restoredOnce by remember { mutableStateOf(false) }
-    LaunchedEffect(items) {
-        if (restoredOnce || restoreItemKey == null) return@LaunchedEffect
-        restoredOnce = true
-        onRestoreResolved()
-        if (!gridFocus.restore(keys, restoreItemKey, restoreItemIndex) && seerrOverflow.isEmpty()) onEmpty()
-    }
+    // R361 (FR-R361-7) — spent when focus lands, and started again if the refetch changes the list meanwhile.
+    RestoreOnReturn(
+        gridFocus, keys, restoreItemKey, restoreItemIndex,
+        onResolved = onRestoreResolved, onEmpty = onEmpty, emptyIsHandled = seerrOverflow.isNotEmpty(),
+    )
     // R361 (FR-R361-3 for grids) — a refresh that drops the focused tile: the tile now at its position.
     FollowGridRefresh(gridFocus, keys, onEmpty = onEmpty)
     var firstFocusDone by remember { mutableStateOf(false) }

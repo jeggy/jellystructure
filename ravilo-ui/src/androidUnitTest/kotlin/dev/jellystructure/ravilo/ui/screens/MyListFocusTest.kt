@@ -26,6 +26,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * R364 — My List on a TV, key by key, over one kept [BrowseStore]: a title added since the last visit shows on the next
@@ -46,18 +50,24 @@ class MyListFocusTest {
     private var opened: MediaCard? = null
     private var profileOpened = 0
     private var navSelected = 0
+    private lateinit var store: BrowseStore
+    @Volatile private var gate: CountDownLatch? = null
+    private val entered = AtomicInteger()
 
     private fun render(initial: List<MediaCard>) {
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         served = initial
         val api = fakeTvApiClient { path ->
             when (path) {
-                "/api/tv/browse" -> RaviloWireJson.encodeToString(SearchResults.serializer(), SearchResults(query = "", items = served, total = served.size))
+                // R361 (FR-R361-7) — a test that holds the refetch picks the frame it lands in.
+                "/api/tv/browse" -> gate?.let { entered.incrementAndGet(); it.await(10, TimeUnit.SECONDS) }.let {
+                    RaviloWireJson.encodeToString(SearchResults.serializer(), SearchResults(query = "", items = served, total = served.size))
+                }
                 "/api/tv/facets" -> RaviloWireJson.encodeToString(BrowseFacets.serializer(), BrowseFacets())
                 else -> null
             }
         }
-        val store = BrowseStore(api)
+        store = BrowseStore(api)
         rule.setContent {
             if (shown) BrowseScreen(
                 kind = BrowseKind.MY_LIST, store = store, displayName = "Olivar", onBack = {},
@@ -104,6 +114,48 @@ class MyListFocusTest {
         shown = true
         waitForTitles(1)
         focused("Keeper 2")
+    }
+
+    /** Open "Keeper 1", then return with the refetch held until the restore has aimed (R361 FR-R361-7). */
+    private fun returnWithRefetchInFlight(next: List<MediaCard>) {
+        press(Key.DirectionDown)
+        focused("Keeper 1")
+        press(Key.Enter)
+        assertEquals("t1", opened?.id)
+        val latch = CountDownLatch(1)
+        gate = latch
+        entered.set(0)
+        served = next
+        rule.mainClock.autoAdvance = false
+        shown = true
+        // Frame by frame until the refetch is asked for (the old list is on screen, the restore has aimed and focus
+        // has not landed), then answer it.
+        var frames = 0
+        while (entered.get() == 0 && frames++ < 10) { rule.mainClock.advanceTimeByFrame(); org.robolectric.shadows.ShadowLooper.idleMainLooper(); Thread.sleep(20) }
+        check(entered.get() > 0) { "the refetch was never asked for" }
+        latch.countDown()
+        val deadline = System.currentTimeMillis() + 5_000
+        while ((store.state.value as? BrowseState.Loaded)?.results?.items?.size != next.size) {
+            check(System.currentTimeMillis() < deadline) { "the refetch never landed" }
+            Thread.sleep(10)
+        }
+        gate = null
+        rule.mainClock.advanceTimeBy(500)         // the bound, from the last list change
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        assertNull(store.focusItemKey, "the restore spent the key")
+    }
+
+    @Test fun `R361 FR-7 — the opened title gone while the restore is in flight lands on its neighbour`() {
+        render(listOf(card(1), card(2)))
+        returnWithRefetchInFlight(listOf(card(2)))
+        focused("Keeper 2")
+    }
+
+    @Test fun `R361 FR-7 — an empty refetch while the restore is in flight lands on the avatar`() {
+        render(listOf(card(1), card(2)))
+        returnWithRefetchInFlight(emptyList())
+        rule.onNodeWithTag(APP_BAR_AVATAR_TAG, useUnmergedTree = true).assertIsFocused()
     }
 
     @Test fun `acceptance 4 — an empty My List shows the hint and focus is on the avatar, whose OK opens the profile menu`() {

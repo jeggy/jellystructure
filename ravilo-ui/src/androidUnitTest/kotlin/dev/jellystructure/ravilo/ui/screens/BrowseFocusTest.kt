@@ -25,6 +25,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * R350 (FR-R350-9) — the Movies / Series browse page, key by key: Up from ANY tile of the first row lands on the
@@ -58,7 +62,7 @@ class BrowseFocusTest {
         served = initial
         val api = fakeTvApiClient { path ->
             when (path) {
-                "/api/tv/browse/seeded" -> RaviloWireJson.encodeToString(SeededBrowseResponse.serializer(), SeededBrowseResponse(items = served, total = served.size))
+                "/api/tv/browse/seeded" -> gate?.let { entered.incrementAndGet(); it.await(10, TimeUnit.SECONDS) }.let { RaviloWireJson.encodeToString(SeededBrowseResponse.serializer(), SeededBrowseResponse(items = served, total = served.size)) }
                 "/api/tv/channels" -> "[]"
                 else -> null
             }
@@ -118,18 +122,80 @@ class BrowseFocusTest {
         focusedWith("Stand-in")
     }
 
-    // ── R361 (FR-R361-4) — Back to a grid whose opened title has left the filtered list ──
+    // ── R361 (FR-R361-4, FR-R361-7) — Back to a grid whose opened title has left the filtered list ──
+    //
+    // The kept store renders its OLD list on Back and then refetches, so the refetch can land at any frame of the
+    // restore. The test picks the frame: the second answer is held on a latch, and the clock is stepped by hand.
 
-    @Test fun `a title gone from the grid lands on the tile now at its index, and the key is spent`() {
-        render()
+    private enum class Refetch { BEFORE_RETURN, IN_FLIGHT, SETTLED }
+
+    @Volatile private var gate: CountDownLatch? = null
+    private val entered = AtomicInteger()
+
+    /** Open the third tile, then return with the refetch answering [next] at [moment]; ends after the 500 ms bound. */
+    private fun openThirdAndReturn(moment: Refetch, next: List<BrowseCard>) {
         press(Key.DirectionRight); press(Key.DirectionRight)
         focusedExactly("Stand-in 3")
         press(Key.Enter)
         assertEquals("m3", opened?.id)
-        served = cards.filter { it.card.id != "m3" }
-        back(expectTitles = 59)
-        focusedExactly("Stand-in 4")
+        val titles = if (next.size == 1) "1 title" else "${next.size} titles"
+        fun awaitStore() {
+            val deadline = System.currentTimeMillis() + 5_000
+            while ((store.state.value as? SeededBrowseState.Loaded)?.items?.size != next.size) {
+                check(System.currentTimeMillis() < deadline) { "the refetch never landed" }
+                Thread.sleep(10)
+            }
+        }
+        when (moment) {
+            Refetch.BEFORE_RETURN -> {
+                served = next
+                store.load()
+                awaitStore()
+                shown = true
+                rule.waitUntil(5_000) { rule.onAllNodes(hasText(titles, substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+                rule.waitForIdle()
+            }
+            Refetch.IN_FLIGHT -> {
+                val latch = CountDownLatch(1)
+                gate = latch
+                served = next
+                entered.set(0)
+                rule.mainClock.autoAdvance = false
+                shown = true
+                // Frame by frame until the refetch is asked for (the old list is on screen, the restore has aimed
+                // and focus has not landed: it needs a frame more), then answer it.
+                var frames = 0
+                while (entered.get() == 0 && frames++ < 10) { rule.mainClock.advanceTimeByFrame(); org.robolectric.shadows.ShadowLooper.idleMainLooper(); Thread.sleep(20) }
+                check(entered.get() > 0) { "the refetch was never asked for" }
+                latch.countDown()
+                awaitStore()
+                gate = null
+            }
+            Refetch.SETTLED -> {
+                shown = true
+                rule.waitUntil(5_000) { rule.onAllNodes(hasText("60 titles", substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+                rule.waitForIdle()
+                rule.mainClock.advanceTimeBy(500)
+                focusedExactly("Stand-in 3")           // focus has settled on the old list
+                served = next
+                store.load()
+                awaitStore()
+            }
+        }
+        // The bound (R200: 30 frames) counted from the last list change; never an open-ended wait for focus.
+        rule.mainClock.advanceTimeBy(500)
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        rule.onAllNodes(hasText(titles, substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty().also { assertTrue(it, "the list shows $titles") }
         assertNull(store.focusItemKey, "the restore spent the key")
+    }
+
+    private val withoutThird get() = cards.filter { it.card.id != "m3" }
+
+    @Test fun `a title gone before the return composes lands on the tile now at its index`() {
+        render()
+        openThirdAndReturn(Refetch.BEFORE_RETURN, withoutThird)
+        focusedExactly("Stand-in 4")
         // an ordinary return afterwards still restores
         press(Key.Enter)
         assertEquals("m4", opened?.id)
@@ -137,15 +203,33 @@ class BrowseFocusTest {
         focusedExactly("Stand-in 4")
     }
 
+    @Test fun `a title gone while the restore is in flight lands on the tile now at its index`() {
+        render()
+        openThirdAndReturn(Refetch.IN_FLIGHT, withoutThird)
+        focusedExactly("Stand-in 4")
+    }
+
+    @Test fun `a title gone after focus has settled lands on the tile now at its index`() {
+        render()
+        openThirdAndReturn(Refetch.SETTLED, withoutThird)
+        focusedExactly("Stand-in 4")
+    }
+
     @Test fun `an empty grid on return lands on the facet bar, never the app bar`() {
         render()
-        press(Key.Enter)
-        served = emptyList()
-        shown = true
-        rule.waitUntil(5_000) { rule.onAllNodes(hasText("0 titles", substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(500)
-        rule.waitForIdle()
+        openThirdAndReturn(Refetch.BEFORE_RETURN, emptyList())
+        inFacetBar()
+    }
+
+    @Test fun `an empty refetch while the restore is in flight lands on the facet bar`() {
+        render()
+        openThirdAndReturn(Refetch.IN_FLIGHT, emptyList())
+        inFacetBar()
+    }
+
+    @Test fun `an empty refetch after focus has settled lands on the facet bar`() {
+        render()
+        openThirdAndReturn(Refetch.SETTLED, emptyList())
         inFacetBar()
     }
 
