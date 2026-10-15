@@ -274,7 +274,11 @@ class LooseFilmsService(
         private val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
         private val token = cfg.apiKeys.jellyfinToken
         private val q = db.jellyfinIdRemapQueries
-        private var recent: Map<String, String>? = null   // path (Jellyfin's view) → id, one read for every film
+        // path (Jellyfin's view) → id: Jellyfin's whole Movie/Episode catalog, read once for every film. No recency
+        // window — a moved film keeps its file's creation time, so it is as old as any (DEB-1328, FR-316-7).
+        private val pathIndex = RepairPathIndex {
+            jellyfin.getAllLibraryItemIds(base, token).mapNotNull { i -> i.path?.let { it to i.id.replace("-", "") } }
+        }
 
         override fun movedEntries(): List<MovedEntry> =
             db.mediaHistoryQueries.byAction("moved_into_folder").executeAsList().map { MovedEntry(it.media_id, it.ts, it.detail) }
@@ -296,11 +300,7 @@ class LooseFilmsService(
         override suspend fun jellyfinItem(id: String): RepairItem? =
             jellyfin.getItem(base, token, id)?.let { RepairItem(it.type, it.path?.let { p -> fromJellyfinView(p, cfg) }) }
 
-        override suspend fun itemIdAt(path: String): String? {
-            val index = recent ?: (jellyfin.recentMediaItems(base, token, REPAIR_RECENT_LIMIT) ?: return null)
-                .mapNotNull { i -> i.path?.let { it to i.id.replace("-", "") } }.toMap().also { recent = it }
-            return index[toJellyfinView(path, cfg)]   // the item AT the path, or nothing — never another item
-        }
+        override suspend fun itemIdAt(path: String): String? = pathIndex.idAt(toJellyfinView(path, cfg))
 
         override fun sessionsOn(id: String) = q.sessionsOn(id).executeAsList().map {
             RepairSessionRow(it.id, it.target_id, it.started_by_device_id, it.queue_json, it.queue_index.toInt(), it.created_at, it.updated_at, it.ended_at)
@@ -537,9 +537,6 @@ class LooseFilmsService(
     companion object {
         /** How many of Jellyfin's newest films a path lookup reads; a moved or renamed film is among the newest. */
         const val FIND_RECENT_LIMIT = 500
-
-        /** The repair's one read of Jellyfin's newest films: wide enough to hold every film the mover has ever moved. */
-        const val REPAIR_RECENT_LIMIT = 5000
 
         /** History actions that are the owner's own edit of a title, for FR-316-7's list of what a swept row lost. */
         val BY_HAND_ACTIONS = setOf(

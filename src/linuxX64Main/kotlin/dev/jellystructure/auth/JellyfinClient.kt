@@ -764,14 +764,6 @@ class JellyfinClient {
             ?.items?.firstOrNull { it.path == path }
     }.getOrElse { Logger.warn("Jellyfin findRecentItemByPath failed: ${it.message}"); null }
 
-    /** DEB-1252 — the [limit] most recently added Movie/Episode items with their paths, in one read, for a caller that
-     *  has several paths to match itself (the 316 repair). Null when Jellyfin cannot be read. */
-    suspend fun recentMediaItems(baseUrl: String, token: String, limit: Int): List<JellyfinItem>? = runCatching {
-        val url = baseUrl.trimEnd('/') +
-            "/Items?Recursive=true&IncludeItemTypes=Movie,Episode&SortBy=DateCreated&SortOrder=Descending&Limit=$limit&Fields=Path"
-        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("recentMediaItems")?.items
-    }.getOrElse { Logger.warn("Jellyfin recentMediaItems failed: ${it.message}"); null }
-
     /** Phase 114 — batch form of [getItem] for the LibraryChanged listener (chunked by the caller to
      *  keep URLs reasonable; Jellyfin has no documented Ids= count limit but a few hundred is prudent). */
     suspend fun getItemsByIds(baseUrl: String, token: String, jellyfinIds: List<String>): List<JellyfinItem> {

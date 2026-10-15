@@ -18,6 +18,8 @@ import kotlin.test.assertTrue
  * row, and a second run planning nothing.
  */
 class LooseFilmRepairTest {
+    private companion object { const val NEWER_EPISODES = 6000 }
+
     private val wrong = "wrongalbum"
     private val root = "/lib/films"
 
@@ -31,10 +33,29 @@ class LooseFilmRepairTest {
 
     private fun ids(queueJson: String) = (Json.parseToJsonElement(queueJson) as JsonArray).map { (it as JsonObject)["id"]!!.jsonPrimitive.content }
 
+    /**
+     * Jellyfin's `/Items` list, newest first by `DateCreated`. A moved film keeps its file's creation time, so the
+     * [films] sit behind [NEWER_EPISODES] later additions (DEB-1328: ranks 8 699–9 458 of 9 616 on prod). A read with
+     * a `Limit` returns only that many of the newest; [all] pages to the end, as `getAllLibraryItemIds` does.
+     */
+    private class FakeJellyfin(private val films: () -> List<Pair<String, String>>) {
+        private fun library() = (1..NEWER_EPISODES).map { "/lib/series/Show/S01E$it.mkv" to "episode-$it" } + films()
+        fun recent(limit: Int) = library().take(limit)
+        fun all(): List<Pair<String, String>> {
+            val lib = library()
+            val acc = ArrayList<Pair<String, String>>()
+            while (acc.size < lib.size) acc += lib.drop(acc.size).take(200)
+            return acc
+        }
+    }
+
     private class Fake(val wrong: String, val root: String) : RepairPorts {
         var entries = ArrayList<MovedEntry>()
         val media = HashMap<String, RepairMediaRow>()        // by media id
-        val items = HashMap<String, String>()                // path → jellyfin id (the path-asserting lookup)
+        val items = HashMap<String, String>()                // path → jellyfin id, as Jellyfin holds it
+        /** Jellyfin as the server answers: films and a newer pile of episodes, and only a bounded window on a limit. */
+        private val jellyfin = FakeJellyfin { items.toList() }
+        private val index = RepairPathIndex { jellyfin.all() }
         val existing = HashSet<String>()
         var wrongItem: RepairItem? = RepairItem("MusicAlbum", "/lib/music/An Artist/An Album")
         val sessions = ArrayList<RepairSessionRow>()
@@ -56,7 +77,7 @@ class LooseFilmRepairTest {
         override fun fileExists(path: String) = path in existing
         override fun videoInFolder(folderName: String): String? = existing.filter { it.startsWith("$root/$folderName/") }.singleOrNull()
         override suspend fun jellyfinItem(id: String) = if (id == wrong) wrongItem else null
-        override suspend fun itemIdAt(path: String) = items[path]
+        override suspend fun itemIdAt(path: String) = index.idAt(path)
         override fun sessionsOn(id: String) = sessions.filter { itemOfSession[it.id] == id }
         override fun samplesOn(id: String) = samples.filter { it.second == id }.map { it.first }
         override fun qoeOn(id: String) = qoe.filter { it.second == id }.map { it.first }
@@ -146,6 +167,25 @@ class LooseFilmRepairTest {
         f.watch["u2" to "real-film-d"] = ViewerData(false, 0, false, 0, null)
         for (s in listOf("film-a", "film-b", "film-c")) f.watch["u1" to "real-$s"] = ViewerData(true, 0, false, 1, null)
         return f
+    }
+
+    @Test fun `a film behind a window of newer additions is still found at its path`() = runBlocking<Unit> {
+        val f = world()
+        val jellyfin = FakeJellyfin { f.items.toList() }
+        val film = "$root/Film C (2025)/C.mkv"
+        // The defect: a 5 000-item window of the newest additions holds none of the three films.
+        assertEquals(null, RepairPathIndex { jellyfin.recent(5000) }.idAt(film))
+        // The fix: no window, the exact path.
+        val index = RepairPathIndex { jellyfin.all() }
+        assertEquals("real-film-c", index.idAt(film))
+        // The assertion stays: a path Jellyfin has no item at is nothing, never a neighbour.
+        assertEquals(null, index.idAt("$root/Film C (2025)/other.mkv"))
+        assertEquals(null, RepairPathIndex { emptyList() }.idAt(film))
+    }
+
+    @Test fun `the plan finds the right item for every film through the full read`() = runBlocking<Unit> {
+        val (plan, _) = planRepair(world(), wrong)
+        for (slug in listOf("film-a", "film-b", "film-c")) assertEquals("real-$slug", plan.films.single { it.mediaId == slug }.rightId)
     }
 
     private fun row(plan: RepairPlan, table: String, key: String) = plan.rows.single { it.table == table && it.key == key }

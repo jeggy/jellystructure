@@ -33,6 +33,21 @@ data class RepairQoeRow(val deviceId: String, val playSessionId: String, val upd
 data class RepairItem(val type: String, val path: String?)
 data class RepairMediaRow(val id: String, val path: String, val jellyfinId: String?)
 
+/**
+ * The path-asserting lookup behind [RepairPorts.itemIdAt]: one read of **every** `(path, id)` pair Jellyfin holds,
+ * then an exact match. This Jellyfin ignores `/Items?Path=`, and a recency window misses a moved film — it keeps its
+ * file's original creation time and sits thousands of items deep (DEB-1328). An empty or failed read is not cached.
+ */
+class RepairPathIndex(private val readAll: suspend () -> List<Pair<String, String>>) {
+    private var index: Map<String, String>? = null
+
+    /** The id of the item whose `Path` is exactly [jellyfinPath] (Jellyfin's view of it), or null — never another item. */
+    suspend fun idAt(jellyfinPath: String): String? {
+        val known = index ?: readAll().takeIf { it.isNotEmpty() }?.toMap()?.also { index = it } ?: return null
+        return known[jellyfinPath]
+    }
+}
+
 /** What [planRepair] reads and what [applyRepair] writes. Production in [LooseFilmsService], fakes in tests. */
 interface RepairPorts {
     fun movedEntries(): List<MovedEntry>
