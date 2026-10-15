@@ -117,20 +117,52 @@ The app updates itself with [Sparkle 2](https://sparkle-project.org) from the re
 
 The EdDSA key pair that signs every appcast. Its public half is committed and baked into every bundle; its private
 half is one more repository secret, `SPARKLE_ED_PRIVATE_KEY`. Losing it means no installed Mac can ever verify another
-update — **back it up where the signing certificate's `.p12` lives.** From the repository root, on the MacBook:
+update — **back it up where the signing certificate's `.p12` lives.**
+
+Nothing here needs the repository, a JDK or Gradle: `generate_keys` is a macOS Keychain tool that ships inside
+Sparkle's release tarball, and it is **not on `PATH`** until you have downloaded and unpacked that. On the MacBook, in
+Terminal (pinned version and SHA-256 are the ones in `build.gradle.kts`):
 
 ```sh
-./gradlew :ravilo-desktop:fetchSparkle
-BIN=ravilo-desktop/build/sparkle/Sparkle-2.10.0/bin
+# 1. Download Sparkle 2.10.0 and check it against the pin. The last line must print "...: OK".
+mkdir -p ~/sparkle-2.10.0 && cd ~/sparkle-2.10.0
+curl -fL -o Sparkle-2.10.0.tar.xz https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
+echo "c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c  Sparkle-2.10.0.tar.xz" | shasum -a 256 -c -
+tar -xJf Sparkle-2.10.0.tar.xz
+ls bin/generate_keys                         # must exist; the tool is run as ./bin/generate_keys, never bare
 
-$BIN/generate_keys --account ravilo                        # makes the pair in the login Keychain
-$BIN/generate_keys --account ravilo -p > ravilo-desktop/sparkle/SUPublicEDKey.txt   # the public half — commit this
-(umask 077; $BIN/generate_keys --account ravilo -x "$HOME/ravilo-sparkle.key")      # the private half, one line
-gh secret set SPARKLE_ED_PRIVATE_KEY --repo jeggy/jellystructure < "$HOME/ravilo-sparkle.key"
+# 2. Make the pair. It lives in the login Keychain; macOS may ask to allow access — click Allow.
+./bin/generate_keys --account ravilo
+#    Prints "A key has been generated…" and the public key (a ~44-character base64 string). Already ran it?
+#    It says the key exists and prints the same public key again — safe to repeat.
+
+# 3. Print only the public half. This is NOT secret; it is the one line the repository needs.
+./bin/generate_keys --account ravilo -p
+
+# 4. Export the private half to a file (readable by you alone).
+( umask 077; ./bin/generate_keys --account ravilo -x ~/ravilo-sparkle.key )
 ```
 
-Put `ravilo-sparkle.key` in the password manager beside `ravilo-signing.p12`, then delete the file. **The private key
-never goes in the repository, an issue, a comment or a log**; the workflow reads it from the secret on standard input.
+Then three things, in this order:
+
+1. **The public key goes to the repository.** Paste the one line from step 3 into a comment on the task (it is public
+   by design) and the engineer commits it as `ravilo-desktop/sparkle/SUPublicEDKey.txt`. Or, from a checkout of the
+   repository: `./bin/generate_keys --account ravilo -p > ravilo-desktop/sparkle/SUPublicEDKey.txt`, then commit and push.
+2. **The private key becomes the secret.** Either of:
+   - the browser — `pbcopy < ~/ravilo-sparkle.key`, then
+     <https://github.com/jeggy/jellystructure/settings/secrets/actions/new>, name `SPARKLE_ED_PRIVATE_KEY`, paste, *Add secret*;
+   - or `gh secret set SPARKLE_ED_PRIVATE_KEY --repo jeggy/jellystructure < ~/ravilo-sparkle.key`, if `gh` is installed
+     and signed in on that Mac (`gh auth status`).
+3. **Back it up, then delete the file.** Put `ravilo-sparkle.key` in the password manager beside `ravilo-signing.p12`,
+   then `rm ~/ravilo-sparkle.key`. The key also stays in the Keychain under the account `ravilo`, so `-x` can be re-run.
+
+**The private key never goes in the repository, an issue, a comment or a log**; the workflow reads it from the secret
+on standard input. Only the *public* line in step 3 may be pasted anywhere.
+
+Troubleshooting: `command not found` — you ran `generate_keys` instead of `./bin/generate_keys`, or you are not in
+`~/sparkle-2.10.0`. "System denied access to the Keychain" — open Keychain Access, lock the *login* keychain, unlock it,
+and run step 2 again. "conflicting key … Please delete the existing item from the keychain" — the tool's own
+words: remove the stale Sparkle item it names in Keychain Access, then run step 2 again.
 
 ### Trying an update without a release
 
