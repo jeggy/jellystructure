@@ -112,12 +112,27 @@ The floor for each package is the highest *first patched version* across its ope
 The two `brace-expansion` lines each stay inside their own major: a single by-name resolution would
 move the 1.x consumers onto 2.x, which is a major crossing nobody asked for.
 
+> **Note, 2026-10-15 (DEB-1219).** Measured while implementing, and it changes two lines of the table:
+> - **`brace-expansion` is one by-name resolution, `^2.1.7`, not two.** Yarn v1 accepts a
+>   `minimatch@<range>/brace-expansion` path and writes its entry, but does not remap a *nested* consumer through
+>   it (the lockfile kept `brace-expansion@^1.1.7` at 1.1.15). The only 1.x consumer is `minimatch` 3, whose
+>   `require('brace-expansion')` is the same CommonJS function in 2.x, so it now runs on 2.x. The 1.x row's
+>   "1.1.21" floor is met by moving off the line.
+> - **The Wasm root gets `ws` and nothing else.** Yarn v1 writes a resolution's package, with its whole tree, into
+>   the lockfile even when nothing depends on it: the full list on the Wasm root grew
+>   `kotlin-js-store/wasm/yarn.lock` from 2 packages to ~300 (webpack-dev-server and its tree) — alerts we had
+>   just closed, reopened under a new file. Each root declares only what its own tree holds.
+
 ### FR-319-3 — A major crossing is kept only if the toolchain still works
 
 The three rows marked *yes* are kept only if every check in FR-319-4 passes with them. If one breaks
 the toolchain, that one resolution is dropped and a **dated note under this requirement** records the
 package, the failure seen, and that its alert stays open for that reason. The engineer does not
 dismiss the alert; that is the owner's (§FR-319-5).
+
+> **Note, 2026-10-15 (DEB-1219).** All three major crossings were kept: `serialize-javascript` 7.1.2, `diff` 8.0.4,
+> `uuid` 11.1.1, with the four production distributions building (FR-319-4). Nothing is recorded here as left open
+> but `braces`.
 
 ### FR-319-4 — The toolchain still builds and tests, and no npm package newly ships
 
@@ -135,6 +150,18 @@ All of these pass on the commit that changes the lockfiles:
   The check is a grep for the toolchain's own markers (`permessage-deflate`, `webpack-dev-server`,
   `sockjs`, `socket.io`) returning nothing, and is written into the commit message with its numbers;
 - CI green on the pushed commit, read from the Publish run per `CLAUDE.md`.
+
+> **Note, 2026-10-15 (DEB-1219) — what the check could and could not prove.**
+> - The four distributions build on the new lockfiles, and the shipped-bytes grep returns `0` for every
+>   toolchain marker in all four; the browser-stub marker is present in the Cast and screen bundles only and
+>   `js-joda` in the two Wasm bundles only, as before.
+> - **`:shared:jsTest` and `:ravilo-i18n:jsTest` fail on the commit before this one as well**, identically:
+>   `:shared:compileTestKotlinJs` does not resolve `kotlin.test`, and `:ravilo-i18n:jsBrowserTest` stops with
+>   "did not discover any tests". Neither reaches karma or mocha with a test to run, so **the upgraded karma,
+>   mocha and `diff` are not exercised by any test**. That is a standing gap in the JS test targets, not a
+>   result of this phase, and it is reported on the task rather than fixed here.
+> - The Cast and screen receiver bundles are byte-different from the previous commit's (toolchain: terser,
+>   webpack runtime), so they go on the QA queue.
 
 ### FR-319-5 — The Dependabot job is a repository setting, not code
 

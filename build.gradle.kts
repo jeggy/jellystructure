@@ -72,6 +72,52 @@ if (!desktopOnly) configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformE
         binaries.executable()
     }
 
+// Phase 319 (FR-319-1/2) — the build's yarn lockfiles (`kotlin-js-store/yarn.lock`, `kotlin-js-store/wasm/yarn.lock`)
+// carry no package inside an open advisory. Every package below is toolchain-only (webpack, its dev server, karma,
+// mocha and their trees); the one advised package a production bundle holds is ws's browser stub. The remedy for a
+// Dependabot alert here is this list plus `kotlinUpgradeYarnLock` / `kotlinWasmUpgradeYarnLock` — Dependabot itself
+// cannot open a PR because Kotlin keeps no package.json beside the lockfile. Each line is the highest first-patched
+// version across the open alerts on 2026-10-15; drop a line once a Kotlin upgrade's own toolchain is past it.
+// A resolution for a package that is not in a root's tree still writes that package (and its whole tree) into the
+// lockfile, so each root gets only what its own tree holds — the Wasm root's is `ws` and nothing else.
+val advisoryResolutions: List<Pair<String, String>> = listOf(
+    "proxy-addr" to "^2.0.8",
+    "shell-quote" to "^1.11.0",
+    // One by-name resolution for both majors: yarn v1 does not honour a `minimatch@<range>/brace-expansion` path for a
+    // nested consumer (measured — the entries were written and nothing was remapped), so the 1.x line's one consumer,
+    // minimatch 3, runs on the 2.x release. Its `require('brace-expansion')` call is the same CommonJS function.
+    "brace-expansion" to "^2.1.7",
+    "js-yaml" to "^4.3.2",
+    "fast-uri" to "^3.1.8",
+    "ws" to "^8.21.0",                // Ktor's JS client pins ws exactly
+    "socket.io-parser" to "^4.2.7",
+    "engine.io" to "^6.6.10",
+    "compression" to "^1.8.2",
+    "source-map-js" to "^1.2.2",
+    "body-parser" to "^1.20.6",
+    "webpack" to "^5.104.1",          // Kotlin pins webpack / webpack-dev-server exactly
+    "webpack-dev-server" to "^5.2.6",
+    "qs" to "^6.16.0",                // express asks for ~6.15, which this one has to cross
+    // Major crossings — kept only while the FR-319-4 checks pass (FR-319-3).
+    "serialize-javascript" to "^7.0.5",
+    "diff" to "^8.0.3",
+    "uuid" to "^11.1.1",
+)
+
+if (!desktopOnly) {
+    // The yarn roots are created by whichever subproject first applies the JS / Wasm yarn plugin, after this script
+    // has been evaluated; the env that reads the resolutions is produced lazily, at task execution.
+    val root = rootProject
+    gradle.projectsEvaluated {
+        root.extensions.findByType<org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension>()?.let { yarn ->
+            advisoryResolutions.forEach { (path, range) -> yarn.resolution(path, range) }
+        }
+        root.extensions.findByType<org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnRootExtension>()?.let { yarn ->
+            advisoryResolutions.filter { (path, _) -> path == "ws" }.forEach { (path, range) -> yarn.resolution(path, range) }
+        }
+    }
+}
+
 tasks.register<Exec>("runBackend") {
     description = "Compile and run the backend server for local development"
     group = "application"
