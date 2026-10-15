@@ -71,3 +71,23 @@ data class SupportForwardRequest(val holder: String, val seat: String? = null, v
 @Serializable data class SupportStateRequest(val state: String)
 @Serializable data class SupportClassRequest(@SerialName("class") val ticketClass: String)
 @Serializable data class SupportFlagRequest(val flagged: Boolean)
+
+/**
+ * 321 (FR-321-10) — one request `AI Agent` made for a ticket: what was sent (the user block, exactly), what came back,
+ * what became of it and what it cost. [verdict] is `SENT`, `FORWARDED: <rule>`, `FLAGGED` or `DISCARDED: <why>`, and
+ * null while the batch is still out.
+ */
+@Serializable
+data class SupportAiTurn(
+    val at: Long,
+    val model: String,
+    val sent: String,
+    val answer: String? = null,
+    val verdict: String? = null,
+    @EncodeDefault val inputTokens: Long = 0L,
+    @EncodeDefault val outputTokens: Long = 0L,
+    @EncodeDefault val costMicroUsd: Long = 0L,
+)
+
+@Serializable
+data class SupportAiTranscript(val ticket: Long, @EncodeDefault val turns: List<SupportAiTurn> = emptyList())

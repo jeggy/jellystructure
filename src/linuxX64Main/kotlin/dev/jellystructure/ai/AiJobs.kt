@@ -73,6 +73,34 @@ class AiJobs(
     }
     var clustersSink: ClustersSink? = null
 
+    /**
+     * Phase 321 — the fourth job's half that is not the rail: building a request from a ticket, applying its answer, and
+     * the three things a person waiting on it is owed (a forward when the limit holds it back, when its batch is lost,
+     * when AI goes away). The rail stays ignorant of tickets: it hands over a subject and a result and keeps the ledger.
+     */
+    interface SupportLane {
+        /** FR-321-8 — called before each pass over what waits, so a viewer's count within one batch starts clean. */
+        fun beginPass()
+        /** One queued ticket as a request, or null when there is nothing to ask (gone, taken by a person, flagged, over a limit — already forwarded). */
+        fun build(subject: String, customId: String, cfg: AiJobConfig): BuiltSupport?
+        /** The request left in [batchId]: the transcript row (FR-321-10). */
+        fun sent(ctx: String, batchId: String, customId: String, model: String, sent: String)
+        /** One result read: apply it (or discard it) and say what became of it. [cost] is what the ledger takes. */
+        suspend fun answered(ctx: String, batchId: String, r: AiRequests.Result, model: String, cost: Long): SupportVerdict
+        /** FR-321-8 — the month's limit holds this ticket back and a person is waiting: forward it, say why. */
+        fun heldByLimit(subject: String, why: String)
+        /** The batch is lost at Anthropic: nobody will answer these, so forward them. */
+        fun lost(ctx: String)
+        /** FR-321-3 — tickets whose request has just been read, so `aiComposing` has turned off: push. */
+        fun settled(tickets: List<Long>)
+        /** FR-321-9 — AI, the key, the job or phase 320's lane went off: forward everything `AI Agent` holds. */
+        fun reconcile(): List<Long>
+        fun ticketOf(ctx: String): Long?
+    }
+    class BuiltSupport(val request: JsonObject, val ctx: String)
+    class SupportVerdict(val verdict: String, val readable: String?, val used: Boolean)
+    var supportLane: SupportLane? = null
+
     private val lock = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
     private val kick = Channel<Unit>(Channel.CONFLATED)
@@ -88,6 +116,7 @@ class AiJobs(
     fun start(scope: CoroutineScope) {
         scope.launch(GateClass.BACKGROUND) {
             while (true) {
+                runCatching { reconcileSupport() }.onFailure { Logger.warn("AI: support reconcile failed: ${it.message}", "ai") }
                 runCatching { pollPending() }.onFailure { Logger.warn("AI: polling failed: ${it.message}", "ai") }
                 runCatching { sendQueued() }.onFailure { Logger.warn("AI: sending failed: ${it.message}", "ai") }
                 // FR-272-5 — every minute, or at once when something is queued or cancelled.
@@ -98,14 +127,64 @@ class AiJobs(
 
     private fun nudge() { kick.trySend(Unit) }
 
+    /** A saved config may have switched something off: look now, rather than at the next minute. */
+    fun configChanged() = nudge()
+
+    // ─── Phase 321 — the support job ──────────────────────────────────────────
+
+    /** FR-321-3 — one row per ticket, newest wins. Not suspend: a viewer's POST calls it, and a row written beside the
+     *  runner's own read is safe — an older id is simply gone when the batch it went in deletes by id. */
+    fun enqueueSupport(ticket: Long, reason: String) {
+        if (!jobOn(AiRequests.SUPPORT_JOB)) return
+        db.aiQueries.enqueue(AiRequests.SUPPORT_JOB, ticket.toString(), "Ticket #$ticket", reason, BY_SYSTEM, ticket.toString(), clock())
+        nudge()
+    }
+
+    /** FR-321-3 — queued for `AI Agent`, or in the batch that is out. The server state behind a thread's `aiComposing`. */
+    fun supportComposing(ticket: Long): Boolean {
+        if (!jobOn(AiRequests.SUPPORT_JOB)) return false
+        if (db.aiQueries.queuedForSubjectPrefix(AiRequests.SUPPORT_JOB, ticket.toString()).executeAsOneOrNull() != null) return true
+        val out = db.aiQueries.pendingBatchForJob(AiRequests.SUPPORT_JOB).executeAsOneOrNull() ?: return false
+        val lane = supportLane ?: return false
+        return db.aiQueries.batchItems(out.id).executeAsList().any { lane.ticketOf(it.context) == ticket }
+    }
+
+    /** FR-320-17 — a ticket was deleted: its waiting request goes, and what the last five batches kept of its thread is blanked. */
+    fun supportTicketDeleted(ticket: Long) {
+        db.aiQueries.waitingFor(AiRequests.SUPPORT_JOB).executeAsList().filter { it.subject == ticket.toString() }
+            .forEach { db.aiQueries.deleteQueued(it.id) }
+        db.aiQueries.scrubTranscripts(SCRUBBED, opaqueId("s", "support|$ticket"))
+    }
+
+    /** FR-321-9 — whatever `AI Agent` holds goes to a person the moment the job cannot run, and what waited is dropped. */
+    suspend fun reconcileSupport() {
+        val lane = supportLane ?: return
+        if (jobOn(AiRequests.SUPPORT_JOB)) return
+        val moved = lane.reconcile()
+        db.aiQueries.waitingFor(AiRequests.SUPPORT_JOB).executeAsList().forEach { db.aiQueries.deleteQueued(it.id) }
+        if (moved.isNotEmpty()) {
+            run(AiRequests.SUPPORT_JOB, "switched off — ${moved.size} ticket${if (moved.size == 1) "" else "s"} forwarded to an admin")
+            Logger.info("AI: support switched off — ${moved.size} ticket(s) forwarded", "ai")
+        }
+    }
+
     private fun on(job: AiJobConfig): Boolean {
         val ai = configStore.current.ai
         return ai.enabled && ai.apiKey.isNotBlank() && job.enabled
     }
 
     private fun cfgFor(job: String): AiJobConfig = configStore.current.ai.let {
-        when (job) { AiRequests.RERANK_JOB -> it.rerank; AiRequests.CLUSTERS_JOB -> it.clusters; else -> it.themes }
+        when (job) {
+            AiRequests.RERANK_JOB -> it.rerank
+            AiRequests.CLUSTERS_JOB -> it.clusters
+            AiRequests.SUPPORT_JOB -> it.support.job()
+            else -> it.themes
+        }
     }
+
+    /** [on] for a job by name: Phase 321's carries one more term, phase 320's `[support] enabled` (FR-321-1). */
+    private fun jobOn(job: String): Boolean =
+        on(cfgFor(job)) && (job != AiRequests.SUPPORT_JOB || configStore.current.support.enabled)
 
     /** Phase 274 — whether a build may ask for groups at all (AI on, a key, the job on). */
     fun clustersOn(): Boolean = on(configStore.current.ai.clusters)
@@ -184,8 +263,10 @@ class AiJobs(
 
     /** FR-272-9 — *Remove* one waiting request; false once it has been sent (or never existed). */
     suspend fun removeQueued(id: Long): Boolean = lock.withLock {
-        if (db.aiQueries.queuedById(id).executeAsOneOrNull() == null) return@withLock false
+        val row = db.aiQueries.queuedById(id).executeAsOneOrNull() ?: return@withLock false
         db.aiQueries.deleteQueued(id)
+        // FR-321-3 — a ticket taken off the queue stops composing: the viewer's indicator turns off.
+        if (row.job == AiRequests.SUPPORT_JOB) row.subject.toLongOrNull()?.let { supportLane?.settled(listOf(it)) }
         true
     }
 
@@ -198,12 +279,13 @@ class AiJobs(
         sendJob(AiRequests.THEMES_JOB)
         sendJob(AiRequests.RERANK_JOB)
         sendJob(AiRequests.CLUSTERS_JOB)
+        sendJob(AiRequests.SUPPORT_JOB)
     }
 
     private suspend fun sendJob(job: String): Boolean = lock.withLock {
         val ai = configStore.current.ai
         val cfg = cfgFor(job)
-        if (!on(cfg)) return@withLock false
+        if (!jobOn(job)) return@withLock false
         if (db.aiQueries.pendingBatchForJob(job).executeAsOneOrNull() != null) return@withLock false
         if ((retryAt[job] ?: 0L) > clock()) return@withLock false
         val waiting = db.aiQueries.waitingFor(job).executeAsList()
@@ -214,7 +296,14 @@ class AiJobs(
         val byKey = items.associateBy { it.jellyfinId ?: it.id }
         val themes = themes()
         val done = if (job == AiRequests.THEMES_JOB) db.aiQueries.allThemes().executeAsList().associate { it.item_id to it.synopsis_hash } else emptyMap()
-        val maxTokens = when (job) { AiRequests.RERANK_JOB -> AiRequests.RERANK_MAX_TOKENS; AiRequests.CLUSTERS_JOB -> AiRequests.CLUSTERS_MAX_TOKENS; else -> AiRequests.THEMES_MAX_TOKENS }
+        val maxTokens = when (job) {
+            AiRequests.RERANK_JOB -> AiRequests.RERANK_MAX_TOKENS
+            AiRequests.CLUSTERS_JOB -> AiRequests.CLUSTERS_MAX_TOKENS
+            AiRequests.SUPPORT_JOB -> AiRequests.SUPPORT_MAX_TOKENS
+            else -> AiRequests.THEMES_MAX_TOKENS
+        }
+        val lane = if (job == AiRequests.SUPPORT_JOB) supportLane else null
+        lane?.beginPass()
         val built = ArrayList<Built>()
         val gone = ArrayList<Long>()
         for (row in waiting) {
@@ -227,6 +316,7 @@ class AiJobs(
                             json.encodeToString(RerankCtx.serializer(), RerankCtx(input.userId, input.scope, shortlist.mapNotNull { it.jellyfinId }))
                     }
                 }
+                AiRequests.SUPPORT_JOB -> lane?.build(row.subject, opaqueId("s", "support|${row.subject}"), cfg)?.let { it.request to it.ctx }
                 AiRequests.CLUSTERS_JOB -> runCatching { json.decodeFromString(AiRequests.ClustersInput.serializer(), row.payload) }.getOrNull()?.let { input ->
                     AiRequests.clustersRequest(opaqueId("c", "household|" + input.builtAt), cfg.model, cfg.effort, input) to
                         json.encodeToString(ClustersCtx.serializer(), ClustersCtx(input.builtAt, input.candidates.map { it.tmdbId }, AiRequests.clusterSourceIds(input).sorted()))
@@ -257,7 +347,17 @@ class AiJobs(
             sum += b.worst
             take += b
         }
-        if (take.size < built.size) {
+        // FR-321-8 — a person is waiting on a support ticket, so what the month's limit holds back is forwarded rather than
+        // left waiting on the AI (FR-272-4 keeps background work waiting, which suits the other jobs).
+        if (lane != null && take.size < built.size) {
+            val limitWhy = "this month's AI limit is reached"
+            val held = built.drop(take.size)
+            val subjects = waiting.associate { it.id to it.subject }
+            db.transaction { held.forEach { db.aiQueries.deleteQueued(it.queueId) } }
+            held.forEach { b -> subjects[b.queueId]?.let { lane.heldByLimit(it, limitWhy) } }
+            run(job, "$limitWhy — ${held.size} ticket${if (held.size == 1) "" else "s"} forwarded to an admin")
+            heldBack.remove(job)
+        } else if (take.size < built.size) {
             val left = built.size - take.size
             heldBack[job] = "$left waiting — this month's limit: ${AiPricing.usd((limit - spent - sum).coerceAtLeast(0))} left, " +
                 "the next request could cost up to ${AiPricing.usd(built[take.size].worst)}"
@@ -278,9 +378,10 @@ class AiJobs(
                 db.aiQueries.insertBatchItem(batch.id, b.customId, b.ctx)
                 db.aiQueries.insertTranscript(batch.id, b.customId, b.label, cfg.model, effort, AiRequests.systemOf(b.request), AiRequests.sentOf(b.request))
                 db.aiQueries.deleteQueued(b.queueId)
+                lane?.sent(b.ctx, batch.id, b.customId, cfg.model, AiRequests.sentOf(b.request))
             }
         }
-        val noun = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; else -> "title" }
+        val noun = nounOf(job)
         run(job, "sent · ${take.size} $noun${if (take.size == 1) "" else "s"} · waiting for Anthropic")
         Logger.info("AI: $job batch ${batch.id} sent (${take.size} requests, worst case ${AiPricing.usd(sum)})", "ai")
         true
@@ -296,7 +397,15 @@ class AiJobs(
         for (row in db.aiQueries.pendingBatches().executeAsList()) {
             val batch = runCatching { client.getBatch(ai.apiKey, row.id) }.getOrElse {
                 if ((it as? AnthropicClient.ApiException)?.status == 404) {
-                    val line = "batch lost at Anthropic — standard list kept"
+                    val line = if (row.job == AiRequests.SUPPORT_JOB) "batch lost at Anthropic — its tickets were forwarded to an admin"
+                        else "batch lost at Anthropic — standard list kept"
+                    if (row.job == AiRequests.SUPPORT_JOB) {
+                        // FR-321-9 — nobody will answer these now, and a person is waiting.
+                        val ctxs = db.aiQueries.batchItems(row.id).executeAsList().map { it.context }
+                        ctxs.forEach { supportLane?.lost(it) }
+                        supportLane?.settled(ctxs.mapNotNull { supportLane?.ticketOf(it) })
+                        db.aiQueries.deleteBatchItems(row.id)
+                    }
                     db.aiQueries.setBatchEnded(STATUS_LOST, clock(), line, 0L, row.id)
                     run(row.job, line)
                     pruneHistory()
@@ -317,6 +426,7 @@ class AiJobs(
         val titles = if (job == AiRequests.RERANK_JOB) library().mapNotNull { m -> m.jellyfinId?.let { it to m.title + (m.year?.let { y -> " ($y)" } ?: "") } }.toMap() else emptyMap()
         var requests = 0L; var input = 0L; var output = 0L; var cacheWrite = 0L; var cacheRead = 0L
         var accepted = 0; var rejected = 0; var expired = 0
+        val settled = ArrayList<Long>()
         for (line in lines) {
             val r = AiRequests.parseResult(line) ?: continue
             val ctx = contexts[r.customId] ?: continue
@@ -338,6 +448,15 @@ class AiJobs(
                         verdict = judged.why
                         readable = picks.mapIndexed { i, p -> "${i + 1}. ${titles[p.jellyfinId] ?: p.jellyfinId} — ${p.reason.ifEmpty { "(topped up from the standard list)" }}" }.joinToString("\n")
                     }
+                }
+                AiRequests.SUPPORT_JOB -> {
+                    val lane = supportLane ?: continue
+                    lane.ticketOf(ctx)?.let { settled += it }
+                    val cost = r.usage?.let { AiPricing.costMicroUsd(model, it) } ?: 0L
+                    val v = lane.answered(ctx, batchId, r, model, cost)
+                    if (v.used) accepted++ else if (r.type == "succeeded") rejected++
+                    verdict = v.verdict
+                    readable = v.readable
                 }
                 AiRequests.CLUSTERS_JOB -> {
                     val c = runCatching { json.decodeFromString(ClustersCtx.serializer(), ctx) }.getOrNull() ?: continue
@@ -381,13 +500,17 @@ class AiJobs(
         }
         val cost = AiPricing.costMicroUsd(model, AiPricing.Usage(input, output, cacheWrite, cacheRead))
         val now = clock()
-        val noun = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; else -> "title" }
+        val noun = nounOf(job)
+        val kept = if (job == AiRequests.SUPPORT_JOB) "forwarded to an admin" else "kept the standard list"
+        val tail = if (job == AiRequests.SUPPORT_JOB) "tickets forwarded to an admin" else "standard list kept"
         val line = when {
-            accepted == 0 && cancelled -> "cancelled — standard list kept"
-            accepted == 0 && expired > 0 -> "batch expired — standard list kept"
-            accepted == 0 -> "no usable answer — standard list kept"
+            accepted == 0 && cancelled -> "cancelled — $tail"
+            accepted == 0 && expired > 0 -> "batch expired — $tail"
+            // A support result that was not applied was discarded or forwarded (the ticket's transcript says which).
+            accepted == 0 && job == AiRequests.SUPPORT_JOB -> "no answer was applied"
+            accepted == 0 -> "no usable answer — $tail"
             else -> "ran · $accepted $noun${if (accepted == 1) "" else "s"} · ${AiPricing.usd(cost)}" +
-                (if (rejected + expired > 0) " · ${rejected + expired} kept the standard list" else "")
+                (if (rejected + expired > 0) " · ${rejected + expired} $kept" else "")
         }
         db.transaction {
             if (requests > 0) addUsage(job, monthKey(now), model, requests, input, output, cacheWrite, cacheRead, cost)
@@ -396,6 +519,8 @@ class AiJobs(
         }
         run(job, line)
         pruneHistory()
+        // FR-321-3 — the batch is no longer out, so these tickets' `aiComposing` has just turned off: push once more.
+        if (settled.isNotEmpty()) supportLane?.settled(settled)
         Logger.info("AI: $job batch $batchId read — $line", "ai")
     }
 
@@ -498,11 +623,14 @@ class AiJobs(
 
     suspend fun jobsView(): JobsView = lock.withLock {
         val ai = configStore.current.ai
-        val jobs = listOf(AiRequests.RERANK_JOB to "Re-rank Recommended", AiRequests.THEMES_JOB to "Theme tags", AiRequests.CLUSTERS_JOB to "Suggestion clusters").map { (job, label) ->
+        val jobs = listOf(
+            AiRequests.RERANK_JOB to "Re-rank Recommended", AiRequests.THEMES_JOB to "Theme tags",
+            AiRequests.CLUSTERS_JOB to "Suggestion clusters", AiRequests.SUPPORT_JOB to "Support",
+        ).map { (job, label) ->
             val cfg = cfgFor(job)
             val out = db.aiQueries.pendingBatchForJob(job).executeAsOneOrNull()
             JobView(
-                job = job, label = label, on = on(cfg), model = cfg.model, modelLabel = AiPricing.model(cfg.model).label,
+                job = job, label = label, on = jobOn(job), model = cfg.model, modelLabel = AiPricing.model(cfg.model).label,
                 spentMicroUsd = spentThisMonth(job), limitMicroUsd = (cfg.monthlyLimitUsd * 1_000_000.0).toLong(),
                 waiting = db.aiQueries.waitingFor(job).executeAsList().map { QueuedDto(it.id, it.label, it.reason, it.queued_by, it.queued_at) },
                 heldBack = heldBack[job],
@@ -577,6 +705,8 @@ class AiJobs(
         val themes: JobStatus,
         /** Phase 274. */
         val clusters: JobStatus,
+        /** Phase 321. */
+        val support: JobStatus,
     )
 
     suspend fun status(viewers: Int): Status {
@@ -599,6 +729,7 @@ class AiJobs(
         val (rerankEst, rerankBasis) = estimate(AiRequests.RERANK_JOB, RERANK_ASSUMED, viewers * RUNS_PER_MONTH)
         val (themesEst, themesBasis) = estimate(AiRequests.THEMES_JOB, THEMES_ASSUMED, untagged.toDouble())
         val (clustersEst, clustersBasis) = estimate(AiRequests.CLUSTERS_JOB, CLUSTERS_ASSUMED, RUNS_PER_MONTH)
+        val (supportEst, supportBasis) = estimate(AiRequests.SUPPORT_JOB, SUPPORT_ASSUMED, SUPPORT_ASKS_PER_MONTH)
         return Status(
             keyHint = key.takeIf { it.length >= 8 }?.let { "…" + it.takeLast(4) },
             pricesAsOf = AiPricing.AS_OF,
@@ -606,6 +737,7 @@ class AiJobs(
             rerank = job(AiRequests.RERANK_JOB, rerankEst, "$viewers viewer${if (viewers == 1) "" else "s"} × about ${RUNS_PER_MONTH.toInt()} runs a month · $rerankBasis"),
             themes = job(AiRequests.THEMES_JOB, themesEst, "once, for $untagged untagged title${if (untagged == 1) "" else "s"} · $themesBasis"),
             clusters = job(AiRequests.CLUSTERS_JOB, clustersEst, "one request per suggestions build, about ${RUNS_PER_MONTH.toInt()} a month · $clustersBasis"),
+            support = job(AiRequests.SUPPORT_JOB, supportEst, "one request per ticket message, about ${SUPPORT_ASKS_PER_MONTH.toInt()} a month · $supportBasis"),
         )
     }
 
@@ -624,6 +756,8 @@ class AiJobs(
     }
 
     companion object {
+        private fun nounOf(job: String) = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; AiRequests.SUPPORT_JOB -> "ticket"; else -> "title" }
+
         /** The process's one instance, for the routes. Set by Main. */
         var current: AiJobs? = null
         /** How many viewers a re-rank covers, for the estimate. Set by Main (269's recently seen viewers). */
@@ -646,6 +780,11 @@ class AiJobs(
         /** FR-270-7's starting assumptions: a re-rank ~12k in / ~5k out; a title's themes ~0.5k in / ~0.15k out. */
         private val RERANK_ASSUMED = AiPricing.Usage(input = 12_000, output = 5_000)
         private val THEMES_ASSUMED = AiPricing.Usage(input = 500, output = 150)
+        /** Phase 321 — the system prompt and a short thread: ~2.5k in, ~0.5k out; and a guess at how often viewers write. */
+        private val SUPPORT_ASSUMED = AiPricing.Usage(input = 2_500, output = 500)
+        private const val SUPPORT_ASKS_PER_MONTH = 30.0
+        /** What a deleted ticket's conversation is blanked to in the batches that still hold it (FR-320-17). */
+        const val SCRUBBED = "[deleted with the ticket]"
         /** Phase 274 — a household's watching and 50 candidates as ids: ~9k in, ~2k out. */
         private val CLUSTERS_ASSUMED = AiPricing.Usage(input = 9_000, output = 2_000)
 

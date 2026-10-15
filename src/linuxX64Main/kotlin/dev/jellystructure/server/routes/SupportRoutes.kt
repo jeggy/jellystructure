@@ -107,6 +107,12 @@ internal fun Route.supportRoutes(service: SupportService) {
         call.respond(service.adminThread(n) ?: return@get call.respondNotFound())
     }
 
+    // 321 (FR-321-10) — every request `AI Agent` made for this ticket, for the ticket's life.
+    get("/support/tickets/{n}/transcript") {
+        val n = call.ticketNumber() ?: return@get call.respondNotFound()
+        call.respond(service.agentTranscript(n) ?: return@get call.respondNotFound())
+    }
+
     post("/support/tickets/{n}/messages") {
         if (!call.adminWriteOpen(service)) return@post
         val n = call.ticketNumber() ?: return@post call.respondNotFound()

@@ -1,0 +1,23 @@
+-- 321 (FR-321-10) — `AI Agent`'s transcript, kept with the ticket: one row per request sent for it, for the ticket's
+-- life, deleted with it (FR-320-17). Must stay byte-for-byte in sync with Support.sq's CREATE statements (the
+-- SQLDelight-migration rule). 79 is 320's: this one is 80. Times are epoch SECONDS. `owner_user_id` is FR-321-8's
+-- "per viewer" and never leaves the server: it is not part of any request and not on any wire.
+CREATE TABLE support_ai_turn (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    owner_user_id TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    custom_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    sent TEXT NOT NULL,
+    answer TEXT,
+    verdict TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_micro_usd INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX support_ai_turn_ticket ON support_ai_turn(ticket_id, id);
+
+CREATE INDEX support_ai_turn_owner ON support_ai_turn(owner_user_id, created_at);

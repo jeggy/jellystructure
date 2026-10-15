@@ -268,6 +268,13 @@ fun Route.configureConfigRoutes(
         // `support` at all, so without this line every save from every tab wrote SupportConfig()'s `enabled = false`
         // over the owner's switch — and, with a key set, quietly took the lane away from viewers.
         config = config.copy(support = stored.support)
+        // Phase 321 (FR-321-1/4/8) — the Support card on the AI tab carries the job's four fields; the three bounds
+        // (`max_input_chars`, `requests_per_viewer_per_day`, `turns_per_ticket`) are config-file-only, so a save keeps them.
+        config = config.copy(ai = config.ai.copy(support = config.ai.support.copy(
+            maxInputChars = stored.ai.support.maxInputChars,
+            requestsPerViewerPerDay = stored.ai.support.requestsPerViewerPerDay,
+            turnsPerTicket = stored.ai.support.turnsPerTicket,
+        )))
         // Phase 276 — the Metadata providers card saves through PUT /api/music/providers, so a Settings save (whose
         // form model has no such fields) never resets the MusicBrainz contact or wipes the AcoustID/fanart.tv keys.
         config = config.copy(
@@ -313,6 +320,9 @@ fun Route.configureConfigRoutes(
         // checked; a failed persist used to still respond 204, so a Settings "Saved ✓" could be a lie
         // (the ktoml age_rating_map decode bug produced exactly this — see ConfigStore.fixAgeRatingMapKeys).
         val ok = configStore.update(config)
+        // Phase 321 (FR-321-9) — AI, the key or the support job may have just gone off: the runner looks now, so a ticket
+        // `AI Agent` holds is with an admin within the poll rather than at the next minute.
+        if (ok) dev.jellystructure.ai.AiJobs.current?.configChanged()
         // Phase 218 (FR-218-3) — a changed chromecast block changes every client's resolved `cast`
         // capability, so push the same global-config event a layout save does; clients re-fetch /tv/config.
         if (ok && (config.chromecast != stored.chromecast || config.publicUrl != stored.publicUrl)) tvEventBus?.notifyGlobalConfigChanged()

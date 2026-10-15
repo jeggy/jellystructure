@@ -31,10 +31,13 @@ private val AI_JOBS = listOf(
     // Phase 274 (FR-274-5, Q7)
     AiJobUi("clusters", "Suggestion clusters",
         "Once per suggestions build (weekly, with Seerr connected): the model groups the films the household doesn't have into three to eight kinds it actually watches, named for this house. It sees genre and keyword ids only — no viewer, no title, no synopsis — and each group's share of the 20 shown is counted by the server, never by the model. If anything goes wrong, the list keeps the six genre groups and the page says so."),
+    // Phase 321 (FR-321-1, FR-321-11)
+    AiJobUi("support", "Support",
+        "When a viewer files a support ticket, AI Agent reads the thread and answers a plain how-to question itself, in the viewer's language. Anything else — a fault, an account problem, a request, or anything it is not sure of — it forwards to an admin with an English summary, and tells the viewer it has. It never resolves, deletes or unflags a ticket. It sees the text of the ticket's thread and the viewer's language: never their name, id or device, though a viewer may type anything into a ticket, including names. Needs <code>[support] enabled = true</code> in config.toml as well."),
 )
 
 private var aiEnabled = false
-private val aiJobEnabled = mutableMapOf("rerank" to false, "themes" to false, "clusters" to false)
+private val aiJobEnabled = mutableMapOf("rerank" to false, "themes" to false, "clusters" to false, "support" to false)
 private var aiLoaded: AiConfig = AiConfig()
 private var aiStatus: AiStatus? = null
 
@@ -62,7 +65,7 @@ internal fun aiSectionHtml(): String = """
               ${AI_JOBS.joinToString("") { aiJobCardHtml(it) }}
               <details style="margin-top:6px;font-size:.82rem;color:var(--ink-soft)">
                 <summary style="cursor:pointer;user-select:none">What is sent to Anthropic</summary>
-                <p style="margin:8px 0 0;line-height:1.55"><b>Re-rank:</b> the titles, years, genres, keywords and a shortened synopsis of each viewer's 100 candidates, and the titles and genres they watched recently. <b>Theme tags:</b> a title's name, year, genres, keywords and synopsis. Never a name, a user id, a device name, an IP address or anything from Jellyfin's user records: a viewer is not named in a request. A kids profile's history is sent under the same rules as anyone's.</p>
+                <p style="margin:8px 0 0;line-height:1.55"><b>Re-rank:</b> the titles, years, genres, keywords and a shortened synopsis of each viewer's 100 candidates, and the titles and genres they watched recently. <b>Theme tags:</b> a title's name, year, genres, keywords and synopsis. <b>Support:</b> the text of a ticket's thread as the viewer and the replies wrote it, and the viewer's language — a viewer may type anything into a ticket, including names. Never a name, a user id, a device name, an IP address or anything from Jellyfin's user records: a viewer is not named in a request. A kids profile's history is sent under the same rules as anyone's.</p>
               </details>
               <p class="hint" id="ai-prices" style="margin:10px 0 0"></p>
             </div>
@@ -108,7 +111,7 @@ internal fun populateAi(c: AiConfig) {
     toggle("ai-enabled-toggle", aiEnabled)
     select("ai-provider")?.value = c.provider
     input("ai-key")?.value = ""
-    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters)) {
+    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support)) {
         aiJobEnabled[key] = job.enabled
         toggle("ai-$key-toggle", job.enabled)
         select("ai-$key-effort")?.value = job.effort
@@ -134,6 +137,7 @@ internal fun readAi(): AiConfig {
         rerank = job("rerank", aiLoaded.rerank),
         themes = job("themes", aiLoaded.themes),
         clusters = job("clusters", aiLoaded.clusters),
+        support = job("support", aiLoaded.support),
     )
 }
 
@@ -141,7 +145,7 @@ internal fun wireAi(scope: CoroutineScope, onChange: () -> Unit) {
     document.getElementById("ai-enabled-toggle")?.addEventListener("click") {
         aiEnabled = !aiEnabled; toggle("ai-enabled-toggle", aiEnabled); onChange()
     }
-    for (key in listOf("rerank", "themes", "clusters")) {
+    for (key in listOf("rerank", "themes", "clusters", "support")) {
         document.getElementById("ai-$key-toggle")?.addEventListener("click") {
             aiJobEnabled[key] = !(aiJobEnabled[key] ?: false); toggle("ai-$key-toggle", aiJobEnabled[key] ?: false); onChange()
         }
@@ -166,7 +170,7 @@ private fun renderAiStatus() {
     (document.getElementById("ai-key-hint") as? HTMLElement)?.textContent = s?.keyHint?.let { "saved: $it" } ?: ""
     (document.getElementById("ai-prices") as? HTMLElement)?.textContent =
         if (s == null) "" else "Prices as of ${s.pricesAsOf}, at batch rates (half the standard price): every job runs in the background through the Message Batches API."
-    for (key in listOf("rerank", "themes", "clusters")) {
+    for (key in listOf("rerank", "themes", "clusters", "support")) {
         val sel = select("ai-$key-model") ?: continue
         if (s != null && sel.options.length == 0) {
             val want = sel.getAttribute("data-want") ?: s.models.firstOrNull()?.id
@@ -180,7 +184,7 @@ private fun renderAiStatus() {
 
 private fun renderAiJob(key: String) {
     val s = aiStatus ?: return
-    val job: AiJobStatus = when (key) { "rerank" -> s.rerank; "clusters" -> s.clusters; else -> s.themes }
+    val job: AiJobStatus = when (key) { "rerank" -> s.rerank; "clusters" -> s.clusters; "support" -> s.support; else -> s.themes }
     val modelId = select("ai-$key-model")?.value ?: return
     val model: AiModel? = s.models.firstOrNull { it.id == modelId }
     // FR-270-3 — effort only for a model that takes it (Haiku 4.5 rejects the parameter).
@@ -206,7 +210,7 @@ internal fun aiTomlPreview(c: AiConfig): String = buildString {
     appendLine("enabled = ${c.enabled}")
     appendLine("provider = \"${c.provider}\"")
     appendLine("api_key = \"${if (c.apiKey.isBlank()) "" else "••••"}\"")
-    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters)) {
+    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support)) {
         appendLine()
         appendLine("[ai.$name]")
         appendLine("enabled = ${j.enabled}")

@@ -870,7 +870,9 @@ private fun usdOf(micro: Long): String {
 
 private fun clockOf(epochSec: Long): String = dev.jellystructure.formatClock(epochSec.toString())
 
-private fun jobNoun(job: String, n: Long): String = (if (job == "rerank") "viewer" else "title") + if (n == 1L) "" else "s"
+private fun jobNoun(job: String, n: Long): String = (when (job) { "rerank" -> "viewer"; "support" -> "ticket"; else -> "title" }) + if (n == 1L) "" else "s"
+
+private fun aiJobName(job: String): String = when (job) { "rerank" -> "Re-rank"; "clusters" -> "Suggestion clusters"; "support" -> "Support"; else -> "Theme tags" }
 
 private fun renderAiCard(container: Element, v: dev.jellystructure.api.AiJobsView) {
     val card = container.querySelector("#ai-card") as? HTMLElement ?: return
@@ -949,7 +951,7 @@ private fun aiHistoryHtml(h: dev.jellystructure.api.AiHistory): String {
     val took = h.endedAt?.let { e -> " · read ${clockOf(e)} · took ${formatRemaining((e - h.sentAt).coerceAtLeast(0) * 1000.0)}" } ?: ""
     val open = if (h.hasTranscripts) """<span class="btn sm ghost ai-open" data-batch="${h.id.esc()}">Conversations</span>"""
         else """<span class="tiny muted">no conversation kept</span>"""   // read before Phase 272
-    val jobName = if (h.job == "rerank") "Re-rank" else "Theme tags"
+    val jobName = aiJobName(h.job)
     return """<div class="jobrow">
         $ic
         <div class="jq-main"><div class="jq-title">$jobName · ${h.requests} ${jobNoun(h.job, h.requests)} · ${h.modelLabel.esc()}</div>
@@ -1010,7 +1012,7 @@ private suspend fun openAiConversation(card: HTMLElement, batchId: String) {
         return
     }
     val b = d.batch
-    val jobName = if (b.job == "rerank") "Re-rank" else "Theme tags"
+    val jobName = aiJobName(b.job)
     val pre = "white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;background:var(--fill-2);padding:10px;border-radius:8px;margin:4px 0 10px;font-size:.74rem;"
     val rows = d.requests.joinToString("") { r ->
         val used = r.verdict?.startsWith("used") == true

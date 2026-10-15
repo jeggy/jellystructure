@@ -717,6 +717,12 @@ fun main() = runBlocking {
         nameOf = { userId -> raviloDeviceService.allDevices().firstOrNull { it.jellyfinUserId == userId }?.jellyfinUsername },
     )
     dev.jellystructure.support.wireSupport(supportService, configStore, tvEventBus) { event -> rootScope.launch { broadcaster.broadcast(event) } }
+    // 321 — `AI Agent`: the support job on the AI rail. The rail queues and bills; the agent builds a ticket's request and
+    // applies the answer under FR-321-5's rules, through the service's own `agent*` writes.
+    supportService.askAgent = { ticket -> aiJobs.enqueueSupport(ticket, "a viewer's message") }
+    supportService.agentComposing = { ticket -> aiJobs.supportComposing(ticket) }
+    supportService.ticketDeleted = { ticket -> aiJobs.supportTicketDeleted(ticket) }
+    aiJobs.supportLane = dev.jellystructure.support.SupportAgent(supportService, { configStore.current })
     // FR-320-17 — tickets resolved with no activity for `retention_days`. Daily, and it runs while the lane is unavailable:
     // an absent key must not turn a retention policy into keeping personal data forever.
     rootScope.launch {

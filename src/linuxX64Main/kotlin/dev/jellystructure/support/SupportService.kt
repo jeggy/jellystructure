@@ -4,6 +4,8 @@ import dev.jellystructure.config.AppConfig
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.model.SupportAdminList
+import dev.jellystructure.model.SupportAiTranscript
+import dev.jellystructure.model.SupportAiTurn
 import dev.jellystructure.model.SupportAdminMessage
 import dev.jellystructure.model.SupportAdminThread
 import dev.jellystructure.model.SupportAdminTicket
@@ -47,9 +49,18 @@ class SupportService(
     var pushViewer: (userId: String, ticket: Long) -> Unit = { _, _ -> }
     /** `support_ticket` on `/ws` (FR-320-10). Wired to the broadcaster. */
     var pushAdmin: (JobEvent) -> Unit = {}
+    /** 321 (FR-321-3) — a ticket `AI Agent` holds was filed, or the viewer wrote on it: queue it. Wired to [dev.jellystructure.ai.AiJobs]. */
+    var askAgent: (ticket: Long) -> Unit = {}
+    /** 321 (FR-320-17) — a ticket was deleted: what the AI rail still holds of it goes too. */
+    var ticketDeleted: (ticket: Long) -> Unit = {}
+    /** 321 (FR-321-3) — whether a ticket is queued for, or out with, `AI Agent`: the server state behind `aiComposing`. */
+    var agentComposing: (ticket: Long) -> Boolean = { false }
 
     /** FR-320-1 — `[support] enabled` and a non-blank `[ai] api_key`; nothing else. */
     val available: Boolean get() = config().let { it.support.availableWith(it.ai) }
+
+    /** 321 (FR-321-1) — `AI Agent` is on: AI, a key, `[ai.support]` and `[support] enabled`. While it is, a new ticket starts with it. */
+    val agentActive: Boolean get() = config().let { it.ai.supportActive(it.support) }
 
     sealed class Outcome<out T> {
         data class Ok<T>(val value: T, val created: Boolean = false) : Outcome<T>()
@@ -93,13 +104,16 @@ class SupportService(
         }
         messageLimit(userId, t)?.let { return it }
         val language = languageOf(userId).ifBlank { "en" }
+        // 321 (FR-321-2) — while `AI Agent` is on it holds a new ticket; otherwise nothing differs from phase 320.
+        val agent = agentActive
         val id = db.transactionWithResult {
-            q.insertTicket(userId, STATE_OPEN, HOLDER_ADMIN, OWES_ADMIN, t, language, t, t)
+            q.insertTicket(userId, STATE_OPEN, if (agent) HOLDER_AI_AGENT else HOLDER_ADMIN, if (agent) OWES_AI_AGENT else OWES_ADMIN, t, language, t, t)
             val id = q.lastInsertId().executeAsOne()
             q.insertMessage(id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_VIEWER, null, body, null, null, VISIBLE, platform, deviceId, t)
             q.insertMessage(id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_RECEIVED, args(id.toString()), VISIBLE, null, null, t)
             id
         }
+        asked(id)
         changed(id, viewerVisible = true)
         return Outcome.Ok(viewerThread(q.ticket(id).executeAsOne()), created = true)
     }
@@ -114,6 +128,7 @@ class SupportService(
             q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_VIEWER, null, body, null, null, VISIBLE, platform, deviceId, t)
             viewerSpoke(tk, t)
         }
+        asked(tk.id)
         changed(tk.id, viewerVisible = true)
         return Outcome.Ok(viewerThread(q.ticket(tk.id).executeAsOne()))
     }
@@ -129,6 +144,7 @@ class SupportService(
             q.insertMessage(tk.id, SupportWire.KIND_SAME_HERE, SupportWire.AUTHOR_VIEWER, null, null, null, null, VISIBLE, platform, deviceId, t)
             viewerSpoke(tk, t)
         }
+        asked(tk.id)
         changed(tk.id, viewerVisible = true)
         return Outcome.Ok(viewerThread(q.ticket(tk.id).executeAsOne()))
     }
@@ -280,6 +296,165 @@ class SupportService(
         return ids.size
     }
 
+    // ── AI Agent (phase 321) ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /** One entry of the thread as `AI Agent` reads it — `VIEWER`-visible only, and never an author's name. */
+    class AgentEntry(val id: Long, val author: String?, val kind: String, val body: String?, val event: String?, val args: List<String>)
+
+    /** The ticket as the request is built from it. [ownerId] is for the per-viewer count and never leaves the server. */
+    class AgentTicket(
+        val number: Long, val ownerId: String, val language: String, val ticketClass: String?, val holder: String, val owes: String,
+        val flagged: Boolean, val lastViewerMessageId: Long, val entries: List<AgentEntry>,
+    )
+
+    fun agentTicket(number: Long): AgentTicket? = q.ticket(number).executeAsOneOrNull()?.let { tk ->
+        AgentTicket(
+            number = tk.id, ownerId = tk.owner_user_id, language = tk.viewer_language, ticketClass = tk.class_, holder = tk.holder,
+            owes = tk.owes, flagged = tk.flagged == 1L, lastViewerMessageId = q.lastViewerMessageId(tk.id).executeAsOne(),
+            entries = q.messages(tk.id).executeAsList().filter { it.visibility == VISIBLE }.map {
+                AgentEntry(it.id, it.author, it.kind, it.body, it.event, decodeArgs(it.event_args))
+            },
+        )
+    }
+
+    /** What `AI Agent` took from a request: the class it chose, and the English summary. */
+    class Classification(val ticketClass: String?, val summary: String?)
+
+    enum class AgentApplied { APPLIED, GONE, HANDLED, SUPERSEDED }
+
+    /**
+     * FR-321-9 — a result may act only on a ticket `AI Agent` still holds, still owes, that is not flagged, and that
+     * the viewer has not written on since the request was built. Otherwise it is discarded (billed, never applied).
+     */
+    private fun heldByAgent(number: Long, askedUpTo: Long): Pair<dev.jellystructure.db.Support_ticket?, AgentApplied> {
+        val tk = q.ticket(number).executeAsOneOrNull() ?: return null to AgentApplied.GONE
+        if (tk.holder != HOLDER_AI_AGENT || tk.flagged == 1L || tk.owes != OWES_AI_AGENT) return null to AgentApplied.HANDLED
+        if (q.lastViewerMessageId(tk.id).executeAsOne() > askedUpTo) return null to AgentApplied.SUPERSEDED
+        return tk to AgentApplied.APPLIED
+    }
+
+    /** FR-321-5 — the class and summary are stored whatever happens next: `ADMIN_ONLY` and `VIEWER` `CLASSIFIED` lines. */
+    private fun classify(tk: dev.jellystructure.db.Support_ticket, c: Classification, t: Long) {
+        c.summary?.takeIf { it.isNotBlank() }?.let { q.setEnglishSummary(it, tk.id) }
+        val cls = c.ticketClass?.takeIf { it in CLASSES } ?: return
+        if (cls == tk.class_) return
+        q.setClass(cls, t, tk.id)
+        q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(cls), ADMIN_ONLY, null, null, t)
+        q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(cls), VISIBLE, null, null, t)
+    }
+
+    private fun agentLine(id: Long, body: String, visibility: String, t: Long) =
+        q.insertMessage(id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_AI_AGENT, AI_AGENT_LABEL, body, null, null, visibility, null, null, t)
+
+    /** FR-321-5 — a reply that passed every rule: a `MESSAGE` by `AI_AGENT`, and nothing is owed until the viewer next writes. */
+    fun agentSend(number: Long, askedUpTo: Long, c: Classification, reply: String): AgentApplied {
+        val (tk, why) = heldByAgent(number, askedUpTo)
+        if (tk == null) return why
+        val t = now()
+        db.transaction {
+            classify(tk, c, t)
+            agentLine(tk.id, reply, VISIBLE, t)
+            q.setOwes(OWES_NONE, t, t, tk.id)
+        }
+        changed(tk.id, viewerVisible = true)
+        return AgentApplied.APPLIED
+    }
+
+    /**
+     * FR-321-6/7 — the ticket moves to [to] (`ADMIN` or `HERVOR`), with [notice] (the server's own fixed line, written as
+     * `AI Agent`'s `MESSAGE`; null when `AI Agent` cannot speak) and one `ADMIN_ONLY` note for whoever holds it next.
+     */
+    fun agentForward(number: Long, askedUpTo: Long, c: Classification, to: String, notice: String?, note: String): AgentApplied {
+        val (tk, why) = heldByAgent(number, askedUpTo)
+        if (tk == null) return why
+        val t = now()
+        db.transaction {
+            classify(tk, c, t)
+            if (notice != null) agentLine(tk.id, notice, VISIBLE, t)
+            q.setRouting(tk.state, to, null, to, tk.owed_since, t, tk.id)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(viewerHolder(to)), VISIBLE, null, null, t)
+            if (note.isNotBlank()) agentLine(tk.id, note, ADMIN_ONLY, t)
+        }
+        changed(tk.id, viewerVisible = true)
+        return AgentApplied.APPLIED
+    }
+
+    /**
+     * FR-321-5 — abuse: flagged, with an `ADMIN_ONLY` note. Nothing the viewer can see changes: no reply, no class line,
+     * no holder change, no push to the viewer.
+     */
+    fun agentFlag(number: Long, askedUpTo: Long, c: Classification, note: String): AgentApplied {
+        val (tk, why) = heldByAgent(number, askedUpTo)
+        if (tk == null) return why
+        val t = now()
+        db.transaction {
+            c.summary?.takeIf { it.isNotBlank() }?.let { q.setEnglishSummary(it, tk.id) }
+            q.setFlag(1L, tk.id)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, EVENT_FLAGGED, null, ADMIN_ONLY, null, null, t)
+            if (note.isNotBlank()) agentLine(tk.id, note, ADMIN_ONLY, t)
+        }
+        changed(tk.id, viewerVisible = false)
+        return AgentApplied.APPLIED
+    }
+
+    /**
+     * FR-321-9 — `AI Agent` is gone: every ticket it holds goes to `ADMIN`, with the `FORWARDED` line and an `ADMIN_ONLY`
+     * reason but no notice. A ticket nobody owes anything on (already answered) keeps owing nothing. A flagged ticket
+     * moves too, quietly: the line is `ADMIN_ONLY` and the viewer is not pushed. Returns the numbers moved.
+     */
+    fun agentForwardAllHeld(reason: String): List<Long> {
+        val held = q.ticketsHeldBy(HOLDER_AI_AGENT).executeAsList()
+        val t = now()
+        for (tk in held) {
+            db.transaction {
+                val owes = if (tk.owes == OWES_NONE) OWES_NONE else OWES_ADMIN
+                q.setRouting(tk.state, HOLDER_ADMIN, null, owes, tk.owed_since, if (tk.flagged == 1L) tk.updated_at else t, tk.id)
+                q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(HOLDER_ADMIN),
+                    if (tk.flagged == 1L) ADMIN_ONLY else VISIBLE, null, null, t)
+                agentLine(tk.id, reason, ADMIN_ONLY, t)
+            }
+            changed(tk.id, viewerVisible = tk.flagged == 0L)
+        }
+        return held.map { it.id }
+    }
+
+    /** A push for a ticket whose `aiComposing` just changed, or whose request was dropped (FR-321-3). */
+    fun agentChanged(number: Long) {
+        val tk = q.ticket(number).executeAsOneOrNull() ?: return
+        changed(tk.id, viewerVisible = tk.flagged == 0L)
+    }
+
+    // The transcript (FR-321-10) — written by SupportAgent as a request goes out and as its answer is read.
+
+    fun agentTurnSent(ticket: Long, ownerId: String, batchId: String, customId: String, model: String, sent: String) {
+        q.insertAiTurn(ticket, ownerId, batchId, customId, now(), model, sent)
+    }
+
+    fun agentTurnAnswered(batchId: String, customId: String, answer: String?, verdict: String, input: Long, output: Long, cost: Long) {
+        q.setAiTurnAnswer(answer, verdict, input, output, cost, batchId, customId)
+    }
+
+    /** FR-321-8 — what `AI Agent` has spent on this viewer's tickets in the rolling day, and the replies it has sent on this ticket. */
+    fun agentRequestsSince(ownerId: String, since: Long): Long = q.aiTurnsSince(ownerId, since).executeAsOne()
+    fun agentRepliesSent(ticket: Long): Long = q.aiTurnsSentOf(ticket).executeAsOne()
+
+    fun agentTranscript(number: Long): SupportAiTranscript? {
+        q.ticket(number).executeAsOneOrNull() ?: return null
+        return SupportAiTranscript(number, q.aiTurnsOf(number).executeAsList().map {
+            SupportAiTurn(it.created_at, it.model, it.sent, it.answer, it.verdict, it.input_tokens, it.output_tokens, it.cost_micro_usd)
+        })
+    }
+
+    /** FR-321-3 — a result for an older message was dropped: the ticket is asked again, so the newer message is answered. */
+    fun askAgentAgain(number: Long) = asked(number)
+
+    /** FR-321-3 — a viewer's message on a ticket `AI Agent` holds, and the ticket not flagged: ask it. */
+    private fun asked(id: Long) {
+        if (!agentActive) return
+        val tk = q.ticket(id).executeAsOneOrNull() ?: return
+        if (tk.holder == HOLDER_AI_AGENT && tk.flagged == 0L && tk.owes == OWES_AI_AGENT) askAgent(tk.id)
+    }
+
     // ── internals ────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private fun own(userId: String, number: Long) =
@@ -289,8 +464,10 @@ class SupportService(
         val tk = q.ticket(id).executeAsOneOrNull() ?: return
         db.transaction {
             q.deleteMessages(id)
+            q.deleteAiTurns(id)   // 321 (FR-321-10) — the transcript goes with the ticket
             q.deleteTicket(id)
         }
+        ticketDeleted(id)
         if (push && available) {
             pushViewer(tk.owner_user_id, id)
             pushAdmin(JobEvent.SupportTicketChanged(number = id, ticket = null, summary = summary(), deleted = true))
@@ -339,6 +516,7 @@ class SupportService(
     )
 
     private fun viewerThread(tk: dev.jellystructure.db.Support_ticket) = SupportThread(
+        aiComposing = tk.holder == HOLDER_AI_AGENT && tk.flagged == 0L && agentComposing(tk.id),
         ticket = viewerRow(tk),
         messages = q.messages(tk.id).executeAsList().filter { it.visibility == VISIBLE }.map {
             SupportMessageView(
@@ -424,7 +602,11 @@ class SupportService(
         const val OWES_ADMIN = "ADMIN"
         const val OWES_HERVOR = "HERVOR"
         const val OWES_NONE = "NONE"
+        const val OWES_AI_AGENT = "AI_AGENT"
         val FORWARD_OWES = setOf(OWES_ADMIN, OWES_HERVOR)
+
+        /** 321 (FR-320-8, FR-321-11) — the literal label on every reply `AI Agent` writes. The only disclosure a viewer gets. */
+        const val AI_AGENT_LABEL = "AI Agent"
 
         const val EVENT_FLAGGED = "FLAGGED"
         const val EVENT_UNFLAGGED = "UNFLAGGED"

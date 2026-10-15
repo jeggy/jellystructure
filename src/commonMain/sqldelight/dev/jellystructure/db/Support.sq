@@ -39,6 +39,28 @@ CREATE TABLE support_message (
 
 CREATE INDEX support_message_ticket ON support_message(ticket_id, id);
 
+-- 321 (FR-321-10) — `AI Agent`'s transcript, one row per request sent for a ticket. Must stay byte-for-byte in sync with
+-- 80.sqm. The verdict is `SENT`, `FORWARDED: <rule>`, `FLAGGED` or `DISCARDED: <why>`; null while the batch is out.
+CREATE TABLE support_ai_turn (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    owner_user_id TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    custom_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    sent TEXT NOT NULL,
+    answer TEXT,
+    verdict TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_micro_usd INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX support_ai_turn_ticket ON support_ai_turn(ticket_id, id);
+
+CREATE INDEX support_ai_turn_owner ON support_ai_turn(owner_user_id, created_at);
+
 insertTicket:
 INSERT INTO support_ticket(owner_user_id, state, holder, holder_seat, owes, owed_since, viewer_language, created_at, updated_at)
 VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?);
@@ -132,3 +154,33 @@ adminUnread:
 SELECT COUNT(*) FROM support_message
 WHERE ticket_id = :ticket AND id > :after
   AND ((kind = 'MESSAGE' AND author = 'VIEWER' AND visibility = 'VIEWER') OR kind = 'SAME_HERE');
+
+-- ─── 321 — `AI Agent` ──────────────────────────────────────────────────────
+
+ticketsHeldBy:
+SELECT * FROM support_ticket WHERE holder = :holder ORDER BY id;
+
+insertAiTurn:
+INSERT INTO support_ai_turn(ticket_id, owner_user_id, batch_id, custom_id, created_at, model, sent)
+VALUES (:ticket, :owner, :batch, :custom, :created_at, :model, :sent);
+
+setAiTurnAnswer:
+UPDATE support_ai_turn SET answer = :answer, verdict = :verdict, input_tokens = :input_tokens, output_tokens = :output_tokens,
+    cost_micro_usd = :cost_micro_usd
+WHERE batch_id = :batch AND custom_id = :custom;
+
+aiTurnsOf:
+SELECT * FROM support_ai_turn WHERE ticket_id = :ticket ORDER BY id;
+
+aiTurnsSentOf:
+SELECT COUNT(*) FROM support_ai_turn WHERE ticket_id = :ticket AND verdict = 'SENT';
+
+aiTurnsSince:
+SELECT COUNT(*) FROM support_ai_turn WHERE owner_user_id = :owner AND created_at > :since;
+
+deleteAiTurns:
+DELETE FROM support_ai_turn WHERE ticket_id = :ticket;
+
+lastViewerMessageId:
+SELECT COALESCE(MAX(id), 0) FROM support_message
+WHERE ticket_id = :ticket AND visibility = 'VIEWER' AND author = 'VIEWER' AND kind IN ('MESSAGE', 'SAME_HERE');

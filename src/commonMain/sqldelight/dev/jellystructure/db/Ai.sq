@@ -215,3 +215,7 @@ SELECT * FROM ai_transcript WHERE batch_id = :batch_id ORDER BY label, custom_id
 
 deleteTranscripts:
 DELETE FROM ai_transcript WHERE batch_id = :batch_id;
+
+-- 321 (FR-320-17) — a deleted ticket's conversation, blanked in the last five batches that still hold it.
+scrubTranscripts:
+UPDATE ai_transcript SET sent = :sent, answer = NULL, readable = NULL WHERE custom_id = :custom_id;

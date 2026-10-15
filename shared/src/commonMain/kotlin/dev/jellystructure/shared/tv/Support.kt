@@ -84,6 +84,11 @@ data class SupportMessageView(
 data class SupportThread(
     val ticket: SupportTicketRow,
     @EncodeDefault val messages: List<SupportMessageView> = emptyList(),
+    /**
+     * 321 (FR-321-3) — `AI Agent` has this ticket queued or in a batch that is out: the server state the working
+     * indicator draws. Additive, and `false` when nothing is composing, so an installed app decodes it unharmed.
+     */
+    @EncodeDefault val aiComposing: Boolean = false,
 )
 
 /** `POST /api/tv/support/tickets` and `POST …/{n}/messages`. */

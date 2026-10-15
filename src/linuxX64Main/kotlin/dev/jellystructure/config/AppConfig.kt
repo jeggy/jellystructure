@@ -197,7 +197,12 @@ data class AiConfig(
     val themes: AiJobConfig = AiJobConfig(effort = "low"),
     /** Phase 274 (FR-274-5, Q7) — names the groups of the household's suggestions on every build. */
     val clusters: AiJobConfig = AiJobConfig(effort = "low"),
-)
+    /** Phase 321 (FR-321-1) — `AI Agent` answers a support ticket. Off by default, like every job. */
+    val support: AiSupportConfig = AiSupportConfig(),
+) {
+    /** Phase 321 (FR-321-1) — the job is active when AI is on, there is a key, the job is on, and phase 320's lane is on. */
+    fun supportActive(lane: SupportConfig): Boolean = enabled && apiKey.isNotBlank() && support.enabled && lane.enabled
+}
 
 /**
  * Phase 320 (FR-320-1/11/13/17) — the support lane's switch and limits. [enabled] is false by default: turning an inbox
@@ -217,6 +222,23 @@ data class SupportConfig(
     @SerialName("hervor_enabled") val hervorEnabled: Boolean = false,
 ) {
     fun availableWith(ai: AiConfig): Boolean = enabled && ai.apiKey.isNotBlank()
+}
+
+/**
+ * Phase 321 (FR-321-1/4/8) — `[ai.support]`: an [AiJobConfig] and the three bounds FR-321-4 and FR-321-8 name. The
+ * three extras are config-file-only (the Settings form carries the four job fields), so a Settings save keeps them.
+ */
+@Serializable
+data class AiSupportConfig(
+    val enabled: Boolean = false,
+    val model: String = "claude-opus-5",
+    val effort: String = "medium",
+    @SerialName("monthly_limit_usd") val monthlyLimitUsd: Double = 5.0,
+    @SerialName("max_input_chars") val maxInputChars: Int = 24_000,
+    @SerialName("requests_per_viewer_per_day") val requestsPerViewerPerDay: Int = 10,
+    @SerialName("turns_per_ticket") val turnsPerTicket: Int = 6,
+) {
+    fun job() = AiJobConfig(enabled, model, effort, monthlyLimitUsd)
 }
 
 @Serializable

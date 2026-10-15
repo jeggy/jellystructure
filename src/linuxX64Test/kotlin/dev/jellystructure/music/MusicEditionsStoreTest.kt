@@ -59,6 +59,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "DROP TABLE IF EXISTS file_av_sync", 0)
         // …and 320's 79 creates support_ticket and support_message.
         for (t in listOf("support_message", "support_ticket")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        // …and 321's 80 creates support_ai_turn.
+        raw.execute(null, "DROP TABLE IF EXISTS support_ai_turn", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

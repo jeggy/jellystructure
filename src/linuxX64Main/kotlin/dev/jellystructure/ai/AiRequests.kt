@@ -158,7 +158,7 @@ object AiRequests {
      * are best-effort). The answer is constrained by `output_config.format`. Effort is sent only to a model
      * that takes it (Haiku 4.5 rejects the parameter).
      */
-    private fun request(customId: String, model: String, effort: String, maxTokens: Int, system: String, user: String, schema: JsonObject): JsonObject =
+    internal fun request(customId: String, model: String, effort: String, maxTokens: Int, system: String, user: String, schema: JsonObject): JsonObject =
         buildJsonObject {
             put("custom_id", customId)
             putJsonObject("params") {
@@ -273,6 +273,9 @@ object AiRequests {
     // ─── Suggestion clusters (Phase 274, FR-274-5) ─────────────────────────────
 
     const val CLUSTERS_JOB = "clusters"
+    /** Phase 321 (FR-321-1/8) — `AI Agent` answers a support ticket; `max_tokens` is FR-321-8's per-request bound. */
+    const val SUPPORT_JOB = "support"
+    const val SUPPORT_MAX_TOKENS = 2_000
     const val CLUSTERS_MAX_TOKENS = 6_000
     const val CLUSTERS_MIN = 3
     const val CLUSTERS_MAX = 8
