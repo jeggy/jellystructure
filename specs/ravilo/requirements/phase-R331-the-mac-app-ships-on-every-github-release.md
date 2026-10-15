@@ -467,3 +467,21 @@ Evidence for both launches is `ps -o lstart` process start times, because a syst
 a note of **how** the first approval was given — System Settings ▸ Privacy & Security ▸ *Open Anyway* and nothing
 else. An approval given any other way (`spctl --add`, clearing the flag) tests a different mechanism and does not
 count.
+
+## Amendment (2026-10-15): the workflow also ships Sparkle and an appcast (R386)
+
+Owner, 2026-10-15 (DEB-1230): the Mac app updates itself with Sparkle 2, from this phase's release assets. The
+out-of-scope entry *an auto-updater (R328 FR-R328-8 is the update line)* no longer holds. **R386** owns the behaviour;
+what it adds to this phase's workflow:
+
+- **`Sparkle.framework` in the bundle.** Its nested helpers are signed with the Ravilo identity, inside-out, before the
+  bundle's own signature (R386 FR-R386-1). FR-R331-2's `codesign --verify --deep --strict` must still pass, and
+  FR-R331-4's self-test is unchanged.
+- **One more repository secret, `SPARKLE_ED_PRIVATE_KEY`.** It is set with `gh secret set` like the two signing
+  secrets, and backed up wherever the certificate is. The `.dmg` is EdDSA-signed with it, and a one-item
+  `appcast.xml` is uploaded beside `ravilo-mac-<N>.dmg` on every release (R386 FR-R386-2).
+- **Acceptance 5 extends to the new secret:** with it removed, the job fails naming it and uploads nothing.
+
+**What this does to acceptance 2b.** An update Sparkle installs never carries a browser quarantine flag. If R386's
+spike confirms that, *Open Anyway* stays a once-per-Mac question for the **first** download, and every later version
+arrives through Sparkle. 2b is unchanged as the test of a hand-downloaded second version, and it is still unwalked.

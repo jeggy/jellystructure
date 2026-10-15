@@ -334,3 +334,16 @@ four seats on 2026-10-13 (owner decision DEB-987; the routing rules were patched
 client-engineer seat this phase was originally routed to closed that day, so any code still owed here is his.
 The Mac halves of R328–R331 are owed from a Mac walk already; acceptance 1–6 here belong on the same walk rather than
 a trip of their own, and that walk goes on the QA queue naming its devices and no seat.
+
+## Amendment (2026-10-15): FR-R385-6's sentence goes with the line it sat under (R386)
+
+R386 (owner, 2026-10-15, DEB-1230) replaces R328's update line with an updater. Updates no longer pass through a
+hand-dragged `.dmg`, so **FR-R385-6 is superseded.** `mac.open_anyway` sat under that line's **Download** and leaves
+with it. Its acceptance item 6 (*the update line reads FR-R385-6's sentence*) is replaced by R386's acceptance.
+
+**FR-R385-1 to FR-R385-5 stand, and R386 relies on them.** When the install state is `TRANSLOCATED` or the app runs
+from the disk image, R386's *Software update* block shows this phase's own heading and body
+(`mac.install_place.title`, `mac.install_place.body_translocated`, `mac.install_place.body_volume`) with *Quit Ravilo*
+as its only action, and never asks Sparkle to install (R386 FR-R386-5). The first install still needs the drag. The
+owner kept that sentence out of the release notes and the site (D4), and the in-app sentence was only ever read once
+the app was already running.

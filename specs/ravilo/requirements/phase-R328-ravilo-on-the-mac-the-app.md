@@ -3,10 +3,14 @@
 > Owner, 2026-09-29: *"Lets create specs for this. So when fully implemented, the dmg file will be attached to the
 > github release, just like android and Tizen."*
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-09-29; runs on a real Mac the same day (signs in, keeps its tokens in the Keychain, plays) — the menu bar's handlers, the Dock reopen and the update line are still owed** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md`
-(road 2). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free: `origin/main` `e828c944` and local `main` top at R327.
+Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` (road 2).
+**Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review). The status of this phase is its board task and
+nothing here.
+
+**Superseded in part:** D3 (the TV layout) by R337, and D6 / FR-R328-8 (the update line) by **R386** (2026-10-15,
+§Amendment below).
 
 **One of four, built in order:** **R328** (this — the app) → **R329** (it plays films and music) → **R330** (it
 casts, speakers first) → **R331** (the `.dmg` on every GitHub release). R331 wires the release only once the first
@@ -345,3 +349,21 @@ gone stale. Checked one by one rather than taken from either document:
 items (About, Settings…, Minimise, View ▸ Enter Full Screen ⌃⌘F), the Dock reopen, and the update line with a server
 newer than the app. The test driver's keys do not reach macOS's own menu, so these need a person at the Mac; they are
 on the Mac-set QA task (DEB-701), not re-filed here.
+
+## Amendment (2026-10-15): the update line is replaced by R386's updater
+
+Owner, 2026-10-15 (DEB-1230, card `1a12e934`, and design round 4): the Mac app updates itself with Sparkle 2, from
+GitHub Releases, never past the server it is signed in to. **R386** carries the whole behaviour. Here, the change is
+recorded against what this phase promised:
+
+- **D6 and FR-R328-8 are superseded.** The line in Settings ▸ Account (*Ravilo {version} for Mac is available* ·
+  **Download** · the install sentence) leaves the Mac app. R386's *Software update* block replaces it, at the top of
+  a new Settings ▸ About section (R386 FR-R386-6, FR-R386-11). The out-of-scope entry *an auto-updater* no longer holds.
+- **Acceptance 5** (*with the app older than the server, Profile shows the update line*) is replaced by R386's
+  acceptance. The 2026-10-12 code audit's owed live check of the update line is therefore not walked: it would test a
+  surface that is going.
+- **What stays:** an already-installed app keeps its compiled line and reads only `/api/health`, which R386 does not
+  change. The first release carrying R386 is reached through that line, by hand, one last time.
+- `UpdateCheck`'s schedule (on knowing the server, every 24 h, 15 min after a failure) carries into R386 unchanged.
+  Its comparison gains a server floor: a server build between releases, `v1.51-238-g…`, counts as 1.51
+  (R386 FR-R386-3, D12).
