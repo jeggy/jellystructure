@@ -331,20 +331,13 @@ class LooseFilmsService(
             jellyfin.setUserData(base, token, userId, itemId, data.played, data.positionTicks, data.lastPlayedDate, data.isFavorite, data.playCount)
         }.getOrDefault(false)
 
-        override fun repairSession(id: String, oldId: String, newId: String, queueJson: String): Boolean {
-            q.repairSession(new_id = newId, queue_json = queueJson, id = id, old_id = oldId)
-            return q.changes().executeAsOne() > 0L
-        }
+        override fun repairSession(id: String, oldId: String, newId: String, queueJson: String): Boolean =
+            repairSessionRow(db, id, oldId, newId, queueJson)
 
-        override fun repairSample(id: Long, oldId: String, newId: String): Boolean {
-            q.repairSample(new_id = newId, id = id, old_id = oldId)
-            return q.changes().executeAsOne() > 0L
-        }
+        override fun repairSample(id: Long, oldId: String, newId: String): Boolean = repairSampleRow(db, id, oldId, newId)
 
-        override fun repairQoe(deviceId: String, playSessionId: String, oldId: String, newId: String): Boolean {
-            q.repairQoe(new_id = newId, device_id = deviceId, play_session_id = playSessionId, old_id = oldId)
-            return q.changes().executeAsOne() > 0L
-        }
+        override fun repairQoe(deviceId: String, playSessionId: String, oldId: String, newId: String): Boolean =
+            repairQoeRow(db, deviceId, playSessionId, oldId, newId)
 
         override suspend fun setMediaJellyfinId(rowId: String, jellyfinId: String): Boolean {
             val item = store.get(rowId) ?: return false
@@ -560,6 +553,27 @@ internal fun sameBytes(a: String, b: String): Boolean {
     val sb = SystemFileSystem.metadataOrNull(Path(b))?.size ?: return false
     if (sa != sb || sa > 64L * 1024 * 1024) return false
     return runCatching { FileIo.readBytes(Path(a)).contentEquals(FileIo.readBytes(Path(b))) }.getOrDefault(false)
+}
+
+// FR-316-7 (DEB-1348) — the three guarded single-row moves of the repair. Each runs its UPDATE and reads `changes()` in
+// ONE transaction, so `changes()` answers for the connection the UPDATE ran on: the native driver pools connections, and
+// a bare `SELECT changes()` after a bare UPDATE answers 0 from another one (the trap MediaJobQueue.claim documents).
+// Reading 0 here made the 2026-10-15 apply move 20 rows, report 0 and write no `Re-bound` history line.
+internal fun repairSessionRow(db: JellystructureDb, id: String, oldId: String, newId: String, queueJson: String): Boolean {
+    val q = db.jellyfinIdRemapQueries
+    return db.transactionWithResult { q.repairSession(new_id = newId, queue_json = queueJson, id = id, old_id = oldId); q.changes().executeAsOne() > 0L }
+}
+
+internal fun repairSampleRow(db: JellystructureDb, id: Long, oldId: String, newId: String): Boolean {
+    val q = db.jellyfinIdRemapQueries
+    return db.transactionWithResult { q.repairSample(new_id = newId, id = id, old_id = oldId); q.changes().executeAsOne() > 0L }
+}
+
+internal fun repairQoeRow(db: JellystructureDb, deviceId: String, playSessionId: String, oldId: String, newId: String): Boolean {
+    val q = db.jellyfinIdRemapQueries
+    return db.transactionWithResult {
+        q.repairQoe(new_id = newId, device_id = deviceId, play_session_id = playSessionId, old_id = oldId); q.changes().executeAsOne() > 0L
+    }
 }
 
 /**

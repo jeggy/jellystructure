@@ -102,6 +102,45 @@ class LooseFilmsBindingTest {
         assertTrue("\"oldId\":\"wrong\"" in snap && "\"newId\":\"right\"" in snap && "playback_start_sample" in snap, snap)
     }
 
+    // ── DEB-1348, FR-316-7 — the repair's three row moves answer for the connection they wrote on ──
+
+    private fun session(id: String, itemId: String) = dev.jellystructure.db.Playback_session(
+        id = id, owner_user_id = "u1", owner_name = "", target_kind = "device", target_id = "tv", target_name = "", lane = "video",
+        kind = "video", item_id = itemId, book_id = null, queue_json = """["$itemId"]""", queue_index = 0L, position_ms = 0L,
+        position_at = 0L, state = "ended", options_json = "{}", revision = 1L, started_by_device_id = "tv",
+        jellyfin_play_session_id = null, offline = 0L, end_reason = null, ended_by = null, created_at = 1L, updated_at = 1L, ended_at = 2L,
+    )
+
+    // The 2026-10-15 apply moved 20 rows and reported 0: a bare UPDATE then a bare `SELECT changes()` read another pooled
+    // connection. The CI fake in LooseFilmRepairTest answers from its own map and never could see it, so this runs the
+    // production helpers against the native driver, where the pool exists.
+    @Test fun `the repair row moves report the row they moved on the native driver`() {
+        val db = createDatabase("$dir/repair.db")
+        val rows = 8
+        val qoe = dev.jellystructure.tv.PlaybackQoeStore(db)
+        for (i in 1..rows) {
+            db.playbackSessionQueries.upsert(session("s$i", "album"))
+            db.playbackStartSampleQueries.insert("dev1", "album", "/lib/$i.mkv", 3, i.toLong())
+            qoe.record("dev1", "ps-$i", dev.jellystructure.shared.tv.PlaybackQoeReport(itemId = "album"))
+        }
+        val sampleIds = db.jellyfinIdRemapQueries.sampleKeysOn("album").executeAsList()
+        assertEquals(rows, sampleIds.size)
+
+        // Many rows, one call each: a pool that hands the read to a neighbour does so on some of them, not only the first.
+        for (i in 1..rows) {
+            assertTrue(repairSessionRow(db, "s$i", "album", "film", """["film"]"""), "session $i moved")
+            assertTrue(repairQoeRow(db, "dev1", "ps-$i", "album", "film"), "qoe $i moved")
+        }
+        for (id in sampleIds) assertTrue(repairSampleRow(db, id, "album", "film"), "sample $id moved")
+        assertEquals(0, db.jellyfinIdRemapQueries.sessionKeysOn("album").executeAsList().size)
+        assertEquals(rows, db.jellyfinIdRemapQueries.sessionKeysOn("film").executeAsList().size)
+
+        // Already off the wrong id: the guard matches nothing and the answer is false, not a stale count.
+        assertEquals(false, repairSessionRow(db, "s1", "album", "film", "[]"))
+        assertEquals(false, repairSampleRow(db, sampleIds.first(), "album", "film"))
+        assertEquals(false, repairQoeRow(db, "dev1", "ps-1", "album", "film"))
+    }
+
     // ── test 9 — FR-316-8, a store write never deletes another film ──
 
     private fun film(slug: String, path: String, jellyfinId: String?) = MediaItem(
