@@ -96,8 +96,25 @@ class MusicTvService(
         val artists: Map<String, MusicArtist> = snap.artists.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
         val tracksByAlbum: Map<String?, List<MusicTrack>> = tracks.values.groupBy { it.albumId }
             .mapValues { (_, l) -> l.sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() })) }
-        fun ownAlbums(artistId: String) = albums.values.filter { a -> a.albumArtists.any { it.artistId == artistId } }
-        fun songsBy(artistId: String) = tracks.values.filter { t -> t.artists.any { it.artistId == artistId } || t.albumId?.let { albums[it] }?.albumArtists?.any { it.artistId == artistId } == true }
+        // Both are looked up once per artist in a sort or a selection, so each is one pass over the library, built on
+        // first use, in the library's own order (a lookup answers exactly what the filter it replaces answered).
+        private val albumsByArtist: Map<String, List<MusicAlbum>> by lazy {
+            val m = HashMap<String, MutableList<MusicAlbum>>()
+            for (a in albums.values) for (id in a.albumArtists.mapTo(HashSet()) { it.artistId }) m.getOrPut(id) { ArrayList() } += a
+            m
+        }
+        private val songsByArtist: Map<String, List<MusicTrack>> by lazy {
+            val m = HashMap<String, MutableList<MusicTrack>>()
+            for (t in tracks.values) {
+                val ids = HashSet<String>()
+                for (r in t.artists) ids += r.artistId
+                t.albumId?.let { albums[it] }?.albumArtists?.forEach { ids += it.artistId }
+                for (id in ids) m.getOrPut(id) { ArrayList() } += t
+            }
+            m
+        }
+        fun ownAlbums(artistId: String): List<MusicAlbum> = albumsByArtist[artistId].orEmpty()
+        fun songsBy(artistId: String): List<MusicTrack> = songsByArtist[artistId].orEmpty()
 
         // ── Phase 305 / R373: one copy of every song, chosen among the copies this viewer may see (dev review 8) ──
         val songs: MusicSongIndex get() = snap.songs

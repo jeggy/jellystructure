@@ -75,6 +75,20 @@ class MusicSelectionTest {
     }
 
     @Test
+    fun the_per_artist_lookups_answer_what_a_scan_of_the_library_answers() = runBlocking<Unit> {
+        // DEB-1344 — `ownAlbums` / `songsBy` are indexes now; each must equal the filter it replaced, in the same order.
+        val v = svc.View(onlyA)
+        for (id in listOf("x", "y", "z", "nobody")) {
+            assertEquals(v.albums.values.filter { a -> a.albumArtists.any { it.artistId == id } }, v.ownAlbums(id))
+            assertEquals(
+                v.tracks.values.filter { t -> t.artists.any { it.artistId == id } || t.albumId?.let { v.albums[it] }?.albumArtists?.any { it.artistId == id } == true },
+                v.songsBy(id),
+            )
+        }
+        assertEquals(listOf("guest"), v.songsBy("y").map { it.id }.filter { it == "guest" }, "a song credited to one artist on another's album is the album artist's too")
+    }
+
+    @Test
     fun albums_follow_the_chips_sort_album_by_album() = runBlocking<Unit> {
         assertEquals(listOf("a1-1", "a1-2", "a2-1", "a2-2", "a3-1", "a3-2", "guest"), ids("albums", sort = "title"))
         assertEquals(listOf("a3-1", "a3-2", "guest", "a1-1", "a1-2", "a2-1", "a2-2"), ids("albums", sort = "year"))
