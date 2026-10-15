@@ -1333,9 +1333,10 @@ data class RaviloConfig(
     // never the whole household's — a device token is per (device, user) throughout this codebase.
     val screens: ScreensCapability? = null,
     // 320 (FR-320-1) — server-resolved, never stored, like [cast]: true only while `[support] enabled` is set AND an AI
-    // key is. False means no Ravilo app draws a support entry. The wire name is the spec's own (camelCase), not this
-    // DTO's usual snake_case.
-    val supportEnabled: Boolean = false,
+    // key is. False means no Ravilo app draws a support entry. snake_case on the wire like the rest of this DTO
+    // (DEB-1273), and omitted at its default like [cast] and [screens]: no `support_enabled` key reads as false.
+    // No @EncodeDefault — the server's Json omits defaults on purpose.
+    @SerialName("support_enabled") val supportEnabled: Boolean = false,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin

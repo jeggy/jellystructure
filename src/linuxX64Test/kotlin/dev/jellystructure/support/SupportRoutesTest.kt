@@ -221,6 +221,30 @@ class SupportRoutesTest {
         h.cfg = AppConfig(support = enabled)          // …and then the key goes
         assertFalse(svc.getConfig("u-anna").supportEnabled, "a stale stored true must not draw an entry")
         assertFalse(svc.getGlobalConfig().supportEnabled)
-        assertTrue("\"supportEnabled\":true" in Json.encodeToString(dev.jellystructure.shared.tv.RaviloConfig.serializer(), svc.getConfig("u-anna").copy(supportEnabled = true)))
+    }
+
+    // FR-320-1 (DEB-1273) — the wire name is snake_case and the key is omitted, not `false`, while support is unavailable.
+    // `wire` is the server's own `Json` (Server.kt installs `Json { ignoreUnknownKeys = true }`: defaults are omitted).
+    @Test fun theWireKeyIsSupportEnabledPresentWhenAvailableAndOmittedOtherwise() = routes("cfgwire") { h ->
+        val wire = Json { ignoreUnknownKeys = true }
+        val ser = dev.jellystructure.shared.tv.RaviloConfig.serializer()
+        val svc = RaviloConfigService(h.db, supportAvailable = { h.service.available })
+        fun encoded(): String = wire.encodeToString(ser, svc.getConfig("u-anna"))
+
+        val on = encoded()
+        assertTrue("\"support_enabled\":true" in on, "available: $on")
+        assertFalse("supportEnabled" in on, "available: the Kotlin name never reaches the wire")
+
+        val unavailable = mapOf(
+            "[ai] absent" to AppConfig(support = enabled),
+            "blank key" to AppConfig(ai = AiConfig(apiKey = "   "), support = enabled),
+            "switch off" to AppConfig(ai = AiConfig(apiKey = "sk-test"), support = SupportConfig(enabled = false)),
+        )
+        for ((label, cfg) in unavailable) {
+            h.cfg = cfg
+            val off = encoded()
+            assertFalse("support_enabled" in off, "$label: no key at all, not an explicit false: $off")
+            assertFalse("supportEnabled" in off, "$label: $off")
+        }
     }
 }
