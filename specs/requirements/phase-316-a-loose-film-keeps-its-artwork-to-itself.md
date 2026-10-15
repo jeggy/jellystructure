@@ -317,7 +317,8 @@ build ticket**, as Move was. The run is idempotent: a second dry run after an ap
 
 **Inputs.** The wrong id is given, not inferred. The dry run then confirms it: Jellyfin reports that id as an item that
 is not a film, at a path that is no moved film's path. If it cannot confirm that, the plan stops there. The films are
-every `moved_into_folder` history entry, which today means the four above. For each film, the plan finds its video
+every `moved_into_folder` history entry. At 08:31Z that meant the four above, and since about 16:00Z it means three:
+the history trim has since deleted the 2026-10-13 line (see the later amendment of this date). For each film, the plan finds its video
 path now: the media row's path when the row exists, or else the single video in the folder its history line names
 under the films root. It then finds **the item Jellyfin has at that path**, using the fixed, path-asserting lookup.
 A film with no item yet is listed as *waiting for the scan*. Nothing is moved for it, and a later run picks it up.
@@ -411,3 +412,56 @@ rename). Had this existed, question 2 would have been a lookup.
 - **314c's DV rename goes through this mover.** Any rename it makes before the lookup fix ships binds to the album
   again. That is the 2026-10-13 case. 314c renames are held under the same rule as Move until the build that carries
   the lookup fix is deployed.
+
+## Amendment 2026-10-15, later — the history trim deleted the fourth film, a rename line, and the trim keeps the mover's record (DEB-1329)
+
+Turið's dry run on prod at 16:03Z (DEB-1271, finding 3) found **three** films, **30** history rows and no `Renamed to`
+line. The 08:31:56Z read above found four, 36 rows and one. **Both reads were right.** `MediaHistory.record` trims the
+table to its newest 2 000 rows on every write. At roughly 35 lines an hour, that window is about 57 hours. The 2026-10-13
+02:26Z line (history id 41183) was still there at 08:31:56Z and is in every copy taken up to 09:28Z. By 16:03Z the
+oldest line left on prod was from 2026-10-13 08:30Z. Nothing was lost by the press itself.
+
+**What this changes, read 2026-10-15 at 16:07Z with the `-wal` and `-shm` files included:**
+
+1. **The 2026-10-13 film has left the repair's view.** Its six rows were derived rows, and the full recommendations
+   build rewrites those whichever film they came from. So the row repair is unaffected.
+2. **The album's single non-empty viewer row can no longer be carried.** FR-316-7 carries that row to the film whose
+   history line says *"put back for 1 viewer"*, and that line was the one that got trimmed. The run already does what
+   the rule says for this case: it carries nothing, resets nothing, and the plan says why. **Acceptance 6 can now be
+   met only through its "or the plan said why" branch.** What becomes of that one viewer's watch data is a question for
+   the owner, not for the run.
+3. **The same trim reaches the other three lines.** The three 2026-10-15 lines are 1 698 rows from the oldest. At the
+   rate measured over the last 46 hours, they leave the table at about **2026-10-17 13:00Z**, and sooner if there is a
+   burst of writes (the busiest hours ran 80–90 lines). After that, the dry run stops with *"no film has been moved by
+   the mover — nothing to repair"*, and the 16 playback rows stay on the album's id. FR-316-9's `before_snapshot` and
+   FR-316-7's `rebound_jellyfin_id` undo record sit in the same ring, so the promise that the repair can be undone by
+   hand also lasts only about 57 hours. FR-316-10 closes this.
+
+### FR-316-7, clarified — a rename-in-place line
+
+The mover also renames a film inside the folder it already has (314c's DV rename). It writes the same
+`moved_into_folder` action, and the line starts `Renamed to <basename>` instead of naming a folder. **Such a line is a
+film like any other**, because the 2026-10-13 rename was bound to the album too, so skipping it would be wrong. Its video
+path is the media row's path. It has no folder fallback, because the line names no folder. With no media row, or a
+row whose file is gone, the film is *waiting for the scan*. A `playback_start_sample` from before the rename carries
+the old basename, which the line does not keep, so that sample is attributed only if its `file_id` equals the
+film's path now. Otherwise it is listed as unaccounted. None of this changes what FR-316-7 promises; it states what its
+rule already yields for a line with no folder. The repair does not need to parse the `Renamed to` name.
+
+### FR-316-10 — the history trim never deletes the mover's or the repair's record
+
+The trim of `media_history` to its newest 2 000 rows **never deletes a `moved_into_folder` or `rebound_jellyfin_id`
+line**, however old it is. These are the only lines FR-316-7 reads as input and the only lines FR-316-9 and FR-316-7
+write as an undo record. They are written once per film the mover touches, and the loose-film list bounds that
+number. Every other action is trimmed as before.
+
+This protects only lines that are still in the table when it ships. **If the three 2026-10-15 lines are trimmed before
+both this and DEB-1328's lookup fix are deployed and the repair is applied, the repair finds no film.** Nothing in this
+spec reconstructs them. That case goes to the owner as a decision.
+
+### Tests added to FR-316-5
+
+11. FR-316-10: with the cap at N, writing N more lines after a `moved_into_folder` line and a `rebound_jellyfin_id`
+    line leaves both in the table, and the oldest line of any other action is gone.
+12. FR-316-7: a `Renamed to …` line with a media row whose file exists is a `ready` film at that path. With no media row,
+    it is `waiting` and nothing is moved for it.
