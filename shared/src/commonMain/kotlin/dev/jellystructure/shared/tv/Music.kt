@@ -210,6 +210,20 @@ data class MusicArtistDetail(
     @SerialName("singles_under") val singlesUnder: List<MusicSinglesUnder> = emptyList(),
 )
 
+/** R388 (FR-R388-4) — the most songs *Play all* / *Shuffle all* put in a queue. One constant, server and clients. */
+const val MUSIC_SELECTION_CAP = 1000
+
+/**
+ * R388 (FR-R388-2) — `GET /tv/music/selection`: the songs of a list, one copy of each, in the order the list draws.
+ * [total] is the folded size before the cap; [capped] is true only when [total] is over [MUSIC_SELECTION_CAP].
+ */
+@Serializable
+data class MusicSelection(
+    val tracks: List<MusicTrackItem>,
+    val total: Int,
+    val capped: Boolean,
+)
+
 /** FR-279-5 — three groups, each with its own total; an empty query answers recently played songs and artists. */
 @Serializable
 data class MusicSearch(

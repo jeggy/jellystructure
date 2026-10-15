@@ -58,6 +58,14 @@ fun Route.musicTvRoutes(
         call.respond(svc.artist(call.attributes[DeviceKey], call.parameters["id"]!!, lang) ?: return@get call.respond(HttpStatusCode.NotFound))
     }
     get("/tv/music/search") { call.respond(svc.search(call.attributes[DeviceKey], call.request.queryParameters["q"])) }
+    // R388 (FR-R388-2) — the songs of a list: Play all / Shuffle all. An unknown scope, or a genre / search with nothing
+    // to go on, is a 400.
+    get("/tv/music/selection") {
+        val q = call.request.queryParameters
+        val shuffle = q["shuffle"]?.lowercase().let { it == "true" || it == "1" }
+        call.respond(svc.selection(call.attributes[DeviceKey], q["scope"].orEmpty(), q["sort"], q["genre"], q["q"], shuffle)
+            ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "scope")))
+    }
 
     // FR-279-6 — one song, one session; the next song in a queue is a stop and a start.
     post("/tv/music/play") {

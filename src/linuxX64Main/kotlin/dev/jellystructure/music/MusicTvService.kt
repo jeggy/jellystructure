@@ -25,6 +25,8 @@ import dev.jellystructure.shared.tv.MusicList
 import dev.jellystructure.shared.tv.MusicPlaylist
 import dev.jellystructure.shared.tv.MusicRow
 import dev.jellystructure.shared.tv.MusicSearch
+import dev.jellystructure.shared.tv.MusicSelection
+import dev.jellystructure.shared.tv.MUSIC_SELECTION_CAP
 import dev.jellystructure.shared.tv.MusicSinglesUnder
 import dev.jellystructure.shared.tv.MusicTrackCopies
 import dev.jellystructure.shared.tv.MusicTrackCopy
@@ -49,12 +51,15 @@ class MusicTvService(
     private val lyricsFile: (MusicTrack) -> String?,
     private val jellyfin: JellyfinClient,
     private val configStore: ConfigStore,
+    /** R388 — the sample of a capped *Shuffle all*; a test seeds it. */
+    private val random: kotlin.random.Random = kotlin.random.Random.Default,
     private val videos: suspend (DeviceData) -> List<dev.jellystructure.model.MediaItem> = { emptyList() },
 ) {
     companion object {
         const val PAGE_SIZE = 60
         /** FR-279-2 / open question 1 — below this a mix is the whole library over again (measured: 60 tracks). */
         private const val USER_TTL_MS = 30_000L
+        private val SELECTION_SCOPES = setOf("library", "artists", "albums", "tracks", "genre", "search")
         private val GROUP_ORDER = listOf("album", "single", "compilation", "live", "soundtrack")
 
         fun albumImage(a: MusicAlbum): String? = if (a.coverState != MusicArt.NONE) "/api/tv/image/music/album/${a.id.encodeURLPathPart()}?v=${a.updatedAt}" else null
@@ -202,36 +207,90 @@ class MusicTvService(
         fun <T> slice(all: List<T>) = all.drop(page * PAGE_SIZE).take(PAGE_SIZE)
         return when (what) {
             "artists" -> {
-                val all = v.artists.values.filter { v.ownAlbums(it.id).isNotEmpty() || v.songsBy(it.id).isNotEmpty() }
-                val sorted = when (sort) {
-                    "title" -> all.sortedBy { (it.sortName ?: it.name).lowercase() }
-                    "played" -> all.sortedByDescending { r -> v.songsBy(r.id).sumOf { u?.playCount?.get(it.id) ?: 0 } }
-                    else -> all.sortedByDescending { r -> v.ownAlbums(r.id).maxOfOrNull { it.addedAt ?: it.createdAt } ?: 0L }
-                }
+                val sorted = sortedArtists(v, u, sort)
                 MusicList(artists = slice(sorted).map { artistCard(v, it) }, total = sorted.size, page = page, pageSize = PAGE_SIZE)
             }
             "tracks" -> {
-                // R373 (FR-R373-3) — one copy of every song: the better file this viewer may open.
-                val all = v.tracks.values.filter { v.isShown(it) }
-                val sorted = when (sort) {
-                    "title" -> all.sortedBy { it.title.lowercase() }
-                    "year" -> all.sortedWith(compareByDescending<MusicTrack> { it.albumId?.let { a -> v.albums[a]?.originalYear() } ?: it.year ?: 0 }.thenBy { it.title.lowercase() })
-                    "played" -> all.sortedWith(compareByDescending<MusicTrack> { u?.songPlays(v, it) ?: 0 }.thenBy { it.title.lowercase() })
-                    else -> all.sortedWith(compareByDescending<MusicTrack> { it.addedAt ?: it.createdAt }.thenBy { it.albumId }.thenBy { it.position ?: 0 })
-                }
+                val sorted = sortedTracks(v, u, sort)
                 MusicList(tracks = slice(sorted).map { trackItem(v, it, u, folded = true) }, total = sorted.size, page = page, pageSize = PAGE_SIZE)
             }
             else -> {
-                val all = v.albums.values.filter { genre == null || genre in it.effectiveGenres() }
-                val sorted = when (sort) {
-                    "title" -> all.sortedBy { (it.sortName ?: it.title).lowercase() }
-                    "year" -> all.sortedWith(compareByDescending<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
-                    "played" -> all.sortedByDescending { a -> v.tracksByAlbum[a.id].orEmpty().sumOf { u?.playCount?.get(it.id) ?: 0 } }
-                    else -> recentAlbums(v).filter { a -> all.any { it.id == a.id } }
-                }
+                val sorted = sortedAlbums(v, u, sort, genre)
                 MusicList(albums = slice(sorted).map { albumCard(v, it) }, total = sorted.size, page = page, pageSize = PAGE_SIZE)
             }
         }
+    }
+
+    // The browse route's three orders, one copy: the list is drawn from them and R388's selection plays them.
+
+    private fun sortedArtists(v: View, u: UserMusic?, sort: String?): List<MusicArtist> {
+        val all = v.artists.values.filter { v.ownAlbums(it.id).isNotEmpty() || v.songsBy(it.id).isNotEmpty() }
+        return when (sort) {
+            "title" -> all.sortedBy { (it.sortName ?: it.name).lowercase() }
+            "played" -> all.sortedByDescending { r -> v.songsBy(r.id).sumOf { u?.playCount?.get(it.id) ?: 0 } }
+            else -> all.sortedByDescending { r -> v.ownAlbums(r.id).maxOfOrNull { it.addedAt ?: it.createdAt } ?: 0L }
+        }
+    }
+
+    private fun sortedTracks(v: View, u: UserMusic?, sort: String?): List<MusicTrack> {
+        // R373 (FR-R373-3) — one copy of every song: the better file this viewer may open.
+        val all = v.tracks.values.filter { v.isShown(it) }
+        return when (sort) {
+            "title" -> all.sortedBy { it.title.lowercase() }
+            "year" -> all.sortedWith(compareByDescending<MusicTrack> { it.albumId?.let { a -> v.albums[a]?.originalYear() } ?: it.year ?: 0 }.thenBy { it.title.lowercase() })
+            "played" -> all.sortedWith(compareByDescending<MusicTrack> { u?.songPlays(v, it) ?: 0 }.thenBy { it.title.lowercase() })
+            else -> all.sortedWith(compareByDescending<MusicTrack> { it.addedAt ?: it.createdAt }.thenBy { it.albumId }.thenBy { it.position ?: 0 })
+        }
+    }
+
+    private fun sortedAlbums(v: View, u: UserMusic?, sort: String?, genre: String?): List<MusicAlbum> {
+        val all = v.albums.values.filter { genre == null || genre in it.effectiveGenres() }
+        return when (sort) {
+            "title" -> all.sortedBy { (it.sortName ?: it.title).lowercase() }
+            "year" -> all.sortedWith(compareByDescending<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
+            "played" -> all.sortedByDescending { a -> v.tracksByAlbum[a.id].orEmpty().sumOf { u?.playCount?.get(it.id) ?: 0 } }
+            else -> recentAlbums(v).filter { a -> all.any { it.id == a.id } }
+        }
+    }
+
+    // ── R388 (FR-R388-2/3/4) — a selection, resolved to songs ──
+
+    /**
+     * What *Play all* / *Shuffle all* queues for the list the viewer is looking at: [scope] `library` · `artists` ·
+     * `albums` · `tracks` · `genre` · `search`, in the order that list draws, one copy of every song, at most
+     * [MUSIC_SELECTION_CAP]. Null for an unknown scope or a `genre` / `q` its scope needs and has not got (a 400).
+     * [shuffle] draws the cap at random from the whole selection and keeps the list's relative order.
+     */
+    suspend fun selection(device: DeviceData, scope: String, sort: String?, genre: String?, q: String?, shuffle: Boolean): MusicSelection? {
+        val genreName = genre?.takeIf { it.isNotBlank() }
+        val query = q?.trim()?.takeIf { it.isNotEmpty() }
+        if (scope !in SELECTION_SCOPES || (scope == "genre" && genreName == null) || (scope == "search" && query == null)) return null
+        val v = View(device)
+        val u = userMusic(device)
+        fun albumSongs(a: MusicAlbum): List<MusicTrack> {
+            val held = v.tracksByAlbum[a.id].orEmpty()
+            return MusicOfficial.layout(a, held).let { l -> if (l.official != null) l.rows.map { it.second } else held }
+        }
+        fun artistSongs(r: MusicArtist): List<MusicTrack> {
+            val own = v.ownAlbums(r.id).sortedWith(compareBy<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
+            val ownIds = own.mapTo(HashSet()) { it.id }
+            val rest = v.songsBy(r.id).filter { it.albumId !in ownIds }
+                .sortedWith(compareBy<MusicTrack> { it.albumId?.let { a -> v.albums[a]?.originalYear() } ?: it.year ?: 0 }.thenBy { it.albumId }.thenBy { it.disc ?: 1 }.thenBy { it.position ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
+            return own.flatMap { albumSongs(it) } + rest
+        }
+        val ordered: List<MusicTrack> = when (scope) {
+            "library" -> recentAlbums(v).flatMap { albumSongs(it) } +
+                v.tracks.values.filter { it.albumId == null || it.albumId !in v.albums }.sortedWith(compareByDescending<MusicTrack> { it.addedAt ?: it.createdAt }.thenBy { it.title.lowercase() })
+            "albums" -> sortedAlbums(v, u, sort, null).flatMap { albumSongs(it) }
+            "genre" -> sortedAlbums(v, u, sort, genreName).flatMap { albumSongs(it) }
+            "artists" -> sortedArtists(v, u, sort).flatMap { artistSongs(it) }
+            "tracks" -> sortedTracks(v, u, sort)
+            else -> searchMatches(v, query!!.lowercase()).let { m -> m.songs + m.albums.flatMap { albumSongs(it) } + m.artists.flatMap { artistSongs(it) } }
+        }
+        val folded = v.fold(ordered)
+        val picked = if (shuffle && folded.size > MUSIC_SELECTION_CAP) folded.indices.shuffled(random).take(MUSIC_SELECTION_CAP).sorted().map { folded[it] }
+            else folded.take(MUSIC_SELECTION_CAP)
+        return MusicSelection(tracks = picked.map { trackItem(v, it, u, folded = true) }, total = folded.size, capped = folded.size > MUSIC_SELECTION_CAP)
     }
 
     fun genres(device: DeviceData): List<MusicGenreCount> {
@@ -357,6 +416,17 @@ class MusicTvService(
 
     // ── FR-279-5 ──
 
+    private data class SearchMatches(val songs: List<MusicTrack>, val albums: List<MusicAlbum>, val artists: List<MusicArtist>)
+
+    /** The search route's match rule and orders, uncapped — [q] trimmed and lower-cased. R388's *search* scope plays these. */
+    private fun searchMatches(v: View, q: String): SearchMatches {
+        fun hit(vararg s: String?) = s.any { it != null && q in it.lowercase() }
+        val songs = v.fold(v.tracks.values.filter { t -> hit(t.title, *t.artists.map { it.name }.toTypedArray()) }).sortedBy { it.title.lowercase() }
+        val albums = v.albums.values.filter { a -> hit(a.title, *a.albumArtists.map { it.name }.toTypedArray()) }.sortedBy { it.title.lowercase() }
+        val artists = v.artists.values.filter { r -> hit(r.name, r.sortName, *r.aliases.toTypedArray()) }.sortedBy { it.name.lowercase() }
+        return SearchMatches(songs, albums, artists)
+    }
+
     suspend fun search(device: DeviceData, query: String?): MusicSearch {
         val v = View(device)
         val q = query?.trim()?.lowercase().orEmpty()
@@ -366,10 +436,7 @@ class MusicTvService(
             val artists = v.artists.values.filter { v.ownAlbums(it.id).isNotEmpty() }.sortedBy { (it.sortName ?: it.name).lowercase() }
             return MusicSearch(songs = recent.map { trackItem(v, it, u, folded = true) }, artists = artists.take(20).map { artistCard(v, it) }, songsTotal = recent.size, artistsTotal = artists.size)
         }
-        fun hit(vararg s: String?) = s.any { it != null && q in it.lowercase() }
-        val songs = v.fold(v.tracks.values.filter { t -> hit(t.title, *t.artists.map { it.name }.toTypedArray()) }).sortedBy { it.title.lowercase() }
-        val albums = v.albums.values.filter { a -> hit(a.title, *a.albumArtists.map { it.name }.toTypedArray()) }.sortedBy { it.title.lowercase() }
-        val artists = v.artists.values.filter { r -> hit(r.name, r.sortName, *r.aliases.toTypedArray()) }.sortedBy { it.name.lowercase() }
+        val (songs, albums, artists) = searchMatches(v, q)
         return MusicSearch(
             songs = songs.take(50).map { trackItem(v, it, u, folded = true) }, albums = albums.take(50).map { albumCard(v, it) }, artists = artists.take(50).map { artistCard(v, it) },
             songsTotal = songs.size, albumsTotal = albums.size, artistsTotal = artists.size,
