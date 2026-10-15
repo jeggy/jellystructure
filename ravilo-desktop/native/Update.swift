@@ -172,7 +172,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
         set("installing", version: item.displayVersionString)
     }
 
-    func updater(_ updater: SPUUpdater, userDidMakeChoice choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem, state: SPUUserUpdateState) {
+    func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem, state: SPUUserUpdateState) {
         // The viewer closed Sparkle's window (D9) without installing: the offer is still there.
         if choice != .install, current() == "window" { set("available", version: updateItem.displayVersionString) }
     }
