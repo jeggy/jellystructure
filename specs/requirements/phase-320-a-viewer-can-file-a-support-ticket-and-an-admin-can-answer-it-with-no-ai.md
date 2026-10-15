@@ -22,6 +22,12 @@
 > design brief's amendment (DEB-1117), not from the owner, and the owner reversed it the same day.
 > FR-320-1, FR-320-19 and the acceptance list were rewritten to match. The file name keeps its
 > original slug so that links from the board keep working. The heading above is the phase's title.
+>
+> **Amended 2026-10-15, after the build and before prod (DEB-1273, from Turið's verdict on DEB-1256).**
+> The config field is renamed **`support_enabled`** on the wire, and it is **omitted** while support is
+> unavailable, never written as `false`. FR-320-1, FR-320-18, FR-320-19, the acceptance list and the build
+> note were rewritten to match. Both are settled here because no client reads the field yet. Once one
+> does, either change would take a release to add, deprecate and remove.
 
 ## Scope
 
@@ -79,7 +85,8 @@ answer. Only a missing key removes the lane.
 While support is unavailable, for either reason:
 
 - every `/api/tv/support/**` route answers **404**;
-- `/api/tv/config` reports `supportEnabled: false`, so no Ravilo app draws an entry;
+- `/api/tv/config` carries no `support_enabled` key, which a client reads as false, so no Ravilo app
+  draws an entry;
 - the admin's `GET` routes still answer, so the data stays readable for a later admin surface and
   for tests;
 - every admin write (reply, forward, state, class, flag, read, delete) answers **409**
@@ -92,7 +99,17 @@ as it was. A viewer whose ticket was open when the key went is told nothing, bec
 to tell them on. That is the owner's call, and it is written here so that nobody adds a notice later
 by accident.
 
-Saving or removing the key, and changing `[support] enabled`, both change `supportEnabled`. Either
+**The wire shape of the flag (amended 2026-10-15, DEB-1273).** The field is `support_enabled`, a boolean
+on `RaviloConfig`, written `true` while support is available and **omitted** otherwise. Two reasons decide
+both halves. Every other multi-word field on `RaviloConfig` is snake_case, and a client reads the field
+through the `:shared` DTO, so the Kotlin property can stay `supportEnabled` while only the wire name
+changes. The server's `Json` omits a field at its default, and every other field on `RaviloConfig` follows
+that rule, `cast` and `screens` included. A server older than 320 omits the field too, so every client has
+to read an absent `support_enabled` as false anyway. Writing an explicit `false` would make this the only
+field on the DTO that needs `@EncodeDefault`, and no reader would behave differently. A client must
+never treat the absence as "unknown, ask again".
+
+Saving or removing the key, and changing `[support] enabled`, both change `support_enabled`. Either
 change is pushed as the `config_changed` event that Ravilo already re-fetches on (`TvEventBus`), so the
 entry appears and disappears without a restart.
 
@@ -246,7 +263,7 @@ answers 204. A daily pass deletes tickets that have been `RESOLVED` with no acti
 `retention_days` (default 365). Tickets are personal data. This is the whole retention policy for
 this phase.
 
-**FR-320-18 — The wire is additive.** Every new DTO goes in `:shared`. `supportEnabled` is a new field on
+**FR-320-18 — The wire is additive.** Every new DTO goes in `:shared`. `support_enabled` is a new field on
 the existing config DTO with a default, so an installed app that has never heard of it decodes it
 unharmed. The new viewer DTOs join `WIRE_ROOTS` so `WireCompatTest` holds them from the first release.
 
@@ -266,8 +283,9 @@ unharmed. The new viewer DTOs join `WIRE_ROOTS` so `WireCompatTest` holds them f
 - Delete and the retention pass.
 - **Availability (FR-320-1), across four configs:** `[ai]` absent, a blank key, `[support] enabled =
   false`, and a key set with `ai.enabled = false`. In the first three, every viewer route answers 404,
-  every admin write answers 409, admin reads answer, and `supportEnabled` is false. The fourth is
-  fully available, with no Anthropic call made.
+  every admin write answers 409, admin reads answer, and the config's JSON has no `support_enabled`
+  key. The fourth is fully available, with no Anthropic call made, and the JSON carries
+  `"support_enabled":true`. Neither JSON contains `supportEnabled`.
 - Removing the key and putting it back loses nothing, and each change emits `config_changed`.
 - `WireCompatTest` over the new roots.
 
@@ -282,7 +300,7 @@ unharmed. The new viewer DTOs join `WIRE_ROOTS` so `WireCompatTest` holds them f
 - With a key set and `ai.enabled = false`, every acceptance line above still holds. No admin ever
   needs AI switched on to answer.
 - With the key removed, or `enabled = false`, every viewer route answers 404 and `/api/tv/config`
-  reports `supportEnabled: false`. A connected Ravilo app drops its entry without a restart, and an
+  carries no `support_enabled`. A connected Ravilo app drops its entry without a restart, and an
   admin reply answers 409. With the key put back, the open ticket is there unchanged.
 
 ## Not in this phase
@@ -307,9 +325,9 @@ an FR above promises; each is open to Bárður's correction.
 
 - **`support_message.device_id`** is a column FR-320-2's list does not name. FR-320-7's "once per ticket per device"
   needs the device, and a platform name cannot tell two phones of one viewer apart. It is never on any wire.
-- **`supportEnabled`** is written under that exact name (the spec's), not the `support_enabled` the rest of
-  `RaviloConfig` would suggest. No client reads it yet, so this is the cheap moment to change it if the owner prefers
-  the snake form.
+- **`supportEnabled`** was written under that exact name (the spec's), not the `support_enabled` the rest of
+  `RaviloConfig` would suggest. *Superseded 2026-10-15 (DEB-1273): the wire name is `support_enabled`. See
+  FR-320-1.*
 - **The support DTOs write every non-null field** (`@EncodeDefault`), so `GET …/unread` is `{"tickets":0}` and never
   `{}`. The server's `Json` omits defaults, which would otherwise have made an empty list an empty object.
 - **Unread** counts `FORWARDED` and `STATE_CHANGED` and nothing else among `SYSTEM` lines. `RECEIVED` and `REOPENED`
@@ -332,7 +350,7 @@ an FR above promises; each is open to Bárður's correction.
 - **Flagging does not touch `updated_at`**, because that is the viewer's last-activity time and FR-320-12 says a
   flagged ticket looks exactly as it did to them.
 - **`config_changed` is emitted on the lane's availability changing**, not on every key save: replacing one key with
-  another leaves `supportEnabled` where it was and is not pushed. Every writer reaches it through
+  another leaves `support_enabled` where it was and is not pushed. Every writer reaches it through
   `ConfigStore.update`, so the admin phase's own toggle gets it for free.
 - **`PUT /api/config` restores `[support]`** from the stored config until the admin phase gives the form its own
   fields; the admin's form model has no `support` key.
