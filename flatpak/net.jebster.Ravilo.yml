@@ -81,6 +81,10 @@ modules:
     sources:
       - type: archive
         url: https://xorg.freedesktop.org/archive/individual/lib/libXpresent-1.0.1.tar.xz
+        # DEB-1319: xorg.freedesktop.org answered in 25 s, then timed out, then reset the connection, on the v1.52
+        # release run. www.x.org and ftp.x.org are no mirror — they 301 back to it; this one serves the same bytes.
+        mirror-urls:
+          - https://mirror.csclub.uwaterloo.ca/x.org/individual/lib/libXpresent-1.0.1.tar.xz
         sha256: b964df9e5a066daa5e08d2dc82692c57ca27d00b8cc257e8e960c9f1cf26231b
   - name: zimg
     # mpv's software renderer scales and converts with zimg where it exists (3 ms a 1080p frame); without it, swscale (30 ms).

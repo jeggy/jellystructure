@@ -47,5 +47,23 @@ else
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "render.sh: '$commit' is not a full commit id" >&2; exit 1; }
   sed -e "s/@VERSION@/$version/g" -e "s/@COMMIT@/$commit/g" -e "s/@DATE@/$date/g" "$template" > "$out/net.jebster.Ravilo.yml"
 fi
-cp "$sources" "$out/flatpak-sources.json"
+# CI hardening, no spec (DEB-1319): v1.52's flatpak failed three times on a plugin-portal 502 and a slow upstream. The
+# generator already gives the Maven Central artefacts `mirror-urls`; the Gradle plugin portal's carry none. The portal
+# proxies Central for everything that is not a plugin marker, so the same path under Central is a mirror for it. A
+# mirror that 404s costs one request: flatpak-builder tries the next URL, and the sha256 is unchanged.
+python3 -I - "$sources" "$out/flatpak-sources.json" <<'PY'
+import json, sys
+src, dst = sys.argv[1:]
+portal = "https://plugins.gradle.org/m2/"
+mirrors = ("https://repo1.maven.org/maven2/", "https://maven-central.storage-download.googleapis.com/maven2/")
+entries = json.load(open(src))
+added = 0
+for e in entries:
+    if e["url"].startswith(portal) and not e.get("mirror-urls"):
+        path = e["url"][len(portal):]
+        e["mirror-urls"] = [m + path for m in mirrors]
+        added += 1
+json.dump(entries, open(dst, "w"), indent=2)
+print("render.sh: %d plugin-portal artefacts got mirror-urls" % added, file=sys.stderr)
+PY
 echo "rendered $out/net.jebster.Ravilo.yml ($(grep -c '"url"' "$out/flatpak-sources.json") artefacts)"
