@@ -251,3 +251,28 @@ that holds only when nothing else is checking it at the same moment.
   so the test must not race on one; the race itself is the new test's job.
 - **Done means:** both green, and `ReceiverTokenRefreshIntegrationTest` run 50 times in a row from the linked
   `test.kexe` (`--ktest_filter`) with no failure; the count goes in the build notes.
+
+### Build notes (2026-10-15, FR-300-10 — `0e445d65`)
+
+- **Shape.** The recommended ticket, in `PlaybackService.kt`: a `tokenTicket` counter under `tokenCacheMutex`; the slow
+  path takes `++tokenTicket` in the same critical section that read the cache; `forgetTokenValidity` and a REJECTED
+  store both write `tokenEventTicket[token] = (++tokenTicket, nowMs)` through one helper; a VALID store compares the
+  token's event ticket with the probe's and skips the three writes (`tokenValidUntil`, the negative entry,
+  `tokenRejectionLogged`) when the event is later. The verdict is still returned to its caller. The helper prunes
+  entries older than `2 × TOKEN_CHECK_TIMEOUT_MS + 500 ms + 1 s`, so the map holds only tokens touched in the last
+  ~11 s.
+- **The re-probe is covered by the first ticket.** A rejection's 500 ms re-probe is part of the same check, so the
+  ticket taken at its miss already precedes everything it does; nothing takes a second one.
+- **`TokenCheckRaceTest`** — three cases on a gated fake `/Users/{id}` (the answer is decided when the request
+  arrives, delivered when the gate opens): *(a)* a 200 held across `revoke` + `forgetTokenValidity` is returned and the
+  next check reaches Jellyfin (3 requests in all: the held one, the 401, FR-194-5's re-probe); *(b)* a 200 held across a
+  revocation whose 401 completes first leaves the rejection in the negative cache (no further request); *(c)* no forget:
+  the verdict is cached and the second check never reaches the fake. Measured on a detached worktree at `188154f2`
+  with only this file added: **(a) and (b) fail 5 of 5 runs, (c) passes**; on `0e445d65` **0 failures in 20 runs**.
+- **`ReceiverTokenRefreshIntegrationTest`** counts the bridge's opens on A's token (`openCount`) and waits for the
+  second before the FR-300-4 step revokes it.
+- **Run 50 times in a row** from the linked `test.kexe` (`--ktest_filter`, one process per run, the *1 tests from 1 test
+  cases ran* line checked each time so a filter matching nothing cannot read as green): **0 failures in 50**.
+- Linked with `linkDebugTestLinuxX64` (3 m 24 s); the full `linuxX64Test` is CI's.
+- **Not deployed; no device needed** — a backend-only change with no wire change. The one check CI cannot make is a
+  receiver on prod following a live sign-in after the swap (FR-300-4's heal on a real Stue/Gæsteværelse cast).
