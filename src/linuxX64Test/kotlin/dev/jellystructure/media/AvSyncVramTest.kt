@@ -193,17 +193,8 @@ class AvSyncVramTest {
         assertEquals("the sidecar answered 500: the decoder caught fire", result.exceptionOrNull()?.message)
     }
 
-    @Test
-    fun `a 422 is still the file's own fault and stores nothing`() = runBlocking {
-        answer.value = """{"error":"moov atom not found"}"""
-        status.value = 422
-        val item = film("undecodable")
-        val result = service.check(item, item.path)
-
-        assertTrue(result.isFailure)
-        assertNull(service.rowFor(item.path))
-        assertTrue(result.exceptionOrNull()?.message?.contains("could not decode") == true)
-    }
+    // A 422 stored nothing until FR-317-39 (DEB-1216): it is now the `undecodable` row, and its tests
+    // live in AvSyncUndecodableTest.
 
     // ── the verdict's own rule, with no sidecar at all ──
 

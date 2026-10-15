@@ -427,7 +427,9 @@ class AvSyncService(
             when (r.status.value) {
                 200 -> measureJson.decodeFromString(MeasureResponse.serializer(), body)
                 404 -> throw AvSyncRefused("the sidecar cannot see $path — check its mounts")
-                422 -> throw AvSyncRefused("the sidecar could not decode it: ${errorOf(body)}")
+                // FR-317-39 — after FR-317-38 a 422 means not one requested window had a picture: a fact
+                // about this file at this size and mtime, which the caller writes down as a row.
+                422 -> throw AvSyncUndecodable("the sidecar could not decode it: ${errorOf(body)}")
                 503 -> throw AvSyncBusy(retryAfterOf(body))
                 // FR-317-36 — a 500 may carry an additive `error_kind`. `vram` means the card could not
                 // hold one frame of this file's geometry: nothing was measured, but that is a thing to
@@ -445,6 +447,9 @@ class AvSyncService(
     }
 
     class AvSyncRefused(message: String) : Exception(message)
+
+    /** FR-317-39 — the sidecar's 422: nothing in this file could be decoded at any window asked for. */
+    class AvSyncUndecodable(message: String) : Exception(message)
     class AvSyncBusy(val retryAfterS: Int) : Exception("the sidecar is already measuring a file")
 
     /** FR-317-36 — the sidecar's `error_kind: "vram"`: this file was not measured and a row says so. */
@@ -624,6 +629,17 @@ class AvSyncService(
     }
 
     /**
+     * FR-317-39 — not one window of this file had a picture, so a row says so: [storeVramRow]'s pattern,
+     * for the 422. Current only while size and mtime match (FR-317-5), so a re-download or a remux makes
+     * the file due again at the next pass; [AvSyncReason.UNDECODABLE] is not one of [SKIP_REASONS].
+     */
+    private suspend fun storeUndecodableRow(path: String, runtimeS: Double?, e: AvSyncUndecodable): Result<AvSyncReading> {
+        Logger.warn("av sync: no picture could be decoded from $path — stored as ${AvSyncReason.UNDECODABLE}: ${e.message}", "integrity")
+        if (!storeSkip(path, AvSyncReason.UNDECODABLE)) return Result.failure(AvSyncRefused("the file is no longer on disk"))
+        return Result.success(AvSyncVerdict.of(emptyList(), zeroFrames(), runtimeS, AvSyncReason.UNDECODABLE))
+    }
+
+    /**
      * FR-317-8 — one file measured, persisted. Returns the reading, or null with the reason as a message
      * when nothing could be measured at all (the job turns that into its own failure text).
      *
@@ -674,6 +690,9 @@ class AvSyncService(
             // triple: a `vram` refusal of FR-317-17's second triple leaves the first triple's windows
             // standing, which is an answer, and `measure` there is read with `getOrNull` already.
             if (it is AvSyncVramExhausted) return storeVramRow(path, runtimeS, it)
+            // FR-317-39 — and the 422, the same way, on the first triple only: a 422 on the second triple
+            // is read with `getOrNull` below and leaves the first triple's reading standing.
+            if (it is AvSyncUndecodable) return storeUndecodableRow(path, runtimeS, it)
             return Result.failure(it)
         }
         if (AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) {

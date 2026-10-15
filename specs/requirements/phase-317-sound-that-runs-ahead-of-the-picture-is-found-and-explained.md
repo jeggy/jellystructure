@@ -2258,6 +2258,12 @@ expressed in fields it already reads. A `no_picture` window never becomes confid
 verdict, and FR-317-32's reason order (`nonfinite`, then `short_audio`, then `no_faces`) is unchanged. A file
 whose only windows with a picture show no faces is honestly `no_faces`.
 
+*Implementation note (2026-10-15, DEB-1216).* The first sentence above is true of **reading** the response and
+false of **keeping** it: `check()` re-encodes `AvSyncWindow`, so a key the DTO does not declare is dropped before
+the row is written, and acceptance 34 could not read `no_picture` back. `AvSyncWindow` therefore gains
+`no_picture: Boolean = false`, additive and defaulted like `audio_short`. A row stored before the key existed
+reads `false`, which is what every such row was. Nothing else on the wire moves.
+
 ### FR-317-39 — A file nothing could be decoded from stores a row that says so
 
 FR-317-36's `vram` pattern, for the 422. Today the 422 is `AvSyncRefused`: no row, `missing` again, and the

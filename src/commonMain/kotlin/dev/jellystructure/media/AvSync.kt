@@ -47,6 +47,12 @@ data class AvSyncWindow(
      *  0 for every row stored before the field existed, which is what a row with no measurement of it can
      *  honestly say. */
     @SerialName("audio_short_frames") val audioShortFrames: Int = 0,
+    /** FR-317-38 (the 2026-10-15 amendment) — this window landed past the end of the picture, so it had
+     *  nothing to be compared against and was refused: no audio was decoded for it and no detection ran.
+     *  Distinct from [audioShort] (which says the *audio* fell short) and from a window that merely has no
+     *  face track. Additive and defaulted — a row stored before the flag existed reads `false`, which is
+     *  what every such row was. Kept in the stored windows so acceptance 34 can read it back. */
+    @SerialName("no_picture") val noPicture: Boolean = false,
 )
 
 /** One face track inside a window: the evidence the title page folds open. */
@@ -104,6 +110,14 @@ object AvSyncReason {
      *  which is the requirement; that it is measurable on this card is not. */
     const val VRAM = "vram"
 
+    /** FR-317-39 — not one requested window of this file had a picture the sidecar could decode (a
+     *  truncated download is the instance DEB-1216 found). A fact about this file at this size and mtime,
+     *  so a row says so — a re-download or a remux makes it due again. Like [VRAM] it is deliberately NOT
+     *  one of [dev.jellystructure.media.AvSyncService.SKIP_REASONS]: nothing was *decided* about the
+     *  file, and a new pipeline version asks again. Before FR-317-39 such a file stored no row, stayed
+     *  `missing`, and was re-queued by the hourly scan to fail again for ever. */
+    const val UNDECODABLE = "undecodable"
+
     /** The one quiet line the Checks card shows for a skipped file (FR-317-10). */
     fun label(reason: String): String = when (reason) {
         ANIMATION -> "skipped — animation has no lips to follow"
@@ -113,6 +127,7 @@ object AvSyncReason {
         NONFINITE -> "not measured — the measurement produced a number that is not a number"
         SHORT_AUDIO -> "not measured — part of the audio did not decode, so there were no words under the lips"
         VRAM -> "not measured — a frame of this file did not fit in the measuring card's memory"
+        UNDECODABLE -> "not measured — no picture could be decoded at any of the points measured"
         else -> "skipped"
     }
 }
