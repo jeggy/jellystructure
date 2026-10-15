@@ -2179,3 +2179,191 @@ Two rows there are worth saying out loud:
 
 - **25 is restated**: the baseline is **five** files, not two, and it is **met** — every one of the five
   stores a `/2` row, and no tensor-shape or non-finite failure has occurred since the `/2` sidecar came up.
+
+## Amendment (2026-10-15) — a window past the end of a stream refuses the whole file, so FR-317-32's promise stops at exactly zero bytes (FR-317-38, FR-317-39, FR-317-40, DEB-1216)
+
+**DEB-959's `scope=missing` sweep finished at 2026-10-14 23:03:41Z, and five files are still unmeasured.** None
+of them has a `file_av_sync` row, so `missing` finds all five again at every `:30` pass. Each one fails in seconds
+with a 422, and since the sweep ended those five are **100 % of what the `avsync` lane does**: exactly five
+enqueues an hour, ten to eleven failed attempts per file since 10-13. The first amendment of 10-14 filed them as
+*could not decode* inside the ~1 % this phase budgets for, and said seven files cycling against ~210 measurements
+an hour did not earn a mechanism. With the sweep over, that ratio no longer holds.
+
+### What the five actually are, read with ffmpeg's whole stderr (2026-10-15)
+
+Each file was read with the sidecar's own decode commands (CPU path, `-v error`) at the windows the backend asks
+for: 20 %, 50 % and 80 % of the header's duration. The table below gives the result for each window and the
+file's current `file_track_coverage` row (phase 255). The files are identified by the job that last failed on
+them. To resolve a job to its file, use `json_extract(params,'$.filePath')`.
+
+| job | size | stored error | what is in the file | windows that decode | 255 already says |
+|---|---|---|---|---|---|
+| `mj-1792045894-2617` | 327 MB | `Last message repeated 3 times` | the file stops at **4.4 %** of its header's length | none: `File ended prematurely` on all three | kind E, content ends 245 s of 5 603 s; `file_integrity` damage 1 |
+| `mj-1792045894-2618` | 1 346 MB | `no audio decoded from 0:a:1` | a second audio track, `0:a:1`, stops at **58 %** | 20 %, 50 %; at 80 % the video and `0:a:0` decode and `0:a:1` returns zero bytes | kind A on that stream, ends 1 443 s of 2 504 s |
+| `mj-1792045894-2619` | 876 MB | `no audio decoded from 0:a:0` | the **only** audio track stops at **20 %** (999 s of 5 010 s) | video at all three; audio at none, with the 20 % window starting 3 s past its end | kind C on that stream |
+| `mj-1792045894-2620` | 279 MB | `ffmpeg produced no frames` | the header claims 1 677 s and the streams end at 1 294 s (**77 %**) | 20 %, 50 %; zero frames at 80 % | kind E |
+| `mj-1792045894-2621` | 1 744 MB | `ffmpeg produced no frames` | the header claims 3 530 s and the streams end at 2 567 s (**73 %**) | 20 %, 50 %; zero frames at 80 % | kind E |
+
+**Every failure is a decode that returned zero bytes with an empty stderr, or with one that was thrown away.**
+For `-2617`, the stored `Last message repeated 3 times` sits in place of the real line, `File ended
+prematurely`. The other four print nothing at `-v error`: ffmpeg was asked to read past the end of a
+stream, did so, and found nothing there. That rules out two of DEB-1216's three candidates. The pre-measure
+probe reads the header correctly, and the sidecar has no decode bug. Two files are damaged sources: `-2617` is
+4 % of itself, and `-2619` has lost the last 80 % of its only audio track. For the other three, the damage is
+local and the file is measurable.
+
+**The defect is that the sidecar turns *nothing here* into *nothing anywhere*.** `decode_video` raises
+`Undecodable` when a window yields no frame, and `decode_audio` raises it when a window yields no sample, for
+the measured track and for every `others` stream alike. The raise happens inside `fetch`, before FR-317-32's
+per-window test runs. That test already covers these cases in its own words:
+
+- *"a window clamped at the end of the file … a container whose runtime overstates the stream still asks for
+  audio that was never there … and any file whose real length is under its header's"* — that is `-2620` and `-2621`;
+- *"An `others` stream that is itself short in a window contributes `None` for that stream in that window
+  alone"* — that is `-2618`, if `0:a:1` is an `others` stream. If it is the measured track, the case is the next one;
+- *"a file whose damage is local gets a real answer out of its healthy parts. A file whose damage is everywhere
+  reaches `unknown` and says `short_audio`"* — that is `-2619`.
+
+Zero bytes is the limit of *short*, and the guard that predates FR-317-32 catches that limit first. FR-317-32's
+own arithmetic gets it right if it is reached: `audio_feature_count(0)` is `1 // 4 − 5 = −5`, so an empty PCM
+gives `audio_short_frames = v − 1`, which is over the bar for any window with more than three frames in it.
+A 45 s window has 1 125. The video side has
+no such answer. With `v = 0`, `v − a` is negative, the window is *not* short, and detection would run on an
+empty tensor. So the video side needs its own rule, which is FR-317-38's second bullet.
+
+### FR-317-38 — A stream that decodes nothing in one window refuses that window, not the file
+
+In `measure.py`, inside a `/measure` request:
+
+- **Zero audio samples is FR-317-32's short audio, not an error.** `decode_audio` returns the empty PCM and
+  no longer raises. The existing test then refuses the window: `audio_short: true`, with `audio_short_frames`
+  set by the arithmetic above. If the empty stream is an `others` entry, it contributes `None` for that stream
+  in that window only. That is FR-317-32 exactly as written, with nothing new added.
+- **Zero video frames refuses the window too.** After `decode_video`'s CPU fallback has also returned nothing,
+  the window has nothing to measure. It is reported the way FR-317-32 reports a refused window
+  (`offset_frames: null`, `conf: 0.0`, `frames: 0`, `faces: []`), and no detection, crop or lip work is done
+  for it. It carries one additive field, **`no_picture: true`**, so that a row can be told apart from a window
+  with no faces in it. The window's ffmpeg error line goes into the sidecar's log, and the window is not
+  `audio_short`. Its audio is not decoded. This is the one change in the order of `fetch`: the video decode
+  now decides whether the audio decodes run at all.
+- **The file is refused only when no window of the request has a picture.** In that case `/measure` answers
+  422, as it does today, with FR-317-40's message from the first window. A request with at least one window
+  that has a picture answers 200. Its refused windows are refused, FR-317-17's second triple is requested
+  because they are not confident, and the verdict is whatever the healthy windows support.
+- `DecodeStalled`, `MeasureTimeout` and the VRAM path are **unchanged**. A stall is still a fault of the run
+  (FR-317-27), and it is never mistaken for an empty window.
+
+The backend needs nothing new for this. `measureJson` already ignores unknown keys, and a refused window is
+expressed in fields it already reads. A `no_picture` window never becomes confident, so it never moves a
+verdict, and FR-317-32's reason order (`nonfinite`, then `short_audio`, then `no_faces`) is unchanged. A file
+whose only windows with a picture show no faces is honestly `no_faces`.
+
+### FR-317-39 — A file nothing could be decoded from stores a row that says so
+
+FR-317-36's `vram` pattern, for the 422. Today the 422 is `AvSyncRefused`: no row, `missing` again, and the
+hourly re-queue for ever. FR-317-38 narrows what still reaches a 422 to *not one requested window had a
+picture*. That is a fact about this file at this size and mtime, so it should be written down.
+
+- The 422 becomes its own exception (`AvSyncUndecodable`). `check()` stores the row the way `storeVramRow`
+  does (`storeSkip(path, …)` with the current stamp), and the job **succeeds**.
+- New reason **`undecodable`** (`AvSyncReason.UNDECODABLE`), with the label *"not measured — no picture could be
+  decoded at any of the points measured"*. Like `nonfinite`, `short_audio` and `vram`, it is **not** in
+  `SKIP_REASONS`, so a new pipeline version measures the file again. Like `vram`, it reaches
+  `AvSyncVerdict.of` as a reason and reads `UNKNOWN`. Nothing was measured, so there is no verdict for it to
+  override.
+- **The row is current only while size and mtime match** (FR-317-5). A re-download or a remux makes the file
+  due again at the next `:30`. That is how `-2617` gets measured once someone replaces it. The replacement is
+  the owner's call under the media-safety rules, and this phase does not trigger it.
+- **A 422 on FR-317-17's second triple behaves as it does today**: `getOrNull()` keeps the first triple's
+  windows, and no `undecodable` row replaces a reading that exists.
+- The other `AvSyncRefused` sentences are **unchanged**: *no longer on disk*, *changed while it was being
+  measured*, *length could not be read*, *no audio track to measure*, *cannot see … check its mounts*. Each of
+  them is a fact about the moment or the setup, not about the file.
+
+### FR-317-40 — The stored error is ffmpeg's real line
+
+`last_line` picks the last non-blank stderr line. ffmpeg's log de-duplication then ends the tail with
+`Last message repeated N times`, which says nothing on its own. `last_line` skips any line matching
+`^\s*Last message repeated \d+ times?$` and returns the line before it. If nothing else is left, it returns the
+fallback it has today. The 422 branch in `server.py` also prints its error line to the sidecar's log, the way
+the 500 branches already do (`print(f'avsync {e}')`). After FR-317-39 the job succeeds and its `error` column
+stays empty, so that log line is the only place the reason is still readable. Nothing else changes.
+
+### What the five become
+
+| job | after FR-317-38 … 40 |
+|---|---|
+| `-2617` | no window has a picture, so it gets a 422 with *File ended prematurely* and a stored `undecodable` row. It leaves `missing`. |
+| `-2618` | 20 % and 50 % are whole. At 80 % only `0:a:1` is empty, so that window is `None` for that stream if it is an `others` stream, or refused as `audio_short` if it is the measured track. Either way the file gets a verdict or an honest `unknown`. |
+| `-2619` | every window has a picture and no audio, so every window is `audio_short`. The second triple goes the same way, and the file is `unknown` with `short_audio`, which is FR-317-32's *damage everywhere*. |
+| `-2620`, `-2621` | 80 % is `no_picture`. 20 % and 50 % measure, and the second triple's 35 % and 65 % do too (90 % is `no_picture`). The file gets a real verdict. |
+
+### Deployment order — the sidecar first, or both together; never the backend alone
+
+The reverse of FR-317-32's freedom, and for FR-317-36's reason. FR-317-39 on its own, against today's sidecar,
+stores `undecodable` for **all five**. That includes the three that FR-317-38 makes measurable. A row moves a
+file out of `missing`, so those three would be stranded until a ↻ per-title recheck or a `PIPELINE_VERSION`
+bump. FR-317-38 and FR-317-40 on their own, against today's backend, are correct: the three measurable files get
+a verdict at the next `:30`, `-2619` gets its `short_audio` row, and only `-2617` keeps cycling, now with the
+right error line. So the sidecar goes first or with the backend. If the backend goes first by mistake, the
+remedy is ↻ on the three titles after the sidecar lands.
+
+### `PIPELINE_VERSION` stays at 2
+
+The only stored rows this can change are rows whose second triple hit a picture-less window: the failure was
+swallowed by `getOrNull()` and the first triple was kept. On a WAL-complete copy of prod at 2026-10-15 07:30Z,
+**2 of the 5 014 measured rows** sit on a file whose content ends before 90 % of its header. One of those reads
+`unknown`. A bump would re-measure 5 014 files, about a day of the card, to reach that one. The ↻ per-title
+recheck reaches it in seconds.
+
+### Deliberately not specified
+
+- **Placing windows inside 255's `content_end_ms`, or inside the measured track's own `endsMs`.** It would
+  turn `-2617` and `-2619` into readings taken from the first 4 minutes and the first 16 minutes of each file.
+  The cost is a dependency from 317's job path on another phase's table and on that table's freshness, plus a
+  third length to reconcile with the probe and the TMDB runtime. It would buy measurements on two files that
+  are already broken for anyone who plays them, and 255 already flags both. FR-317-38 gets the measurable three
+  without it.
+- **Naming the 255 finding in the `undecodable` line.** FR-317-32 rejected the same join for the same reason:
+  it would join two services' findings on a render path for one sentence. The reason string is the hook for
+  whoever next touches that banner.
+- **Doing anything about the files themselves.** A truncated download and a lost audio track are library
+  problems. They belong to the owner and are covered by media-safety. Phase 255 already reports them on the
+  title page.
+- **Clamping a window's start to the probed stream end.** The header is the only length the backend has
+  without reading the file, and FR-317-31 took header reads *off* this path. A window past the end now costs
+  one empty decode of well under a second, and it answers the question itself.
+
+### Tests (added)
+
+- **Sidecar, CPU only, generated material** (`ffmpeg -f lavfi`, the same way `test_sidecar.py` builds its
+  inputs; no library file):
+  - a Matroska file whose video is 30 s and whose audio is 60 s, asked for windows at 5 s and 48 s. Expect a 200,
+    a 48 s window with `no_picture: true` and `frames: 0`, and a 5 s window that is not refused;
+  - a 60 s file whose only audio track is 10 s, asked for windows at 20 s and 40 s. Expect a 200 with both
+    windows `audio_short: true`, and no exception;
+  - the same file with a second audio stream of full length as the measured track, and the 10 s stream as an
+    `others` entry. Expect the windows to be measured, and `None` for that `others` stream in both;
+  - a file cut with `head -c` to its first few seconds, asked for windows past the cut. Expect a 422 whose
+    `error` is `File ended prematurely`, with no `Last message repeated` in it;
+  - `last_line` on `"…\n[matroska,webm @ 0x…] File ended prematurely\n    Last message repeated 3 times\n"`
+    returns the matroska line, and on a tail made only of repeat lines it returns `''`.
+- **Backend** (`AvSyncVramTest`'s shape):
+  - a 422 stores a row with `reason = undecodable` and the file's current stamp. The job is `success`, and the
+    file is no longer `missing`;
+  - the row is due again after a size or mtime change;
+  - `undecodable` is not in `SKIP_REASONS`, and its reading is `UNKNOWN`;
+  - a 422 on the **second** triple keeps the first triple's windows, and does not store `undecodable`.
+
+### Acceptance (added)
+
+Read from a WAL-complete copy of the prod DB. No device or admin session is needed.
+
+- **33.** Within the first `:30` pass after the sidecar and backend are both up, each of the five paths behind
+  `mj-1792045894-2617` … `-2621` carries a `/2` row. After that, **no `check_av_sync` job is enqueued for any of
+  them** across three consecutive `:30` passes.
+- **34.** `-2620` and `-2621` store at least one window with `no_picture: true` and at least one with a non-null
+  `offset_frames`. `-2619` stores `short_audio`. `-2617` stores `undecodable`. If `-2618`'s `0:a:1` is an
+  `others` stream, its row has a verdict, or `unknown` without `undecodable`.
+- **35.** `-2617`'s last failed job before the deploy carries `Last message repeated`. After the deploy, the sidecar's
+  log line for its 422 carries `File ended prematurely`.
