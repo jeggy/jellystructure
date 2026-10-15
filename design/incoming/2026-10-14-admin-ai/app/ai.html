@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — AI</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="dashboard.css">
+<link rel="stylesheet" href="ai.css">
+<link rel="stylesheet" href="support.css">
+<style>a{color:var(--hi)}a:hover{color:var(--acc-ink)}</style>
+</head>
+<body class="wf-body app-body">
+<!-- Brief 2026-10-14: a new AI page, present only while an AI API key is set (Settings → Connections).
+     First feature: Auto-fetch — paste a page URL + TMDB id, the model investigates the page, confirms it is a
+     series, maps episode titles to S/E, and stores an idempotent fetch script that re-runs on a schedule. -->
+<main class="app-main2 wide" data-page="ai" data-screen-label="AI" data-state="list">
+  <div class="pagebar">
+    <h1>AI</h1>
+    <span class="chk" data-st="list run review fail tmdb" style="margin-left:4px;"><span class="dot ok"></span><span class="badge ok">API key valid · model reachable</span></span>
+    <span class="spacer"></span>
+    <a class="btn sm ghost" href="settings.html#tab=connections" data-st="list run review fail tmdb">Key &amp; model → Settings</a>
+  </div>
+  <!-- support-lane (2026-10-14): Support is a tab here, not a sidebar entry; the AI sidebar entry carries the open-ticket count -->
+  <div class="tk-tabs" id="ai-tabs"><span class="on" data-tab="support">Support <em class="tk-cnt">2</em></span><span data-tab="fetchers">Fetchers</span></div>
+  <div id="ai-support"></div>
+  <div id="ai-fetchers">
+  <div class="ov-fence"><span class="fl">Preview · mockup only</span>
+    <span class="seg" id="af-state"><span class="on" data-s="list">Fetchers</span><span data-s="run">Investigating</span><span data-s="review">Found · review</span><span data-s="fail">Not a series</span><span data-s="tmdb">Not on TMDB yet</span><span data-s="nokey">No AI key</span></span>
+    <span class="tiny muted">“No AI key” also removes the AI entry from the sidebar — the page is absent, not greyed.</span>
+  </div>
+
+  <!-- gate: no key -->
+  <div class="af-gate" data-st="nokey">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3.5c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z"/></svg></div>
+    <h2 style="margin:0 0 8px;font-size:1.3rem;">AI features need an API key</h2>
+    <p class="muted" style="margin:0 0 18px;line-height:1.6;">Add one under Settings → Connections and this page appears in the sidebar. Nothing here runs without it, and no page content is ever sent anywhere until you start an investigation.</p>
+    <a class="btn primary" href="settings.html#tab=connections">Open Connections</a>
+  </div>
+
+  <div data-st="list run review fail tmdb">
+  <p class="page-sub">Auto-fetch turns a web page that hosts a series into a scheduled download. You give it the page and the TMDB id; the model works out how the videos are served, picks the highest quality, checks it really is a series, and writes a script that is safe to run again and again. New episodes usually land here <b>before TMDB knows them</b> — the fetcher still files them by season and episode, and carries the episode name, overview and a still across from the source page so you can add them to TMDB in one go.</p>
+
+  <!-- NOT ON TMDB YET -->
+  <div class="card" id="af-tmdb-card" data-st="list tmdb">
+    <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Not on TMDB yet</h3><span class="badge warn" style="margin-left:8px;" id="af-tq-count">3 episodes</span><span class="spacer"></span><span class="tiny muted">metadata refresh is paused for these until TMDB has them</span></div>
+    <div class="tiny muted" style="margin:6px 0 10px;">Downloaded and placed as S/E from the page, but TMDB has no such episode. Open one: the episode name and overview are taken from the source page as written — when the page has none, that is said plainly, nothing is made up — and a still is picked from the video. Nothing is written to TMDB from here — TMDB does not take submissions by API — you copy it across and mark it submitted.</div>
+    <div id="af-tq"></div>
+  </div>
+
+  <!-- NEW AUTO-FETCHER -->
+  <div class="card" id="af-new" data-st="list run review fail">
+    <div class="row center"><h3 style="margin:0;font-size:1.1rem;">New auto-fetcher</h3><span class="badge info" style="margin-left:8px;">series only</span><span class="spacer"></span><span class="tiny muted">one investigation at a time</span></div>
+    <div class="tiny muted" style="margin:6px 0 14px;">Films, clips and anything that is not a series are refused on purpose — a wrong guess here would file episodes under the wrong title for ever.</div>
+    <div class="af-form">
+      <div class="field"><label>Page URL</label><input class="input mono" id="af-url" value="https://varpid.example.fo/sendingar/royndin" spellcheck="false"><span class="hint">The series' own page — the one that lists its episodes.</span></div>
+      <div class="field"><label>TMDB id</label><input class="input mono" id="af-tmdb" value="9000001" spellcheck="false"><span class="hint">Must resolve to a TV series on TMDB.</span></div>
+      <span class="btn primary" id="af-go" data-st="list fail review">⌕ Investigate</span>
+      <span class="btn" id="af-stop" data-st="run" style="color:var(--ink-soft);">Stop</span>
+    </div>
+    <div class="af-echo" id="af-echo"><span class="ph"></span><span><b>Royndin</b> · TV series · 3 seasons listed on TMDB · Faroese · <a href="series.html">not in library yet</a></span></div>
+
+    <!-- investigation -->
+    <div class="af-steps" data-st="run review fail" id="af-steps">
+      <div class="af-step" data-step="page"><span class="ic">1</span><div>Read the page<div class="fx">13 episode cards · 3 season tabs · player: HLS (m3u8) behind a JSON manifest</div></div><span class="t">2.1s</span></div>
+      <div class="af-step" data-step="videos"><span class="ic">2</span><div>Find how the videos are served<div class="fx">/api/v2/media/{id}/manifest → variants 1080p · 720p · 360p · audio-only → highest kept</div></div><span class="t">4.8s</span></div>
+      <div class="af-step" data-step="series"><span class="ic">3</span><div>Confirm this is a series<div class="fx" id="af-series-fx">13 items with recurring title + season grouping · matches TMDB “Royndin” (3 seasons) · not a film</div></div><span class="t">1.4s</span></div>
+      <div class="af-step" data-step="pattern"><span class="ic">4</span><div>Map episode titles to seasons and episodes<div class="fx">year-in-title → S{YYYY}; “N. partur” or “(N:M)” → E{NN} · 13/13 mapped · 0 ambiguous</div></div><span class="t">3.0s</span></div>
+      <div class="af-step" data-step="script"><span class="ic">5</span><div>Write the fetch script<div class="fx">idempotent: lists remote → diffs against library → downloads only what is missing</div></div><span class="t">2.6s</span></div>
+    </div>
+
+    <!-- failure -->
+    <div class="af-fail" data-st="fail">
+      <h4>Can't set up auto-fetch for this URL</h4>
+      <p>The page could not be identified as a TV series, so nothing was written. Auto-fetch only sets itself up when it is sure — a half-right guess would file files under the wrong title.</p>
+      <div class="why">reason: 1 video found, no recurring title, no season or episode numbering · TMDB 9000001 is a series but the page looks like a single film or clip</div>
+      <div class="row center" style="margin-top:12px;gap:8px;flex-wrap:wrap;">
+        <a class="btn sm" href="https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml&amp;title=Auto-fetch%3A+could+not+identify+series" target="_blank" rel="noopener">File a bug report on GitHub ↗</a>
+        <span class="tiny muted">The report is pre-filled with the URL, the TMDB id and the five steps above — never with the page's content.</span>
+      </div>
+    </div>
+
+    <!-- review -->
+    <div class="af-review" data-st="review">
+      <div>
+        <div class="af-kv">
+          <span class="k">Series</span><span class="v"><b>Royndin</b> · TMDB 9000001 · <span class="af-conf">✓ confirmed series</span></span>
+          <span class="k">Source</span><span class="v mono" style="font-size:.8rem;">varpid.example.fo · HLS manifest · best variant <b>1080p</b></span>
+          <span class="k">Found</span><span class="v"><b>13 episodes</b> across 2022 · 2025 · 2026 — 10 missing from the library, 3 already there · <b>1 not on TMDB yet</b></span>
+          <span class="k">Pattern</span><span class="v">Yearly seasons. The year in the title is the season; “N. partur” or “(N:M)” is the episode.</span>
+        </div>
+        <table class="af-map">
+          <thead><tr><th>Title on page</th><th></th><th>Becomes</th><th>Library</th></tr></thead>
+          <tbody>
+            <tr><td>Royndin 2026 (1:3)</td><td class="arr">→</td><td class="mono">S2026E01</td><td><span class="badge warn">missing</span> <span class="badge" title="TMDB has no S2026E01 yet — it will be queued under Not on TMDB yet after download">not on TMDB</span></td></tr>
+            <tr><td>Royndin 2025: 2.partur (2:3)</td><td class="arr">→</td><td class="mono">S2025E02</td><td><span class="badge warn">missing</span></td></tr>
+            <tr class="have"><td>Royndin 2022: 1. partur</td><td class="arr">→</td><td class="mono">S2022E01</td><td><span class="badge ok">have · skipped</span></td></tr>
+            <tr><td colspan="4" class="tiny muted" style="padding:8px 10px;">10 more · <a href="#" id="af-showall">show all 13 mappings</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="box flat" style="padding:14px 15px;align-self:start;">
+        <div class="field"><label>Name</label><input class="input" id="af-name" value="Royndin"></div>
+        <div class="field"><label>Check for new episodes</label><span class="select" id="af-sched"><span>Daily · 04:00</span></span><span class="hint">Re-running is always safe — the script only downloads what the library is missing.</span></div>
+        <div class="field"><label>Run the first time</label><span class="seg" id="af-first"><span class="on">Now</span><span>At next check</span></span></div>
+        <div class="row center" style="gap:8px;margin-top:4px;"><span class="btn primary" id="af-save">Save auto-fetcher</span><span class="btn sm ghost" id="af-discard">Discard</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FETCHERS -->
+  <div class="card" style="margin-top:16px;" data-st="list run review fail">
+    <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Auto-fetchers</h3><span class="badge" style="margin-left:8px;" id="af-count">3</span><span class="spacer"></span><span class="tiny muted">next check in 5h 12m</span><span class="btn sm ghost" id="af-runall">▶ Run all now</span></div>
+    <div class="tiny muted" style="margin:6px 0 10px;">Each one is a stored script and a schedule. Click a row for the script and its last runs. A run that finds nothing new is the normal outcome, not a failure.</div>
+    <table class="af-tbl">
+      <thead><tr><th>Series</th><th class="hide-m">Pattern</th><th>Schedule</th><th>Last run</th><th class="hide-m">Quality</th><th></th><th></th></tr></thead>
+      <tbody id="af-rows"></tbody>
+    </table>
+  </div>
+  </div>
+</div><!-- /#ai-fetchers -->
+</main>
+<script src="support.js"></script>
+<script src="app-shell.js"></script>
+<script src="ai.js"></script>
+</body>
+</html>

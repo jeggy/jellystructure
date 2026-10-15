@@ -126,3 +126,89 @@ Both questions this round raised went to Bárður, who owns the owner channel, a
   the `No AI key` gate that *removes* the sidebar entry rather than greying it, the narrow
   breakpoint — is **shared chrome**, not Auto-fetch's own. A later round that adds the second
   feature extends that shell; it does not draw a second one.
+
+---
+
+## Amendment — 2026-10-15 — the re-skin landed (DEB-1246)
+
+The round-2 note above says this directory is not reopened or patched, and that a re-skinned page
+arrives as its own lane-A round. **The owner decided otherwise** (DEB-1076, card `ec82f2e1`,
+2026-10-15, verbatim): *"Rannvá swaps the example for a stand-in when she pulls your export, text
+only, and asks once to write it back."* So the re-skin is done in this seat rather than by the
+studio, and it lands here beside the `ai.css` it belongs to instead of in a fourth directory.
+
+**Source:** the owner's export, `~/design-exports/2026-10-15-studio.zip` (10-15 09:43Z). No new
+export and no studio pull. `app/ai.css` in that export hashes `9f0a2144`, byte-identical to the copy
+already committed here, and `app/ai.js` hashes `54e61f40`, byte-identical to what round 2 read — so
+round 3 edited `ai.html` only (`6e44164f` → `3639f188`, +455 B: the `#ai-support` mount, the
+`tk-tabs` switcher and the `support.css` link).
+
+### What changed — text only, by kind
+
+The design, layout, every state, the step list, the review table and the copy structure are exactly
+as drawn. Only the worked example's identifying data moved. **The replaced values are named by kind
+only; this repository is public.**
+
+| kind | replaced with | precedent for the stand-in |
+|---|---|---|
+| series name (12 occurrences across the two files) | `Royndin` | new; verified absent from the library |
+| URL slug, fetcher id, queue-row id | `royndin` | as above |
+| source host | `varpid.example.fo` | `Varpið`, the corpus's Faroese broadcaster — 14 hits in the committed tree |
+| TMDB id (was live, and deep-linked to a real episode-edit page) | `9000001` | placeholder above TMDB's TV id range — resolves to nothing |
+| the source's episode-numbering word, in the pattern string and three page titles | `partur` | the **shipped** Faroese word for *episode* (`up_episode`, and FR-R343-7's `partur`/`partar`) |
+| Faroese episode name | `Útfall` | new; verified absent from the library |
+| that episode's overview — it described the real programme's premise | a stand-in synopsis for `Royndin`, same length and shape | — |
+
+### Why the numbering word had to go too, which round 2 did not call out
+
+Round 2 named four identifying items: the series name, the slug, a Faroese episode name and the
+TMDB id. There was a fifth. The source's episode-numbering word is **in the live library** — 10
+episode titles, 10 paths and 10 filenames on the one matching row — so it is a library string in its
+own right, not a convention the design invented. It also had **zero** occurrences anywhere in this
+repository, which is the same signal that caught the real title: *the name with no precedent is the
+one that is real.* Both of round 2's cleared stand-ins (`Nordvest`, `Babel Fish`) are untouched.
+
+The yearly-season pattern itself stays. It is what steps 3–5, the `Pattern` row, the review table
+and the `season/2026/episode/1` deep link all exist to demonstrate; removing it would be a redesign,
+and this task is text only.
+
+### The gate
+
+| check | result |
+|---|---|
+| every string literal in both files read by hand | done |
+| every media and episode title in the library, word-bounded, against both files | no hit but generic single English words (`from`, `Still`, `Media`, `Class`, …) that are titles somewhere in the library and ordinary UI prose here |
+| every non-ASCII token in both files against the library | `Útfall` — clean |
+| residual check for all six replaced items | none present |
+| `scripts/check-deanonymization.sh` | green |
+| `scripts/check-phases.sh` | green |
+| `scripts/check-css-scoping.sh` | green |
+| `scripts/check-mobile-css.sh` | green |
+| canvas fences, `ai.html` and `ai.js` | clean |
+| canvas fences, `ai.css` | **one violation — pre-existing, see below** |
+
+The library was read from a WAL-consistent copy (`db`, `-wal` and `-shm` all copied), opened
+read-only, and 591 media rows were checked. `Afsnit 7` / `Afsnit 8` are real library episode titles
+and do appear here, on `Nordvest`: they are the generic Danish word for *episode* plus a number,
+they name no programme, and they carry the design's own point — the source-incomplete row that has
+no episode name to show. Round 2 landed them and its gate cleared them; left as drawn.
+
+### Open at promotion, not fixed here
+
+- **`ai.css` breaks the screenshot tool.** `.af-step.run .ic::after` spins on
+  `animation: af-spin .8s linear infinite`, and an infinite animation is a canvas fence. It is round
+  2's file, landed before this task and byte-identical in the export, and the repo guards do not
+  look for this. Replacing a drawn loading state is a design decision, so it is reported, not
+  redrawn.
+- **`Activity › Support log` survives a missing AI key, and under the owner's rule it must not.**
+  `app-shell.js` gates the *sidebar entry* correctly (`needsAiKey && !aiKeySet()`, lines 103 and
+  244), but the `Support log` segment lives inside `activity.html`'s own `viewseg` switcher
+  (line 140) and that switcher has no key gate at all — `activity.html` never mentions `aiKeySet`.
+  Noted for promotion as instructed; not redrawn.
+- **The no-key state for the support lane is not drawn**, and the paste block once promised for it
+  is dropped (owner, 2026-10-15).
+- **The composer carries no "an AI reads this" line** — checked across round 3's whole Ravilo half
+  and found absent, so FR-321-11 needs nothing removed. The `AI Agent` label is present and is the
+  only disclosure, per `ad7505a5`.
+- **Still not promoted.** `ai.css` needs its `SCOPED_FILES` row and wrapper class, as round 2 noted,
+  and promotion is a separate hand-written commit. **No phase number here either.**
