@@ -3,11 +3,11 @@
 > Production bug, 2026-10-02: a Mac signed in to Jellyfin again, and from then on every Chromecast, Nest Hub and
 > speaker it had once enrolled refused to play — for every sender, silently, until re-paired by hand.
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `f9618d0f`. Number given by the coordinator (admin
-specs top at 299). The receiver page (`ravilo-cast`) is served by this backend (`/cast/`), so its half ships here too;
-no installed app changes.
+Written 2026-10-02 (dev-authored), against `main` `f9618d0f`; build notes at the end. The receiver page
+(`ravilo-cast`) is served by this backend (`/cast/`), so its half ships here too; no installed app changes. Amended
+2026-10-15 (FR-300-10, below): a token check in flight can no longer undo a forget.
 
 **Amends** phase 218 (FR-218-9: the receiver enrols *once per receiver*; FR-218-12: the receiver's row holds "the
 enrolling user's" Jellyfin token, which is a copy of one sender's token with that sender's lifetime), and R245/R324's
@@ -189,3 +189,65 @@ sign-in from device …` or, with the new receiver page, `Cast receiver cast-…
 (2) a music cast from the Mac to Stue plays; (3) a cast from the Pixel to Stue plays and the log says re-enrolled;
 (4) sign the Mac in again, cast from the Pixel: it plays, and the log has `receiver(s) of user … followed device …`;
 (5) the Jellyfin dashboard still controls the speaker (299) after (4).
+
+## Amendment (2026-10-15) — a token check in flight cannot undo a forget
+
+CI, 2026-10-14: `Publish` on `main` @ `ab473b93` (run 38595367408, job `ci / unit`) failed
+`ReceiverTokenRefreshIntegrationTest` once; the next run on `3b483e31` passed with nothing in between touching `tv/`.
+DEB-1190 called it flaky and moved on; the CI watch (DEB-1212) filed it as DEB-1217. The uploaded test report has the
+message the console line dropped:
+
+```
+kotlin.AssertionError: healed from the Pixel's sign-in. Expected <jf-pixel-…>, actual <jf-mac2-…>.
+```
+
+That is the FR-300-4 step: the test revokes A's token in the fake Jellyfin, calls `forgetTokenValidity` on it, and the
+receiver's next check still answered **VALID** for the revoked token, from the cache. The test ran 0.73 s and logged
+exactly one rejection line, so this check never reached Jellyfin (a rejection costs two probes and a 500 ms pause,
+FR-194-5): a positive verdict for the revoked token was back in `tokenValidUntil` after the forget.
+
+**The race, read from the code at `188154f2`.** `cachedTokenCheck` (`PlaybackService.kt`) reads the cache under
+`tokenCacheMutex`, releases it, probes Jellyfin, and takes the mutex again to store what the probe said. Nothing
+connects the store to the read: a probe that started **before** a revocation and answered 200 is stored **after**
+`forgetTokenValidity`, and the dead token is trusted for `TOKEN_VALID_TTL_MS` (five minutes). In the test the
+concurrent prober is the receiver's session bridge: the step before ("A casts again") hands the receiver A's token,
+the listener restarts the bridge (FR-300-6), and the restarted loop's `tvToken` runs on its own coroutine, after
+`cancelAndJoin` of the old loop — free to be mid-probe when the test revokes. The log's last line is that restart with
+no *connected* after it.
+
+**This is a product race, not only a test one.** In production a re-sign-in reaches Jellyfin before it reaches
+`loginDevice`, so FR-300-3's forget of the old token can land while a bridge, a heartbeat or a playback start is
+mid-probe on it; the old token is then served for five minutes and FR-300-4's heal never runs, because the check
+never says *rejected*. FR-300-3 and FR-300-5 promise the old token "is checked again before it is trusted"; today
+that holds only when nothing else is checking it at the same moment.
+
+### FR-300-10 — A verdict older than a forget is not stored
+
+1. **A forget wins over every probe that began before it.** `cachedTokenCheck` remembers when its probe began (under
+   `tokenCacheMutex`, at the cache miss). Its **VALID** verdict is stored only if no `forgetTokenValidity` of that
+   token happened since. Otherwise the verdict is still **returned** to that caller — it is what Jellyfin said for its
+   request — but not cached, so the next caller probes again.
+2. **A newer rejection wins over an older acceptance.** A VALID verdict is likewise not stored, and does not clear the
+   negative entry, when a REJECTED verdict for the same token was recorded after its probe began. (Two probes
+   straddling the revocation, the 401 landing first: today the older 200 overwrites it.)
+3. **Bounded.** Whatever records "forgotten / rejected at" per token is pruned: no probe outlives
+   `TOKEN_CHECK_TIMEOUT_MS` twice plus FR-194-5's pause, so an entry older than that can go. No change to the TTLs, the
+   negative cache, FR-194's three states or the heal.
+4. **Recommended build:** a monotonic counter under `tokenCacheMutex`; the slow path takes a ticket at the miss;
+   `forgetTokenValidity` and a REJECTED store record the counter against the token; a VALID store compares. Sjúrður's
+   call if something smaller does the same.
+
+### Tests
+
+- **New, deterministic — `TokenCheckRaceTest`** (`linuxX64Test`): a fake Jellyfin over the loopback whose
+  `/Users/{id}` holds its answer on a gate the test opens. (a) Start a check of token T (live) and wait until the fake
+  has the request; revoke T and `forgetTokenValidity(T)`; open the gate — the in-flight check returns VALID; the next
+  check reaches the fake and returns REJECTED. (b) Two checks of T straddling a revocation, the 401 completing first:
+  the next check is REJECTED from the cache. (c) No forget: a VALID verdict is cached exactly as before (the next
+  check does not reach the fake). On `188154f2`, (a) and (b) must fail every run, not sometimes.
+- **`ReceiverTokenRefreshIntegrationTest` stops staging a revocation under a restart it caused.** After "A casts
+  again", it waits until the bridge has opened on A's token **a second time** (count the opens; `opened()` is already
+  true from the first) before the FR-300-4 step revokes it. The step models a receiver with no hand-off in flight,
+  so the test must not race on one; the race itself is the new test's job.
+- **Done means:** both green, and `ReceiverTokenRefreshIntegrationTest` run 50 times in a row from the linked
+  `test.kexe` (`--ktest_filter`) with no failure; the count goes in the build notes.
