@@ -195,7 +195,8 @@ jobs:
           echo "APP=$APP" >> "$GITHUB_ENV"
           echo "Swift library: $LIB"
           # R386 (FR-R386-1) — Sparkle is in the bundle, the update key is in its Info.plist, and there is no feed URL.
-          SPARKLE_DIR=$(echo "$PWD"/ravilo-desktop/build/sparkle/Sparkle-*)
+          SPARKLE_DIR=$(echo "$PWD"/ravilo-desktop/build/sparkle/Sparkle-*/)   # trailing slash: the directory, not the .tar.xz beside it
+          SPARKLE_DIR=${SPARKLE_DIR%/}
           test -d "$APP/Contents/Frameworks/Sparkle.framework" || { echo "::error::Sparkle.framework is not in Contents/Frameworks (R386 FR-R386-1)"; exit 1; }
           test -x "$SPARKLE_DIR/bin/sign_update" || { echo "::error::Sparkle's sign_update was not fetched into $SPARKLE_DIR"; exit 1; }
           PLIST="$APP/Contents/Info.plist"
