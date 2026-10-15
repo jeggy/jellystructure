@@ -11,15 +11,15 @@ changes with it.
 | [`plan.md`](plan.md) | The **"how"** — source layout, data models, API routes, UI pages, WebSocket protocol, scanner flow. |
 | [`research-reports/`](research-reports/) | Standalone **research & investigation reports** — dated deep dives behind a decision or future phase. Research, not spec; may go stale. See the [index](research-reports/README.md). |
 
-**Phase status lives in the repo-root [`STATUS.md`](../STATUS.md)** — the single source of truth for
-both products (admin numeric + Ravilo `R…`). A spec's file location or body no longer encodes status.
+**Phase status lives only on the board** — each phase's task is the single source of truth for both
+products (admin numeric + Ravilo `R…`). A spec's file location or body does not encode status.
 
 ## Reading order
-1. [`../STATUS.md`](../STATUS.md) — what's done, what's next.
+1. The board — what's done, what's next.
 2. The relevant phase spec in [`requirements/`](requirements/).
 3. [`plan.md`](plan.md) — where the relevant code lives.
 4. [`constitution.md`](constitution.md) — the rules that constrain any change.
 
 Project overview and build commands live in the repo-root [`README.md`](../README.md); the rules for
-working in this repo — including that phase numbers come from `STATUS.md` and never from prose — are
+working in this repo — including that phase numbers come from the board and never from prose — are
 in [`CLAUDE.md`](../CLAUDE.md).

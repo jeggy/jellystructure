@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
-      - name: Spec/STATUS consistency
+      - name: Spec numbering consistency
         run: ./scripts/check-phases.sh
       - name: In-place media writers ask the seeding guard (315)
         run: ./scripts/check-inplace-guard.sh

@@ -150,12 +150,12 @@ rejected because its canvas rendering breaks accessibility and CSS.
 ## How the project is developed
 
 Every change starts as a numbered spec under `specs/requirements/` (jellystructure) or
-`specs/ravilo/requirements/` (Ravilo), including bug fixes to already-shipped phases. `STATUS.md` is
-the only place a phase's status lives. `specs/constitution.md` holds the architectural rules that
+`specs/ravilo/requirements/` (Ravilo), including bug fixes to already-shipped phases. A phase's
+board task is the only place its status lives. `specs/constitution.md` holds the architectural rules that
 override everything else; `specs/plan.md` describes how the system is built today.
 
-`scripts/check-phases.sh` fails if a spec file has no row in `STATUS.md` or a row points at a
-missing spec file. The other scripts check CSS scoping, mobile CSS, and that the hand-written
+`scripts/check-phases.sh` fails if a spec filename does not parse or two spec files share a phase
+number. The other scripts check CSS scoping, mobile CSS, and that the hand-written
 language-to-country-code tables in the Ravilo clients agree with each other.
 
 Dated research reports live in `specs/research-reports/` — investigations behind a decision, not

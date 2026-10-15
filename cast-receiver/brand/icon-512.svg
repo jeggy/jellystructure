@@ -4,7 +4,7 @@
 
   Why it lives here and not under design/: the only vector master of the Ravilo mark is
   design/ravilo/assets/brand/ravilo-mark.svg, and `design/` is overwritten wholesale by the "updated
-  designs" sync (STATUS.md's standing warning — the same class of incident as specs/research-reports/).
+  designs" sync (the same class of incident as specs/research-reports/).
   A build step that read from there is a build the next design export could break silently, at image
   build time, in CI. So the mark is copied here, and the PNG beside it is COMMITTED.
 

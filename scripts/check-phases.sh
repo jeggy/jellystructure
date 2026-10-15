@@ -1,26 +1,45 @@
 #!/usr/bin/env bash
-# Reconcile /STATUS.md (the single phase-status overview) against the spec files.
-# Run after every "updated designs" sync. Exits non-zero on any mismatch.
+# Guard the spec tree's phase numbering. Exits non-zero on any mismatch.
 #
-#   ORPHAN FILE → a spec exists with no row in STATUS.md (newly synced → add a row)
-#   DEAD ROW    → STATUS.md links a spec that no longer exists (deleted by sync → investigate)
+# Phase status lives only on the board, which CI on GitHub cannot reach, so this checks what the
+# repository itself holds:
+#
+#   BAD NAME  → a phase-*.md file whose name is not phase-<N>-… (admin) or phase-R<N>-… (Ravilo)
+#   DUPLICATE → two files in one directory share a phase number
+#
+# <N> is the digits plus an optional lower-case letter suffix (314c is its own phase).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-STATUS="STATUS.md"
 fail=0
+total=0
 
-# 1) every spec file must be referenced in STATUS.md
-while IFS= read -r f; do
-  grep -qF "($f)" "$STATUS" || { echo "ORPHAN FILE  $f  (no row in $STATUS)"; fail=1; }
-done < <(find specs/requirements specs/ravilo/requirements -maxdepth 1 -name 'phase-*.md' | sort)
+# check_dir <directory> <prefix> — <prefix> is "" for admin specs and "R" for Ravilo specs.
+check_dir() {
+  local dir="$1" prefix="$2" f base num
+  local -A seen=()
+  while IFS= read -r f; do
+    base="$(basename "$f")"
+    total=$((total + 1))
+    if [[ ! "$base" =~ ^phase-${prefix}([0-9]+[a-z]?)-.+\.md$ ]]; then
+      echo "BAD NAME   $f  (expected phase-${prefix}<N>-<slug>.md)"
+      fail=1
+      continue
+    fi
+    num="${BASH_REMATCH[1]}"
+    if [[ -n "${seen[$num]:-}" ]]; then
+      echo "DUPLICATE  ${prefix}${num}  $f  (also ${seen[$num]})"
+      fail=1
+    else
+      seen[$num]="$f"
+    fi
+  done < <(find "$dir" -maxdepth 1 -name 'phase-*.md' | sort)
+}
 
-# 2) every spec link in STATUS.md must resolve to a real file
-while IFS= read -r f; do
-  [ -f "$f" ] || { echo "DEAD ROW     $f  (linked in $STATUS, file missing)"; fail=1; }
-done < <(grep -oE '\(specs/[^)]*phase-[^)]*\.md\)' "$STATUS" | tr -d '()' | sort -u)
+check_dir specs/requirements ""
+check_dir specs/ravilo/requirements "R"
 
 if [ "$fail" -eq 0 ]; then
-  echo "OK — $(grep -cE '^\| ' "$STATUS") rows; every spec file has a row and every row resolves."
+  echo "OK — $total spec files; every name parses and no phase number is used twice."
 fi
 exit "$fail"

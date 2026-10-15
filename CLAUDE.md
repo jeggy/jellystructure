@@ -3,10 +3,10 @@
 Orientation for anyone — human or agent — working in this repository.
 
 Deliberately short. The long-lived detail lives in files that are maintained for their own sake:
-[`README.md`](README.md) for what the product is and how to build it, [`STATUS.md`](STATUS.md) for
-phase status, [`specs/`](specs/) for requirements. **This file holds only the rules that are not
-obvious from the code, and no facts that go stale.** If you are tempted to add a status, a count or
-a phase number here, add it to `STATUS.md` instead.
+[`README.md`](README.md) for what the product is and how to build it, [`specs/`](specs/) for
+requirements, and the board for phase status. **This file holds only the rules that are not obvious
+from the code, and no facts that go stale.** If you are tempted to add a status, a count or a phase
+number here, it belongs on the phase's board task.
 
 ## What this is
 
@@ -18,11 +18,11 @@ repository layout and the build commands. Read it first.
 
 ## The rules that matter
 
-**Phase numbers come from [`STATUS.md`](STATUS.md) and the board — never from prose.** Every number
-0–N and R0–RN is a row there; the next free number is the one after the highest row, and finding it
-is a query, not a recollection. Three separate renumbering collisions in October 2026 all began with
+**Phase numbers come from the board — never from prose.** Every number 0–N and R0–RN is a task
+there; the next free number is the one after the highest, and finding it is a query, not a
+recollection. Bárður allocates. Three separate renumbering collisions in October 2026 all began with
 someone reading a free number out of a prose summary that had gone stale. No document in this repo
-other than `STATUS.md` is allowed to claim what is free.
+is allowed to claim what is free.
 
 **Every change in behaviour starts as a spec.** A new behaviour gets a new numbered file under
 [`specs/requirements/`](specs/requirements/) (backend/admin) or
@@ -30,7 +30,7 @@ other than `STATUS.md` is allowed to claim what is free.
 shipped phase promises gets a **dated amendment inside that phase's existing spec**, written before
 the Kotlin. A fix that only makes the code do what the spec already says needs no amendment: the
 commit names the FR it restores (owner decision, 2026-10-15).
-`STATUS.md` is the only place a status lives — not the spec body, not a comment.
+The phase's board task is the only place a status lives — not the spec body, not a comment.
 
 **A spec body that still carries a `## Status` heading is fixed the next time that spec is touched,
 never in a sweep.** Roughly half the spec tree predates the rule above. When you open one of those
@@ -91,9 +91,10 @@ calls, every time.
 
 ## Consistency checks
 
-[`scripts/`](scripts/) holds the guards — `check-phases.sh` reconciles every spec file against a
-`STATUS.md` row in both directions, and the rest check CSS scoping, mobile CSS, the hand-written
-language/country tables, de-anonymisation and more. Run the ones that touch what you changed.
+[`scripts/`](scripts/) holds the guards — `check-phases.sh` checks that every spec filename parses
+and no phase number is used twice (it cannot reach the board, so it says nothing about status), and
+the rest check CSS scoping, mobile CSS, the hand-written language/country tables, de-anonymisation
+and more. Run the ones that touch what you changed.
 
 ## Historical note
 

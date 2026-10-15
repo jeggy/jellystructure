@@ -13,7 +13,7 @@ the first full mirror went through on the same day (DEB-792), so lane A's transp
 `DesignSync` pull — with one exception that is now a standing fact rather than a gap: **binaries and
 anything over 256 KiB travel by an owner-exported zip, never by the pull.**
 
-`STATUS.md` holds phase status and nothing here does. [`specs/constitution.md`](../specs/constitution.md)
+A phase's board task holds its status and nothing here does. [`specs/constitution.md`](../specs/constitution.md)
 wins on conflict.
 
 ## What is true today
@@ -123,7 +123,7 @@ Works today; the only machine in the loop is the owner's clipboard.
    the twelve production files is **hand-edited to add the new rules — never a file copy.** Every one
    of the nineteen wipes was a wholesale overwrite of a file that had hand fixes in it.
 7. **Then spec, then number, then build.** Rannvá writes the spec or the dated amendment; the number
-   comes from `STATUS.md` and the board **at adoption, not at triage** — a number allocated while the
+   comes from the board **at adoption, not at triage** — a number allocated while the
    owner is still deciding is a collision waiting to happen. Tróndur routes: Sjúrður for every line of
    product code — backend, admin and the Ravilo clients alike — and the test plan onto the QA queue
    without naming a seat.
@@ -301,7 +301,7 @@ Four steps, one path, no deletes. The push is only finished when step 4 has matc
    shipped behaviour gets a dated amendment inside that phase's spec. The unit of a task is *what a
    viewer would notice as a change*: not one task per screen, not one per component.
 5. **Phase numbers never leave the repo, and are allocated at adoption.** The design project is given
-   excerpts and never a number; the only authority on a free number is `STATUS.md` and the board.
+   excerpts and never a number; the only authority on a free number is the board.
 6. **`STATUS.md` and `specs/` are never mirrored out.** They were deleted from the design project on
    2026-10-12 and nothing by either name goes back.
 7. **The repository is public.** No library title, no real host, no address, no key — in a mockup, a

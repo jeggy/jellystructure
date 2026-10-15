@@ -297,7 +297,7 @@ What this directive does **not** move:
   the Jellyfin library, never a TV or a phone.
 
 The delta is **measured, never summarised**: `git rev-list <prod sha>..<main sha>`, with the code
-commits separated from the spec and `STATUS.md` commits, and `/api/health` read for what prod is
+commits separated from the spec commits, and `/api/health` read for what prod is
 actually running — the image tag and `/health` have both lied before.
 
 ### QA may induce a reversible state on prod without asking
