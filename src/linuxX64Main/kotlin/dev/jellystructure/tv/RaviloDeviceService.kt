@@ -342,8 +342,18 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
      *  clear — a proxy that occasionally fails to set the header must not un-group an already-placed TV. */
     fun recordAddress(deviceId: String, jellyfinUserId: String, address: String?) {
         val a = address?.trim()?.ifBlank { null } ?: return
-        val before = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId).executeAsOneOrNull()?.last_public_address
+        val row = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId).executeAsOneOrNull()
+        val before = row?.last_public_address
         db.raviloDeviceQueries.updatePublicAddress(last_public_address = a, device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+        // FR-236-6 — `validateDeviceToken` serves DeviceData from tokenCache for five minutes, so a row written only
+        // in the DB left a fresh sign-in (or a phone that moved networks) on its login-time address: `isNearby` saw
+        // none and every nearby-only place was skipped until the entry expired. Patch the cached entry in place — an
+        // eviction would cost the next request a SELECT, and a miss racing this write could re-cache the old row.
+        row?.let { r ->
+            tokenCache.update(r.device_token) { cur ->
+                if (cur != null && cur.data.lastPublicAddress != a) cur.copy(data = cur.data.copy(lastPublicAddress = a)) else cur
+            }
+        }
         if (before != a) runCatching { onAddressChanged?.invoke(deviceId) }   // R368 owner decision 2
     }
 
