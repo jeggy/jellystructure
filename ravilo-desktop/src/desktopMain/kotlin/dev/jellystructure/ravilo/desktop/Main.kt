@@ -149,6 +149,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
             window.minimumSize = Dimension(360, 600)   // R337 FR-R337-11 (was 960 × 600): a window can reach the phone layout
             DesktopWindow.awtWindow = window
             TestDriver.start(window)   // off unless RAVILO_TESTDRIVER names a directory
+            FrameCounter.install(window)   // R383 — off unless -Dravilo.debug.frames: frames drawn per minute, to the log
             DesktopWindow.setFullScreenHandler = ::setFullScreen
             // R337 — what the frame the app draws asks of the window.
             DesktopWindow.closeHandler = { SwingUtilities.invokeLater { close() } }

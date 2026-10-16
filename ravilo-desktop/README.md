@@ -55,6 +55,14 @@ Off unless asked for; input commands refuse while the person at the computer use
 commands are listed at the top of `TestDriver.kt`. `w2` before a command points it at the Settings window while that is open
 (`w2 shot settings`).
 
+## What it costs on a Mac (R383)
+
+`scripts/check-mac-resources.sh <idle|hidden|cast|music|film>` samples the running Ravilo for 30 s — CPU, footprint,
+threads, idle wakeups — against FR-R383-2's budget for that state, and exits 1 on a breach. Start the app with
+`-Dravilo.debug.frames` (or `RAVILO_DEBUG_FRAMES=1`) and it also logs, once a minute, how many frames Skia drew
+(`~/Library/Logs/Ravilo/ravilo.log`, `FrameCounter.kt`): a hidden window should read 0. `--histogram` adds
+`jcmd <pid> GC.class_histogram`; the release's runtime has no `jdk.jfr`, so a JDK 21 on the Mac supplies `jcmd`.
+
 ## The signing certificate (once, on a Mac)
 
 Every release is signed with **one** self-signed certificate of our own (R331 FR-R331-3). It is what lets a Mac
