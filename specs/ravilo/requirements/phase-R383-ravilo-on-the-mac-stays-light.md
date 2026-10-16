@@ -193,3 +193,46 @@ ships together with the fix for whatever grows, never before it.
 3. **Frames and timers** (FR-R383-3, FR-R383-5). M.
 4. **The About-window figures** (FR-R383-6, its client half) and the remaining FR-R383-7 tests. S–M.
 5. QA re-measures against FR-R383-2 (acceptance 1–2).
+
+## Build notes
+
+### 2026-10-16 — the first Mac measurement (FR-R383-1; QA row DEB-1466)
+
+Measured on a 32 GiB Apple-silicon MacBook, macOS 27, the public v1.52 (A) and `main` at `v1.52-31-g411350c6` with the
+frame counter (B), 120 Hz display. Numbers are as the QA verdict reported them; `idlew` is **not calibrated** against
+Activity Monitor (nobody could see the screen).
+
+| State | A CPU / footprint | B CPU / footprint / frames/s |
+|---|---|---|
+| Idle, Home | 41 % / 606 MB | 58 % / 795 MB / 119 |
+| Hidden (`open -j`) | 10 % / 671 MB | 7 % / 702 MB / 9–16 |
+| Casting, 15 min | 107 % / 3.0 GB (window on Songs) · 44 % / 1.2 GB (window on Listen) | 39–42 % / 0.9–1.0 GB / 120 |
+| Casting, 60 min | 106 % / 3.1 GB | 41 % / 1.05 GB / 120 |
+| 4K HEVC HDR10 film | 49 % / 4.4 GB | 49 % / 5.7 GB / 120 |
+| Idle after the film | 45 % / 1.25 GB | 41 % / 1.04 GB / 120 |
+
+Every sample breaches FR-R383-2. What the evidence says:
+
+1. **No leak in 60 minutes on either build** (live Java heap +1 MB over 45 minutes of casting; 12+ song hand-offs
+   without error). The 1.50 `OutOfMemoryError` is not reproduced.
+2. **The Songs list composed the whole library.** `listChip` put every loaded row in one lazy item and each last row's
+   `more()` paged in the next page, so 6 000 songs meant 164 k layout nodes, 460 MB of live heap, 3 GB footprint and
+   106 % CPU. That, not a per-song leak, is the evidence-backed cause of the heap running out. Fixed first (below).
+3. **The window draws at the display rate whenever anything on screen moves** (≈ 120 frames/s ≈ 40–58 % of a core), and
+   a ⌘H / `open -j` hide never reaches `DesktopWindow` (`shown` stays `true`), so a hidden, casting app still draws 120/s.
+   FR-R383-3 is unbuilt; that is slice 3.
+4. **4K playback is native memory** (AVFoundation/IOSurface/Skia: 4.4–5.7 GB footprint against a 48–65 MB Java heap) and
+   1.0–1.25 GB stays after the film. FR-R383-2's 1.5 GB film row cannot be met by the Java side; if it stays in
+   the table it is the owner's number to change after the frame work.
+5. **Idle wakeups on B are 140–350/s from the first cast on**, against 0.6–35/s on A, unexplained by the frame counter.
+   To be chased in slice 3 (FR-R383-5), not assumed.
+
+### 2026-10-16 — slice 2 as built (FR-R383-4)
+
+- The Songs / Albums / Artists lists are one lazy item per row (a grid row for the cards), so only the rows on screen
+  compose and the next page is asked for when the last loaded row is reached (`BrowseListIsLazyTest`, in CI).
+- `-Xmx1g` in `compose.desktop.application.jvmArgs` (shared with the Linux build). It ships with the fix above, never
+  before it. Image decode size is left as is: Coil's `AsyncImage` sizes the decode to its slot, and images are not among
+  the consumers the measurement names.
+- Not built yet: frames and hidden detection (slice 3), the idle-wakeup regression, the About figures and the 100-song
+  queue test (slice 4). The re-measure (acceptance 1–2) follows slice 3.
