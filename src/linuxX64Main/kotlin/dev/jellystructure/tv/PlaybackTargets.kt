@@ -293,8 +293,13 @@ class SessionStarter(
         val cur = items.getOrNull(req.index) ?: items.first()
         val music = rec.kind == SessionKind.MUSIC
         val tracks = if (music) items.map { it.id }.mapNotNull { trackItem(it) } else emptyList()
+        // FR-R378-3 — the receiver enrols under the name the LOAD gives it, and its redeem names the session's place: a
+        // relayed launch carries the speaker's own name (a move's is `movingTo`, not yet the row's place), or the session
+        // read *Chromecast* — the enrolment default — instead of the room.
+        val place = (rec.movingTo ?: rec.targetName).trim().takeIf { it.isNotEmpty() && it != castId }
         val load = CastLoadData(
             serverUrl = serverUrl(), code = code.code, itemId = cur.id, title = cur.title ?: "", kicker = cur.subtitle,
+            deviceName = place,
             artUrl = cur.artwork?.let { if (it.startsWith("http")) it else serverUrl().trimEnd('/') + it },
             positionMs = req.startMs, tracks = tracks, currentIndex = if (music) req.index else -1,
             repeat = req.repeat, shuffle = req.shuffle, sessionId = rec.id,

@@ -55,6 +55,23 @@ class PlaybackStartIntegrationTest {
         assertTrue("\"load_here\":true" !in r.body, r.body)
     }
 
+    @Test fun `a relayed speaker launch carries the speaker's own name so the receiver does not enrol as Chromecast`() = loopback("start-relay-name") {
+        // R378 acceptance 2 (found live 2026-10-12): the session's place read *Chromecast* — the receiver's enrolment
+        // default — because the relayed LOAD had no device_name and the redeem overwrote the row's place with it.
+        val web = device("web-a", "u-anna", "web", "web")
+        val phone = device("phone-a", "u-anna", "phone", "phone")
+        open(web, "sessions,session_control", plays = "video")
+        val ps = open(phone, "sessions,session_control", plays = "video,music,book")
+        kinds["song-1"] = SessionKind.MUSIC
+        ps.out.send("""{"type":"cast_devices_seen","devices":[{"cast_device_id":"c-office","name":"Office","kind":"speaker"}]}""")
+        waitFor("the reach is reported") { starter.reach.entries().isNotEmpty() }
+        assertEquals(200, post("/tv/playback/sessions", """{"target_id":"cast:c-office","kind":"music","items":["song-1"]}""", web).status)
+        waitFor("the phone is asked to launch it") { ps.frames("cast_relay_load").any { "c-office" in it } }
+        val frame = ps.frames("cast_relay_load").single()
+        assertTrue("\"device_name\":\"Office\"" in frame, frame)
+        assertEquals("Office", sessions.all().single { it.live }.targetName)
+    }
+
     @Test fun `with no relay app online the speaker start is refused as not reachable`() = loopback("start-norelay") {
         val web = device("web-a", "u-anna", "web", "web")
         open(web, "sessions,session_control", plays = "video")

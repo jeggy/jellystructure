@@ -53,6 +53,8 @@ class SessionMoveIntegrationTest {
         val r = post("/tv/playback/sessions/$id/move", """{"target_id":"cast:c-office"}""", web)
         assertEquals(200, r.status, r.body)
         waitFor("the phone relays the launch for the same session") { ps.frames("cast_relay_load").any { id in it && "c-office" in it } }
+        // R378 — the relayed LOAD names the speaker (the move's `movingTo`, not the old place), so the receiver's redeem keeps it.
+        assertTrue(ps.frames("cast_relay_load").single { id in it }.contains("\"device_name\":\"Office\""))
     }
 
     @Test fun `the admin lists the owner's places and moves the session on the owner's behalf`() = loopback("move-admin") {
