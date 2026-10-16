@@ -5,10 +5,9 @@
 > D1 **A**; Q1 yes · Q2 yes · **Q3 yes, the B-sides play with *Play album + extras*** · Q4 no number ·
 > **Q5 the better file first, wherever it is from** · Q6 after the version chips · Q7 folded.
 
-## Status
+## Scope
 
-`✓ Built 2026-10-05` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · built (see Build notes) · pending export. Written
-2026-10-04 (design-authored) from
+Written 2026-10-04 (design-authored) from
 `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` (owner decided §A on 10-03 and §G on 10-04) and the
 mockups built from it:
 - `design/app/editions.js` + `editions.css` (`ed-*`, `window.Editions`), loaded by `album.html`, `library.html`,
@@ -16,8 +15,7 @@ mockups built from it:
 - the round-1 canvas `design/app/Music Editions - Directions.html` (+ `editions-directions.js`), where D1 = **A** is
   picked and B/C are kept as declined
 
-The number was checked free on `main` (tree `fdbc126`, admin tops at 304 with our playback-sessions spec) on
-2026-10-04. The brief's own "303 / R361" were taken the same day. **Ravilo's side is R373.**
+**Ravilo's side is R373.** Amended 2026-10-16 on the owner's answers on DEB-1487 (see the end).
 
 **Builds on** 275 (the music library), 276 (MusicBrainz: the release match, the recording match, `agrees`/`manual`),
 278 (the admin UI: album, artist, Library → Music), 285 (the Dashboard's row grammar) and 292 (song versions — a
@@ -59,7 +57,9 @@ Singles, EPs, compilations and box sets never get one (a single here has 14 rele
 
 **FR-305-3 — Extras.** A held track whose recording is not on the official tracklist is an **extra**. Extras stay in
 the library, in every count of files, and are shown — never hidden. An extra in the middle of the held edition
-(track 12 of 26) moves down to the extras section. `first_release` is filled from MusicBrainz.
+(track 12 of 26) moves down to the extras section. `first_release` is filled from MusicBrainz. *Amended 2026-10-16:
+a held version of an official song the files otherwise lack stands in that song's row, and an album where no held
+file lands on an official row is today's plain list (FR-305-3a, FR-305-3b, at the end).*
 
 **FR-305-4 — The owner's pick.** *Change…* lists the album's pressings (Find match…'s list: country · date · label ·
 format · tracks · *against the official*) with **Use as the official album** on each pressing whose extra songs are in
@@ -646,3 +646,82 @@ otherwise the album is today's plain list (FR-305-5) and none of its files is an
 index (`isExtra` / Bonus / song folding), album rows and the single-homing title check. Albums with some ids keep dev
 review 3. Test: `MusicExtrasTest.a_matched_album_whose_files_carry_no_recording_ids_is_todays_plain_list`. Open: why
 those albums never got track-level recording ids (a re-match may fill them).
+
+*Answered 2026-10-16 (DEB-1487):* those tracks reached the store after their album's match, and `match_musicbrainz`
+revisits only unmatched albums. Prod had 146 such tracks on 20 albums with *some* ids, so the fix above did not
+cover them, and 126 of them were official songs shown as extras. Mapping them is a restoring fix to FR-276-1
+(DEB-1488) and needs no amendment here.
+
+## Amendment 2026-10-16 — a version stands in its official song's row; never "0 songs" (DEB-1487)
+
+> Owner, 2026-10-16, on the DEB-1487 card: the album page read *0 songs · 0 min + 16 extras*. **Versions: "same
+> MusicBrainz work, else the same base title within that album's own official tracklist"** (recommended option).
+> **Safety net: yes.**
+
+**Why.** FR-305-3 and FR-305-8 make the recording the identity, and MusicBrainz models a remaster, a new mix, an
+extended edition or an anniversary re-recording as a *different* recording. An album held only in such an edition
+therefore showed every official song as a *not in library* gap row and its held version as an extra. Prod
+(10-16): 212 extras on 49 albums were, by base title, a version of an official song the album otherwise lacked, and 5
+albums read *0 songs* although every file had a recording id.
+
+**FR-305-3a — A version fills its official song's row.** After FR-305-3's recording test, each official song with **no
+held copy of its own recording** (a gap row) may be filled by **one** held track of the same album that is not on the
+official list, when:
+1. the held recording and the official recording perform **the same MusicBrainz work** (a `performance`
+   relationship, any attributes but `partial` and `medley`); **or else**
+2. the held track's base title (292's normalisation, `MusicSongs.baseTitle`: brackets and a dashed tail dropped,
+   letters and digits only) equals the base title of **exactly one** gap song, and of no other official song.
+
+A track never fills a slot when its 292 version types, as the album page shows them (MusicBrainz's facts, the title
+finder and the owner's ticks), include any type but *Edit*: *Live*, *Demo*, *Remix*, *Instrumental*, *Cover*,
+*Acoustic*, *Alternate* or *Session*. Those are bonus material, not the album in another version. An *Edit* (an
+*extended* or radio cut) may fill a slot, as may a remaster, mix or re-recording that carries no type. When several held tracks qualify for one slot, the earliest in the held edition's own
+order (disc, then position) fills it, and the rest stay extras. A track fills at most one slot. A title that matches
+two official songs fills neither.
+
+What a filled row is:
+- it sits in the official order with the official number, above the divider, and counts as a song in *{n} songs +
+  {k} extras*. The header length stays the official album's (FR-305-12);
+- it carries its own 292 version chips (*Edit* on an extended cut; a plain remaster carries none) and no *Bonus*;
+- for owner decision 1 (*Bonus on a folded row*), it is an official copy, so its song is not bonus;
+- in Ravilo (R373) it is one of `official_ids` and plays in the official order with *Play album*. R388's *Play all /
+  Shuffle* on a list queues it as an official song;
+- **it is not a fold.** FR-305-8 and FR-305-11 are unchanged: the held version and the official recording stay two
+  songs in Library → Songs unless rule 1, 2 or 3 of FR-305-8 joins them, and each keeps its own facts.
+
+**Where the work ids come from.** Only an album that has **both a gap row and an extra** (after FR-305-3) needs
+them, and FR-305-3a runs only there.
+- The official songs gain `works` (MusicBrainz work ids) on the album's `official` JSON. They are read from the official
+  list's own release with the lookup 292 already uses (`release/{id}?inc=…+recording-level-rels+work-rels`), once,
+  and again whenever the official list is re-read.
+- 292's `MusicRecordingFacts` gains `works` the same way. The held release's lookup already returns the work
+  relationships, and only the id was not kept. A held recording not on that release (a tag fallback) costs one
+  `recording/{id}?inc=work-rels`.
+- Old rows without `works` are caught up in `match_musicbrainz`'s editions catch-up, bounded to the albums above: about
+  two requests per album, once. A second run with nothing new asks nothing. If MusicBrainz is unreachable, the work
+  rule simply does not fire, and the title rule still runs.
+- No migration: both are JSON fields.
+
+**FR-305-3b — Never "0 songs".** The official list is laid against the files only when **at least one held file lands
+on an official row**, by its own recording (FR-305-3) or by FR-305-3a. Otherwise the album is today's plain list
+(FR-305-5): no divider, no gap rows, no *+ N extras*, and no file on it is an extra or Bonus. This replaces the
+2026-10-05 fix's test ("at least one held file has a recording id") everywhere `MusicOfficial.usable` is used:
+`layout`, the editions index, album rows, the single-homing title check and R373's lists. The owner accepted the
+known cost: an album held as a bonus disc alone is no longer labelled as extras.
+
+**Tests** (`MusicExtrasTest` and `MusicAlbumPageTest`, stand-ins only):
+- `a_remastered_edition_fills_the_official_rows_by_work`: *Kite Weather* held as 11 other recordings with the same works
+  gives 11 numbered rows, no gap, no extra, and its version chips;
+- `a_version_with_no_work_fills_by_base_title`: *Low Tide (2026 mix)* fills *Low Tide*;
+- `a_live_demo_or_remix_never_fills_a_slot_an_edit_does`;
+- `a_slot_held_by_its_own_recording_is_not_refilled`: the version stays an extra;
+- `a_title_matching_two_official_songs_fills_neither`;
+- `the_earliest_held_candidate_fills_the_slot_the_rest_stay_extras`;
+- `a_filled_row_is_not_bonus_and_does_not_fold`: Library → Songs still lists the two recordings apart;
+- `no_held_file_on_an_official_row_is_the_plain_list` (FR-305-3b), replacing
+  `a_matched_album_whose_files_carry_no_recording_ids_is_todays_plain_list` (which stays true as a special case);
+- `MusicEditionsCatchUpTest.work_ids_are_read_only_for_albums_with_a_gap_and_an_extra_and_once`.
+
+**Only the real library can confirm:** no album reads *0 songs* (7 did on 10-16), and the 212 version-extras on 49
+albums mostly move into their official rows. Live, demo and remix cuts stay extras by design. Read this from a prod DB
+copy and the admin album pages, and keep album names out of commits and reports.
