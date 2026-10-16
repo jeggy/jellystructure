@@ -1146,6 +1146,9 @@ data class ChannelSystemRows(
 @Serializable
 data class SystemContinue(
     val show: Boolean = true,
+    /** DEB-1264 (FR-1) — titles carrying one of these tags (whole name, case-insensitive) are left out of this
+     *  Custom collection's Continue Watching row and its See all. Home's list does not apply here. */
+    @SerialName("hide_tags") val hideTags: List<String> = emptyList(),
 )
 
 @Serializable
@@ -1252,6 +1255,9 @@ data class RowConfig(
     val pinned: List<String> = emptyList(),
     /** Titles the row shows, 3..30; null = 30 (FR-225-1b). Also the ceiling on [pinned]. */
     val limit: Int? = null,
+    /** DEB-1264 (FR-1) — read ONLY on a `CONTINUE` row: titles carrying one of these tags (whole name,
+     *  case-insensitive) are left out of the row and its See all. Absent from an older config = empty. */
+    @SerialName("hide_tags") val hideTags: List<String> = emptyList(),
 )
 
 /** Phase 225 — [by] ∈ `added` · `title` · `year`. [descending] = newest first for added/year, Z → A for title. */

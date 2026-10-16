@@ -183,10 +183,13 @@ class RaviloConfigService(
                 paddingLogo = c.paddingLogo?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
                 paddingText = c.paddingText?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
                 // Phase 225 (FR-225-11) — pins deduplicated, first occurrence wins; an absent sort/limit STAYS absent.
-                rows = c.rows?.let { rc -> rc.copy(items = rc.items.map { it.copy(query = it.query?.pruned(), pinned = it.pinned.distinct()) }) },
+                rows = c.rows?.let { rc -> rc.copy(
+                    items = rc.items.map { it.copy(query = it.query?.pruned(), pinned = it.pinned.distinct(), hideTags = tidyHideTags(it.hideTags)) },
+                    system = rc.system.copy(cont = rc.system.cont.copy(hideTags = tidyHideTags(rc.system.cont.hideTags))),  // DEB-1264 (FR-1)
+                ) },
             )
         },
-        rows = config.rows.mapIndexed { i, r -> r.copy(order = i, query = r.query?.pruned(), pinned = r.pinned.distinct()) },
+        rows = config.rows.mapIndexed { i, r -> r.copy(order = i, query = r.query?.pruned(), pinned = r.pinned.distinct(), hideTags = tidyHideTags(r.hideTags)) },
         heroHeightPct = config.heroHeightPct.coerceIn(40, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
         // R174 — poster-grid items per row: landscape 2..10, portrait 1..4 (fewer, phone-sized).
@@ -509,6 +512,12 @@ private const val DEFAULT_BRAND_COLOR = "linear-gradient(135deg,#3b2a78,#15102e)
  * `linear-gradient(<deg>, <c1>, <c2>)`. Anything else is clamped to the default preset so the TV
  * always has a renderable fill; a null/blank value stays null (the card falls back to the skin accent).
  */
+/** DEB-1264 (FR-1) — trim each entry, drop empty ones, collapse case-insensitive duplicates keeping the first spelling. */
+internal fun tidyHideTags(tags: List<String>): List<String> {
+    val seen = mutableSetOf<String>()
+    return tags.map { it.trim() }.filter { it.isNotEmpty() && seen.add(it.lowercase()) }
+}
+
 private fun sanitizeBrandColor(value: String?): String? {
     val v = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     return if (isValidBrandColor(v)) v else DEFAULT_BRAND_COLOR

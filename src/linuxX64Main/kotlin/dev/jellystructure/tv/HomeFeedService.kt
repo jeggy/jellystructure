@@ -515,15 +515,16 @@ class HomeFeedService(
         if (filtered.isEmpty()) return false  // open question 1's "cheap outer test" — settles the common case with no row work at all
 
         val cascade = configStore.current.metadata.ageRatingCascade
-        fun continueRowNonEmpty(): Boolean {
+        // DEB-1264 (FR-4): the tag filter applies here too, or a collection counts as non-empty for a title its own row hides.
+        fun continueRowNonEmpty(hideTags: List<String>): Boolean {
             val canonical = canonicalContinueList(device)
-            return canonical.any { it.mediaItem.matchesChannel(channelCfg, heroIds) }
+            return canonical.any { it.mediaItem.matchesChannel(channelCfg, heroIds) && !it.mediaItem.hiddenBy(hideTags) }
         }
 
         val channelRows = channelCfg.rows
         if (channelRows?.mode == "custom") {
             val sys = channelRows.system
-            if (sys.cont.show && continueRowNonEmpty()) return true
+            if (sys.cont.show && continueRowNonEmpty(sys.cont.hideTags)) return true
             if (sys.newly.show) return true  // filtered already known non-empty above; addNewlyAddedRows applies no further per-item filter
             return channelRows.items.filter { it.enabled }.any { rowCfg ->
                 if (rowCfg.kind == RowKind.RECOMMENDED) recommendedIn(device, filtered).isNotEmpty()
@@ -537,7 +538,7 @@ class HomeFeedService(
         if (config.mergeNewlyAdded) return true
         return config.rows.filter { it.enabled }.any { rowCfg ->
             when (rowCfg.kind) {
-                RowKind.CONTINUE -> continueRowNonEmpty()
+                RowKind.CONTINUE -> continueRowNonEmpty(rowCfg.hideTags)
                 RowKind.NEWLY_ADDED -> when (rowCfg.mediaKind) {
                     "MOVIE" -> filtered.any { it.kind == MediaKind.MOVIE }
                     "SERIES" -> filtered.any { it.kind == MediaKind.TV_SHOW }
@@ -577,7 +578,8 @@ class HomeFeedService(
                 // R219 (FR-R219-6): the row and continueWatchingAll's See-all must apply this exact same
                 // filter, or the two silently disagree about membership — see the model note in the spec.
                 val canonical = canonicalContinueList(device)
-                val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) }.capped()
+                // DEB-1264 (FR-4): tag filter after the channel filter, before the cap; Home's list does not apply here (FR-3).
+                val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) && !it.mediaItem.hiddenBy(sys.cont.hideTags) }.capped()
                 if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
             }
             if (sys.newly.show) {
@@ -604,7 +606,8 @@ class HomeFeedService(
                     // on Home, wrong on a channel page, which is what R233's live report hit.
                     val canonical = canonicalContinueList(device)
                     val filtered = if (channelFilter != null) canonical.filter { it.mediaItem.matchesChannel(channelFilter, heroIds) } else canonical
-                    val cont = filtered.capped()
+                    // DEB-1264 (FR-3/FR-4): this row's own list — Home's, for a Same as Home collection too.
+                    val cont = filtered.filter { !it.mediaItem.hiddenBy(rowCfg.hideTags) }.capped()
                     if (cont.cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
                 }
 
@@ -821,7 +824,11 @@ class HomeFeedService(
             val heroIds = config.heroes.map { it.itemId }.toSet()
             canonical.filter { it.mediaItem.matchesChannel(channelCfg, heroIds) }
         } else canonical
-        return scoped.map { it.card.withGenreLabels(config.uiLanguage) }  // Phase 271
+        // DEB-1264 (FR-5): the list FR-3 picks for this page — a Custom collection's own, otherwise Home's first Continue row.
+        val customRows = channelCfg?.rows?.takeIf { it.mode == "custom" }
+        val hideTags = if (customRows != null) customRows.system.cont.hideTags
+            else config.rows.sortedBy { it.order }.firstOrNull { it.kind == RowKind.CONTINUE }?.hideTags.orEmpty()
+        return scoped.filter { !it.mediaItem.hiddenBy(hideTags) }.map { it.card.withGenreLabels(config.uiLanguage) }  // Phase 271
     }
 
     /**
@@ -932,6 +939,10 @@ class HomeFeedService(
      *  pre-cap match count, for [Row.seedTotalCount] (FR-R219-5) — `cards.size` alone would be wrong for
      *  a See-all tile's count once a viewer has more than [CONTINUE_ROW_LIMIT] in-progress/next-up titles. */
     private data class ContinueRowResult(val cards: List<MediaCard>, val total: Int)
+
+    /** DEB-1264 (FR-2) — the whole tag name, case-insensitively; never a substring. An episode's [MediaItem] is its series. */
+    private fun MediaItem.hiddenBy(hideTags: List<String>): Boolean =
+        hideTags.isNotEmpty() && tags.any { t -> hideTags.any { it.equals(t, ignoreCase = true) } }
 
     private fun List<ContinueEntry>.capped(limit: Int = CONTINUE_ROW_LIMIT): ContinueRowResult =
         ContinueRowResult(cards = take(limit).map { it.card }, total = size)
