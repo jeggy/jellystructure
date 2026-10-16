@@ -138,6 +138,11 @@ shipped translation files win wherever a string already exists. Until the pull, 
 English line for every language. The phase is not `✓ Done` while either Danish or Faroese line is
 still English, and its QA plan checks both.
 
+*Amended 2026-10-16 (DEB-1243):* round 3 carries `forward_notice` in Danish and Faroese but no `request_logged` line.
+The owner was asked to supply the pair (card `c8500823`, DEB-1406) and left it blank, so the pair is requested in a
+design string round through Rannvá (DEB-1438). `forward_notice` is still taken from round 3; `request_logged` is taken
+from the round that carries DEB-1438. Until then the English line stands, as above.
+
 **FR-321-8 — Spend, bounded three ways.** On top of 270's monthly limit (FR-270-6, applied as 272's
 prefix):
 
