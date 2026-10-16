@@ -289,3 +289,67 @@ block on screen still comes only from the engine's report (FR-R386-7).
 update*. Quitting Ravilo stands in for it, because that is the same Sparkle install (FR-R386-4). The FR-R386-12 lines
 are how the spike sees *downloading* and *ready*. The toggle-off path that the spike plan carried as its step 5 is
 acceptance 5, and the screens' QA ticket takes it.
+
+## Amendment (2026-10-16): the screens, as built (DEB-1280)
+
+Sjúrður, from the spike's pass (DEB-1292) and the frames. Nothing the spike found contradicts the spec above. These are the
+places the build had to choose, written down so a reader of the frames and a reader of this file agree.
+
+**FR-R386-6.** On the desktop target the About section is the Settings window's fourth tab on the Mac (`General ·
+Playback · Account · About`) and one group of Version and Server on GNOME. In the phone family it is a section at the end
+of the Settings page. **A computer's window under 600 dp is the phone family (R337 FR-R337-1), and there Settings is the
+phone's page, as the `about-mobile-*` frames draw it** — not the desktop family's window. Until now every way to Settings
+opened the window whatever the width, so the frames' page was unreachable. The window stays the answer at 600 dp and wider.
+The Version row reads `mac.about_version` (the build's own version, `1.52-57-g…` on a build between releases); the Server
+row is the host the app is signed in to.
+
+**FR-R386-7.** The block is a function of two things only: the last check's decision and Sparkle's last report
+(`UpdateView`). Where the app runs from (FR-R386-5) comes first, then Sparkle's report, then the check. *Checking* is shown
+while a check is under way — Ravilo's own read of the server and GitHub, or Sparkle's — and before the first one has
+finished; it is a fact about the engine, not a prediction. A check that asked Sparkle and found it not yet begun is
+*Checking*, never *Up to date*. With Sparkle absent from the bundle there is no updater to show, so there is no block.
+- *Up to date* and *Offline* name the check's time: **today's as *Checked today at {t}***, an earlier day's as *Checked {d}
+  at {t}* (`mac.update.checked_on`, `…offline_sub_on`), and a check that never reached the server leaves the time out
+  (`…offline_sub_never`). Round 4 drew only *today*; a Mac that has been offline since yesterday needs the others.
+- *Failed*'s **Try again** asks for a new check, which downloads the update fresh.
+- *Download* with the toggle off, and **Check now**, are Ravilo's own calls: *Download* hands over to Sparkle's window (D9).
+- State 3 shows no figures: Sparkle reports none for a background download (FR-R386-4), so `Downloading` carries -1 and the
+  block draws its sentence alone. If a later Sparkle reports bytes, `UpdateBlockState.Downloading` already carries them.
+- **The toggle** answers at once from the stored value; the value is the state, so nothing is guessed.
+
+**FR-R386-8.** Besides the row at the sidebar's foot and the dot on Settings, the frame `about-desktop-ready-notice-rail`
+draws a **tile** on the collapsed rail (*Restart* under the mark; dashed *After playback* while something plays) and puts the
+dot on the viewer's photo, since the rail has no Settings entry of its own. The phone family's Settings row on the Profile
+page carries the dot too (`about-mobile-ready-notice-profile`). *Hide* hides the sidebar's row and the rail's tile together,
+until the next launch.
+- **While anything plays or casts** is a film on this Mac or on a TV or speaker it casts to, a song, or a cast this app has
+  linked (`Dest.Player`, `Dest.LiveTv`, `Dest.CastRemote`, the music engine, `MusicCast.linked`). *Restart to update* is also
+  refused in code (`SoftwareUpdate.restart`), not only left out of the drawing.
+
+**FR-R386-9.** *Check for Updates…* is an item `Update.swift` inserts into the application menu directly under *About
+Ravilo*, titled in the viewer's language. AWT owns that menu and may rebuild it, so Kotlin asks for the item every other
+second and the call is idempotent; a choice is counted in the engine's report (`menu=`) and Kotlin turns it into
+`AppCommand.UPDATE_CHECK`, which runs *Check now* and opens About (the window's tab, or the page scrolled to its end). With
+no Swift library or an older one the item is absent. The item exists only where the block does.
+
+**FR-R386-10.** New keys beyond the round's list: `mac.update.checked_on`, `offline_sub_on`, `offline_sub_never` (above),
+and `mac.update.try_again`, a key of its own — it has the support lane's words today and the two screens may now drift
+apart. `mac.about_version` is the Version row's string. Danish `før` appears in two of the round's drafts, so those keys are
+excluded from `check-i18n-spelling` by name, with the reason.
+
+**FR-R386-11.** Done: R328's line is gone from Settings ▸ Account on the Mac and from GNOME's Account group; `AppUpdate`,
+`AppUpdateOffer`, `AppUpdateLine`, `UpdateCheck.offerFor`/`downloadUrl` and `mac.open_anyway` are removed, with R385's test of
+that sentence (FR-R385-6's sentence went with the line it sat under).
+
+**Seen without a Mac.** A development build shows no block, so the twelve states cannot be reached by running it. The test
+driver's `update <state>` puts one on screen (`UpdatePreview`, `update off` removes it): it changes what is drawn and
+checks or installs nothing, and it exists only when the test driver is on. On GNOME the About group draws the block while
+a state is set, which in production it never is. This is how the screens were compared with the frames on Linux.
+
+**What CI covers and what does not.** `UpdateViewTest` (the state each report maps to), `SoftwareUpdateStringsTest` (every
+key in en · da · fo, none naming the mechanism), `SoftwareUpdateScreensTest` (what each state says and offers, in both
+families, that no key or `{placeholder}` is left on screen in any language, the notice and its dot) all run in CI. Not
+coverable there, and so on the QA ticket: the Ravilo menu item and its click, *Restart to update* relaunching as the new
+version, Sparkle's own window for the toggle-off *Download*, a real background download's state 3, and Danish and Faroese
+clipping against the frames on the Mac's own fonts.
+
