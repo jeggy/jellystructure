@@ -250,3 +250,36 @@ their own line: it is compiled into them and reads only `/api/health`, which doe
    sits under *About Ravilo* and opens About with a check running.
 10. **The first real update** — the release after the first one carrying this phase — installs on the household Mac
     from the notice, with no prompt and nothing dragged. Release timing is the owner's, so this item waits on him.
+
+## Amendment (2026-10-16): the spike found no silent download, and the engine is unreadable (DEB-1513)
+
+Bárður, from the spike's verdict on DEB-1292 (Høgni's run on a Gatekeeper-on Mac and Óluva's of 10-15, consolidated
+by Turið). Two Macs and two install paths gave the same result. A background check read `appcast.xml` (200) and then
+never fetched the `.dmg`. The spike's question was whether Sparkle updates a quarantined, self-signed Ravilo with no
+Gatekeeper prompt. It is **unanswered**: nothing was installed. Build 1's state could not be read from outside the
+app either, because it had no screen and no log line for it. A fix slice, DEB-1513, now sits between the engine and
+the screens. The screens (DEB-1280) wait for the re-run.
+
+**FR-R386-1, the `Info.plist` bullet, amended.** What has to hold is that **Ravilo decides when Sparkle checks and
+against which feed**. `SUEnableAutomaticChecks = NO` was only the means. If Sparkle 2 downloads silently only with
+its automatic checks on, the builder may turn them on, provided Sparkle's own scheduler never starts a check Ravilo
+did not ask for. A delegate that refuses every check Ravilo did not start satisfies that. The plist key and
+`deploy-macos.yml`'s guard follow the choice. The commit cites Sparkle's source for the reason.
+
+**FR-R386-4, toggle on, restated as testable.** A background check that finds an update downloads it with no window.
+The engine's state then goes *checking* → *downloading* → *ready*. If it stays at *checking* or *available*, or
+returns to *idle*, without fetching the update, FR-R386-4 is broken.
+
+**FR-R386-12 (new): the engine logs its state.** Every change of the engine's state writes one line to `ravilo.log`:
+
+- the old state, the new state and the version;
+- with *failed*, the kind of failure; with *unavailable*, the reason.
+
+Each check writes one line naming the feed it was pointed at. A poll that finds no change writes nothing. The lines
+carry no account, no token and nothing from the library. QA reads the engine from outside through them, and the
+block on screen still comes only from the engine's report (FR-R386-7).
+
+**Acceptance 3, amended for the re-run.** The re-run happens before the screens exist, so it has no *Restart to
+update*. Quitting Ravilo stands in for it, because that is the same Sparkle install (FR-R386-4). The FR-R386-12 lines
+are how the spike sees *downloading* and *ready*. The toggle-off path that the spike plan carried as its step 5 is
+acceptance 5, and the screens' QA ticket takes it.
