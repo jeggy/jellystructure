@@ -281,3 +281,13 @@ still frozen while the page scrolls. Not re-measured yet.
 Unbuilt: a window *launched* hidden (`open -g -j`) still reports `shown=true` (67/s then 19.8/s); the post-playback wakeups
 (16–20/s); music-playing CPU is 14 % against FR-R383-2's 10 % row (the bars and the progress line still draw ~19/s); the About
 figures and the 100-song cast test. A real Dock click / ⌘Tab unhide has not been tried by anyone at the Mac.
+
+### 2026-10-16 — the fourth re-measure (QA DEB-1536, `main` at `aefbf64b`)
+
+Partial pass. Home, focused, hero visible: **29 frames/s, 13.2 % CPU, 632 MB** (was 119.8/s, 37.8 %). A cast with the window on an album
+page: **3.2 frames/s, 5.2 % CPU, 774 MB** (was 19.3/s, 12.4 %). Music playing locally: 18.5/s, 16.9 % (unchanged, over the 10 % row).
+Not met: Home read **27.7/s with the hero scrolled fully off screen**, while Movies read 0.0. The drift stepper is only paused while
+the list is *scrolling*, so a hero that is composed but out of sight kept dirtying its layer. Fix: the drift also runs only while the
+list's first visible item is the hero (`firstVisibleItemIndex == 0`), and the step is 66 ms (about 15 a second) rather than 42 ms.
+Not re-measured. The idle budget (< 2 % CPU, < 600 MB) and the music row (< 10 %) are still open; whether 600 MB is reachable by a JVM
+plus Skia at all is the owner's call after the evidence (build review item 2).

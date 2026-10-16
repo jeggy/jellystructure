@@ -384,7 +384,9 @@ private fun HomeLoaded(
                         onUp = { navBarFR.requestFocus() },
                         // R101: freeze the Ken Burns drift while the list is actively scrolling so the
                         // full-width hero stops its per-frame scaled redraw during the gesture.
-                        driftEnabled = { !listState.isScrollInProgress },
+                        // R383: …and while the hero is scrolled out of sight (DEB-1536: a stepper left running off screen
+                        // still dirtied a layer ~28 times a second, so Home drew with nothing to see).
+                        driftEnabled = { !listState.isScrollInProgress && listState.firstVisibleItemIndex == 0 },
                         onDown = { requestFocusRetryingOrMoveNative(scope, firstRowFR, focusManager, FocusDirection.Down) },
                         initialHeroId = store.heroId,                 // R365 (FR-R365-10)
                         onActiveChanged = { store.heroId = it },

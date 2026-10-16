@@ -149,7 +149,7 @@ private fun HeroCarouselContent(
                 val ms = (RaviloMotion.HERO_KEN_BURNS_TRAVEL_MS * (remaining / span)).toInt()
                 // R383 (FR-R383-3) — stepped, not `animateTo`: a tween asks for a frame on every vsync for the whole 9 s, and
                 // the hero never settles (it restarts every slide), so a window showing Home drew 120 frames/s on a 120 Hz Mac
-                // (38 % of a core, DEB-1523). A 5 % drift over 9 s moves about 7 px a second: 24 steps a second is not visible.
+                // (38 % of a core, DEB-1523). A 5 % drift over 9 s moves about 7 px a second: 15 steps a second is not visible.
                 val from = kbScale.value
                 val mark = kotlin.time.TimeSource.Monotonic.markNow()
                 while (true) {
@@ -397,5 +397,5 @@ private fun HeroCarouselContent(
 fun heroStartIndex(heroIds: List<String>, savedId: String?): Int =
     savedId?.let { heroIds.indexOf(it) }?.takeIf { it >= 0 } ?: 0
 
-/** R383 — the Ken Burns drift's step: about 24 a second. */
-private const val HERO_DRIFT_STEP_MS = 42L
+/** R383 — the Ken Burns drift's step: about 15 a second (0.5 px a step). */
+private const val HERO_DRIFT_STEP_MS = 66L
