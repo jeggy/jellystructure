@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.config.AiConfig
 import dev.jellystructure.config.AppConfig
+import dev.jellystructure.config.SupportConfig
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
@@ -16,9 +17,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * DEB-1253 (FR-1, FR-2) — `GET /api/ai/page` across the four configs the spec's Acceptance 1 names, through
+ * DEB-1253 (FR-1, FR-2) + DEB-1500 (FR-1) — `GET /api/ai/page` across the configs the specs' acceptance lists name, through
  * `testApplication`: no `[ai]`, a blank key, a key without Seerr, a key with Seerr. `ai.enabled = false` with a key
- * still answers 200, because the key is the gate and not the switch.
+ * still answers 200, because the key is the gate and not the switch. Support is the first tab whenever the key is set,
+ * with the lane open or closed (DEB-1500), so a key with no Seerr is no longer a 404.
  */
 class AiPageRoutesTest {
     private fun answer(cfg: AppConfig, seerr: Boolean): Pair<HttpStatusCode, String> {
@@ -43,18 +45,28 @@ class AiPageRoutesTest {
         assertEquals(HttpStatusCode.NotFound, answer(AppConfig(ai = AiConfig(apiKey = "  ")), seerr = true).first)
     }
 
-    @Test fun aKeyWithoutSeerrHasNoTabAndIs404() =
-        assertEquals(HttpStatusCode.NotFound, answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = false).first)
+    @Test fun aKeyWithoutSeerrHasTheSupportTabAlone() {
+        val (status, body) = answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = false)
+        assertEquals(HttpStatusCode.OK, status)
+        assertEquals("""{"tabs":["support"]}""", body)
+    }
 
-    @Test fun aKeyWithSeerrNamesTheSuggestionsTab() {
+    @Test fun aKeyWithSeerrNamesSupportThenSuggestions() {
         val (status, body) = answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = true)
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals("""{"tabs":["suggestions"]}""", body)
+        assertEquals("""{"tabs":["support","suggestions"]}""", body)
+    }
+
+    @Test fun supportIsThereWithTheLaneClosedAndWithItOpen() {
+        for (open in listOf(false, true)) {
+            val cfg = AppConfig(ai = AiConfig(apiKey = "sk-test"), support = SupportConfig(enabled = open))
+            assertEquals("""{"tabs":["support"]}""", answer(cfg, seerr = false).second, "enabled = $open")
+        }
     }
 
     @Test fun switchingAiOffWithAKeyStillAnswers200() {
         val (status, body) = answer(AppConfig(ai = AiConfig(enabled = false, apiKey = "sk-test")), seerr = true)
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals("""{"tabs":["suggestions"]}""", body)
+        assertEquals("""{"tabs":["support","suggestions"]}""", body)
     }
 }

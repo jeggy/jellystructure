@@ -2,6 +2,8 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.SessionKey
+import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.model.SupportEnabledRequest
 import dev.jellystructure.model.SupportClassRequest
 import dev.jellystructure.model.SupportFlagRequest
 import dev.jellystructure.model.SupportForwardRequest
@@ -29,7 +31,7 @@ import io.ktor.server.routing.post
  * that is not yours, so nothing says "it exists but is switched off" — and every admin *write* answers 409
  * `support_unavailable`. Admin reads still answer.
  */
-internal fun Route.supportRoutes(service: SupportService) {
+internal fun Route.supportRoutes(service: SupportService, configStore: ConfigStore? = null) {
     // ── The viewer ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     get("/tv/support/tickets") {
@@ -102,6 +104,27 @@ internal fun Route.supportRoutes(service: SupportService) {
 
     get("/support/summary") { call.respond(service.summary()) }
 
+    // DEB-1500 (FR-3) — the lane's switch. It writes `[support] enabled` through ConfigStore.update, so the `config_changed`
+    // Ravilo re-fetches on is emitted by the hook wired in `wireSupport`, and it answers with the new summary (FR-4): the
+    // admin renders that and nothing it assumed. `PUT /api/config` still restores `[support]` from the stored config, so a
+    // Settings save can never flip the lane.
+    post("/support/enabled") {
+        val store = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "config_unavailable"))
+        val req = call.receiveOrBadRequest<SupportEnabledRequest>() ?: return@post
+        val current = store.current
+        if (current.support.enabled != req.enabled &&
+            !store.update(current.copy(support = current.support.copy(enabled = req.enabled)))) {
+            return@post call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "config_not_saved"))
+        }
+        call.respond(service.summary())
+    }
+
+    // DEB-1500 (FR-12) — Activity › Support log: history only, newest first, no bodies.
+    get("/support/log") {
+        val q = call.request.queryParameters
+        call.respond(service.log(q["before"]?.toLongOrNull(), q["limit"]?.toIntOrNull() ?: SupportService.LOG_PAGE))
+    }
+
     get("/support/tickets/{n}") {
         val n = call.ticketNumber() ?: return@get call.respondNotFound()
         call.respond(service.adminThread(n) ?: return@get call.respondNotFound())
@@ -131,21 +154,21 @@ internal fun Route.supportRoutes(service: SupportService) {
         if (!call.adminWriteOpen(service)) return@post
         val n = call.ticketNumber() ?: return@post call.respondNotFound()
         val req = call.receiveOrBadRequest<SupportStateRequest>() ?: return@post
-        call.respondOutcome(service.setState(n, req.state))
+        call.respondOutcome(service.setState(n, req.state, call.adminName()))
     }
 
     post("/support/tickets/{n}/class") {
         if (!call.adminWriteOpen(service)) return@post
         val n = call.ticketNumber() ?: return@post call.respondNotFound()
         val req = call.receiveOrBadRequest<SupportClassRequest>() ?: return@post
-        call.respondOutcome(service.setClass(n, req.ticketClass))
+        call.respondOutcome(service.setClass(n, req.ticketClass, call.adminName()))
     }
 
     post("/support/tickets/{n}/flag") {
         if (!call.adminWriteOpen(service)) return@post
         val n = call.ticketNumber() ?: return@post call.respondNotFound()
         val req = call.receiveOrBadRequest<SupportFlagRequest>() ?: return@post
-        call.respondOutcome(service.setFlag(n, req.flagged))
+        call.respondOutcome(service.setFlag(n, req.flagged, call.adminName()))
     }
 
     post("/support/tickets/{n}/read") {

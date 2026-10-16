@@ -70,11 +70,14 @@ class SupportAgentTest {
                 promises: Boolean = false, claims: Boolean = false, language: String = "en", forwardTo: String = "ADMIN",
                 reply: String = "Open the player's subtitle menu and pick a language.", summary: String = "Asks how to keep subtitles on.",
                 reproduction: String? = null,
+                /** DEB-1500 (FR-13) — a null title leaves its key out, which is what a batch built before the titles shipped answers. */
+                title: String? = "Subtitles always on", englishTitle: String? = "Keeping subtitles on",
             ): String {
                 fun q(s: String) = Json.encodeToString(kotlinx.serialization.json.JsonPrimitive.serializer(), kotlinx.serialization.json.JsonPrimitive(s))
+                val titles = (title?.let { ""","title":${q(it)}""" } ?: "") + (englishTitle?.let { ""","englishTitle":${q(it)}""" } ?: "")
                 return """{"class":"$cls","englishSummary":${q(summary)},"reproduction":${reproduction?.let { q(it) } ?: "null"},"replyLanguage":"$language",""" +
                     """"reply":${q(reply)},"decision":"$decision","forwardTo":"$forwardTo","confidence":"$confidence",""" +
-                    """"languageConfidence":"$languageConfidence","promisesSomething":$promises,"claimsState":$claims}"""
+                    """"languageConfidence":"$languageConfidence","promisesSomething":$promises,"claimsState":$claims$titles}"""
             }
         }
     }
@@ -175,6 +178,99 @@ class SupportAgentTest {
         assertEquals(listOf<String?>("SENT"), verdicts(n))
         val m = viewer(n).messages.last { it.author == "AI_AGENT" }
         assertEquals("AI Agent", m.authorLabel)
+    }
+
+    // ── DEB-1500 (FR-13) — AI Agent titles the case, once ─────────────────────────────────────────────────────────────
+
+    /** The ticket's two titles as the admin reads them. */
+    private fun Rig.titles(n: Long) = admin(n).ticket.let { it.title to it.englishTitle }
+
+    @Test fun aTurnThatReachesEndTurnStoresBothTitlesAndASecondTurnChangesNeither() = rig("title1") {
+        val n = file()
+        assertEquals(null to null, titles(n), "a ticket nobody has answered has no title")
+        assertFalse("\"title\"" in Json.encodeToString(SupportThread.serializer(), viewer(n)), "omitted while null, not an explicit null")
+        cycle()
+        assertEquals("Subtitles always on" to "Keeping subtitles on", titles(n))
+        assertEquals("Subtitles always on", viewer(n).ticket.title, "the viewer's row carries the viewer-language title")
+        assertTrue("\"title\":\"Subtitles always on\"" in Json.encodeToString(SupportThread.serializer(), viewer(n)))
+        anthropic.answerFor = { FakeAnthropic.good(title = "A different title", englishTitle = "Another title entirely") }
+        post(n, "And on the TV too?")
+        cycle()
+        assertEquals(listOf<String?>("SENT", "SENT"), verdicts(n))
+        assertEquals("Subtitles always on" to "Keeping subtitles on", titles(n), "once set, AI Agent never changes a title under the viewer")
+    }
+
+    @Test fun aTitleWithAnInternalStringIsDroppedWhileTheEnglishOneIsStoredAndTheVerdictNamesTheRuleNotTheText() = rig("title2") {
+        anthropic.answerFor = { FakeAnthropic.good(title = "Fixed in FR-12", englishTitle = "Keeping subtitles on") }
+        val n = file()
+        cycle()
+        assertEquals(null to "Keeping subtitles on", titles(n))
+        val verdict = verdicts(n).single()!!
+        assertTrue(verdict.startsWith("SENT | TITLE_DROPPED: title rule 4"), verdict)
+        assertFalse("FR-12" in verdict, "the transcript's verdict quotes nothing of the title: $verdict")
+        // The count of replies sent still reads it as SENT, so the per-ticket bound (FR-321-8) holds.
+        assertEquals(1L, service.agentRepliesSent(n))
+        // A title that failed stays null, so the next turn may fill it; the one already stored is not touched.
+        anthropic.answerFor = { FakeAnthropic.good(title = "Subtitles always on", englishTitle = "Not this one") }
+        post(n, "And on the TV too?")
+        cycle()
+        assertEquals("Subtitles always on" to "Keeping subtitles on", titles(n))
+    }
+
+    @Test fun aLowLanguageConfidenceKeepsTheViewerTitleNullButNotTheEnglishOne() = rig("title3") {
+        anthropic.answerFor = { FakeAnthropic.good(languageConfidence = "LOW", reply = "Probably.") }
+        val n = file()
+        cycle()
+        assertEquals(null to "Keeping subtitles on", titles(n))
+        assertTrue(verdicts(n).single()!!.contains("TITLE_DROPPED: title rule 2"), verdicts(n).toString())
+    }
+
+    @Test fun aReplyLanguageThatIsNotTheViewersDropsTheTitleAndAnEnglishOneStaysEnglish() = rig("title4") {
+        anthropic.answerFor = { FakeAnthropic.good(language = "da", title = "Undertekster altid til") }
+        val n = file()
+        cycle()
+        assertEquals(null to "Keeping subtitles on", titles(n))
+        assertTrue(verdicts(n).single()!!.contains("TITLE_DROPPED: title rule 5"), verdicts(n).toString())
+    }
+
+    @Test fun anEnglishTitleOverSixtyCodePointsOrOnTwoLinesIsNotStored() = rig("title5") {
+        val long = "x".repeat(61)
+        for ((tag, english) in listOf("long" to long, "lines" to "Two\nlines", "blank" to "   ")) {
+            anthropic.answerFor = { FakeAnthropic.good(englishTitle = english) }
+            val n = file(user = "u-$tag")
+            cycle()
+            assertEquals("Subtitles always on" to null, titles(n), tag)
+        }
+        // Exactly sixty is allowed.
+        anthropic.answerFor = { FakeAnthropic.good(englishTitle = "y".repeat(60)) }
+        val n = file(user = "u-edge")
+        cycle()
+        assertEquals("y".repeat(60), titles(n).second)
+    }
+
+    @Test fun abuseStoresNeitherTitleAndAnAnswerWithoutTitlesStillSends() = rig("title6") {
+        anthropic.answerFor = { FakeAnthropic.good(cls = "ABUSE") }
+        val n = file()
+        cycle()
+        assertEquals(null to null, titles(n))
+        assertEquals(listOf<String?>("FLAGGED"), verdicts(n), "ABUSE reports no dropped title either")
+        // A batch built before the titles shipped answers without them: it is read, judged and sent, with no title.
+        anthropic.answerFor = { FakeAnthropic.good(title = null, englishTitle = null) }
+        val m = file(user = "u-ben")
+        cycle()
+        assertEquals("Open the player's subtitle menu and pick a language.", lastAiBody(m, "u-ben"))
+        assertEquals(null to null, titles(m))
+    }
+
+    @Test fun theRequestAsksForBothTitlesAndTheSchemaRequiresThem() = rig("title7") {
+        file()
+        send()
+        val req = anthropic.sent.single()
+        val schema = req.toString()
+        assertTrue("\"title\":{\"type\":\"string\"}" in schema && "\"englishTitle\":{\"type\":\"string\"}" in schema, schema)
+        val required = req["params"]!!.jsonObject.toString()
+        assertTrue("\"required\":[" in required && "\"title\",\"englishTitle\"]" in required, required)
+        assertTrue("additionalProperties\":false" in required)
     }
 
     private fun forwardedBecause(tag: String, answer: String, reason: String, extra: Rig.(Long) -> Unit = {}) = rig(tag) {
@@ -483,11 +579,36 @@ class SupportAgentTest {
 
     // ── FR-321-7 — the fixed lines ───────────────────────────────────────────────────────────────────────────────────
 
-    @Test fun theFixedLinesAreInTheViewersLanguageAndEnglishUntilRoundThreeIsPulled() {
-        for (lang in listOf("en", "da", "fo", "de")) {
-            assertEquals("I'll forward this and they will answer you soon.", SupportAi.forwardNotice(lang))
-            assertTrue(SupportAi.requestLogged(lang, 41).contains("request #41"))
+    // DEB-1500 (FR-15) — round 3's Danish and Faroese lines, character for character; the condition 321 set for itself.
+    @Test fun theFixedLinesAreInTheViewersLanguageAndAnyOtherLanguageReadsEnglish() {
+        assertEquals("I'll forward this and they will answer you soon.", SupportAi.forwardNotice("en"))
+        assertEquals("Jeg sender det videre, og de svarer dig snart.", SupportAi.forwardNotice("da"))
+        assertEquals("Eg sendi hetta víðari, og tey svara tær skjótt.", SupportAi.forwardNotice("fo"))
+        assertEquals("Thanks — this is logged as request #41. Adding it needs a decision from the people who run this server, so it won't happen on its own.", SupportAi.requestLogged("en", 41))
+        assertEquals("Tak — det er registreret som ønske #41. At tilføje det kræver en beslutning fra dem, der driver denne server, så det sker ikke af sig selv.", SupportAi.requestLogged("da", 41))
+        assertEquals("Takk — hetta er skrásett sum ynski #41. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.", SupportAi.requestLogged("fo", 41))
+        // A language the server has no line for reads the English one, never a gap.
+        assertEquals(SupportAi.forwardNotice("en"), SupportAi.forwardNotice("de"))
+        assertTrue(SupportAi.requestLogged("de", 41).contains("request #41"))
+    }
+
+    // Acceptance 8 — through the whole path, not the table: a Danish viewer's forward and a Faroese viewer's request.
+    @Test fun aDanishViewersForwardedTicketCarriesTheDanishNoticeAndAFaroeseRequestTheFaroeseOneWithItsNumber() = rig("lang") {
+        val da = SupportService(db, { store.current }, languageOf = { "da" }, nameOf = { it }, clock = { now }).also {
+            it.askAgent = { t -> jobs.enqueueSupport(t, "a viewer's message") }
         }
+        anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "da", reply = "x") }
+        val n = (da.file("u-da", "phone", "d1", "Lyden forsvinder") as Outcome.Ok).value.ticket.number
+        cycle()
+        assertEquals("Jeg sender det videre, og de svarer dig snart.", da.thread("u-da", n)!!.messages.last { it.author == "AI_AGENT" }.body)
+        val fo = SupportService(db, { store.current }, languageOf = { "fo" }, nameOf = { it }, clock = { now }).also {
+            it.askAgent = { t -> jobs.enqueueSupport(t, "a viewer's message") }
+        }
+        anthropic.answerFor = { FakeAnthropic.good(cls = "REQUEST", language = "fo", reply = "x") }
+        val m = (fo.file("u-fo", "phone", "d1", "Kunnu tit lagt hetta afturat") as Outcome.Ok).value.ticket.number
+        cycle()
+        assertEquals("Takk — hetta er skrásett sum ynski #$m. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.",
+            fo.thread("u-fo", m)!!.messages.last { it.author == "AI_AGENT" }.body)
     }
 
     // ── FR-321-1 — config ────────────────────────────────────────────────────────────────────────────────────────────

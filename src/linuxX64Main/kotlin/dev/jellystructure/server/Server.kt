@@ -689,7 +689,7 @@ fun startServer(
                     seerrDiscoverService?.suggestions = s
                     suggestionsRoutes(s)
                 }
-                supportService?.let { supportRoutes(it) }   // Phase 320 — /api/tv/support/** and /api/support/**
+                supportService?.let { supportRoutes(it, configStore) }   // Phase 320 — /api/tv/support/** and /api/support/**
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).

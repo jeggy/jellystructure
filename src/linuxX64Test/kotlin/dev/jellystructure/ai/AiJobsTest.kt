@@ -241,6 +241,25 @@ class AiJobsTest {
         assertEquals(3, wire["rerank"]!!.jsonObject["estimateMicroUsd"]!!.jsonObject.size)
     }
 
+    // DEB-1500 (FR-5) — the Support card says why it is not running; the other three jobs never do.
+    @Test
+    fun `the support job says why it is not running while the lane is closed and the others say nothing`() = runBlocking {
+        enable(rerank = true)
+        val j = jobs(FakeTransport { _, _, _ -> error("no call") })
+        configStore.update(configStore.current.copy(support = configStore.current.support.copy(enabled = false)))
+        val closed = j.status(viewers = 4)
+        assertEquals("Support is closed to viewers, so there is nothing to answer. Open it on AI › Support.", closed.support.inactiveReason)
+        assertEquals(listOf<String?>(null, null, null), listOf(closed.rerank.inactiveReason, closed.themes.inactiveReason, closed.clusters.inactiveReason))
+        configStore.update(configStore.current.copy(support = configStore.current.support.copy(enabled = true)))
+        assertEquals(null, j.status(viewers = 4).support.inactiveReason, "open: the job would run")
+        // On the wire it is a plain string when there is one, and no key at all when there is not.
+        val wire = Json { ignoreUnknownKeys = true }
+        configStore.update(configStore.current.copy(support = configStore.current.support.copy(enabled = false)))
+        val onWire = wire.encodeToJsonElement(AiJobs.Status.serializer(), j.status(viewers = 4)).jsonObject
+        assertEquals("\"${AiJobs.SUPPORT_CLOSED_REASON}\"", onWire["support"]!!.jsonObject["inactiveReason"].toString())
+        assertFalse("inactiveReason" in onWire["rerank"]!!.jsonObject)
+    }
+
     // ─── Off means off (dev review item 8) ────────────────────────────────────
 
     @Test

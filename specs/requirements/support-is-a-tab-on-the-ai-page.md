@@ -338,3 +338,33 @@ phone and a desktop viewport, with the stand-in data above, for acceptance 1, 4,
 - **`inactiveReason` for the other three AI jobs.**
 - **Round 2's Fetchers tab and its key-status badge.**
 - **Any Ravilo surface.** That is DEB-1501.
+
+## Amendment 2026-10-16 — what the build settled
+
+Written before the Kotlin it describes, from reading the code FR-4, FR-8, FR-12 and FR-13 land in. Nothing above changes
+meaning; each line says what a sentence above left open.
+
+- **FR-4 / FR-8 — where the fields live.** `laneOpen` and `hervorEnabled` are fields of `SupportSummary`, which is the
+  summary both `GET /api/support/summary` and every `support_ticket` event already carry, so one change gives both. FR-8's
+  *AI Agent is writing…* needs `aiComposing`, which the admin thread did not have: `SupportAdminThread` gains it, computed
+  as the viewer's thread computes it. Both are additive on admin DTOs.
+- **FR-12 — what an entry is.** `action` is a code, not prose: `received` · `forwarded` · `state_changed` · `classified` ·
+  `reopened` · `flagged` · `flag_removed` · `replied` · `ai_verdict`. `args` holds the facts that go with it (a holder, a
+  state, a class, a verdict) and never text a person wrote. The page words each from the code; the server sends no sentence.
+  - `replied` is a message **a viewer can read**, by `AI_AGENT`, `HERVOR` or `ADMIN`. An `ADMIN_ONLY` note rides a forward
+    and a flag, which are entries of their own; logging it as a reply would say a viewer was answered when none was.
+  - An entry's `id` is `messageId × 2` for a line and `turnId × 2 + 1` for a verdict, so the two sources never collide and
+    `before` is one number. Order is time, then id.
+  - A verdict is cut at any quotation mark before it is sent: FR-321-5 rule 4's reason quotes the internal string that
+    failed it, and a log may name a rule but not the text.
+  - `received` and `reopened` are `VIEWER`, labelled with the owner's name read at the time of the request. `SYSTEM` is a
+    line with no recorded actor: everything written before the migration, and the sweep that forwards what `AI Agent` held.
+- **FR-13 — the transcript's verdict.** A dropped title rides beside the main verdict after a ` | `:
+  `SENT | TITLE_DROPPED: title rule 4 — contains an internal string`. It names the field and the rule and quotes nothing of
+  the title. The count of replies sent (FR-321-8) reads `SENT` as a prefix, so a dropped title does not cost a turn.
+- **FR-13 — an answer without titles is still read.** The schema *requires* both titles, but a batch built before this shipped
+  comes back without them. Its reply is judged and sent as before, and the ticket simply has no title yet. `ABUSE` reports no
+  dropped title because it stores none.
+- **FR-6 — *Open*.** The filter asks `state=OPEN` and the count is `open`, which counts every state but `RESOLVED`. They are
+  the same set until something sets `IN_PROGRESS`, which no admin page does. If one ever does, the filter wants a state
+  list, not this table.

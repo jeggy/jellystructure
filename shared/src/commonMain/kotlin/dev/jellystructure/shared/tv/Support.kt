@@ -55,6 +55,11 @@ data class SupportTicketRow(
     val holder: String,
     /** `BUG` · `REQUEST` · `QUESTION` · `ACCOUNT` · `OTHER`, or null while unclassified. */
     @SerialName("class") val ticketClass: String? = null,
+    /**
+     * DEB-1500 (FR-13) — the case title `AI Agent` wrote in the viewer's own language, or null (omitted) while there is none.
+     * Additive: an installed app ignores it, and a client reading an older server sees it absent (FR-320-18).
+     */
+    val title: String? = null,
     /** The first message's first 140 characters. */
     @EncodeDefault val preview: String = "",
     /** Epoch seconds. */

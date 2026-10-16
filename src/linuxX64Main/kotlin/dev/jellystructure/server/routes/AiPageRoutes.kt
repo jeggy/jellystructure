@@ -12,14 +12,19 @@ import kotlinx.serialization.Serializable
 data class AiPageDto(val tabs: List<String>)
 
 /**
- * DEB-1253 (FR-1, FR-2) — which tabs the AI page has: Support · Fetchers · Suggestions, each only while its own gate
- * holds. Empty when `[ai] api_key` is blank. The key test is "non-blank" (320 FR-320-1), not `ai.enabled`: switching AI
- * off, a revoked key or a spent limit leave the page where it is. Support and Fetchers are not built, so Suggestions
- * (Seerr connected, FR-274-1) is the only tab today.
+ * DEB-1253 (FR-1, FR-2) + DEB-1500 (FR-1) — which tabs the AI page has: Support · Fetchers · Suggestions. Empty when
+ * `[ai] api_key` is blank. The key test is "non-blank" (320 FR-320-1), not `ai.enabled`: switching AI off, a revoked key
+ * or a spent limit leave the page where it is. **Support is there whenever the key is**, whether `[support] enabled` is
+ * true or false: the lane's switch lives inside the tab, and a closed lane still has tickets an admin can read. With a key
+ * set the page therefore exists without Seerr; Suggestions (Seerr connected, FR-274-1) is the only tab that waits for it.
+ * Fetchers is not built.
  */
 fun aiPageTabs(config: AppConfig, suggestionsAvailable: Boolean): List<String> {
     if (config.ai.apiKey.isBlank()) return emptyList()
-    return buildList { if (suggestionsAvailable) add("suggestions") }
+    return buildList {
+        add("support")
+        if (suggestionsAvailable) add("suggestions")
+    }
 }
 
 /** `GET /api/ai/page` — 404 means "no AI page": no sidebar entry and no route (FR-2). Admin-only; not on the Ravilo wire. */

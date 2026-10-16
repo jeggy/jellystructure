@@ -49,6 +49,9 @@ object SupportAi {
         - forwardTo: ADMIN, or HERVOR for a fault a case-worker could match to a known problem.
         - confidence and languageConfidence: HIGH only when you are sure the reply is right and in the viewer's
           language, otherwise LOW.
+        - title: a case title in the language of the reply, and englishTitle: the same title in English. Each is a few
+          words that name the problem or the question, the way a helpdesk would file it, on one line and at most 60
+          characters. No promise, no claim about the server or the library.
         - promisesSomething: true if the reply promises a feature, a date, a fix or any future action.
         - claimsState: true if the reply says anything about the state of the server, a title in the library, or a
           known problem. You have read none of them, so a reply must not.
@@ -66,6 +69,11 @@ object SupportAi {
         "class", "englishSummary", "reproduction", "replyLanguage", "reply", "decision", "forwardTo", "confidence",
         "languageConfidence", "promisesSomething", "claimsState",
     )
+    /**
+     * DEB-1500 (FR-13) — the schema requires the two titles, but an answer is read without them: a batch built before this
+     * shipped comes back with neither, and its reply must still be judged and sent. A missing title is just no title.
+     */
+    private val REQUIRED = FIELDS + listOf("title", "englishTitle")
 
     private val SCHEMA = buildJsonObject {
         put("type", "object")
@@ -79,10 +87,12 @@ object SupportAi {
             putJsonObject("forwardTo") { put("type", "string"); putJsonArray("enum") { add(JsonPrimitive("ADMIN")); add(JsonPrimitive("HERVOR")) } }
             putJsonObject("confidence") { put("type", "string"); putJsonArray("enum") { add(JsonPrimitive("HIGH")); add(JsonPrimitive("LOW")) } }
             putJsonObject("languageConfidence") { put("type", "string"); putJsonArray("enum") { add(JsonPrimitive("HIGH")); add(JsonPrimitive("LOW")) } }
+            putJsonObject("title") { put("type", "string") }
+            putJsonObject("englishTitle") { put("type", "string") }
             putJsonObject("promisesSomething") { put("type", "boolean") }
             putJsonObject("claimsState") { put("type", "boolean") }
         }
-        putJsonArray("required") { FIELDS.forEach { add(JsonPrimitive(it)) } }
+        putJsonArray("required") { REQUIRED.forEach { add(JsonPrimitive(it)) } }
         put("additionalProperties", false)
     }
 
@@ -144,6 +154,8 @@ object SupportAi {
         val ticketClass: String, val summary: String, val reproduction: String?, val replyLanguage: String, val reply: String,
         val decision: String, val forwardTo: String, val confidence: String, val languageConfidence: String,
         val promisesSomething: Boolean, val claimsState: Boolean,
+        /** DEB-1500 (FR-13) — as the model wrote them. Null when the answer carried none; [titles] decides what may be stored. */
+        val title: String? = null, val englishTitle: String? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -184,7 +196,7 @@ object SupportAi {
         }
         return Answer(
             cls, summary.takeCodePoints(MAX_SUMMARY), repro?.ifBlank { null }?.takeCodePoints(MAX_SUMMARY), lang, reply,
-            decision, to, conf, langConf, promises, claims,
+            decision, to, conf, langConf, promises, claims, str("title"), str("englishTitle"),
         ) to "read"
     }
 
@@ -250,22 +262,61 @@ object SupportAi {
         }
     }
 
+    // ─── The case title (DEB-1500, FR-13) ────────────────────────────────────
+
+    const val MAX_TITLE = 60
+
+    /** What may be stored of the titles [titles] was given, and why anything was not. [dropped] names rules, never the text. */
+    class TitleRuling(val title: String?, val englishTitle: String?, val dropped: String?)
+
+    /** The first test a title fails, in words that quote nothing of it; null when it may be stored. */
+    private fun titleFault(t: String?): String? = when {
+        t == null || t.isBlank() -> "empty"
+        t.contains('\n') || t.contains('\r') -> "not one line"
+        t.trim().codePointCount() > MAX_TITLE -> "longer than $MAX_TITLE characters"
+        internalString(t) != null -> "rule 4 — contains an internal string"
+        else -> null
+    }
+
+    /**
+     * FR-13 — `englishTitle` is stored when it is one line, at most 60 code points and passes rule 4. `title` passes the
+     * same tests and, because it reaches the viewer even when the reply forwards, every check a sent reply's language must:
+     * `languageConfidence` HIGH (rule 2) and a `replyLanguage` that is the viewer's (rule 5). A title that fails stays null
+     * and a later turn may fill it.
+     */
+    fun titles(a: Answer, viewerLanguage: String): TitleRuling {
+        val dropped = ArrayList<String>()
+        val english = a.englishTitle?.trim()
+        val englishFault = titleFault(english)
+        if (englishFault != null && a.englishTitle != null) dropped += "englishTitle $englishFault"
+        val own = a.title?.trim()
+        val ownFault = titleFault(own) ?: when {
+            a.languageConfidence != "HIGH" -> "rule 2 — language confidence is LOW"
+            a.replyLanguage == "other" || a.replyLanguage != viewerLanguage.ifBlank { "en" } -> "rule 5 — not in the viewer's language"
+            else -> null
+        }
+        if (ownFault != null && a.title != null) dropped += "title $ownFault"
+        return TitleRuling(
+            title = own.takeIf { ownFault == null }, englishTitle = english.takeIf { englishFault == null },
+            dropped = dropped.takeIf { it.isNotEmpty() }?.joinToString("; "),
+        )
+    }
+
     // ─── The server's own lines (FR-321-7) ───────────────────────────────────
 
     /**
-     * Written from this table and never by the model, in the viewer's language. The Danish and Faroese text is taken from
-     * design round 3's string set when it is pulled (DEB-803); until then both carry the English line, and the phase is
-     * not done while either is still English.
+     * Written from this table and never by the model, in the viewer's language. The Danish and Faroese text is round 3's,
+     * character for character (DEB-1500, FR-15); it clears the condition 321 set for itself.
      */
     private val FORWARD_NOTICE = mapOf(
         "en" to "I'll forward this and they will answer you soon.",
-        "da" to "I'll forward this and they will answer you soon.",
-        "fo" to "I'll forward this and they will answer you soon.",
+        "da" to "Jeg sender det videre, og de svarer dig snart.",
+        "fo" to "Eg sendi hetta víðari, og tey svara tær skjótt.",
     )
     private val REQUEST_LOGGED = mapOf(
         "en" to "Thanks — this is logged as request #{n}. Adding it needs a decision from the people who run this server, so it won't happen on its own.",
-        "da" to "Thanks — this is logged as request #{n}. Adding it needs a decision from the people who run this server, so it won't happen on its own.",
-        "fo" to "Thanks — this is logged as request #{n}. Adding it needs a decision from the people who run this server, so it won't happen on its own.",
+        "da" to "Tak — det er registreret som ønske #{n}. At tilføje det kræver en beslutning fra dem, der driver denne server, så det sker ikke af sig selv.",
+        "fo" to "Takk — hetta er skrásett sum ynski #{n}. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.",
     )
 
     fun forwardNotice(language: String): String = FORWARD_NOTICE[language] ?: FORWARD_NOTICE.getValue("en")

@@ -419,6 +419,96 @@ class SupportServiceTest {
         assertEquals(41L, back.number)
     }
 
+    // ── DEB-1500 (FR-4) — the summary and every push say whether the lane is open ──────────────────────────────────────
+
+    @Test fun theSummaryAndEveryAdminPushCarryTheLaneAndHervorSwitches() = support("lanefields") {
+        file()
+        val pushed = (adminPushes.last() as JobEvent.SupportTicketChanged).summary
+        assertTrue(pushed.laneOpen, "an event is only pushed while the lane is open")
+        assertFalse(pushed.hervorEnabled)
+        configure { copy(hervorEnabled = true) }
+        assertTrue(service.summary().hervorEnabled)
+        configure { copy(enabled = false) }
+        val closed = service.summary()
+        assertFalse(closed.laneOpen)
+        assertEquals(1, closed.open, "a closed lane still counts the tickets it holds")
+        // Admin-only, and on the wire even as a false: the strip must not read an absent key as open.
+        val wire = Json { ignoreUnknownKeys = true }.encodeToString(dev.jellystructure.model.SupportSummary.serializer(), closed)
+        assertTrue("\"laneOpen\":false" in wire && "\"hervorEnabled\":true" in wire, wire)
+    }
+
+    // ── DEB-1500 (FR-12) — the Support log ─────────────────────────────────────────────────────────────────────────────
+
+    @Test fun theLogListsTheFilingTheVerdictTheForwardTheReplyAndTheFlagAndNoTextOfTheTicket() = support("log") {
+        val n = file(body = "SECRET-BODY wants subtitles").ticket.number
+        now += 10; service.agentTurnSent(n, "u-anna", "b1", "c1", "claude-opus-5", "SECRET-SENT-BLOCK")
+        service.agentTurnAnswered("b1", "c1", "SECRET-ANSWER", "FORWARDED: rule 4 — the reply contains an internal string (\"FR-12\") | TITLE_DROPPED: title rule 4", 1, 1, 1)
+        now += 10; ok(service.forward(n, "Hallur", "ADMIN", null, "ADMIN", "SECRET-NOTE"))
+        now += 10; ok(service.reply(n, "Hallur", "SECRET-REPLY"))
+        now += 10; ok(service.setClass(n, "BUG", "Hallur"))
+        now += 10; ok(service.setState(n, "RESOLVED", "Hallur"))
+        now += 10; ok(service.post("u-anna", n, "phone", "d1", "SECRET-AGAIN"))
+        now += 10; ok(service.setFlag(n, true, "Hallur"))
+        now += 10; ok(service.setFlag(n, false, "Hallur"))
+
+        val log = service.log()
+        val wire = Json { ignoreUnknownKeys = true; encodeDefaults = true }.encodeToString(dev.jellystructure.model.SupportLog.serializer(), log)
+        assertFalse("SECRET" in wire, "no body, note, reply, summary or title is ever in an entry: $wire")
+        assertFalse("FR-12" in wire, "a rule that quotes the string that failed it is cut before it reaches the log: $wire")
+        assertEquals(
+            listOf("flag_removed", "flagged", "reopened", "state_changed", "classified", "replied", "forwarded", "ai_verdict", "received"),
+            log.entries.map { it.action },
+        )
+        val byAction = log.entries.associateBy { it.action }
+        assertEquals("ADMIN" to "Hallur", byAction.getValue("flagged").let { it.actor to it.actorLabel })
+        assertEquals("ADMIN" to "Hallur", byAction.getValue("forwarded").let { it.actor to it.actorLabel })
+        assertEquals("ADMIN" to "Hallur", byAction.getValue("replied").let { it.actor to it.actorLabel })
+        assertEquals("VIEWER" to "Name-of-u-anna", byAction.getValue("received").let { it.actor to it.actorLabel })
+        assertEquals("VIEWER" to "Name-of-u-anna", byAction.getValue("reopened").let { it.actor to it.actorLabel })
+        assertEquals(listOf("RESOLVED"), byAction.getValue("state_changed").args)
+        assertEquals(listOf("BUG"), byAction.getValue("classified").args)
+        assertEquals(emptyList(), byAction.getValue("received").args)
+        assertEquals("AI_AGENT" to listOf("FORWARDED: rule 4 — the reply contains an internal string | TITLE_DROPPED: title rule 4"),
+            byAction.getValue("ai_verdict").let { it.actor to it.args })
+        assertTrue(log.entries.all { it.ticket == n })
+        assertEquals(log.entries.map { it.at }.sortedDescending(), log.entries.map { it.at }, "newest first")
+    }
+
+    @Test fun anAdminOnlyNoteIsNotAReplyAndALineWrittenBeforeTheActorColumnReadsAsSystem() = support("logold") {
+        val n = file().ticket.number
+        now += 10
+        // An ADMIN_ONLY note rides a forward; the forward is the entry, the note is not "replied".
+        ok(service.forward(n, "Hallur", "ADMIN", null, "ADMIN", "a note"))
+        // What a line written before 81.sqm looks like: a SYSTEM line with no actor.
+        now += 10
+        db.supportQueries.insertMessage(n, "SYSTEM", null, null, null, "FORWARDED", "[\"TEAM\"]", "VIEWER", null, null, now, null, null)
+        val log = service.log()
+        assertEquals(listOf("forwarded", "forwarded", "received"), log.entries.map { it.action })
+        assertEquals("SYSTEM", log.entries.first().actor)
+        assertNull(log.entries.first().actorLabel)
+        assertEquals(listOf("TEAM"), log.entries.first().args)
+    }
+
+    @Test fun theLogPagesBackwardsFromAnEntryIdWithNoGapAndNoRepeat() = support("logpage") {
+        val numbers = (1..4).map { i -> now += 5; file(user = "u-$i").ticket.number }
+        now += 5; service.agentTurnSent(numbers[0], "u-1", "b", "c", "m", "x")
+        service.agentTurnAnswered("b", "c", null, "SENT", 0, 0, 0)
+        now += 5; ok(service.reply(numbers[1], "Hallur", "hi"))
+        val all = service.log(limit = 200).entries
+        assertEquals(6, all.size, "four filings, one verdict and one reply")
+        val pages = ArrayList<Long>()
+        var cursor: Long? = null
+        while (true) {
+            val page = service.log(before = cursor, limit = 2).entries
+            if (page.isEmpty()) break
+            assertTrue(page.size <= 2)
+            pages += page.map { it.id }
+            cursor = page.last().id
+        }
+        assertEquals(all.map { it.id }, pages, "walking back two at a time visits every entry once, in order")
+        assertEquals(all.map { it.id }.distinct(), all.map { it.id }, "an entry id never collides across the two sources")
+    }
+
     private data class SupportSummaryOf(val open: Int, val owedByAdmin: Int, val overdue: Int) {
         companion object { fun of(s: dev.jellystructure.model.SupportSummary) = SupportSummaryOf(s.open, s.owedByAdmin, s.overdue) }
     }

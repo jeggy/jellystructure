@@ -9,6 +9,8 @@ import dev.jellystructure.model.SupportAiTurn
 import dev.jellystructure.model.SupportAdminMessage
 import dev.jellystructure.model.SupportAdminThread
 import dev.jellystructure.model.SupportAdminTicket
+import dev.jellystructure.model.SupportLog
+import dev.jellystructure.model.SupportLogEntry
 import dev.jellystructure.model.SupportSummary
 import dev.jellystructure.shared.tv.SupportMessageView
 import dev.jellystructure.shared.tv.SupportThread
@@ -109,8 +111,8 @@ class SupportService(
         val id = db.transactionWithResult {
             q.insertTicket(userId, STATE_OPEN, if (agent) HOLDER_AI_AGENT else HOLDER_ADMIN, if (agent) OWES_AI_AGENT else OWES_ADMIN, t, language, t, t)
             val id = q.lastInsertId().executeAsOne()
-            q.insertMessage(id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_VIEWER, null, body, null, null, VISIBLE, platform, deviceId, t)
-            q.insertMessage(id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_RECEIVED, args(id.toString()), VISIBLE, null, null, t)
+            q.insertMessage(id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_VIEWER, null, body, null, null, VISIBLE, platform, deviceId, t, ACTOR_VIEWER, null)
+            q.insertMessage(id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_RECEIVED, args(id.toString()), VISIBLE, null, null, t, ACTOR_VIEWER, null)
             id
         }
         asked(id)
@@ -125,7 +127,7 @@ class SupportService(
         val t = now()
         messageLimit(userId, t)?.let { return it }
         db.transaction {
-            q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_VIEWER, null, body, null, null, VISIBLE, platform, deviceId, t)
+            q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_VIEWER, null, body, null, null, VISIBLE, platform, deviceId, t, null, null)
             viewerSpoke(tk, t)
         }
         asked(tk.id)
@@ -141,7 +143,7 @@ class SupportService(
             return Outcome.Ok(viewerThread(tk))
         }
         db.transaction {
-            q.insertMessage(tk.id, SupportWire.KIND_SAME_HERE, SupportWire.AUTHOR_VIEWER, null, null, null, null, VISIBLE, platform, deviceId, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SAME_HERE, SupportWire.AUTHOR_VIEWER, null, null, null, null, VISIBLE, platform, deviceId, t, null, null)
             viewerSpoke(tk, t)
         }
         asked(tk.id)
@@ -182,6 +184,8 @@ class SupportService(
             open = live.count { it.state != STATE_RESOLVED },
             owedByAdmin = live.count { it.owes == OWES_ADMIN },
             overdue = live.count { isOverdue(it.owes, it.owed_since, t) },
+            laneOpen = limits.enabled,
+            hervorEnabled = limits.hervorEnabled,
         )
     }
 
@@ -191,7 +195,7 @@ class SupportService(
         bodyRefusal(body)?.let { return it }
         val t = now()
         db.transaction {
-            q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_ADMIN, adminName, body, null, null, VISIBLE, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_ADMIN, adminName, body, null, null, VISIBLE, null, null, t, null, null)
             q.setOwes(OWES_NONE, t, t, tk.id)
         }
         changed(tk.id, viewerVisible = true)
@@ -215,9 +219,9 @@ class SupportService(
         val t = now()
         db.transaction {
             q.setRouting(tk.state, holder, if (holder == HOLDER_SEAT) seatName else null, owes, t, t, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(viewerHolder(holder)), VISIBLE, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(viewerHolder(holder)), VISIBLE, null, null, t, ACTOR_ADMIN, adminName)
             if (note.isNotBlank()) {
-                q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_ADMIN, adminName, note, null, null, ADMIN_ONLY, null, null, t)
+                q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_ADMIN, adminName, note, null, null, ADMIN_ONLY, null, null, t, null, null)
             }
         }
         changed(tk.id, viewerVisible = true)
@@ -228,7 +232,7 @@ class SupportService(
      * FR-320-12 — `RESOLVED` owes nothing, so a resolved ticket is never overdue. Leaving `RESOLVED` hands the
      * obligation back to whoever holds it, by the same rule a viewer's message uses. Same state = no line, no push.
      */
-    fun setState(number: Long, state: String): Outcome<SupportAdminThread> {
+    fun setState(number: Long, state: String, adminName: String? = null): Outcome<SupportAdminThread> {
         val tk = q.ticket(number).executeAsOneOrNull() ?: return notFound()
         if (state !in STATES) return bad("state", "state must be OPEN, IN_PROGRESS or RESOLVED")
         if (state == tk.state) return Outcome.Ok(adminThreadOf(tk))
@@ -241,33 +245,33 @@ class SupportService(
             }
             val since = if (owes == tk.owes) tk.owed_since else t
             q.setRouting(state, tk.holder, tk.holder_seat, owes, since, t, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_STATE_CHANGED, args(state), VISIBLE, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_STATE_CHANGED, args(state), VISIBLE, null, null, t, ACTOR_ADMIN, adminName)
         }
         changed(tk.id, viewerVisible = true)
         return Outcome.Ok(adminThreadOf(q.ticket(tk.id).executeAsOne()))
     }
 
-    fun setClass(number: Long, ticketClass: String): Outcome<SupportAdminThread> {
+    fun setClass(number: Long, ticketClass: String, adminName: String? = null): Outcome<SupportAdminThread> {
         val tk = q.ticket(number).executeAsOneOrNull() ?: return notFound()
         if (ticketClass !in CLASSES) return bad("class", "class must be BUG, REQUEST, QUESTION, ACCOUNT or OTHER")
         if (ticketClass == tk.class_) return Outcome.Ok(adminThreadOf(tk))
         val t = now()
         db.transaction {
             q.setClass(ticketClass, t, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(ticketClass), VISIBLE, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(ticketClass), VISIBLE, null, null, t, ACTOR_ADMIN, adminName)
         }
         changed(tk.id, viewerVisible = true)
         return Outcome.Ok(adminThreadOf(q.ticket(tk.id).executeAsOne()))
     }
 
     /** FR-320-12 — an `ADMIN_ONLY` line and nothing the viewer can see: no push to the viewer, no unread. */
-    fun setFlag(number: Long, flagged: Boolean): Outcome<SupportAdminThread> {
+    fun setFlag(number: Long, flagged: Boolean, adminName: String? = null): Outcome<SupportAdminThread> {
         val tk = q.ticket(number).executeAsOneOrNull() ?: return notFound()
         if ((tk.flagged == 1L) == flagged) return Outcome.Ok(adminThreadOf(tk))
         val t = now()
         db.transaction {
             q.setFlag(if (flagged) 1L else 0L, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, if (flagged) EVENT_FLAGGED else EVENT_UNFLAGGED, null, ADMIN_ONLY, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, if (flagged) EVENT_FLAGGED else EVENT_UNFLAGGED, null, ADMIN_ONLY, null, null, t, ACTOR_ADMIN, adminName)
         }
         changed(tk.id, viewerVisible = false)
         return Outcome.Ok(adminThreadOf(q.ticket(tk.id).executeAsOne()))
@@ -318,7 +322,7 @@ class SupportService(
     }
 
     /** What `AI Agent` took from a request: the class it chose, and the English summary. */
-    class Classification(val ticketClass: String?, val summary: String?)
+    class Classification(val ticketClass: String?, val summary: String?, val title: String? = null, val englishTitle: String? = null)
 
     enum class AgentApplied { APPLIED, GONE, HANDLED, SUPERSEDED }
 
@@ -336,15 +340,17 @@ class SupportService(
     /** FR-321-5 — the class and summary are stored whatever happens next: `ADMIN_ONLY` and `VIEWER` `CLASSIFIED` lines. */
     private fun classify(tk: dev.jellystructure.db.Support_ticket, c: Classification, t: Long) {
         c.summary?.takeIf { it.isNotBlank() }?.let { q.setEnglishSummary(it, tk.id) }
+        // DEB-1500 (FR-13) — each title is written only while it is still null; once set, `AI Agent` never changes it.
+        if (c.title != null || c.englishTitle != null) q.setTitles(c.title, c.englishTitle, tk.id)
         val cls = c.ticketClass?.takeIf { it in CLASSES } ?: return
         if (cls == tk.class_) return
         q.setClass(cls, t, tk.id)
-        q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(cls), ADMIN_ONLY, null, null, t)
-        q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(cls), VISIBLE, null, null, t)
+        q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(cls), ADMIN_ONLY, null, null, t, ACTOR_AI_AGENT, null)
+        q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_CLASSIFIED, args(cls), VISIBLE, null, null, t, ACTOR_AI_AGENT, null)
     }
 
     private fun agentLine(id: Long, body: String, visibility: String, t: Long) =
-        q.insertMessage(id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_AI_AGENT, AI_AGENT_LABEL, body, null, null, visibility, null, null, t)
+        q.insertMessage(id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_AI_AGENT, AI_AGENT_LABEL, body, null, null, visibility, null, null, t, null, null)
 
     /** FR-321-5 — a reply that passed every rule: a `MESSAGE` by `AI_AGENT`, and nothing is owed until the viewer next writes. */
     fun agentSend(number: Long, askedUpTo: Long, c: Classification, reply: String): AgentApplied {
@@ -372,7 +378,7 @@ class SupportService(
             classify(tk, c, t)
             if (notice != null) agentLine(tk.id, notice, VISIBLE, t)
             q.setRouting(tk.state, to, null, to, tk.owed_since, t, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(viewerHolder(to)), VISIBLE, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(viewerHolder(to)), VISIBLE, null, null, t, ACTOR_AI_AGENT, null)
             if (note.isNotBlank()) agentLine(tk.id, note, ADMIN_ONLY, t)
         }
         changed(tk.id, viewerVisible = true)
@@ -390,7 +396,7 @@ class SupportService(
         db.transaction {
             c.summary?.takeIf { it.isNotBlank() }?.let { q.setEnglishSummary(it, tk.id) }
             q.setFlag(1L, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, EVENT_FLAGGED, null, ADMIN_ONLY, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, EVENT_FLAGGED, null, ADMIN_ONLY, null, null, t, ACTOR_AI_AGENT, null)
             if (note.isNotBlank()) agentLine(tk.id, note, ADMIN_ONLY, t)
         }
         changed(tk.id, viewerVisible = false)
@@ -410,7 +416,7 @@ class SupportService(
                 val owes = if (tk.owes == OWES_NONE) OWES_NONE else OWES_ADMIN
                 q.setRouting(tk.state, HOLDER_ADMIN, null, owes, tk.owed_since, if (tk.flagged == 1L) tk.updated_at else t, tk.id)
                 q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(HOLDER_ADMIN),
-                    if (tk.flagged == 1L) ADMIN_ONLY else VISIBLE, null, null, t)
+                    if (tk.flagged == 1L) ADMIN_ONLY else VISIBLE, null, null, t, ACTOR_SYSTEM, null)
                 agentLine(tk.id, reason, ADMIN_ONLY, t)
             }
             changed(tk.id, viewerVisible = tk.flagged == 0L)
@@ -455,6 +461,59 @@ class SupportService(
         if (tk.holder == HOLDER_AI_AGENT && tk.flagged == 0L && tk.owes == OWES_AI_AGENT) askAgent(tk.id)
     }
 
+    // ── The Support log (DEB-1500, FR-12) ─────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Newest first, [limit] at most, strictly older than the entry [before] names (an entry's own [SupportLogEntry.id]).
+     * It is built from the `SYSTEM` lines of both visibilities, every reply a viewer can read by `AI_AGENT`, `HERVOR` or
+     * `ADMIN`, and every `AI Agent` verdict. **No body, note, summary or title reaches an entry**: a line is named by its
+     * event and the facts that go with it (a holder, a state, a class), never by its text (FR-320-16).
+     */
+    fun log(before: Long? = null, limit: Int = LOG_PAGE): SupportLog {
+        val n = limit.coerceIn(1, LOG_MAX).toLong()
+        val cursor = before ?: Long.MAX_VALUE
+        val at = before?.let { logTimeOf(it) } ?: Long.MAX_VALUE
+        val owners = HashMap<Long, String>()
+        fun ownerName(ticket: Long): String? = owners.getOrPut(ticket) {
+            q.ticket(ticket).executeAsOneOrNull()?.owner_user_id?.let { nameOf(it) ?: it } ?: ""
+        }.ifEmpty { null }
+        val fromMessages = q.logMessages(at, cursor, n).executeAsList().mapNotNull { m ->
+            val args = decodeArgs(m.event_args)
+            if (m.kind == SupportWire.KIND_MESSAGE) {
+                return@mapNotNull SupportLogEntry(m.id * 2, m.at, m.ticket, m.author.orEmpty(), m.author_label, "replied")
+            }
+            val action = when (m.event) {
+                SupportWire.EVENT_RECEIVED -> "received"
+                SupportWire.EVENT_FORWARDED -> "forwarded"
+                SupportWire.EVENT_STATE_CHANGED -> "state_changed"
+                SupportWire.EVENT_CLASSIFIED -> "classified"
+                SupportWire.EVENT_REOPENED -> "reopened"
+                EVENT_FLAGGED -> "flagged"
+                EVENT_UNFLAGGED -> "flag_removed"
+                else -> return@mapNotNull null
+            }
+            val actor = m.actor ?: ACTOR_SYSTEM
+            SupportLogEntry(m.id * 2, m.at, m.ticket, actor, if (actor == ACTOR_VIEWER) ownerName(m.ticket) else m.actor_label, action,
+                // A received line's only arg is the ticket's own number, which the entry already carries.
+                if (action == "received") emptyList() else args)
+        }
+        val fromTurns = q.logTurns(at, cursor, n).executeAsList().map { t ->
+            SupportLogEntry(t.id * 2 + 1, t.at, t.ticket, ACTOR_AI_AGENT, AI_AGENT_LABEL, "ai_verdict", listOf(verdictForLog(t.verdict.orEmpty())))
+        }
+        return SupportLog((fromMessages + fromTurns).sortedWith(compareByDescending<SupportLogEntry> { it.at }.thenByDescending { it.id }).take(n.toInt()))
+    }
+
+    /** The time of the entry a cursor names, or the far future (so an unknown cursor reads from the top). */
+    private fun logTimeOf(id: Long): Long =
+        (if (id % 2L == 0L) q.logMessageAt(id / 2).executeAsOneOrNull() else q.logTurnAt(id / 2).executeAsOneOrNull()) ?: Long.MAX_VALUE
+
+    /**
+     * A verdict as the log names it: `SENT`, `FORWARDED: <rule>`, `FLAGGED` or `DISCARDED: <why>`. A rule can quote the
+     * string that failed it (rule 4 names the internal string a reply held), so anything in quotation marks is cut.
+     */
+    private fun verdictForLog(verdict: String): String =
+        verdict.replace(Regex("\\s*\\(\"[^\"]*\"\\)"), "").replace(Regex("\"[^\"]*\""), "").trim()
+
     // ── internals ────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private fun own(userId: String, number: Long) =
@@ -478,7 +537,7 @@ class SupportService(
     private fun viewerSpoke(tk: dev.jellystructure.db.Support_ticket, t: Long) {
         if (tk.state == STATE_RESOLVED) {
             q.setRouting(STATE_OPEN, HOLDER_ADMIN, null, OWES_ADMIN, t, t, tk.id)
-            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_REOPENED, null, VISIBLE, null, null, t)
+            q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_REOPENED, null, VISIBLE, null, null, t, ACTOR_VIEWER, null)
             return
         }
         val owes = owesFor(tk.holder)
@@ -511,7 +570,7 @@ class SupportService(
         q.viewerUnread(tk.id, tk.viewer_read_message_id).executeAsOne().toInt()
 
     private fun viewerRow(tk: dev.jellystructure.db.Support_ticket) = SupportTicketRow(
-        number = tk.id, state = tk.state, holder = viewerHolder(tk.holder), ticketClass = tk.class_,
+        number = tk.id, state = tk.state, holder = viewerHolder(tk.holder), ticketClass = tk.class_, title = tk.title,
         preview = preview(tk.id), lastActivity = tk.updated_at, unread = viewerUnreadOf(tk),
     )
 
@@ -530,12 +589,13 @@ class SupportService(
         number = tk.id, ownerId = tk.owner_user_id, ownerName = nameOf(tk.owner_user_id) ?: tk.owner_user_id,
         state = tk.state, holder = tk.holder, holderSeat = tk.holder_seat, owes = tk.owes, owedSince = tk.owed_since,
         overdue = isOverdue(tk.owes, tk.owed_since, now()), ticketClass = tk.class_, englishSummary = tk.english_summary,
-        viewerLanguage = tk.viewer_language, flagged = tk.flagged == 1L, preview = preview(tk.id),
+        englishTitle = tk.english_title, title = tk.title, viewerLanguage = tk.viewer_language, flagged = tk.flagged == 1L, preview = preview(tk.id),
         lastActivity = tk.updated_at, unread = q.adminUnread(tk.id, tk.admin_read_message_id).executeAsOne().toInt(),
     )
 
     private fun adminThreadOf(tk: dev.jellystructure.db.Support_ticket) = SupportAdminThread(
         ticket = adminRow(tk),
+        aiComposing = tk.holder == HOLDER_AI_AGENT && tk.flagged == 0L && agentComposing(tk.id),
         messages = q.messages(tk.id).executeAsList().map {
             SupportAdminMessage(
                 id = it.id, kind = it.kind, author = it.author, authorLabel = it.author_label, body = it.body,
@@ -614,8 +674,17 @@ class SupportService(
         const val VISIBLE = "VIEWER"
         const val ADMIN_ONLY = "ADMIN_ONLY"
 
+        /** DEB-1500 (FR-12) — who wrote a `SYSTEM` line. A line written before the column existed has none and reads as [ACTOR_SYSTEM]. */
+        const val ACTOR_VIEWER = "VIEWER"
+        const val ACTOR_ADMIN = "ADMIN"
+        const val ACTOR_AI_AGENT = "AI_AGENT"
+        const val ACTOR_SYSTEM = "SYSTEM"
+
         /** FR-320-5 — a phone, a computer and the web file; a TV, a Tizen TV, a cast receiver or no header do not. */
         val WRITE_PLATFORMS = setOf("phone", "web", "mac", "linux")
+
+        const val LOG_PAGE = 50
+        const val LOG_MAX = 200
 
         const val DAY = 86_400L
         const val SAME_HERE_WINDOW = 6 * 3600L

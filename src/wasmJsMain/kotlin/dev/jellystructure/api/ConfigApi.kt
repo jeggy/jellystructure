@@ -235,6 +235,8 @@ data class AiJobStatus(
     val heldBack: String? = null,    // Phase 272 — why what waits was not sent (the monthly limit)
     val estimateMicroUsd: Map<String, Long> = emptyMap(),
     val estimateBasis: String = "",
+    /** DEB-1500 (FR-5) — English, from the server: why the job would not run right now; null when it would. */
+    val inactiveReason: String? = null,
 )
 
 @Serializable

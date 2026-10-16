@@ -17,7 +17,9 @@ CREATE TABLE support_ticket (
     admin_read_message_id INTEGER NOT NULL DEFAULT 0,
     viewer_read_message_id INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    title TEXT,
+    english_title TEXT
 );
 
 CREATE INDEX support_ticket_owner ON support_ticket(owner_user_id, created_at);
@@ -34,7 +36,9 @@ CREATE TABLE support_message (
     visibility TEXT NOT NULL,
     device_platform TEXT,
     device_id TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    actor TEXT,
+    actor_label TEXT
 );
 
 CREATE INDEX support_message_ticket ON support_message(ticket_id, id);
@@ -69,8 +73,8 @@ lastInsertId:
 SELECT last_insert_rowid();
 
 insertMessage:
-INSERT INTO support_message(ticket_id, kind, author, author_label, body, event, event_args, visibility, device_platform, device_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO support_message(ticket_id, kind, author, author_label, body, event, event_args, visibility, device_platform, device_id, created_at, actor, actor_label)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 ticket:
 SELECT * FROM support_ticket WHERE id = :id;
@@ -109,6 +113,11 @@ UPDATE support_ticket SET flagged = :flagged WHERE id = :id;
 
 setEnglishSummary:
 UPDATE support_ticket SET english_summary = :summary WHERE id = :id;
+
+-- DEB-1500 (FR-13) — `AI Agent` titles the case once: each title is written only while it is still null, and neither
+-- touches updated_at (the title is not a new thing the viewer is told about).
+setTitles:
+UPDATE support_ticket SET title = COALESCE(title, :title), english_title = COALESCE(english_title, :english_title) WHERE id = :id;
 
 moveViewerRead:
 UPDATE support_ticket SET viewer_read_message_id = :up_to WHERE id = :id AND viewer_read_message_id < :up_to;
@@ -172,8 +181,9 @@ WHERE batch_id = :batch AND custom_id = :custom;
 aiTurnsOf:
 SELECT * FROM support_ai_turn WHERE ticket_id = :ticket ORDER BY id;
 
+-- DEB-1500 (FR-13) — a title that was dropped rides beside the verdict (`SENT | TITLE_DROPPED: …`), so SENT is a prefix.
 aiTurnsSentOf:
-SELECT COUNT(*) FROM support_ai_turn WHERE ticket_id = :ticket AND verdict = 'SENT';
+SELECT COUNT(*) FROM support_ai_turn WHERE ticket_id = :ticket AND (verdict = 'SENT' OR verdict LIKE 'SENT |%');
 
 aiTurnsSince:
 SELECT COUNT(*) FROM support_ai_turn WHERE owner_user_id = :owner AND created_at > :since;
@@ -184,3 +194,31 @@ DELETE FROM support_ai_turn WHERE ticket_id = :ticket;
 lastViewerMessageId:
 SELECT COALESCE(MAX(id), 0) FROM support_message
 WHERE ticket_id = :ticket AND visibility = 'VIEWER' AND author = 'VIEWER' AND kind IN ('MESSAGE', 'SAME_HERE');
+
+-- ─── DEB-1500 (FR-12) — the Support log ────────────────────────────────────
+
+-- One log entry per row of either source, newest first. An entry's id is `id * 2` for a message and `id * 2 + 1` for a
+-- turn, so the two sources never collide and `before` is one number. (created_at, id) is the order; a cursor is the
+-- entry's own composite id, and its time is looked up first (logMessageAt, logTurnAt).
+logMessages:
+SELECT m.id AS id, m.created_at AS at, m.ticket_id AS ticket, m.kind AS kind, m.author AS author, m.author_label AS author_label,
+       m.event AS event, m.event_args AS event_args, m.visibility AS visibility, m.actor AS actor, m.actor_label AS actor_label
+FROM support_message m
+WHERE (m.kind = 'SYSTEM' OR (m.kind = 'MESSAGE' AND m.visibility = 'VIEWER' AND m.author IN ('AI_AGENT', 'HERVOR', 'ADMIN')))
+  AND (m.created_at < :at OR (m.created_at = :at AND m.id * 2 < :before))
+ORDER BY m.created_at DESC, m.id DESC
+LIMIT :limit;
+
+logTurns:
+SELECT t.id AS id, t.created_at AS at, t.ticket_id AS ticket, t.verdict AS verdict
+FROM support_ai_turn t
+WHERE t.verdict IS NOT NULL
+  AND (t.created_at < :at OR (t.created_at = :at AND t.id * 2 + 1 < :before))
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT :limit;
+
+logMessageAt:
+SELECT created_at FROM support_message WHERE id = :id;
+
+logTurnAt:
+SELECT created_at FROM support_ai_turn WHERE id = :id;

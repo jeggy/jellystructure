@@ -25,6 +25,9 @@ data class SupportAdminTicket(
     @EncodeDefault val overdue: Boolean = false,
     @SerialName("class") val ticketClass: String? = null,
     val englishSummary: String? = null,
+    /** DEB-1500 (FR-13) — `AI Agent`'s case title in English (all tickets are English on our side), and in the viewer's language. Null until a turn writes one. */
+    val englishTitle: String? = null,
+    val title: String? = null,
     @EncodeDefault val viewerLanguage: String = "en",
     @EncodeDefault val flagged: Boolean = false,
     @EncodeDefault val preview: String = "",
@@ -51,18 +54,49 @@ data class SupportAdminMessage(
 data class SupportAdminThread(
     val ticket: SupportAdminTicket,
     @EncodeDefault val messages: List<SupportAdminMessage> = emptyList(),
+    /** DEB-1500 (FR-8) — the same flag the viewer's thread carries: `AI Agent` has the ticket queued or out. */
+    @EncodeDefault val aiComposing: Boolean = false,
 )
 
 @Serializable
 data class SupportAdminList(@EncodeDefault val tickets: List<SupportAdminTicket> = emptyList())
 
-/** FR-320-14 — computed over unflagged tickets. */
+/**
+ * FR-320-14 — computed over unflagged tickets. DEB-1500 (FR-4) adds two admin-only fields: [laneOpen] is `[support]
+ * enabled`, and [hervorEnabled] is `[support] hervor_enabled`. The tab and the sidebar count read them from here, never
+ * from the config form.
+ */
 @Serializable
 data class SupportSummary(
     @EncodeDefault val open: Int = 0,
     @EncodeDefault val owedByAdmin: Int = 0,
     @EncodeDefault val overdue: Int = 0,
+    @EncodeDefault val laneOpen: Boolean = false,
+    @EncodeDefault val hervorEnabled: Boolean = false,
 )
+
+/** DEB-1500 (FR-3) — `POST /api/support/enabled`. */
+@Serializable data class SupportEnabledRequest(val enabled: Boolean)
+
+/**
+ * DEB-1500 (FR-12) — one line of Activity › Support log. [id] orders it (it is also the `before` cursor), [action] is a
+ * code (`received` · `forwarded` · `state_changed` · `classified` · `reopened` · `flagged` · `flag_removed` · `replied` ·
+ * `ai_verdict`), and [args] are the facts that go with it. **No body, note, summary or title is ever here** (FR-320-16).
+ */
+@Serializable
+data class SupportLogEntry(
+    val id: Long,
+    val at: Long,
+    val ticket: Long,
+    /** `AI_AGENT` · `HERVOR` · `ADMIN` · `VIEWER` · `SYSTEM`. */
+    val actor: String,
+    val actorLabel: String? = null,
+    val action: String,
+    @EncodeDefault val args: List<String> = emptyList(),
+)
+
+@Serializable
+data class SupportLog(@EncodeDefault val entries: List<SupportLogEntry> = emptyList())
 
 /** `POST …/forward`. [holder] is `ADMIN` · `HERVOR` · `SEAT`; [seat] names the seat when it is `SEAT`. */
 @Serializable

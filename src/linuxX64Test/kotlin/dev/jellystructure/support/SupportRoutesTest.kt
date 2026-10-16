@@ -6,6 +6,7 @@ import dev.jellystructure.auth.SessionData
 import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.config.AiConfig
 import dev.jellystructure.config.AppConfig
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.SupportConfig
 import dev.jellystructure.server.routes.supportRoutes
 import dev.jellystructure.shared.tv.SupportThread
@@ -31,7 +32,9 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import platform.posix.getpid
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -45,7 +48,12 @@ import kotlin.test.assertTrue
 class SupportRoutesTest {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun routes(tag: String, body: suspend ApplicationTestBuilder.(SupportHarness) -> Unit) = testApplication {
+    private fun routes(
+        tag: String,
+        store: ConfigStore? = null,
+        serviceOf: (SupportHarness) -> SupportService = { it.service },
+        body: suspend ApplicationTestBuilder.(SupportHarness) -> Unit,
+    ) = testApplication {
         val h = SupportHarness(tag)
         try {
             application {
@@ -57,7 +65,7 @@ class SupportRoutesTest {
                     }
                     if (call.request.headers["X-Test-Admin"] != null) call.attributes.put(SessionKey, SessionData("t", "u-root", "root", "jf", Long.MAX_VALUE))
                 }
-                routing { route("/api") { supportRoutes(h.service) } }
+                routing { route("/api") { supportRoutes(serviceOf(h), store) } }
             }
             body(h)
         } finally { h.close() }
@@ -221,6 +229,74 @@ class SupportRoutesTest {
         h.cfg = AppConfig(support = enabled)          // …and then the key goes
         assertFalse(svc.getConfig("u-anna").supportEnabled, "a stale stored true must not draw an entry")
         assertFalse(svc.getGlobalConfig().supportEnabled)
+    }
+
+    // ── DEB-1500 (FR-3, FR-4) — the lane's switch ───────────────────────────────────────────────────────────────────────
+
+    @Test fun postingEnabledOpensAndClosesTheLaneAnswersTheNewSummaryAndEmitsConfigChangedOnlyWhenAvailabilityFlips() {
+        val toml = "/tmp/jellystructure-test-lane-${getpid()}.toml"
+        val store = ConfigStore(toml)
+        runBlocking { store.update(AppConfig(ai = AiConfig(apiKey = "sk-test"), support = SupportConfig(enabled = false, hervorEnabled = true))) }
+        var configChanged = 0
+        store.onSupportAvailabilityChanged = { configChanged++ }
+        try {
+            routes("lane", store = store, serviceOf = { SupportService(it.db, { store.current }) }) {
+                val closed = json.parseToJsonElement(client.get("/api/support/summary") { header("X-Test-Admin", "1") }.bodyAsText())
+                assertTrue("\"laneOpen\":false" in closed.toString(), closed.toString())
+
+                val open = client.adminPost("/support/enabled", """{"enabled":true}""")
+                assertEquals(HttpStatusCode.OK, open.status, open.bodyAsText())
+                val openBody = open.bodyAsText()
+                assertTrue("\"laneOpen\":true" in openBody && "\"hervorEnabled\":true" in openBody, "it answers with the new summary: $openBody")
+                assertTrue(store.current.support.enabled, "written through ConfigStore.update")
+                assertEquals(1, configChanged, "availability flipped: config_changed is emitted")
+                client.adminPost("/support/enabled", """{"enabled":true}""")
+                assertEquals(1, configChanged, "the same value again is neither a write nor an event")
+
+                val shut = client.adminPost("/support/enabled", """{"enabled":false}""")
+                assertTrue("\"laneOpen\":false" in shut.bodyAsText(), shut.bodyAsText())
+                assertFalse(store.current.support.enabled)
+                assertEquals(2, configChanged)
+                // Closed: a viewer route is 404 again, as FR-320-1 says, and the switch itself still answers.
+                assertEquals(HttpStatusCode.NotFound, client.viewerGet("/tv/support/tickets").status)
+
+                assertEquals(HttpStatusCode.BadRequest, client.adminPost("/support/enabled", """{"enabled":"yes"}""").status)
+                assertEquals(HttpStatusCode.BadRequest, client.adminPost("/support/enabled", "{}").status)
+            }
+            // The toml on disk says what the route says: the switch survives a restart.
+            assertFalse(ConfigStore(toml).also { runBlocking { it.load() } }.current.support.enabled)
+        } finally {
+            runCatching { platform.posix.remove(toml) }
+        }
+    }
+
+    @Test fun theSwitchIsUnavailableWithoutAConfigStoreAndATicketIsStillReadableWhileTheLaneIsClosed() = routes("lane-closed") { h ->
+        assertEquals(HttpStatusCode.ServiceUnavailable, client.adminPost("/support/enabled", """{"enabled":true}""").status)
+        val n = client.fileTicket()
+        h.configure { copy(enabled = false) }
+        val one = client.get("/api/support/tickets/$n") { header("X-Test-Admin", "1") }
+        assertEquals(HttpStatusCode.OK, one.status, "a closed lane still has tickets an admin can read (FR-320-1)")
+        assertEquals(HttpStatusCode.Conflict, client.adminPost("/support/tickets/$n/messages", """{"body":"x"}""").status)
+    }
+
+    // ── DEB-1500 (FR-12) — GET /api/support/log ─────────────────────────────────────────────────────────────────────────
+
+    @Test fun theLogRouteNamesTicketsAndEventsAndNeverTheirText() = routes("log") {
+        val n = client.fileTicket("PRIVATE-WORDS that the viewer typed")
+        client.adminPost("/support/tickets/$n/messages", """{"body":"PRIVATE-REPLY"}""")
+        client.adminPost("/support/tickets/$n/forward", """{"holder":"ADMIN","owes":"ADMIN","note":"PRIVATE-NOTE"}""")
+        val r = client.get("/api/support/log?limit=50") { header("X-Test-Admin", "1") }
+        assertEquals(HttpStatusCode.OK, r.status)
+        val text = r.bodyAsText()
+        assertFalse("PRIVATE" in text, text)
+        for (action in listOf("received", "replied", "forwarded")) assertTrue("\"action\":\"$action\"" in text, "$action in $text")
+        val first = json.parseToJsonElement(text).let { (it as kotlinx.serialization.json.JsonObject)["entries"] as kotlinx.serialization.json.JsonArray }
+        assertEquals(3, first.size)
+        // `before` is the entry id; limit is clamped, a junk value falls back to the page size.
+        val firstId = (first[0] as kotlinx.serialization.json.JsonObject)["id"].toString()
+        val older = client.get("/api/support/log?before=$firstId&limit=abc") { header("X-Test-Admin", "1") }.bodyAsText()
+        assertFalse("\"action\":\"forwarded\"" in older, older)
+        assertTrue("\"action\":\"received\"" in older)
     }
 
     // FR-320-1 (DEB-1273) — the wire name is snake_case and the key is omitted, not `false`, while support is unavailable.

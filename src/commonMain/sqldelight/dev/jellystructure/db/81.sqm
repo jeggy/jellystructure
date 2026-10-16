@@ -1,0 +1,8 @@
+-- DEB-1500 — the Support tab's backend. FR-13: `AI Agent` titles the case (two titles from one pass, each written once);
+-- FR-12: the Support log names who wrote a line, so a `SYSTEM` line carries a nullable actor and its label. Lines written
+-- before this migration read as `SYSTEM`. Support.sq's CREATE TABLEs carry the same columns, last. 80 is 321's: this one
+-- is 81.
+ALTER TABLE support_ticket ADD COLUMN title TEXT;
+ALTER TABLE support_ticket ADD COLUMN english_title TEXT;
+ALTER TABLE support_message ADD COLUMN actor TEXT;
+ALTER TABLE support_message ADD COLUMN actor_label TEXT;

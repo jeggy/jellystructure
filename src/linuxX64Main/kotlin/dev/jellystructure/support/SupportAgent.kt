@@ -83,7 +83,7 @@ class SupportAgent(
             ?: return AiJobs.SupportVerdict("DISCARDED: unreadable context", null, false)
         suspend fun done(verdict: String, readable: String?, used: Boolean): AiJobs.SupportVerdict {
             service.agentTurnAnswered(batchId, r.customId, r.text ?: r.error, verdict, r.usage?.input ?: 0L, r.usage?.output ?: 0L, cost)
-            Logger.info("Support: ticket #${c.t} — ${verdict.substringBefore(':')}", "support")
+            Logger.info("Support: ticket #${c.t} — ${verdict.substringBefore(" |").substringBefore(':')}", "support")
             return AiJobs.SupportVerdict(verdict, readable, used)
         }
         suspend fun discarded(applied: SupportService.AgentApplied): AiJobs.SupportVerdict? = when (applied) {
@@ -110,12 +110,16 @@ class SupportAgent(
         }
 
         val ruling = SupportAi.rule(answer, c.lang, config().support.hervorEnabled)
-        val cl = SupportService.Classification(answer.ticketClass, answer.summary)
+        // DEB-1500 (FR-13) — the titles ride the same pass. ABUSE stores neither (agentFlag takes the summary alone), so it
+        // has nothing to report dropped either.
+        val titles = SupportAi.titles(answer, c.lang)
+        val cl = SupportService.Classification(answer.ticketClass, answer.summary, titles.title, titles.englishTitle)
+        val dropped = titles.dropped?.takeIf { ruling.kind != SupportAi.Kind.ABUSE }?.let { " | TITLE_DROPPED: $it" }.orEmpty()
         val readable = "${answer.ticketClass} · ${answer.summary}"
         return when (ruling.kind) {
             SupportAi.Kind.SEND -> {
                 val applied = service.agentSend(c.t, c.upTo, cl, answer.reply)
-                discarded(applied) ?: done("SENT", readable, true)
+                discarded(applied) ?: done("SENT$dropped", readable, true)
             }
             SupportAi.Kind.ABUSE -> {
                 val applied = service.agentFlag(c.t, c.upTo, cl, "AI Agent flagged this as abuse and sent nothing. Summary: ${answer.summary}")
@@ -123,11 +127,11 @@ class SupportAgent(
             }
             SupportAi.Kind.REQUEST -> {
                 val applied = service.agentForward(c.t, c.upTo, cl, SupportService.HOLDER_ADMIN, SupportAi.requestLogged(c.lang, c.t), adminNote(ruling))
-                discarded(applied) ?: done("FORWARDED: ${ruling.reason}", readable, true)
+                discarded(applied) ?: done("FORWARDED: ${ruling.reason}$dropped", readable, true)
             }
             SupportAi.Kind.FORWARD -> {
                 val applied = service.agentForward(c.t, c.upTo, cl, ruling.to, SupportAi.forwardNotice(c.lang), adminNote(ruling))
-                discarded(applied) ?: done("FORWARDED: ${ruling.reason}", readable, true)
+                discarded(applied) ?: done("FORWARDED: ${ruling.reason}$dropped", readable, true)
             }
         }
     }

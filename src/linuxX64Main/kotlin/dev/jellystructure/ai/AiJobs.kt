@@ -692,6 +692,8 @@ class AiJobs(
         /** A month at the current settings, per model id (the tab shows the selected model's). */
         val estimateMicroUsd: Map<String, Long> = emptyMap(),
         val estimateBasis: String = "",
+        /** DEB-1500 (FR-5) — English, written by the server: why the job would not run right now. Null when it would. */
+        val inactiveReason: String? = null,
     )
 
     /** No field here has a default: the server's `Json` leaves out a field equal to its default, and the tab
@@ -711,7 +713,7 @@ class AiJobs(
 
     suspend fun status(viewers: Int): Status {
         val key = configStore.current.ai.apiKey
-        fun job(job: String, estimate: Map<String, Long>, basis: String): JobStatus {
+        fun job(job: String, estimate: Map<String, Long>, basis: String, inactiveReason: String? = null): JobStatus {
             val run = db.aiQueries.runFor(job).executeAsOneOrNull()
             return JobStatus(
                 spentThisMonthMicroUsd = spentThisMonth(job),
@@ -719,7 +721,7 @@ class AiJobs(
                 pending = db.aiQueries.pendingBatchForJob(job).executeAsOneOrNull() != null,
                 waiting = db.aiQueries.waitingFor(job).executeAsList().size.toLong(),
                 heldBack = heldBack[job],
-                estimateMicroUsd = estimate, estimateBasis = basis,
+                estimateMicroUsd = estimate, estimateBasis = basis, inactiveReason = inactiveReason,
             )
         }
         val untagged = run {
@@ -737,7 +739,9 @@ class AiJobs(
             rerank = job(AiRequests.RERANK_JOB, rerankEst, "$viewers viewer${if (viewers == 1) "" else "s"} × about ${RUNS_PER_MONTH.toInt()} runs a month · $rerankBasis"),
             themes = job(AiRequests.THEMES_JOB, themesEst, "once, for $untagged untagged title${if (untagged == 1) "" else "s"} · $themesBasis"),
             clusters = job(AiRequests.CLUSTERS_JOB, clustersEst, "one request per suggestions build, about ${RUNS_PER_MONTH.toInt()} a month · $clustersBasis"),
-            support = job(AiRequests.SUPPORT_JOB, supportEst, "one request per ticket message, about ${SUPPORT_ASKS_PER_MONTH.toInt()} a month · $supportBasis"),
+            support = job(AiRequests.SUPPORT_JOB, supportEst, "one request per ticket message, about ${SUPPORT_ASKS_PER_MONTH.toInt()} a month · $supportBasis",
+                // DEB-1500 (FR-5) — the owner switched the job on in Settings and nothing happened: the lane was closed.
+                inactiveReason = if (configStore.current.support.enabled) null else SUPPORT_CLOSED_REASON),
         )
     }
 
@@ -756,6 +760,8 @@ class AiJobs(
     }
 
     companion object {
+        const val SUPPORT_CLOSED_REASON = "Support is closed to viewers, so there is nothing to answer. Open it on AI › Support."
+
         private fun nounOf(job: String) = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; AiRequests.SUPPORT_JOB -> "ticket"; else -> "title" }
 
         /** The process's one instance, for the routes. Set by Main. */
