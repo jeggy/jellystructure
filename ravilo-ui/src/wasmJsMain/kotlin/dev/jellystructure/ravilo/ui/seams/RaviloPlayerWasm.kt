@@ -36,7 +36,26 @@ actual class RaviloPlayer actual constructor() {
     private val events = WebPlaybackEvents(qoe)
 
     /** R376 (FR-R376-2) — what the element reported since the last read, in order; a stall records where it was. */
-    private fun sync() = events.feed(drainEvents(video), positionMs, (bufferedMs - positionMs).coerceAtLeast(0), jsQ308(video, "bps").toLong().takeIf { it > 0 })
+    private fun sync() {
+        events.feed(drainEvents(video), positionMs, (bufferedMs - positionMs).coerceAtLeast(0), jsQ308(video, "bps").toLong().takeIf { it > 0 })
+        boundLadder()
+    }
+
+    /** 309 (FR-309-16) — the shared ladder rule over hls.js's own ABR, evaluated about once a second. */
+    private val ladderCap = WebLadderCap()
+    private var ladderAtMs = 0.0
+    private fun boundLadder() {
+        val now = nowMs()
+        if (now - ladderAtMs < LADDER_EVERY_MS) return
+        ladderAtMs = now
+        val levels = hlsLevelBandwidths(video)
+        if (levels.isEmpty()) { ladderCap.reset(); return }   // not hls.js, or its manifest is not read yet
+        val ahead = bufferAheadMs(video)
+        // A seek is not a falling buffer: forget the sample, bound nothing new.
+        if (video.seeking) { ladderCap.reset(); return }
+        val decision = ladderCap.evaluate(levels, hlsCurrentLevel(video).toInt(), ahead.toLong(), PlayerLadderHints.oursEncoder) ?: return
+        applyLadderCap(video, decision.capLevel, decision.stepDown, ahead)
+    }
 
     /** R244 (FR-R244-6) — fit/fill is the <video>'s object-fit on the web. */
     internal fun setObjectFit(fill: Boolean) {
@@ -56,6 +75,7 @@ actual class RaviloPlayer actual constructor() {
         // R376 (FR-R376-2) — the outgoing stream's events belong to it; the new one starts with no frame from now,
         // not from whenever the browser gets round to `loadstart`.
         sync()
+        ladderCap.reset()
         // R376 (FR-R376-S1) — the element shows again, its unlock bookkeeping stops, and it tries sound again (a film
         // left muted by a gesture-less start must not leave the next one silent with no pill).
         prepareForSource(video)
@@ -325,6 +345,47 @@ private fun resetElement(video: HTMLVideoElement): Unit = js(
         video._raviloShow = -1;
         video.style.objectFit = 'contain';
         video.style.visibility = 'hidden';
+    }"""
+)
+
+/** 309 (FR-309-16) — how often the ladder rule looks at hls.js; the polls that call [RaviloPlayer.sync] are far denser. */
+private const val LADDER_EVERY_MS = 1000.0
+
+/** 309 (FR-309-16) — the `BANDWIDTH` of hls.js's levels in its own (ascending) order; empty when hls.js is not playing it. */
+private fun hlsLevelBandwidths(video: HTMLVideoElement): List<Long> = jsLevelBandwidths(video).let { csv ->
+    if (csv.isEmpty()) emptyList() else csv.split(',').mapNotNull { it.toLongOrNull() }
+}
+
+private fun jsLevelBandwidths(video: HTMLVideoElement): String = js(
+    """(function(){ var h = video._hls; if (!h || !h.levels || h.levels.length < 2) return ''; return h.levels.map(function(l){ return Math.round(l.bitrate || 0); }).join(','); })()"""
+)
+
+/** The level hls.js is playing (-1 before one is). */
+private fun hlsCurrentLevel(video: HTMLVideoElement): Double = js(
+    """(function(){ var h = video._hls; return h && h.currentLevel >= 0 ? h.currentLevel : -1; })()"""
+)
+
+/** The buffer ahead of the playhead in ms, from the range that holds it (0 = none under the playhead). */
+private fun bufferAheadMs(video: HTMLVideoElement): Double = js(
+    """(function(){
+        var b = video.buffered, t = video.currentTime;
+        for (var i = 0; i < b.length; i++) { if (b.start(i) <= t + 0.5 && b.end(i) >= t) return (b.end(i) - t) * 1000; }
+        return 0;
+    })()"""
+)
+
+/**
+ * 309 (FR-309-16) — bound hls.js's ABR at [level] (`autoLevelCapping`); on a step down the next segment is the lower
+ * level already. Logs only when the bound moves.
+ */
+private fun applyLadderCap(video: HTMLVideoElement, level: Int, stepDown: Boolean, aheadMs: Double): Unit = js(
+    """{
+        var h = video._hls; if (!h) return;
+        if (h.autoLevelCapping !== level) {
+            h.autoLevelCapping = level;
+            try { console.log('309 web ladder: cap ' + Math.round((h.levels[level].bitrate || 0) / 1000) + ' kbps (' + Math.round(aheadMs) + ' ms buffered)'); } catch (e) {}
+        }
+        if (stepDown && h.currentLevel > level) h.nextAutoLevel = level;
     }"""
 )
 

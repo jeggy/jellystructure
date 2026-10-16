@@ -9,17 +9,14 @@
 > that and if it was not true we dynamically go down in quality. All in all, we want as little buffering/lagging as
 > possible and prewarm as much as possible, so we know all the information we need and start streaming the best we can."*
 
-## Status
+## Scope
 
-`⚠ Partial` — **309a0 built and deployed 2026-10-08; 309a (backend) and most of 309b (Android + every client's detail page)
-built 2026-10-08 on a worktree branch on top of 313, not merged, not deployed, not device-tested** (see *Build notes —
-309a / 309b*). Written 2026-10-07 (dev-authored), dev-reviewed 2026-10-07 and re-reviewed 2026-10-08; the owner then
-moved the mechanism to our own encoder (313). **309c built 2026-10-09 on a worktree branch, not merged, not deployed,
-not device-tested** (see *Build notes — 309c*): the receiver bounds Shaka's ABR by the ladder rule and runs the speed
-test, a direct play that stalls moves to the ladder once, the phone and the desktop send the receiver's id with the
-prewarm (a no-op while casts go to Jellyfin, 313), mpv restreams a rung down/up, AVPlayer climbs under a peak bitrate
-with 40 s forward buffer. **Not built:** the web player (left alone: R376 is rebuilding it). Builds on **308**,
-replaces 308 FR-308-3's start rule and FR-308-4's direct-play gate, retires 185 FR-185-5…7's note and R222.
+Written 2026-10-07 (dev-authored), dev-reviewed 2026-10-07 and 2026-10-08; the owner then moved the mechanism to our own
+encoder (313). Touches the backend (the stream record, the start rung, the speed test, the prewarm, `playback_note`),
+the Cast receiver, Android, the desktop clients and the web player (FR-309-16). Builds on **308**, replaces 308
+FR-308-3's start rule and FR-308-4's direct-play gate, retires 185 FR-185-5…7's note and R222. What was built when,
+and what was seen live, is in *Build notes* and the *Live* sections below; where the work stands is on its board task
+(DEB-312).
 
 ## What happened (2026-10-06 23:20–23:25, read-only from logs and the DB)
 
@@ -745,3 +742,41 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
   none (309)`, `PlaybackInfo directPlay=true`; the speed test ran with the cast (a measurement of 48 Mbps landed in the
   record a few seconds later). A server-road start (`session_load`) direct-played too.
 - **FR-309-15** found here (above), fixed the same night.
+
+## Amendment 2026-10-16 (DEB-312) — the web player
+
+FR-309-4/-5 say "every player", and the first build left the web player alone while R376 rebuilt it (R376 is merged;
+`RaviloPlayerWasm.kt` now carries hls.js 1.7.3 with the 308 seed and counts). This closes the gap.
+
+### FR-309-16 — hls.js climbs one rung at a time and steps down on the buffer rule; Safari's native HLS is the exception
+
+- **hls.js (every browser with MediaSource that is not Safari — Chrome, Edge, Firefox, Chrome on Android).** The player
+  runs the shared rule (`LadderRules.allowedMaxBps`, the one Android's track selection and the receiver's Shaka use) about
+  once a second while a ladder plays, over hls.js's own ABR: the rung playing is the level hls.js reports, the buffer
+  ahead is the range of the `<video>` that holds the playhead, and the bound is applied as `hls.autoLevelCapping` — the
+  highest level whose `BANDWIDTH` is within the rule's bound. So hls.js climbs **one rung at a time** and only with the
+  buffer FR-309-4 asks (10 s on our own encoder, 30 s on Jellyfin's), and when the buffer is **under 20 s and falling**
+  it drops below the rung playing at once (`hls.nextAutoLevel` is set too, so the next segment is already the lower
+  rung), again at each evaluation while it keeps falling (FR-309-5). hls.js's estimate × 0.7 still decides inside the
+  bound. No bound before a level is playing: the start is the server's (FR-309-2), seeded as 308 does.
+- **A seek is not a falling buffer.** A seek, or a source change, forgets the last sample; nothing is evaluated while
+  the element is seeking, and the first sample after it is only a starting point.
+- **Safari (native HLS) is exempt from FR-309-4/-5's enforcement.** The browser's AVPlayer picks the variant itself and
+  the page has no handle on it — `preferredPeakBitRate` and the buffer rule are not reachable from JavaScript (they are
+  on the Mac app, FR-309-9). Native HLS stays first on Safari because AirPlay needs it (R265, FR-R376-7), so the rule
+  cannot be had by switching engines either. What still holds on Safari: FR-309-2 (the start rung is the first variant
+  the master lists), FR-309-1/-8 (the record, the direct-play gate: the server's side of the rule), and FR-309-11 (a
+  rebuffer is counted and reported, and a stall still caps the next start at ×0.8 for 24 h). Not held: one rung at a
+  time on the way up, and the early step-down. R376's review item 4 ("Safari's quality") is closed by this paragraph.
+  The same holds for a browser with no MediaSource that plays HLS natively.
+- **Nothing changes on the wire or on the server.** The web already reports its level (`variantBandwidthBps`) and
+  switch counts (308, FR-308-5); a debug line `309 web ladder: cap <n> kbps (<ahead> ms buffered)` is written on each
+  change of the bound.
+- **Tests:** `WebLadderCapTest` (`:ravilo-ui:desktopTest`) — no bound before a level plays; a climb of one level; the
+  climb waits for the buffer (10 s ours, 30 s Jellyfin's); a step down under 20 s and falling, again while it keeps
+  falling, never below the lowest level; a rising buffer under 20 s holds; levels with equal bandwidth map to the highest
+  index; a seek resets the sample. `LadderRulesTest` already covers the rule itself. **Why the hls.js calls themselves
+  are not under CI:** setting `autoLevelCapping` on a live stream is only observable with real segments in a real
+  browser under a throttle, which the Playwright mock stack does not serve; that behaviour moves to the QA ticket
+  (hls.js under a throttled server climbing 4 → 8 Mbps one rung at a time and stepping down before 10 s of buffer —
+  this spec's *Tests* section, last bullet).
