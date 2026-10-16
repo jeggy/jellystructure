@@ -8,7 +8,7 @@
 Written 2026-10-12 (PO-authored from DEB-756, itself found on the Mac walk DEB-721). Not dev-reviewed.
 Builds on the Mac app (R328–R331, R337) and the shared error classifier R237/R280, and touches no Swift and no
 native call. The Build notes (2026-10-12) and Walk notes (2026-10-13) below record what landed and what the walk
-proved; the row in `STATUS.md` is the status.
+proved.
 
 ## What was seen
 
@@ -347,3 +347,17 @@ from the disk image, R386's *Software update* block shows this phase's own headi
 as its only action, and never asks Sparkle to install (R386 FR-R386-5). The first install still needs the drag. The
 owner kept that sentence out of the release notes and the site (D4), and the in-app sentence was only ever read once
 the app was already running.
+
+## Amendment (2026-10-16): D4's site half is reopened by the owner (DEB-1469)
+
+D4 kept the install steps off the public download page *"without the owner reopening it"*. **The owner reopened it on
+2026-10-16 (DEB-1076).** That was after the R331 2b walk found that every hand-downloaded version is refused twice:
+*"Still no Apple bills: show both Open Anyway steps in pictures, on the download page and in the .dmg window."* The
+download page's Mac card, and the window the `.dmg` opens to, now belong to
+[`the-mac-download-shows-open-anyway-in-pictures.md`](the-mac-download-shows-open-anyway-in-pictures.md)
+(DEB-1469). Its step 3, the drag to Applications, is the sentence this phase kept in the app.
+
+D4's **release-notes half stands**: FR-R331-6 stays withdrawn. FR-R385-1 to FR-R385-5 are unaffected. A translocated
+copy still gets this phase's message, because a user can skip the pictures. A correction for the record: D4 calls the
+page *`gamlihandil`'s download copy*. The page is `ravilo.html` in the jellystructure info site's hosting tree, not
+the `gamlihandil` site.

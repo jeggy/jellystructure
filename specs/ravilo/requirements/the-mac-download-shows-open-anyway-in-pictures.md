@@ -30,6 +30,10 @@ explanations, not changes to signing. **Not in scope:** notarisation or any Appl
 release notes (FR-R331-6 stays withdrawn: *"People downloading dmg already know how to install a dmg"*); Sparkle's
 in-app update path (R386, open on DEB-1292); the Local Network card's findings from the same walk.
 
+**This reopens R385 D4's site half.** On 2026-10-12 the owner kept the install steps off the download page (*"the
+in-app line is enough; leave the site alone"*). The 2026-10-16 answer above moves that, and R385 records it in an
+amendment. Its message for a translocated copy still stands as the fallback for a user who skips the pictures.
+
 ## Requirements
 
 **FR-1 — Five steps, in the order a user meets them.** One sequence, used on both surfaces:
