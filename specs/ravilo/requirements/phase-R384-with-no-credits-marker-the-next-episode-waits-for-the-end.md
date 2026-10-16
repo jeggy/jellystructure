@@ -114,6 +114,19 @@ R381's preload of the next episode with no trusted marker starts at `max(duratio
 - A receiver test for FR-R384-3's end handling (finish during a countdown ⇒ one load, after the countdown; finish
   before a countdown ⇒ countdown, then one load).
 
+**Amendment 2026-10-16 (DEB-1484, from DEB-1480's finding; Tróndur's call).** Only the first of the three tests
+exists, and it is the automated test for this phase:
+
+- **`NextUpTriggerTest`** (`:shared`) is the automated test. It already covers every case the first bullet names.
+- **The `PlayerScreen` test and the receiver end-handling test are not written.** There is no harness for either. The
+  player's trigger, natural-end safety net and countdown sit inline in the `PlayerScreen` composable on ExoPlayer, with
+  no extracted state machine to test. The receiver's end handling is in a `private class Receiver` that reaches for
+  `CastReceiverContext` and the DOM, and `ravilo-cast` has no `jsTest` set and no CI line. Either test first needs a
+  behaviour-preserving extraction from the player or the receiver, size M each with its own QA row. That extraction is
+  **not ordered**. If the auto-advance regresses later, it is ordered then.
+- **Their coverage is device acceptance:** acceptance 1, 3 and 4 on the phone (DEB-699) and acceptance 2's TV-app half
+  (DEB-700) for FR-R384-2; acceptance 2's Cast half (DEB-1483) for FR-R384-3.
+
 ## Acceptance
 
 1. On the phone (Pixel 9, debug build), a 1-minute episode with no marker plays to its last second. The card shows
@@ -152,5 +165,6 @@ R381's preload of the next episode with no trusted marker starts at `max(duratio
   `playNext()` at once, `playNext` stops a finished title at its length, a cancel after the end ends it (`endHere()`).
 - Verified here: `:shared:desktopTest`, `:ravilo-ui:desktopTest` (all green), `:ravilo-cast:compileKotlinJs`,
   `:ravilo-screen:compileKotlinJs`, `:ravilo-web:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
-  `:ravilo-ui:compileKotlinDesktop`. **Not run on any device**; the acceptance list is owed. The screen app's check waits
-  for Tizen work to resume. The Cast receiver ships with the backend image (next deploy); the app with the next release.
+  `:ravilo-ui:compileKotlinDesktop`. The device acceptance is walked on the QA rows FR-R384-5's 2026-10-16 amendment
+  names. The screen app's check waits for Tizen work to resume. The Cast receiver ships with the backend image; the app
+  with a release.
