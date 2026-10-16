@@ -21,6 +21,8 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
@@ -157,7 +159,7 @@ actual class RaviloPlayer actual constructor() {
         player.addListener(cueListener)
         currentSurfaceView?.let { player.setVideoSurfaceView(it) }
         if (RaviloAppContext.isTelevision && mediaSessionRef == null) {
-            mediaSessionRef = MediaSession.Builder(ctx, player).setId("ravilo-player").build()
+            mediaSessionRef = buildSession(player)
         }
     }
 
@@ -390,11 +392,24 @@ actual class RaviloPlayer actual constructor() {
     // R244 (FR-R244-10) — the attached caption view and the phone's chosen size multiplier.
     private var subtitleViewRef: SubtitleView? = null
     private var subtitleScale: Float = 1f
+    // R292 (FR-R292-14, DEB-569) — the one place a session is built: it refuses a play for a short window after a
+    // standby return (a sender's or the Cast SDK's resume would otherwise start the film FR-R292-8a left paused).
+    private fun buildSession(player: ExoPlayer): MediaSession =
+        MediaSession.Builder(ctx, player).setId("ravilo-player").setCallback(object : MediaSession.Callback {
+            override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
+                if (playerCommand == Player.COMMAND_PLAY_PAUSE && !session.player.playWhenReady &&
+                    TvPlayerSessionHooks.standbyHold.refusesPlay(android.os.SystemClock.elapsedRealtime())) {
+                    android.util.Log.i("R292", "FR-R292-14: a play from ${controller.packageName} refused, the film came back from standby")
+                    return SessionError.ERROR_NOT_SUPPORTED
+                }
+                return SessionResult.RESULT_SUCCESS
+            }
+        }).build()
     // R292 — a session only ever wraps a LIVE engine: with none, nothing to advertise (bindEngine creates it).
     private fun ensureMediaSession(): MediaSession? {
         if (!RaviloAppContext.isTelevision) return null
         val e = engine ?: return null
-        return mediaSessionRef ?: MediaSession.Builder(ctx, e).setId("ravilo-player").build().also { mediaSessionRef = it }
+        return mediaSessionRef ?: buildSession(e).also { mediaSessionRef = it }
     }
 
     // R77: video geometry for automatic aspect-ratio correction in PlayerVideoSurface.

@@ -52,6 +52,9 @@ actual fun PlayerLifecycleEffect(
                     player.releaseEngine()
                 }
                 is Action.Foreground -> {
+                    // FR-R292-14 — armed BEFORE the new engine and session exist, so a resume the Cast SDK pushes
+                    // into the session as it is handed over finds the hold already up.
+                    if (action.afterStandby) TvPlayerSessionHooks.standbyHold.arm(android.os.SystemClock.elapsedRealtime())
                     currentOnForeground(action.afterStandby)
                     player.setSessionActive(true)
                 }

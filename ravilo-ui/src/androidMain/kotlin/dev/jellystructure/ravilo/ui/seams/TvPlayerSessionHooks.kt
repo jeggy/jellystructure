@@ -20,8 +20,12 @@ object TvPlayerSessionHooks {
     @Volatile var current: MediaSession? = null
         private set
 
+    /** R292 (FR-R292-14, DEB-569) — after a standby return, a play through the session (a sender's or the Cast SDK's
+     *  resume) is refused for a short window; armed by [PlayerLifecycleEffect], ended by a new cast. */
+    val standbyHold = StandbyPlayHold()
+
     /** The receiver accepted a load: the next session to appear is the one the cast drives. */
-    fun castAccepted() { castAwaiting = true }
+    fun castAccepted() { castAwaiting = true; standbyHold.released() }
 
     /** The receiver stopped (the app left the screen): nothing is driven by a cast any more. */
     fun castEnded() { castAwaiting = false; castDriving = false }
