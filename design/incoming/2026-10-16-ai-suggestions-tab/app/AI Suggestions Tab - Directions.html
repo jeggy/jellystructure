@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jellystructure admin — Suggestions as the AI page's third tab: directions (round ai-suggestions-tab)</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="ai-suggestions-directions.css">
+</head>
+<body>
+<!-- ============ 0 · what is fixed ============ -->
+<div class="lbl w3" style="left:60px;top:40px"><span class="tag">Round · ai-suggestions-tab · no phase number</span><h2>Suggestions as the third tab of the AI page</h2><small>The question: when an AI key is set, how does today’s full Suggestions page sit as the <b>third tab</b> of the AI page, and what does it give up to fit under a header it no longer owns? Admin only, at the desktop width (1280) and the admin’s narrow breakpoint (390). Two named directions, the recommended one carried through every state, then the three open decisions with their alternatives drawn, then the strings. Read left to right, top to bottom.</small></div>
+
+<div class="panel" style="left:60px;top:230px;width:1460px"><h2>What is fixed — drawn as given, not reopened</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 40px">
+<ul>
+<li><b>The owner, verbatim:</b> <q>if AI key is there, then it’s under the AI page, otherwise it stays as is.</q> Only the first case is drawn: key set and Seerr connected ⇒ Suggestions is a tab on the AI page and there is <b>no</b> Suggestions entry in the sidebar. No key ⇒ today’s page, unchanged, not drawn. No Seerr ⇒ Suggestions is nowhere.</li>
+<li><b>Tab order: Support · Fetchers · Suggestions.</b> Support needs support on <i>and</i> a key; Fetchers needs a key; Suggestions needs Seerr. The AI page exists only while a key is set.</li>
+<li><b>One shell.</b> The tab switcher (<span class="mono">tk-tabs</span>, <i>Support 2 · Fetchers</i>), the header row (<i>AI</i> · <i>API key valid · model reachable</i> · <i>Key &amp; model → Settings</i>) and their narrow breakpoint are extended, not redrawn.</li>
+<li><b>Absent, never greyed.</b> A tab whose feature is off is not drawn — no disabled tab, no empty-state tab, no explanation.</li>
+</ul>
+<ul>
+<li><b>Server-pushed state only:</b> <q>The frontend renders server-pushed state only — no derived or optimistic local state.</q> Every number drawn is one the server sent.</li>
+<li><b>Tabs use <span class="mono">replaceState</span>:</b> <q>Back/Forward navigate between pages, not between tabs. Deep-linking and refresh still reconstruct the correct tab from the URL.</q></li>
+<li><b>Type and colour:</b> Space Grotesk · Sora · JetBrains Mono; <span class="mono">--ok</span> / <span class="mono">--warn</span> / <span class="mono">--bad</span>. Dark-primary with a light toggle — the recommended direction is drawn in both.</li>
+<li><b>The Suggestions content does not change.</b> <i>Suggestions · Seerr connected · Built {when} · {n} shown of 50 · Dismissed ({n}) · Rebuild now</i>; <i>Built from {n} finished films:</i>; the cluster-source line; the cluster groups with <b>Download</b> and <b>No thanks</b>; <b>Show more</b>; the Dismissed view; the <i>Seerr couldn’t be reached</i> banner. Only where it sits is drawn — except Show more, which the owner moved under each group on 2026-10-16 (section 2).</li>
+</ul>
+</div>
+<div class="good"><b>How the tension is held.</b> The shared header stays the AI page’s and never changes with the tab. Everything Suggestions used to put in its own title row moves, word for word, into a toolbar row that belongs to the tab panel — so switching tabs toggles only the panel, as the contract says. What the page gives up is listed beside the comparison in section 1: its title, its sidebar entry, its place as a landing page, and one click.</div>
+</div>
+
+<!-- ============ 1 · directions ============ -->
+<div class="sec" style="left:60px;top:1120px">1 · The named directions<small>same moment: key set, support on, Seerr connected, Suggestions selected · desktop 1280 at 60% · narrow 390 at 75%</small></div>
+
+<div class="lbl wb" style="left:60px;top:1190px"><span class="tag pick">Decided · owner 2026-10-16</span><h3>A · Toolbar under the tabs — the tab owns its controls</h3><small>The AI header keeps only its own title, badge and <i>Key &amp; model → Settings</i>, identical on all three tabs. Directly under the switcher, a toolbar row that belongs to the Suggestions panel carries what the page’s title row used to: <b>Seerr connected</b> first, then <b>Built Tuesday 06:30 · 20 shown of 50</b>, and at the right <b>Dismissed (4)</b> and <b>Rebuild now</b>. At 390 the row wraps to two lines under the tabs; nothing above the tabs moves.</small></div>
+<div class="fx" style="left:60px;top:1420px" data-s=".6" data-f="dir=A;w=d"></div>
+<div class="fx" style="left:860px;top:1420px" data-s=".75" data-f="dir=A;w=n"></div>
+
+<div class="lbl wb" style="left:1260px;top:1190px"><span class="tag no">Not picked</span><h3>B · Up into the shared header — the header changes with the tab</h3><small>Drawn so the cost of crowding the shared header is visible. While Suggestions is selected, its Seerr badge sits beside the AI badge and <b>Built · shown · Dismissed · Rebuild now</b> join the header row before <i>Key &amp; model → Settings</i>. The panel starts straight after the tabs. Costs: the header wraps to two lines even at 1280, to five at 390, and its content changes every time the tab does.</small></div>
+<div class="fx" style="left:1260px;top:1420px" data-s=".6" data-f="dir=B;w=d"></div>
+<div class="fx" style="left:2060px;top:1420px" data-s=".75" data-f="dir=B;w=n"></div>
+
+<div class="panel" style="left:2420px;top:1190px;width:980px"><h2>How they compare</h2>
+<table class="tbl"><tr><th></th><th>A · Toolbar under the tabs</th><th>B · Up into the shared header</th></tr>
+<tr><td><b>Shared header</b></td><td>Identical on every tab</td><td>Gains five items on Suggestions only</td></tr>
+<tr><td><b>Tab switch</b></td><td>Only the panel toggles — the contract as written</td><td>The header re-renders too. The contract says <q>Only the tab panel toggles in the DOM</q>, so B contradicts it</td></tr>
+<tr><td><b>Seerr badge</b></td><td>Leads the tab’s toolbar — reads as the tab’s fact</td><td>Beside <i>API key valid</i> — two health badges of different things in one row</td></tr>
+<tr><td><b>Rebuild now</b></td><td>Inside the tab, beside the list it rebuilds</td><td>Beside <i>Key &amp; model → Settings</i> — reads as rebuilding something of the AI’s</td></tr>
+<tr><td><b>Desktop, 1280</b></td><td>Header one line; toolbar one line</td><td>Header wraps to two lines</td></tr>
+<tr><td><b>Narrow, 390</b></td><td>Header two lines (as today); toolbar two lines under the tabs</td><td>Header five lines; the tabs drop to mid-screen and the first tile below the fold</td></tr>
+<tr><td><b>Vertical cost before the first tile</b></td><td>One toolbar row (≈ 36px)</td><td>One extra header line on desktop; four at 390</td></tr>
+</table>
+<div class="good"><b>Decided: A</b> (owner, 2026-10-16). It is the only one that keeps the shell one shell and the tab switch a panel toggle. B is drawn for the record; it fails the shipped contract on its own terms.</div>
+<h4>What Suggestions gives up by moving — both directions</h4>
+<ul>
+<li><b>Its title.</b> The <i>Suggestions</i> heading survives only as the tab label; the page’s h1 is <i>AI</i>.</li>
+<li><b>Its sidebar entry</b> between Library and Activity. Reaching it is now AI → Suggestions: one more click, and the AI page opens on its first present tab (Support), never on Suggestions unless the link says <span class="mono">?tab=suggestions</span>.</li>
+<li><b>Its address.</b> <span class="mono">suggestions.html</span> becomes the no-key page only. With a key set, a link to it — the Dashboard card’s included — must land on <span class="mono">ai.html?tab=suggestions</span>. Not drawn; reported.</li>
+<li><b>A header to itself.</b> The connection badge no longer sits beside a title of its own; in A it leads the toolbar, in B it shares a row with the AI’s badge.</li>
+<li><b>Nothing of its content.</b> Every line, control and behaviour listed in FIXED is drawn unchanged.</li>
+</ul>
+</div>
+
+<!-- ============ 2 · A through every state ============ -->
+<div class="sec" style="left:60px;top:2180px">2 · A, through every state<small>each state at desktop 1280 (60%) and at the narrow breakpoint 390 (75%) — the narrow frame is state 6 for every row</small></div>
+
+<div class="lbl wb" style="left:60px;top:2260px"><span class="tag new">State 1</span><h3>All three tabs present, Suggestions selected</h3><small><i>Support 2 · Fetchers · Suggestions</i>. The count on Support is the open-ticket count the server sends. The toolbar is the tab’s. Groups are the AI-named ones (owner, 2026-10-16) and the cluster line reads <i>Grouped by AI this build · see the answer</i>.</small></div>
+<div class="cap" style="left:60px;top:2402px">Desktop · 1280</div><div class="cap" style="left:860px;top:2402px">Narrow · 390</div>
+<div class="fx" style="left:60px;top:2426px" data-s=".6" data-f="w=d"></div>
+<div class="fx" style="left:860px;top:2426px" data-s=".75" data-f="w=n"></div>
+
+<div class="lbl wb" style="left:1260px;top:2260px"><span class="tag new">State 1 · light</span><h3>The same, on the light toggle</h3><small>wf.css light tokens. Badges re-ink to the light variants (<span class="mono">#128a5f</span> ok, <span class="mono">#9a6a06</span> warn); the red tab count and the accent underline are the same in both.</small></div>
+<div class="cap" style="left:1260px;top:2402px">Desktop · 1280 · light</div><div class="cap" style="left:2060px;top:2402px">Narrow · 390 · light</div>
+<div class="fx" style="left:1260px;top:2426px" data-s=".6" data-f="w=d;th=lt"></div>
+<div class="fx" style="left:2060px;top:2426px" data-s=".75" data-f="w=n;th=lt"></div>
+
+<div class="lbl wb" style="left:60px;top:3120px"><span class="tag new">State 2</span><h3>“Suggestions is the only tab” — drawn as Fetchers · Suggestions</h3><small>Key set, support off, nothing configured under Fetchers. I agree with the lean: Fetchers needs only a key, so it is present, and its “nothing configured” is not an empty tab — it still holds the <i>New auto-fetcher</i> form. So with a key, <b>Suggestions can never be the only tab</b>: the AI page exists only with a key, and a key always brings Fetchers. The switcher stays a switcher with two entries; no single-tab special case is needed.</small></div>
+<div class="cap" style="left:60px;top:3262px">Desktop · 1280</div><div class="cap" style="left:860px;top:3262px">Narrow · 390</div>
+<div class="fx" style="left:60px;top:3286px" data-s=".6" data-f="w=d;tabs=fetchers,suggestions"></div>
+<div class="fx" style="left:860px;top:3286px" data-s=".75" data-f="w=n;tabs=fetchers,suggestions"></div>
+
+<div class="lbl wb" style="left:1260px;top:3120px"><span class="tag new">State 3 · error</span><h3>Seerr unreachable, inside the tab</h3><small>The toolbar’s badge turns to <i>Seerr unreachable</i> (<span class="mono">--warn</span>), the shipped <i>Last built list</i> banner sits under the cluster line, and every <b>Download</b> is disabled with its shipped line. <b>No thanks</b> stays live. The AI header’s own badge is untouched — the AI is fine; Seerr is not.</small></div>
+<div class="cap" style="left:1260px;top:3262px">Desktop · 1280</div><div class="cap" style="left:2060px;top:3262px">Narrow · 390</div>
+<div class="fx" style="left:1260px;top:3286px" data-s=".6" data-f="w=d;st=unreach"></div>
+<div class="fx" style="left:2060px;top:3286px" data-s=".75" data-f="w=n;st=unreach"></div>
+
+<div class="lbl wb" style="left:60px;top:3980px"><span class="tag new">Offline · drawn separately</span><h3>Lost connection to this server</h3><small>This reads differently from state 3. An unreachable Seerr is a fact the server pushes; a lost WebSocket means the server can push nothing, so it is the <b>page’s</b> state, not the tab’s — a strip above the tabs, all three tabs alike. Everything drawn is the last thing sent. <b>Download</b>, <b>No thanks</b> and <b>Rebuild now</b> all wait, because nothing can reach the server. New string; no shipped pattern for this was found in the project.</small></div>
+<div class="cap" style="left:60px;top:4122px">Desktop · 1280</div><div class="cap" style="left:860px;top:4122px">Narrow · 390</div>
+<div class="fx" style="left:60px;top:4146px" data-s=".6" data-f="w=d;st=offline"></div>
+<div class="fx" style="left:860px;top:4146px" data-s=".75" data-f="w=n;st=offline"></div>
+
+<div class="lbl wb" style="left:1260px;top:3980px"><span class="tag new">State 4</span><h3>The Dismissed view, inside the tab</h3><small>Decision 2’s lean. <b>Dismissed (4)</b> stays pressed in the toolbar; the Dismissed card replaces the list, the intro and the built-from line, with <b>Close</b> back to the list. The URL becomes <span class="mono">?tab=suggestions&amp;view=dismissed</span> by <span class="mono">replaceState</span>: refresh reopens it, Back leaves the page. At 390 the table’s rows stack — title, reason, who · when, Bring back — because today’s five columns do not fit.</small></div>
+<div class="cap" style="left:1260px;top:4122px">Desktop · 1280</div><div class="cap" style="left:2060px;top:4122px">Narrow · 390</div>
+<div class="fx" style="left:1260px;top:4146px" data-s=".6" data-f="w=d;st=dism"></div>
+<div class="fx" style="left:2060px;top:4146px" data-s=".75" data-f="w=n;st=dism"></div>
+
+<div class="lbl wb" style="left:60px;top:4840px"><span class="tag new">State 5 · empty</span><h3>Nobody has finished enough yet</h3><small>The shipped empty card, word for word: <i>Suggestions appear once someone has finished a few films.</i> As shipped, the built-from line is hidden and the cluster line stays. The toolbar reports what the server sent: <i>0 shown of 50</i>, <i>Dismissed (4)</i>.</small></div>
+<div class="cap" style="left:60px;top:4982px">Desktop · 1280</div><div class="cap" style="left:860px;top:4982px">Narrow · 390</div>
+<div class="fx" style="left:60px;top:5006px" data-s=".6" data-f="w=d;st=empty"></div>
+<div class="fx" style="left:860px;top:5006px" data-s=".75" data-f="w=n;st=empty"></div>
+
+<div class="lbl wb" style="left:1260px;top:4840px"><span class="tag new">Loading</span><h3>The tab’s first paint</h3><small>The header and the tabs are already there; only the panel waits. The toolbar keeps its shape as static placeholders — no figure is shown before the server sends it, not even <i>Dismissed</i>’s count — and the list paints as placeholder tiles in the grid’s own shape.</small></div>
+<div class="cap" style="left:1260px;top:4982px">Desktop · 1280</div><div class="cap" style="left:2060px;top:4982px">Narrow · 390</div>
+<div class="fx" style="left:1260px;top:5006px" data-s=".6" data-f="w=d;st=loading"></div>
+<div class="fx" style="left:2060px;top:5006px" data-s=".75" data-f="w=n;st=loading"></div>
+
+<div class="lbl wb" style="left:60px;top:5700px"><span class="tag new">State 7 · longest string</span><h3>All four viewers, and the longest cluster line</h3><small>Top of the panel only. The chip row carries Eyð 101 · Marjun 7 · Kids 4 · Olivar with <i>nothing finished yet</i>; the cluster line is <i>Grouped by genre — this month’s AI limit was reached</i>. Both wrap; nothing truncates.</small></div>
+<div class="cap" style="left:60px;top:5842px">Desktop · 1280</div><div class="cap" style="left:860px;top:5842px">Narrow · 390</div>
+<div class="fx" style="left:60px;top:5866px" data-s=".6" data-f="w=dl;st=long"></div>
+<div class="fx" style="left:860px;top:5866px" data-s=".75" data-f="w=nl;st=long"></div>
+
+<div class="panel" style="left:1260px;top:5700px;width:1100px"><h2>States — drawn and not drawn</h2>
+<ul>
+<li><b>Drawn, at both widths:</b> 1 all three tabs (dark and light) · Show more under each group · 2 the two-tab set · 3 Seerr unreachable · offline · 4 Dismissed · 5 empty · loading · 7 longest string (English only — the admin ships in English).</li>
+<li><b>State 6, the narrow breakpoint,</b> is the right-hand frame of every row above.</li>
+<li><b>error</b> is state 3. <b>offline</b> is drawn on its own — a lost WebSocket is the page’s state, not the tab’s.</li>
+<li><b>10-foot focus: not applicable.</b> No TV surface is in this round.</li>
+<li><b>Not drawn:</b> the No-key case (it ships today and does not change), the No-Seerr case (nothing to draw), the Fetchers tab’s own empty panel (unchanged by this round), and the Download sheet and the No-thanks reason picker (unchanged, and they behave the same inside the tab).</li>
+</ul>
+</div>
+
+<div class="lbl wb" style="left:60px;top:6440px"><span class="tag pick">Owner · 2026-10-16</span><h3>Show more — under each group, every group shown once</h3><small>The list is scrolled to where the first group ends. Each AI-named group shows its share of the 20, then <b>Show {n} more</b> opens that group’s weaker matches in place — the {n} is how many of the 50 built sit in that group, as the server sent them (9 · 6 · 5 · 3 · 3 · 4). There is no Show more at the foot of the list, and no group appears a second time.</small></div>
+<div class="cap" style="left:60px;top:6582px">Desktop · 1280 · scrolled</div><div class="cap" style="left:860px;top:6582px">Narrow · 390 · scrolled</div>
+<div class="fx" style="left:60px;top:6606px" data-s=".6" data-f="w=dl;st=more"></div>
+<div class="fx" style="left:860px;top:6606px" data-s=".75" data-f="w=nl;st=more"></div>
+
+<!-- ============ 3 · decisions ============ -->
+<div class="sec" style="left:60px;top:7420px">3 · The three decisions — decided by the owner, 2026-10-16<small>the lean of each was picked and is drawn above; the alternative stays here for the record</small></div>
+
+<div class="panel" style="left:60px;top:7500px;width:940px"><span class="tag">Decision 1</span><h2>Where do Suggestions’ own header controls go?</h2>
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>A toolbar row under the tabs</h4><p>Direction A. The AI header keeps its title, badge and <i>Key &amp; model → Settings</i>; the tab’s row carries Seerr connected · Built · shown · Dismissed · Rebuild now.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>Up into the shared header</h4><p>Direction B, section 1. Wraps the header at 1280 and to five lines at 390, and makes the header change with the tab.</p></div></div>
+<div class="dv2"><b>Decided: the toolbar.</b> B’s header changes on every tab switch, which the shipped contract rules out (<q>Only the tab panel toggles in the DOM</q>). A costs one toolbar row and nothing else.</div></div>
+
+<div class="panel" style="left:60px;top:7920px;width:940px"><span class="tag">Decision 2</span><h2>Where does Dismissed open?</h2>
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>Inside the tab, replacing the list</h4><p>Section 2, state 4. <b>Close</b> returns to the list. <span class="mono">?tab=suggestions&amp;view=dismissed</span> by <span class="mono">replaceState</span>.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>A drawer beside the list</h4><p>To the right. 470px from the right edge over a scrim at 1280; at 390 it can only be a full-screen layer with ✕ Close.</p></div></div>
+<div class="dv2"><b>Decided: inside the tab.</b> It is the one that survives <span class="mono">replaceState</span> without Back. Both can be written to the URL the same way, and both close with their own button. But the drawer is an overlay: at 390 it covers the whole page, and a full-screen layer is the one thing an admin closes with Back by reflex — and Back, by the contract, leaves the AI page altogether. The in-tab view is a state of the panel, not a layer above it, so nobody reaches for Back to leave it. The drawer’s one gain, the list visible beside it, exists only at desktop and only behind a scrim.</div></div>
+<div class="cap" style="left:1060px;top:7896px">Not picked · drawer · desktop 1280</div><div class="cap" style="left:1860px;top:7896px">Not picked · drawer · narrow 390</div>
+<div class="fx" style="left:1060px;top:7920px" data-s=".6" data-f="w=d;st=drawer"></div>
+<div class="fx" style="left:1860px;top:7920px" data-s=".75" data-f="w=n;st=drawer"></div>
+
+<div class="panel" style="left:60px;top:8660px;width:940px"><span class="tag">Decision 3</span><h2>Does the sidebar’s AI entry carry a second number?</h2>
+<div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>Unchanged: the open-ticket count only</h4><p><i>AI 2</i>. Suggestions adds no count. With the key set, the Suggestions entry is simply gone from between Library and Activity.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>A second, neutral count</h4><p><i>AI 2 3</i>: the red ticket count, then a grey count of suggestions new since the admin last looked — the server already sends this figure (<span class="mono">newSince: 3</span>). The tab label carries the same 3.</p></div></div>
+<div class="dv2"><b>Decided: the open-ticket count only.</b> The red count means “someone is waiting for you”; three new films are not waiting for anyone. Two numbers on one entry cannot be told apart without hovering, and when support is off the entry would carry only the grey one, which reads like a ticket count with the wrong colour.</div></div>
+<div class="cap" style="left:1060px;top:8636px">Lean · AI 2</div><div class="cap" style="left:1340px;top:8636px">Not picked · AI 2 3</div><div class="cap" style="left:1620px;top:8636px">Where it was · not drawn in the app</div><div class="cap" style="left:1900px;top:8636px">Lean · narrow drawer</div>
+<div class="fx" style="left:1060px;top:8660px" data-s="1" data-f="w=side"></div>
+<div class="fx" style="left:1340px;top:8660px" data-s="1" data-f="w=side;nav=alt"></div>
+<div class="fx" style="left:1620px;top:8660px" data-s="1" data-f="w=side;nav=gone"></div>
+<div class="fx" style="left:1900px;top:8660px" data-s=".75" data-f="w=n;drawerNav"></div>
+<div class="cap" style="left:1060px;top:9320px">Not picked · the tab label carries the second count too</div>
+<div class="fx" style="left:1060px;top:9344px" data-s=".6" data-f="w=dl;st=long;nav=alt"></div>
+
+<!-- ============ 4 · strings ============ -->
+<div class="sec" style="left:60px;top:9720px">4 · New strings<small>English only</small></div>
+<div class="panel" style="left:60px;top:9800px;width:1560px"><h2>Every new string in this round</h2><p>English only — the Jellystructure admin ships in English. One Suggestions string changes (owner, 2026-10-16): the list-foot <i>Show 30 more</i> and its line are replaced by a per-group button. Every other string drawn already exists.</p>
+<table class="tbl"><tr><th>key</th><th>en</th><th>where</th></tr>
+<tr><td class="mono">ai_conn_lost</td><td>Connection to this server lost · reconnecting. What you see is what it last sent. Nothing is sent until it’s back — Download, No thanks and Rebuild wait.</td><td>Page-level strip above the tabs, offline only</td></tr>
+<tr><td class="mono">sg_group_more</td><td>Show {n} more · weaker matches from the same build</td><td>Under each group with weaker matches; replaces <i>Show 30 more</i> · <i>weaker matches from the same build — the 20 above are the ones sized to the household</i></td></tr>
+</table>
+</div>
+
+<div class="panel" style="left:1700px;top:9800px;width:900px"><h2>Also decided — owner, 2026-10-16</h2>
+<ul>
+<li><b>Fetchers is always a tab while a key is set</b>, so Suggestions is never the only tab.</li>
+<li><b>The AI page opens on its first present tab</b> (Support); Suggestions only when the link says <span class="mono">?tab=suggestions</span>.</li>
+<li><b>Old links</b> to <span class="mono">suggestions.html</span>, the Dashboard card’s included, land on <span class="mono">ai.html?tab=suggestions</span> while a key is set.</li>
+<li><b>Lost connection</b> is the page-level strip above the tabs; Download, No thanks and Rebuild wait.</li>
+<li><b>The narrow Dismissed table</b> stacks its rows inside the tab only; the no-key page is left as it ships.</li>
+<li><b>Groups are AI-named</b>, each shown once, with <b>Show {n} more</b> under each group and none at the foot of the list.</li>
+<li><b>Phase number:</b> none — the place for it is blank.</li>
+</ul>
+</div>
+
+<script src="suggestions-data.js"></script>
+<script src="ai-suggestions-directions.js"></script>
+</body>
+</html>

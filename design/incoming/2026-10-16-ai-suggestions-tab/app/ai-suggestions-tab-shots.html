@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ai-suggestions-tab — 1:1 frames for the PNG export</title>
+<link rel="stylesheet" href="ai-suggestions-directions.css">
+<style>html,body{margin:0;background:#e9eaee}#slot{position:absolute;left:0;top:0}#slot .fx{position:relative;left:0;top:0;border-radius:0;box-shadow:none}#lst{position:absolute;left:0;top:0;font:12px 'JetBrains Mono',monospace;color:#12141b;padding:8px}</style>
+</head>
+<body>
+<div id="slot"></div>
+<script>
+/* name → frame spec. PNG names: ai-suggestions-tab-<direction>-<width>-<state>.png */
+window.SHOTS = [];
+(function () {
+  const S = [['all-tabs', ''], ['all-tabs-light', 'th=lt'], ['only-tab', 'tabs=fetchers,suggestions'], ['seerr-unreachable', 'st=unreach'], ['offline', 'st=offline'], ['dismissed', 'st=dism'], ['empty', 'st=empty'], ['loading', 'st=loading'], ['longest', 'st=long'], ['show-more', 'st=more'], ['dismissed-drawer', 'st=drawer']];
+  S.forEach(([n, f]) => [['desktop', 'd'], ['narrow', 'n']].forEach(([wn, w]) => {
+    const ww = /longest|show-more/.test(n) ? (w === 'd' ? 'dl' : 'nl') : w;
+    SHOTS.push(['ai-suggestions-tab-toolbar-' + wn + '-' + n, 'dir=A;w=' + ww + (f ? ';' + f : '')]);
+  }));
+  SHOTS.push(['ai-suggestions-tab-header-desktop-all-tabs', 'dir=B;w=d'], ['ai-suggestions-tab-header-narrow-all-tabs', 'dir=B;w=n'],
+    ['ai-suggestions-tab-toolbar-desktop-sidebar', 'w=side'], ['ai-suggestions-tab-toolbar-desktop-sidebar-two-counts', 'w=side;nav=alt'],
+    ['ai-suggestions-tab-toolbar-desktop-tab-two-counts', 'w=dl;st=long;nav=alt'], ['ai-suggestions-tab-toolbar-narrow-sidebar', 'w=n;drawerNav']);
+})();
+window.shot = function (i, x, y) {
+  const el = document.createElement('div'); el.className = 'fx'; el.dataset.s = '1'; el.dataset.f = SHOTS[i][1];
+  const slot = document.getElementById('slot'); slot.innerHTML = ''; slot.appendChild(el); AISG.mount(el);
+  slot.style.transform = 'translate(' + (-(x || 0)) + 'px,' + (-(y || 0)) + 'px)';
+  const d = AISG.DIMS[AISG.parse(SHOTS[i][1]).w || 'd']; return { name: SHOTS[i][0], w: d[0], h: d[1] };
+};
+</script>
+<script src="suggestions-data.js"></script>
+<script src="ai-suggestions-directions.js"></script>
+<script>shot(+(new URLSearchParams(location.search).get('i') || 0));</script>
+</body>
+</html>
