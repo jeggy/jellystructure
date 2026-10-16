@@ -866,3 +866,43 @@ load-shaped, not correctness-shaped.
 against the load that actually existed. Two 4K HEVC ladders at once fill the P4000, so **the two roads go serially** —
 run simultaneously they measure contention rather than the fix. Whether the ceiling of four wants a cap of its own on
 this panel is a question for the owner **after** a measurement, not before one.
+
+## Amendment (2026-10-16) — a 4K copy to a cast receiver: re-test first, then ~40 Mbps goes to our encoder (owner decision; DEB-315)
+
+> Owner, 2026-10-16 (card `c8500823` on DEB-1406), asked about the 2026-10-10 copy-only stall above (*To decide: cap
+> a receiver's copy by a measured ceiling, or send a 4K copy above ~40 Mbps to our encoder*): *"Re-test, then the
+> 40 Mbps rule if it still stalls."* The measured-ceiling option was not taken.
+
+The stall was seen once, on 2026-10-10, and has not been re-checked since FR-309-15 changed how a direct play's
+bitrate is proven and FR-313-16 changed which family the receiver's shape gets. So the rule below is **conditional**:
+it is built only if the re-test reproduces the stall, and it is withdrawn, not built, if the re-test passes.
+
+**The re-test (QA, on prod).** A cast of a ~45–55 Mbps 4K HDR10 remux to the Stue TV's built-in Chromecast, served as
+the 2026-10-10 one was: Jellyfin's copy-only road, the HEVC picture copied and only the audio re-encoded. The
+backend's `playback start … takes … → cap …` line and the absence of an `encoder=ours` line for the play show that it
+went that road; a play that went any other road did not test this, and is reported as such rather than as a pass.
+**Pass:** first picture within 15 s of the receiver's BUFFERING, and 5 min played on with `rebuffer_count = 0` in
+`playback_qoe`. **Fail:** BUFFERING at 0:00 for 60 s or more, or any rebuffer in those 5 min. A pass closes DEB-315
+with this amendment's rule withdrawn; a fail makes FR-313-17 the build.
+
+### FR-313-17 — if the re-test fails: a cast receiver's 4K copy above ~40 Mbps is ours
+
+- **Which plays.** A play on a `cast` device (the Chromecast web receiver) of a 2160p source whose whole-file bitrate
+  — FR-309-15's `directPlayStreamBps`, the figure Jellyfin weighs — is above **40 Mbps**. Every other device kind, and
+  every source at or under 40 Mbps or under 2160p, is unchanged. The owner's *every 4K copy* is read within the
+  question it answered, which was about the receiver; extending it to the apps would be a new decision, because a
+  4K direct play on the TV app is measured to work up to its 60 Mbps ceiling.
+- **What happens.** The play's negotiation cap is at most 40 Mbps, so Jellyfin answers with a picture re-encode
+  (`ContainerBitrateExceedsLimit`) instead of a copy; `reencodesVideo` is then true and our encoder plans it like any
+  other cast transcode — the receiver's own HEVC or H.264 family, its ladder, TS segments. The cap sits beside
+  `negotiationCap` (`StreamRecord.kt`) and only ever narrows, like every cap there.
+- **What does not change.** FR-313-12's fallback: a play our encoder cannot serve still goes to Jellyfin, which at a
+  40 Mbps cap is a Jellyfin re-encode, not the copy that stalled. A receiver's 309 record is not written from this
+  cap. Non-goals still hold: this receiver never direct-plays a file (it plays HLS only), so no direct play is
+  replaced.
+- **Logged.** The `playback start` line names the cap's reason, `4K copy to a cast receiver above 40 Mbps (313)`, so
+  the admin reads why a remux was re-encoded.
+
+**Tests (if built).** `EncoderPlanTest` / `StreamRecordTest`: a `cast` device and a 2160p source at 51.6 Mbps gets a
+cap ≤ 40 Mbps; the same source at 38 Mbps, a 1080p source at 51.6 Mbps, and a `tv`-platform device with the 2160p
+51.6 Mbps source are uncapped by this rule; an existing lower cap (a 309 record below 40 Mbps) is kept.
