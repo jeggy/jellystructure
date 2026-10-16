@@ -266,6 +266,12 @@ its automatic checks on, the builder may turn them on, provided Sparkle's own sc
 did not ask for. A delegate that refuses every check Ravilo did not start satisfies that. The plist key and
 `deploy-macos.yml`'s guard follow the choice. The commit cites Sparkle's source for the reason.
 
+*Built (Sjúrður, 2026-10-16):* Sparkle 2.10.0's source confirms the hypothesis. `allowsAutomaticUpdates` is the plist's
+`SUAllowsAutomaticUpdates` when present, else `automaticallyChecksForUpdates`, and `automaticallyDownloadsUpdates` is
+silently ignored while it is false. The bundle therefore keeps `SUEnableAutomaticChecks = NO` and gains
+`SUAllowsAutomaticUpdates = YES`: Sparkle's scheduler stays off, and the delegate still refuses any check Ravilo did not
+start. `deploy-macos.yml` guards both keys.
+
 **FR-R386-4, toggle on, restated as testable.** A background check that finds an update downloads it with no window.
 The engine's state then goes *checking* → *downloading* → *ready*. If it stays at *checking* or *available*, or
 returns to *idle*, without fetching the update, FR-R386-4 is broken.
