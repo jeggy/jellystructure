@@ -1366,6 +1366,7 @@ private fun attachListeners(scope: CoroutineScope) {
                 updateSaveEnabledForSchedule()
             }
             if (ok) { renderPathCheckInline(ConfigApi.pathCheck()); refreshNextRun() }   // 93e: reflect the saved schedule
+            if (ok) refreshAiNav()   // DEB-1253 (FR-3): a key saved or cleared swaps AI and Suggestions in the sidebar without a reload
             // Phase 317 (FR-317-16) — the A/V sync line describes the SAVED config, so it is re-asked here
             // rather than left describing the one before the save (switching the check off, or correcting
             // the sidecar's address, changes what that line says).

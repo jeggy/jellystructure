@@ -21,7 +21,10 @@ import org.w3c.dom.HTMLTextAreaElement
  * Styles: `design/app/suggestions.css` (sg-*), shared with the mockup.
  */
 private var sgPage: SuggestionsPageDto? = null
-private var sgShowMore = false
+/** DEB-1253 (FR-8) — the groups (by index in the page's clusters) whose weaker matches are open. Resets when the page or tab is rendered. */
+private val sgOpen = mutableSetOf<Int>()
+/** DEB-1253 (FR-6) — hosted as the AI page's Suggestions tab (`data-sg-host="tab"`) rather than as `#/suggestions`. */
+private var sgInTab = false
 private var sgPick: Int? = null
 private var sgOther: Int? = null
 private var sgView = "list"
@@ -47,11 +50,27 @@ private val REASONS = listOf(
     Triple("other", "Other", "Out. Your note is kept with it under Dismissed."),
 )
 
-fun renderSuggestions(container: Element, scope: CoroutineScope, query: Map<String, String>) {
+fun renderSuggestions(container: Element, scope: CoroutineScope, query: Map<String, String>, inTab: Boolean = false) {
     sgView = if (query["view"] == "dismissed") "dismissed" else "list"
-    sgPick = null; sgOther = null; sgShowMore = false; sgDl = null
+    sgPick = null; sgOther = null; sgOpen.clear(); sgDl = null; sgInTab = inTab
     sgEscapeOnce()
-    container.innerHTML = """
+    container.innerHTML = if (inTab) """
+        <div id="sg-root" data-sg-host="tab">
+        <div class="sg-tb">
+          <span class="badge ok" id="sg-conn">● Seerr connected</span>
+          <span class="tiny muted" id="sg-built"></span>
+          <span class="spacer"></span>
+          <a class="chip" href="#/ai?tab=suggestions&amp;view=dismissed" id="sg-dlink">Dismissed</a>
+          <span class="btn sm" id="sg-rebuild">⟲ Rebuild now</span>
+        </div>
+        $SG_SUB
+        <div class="sg-who" id="sg-who"></div>
+        <div class="sg-who" id="sg-grp"></div>
+        <div id="sg-banner"></div>
+        <div id="sg-main"><span class="muted tiny">Loading…</span></div>
+        <div id="sg-dsm"></div>
+        </div>
+    """.trimIndent() else """
         <div id="sg-root">
         <div class="pagebar">
           <h1>Suggestions</h1>
@@ -61,7 +80,7 @@ fun renderSuggestions(container: Element, scope: CoroutineScope, query: Map<Stri
           <a class="chip" href="#/suggestions?view=dismissed" id="sg-dlink">Dismissed</a>
           <span class="btn sm" id="sg-rebuild">⟲ Rebuild now</span>
         </div>
-        <p class="page-sub">Films Seerr can get that the library doesn't have, picked from what the household <b>finished</b> — each kind given room in proportion to how much of it gets watched. Nothing is requested until someone presses <b>Download</b>. The same list, per viewer, is a row on Ravilo's Request tab (<a href="#/ravilo?tab=requests">Requests</a>).</p>
+        $SG_SUB
         <div class="sg-who" id="sg-who"></div>
         <div class="sg-who" id="sg-grp"></div>
         <div id="sg-banner"></div>
@@ -69,9 +88,17 @@ fun renderSuggestions(container: Element, scope: CoroutineScope, query: Map<Stri
         </div>
     """.trimIndent()
     // On this page's own root, which is replaced with the page: the shared container outlives every route.
-    document.getElementById("sg-root")?.addEventListener("click", { ev -> (ev.target as? Element)?.let { sgClick(it, scope) } })
+    document.getElementById("sg-root")?.addEventListener("click", { ev ->
+        (ev.target as? Element)?.let {
+            // In the tab, Dismissed opens in place (replaceState), so the chip's and Close's own hash links must not navigate.
+            if (sgInTab && it.closest("#sg-dlink, [data-dclose]") != null) ev.preventDefault()
+            sgClick(it, scope)
+        }
+    })
     scope.launch { sgLoad() }
 }
+
+private const val SG_SUB = """<p class="page-sub">Films Seerr can get that the library doesn't have, picked from what the household <b>finished</b> — each kind given room in proportion to how much of it gets watched. Nothing is requested until someone presses <b>Download</b>. The same list, per viewer, is a row on Ravilo's Request tab (<a href="#/ravilo?tab=requests">Requests</a>).</p>"""
 
 private suspend fun sgLoad() {
     val main = document.getElementById("sg-main") as? HTMLElement ?: return
@@ -100,7 +127,10 @@ private fun sgRender() {
         !p.built -> "Not built yet"
         else -> "Built ${sgWhen(p.builtAt)} · $shown shown of ${p.items.size}"
     }
-    (document.getElementById("sg-dlink") as? HTMLElement)?.textContent = "Dismissed (${p.dismissedCount})"
+    (document.getElementById("sg-dlink") as? HTMLElement)?.let {
+        it.textContent = "Dismissed (${p.dismissedCount})"
+        if (sgInTab) it.classList.toggle("on", sgView == "dismissed")
+    }
     (document.getElementById("sg-conn") as? HTMLElement)?.let {
         it.className = if (p.seerrOk) "badge ok" else "badge warn"
         it.textContent = if (p.seerrOk) "● Seerr connected" else "● Seerr unreachable"
@@ -124,32 +154,35 @@ private fun sgRender() {
     (document.getElementById("sg-banner") as? HTMLElement)?.innerHTML = if (p.seerrOk || !p.built) "" else
         """<div class="note warn" style="margin-top:14px;display:flex;gap:12px;align-items:center;"><span class="badge warn" style="flex:none;">Last built list</span><span class="tiny" style="flex:1;line-height:1.5;">Built ${sgWhen(p.builtAt)} · Seerr couldn’t be reached${p.seerrDownSince?.let { " since " + dev.jellystructure.formatClock(it.toString()) } ?: ""}. The list is still true; <b>Download</b> waits until Seerr answers again.</span><span class="btn sm ghost" id="sg-retry">Try again</span></div>"""
     val main = document.getElementById("sg-main") as? HTMLElement ?: return
-    if (sgView == "dismissed") { main.innerHTML = sgDismissedHtml(); return }
+    if (sgInTab) {
+        // The tab's Dismissed view is its own element: the host's `sg-dview` class hides the list, the toolbar stays.
+        document.getElementById("sg-root")?.classList?.toggle("sg-dview", sgView == "dismissed")
+        (document.getElementById("sg-dsm") as? HTMLElement)?.innerHTML = if (sgView == "dismissed") sgDismissedHtml() else ""
+        if (sgView == "dismissed") return
+    } else if (sgView == "dismissed") { main.innerHTML = sgDismissedHtml(); return }
     main.innerHTML = when {
         !p.built -> sgEmpty("Nothing built yet", "The first list is built in the background from what the household has finished. It takes a few minutes; the page fills in when it is done.",
             if (p.building) """<span class="btn is-off">Building…</span>""" else """<span class="btn primary" data-build="1">Build now</span>""")
         p.noHistory -> sgEmpty("Suggestions appear once someone has finished a few films.", "", "")
         p.items.isEmpty() -> sgEmpty("Nothing new right now · next build ${sgWhen(p.nextBuildAt)}", "Everything suggested has been downloaded, requested or dismissed.", """<span class="btn" data-build="1">⟲ Rebuild now</span>""")
-        else -> buildString {
-            append(sgBuckets(p, shownPart = true))
-            val more = p.items.count { !it.shown }
-            if (more > 0) {
-                if (sgShowMore) { append("""<div class="sg-fold">$more weaker match${if (more == 1) "" else "es"}</div>"""); append(sgBuckets(p, shownPart = false)) }
-                else append("""<div class="sg-more"><span class="btn" id="sg-showmore">Show $more more</span><span class="tiny muted">weaker matches from the same build — the ${shown} above are the ones sized to the household</span></div>""")
-            }
-        }
+        else -> sgBuckets(p)
     }
 }
 
-private fun sgBuckets(p: SuggestionsPageDto, shownPart: Boolean): String = buildString {
-    for (c in p.clusters) {
-        val items = p.items.filter { it.cluster == c.name && it.shown == shownPart }
-        if (items.isEmpty()) continue
+/** FR-8 — each group once: its shown tiles, then (once opened) its weaker matches in the same grid. */
+private fun sgBuckets(p: SuggestionsPageDto): String = buildString {
+    p.clusters.forEachIndexed { gi, c ->
+        val own = p.items.filter { it.cluster == c.name }
+        val weaker = own.filter { !it.shown }
+        val items = own.filter { it.shown }.let { shownOnes -> if (gi in sgOpen) shownOnes + weaker else shownOnes }
+        if (items.isEmpty()) return@forEachIndexed
         val evidence = if (p.clusterSource == "ai") "the household finished ${c.finished} film${if (c.finished == 1) "" else "s"} like these"
             else "the household finished ${c.finished} ${c.name.lowercase().replace(" & ", " and ")} film${if (c.finished == 1) "" else "s"}"
         append("""<section class="sg-bucket"><div class="sg-bh"><h3>${c.name.esc()}</h3><span class="n">${items.size}</span><span class="ev">$evidence</span></div><div class="sg-grid">""")
         items.forEach { append(sgTile(p, it)) }
-        append("</div></section>")
+        append("</div>")
+        if (weaker.isNotEmpty() && gi !in sgOpen) append("""<div class="sg-more"><span class="btn sm" data-gmore="$gi">Show ${weaker.size} more</span><span class="tiny muted">weaker matches from the same build</span></div>""")
+        append("</section>")
     }
 }
 
@@ -222,7 +255,7 @@ private fun sgReason(r: String) = REASONS.firstOrNull { it.first == r }?.second 
 private fun sgDismissedHtml(): String {
     val list = sgDismissed ?: return """<span class="muted tiny">Loading…</span>"""
     return buildString {
-        append("""<div class="card" style="margin-top:18px;"><div class="row center"><h3 style="margin:0;font-size:1.05rem;">Dismissed</h3><span class="badge" style="margin-left:8px;">${list.size}</span><span class="spacer"></span><a class="btn sm ghost" href="#/suggestions">Close</a></div>""")
+        append("""<div class="card" style="margin-top:18px;"><div class="row center"><h3 style="margin:0;font-size:1.05rem;">Dismissed</h3><span class="badge" style="margin-left:8px;">${list.size}</span><span class="spacer"></span><a class="btn sm ghost" ${if (sgInTab) """href="#/ai?tab=suggestions" data-dclose="1"""" else """href="#/suggestions""""}>Close</a></div>""")
         append("""<p class="tiny muted" style="margin:6px 0 0;">Everything said no to, and why — and anything blocklisted in Seerr directly. None of it is suggested again; <b>Bring back</b> also takes it off Seerr’s blocklist.</p>""")
         if (list.isEmpty()) append("""<p class="tiny muted">Nothing dismissed.</p>""")
         else {
@@ -264,6 +297,24 @@ private fun sgUndo(scope: CoroutineScope, item: SuggestionItemDto) {
     sgUndoTimer = window.setTimeout({ u.remove(); null }, 6000)
 }
 
+/** FR-6.3 — "am I still on the Suggestions page", in either home: `#/suggestions`, or the AI page's Suggestions tab. */
+private fun sgOnPage(): Boolean {
+    val path = dev.jellystructure.Router.currentPath()
+    return path.startsWith("/suggestions") || (path == "/ai" && dev.jellystructure.Router.currentQuery()["tab"] == "suggestions")
+}
+
+/** FR-7 — the AI page marks its `<main>` `ws-lost` while the server is gone; nothing else ever does. */
+private fun sgLost(): Boolean = document.getElementById("page-content")?.classList?.contains("ws-lost") == true
+
+/** FR-6.2 — the tab's Dismissed view opens and closes in place: `view` in the URL by replaceState, no history entry. */
+private fun sgSetDismissed(on: Boolean, scope: CoroutineScope) {
+    sgView = if (on) "dismissed" else "list"
+    dev.jellystructure.Router.updateQuery(mapOf("view" to if (on) "dismissed" else null), replace = true)
+    sgDismissed = null
+    sgRender()
+    if (on) scope.launch { sgDismissed = SuggestionsApi.dismissed(); sgRender() }
+}
+
 /** While a build runs, the page asks again every few seconds — and stops the moment the page is left. */
 private fun sgPollWhileBuilding(scope: CoroutineScope) {
     if (sgPolling) return
@@ -272,7 +323,7 @@ private fun sgPollWhileBuilding(scope: CoroutineScope) {
         try {
             repeat(60) {
                 delay(5_000)
-                if (!dev.jellystructure.Router.currentPath().startsWith("/suggestions")) return@launch
+                if (!sgOnPage()) return@launch
                 sgLoad()
                 if (sgPage?.building != true) return@launch
             }
@@ -283,11 +334,19 @@ private fun sgPollWhileBuilding(scope: CoroutineScope) {
 private fun sgClick(t: Element, scope: CoroutineScope) {
     val p = sgPage
     if (t.closest("#sg-retry") != null) { scope.launch { sgLoad() }; return }
-    if (t.closest("#sg-showmore") != null) { sgShowMore = true; sgRender(); return }
+    t.closest("[data-gmore]")?.let { b -> b.getAttribute("data-gmore")?.toIntOrNull()?.let { sgOpen.add(it) }; sgRender(); return }
+    if (sgInTab) {
+        t.closest("#sg-dlink")?.let { sgSetDismissed(sgView != "dismissed", scope); return }
+        if (t.closest("[data-dclose]") != null) { sgSetDismissed(false, scope); return }
+    }
+    // FR-7 — the strip above the tab strip is the reason: nothing is sent until the server is back.
+    if (sgLost() && t.closest("#sg-rebuild, [data-build], [data-dl], [data-no], [data-dlgo], [data-reason], [data-other]") != null) {
+        sgToast("Waiting for the server — nothing is sent until it’s back"); return
+    }
     if (t.closest("#sg-rebuild") != null || t.closest("[data-build]") != null) {
         scope.launch {
             if (SuggestionsApi.rebuild()) { sgToast("Queued · the list rebuilds in the background"); sgLoad(); sgPollWhileBuilding(scope) }
-            else sgToast("A build is already running")
+            else if (!sgLost()) sgToast("A build is already running")
         }
         return
     }

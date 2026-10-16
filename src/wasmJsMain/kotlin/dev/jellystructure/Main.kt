@@ -2,7 +2,9 @@ package dev.jellystructure
 
 import dev.jellystructure.api.AuthApi
 import dev.jellystructure.api.UserProfile
+import dev.jellystructure.ui.leaveAiPage
 import dev.jellystructure.ui.renderActivity
+import dev.jellystructure.ui.renderAiPage
 import dev.jellystructure.ui.renderDashboard
 import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
@@ -21,7 +23,7 @@ import dev.jellystructure.ui.renderRaviloUsers
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.renderSubtitles
-import dev.jellystructure.ui.renderSuggestions
+import dev.jellystructure.ui.renderSuggestionsRoute
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -72,9 +74,16 @@ object App {
         Router.navigate(route)
     }
 
+    /** DEB-1253 (FR-4) — lands on the live home of an old address: rewrites the URL with replaceState (so Back never bounces) and routes again. */
+    fun redirect(route: String) {
+        Router.replaceRoute(route)
+        handleRoute()
+    }
+
     private fun handleRoute() {
         val path = Router.currentPath()
         val query = Router.currentQuery()
+        if (path != "/ai") leaveAiPage()
         if (path == "/segments") {
             shellMounted = false
             renderSegments(scope, query)
@@ -107,7 +116,8 @@ object App {
             path.startsWith("/audiobook/") -> renderAudiobookPage(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook/").substringBefore('/')), query)
             path.startsWith("/audiobook-author/") -> renderAudiobookAuthor(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook-author/").substringBefore('/')), query)
             path == "/activity" -> renderActivity(container, scope, query)
-            path.startsWith("/suggestions") -> renderSuggestions(container, scope, query)  // Phase 274
+            path.startsWith("/suggestions") -> renderSuggestionsRoute(container, scope, query)  // Phase 274; DEB-1253 (FR-4) asks which home first
+            path == "/ai" -> renderAiPage(container, scope, query)  // DEB-1253
             path == "/subtitles" -> renderSubtitles(container, scope, query)  // Phase 302: ?fit=<group>
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)

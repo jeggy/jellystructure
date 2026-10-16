@@ -40,6 +40,7 @@ private val ICONS = mapOf(
     "library"   to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>""",
     "triage"    to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>""",
     "suggestions" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>""",
+    "ai"        to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z"/><path d="M19 15.5c.2 1.6 1.2 2.6 2.8 2.8-1.6.2-2.6 1.2-2.8 2.8-.2-1.6-1.2-2.6-2.8-2.8 1.6-.2 2.6-1.2 2.8-2.8z"/></svg>""",
     "activity"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>""",
     "language"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>""",
     "metadata"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>""",
@@ -58,6 +59,7 @@ private val BASE_NAV: List<NavEntry> = listOf(
     NavLink("/library", "Library", "library"),
     NavLink("/suggestions", "Suggestions", "suggestions", hidden = true),  // Phase 274 (FR-274-8a)
     NavLink("/activity", "Activity", "activity"),
+    NavLink("/ai", "AI", "ai", hidden = true),  // DEB-1253 (FR-3) — below Activity, shown while GET /api/ai/page answers 200; no count
     NavGroup("Setup"),
     NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/settings", "Settings", "settings"),
@@ -154,10 +156,8 @@ fun renderShell(user: UserProfile) {
 
     document.getElementById("cmd-search-pill")?.addEventListener("click") { showPalette() }
 
-    // Phase 274 (FR-274-1) — Suggestions is in the sidebar only while Seerr is connected.
-    MainScope().launch {
-        if (dev.jellystructure.api.SuggestionsApi.available()) (document.getElementById("nav-suggestions") as? HTMLElement)?.style?.display = ""
-    }
+    // Phase 274 (FR-274-1) + DEB-1253 (FR-3) — Suggestions is in the sidebar only while Seerr is connected and the AI page does not hold it.
+    refreshAiNav()
 
     MainScope().launch {
         // Phase 285 (FR-285-6) — the sidebar count is the Dashboard's row count, the same number its tile shows.
@@ -196,13 +196,36 @@ fun renderShell(user: UserProfile) {
     }
 }
 
+/** DEB-1253 (FR-3) — what the server last said: the AI page's tabs (null = no AI page), and whether Seerr is connected. */
+private var navAiTabs: List<String>? = null
+private var navSuggestions = false
+
+/**
+ * Reads `GET /api/ai/page` beside the Seerr probe and shows the sidebar to match: **AI** while the page exists, and
+ * *Suggestions* only when Seerr is connected and the AI page does not hold it. Run when the shell mounts and again after
+ * Settings saves, so a key set or cleared changes the sidebar without a reload.
+ */
+fun refreshAiNav() {
+    MainScope().launch {
+        val tabs = dev.jellystructure.api.AiPageApi.tabs()
+        val seerr = dev.jellystructure.api.SuggestionsApi.available()
+        navAiTabs = tabs; navSuggestions = seerr
+        (document.getElementById("nav-ai") as? HTMLElement)?.style?.display = if (tabs != null) "" else "none"
+        (document.getElementById("nav-suggestions") as? HTMLElement)?.style?.display = if (seerr && tabs?.contains("suggestions") != true) "" else "none"
+    }
+}
+
 private data class PaletteCmd(val label: String, val detail: String = "", val action: () -> Unit)
 private var paletteSearchJob: Job? = null
 
-private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
+private fun buildPaletteCommands(): List<PaletteCmd> = listOfNotNull(
     PaletteCmd("Go to Library", "Browse all media") { App.navigate("/library") },
     PaletteCmd("Go to Settings", "Connections, scan & metadata options") { App.navigate("/settings") },
     PaletteCmd("Go to Activity", "Scan log and workers") { App.navigate("/activity") },
+    // FR-3 — the palette follows the sidebar: AI or Suggestions, never both.
+    if (navAiTabs != null) PaletteCmd("Go to AI", navAiTabs.orEmpty().joinToString(" · ") { t -> t.replaceFirstChar { c -> c.uppercase() } }) { App.navigate("/ai") }
+    else if (navSuggestions) PaletteCmd("Go to Suggestions", "Films Seerr can get that the library doesn’t have") { App.navigate("/suggestions") }
+    else null,
     PaletteCmd("Go to Metadata", "Studios, networks, genres & tags") { App.navigate("/metadata") },
     PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
     PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {

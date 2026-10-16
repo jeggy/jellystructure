@@ -29,6 +29,11 @@ object Router {
         }
     }
 
+    /** Rewrites the current URL to [route] (`/path?query`) with replaceState: no history entry and no `hashchange`. */
+    fun replaceRoute(route: String) {
+        window.history.replaceState(null, "", "#$route")
+    }
+
     /** Updates only the query of the current path, preserving path and unmentioned params. */
     fun updateQuery(updates: Map<String, String?>, replace: Boolean = true) {
         val path = currentPath()
