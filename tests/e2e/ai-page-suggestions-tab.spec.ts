@@ -117,10 +117,11 @@ test.describe.serial("AI page — Suggestions as a tab (DEB-1253)", () => {
         await page.goto("/#/dashboard");
         await expect.poll(() => navShown(page, "#/ai")).toBe(true);
         expect(await navShown(page, "#/suggestions")).toBe(false);
-        // AI sits below Activity, above the Setup group, and carries no count.
+        // AI sits below Activity, above the Setup group, and shows no count here: the page has no Support tab (DEB-1500 FR-2
+        // adds the open-ticket count only when it does), so the badge the shell draws hidden stays hidden and empty.
         const labels = await page.locator(".app-side > a.nav").allTextContents();
         expect(labels.map((l) => l.trim())).toEqual(["Dashboard", "Library", "Suggestions", "Activity", "AI"]);
-        await expect(navLink(page, "#/ai").locator(".count")).toHaveCount(0);
+        await expect(navLink(page, "#/ai").locator(".count")).toBeHidden();
         await page.keyboard.press("Control+k");
         await expect(page.locator("#cmd-palette-list")).toContainText("Go to AI");
         await expect(page.locator("#cmd-palette-list")).not.toContainText("Go to Suggestions");

@@ -33,7 +33,7 @@ private val AI_JOBS = listOf(
         "Once per suggestions build (weekly, with Seerr connected): the model groups the films the household doesn't have into three to eight kinds it actually watches, named for this house. It sees genre and keyword ids only — no viewer, no title, no synopsis — and each group's share of the 20 shown is counted by the server, never by the model. If anything goes wrong, the list keeps the six genre groups and the page says so."),
     // Phase 321 (FR-321-1, FR-321-11)
     AiJobUi("support", "Support",
-        "When a viewer files a support ticket, AI Agent reads the thread and answers a plain how-to question itself, in the viewer's language. Anything else — a fault, an account problem, a request, or anything it is not sure of — it forwards to an admin with an English summary, and tells the viewer it has. It never resolves, deletes or unflags a ticket. It sees the text of the ticket's thread and the viewer's language: never their name, id or device, though a viewer may type anything into a ticket, including names. Needs <code>[support] enabled = true</code> in config.toml as well."),
+        "When a viewer files a support ticket, AI Agent reads the thread and answers a plain how-to question itself, in the viewer's language. Anything else — a fault, an account problem, a request, or anything it is not sure of — it forwards to an admin with an English summary, and tells the viewer it has. It never resolves, deletes or unflags a ticket. It sees the text of the ticket's thread and the viewer's language: never their name, id or device, though a viewer may type anything into a ticket, including names."),
 )
 
 private var aiEnabled = false
@@ -84,6 +84,7 @@ private fun aiJobCardHtml(j: AiJobUi): String = """
                     <select id="ai-${j.key}-effort" class="input" style="width:120px"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
                   <div class="field" style="margin:0"><label>Monthly limit (USD)</label><input id="ai-${j.key}-limit" class="input" type="number" min="0" step="0.5" style="width:110px"></div>
                 </div>
+                <div class="tiny muted" id="ai-${j.key}-inactive" style="margin-top:10px;display:none"></div>
                 <div class="tiny muted" id="ai-${j.key}-spent" style="margin-top:10px"></div>
                 <div class="tiny muted" id="ai-${j.key}-last" style="margin-top:2px"></div>
                 <div class="tiny muted" id="ai-${j.key}-estimate" style="margin-top:2px"></div>
@@ -190,6 +191,13 @@ private fun renderAiJob(key: String) {
     // FR-270-3 — effort only for a model that takes it (Haiku 4.5 rejects the parameter).
     (document.getElementById("ai-$key-effort-field") as? HTMLElement)?.style?.display = if (model?.effort == false) "none" else ""
     val limit = input("ai-$key-limit")?.value?.toDoubleOrNull()
+    // DEB-1500 (FR-5) — why the job is not running, in the server's words, as the card's first status line. The server names
+    // the page that opens it, and that name is the link; nothing else in the sentence is markup.
+    (document.getElementById("ai-$key-inactive") as? HTMLElement)?.let { el ->
+        val why = job.inactiveReason
+        el.style.display = if (why == null) "none" else ""
+        el.innerHTML = why?.esc()?.replace("AI › Support", """<a href="#/ai?tab=support">AI › Support</a>""").orEmpty()
+    }
     (document.getElementById("ai-$key-spent") as? HTMLElement)?.textContent =
         "Spent this month: ${usd(job.spentThisMonthMicroUsd)}" + (limit?.let { " of ${usd((it * 1_000_000).toLong())}" } ?: "") +
             (if (job.pending) " · a batch is out, waiting for Anthropic" else "") +

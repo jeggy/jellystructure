@@ -59,7 +59,7 @@ private val BASE_NAV: List<NavEntry> = listOf(
     NavLink("/library", "Library", "library"),
     NavLink("/suggestions", "Suggestions", "suggestions", hidden = true),  // Phase 274 (FR-274-8a)
     NavLink("/activity", "Activity", "activity"),
-    NavLink("/ai", "AI", "ai", hidden = true),  // DEB-1253 (FR-3) — below Activity, shown while GET /api/ai/page answers 200; no count
+    NavLink("/ai", "AI", "ai", hidden = true),  // DEB-1253 (FR-3) — below Activity, shown while GET /api/ai/page answers 200; DEB-1500 (FR-2) adds the open-ticket count
     NavGroup("Setup"),
     NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/settings", "Settings", "settings"),
@@ -77,6 +77,7 @@ private val BASE_NAV: List<NavEntry> = listOf(
 private fun navEntries(): List<NavEntry> = BASE_NAV
 
 fun renderShell(user: UserProfile) {
+    SupportLive.adminName = user.name
     val body = document.body ?: return
 
     // Apply persisted theme before rendering HTML to avoid flash
@@ -211,6 +212,9 @@ fun refreshAiNav() {
         val seerr = dev.jellystructure.api.SuggestionsApi.available()
         navAiTabs = tabs; navSuggestions = seerr
         (document.getElementById("nav-ai") as? HTMLElement)?.style?.display = if (tabs != null) "" else "none"
+        // DEB-1500 (FR-2) — the AI entry's count is the support summary's `open`, read when the shell mounts beside the page
+        // read; after that every `support_ticket` event on /ws carries it, and the admin never adds or subtracts on its own.
+        if (tabs?.contains("support") == true) dev.jellystructure.api.SupportApi.summary()?.let { SupportLive.seed(it) }
         (document.getElementById("nav-suggestions") as? HTMLElement)?.style?.display = if (seerr && tabs?.contains("suggestions") != true) "" else "none"
     }
 }
@@ -465,13 +469,26 @@ private fun connectDockSocket() {
                     dockScanned = 0
                     hideCancelledBanner()
                 }
+                // DEB-1500 (FR-2, FR-6) — the count in the sidebar, and the open Support tab or log, follow the push.
+                is JobEvent.SupportTicketChanged -> SupportLive.event(event)
                 else -> {}
             }
         }
     }
 
     ws.onclose = { _: Event ->
-        if (dockSocket == ws) dockSocket = null
+        if (dockSocket == ws) {
+            dockSocket = null
+            // DEB-1500 (FR-2) — the count is only as current as this socket, so a dropped one is reopened (while the shell is
+            // still on the page), and the count is read again for whatever was pushed while it was down.
+            window.setTimeout({
+                if (dockSocket == null && document.getElementById("ambient-dock") != null) {
+                    connectDockSocket()
+                    refreshAiNav()
+                }
+                null
+            }, 5_000)
+        }
     }
 }
 
@@ -564,6 +581,8 @@ private fun navGroupCollapsed(label: String): Boolean =
 private fun navLinkHtml(entry: NavLink): String {
     val countHtml = when {
         entry.href == "/triage" -> """<span class="count" id="triage-count-badge"></span>"""
+        // DEB-1500 (FR-2) — the open tickets, from the support summary; hidden at 0 and while the lane is closed.
+        entry.href == "/ai" -> """<span class="count" id="ai-count-badge" style="display:none"></span>"""
         entry.count != null -> """<span class="count">${entry.count}</span>"""
         else -> ""
     }

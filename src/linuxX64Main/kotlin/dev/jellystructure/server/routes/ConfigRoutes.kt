@@ -264,9 +264,10 @@ fun Route.configureConfigRoutes(
         // Phase 273 — the subtitle check's switch has its own route (PUT /api/subtitles/settings), so a Settings save
         // from any page, including one loaded before the switch existed, never resets it.
         config = config.copy(subtitleCheck = stored.subtitleCheck)
-        // Phase 320 — `[support]` is config-file-only until the admin phase adds its toggle: the frontend model has no
-        // `support` at all, so without this line every save from every tab wrote SupportConfig()'s `enabled = false`
-        // over the owner's switch — and, with a key set, quietly took the lane away from viewers.
+        // Phase 320 — `[support]` is not part of the Settings form: the frontend model has no `support` at all, so without
+        // this line every save from every tab wrote SupportConfig()'s `enabled = false` over the owner's switch — and, with
+        // a key set, quietly took the lane away from viewers. DEB-1500 (FR-3): the lane's switch is POST /api/support/enabled
+        // on the AI page's Support tab, and this line is why a Settings save in between can never flip it.
         config = config.copy(support = stored.support)
         // Phase 321 (FR-321-1/4/8) — the Support card on the AI tab carries the job's four fields; the three bounds
         // (`max_input_chars`, `requests_per_viewer_per_day`, `turns_per_ticket`) are config-file-only, so a save keeps them.

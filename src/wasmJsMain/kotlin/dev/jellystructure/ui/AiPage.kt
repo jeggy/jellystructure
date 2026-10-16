@@ -14,14 +14,18 @@ import org.w3c.dom.HTMLElement
 
 /**
  * DEB-1253 (FR-2..FR-7) — the admin's AI page: its own header, a tab strip (`.tk-tabs`) in the server's order, and one
- * panel per tab. Suggestions is the only tab built today; Support and Fetchers each add a tab here later. Styles:
- * `design/app/app.css` (`.tk-tabs`, `.ai-offl`) and `design/app/suggestions.css` (`.sg-tb`).
+ * panel per tab. Support (DEB-1500, `SupportTab.kt`) and Suggestions are built; Fetchers adds a tab here later. Styles:
+ * `design/app/app.css` (`.tk-tabs`, `.tk-cnt`, `.ai-offl`), `design/app/support.css` (`.tksup`, the Support panel's host) and
+ * `design/app/suggestions.css` (`.sg-tb`).
  */
 private val AI_TAB_LABELS = mapOf("support" to "Support", "fetchers" to "Fetchers", "suggestions" to "Suggestions")
 
 private var aiTabs: List<String> = emptyList()
 private var aiLost = false
 private var aiProbe: Job? = null
+
+/** DEB-1500 (FR-16) — the page's offline strip is showing: the Support tab's writes are disabled while it does. */
+internal fun aiPageLost(): Boolean = aiLost
 
 /** `#/suggestions`, and `#/suggestions?view=dismissed`: the live home is asked (FR-4) before anything is drawn. */
 fun renderSuggestionsRoute(container: Element, scope: CoroutineScope, query: Map<String, String>) {
@@ -53,6 +57,7 @@ fun renderAiPage(container: Element, scope: CoroutineScope, query: Map<String, S
 
 /** Called on every route that is not the AI page, and before it is drawn again: the strip, the probe and the listener go. */
 fun leaveAiPage() {
+    leaveSupportTab()
     aiProbe?.cancel(); aiProbe = null
     aiLost = false
     ServerLink.onNoResponse = null
@@ -71,19 +76,20 @@ private fun mountAiPage(container: Element, scope: CoroutineScope, tabs: List<St
           <span class="spacer"></span>
           <a class="btn sm ghost" href="#/settings?tab=ai">Key &amp; model → Settings</a>
         </div>
-        <div class="ai-offl" id="ai-offl" role="status"><span class="dot"></span><span><b>Connection to this server lost · reconnecting.</b> What you see is what it last sent. Nothing is sent until it’s back — Download, No thanks and Rebuild wait.</span></div>
-        <div class="tk-tabs" id="ai-tabs">${tabs.joinToString("") { """<span data-tab="$it">${AI_TAB_LABELS[it] ?: it}</span>""" }}</div>
-        ${tabs.joinToString("") { """<div id="ai-${it}" data-ai-panel="$it" style="display:none"></div>""" }}
+        <div class="ai-offl" id="ai-offl" role="status"><span class="dot"></span><span><b>Connection to this server lost · reconnecting.</b> What you see is what it last sent. Nothing is sent until it’s back.</span></div>
+        <div class="tk-tabs" id="ai-tabs">${tabs.joinToString("") { """<span data-tab="$it">${AI_TAB_LABELS[it] ?: it}${if (it == "support") """<b class="tk-cnt" id="ai-tab-count" style="display:none"></b>""" else ""}</span>""" }}</div>
+        ${tabs.joinToString("") { """<div id="ai-${it}" data-ai-panel="$it"${if (it == "support") " class=\"tksup\"" else ""} style="display:none"></div>""" }}
         </div>
     """.trimIndent()
     document.getElementById("ai-tabs")?.addEventListener("click", { ev ->
         val t = (ev.target as? Element)?.closest("[data-tab]")?.getAttribute("data-tab") ?: return@addEventListener
         if (t == Router.currentQuery()["tab"]) return@addEventListener
         // FR-5.2 — a tab switch is a replaceState: no hashchange, no history entry, only the panel toggles.
-        Router.updateQuery(mapOf("tab" to t, "view" to null), replace = true)
+        Router.updateQuery(mapOf("tab" to t, "view" to null, "ticket" to null), replace = true)
         showAiTab(scope, t)
     })
     ServerLink.onNoResponse = { aiServerLost(scope) }
+    SupportLive.paintCount()
     showAiTab(scope, tab)
 }
 
@@ -94,6 +100,7 @@ private fun showAiTab(scope: CoroutineScope, tab: String) {
     }
     val panel = document.getElementById("ai-$tab") ?: return
     when (tab) {
+        "support" -> renderSupportTab(panel, scope, Router.currentQuery())
         "suggestions" -> renderSuggestions(panel, scope, Router.currentQuery(), inTab = true)
     }
 }

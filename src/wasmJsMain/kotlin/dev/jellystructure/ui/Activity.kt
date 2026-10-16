@@ -1,5 +1,6 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.Router
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.httpClient
 import io.ktor.client.call.body
@@ -154,7 +155,10 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
           <div class="tiny" style="line-height:1.6;">Ravilo requests are queuing behind background work.</div>
         </div>
 
-        <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count" id="jobs-count-badge" style="display:none;">0</span></span></span></div>
+        <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count" id="jobs-count-badge" style="display:none;">0</span></span><span data-view="support" id="viewseg-support" style="display:none;">Support log</span></span></div>
+
+        <!-- DEB-1500 (FR-12) — history only: what every author did to every ticket. Present only while the AI page lists Support. -->
+        <div id="view-support" class="tksup" style="display:none;"></div>
 
         <div id="view-jobs" style="display:none;">
           <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
@@ -317,14 +321,21 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     jobsPollActive = false
     container.querySelector("#viewseg")?.addEventListener("click") { e ->
         val target = (e.target as? HTMLElement)?.closest("[data-view]") as? HTMLElement ?: return@addEventListener
-        val jobs = target.getAttribute("data-view") == "jobs"
+        val view = target.getAttribute("data-view")
+        val jobs = view == "jobs"
+        val supportLog = view == "support"
         val segOpts = container.querySelectorAll("#viewseg [data-view]")
         for (i in 0 until segOpts.length) {
             val opt = segOpts.item(i) as? HTMLElement ?: continue
             if (opt == target) opt.classList.add("on") else opt.classList.remove("on")
         }
-        (container.querySelector("#view-console") as? HTMLElement)?.style?.display = if (jobs) "none" else ""
+        (container.querySelector("#view-console") as? HTMLElement)?.style?.display = if (jobs || supportLog) "none" else ""
         (container.querySelector("#view-jobs") as? HTMLElement)?.style?.display = if (jobs) "" else "none"
+        (container.querySelector("#view-support") as? HTMLElement)?.let { host ->
+            host.style.display = if (supportLog) "" else "none"
+            if (supportLog) mountSupportLog(host, scope)
+        }
+        Router.updateQuery(mapOf("view" to if (supportLog) "support" else if (jobs) "jobs" else null), replace = true)
         val wasPolling = jobsPollActive
         jobsPollActive = jobs
         if (jobs && !wasPolling) {
@@ -342,6 +353,13 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     }
     // `#/activity?view=jobs` opens *Jobs & workers* (the AI card's links, and the design's own URL).
     if (query["view"] == "jobs") (container.querySelector("#viewseg [data-view=jobs]") as? HTMLElement)?.click()
+    // DEB-1500 (FR-12) — *Support log* is a view of its own, shown only while the AI page lists Support.
+    scope.launch {
+        val tabs = dev.jellystructure.api.AiPageApi.tabs()
+        if (!activityShowing(container, gen) || tabs?.contains("support") != true) return@launch
+        (container.querySelector("#viewseg-support") as? HTMLElement)?.style?.display = ""
+        if (query["view"] == "support") (container.querySelector("#viewseg [data-view=support]") as? HTMLElement)?.click()
+    }
 
     container.querySelector("#clear-log-btn")?.addEventListener("click") {
         if (window.confirm("Clear the entire activity log?")) {
