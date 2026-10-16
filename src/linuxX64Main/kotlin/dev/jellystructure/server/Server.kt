@@ -27,6 +27,7 @@ import dev.jellystructure.server.routes.audiobooksTvRoutes
 import dev.jellystructure.server.routes.musicRoutes
 import dev.jellystructure.server.routes.musicTvRoutes
 import dev.jellystructure.media.visibleTo
+import dev.jellystructure.server.routes.aiPageRoutes
 import dev.jellystructure.server.routes.aiRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.bazarrRoutes
@@ -287,7 +288,11 @@ fun startServer(
                     return@exception
                 }
                 // Logger.error writes both the log line and the Activity entry in one call.
-                Logger.error("Unhandled route exception on ${call.request.path()}: ${cause.message}", "http")
+                // DEB-1498 — the class as well as the message. A Kotlin/Native `NullPointerException` (what a
+                // concurrently-grown shared `HashMap` throws, phase 294) carries a null message, so this line
+                // read `Unhandled route exception on /api/tv/facets/summary: null` and named neither what threw
+                // nor what kind of throw it was. `simpleName` is always there.
+                Logger.error("Unhandled route exception on ${call.request.path()}: ${cause::class.simpleName}: ${cause.message}", "http")
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "internal server error"))
             }
             status(HttpStatusCode.NotFound) { call, status ->
@@ -648,6 +653,7 @@ fun startServer(
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline)
                 activityRoutes(activityLog)
                 aiRoutes(configStore)   // Phase 270
+                aiPageRoutes({ configStore.current }, { suggestionService?.available() == true })   // DEB-1253 (FR-2)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
                 dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
