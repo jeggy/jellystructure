@@ -248,3 +248,19 @@ the event only from AppKit): the QA check is the frame counter reading 0 for a h
 continuously; it does not say what. The candidates are the infinite transitions (`MusicGlyphs` playing bars, `Cast`
 pulse, `Shimmer`, the player spinners) and the focus/hero animations; the cheap way to find it is bisection with the test
 driver on a Mac (navigate, read `frames:`, repeat). The idle-wakeup regression (140–350/s on B) is the other open item.
+
+### 2026-10-16 — the re-measure (QA DEB-1510, `main` at `4e407bee`) and slice 3, second half (FR-R383-3)
+
+Verdict, on the same Mac: the Songs list is lazy (10 745 songs paged in: `LayoutNode` 1 002 against 164 507; footprint 1 040 MB,
+CPU 2 %); `-Xmx1g` took (`MaxHeapSize` 1 073 741 824, no `OutOfMemoryError`); a Mac-side hide stops drawing **0.0 frames/s,
+CPU 2.7 %, music kept going**. Two things still drew at ~120 frames/s: **anything playing** (54 % CPU, 119.7/s, the EDT
+in the Metal redrawer's frame dispatcher, no recomposition) and **a focused window on Home with nothing playing** (119.9/s,
+39 % CPU; the same process unfocused read 2.6 % and 2.6/s). Not measured: casting (a live household session held the only
+speaker), `idlew` calibration, a real Dock click or ⌘Tab. Wakeups after playback stayed 38–40/s against 2.2 before it.
+
+Built: `PlayingBars` created a `rememberInfiniteTransition` whether or not it was `animated`, so a *paused* bar still drew on
+every vsync; the music `Pulse` and the Cast connecting pulse did the same. All three now take a **stepped phase**
+(`rememberSteppedPhase`: about 12 steps a second, and none at all while inactive). The remaining 120/s cause, the focused idle
+Home, is not in an infinite transition (none runs there) and is **not found**; it is the next bisect. **Open and unbuilt:**
+a window *launched* hidden (`open -g -j`) never gets the hide event and reads `shown=true`; that focused-Home draw;
+the 38–40 wakeups/s after playback; casting numbers; the About figures and the 100-song cast test.

@@ -476,8 +476,7 @@ private fun Transport(st: MusicPlayerState) {
 
 @Composable
 internal fun Pulse(tint: Color) {
-    val t = rememberInfiniteTransition(label = "pulse")
-    val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), AnimRepeat.Restart), label = "p")
+    val p = dev.jellystructure.ravilo.ui.components.rememberSteppedPhase(true, 900)   // R383 — stepped, see rememberSteppedPhase
     Canvas(Modifier.size(34.dp, 12.dp)) {
         for (i in 0..2) {
             val phase = (p + i * 0.22f) % 1f

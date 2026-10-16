@@ -155,8 +155,7 @@ private fun DrawScope.drawMusicIcon(icon: MusicIcon, tint: Color) {
  */
 @Composable
 fun PlayingBars(animated: Boolean, tint: Color, glyphSize: Dp, modifier: Modifier = Modifier) {
-    val t = rememberInfiniteTransition(label = "playingBars")
-    val phase by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "phase")
+    val phase = rememberSteppedPhase(animated, 900)   // R383 — not an infinite transition: that drew every vsync, paused or not
     Canvas(modifier.size(glyphSize)) {
         val w = size.width / 7f
         val base = size.height

@@ -563,10 +563,8 @@ fun AirPlayNoticeBar() {
 @Composable
 internal fun CastMarkGlyph(tint: Color, link: CastLinkState, sizeDp: Int = 24) {
     val pulsing = link == CastLinkState.CONNECTING || link == CastLinkState.RECONNECTING
-    val pulse = if (pulsing) {
-        val t = rememberInfiniteTransition(label = "castPulse")
-        t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "castPulseAlpha").value
-    } else 1f
+    val castPhase = rememberSteppedPhase(pulsing, 1400)   // R383 — stepped; 0.35 → 1 → 0.35 over 1.4 s, as the reversing 700 ms tween was
+    val pulse = if (pulsing) 0.35f + 0.65f * (if (castPhase < 0.5f) castPhase * 2f else (1f - castPhase) * 2f) else 1f
     val connected = link == CastLinkState.CONNECTED
     Canvas(Modifier.size(sizeDp.dp)) {
         val w = size.width; val h = size.height
