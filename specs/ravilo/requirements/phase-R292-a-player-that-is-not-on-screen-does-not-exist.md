@@ -6,8 +6,8 @@ Written 2026-09-24 from a household report and a same-day investigation on the s
 2026-09-24 against `main` `9d2636bb`**; built 2026-09-25 from that review (all nine items) and device-tried on
 the stue TV the same morning — see *Trials* under Build. **Supersedes R220 FR-R220-4** and R192's *"resume
 without a full player rebuild"* code comments; keeps R220's detector and ladder for mid-playback loss
-(FR-R292-11). Amended 2026-10-09 (FR-R292-8a, standby) and 2026-10-14 (FR-R292-13, a return with no record —
-DEB-782). Phase status lives in `STATUS.md`.
+(FR-R292-11). Amended 2026-10-09 (FR-R292-8a, standby), 2026-10-14 (FR-R292-13, a return with no record —
+DEB-782) and 2026-10-16 (FR-R292-14, Cast Connect after standby — DEB-569). Phase status lives in `STATUS.md`.
 
 ### Build (2026-09-25)
 
@@ -267,6 +267,15 @@ the music, R322 FR-R322-12.)*
   binge's next episode and a restore from saved state (FR-R292-6) do not go through the return and are untouched.
   The rule is in shared code, so it holds for every client that calls the return: the Android TV and phone, and the
   web app (whose return never carries a screen-off, so it could never reach FR-R292-8a's protection).
+- **FR-R292-14 — After standby, the cast's resume does not play** *(amendment 2026-10-16, DEB-569, see below)*. On
+  the Android TV, for a window of **15 s** from a return that FR-R292-8a marked `afterStandby`, a **play** that
+  reaches the player through its Media3 session (`COMMAND_PLAY_PAUSE` while the player is paused) is refused —
+  that session is the one handed to Cast Connect, and it is the road a sender's or the Cast SDK's resume takes. The
+  film stays paused at the place, as FR-R292-8a requires. Not covered by the window: the viewer's own play on the TV
+  (the player's button and the remote's keys act on the player directly), a pause (always allowed), and a **new
+  cast** — accepting a Cast Connect LOAD ends the window, so a deliberate new cast plays at once. A play from the
+  phone after the window plays. The decision is `StandbyPlayHold` (pure, tested); the Android player's session
+  callback asks it, and the lifecycle effect arms it before the new engine and session exist.
 - **FR-R292-9 — Live TV follows the same rule.** `LiveTvPlayerScreen` gets the same lifecycle: pause on
   `ON_PAUSE`, release on `ON_STOP`/screen-off, and on return re-tune the channel it was on (the channel
   is its resume record). Pressing HOME during Live TV stops the audio.
@@ -527,3 +536,22 @@ nullable ref with one re-bind function that owns every listener (item 6).
 - **Decided without a device repro**, on purpose: the spec already required it (FR-R292-3), the code contradicts it
   in one default, and the whole estate was unticked from 2026-10-14 12:00Z. The device check is acceptance 8, after
   the build. Open question 2's 30-minute rule (owner, 2026-09-24) is untouched.
+
+## Found 2026-10-10, amended 2026-10-16 (FR-R292-14, DEB-569)
+
+- **The open half of FR-R292-8a.** The 2026-10-10 live run passed for a local film and failed for a Cast Connect one:
+  the app came back at the record's place and played on. No sender-side code plays on a reconnect (the phone's
+  `onSessionResumed` only asks for status), the player's own latch is already paused after standby, and the only road
+  left into a paused engine is its Media3 session — which `CastConnectReceiver` hands to the Cast SDK on the return.
+  So the resume is most likely the SDK's (its stored LOAD said autoplay) or the still-connected sender's, arriving
+  as a play command on that session.
+- **The cause was never confirmed on a device**, and this amendment does not claim it: FR-R292-14 closes the road
+  that is known to exist and is the one place the code can see the command. If a device run shows the film still
+  plays on, the next read is the command's origin (the session callback logs the controller's package on every refused
+  play, tag `R292`), not another guess.
+- **Acceptance 9 (FR-R292-14).** Unit: inside the window a play is refused and a pause is not; after the window, or
+  after a new cast is accepted, a play is allowed; with no standby return nothing is ever refused. Device (the TV and
+  an Android phone as the sender, `.debug` of `main`): cast a film from the phone, `KEYCODE_SLEEP` on the TV, wake it
+  and open Ravilo — the picture is at the place and the position does not advance over 30 s; then press play on the
+  phone after 20 s and it plays. Controls: a local film still comes back paused (8a), and a new cast right after a
+  wake plays.
