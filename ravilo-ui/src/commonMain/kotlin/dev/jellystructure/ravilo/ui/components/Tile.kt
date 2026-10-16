@@ -136,6 +136,7 @@ fun Tile(
     episodeBadgeColor: Color = Color.Black.copy(alpha = 0.6f),
     /** R149: "Soon • SxxExx" badge for continuing series with a scheduled episode. Null = no badge. */
     upcomingLabel: String? = null,
+    upcomingAirUtc: String? = null,  // DEB-1482 (FR-3)
     /** R325 (FR-R325-3) — `4K` · `HDR` · `4K HDR`, bottom-start; null (a 1080p or SD title) draws nothing. */
     qualityBadge: String? = null,
     /** Phase R240 (FR-R240-3/7) — true for the one tile J has opened. Grows the tile's actual layout
@@ -311,9 +312,9 @@ fun Tile(
                 verticalAlignment = Alignment.Top,
             ) {
                 Box(Modifier.weight(1f)) {
-                    CornerBadgeContent(corners.topStart, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+                    CornerBadgeContent(corners.topStart, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, upcomingAirUtc, colors, sora)
                 }
-                CornerBadgeContent(corners.topEnd, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+                CornerBadgeContent(corners.topEnd, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, upcomingAirUtc, colors, sora)
             }
             // R325 (FR-R325-3) — the picture badge, bottom-start, clear of the two top corners and above the progress bar.
             qualityBadge?.let { q ->
@@ -491,6 +492,7 @@ private fun CornerBadgeContent(
     episodeBadge: String?,
     episodeBadgeColor: Color,
     upcomingLabel: String?,
+    upcomingAirUtc: String?,
     colors: RaviloColors,
     sora: FontFamily,
 ) {
@@ -523,7 +525,7 @@ private fun CornerBadgeContent(
         ) {
             Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
             Spacer(Modifier.width(4.dp))
-            Text(text = str("tile.badge_soon", mapOf("label" to upcomingLabel.orEmpty())), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text = upcomingBadgeText(upcomingLabel.orEmpty(), upcomingAirUtc), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

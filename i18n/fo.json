@@ -585,6 +585,10 @@
     "text": "Skjótt • {label}",
     "note": "Draft Faroese — review before release."
   },
+  "tile.badge_upcoming": {
+    "text": "{when} • {label}",
+    "note": "Draft Faroese — review before release."
+  },
   "detail.episodes_watched": {
     "text": "{watched} av {total} pørtum sæddir",
     "note": "Draft Faroese — review before release."
@@ -606,6 +610,10 @@
   },
   "date.weekday_day_month": {
     "text": "{weekday} {day}. {month}",
+    "note": "Draft Faroese — review before release."
+  },
+  "date.day_month": {
+    "text": "{day}. {month}",
     "note": "Draft Faroese — review before release."
   },
   "month.jan": {

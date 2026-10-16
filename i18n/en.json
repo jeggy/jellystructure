@@ -645,6 +645,10 @@
     "text": "Soon • {label}",
     "note": "R279 — the corner badge on a title that has not arrived yet. {label} is an episode code like S02E04, already formatted."
   },
+  "tile.badge_upcoming": {
+    "text": "{when} • {label}",
+    "note": "DEB-1482 — the corner badge on a series with a next episode scheduled. {when} is the weekday it airs (wd.abbr.*, drawn as written, not upper-cased) in the viewer's own time zone, or a date from date.day_month when it is a week or more away; {label} is an episode code like S02E04, already formatted. Reorder as your language needs. Where this key is untranslated the English template is used around your own weekday."
+  },
   "detail.episodes_watched": {
     "text": "{watched} of {total} episodes watched",
     "note": "R279 — under a series' hero. Both numbers are plain integers."
@@ -676,6 +680,10 @@
   "date.weekday_day_month": {
     "text": "{weekday} {day} {month}",
     "note": "R279 — a day header on the Upcoming calendar. Reorder as needed."
+  },
+  "date.day_month": {
+    "text": "{day} {month}",
+    "note": "DEB-1482 — the date on the upcoming-episode badge when the episode is a week or more away, e.g. 12 Nov. {day} is a plain number; {month} comes from the month.* keys. Reorder or add punctuation as your language writes a short date."
   },
   "month.jan": {
     "text": "Jan",
