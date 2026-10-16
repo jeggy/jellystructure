@@ -114,3 +114,13 @@ data class SupportChangedEnvelope(
     @EncodeDefault val type: String = "support_changed",
     @EncodeDefault val ticket: Long = 0L,
 )
+
+/**
+ * DEB-1501 (FR-5) — the server's answer to a send, once it answered at all. [Sent] carries the thread the 200 or 201
+ * returned; [Refused] is any other status (400 too long, 404 gone or the lane closed, 429 the daily limit). No answer
+ * at all is not a value here: [TvApiClient] lets that exception through, and the caller says "offline".
+ */
+sealed class SupportSendResult {
+    data class Sent(val thread: SupportThread) : SupportSendResult()
+    data class Refused(val status: Int) : SupportSendResult()
+}

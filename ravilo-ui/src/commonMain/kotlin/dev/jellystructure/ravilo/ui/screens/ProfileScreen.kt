@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -93,6 +94,8 @@ fun ProfileScreen(
     onAppLanguage: () -> Unit,
     onChangePassword: () -> Unit,
     onSettings: () -> Unit,
+    /** DEB-1501 (FR-1) — opens My tickets; null (no row at all) while the support lane is closed, and on every TV. */
+    onSupport: (() -> Unit)? = null,
     /** Fires after this ONE profile's session is revoked and forgotten (R191's `signOutActiveSession`). */
     onSignedOut: () -> Unit,
     /** FR-R304-1 — tap-on-active scrolls to top: the caller bumps this on a re-tap of the bar's item. */
@@ -148,6 +151,12 @@ fun ProfileScreen(
                     Text("Ravilo ${raviloVersion()} · ${str("profile.signed_in_to", mapOf("host" to serverHost))}", color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora)
                     Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         dev.jellystructure.ravilo.ui.components.DeskButton(str("nav.settings") + "…", onClick = onSettings)
+                        if (onSupport != null) Box {
+                            dev.jellystructure.ravilo.ui.components.DeskButton(str("support.title"), onClick = onSupport)
+                            if (dev.jellystructure.ravilo.ui.support.supportUnreadShows()) {
+                                dev.jellystructure.ravilo.ui.components.UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp))
+                            }
+                        }
                         dev.jellystructure.ravilo.ui.components.DeskButton(str("profile.sign_out")) { showSignOut = true }
                     }
                 }
@@ -233,6 +242,11 @@ fun ProfileScreen(
                 // Dev review item 2 — the phone's Settings still holds skin, autoplay, tile shape and more;
                 // a row rather than a deleted screen.
                 ProfileRow(str("nav.settings"), null, onSettings, dot = dev.jellystructure.ravilo.ui.components.updateDotShows())
+                // DEB-1501 (FR-1, FR-2) — after Settings; an unread reply puts a dot here and on the bar's Profile item.
+                if (onSupport != null) {
+                    RowDivider()
+                    ProfileRow(str("support.title"), null, onSupport, dot = dev.jellystructure.ravilo.ui.support.supportUnreadShows())
+                }
             }
 
             // ── Sign out ──

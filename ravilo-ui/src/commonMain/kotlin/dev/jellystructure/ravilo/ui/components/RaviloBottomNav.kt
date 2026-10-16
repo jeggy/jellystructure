@@ -211,7 +211,8 @@ private fun BottomNavCell(
                     ProfileDot(userInitials, isSelected, ring = isSelected && profileRing)
                     // R386 (FR-R386-8, D11) — one dot that means "your Profile page has something"; the page's first row says
                     // what. An update that is ready is one reason today; the support lane's unread reply will be another.
-                    if (updateDotShows()) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp), size = 10.dp, ring = colors.surface)
+                    // DEB-1501 (FR-2) — and so is a support reply nobody has read: the Support row on the page says which.
+                    if (updateDotShows() || dev.jellystructure.ravilo.ui.support.supportUnreadShows()) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp), size = 10.dp, ring = colors.surface)
                 }
                 else -> {
                     val tint = if (isSelected) colors.onAccent else colors.textSecondary

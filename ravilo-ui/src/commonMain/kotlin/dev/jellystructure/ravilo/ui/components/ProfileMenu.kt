@@ -68,6 +68,8 @@ fun ProfileMenu(
     // R234 (FR-R234-1) — phone/web only (gated below on isTvPlatform, never on window size); opens the
     // Your profile screen. Optional so a TV caller need not supply a destination that never shows.
     onYourProfile: (() -> Unit)? = null,
+    // DEB-1501 (FR-1) — after Settings, while the support lane is open on a platform that may file; null draws nothing.
+    onSupport: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
@@ -93,12 +95,14 @@ fun ProfileMenu(
     // optional row (Your profile, phone/web only) can slot in without every other row's up/down needing
     // to be re-wired by hand. Row order matches the mockup: Switch profile · Your profile · My List ·
     // Settings · Sign out (R340 — Add user and Unpair removed; Your profile stays on the web app, R234).
-    data class MenuItem(val label: String, val onSelect: () -> Unit, val bold: Boolean = false, val danger: Boolean = false)
+    data class MenuItem(val label: String, val onSelect: () -> Unit, val bold: Boolean = false, val danger: Boolean = false, val dot: Boolean = false)
+    val supportDot = dev.jellystructure.ravilo.ui.support.supportUnreadShows()
     val items = buildList {
         add(MenuItem(str("pm.switch"), onSwitchProfile, bold = true))
         if (!isTvPlatform && onYourProfile != null) add(MenuItem(str("pm.your_profile"), onYourProfile))
         add(MenuItem(str("pm.my_list"), onMyList))
         add(MenuItem(str("pm.settings"), onSettings))
+        if (!isTvPlatform && onSupport != null) add(MenuItem(str("support.title"), onSupport, dot = supportDot))
         add(MenuItem(str("pm.sign_out"), { showSignOutConfirm = true }))
     }
     val focusRequesters = remember(items.size) { items.map { FocusRequester() } }
@@ -133,6 +137,7 @@ fun ProfileMenu(
                     onBack = onClose,
                     bold = item.bold,
                     danger = item.danger,
+                    dot = item.dot,
                 )
             }
         }
@@ -149,6 +154,7 @@ private fun ProfileMenuRow(
     onBack: () -> Unit,
     bold: Boolean = false,
     danger: Boolean = false,
+    dot: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
@@ -177,5 +183,9 @@ private fun ProfileMenuRow(
             fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
             fontFamily = Sora,
         )
+        if (dot) {
+            Spacer(Modifier.width(8.dp))
+            UpdateDot(Modifier.align(Alignment.CenterVertically), ring = colors.surface)
+        }
     }
 }

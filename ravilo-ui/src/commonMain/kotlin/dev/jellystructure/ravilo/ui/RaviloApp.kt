@@ -378,6 +378,10 @@ private sealed class Dest {
     // R323 — a book and its author (the phone only; the bar hides, the mini bar stays).
     data class AudiobookDetail(val id: String, val displayName: String) : Dest()
     data class AudiobookAuthor(val id: String, val displayName: String) : Dest()
+    // DEB-1501 — the viewer's support lane, reached from Profile (phone, web, Mac, Linux; never a TV). [SupportThread.number]
+    // null is the first message of a ticket not yet filed; [seed] is the thread the 201 that filed it returned.
+    data class SupportList(val displayName: String) : Dest()
+    data class SupportThread(val displayName: String, val number: Long?, val seed: dev.jellystructure.shared.tv.SupportThread? = null) : Dest()
 
     // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
     fun toRoute(): String = when (this) {
@@ -414,6 +418,8 @@ private sealed class Dest {
         is PlaylistDetail -> "/music/playlist/$id"
         is AudiobookDetail -> "/music/audiobook/$id"
         is AudiobookAuthor -> "/music/audiobook-author/$id"
+        is SupportList    -> "/support"
+        is SupportThread  -> if (number == null) "/support/new" else "/support/$number"
     }
 }
 
@@ -467,6 +473,8 @@ fun RaviloApp(
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
                 castAppId = cfg.cast?.appId
                 castMusic = cfg.cast?.music == true   // R324 (dev review 12)
+                // DEB-1501 (FR-1) — an app that reads no flag draws nothing; a TV never does, even with the flag on.
+                dev.jellystructure.ravilo.ui.support.SupportLane.enabled.value = cfg.supportEnabled && !isTvPlatform
                 screensEnabled = cfg.screens?.enabled == true
                 screensPaired = cfg.screens?.paired == true
                 configRefreshes++
@@ -564,9 +572,12 @@ fun RaviloApp(
                     // does not (FR-R368-10), and an installed app without this never receives one.
                     // R369 — every app obeys `session_command` (`session_control`); the TV declares only that (a place).
                     // R369 (FR-R369-9) — and a book-time seek where this app has a music engine to obey it in.
-                    features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform, obeysSessionCommands = true,
-                        groupControl = dev.jellystructure.ravilo.ui.seams.platformGroupController() != null,
-                        bookSeek = dev.jellystructure.ravilo.ui.music.MusicEngine.supported)),
+                    features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.support.SupportModel.withSupportFeature(   // DEB-1501 (FR-7)
+                        dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform, obeysSessionCommands = true,
+                            groupControl = dev.jellystructure.ravilo.ui.seams.platformGroupController() != null,
+                            bookSeek = dev.jellystructure.ravilo.ui.music.MusicEngine.supported),
+                        mayFile = !isTvPlatform)),
+                    onSupportChanged = { dev.jellystructure.ravilo.ui.support.SupportLane.changes.emit(it) },
                     onSessionList = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onList(it) },
                     onSessionState = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onState(it) },
                     onSessionCommand = { text ->
@@ -589,6 +600,7 @@ fun RaviloApp(
                         // away longer than the server's push stream can be assumed to have covered.
                         // R369 (dev review item 13) — back on a socket: the open remote re-attaches and re-reads.
                         dev.jellystructure.ravilo.ui.sessions.SessionRemote.onSocketOpen()
+                        dev.jellystructure.ravilo.ui.support.SupportLane.changes.emit(dev.jellystructure.ravilo.ui.support.SupportLane.ALL)   // DEB-1501 (FR-7) — a reconnect reads all three again
                         if (!isTvPlatform) dev.jellystructure.ravilo.ui.sessions.PlayOnStore.changed()   // R370 — the places, again
                         val rev = runCatching { apiClient.getConfigRev() }.getOrNull()
                         val d = eventsCatchUp.onOpen(rev, Clock.System.now().toEpochMilliseconds())
@@ -836,6 +848,20 @@ fun RaviloApp(
             stack = if (stack.isEmpty()) listOf(dest) else stack.dropLast(1) + dest
             if (!fromHistory.flag) replaceRoute(dest.toRoute())
         }
+        // DEB-1501 (FR-1, FR-2, FR-7) — the support lane. The unread count is read when the flag turns on, on every
+        // `support_changed` and after a reconnect, and never counted here. When the flag goes, an open Support screen
+        // returns to Profile: every route now answers 404.
+        val supportGateway = remember(apiClient) { dev.jellystructure.ravilo.ui.support.TvSupportGateway(apiClient) }
+        val supportLaneOpen by dev.jellystructure.ravilo.ui.support.SupportLane.enabled.collectAsState()
+        LaunchedEffect(supportLaneOpen, activeUserId) {
+            if (!supportLaneOpen || activeUserId == null) { dev.jellystructure.ravilo.ui.support.SupportLane.clear(); return@LaunchedEffect }
+            dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway)
+            dev.jellystructure.ravilo.ui.support.SupportLane.changes.collect { dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway) }
+        }
+        LaunchedEffect(supportLaneOpen) {
+            if (!supportLaneOpen) while (stack.size > 1 && stack.last().let { it is Dest.SupportList || it is Dest.SupportThread }) pop()
+        }
+
         // R100: single funnel for opening a movie/series detail — pre-warm the hero backdrop into
         // Coil so it's a cache hit (no late fade) when the detail composes, then push the right Dest.
         fun openDetail(card: MediaCard, displayName: String) {
@@ -916,6 +942,7 @@ fun RaviloApp(
             is Dest.MusicQueue -> d.displayName; is Dest.AlbumDetail -> d.displayName; is Dest.ArtistDetail -> d.displayName
             is Dest.PlaylistDetail -> d.displayName
             is Dest.AudiobookDetail -> d.displayName; is Dest.AudiobookAuthor -> d.displayName   // R323
+            is Dest.SupportList -> d.displayName; is Dest.SupportThread -> d.displayName   // DEB-1501
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -1115,6 +1142,8 @@ fun RaviloApp(
         fun bottomBarShows(d: Dest): Boolean = when (d) {
             is Dest.Player, is Dest.LiveTv -> false
             is Dest.Login, is Dest.ProfilePicker -> false
+            // DEB-1501 (FR-5) — the thread's composer owns the bottom edge.
+            is Dest.SupportThread -> false
             else -> true
         }
 
@@ -2808,6 +2837,8 @@ fun RaviloApp(
                     onAppLanguage = { push(Dest.AppLanguage(dest.displayName)) },
                     onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
                     onSettings = { push(Dest.Settings(dest.displayName)) },
+                    // DEB-1501 (FR-1) — the Support row, after Settings, while the flag is on.
+                    onSupport = if (supportLaneOpen) ({ push(Dest.SupportList(dest.displayName)) }) else null,
                     // R191's shape: this one profile is revoked/forgotten; another cached profile goes to
                     // the picker, none goes to Login.
                     onSignedOut = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
@@ -2933,6 +2964,34 @@ fun RaviloApp(
                 apiClient = apiClient,
                 onBack = { pop() },
             )
+
+            // DEB-1501 — My tickets. Kept for the app run, so a list shown before the network was cut keeps its rows (FR-8).
+            is Dest.SupportList -> {
+                val listStore = keptStore("support-list:$activeUserId") { dev.jellystructure.ravilo.ui.support.SupportListStore(supportGateway) }
+                dev.jellystructure.ravilo.ui.support.SupportListScreen(
+                    store = listStore,
+                    onBack = { pop() },
+                    onOpen = { row -> push(Dest.SupportThread(dest.displayName, row.number)) },
+                    onWrite = { push(Dest.SupportThread(dest.displayName, null)) },
+                    onGone = { pop() },
+                )
+            }
+            is Dest.SupportThread -> {
+                val threadStore = remember(dest) {
+                    dev.jellystructure.ravilo.ui.support.SupportThreadStore(supportGateway, dest.number, dest.seed) {
+                        dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway)
+                    }
+                }
+                dev.jellystructure.ravilo.ui.support.SupportThreadScreen(
+                    store = threadStore,
+                    viewerName = MultiTokenStore.getActive()?.displayName ?: dest.displayName,
+                    isPhone = apiClient.platform == "phone",
+                    onBack = { pop() },
+                    onFiled = { t -> replaceTop(Dest.SupportThread(dest.displayName, t.ticket.number, seed = t)) },
+                    // FR-5 — a 404 goes back to My tickets; the lane going closed is FR-1's pop, from the flag.
+                    onGone = { pop() },
+                )
+            }
 
             is Dest.Settings -> {
                 val store = remember { SettingsStore(apiClient) }
@@ -3172,6 +3231,8 @@ fun RaviloApp(
                 onMyList = { profileMenuOpen = false; val under = stack.last(); push(Dest.Browse(BrowseKind.MY_LIST, currentDisplayName)); avatarReturnTo = under },
                 onSettings = { profileMenuOpen = false; val under = stack.last(); push(Dest.Settings(currentDisplayName)); if (!isDesktopPlatform) avatarReturnTo = under },
                 onSwitchProfile = { profileMenuOpen = false; push(Dest.ProfilePicker) },
+                // DEB-1501 (FR-1) — the web's profile menu, on a window wide enough to use it: Support after Settings.
+                onSupport = if (supportLaneOpen && !isTvPlatform) ({ profileMenuOpen = false; push(Dest.SupportList(currentDisplayName)) }) else null,
                 onYourProfile = { profileMenuOpen = false; val under = stack.last(); push(Dest.YourProfile(currentDisplayName)); avatarReturnTo = under },
                 // R191 — mirrors onUnpair's shape but only one profile was revoked/forgotten; go to
                 // the picker if another cached profile remains, else all the way to Login.

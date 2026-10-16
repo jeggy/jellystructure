@@ -525,6 +525,10 @@ private fun ProfileAvatar(
                 fontFamily = Sora,
             )
         }
+        // DEB-1501 (FR-2) — the web's avatar button: an unread support reply, read from the server and never counted here.
+        if (dev.jellystructure.ravilo.ui.support.supportUnreadShows()) {
+            UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp), size = 10.dp, ring = colors.background)
+        }
     }
 }
 

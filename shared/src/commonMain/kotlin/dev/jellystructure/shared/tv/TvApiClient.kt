@@ -63,7 +63,7 @@ class TvApiClient(
     private val json: Json = RaviloWireJson,   // R318 — unknown enum values fall back, never fail the payload
     // R252 (FR-R252-2) — which kind of client this is, stated on every request: tv · phone · web ·
     // tizen · cast. Each entry point passes its own; the version is never passed (see identify()).
-    private val platform: String = "unknown",
+    val platform: String = "unknown",
 ) {
     /** R305 — every REST call goes through here, detached from its caller's job (see [DetachedHttp]). */
     private val client = DetachedHttp(client)
@@ -989,6 +989,9 @@ class TvApiClient(
         // R380 (owner decision 2) — a TV's name as Cast shows it (its Android device name), so the server lists the TV's
         // Ravilo app and its Cast device as ONE place. Null = not said (today's URL).
         castName: String? = null,
+        // DEB-1501 (FR-7) — `{"type":"support_changed","ticket":n}`, only to a socket that asked for `support`. A signal:
+        // the app reads again, nothing is patched from the event. Never through [onEvent] (that is "the config changed").
+        onSupportChanged: suspend (Long) -> Unit = {},
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -1050,6 +1053,7 @@ class TvApiClient(
                         runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }
                     }
                     "home_changed" -> onHomeChanged(ev.rev)
+                    "support_changed" -> onSupportChanged(runCatching { json.decodeFromString<SupportChangedEnvelope>(text).ticket }.getOrDefault(0L))
                     // R368 — never `else`: an unknown type would be read as "the config changed".
                     "session_list" -> runCatching { json.decodeFromString<SessionListEnvelope>(text) }.getOrNull()?.let { onSessionList(it) }
                     "session_state" -> runCatching { json.decodeFromString<SessionStateEnvelope>(text) }.getOrNull()?.let { onSessionState(it) }
@@ -1160,6 +1164,55 @@ class TvApiClient(
         val r = client.get("$baseUrl/api/tv/playback/sessions") { auth() }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())
+    }
+
+    // ─── DEB-1501 — the viewer's support lane (320, FR-320-18) ────────────────────────────────────────────────
+
+    /** `GET /api/tv/support/unread` — the number of tickets with something unread. 404 while the lane is closed. */
+    suspend fun supportUnread(): Int {
+        val r = client.get("$baseUrl/api/tv/support/unread") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<SupportUnread>(r.bodyAsText()).tickets
+    }
+
+    /** `GET /api/tv/support/tickets` — this viewer's tickets, in the server's order. */
+    suspend fun supportTickets(): List<SupportTicketRow> {
+        val r = client.get("$baseUrl/api/tv/support/tickets") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<SupportTicketList>(r.bodyAsText()).tickets
+    }
+
+    /** `GET /api/tv/support/tickets/{n}` — 404 for another viewer's ticket exactly as for one that does not exist. */
+    suspend fun supportThread(n: Long): SupportThread {
+        val r = client.get("$baseUrl/api/tv/support/tickets/$n") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<SupportThread>(r.bodyAsText())
+    }
+
+    /** `POST …/{n}/read` — moves the viewer's marker forward, never back (FR-320-9). */
+    suspend fun supportMarkRead(n: Long, upTo: Long) {
+        val r = client.post("$baseUrl/api/tv/support/tickets/$n/read") {
+            auth()
+            jsonBody(json.encodeToString(SupportReadRequest.serializer(), SupportReadRequest(upTo)))
+        }
+        r.assertSuccess()
+    }
+
+    /** `POST /api/tv/support/tickets` — files a ticket; the 201's thread carries the receipt. */
+    suspend fun supportFile(body: String): SupportSendResult =
+        supportSend("$baseUrl/api/tv/support/tickets", body)
+
+    /** `POST …/{n}/messages` — writes on a ticket; on a `RESOLVED` one the write reopens it (FR-320-6). */
+    suspend fun supportPost(n: Long, body: String): SupportSendResult =
+        supportSend("$baseUrl/api/tv/support/tickets/$n/messages", body)
+
+    private suspend fun supportSend(url: String, body: String): SupportSendResult {
+        val r = client.post(url) {
+            auth()
+            jsonBody(json.encodeToString(SupportPostRequest.serializer(), SupportPostRequest(body)))
+        }
+        if (!r.status.isSuccess()) return SupportSendResult.Refused(r.status.value)
+        return SupportSendResult.Sent(json.decodeFromString<SupportThread>(r.bodyAsText()))
     }
 
     private fun HttpRequestBuilder.wsAuth(token: String) {
