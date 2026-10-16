@@ -485,3 +485,27 @@ what it adds to this phase's workflow:
 **What this does to acceptance 2b.** An update Sparkle installs never carries a browser quarantine flag. If R386's
 spike confirms that, *Open Anyway* stays a once-per-Mac question for the **first** download, and every later version
 arrives through Sparkle. 2b is unchanged as the test of a hand-downloaded second version, and it is still unwalked.
+
+## Amendment (2026-10-16): 2b walked, and FR-R331-3's once-per-Mac claim is false
+
+Walked on 2026-10-16 (DEB-763; Høgni on the household's personal Mac, Gatekeeper on, official v1.50, v1.51 and v1.52
+`.dmg`s downloaded with a browser and dragged with Finder; consolidated by Turið, 08:56Z). **Every hand-downloaded
+version is refused twice:** first the disk image, then the installed app. Each refusal needs System Settings ▸ Privacy
+& Security ▸ *Open Anyway* plus the user's credentials. v1.51 over an approved v1.50 prompted exactly as v1.50 did, and
+v1.52 did the same again.
+
+So the first outcome this file allowed for did not happen. An approval is **not** reused across versions signed with
+the same certificate. §Scope's *"approves the app once, not once per update"*, D2's *"applies once per Mac"* and
+FR-R331-3's reasoning about the designated requirement no longer describe what a user sees, and should not be quoted
+as fact again. **As the 2b note already said: the fix is the claim, not the certificate.** The certificate stays, and
+the 2026-09-29 decision to have no Apple account is the owner's to keep or reopen. Two things are unaffected:
+
+- **Whether the same certificate keeps the Keychain sign-in and the Local Network consent across updates**
+  (FR-R331-3's other reasons) was not tested by 2b.
+- **Updates installed by Sparkle** (R386) carry no browser quarantine flag, so they should not be assessed at all.
+  That is still unproven: DEB-1292 is open, and its last sitting saw the appcast fetched but no `.dmg` downloaded.
+
+What a user sees today: **two** *Open Anyway* approvals on the first install, and two more on every version they
+download by hand. The public download page's line *"The first time: … Open Anyway"* and R385's update-line sentence
+both understate this. The owner was asked again on DEB-1076, with this fact, whether to notarise or to explain the
+step in pictures.
