@@ -28,6 +28,19 @@
 > unavailable, never written as `false`. FR-320-1, FR-320-18, FR-320-19, the acceptance list and the build
 > note were rewritten to match. Both are settled here because no client reads the field yet. Once one
 > does, either change would take a release to add, deprecate and remove.
+>
+> **Amended 2026-10-16, before the screens are built (DEB-1499).** The admin page and the Ravilo screens are adopted:
+> [`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md) (DEB-1500) and
+> [`a-support-ticket-reads-as-a-chat.md`](../ravilo/requirements/a-support-ticket-reads-as-a-chat.md) (DEB-1501). Each
+> adds to this phase's wire and changes nothing it promises:
+>
+> - the viewer row (FR-320-8) and the admin row gain `title`, and the admin row `englishTitle` too. Both are written by
+>   `AI Agent` (DEB-1500 FR-13);
+> - the summary (FR-320-14) gains `laneOpen` and `hervorEnabled`;
+> - two admin routes are added: `POST /api/support/enabled`, which is FR-320-1's promised toggle, and
+>   `GET /api/support/log`.
+>
+> The Ravilo half covers the phone, the web, the Mac and Linux. The TV's read-only thread follows as its own task.
 
 ## Scope
 

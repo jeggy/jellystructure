@@ -151,6 +151,12 @@ it outlives the quarantine. Each line carries `{n}` once, directly after `#`, as
 |---|---|---|
 | `request_logged` | Tak — det er registreret som ønske #{n}. At tilføje det kræver en beslutning fra dem, der driver denne server, så det sker ikke af sig selv. | Takk — hetta er skrásett sum ynski #{n}. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum. |
 
+*Amended 2026-10-16 (DEB-1499):* both pairs go into `SupportAi.kt` with the admin's Support tab
+([`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md) FR-15, DEB-1500). That spec also adds
+`title` and `englishTitle` to FR-321-4's answer, with the rules for storing them (its FR-13): written once, never
+changed by `AI Agent`, and the viewer's title held to rule 4's internal-string check and to rules 2 and 5's language
+tests.
+
 **FR-321-8 — Spend, bounded three ways.** On top of 270's monthly limit (FR-270-6, applied as 272's
 prefix):
 

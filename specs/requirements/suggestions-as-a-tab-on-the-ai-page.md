@@ -64,6 +64,11 @@ Support and Fetchers are not built, so today the list is `["suggestions"]` or no
 even with one tab, so it keeps its shape when the next tab lands. (Round 5 decided that once Fetchers is built it is
 present whenever a key is set, so Suggestions will not be the only tab for long.)
 
+*Amended 2026-10-16 (DEB-1499), for the build after this one:* the Support tab
+([`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md), DEB-1500) is present whenever a key is set.
+Once that is built, a key with no Seerr answers `{"tabs":["support"]}` instead of 404. This work's acceptance 1 is
+unchanged, because it tests the build before Support exists.
+
 **FR-3 — The sidebar follows the server, without a reload.** The shell reads `GET /api/ai/page` beside the existing
 Seerr probe when it mounts: a 200 shows **AI** (below *Activity*, above the *Setup* group, icon `ai` from round 5's
 `app-shell.js`), and a 200 whose `tabs` holds `suggestions` hides the *Suggestions* entry. The command palette follows
