@@ -147,7 +147,17 @@ private fun HeroCarouselContent(
                 val remaining = RaviloMotion.HERO_KEN_BURNS_SCALE - kbScale.value
                 if (remaining <= 0f) return@collectLatest
                 val ms = (RaviloMotion.HERO_KEN_BURNS_TRAVEL_MS * (remaining / span)).toInt()
-                kbScale.animateTo(RaviloMotion.HERO_KEN_BURNS_SCALE, tween(ms, easing = LinearEasing))
+                // R383 (FR-R383-3) — stepped, not `animateTo`: a tween asks for a frame on every vsync for the whole 9 s, and
+                // the hero never settles (it restarts every slide), so a window showing Home drew 120 frames/s on a 120 Hz Mac
+                // (38 % of a core, DEB-1523). A 5 % drift over 9 s moves about 7 px a second: 24 steps a second is not visible.
+                val from = kbScale.value
+                val mark = kotlin.time.TimeSource.Monotonic.markNow()
+                while (true) {
+                    val f = (mark.elapsedNow().inWholeMilliseconds.toFloat() / ms).coerceIn(0f, 1f)
+                    kbScale.snapTo(from + (RaviloMotion.HERO_KEN_BURNS_SCALE - from) * f)
+                    if (f >= 1f) break
+                    kotlinx.coroutines.delay(HERO_DRIFT_STEP_MS)
+                }
             }
     }
 
@@ -386,3 +396,6 @@ private fun HeroCarouselContent(
 /** R365 (FR-R365-10) — the slide the hero starts on: the saved hero's index, else (gone, or none saved) the first. */
 fun heroStartIndex(heroIds: List<String>, savedId: String?): Int =
     savedId?.let { heroIds.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+
+/** R383 — the Ken Burns drift's step: about 24 a second. */
+private const val HERO_DRIFT_STEP_MS = 42L

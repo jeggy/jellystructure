@@ -264,3 +264,20 @@ every vsync; the music `Pulse` and the Cast connecting pulse did the same. All t
 Home, is not in an infinite transition (none runs there) and is **not found**; it is the next bisect. **Open and unbuilt:**
 a window *launched* hidden (`open -g -j`) never gets the hide event and reads `shown=true`; that focused-Home draw;
 the 38–40 wakeups/s after playback; casting numbers; the About figures and the 100-song cast test.
+
+### 2026-10-16 — the third re-measure (QA DEB-1523, `main` at `ca47151f`) and the hero (FR-R383-3)
+
+Stepped indicators **pass**: music playing, window visible and unfocused, 19 frames/s and 14 % CPU (was 119.7/s, 54 %); paused,
+0.0/s. Casting for 15 minutes, window visible: 19.4 → 19.3 frames/s, 12.7 → 12.4 % CPU, 738 → 722 MB, wakeups 2.1 → 5.7/s —
+**flat, no growth**. After playback the wakeups settle at 16–20/s (against 2.2/s before any playback and 38–40/s in the last round).
+
+The focused-Home draw is **the hero carousel's Ken Burns drift, and window *occlusion* is the switch, not focus**: Movies, Listen,
+an album and Settings read 0.0/s; Home reads 119.8/s; scrolled until the hero is off screen it reads 0.0/s (with a sliver still
+visible, 119.8/s); unfocused with the window partly visible, 119.6/s; fully covered by another app, 2.9/s (macOS stops the display
+link for an occluded window). `HeroCarousel` ran `kbScale.animateTo(1.05, tween(9 s))` restarted by every 7 s auto-advance, so it
+never settled. It is now driven in steps of 42 ms (about 24 a second; the drift moves ~7 px a second, so no step is visible) and
+still frozen while the page scrolls. Not re-measured yet.
+
+Unbuilt: a window *launched* hidden (`open -g -j`) still reports `shown=true` (67/s then 19.8/s); the post-playback wakeups
+(16–20/s); music-playing CPU is 14 % against FR-R383-2's 10 % row (the bars and the progress line still draw ~19/s); the About
+figures and the 100-song cast test. A real Dock click / ⌘Tab unhide has not been tried by anyone at the Mac.
