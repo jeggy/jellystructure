@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Continue Watching — hide titles tagged… — decided (continue-hidden-tags)</title>
+<link rel="stylesheet" href="continue-hidden-tags.css">
+</head>
+<body>
+
+<div class="blk lbl" data-gap="40"><span class="tag pick">round · continue-hidden-tags · decided · phase number left blank — not allocated here</span><h1>Continue Watching — hide titles tagged…</h1><small>A tag condition on each <b>Continue Watching</b> system row: on Home, in a collection with its own rows, or in a user's own layout. The row stays exactly as <i>Newly Added Movies</i> and <i>Newly Added Series</i> are drawn; the only addition is one small sub-row beneath it. Admin-only. No Ravilo change: the TV, phone, desktop and browser receive a shorter row and a See all that matches it.</small></div>
+
+<div class="blk prow" data-gap="90">
+<div class="panel" style="width:1180px">
+<h2>Decided</h2>
+<div class="dec"><span class="dn">01</span><div><b class="t">The rule lives on a Continue Watching content row</b><p>A sub-row under the system row: <span class="mono">Hide titles tagged</span>, the tags as chips, <span class="mono">＋ Add tag</span>. The row keeps the card, border and background of the other system rows — no tint, and no explanatory text. It applies wherever that row is shown.</p></div></div>
+<div class="dec"><span class="dn">02</span><div><b class="t">Admins only</b><p>Set only in Jellystructure's Ravilo layout configuration. No viewer control on any client.</p></div></div>
+<div class="dec"><span class="dn">03</span><div><b class="t">Hiding a single card — skipped</b><p>Out of this round; nothing drawn.</p></div></div>
+<div class="dec"><span class="dn">04</span><div><b class="t">See all — hidden there too, silently</b><p>No footer, no string.</p></div></div>
+<div class="dec"><span class="dn">Q1 · Q4</span><div><b class="t">Every Continue Watching row has its own tags</b><p>The Home row has its tag list. A collection set to <b>Same as Home</b> reuses the Home rows, and with them the Home tags — there is nothing to set inside it. A collection set to <b>Custom</b> has its own Continue Watching row, and its tags are picked again there. They can differ from Home's or be empty. If that collection's Continue Watching is off, there is no sub-row. Olivar is such a collection. The same applies to a user's custom layout (Eyð).</p></div></div>
+<div class="dec"><span class="dn">Q2</span><div><b class="t">Picker with nothing typed: the most-used tags</b><p>The six most-used tags, by title count, until a letter is typed.</p></div></div>
+<div class="dec"><span class="dn">Q3</span><div><b class="t">No new Save</b><p>The tag list is part of the layout and is saved by the existing Save, along with every other layout change.</p></div></div>
+<div class="dec"><span class="dn">Q6</span><div><b class="t">There are no kids profiles</b><p>There are only configurations: collections, content rows, and users with overridden layouts. "Kids" is just a user name in the stand-in data.</p></div></div>
+<h4>Unchanged from the brief</h4>
+<ul>
+<li>Exact tag name, case-insensitive, on the movie or the series. A series tag hides both its resume cards and its next-up card.</li>
+<li>Hiding happens before the 20-card cap. The row and See all never disagree. An empty row is omitted.</li>
+<li>Progress is never touched. The title stays everywhere else, and Resume still works on its own page. The picker can't create a tag.</li>
+</ul>
+</div>
+<div class="panel" style="width:900px">
+<h2>Also decided</h2>
+<div class="dec"><span class="dn">Q5</span><div><b class="t">A tag carried by 0 titles — kept as drawn</b><p>The chip shows its count, <span class="mono">0</span>, in amber. No sentence.</p></div></div>
+<div class="dec"><span class="dn">Q7</span><div><b class="t">Continue Watching switched off — sub-row hidden, tags kept</b><p>While the row is off its sub-row isn't shown, but the saved tags stay. Switching the row back on brings them back unchanged. Nothing is shown greyed out.</p></div></div>
+<p style="margin-top:14px"><b>Nothing is left open.</b></p>
+</div>
+</div>
+
+<div class="blk lbl"><span class="tag pick">Admin · desktop (1000 px) · Home content rows</span><h2>The Home Continue Watching row, with its sub-row</h2><small>The global layout comes first. Empty is the default. The picker hangs from the sub-row. With nothing typed it lists the most-used tags; once you type, it searches all 2 697, and the match is underlined so <span style="font-family:'JetBrains Mono',monospace">kidnapping</span> reads as a different tag rather than a partial hit. Eyð has her own layout, so her Continue row has its own list.</small></div>
+<div class="blk frames" data-ids="*" data-prefix="layout-admin-desktop-"></div>
+
+<div class="blk lbl"><span class="tag pick">Admin · a collection with its own rows</span><h2>Collection Olivar — Content rows: Custom</h2><small>Olivar's Continue Watching is off, so there's nothing to set. Switched on, it has its own sub-row, empty to begin with; the tags are picked again here. Drawn: <span style="font-family:'JetBrains Mono',monospace">cartoons</span>, while Home hides <span style="font-family:'JetBrains Mono',monospace">kids-tv</span>. A collection on <b>Same as Home</b> shows no sub-row, because it uses the Home row and its tags.</small></div>
+<div class="blk frames" data-ids="*" data-prefix="collection-admin-"></div>
+
+<div class="blk lbl"><span class="tag pick">Admin · narrow (390 px)</span><h2>The same row at the admin's narrow breakpoint</h2><small>The row wraps the way the other system rows do. The sub-row takes the full width, and so does the picker. The longest tag is cut with an ellipsis inside its chip, but wraps in full in the picker.</small></div>
+<div class="blk frames" data-ids="*" data-prefix="layout-admin-narrow-"></div>
+
+<div class="blk lbl"><span class="tag pick">Ravilo TV · 10-foot · the result</span><h2>Fewer cards, nothing else</h2><small>The server sends a shorter row; the client is unchanged. It's the same screen with the same focus on the first card. The strip under each frame shows the whole row, including the part off-screen. A user on the global layout, with the Home row hiding <span style="font-family:'JetBrains Mono',monospace">kids-tv</span>: <b>8 → 5</b> (cards 1, 3, 5, 7, 8). Eyð's own layout hides <span style="font-family:'JetBrains Mono',monospace">kids-tv</span> and <span style="font-family:'JetBrains Mono',monospace">cartoons</span>: <b>4</b> (cards 1, 3, 5, 7). If every card is hidden, the row and its header are omitted and Newly Added takes first focus, still carrying the hidden titles. See all lists the same 5 cards and says nothing.</small></div>
+<div class="blk frames" data-ids="filter-tv-home-before,filter-tv-home-after,filter-tv-home-after-eyd,filter-tv-home-row-omitted,filter-tv-see-all"></div>
+
+<div class="blk prow" data-gap="90">
+<div class="panel" style="width:2100px">
+<h2>New strings · en / da / fo</h2>
+<p>Danish and Faroese are drafts. Every other string on these frames already exists in the admin or in Ravilo's shipped tables.</p>
+<div id="strings"></div>
+</div>
+</div>
+
+<script src="continue-hidden-tags.js"></script>
+<script>CHT.mountDoc(); if (document.fonts) document.fonts.ready.then(CHT.place);</script>
+</body>
+</html>

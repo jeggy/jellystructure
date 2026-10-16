@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>continue-hidden-tags — 1:1 frames for the PNG export</title>
+<link rel="stylesheet" href="continue-hidden-tags.css?v=11">
+<style>html,body{margin:0;background:#ff00ff;overflow:hidden}#slot{position:absolute;left:0;top:0;display:inline-block}#slot>*{box-shadow:none !important;border-radius:0 !important}#slot .phw{background:#e9eaee}#slot .dv{box-shadow:0 0 0 10px #15171d,0 0 0 12px #2a2d36 !important}</style>
+</head>
+<body>
+<div id="slot"></div>
+<script src="continue-hidden-tags.js"></script>
+<script>
+/* shot(i) renders SHOTS[i] alone at 0,0 and sizes the page to it; returns its PNG name and size. */
+window.shot = function (i) {
+  const s = CHT.SH[i], slot = document.getElementById('slot');
+  slot.innerHTML = s.fn();
+  const el = slot.firstElementChild, w = el.offsetWidth, h = el.offsetHeight;
+  document.documentElement.style.width = document.body.style.width = w + 'px';
+  document.documentElement.style.height = document.body.style.height = h + 'px';
+  document.title = s.id + ' ' + w + 'x' + h;
+  return { name: 'continue-hidden-tags-' + s.id + '.png', w, h };
+};
+/* tile(i,x,y): the same frame shifted so the viewport shows the tile at (x,y) — stitched back together offline. */
+window.tile = function (i, x, y) { const r = shot(i); document.getElementById('slot').style.transform = 'translate(' + (-x) + 'px,' + (-y) + 'px)'; return r; };
+shot(+(new URLSearchParams(location.search).get('i') || 0));
+</script>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Library</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="ravilo-builders.css">
+<link rel="stylesheet" href="../flags.css">
+<link rel="stylesheet" href="music.css">
+<link rel="stylesheet" href="versions.css">
+<link rel="stylesheet" href="editions.css">
+<style>
+  .filterbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
+  .fchip { cursor: pointer; }
+  .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+  /* tracker filter (Phase 98) — a library axis, separate from the workbench */
+  .seedfilter { display: inline-flex; align-items: center; gap: 7px; font-size: .82rem; }
+  .seedfilter.on .seedsel { border-color: var(--hi); color: var(--acc-ink); background: var(--hi-soft); font-weight: 600; }
+  .seedsel { font: inherit; font-size: .82rem; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-2);
+    background: var(--fill-2); color: var(--ink); cursor: pointer; }
+  .seed-x { cursor: pointer; color: var(--ink-dim); font-size: .9rem; display: none; }
+  .seedfilter.on .seed-x { display: inline; }
+  .seed-x:hover { color: var(--bad); }
+  .searchwrap { position: relative; }
+  /* Clear filters chip (Phase 101) — shown only when something is active */
+  .clearchip { display: none; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
+    font-size: .82rem; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+    background: transparent; border: 1px solid var(--line-2);
+    transition: color .18s, background .18s, border-color .18s, transform .18s; }
+  .clearchip.show { display: inline-flex; animation: clearIn .22s ease both; }
+  .clearchip:hover { color: #fff; background: var(--bad); border-color: transparent; transform: translateY(-1px); }
+  .clearchip .x { font-size: .72rem; opacity: .85; }
+  @keyframes clearIn { from { opacity: 0; transform: translateX(-6px) scale(.94); } to { opacity: 1; transform: none; } }
+  .pop { position: relative; }
+  .pop-panel { position: absolute; top: 40px; right: 0; width: 320px; z-index: 40; display: none; padding: 14px; }
+  .pop.open .pop-panel { display: block; }
+  .pop-panel .field { margin-bottom: 12px; }
+
+  /* the "Add filter" entry + active condition chips + live count */
+  .addfilter { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 8px;
+    background: var(--fill-2); border: 1px dashed var(--line-2); font-size: .85rem; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
+  .addfilter:hover { border-color: var(--hi); color: var(--acc-ink); background: var(--hi-soft); }
+  .activefilters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .activefilters:empty { display: none; }
+  .fxchip { display: inline-flex; align-items: center; gap: 7px; background: var(--hi-soft); border: 1px solid rgba(123,110,240,.4);
+    color: var(--acc-ink); border-radius: 8px; padding: 6px 10px; font-size: .82rem; font-weight: 600; cursor: pointer; }
+  .fxchip .rm { cursor: pointer; opacity: .6; }
+  .fxchip .rm:hover { opacity: 1; }
+  .livecount { display: inline-flex; align-items: baseline; gap: 6px; }
+  .livecount .n { font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: 1.05rem; color: var(--ok); }
+
+  /* poster grid rendered from the shared title pool */
+  .poster { position: relative; cursor: pointer; }
+  .poster .imgslot { position: relative; overflow: hidden; }
+  .poster .imgslot .fillg { position: absolute; inset: 0; }
+  .poster .imgslot .corner { position: absolute; top: 0; right: 0; width: 0; height: 0; border-style: solid; border-width: 0 22px 22px 0; }
+  .poster-ov { position: absolute; inset: 0; border-radius: var(--radius-s); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; opacity: 0; transition: opacity .16s ease;
+    background: linear-gradient(0deg, rgba(7,9,14,.92), rgba(7,9,14,.55)); }
+  .poster:hover .poster-ov { opacity: 1; }
+  .poster:hover .imgslot { box-shadow: 0 0 0 2px var(--hi); }
+  /* cheap off-screen cards — content-visibility keeps thousands smooth (Phase 43 §C) */
+  .poster { content-visibility: auto; contain-intrinsic-size: 150px 300px; }
+
+  /* infinite-scroll affordances */
+  .lib-loadrow { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 22px 0 8px; }
+  .lib-loadrow[hidden], .lib-end[hidden] { display: none; }
+  .lib-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line-2);
+    border-top-color: var(--hi); animation: libspin .7s linear infinite; }
+  @keyframes libspin { to { transform: rotate(360deg); } }
+  .lib-end { text-align: center; padding: 22px 0 8px; }
+  /* skeleton shimmer cards shown while a slice is in flight */
+  .poster.skel { pointer-events: none; }
+  .poster.skel .imgslot { background: var(--fill-2); position: relative; overflow: hidden; }
+  .poster.skel .imgslot::after { content: ''; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.06) 50%, transparent 80%);
+    animation: libshim 1.1s ease-in-out infinite; }
+  @keyframes libshim { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .poster.skel .ttl, .poster.skel .yr { background: var(--fill-2); color: transparent; border-radius: 5px; margin-top: 7px; }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="library" data-scan data-screen-label="Library">
+  <div class="pagebar">
+    <h1>Library</h1>
+    <span class="spacer"></span>
+    <span class="searchwrap" id="searchwrap">
+      <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
+    </span>
+    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span><span data-kind="mv">Music videos</span><span data-kind="music">Music</span><span data-kind="books">Audiobooks</span></span>
+  </div>
+  <!-- admin music brief §A: a fourth kind — Albums · Artists · Songs; music-library.js renders it -->
+  <div id="mu-lib" hidden></div>
+  <!-- admin brief §M1: the Audiobooks kind — Books · Authors · Series; audiobook-library.js renders it -->
+  <div id="ab-lib" hidden></div>
+  <div id="film-lib">
+  <p class="page-sub">Everything Jellystructure manages — and the bridge to Ravilo. Build a <b>filter</b> with the same workbench used for TV rows &amp; channels, then save it straight into a viewer's layout, or feature any title in their hero carousel.</p>
+
+  <div class="filterbar">
+    <span class="muted tiny">filter:</span>
+    <span class="addfilter" id="add-filter">⚙ Add filter</span>
+    <span class="chip fchip on" data-quick="all">All</span>
+    <span class="chip fchip" data-quick="attention">Needs attention</span>
+    <span class="chip fchip" data-quick="missing_artwork" title="No poster.jpg on disk">Missing artwork</span>
+    <span class="chip fchip" data-quick="cover_as_video" title="Cover art muxed as a selectable video track — playback-hostile, repairable">Cover-as-video</span>
+    <span class="chip fchip" data-quick="file_damage" title="Damage past the first cluster (254) — repair from a clean copy, or make playable">Damaged files</span>
+    <span class="chip fchip" data-quick="track_ends_early" title="A track ends before the file does (255)">Track ends early</span>
+    <span class="chip fchip" data-quick="duration_header_wrong" title="The file reports a longer length than it has (255)">Wrong length</span>
+    <span class="seedfilter" id="seedfilter" title="Show only items seeded on a tracker (qBittorrent). Not a workbench facet — a library view.">
+      <span class="muted tiny" style="margin-left:4px;">🌱 seeded on:</span>
+      <select class="seedsel" id="seed-tracker">
+        <option value="">any tracker (off)</option>
+        <option value="*">— any tracker —</option>
+        <option value="FrostSeed">FrostSeed</option>
+        <option value="FilmBytes">FilmBytes</option>
+        <option value="OpenTrackers">OpenTrackers</option>
+      </select>
+      <span class="seed-x" id="seed-x" title="Clear tracker filter">✕</span>
+    </span>
+
+    <span class="clearchip" id="lib-clear" title="Reset every filter, search and quick chip"><span class="x">✕</span> Clear filters</span>
+
+    <span class="spacer" style="flex:1"></span>
+
+    <span class="select" style="width:auto;min-width:170px;"><span>sort: recently added</span></span>
+  </div>
+
+  <!-- active filter conditions (removable) + live count -->
+  <div class="activefilters" id="activefilters"></div>
+
+  <!-- result count for the current filter set -->
+  <div class="row center" style="margin-bottom:12px;"><span class="muted tiny" id="lib-total"></span></div>
+
+  <!-- poster grid (rendered from the shared title pool) -->
+  <div class="poster-grid" id="lib-grid"></div>
+
+  <!-- infinite-scroll sentinel + loading row (replaces prev/next pagination) -->
+  <div id="lib-loadrow" class="lib-loadrow" hidden>
+    <span class="lib-spin"></span><span class="tiny muted">Loading more…</span>
+  </div>
+  <div id="lib-end" class="lib-end tiny muted" hidden>You’ve reached the end · <span id="lib-end-n"></span></div>
+  <div id="lib-sentinel" aria-hidden="true" style="height:1px;"></div>
+  </div>
+</main>
+
+<div id="cf-modal-root"></div>
+
+<script src="app-shell.js"></script>
+<script src="cw-hide-tags.js"></script>
+<script src="ravilo-builders.js"></script>
+<script src="music-data.js"></script>
+<script src="versions.js"></script>
+<script src="editions.js"></script>
+<script src="music-qs.js"></script>
+<script src="music-library.js"></script>
+<script src="audiobook-data.js"></script>
+<script src="audiobook-library.js"></script>
+<script>
+(function () {
+  const RB = window.RaviloBuilders;
+  const grid = document.getElementById('lib-grid');
+  const active = document.getElementById('activefilters');
+  const totalEl = document.getElementById('lib-total');
+  const loadRow = document.getElementById('lib-loadrow');
+  const endRow = document.getElementById('lib-end');
+  const sentinel = document.getElementById('lib-sentinel');
+  const VIEWER = 'Eyð Restorff';
+
+  // a few titles carry attention/artwork status so the quick chips mean something
+  const STATUS = {
+    'Cosmos Laundromat': { k: 'attention', label: '1 untagged', cls: 'bad' },
+    'Neon Harbor': { k: 'attention', label: 'wrong default', cls: 'warn' },
+    'The Heist Crew': { k: 'attention', label: '2 untagged', cls: 'bad' },
+    'Whispering Pines': { k: 'attention', label: 'language mix', cls: 'warn' },
+    'Kids Quest': { k: 'attention', label: 'no match', cls: 'bad' },
+    'Nordvest': { k: 'attention', label: '4 eps attention', cls: 'bad' },
+    'Iron Veil': { k: 'cover_as_video', label: 'cover as video', cls: 'bad' },
+    'The Last Fjord': { k: 'cover_as_video', label: 'cover as video', cls: 'bad' },
+    'Agent 327': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
+    'Laugh Track': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
+    'Little Robots': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
+    'Comedy Central Hour': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
+    // 254 (built) + 255 (planned) — the served admin's three file-health types, now in the mirror too
+    'Spring': { k: 'file_damage', label: 'damaged file', cls: 'bad' },
+    'Havets Hjarta': { k: 'file_damage', label: '3 eps damaged', cls: 'bad' },
+    'Cosmos Laundromat': { k: 'track_ends_early', label: 'audio stops at 41:07', cls: 'bad' },
+    'Hraðar Ljós': { k: 'duration_header_wrong', label: 'claims 2 min longer', cls: 'warn' },
+  };
+
+  let quick = 'all';
+  let kind = 'movie';
+  let search = '';
+
+  /* tracker seeding filter (Phase 98) — which tracker (if any) a title is seeded on.
+     Live data comes from qBittorrent resolved via the Phase-98 tracker registry; here it's a
+     deterministic stand-in so the filter produces a believable subset. */
+  const SEED_TRACKERS = ['FrostSeed', 'FilmBytes', 'OpenTrackers'];
+  const SEED_OVERRIDE = { 'Nordvest': 'FrostSeed', 'Sintel': 'FrostSeed' };
+  function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+  function seededOn(title) {
+    if (title in SEED_OVERRIDE) return SEED_OVERRIDE[title];
+    const h = hashStr(title);
+    return (h % 100) < 38 ? SEED_TRACKERS[h % SEED_TRACKERS.length] : null;  // ~38% are seeded
+  }
+  let seedTracker = '';
+  try { const tp = new URLSearchParams(location.search).get('tracker'); if (tp) seedTracker = tp; } catch (e) {}
+
+  // Coverage hand-off from the Ravilo channel editor: a normal workbench filter (the channel's
+  // conditions ANDed with "Content row is none of <its rows>") carried via localStorage. It loads
+  // as ordinary, editable filter conditions — nothing special about it on this page.
+  let rowsContext = [];
+  let initialFilter = null;
+  let handoffLabel = '';
+  try {
+    if (new URLSearchParams(location.search).get('view') === 'coverage') {
+      const raw = localStorage.getItem('js-cov-filter');
+      if (raw) { const p = JSON.parse(raw); if (p && p.filter) { initialFilter = p.filter; rowsContext = p.rows || []; handoffLabel = p.label || ''; } }
+    }
+  } catch (e) { initialFilter = null; }
+
+  let state = initialFilter
+    ? Object.assign(RB.pruneState(initialFilter), { include: 'all' })
+    : { root: RB.mkGroup('and', []), include: 'all' };   // workbench query (empty = all)
+
+  function effective() {
+    return Object.assign({}, state, { include: kind });
+  }
+  function matches() {
+    let list = RB.evaluate(effective());
+    if (quick !== 'all') list = list.filter(t => STATUS[t.title] && STATUS[t.title].k === quick);
+    if (seedTracker) list = list.filter(t => { const s = seededOn(t.title); return seedTracker === '*' ? !!s : s === seedTracker; });
+    if (search) list = list.filter(t => t.title.toLowerCase().includes(search.toLowerCase()));
+    return list;
+  }
+
+  function poster(t) {
+    const st = STATUS[t.title];
+    const badge = st ? `<span class="badge ${st.cls}" style="font-size:.62rem;">${st.label}</span>` : `<span class="badge ok" style="font-size:.62rem;">ok</span>`;
+    const corner = st ? `<span class="corner" style="border-color:transparent var(--${st.cls}) transparent transparent;"></span>` : '';
+    const href = t.kind === 'series' ? 'series.html' : 'media.html';
+    const d = document.createElement('div');
+    d.className = 'poster';
+    d.innerHTML = `
+      <div class="imgslot" style="background:transparent;">
+        <span class="fillg" style="background:${RB.grad(t.title)};"></span>${corner}
+        <div class="poster-ov">
+          <span class="btn sm primary open">Open detail</span>
+        </div>
+      </div>
+      <div class="ttl">${t.title}</div>
+      <div class="yr">${t.year} · ${badge}</div>`;
+    d.querySelector('.open').onclick = e => { e.stopPropagation(); location.href = href; };
+    d.onclick = () => location.href = href;
+    return d;
+  }
+
+  function renderActive() {
+    // one chip per top-level BLOCK — its text is the block's summary, ✕ removes the whole block
+    const blocks = (state.root ? state.root.children : []).map((b, i) => ({ b, i })).filter(x => RB.nodeHasValues(x.b));
+    const chips = blocks.map(x => `<span class="fxchip" data-edit="1">${RB.groupSummary(x.b, false)} <span class="rm" data-rm="${x.i}">✕</span></span>`);
+    if (chips.length) {
+      const word = ` <span class="tiny muted">${state.root.join === 'or' ? 'or' : 'and'}</span> `;
+      const handoff = handoffLabel ? `<a class="tiny" href="ravilo-config.html" style="margin-left:10px;color:var(--ink-soft);" title="Coverage gap for the “${handoffLabel}” channel">‹ from “${handoffLabel}” · Ravilo config</a>` : '';
+      active.innerHTML = chips.join(word)
+        + `<span class="livecount" style="margin-left:6px;"><span class="n">${matches().length}</span><span class="tiny muted">titles match</span></span>`
+        + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--acc-ink);" id="edit-filter">edit ⚙</span>`
+        + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" id="clear-filter">clear all</span>`
+        + handoff;
+      active.querySelectorAll('[data-rm]').forEach(b => b.onclick = e => { e.stopPropagation(); state.root.children.splice(+b.dataset.rm, 1); renderAll(); });
+      active.querySelector('#edit-filter').onclick = openBuilder;
+      active.querySelector('#clear-filter').onclick = () => { state = { root: RB.mkGroup('and', []), include: 'all' }; handoffLabel = ''; renderAll(); };
+      active.querySelectorAll('.fxchip[data-edit]').forEach(c => c.onclick = e => { if (!e.target.dataset.rm) openBuilder(); });
+    } else {
+      active.innerHTML = '';
+    }
+  }
+
+  /* ---------- infinite scroll (replaces prev/next pagination — Phase 43 / FR-LV1) ---------- */
+  const SLICE = 18;            // items fetched per scroll step
+  const DEMO_BROWSE = 96;      // simulated library depth while browsing (no filter) so scroll feels endless
+  let order = [];              // virtual ordered list for the current filter/search/sort
+  let shown = 0;               // how many are in the DOM
+  let loading = false;
+  let done = false;
+
+  function browsing() {
+    return !RB.stateHasConditions(state) && quick === 'all' && !search && !seedTracker;
+  }
+  function buildOrder() {
+    const base = matches();
+    if (browsing() && base.length) {
+      // demo: cycle the pool to simulate a deep library so the scroller triggers repeatedly
+      const out = [];
+      for (let i = 0; i < DEMO_BROWSE; i++) out.push(base[i % base.length]);
+      return out;
+    }
+    return base;
+  }
+  function totalLabel() {
+    const filtered = !browsing();
+    const n = filtered ? order.length : (kind === 'movie' ? 1842 : kind === 'series' ? 312 : 22);
+    const noun = kind === 'movie' ? ' films' : kind === 'series' ? ' series' : ' music videos';
+    totalEl.textContent = n.toLocaleString() + noun + (filtered ? ' · filtered' : '');
+  }
+  function skeleton(n) {
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('div');
+      d.className = 'poster skel';
+      d.innerHTML = '<div class="imgslot"></div><div class="ttl">·</div><div class="yr">·</div>';
+      frag.appendChild(d);
+    }
+    return frag;
+  }
+  function appendSlice() {
+    if (loading || done) return;
+    const next = order.slice(shown, shown + SLICE);
+    if (!next.length) { done = true; loadRow.hidden = true; endRow.hidden = false; return; }
+    loading = true;
+    loadRow.hidden = false;
+    // show skeletons, then swap for real cards — mimics a fetch round-trip
+    grid.appendChild(skeleton(Math.min(SLICE, next.length)));
+    const skels = [...grid.querySelectorAll('.poster.skel')];
+    setTimeout(() => {
+      skels.forEach(s => s.remove());
+      next.forEach(t => grid.appendChild(poster(t)));
+      shown += next.length;
+      loading = false;
+      loadRow.hidden = true;
+      if (shown >= order.length) { done = true; endRow.hidden = false; document.getElementById('lib-end-n').textContent = order.length.toLocaleString() + ' shown'; }
+      else { endRow.hidden = true; fill(); }
+    }, 320);
+  }
+  // keep loading until the viewport is satisfied (short slices on tall screens)
+  function fill() {
+    if (done || loading) return;
+    const r = sentinel.getBoundingClientRect();
+    if (r.top < window.innerHeight + 700) appendSlice();
+  }
+  function renderGrid() {
+    order = buildOrder(); shown = 0; done = false; loading = false;
+    grid.innerHTML = ''; endRow.hidden = true; loadRow.hidden = true;
+    if (!order.length) { grid.innerHTML = '<div class="muted" style="padding:40px 4px;">No titles match these filters.</div>'; totalLabel(); return; }
+    totalLabel();
+    appendSlice();
+  }
+
+  function renderAll() { renderActive(); renderGrid(); syncClear(); }
+
+  function openBuilder() {
+    RB.openFilter({
+      mode: 'library',
+      edit: RB.stateHasConditions(state),
+      headTitle: 'Library filter',
+      saveLabel: 'Apply filter',
+      rowsContext: rowsContext,
+      state: JSON.parse(JSON.stringify(state)),
+      onSave: ({ state: s }) => { state = Object.assign(RB.pruneState(s), { include: 'all' }); renderAll(); }
+    });
+  }
+
+  // wire controls
+  document.getElementById('add-filter').onclick = openBuilder;
+
+  /* Clear filters (Phase 101) — one-click reset of the whole filter row */
+  const clearBtn = document.getElementById('lib-clear');
+  function anyActive() { return RB.stateHasConditions(state) || quick !== 'all' || !!search || !!seedTracker; }
+  function syncClear() { if (clearBtn) clearBtn.classList.toggle('show', anyActive()); }
+  clearBtn.addEventListener('click', () => {
+    state = { root: RB.mkGroup('and', []), include: 'all' }; handoffLabel = '';
+    quick = 'all';
+    document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x.dataset.quick === 'all'));
+    search = ''; document.getElementById('lib-search').value = '';
+    seedTracker = ''; syncSeedUI();
+    renderAll();
+    toast('Filters cleared');
+  });
+
+  /* tracker seeding filter wiring (Phase 98) */
+  const seedSel = document.getElementById('seed-tracker');
+  const seedWrap = document.getElementById('seedfilter');
+  function syncSeedUI() {
+    seedSel.value = seedTracker || '';
+    seedWrap.classList.toggle('on', !!seedTracker);
+  }
+  seedSel.addEventListener('change', () => { seedTracker = seedSel.value; syncSeedUI(); renderAll(); });
+  document.getElementById('seed-x').addEventListener('click', () => { seedTracker = ''; syncSeedUI(); renderAll(); });
+  syncSeedUI();
+
+  const kindseg = document.getElementById('kindseg');
+  kindseg.addEventListener('click', e => {
+    const s = e.target.closest('[data-kind]'); if (!s) return;
+    [...kindseg.children].forEach(x => x.classList.toggle('on', x === s));
+    const isMusic = s.dataset.kind === 'music', isBooks = s.dataset.kind === 'books';
+    document.getElementById('film-lib').hidden = isMusic || isBooks;
+    si.placeholder = isMusic ? '⌕ search album, artist, song…' : isBooks ? '⌕ search title, author, narrator…' : '⌕ search title…';
+    if (window.MusicLib) { MusicLib.show(isMusic); if (isMusic) MusicLib.search(si.value); }
+    if (window.BookLib) { BookLib.show(isBooks); if (isBooks) BookLib.search(si.value); }
+    if (isMusic || isBooks) return;
+    kind = s.dataset.kind === 'tv' ? 'series' : s.dataset.kind === 'mv' ? 'musicvideo' : 'movie';
+    renderAll();
+  });
+
+  document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x === c));
+    quick = c.dataset.quick; renderAll();
+  }));
+
+  // search
+  const sw = document.getElementById('searchwrap'), si = document.getElementById('lib-search');
+  si.addEventListener('input', () => { if (document.getElementById('film-lib').hidden) { if (window.MusicLib) MusicLib.search(si.value); if (window.BookLib) BookLib.search(si.value); return; } search = si.value; renderGrid(); syncClear(); });
+
+  // local toast (also used by the shared builder via window.__toast)
+  function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1900); }
+  window.__toast = toast;
+
+  // fetch the next slice as the sentinel nears the viewport (700px lookahead).
+  // IntersectionObserver is the primary trigger; a scroll/resize fill-loop is the
+  // robust fallback (Phase 43 §B2 "elemNearViewportBottom").
+  const io = new IntersectionObserver(entries => {
+    if (entries.some(e => e.isIntersecting)) appendSlice();
+  }, { root: null, rootMargin: '700px 0px' });
+  io.observe(sentinel);
+  window.addEventListener('scroll', fill, { passive: true });
+  window.addEventListener('resize', fill, { passive: true });
+
+  // Deep-link from the Dashboard triage breakdown: ?filter=<triage-type> activates the closest
+  // quick chip (cover_as_video / missing_artwork have their own; every other type folds into the
+  // umbrella "Needs attention" chip).
+  try {
+    const fp = new URLSearchParams(location.search).get('filter');
+    if (fp) {
+      const chipFor = ['all', 'attention', 'missing_artwork', 'cover_as_video', 'file_damage', 'track_ends_early', 'duration_header_wrong'].includes(fp) ? fp : 'attention';
+      quick = chipFor;
+      document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x.dataset.quick === chipFor));
+    }
+  } catch (e) {}
+
+  renderAll();
+  try { const k = new URLSearchParams(location.search).get('kind'); if (k === 'music' || k === 'books') kindseg.querySelector('[data-kind="' + k + '"]').click(); } catch (e) {}
+})();
+</script>
+</body>
+</html>
