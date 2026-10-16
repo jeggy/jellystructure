@@ -203,6 +203,27 @@
 .tabs2 a:hover, .tabs2 span:hover { color: var(--ink); text-decoration: none; }
 .tabs2 .on { color: var(--ink); border-bottom-color: var(--hi); }
 
+/* ---------- AI page chrome (ai-suggestions-tab, 2026-10-16) ----------
+   Shared, not page-scoped: the AI page's tab strip is drawn with one tab today and gains Support and
+   Fetchers later, each from its own round, so the strip and the page-level lost-connection strip are
+   the page's chrome rather than any one tab's. Promoted from round 5's support.css (.tk-tabs) and
+   ai.html's inline <style> (.ai-offl) so the build adds no styling of its own.
+   .tk-cnt, the open-ticket count badge, is deliberately NOT here: it is 320's and arrives with the
+   Support tab (FR-3 — no count on the AI entry in this work). */
+.tk-tabs { display:flex; gap:4px; margin:0 0 18px; border-bottom:1px solid var(--line); }
+.tk-tabs span { display:flex; gap:8px; align-items:center; padding:10px 14px; font-size:.9rem; font-weight:600; color:var(--ink-soft); border-bottom:2px solid transparent; margin-bottom:-1px; cursor:pointer; }
+.tk-tabs span:hover { color:var(--ink); }
+.tk-tabs span.on { color:var(--ink); border-bottom-color:var(--hi); }
+
+/* FR-7 — losing the server is the page's state, not the tab's: the strip sits above the tab strip
+   (owner, 2026-10-16) and is revealed by `ws-lost` on the page's own <main>. While it shows, the three
+   controls it speaks for are disabled — Download ([data-dl]), No thanks ([data-no]) and Rebuild now
+   (#sg-rebuild) — which is the one hook set the build must keep for this rule to reach them. */
+.ai-offl { display:none; align-items:flex-start; gap:10px; padding:10px 13px; border-radius:10px; background:var(--fill-3); border:1px solid var(--line-2); font-size:.8rem; line-height:1.5; margin:6px 0 14px; }
+.ai-offl .dot { margin-top:6px; box-shadow:none; }
+main.ws-lost .ai-offl { display:flex; }
+main.ws-lost #ai-suggestions :is([data-dl],[data-no],#sg-rebuild) { opacity:.45; pointer-events:none; }
+
 /* override card */
 .override {
   border: 1px solid rgba(63,182,245,.4); background: var(--info-soft);

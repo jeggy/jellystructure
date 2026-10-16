@@ -1,5 +1,12 @@
 /* Phase 274 — the Suggestions page (sg-*). Every selector starts with .sg-, so it ships next to wf.css untouched.
    The mockup (suggestions.html) and the admin (ui/Suggestions.kt) both load this file. */
+/* ai-suggestions-tab: hosted as the AI page's third tab ([data-sg-host="tab"]). The page's own header row becomes the
+   tab's toolbar; Dismissed replaces the list inside the tab. suggestions.html (no AI key) is untouched by these rules. */
+.sg-tb{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:-2px 0 12px}
+.sg-tb .spacer{flex:1}
+.sg-tb .chip.on{border-color:var(--hi);background:var(--hi-soft);color:var(--acc-ink)}
+[data-sg-host="tab"].sg-dview>:is(.page-sub,#sg-who,#sg-grp,#sg-main){display:none}
+@media (max-width:560px){[data-sg-host="tab"] .sg-dtable thead{display:none}[data-sg-host="tab"] .sg-dtable tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--line)}[data-sg-host="tab"] .sg-dtable td{border:0;padding:0}[data-sg-host="tab"] .sg-dtable td:nth-child(1),[data-sg-host="tab"] .sg-dtable td:nth-child(2){grid-column:1}[data-sg-host="tab"] .sg-dtable td:nth-child(3),[data-sg-host="tab"] .sg-dtable td:nth-child(4){display:inline;grid-column:1;font-size:.76rem;color:var(--ink-soft)}[data-sg-host="tab"] .sg-dtable td:last-child{grid-column:2;grid-row:1/span 4;align-self:center}}
 .sg-who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 2px;font-size:.8rem;color:var(--ink-soft)}
 .sg-who .chip b{font-variant-numeric:tabular-nums}
 .sg-who .chip.none{color:var(--ink-dim);border-style:dashed}

@@ -128,3 +128,27 @@ the alternative is on the canvas for the record.
 
 A tenth, non-design section rode with this brief: the Danish and Faroese text of `request_logged`
 ([DEB-1438](/DEB/issues/DEB-1438)) came back in the report and is not part of the drawing.
+
+## Promoted 2026-10-16 (DEB-1492) — and what in here is now stale
+
+The CSS this round needs is in production. **The files in `edited-in-place/` were not promoted and are
+now baselines, not sources**; `app/` and `screenshots/` stay as drawn, because the spec
+(`specs/requirements/suggestions-as-a-tab-on-the-ai-page.md`) points the build and QA at them. This
+directory is pruned once that build has landed, not before.
+
+| Promoted into | What |
+|---|---|
+| `design/app/suggestions.css` | `.sg-tb`, the in-tab Dismissed view, the narrow stacked Dismissed table — all under `[data-sg-host="tab"]` |
+| `design/app/app.css` | `.tk-tabs` (from `edited-in-place/support.css`) and `.ai-offl` with its `main.ws-lost` rules (from `ai.html`'s inline `<style>`), as the AI page's shared chrome |
+
+**Refused at the gate: `edited-in-place/suggestions.css`'s `.sg-dl { max-height: calc(100vh - 60px) }`.**
+It is the triage's one finding and it is a stale baseline, not a fix: the design project's copy predates
+`7e2a2283` (DEB-1368), which made that line `max-height:100%` so a phone's toolbar cannot clip the
+Download dialog's primary button (FR-274-18). `scripts/check-mobile-css.sh` now fences the line both
+ways, so a later round cannot land the `calc()` quietly.
+
+**Not promoted, because their baselines are not in the tree yet:** `ai.html` and the `support.*` pair
+belong to rounds 2 and 3, neither of which is adopted, and `app-shell.js` / `suggestions.html` /
+`suggestions.js` rewrite their links to an `ai.html` that `design/app/` does not have. They promote with
+whichever round lands that page. Also not promoted: `.tk-cnt`, the open-ticket count badge — it is 320's
+and arrives with the Support tab (FR-3 gives the AI entry no count).

@@ -61,6 +61,15 @@ check "$APP" "sidebar nav group toggle (.group-toggle)" \
   ".app-side .group-label.group-toggle"
 check "$APP" "sidebar nav group chevron (.grp-chev)" \
   ".app-side .nav-group.collapsed .grp-chev"
+# DEB-1492 (2026-10-16) — the AI page's shared chrome, promoted from round 5 by hand: the tab strip came
+# from the design project's support.css and the lost-connection strip from ai.html's inline <style>, and
+# NEITHER of those two files is served, so app.css is the only copy that ships. The design project's own
+# app.css has no idea these rules exist.
+check "$APP" "AI page tab strip (.tk-tabs)" ".tk-tabs { display:flex; gap:4px;"
+check "$APP" "AI page lost-connection strip, FR-7 (.ai-offl)" ".ai-offl { display:none; align-items:flex-start;"
+check "$APP" "AI page lost-connection strip is revealed by main.ws-lost" "main.ws-lost .ai-offl { display:flex; }"
+check "$APP" "AI page lost-connection disables Download/No thanks/Rebuild, FR-7" \
+  "main.ws-lost #ai-suggestions :is([data-dl],[data-no],#sg-rebuild)"
 
 # ---- detail.css ----------------------------------------------------------------------------------
 # Phase 44 — the NFO raw viewer (tree + pane) on media/series detail.
@@ -230,6 +239,25 @@ VERCSS="design/app/versions.css"
 check "$VERCSS" "292 version chip 11 px" ".vr-b{display:inline-flex;align-items:center;font-size:11px;"
 check "$VERCSS" "292 version chip 45 % on light" '[data-theme="light"] .vr-b{color:color-mix(in oklch,var(--c) 45%,var(--ink))}'
 check "$VERCSS" "292 +N chip 11 px" ".vr-more{display:inline-flex;align-items:center;font-size:11px;"
+
+# DEB-1492 (2026-10-16) — the Suggestions page hosted as the AI page's third tab, promoted from round 5.
+SUGCSS="design/app/suggestions.css"
+check "$SUGCSS" "in-tab toolbar (.sg-tb)" ".sg-tb{display:flex;align-items:center;gap:8px 12px;"
+check "$SUGCSS" "in-tab Dismissed view replaces the list, FR-6.2" \
+  '[data-sg-host="tab"].sg-dview>:is(.page-sub,#sg-who,#sg-grp,#sg-main){display:none}'
+check "$SUGCSS" "Dismissed table stacks at <=560px INSIDE THE TAB ONLY, FR-6.2" \
+  '@media (max-width:560px){[data-sg-host="tab"] .sg-dtable thead{display:none}'
+# FR-274-18 (7e2a2283, DEB-1368) — the Download dialog is bounded by its FLEX PARENT, not the viewport.
+# `calc(100vh - 60px)` lets a phone's browser toolbar clip the primary button; the design project's copy
+# of suggestions.css predates that fix and still carries the calc(), so round 5 offered it back as if it
+# were new work and DEB-1492 refused it at the gate. Fenced so the next round cannot land it quietly.
+check "$SUGCSS" "Download dialog height is max-height:100%, NOT calc(100vh - 60px)" \
+  ".sg-dl{width:min(520px,100%);max-height:100%;"
+if grep -qF "max-height:calc(100vh - 60px)" "$SUGCSS"; then
+  echo "REVERTED     .sg-dl max-height is back to calc(100vh - 60px) — that is FR-274-18 undone"
+  echo "             (in $SUGCSS; restore max-height:100%, see 7e2a2283 / DEB-1368)"
+  fail=1
+fi
 
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
