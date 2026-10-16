@@ -2,10 +2,9 @@
 
 > Found live on production, 2026-10-02 (backend v1.48-33-g1ae6c1c4).
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-02 (see Build notes). Written 2026-10-02 (dev-authored), against `main` `145fc0f9`. Number verified free (admin specs top at
-293). Not dev-reviewed.
+Written 2026-10-02 (dev-authored), against `main` `145fc0f9`. Not dev-reviewed.
 
 **Amends** phase 224 (`DeviceIdentityRegistry`, FR-224-4) and the R86-B token cache in `RaviloDeviceService`: both
 described "plain map, no lock" as a discipline. It isn't one on Kotlin/Native.
@@ -92,3 +91,56 @@ with removes; `DeviceIdentityRegistry` 40 000 devices remembered twice with forg
 database, 2 400 validations with sign-ins between them).
 
 **Owed (deploy):** acceptance 2, a TV sign-in on production with no `grow-only hash array` line in the log.
+
+## Amendment (2026-10-16) — the sweep missed `LogoDownloader`'s two sidecar caches (DEB-1498)
+
+FR-294-2 lists the siblings that become `LockedMap`s, and the build notes above close the audit with *"Function-local
+maps were not counted."* Two maps fell between those sentences: `LogoDownloader.inkCache` (phase 232) and
+`LogoDownloader.reinkCache` (R308). They are fields on the one process-wide `LogoDownloader`, not function-local, and
+they are **written from the request thread** — so they belong in FR-294-2's list and were left as plain `HashMap`s.
+
+### What it cost
+
+Production, 2026-10-16T11:53:42.536Z, 4.25 s into the DEB-1479 deploy's new container:
+
+```
+[ERROR] Unhandled route exception on /api/tv/facets/summary: null
+```
+
+The route is R310's (FR-R310-3) Discover-wall counts. The path from it to these maps:
+
+- `BrowseService.facets` misses its per-user `facetsCache` — every entry is cold after a restart — and calls
+  `buildFacets`, whose `toFacets` calls `logoInk(kind, name)` and `logoReink(kind, name)` **once per studio and once
+  per network**. One cold build therefore inserts hundreds of keys into both maps, growing each table repeatedly.
+- `/api/tv/facets` and `/api/tv/facets/summary` are the only routes that reach `toFacets`, which is why no other
+  route logged anything.
+- Concurrently, `Main.kt`'s boot launch of `logoDownloader.computeMissingInk()` (background gate) is calling
+  `inkCache.remove` / `reinkCache.remove` over every logo on disk, and `fetchMissing` removes from both after a batch.
+
+Several viewers' clients were polling the server as it was recreated, so several cold builds ran at once. That is
+exactly the condition this phase proved corrupts a Kotlin/Native `HashMap` — *"Two threads inserting into one
+Kotlin/Native `HashMap` is enough"* — and a read walking a half-grown table throws a `NullPointerException`, whose
+`message` is `null`. Hence the bare `null` in the log line.
+
+**Not a cold-start readiness problem, and not new.** The hazard has been there since phase 232 added `inkCache`; it
+needs concurrent cold facets builds, which is why earlier deploys in this family recorded 0 `[ERROR]` lines at
+startup and why this did not recur in the minutes after. Nothing about the route is unready at 4 s, so a readiness
+contract (503 + `Retry-After`, or an empty-but-valid `wallSummary`) is **not** the fix: it is wire-visible, and it
+would answer a corrupted cache with a soothing 503 instead of repairing it. A `runCatching` around the handler would
+do the same, worse.
+
+**FR-294-6 — `LogoDownloader`'s sidecar caches are thread-safe.** `inkCache` and `reinkCache` are `LockedMap`s. What
+they cache, and for how long, is unchanged; the sidecar reads stay outside the lock, as FR-294-1 requires. No wire
+change (FR-294-5 stands).
+
+**FR-294-7 — A regression test.** `SharedMapsConcurrencyTest` gains the facets case: eight threads call `logoInk` and
+`logoReink` over the same 400-logo set, as concurrent cold facets builds do. Nothing throws and every sidecar still
+reads back its own value.
+
+### Still owed
+
+The audit's boundary — "fields on a long-lived object, reached from a request thread" — was applied by hand twice and
+missed this both times. The remaining unlocked candidates found while fixing this one are **not** addressed here and
+are not claimed to be harmless: `MusicTvService.userCache`, `MusicBrowse`'s `albumCache`, `MusicSongs.parent`,
+`FlacIndex.known`, `PlaybackTargets.byApp` and `AiJobs`' `heldBack`/`retryAt`. Each needs the same question asked —
+is it written from a request thread? — and that is its own task, not this amendment's.

@@ -3,8 +3,16 @@ package dev.jellystructure.ops
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.DeviceIdentityRegistry
 import dev.jellystructure.auth.JellyfinDeviceIdentity
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.createDatabase
+import dev.jellystructure.io.FileIo
+import dev.jellystructure.media.LOGO_INK_DARK
+import dev.jellystructure.media.LOGO_INK_LIGHT
+import dev.jellystructure.media.LogoDownloader
+import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.tv.RaviloDeviceService
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.joinAll
@@ -27,11 +35,16 @@ import kotlin.test.assertNotNull
 class SharedMapsConcurrencyTest {
     private val threads = 8
     private var dbPath: String? = null
+    private var logoDir: String? = null
 
     @AfterTest
     fun tearDown() {
         DeviceIdentityRegistry.clear()
         dbPath?.let { p -> for (suffix in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$p$suffix") } }
+        logoDir?.let { d ->
+            runCatching { SystemFileSystem.list(Path("$d/artwork/studios")).forEach { SystemFileSystem.delete(it, mustExist = false) } }
+            for (p in listOf("$d/artwork/studios", "$d/artwork", d)) runCatching { SystemFileSystem.delete(Path(p), mustExist = false) }
+        }
     }
 
     private fun onThreads(body: suspend (Int) -> Unit) = runBlocking {
@@ -98,5 +111,38 @@ class SharedMapsConcurrencyTest {
             }
         }
         for (token in tokens) assertNotNull(service.validateDeviceToken(token))
+    }
+
+    /**
+     * DEB-1498 (FR-294-6) — the two sidecar caches in [LogoDownloader]. `BrowseService.toFacets` calls `logoInk` and
+     * `logoReink` once per studio and once per network on the request thread, so one cold facets build inserts
+     * hundreds of keys into both maps; several TVs asking for their Discover walls in the seconds after a restart do
+     * that at the same time, with the background ink sweep removing from the same maps. That is the shape phase 294
+     * proved corrupts a Kotlin/Native `HashMap`, and it is how `/api/tv/facets/summary` threw a message-less NPE on
+     * production 4 s into the DEB-1479 deploy. Every thread inserts the same key set, exactly as the real builds do.
+     */
+    @Test
+    fun `concurrent facets builds never corrupt the logo ink caches`() {
+        val dir = "/tmp/jellystructure-test-logoink-${getpid()}".also { logoDir = it }
+        SystemFileSystem.createDirectories(Path("$dir/artwork/studios"))
+        val names = (0 until 400).map { "Studio $it" }
+        for ((i, name) in names.withIndex()) {
+            val slug = name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            FileIo.writeBytes(Path("$dir/artwork/studios/$slug.png"), byteArrayOf(0))
+            FileIo.writeBytes(Path("$dir/artwork/studios/$slug.ink"), (if (i % 2 == 0) LOGO_INK_LIGHT else LOGO_INK_DARK).encodeToByteArray())
+            FileIo.writeBytes(Path("$dir/artwork/studios/$slug.reink"), (if (i % 3 == 0) "1" else "0").encodeToByteArray())
+        }
+        val logos = LogoDownloader(dir, TmdbClient(ConfigStore("$dir/config.toml")))
+        onThreads {
+            for (name in names) {
+                assertNotNull(logos.logoInk("studios", name))
+                logos.logoReink("studios", name)
+            }
+        }
+        // Read back from the warm caches: every sidecar still answers its own value, and nothing threw above.
+        for ((i, name) in names.withIndex()) {
+            assertEquals(if (i % 2 == 0) LOGO_INK_LIGHT else LOGO_INK_DARK, logos.logoInk("studios", name))
+            assertEquals(if (i % 3 == 0) true else null, logos.logoReink("studios", name))
+        }
     }
 }

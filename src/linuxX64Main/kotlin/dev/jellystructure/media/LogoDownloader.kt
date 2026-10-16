@@ -3,6 +3,7 @@ package dev.jellystructure.media
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.OutboundHttp
+import dev.jellystructure.ops.LockedMap
 import dev.jellystructure.tmdb.TmdbClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
@@ -39,7 +40,11 @@ class LogoDownloader(
         SystemFileSystem.exists(Path(logoFile(kind, name)))
 
     // ── Phase 232 — which ink a logo is drawn in ("light"/"dark"), persisted as a `<slug>.ink` sidecar ──
-    private val inkCache = HashMap<String, String>()
+    // DEB-1498 (FR-294-6) — a LockedMap, not a HashMap: [logoInk] is called from the request thread once per
+    // studio and per network by BrowseService.toFacets, while [computeMissingInk] and [fetchMissing] remove
+    // from the same map on the background gate. Phase 294's audit counted this one as function-local and
+    // missed it.
+    private val inkCache = LockedMap<String, String>()
 
     /** FR-232-3 — read-only and cheap: never computes (that is [computeMissingInk]'s job, off the request
      *  path). `null` = not known yet (a re-downloaded logo drops its sidecar, FR-232-4). */
@@ -55,7 +60,9 @@ class LogoDownloader(
     }
 
     // ── R308 — whether the client re-inks a logo to show on the light plate, a `<slug>.reink` sidecar ──
-    private val reinkCache = HashMap<String, Boolean>()
+    // DEB-1498 (FR-294-6) — locked for the same reason as [inkCache]; [judgeReink] removes from it on the
+    // background gate while a facets build inserts.
+    private val reinkCache = LockedMap<String, Boolean>()
 
     /** FR-R308-4/5 — read-only and cheap, like [logoInk]. `true` only when judged so; `null` = draw as is. */
     fun logoReink(kind: String, name: String): Boolean? {
