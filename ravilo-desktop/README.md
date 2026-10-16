@@ -120,6 +120,13 @@ The app updates itself with [Sparkle 2](https://sparkle-project.org) from the re
   run's artifact). It then checks the appcast's signature against the public key the bundle carries.
 - **The server floor.** `UpdateCheck` points Sparkle at `releases/download/v<S>/appcast.xml`, where S is the release
   the server is based on, so a Mac never moves past its server (`UpdateRules.plan`, tested in `UpdatePlanTest`).
+- **The screens.** Settings ▸ About (`SoftwareUpdate.kt`) draws the *Software update* block from one value,
+  `UpdateView.of(status, …)` — the last check and Sparkle's last report, nothing else (`UpdateViewTest`,
+  `SoftwareUpdateScreensTest`). A development build and Linux have no block. The ready notice is a row at the sidebar's
+  foot, a tile on the rail and a row atop the phone layout's Profile page; *Check for Updates…* is a menu item
+  `Update.swift` puts under *About Ravilo*. To look at a state on a build that has none, start the app with the test
+  driver and say `update ready`, `update ready-playing`, `update failed-verify` … (`update off` takes it away): it
+  changes what is drawn and checks or installs nothing. The names are `UpdatePreview.names`.
 
 ### The update key (once, on a Mac)
 

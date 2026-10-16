@@ -95,6 +95,8 @@ object MacNative {
         fun ravilo_update_check_window(feedUrl: String)
         /** Installs the downloaded update and relaunches. */
         fun ravilo_update_install()
+        /** FR-R386-9 — adds (or retitles) *Check for Updates…* under *About Ravilo*; a choice shows up in the snapshot's `menu=`. */
+        fun ravilo_update_menu_item(title: String)
         /** `key=value` lines — see [SparkleSnapshot.parse]. Free it. */
         fun ravilo_update_snapshot(): Pointer?
     }

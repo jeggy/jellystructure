@@ -17,6 +17,8 @@ data class SparkleSnapshot(
     val total: Long,
     /** FR-R386-12 — the engine's changes of state since the previous snapshot, oldest first; usually empty. */
     val changes: List<EngineChange> = emptyList(),
+    /** FR-R386-9 — how many times *Check for Updates…* has been chosen in the Ravilo menu since launch. */
+    val menuClicks: Int = 0,
 ) {
     enum class Phase { UNAVAILABLE, IDLE, CHECKING, DOWNLOADING, AVAILABLE, READY, INSTALLING, WINDOW, FAILED, NOT_FOUND }
     enum class Failure { DOWNLOAD, SIGNATURE, FEED, OTHER }
@@ -77,6 +79,7 @@ data class SparkleSnapshot(
                 bytes = kv["bytes"]?.toLongOrNull() ?: -1,
                 total = kv["total"]?.toLongOrNull() ?: -1,
                 changes = changes,
+                menuClicks = kv["menu"]?.toIntOrNull() ?: 0,
             )
         }
     }
@@ -110,6 +113,9 @@ object MacUpdater {
     }
 
     fun installAndRelaunch() = native(Unit) { it.ravilo_update_install() }
+
+    /** FR-R386-9 — keeps *Check for Updates…* under *About Ravilo* in the Ravilo menu, in [title]'s language. Idempotent. */
+    fun installMenuItem(title: String) = native(Unit) { it.ravilo_update_menu_item(title) }
 
     fun snapshot(): SparkleSnapshot = native(SparkleSnapshot.UNAVAILABLE) { lib ->
         SparkleSnapshot.parse(MacNative.take(lib.ravilo_update_snapshot()))

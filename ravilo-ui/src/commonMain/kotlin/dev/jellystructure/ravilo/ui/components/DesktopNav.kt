@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -224,6 +225,9 @@ fun DesktopNav(
                     }
                 }
             }
+            // R386 (FR-R386-8) — the ready notice: a row at the sidebar's foot, a tile on the rail. Nothing when no update is ready.
+            if (rail) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { UpdateRailTile() }
+            else UpdateNoticeRow(desk = true)
             ViewerFoot(rail, viewerName, onViewer, onSettings, onSignOut)
         }
         // GNOME's split view: a hairline between the sidebar and the content.
@@ -393,12 +397,17 @@ private fun RailItem(p: DesktopPage, on: Boolean, dot: Boolean, onClick: () -> U
 @Composable
 private fun ViewerFoot(rail: Boolean, name: String, onViewer: () -> Unit, onSettings: () -> Unit, onSignOut: () -> Unit) {
     val colors = RaviloTheme.colors
+    val updateDot = updateDotShows()
     val avatar = LocalUserAvatarUrl.current
     @Composable
     fun photo(size: Dp) {
-        Box(Modifier.size(size).clip(CircleShape).background(colors.accentGradient).handCursor().clickable(onClick = onViewer), contentAlignment = Alignment.Center) {
-            if (avatar != null) RemoteImage(avatar, name, Modifier.fillMaxSize())
-            else Text(name.take(1).uppercase().ifEmpty { "?" }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
+        Box {
+            Box(Modifier.size(size).clip(CircleShape).background(colors.accentGradient).handCursor().clickable(onClick = onViewer), contentAlignment = Alignment.Center) {
+                if (avatar != null) RemoteImage(avatar, name, Modifier.fillMaxSize())
+                else Text(name.take(1).uppercase().ifEmpty { "?" }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
+            }
+            // R386 (FR-R386-8) — on the rail the dot sits on the viewer's photo: Settings is behind it.
+            if (rail && updateDot) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp))
         }
     }
     if (rail) {
@@ -409,7 +418,9 @@ private fun ViewerFoot(rail: Boolean, name: String, onViewer: () -> Unit, onSett
         photo(26.dp)
         Column(Modifier.weight(1f)) {
             Text(name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onViewer))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // R386 (FR-R386-8, D6) — a dot on the Settings entry: the update that is ready is shown in its About.
+                if (updateDot) UpdateDot()
                 Text(str("pm.settings"), color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont, modifier = Modifier.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSettings))
                 Text("·", color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont)
                 Text(str("pm.sign_out"), color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont, modifier = Modifier.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSignOut))

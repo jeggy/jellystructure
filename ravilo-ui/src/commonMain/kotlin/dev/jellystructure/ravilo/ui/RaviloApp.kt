@@ -788,11 +788,15 @@ fun RaviloApp(
         // R337 — on a computer Settings is a window of its own beside the app's (the mockup's T·e, ⌘, on the Mac), so
         // every way to Settings opens that window and the app's own page stays where it is.
         var deskSettingsOpen by remember { mutableStateOf(false) }
+        // R386 (FR-R386-6) — a computer's window narrower than 600 dp shows the phone's screens (R337 FR-R337-1), and there
+        // Settings is the phone's page, with About as a section of it: the window is the desktop family's. Read only when a
+        // push asks, so a plain holder (set where [handset] is known, below) is enough.
+        val phoneLayout = remember { BooleanArray(1) }
         // R365 (FR-R365-5) — the page the profile menu pushed Settings / My List / Your profile from: when it is on top
         // again (Back), its AppBar puts focus on the avatar (LocalAvatarReturn), once.
         var avatarReturnTo by remember { mutableStateOf<Dest?>(null) }
         fun push(dest: Dest) {
-            if (dest is Dest.Settings && isDesktopPlatform) { deskSettingsOpen = true; return }
+            if (dest is Dest.Settings && isDesktopPlatform && !phoneLayout[0]) { deskSettingsOpen = true; return }
             avatarReturnTo = null   // R365 — any other navigation spends it (the menu's pushes set it after this)
             navDir = NavDir.Forward
             forwardStack = emptyList()
@@ -1061,6 +1065,16 @@ fun RaviloApp(
                             push(Dest.Settings(MultiTokenStore.getActive()?.displayName.orEmpty()))
                         }
                     }
+                    // R386 (FR-R386-9) — *Check for Updates…*: About opens, and the check runs there. A finished check is
+                    // shown in the block, never in a Sparkle alert. Signed out, there is no Settings: the check still runs.
+                    dev.jellystructure.ravilo.ui.components.AppCommand.UPDATE_CHECK -> {
+                        dev.jellystructure.ravilo.ui.components.SoftwareUpdate.actions.checkNow()
+                        val top = stack.lastOrNull()
+                        if (activeUserId != null && top !is Dest.Player && top !is Dest.LiveTv) {
+                            dev.jellystructure.ravilo.ui.components.SoftwareUpdate.requestAbout()
+                            if (top !is Dest.Settings) push(Dest.Settings(MultiTokenStore.getActive()?.displayName.orEmpty()))
+                        }
+                    }
                     else -> Unit   // R337 — the desktop's other commands are handled with the frame, below
                 }
             }
@@ -1130,6 +1144,7 @@ fun RaviloApp(
         val handset = remember(windowInfo.containerSize.width, windowInfo.containerSize.height, density) {
             isHandset(isTvPlatform, windowInfo.containerSize.width, windowInfo.containerSize.height, density.density)
         }
+        phoneLayout[0] = handset
         // R337 (FR-R337-1) — the view family. A desktop window under 600 dp is handset by the same test (its minimum
         // height is 600, so "the shorter side is under 600" is "the width is under 600"): the phone's screens, unchanged.
         val family = when {
@@ -1250,6 +1265,11 @@ fun RaviloApp(
         // A session touched since this app's own player was last used takes the slot; using the player takes it back.
         val musicLinkedNow by dev.jellystructure.ravilo.ui.music.MusicCast.linked.collectAsState()
         val musicLinkedPlace by dev.jellystructure.ravilo.ui.music.MusicCast.deviceName.collectAsState()
+        // R386 (FR-R386-4, state 5) — while a film plays here or on a speaker or TV this app casts to, while a song plays, or
+        // while a cast this app controls is linked, an update that is ready waits: the notice and the block read this.
+        val updateTop = stack.lastOrNull()
+        val updatePlaying = updateTop is Dest.Player || updateTop is Dest.LiveTv || updateTop is Dest.CastRemote || musicState.playing || musicLinkedNow
+        LaunchedEffect(updatePlaying) { dev.jellystructure.ravilo.ui.components.SoftwareUpdate.setPlaying(updatePlaying) }
         val sessionOverMusic = musicLinkedNow &&
             dev.jellystructure.ravilo.ui.sessions.touchedTakesBar(sessionsNow.sessions, touchedSession, filmsMode = !inMusic, linkedPlace = musicLinkedPlace)
         // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.
@@ -1431,6 +1451,7 @@ fun RaviloApp(
                     dev.jellystructure.ravilo.ui.components.AppCommand.VOLUME_DOWN -> dev.jellystructure.ravilo.ui.music.MusicVolume.nudge(-0.1f)
                     dev.jellystructure.ravilo.ui.components.AppCommand.SIGN_OUT -> if (activeUserId != null) deskSignOutAsk = true
                     dev.jellystructure.ravilo.ui.components.AppCommand.OPEN_SETTINGS -> Unit   // handled above, where it always was
+                    dev.jellystructure.ravilo.ui.components.AppCommand.UPDATE_CHECK -> Unit   // R386 — handled above, with Settings
                 }
             }
         }

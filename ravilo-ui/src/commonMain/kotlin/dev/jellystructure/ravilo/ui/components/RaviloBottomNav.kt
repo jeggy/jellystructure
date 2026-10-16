@@ -207,7 +207,12 @@ private fun BottomNavCell(
             when (item) {
                 // FR-R267-5d — the profile item's icon is the viewer's own avatar: the photo when
                 // there is one, initials when there is not.
-                BottomNavItem.PROFILE -> ProfileDot(userInitials, isSelected, ring = isSelected && profileRing)
+                BottomNavItem.PROFILE -> Box {
+                    ProfileDot(userInitials, isSelected, ring = isSelected && profileRing)
+                    // R386 (FR-R386-8, D11) — one dot that means "your Profile page has something"; the page's first row says
+                    // what. An update that is ready is one reason today; the support lane's unread reply will be another.
+                    if (updateDotShows()) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp), size = 10.dp, ring = colors.surface)
+                }
                 else -> {
                     val tint = if (isSelected) colors.onAccent else colors.textSecondary
                     // R321 — music mode's four marks, drawn on the same 24-unit grid.

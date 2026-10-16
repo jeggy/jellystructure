@@ -141,7 +141,7 @@ class MacDiagnosisTest {
         val keys = listOf(
             "mac.install_place.title", "mac.install_place.body_translocated", "mac.install_place.body_volume",
             "mac.local_network_blocked.title", "mac.local_network_blocked.body",
-            "mac.menu_quit", "mac.open_settings", "mac.open_anyway", "action.retry",
+            "mac.menu_quit", "mac.open_settings", "action.retry",
         )
         for (key in keys) {
             val english = t(key, "en")
@@ -163,22 +163,11 @@ class MacDiagnosisTest {
         val forbidden = listOf("transloc", "tcc", "bundle", "quarantin")
         val keys = listOf(
             "mac.install_place.title", "mac.install_place.body_translocated", "mac.install_place.body_volume",
-            "mac.local_network_blocked.title", "mac.local_network_blocked.body", "mac.open_anyway",
+            "mac.local_network_blocked.title", "mac.local_network_blocked.body",
         )
         for (lang in languages) for (key in keys) {
             val text = t(key, lang).lowercase()
             for (word in forbidden) assertFalse(word in text, "'$key' in '$lang' names '$word': $text")
         }
-    }
-
-    /** FR-R385-6 — the update line's sentence leads with the drag, which is the install this phase is about. */
-    @Test
-    fun the_update_line_says_to_drag_it_first() {
-        val english = t("mac.open_anyway", "en")
-        assertTrue(english.startsWith("Open the disk image and drag Ravilo"), english)
-        assertTrue(
-            english.indexOf("Applications") < english.indexOf("Open Anyway"),
-            "the drag comes before the Gatekeeper sentence: $english",
-        )
     }
 }

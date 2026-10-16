@@ -172,6 +172,11 @@ fun ProfileScreen(
                 .padding(horizontal = 20.dp)
                 .padding(top = 18.dp, bottom = 24.dp),
         ) {
+            // ── R386 (FR-R386-8, D6/D11): the page's first row says why the bar's Profile has a dot ──
+            if (dev.jellystructure.ravilo.ui.components.updateDotShows()) {
+                dev.jellystructure.ravilo.ui.components.UpdateNoticeRow(desk = false)
+                Spacer(Modifier.height(16.dp))
+            }
             // ── identity ──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -227,7 +232,7 @@ fun ProfileScreen(
                 RowDivider()
                 // Dev review item 2 — the phone's Settings still holds skin, autoplay, tile shape and more;
                 // a row rather than a deleted screen.
-                ProfileRow(str("nav.settings"), null, onSettings)
+                ProfileRow(str("nav.settings"), null, onSettings, dot = dev.jellystructure.ravilo.ui.components.updateDotShows())
             }
 
             // ── Sign out ──
@@ -313,7 +318,7 @@ fun AppLanguageScreen(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, onClick: () -> Unit) {
+private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false) {
     val colors = RaviloTheme.colors
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -325,6 +330,7 @@ private fun ProfileRow(label: String, value: String?, onClick: () -> Unit) {
             Text(label, color = colors.text, fontSize = 15.sp, fontFamily = Sora)
             if (value != null) Text(value, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
         }
+        if (dot) { dev.jellystructure.ravilo.ui.components.UpdateDot(ring = colors.surface); Spacer(Modifier.width(12.dp)) }
         Text("›", color = colors.textDim, fontSize = 20.sp)
     }
 }

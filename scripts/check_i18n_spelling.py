@@ -12,6 +12,10 @@ EXCLUDED_KEYS = {"browse.sort.az", "browse.sort.za", "music.sort_az"}   # R321 �
 # R335 — Faroese `tøk` ("available", player.unavailable) and `tók` ("took", slow_tail_measured) are two different
 # words that differ only by the accent; neither is a typo for the other.
 EXCLUDED_KEYS |= {"player.unavailable"}
+# R386 — Danish `før` ("before") and `for` ("for") are two different words that differ only by the accent. The round's
+# drafts say *Ravilo spørger, før den genstarter* ("Ravilo asks before it restarts"): `før` is right there, and the
+# file's 21 `for` are right where they are.
+EXCLUDED_KEYS |= {"mac.update.dl_sub", "mac.update.auto_on"}
 
 # R288 — unit abbreviations are not words in any language, so they are exempt from folding against
 # words that happen to look like them. `min` is minutes in all three files; Faroese `mín` is "my".

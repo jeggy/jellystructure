@@ -256,6 +256,15 @@ fun SettingsScreen(
     // added below), but a hard requirement for it, since even correct focus navigation can't show
     // what never scrolls into view.
     val scrollState = rememberScrollState()
+    // R386 (FR-R386-9) — *Check for Updates…* in the phone family: the page scrolls to About, where the check shows.
+    val aboutRequested by dev.jellystructure.ravilo.ui.components.SoftwareUpdate.aboutRequested.collectAsState()
+    LaunchedEffect(aboutRequested, state is SettingsState.Loaded) {
+        if (aboutRequested && state is SettingsState.Loaded) {
+            kotlinx.coroutines.delay(150)   // the sections have measured by now
+            scrollState.animateScrollTo(scrollState.maxValue)
+            dev.jellystructure.ravilo.ui.components.SoftwareUpdate.aboutShown()
+        }
+    }
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         Column(
             modifier = Modifier
@@ -380,11 +389,18 @@ fun DesktopSettingsPanel(
         val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
         LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
         val mac = dev.jellystructure.ravilo.ui.isMacPlatform
-        var tab by remember { mutableStateOf(0) }
+        // FR-R386-9 — *Check for Updates…* opens this window on About.
+        val aboutRequested by dev.jellystructure.ravilo.ui.components.SoftwareUpdate.aboutRequested.collectAsState()
+        var tab by remember { mutableStateOf(if (aboutRequested && mac) 3 else 0) }
+        LaunchedEffect(aboutRequested) {
+            if (aboutRequested) { if (mac) tab = 3; dev.jellystructure.ravilo.ui.components.SoftwareUpdate.aboutShown() }
+        }
         val tabs = listOf(
             dev.jellystructure.ravilo.ui.components.DeskIcon.SIDEBAR to str("settings.general"),
             dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY to str("settings.playback"),
             dev.jellystructure.ravilo.ui.components.DeskIcon.PERSON to str("settings.account"),
+            // R386 (FR-R386-6, D5) — About, after Account: the version, the Software update block and the server.
+            dev.jellystructure.ravilo.ui.components.DeskIcon.INFO to str("mac.update.about"),
         )
 
         @Composable
@@ -453,11 +469,6 @@ fun DesktopSettingsPanel(
         fun account(first: Boolean) {
             heading(str("settings.account"), first)
             Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.text, fontSize = 13.5.sp, fontFamily = ui)
-            val offer by dev.jellystructure.ravilo.ui.components.AppUpdate.offer.collectAsState()
-            offer?.let {
-                Spacer(Modifier.height(14.dp))
-                dev.jellystructure.ravilo.ui.components.AppUpdateLine(it, remember { FocusRequester() }, onUp = {}, onDown = {})
-            }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), onClick = onChangePassword)
@@ -492,7 +503,8 @@ fun DesktopSettingsPanel(
                     is SettingsState.Loaded -> if (mac) when (tab) {
                         0 -> general(s.config)
                         1 -> playback(s.config, first = true)
-                        else -> account(first = true)
+                        2 -> account(first = true)
+                        else -> dev.jellystructure.ravilo.ui.components.AboutSection(desk = true)
                     } else GnomePreferences(s.config, store, displayName, onSkinChange, onThemeChange, onChangePassword, onSignOut)
                 }
             }
@@ -571,11 +583,20 @@ private fun GnomePreferences(
     }
     AdwGroup(str("settings.account")) {
         AdwRow(str("profile.signed_in", mapOf("name" to displayName)))
-        val offer by dev.jellystructure.ravilo.ui.components.AppUpdate.offer.collectAsState()
-        val uri = androidx.compose.ui.platform.LocalUriHandler.current
-        offer?.let { o -> AdwRow(str("mac.update_available", mapOf("version" to o.version)), onClick = { runCatching { uri.openUri(o.downloadUrl) } }) { AdwChevron() } }
         AdwRow(str("account.pw_change"), onClick = onChangePassword) { AdwChevron() }
         AdwRow(str("profile.sign_out"), onClick = onSignOut) { AdwChevron() }
+    }
+    // R386 (FR-R386-6) — About: the version and the server. No update block on Linux (Flathub updates the Flatpak): nothing
+    // there ever sets the model, so this stays empty — the test driver's `update <state>` is what shows it, to be looked at.
+    val updateModel by dev.jellystructure.ravilo.ui.components.SoftwareUpdate.model.collectAsState()
+    if (updateModel != null) {
+        Spacer(Modifier.height(18.dp))
+        dev.jellystructure.ravilo.ui.components.SoftwareUpdateBlock(desk = true)
+    }
+    AdwGroup(str("mac.update.about")) {
+        val mono = androidx.compose.ui.text.font.FontFamily.Monospace
+        AdwRow(str("mac.update.row_version")) { Text(dev.jellystructure.shared.raviloVersion(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = mono) }
+        AdwRow(str("mac.update.row_server")) { Text(dev.jellystructure.ravilo.ui.components.aboutServerHost(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = mono) }
     }
 }
 
@@ -939,9 +960,6 @@ private fun SettingsContent(
     val goTop: (() -> Unit)? = topFR?.let { fr -> { runCatching { fr.requestFocus() }; Unit } }
     val progressFR = remember { FocusRequester() }
     val autoplayFR = remember { FocusRequester() }
-    // R328 (FR-R328-8) — the Mac's update line, between the identity and Change password when there is one.
-    val updateOffer by dev.jellystructure.ravilo.ui.components.AppUpdate.offer.collectAsState()
-    val updateFR = remember { FocusRequester() }
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
@@ -1057,7 +1075,7 @@ private fun SettingsContent(
         focusRequester = autoplayFR,
         onToggle = { store.saveAutoplayNext(!config.autoplayNext) },
         onUp = { progressFR.requestFocus() },
-        onDown = { (if (updateOffer != null) updateFR else changePwFR).requestFocus() },
+        onDown = { changePwFR.requestFocus() },
     )
     // R322 (FR-R322-9, J6's lean) — Settings ▸ Listening: *Even out volume*, on by default. Wherever music plays
     // and the device is not a TV: the phone, and (R329) the Mac.
@@ -1109,14 +1127,6 @@ private fun SettingsContent(
     Spacer(Modifier.height(12.dp))
     Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.textSecondary, fontSize = 15.sp)
     Spacer(Modifier.height(16.dp))
-    updateOffer?.let { offer ->
-        dev.jellystructure.ravilo.ui.components.AppUpdateLine(
-            offer, updateFR,
-            onUp = { autoplayFR.requestFocus() },
-            onDown = { changePwFR.requestFocus() },
-        )
-        Spacer(Modifier.height(16.dp))
-    }
     // R234 (FR-R234-4) — a password is a credential, not a preference, so it lives here on every
     // platform (TV included) rather than gated like the phone/web-only "Your profile" photo screen.
     var changePwFocused by rememberFocusVisual()
@@ -1128,7 +1138,7 @@ private fun SettingsContent(
                 focusRequester = changePwFR,
                 onFocused = { changePwFocused = true },
                 onBlurred = { changePwFocused = false },
-                onUp = { (if (updateOffer != null) updateFR else autoplayFR).requestFocus() },
+                onUp = { autoplayFR.requestFocus() },
                 onDown = { (if (isWebPlatform) installFR else signOutFR).requestFocus() },
                 onSelect = onChangePassword,
             )
@@ -1181,6 +1191,15 @@ private fun SettingsContent(
 
     // R340 (FR-R340-2) — the separate "Unpair this TV" section is gone: Sign out above asks whom, and
     // "Everyone on this TV" is what it did (plus the server forgotten). One way out, and it always asks.
+
+    // R386 (FR-R386-6, D5) — the desktop target's About, in the phone family: the version, the Software update block
+    // (the Mac release build only) and the server. Nothing on a TV, a phone or the web.
+    if (dev.jellystructure.ravilo.ui.isDesktopPlatform) {
+        Spacer(Modifier.height(32.dp))
+        SectionHeader(str("mac.update.about"))
+        Spacer(Modifier.height(12.dp))
+        dev.jellystructure.ravilo.ui.components.AboutSection(desk = false)
+    }
 }
 
 /**

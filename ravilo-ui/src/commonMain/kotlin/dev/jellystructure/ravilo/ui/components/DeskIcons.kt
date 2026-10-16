@@ -87,6 +87,15 @@ enum class DeskIcon(internal val d: String, internal val filled: Boolean = false
     LAPTOP(rect(4f, 5f, 16f, 11f, 1.5f) + "M2 19h20"),
     SPEAKER(rect(6f, 3f, 12f, 18f, 2f) + circle(12f, 14f, 3.2f) + circle(12f, 7.5f, 1f)),
     SPEAKERS(rect(10f, 3f, 10f, 15f, 2f) + circle(15f, 12f, 2.5f) + "M6 7v12a2 2 0 0 0 2 2h7"),
+    // R386 — the update block's marks, on the same grid and stroke (`mac-update.js`).
+    CHECK("M5 12.5l4.5 4.5L19 7.5"),
+    DOWNLOAD("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"),
+    INSTALL("M6 4h12M12 20V9M7.5 13.5L12 9l4.5 4.5"),
+    CLOCK(circle(12f, 12f, 9f) + "M12 7v5l3 2"),
+    ALERT("M12 3.5l9.5 16.5h-19z" + "M12 10v4.5M12 17.5v.1"),
+    FOLDER("M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"),
+    OFFLINE("M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0M12 19.5v.1M3.5 3.5l17 17"),
+    INFO(circle(12f, 12f, 9f) + "M12 11v5.5M12 7.6v.1"),
 }
 
 /** R368 (review item 15) — the icon a session's place is drawn with. */

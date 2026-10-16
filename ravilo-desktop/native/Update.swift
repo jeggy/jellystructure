@@ -43,6 +43,8 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
     /// With `unavailable`: why, for the log.
     private var reason = ""
     private var autoDownload = true
+    /// FR-R386-9 — how many times *Check for Updates…* has been chosen in the Ravilo menu; Kotlin reads it with the rest.
+    private var menuClicks = 0
     /// FR-R386-12 — one entry per change of state, `old|new|version|failure|reason`, handed out by the next snapshot.
     private var changes: [String] = []
 
@@ -78,10 +80,34 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
     func snapshot() -> String {
         lock.lock(); defer { lock.unlock() }
         let lines = ["phase=\(phase)", "version=\(version)", "failure=\(failure)", "reason=\(reason)",
-                     "auto=\(autoDownload ? 1 : 0)", "bytes=-1", "total=-1"] + changes.map { "change=\($0)" }
+                     "auto=\(autoDownload ? 1 : 0)", "bytes=-1", "total=-1", "menu=\(menuClicks)"] + changes.map { "change=\($0)" }
         changes.removeAll()
         return lines.joined(separator: "\n")
     }
+
+    // ── the Ravilo menu's *Check for Updates…* (FR-R386-9, D8) ──
+
+    /// The choice is recorded and Kotlin's poll sees it: the same no-callback shape as everything else here.
+    fileprivate func menuChosen() { lock.lock(); menuClicks += 1; lock.unlock() }
+
+    /// Puts *Check for Updates…* directly under *About Ravilo*, the first item of the application menu (the standard
+    /// macOS place), or retitles it when the language changed. Idempotent, so Kotlin may call it every few seconds: AWT
+    /// owns this menu and could rebuild it. Nothing happens until the menu bar exists.
+    func installMenuItem(_ title: String) {
+        DispatchQueue.main.async {
+            guard let appMenu = NSApp.mainMenu?.items.first?.submenu else { return }
+            if let existing = appMenu.items.first(where: { $0.tag == RaviloUpdater.menuTag }) {
+                if existing.title != title { existing.title = title }
+                return
+            }
+            let item = NSMenuItem(title: title, action: #selector(RaviloMenuTarget.check(_:)), keyEquivalent: "")
+            item.target = menuTarget
+            item.tag = RaviloUpdater.menuTag
+            appMenu.insertItem(item, at: min(1, appMenu.items.count))
+        }
+    }
+
+    private static let menuTag = 386
 
     // ── main thread ──
 
@@ -256,6 +282,13 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
 
 private let updateEngine = RaviloUpdater()
 
+/// The target of the menu item's action: AppKit needs an Objective-C object to send it to.
+private final class RaviloMenuTarget: NSObject {
+    @objc func check(_ sender: Any?) { updateEngine.menuChosen() }
+}
+
+private let menuTarget = RaviloMenuTarget()
+
 /// Creates the updater (the snapshot says `unavailable`, and why, when Sparkle cannot run here).
 @_cdecl("ravilo_update_start")
 public func ravilo_update_start() { updateEngine.start() }
@@ -276,6 +309,10 @@ public func ravilo_update_check_window(_ feedURL: UnsafePointer<CChar>) {
 @_cdecl("ravilo_update_install")
 public func ravilo_update_install() { updateEngine.installAndRelaunch() }
 
-/// `key=value` lines: phase · version · failure · reason · auto · bytes · total. Free it.
+/// FR-R386-9 — adds or retitles *Check for Updates…* under *About Ravilo*; a choice shows in the snapshot's `menu=`.
+@_cdecl("ravilo_update_menu_item")
+public func ravilo_update_menu_item(_ title: UnsafePointer<CChar>) { updateEngine.installMenuItem(String(cString: title)) }
+
+/// `key=value` lines: phase · version · failure · reason · auto · bytes · total · menu. Free it.
 @_cdecl("ravilo_update_snapshot")
 public func ravilo_update_snapshot() -> UnsafeMutablePointer<CChar>? { cString(updateEngine.snapshot()) }

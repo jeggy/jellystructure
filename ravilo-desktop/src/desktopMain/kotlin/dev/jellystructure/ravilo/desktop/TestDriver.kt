@@ -41,6 +41,8 @@ import javax.swing.SwingUtilities
  * - `cursor <x> <y>` — moves there and answers with the pointer the app asks for (`Hand Cursor`, `Default Cursor`, …).
  * - `key <name> [meta+shift+…]` — a key by its `KeyEvent.VK_` name (`key ESCAPE`, `key COMMA meta`); `type <text>`.
  * - `cmd <AppCommand>` — what a menu item sends (`cmd MODE_MUSIC`): macOS's menu bar cannot be reached from here.
+ * - `update <state>` — R386's Software update block in one of its states, on a build that shows none (`update ready`,
+ *   `update handover`; `update off` takes it away): what is drawn changes, nothing is checked or installed.
  * - `quiet` (`quiet off`) — the app plays at nothing; the volume the person set stays shown and remembered.
  * - `cast` — what speaker discovery sees (3 s).
  * - `size <w> <h>` · `front` · `info` · `chrome` (the Mac's traffic lights and title-area hit test, from AppKit).
@@ -190,6 +192,20 @@ internal object TestDriver {
                 "ok"
             }
             "cmd" -> { AppCommands.send(AppCommand.valueOf(parts[1])); "ok" }
+            // R386 — the update block's states on a build that has none (a development build shows no block, state 10):
+            // `update ready`, `update ready-playing`, `update off`… Only what is drawn changes; nothing is checked or installed.
+            "update" -> {
+                val name = parts.getOrNull(1).orEmpty()
+                when {
+                    !dev.jellystructure.ravilo.ui.desktop.UpdateCheck.preview(name) ->
+                        "err unknown state '$name' — ${dev.jellystructure.ravilo.ui.desktop.UpdatePreview.names.joinToString(" ")} off"
+                    else -> {
+                        // State 5 is the same update with something playing: the seam stands in for the player.
+                        dev.jellystructure.ravilo.ui.components.SoftwareUpdate.setPlaying(name == "ready-playing")
+                        "ok"
+                    }
+                }
+            }
             // Nothing is heard from here on, and the volume the person set is left as it is (shown and remembered).
             "quiet" -> { dev.jellystructure.ravilo.ui.music.MusicVolume.silenced = parts.getOrNull(1) != "off"; "ok" }
             "size" -> onEdt { window.setSize(int(1), int(2)); "ok" }

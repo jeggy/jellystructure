@@ -24,6 +24,7 @@ ALLOWED="
   components/MultiEpisodeCard.kt                3
   components/RaviloBottomNav.kt                 1
   components/ServerMessageHost.kt               1
+  components/SoftwareUpdate.kt                  5   # R386 — all on the accent's own fill: the buttons' labels, the switch's knob, the ready mark
   components/Tile.kt                            7
   music/BookPlayerScreens.kt                    2
   music/DesktopMusicBar.kt                      1
