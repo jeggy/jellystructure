@@ -285,6 +285,8 @@ operational task with no code shape:
 - **Debug→release cutover on the live host (F8)** — happens naturally once the compose file in the other
   repo switches from the dev-run binary to the published image; nothing to spec here.
 - **Multi-arch builds.** amd64 only, matching the only architecture this deployment runs on.
+  *Superseded 2026-10-16 (owner, DEB-1490):* `jellystructure` and `ravilo-web` publish `linux/amd64` +
+  `linux/arm64` — see [`the-docker-images-run-on-arm64.md`](the-docker-images-run-on-arm64.md).
 - **Dependency CVE scanning.** Out of scope, as it was for the original security review.
 
 ## 4. Open questions
