@@ -4,13 +4,12 @@
 > trusted with (309, decision 2), **plus a small phase of its own to find and remove the sub-0.5 s stall at the start
 > of direct plays** (170 of Stue TV's 265 direct plays reported one).
 
-## Status
+## Scope
 
-`⚠ Partial` — **R381a (counting) and R381b (prepare + direct-play prefetch) built 2026-10-08** on branch
-`worktree-agent-aceb0612dd5f38a6b` (not merged, not deployed, no app release); the counting half verified live on Stue TV
-with a debug build (see *Build notes*). R381c (FR-R381-5, fixing what real start stalls remain) waits for a week of
-corrected numbers by design. Written 2026-10-08 (dev-authored) from a read-only investigation; **dev-reviewed 2026-10-08**
-(section below). Android (TV + phone) player and the backend's readers of `playback_qoe` (308, 309).
+Android (TV + phone) player and the backend's readers of `playback_qoe` (308, 309). Written 2026-10-08 (dev-authored)
+from a read-only investigation; dev-reviewed 2026-10-08 (section below). R381a (counting) and R381b (prepare +
+direct-play prefetch) are the two halves that shipped; R381c is FR-R381-5, fixing what real start stalls remain, and
+waited for a week of corrected numbers by design (its reading is in *Build notes (2026-10-16)*).
 
 ## What happens
 
@@ -301,3 +300,38 @@ first (309a0/310 may take numbers).
   *Test Stream* account (not a household viewer). The device is not to be touched; the owner may want to unmute it.
 - **Not verified live:** R381a on the receiver/desktop/web (not in scope of this build), FR-R381-6 test 4 (Media3
   integration test, not written).
+
+## Build notes (2026-10-16, DEB-657)
+
+**FR-R381-5 — the week of corrected numbers is in, and there is no real start stall to remove.** Read from a copy of
+the prod DB (WAL and shm copied with it), `playback_qoe` rows with `per_item = 1`, written by apps that carry R381a;
+direct plays only:
+
+| Device (app) | Per-item direct plays | Reported any stall | First-frame median |
+|---|---|---|---|
+| Stue TV (BRAVIA VH21, 1.51) | 102 (10-10 → 10-16) | 0 | 319 ms |
+| Kids' TV (BRAVIA VH2, 1.51) | 38 (10-11 → 10-14) | 0 | 262 ms |
+| the three other TV-platform devices | 34 | 0 | — |
+
+Acceptance 1 (≤ 5 % of direct plays report a stall, no report repeats the previous item's numbers) is met on both
+household TVs: 0 of 140, against 64 % and 73 % before, and no `per_item = 1` row repeats another's numbers. Stue
+TV's last legacy (`per_item = 0`) row is a single no-stall row from 10-16 00:00Z. The week is six days on Stue TV and
+four on the kids' TV, not seven. Across every device, the only
+`per_item = 1` rows with a counted stall are three, none a TV start stall: the debug web player on 10-09 (one 10 ms
+`start`-phase wait, 94 ms after its first frame), the Pixel 9 Pro's debug build on 10-09 (seven `mid` stalls of
+24–97 s each with ≈ 150 ms buffered, `wifi` link, 20 Mbps variant — a link or variant question for 309, not a start
+stall) and the web player on 10-15 (one 69 ms `start`-phase wait after a seek). So `bufferForPlaybackMs` and the
+subtitle side-load stay as they are: **FR-R381-5 changes nothing**, and its suspects stay suspects.
+
+*Data, not a verdict:* one Stue TV row (written 10-13 06:11Z) reports `first_frame_ms = 16 845 459` (≈ 4.7 h) with
+`background_returns = 1` — the item's first-load timer spanning a standby return. It does not touch the stall counts;
+it skews any mean of `first_frame_ms`, so read the median.
+
+**FR-R381-6 test 4 — written.** `QoeCounterMedia3Test` (`:ravilo-ui:testDebugUnitTest`, Robolectric, Media3 1.8.0
+`media3-test-utils` and `-robolectric`, the same pins as `:ravilo-player`): a real `ExoPlayer` on a `FakeClock` with
+fake renderers, load → first frame → the next item on the same engine → first frame → a third; each item counts 0
+stalls, and the test asserts Media3 did buffer again for the second item, so it is not vacuous. A second test drives the
+same sequence with a player that never tells the counter about the new item and sees the start counted as a stall (the
+2026-10-08 behaviour), proving the first can fail. To test the real wiring and not a copy, the counter-feeding half of
+the player's listener (first frame, seek, playback state, pause) moved unchanged into `QoeCounterFeed`
+(`androidMain`), which `RaviloPlayer` binds to every engine it builds.

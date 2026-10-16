@@ -152,6 +152,7 @@ actual class RaviloPlayer actual constructor() {
     private fun bindEngine(player: ExoPlayer) {
         player.addListener(videoSizeListener)
         player.addAnalyticsListener(qoeListener)
+        player.addAnalyticsListener(qoeFeed)
         // R291 — a debuggable build logs every load (tag R291); a release build binds nothing extra.
         if ((ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             player.addAnalyticsListener(DebugLoadLogger { player.currentPosition to player.bufferedPosition })
@@ -268,6 +269,14 @@ actual class RaviloPlayer actual constructor() {
     // Guarded by [qoeLock]: Media3 calls the listener on its looper, the session store reads the snapshot elsewhere.
     private val qoeLock = Any()
     private val qoeCounter = QoeCounter()
+    // R381 — Media3's first frame, seeks, playback state and pauses reach [qoeCounter] through this; the rest of the
+    // counter's events (variant, track switch, engine rebuild) are told to it where they happen below.
+    private val qoeFeed = QoeCounterFeed(
+        qoeCounter, qoeLock,
+        positionOf = { engine?.currentPosition },
+        bufferedAheadOf = { engine?.let { it.bufferedPosition - it.currentPosition } ?: 0L },
+        variantBpsOf = { qoeVariantBps },
+    )
 
     // R218 (FR-R218-1) — fed by this same qoeListener's callbacks below, but distinct fields from the
     // qoe* ones above: these are per LOAD (moment B, the cold start, reappears for every stream), the qoe* ones
@@ -281,7 +290,6 @@ actual class RaviloPlayer actual constructor() {
 
     private val qoeListener = object : AnalyticsListener {
         override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
-            synchronized(qoeLock) { qoeCounter.firstFrame(eventTime.realtimeMs) }
             _hasRenderedFirstFrame = true
         }
         override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
@@ -300,10 +308,7 @@ actual class RaviloPlayer actual constructor() {
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-                synchronized(qoeLock) { qoeCounter.seek() }
-                _isSeeking = true
-            }
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) _isSeeking = true
         }
         override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: androidx.media3.common.PlaybackException) {
             // R379 (FR-R379-2) — a platform decoder failed: once, restart the item on an engine that prefers FFmpeg
@@ -322,22 +327,12 @@ actual class RaviloPlayer actual constructor() {
             when (state) {
                 Player.STATE_BUFFERING -> {
                     _isBuffering = true
-                    val e = engine
-                    val pos = e?.currentPosition ?: eventTime.currentPlaybackPositionMs
-                    val ahead = e?.let { it.bufferedPosition - it.currentPosition } ?: 0L
-                    synchronized(qoeLock) { qoeCounter.buffering(eventTime.realtimeMs, pos, ahead, qoeVariantBps) }
                 }
                 Player.STATE_READY -> {
                     _isBuffering = false
                     _isSeeking = false
-                    synchronized(qoeLock) { qoeCounter.ready(eventTime.realtimeMs) }
                 }
-                else -> synchronized(qoeLock) { qoeCounter.interrupted() }
             }
-        }
-        // R381 — a pause while waiting is the viewer's, not a stall.
-        override fun onPlayWhenReadyChanged(eventTime: AnalyticsListener.EventTime, playWhenReady: Boolean, reason: Int) {
-            if (!playWhenReady) synchronized(qoeLock) { qoeCounter.interrupted() }
         }
         // 308 (FR-308-5) — a new video variant reached the playhead: an HLS variant's format carries the master's
         // BANDWIDTH (peak) and RESOLUTION. A muxed variant is reported as the DEFAULT track type, a demuxed one as VIDEO;

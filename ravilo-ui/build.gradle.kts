@@ -129,6 +129,9 @@ kotlin {
                 implementation(libs.androidx.compose.ui.test.junit4)
                 implementation(libs.robolectric)
                 implementation("junit:junit:4.13.2")
+                // R381 (FR-R381-6 test 4) — a real ExoPlayer on a fake clock with fake renderers; the same pins as :ravilo-player.
+                implementation("androidx.media3:media3-test-utils:1.8.0")
+                implementation("androidx.media3:media3-test-utils-robolectric:1.8.0")
             }
         }
         val desktopMain by getting {
