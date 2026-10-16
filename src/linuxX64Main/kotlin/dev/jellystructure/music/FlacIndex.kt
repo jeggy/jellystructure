@@ -38,7 +38,12 @@ object FlacIndex {
     }
 
     private class Known(val size: Long, val mtime: Long, val has: Boolean?)
-    private val known = HashMap<String, Known>()
+    // DEB-1498 (FR-294-6) — a LockedMap, not a HashMap. This is an `object`, and [capabilitiesFor] reaches
+    // [hasSeekTable] straight from the music playback-negotiation route, so two devices starting a song at
+    // once both insert here; the 4 000-entry `clear()` below makes a collision worse than a lost entry.
+    // The size check, the clear and the put are three separate locked steps on purpose: a cache that briefly
+    // holds 4 001 entries is fine, and FR-294-1 forbids doing the eviction inside the lock's lambda.
+    private val known = dev.jellystructure.ops.LockedMap<String, Known>()
 
     /** [hasSeekTable] for a path, remembered while the file's size and modification time stay what they were. */
     fun hasSeekTable(path: String?): Boolean? {

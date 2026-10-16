@@ -129,18 +129,25 @@ contract (503 + `Retry-After`, or an empty-but-valid `wallSummary`) is **not** t
 would answer a corrupted cache with a soothing 503 instead of repairing it. A `runCatching` around the handler would
 do the same, worse.
 
-**FR-294-6 — `LogoDownloader`'s sidecar caches are thread-safe.** `inkCache` and `reinkCache` are `LockedMap`s. What
-they cache, and for how long, is unchanged; the sidecar reads stay outside the lock, as FR-294-1 requires. No wire
-change (FR-294-5 stands).
+**FR-294-6 — `LogoDownloader`'s sidecar caches, and `FlacIndex`'s, are thread-safe.** `LogoDownloader.inkCache`,
+`LogoDownloader.reinkCache` and `FlacIndex.known` are `LockedMap`s. What each caches, and for how long, is unchanged;
+the sidecar and FLAC-header reads stay outside the lock, as FR-294-1 requires. No wire change (FR-294-5 stands).
 
 **FR-294-7 — A regression test.** `SharedMapsConcurrencyTest` gains the facets case: eight threads call `logoInk` and
 `logoReink` over the same 400-logo set, as concurrent cold facets builds do. Nothing throws and every sidecar still
 reads back its own value.
 
-### Still owed
+### The rest of the sweep, asked properly this time
 
-The audit's boundary — "fields on a long-lived object, reached from a request thread" — was applied by hand twice and
-missed this both times. The remaining unlocked candidates found while fixing this one are **not** addressed here and
-are not claimed to be harmless: `MusicTvService.userCache`, `MusicBrowse`'s `albumCache`, `MusicSongs.parent`,
-`FlacIndex.known`, `PlaybackTargets.byApp` and `AiJobs`' `heldBack`/`retryAt`. Each needs the same question asked —
-is it written from a request thread? — and that is its own task, not this amendment's.
+The audit's boundary — "a field on a long-lived object, mutated from a request thread" — was applied by hand twice and
+missed `LogoDownloader` both times, so the six other unlocked map fields in the backend were each put to the same
+question. Five are fine, and the reasons are worth recording so a third sweep does not re-ask:
+
+| Field | Verdict |
+| --- | --- |
+| `FlacIndex.known` | **At risk — fixed here.** `FlacIndex` is an `object`, and `capabilitiesFor` → `hasSeekTable(path)` writes `known` straight from the music playback-negotiation route (`MusicTvRoutes.kt:85`). Two devices starting a song at once both insert, and the 4 000-entry `clear()` makes a collision worse than a lost entry. Now a `LockedMap`. |
+| `MusicTvService.userCache` | Safe — already behind `userLock: Mutex` (`MusicTvService.kt:140`); every read, write and `forget` takes it. |
+| `PlaybackTargets.byApp` | Safe — already behind `mutex: Mutex` (`PlaybackTargets.kt:42`). |
+| `MusicBrowse`'s `albumCache` | Safe — a field on `Ctx`, which is built per request ("once per request", `MusicBrowse.kt:253`), so it is function-local in everything but spelling. |
+| `MusicSongIndex.parent` | Safe — written only in `init`. The union-find's path compression is why `rootOf` is precomputed there, as its own comment says: *"the snapshot is read from many request threads, and path compression writes."* |
+| `AiJobs.heldBack` / `retryAt` | Writes safe — every mutation is inside `lock.withLock`. **Two reads are not**: `heldBack[job]` at `AiJobs.kt:636` and `:721` are outside it, so a read can walk the table while a locked write grows it. Narrower than the above (one writer, at AI-job cadence) and left alone deliberately rather than overlooked. |
