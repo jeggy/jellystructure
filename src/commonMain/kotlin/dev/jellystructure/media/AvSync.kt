@@ -198,6 +198,15 @@ object AvSyncVerdict {
         w.offsetFrames != null && !w.nonFinite && w.conf >= CONF_MIN && w.frames >= FRAMES_MIN
 
     /**
+     * FR-317-5 — did the model have a face track to read in this window? A window with one was *measured*,
+     * however weakly: it carries an `offset_frames` and its face tracks. A window with none (including a
+     * refused one, which reports exactly as a faceless one does) measured nothing. This is the line
+     * between the two sentences an unreadable file can honestly say — *no faces to measure* and *no window
+     * read clearly enough to measure* — and between a stored `no_faces` and a stored `NULL`.
+     */
+    fun hadFaceTrack(w: AvSyncWindow): Boolean = w.offsetFrames != null || w.faces.isNotEmpty()
+
+    /**
      * FR-317-30 — did any number in this measurement come back non-finite? A `NaN` correlation is *no
      * answer*, and a file whose answer rests on one is not a measured file: the row stores
      * [AvSyncReason.NONFINITE] and reads `UNKNOWN`, rather than being counted among the clean readings on
@@ -269,7 +278,14 @@ object AvSyncVerdict {
      * home; null means "not known", which is never a skip.
      */
     fun of(windows: List<AvSyncWindow>, zeroFrames: Int = DEFAULT_ZERO_FRAMES, runtimeS: Double? = null, reason: String? = null): AvSyncReading {
-        if (reason != null) return AvSyncReading(AvSyncState.UNKNOWN, reason = reason, why = AvSyncReason.label(reason))
+        // FR-317-5 (DEB-836) — a stored `no_faces` beside windows is not taken on trust: until DEB-836 the
+        // lane wrote it for any reading with fewer than two confident windows, faces found or not. Such a
+        // row is re-derived from its windows below, which hands back `no_faces` for a faceless set and
+        // `null` (with its *why*) for a file that was measured and could not be read. Every `no_faces` was
+        // produced by this function, so re-deriving it can only correct it. With no windows to re-derive
+        // from, the stored word stands.
+        val stored = reason?.takeUnless { it == AvSyncReason.NO_FACES && windows.isNotEmpty() }
+        if (stored != null) return AvSyncReading(AvSyncState.UNKNOWN, reason = stored, why = AvSyncReason.label(stored))
         if (runtimeS != null && runtimeS < MIN_RUNTIME_S) {
             return AvSyncReading(AvSyncState.UNKNOWN, reason = AvSyncReason.TOO_SHORT, why = AvSyncReason.label(AvSyncReason.TOO_SHORT))
         }
@@ -284,17 +300,24 @@ object AvSyncVerdict {
             // `nonfinite` stays the headline where both appear — after this change a non-finite number is
             // by definition not explained by short audio, so it is the one that is news.
             val shortAudio = !nonFinite && hasShortAudio(windows)
+            // FR-317-5 — `reason` is set only when nothing was measured. A window with a face track was
+            // measured, so a file with one is `UNKNOWN` with no reason, and `why` says *no window read
+            // clearly enough*. Only a set with no face track in any window is honestly `no_faces`
+            // (DEB-1216: "a file whose only windows with a picture show no faces"); no windows at all
+            // claims nothing about faces.
+            val noFaces = windows.isNotEmpty() && windows.none { hadFaceTrack(it) }
             return AvSyncReading(
                 AvSyncState.UNKNOWN, confidentWindows = confident.size,
                 reason = when {
                     nonFinite -> AvSyncReason.NONFINITE
                     shortAudio -> AvSyncReason.SHORT_AUDIO
-                    windows.isEmpty() -> null
-                    else -> AvSyncReason.NO_FACES
+                    noFaces -> AvSyncReason.NO_FACES
+                    else -> null
                 },
                 why = when {
                     nonFinite -> AvSyncReason.label(AvSyncReason.NONFINITE)
                     shortAudio -> AvSyncReason.label(AvSyncReason.SHORT_AUDIO)
+                    noFaces -> AvSyncReason.label(AvSyncReason.NO_FACES)
                     confident.isEmpty() -> "no window read clearly enough to measure"
                     else -> "only one window read clearly enough to measure"
                 },

@@ -554,8 +554,9 @@ class AvSyncService(
 
     /** Phase 261 — a stored row's finding in one line for the Checks card, in the advice's own words. */
     fun findingSummary(row: File_av_sync): String? {
-        row.reason?.let { return AvSyncReason.label(it) }
-        val reading = AvSyncVerdict.of(windowsOf(row), zeroFrames(), null, null)
+        // The stored reason goes through the verdict rule, like every other read (DEB-836): a legacy
+        // `no_faces` beside windows that had a face track is re-derived there, not echoed.
+        val reading = AvSyncVerdict.of(windowsOf(row), zeroFrames(), null, row.reason)
         return when (reading.state) {
             AvSyncState.OFFSET -> "audio ${AvSyncVerdict.signedMs(reading.offsetMs ?: 0)} — ${if (reading.audioEarly) "ahead of" else "behind"} the picture"
             AvSyncState.DRIFT -> "the sound drifts away from the picture"
