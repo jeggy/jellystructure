@@ -731,3 +731,14 @@ Both are provable without a device, and that is the point of writing them this w
 - `tv/PlaybackSessionsTest` — the `failed` arm still fires for a load that never reported, so DEB-919's signal is kept.
 - The device half of DEB-1054 (◀ back across a part boundary on the Stue TV, where the `failed` was seen) stays on the
   QA queue and is **not** a condition of the build: the three cases above decide whether the fix is right.
+
+## Amendment 2026-10-16 — a film watched to the end is over (owner decision; DEB-808)
+
+> Owner, 2026-10-16 (card `c8500823` on DEB-1406), asked whether a scrub back out of the end of a film is a new
+> session or the film is simply over: *"Over — one spec line, nothing to build."*
+
+**FR-R372-15 — after FR-R372-10 ends a session at the end of an item, a scrub back into that item is not a session.**
+It reports nothing, starts no `startPlayback`, and *Playing now* does not show it; Jellyfin keeps the position and
+watched state the end-of-play stop already wrote. This answers the gap the 2026-10-13 build notes named (*A scrub back
+out of the end is not covered*) and closes DEB-808 with nothing to build. Pressing Play on the item again is a new play
+and a new session, exactly as today.
