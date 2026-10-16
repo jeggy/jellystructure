@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.desktop
 
 import java.awt.Desktop
+import java.awt.desktop.AppHiddenListener
 import java.awt.desktop.AppReopenedListener
 import javax.swing.SwingUtilities
 
@@ -15,7 +16,7 @@ internal object MacAppHooks {
         runCatching { Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_ABOUT) }.getOrDefault(false)
     }
 
-    fun install(onAbout: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit, onReopen: () -> Unit) {
+    fun install(onAbout: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit, onReopen: () -> Unit, onHidden: (Boolean) -> Unit = {}) {
         if (!Desktop.isDesktopSupported()) return
         val desktop = Desktop.getDesktop()
         fun supported(action: Desktop.Action) = runCatching { desktop.isSupported(action) }.getOrDefault(false)
@@ -28,6 +29,14 @@ internal object MacAppHooks {
         }
         if (supported(Desktop.Action.APP_EVENT_REOPENED)) {
             desktop.addAppEventListener(AppReopenedListener { SwingUtilities.invokeLater(onReopen) })
+        }
+        // R383 (FR-R383-3) — ⌘H / `open -j` hides the app without a window event: Java still thinks the window is showing
+        // and Compose goes on drawing at the display rate into a window nobody sees (120 frames/s measured, DEB-1466).
+        if (supported(Desktop.Action.APP_EVENT_HIDDEN)) {
+            desktop.addAppEventListener(object : AppHiddenListener {
+                override fun appHidden(e: java.awt.desktop.AppHiddenEvent) { SwingUtilities.invokeLater { onHidden(true) } }
+                override fun appUnhidden(e: java.awt.desktop.AppHiddenEvent) { SwingUtilities.invokeLater { onHidden(false) } }
+            })
         }
     }
 }

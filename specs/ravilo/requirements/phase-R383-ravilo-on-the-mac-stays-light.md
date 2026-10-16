@@ -236,3 +236,15 @@ Every sample breaches FR-R383-2. What the evidence says:
   the consumers the measurement names.
 - Not built yet: frames and hidden detection (slice 3), the idle-wakeup regression, the About figures and the 100-song
   queue test (slice 4). The re-measure (acceptance 1–2) follows slice 3.
+
+### 2026-10-16 — slice 3, first half: a hidden app stops drawing (FR-R383-3)
+
+`MacAppHooks` listens for `AppHiddenListener` (⌘H, `open -j`, Hide Others); `Main.kt` then takes the window's visibility
+to `shown && !appHidden` and reports the same to `DesktopWindow`, so network work pauses with it as it does for a
+minimised window. Unhiding (Dock click, ⌘Tab) brings it back. **Not yet proved on a Mac** (no automated seam: AWT raises
+the event only from AppKit): the QA check is the frame counter reading 0 for a hidden, casting app.
+
+**Still open in slice 3:** what makes a *visible, idle* Home draw 119 frames/s. The counter says that something animates
+continuously; it does not say what. The candidates are the infinite transitions (`MusicGlyphs` playing bars, `Cast`
+pulse, `Shimmer`, the player spinners) and the focus/hero animations; the cheap way to find it is bisection with the test
+driver on a Mac (navigate, read `frames:`, repeat). The idle-wakeup regression (140–350/s on B) is the other open item.

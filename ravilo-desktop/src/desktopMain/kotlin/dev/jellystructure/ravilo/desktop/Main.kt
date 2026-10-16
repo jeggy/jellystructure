@@ -88,6 +88,8 @@ fun main(args: Array<String>) {
 private fun ApplicationScope.RaviloDesktopApp() {
     var shown by remember { mutableStateOf(true) }
     var aboutOpen by remember { mutableStateOf(false) }
+    // R383 (FR-R383-3) — the Mac hid the whole app (⌘H): the window is as good as closed, so it stops drawing.
+    var appHidden by remember { mutableStateOf(false) }
     // The menu bar speaks the device's language (R279's middle rung), refreshed as the viewer changes it.
     val lang by produceState(LastLanguage.read() ?: "en") {
         while (true) { delay(2_000); value = LastLanguage.read() ?: "en" }
@@ -124,6 +126,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
             onSettings = ::openSettings,
             onQuit = quit,
             onReopen = { shown = true },
+            onHidden = { appHidden = it },
         )
         // R385 (FR-R385-4) — **Quit Ravilo** on the install-state message is this quit: the stops are reported first
         // (FR-R328-9), exactly as ⌘Q and the menu item do it.
@@ -135,7 +138,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
     Window(
         onCloseRequest = ::close,
         state = state,
-        visible = shown,
+        visible = shown && !appHidden,
         title = "Ravilo",
         icon = AppImages.icon,
         // R337 (FR-R337-5, dev review 11) — GNOME's shape is drawn by Ravilo: an undecorated window with our header bars.
@@ -170,8 +173,8 @@ private fun ApplicationScope.RaviloDesktopApp() {
         // Shown again from the Dock or the menu: in front. Only then — raising on every focus change would bury
         // the About window under the main one.
         LaunchedEffect(shown) { if (shown) window.toFront() }
-        LaunchedEffect(shown, state.isMinimized, focused, state.placement) {
-            DesktopWindow.report(shown, state.isMinimized, focused, state.placement == WindowPlacement.Fullscreen)
+        LaunchedEffect(shown, appHidden, state.isMinimized, focused, state.placement) {
+            DesktopWindow.report(shown && !appHidden, state.isMinimized, focused, state.placement == WindowPlacement.Fullscreen)
         }
         // R337 — a window that fills the screen has square corners; a floating one has libadwaita's 12 dp.
         val filled = state.placement != WindowPlacement.Floating
