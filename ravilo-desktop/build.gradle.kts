@@ -157,6 +157,11 @@ compose.desktop {
         mainClass = "dev.jellystructure.ravilo.desktop.MainKt"
         // FR-R328-5 (dev review 7) — the menu bar in macOS's own bar, and the app's name in it for `gradle run`.
         jvmArgs += listOf("-Dapple.laf.useScreenMenuBar=true", "-Dapple.awt.application.name=Ravilo")
+        // R383 (FR-R383-4, DEB-659) — an explicit ceiling; the default was a quarter of the machine's RAM (8 GB on a 32 GB Mac).
+        // The Mac measurement (DEB-1466) put the live Java heap at 60–100 MB once the Songs list is lazy, so 1 GB leaves
+        // ten times that, and Coil's memory cache (20 % of the max heap) is bounded at ~200 MB. 4K video memory is native
+        // (AVFoundation/IOSurface), outside this limit. Shared with the Linux build.
+        jvmArgs += "-Xmx1g"
         if (updateFeedOverride) jvmArgs += "-Dravilo.update.feed.allowed=true"
 
         nativeDistributions {

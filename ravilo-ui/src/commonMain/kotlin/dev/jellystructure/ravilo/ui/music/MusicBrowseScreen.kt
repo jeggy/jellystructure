@@ -193,7 +193,12 @@ fun MusicBrowseScreen(
     val sortable = query.isBlank() && chip in sorts.keys && !(chip == "albums" && genre != null)
     val bookSortable = query.isBlank() && chip == "audiobooks" && books != null && bookView == "books"
 
-    Box(Modifier.fillMaxSize().background(colors.background)) {
+    // R383 (FR-R383-4) — the chip's list state is read here, in the composition, so the rows below can be real lazy items.
+    val listChipActive = query.isBlank() && (chip == "albums" || chip == "artists" || chip == "songs")
+    val paged = if (listChipActive) store.list(chip, sorts[chip] ?: "added", if (chip == "albums") genre else null) else null
+    val pagedState by (paged?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow<Load<MusicList>>(Load.Loading) }).collectAsState()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(colors.background)) {
+        val gridWidth = maxWidth - raviloHPad * 2
         // R337 (dev review 5) — on the desktop the sidebar is the chip strip, and its search field opens this page as the
         // search page: the page's own field shows only then (or while a query is typed), the chips never.
         val deskFamily = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
@@ -227,7 +232,7 @@ fun MusicBrowseScreen(
                     else -> {
                         val sort = sorts[chip] ?: "added"
                         val g = if (chip == "albums") genre else null
-                        listChip(store.list(chip, sort, g), chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore)
+                        listChip(store.list(chip, sort, g), pagedState, gridWidth, deskFamily, chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore)
                     }
                 }
             }
@@ -383,8 +388,11 @@ private fun ArtistLine(a: MusicArtistCard, onOpen: () -> Unit) {
 
 // ── the chips' content ──
 
-private fun LazyListScope.listChip(
+internal fun LazyListScope.listChip(
     paged: MusicPagedList,
+    state: Load<MusicList>,
+    gridWidth: Dp,
+    desk: Boolean,
     chip: String,
     genre: String?,
     onBackToGenres: () -> Unit,
@@ -402,20 +410,37 @@ private fun LazyListScope.listChip(
             Text(genre, color = RaviloTheme.colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
         }
     }
-    item(key = "list-$chip-$genre") {
-        val state by paged.state.collectAsState()
-        val l = (state as? Load.Ready)?.value
-        when {
-            l == null -> Box(Modifier.fillMaxWidth().height(120.dp))
-            chip == "albums" -> Grid(l.albums, 2, 12.dp, { paged.more() }) { a, w -> AlbumCardView(a, w, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
-            chip == "artists" -> Grid(l.artists, 3, 12.dp, { paged.more() }) { a, w -> ArtistCardView(a, w) { onOpenArtist(a.id) } }
-            else -> Column(Modifier.padding(horizontal = raviloHPad)) {
-                l.tracks.forEachIndexed { i, t ->
-                    TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(l.tracks, i, MusicContext("songs", t.title)) }, onMore = { onTrackMore(t) })
-                    if (i == l.tracks.lastIndex) LaunchedEffect(l.tracks.size) { paged.more() }
-                }
+    // R383 (FR-R383-4, DEB-659) — one lazy item per row. The page used to put every loaded row in ONE item, so a
+    // library of 6 000 songs composed all 6 000 (164 k layout nodes, 3 GB footprint on the Mac) and each last row's
+    // `more()` pulled the next page in at once. Now only the visible rows compose, and `more()` fires near the end.
+    val l = (state as? Load.Ready)?.value
+    when {
+        l == null -> item(key = "list-$chip-$genre") { Box(Modifier.fillMaxWidth().height(120.dp)) }
+        chip == "albums" -> gridRows(l.albums, gridWidth, desk, 2, 12.dp, "$chip-$genre", { paged.more() }) { a, w -> AlbumCardView(a, w, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
+        chip == "artists" -> gridRows(l.artists, gridWidth, desk, 3, 12.dp, "$chip-$genre", { paged.more() }) { a, w -> ArtistCardView(a, w) { onOpenArtist(a.id) } }
+        else -> itemsIndexed(l.tracks, key = { i, t -> "t-$i-${t.id}" }) { i, t ->
+            Box(Modifier.padding(horizontal = raviloHPad)) {
+                TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(l.tracks, i, MusicContext("songs", t.title)) }, onMore = { onTrackMore(t) })
             }
+            if (i == l.tracks.lastIndex) LaunchedEffect(l.tracks.size) { paged.more() }
         }
+    }
+}
+
+/** [Grid]'s rows as lazy items: [width] is the page less its padding, and the last row asks for the next page. */
+private fun <T> LazyListScope.gridRows(
+    items: List<T>, width: Dp, desk: Boolean, columns: Int, gap: Dp, keyBase: String, onEnd: () -> Unit, cell: @Composable (T, Dp) -> Unit,
+) {
+    // The same arithmetic as Grid: the desktop fits as many 150 dp columns as there is room for, the phone's count is the floor.
+    val colGap = if (desk) 18.dp else gap
+    val cols = if (desk) maxOf(columns, ((width + colGap) / (150.dp + colGap)).toInt()) else columns
+    val w = (width - colGap * (cols - 1)) / cols
+    val rows = items.chunked(cols)
+    itemsIndexed(rows, key = { r, _ -> "g-$keyBase-$r" }) { r, row ->
+        Row(Modifier.padding(horizontal = raviloHPad).padding(bottom = if (desk) 22.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(colGap)) {
+            row.forEach { cell(it, w) }
+        }
+        if (r == rows.lastIndex) LaunchedEffect(items.size) { onEnd() }
     }
 }
 
