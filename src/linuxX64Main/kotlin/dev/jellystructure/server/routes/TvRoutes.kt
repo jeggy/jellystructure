@@ -3,6 +3,8 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.tv.forClients
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.server.respondFileChunked
+import dev.jellystructure.server.respondFileWithHead
+import dev.jellystructure.tv.EncoderMux
 import io.ktor.server.plugins.origin
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
@@ -1469,7 +1471,16 @@ fun Route.tvRoutes(
                 kind == "a" -> "audio/mp4"
                 else -> "video/mp4"
             }
-            respondFileChunked(call, path, ContentType.parse(type))
+            // DEB-1432 (FR-313-7, build review item 11) — fMP4 on the file's own clock, whichever job wrote it.
+            val fixed = if (playbackService.encoder.mux(id) != EncoderMux.FMP4) null
+                else if (file == "init.mp4") playbackService.encoder.initOnFileClock(path)
+                else if (file.endsWith(".m4s")) playbackService.encoder.segmentHeadOnFileClock(path)
+                else null
+            when {
+                fixed == null -> respondFileChunked(call, path, ContentType.parse(type))
+                file == "init.mp4" -> call.respondBytes(fixed, ContentType.parse(type))
+                else -> respondFileWithHead(call, path, ContentType.parse(type), fixed)
+            }
         }
     }
 

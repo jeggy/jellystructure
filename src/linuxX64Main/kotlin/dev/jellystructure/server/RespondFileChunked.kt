@@ -63,3 +63,24 @@ suspend fun respondFileChunked(call: ApplicationCall, path: String, contentType:
         }
     }
 }
+
+/**
+ * DEB-1432 — [respondFileChunked] with the file's first `head.size` bytes replaced by [head] (a segment whose `tfdt`
+ * was shifted, see `EncoderTimeline.kt`): the rest is streamed from the file as before, never read whole.
+ */
+suspend fun respondFileWithHead(call: ApplicationCall, path: String, contentType: ContentType, head: ByteArray) {
+    val p = Path(path)
+    val size = SystemFileSystem.metadataOrNull(p)?.size ?: return call.respond(HttpStatusCode.NotFound)
+    call.respondBytesWriter(contentType, HttpStatusCode.OK, size) {
+        writeFully(head, 0, head.size)
+        val buf = ByteArray(256 * 1024)
+        SystemFileSystem.source(p).buffered().use { source ->
+            withContext(Dispatchers.IO) { source.skip(head.size.toLong()) }
+            while (true) {
+                val n = withContext(Dispatchers.IO) { source.readAtMostTo(buf) }
+                if (n <= 0) break
+                writeFully(buf, 0, n)
+            }
+        }
+    }
+}

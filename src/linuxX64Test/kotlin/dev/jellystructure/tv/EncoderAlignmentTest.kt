@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.io.FileIo
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -11,6 +12,7 @@ import platform.posix.fgets
 import platform.posix.pclose
 import platform.posix.popen
 import kotlin.math.abs
+import kotlinx.io.files.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -34,6 +36,11 @@ class EncoderAlignmentTest {
 
     private fun firstPts(file: String): Double =
         sh("ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -read_intervals '%+#1' -of csv=p=0 '$file' 2>/dev/null").trim().lines().first().substringBefore(',').trim().toDouble()
+
+    private fun tfdtOf(head: ByteArray): Long {
+        val i = (0..head.size - 4).first { head[it] == 't'.code.toByte() && head[it + 1] == 'f'.code.toByte() && head[it + 2] == 'd'.code.toByte() && head[it + 3] == 't'.code.toByte() }
+        return (0 until 8).fold(0L) { a, k -> (a shl 8) or (head[i + 8 + k].toLong() and 0xFF) }
+    }
 
     @Test fun `every rung and a restarted job share segment boundaries`() {
         val probe = sh("command -v ffmpeg; command -v ffprobe")
@@ -71,6 +78,29 @@ class EncoderAlignmentTest {
             assertTrue(sh("ls $root/c/0").lines().any { it.startsWith("init") && it.endsWith(".mp4") }, sh("cat $root/c/log"))
             assertEquals(0, access("$root/c/0/s2.m4s", F_OK))
             assertEquals(0, access("$root/c/1/s2.m4s", F_OK))
+            // DEB-1432 — fMP4 from a restarted job is on the file's clock too: ffmpeg writes that job's `tfdt` from 0 and
+            // keeps where it began in the init's edit list, which hls.js ignores. Served through the timeline fix, segment k
+            // of the restarted job (file k − 3) starts where segment k of the first job does, for the video and the audio.
+            sh("mkdir -p $root/d/0 $root/d/1 $root/d/2")
+            sh(encoderCommand(fmp4, 3, "$root/d", "ffmpeg") + " >/dev/null 2>$root/d/log")
+            for (v in 0..2) {
+                val initC = FileIo.readBytes(Path(sh("ls $root/c/$v/init*.mp4").trim()))
+                val initD = FileIo.readBytes(Path(sh("ls $root/d/$v/init*.mp4").trim()))
+                val ticks = fmp4TrackStartTicks(initD)
+                assertTrue(fmp4TrackStartTicks(fmp4WithoutEditList(initD)) == 0L && fmp4TrackStartTicks(fmp4WithoutEditList(initC)) == 0L, "variant $v: an edit list is left")
+                val scale = if (v == 2) 48_000.0 else 12_288.0
+                if (v < 2) assertEquals(3 * 2 * 12_288L, ticks, "variant $v: the restarted job's start")
+                for (k in 3..5) {
+                    val first = FileIo.readHead(Path("$root/c/$v/s$k.m4s"), 2048)
+                    val again = FileIo.readHead(Path("$root/d/$v/s${k - 3}.m4s"), 2048)
+                    assertTrue(fmp4ShiftBaseTime(first, fmp4TrackStartTicks(initC)) && fmp4ShiftBaseTime(again, ticks))
+                    // Each job cuts the audio on AAC frames of its own, starting where its decoder's first sample is: the two can sit
+                    // a few frames (measured 59 ms) apart at the seam — the same as with the edit list, and inaudible; the video is exact.
+                    val tolerance = if (v == 2) 0.1 else 0.001
+                    assertTrue(abs(tfdtOf(first) - tfdtOf(again)) / scale < tolerance, "variant $v segment $k: ${tfdtOf(first) / scale} s vs ${tfdtOf(again) / scale} s")
+                    assertTrue(abs(tfdtOf(again) / scale - k * 2.0) < 0.1, "variant $v segment $k is not at ${k * 2} s: ${tfdtOf(again) / scale}")
+                }
+            }
         } finally {
             sh("rm -rf '$root'")
         }

@@ -1,6 +1,7 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.config.EncoderConfig
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.io.files.Path
 import platform.posix.X_OK
 import platform.posix.access
 import platform.posix.fgets
@@ -309,6 +311,20 @@ class Encoder(
         return jobs.init(id, e.plan, ffmpegPath, v, nearSegment ?: (e.startMs / ENCODER_SEGMENT_MS).toInt())
     }
 
+    /**
+     * DEB-1432 (FR-313-7, build review item 11) — a job's fMP4 on the file's own clock, whichever job wrote it: the init
+     * without its edit list, and the first bytes of a segment with `tfdt` moved by the delay that edit list held (see
+     * `EncoderTimeline.kt`). Null when the file needs nothing (a TS job, or a track that starts at 0).
+     */
+    suspend fun initOnFileClock(path: String): ByteArray? = runCatching { fmp4WithoutEditList(FileIo.readBytes(Path(path))) }.getOrNull()
+
+    suspend fun segmentHeadOnFileClock(path: String): ByteArray? {
+        val ticks = jobs.trackStartTicks(path)
+        if (ticks == 0L) return null
+        val head = runCatching { FileIo.readHead(Path(path), TIMELINE_HEAD_BYTES) }.getOrNull() ?: return null
+        return head.takeIf { fmp4ShiftBaseTime(it, ticks) }
+    }
+
     fun mux(id: String): EncoderMux? = entries[id]?.plan?.mux
 
     /** Phase 180 / FR-313-1 — every stream (and job) registered for [jellyfinPlaySessionId]; returns how many. */
@@ -375,6 +391,8 @@ class Encoder(
     }
 
     companion object {
+        /** The head of a segment read to move its `tfdt` ([segmentHeadOnFileClock]): `moof` is first and `tfdt` is near its start. */
+        const val TIMELINE_HEAD_BYTES = 2048
         /** Pinned (FR-313-11): the same build Jellyfin's own container runs (8.1.2), portable GPL, verified by SHA-256. */
         const val JELLYFIN_FFMPEG_VERSION = "8.1.2-5"
         const val JELLYFIN_FFMPEG_URL = "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.2-5/jellyfin-ffmpeg_8.1.2-5_portable_linux64-gpl.tar.xz"

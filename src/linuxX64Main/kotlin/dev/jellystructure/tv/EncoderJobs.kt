@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.newFixedThreadPoolContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.io.files.Path
 import platform.posix.F_OK
 import platform.posix.SIGCONT
 import platform.posix.SIGKILL
@@ -62,6 +64,8 @@ class EncoderJobs(
         /** 313 (2026-10-09) — segments below this were deleted behind the player ([prune]); none of them can be served. */
         @Volatile var prunedBelow = startSegment
         val startedAtMs = nowMs()
+        /** DEB-1432 — [fmp4TrackStartTicks] of each variant's init, read once ([EncoderJobs.trackStartTicks]). */
+        val trackStart = HashMap<String, Long>()
         /** Segment [k]'s file in [variant]: every job numbers its files from 0 (see [encoderCommand]). */
         fun file(variant: Int, k: Int): String = "$dir/$variant/s${k - startSegment}.${if (plan.mux == EncoderMux.FMP4) "m4s" else "ts"}"
     }
@@ -135,6 +139,17 @@ class EncoderJobs(
         }
         Logger.warn("encoder $streamId: segment $k of variant $variant not ready in ${SEGMENT_WAIT_MS}ms", "tv")
         return null
+    }
+
+    /**
+     * DEB-1432 — where the track that wrote [path] (a segment of some job of ours) starts on the file's clock, in its
+     * own timescale (`EncoderTimeline.kt`); 0 when [path] is not a job's, or the job's init is not there yet.
+     */
+    internal suspend fun trackStartTicks(path: String): Long = mutex.withLock {
+        val job = streams.values.firstNotNullOfOrNull { s -> (listOfNotNull(s.current) + s.retired).firstOrNull { path.startsWith(it.dir + "/") } }
+            ?: return@withLock 0L
+        val variantDir = path.substringBeforeLast('/')
+        job.trackStart[variantDir] ?: (initIn(variantDir)?.let { fmp4TrackStartTicks(FileIo.readBytes(Path(it))) })?.also { job.trackStart[variantDir] = it } ?: 0L
     }
 
     /** The init segment of [variant] (fMP4): whichever job of the stream has written one (they are identical). */

@@ -27,6 +27,10 @@ object FileIo {
     fun readBytes(path: Path): ByteArray =
         SystemFileSystem.source(path).buffered().use { it.readByteArray() }
 
+    /** The first [n] bytes of [path] (fewer when the file is shorter). */
+    fun readHead(path: Path, n: Int): ByteArray =
+        SystemFileSystem.source(path).buffered().use { it.readByteArray(minOf(n.toLong(), SystemFileSystem.metadataOrNull(path)?.size ?: 0L).toInt()) }
+
     fun readText(path: Path): String =
         SystemFileSystem.source(path).buffered().use { it.readString() }
 
