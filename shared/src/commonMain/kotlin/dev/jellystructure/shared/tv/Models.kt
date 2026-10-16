@@ -483,6 +483,9 @@ data class MediaCard(
     val watched: Boolean = false,
     /** R149: true when Sonarr is enabled, the series is continuing, and a next-airing date exists. */
     @SerialName("upcoming_episode") val upcomingEpisode: String? = null,
+    /** DEB-1482 (FR-2): Sonarr's airing instant (ISO-8601 UTC) for [upcomingEpisode], present exactly when it is. The app turns it
+     *  into the viewer's own weekday; [upcomingEpisode] keeps the bare code because an app that predates this wraps it in "Soon • …". */
+    @SerialName("upcoming_air_utc") val upcomingAirUtc: String? = null,
     /** Phase 155 — normalized age 0-18 (CertificationResolver.normalizedAge()); never null, defaults to
      *  18 for an unmapped or uncertified title. A gate value for filtering/kids-gating, not a label —
      *  never render this as "18+" on its own; [rating] is still what R153's regional chip displays. */

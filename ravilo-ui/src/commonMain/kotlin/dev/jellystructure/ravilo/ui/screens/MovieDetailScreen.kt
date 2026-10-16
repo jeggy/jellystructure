@@ -443,6 +443,7 @@ private fun MovieDetailLoaded(
                                 posterUrl = card.posterUrl,
                                 watched = card.watched,
                                 upcomingLabel = card.upcomingEpisode,
+                                upcomingAirUtc = card.upcomingAirUtc,
                                 qualityBadge = card.qualityBadge,   // R325
                                 onSelect = { onRelatedSelect(card) },
                             )

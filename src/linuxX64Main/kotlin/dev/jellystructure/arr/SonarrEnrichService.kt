@@ -79,7 +79,7 @@ class SonarrEnrichService(
     ): MediaItem {
         if (info.status == "ended") {
             return if (item.sonarrStatus == "ended" && item.sonarrNextAiringDate == null) item
-            else item.copy(sonarrStatus = "ended", sonarrNextAiringDate = null,
+            else item.copy(sonarrStatus = "ended", sonarrNextAiringDate = null, sonarrNextAiringUtc = null,
                 sonarrNextAiringSeason = null, sonarrNextAiringEpisode = null, sonarrNextAiringTitle = null)
         }
 
@@ -101,6 +101,7 @@ class SonarrEnrichService(
         return item.copy(
             sonarrStatus = "continuing",
             sonarrNextAiringDate = next?.airDateUtc?.take(10),
+            sonarrNextAiringUtc = next?.airDateUtc,  // DEB-1482 (FR-1)
             sonarrNextAiringSeason = next?.seasonNumber,
             sonarrNextAiringEpisode = next?.episodeNumber,
             sonarrNextAiringTitle = next?.title?.takeIf { it.isNotBlank() },

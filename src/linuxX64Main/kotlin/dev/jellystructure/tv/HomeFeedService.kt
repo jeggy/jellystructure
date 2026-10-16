@@ -1049,10 +1049,8 @@ class HomeFeedService(
             episodeNumber = episodeNumber,
             episodeNumberEnd = episodeNumberEnd,
             badge = badge,
-            upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
-                sonarrStatus != "ended" && sonarrNextAiringDate != null &&
-                sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)
-                "S${sonarrNextAiringSeason.toString().padStart(2,'0')}E${sonarrNextAiringEpisode.toString().padStart(2,'0')}" else null,
+            upcomingEpisode = upcomingEpisodeCode(sonarrEnabled),
+            upcomingAirUtc = upcomingAirUtc(sonarrEnabled),  // DEB-1482 (FR-2)
         )
     }
 

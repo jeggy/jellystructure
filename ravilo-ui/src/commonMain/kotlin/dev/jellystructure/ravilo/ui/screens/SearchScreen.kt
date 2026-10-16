@@ -470,6 +470,7 @@ fun SearchScreen(
                         progressPct = card.progressPct ?: 0f,
                         watched = card.watched,
                         upcomingLabel = card.upcomingEpisode,
+                        upcomingAirUtc = card.upcomingAirUtc,
                         qualityBadge = card.qualityBadge,   // R325
                         focusRequester = if (i == returnIndex) returnFR else null,
                         onFocused = { focusedGridIdx = i; inGrid = true },

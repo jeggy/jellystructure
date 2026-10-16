@@ -1164,6 +1164,7 @@ private fun BrowseCardGrid(
                     progressPct = card.progressPct ?: 0f,
                     watched = card.watched,
                     upcomingLabel = card.upcomingEpisode,
+                    upcomingAirUtc = card.upcomingAirUtc,
                     qualityBadge = card.qualityBadge,   // R325
                     // R55 / R257 — the first cell's own requester, always on it (R362 review item 2: it used to
                     // step aside for a restore target and leave Down from the facet bar with nothing to reach).

@@ -521,6 +521,7 @@ private fun BrowseGrid(
                     progressPct = card.progressPct ?: 0f,
                     watched = card.watched,
                     upcomingLabel = card.upcomingEpisode,
+                    upcomingAirUtc = card.upcomingAirUtc,
                     qualityBadge = card.qualityBadge,   // R325
                     // R55: the first cell is the back-to-top landing target (always: R362 review item 2).
                     focusRequester = if (i == 0) firstCellFR else null,

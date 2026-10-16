@@ -285,6 +285,8 @@ data class MediaItem(
     // R149: Sonarr-sourced series status + next-airing (null = not yet enriched or Sonarr not configured).
     val sonarrStatus: String? = null,         // "continuing" | "ended"
     val sonarrNextAiringDate: String? = null, // yyyy-MM-dd (UTC-pinned date from Sonarr)
+    /** DEB-1482 (FR-1): Sonarr's `airDateUtc` for the same episode, as sent (ISO-8601, UTC). Written and cleared with [sonarrNextAiringDate]. */
+    val sonarrNextAiringUtc: String? = null,
     val sonarrNextAiringSeason: Int? = null,
     val sonarrNextAiringEpisode: Int? = null,
     val sonarrNextAiringTitle: String? = null,

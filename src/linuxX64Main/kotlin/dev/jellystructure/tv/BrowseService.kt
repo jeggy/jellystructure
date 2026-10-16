@@ -421,10 +421,8 @@ class BrowseService(
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
             backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
             qualityBadge = qualityBadge(),   // R325 (FR-R325-3)
-            upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
-                sonarrStatus != "ended" && sonarrNextAiringDate != null &&
-                sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)
-                "S${sonarrNextAiringSeason.toString().padStart(2,'0')}E${sonarrNextAiringEpisode.toString().padStart(2,'0')}" else null,
+            upcomingEpisode = upcomingEpisodeCode(sonarrEnabled),
+            upcomingAirUtc = upcomingAirUtc(sonarrEnabled),  // DEB-1482 (FR-2)
         )
     }
 }
