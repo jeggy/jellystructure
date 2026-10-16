@@ -91,6 +91,8 @@ class MusicTvService(
         /** Phase 292 — every song's version, over the whole library (one answer per recording, whoever looks). */
         val versions: MusicVersionIndex get() = snap.versions
         val versionTypes get() = snap.versionTypes
+        /** DEB-1487 (FR-305-3a) — what an official-row fill reads about a held file. */
+        val fill: MusicOfficial.Fill get() = snap.fill
         val albums: Map<String, MusicAlbum> = snap.albums.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
         val tracks: Map<String, MusicTrack> = snap.tracks.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
         val artists: Map<String, MusicArtist> = snap.artists.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
@@ -286,7 +288,7 @@ class MusicTvService(
         val u = userMusic(device)
         fun albumSongs(a: MusicAlbum): List<MusicTrack> {
             val held = v.tracksByAlbum[a.id].orEmpty()
-            return MusicOfficial.layout(a, held).let { l -> if (l.official != null) l.rows.map { it.second } else held }
+            return MusicOfficial.layout(a, held, v.fill).let { l -> if (l.official != null) l.rows.map { it.second } else held }
         }
         fun artistSongs(r: MusicArtist): List<MusicTrack> {
             val own = v.ownAlbums(r.id).sortedWith(compareBy<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
@@ -354,7 +356,7 @@ class MusicTvService(
         val held = v.tracksByAlbum[a.id].orEmpty()
         // R373 (FR-R373-1) — the official album, its extras, its singles and their B-sides; `tracks` keeps the files'
         // order so an installed app shows today's page.
-        val layout = MusicOfficial.layout(a, held)
+        val layout = MusicOfficial.layout(a, held, v.fill)
         val edition = if (layout.official != null) MusicOfficial.editionOf(a, layout.extras) else MusicOfficial.Edition()
         val singles = v.editions.singlesUnder(a.id).filter { it.id in v.albums }
         val bsides = v.editions.bsides(a.id).filter { (s, t) -> s.id in v.albums && t.id in v.tracks }

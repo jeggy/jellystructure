@@ -45,7 +45,7 @@ object MusicAlbumPage {
     fun build(snap: MusicStore.Snapshot, albumId: String, lyricsOf: (MusicTrack) -> String? = { null }): MusicAlbumPageDto? {
         val a = snap.albums[albumId] ?: return null
         val tracks = snap.tracksByAlbum[a.id].orEmpty().filter { it.missingSince == null }
-        val layout = MusicOfficial.layout(a, tracks)
+        val layout = MusicOfficial.layout(a, tracks, snap.fill)
         val official = layout.official
         val rows: List<MusicTrackRow>
         var line: MusicOfficialLine? = null

@@ -229,6 +229,9 @@ data class MusicOfficialSong(
     /** The medium on the release it was read from (1-based) and the position on it. */
     val disc: Int = 1,
     val position: Int = 0,
+    /** DEB-1487 (FR-305-3a) — the MusicBrainz works this recording performs (a `performance` that is not `partial` or
+     *  a `medley`). Null = not read yet; empty = read, none. Read only for an album with both a gap and an extra. */
+    val works: List<String>? = null,
 )
 
 /** Phase 305 (FR-305-2) — an album's official tracklist, and where it was read. */

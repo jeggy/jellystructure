@@ -41,6 +41,8 @@ data class MusicRecordingFacts(
     val disambiguation: String? = null,
     val instrumentalOf: MusicVersionTarget? = null,
     val remixOf: MusicVersionTarget? = null,
+    /** DEB-1487 (FR-305-3a) — the works this recording performs (see `MusicOfficialSong.works`); null = not read yet. */
+    val works: List<String>? = null,
     val fetchedAt: Long = 0,
 )
 

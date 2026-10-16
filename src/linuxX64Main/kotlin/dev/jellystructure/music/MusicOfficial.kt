@@ -5,7 +5,9 @@ import dev.jellystructure.model.MusicExtraOrigin
 import dev.jellystructure.model.MusicMatch
 import dev.jellystructure.model.MusicOfficialList
 import dev.jellystructure.model.MusicOfficialSong
+import dev.jellystructure.model.MusicRecordingFacts
 import dev.jellystructure.model.MusicTrack
+import dev.jellystructure.model.MusicVersions
 
 /**
  * Phase 305 (FR-305-2..5, dev review 4) — an album's official tracklist, read from MusicBrainz's pressings, and what
@@ -88,22 +90,18 @@ object MusicOfficial {
         if (a.matchState != MusicMatch.MATCHED || a.releaseGroupMbid == null) null else a.userOfficial ?: a.official
 
     /**
-     * The tracklist an album's held files can be laid against: [effective], but only when at least one held file carries
-     * a recording id. Found on the dev stack 2026-10-05: 82 matched albums (~1 460 files) were never mapped track by
-     * track, so dev review 3's "no recording id ⇒ extra" turned every file into an extra (*0 songs + 54 extras*) and put a
-     * Bonus chip on songs that are on the official album. With nothing to compare, the album is today's plain list
-     * (FR-305-5) and none of its files is an extra. An album with some ids keeps dev review 3 for the rest.
+     * FR-305-3a — what the fill reads about a held file besides the official list: its 292 version types as the album
+     * page shows them, and the MusicBrainz works its recording performs (null = not read, so the work rule skips it).
+     * [MusicStore.Snapshot.fill] is the one the readers use.
      */
-    fun usable(a: MusicAlbum, tracks: List<MusicTrack>): MusicOfficialList? =
-        effective(a)?.takeIf { tracks.any { it.recordingMbid != null } }
+    class Fill(
+        val typesOf: (MusicTrack) -> Collection<String> = { emptyList() },
+        val worksOf: (MusicTrack) -> List<String>? = { null },
+    )
 
-    /** FR-305-3 / dev review 3 — a held track is an extra when its recording is not on the official list, or it has
-     *  none (it is not shown to be on the official album). Whatever its recording state (dev review 2a). */
-    fun isExtra(official: MusicOfficialList?, t: MusicTrack): Boolean {
-        official ?: return false
-        val rec = t.recordingMbid ?: return true
-        return rec !in official.recordings
-    }
+    /** FR-305-3's recording test alone: the held recording is one of the official list's. Where a file counts as an
+     *  extra is [layout]'s answer, because FR-305-3a may fill a row with it. */
+    fun isOnList(official: MusicOfficialList?, t: MusicTrack): Boolean = t.recordingMbid?.let { it in official?.recordings.orEmpty() } == true
 
     /** One medium: `1`…`n`; more than one: `disc·track`, as on the official release. */
     fun number(official: MusicOfficialList, index: Int): String {
@@ -122,19 +120,81 @@ object MusicOfficial {
         val extras: List<MusicTrack>,
     )
 
-    /** FR-305-3/5 — [tracks] in the files' order. An unmatched album (or one with no list yet) is today's plain list. */
-    fun layout(a: MusicAlbum, tracks: List<MusicTrack>): Layout {
-        val official = usable(a, tracks) ?: return Layout(null, emptyList(), emptyList(), tracks)
+    /**
+     * The tracklist an album's held files are laid against — [effective], when at least one held file lands on an
+     * official row, by its own recording (FR-305-3) or by FR-305-3a; else null and the album is the plain list
+     * (FR-305-3b, replacing the 2026-10-05 "any recording id" test). Every reader of "is this an extra?" goes through
+     * [layout], so they cannot disagree.
+     */
+    fun usable(a: MusicAlbum, tracks: List<MusicTrack>, fill: Fill): MusicOfficialList? = layout(a, tracks, fill).official
+
+    /** FR-305-3/3a/3b/5 — [tracks] in the files' order. An unmatched album (or one with no list yet, or none of whose
+     *  files lands on an official row) is today's plain list. */
+    fun layout(a: MusicAlbum, tracks: List<MusicTrack>, fill: Fill): Layout {
+        val plain = Layout(null, emptyList(), emptyList(), tracks)
+        val official = effective(a) ?: return plain
         val index = official.songs.withIndex().associate { it.value.recordingMbid to it.index }
         val rows = ArrayList<Pair<Int, MusicTrack>>()
-        val extras = ArrayList<MusicTrack>()
+        val rest = ArrayList<MusicTrack>()
         for (t in tracks) {
             val i = t.recordingMbid?.let { index[it] }
-            if (i == null) extras += t else rows += i to t
+            if (i == null) rest += t else rows += i to t
         }
         val held = rows.mapTo(HashSet()) { it.first }
-        val gaps = official.songs.withIndex().filter { it.index !in held }.map { it.index to it.value }
-        return Layout(official, rows.sortedBy { it.first }, gaps, extras)
+        val open = official.songs.indices.filter { it !in held }
+        val filled = if (open.isEmpty() || rest.isEmpty()) emptyMap() else fills(official, open, rest, fill)
+        if (rows.isEmpty() && filled.isEmpty()) return plain
+        filled.forEach { (i, t) -> rows += i to t }
+        val used = filled.values.mapTo(HashSet()) { it.id }
+        return Layout(
+            official, rows.sortedBy { it.first },
+            open.filter { it !in filled }.map { it to official.songs[it] },
+            rest.filter { it.id !in used },
+        )
+    }
+
+    /**
+     * FR-305-3a — the gap rows ([open]) a held version fills: slot by slot in the official order, the earliest held
+     * candidate (disc, then position) that performs the same work or whose base title is that of this song alone among
+     * the official songs. A candidate carries no type but *Edit*; a track fills at most one slot.
+     */
+    private fun fills(official: MusicOfficialList, open: List<Int>, rest: List<MusicTrack>, fill: Fill): Map<Int, MusicTrack> {
+        val candidates = rest.filter { t -> fill.typesOf(t).all { it == MusicVersions.EDIT } }
+            .sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }))
+        if (candidates.isEmpty()) return emptyMap()
+        val bases = official.songs.map { MusicSingleHome.baseTitle(it.title) }
+        val out = LinkedHashMap<Int, MusicTrack>()
+        val taken = HashSet<String>()
+        for (i in open) {
+            val works = official.songs[i].works.orEmpty()
+            val base = bases[i].takeIf { b -> b.isNotEmpty() && bases.count { it == b } == 1 }
+            val pick = candidates.firstOrNull { t ->
+                t.id !in taken && ((works.isNotEmpty() && fill.worksOf(t).orEmpty().any { it in works }) ||
+                    (base != null && MusicSingleHome.baseTitle(t.title) == base))
+            } ?: continue
+            out[i] = pick
+            taken += pick.id
+        }
+        return out
+    }
+
+    /**
+     * FR-305-3a — what must be read from MusicBrainz before the work rule can run on [a]: the album has both a gap and
+     * an extra (by recording alone), and either a gap song of the official list or an extra's recording has no `works`
+     * yet. Null = nothing to read (also for an album the rule never reaches).
+     */
+    data class WorkNeed(val officialList: Boolean, val heldRecordings: Set<String>)
+
+    fun workNeed(a: MusicAlbum, tracks: List<MusicTrack>, factsOf: (String) -> MusicRecordingFacts?): WorkNeed? {
+        val official = effective(a) ?: return null
+        val extras = tracks.filter { !isOnList(official, it) }
+        if (extras.isEmpty()) return null
+        val held = tracks.mapNotNull { it.recordingMbid }.toSet()
+        val gaps = official.songs.filter { it.recordingMbid !in held }
+        if (gaps.isEmpty()) return null
+        val heldNeeded = extras.mapNotNull { it.recordingMbid }.filter { factsOf(it)?.let { f -> f.works == null } == true }.toSet()
+        val listNeeded = gaps.any { it.works == null }
+        return if (listNeeded || heldNeeded.isNotEmpty()) WorkNeed(listNeeded, heldNeeded) else null
     }
 
     /**

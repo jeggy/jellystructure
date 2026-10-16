@@ -13,6 +13,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -74,7 +75,7 @@ class MusicNewTracksCatchUpTest {
         val s = svc(CountingMb()).matchAlbums(null, scopeAll = false)
         assertEquals(1, s.mapped); assertTrue(s.sentence().contains("new tracks mapped on 1 album"), s.sentence())
         assertTrue(tracks().none { it.recordingState == null })
-        val layout = MusicOfficial.layout(store.album("kw")!!, tracks().sortedBy { it.position })
+        val layout = MusicOfficial.layout(store.album("kw")!!, tracks().sortedBy { it.position }, MusicOfficial.Fill())
         assertEquals(11, layout.rows.size); assertEquals(5, layout.extras.size); assertEquals(0, layout.gaps.size)
         assertEquals(MusicRecording.AGREES, store.track("kw-9")!!.recordingState); assertEquals("kw-r9", store.track("kw-9")!!.recordingMbid)
     }
@@ -95,7 +96,7 @@ class MusicNewTracksCatchUpTest {
         val t = store.track("kw-12")!!
         assertEquals("x-12", t.recordingMbid); assertEquals(MusicRecording.DISAGREES, t.recordingState); assertNull(t.releaseTrackMbid)
         // It is an extra for 305 (its recording is not on the official list), and it never folds (rule 1 needs AGREES).
-        assertTrue(MusicOfficial.isExtra(store.album("kw")!!.official, t))
+        assertFalse(MusicOfficial.isOnList(store.album("kw")!!.official, t))
     }
 
     @Test

@@ -7,7 +7,9 @@ import dev.jellystructure.model.MusicArtist
 import dev.jellystructure.model.MusicCandidate
 import dev.jellystructure.model.MusicMatch
 import dev.jellystructure.model.MusicMatchStatus
+import dev.jellystructure.model.MusicOfficialList
 import dev.jellystructure.model.MusicRecording
+import dev.jellystructure.model.MusicRecordingFacts
 import dev.jellystructure.model.MusicRecordingOption
 import dev.jellystructure.model.MusicReleaseOption
 import dev.jellystructure.model.MusicSoundResult
@@ -17,14 +19,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.AtomicReference
 
-data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0, val editions: Int = 0, val mapped: Int = 0) {
+data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0, val editions: Int = 0, val mapped: Int = 0, val works: Int = 0) {
     fun sentence(): String = (if (tried == 0) "nothing to match" else buildString {
         append("$tried albums · $matched matched · $needsYou need you · $unmatched unmatched")
         if (artists > 0) append(" · $artists artists")
         if (failed > 0) append(" · MusicBrainz didn't answer for $failed")
     }) + (if (versions > 0) " · versions read for $versions album${if (versions == 1) "" else "s"}" else "") +
         (if (editions > 0) " · official lists and singles read for $editions release${if (editions == 1) "" else "s"}" else "") +
-        if (mapped > 0) " · new tracks mapped on $mapped album${if (mapped == 1) "" else "s"}" else ""
+        (if (mapped > 0) " · new tracks mapped on $mapped album${if (mapped == 1) "" else "s"}" else "") +
+        if (works > 0) " · work ids read for $works album${if (works == 1) "" else "s"}" else ""
 }
 
 /** Phase 305 (FR-305-4) — what *Use as the official album* answered. */
@@ -172,7 +175,7 @@ class MusicMatchService(
             }
         }.sortedBy { it.sortName ?: it.title }
         statusRef.value = MusicMatchStatus(running = true, done = 0, total = albums.size, startedAt = now)
-        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0; var editions = 0; var mapped = 0
+        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0; var editions = 0; var mapped = 0; var works = 0
         try {
             albums.forEachIndexed { i, a ->
                 statusRef.value = statusRef.value.copy(done = i, currentAlbum = a.title)
@@ -227,11 +230,13 @@ class MusicMatchService(
             // Phase 305 (dev review 4) — official tracklists, extras' first pressings and singles' *single from*, read
             // here so a locked album is caught up too: once per release group, again on an `all` run.
             if (ids == null) editions = catchUpEditions(scopeAll, now)
+            // DEB-1487 (FR-305-3a) — the work ids of an album with both a gap and an extra, once.
+            if (ids == null) works = catchUpWorks()
         } finally {
-            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions, mapped)
+            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions, mapped, works)
             statusRef.value = MusicMatchStatus(running = false, done = albums.size, total = albums.size, lastSummary = summary.sentence())
         }
-        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions, mapped)
+        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions, mapped, works)
     }
 
     // ── FR-276-1: tracks that arrive after the match ──
@@ -337,9 +342,9 @@ class MusicMatchService(
         val rg = mb.releaseGroup(rgId) ?: return false
         if (MusicOfficial.isAlbum(rg.primaryType, rg.secondaryTypes)) {
             val releases = mb.releasesOf(rgId) ?: return false
-            val official = MusicOfficial.vote(rg, releases, now) ?: a.official
+            val official = MusicOfficial.vote(rg, releases, now)?.let { carryWorks(a.official, it) } ?: a.official
             val effective = a.userOfficial ?: official
-            val extras = tracksOf(albumId).filter { MusicOfficial.isExtra(effective, it) }.mapNotNull { it.recordingMbid }.toSet()
+            val extras = if (effective == null) emptySet() else tracksOf(albumId).filter { !MusicOfficial.isOnList(effective, it) }.mapNotNull { it.recordingMbid }.toSet()
             val origins = MusicOfficial.firstReleases(releases, extras).toMutableMap()
             for (rec in extras - origins.keys) {
                 val r = mb.recording(rec) ?: continue
@@ -348,11 +353,74 @@ class MusicMatchService(
             }
             val cur = store.album(albumId) ?: return false
             store.putAlbum(cur.copy(official = official, extraOrigins = origins, singleFrom = singleFromOf(rg), relsReadAt = now))
+            runCatching { readWorks(albumId) }.onFailure { Logger.warn("works: $albumId: ${it.message}", "music") }
         } else {
             val cur = store.album(albumId) ?: return false
             store.putAlbum(cur.copy(official = null, singleFrom = singleFromOf(rg), relsReadAt = now))
         }
         return true
+    }
+
+    /** The same pressing re-read keeps the work ids it already has: a re-vote that lands on the same release asks nothing. */
+    private fun carryWorks(old: MusicOfficialList?, new: MusicOfficialList): MusicOfficialList {
+        if (old == null || old.releaseMbid != new.releaseMbid) return new
+        val known = old.songs.filter { it.works != null }.associate { it.recordingMbid to it.works }
+        return new.copy(songs = new.songs.map { s -> if (s.works == null && s.recordingMbid in known) s.copy(works = known[s.recordingMbid]) else s })
+    }
+
+    /** DEB-1487 (FR-305-3a) — albums that have both a gap and an extra and still miss a work id. */
+    private suspend fun catchUpWorks(): Int {
+        var n = 0
+        val snap = store.snapshot()
+        val due = snap.albums.values.filter { a ->
+            a.missingSince == null && a.matchState == MusicMatch.MATCHED && MusicOfficial.isAlbum(a) &&
+                MusicOfficial.workNeed(a, tracksOf(a.id)) { snap.facts[it] } != null
+        }
+        for (a in due.sortedBy { it.sortName ?: it.title }) if (runCatching { readWorks(a.id) }.onFailure { Logger.warn("works: ${a.id}: ${it.message}", "music") }.getOrDefault(false)) n++
+        return n
+    }
+
+    /**
+     * DEB-1487 (FR-305-3a) — read the work ids [albumId]'s fill needs, and only for an album with both a gap and an extra
+     * ([MusicOfficial.workNeed]): the official list's own release with its recordings' work relationships (one
+     * request), and the held release for the extras' recordings (one request, none when it is the same release; a
+     * recording not on it costs one recording lookup). A recording read and found to perform no work gets an empty list,
+     * so the next run asks nothing. False when nothing was written; MusicBrainz not answering leaves everything as it
+     * was, and the title rule still runs.
+     */
+    suspend fun readWorks(albumId: String): Boolean {
+        val a = store.album(albumId) ?: return false
+        val need = MusicOfficial.workNeed(a, tracksOf(albumId)) { store.snapshot().facts[it] } ?: return false
+        val releases = HashMap<String, MbRelease?>()
+        suspend fun rels(id: String): MbRelease? = releases.getOrPut(id) { mb.releaseWithRels(id) }
+        fun worksByRecording(r: MbRelease): Map<String, List<String>> =
+            r.media.flatMap { it.tracks }.mapNotNull { it.recording }.filter { it.id.isNotBlank() }.associate { it.id to MusicVersionFacts.worksOf(it.relations) }
+        var wrote = false
+        if (need.officialList) {
+            val list = MusicOfficial.effective(a)
+            val release = list?.releaseMbid?.let { rels(it) }
+            if (list != null && release != null) {
+                val byRec = worksByRecording(release)
+                val read = list.copy(songs = list.songs.map { it.copy(works = byRec[it.recordingMbid] ?: emptyList()) })
+                val cur = store.album(albumId) ?: return false
+                store.putAlbum(if (cur.userOfficial != null) cur.copy(userOfficial = read) else cur.copy(official = read))
+                wrote = true
+            }
+        }
+        if (need.heldRecordings.isNotEmpty()) {
+            val release = a.releaseMbid?.let { rels(it) }
+            if (release != null) {
+                val byRec = worksByRecording(release)
+                val facts = store.snapshot().facts
+                val read = ArrayList<MusicRecordingFacts>()
+                for (rec in need.heldRecordings) {
+                    val works = byRec[rec] ?: mb.recordingRels(rec)?.let { MusicVersionFacts.worksOf(it.relations) } ?: continue
+                    facts[rec]?.let { read += it.copy(works = works) }
+                }
+                if (read.isNotEmpty()) { store.putFacts(read); wrote = true }
+            }
+        }
+        return wrote
     }
 
     /** FR-305-4 — *Change…*'s list: every pressing, what it has against the official list, and whether it can be

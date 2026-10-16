@@ -78,6 +78,8 @@ object MusicSingleHome {
         val singles: List<MusicAlbum>,
         val tracksOf: (String) -> List<MusicTrack>,
         val facts: Map<String, MusicRecordingFacts>,
+        /** An album's rows against its files (FR-305-3a/3b): which held tracks are on its official list. */
+        val layoutOf: (MusicAlbum) -> MusicOfficial.Layout,
     )
 
     /** The artist a release is credited to: MusicBrainz's ids, else Jellyfin's. */
@@ -126,7 +128,7 @@ object MusicSingleHome {
         return candidates.filter { a ->
             val ay = a.originalYear() ?: return@filter false
             kotlin.math.abs(ay - year) <= 2 && (MusicOfficial.effective(a)?.songs.orEmpty().any { baseTitle(it.title) == base } ||
-                lib.tracksOf(a.id).any { baseTitle(it.title) == base && !MusicOfficial.isExtra(MusicOfficial.usable(a, lib.tracksOf(a.id)), it) })
+                lib.layoutOf(a).let { l -> if (l.official == null) lib.tracksOf(a.id) else l.rows.map { it.second } }.any { baseTitle(it.title) == base })
         }.minWithOrNull(compareBy({ kotlin.math.abs((it.originalYear() ?: 0) - year) }, { it.originalYear() ?: 0 }))?.let { Home(it.id, TITLE) }
     }
 }
@@ -187,26 +189,25 @@ class MusicEditionsIndex(private val snap: MusicStore.Snapshot) {
     private val liveAlbums by lazy { snap.albums.values.filter { it.missingSince == null } }
     fun liveTracks(albumId: String): List<MusicTrack> = snap.tracksByAlbum[albumId].orEmpty().filter { it.missingSince == null }
 
-    // Computed once per snapshot (the index is shared across requests; `lazy` is synchronized).
-    private val usableByAlbum by lazy { snap.albums.mapValues { (id, a) -> MusicOfficial.usable(a, snap.tracksByAlbum[id].orEmpty()) } }
-    fun official(a: MusicAlbum): MusicOfficialList? = usableByAlbum[a.id] ?: MusicOfficial.usable(a, snap.tracksByAlbum[a.id].orEmpty())
+    // Computed once per snapshot (the index is shared across requests; `lazy` is synchronized). One layout per album
+    // answers every "is this an extra?" (FR-305-3a/3b), so the page, the counts and Songs cannot disagree.
+    private val layouts by lazy { snap.albums.mapValues { (id, a) -> MusicOfficial.layout(a, liveTracks(id), snap.fill) } }
+    fun layout(a: MusicAlbum): MusicOfficial.Layout = layouts[a.id] ?: MusicOfficial.layout(a, liveTracks(a.id), snap.fill)
+    fun official(a: MusicAlbum): MusicOfficialList? = layout(a).official
 
-    fun isExtra(t: MusicTrack): Boolean {
-        val a = t.albumId?.let { snap.albums[it] } ?: return false
-        return MusicOfficial.isExtra(official(a), t)
-    }
+    private val extraIds by lazy { layouts.values.filter { it.official != null }.flatMapTo(HashSet()) { l -> l.extras.map { it.id } } }
+    private val officialIds by lazy { layouts.values.filter { it.official != null }.flatMapTo(HashSet()) { l -> l.rows.map { it.second.id } } }
 
-    /** On the album's official tracklist (a copy that makes a song *not bonus*, owner decision 1). */
-    fun isOfficial(t: MusicTrack): Boolean {
-        val a = t.albumId?.let { snap.albums[it] } ?: return false
-        val o = official(a) ?: return false
-        return t.recordingMbid != null && t.recordingMbid in o.recordings
-    }
+    fun isExtra(t: MusicTrack): Boolean = t.id in extraIds
+
+    /** On the album's official tracklist, by its own recording or filling a row (FR-305-3a) — a copy that makes a song
+     *  *not bonus*, owner decision 1. */
+    fun isOfficial(t: MusicTrack): Boolean = t.id in officialIds
 
     fun kindOf(t: MusicTrack): Int = MusicCopyRank.kindOf(t.albumId?.let { snap.albums[it] }, isExtra(t))
 
     private val library by lazy {
-        MusicSingleHome.Library(liveAlbums, liveAlbums.filter { MusicOfficial.isSingleOrEp(it) }, ::liveTracks, snap.facts)
+        MusicSingleHome.Library(liveAlbums, liveAlbums.filter { MusicOfficial.isSingleOrEp(it) }, ::liveTracks, snap.facts, ::layout)
     }
 
     /** Every single's and EP's home (absent = not homed). A *No album* override is a home with no album. */

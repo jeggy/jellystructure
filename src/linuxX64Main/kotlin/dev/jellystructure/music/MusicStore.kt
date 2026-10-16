@@ -60,6 +60,11 @@ class MusicStore(private val db: JellystructureDb) {
         /** Phase 292 — every song's version answer, computed once per snapshot. */
         val versions: MusicVersionIndex by lazy { MusicVersionIndex(this) }
 
+        /** DEB-1487 (FR-305-3a) — what the official-row fill reads about a held file: its shown version types and works. */
+        val fill: MusicOfficial.Fill by lazy {
+            MusicOfficial.Fill({ versions.of(it).shown }, { t -> t.recordingMbid?.let { facts[it] }?.works })
+        }
+
         /** Phase 292 (FR-292-13) — the nine types with the owner's colour and meaning. */
         val versionTypes: List<MusicVersionTypeInfo> by lazy {
             MusicVersions.TYPES.map { t -> typeOverrides[t.key]?.let { o -> t.copy(color = o.color ?: t.color, meaning = o.meaning ?: t.meaning) } ?: t }

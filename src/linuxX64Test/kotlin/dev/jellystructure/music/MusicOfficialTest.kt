@@ -6,6 +6,7 @@ import dev.jellystructure.model.MusicMatch
 import dev.jellystructure.model.MusicOfficialList
 import dev.jellystructure.model.MusicOfficialSong
 import dev.jellystructure.model.MusicRecording
+import dev.jellystructure.model.MusicRecordingFacts
 import dev.jellystructure.model.MusicTrack
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -107,42 +108,53 @@ class MusicOfficialTest {
 class MusicExtrasTest {
     private val official = MusicOfficialList((1..3).map { MusicOfficialSong("r$it", "Song $it", 200_000, 1, it) }, "rel", "A", 3, 3, "rg", "A")
     private val album = MusicAlbum(id = "a", title = "A", matchState = MusicMatch.MATCHED, releaseGroupMbid = "rg", primaryType = "Album", official = official)
-    private fun t(id: String, pos: Int, rec: String?, state: String? = MusicRecording.AGREES) =
-        MusicTrack(id = id, albumId = "a", title = id, position = pos, recordingMbid = rec, recordingState = rec?.let { state })
+    private val fill = MusicOfficial.Fill()
+    private fun t(id: String, pos: Int, rec: String?, state: String? = MusicRecording.AGREES, title: String = id, disc: Int? = null) =
+        MusicTrack(id = id, albumId = "a", title = title, disc = disc, position = pos, recordingMbid = rec, recordingState = rec?.let { state })
 
     @Test
     fun a_held_recording_off_the_official_list_is_an_extra_and_moves_down() {
-        val l = MusicOfficial.layout(album, listOf(t("one", 1, "r1"), t("two", 2, "x-bonus"), t("three", 3, "r2"), t("four", 4, "r3")))
+        val l = MusicOfficial.layout(album, listOf(t("one", 1, "r1"), t("two", 2, "x-bonus"), t("three", 3, "r2"), t("four", 4, "r3")), fill)
         assertEquals(listOf("one", "three", "four"), l.rows.map { it.second.id })
         assertEquals(listOf("two"), l.extras.map { it.id })
     }
 
     @Test
     fun a_disagreeing_tracks_recording_still_decides_extra() {
-        assertFalse(MusicOfficial.isExtra(official, t("x", 1, "r1", MusicRecording.DISAGREES)))
-        assertTrue(MusicOfficial.isExtra(official, t("y", 2, "zz", MusicRecording.DISAGREES)))
+        assertTrue(MusicOfficial.isOnList(official, t("x", 1, "r1", MusicRecording.DISAGREES)))
+        assertFalse(MusicOfficial.isOnList(official, t("y", 2, "zz", MusicRecording.DISAGREES)))
         assertEquals("trk:x", dev.jellystructure.model.MusicVersions.keyOf(t("x", 1, "r1", MusicRecording.DISAGREES)), "rule 1 never trusts it")
     }
 
     @Test
     fun no_recording_id_on_a_matched_album_is_an_extra() {
-        assertTrue(MusicOfficial.isExtra(official, t("x", 9, null)))
+        assertFalse(MusicOfficial.isOnList(official, t("x", 9, null)))
     }
 
     @Test
     fun a_matched_album_whose_files_carry_no_recording_ids_is_todays_plain_list() {
         // Found on the dev stack 2026-10-05: 54 files, an official list, no recording ids ⇒ *0 songs + 54 extras*.
         val files = listOf(t("01-01 - One", 1, null), t("01-02 - Two", 2, null), t("02-01 - One", 1, null))
-        val l = MusicOfficial.layout(album, files)
+        val l = MusicOfficial.layout(album, files, fill)
         assertNull(l.official); assertTrue(l.rows.isEmpty()); assertTrue(l.gaps.isEmpty())
         assertEquals(files.map { it.id }, l.extras.map { it.id }, "the files' own order, as an unmatched album")
-        assertNull(MusicOfficial.usable(album, files), "nothing to compare, so no file is an extra or Bonus")
-        assertEquals(official, MusicOfficial.usable(album, files + t("three", 3, "r3")), "one id is enough to lay out")
+        assertNull(MusicOfficial.usable(album, files, fill), "nothing to compare, so no file is an extra or Bonus")
+        assertEquals(official, MusicOfficial.usable(album, files + t("three", 3, "r3"), fill), "one id is enough to lay out")
+    }
+
+    @Test
+    fun no_held_file_on_an_official_row_is_the_plain_list() {
+        // FR-305-3b — files with ids that are all off the list (a bonus disc held alone) are no longer extras.
+        val files = listOf(t("b1", 1, "x-1"), t("b2", 2, "x-2"))
+        val l = MusicOfficial.layout(album, files, fill)
+        assertNull(l.official); assertTrue(l.rows.isEmpty()); assertTrue(l.gaps.isEmpty())
+        assertEquals(files.map { it.id }, l.extras.map { it.id })
+        assertEquals(official, MusicOfficial.usable(album, files + t("one", 3, "r1"), fill), "one file on a row is enough")
     }
 
     @Test
     fun an_official_song_the_files_lack_is_a_gap_row_above_the_divider() {
-        val l = MusicOfficial.layout(album, listOf(t("one", 1, "r1"), t("three", 3, "r3")))
+        val l = MusicOfficial.layout(album, listOf(t("one", 1, "r1"), t("three", 3, "r3")), fill)
         assertEquals(listOf(1), l.gaps.map { it.first })
         assertEquals("Song 2", l.gaps.single().second.title)
     }
@@ -151,9 +163,123 @@ class MusicExtrasTest {
     fun an_unmatched_album_has_no_official_list_no_extras_no_gaps() {
         val plain = album.copy(matchState = MusicMatch.UNMATCHED, releaseGroupMbid = null)
         val files = listOf(t("b", 2, null), t("a", 1, null))
-        val l = MusicOfficial.layout(plain, files)
+        val l = MusicOfficial.layout(plain, files, fill)
         assertNull(l.official); assertTrue(l.rows.isEmpty()); assertTrue(l.gaps.isEmpty())
         assertEquals(listOf("b", "a"), l.extras.map { it.id }, "the files' own order, exactly today")
+    }
+}
+
+/** DEB-1487 (FR-305-3a/3b) — a held version fills its official song's row. Stand-ins only. */
+class MusicFillTest {
+    private val titles = listOf("Low Tide", "Fog Bank", "Tidewater")
+    private val official = MusicOfficialList(
+        titles.mapIndexed { i, t -> MusicOfficialSong("r${i + 1}", t, 200_000, 1, i + 1, works = listOf("w${i + 1}")) }, "rel", "A", 3, 3, "rg", "A",
+    )
+    private val album = MusicAlbum(id = "a", title = "A", matchState = MusicMatch.MATCHED, releaseGroupMbid = "rg", primaryType = "Album", official = official)
+    private fun t(id: String, pos: Int, rec: String?, title: String, disc: Int? = null) =
+        MusicTrack(id = id, albumId = "a", title = title, disc = disc, position = pos, recordingMbid = rec, recordingState = rec?.let { MusicRecording.AGREES })
+    private fun fill(types: Map<String, List<String>> = emptyMap(), works: Map<String, List<String>> = emptyMap()) =
+        MusicOfficial.Fill({ types[it.id].orEmpty() }, { it.recordingMbid?.let { r -> works[r] } })
+
+    @Test
+    fun a_remastered_edition_fills_the_official_rows_by_work() {
+        // Held as other recordings of the same three works, under titles that say nothing of the official ones.
+        val files = listOf(t("h1", 1, "m1", "Opening"), t("h2", 2, "m2", "Middle"), t("h3", 3, "m3", "Closing"))
+        val l = MusicOfficial.layout(album, files, fill(works = mapOf("m1" to listOf("w1"), "m2" to listOf("w2"), "m3" to listOf("w3"))))
+        assertEquals(official, l.official)
+        assertEquals(listOf(0 to "h1", 1 to "h2", 2 to "h3"), l.rows.map { it.first to it.second.id })
+        assertTrue(l.gaps.isEmpty()); assertTrue(l.extras.isEmpty())
+        assertEquals("1", MusicOfficial.number(official, l.rows[0].first), "numbered in the official order")
+    }
+
+    @Test
+    fun a_version_with_no_work_fills_by_base_title() {
+        val files = listOf(t("own", 1, "r1", "Low Tide"), t("v", 2, "m2", "Fog Bank (2026 mix)"), t("x", 3, "m9", "Unrelated"))
+        val l = MusicOfficial.layout(album, files, fill())
+        assertEquals(listOf(0 to "own", 1 to "v"), l.rows.map { it.first to it.second.id })
+        assertEquals(listOf(2), l.gaps.map { it.first }, "Tidewater is still not held")
+        assertEquals(listOf("x"), l.extras.map { it.id })
+    }
+
+    @Test
+    fun a_live_demo_or_remix_never_fills_a_slot_an_edit_does() {
+        val files = listOf(t("own", 1, "r1", "Low Tide"), t("live", 2, "m2", "Fog Bank (live)"), t("demo", 3, "m3", "Tidewater (demo)"))
+        val types = mapOf("live" to listOf("live"), "demo" to listOf("demo"))
+        val l = MusicOfficial.layout(album, files, fill(types, works = mapOf("m2" to listOf("w2"), "m3" to listOf("w3"))))
+        assertEquals(listOf("own"), l.rows.map { it.second.id }); assertEquals(listOf("live", "demo"), l.extras.map { it.id })
+        for (type in listOf("remix", "instrumental", "cover", "acoustic", "alternate", "session")) {
+            val r = MusicOfficial.layout(album, listOf(t("own", 1, "r1", "Low Tide"), t("v", 2, "m2", "Fog Bank")), fill(mapOf("v" to listOf(type))))
+            assertEquals(listOf("v"), r.extras.map { it.id }, type)
+        }
+        val edit = MusicOfficial.layout(album, listOf(t("own", 1, "r1", "Low Tide"), t("v", 2, "m2", "Fog Bank - Extended")), fill(mapOf("v" to listOf("edit"))))
+        assertEquals(listOf("own", "v"), edit.rows.map { it.second.id }, "an Edit fills")
+        assertTrue(edit.extras.isEmpty())
+    }
+
+    @Test
+    fun a_slot_held_by_its_own_recording_is_not_refilled() {
+        val files = listOf(t("own", 1, "r1", "Low Tide"), t("v", 2, "m1", "Low Tide (2026 mix)"))
+        val l = MusicOfficial.layout(album, files, fill(works = mapOf("m1" to listOf("w1"))))
+        assertEquals(listOf("own"), l.rows.map { it.second.id })
+        assertEquals(listOf("v"), l.extras.map { it.id })
+    }
+
+    @Test
+    fun a_title_matching_two_official_songs_fills_neither() {
+        val twice = official.copy(songs = official.songs + MusicOfficialSong("r4", "Low Tide (reprise)", 100_000, 1, 4))
+        val a = album.copy(official = twice)
+        val l = MusicOfficial.layout(a, listOf(t("own", 1, "r2", "Fog Bank"), t("v", 2, "m1", "Low Tide (2026 mix)")), fill())
+        assertEquals(listOf("own"), l.rows.map { it.second.id })
+        assertEquals(listOf("v"), l.extras.map { it.id })
+        assertEquals(listOf(0, 2, 3), l.gaps.map { it.first })
+    }
+
+    @Test
+    fun the_earliest_held_candidate_fills_the_slot_the_rest_stay_extras() {
+        val files = listOf(t("own", 1, "r2", "Fog Bank"), t("late", 5, "m1b", "Low Tide (2026 mix)"), t("early", 2, "m1a", "Low Tide (2011 mix)"), t("disc2", 1, "m1c", "Low Tide (live)", disc = 2))
+        val l = MusicOfficial.layout(album, files, fill())
+        assertEquals(mapOf(0 to "early", 1 to "own"), l.rows.associate { it.first to it.second.id })
+        assertEquals(listOf("late", "disc2"), l.extras.map { it.id }, "the files' own order")
+    }
+
+    @Test
+    fun a_track_fills_at_most_one_slot() {
+        // One recording performing two works (a medley without the attribute) must not fill both rows.
+        val l = MusicOfficial.layout(album, listOf(t("own", 1, "r3", "Tidewater"), t("v", 2, "m", "Opening")), fill(works = mapOf("m" to listOf("w1", "w2"))))
+        assertEquals(listOf(0 to "v", 2 to "own"), l.rows.map { it.first to it.second.id })
+        assertEquals(listOf(1), l.gaps.map { it.first })
+    }
+
+    @Test
+    fun a_filled_row_is_official_and_the_header_counts_it() {
+        val files = listOf(t("own", 1, "r1", "Low Tide"), t("v", 2, "m2", "Fog Bank (2026 mix)"))
+        val l = MusicOfficial.layout(album, files, fill())
+        assertEquals(official, l.official)
+        assertEquals(2, l.rows.size); assertTrue(l.extras.isEmpty())
+    }
+
+    @Test
+    fun no_held_file_on_an_official_row_is_the_plain_list() {
+        val files = listOf(t("b", 1, "m1", "Bonus Song"), t("v", 2, "m2", "Fog Bank (live)"))
+        val l = MusicOfficial.layout(album, files, fill(mapOf("v" to listOf("live"))))
+        assertNull(l.official); assertTrue(l.rows.isEmpty()); assertTrue(l.gaps.isEmpty())
+        assertEquals(files.map { it.id }, l.extras.map { it.id })
+        assertNull(MusicOfficial.usable(album, files, fill(mapOf("v" to listOf("live")))))
+    }
+
+    @Test
+    fun the_work_rule_needs_a_read_only_for_a_gap_and_an_extra() {
+        val facts = { rec: String -> MusicRecordingFacts(rec) }
+        val gapAndExtra = listOf(t("own", 1, "r1", "Low Tide"), t("v", 2, "m2", "Fog Bank (2026 mix)"))
+        val need = MusicOfficial.workNeed(album, gapAndExtra, facts)
+        assertEquals(setOf("m2"), need?.heldRecordings)
+        assertEquals(false, need?.officialList)
+        val noList = album.copy(official = official.copy(songs = official.songs.map { it.copy(works = null) }))
+        assertEquals(true, MusicOfficial.workNeed(noList, gapAndExtra, facts)?.officialList)
+        assertNull(MusicOfficial.workNeed(noList, listOf(t("a", 1, "r1", "Low Tide"), t("b", 2, "r2", "Fog Bank"), t("c", 3, "r3", "Tidewater")), facts), "no gap, no extra")
+        assertNull(MusicOfficial.workNeed(noList, listOf(t("a", 1, "r1", "Low Tide"), t("c", 3, "r3", "Tidewater")), facts), "a gap but no extra")
+        assertNull(MusicOfficial.workNeed(noList, listOf(t("a", 1, "r1", "Low Tide"), t("b", 2, "r2", "Fog Bank"), t("c", 3, "r3", "Tidewater"), t("x", 4, "m", "Bonus")), facts), "an extra but no gap")
+        assertNull(MusicOfficial.workNeed(album, gapAndExtra) { rec -> MusicRecordingFacts(rec, works = emptyList()) }, "already read")
     }
 }
 

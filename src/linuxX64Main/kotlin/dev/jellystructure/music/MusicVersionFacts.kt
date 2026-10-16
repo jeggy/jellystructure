@@ -25,6 +25,12 @@ object MusicVersionFacts {
 
     private fun MbWork.noWords(): Boolean = language == NO_WORDS || (language == null && languages.isNotEmpty() && languages.all { it == NO_WORDS })
 
+    /** DEB-1487 (FR-305-3a) — the works a recording performs: a `performance` relationship with any attributes but
+     *  `partial` and `medley`. Empty when it was read and performs none. */
+    fun worksOf(relations: List<MbRelation>): List<String> =
+        relations.filter { it.type == "performance" && it.work?.id?.isNotBlank() == true && "partial" !in it.attributes && "medley" !in it.attributes }
+            .map { it.work!!.id }.distinct().sorted()
+
     fun from(recordingMbid: String, disambiguation: String?, relations: List<MbRelation>, now: Long): MusicRecordingFacts {
         val perfs = relations.filter { it.type == "performance" && it.work != null }
         val sung = perfs.filter { !it.work!!.noWords() }
@@ -45,6 +51,7 @@ object MusicVersionFacts {
             disambiguation = disambiguation?.trim()?.takeIf { it.isNotEmpty() },
             instrumentalOf = instrumentalOf?.recording?.let { MusicVersionTarget(it.id, it.title, MusicScoring.creditText(it.artistCredit).takeIf { a -> a.isNotBlank() }) },
             remixOf = remixOf?.recording?.let { MusicVersionTarget(it.id, it.title, MusicScoring.creditText(it.artistCredit).takeIf { a -> a.isNotBlank() }) },
+            works = worksOf(relations),
             fetchedAt = now,
         )
     }

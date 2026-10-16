@@ -3,6 +3,7 @@ package dev.jellystructure.music
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.model.MusicMatch
+import dev.jellystructure.model.MusicRecordingFacts
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.ops.GateClassKind
 import dev.jellystructure.ops.currentGateClass
@@ -48,6 +49,45 @@ class MusicAlbumPageTest {
         val gap = p.gaps.single()
         assertEquals(4, gap.slot); assertEquals("5", gap.number); assertEquals("Low Tide", gap.title)
         assertEquals(1, gap.disc); assertEquals(5, gap.position); assertEquals(264_000L, gap.lengthMs)
+    }
+
+    /** Kite Weather held only as a remaster: every file is another recording of the same work as its official song. */
+    private fun remastered(): EditionsFixture.Lib {
+        val official = EditionsFixture.kwOfficial().let { o -> o.copy(songs = o.songs.mapIndexed { i, s -> s.copy(works = listOf("w${i + 1}")) }) }
+        val albums = lib.albums.map { if (it.id == "kw") it.copy(official = official) else it }
+        val tracks = lib.tracks.map { t -> if (t.albumId == "kw" && t.id != "kw-12") t.copy(recordingMbid = "kw-m${t.position}") else t }
+        val facts = (1..11).map { MusicRecordingFacts("kw-m$it", works = listOf("w$it")) }
+        return lib.copy(albums = albums, tracks = tracks, facts = lib.facts + facts)
+    }
+
+    @Test
+    fun a_remastered_edition_fills_the_official_rows_and_no_album_reads_zero_songs() {
+        val p = MusicAlbumPage.build(remastered().snapshot(), "kw")!!
+        assertEquals((1..11).map { "$it" }, p.tracks.take(11).map { it.number })
+        assertTrue(p.tracks.take(11).none { it.extra }); assertTrue(p.gaps.isEmpty())
+        assertEquals(11, p.official!!.songs); assertEquals(1, p.official!!.extras)
+        val row = MusicBrowse.browse(remastered().snapshot(), MusicBrowse.ALBUMS, emptyMap(), null, emptyMap()).albums.single { it.id == "kw" }
+        assertEquals(11, row.songs); assertEquals(1, row.extras)
+    }
+
+    @Test
+    fun a_filled_row_is_not_bonus_and_does_not_fold() {
+        val snap = remastered().snapshot()
+        val version = snap.tracks.getValue("kw-2"); val official = snap.tracks.getValue("tt-1")
+        assertEquals("kw-r2", official.recordingMbid); assertEquals("kw-m2", version.recordingMbid)
+        assertFalse(snap.editions.isExtra(version)); assertTrue(snap.editions.isOfficial(version))
+        assertFalse(snap.songs.bonus(version), "an official copy: owner decision 1")
+        assertTrue(snap.songs.songOf(version) != snap.songs.songOf(official), "Library → Songs lists the two recordings apart")
+        assertEquals(setOf(version.id), snap.songs.copies(version).map { it.id }.toSet())
+    }
+
+    @Test
+    fun without_the_works_and_with_other_titles_nothing_fills_and_the_album_is_the_plain_list() {
+        // Without the works (not read yet, MusicBrainz down) the same files fill by title only: these differ, so none.
+        val snap = remastered().let { l -> l.copy(tracks = l.tracks.map { if (it.albumId == "kw" && it.id != "kw-12") it.copy(title = "Retitled ${it.position}") else it }, facts = emptyList()) }.snapshot()
+        val p = MusicAlbumPage.build(snap, "kw")!!
+        assertNull(p.official, "no file lands on an official row ⇒ the plain list (FR-305-3b)")
+        assertEquals(12, p.tracks.size); assertTrue(p.gaps.isEmpty())
     }
 
     @Test
