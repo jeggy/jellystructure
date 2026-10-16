@@ -508,3 +508,23 @@ Two more defects in the same dialog, which surface the moment the first is fixed
 no Seerr; the route renders without a gate, and the page shows server-pushed state only, so the stubs are the
 whole server) and runs acceptance 1–6 at a phone and a desktop viewport, counting the `POST`s. Stand-in titles and
 viewer names only. It fails on `3b483e31` at the first tap.
+
+## Amendment (2026-10-16) — while an AI key is set, the page is a tab on the AI page; each group shows its own *Show more*
+
+Owner, 2026-10-15 on DEB-1253, asked to move Suggestions under the admin's AI page: *"if AI key is there, then it's
+under the AI page, otherwise it stays as is."* Round 5 of the design studio drew it on 2026-10-16 with the owner
+picking every decision live (`design/incoming/2026-10-16-ai-suggestions-tab/`). The move is specified in
+[`suggestions-as-a-tab-on-the-ai-page.md`](suggestions-as-a-tab-on-the-ai-page.md) (DEB-1253); this amendment
+records what it changes here.
+
+- **FR-274-8a — where it sits — now depends on the AI key.** With `[ai] api_key` non-blank, Suggestions is the
+  *Suggestions* tab of the AI page and has no sidebar entry of its own; its header row becomes the tab's toolbar,
+  word for word, and *Dismissed* opens inside the tab with `replaceState` (that spec's FR-1, FR-5, FR-6). With no key,
+  FR-274-8a and FR-274-8 hold exactly as written. FR-274-1's gate is unchanged: no Seerr ⇒ neither home.
+- **FR-274-9's *Show 30 more* is replaced, in both homes.** Each group is shown once and ends with its own *Show {n}
+  more* · *weaker matches from the same build*, which adds that group's weaker matches to the end of the same group.
+  The list-foot control, its fold and the second pass of the same groups are gone (that spec's FR-8). Q3 still holds:
+  20 shown of 50 built.
+- **FR-274-14's Dashboard row** keeps its `/suggestions` link; the admin redirects it to the live home.
+- **FR-274-18 is unaffected.** `.sg-dl` keeps `max-height: 100%` (DEB-1368). Round 5's copy of `suggestions.css`
+  predates that fix and would revert it, so that one line is not promoted.
