@@ -17,13 +17,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.AtomicReference
 
-data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0, val editions: Int = 0) {
+data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0, val editions: Int = 0, val mapped: Int = 0) {
     fun sentence(): String = (if (tried == 0) "nothing to match" else buildString {
         append("$tried albums · $matched matched · $needsYou need you · $unmatched unmatched")
         if (artists > 0) append(" · $artists artists")
         if (failed > 0) append(" · MusicBrainz didn't answer for $failed")
     }) + (if (versions > 0) " · versions read for $versions album${if (versions == 1) "" else "s"}" else "") +
-        if (editions > 0) " · official lists and singles read for $editions release${if (editions == 1) "" else "s"}" else ""
+        (if (editions > 0) " · official lists and singles read for $editions release${if (editions == 1) "" else "s"}" else "") +
+        if (mapped > 0) " · new tracks mapped on $mapped album${if (mapped == 1) "" else "s"}" else ""
 }
 
 /** Phase 305 (FR-305-4) — what *Use as the official album* answered. */
@@ -171,7 +172,7 @@ class MusicMatchService(
             }
         }.sortedBy { it.sortName ?: it.title }
         statusRef.value = MusicMatchStatus(running = true, done = 0, total = albums.size, startedAt = now)
-        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0; var editions = 0
+        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0; var editions = 0; var mapped = 0
         try {
             albums.forEachIndexed { i, a ->
                 statusRef.value = statusRef.value.copy(done = i, currentAlbum = a.title)
@@ -219,16 +220,86 @@ class MusicMatchService(
             }
             // Phase 292 (dev review 5) — a matched album whose recordings were never read for versions is caught up
             // here: once per album, at MusicBrainz's one request a second. A run over every album leaves out none.
+            // FR-276-1 (DEB-1487) — a track that arrived after its album was matched gets its recording here; before the
+            // version facts and editions, which read the recordings it gives.
+            if (ids == null) mapped = catchUpNewTracks()
             if (ids == null) versions = catchUpVersionFacts()
             // Phase 305 (dev review 4) — official tracklists, extras' first pressings and singles' *single from*, read
             // here so a locked album is caught up too: once per release group, again on an `all` run.
             if (ids == null) editions = catchUpEditions(scopeAll, now)
         } finally {
-            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions)
+            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions, mapped)
             statusRef.value = MusicMatchStatus(running = false, done = albums.size, total = albums.size, lastSummary = summary.sentence())
         }
-        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions)
+        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions, mapped)
     }
+
+    // ── FR-276-1: tracks that arrive after the match ──
+
+    /** Per album: the release it was last read against and the tracks that stayed unmapped then (this process only).
+     *  A track the release has no position for and the file has no tag for would otherwise ask MusicBrainz every run. */
+    private val stillUnmapped = HashMap<String, Pair<String, Set<String>>>()
+
+    /** The file's own recording tag (Jellyfin's `MusicBrainzRecording`). */
+    private fun recordingTag(t: MusicTrack): String? = t.jellyfinProviderIds["MusicBrainzRecording"]?.takeIf { it.isNotBlank() }
+
+    /**
+     * FR-276-1 (DEB-1487) — `matchAlbums` revisits only unmatched albums and only [applyMatch] maps tracks, so a file that
+     * entered the store after its album's match never had a recording and 305 called it an extra. Every matched album
+     * (locked ones too: a lock freezes the match, not new files) with a present track in no recording state gets
+     * that track mapped against the album's own release: one request. A track the release has no position for takes the
+     * file's tag as its recording (FR-276-3 rung 1) in state `disagrees`: it counts for the extra test but never for
+     * FR-305-8 rule 1's folding. A manual or already-mapped track and the album's own match fields are left alone;
+     * MusicBrainz not answering leaves the tracks as they are, and the next run tries again.
+     */
+    private suspend fun catchUpNewTracks(): Int {
+        var n = 0
+        val due = store.snapshot().albums.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.releaseMbid != null }
+            .sortedBy { it.sortName ?: it.title }
+        for (a in due) {
+            val release = a.releaseMbid ?: continue
+            val wanted = tracksOf(a.id).filter { it.recordingState == null && (it.position != null || recordingTag(it) != null) }
+            if (wanted.isEmpty()) continue
+            stillUnmapped[a.id]?.takeIf { it.first == release }?.let { (_, ids) -> if (wanted.all { it.id in ids }) continue }
+            val ok = runCatching { mapNewTracks(a.id, release) }.onFailure { Logger.warn("new tracks: ${a.id}: ${it.message}", "music") }.getOrDefault(false)
+            if (ok) n++
+        }
+        return n
+    }
+
+    private suspend fun mapNewTracks(albumId: String, releaseMbid: String): Boolean {
+        val release = mb.release(releaseMbid) ?: return false
+        val unmapped = tracksOf(albumId).filter { it.recordingState == null }
+        val byTrack = MusicScoring.agreement(release, unmapped).hits.associateBy { it.track.id }
+        val updated = unmapped.mapNotNull { t ->
+            val hit = byTrack[t.id]
+            val tag = recordingTag(t)
+            when {
+                hit?.mb != null -> withRecording(t, hit.mb, hit.agrees)
+                tag != null -> t.copy(recordingMbid = tag, recordingState = MusicRecording.DISAGREES)
+                else -> null
+            }
+        }
+        if (updated.isNotEmpty()) {
+            store.putTracks(updated)
+            note(albumId, "music_match", "match_musicbrainz · ${updated.size} new track${if (updated.size == 1) "" else "s"} mapped to the release")
+            moveVersionChoices(unmapped, updated)
+        }
+        val done = updated.mapTo(HashSet()) { it.id }
+        stillUnmapped[albumId] = releaseMbid to unmapped.map { it.id }.filter { it !in done }.toSet()
+        if (updated.isEmpty()) return false
+        runCatching { readVersionFacts(albumId) }.onFailure { Logger.warn("versions: $albumId: ${it.message}", "music") }
+        runCatching { readEditions(albumId) }.onFailure { Logger.warn("editions: $albumId: ${it.message}", "music") }
+        return true
+    }
+
+    /** [t] on the release's track [mbt]: the one block both a match and the catch-up write. */
+    private fun withRecording(t: MusicTrack, mbt: MbTrack, agrees: Boolean): MusicTrack = t.copy(
+        recordingMbid = mbt.recording?.id, releaseTrackMbid = mbt.id,
+        recordingState = if (agrees) MusicRecording.AGREES else MusicRecording.DISAGREES,
+        mbTitle = mbt.title, mbLengthMs = mbt.length ?: mbt.recording?.length,
+        mbArtists = MusicScoring.credits(mbt.artistCredit.ifEmpty { mbt.recording?.artistCredit.orEmpty() }),
+    )
 
     // ── Phase 305: official tracklists, extras, singles ──
 
@@ -422,13 +493,13 @@ class MusicMatchService(
         val updated = tracks.map { t ->
             val hit = byTrack[t.id]
             val mbt = hit?.mb
-            if (t.recordingState == MusicRecording.MANUAL) t.copy(releaseTrackMbid = mbt?.id ?: t.releaseTrackMbid)
-            else t.copy(
-                recordingMbid = mbt?.recording?.id, releaseTrackMbid = mbt?.id,
-                recordingState = when { mbt == null -> null; hit.agrees -> MusicRecording.AGREES; else -> MusicRecording.DISAGREES },
-                mbTitle = mbt?.title, mbLengthMs = mbt?.length ?: mbt?.recording?.length,
-                mbArtists = MusicScoring.credits(mbt?.artistCredit.orEmpty().ifEmpty { mbt?.recording?.artistCredit.orEmpty() }),
-            )
+            when {
+                t.recordingState == MusicRecording.MANUAL -> t.copy(releaseTrackMbid = mbt?.id ?: t.releaseTrackMbid)
+                mbt != null -> withRecording(t, mbt, hit?.agrees == true)
+                else -> t.copy(
+                    recordingMbid = null, releaseTrackMbid = null, recordingState = null, mbTitle = null, mbLengthMs = null, mbArtists = emptyList(),
+                )
+            }
         }
         store.putTracks(updated)
         // Phase 292 (dev review 6) — a song that gained its recording takes its own version ticks along.
