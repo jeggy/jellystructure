@@ -259,6 +259,43 @@ if grep -qF "max-height:calc(100vh - 60px)" "$SUGCSS"; then
   fail=1
 fi
 
+# DEB-1503 (2026-10-16, FR-17) — the admin's Support surface, promoted from round 3 (support-lane) into a
+# new page-scoped file plus two rules in app.css. Everything listed here was authored BY HAND during the
+# promotion: the design project's own support.css has none of it, so a future round offering that file
+# back would be a straight regression of all of it.
+SUPCSS="design/app/support.css"
+check "$SUPCSS" "Support is scoped under .tksup, not under the bare .tk- prefix" \
+  ".tksup .tk-row { display:grid;"
+check "$SUPCSS" "FR-3 lane strip, closed state (.tk-lane.closed)" \
+  ".tksup .tk-lane.closed { background:var(--warn-soft);"
+check "$SUPCSS" "FR-8 admin-only tag, and its unfilled bubble (.tk-bdg.adm)" \
+  ".tksup .tk-m.adm .t { background:transparent; border:1px dashed var(--line-2);"
+check "$SUPCSS" "FR-6/FR-10.4 overdue badge is warn, never bad (.tk-od)" \
+  ".tksup .tk-od { display:inline-flex;"
+check "$SUPCSS" "FR-10.9 transcript panel rides the shared dialog (.modal.tk-tr)" \
+  ".tksup .modal.tk-tr { width:760px; }"
+# FIX 1 — the holder slot had its own unstyled block overlapping the title in round 3's frames.
+check "$SUPCSS" "thread header is a 2-column grid so the holder cannot overlap the title" \
+  ".tksup .tk-dh { display:grid; grid-template-columns:minmax(0,1fr) auto;"
+check "$SUPCSS" "holder chip sits in the header's second column" \
+  ".tksup .tk-dh .tk-hold { grid-column:2; grid-row:1 / span 2;"
+# FIX 2 — FR-8: Show the rest sits INSIDE the clamped bubble, and the clamp is by line, not by height.
+check "$SUPCSS" "clamped bubble clamps 14 LINES (never mid-glyph)" \
+  "display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:14;"
+check "$SUPCSS" "Show the rest is a child of the bubble (.tk-m .t .more)" \
+  ".tksup .tk-m .t .more { align-self:flex-start;"
+# FIX 3 — the log's action column was squeezed to the right edge and wrapped three lines deep.
+check "$SUPCSS" "log row has no fixed columns and #n cannot wrap (.tk-lg)" \
+  ".tksup .tk-lg { display:grid; grid-template-columns:max-content max-content minmax(0,1fr) max-content;"
+check "$SUPCSS" "FR-10 rail moves under the thread, unstuck, at <=900px" \
+  "@media (max-width:900px) {"
+check "$SUPCSS" "FR-6 list stacks at <=560px" \
+  ".tksup .tk-row { display:flex; flex-wrap:wrap;"
+# app.css's half of the same promotion.
+check "$APP" "AI tab strip count badge (.tk-cnt)" ".tk-cnt { display:inline-flex; align-items:center;"
+check "$APP" "FR-16 lost connection disables every Support write" \
+  "main.ws-lost #ai-support :is([data-tk-w],.tk-cp textarea)"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else

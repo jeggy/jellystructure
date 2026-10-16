@@ -1,0 +1,242 @@
+/* Jellystructure — Support (`.tk-*`), promoted by hand from round 3 (`support-lane`, decided 2026-10-14)
+   on 2026-10-16 for DEB-1503 / FR-17. Source: design/incoming/2026-10-15-support-lane/app/support.css and
+   its four admin frames (…-admin-list, …-admin-detail, …-abuse-admin, …-alt-activity-tab). Never a file
+   copy: the round's file was read and re-authored here, defects fixed, with the pieces the spec adds and
+   the round did not draw. Extends wf.css tokens; no new tokens.
+
+   SCOPE — every rule in this file begins with `.tksup`, so it ships next to wf.css untouched and cannot
+   reach another page (scripts/check-css-scoping.sh enforces it). Two hosts carry that class, and they are
+   round 3's own two mounts:
+     • the AI page's Support panel — `#ai-support` (`[data-ai-panel="support"]`, AiPage.kt);
+     • Activity's Support log view — `#view-support` (`#/activity?view=support`, FR-12).
+   Everything this file styles, including FR-3's confirm dialog and FR-10.9's transcript panel, is
+   rendered INSIDE one of those two elements. A panel moved to <body> loses every rule here.
+
+   NOT in this file, on purpose:
+     • `.tk-tabs` — the AI page's tab strip, already promoted into app.css by DEB-1492. Round 3 carries
+       its own copy of those four rules; they are not re-declared here, which is the `.tk-*` collision
+       the task asked to watch for.
+     • `.tk-cnt` — the tab strip's count badge, added to app.css by this promotion, because the strip is
+       the page's chrome and not this tab's.
+     • FR-2's count on the sidebar's AI entry — the shell already has that badge:
+       `.app-side a.nav .count` (app.css), which Triage uses. Round 3's JS wrote into it too. Nothing new.
+     • `.ai-offl` and `main.ws-lost` — the page's lost-connection strip (app.css). FR-16's rule that
+       disables this tab's writes while it shows is there as well, beside the Suggestions one.
+
+   DROPPED AT THE GATE — round 3's `main.tk-on > #ai-fetchers` and `main:not(.tk-on) > #ai-support`. They
+   are the mockup's device for holding two tabs in one static page; the built AI page toggles each panel's
+   own `display` in `showAiTab` (AiPage.kt), so those two rules would style nothing and would reach across
+   the whole page from a file that must not.
+
+   THE THREE DEFECTS THE MANIFEST FOUND IN THE FRAMES, fixed here and marked `FIX` below:
+     1. the thread header's holder slot overlapped the title — it is a column of its own now;
+     2. `Show the rest` sat outside the clamped bubble — it is inside it, and the clamp is by line, so it
+        can no longer cut mid-glyph;
+     3. the Support log's rows squeezed their action column against the right edge — no fixed column
+        widths left, and `#n` can never wrap.
+
+   The build (DEB-1500) adds no styling of its own. It does add one line this promotion does not own:
+   `<link rel="stylesheet" href="support.css">` in src/wasmJsMain/resources/index.html, beside the other
+   page-scoped sheets. The syncDesignAssets include is in build.gradle.kts.
+
+   Stand-in data in the frames is round 3's only. */
+
+/* ---------- the lane's switch (FR-3) — drawn by this promotion, not by the round ----------
+   The tab's first element. Closed: the notice and a primary **Open support to viewers**. Open: one line
+   and a plain **Close support**, which asks first in the shared dialog (`.modal-back` / `.modal`,
+   detail.css) — no dialog chrome of its own. */
+.tksup .tk-lane { display:flex; align-items:center; gap:10px 16px; flex-wrap:wrap; padding:13px 16px; margin:0 0 16px; border:1px solid var(--line-2); border-radius:12px; background:var(--fill-2); font-size:.86rem; line-height:1.5; }
+.tksup .tk-lane > div { flex:1 1 240px; min-width:0; }
+.tksup .tk-lane b { font-weight:600; }
+.tksup .tk-lane .btn { flex:none; }
+.tksup .tk-lane.closed { background:var(--warn-soft); border-color:rgba(245,181,66,.4); }
+.tksup .tk-lane.closed > i { flex:none; width:9px; height:9px; border-radius:50%; background:var(--warn); }
+
+/* ---------- list ---------- */
+.tksup .tk-box { padding:14px 18px 6px; }
+.tksup .tk-bar { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+.tksup .tk-tbl { min-width:900px; display:flex; flex-direction:column; }
+.tksup .tk-row { display:grid; grid-template-columns:56px 150px minmax(180px,1fr) 92px 92px 200px 150px; gap:0 12px; align-items:center; padding:13px 0; border-top:1px solid var(--line); font-size:.88rem; cursor:pointer; }
+.tksup .tk-row.hd { padding:0 0 9px; border-top:0; cursor:default; }
+.tksup .tk-row.hd span { font-family:'JetBrains Mono',monospace; font-size:.66rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); font-weight:600; }
+.tksup .tk-row:not(.hd):hover { background:var(--fill-2); margin:0 -18px; padding-left:18px; padding-right:18px; }
+.tksup .tk-row > span { min-width:0; }
+.tksup .tk-row .tt { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--ink-soft); }
+.tksup .tk-row.un .tt { color:var(--ink); font-weight:600; }
+/* FR-6 — with no englishTitle yet, the Ticket cell carries the preview instead, and says so by being muted. */
+.tksup .tk-row .tt.pv { color:var(--ink-dim); font-weight:400; }
+.tksup .tk-row .vw b { font-weight:600; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tksup .tk-row .mono { font-family:'JetBrains Mono',monospace; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tksup .tk-row u { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--info); margin-right:6px; vertical-align:middle; }
+/* FR-6's Last cell is the relative time plus, when it is late, the overdue badge. */
+.tksup .tk-row .lt { display:flex; align-items:center; gap:7px; min-width:0; }
+.tksup .tk-hnd { font-family:'JetBrains Mono',monospace; font-size:.74rem; color:var(--ink-dim); font-weight:400; }
+.tksup .tk-cl { font-size:.68rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:2px 7px; border-radius:5px; background:var(--fill-3); color:var(--ink-soft); white-space:nowrap; }
+.tksup .tk-hold { display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; min-width:0; }
+.tksup .tk-empty { padding:28px 0; text-align:center; color:var(--ink-soft); font-size:.86rem; }
+
+/* FR-6, FR-10.4 — the overdue badge, drawn by this promotion: late, not broken, so it is `warn` and
+   never `bad`. `bad` is the flag's colour on this surface and must keep meaning one thing. */
+.tksup .tk-od { display:inline-flex; align-items:center; font-family:'JetBrains Mono',monospace; font-size:.64rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:1px 6px; border-radius:5px; background:var(--warn-soft); border:1px solid rgba(245,181,66,.4); color:var(--warn); white-space:nowrap; }
+.tksup .tk-kv b.od { color:var(--warn); }
+
+/* ---------- the shared author marks ---------- */
+.tksup .tk-av { position:relative; width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px; color:#fff; background:#4a5170; flex:none; }
+.tksup .tk-av.me { background:var(--grad); }
+.tksup .tk-av.hv { background:#1f7a8c; border-radius:9px; }
+.tksup .tk-av.ai { border-radius:9px; background:var(--fill-3); border:1.5px solid var(--hi); }
+.tksup .tk-av.ai i { width:10px; height:10px; background:var(--grad); transform:rotate(45deg); border-radius:2px; }
+.tksup .tk-av.none { background:transparent; border:1.5px dashed var(--line-2); }
+.tksup .tk-av.okc { background:transparent; border:1.5px solid var(--ok); color:var(--ok); }
+.tksup .tk-av.okc svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+.tksup .tk-av.sm { width:24px; height:24px; font-size:10px; }
+.tksup .tk-av.sm.ai, .tksup .tk-av.sm.hv { border-radius:7px; }
+.tksup .tk-av.sm.ai i { width:8px; height:8px; }
+.tksup .tk-bdg { font-family:'JetBrains Mono',monospace; font-size:.64rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:5px; background:var(--hi-soft); color:var(--acc-ink); }
+.tksup .tk-bdg.ai { background:transparent; border:1px solid var(--hi); color:var(--hi); padding:1px 5px; }
+/* FR-8 — the *admin only* tag, drawn by this promotion: an ADMIN_ONLY line is never confused with what
+   the viewer reads, so it carries the tag AND the bubble is dashed and unfilled rather than tinted. */
+.tksup .tk-bdg.adm { background:transparent; border:1px dashed var(--line-2); color:var(--ink-soft); padding:1px 5px; }
+.tksup .tk-m.adm .t { background:transparent; border:1px dashed var(--line-2); color:var(--ink-soft); }
+
+/* ---------- detail ---------- */
+.tksup .tk-det { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:26px; align-items:start; }
+.tksup .tk-back { display:inline-flex; align-items:center; gap:6px; font-size:.85rem; color:var(--ink-soft); margin-bottom:10px; cursor:pointer; }
+.tksup .tk-back svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+/* FIX 1 (manifest: "the header's holder slot renders as an unstyled block whose glyph overlaps the
+   title") — the header is a two-column grid: the meta line and the title keep column 1, the holder gets
+   a column and a chip of its own, so nothing can land on top of the title however long either is. */
+.tksup .tk-dh { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:2px 14px; margin:0 0 14px; }
+.tksup .tk-dh .kk { grid-column:1; font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--ink-soft); letter-spacing:.03em; }
+.tksup .tk-dh h2 { grid-column:1; font-family:'Space Grotesk',sans-serif; font-size:1.35rem; margin:5px 0 0; letter-spacing:-.01em; }
+.tksup .tk-dh .tk-hold { grid-column:2; grid-row:1 / span 2; align-self:center; max-width:220px; padding:5px 10px; border:1px solid var(--line); border-radius:9px; background:var(--fill-2); font-size:.82rem; }
+.tksup .tk-th { display:flex; flex-direction:column; gap:12px; padding:6px 4px 14px; }
+.tksup .tk-m { display:flex; gap:9px; max-width:78%; align-self:flex-start; }
+.tksup .tk-m.me { align-self:flex-end; flex-direction:row-reverse; }
+.tksup .tk-m .b { min-width:0; display:flex; flex-direction:column; }
+.tksup .tk-m .w { display:flex; align-items:center; gap:6px; font-size:.8rem; color:var(--ink-soft); margin-bottom:5px; padding:0 2px; }
+.tksup .tk-m .w b { color:var(--ink); font-weight:600; }
+.tksup .tk-m .w time { font-family:'JetBrains Mono',monospace; font-size:.7rem; color:var(--ink-dim); margin-left:2px; }
+.tksup .tk-m.me .w { justify-content:flex-end; }
+.tksup .tk-m .t { padding:10px 13px; border-radius:16px; border-top-left-radius:5px; background:var(--fill); font-size:.9rem; line-height:1.45; color:var(--ink); overflow-wrap:anywhere; }
+.tksup .tk-m.me .t { background:var(--grad); color:#fff; border-radius:16px; border-top-right-radius:5px; }
+/* FIX 2 (manifest: "the 2 000-character bubble clamps mid-glyph with `Show the rest` outside it") —
+   FR-8: a body longer than 14 lines is clamped and the button sits INSIDE the bubble. The clamp is
+   `-webkit-line-clamp`, i.e. by line and not by height, so it cannot cut through a glyph; the body is a
+   `.bd` child so the button is not clamped away with it. `.tk-m.op` is the expanded state. */
+.tksup .tk-m.cl .t { display:flex; flex-direction:column; align-items:flex-start; gap:7px; }
+.tksup .tk-m.cl .t .bd { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:14; overflow:hidden; }
+.tksup .tk-m.cl.op .t .bd { display:block; -webkit-line-clamp:unset; overflow:visible; }
+.tksup .tk-m .t .more { align-self:flex-start; background:none; border:0; padding:0; font:inherit; font-size:.8rem; font-weight:600; color:var(--acc-ink); cursor:pointer; }
+.tksup .tk-m.me .t .more { color:#fff; text-decoration:underline; }
+.tksup .tk-sys { position:relative; display:flex; justify-content:center; padding:0 6px; }
+.tksup .tk-sys::before { content:''; position:absolute; left:10px; right:10px; top:50%; height:1px; background:var(--line); }
+.tksup .tk-sys > span { position:relative; display:inline-block; padding:0 10px; background:var(--bg); font-size:.8rem; color:var(--ink-soft); text-align:center; line-height:1.5; }
+.tksup .tk-sys > span b { color:var(--ink); font-weight:600; }
+.tksup .tk-sys i { display:inline-block; vertical-align:middle; width:6px; height:6px; border-radius:50%; background:var(--ink-dim); margin-right:7px; }
+.tksup .tk-sys.hand i, .tksup .tk-sys.fwd i { background:var(--info); }
+.tksup .tk-sys.ok i { background:var(--ok); }
+.tksup .tk-sys.reopen i { background:var(--warn); }
+.tksup .tk-sys.owner i { background:transparent; box-shadow:inset 0 0 0 2px var(--info); }
+.tksup .tk-sys .tk-av { width:20px; height:20px; font-size:9px; vertical-align:middle; margin-right:6px; }
+.tksup .tk-sys .tk-av.hv { border-radius:6px; }
+.tksup .tk-sys time { font-family:'JetBrains Mono',monospace; font-size:.7rem; color:var(--ink-dim); margin-left:7px; }
+.tksup .tk-sys .tk-bdg { margin-left:7px; }
+/* FR-8 — "AI Agent is writing…" is the thread's last line while `aiComposing` is true. Muted, no motion:
+   the admin list is a page an admin leaves open. */
+.tksup .tk-comp { align-self:flex-start; padding:2px 6px; font-size:.8rem; color:var(--ink-soft); font-style:italic; }
+.tksup .tk-cp { display:flex; gap:8px; align-items:flex-end; padding:12px 0 0; border-top:1px solid var(--line); }
+.tksup .tk-cp textarea { flex:1; min-height:44px; resize:vertical; border-radius:12px; background:var(--fill-2); border:1px solid var(--line-2); padding:11px 14px; font-family:'Sora',sans-serif; font-size:.88rem; color:var(--ink); outline:none; }
+.tksup .tk-cp textarea:focus { border-color:var(--hi); box-shadow:0 0 0 3px var(--hi-soft); }
+.tksup .tk-cp .dead { flex:1; padding:11px 14px; font-size:.85rem; color:var(--ink-dim); font-style:italic; }
+/* FR-9 — the composer locks until the server's answer arrives, and says so on its own line. */
+.tksup .tk-cp.busy textarea, .tksup .tk-cp.busy .btn { opacity:.45; pointer-events:none; }
+.tksup .tk-cp .snd { flex:none; align-self:center; font-size:.78rem; color:var(--ink-soft); }
+.tksup .tk-flag { display:flex; gap:12px; align-items:flex-start; padding:12px 14px; border-radius:10px; background:var(--bad-soft); border:1px solid rgba(255,111,97,.35); font-size:.85rem; line-height:1.5; color:var(--ink); margin-bottom:8px; }
+.tksup .tk-flag i { width:9px; height:9px; border-radius:50%; background:var(--bad); flex:none; margin-top:6px; }
+
+/* ---------- rail ---------- */
+.tksup .tk-rail { display:flex; flex-direction:column; gap:12px; position:sticky; top:24px; }
+.tksup .tk-rc { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--fill-2); }
+.tksup .tk-rc.off { opacity:.45; pointer-events:none; }
+.tksup .tk-rc h4 { margin:0 0 10px; font-family:'Space Grotesk',sans-serif; font-size:.9rem; }
+.tksup .tk-kv { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:.85rem; }
+.tksup .tk-kv:first-child { border-top:0; padding-top:0; }
+.tksup .tk-kv s { text-decoration:none; color:var(--ink-soft); flex:none; }
+.tksup .tk-kv b { display:flex; align-items:center; gap:7px; font-weight:600; text-align:right; min-width:0; }
+.tksup .tk-kv b.mute { font-weight:500; font-size:.78rem; line-height:1.35; color:var(--ink-soft); }
+/* FR-10.2 — Class is a select on this surface, not round 3's read-only line. */
+.tksup .tk-kv select { max-width:160px; font:inherit; font-size:.82rem; padding:4px 8px; border-radius:8px; background:var(--fill); border:1px solid var(--line-2); color:var(--ink); }
+.tksup .tk-ro { display:flex; align-items:flex-start; gap:9px; padding:8px 0; font-size:.85rem; cursor:pointer; }
+.tksup .tk-ro i { width:16px; height:16px; border-radius:50%; border:1.5px solid var(--line-2); flex:none; margin-top:4px; }
+.tksup .tk-ro.on i { border-color:var(--hi); box-shadow:inset 0 0 0 4px var(--hi); }
+.tksup .tk-ro span { display:flex; flex-direction:column; gap:2px; padding-top:3px; }
+.tksup .tk-ro small { font-size:.74rem; color:var(--ink-soft); line-height:1.4; }
+/* FR-11 — a destination equal to the current holder is offered but not pressable. */
+.tksup .tk-ro.no { opacity:.45; pointer-events:none; }
+/* FR-11's optional note, one line, admins only. */
+.tksup .tk-note { width:100%; margin-top:8px; font:inherit; font-size:.82rem; padding:8px 10px; border-radius:9px; background:var(--fill); border:1px solid var(--line-2); color:var(--ink); }
+.tksup .tk-acts { display:flex; gap:8px; margin-top:10px; }
+.tksup .tk-acts .btn, .tksup .tk-rc .btn.wide { flex:1; justify-content:center; }
+.tksup .tk-rc .btn.wide + small { display:block; margin-top:8px; font-size:.74rem; color:var(--ink-soft); line-height:1.4; }
+.tksup .tk-rc .btn.okb { color:var(--ok); border-color:rgba(45,212,154,.4); }
+.tksup .tk-rc .btn.badb { color:var(--bad); border-color:rgba(255,111,97,.4); }
+
+/* ---------- FR-10.9 the AI transcript panel — drawn by this promotion, not by the round ----------
+   The shared dialog carries it (`.modal-back` / `.modal`, detail.css), rendered inside this tab. One row
+   per turn; the sent block and the answer are `<details>` with a `<pre>` set by textContent, so a prompt
+   that contains markup is still only text and nothing here can execute it. */
+.tksup .modal.tk-tr { width:760px; }
+.tksup .tk-tr .tk-turn { padding:11px 0; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:7px; }
+.tksup .tk-tr .tk-turn:first-of-type { border-top:0; }
+.tksup .tk-tr .tk-turn .hd { display:flex; align-items:center; gap:8px 10px; flex-wrap:wrap; font-size:.82rem; }
+.tksup .tk-tr .tk-turn time, .tksup .tk-tr .tk-turn .mdl { font-family:'JetBrains Mono',monospace; font-size:.74rem; color:var(--ink-soft); }
+.tksup .tk-tr .tk-turn .cost { margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:.74rem; color:var(--ink-soft); white-space:nowrap; }
+.tksup .tk-tr details { border-radius:9px; background:var(--fill-2); border:1px solid var(--line); }
+.tksup .tk-tr summary { padding:7px 11px; cursor:pointer; font-size:.78rem; font-weight:600; color:var(--ink-soft); }
+.tksup .tk-tr pre { margin:0; padding:0 11px 11px; max-height:260px; overflow:auto; font-family:'JetBrains Mono',monospace; font-size:.72rem; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--ink-soft); }
+
+/* ---------- activity › support log (FR-12) ---------- */
+.tksup .tk-logbox { padding:6px 18px; }
+.tksup .tk-log { display:flex; flex-direction:column; }
+/* FIX 3 (manifest: "the `Support log` rows squeeze their action column to the right edge and wrap it
+   three lines deep") — round 3 spent 110 px + 170 px + 60 px on three columns that only ever hold one
+   short line each, and gave the action the remainder. Every column is content-sized now, the action
+   takes the slack, and `#n` is `max-content` and `nowrap`, so it cannot wrap at any width. */
+.tksup .tk-lg { display:grid; grid-template-columns:max-content max-content minmax(0,1fr) max-content; align-items:center; gap:4px 14px; padding:10px 0; border-top:1px solid var(--line); font-size:.86rem; }
+.tksup .tk-lg:first-child { border-top:0; }
+.tksup .tk-lg time { font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--ink-soft); white-space:nowrap; }
+.tksup .tk-lg b { display:flex; align-items:center; gap:8px; font-weight:600; white-space:nowrap; }
+.tksup .tk-lg .ac { min-width:0; color:var(--ink-soft); text-wrap:pretty; }
+.tksup .tk-lg .tk { justify-self:end; font-family:'JetBrains Mono',monospace; font-size:.76rem; white-space:nowrap; }
+
+/* ---------- narrow ---------- */
+/* FR-10 — "beside the thread, or under it at ≤ 900 px". Unstuck as well as unsplit: a sticky rail under
+   the thread would park itself over the composer. */
+@media (max-width:900px) {
+  .tksup .tk-det { grid-template-columns:minmax(0,1fr); gap:18px; }
+  .tksup .tk-rail { position:static; top:auto; }
+  .tksup .tk-m { max-width:88%; }
+}
+/* FR-6 — "at ≤ 560 px the table stacks, like the Suggestions tab's Dismissed table". The row stops being
+   a grid: #41 and the viewer on the first line, the ticket on its own, then class · state · holder · last.
+   The header row goes, since there are no columns left for it to name. The row's seven cells are reordered
+   by class, not by `:nth-child` and not by `:has()`, so the Class and State cells each carry one — `.cls`
+   and `.st` — and a cell added later cannot shuffle the rest. */
+@media (max-width:560px) {
+  .tksup .tk-box, .tksup .tk-logbox { padding-left:14px; padding-right:14px; }
+  .tksup .tk-tbl { min-width:0; }
+  .tksup .tk-row.hd { display:none; }
+  .tksup .tk-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px 9px; padding:12px 0; }
+  .tksup .tk-row:not(.hd):hover { margin:0 -14px; padding-left:14px; padding-right:14px; }
+  .tksup .tk-row > .mono { order:0; flex:none; }
+  .tksup .tk-row > .vw { order:0; flex:1 1 auto; }
+  .tksup .tk-row > .tt { order:1; flex:1 1 100%; white-space:normal; overflow:visible; text-overflow:clip; }
+  .tksup .tk-row > .cls, .tksup .tk-row > .st { order:2; flex:none; }
+  .tksup .tk-row > .tk-hold, .tksup .tk-row > .lt { order:2; flex:none; }
+  .tksup .tk-lg { grid-template-columns:minmax(0,1fr) max-content; gap:3px 12px; }
+  .tksup .tk-lg time { grid-column:1; }
+  .tksup .tk-lg b { grid-column:1; }
+  .tksup .tk-lg .ac { grid-column:1; }
+  .tksup .tk-lg .tk { grid-column:2; grid-row:1 / span 3; align-self:start; }
+}

@@ -20,6 +20,12 @@ cd "$(dirname "$0")/.."
 # file -> its own declared scope-wrapper class (from that file's own header/established convention).
 declare -A SCOPED_FILES=(
   ["design/app/segments.css"]=".sx"
+  # Support (round 3, promoted 2026-10-16 — DEB-1503, FR-17). Its classes are `.tk-*`, which is a prefix
+  # and not a scope: `.tk-tabs` and `.tk-cnt` are the AI page's shared chrome in app.css, and app.css
+  # loads BEFORE this file, so an unscoped `.tk-*` rule here would quietly win on every page that draws
+  # the tab strip. Hence a real wrapper class, carried by both of the file's two hosts — the AI page's
+  # Support panel (#ai-support) and Activity's Support log view (#view-support).
+  ["design/app/support.css"]=".tksup"
 )
 
 # Selectors allowed to stay outside the scope for this file, with the reason inline in the file

@@ -215,6 +215,13 @@
 .tk-tabs span:hover { color:var(--ink); }
 .tk-tabs span.on { color:var(--ink); border-bottom-color:var(--hi); }
 
+/* .tk-cnt arrives here with the Support tab, as the comment above said it would (support-lane round 3,
+   promoted 2026-10-16, DEB-1503/FR-17). It belongs to the strip rather than to the Support tab, so it
+   stays out of the page-scoped design/app/support.css. FR-2's count on the SIDEBAR's AI entry is not
+   this badge and needs nothing new: `.app-side a.nav .count` above is the shell's own, which Triage
+   already uses and round 3's mockup wrote into. */
+.tk-cnt { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:18px; padding:0 7px; border-radius:20px; background:var(--bad); color:#fff; font-size:.68rem; font-weight:600; }
+
 /* FR-7 — losing the server is the page's state, not the tab's: the strip sits above the tab strip
    (owner, 2026-10-16) and is revealed by `ws-lost` on the page's own <main>. While it shows, the three
    controls it speaks for are disabled — Download ([data-dl]), No thanks ([data-no]) and Rebuild now
@@ -223,6 +230,12 @@
 .ai-offl .dot { margin-top:6px; box-shadow:none; }
 main.ws-lost .ai-offl { display:flex; }
 main.ws-lost #ai-suggestions :is([data-dl],[data-no],#sg-rebuild) { opacity:.45; pointer-events:none; }
+/* FR-16 (support-is-a-tab-on-the-ai-page, DEB-1503/FR-17) — the same strip covers the Support tab, and
+   while it shows every write there is disabled: the lane switch, Send, Forward, Resolve, Reopen, the
+   flag and Class. One hook, `data-tk-w`, on each of those controls is what the build must keep for this
+   rule to reach them; the composer's textarea is named outright so a locked thread cannot be typed into
+   either. The strip's own sentence stops naming the Suggestions buttons — that copy is AiPage.kt's. */
+main.ws-lost #ai-support :is([data-tk-w],.tk-cp textarea) { opacity:.45; pointer-events:none; }
 
 /* override card */
 .override {
