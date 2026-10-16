@@ -143,6 +143,14 @@ The owner was asked to supply the pair (card `c8500823`, DEB-1406) and left it b
 design string round through Rannvá (DEB-1438). `forward_notice` is still taken from round 3; `request_logged` is taken
 from the round that carries DEB-1438. Until then the English line stands, as above.
 
+*Amended 2026-10-16 (DEB-1438), the pair received:* round 5 carried it, in its report
+(`design/incoming/2026-10-16-ai-suggestions-tab/app/ai-suggestions-tab-report.md`, commit `7bb848ae`). It is copied here so
+it outlives the quarantine. Each line carries `{n}` once, directly after `#`, as the English does:
+
+| Key | da | fo |
+|---|---|---|
+| `request_logged` | Tak — det er registreret som ønske #{n}. At tilføje det kræver en beslutning fra dem, der driver denne server, så det sker ikke af sig selv. | Takk — hetta er skrásett sum ynski #{n}. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum. |
+
 **FR-321-8 — Spend, bounded three ways.** On top of 270's monthly limit (FR-270-6, applied as 272's
 prefix):
 
