@@ -269,3 +269,33 @@ the clamp. A `ravilo-web` Playwright spec stubs `/api/tv/config` and `/api/tv/su
 - **Push notifications outside the app** (320).
 - **Attaching a screenshot or a log.**
 - **The round's motion layer.**
+
+## Amendment 2026-10-16 — as built (DEB-1501)
+
+The screens are in `:ravilo-ui` common code (`ui/support/`), and the places the build read the spec rather than copied it are
+these. None changes what a viewer is promised above, and each is something QA can check.
+
+- **A list row cannot choose *waiting for a first reply* (FR-9).** The ticket list carries no messages, and the table's second
+  row is chosen from them. A row therefore skips it and reads its holder (*Open · with AI Agent*). The thread's header applies
+  the whole table, so a ticket nobody has answered reads *waiting* there and *with AI Agent* in the list until the first reply.
+- **A send that is refused with any status other than 400, 404 or 429** (a 5xx, a 403) shows FR-5's *Not sent* line with
+  **Try again**, and keeps the draft. The round has no string for it, and the viewer's choices are the same.
+- **The receipt's `{class}` is the class string in lower case** (*logged as a bug*), in every language. A ticket whose class
+  is `ACCOUNT` or `OTHER` has no string, so its receipt is the bare *Received · #n*.
+- **`FORWARDED` and the `AI Agent`/`Hervør` names** come from the event's argument (the viewer-wire holder), so a later holder
+  the app does not know reads as *support*, as FR-9's last row does.
+- **The week rule (FR-3, FR-4):** `HH:mm` for today, the abbreviated weekday for the six days before it, then `12 Oct`, with the
+  year added for another year. These use the existing `wd.abbr.*`, `month.*` and `date.*` keys.
+- **The `title` fallback** is also used for the pinned header, so a new ticket reads *Ticket #n* until `AI Agent` titles it.
+- **Platform line (FR-6):** *Sent from Ravilo on the phone · {name}* is shown when the app's platform is `phone`; `{name}` is the
+  device name the app already sends at sign-in.
+- **Tests.** The screens' states (acceptance 1's entry rows excepted) are Compose tests in `:ravilo-ui:testDebugUnitTest`
+  (`SupportScreensTest`), and the tables are common unit tests. The `ravilo-web` Playwright spec is **wire-level**: Ravilo web
+  is a canvas with no DOM to click, and this repository's CI deliberately never drives its rendering
+  (`ravilo-web.spec.ts`), so the spec boots the real app with a stored session and a stubbed server, and asserts what only a
+  browser shows — the unread read when the flag is on and never when it is off, `support` in `features=`, a re-read on
+  `support_changed` and after a reconnect, at a phone and a desktop viewport. Acceptance 2, 4, 5, 6 and 8 end to end on a device
+  are the QA ticket's. A soft-wrapped 2 000-character body (acceptance 8) needs real glyph widths, which Robolectric lacks, so
+  that case is on the QA plan; the newline case is a Compose test.
+- **Acceptance 7 stays open** for the five new strings until DEB-1504 lands their Danish and Faroese. They carry English in `da`
+  and `fo` through the key fallback, and `SupportModelTest` prints which are still English.
