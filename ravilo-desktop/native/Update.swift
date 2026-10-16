@@ -5,6 +5,17 @@
 // Like Bonjour.swift this keeps its state here and Kotlin polls `ravilo_update_snapshot` — nothing calls back into the
 // JVM. Sparkle itself is only ever touched on the main thread.
 //
+// Why a background check used to stop after the appcast (Sparkle 2.10.0 source, read 2026-10-16, DEB-1513):
+// `-[SPUUpdater _checkForUpdatesInBackground]` picks `SPUAutomaticUpdateDriver` (the silent download) only when
+// `[self automaticallyDownloadsUpdates]` is true, else `SPUScheduledUpdateDriver` (which shows the update and waits).
+// `SPUUpdaterSettings.currentAutomaticallyDownloadsUpdates` is `allowsAutomaticUpdates && SUAutomaticallyUpdate`, and
+// `currentAllowsAutomaticUpdates` is the Info.plist's `SUAllowsAutomaticUpdates` when the bundle carries it, else
+// `automaticallyChecksForUpdates`. `-setAutomaticallyDownloadsUpdates:` returns without storing anything while
+// `allowsAutomaticUpdates` is false. Build 1 had automatic checks off and no `SUAllowsAutomaticUpdates`, so the
+// assignment below was a silent no-op, the scheduled driver ran, and the update was found and never downloaded.
+// The bundle now carries `SUAllowsAutomaticUpdates = YES` beside `SUEnableAutomaticChecks = NO`: silent downloads are
+// allowed, Sparkle's timer stays off, and `updater(_:mayPerform:)` refuses any check Ravilo did not start.
+//
 // Sparkle is linked weakly (build.gradle.kts): a bundle without Sparkle.framework still loads this library, and the
 // updater then reports `unavailable` instead of taking playback, the Keychain and Bonjour down with it.
 //
@@ -32,6 +43,8 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
     /// With `unavailable`: why, for the log.
     private var reason = ""
     private var autoDownload = true
+    /// FR-R386-12 — one entry per change of state, `old|new|version|failure|reason`, handed out by the next snapshot.
+    private var changes: [String] = []
 
     // ── main thread only ──
     private var updater: SPUUpdater?
@@ -39,23 +52,35 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
     private var started = false
     private var feed = ""
     private var userInitiated = false
+    /// Set by Ravilo's own calls right before they ask Sparkle for a check; `updater(_:mayPerform:)` consumes it.
+    private var askedByRavilo = false
     private var installHandler: (() -> Void)?
 
     private func set(_ p: String, version v: String? = nil, failure f: String = "", reason r: String = "") {
         lock.lock()
+        let old = (phase, version, failure, reason)
+        let cleanReason = r.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "|", with: "/")
         phase = p
         if let v = v { version = v }
         failure = f
-        reason = r
+        reason = cleanReason
+        if old != (phase, version, failure, reason) {
+            changes.append("\(old.0)|\(p)|\(version)|\(f)|\(cleanReason)")
+            if changes.count > 200 { changes.removeFirst(changes.count - 200) }
+        }
         lock.unlock()
     }
 
     private func current() -> String { lock.lock(); defer { lock.unlock() }; return phase }
 
+    /// Hands out — and forgets — the changes of state since the last call, as `change=` lines (FR-R386-12). Kotlin's
+    /// poll is the one reader, once a second, so a state that lasts less than a second is still logged.
     func snapshot() -> String {
         lock.lock(); defer { lock.unlock() }
-        return ["phase=\(phase)", "version=\(version)", "failure=\(failure)", "reason=\(reason)",
-                "auto=\(autoDownload ? 1 : 0)", "bytes=-1", "total=-1"].joined(separator: "\n")
+        let lines = ["phase=\(phase)", "version=\(version)", "failure=\(failure)", "reason=\(reason)",
+                     "auto=\(autoDownload ? 1 : 0)", "bytes=-1", "total=-1"] + changes.map { "change=\($0)" }
+        changes.removeAll()
+        return lines.joined(separator: "\n")
     }
 
     // ── main thread ──
@@ -75,6 +100,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
         let driver = SPUStandardUserDriver(hostBundle: Bundle.main, delegate: self)
         let u = SPUUpdater(hostBundle: Bundle.main, applicationBundle: Bundle.main, userDriver: driver, delegate: self)
         // Ravilo schedules the checks (FR-R386-3); Sparkle's own timer stays off, as SUEnableAutomaticChecks says too.
+        // `automaticallyDownloadsUpdates` below only sticks because the bundle says SUAllowsAutomaticUpdates (see above).
         u.automaticallyChecksForUpdates = false
         lock.lock(); let auto = autoDownload; lock.unlock()
         u.automaticallyDownloadsUpdates = auto
@@ -104,6 +130,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
             self.feed = url
             self.userInitiated = false
             self.set("checking")
+            self.askedByRavilo = true
             u.checkForUpdatesInBackground()
         }
     }
@@ -115,6 +142,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
             if !url.isEmpty { self.feed = url }
             self.userInitiated = true
             self.set("window", version: nil)
+            self.askedByRavilo = true
             u.checkForUpdates()
         }
     }
@@ -129,6 +157,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
             } else if let u = self.updater {
                 self.userInitiated = true
                 self.set("window")
+                self.askedByRavilo = true
                 u.checkForUpdates()
             }
         }
@@ -137,6 +166,16 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
     // ── SPUUpdaterDelegate ──
 
     func feedURLString(for updater: SPUUpdater) -> String? { feed.isEmpty ? nil : feed }
+
+    /// FR-R386-1 — Ravilo decides when Sparkle checks. A check Ravilo did not start (Sparkle's own scheduler, which is
+    /// off, or a stored preference turning it on) is refused here; the throw is not reported as a failure below.
+    func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+        if askedByRavilo { askedByRavilo = false; return }
+        throw NSError(domain: Self.refusedDomain, code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Ravilo did not ask for this check"])
+    }
+
+    private static let refusedDomain = "dev.jellystructure.ravilo.update"
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         lock.lock(); let auto = autoDownload; lock.unlock()
@@ -181,6 +220,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
         let p = current()
         if p == "ready" || p == "installing" { return }
         let ns = error as NSError
+        if ns.domain == Self.refusedDomain { return }
         guard ns.domain == SUSparkleErrorDomain else { set("failed", failure: "other"); return }
         // SUErrors.h, by number (the enum's Swift spelling is not worth a build failure): 1001 no update; 3000s
         // extraction and signature; 2000/2001 download; 1000…1007 the appcast; 0001…0002 signing configuration.
@@ -194,6 +234,7 @@ private final class RaviloUpdater: NSObject, SPUUpdaterDelegate, SPUStandardUser
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        askedByRavilo = false
         // A cycle that ended with neither an update nor an error was a check that found nothing.
         if error == nil, current() == "checking" { set("notfound") }
     }

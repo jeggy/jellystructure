@@ -205,6 +205,8 @@ jobs:
             || { echo "::error::Info.plist's SUPublicEDKey is not ravilo-desktop/sparkle/SUPublicEDKey.txt"; exit 1; }
           [ "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' "$PLIST")" = "false" ] \
             || { echo "::error::Info.plist must carry SUEnableAutomaticChecks = NO (R386 FR-R386-1)"; exit 1; }
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :SUAllowsAutomaticUpdates' "$PLIST")" = "true" ] \
+            || { echo "::error::Info.plist must carry SUAllowsAutomaticUpdates = YES; without it a background check never downloads (R386 FR-R386-4, DEB-1513)"; exit 1; }
           if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$PLIST" >/dev/null 2>&1; then
             echo "::error::Info.plist carries an SUFeedURL; the feed is set per check (R386 FR-R386-1)"; exit 1
           fi

@@ -96,4 +96,31 @@ class UpdatePlanTest {
         assertEquals(SparkleSnapshot.Phase.UNAVAILABLE, SparkleSnapshot.parse("garbage").phase)
         assertEquals(SparkleSnapshot.Phase.UNAVAILABLE, SparkleSnapshot.parse(null).phase)
     }
+
+    @Test
+    fun `the engine's changes of state become one log line each, and a snapshot without any writes none`() {
+        val s = SparkleSnapshot.parse(
+            "phase=ready\nversion=1.53\nfailure=\nreason=\nauto=1\nbytes=-1\ntotal=-1\n" +
+                "change=checking|downloading|1.53||\nchange=downloading|ready|1.53||\nchange=idle|unavailable|||Sparkle did not start",
+        )
+        assertEquals(
+            listOf(
+                "update: engine checking -> downloading version=1.53",
+                "update: engine downloading -> ready version=1.53",
+                "update: engine idle -> unavailable reason=Sparkle did not start",
+            ),
+            s.changes.map { it.logLine() },
+        )
+        assertEquals("update: engine checking -> failed version=1.53 failure=download", SparkleSnapshot.EngineChange("checking", "failed", "1.53", "download", "").logLine())
+        assertEquals(emptyList(), SparkleSnapshot.parse("phase=idle\nversion=\nauto=1").changes)
+        assertEquals(emptyList(), SparkleSnapshot.parse("phase=idle\nchange=garbage\nchange=|ready|1.53||").changes)
+    }
+
+    @Test
+    fun `a check names the feed it was pointed at`() {
+        assertEquals(
+            "update: check (background) feed=https://example.test/v1.53/appcast.xml",
+            MacUpdater.checkLine("background", "https://example.test/v1.53/appcast.xml"),
+        )
+    }
 }

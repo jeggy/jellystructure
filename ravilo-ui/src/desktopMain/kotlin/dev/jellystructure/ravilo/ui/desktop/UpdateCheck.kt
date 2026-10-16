@@ -144,6 +144,8 @@ object UpdateCheck {
 
     private fun publish(plan: UpdatePlan?, now: Long) {
         val sparkle = if (DesktopPaths.isMac) MacUpdater.snapshot() else SparkleSnapshot.UNAVAILABLE
+        // FR-R386-12 — the engine hands out its changes once; a poll with none writes nothing.
+        sparkle.changes.forEach { println(it.logLine()) }
         _status.value = _status.value.copy(
             plan = plan ?: _status.value.plan,
             checkedAt = if (plan != null && plan != UpdatePlan.Offline) now else _status.value.checkedAt,

@@ -181,6 +181,9 @@ compose.desktop {
                 appCategory = "public.app-category.entertainment"
                 iconFile.set(project.file("icons/ravilo.icns"))
                 // R330 (FR-R330-8) — without these macOS 15 blocks Bonjour silently; the first scan asks the viewer.
+                // R386 (FR-R386-1, DEB-1513) — SUEnableAutomaticChecks stays NO: Ravilo decides when Sparkle checks.
+                // SUAllowsAutomaticUpdates is YES: without it Sparkle 2.10 ignores `automaticallyDownloadsUpdates` while
+                // automatic checks are off, and a background check finds the update and never downloads it.
                 infoPlist {
                     extraKeysRawXml = """
                         <key>NSLocalNetworkUsageDescription</key>
@@ -189,6 +192,8 @@ compose.desktop {
                         <array><string>_googlecast._tcp</string></array>
                         <key>SUEnableAutomaticChecks</key>
                         <false/>
+                        <key>SUAllowsAutomaticUpdates</key>
+                        <true/>
                     """.trimIndent() +
                         // R386 (FR-R386-1) — Sparkle verifies every update against this key. There is deliberately no
                         // SUFeedURL: the feed is set per check (FR-R386-3).

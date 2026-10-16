@@ -15,9 +15,30 @@ data class SparkleSnapshot(
     /** Bytes of a background download, or -1 when Sparkle reports none — which it does not (Update.swift's header). */
     val bytes: Long,
     val total: Long,
+    /** FR-R386-12 — the engine's changes of state since the previous snapshot, oldest first; usually empty. */
+    val changes: List<EngineChange> = emptyList(),
 ) {
     enum class Phase { UNAVAILABLE, IDLE, CHECKING, DOWNLOADING, AVAILABLE, READY, INSTALLING, WINDOW, FAILED, NOT_FOUND }
     enum class Failure { DOWNLOAD, SIGNATURE, FEED, OTHER }
+
+    /** One change of the engine's state, as `Update.swift` recorded it: phases and failure kinds are its words. */
+    data class EngineChange(val from: String, val to: String, val version: String, val failure: String, val reason: String) {
+        /** The `ravilo.log` line (FR-R386-12). No account, token or library text is ever in these fields. */
+        fun logLine(): String = buildString {
+            append("update: engine $from -> $to")
+            if (version.isNotEmpty()) append(" version=$version")
+            if (failure.isNotEmpty()) append(" failure=$failure")
+            if (reason.isNotEmpty()) append(" reason=$reason")
+        }
+
+        companion object {
+            /** `from|to|version|failure|reason`; a malformed line is dropped, never an exception. */
+            fun parse(value: String): EngineChange? {
+                val f = value.split('|', limit = 5)
+                return if (f.size == 5 && f[0].isNotEmpty() && f[1].isNotEmpty()) EngineChange(f[0], f[1], f[2], f[3], f[4]) else null
+            }
+        }
+    }
 
     companion object {
         val UNAVAILABLE = SparkleSnapshot(Phase.UNAVAILABLE, "", null, "no Mac library", true, -1, -1)
@@ -25,7 +46,9 @@ data class SparkleSnapshot(
         /** `phase=ready\nversion=1.53\n…`; anything unreadable is [Phase.UNAVAILABLE], never an exception. */
         fun parse(text: String?): SparkleSnapshot {
             if (text == null) return UNAVAILABLE
-            val kv = text.lineSequence().mapNotNull { l -> l.indexOf('=').takeIf { it > 0 }?.let { l.substring(0, it) to l.substring(it + 1) } }.toMap()
+            val pairs = text.lineSequence().mapNotNull { l -> l.indexOf('=').takeIf { it > 0 }?.let { l.substring(0, it) to l.substring(it + 1) } }.toList()
+            val kv = pairs.toMap()
+            val changes = pairs.filter { it.first == "change" }.mapNotNull { EngineChange.parse(it.second) }
             val phase = when (kv["phase"]) {
                 "idle" -> Phase.IDLE
                 "checking" -> Phase.CHECKING
@@ -53,6 +76,7 @@ data class SparkleSnapshot(
                 autoDownload = kv["auto"] != "0",
                 bytes = kv["bytes"]?.toLongOrNull() ?: -1,
                 total = kv["total"]?.toLongOrNull() ?: -1,
+                changes = changes,
             )
         }
     }
@@ -72,9 +96,18 @@ object MacUpdater {
 
     fun setAutoDownload(on: Boolean) = native(Unit) { it.ravilo_update_set_auto_download(if (on) 1 else 0) }
 
-    fun checkInBackground(feedUrl: String) = native(Unit) { it.ravilo_update_check_background(feedUrl) }
+    /** FR-R386-12 — each check writes one line naming the feed it was pointed at. */
+    fun checkLine(kind: String, feedUrl: String) = "update: check ($kind) feed=$feedUrl"
 
-    fun checkWithWindow(feedUrl: String) = native(Unit) { it.ravilo_update_check_window(feedUrl) }
+    fun checkInBackground(feedUrl: String) {
+        println(checkLine("background", feedUrl))
+        native(Unit) { it.ravilo_update_check_background(feedUrl) }
+    }
+
+    fun checkWithWindow(feedUrl: String) {
+        println(checkLine("window", feedUrl))
+        native(Unit) { it.ravilo_update_check_window(feedUrl) }
+    }
 
     fun installAndRelaunch() = native(Unit) { it.ravilo_update_install() }
 
