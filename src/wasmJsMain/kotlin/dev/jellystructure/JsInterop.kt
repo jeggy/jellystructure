@@ -17,6 +17,10 @@ internal fun installSystemThemeWatcher(): Unit =
 internal fun scrollIntoViewSmooth(el: JsAny): Unit =
     js("el.scrollIntoView({behavior:'smooth',block:'start'})")
 
+// DEB-1264 — keep a keyboard-highlighted picker row in view inside its own scroller, without moving the page.
+internal fun scrollIntoViewNearest(el: JsAny): Unit =
+    js("el.scrollIntoView({block:'nearest'})")
+
 // epochSecStr = epoch-seconds as decimal string; formats as HH:mm:ss same-day, or "MMM d, HH:mm" cross-day
 internal fun formatStoredTs(epochSecStr: String): String = js("""(function(){
     var d=new Date(parseFloat(epochSecStr)*1000);

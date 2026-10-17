@@ -627,9 +627,14 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .cw-chip .x:hover { color: var(--bad); background: var(--fill-2); }
 .cw-add { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px; border-radius: 7px; border: 1px dashed var(--line-2); background: transparent; font-family: 'Sora', sans-serif; font-size: .76rem; font-weight: 600; color: var(--acc-ink); white-space: nowrap; cursor: pointer; }
 .cw-add:hover, .cw-add.open { border-style: solid; border-color: var(--hi); background: var(--hi-soft); }
+/* The popup hangs below its sub-row, usually past the bottom of the card it is in. Each page section is its own stacking
+   context, so the next section's card would paint over it and take its clicks; the section holding an open picker is lifted. */
+.rav-tab-section:has(.cw-pick), .card:has(.cw-pick) { position: relative; z-index: 30; }
 .cw-pick { position: absolute; left: 0; top: calc(100% + 8px); z-index: 40; width: 380px; max-width: calc(100vw - 32px); padding: 8px; border-radius: 12px; background: var(--fill); border: 1px solid var(--line-2); box-shadow: var(--shadow); }
 .cw-ps { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; border-radius: 9px; background: var(--fill-2); border: 1px solid var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); color: var(--ink-soft); }
 .cw-ps input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-family: 'Sora', sans-serif; font-size: .84rem; }
+/* The picker lists every tag that contains the query (the catalogue is ~2 700), so its results scroll inside the popup. */
+.cw-res { max-height: 320px; overflow-y: auto; }
 .cw-ph { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); padding: 11px 10px 4px; }
 .cw-pi { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: .8rem; color: var(--ink); cursor: pointer; }
 .cw-pi.hov, .cw-pi:hover { background: var(--hi-soft); }

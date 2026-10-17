@@ -387,6 +387,25 @@ private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
     }
 }
 
+/**
+ * DEB-1264 (FR-9) — after a Save, a Continue Watching row's "Hide titles tagged" list is what the server stored
+ * (entries trimmed, empties dropped, case-insensitive duplicates collapsed), read back for the scope just saved.
+ * If the read fails the editor keeps what it sent; nothing else in [saved] is touched.
+ */
+private suspend fun withServerHideTags(saved: RaviloConfig): RaviloConfig {
+    val echo = runCatching {
+        if (currentScopeIsGlobal) RaviloApi.getConfigWithMeta(scope = "global") else RaviloApi.getConfigWithMeta(userId = currentUserId)
+    }.getOrNull()?.config ?: return saved
+    return saved.copy(
+        rows = saved.rows.map { r -> echo.rows.firstOrNull { it.id == r.id }?.let { r.copy(hideTags = it.hideTags) } ?: r },
+        channels = saved.channels.map { c ->
+            val stored = echo.channels.firstOrNull { it.id == c.id }?.rows?.system?.cont?.hideTags
+            val rows = c.rows
+            if (stored == null || rows == null) c else c.copy(rows = rows.copy(system = rows.system.copy(cont = rows.system.cont.copy(hideTags = stored))))
+        },
+    )
+}
+
 private fun wireShell(container: Element, scope: CoroutineScope) {
     // R51 scope switcher — global
     container.querySelector("#rav-scope-global")?.addEventListener("click") { _ ->
@@ -505,6 +524,9 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
                     // Invalidate cache so the next scope switch re-fetches fresh data
                     scopeConfigCache.remove(if (currentScopeIsGlobal) "global" else currentUserId)
                     showMsg(msg, "Saved.", ok = true)
+                    // DEB-1264 (FR-9) — the Continue rows' lists show what the server stored, not what was typed.
+                    val echoed = withServerHideTags(currentConfig)
+                    if (echoed != currentConfig) { currentConfig = echoed; renderRows(container) }
                 },
                 onFailure = { showMsg(msg, "Save failed: ${it.message}", ok = false) },
             )
@@ -1241,10 +1263,11 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             <!-- R143: per-channel system rows -->
             <div class="cf-sysrows" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px">
               <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">System rows</div>
-              <div class="cf-sysrow ${if (!contShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;${if (!contShow) "opacity:.5" else ""}">
+              <div class="cf-sysrow hascond ${if (!contShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;${if (!contShow) "opacity:.5" else ""}">
                 <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
                 <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">In-progress titles from this collection</div></div>
                 <span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>
+                ${hideTagsMountHtml("collection-continue")}
               </div>
               <div class="cf-sysrow ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;${if (!newlyShow) "opacity:.5" else ""}">
                 <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
@@ -1284,6 +1307,19 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         list[idx] = cur.copy(rows = existing.copy(mode = "custom", system = f(existing.system)))
         currentConfig = currentConfig.copy(channels = list)
         reRenderChannelRows()
+    }
+    // DEB-1264 (FR-7) — a Custom collection's own Continue Watching list; shown only inside the Custom body, so a collection
+    // on "Same as Home" has none. The edit goes to the unsaved layout without re-rendering the page, so a picker stays open.
+    (container.querySelector("[$HIDE_TAGS_MOUNT_ATTR]") as? HTMLElement)?.let { host ->
+        mountHideTags(host, scope,
+            tags = { currentConfig.channels.getOrNull(idx)?.rows?.system?.cont?.hideTags.orEmpty() },
+            onChange = { next ->
+                val list = currentConfig.channels.toMutableList()
+                val cur = list.getOrNull(idx) ?: return@mountHideTags
+                val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
+                list[idx] = cur.copy(rows = existing.copy(mode = "custom", system = existing.system.copy(cont = existing.system.cont.copy(hideTags = next))))
+                currentConfig = currentConfig.copy(channels = list)
+            })
     }
     container.querySelectorAll("[data-systog]").let { tg ->
         for (i in 0 until tg.length) {
@@ -1529,7 +1565,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 else RaviloApi.putConfig(currentUserId, updatedConfig)
             }.fold(
                 onSuccess = {
-                    currentConfig = updatedConfig
+                    currentConfig = withServerHideTags(updatedConfig)   // DEB-1264 (FR-9)
                     scopeConfigCache.remove(if (currentScopeIsGlobal) "global" else currentUserId)
                     historyReplaceState("#/ravilo")
                     renderFull(container, scope)
@@ -1919,6 +1955,8 @@ private fun renderRows(container: Element) {
 
     val slots = buildRowSlots()
     val placement = currentConfig.liveTvHome ?: dev.jellystructure.shared.tv.LiveTvHomePlacement()
+    // DEB-1264 (FR-3, FR-7) — the admin offers one list; a layout with several Continue rows gets it on the first in order.
+    val hideTagsRowId = currentConfig.rows.sortedBy { it.order }.firstOrNull { it.kind == RowKind.CONTINUE }?.id
 
     val rows = slots.mapIndexed { i, slot ->
         if (slot is RowSlot.LiveTv) {
@@ -1940,7 +1978,11 @@ private fun renderRows(container: Element) {
         if (system) {
             val srcLine = systemRowSource(r)
             val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind, r.mediaKind)
-            """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml</div>"""
+            // DEB-1264 (FR-7) — the first Continue Watching row carries the "Hide titles tagged" sub-row; `hascond` lets it
+            // wrap onto its own line and `off` hides it (the tags are kept) while the row is switched off.
+            val hasTags = r.id == hideTagsRowId
+            val rowCls = "cfg-row" + (if (hasTags) " hascond" else "") + (if (hasTags && !r.enabled) " off" else "")
+            """<div class="$rowCls" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml${if (hasTags) hideTagsMountHtml(r.id) else ""}</div>"""
         } else if (r.kind == RowKind.RECOMMENDED) {
             val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind)
             """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-limit=\"$i\"")}</div></div>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
@@ -1982,13 +2024,23 @@ private fun renderRows(container: Element) {
         for (k in 0 until toggles.length) {
             val tog = toggles.item(k) as? HTMLElement ?: continue
             val idx = tog.getAttribute("data-row-toggle") ?: continue
-            tog.addEventListener("click") { _ ->
+            tog.addEventListener("click") { ev ->
+                // The toggle sits inside a <label> that owns the checkbox: without this the label's own activation flips the
+                // checkbox a second time, so a row could be switched off but never on, and Save read the stale value.
+                ev.preventDefault()
                 val cb = sect.querySelector("[data-row-enabled='$idx']") as? HTMLInputElement ?: return@addEventListener
                 cb.checked = !cb.checked; tog.classList.toggle("on", cb.checked)
                 val lbl = tog.previousElementSibling as? HTMLElement; lbl?.textContent = if (cb.checked) "show" else "hidden"
+                (tog.closest(".cfg-row.hascond") as? HTMLElement)?.classList?.toggle("off", !cb.checked)   // DEB-1264 (FR-7)
                 collectConfig(container); renderPreview(container)
             }
         }
+    }
+    // DEB-1264 (FR-7..FR-9) — the list is edited in the unsaved layout and rides the existing Save, like a row toggle.
+    if (hideTagsRowId != null) (sect.querySelector("[$HIDE_TAGS_MOUNT_ATTR]") as? HTMLElement)?.let { host ->
+        mountHideTags(host, rcScope ?: return@let,
+            tags = { currentConfig.rows.firstOrNull { it.id == hideTagsRowId }?.hideTags.orEmpty() },
+            onChange = { next -> currentConfig = currentConfig.copy(rows = currentConfig.rows.map { if (it.id == hideTagsRowId) it.copy(hideTags = next) else it }) })
     }
     sect.querySelector("#merge-newly-added")?.addEventListener("change") { _ ->
         val checked = (sect.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
