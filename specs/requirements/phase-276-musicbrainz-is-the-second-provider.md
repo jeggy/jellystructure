@@ -1,11 +1,12 @@
 # Phase 276 — MusicBrainz is the second provider: the match ladder, Find match…, lock and clear
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28 (build notes at the end; not deployed). `Planned` when written 2026-09-28 from
-`specs/design-brief-music-in-the-admin-2026-09-27.md` (§B1, §B2, §E2, §H2,
-§H5), the research report §3.1–§3.3 and §4.3, and the mockups `design/app/album.js` (the Find match… panel) and
-`design/app/settings.html#sect-musicprov`. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275**. Numbering: see 275.
+Written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§B1, §B2, §E2, §H2, §H5), the
+research report §3.1–§3.3 and §4.3, and the mockups `design/app/album.js` (the Find match… panel) and
+`design/app/settings.html#sect-musicprov`. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on
+**275**. Numbering: see 275. Amended 2026-09-28 (the providers card's Save) and 2026-10-17 (a track with no track
+number), both at the end.
 
 ## Decisions (round 1 — leans; not yet answered)
 
@@ -234,3 +235,62 @@ the first fingerprint* without calling anything. Now:
 
 Unchanged: the two routes, and `PUT /api/config` still keeping the stored `[musicbrainz]`, `[music]`,
 `[audiobooks]` and the three keys — a page loaded before the card existed must still not reset them.
+
+## Amendment (2026-10-17) — a track with no track number takes its release track from its own ids (DEB-1631)
+
+**What was wrong.** Every per-track mapping finds a file's release track by **disc and position** only
+(`MusicScoring.agreement`, which skips a track whose `position` is null). A file with no track number therefore never
+gets a release track, whatever its tags say. FR-276-3 step 6 (applying a match) leaves such a track with no
+recording, and since DEB-1488 the FR-276-1 catch-up gives it the file's recording tag in state `disagrees`. The
+admin then reads *from a different release* with *Match this track…* on every one of them, which is FR-276-5's
+mark for a recording that really is on another release. 305 keys a `disagrees` track by itself rather than by its
+recording, so such a track does not fill its official song's row by recording and is not folded by FR-305-8 rule 1.
+
+Found by DEB-1562's QA observation and measured on a read-only copy of prod's DB (2026-10-17, ~14:30Z): **1 210
+present tracks on 84 matched albums** have no position, are `disagrees`, and carry Jellyfin `MusicBrainzAlbum` equal
+to their album's `releaseMbid` plus a `MusicBrainzTrack` (release-track) id. Their files have no `TRACKNUMBER`
+tag at all, so this is the file and not our ingest. 82 of the 84 albums were matched by AcoustID, which places an
+album by sound and needs no position. Every positioned track whose tags name its album's release maps as before.
+
+**FR-276-5a — A track with no position is placed by its own ids.** When a track has no position, or its position
+finds no track on the release, the per-track mapping looks for its release track by id. It is the same mapping in
+both places it runs, applying a match (FR-276-3 step 6) and the FR-276-1 catch-up:
+
+1. Its Jellyfin `MusicBrainzTrack` id, if that id is a track on the release.
+2. Otherwise its `MusicBrainzRecording` id, if **exactly one** track on the release has that recording.
+
+A track placed this way takes that release track's recording and release-track id. It is `agrees` when the
+lengths are within ±3 s (`LENGTH_TOLERANCE_MS`), or, with a length missing on either side, when the titles match
+after normalising, exactly as a position hit is judged. Otherwise it is `disagrees`. A track that neither id places
+keeps today's behaviour. A `manual` track is never changed.
+
+**What this does not change.** Choosing a release (the pick rule, `bestRelease`, a candidate's *N of M agree*
+sentence and Find match…'s counts) still counts position hits only, so no album's match moves. Nothing is written
+to a file. Whether jellystructure should write a missing `TRACKNUMBER` from the release track is a separate
+question, deliberately left out of this amendment.
+
+**The tracks already marked.** The catch-up takes a track that is `disagrees`, has no position, and carries a
+`MusicBrainzTrack` id, as well as an unmapped one. It does this once per album and release (the existing
+`stillUnmapped` memo), and a re-read that places nothing leaves the track as it is. On prod that is one release
+request per album, about 84, at MusicBrainz's 1/s. The next scan's `match_musicbrainz` summary reports them with
+the existing *new tracks mapped on N albums* clause.
+
+**Tests.** `MusicScoring` and `MusicMatchService` unit tests cover these cases:
+
+- A position-less track found by its `MusicBrainzTrack` id, `agrees`.
+- The same with the length 5 s off, `disagrees`.
+- A track found by its recording id when exactly one release track has it, and not found when two do.
+- An id that is not on the release, so no hit.
+- A `manual` track untouched.
+- A positioned track judged exactly as today.
+- A `disagrees` position-less track re-mapped by the catch-up once, and not asked about again on the next run.
+
+**Acceptance (prod, after the deploy, no device).**
+
+1. After the first `match_musicbrainz` run: present tracks with no position, in `disagrees`, whose `MusicBrainzTrack`
+   is on their album's release go from 1 210 on 84 albums to 0 (any left over is listed with its reason).
+2. No album's `releaseMbid`, `releaseGroupMbid` or `matchedAt` changes, and no `manual` track changes.
+3. Every album page (`/api/music/album/{id}/page`), diffed before and after: no album reads 0 songs, and no album's
+   official song count goes down. The albums whose counts changed are listed.
+4. The admin's Tracks tab on one of those albums shows no *from a different release* mark on a track whose tags
+   name the album's release.
