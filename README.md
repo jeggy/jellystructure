@@ -86,6 +86,10 @@ The container's UID/GID must match the owner of your media, or track edits will 
 The Ravilo browser client is a second image, `ghcr.io/jeggy/ravilo-web:latest`, listening on 8080.
 Both images are published on tagged releases as `MAJOR.MINOR`, plus `:latest` and a commit SHA tag.
 
+Both images cover `linux/amd64` and `linux/arm64` under one tag (Apple Silicon, a 64-bit Raspberry Pi, an ARM NAS), so
+`docker compose pull` picks the right one with no `platform:` line. The A/V sync sidecar,
+`ghcr.io/jeggy/jellystructure-avsync`, is `linux/amd64` with an NVIDIA GPU only.
+
 ## Configuration
 
 Config is TOML at `/config/config.toml`, editable from the Settings page.
@@ -113,11 +117,12 @@ next save from the UI overwrites the file.
 
 ## Building from source
 
-The backend is Kotlin/Native targeting `linuxX64` (no JVM at runtime); the build needs JDK 21 and
-`libsqlite3-dev` for the link step.
+The backend is Kotlin/Native targeting `linuxX64` and `linuxArm64` (no JVM at runtime); the build needs JDK 21 and
+`libsqlite3-dev` for the link step. Kotlin/Native has no Linux arm64 compiler host, so the arm64 binary is cross-compiled
+on x86-64 (the Dockerfiles do this; `linuxArm64` needs the arm64 `libsqlite3-dev` too).
 
 ```sh
-./gradlew linkReleaseExecutableLinuxX64   # backend binary
+./gradlew linkReleaseExecutableLinuxX64   # backend binary (…LinuxArm64 for arm64)
 ./gradlew wasmJsBrowserDistribution       # admin frontend
 ./gradlew runDev                          # both, then run the backend locally
 ```
