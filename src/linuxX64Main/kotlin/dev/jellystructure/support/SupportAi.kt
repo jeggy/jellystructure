@@ -49,8 +49,9 @@ object SupportAi {
         - forwardTo: HERVOR for anything a person can help with by talking it through — a question that needs more
           than general how-to, a recommendation of what to watch or listen to, or a fault a case-worker could match
           to a known problem; ADMIN for what needs the people who run the server.
-        - confidence and languageConfidence: HIGH only when you are sure the reply is right and in the viewer's
-          language, otherwise LOW.
+        - confidence: HIGH only when you are sure the reply is right and safe to send, otherwise LOW.
+        - languageConfidence: HIGH when you are sure which language the viewer wrote in, judged from their message
+          alone, whether you send or forward. A short message in a clear language is HIGH. Otherwise LOW.
         - title: a case title in the language of the reply, and englishTitle: the same title in English. Each is a few
           words that name the problem or the question, the way a helpdesk would file it, on one line and at most 60
           characters. No promise, no claim about the server or the library.
@@ -401,11 +402,12 @@ object SupportAi {
 
     /**
      * DEB-1663 (FR-321-7) — the language the server's own lines are written in: the answer's `replyLanguage` when it is
-     * `en`, `da` or `fo` and `languageConfidence` is HIGH, otherwise [viewerLanguage] (`en` when blank). [answer] is null
-     * when there is no readable answer.
+     * `en`, `da` or `fo` whatever its `languageConfidence` (the lines are the server's, so a wrong guess still lands closer
+     * than the interface language), otherwise [viewerLanguage] (`en` when blank). [answer] is null when there is no
+     * readable answer.
      */
     fun lineLanguage(answer: Answer?, viewerLanguage: String): String =
-        answer?.takeIf { it.replyLanguage in LINE_LANGUAGES && it.languageConfidence == "HIGH" }?.replyLanguage
+        answer?.takeIf { it.replyLanguage in LINE_LANGUAGES }?.replyLanguage
             ?: viewerLanguage.ifBlank { "en" }
 
     /** DEB-1663 — a forward with no readable answer: the ticket's latest turn whose stored answer parses, judged by [lineLanguage]. */

@@ -631,24 +631,25 @@ class SupportAgentTest {
         assertEquals("This is something Hervør can help with, so I'm passing it on to her.", SupportAi.forwardNotice("en", "HERVOR", ""))
     }
 
-    @Test fun theLineLanguageIsTheAnswersWhenItIsEnDaOrFoAndHighElseTheViewersElseEnglish() {
+    @Test fun theLineLanguageIsTheAnswersWhenItIsEnDaOrFoWhateverItsConfidenceElseTheViewersElseEnglish() {
         fun a(lang: String, conf: String) = SupportAi.parseText(FakeAnthropic.good(language = lang, languageConfidence = conf)).first!!
         assertEquals("fo", SupportAi.lineLanguage(a("fo", "HIGH"), "en"))
-        assertEquals("en", SupportAi.lineLanguage(a("fo", "LOW"), "en"))
+        assertEquals("fo", SupportAi.lineLanguage(a("fo", "LOW"), "en"))
+        assertEquals("da", SupportAi.lineLanguage(a("other", "LOW"), "da"))
         assertEquals("da", SupportAi.lineLanguage(a("other", "HIGH"), "da"))
         assertEquals("en", SupportAi.lineLanguage(a("other", "HIGH"), ""))
         assertEquals("fo", SupportAi.lineLanguage(null as SupportAi.Answer?, "fo"))
         // No readable answer: the latest stored answer that parses, judged by the same test.
         val stored = listOf(FakeAnthropic.good(language = "da"), FakeAnthropic.good(language = "fo"), "not json")
         assertEquals("fo", SupportAi.lineLanguage(stored, "en"))
-        assertEquals("en", SupportAi.lineLanguage(listOf(FakeAnthropic.good(language = "fo", languageConfidence = "LOW")), "en"))
+        assertEquals("fo", SupportAi.lineLanguage(listOf(FakeAnthropic.good(language = "fo", languageConfidence = "LOW")), "en"))
         assertEquals("da", SupportAi.lineLanguage(emptyList(), "da"))
     }
 
     private val foAdmins = "Hey Name-of-u-anna, hettar er nakað umsitararnir kunnu hjálpa við, so eg sendi tað líka víðari til teirra."
     private val foHervor = "Hey Name-of-u-anna, hettar er nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana."
 
-    @Test fun aFaroeseAnswerWithHighLanguageConfidenceOnAnEnglishTicketPostsTheFaroeseLineAndLowPostsTheEnglishOne() {
+    @Test fun aFaroeseAnswerOnAnEnglishTicketPostsTheFaroeseLineWhateverItsLanguageConfidence() {
         rig("line1") {
             anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "fo", languageConfidence = "HIGH", reply = "x") }
             val n = file("Hvat skal eg hyggja at?")
@@ -657,6 +658,12 @@ class SupportAgentTest {
         }
         rig("line2") {
             anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "fo", languageConfidence = "LOW", reply = "x") }
+            val n = file("Hvat skal eg hyggja at?")
+            cycle()
+            assertEquals(foAdmins, lastAiBody(n))
+        }
+        rig("line3") {
+            anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "other", languageConfidence = "LOW", reply = "x") }
             val n = file("Hvat skal eg hyggja at?")
             cycle()
             assertEquals(forwardNotice, lastAiBody(n))
