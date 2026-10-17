@@ -51,6 +51,15 @@ object MusicIngest {
             lib.localPath + p.removePrefix(lib.jellyfinPath) else p
     }
 
+    /** FR-277-1a — does [path] lie inside the library's folder? A blank `jellyfin_path` means both containers see the
+     *  library at one path, so nothing is "outside". [path] is in Jellyfin's terms, or jellystructure's own when
+     *  [local] is set (a stored row). */
+    fun insideLibrary(lib: LibraryMapping, path: String, local: Boolean = false): Boolean {
+        if (lib.jellyfinPath.isBlank()) return true
+        val root = (if (local) lib.localPath.ifBlank { lib.jellyfinPath } else lib.jellyfinPath).trimEnd('/')
+        return path == root || path.startsWith("$root/")
+    }
+
     fun build(
         lib: LibraryMapping,
         jf: JellyfinMusicLibrary,
@@ -131,7 +140,10 @@ object MusicIngest {
         val artists = artistIds.map { id ->
             val a = folderArtists[id]
             val prev = previousArtists[id]
-            val path = a?.let { localPath(lib, it.path) }
+            // FR-277-1a — Jellyfin's own metadata folder for an artist it keeps no library folder for lies outside the
+            // library, and exists only in Jellyfin's container: no folder here.
+            val outside = a?.path?.takeIf { it.isNotBlank() }?.let { !insideLibrary(lib, it) } == true
+            val path = if (outside) null else a?.let { localPath(lib, it.path) }
             val fresh = MusicArtist(
                 id = id,
                 libraryId = libId,
@@ -144,7 +156,7 @@ object MusicIngest {
                 logoState = fileState(path, LOGO_FILES, exists),
                 addedAt = a?.dateCreated?.let { isoToEpochSeconds(it) },
             )
-            carry(fresh, prev, now)
+            carry(fresh, prev, now, lib, outside)
         }
 
         // ── what this library had and Jellyfin no longer reports ──
@@ -200,18 +212,27 @@ object MusicIngest {
         return if (merged == prev) prev else merged.copy(updatedAt = now)
     }
 
-    private fun carry(fresh: MusicArtist, prev: MusicArtist?, now: Long): MusicArtist {
+    private fun carry(fresh: MusicArtist, prev: MusicArtist?, now: Long, lib: LibraryMapping, outside: Boolean): MusicArtist {
         if (prev == null) return fresh.copy(createdAt = now, updatedAt = now)
+        // FR-277-1a — a stored path outside the library is not a folder an earlier scan saw: it is never carried.
+        val storedFolder = prev.path?.takeIf { insideLibrary(lib, it, local = true) }
+        val cleared = prev.path != null && storedFolder == null
+        val carried = fresh.path == null && storedFolder != null
         val merged = prev.copy(
             libraryId = fresh.libraryId, name = fresh.name, sortName = fresh.sortName,
             // A credit-only sighting never erases a folder an earlier scan saw.
-            path = fresh.path ?: prev.path,
+            path = fresh.path ?: storedFolder,
             jellyfinProviderIds = fresh.jellyfinProviderIds.ifEmpty { prev.jellyfinProviderIds },
-            imageState = if (fresh.path == null && prev.path != null) prev.imageState else fresh.imageState,
+            imageState = when {
+                carried -> prev.imageState
+                // A credit-only sighting of a cleared row can't see Jellyfin's picture: keep what it showed, minus a file.
+                cleared && !outside && fresh.path == null -> prev.imageState.takeIf { it != MusicArt.FILE } ?: MusicArt.NONE
+                else -> fresh.imageState
+            },
             addedAt = fresh.addedAt ?: prev.addedAt, missingSince = null,
             // A credit-only sighting has no folder to look in: keep what the folder showed.
-            backdropState = if (fresh.path == null) prev.backdropState else fresh.backdropState,
-            logoState = if (fresh.path == null) prev.logoState else fresh.logoState,
+            backdropState = if (carried) prev.backdropState else fresh.backdropState,
+            logoState = if (carried) prev.logoState else fresh.logoState,
         )
         return if (merged == prev) prev else merged.copy(updatedAt = now)
     }

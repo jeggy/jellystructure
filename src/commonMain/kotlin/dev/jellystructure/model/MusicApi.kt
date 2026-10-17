@@ -217,7 +217,7 @@ data class MusicArtistRow(
     val songs: Int = 0,
     val match: String,
     val picture: Boolean = false,
-    /** Has a folder of its own; a credit-only artist has nowhere to put a picture. */
+    /** Has a folder of its own; an artist with no folder (a credit, or one Jellyfin keeps none for) has nowhere to put a picture. */
     val folder: Boolean = false,
     val v: Long = 0,
 )

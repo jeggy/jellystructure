@@ -205,7 +205,7 @@ private fun arOverview(p: MusicArtistPageDto): String {
 
 private suspend fun arArtwork(p: MusicArtistPageDto): String {
     val r = p.artist
-    if (r.path == null) return """<div class="tiny muted">This artist has no folder of their own in the library — only a credit — so there is nowhere to put a picture.</div>"""
+    if (r.path == null) return """<div class="tiny muted">This artist has no folder of their own in the library, so there is nowhere to put a picture.</div>"""
     val art = MusicApi.artistArtwork(r.id)
     fun inUse(kind: String, file: String?, label: String, wide: Boolean): String {
         val url = "/api/music/image/artist/${r.id}/$kind?v=${r.updatedAt}"

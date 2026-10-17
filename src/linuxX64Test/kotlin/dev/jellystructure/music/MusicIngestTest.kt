@@ -152,4 +152,73 @@ class MusicIngestTest {
         assertEquals("JP", album.extraOrigins["r9"]?.country)
         assertEquals(24, again.tracks.single().bitDepth)
     }
+
+    // ── FR-277-1a — an artist Jellyfin keeps no library folder for has no folder here ──
+
+    private val slashLib = lib.copy(jellyfinPath = "/media/music/", localPath = "/mnt/music/")
+    private val metaPath = "/config/metadata/artists/Harbour Lights"
+    private fun artistJf(path: String, tag: Boolean = false) = JellyfinMusicLibrary(
+        artists = listOf(JellyfinMusicItem(id = "art1", name = "Harbour Lights", type = "MusicArtist", path = path,
+            imageTags = if (tag) mapOf("Primary" to "abc") else emptyMap())),
+        albums = emptyList(), tracks = emptyList(),
+    )
+
+    @Test
+    fun an_artist_outside_the_library_folder_gets_a_null_path() {
+        fun artist(l: LibraryMapping, path: String, tag: Boolean = false) =
+            MusicIngest.build(l, artistJf(path, tag), emptyMap(), emptyMap(), emptyMap(), 1000, { false }).artists.single()
+        val outside = artist(slashLib, metaPath, tag = true)
+        assertNull(outside.path)
+        assertEquals(MusicArt.JELLYFIN, outside.imageState)            // what Jellyfin shows
+        assertEquals(MusicArt.NONE, artist(slashLib, metaPath).imageState)
+        assertEquals(MusicArt.NONE, outside.backdropState); assertEquals(MusicArt.NONE, outside.logoState)
+        assertEquals("/mnt/music/Harbour Lights", artist(slashLib, "/media/music/Harbour Lights").path)
+        // a sibling that merely shares the prefix is outside too
+        assertNull(artist(slashLib, "/media/music2/Harbour Lights").path)
+        // a blank jellyfin_path means one path for both containers: nothing is outside
+        val blank = lib.copy(jellyfinPath = "", localPath = "")
+        assertEquals(metaPath, artist(blank, metaPath).path)
+    }
+
+    @Test
+    fun a_stored_path_outside_the_library_is_cleared_and_a_real_folder_survives_a_credit() {
+        val stored = MusicIngest.build(lib.copy(jellyfinPath = "", localPath = ""), artistJf(metaPath), emptyMap(), emptyMap(), emptyMap(), 1000, { false })
+            .artists.single().copy(matchState = MusicMatch.MATCHED, mbid = "mb-1", biographies = mapOf("en" to "Lead"))
+        assertEquals(metaPath, stored.path)
+        // the same item seen again with the library's folder set: the stored path is not carried
+        val again = MusicIngest.build(slashLib, artistJf(metaPath, tag = true), mapOf(stored.id to stored), emptyMap(), emptyMap(), 2000, { false }).artists.single()
+        assertNull(again.path)
+        assertEquals(MusicArt.JELLYFIN, again.imageState)
+        assertEquals(MusicMatch.MATCHED, again.matchState); assertEquals("mb-1", again.mbid); assertEquals(stored.biographies, again.biographies)
+        // …and a later scan changes nothing
+        val third = MusicIngest.build(slashLib, artistJf(metaPath, tag = true), mapOf(again.id to again), emptyMap(), emptyMap(), 3000, { false }).artists.single()
+        assertEquals(again, third)
+        // a credit-only sighting of the bad stored path clears it too
+        val credit = JellyfinMusicLibrary(emptyList(), emptyList(), listOf(track("t1", 1).copy(artistItems = listOf(band))))
+        assertNull(MusicIngest.build(slashLib, credit, mapOf(stored.id to stored), emptyMap(), emptyMap(), 2000, { false }).artists.single { it.id == "art1" }.path)
+        // a stored real folder seen again only as a credit keeps its folder
+        val real = MusicIngest.build(slashLib, artistJf("/media/music/Harbour Lights"), emptyMap(), emptyMap(), emptyMap(), 1000, { true })
+            .artists.single()
+        assertEquals(MusicArt.FILE, real.imageState)
+        val kept = MusicIngest.build(slashLib, credit, mapOf(real.id to real), emptyMap(), emptyMap(), 2000, { false }).artists.single { it.id == "art1" }
+        assertEquals("/mnt/music/Harbour Lights", kept.path)
+        assertEquals(MusicArt.FILE, kept.imageState)
+    }
+
+    @Test
+    fun a_folderless_artist_is_not_a_missing_picture() {
+        val rows = MusicIngest.build(slashLib, artistJf(metaPath), emptyMap(), emptyMap(), emptyMap(), 1000, { false })
+        val folderless = rows.artists.single().copy(matchState = MusicMatch.MATCHED, mbid = "mb-1")
+        val snap = MusicStore.Snapshot(artists = mapOf(folderless.id to folderless), albums = emptyMap(), tracks = emptyMap())
+        assertEquals(0, MusicTriage.Music(snap, emptySet()).count("music_no_picture"))
+        assertTrue(MusicBrowse.browse(snap, MusicBrowse.ARTISTS, emptyMap(), null, emptyMap(), triage = "music_no_picture").artists.isEmpty())
+        val path = "/tmp/jellystructure-test-music-folderless-${getpid()}.db"
+        runCatching { platform.posix.remove(path) }
+        runBlocking {
+            val store = MusicStore(createDatabase(path))
+            store.replaceLibrary(MusicLibraryRows("lib1", listOf(folderless), emptyList(), emptyList()))
+            assertEquals(0, store.health().artistImagesMissing)
+        }
+        runCatching { platform.posix.remove(path) }
+    }
 }
