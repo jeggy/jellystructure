@@ -44,23 +44,27 @@ if (!desktopOnly) configure<app.cash.sqldelight.gradle.SqlDelightExtension> {
 }
 
 if (!desktopOnly) configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
-    linuxX64 {
-        binaries {
-            executable {
-                entryPoint = "dev.jellystructure.main"
-                baseName = "jellystructure"
-                // ld.lld doesn't search multiarch lib dirs; --allow-shlib-undefined lets libsqlite3.so's
-                // glibc symbol references (pow, dlclose) resolve at runtime via the system linker.
-                linkerOpts("-L/usr/lib/x86_64-linux-gnu", "--allow-shlib-undefined")
-                // Runtime allocator override for experiments: -PnativeAllocator=std|custom
-                (project.findProperty("nativeAllocator") as String?)?.let { freeCompilerArgs += listOf("-Xallocator=$it") }
+    // DEB-1490 FR-1 — both Linux targets, one set of options. The per-arch library directory is the only difference:
+    // ld.lld doesn't search multiarch lib dirs, and the arm64 one is the builder's cross copy of libsqlite3-dev.
+    listOf(linuxX64() to "x86_64-linux-gnu", linuxArm64() to "aarch64-linux-gnu").forEach { (target, libDir) ->
+        target.apply {
+            binaries {
+                executable {
+                    entryPoint = "dev.jellystructure.main"
+                    baseName = "jellystructure"
+                    // ld.lld doesn't search multiarch lib dirs; --allow-shlib-undefined lets libsqlite3.so's
+                    // glibc symbol references (pow, dlclose) resolve at runtime via the system linker.
+                    linkerOpts("-L/usr/lib/$libDir", "--allow-shlib-undefined")
+                    // Runtime allocator override for experiments: -PnativeAllocator=std|custom
+                    (project.findProperty("nativeAllocator") as String?)?.let { freeCompilerArgs += listOf("-Xallocator=$it") }
+                }
             }
+            // Phase 140 — the repo's first native tests (linuxX64Test) link the whole of linuxX64Main
+            // (SQLDelight-generated code references sqlite3) but the auto-created test binary doesn't
+            // inherit executable{}'s linkerOpts above; same fix needed here or `./gradlew linuxX64Test`
+            // fails at the link step with "unable to find library -lsqlite3", not a compile error.
+            binaries.getTest("DEBUG").linkerOpts("-L/usr/lib/$libDir", "--allow-shlib-undefined")
         }
-        // Phase 140 — the repo's first native tests (linuxX64Test) link the whole of linuxX64Main
-        // (SQLDelight-generated code references sqlite3) but the auto-created test binary doesn't
-        // inherit executable{}'s linkerOpts above; same fix needed here or `./gradlew linuxX64Test`
-        // fails at the link step with "unable to find library -lsqlite3", not a compile error.
-        binaries.getTest("DEBUG").linkerOpts("-L/usr/lib/x86_64-linux-gnu", "--allow-shlib-undefined")
     }
 
     wasmJs {
@@ -386,7 +390,7 @@ tasks.named("wasmJsBrowserDistribution") {
             }
         }
         // Intermediate native source set — SQLDelight generates its DB types here so they are visible
-        // to linuxX64Main (and future linuxArm64Main) but NOT to wasmJsMain, avoiding the
+        // to the Linux targets but NOT to wasmJsMain, avoiding the
         // "wasmJs can't resolve sqldelight:runtime" error. Requires applyDefaultHierarchyTemplate=false.
         val nativeMain by creating {
             dependsOn(commonMain)
@@ -394,8 +398,12 @@ tasks.named("wasmJsBrowserDistribution") {
                 implementation(libs.sqldelight.native.driver)
             }
         }
-        val linuxX64Main by getting {
+        // DEB-1490 FR-1 — the code both Linux targets compile. It still lives in src/linuxX64Main/kotlin (a srcDir, not a
+        // 291-file move, so blame, the scripts/check-*.sh paths and in-flight work stay put); the two target source sets
+        // below are empty and only hang off it.
+        val linuxMain by creating {
             dependsOn(nativeMain)
+            kotlin.srcDir("src/linuxX64Main/kotlin")
             dependencies {
                 implementation(projects.shared)
                 implementation(libs.ktor.server.core)
@@ -417,6 +425,13 @@ tasks.named("wasmJsBrowserDistribution") {
                 implementation(libs.kotlinx.io.core)
                 implementation(libs.ktoml.core)
             }
+        }
+        val linuxX64Main by getting {
+            dependsOn(linuxMain)
+            kotlin.setSrcDirs(emptyList<String>())   // linuxMain owns src/linuxX64Main/kotlin
+        }
+        val linuxArm64Main by getting {
+            dependsOn(linuxMain)
         }
         val linuxX64Test by getting {
             dependencies {
@@ -446,7 +461,7 @@ tasks.named("wasmJsBrowserDistribution") {
 // commonMain dependency. The wasmJs frontend has no SQLite code at all, but it inherits
 // commonMain — so it would fail to resolve sqldelight:runtime (no wasmJs artifact exists).
 // Fix: after the SQLDelight plugin has wired itself up, reroute its generated source directory
-// and its runtime dependency from commonMain to linuxX64Main.
+// and its runtime dependency from commonMain to linuxMain (the source set both Linux targets compile, DEB-1490).
 if (!desktopOnly) afterEvaluate {
     val kotlin = extensions.getByType(org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension::class.java)
     val generatedDir = layout.buildDirectory
@@ -454,9 +469,9 @@ if (!desktopOnly) afterEvaluate {
         .get().asFile
 
     val commonMain = kotlin.sourceSets.getByName("commonMain")
-    val linuxX64Main = kotlin.sourceSets.getByName("linuxX64Main")
+    val linuxMain = kotlin.sourceSets.getByName("linuxMain")
 
-    // Move generated source directory: commonMain → linuxX64Main
+    // Move generated source directory: commonMain → linuxMain
     commonMain.kotlin.setSrcDirs(commonMain.kotlin.srcDirs.filter { it != generatedDir })
     // Bug fix: a plain `srcDir(File)` here loses the task dependency SQLDelight normally wires onto
     // commonMain automatically — compileKotlinLinuxX64 (and therefore link*ExecutableLinuxX64) had NO
@@ -466,15 +481,15 @@ if (!desktopOnly) afterEvaluate {
     // --dry-run`, which showed the generation task absent from the task graph entirely. `files(...)
     // .builtBy(...)` is the correct Gradle idiom: it makes the directory a first-class task output, so
     // every consumer (this compile task, its test variant, IDE sync) gets the dependency automatically.
-    linuxX64Main.kotlin.srcDir(files(generatedDir).builtBy(tasks.named("generateCommonMainJellystructureDbInterface")))
+    linuxMain.kotlin.srcDir(files(generatedDir).builtBy(tasks.named("generateCommonMainJellystructureDbInterface")))
 
-    // Move the sqldelight:runtime dependency: commonMainApi → linuxX64MainImplementation
+    // Move the sqldelight:runtime dependency: commonMainApi → linuxMainImplementation
     // (SQLDelight adds it to commonMainApi, not commonMainImplementation)
     val rtDeps = configurations.getByName("commonMainApi").dependencies
         .filter { it.group == "app.cash.sqldelight" && it.name == "runtime" }
     rtDeps.forEach { dep ->
         configurations.getByName("commonMainApi").dependencies.remove(dep)
-        dependencies.add("linuxX64MainImplementation", dep)
+        dependencies.add("linuxMainImplementation", dep)
     }
 }
 

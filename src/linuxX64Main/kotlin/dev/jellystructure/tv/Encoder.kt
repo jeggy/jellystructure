@@ -26,6 +26,9 @@ import platform.posix.access
 import platform.posix.fgets
 import platform.posix.pclose
 import platform.posix.popen
+import kotlin.experimental.ExperimentalNativeApi
+import kotlin.native.CpuArchitecture
+import kotlin.native.Platform
 import kotlin.time.Clock
 
 /**
@@ -395,8 +398,14 @@ class Encoder(
         const val TIMELINE_HEAD_BYTES = 2048
         /** Pinned (FR-313-11): the same build Jellyfin's own container runs (8.1.2), portable GPL, verified by SHA-256. */
         const val JELLYFIN_FFMPEG_VERSION = "8.1.2-5"
-        const val JELLYFIN_FFMPEG_URL = "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.2-5/jellyfin-ffmpeg_8.1.2-5_portable_linux64-gpl.tar.xz"
-        const val JELLYFIN_FFMPEG_SHA256 = "1fd859927053c44a4f2dbf67ae8b9ba8d29fb3b8930df0dd57d91aa60589363d"
+        private const val JELLYFIN_FFMPEG_BASE = "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v$JELLYFIN_FFMPEG_VERSION/jellyfin-ffmpeg_${JELLYFIN_FFMPEG_VERSION}_portable"
+        /** DEB-1490 FR-4 — the build for the architecture this binary was compiled for: `linux64` on x86-64, `linuxarm64` on arm64. */
+        @OptIn(ExperimentalNativeApi::class)
+        private val arm64 = Platform.cpuArchitecture == CpuArchitecture.ARM64
+        val JELLYFIN_FFMPEG_URL: String = JELLYFIN_FFMPEG_BASE + (if (arm64) "_linuxarm64-gpl.tar.xz" else "_linux64-gpl.tar.xz")
+        val JELLYFIN_FFMPEG_SHA256: String =
+            if (arm64) "1bd4fafaf4c309cad896d3479152c31d6b7604d4be8b8526882ea16cc6d5f589"
+            else "1fd859927053c44a4f2dbf67ae8b9ba8d29fb3b8930df0dd57d91aa60589363d"
     }
 }
 

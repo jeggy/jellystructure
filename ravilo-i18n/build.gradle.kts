@@ -43,6 +43,7 @@ kotlin {
         }
 
         linuxX64()
+        linuxArm64()   // DEB-1490 FR-1 — :shared's linuxArm64 needs it; no linux-specific source here
     }
 
     // R328 — Compose Desktop (the Mac app) is a JVM target.

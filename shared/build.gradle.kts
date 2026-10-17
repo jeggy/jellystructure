@@ -32,6 +32,7 @@ kotlin {
         }
 
         linuxX64()
+        linuxArm64()   // DEB-1490 FR-1 — cross-compiled for the arm64 images; only linuxX64Test runs in CI
     }
 
     // R328 — the Mac (and, for development, the Linux box): Compose Desktop is a JVM target. The name is
@@ -63,6 +64,20 @@ kotlin {
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.websockets)
             }
+        }
+        // DEB-1490 FR-1 — the code both Linux targets compile. It still lives in src/linuxX64Main/kotlin (a srcDir, not a
+        // move: blame and the scripts/check-*.sh paths stay put); the two target source sets only hang off it.
+        // The default hierarchy template is off (gradle.properties), so the intermediate set is declared by hand.
+        if (!desktopOnly) {
+            val linuxMain = create("linuxMain") {
+                dependsOn(getByName("commonMain"))
+                kotlin.srcDir("src/linuxX64Main/kotlin")
+            }
+            getByName("linuxX64Main") {
+                dependsOn(linuxMain)
+                kotlin.setSrcDirs(emptyList<String>())
+            }
+            getByName("linuxArm64Main") { dependsOn(linuxMain) }
         }
         // R328 — commonTest already holds tests written against kotlin.test; linuxX64Test resolves it its own way,
         // the desktop target needs it named.
