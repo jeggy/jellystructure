@@ -157,6 +157,51 @@ it outlives the quarantine. Each line carries `{n}` once, directly after `#`, as
 changed by `AI Agent`, and the viewer's title held to rule 4's internal-string check and to rules 2 and 5's language
 tests.
 
+*Amended 2026-10-17 (DEB-1663) — the forward line greets the viewer by name, names who gets the ticket, and is in the
+language they wrote in.* Found on prod: a viewer whose interface is English wrote a Faroese question asking what to
+watch. The model read it as Faroese, but the viewer got the English `forward_notice`, because the line was picked by
+`viewer_language`. Owner, 2026-10-17 (DEB-1663): *"We would rather have it say something like 'Hey [viewer's name], hettar er
+nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana'"*. The six lines below were approved as drafted on
+the DEB-1663 card. This amendment replaces `forward_notice` and changes three things:
+
+1. **The line language** is no longer `viewer_language` alone. It is the answer's `replyLanguage` when that is `en`,
+   `da` or `fo` **and** `languageConfidence` is `HIGH`. Otherwise it is `viewer_language`, and `en` when that is
+   blank. A forward with no readable answer (a parse failure, a limit, a lost request) uses the ticket's most recent
+   `support_ai_turn` whose answer parsed, judged by the same test. With none, it uses `viewer_language`. The same line
+   language picks `request_logged`.
+2. **`forward_notice` becomes two lines per language**, one for each holder the ticket actually moves to: `ruling.to`
+   after the `hervor_enabled` check, never the model's `forwardTo` before it. The lines stay the server's (the rule
+   above holds): a fixed table in `SupportAi.kt`, never model prose. `{name}` is the ticket owner's Jellyfin user name,
+   as the admin row already resolves it (`nameOf(owner_user_id)`). It is filled in **by the server after the answer
+   comes back** and is never sent to Anthropic (FR-321-4). When the name does not resolve, the line drops its greeting
+   and starts at the next word with a capital letter. It never falls back to an id.
+
+| Key | to `HERVOR` | to `ADMIN` |
+|---|---|---|
+| fo | Hey {name}, hettar er nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana. | Hey {name}, hettar er nakað umsitararnir kunnu hjálpa við, so eg sendi tað líka víðari til teirra. |
+| da | Hej {name}, det her er noget Hervør kan hjælpe med, så jeg sender det lige videre til hende. | Hej {name}, det her er noget administratorerne kan hjælpe med, så jeg sender det lige videre til dem. |
+| en | Hey {name}, this is something Hervør can help with, so I'm passing it on to her. | Hey {name}, this is something the admins can help with, so I'm passing it on to them. |
+
+   They replace `forward_notice` on **every** forward that posts one: a ruling's, an unreadable answer's, a limit's
+   (FR-321-8) and a lost request's. FR-321-9's switch-off forward still posts none. The viewer's name inside a line
+   written by `AI_AGENT` is never sent on a later turn either. `threadBlock` writes `the viewer` in its place in every
+   `AI_AGENT` entry. No ticket returns to `AI_AGENT` today, so this is a guard, not a path.
+3. **The system prompt's `forwardTo` line widens** from faults only to: *HERVOR for anything a person can help with by
+   talking it through — a question that needs more than general how-to, a recommendation of what to watch or listen to,
+   or a fault a case-worker could match to a known problem; ADMIN for what needs the people who run the server.*
+   `REQUEST`, `ACCOUNT` and `ABUSE` keep their fixed paths. While `hervor_enabled` is off, every forward goes to `ADMIN`
+   as before, with the admins line.
+
+The case title follows the same language rule: see the 2026-10-17 amendment to
+[`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md) FR-13. **Answering "what should I watch?"
+without a forward** is separate later work, decided on the same card. It means `AI Agent` reads the viewer's own
+re-rank suggestions, and it is not part of this amendment.
+
+*Tests (added to FR-321-12):* a Faroese answer with `languageConfidence` `HIGH` on a ticket whose `viewer_language` is
+`en` posts the Faroese line, and the same answer with `LOW` posts the English one. `HERVOR` with `hervor_enabled` off
+posts the admins line. A name that does not resolve posts the greeting-less line. A limit forward after a Faroese turn
+posts Faroese. The exact request JSON for a thread that contains a forward line carries no viewer name.
+
 **FR-321-8 — Spend, bounded three ways.** On top of 270's monthly limit (FR-270-6, applied as 272's
 prefix):
 

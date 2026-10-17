@@ -247,6 +247,13 @@ mean two titles from the same pass:
 A ticket filed while the job is not active has no title until a turn writes one. The Ravilo screen shows *Ticket #41*
 in its place. No admin route sets a title.
 
+*Amended 2026-10-17 (DEB-1663):* "`replyLanguage` matches the viewer" means the **line language** of
+[phase 321's 2026-10-17 amendment](phase-321-ai-agent-answers-a-ticket-and-forwards-whenever-it-cannot.md). That is the
+language the viewer wrote in, when the answer names it as `en`, `da` or `fo` with `languageConfidence` `HIGH`. It no
+longer means `viewer_language` alone. Found on prod: a Faroese question from a phone with an English interface got its
+English title only, because `SupportAi.titles` dropped the Faroese one as *rule 5 — not in the viewer's language*. With
+`languageConfidence` `HIGH` already required, the test becomes: `replyLanguage` is `en`, `da` or `fo`.
+
 **FR-14 — Where the titles show.** On the admin side: FR-6's Ticket column, FR-8's header and FR-10's rail, all from
 `englishTitle`. The viewer's `title` belongs to the Ravilo spec.
 
