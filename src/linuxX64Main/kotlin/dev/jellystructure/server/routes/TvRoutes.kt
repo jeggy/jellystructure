@@ -1552,6 +1552,9 @@ fun Route.tvRoutes(
         if (data == null || data.isEmpty()) {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid base64 data")); return@post
         }
+        channelLogoStore.liveTextRefusal(req.filename, data)?.let { reason ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to reason)); return@post
+        }
         val logo = channelLogoStore.save(req.filename, data)
             ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unsupported file — use PNG/SVG/JPG/WebP up to 2 MB"))
         call.respond(logo)

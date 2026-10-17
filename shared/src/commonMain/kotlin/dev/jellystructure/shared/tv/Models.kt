@@ -1187,9 +1187,10 @@ data class ChannelConfig(
     val rows: ChannelRowsConfig? = null,
 )
 
-/** A server-owned channel-button logo asset (R36 §F), served at `/api/tv/channel-logos/<file>`. */
+/** A server-owned channel-button logo asset (R36 §F), served at `/api/tv/channel-logos/<file>`.
+ *  `liveText` (DEB-1511 FR-2): a stored `.svg` whose lettering is `<text>`, which Skia-based clients do not draw. */
 @Serializable
-data class ChannelLogo(val url: String, val label: String)
+data class ChannelLogo(val url: String, val label: String, val liveText: Boolean = false)
 
 /** Upload payload for a channel logo: original filename + base64 file bytes (data-URL prefix tolerated). */
 @Serializable

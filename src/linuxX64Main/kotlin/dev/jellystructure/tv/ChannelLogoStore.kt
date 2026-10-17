@@ -27,11 +27,22 @@ class ChannelLogoStore(dataDir: String) {
     private val allowedExt = setOf("png", "svg", "jpg", "jpeg", "webp")
     private val maxBytes = 2 * 1024 * 1024 // 2 MB
 
+    /**
+     * DEB-1511 FR-1 — the 400 message for an `.svg` whose lettering is live `<text>`, else null. Ravilo Web and the
+     * desktop apps draw SVG through Skia's `SVGDOM`, which draws no text; the admin's `<img>` preview hides that.
+     */
+    fun liveTextRefusal(originalName: String, bytes: ByteArray): String? =
+        if (originalName.substringAfterLast('.', "").lowercase() == "svg" && carriesLiveText(bytes))
+            "this SVG's lettering is live text (<text>), which Ravilo's web and desktop apps cannot draw — " +
+                "outline the text (convert it to paths) or upload a PNG"
+        else null
+
     /** Validate + store an uploaded logo; returns its public URL + label, or null if rejected. */
     suspend fun save(originalName: String, bytes: ByteArray): ChannelLogo? {
         val ext = originalName.substringAfterLast('.', "").lowercase()
         if (ext !in allowedExt) return null
         if (bytes.isEmpty() || bytes.size > maxBytes) return null
+        if (liveTextRefusal(originalName, bytes) != null) return null
         ensureDir()
         val base = originalName.substringBeforeLast('.')
             .map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '-' }
@@ -52,7 +63,14 @@ class ChannelLogoStore(dataDir: String) {
         return entries.map { it.name }
             .filter { !it.endsWith(".tmp") && it.substringAfterLast('.', "").lowercase() in allowedExt }
             .sortedDescending()
-            .map { ChannelLogo("$publicBase/$it", labelFor(it)) }
+            .map { ChannelLogo("$publicBase/$it", labelFor(it), liveText = hasLiveText(it)) }
+    }
+
+    /** DEB-1511 FR-2 — a stored `.svg` that [liveTextRefusal] would refuse today. */
+    private fun hasLiveText(stored: String): Boolean {
+        if (stored.substringAfterLast('.', "").lowercase() != "svg") return false
+        val bytes = runCatching { FileIo.readBytes(Path("$dir/$stored")) }.getOrNull() ?: return false
+        return carriesLiveText(bytes)
     }
 
     /** Read a stored logo by filename (path-traversal guarded). */
@@ -80,6 +98,13 @@ class ChannelLogoStore(dataDir: String) {
     private fun labelFor(stored: String): String {
         val noExt = stored.substringBeforeLast('.')
         return noExt.substringAfter('-', noExt).ifEmpty { stored }
+    }
+
+    companion object {
+        /** A `<text` element start, case-insensitive, optionally namespaced (`<svg:text`). `<textPath` does not count. */
+        private val textElement = Regex("<(?:[a-z_][\\w.-]*:)?text(?=[\\s/>])", RegexOption.IGNORE_CASE)
+
+        fun carriesLiveText(bytes: ByteArray): Boolean = textElement.containsMatchIn(bytes.decodeToString())
     }
 
     @OptIn(ExperimentalForeignApi::class)

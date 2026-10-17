@@ -779,7 +779,8 @@ private fun wbRenderChannel() {
       </div>""" else ""
     val logoOrText = if (wbChStyle == "logo") {
         val tiles = wbLogos.joinToString("") { lg ->
-            """<button class="wbc-tile${if (lg.url == wbLogoUrl) " on" else ""}" data-logo="${lg.url.esc()}" title="${lg.label.esc()}"><img src="${lg.url.esc()}" alt=""></button>"""
+            val title = if (lg.liveText) "${lg.label} — text won't show on web or desktop" else lg.label
+            """<button class="wbc-tile${if (lg.url == wbLogoUrl) " on" else ""}" data-logo="${lg.url.esc()}" title="${title.esc()}"${if (lg.liveText) """ style="position:relative;" """ else ""}><img src="${lg.url.esc()}" alt="">${if (lg.liveText) """<span class="tiny" data-logo-live-text style="position:absolute;top:1px;right:3px;color:var(--warn);">⚠</span>""" else ""}</button>"""
         }
         """<div class="tiny muted" style="margin:12px 0 7px;">Pick a logo or upload your own — a transparent PNG/SVG sits cleanly on the brand fill.</div>
            <div class="wbc-grid">$tiles<button class="wbc-tile wbc-up" data-upload><span style="font-size:1.25rem;">⤒</span><span class="tiny">Upload</span></button></div>
