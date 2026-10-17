@@ -2412,6 +2412,12 @@ measured and settled, that contradicts FR-317-18: *not measured yet* is only for
   The page renders what it is given (constitution: no derived state). A forced `check_avsync` posted while every
   file is current answers **409** with the same sentence, so a stale page cannot run it either.
 
+**Two points the amendment left to the build (DEB-1688).** The wire names follow the checks DTO's own
+snake_case: `refresh_blocked` and `refresh_blocked_why` on the step. And a file whose current reading is a skip
+(FR-317-5) was drawn *not yet* by the same `unchecked` mapping, which contradicts the rule above for the same
+reason; it takes its own row state, `skipped`, drawn as the neutral chip *skipped*, and still makes the title
+*partial*, as it always has. The popover's general sentence applies to it.
+
 **The number of windows is not changed by this amendment.** The owner also asked for more windows. That half waits
 on his answer to a corrected card on DEB-1076: today's plan already takes six on a hard file (FR-317-17), not three,
 which the first card got wrong. It will be its own dated amendment.

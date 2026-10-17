@@ -1,0 +1,4 @@
+-- DEB-1688 (FR-317-42) — the plan a file's A/V sync row was measured under. 2 for every existing row (two triples
+-- was the whole plan until now), 5 for a new one: the service writes it. Must stay byte-for-byte in sync with
+-- FileAvSync.sq's CREATE statement (the SQLDelight-migration rule). No pipeline-version bump goes with it.
+ALTER TABLE file_av_sync ADD COLUMN passes_max INTEGER NOT NULL DEFAULT 2;

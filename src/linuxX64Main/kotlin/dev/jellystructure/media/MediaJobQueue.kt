@@ -1124,6 +1124,18 @@ class MediaJobQueue(
     fun titleChecks(item: MediaItem, config: dev.jellystructure.config.AppConfig): TitleChecksDto =
         TitleChecks(db, store, stepRuns, fileIntegrity, trackCoverage, subtitleChecks, avSync).forItem(item, config)
 
+    /**
+     * FR-317-41 — why a forced A/V sync re-measure of this title would change nothing, or null when it can.
+     * The same rule the Checks card's disabled ↻ is drawn from ([dev.jellystructure.media.TitleChecks.avSyncRefreshBlock]),
+     * so the route answers 409 to exactly what the page shows blocked.
+     */
+    fun avSyncRefreshBlock(item: MediaItem): String? {
+        val service = avSync?.takeIf { it.enabled() } ?: return null
+        val rows = service.rowsByPath()
+        val readings = FileCheckSchedule.units(item).map { service.readingFor(it.path, rows, runtimeS = service.knownRuntimeS(item, it.path)) }
+        return dev.jellystructure.media.TitleChecks.avSyncRefreshBlock(readings)
+    }
+
     /** Phase 261 — Check now's answer: how many files it looked at, rows it queued, waiting rows it raised. */
     @kotlinx.serialization.Serializable
     data class TitleChecks(val files: Int, val queued: Int, val promoted: Int)

@@ -86,6 +86,10 @@ object AvSyncReason {
     const val NO_ORIGINAL_TRACK = "no_original_track"
     const val NO_FACES = "no_faces"
 
+    /** FR-317-8 — the reasons the backend decides by itself, without ever asking the sidecar. A row stored
+     *  with one is settled for good: no pipeline version can change whether a title is animation. */
+    val SKIPS: Set<String> = setOf(ANIMATION, TOO_SHORT, NO_ORIGINAL_TRACK)
+
     /** FR-317-30 — a number in the measurement came back non-finite. Deliberately NOT one of
      *  [dev.jellystructure.media.AvSyncService.SKIP_REASONS]: nothing was decided about this file, so a new
      *  pipeline version measures it again, where `animation` or `too_short` would stand for ever. */
@@ -234,18 +238,36 @@ object AvSyncVerdict {
         windows.filter { it.audioShort }.maxOfOrNull { it.audioShortFrames }
 
     /**
-     * FR-317-17 (amendment 2026-10-12) — is another triple of windows worth asking for? Yes whenever the
-     * pass so far yields **neither** [AvSyncState.IN_SYNC] **nor** [AvSyncState.OFFSET]: too few confident
-     * windows to measure anything (the original rule), or confident windows that disagree.
+     * FR-317-42 — the window plan: up to five triples at fixed fractions of the runtime, in this order. Passes
+     * 1 and 2 are FR-317-8's and FR-317-17's own and have not moved, so no answered reading moves; the other
+     * three are new. All fifteen fractions differ.
+     */
+    val PASS_FRACTIONS: List<List<Double>> = listOf(
+        listOf(0.20, 0.50, 0.80),
+        listOf(0.35, 0.65, 0.90),
+        listOf(0.10, 0.425, 0.725),
+        listOf(0.275, 0.575, 0.85),
+        listOf(0.15, 0.3125, 0.6125),
+    )
+
+    /** FR-317-42 — the plan's length, stored with every new row as `passes_max`. A row stored `unknown`
+     *  under a smaller one was never given the later passes (see [AvSyncService.isStaleUnderPlan]). */
+    val PASSES_MAX: Int = PASS_FRACTIONS.size
+
+    /**
+     * FR-317-42 (replacing FR-317-17's trigger) — is another triple worth asking for? Only while the verdict
+     * over **every** window so far is [AvSyncState.UNKNOWN] and not because the backend decided to skip the
+     * file. [AvSyncState.IN_SYNC], [AvSyncState.OFFSET] and [AvSyncState.DRIFT] all end the escalation: the
+     * file has an answer, and spending three more windows after it is what FR-317-17 would have done on a
+     * drift had it ever had more than one extra pass to spend.
      *
-     * Why the second arm: `drift` needs [DRIFT_MIN_WINDOWS] confident windows on a line, and three windows
-     * can never reach four — so three confident windows that disagree, which is exactly the signature of a
-     * steady drift, could only ever come out `unknown`, and `unknown` is never counted and never shown
-     * (FR-317-7). A drifting film would have vanished silently. The bar is never lowered to meet the
-     * windows; more of the file is measured until there are enough of them.
+     * Why `unknown` was always the right trigger: `drift` needs [DRIFT_MIN_WINDOWS] confident windows on a
+     * line, and three windows can never reach four — so three confident windows that disagree, the signature
+     * of a steady drift, come out `unknown` and ask for more of the file. The bar is never lowered to meet
+     * the windows; more of the file is measured until there are enough of them (FR-317-17, unchanged).
      */
     fun wantsMoreWindows(sofar: AvSyncReading): Boolean =
-        sofar.state != AvSyncState.IN_SYNC && sofar.state != AvSyncState.OFFSET
+        sofar.state == AvSyncState.UNKNOWN && sofar.reason !in AvSyncReason.SKIPS
 
     /**
      * FR-317-6 — the library's zero: the conf-weighted median [offsetFrames] of every confident window

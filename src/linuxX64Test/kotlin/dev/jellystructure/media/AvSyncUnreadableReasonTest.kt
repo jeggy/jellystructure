@@ -168,7 +168,7 @@ class AvSyncUnreadableReasonTest {
         val fresh = assertNotNull(service.rowFor(item.path))
         db.fileAvSyncQueries.put(
             fresh.path, fresh.size, fresh.mtime, fresh.checked_at, fresh.model, fresh.audio,
-            AvSyncReason.NO_FACES, fresh.windows, fresh.others, fresh.mkv_audio_ids,
+            AvSyncReason.NO_FACES, fresh.windows, fresh.others, fresh.mkv_audio_ids, fresh.passes_max,
         )
         assertEquals(AvSyncReason.NO_FACES, assertNotNull(service.rowFor(item.path)).reason)
 

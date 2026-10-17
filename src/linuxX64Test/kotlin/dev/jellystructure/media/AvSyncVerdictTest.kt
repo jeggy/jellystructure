@@ -158,18 +158,33 @@ class AvSyncVerdictTest {
     }
 
     @Test
-    fun `more windows are wanted for anything that is neither in_sync nor offset`() {
+    fun `more windows are wanted only while the verdict is unknown without a skip`() {
         fun steady(frames: Int) = (1..4).map { w(it * 1000.0, frames, 3.0, 800) }
         assertFalse(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(steady(0), zeroFrames = -1)))      // in_sync
         assertFalse(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(steady(4), zeroFrames = -1)))      // offset
+        // FR-317-42 — a drift is an answer too, and ends the escalation (FR-317-17's trigger did not stop on it).
+        assertFalse(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(driftFirstTriple + driftSecondTriple, zeroFrames = -1)))
         // Too few confident (the original rule), no face at all, and a confident disagreement.
         assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(listOf(w(600.0, 4, 3.0, 800), w(1800.0, 1, 0.4, 900)), zeroFrames = -1)))
         assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(listOf(AvSyncWindow(startS = 600.0)), zeroFrames = -1)))
         assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(driftFirstTriple, zeroFrames = -1)))
-        // A drift wants them too. It cannot come out of three windows today, so [AvSyncService.check]
-        // never sees this case; written as the rule reads rather than as a list of states, so a change to
-        // DRIFT_MIN_WINDOWS cannot quietly turn it into something else.
-        assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(driftFirstTriple + driftSecondTriple, zeroFrames = -1)))
+        // A skip decided by the backend is not a file to measure harder.
+        for (skip in AvSyncReason.SKIPS) {
+            assertFalse(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(emptyList(), zeroFrames = -1, reason = skip)), skip)
+        }
+    }
+
+    @Test
+    fun `the five triples are in order and all fifteen fractions differ`() {
+        assertEquals(
+            listOf(
+                listOf(0.20, 0.50, 0.80), listOf(0.35, 0.65, 0.90), listOf(0.10, 0.425, 0.725),
+                listOf(0.275, 0.575, 0.85), listOf(0.15, 0.3125, 0.6125),
+            ),
+            AvSyncVerdict.PASS_FRACTIONS,
+        )
+        assertEquals(5, AvSyncVerdict.PASSES_MAX)
+        assertEquals(15, AvSyncVerdict.PASS_FRACTIONS.flatten().toSet().size)
     }
 
     @Test

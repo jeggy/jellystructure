@@ -29,6 +29,11 @@ data class StepCheckDto(
     @SerialName("next_due") val nextDue: String,
     /** The existing per-title action this line's ↻ runs, or null — the card never invents one (FR-261-10). */
     val action: String? = null,
+    /** FR-317-41 — the ↻ stays in its place but is disabled: every file it would re-measure already has a
+     *  current reading, so a forced re-measure would read the same parts of the file and store the same
+     *  answer. The page renders it, and [refreshBlockedWhy] on hover, focus or tap; it decides nothing. */
+    @SerialName("refresh_blocked") val refreshBlocked: Boolean = false,
+    @SerialName("refresh_blocked_why") val refreshBlockedWhy: String? = null,
     val files: List<FileCheckRowDto> = emptyList(),
 )
 
@@ -38,7 +43,7 @@ data class FileCheckRowDto(
     val name: String,
     val season: Int? = null,
     @SerialName("episode_tag") val episodeTag: String? = null,
-    /** clean · finding · unchecked */
+    /** clean · finding · unchecked · cant_tell · skipped (the last two are the A/V sync step's, FR-317-41) */
     val state: String,
     @SerialName("checked_at") val checkedAt: Long? = null,
     val checked: String,
@@ -260,19 +265,24 @@ class TitleChecks(
         // left a stopped sidecar reading *not yet · next run · 3 not measured*: an invitation to wait for a
         // check that cannot happen.
         val on = step.enabled && service != null && service.enabled() && service.readyNow()
+        val rowsByPath = service?.rowsByPath().orEmpty()
         val measured = FileCheckSchedule.units(item).map { unit ->
-            val row = service?.rowFor(unit.path)
+            val row = rowsByPath[unit.path]
             val stamp = FileIntegrityService.stampOf(unit.path)
-            val current = row != null && stamp != null && row.size == stamp.size && row.mtime == stamp.mtime
-            val reading = if (current) service!!.readingFor(unit.path, mapOf(unit.path to row!!), runtimeS = service.knownRuntimeS(item, unit.path)) else null
+            // FR-317-18 — *current* is FR-317-7's rule, not the stamp alone: same size and mtime, same
+            // pipeline version, same model, and not an `unknown` from a shorter plan (FR-317-42). A row
+            // that is not current reads *not yet*, with nothing of the old reading beside it.
+            val reading = service?.readingFor(unit.path, rowsByPath, runtimeS = service.knownRuntimeS(item, unit.path))
+            val current = reading != null
             val queued = FileCheckSchedule.dedupeKey(FileCheckSchedule.AVSYNC_JOB, unit.path) in active
             reading to FileCheckRowDto(
                 path = unit.path, name = unit.path.substringAfterLast('/'), season = unit.season, episodeTag = unit.episodeTag,
                 state = when {
                     reading == null -> "unchecked"
                     reading.isFinding -> "finding"
-                    // Never "clean": the file may well have been measured (FR-317-20), but nothing was read.
-                    reading.state == AvSyncState.UNKNOWN -> "unchecked"
+                    // FR-317-41 — measured, settled and unreadable: *can't tell*. Never "clean" (nothing was
+                    // read, FR-317-20) and no longer "unchecked", which means a file with no current row.
+                    reading.state == AvSyncState.UNKNOWN -> if (isSkip(reading)) "skipped" else "cant_tell"
                     else -> "clean"
                 },
                 checkedAt = row?.checked_at?.takeIf { current },
@@ -284,13 +294,15 @@ class TitleChecks(
                     reading == null -> "next run"
                     else -> "when the file changes"
                 },
-                detail = if (current) service!!.findingSummary(row!!) else null,
+                detail = if (current) service?.findingSummary(row!!) else null,
             )
         }
         val rows = measured.map { it.second }
         val checked = rows.mapNotNull { it.checkedAt }
         val findings = rows.count { it.state == "finding" }
-        val unchecked = rows.count { it.state == "unchecked" }
+        // A *can't tell* or skipped file is settled but not clean: the title is still *partial* (FR-317-7).
+        val unchecked = rows.count { it.state == "unchecked" || it.state == "cant_tell" || it.state == "skipped" }
+        val block = avSyncRefreshBlock(measured.map { it.first })
         // FR-317-20 (amendment 2026-10-13) — the step's own two lines come from the readings, not from the
         // rows' `state`: `unchecked` covers a file with no current result AND a file that WAS measured and
         // came out `unknown`, and only the first is waiting for a run. `outcome` keeps counting both, so an
@@ -308,6 +320,7 @@ class TitleChecks(
             detail = line.detail,
             nextDue = line.nextDue,
             action = "check_avsync",
+            refreshBlocked = block != null, refreshBlockedWhy = block,
             files = rows,
         )
     }
@@ -329,6 +342,31 @@ class TitleChecks(
     data class AvSyncStepLine(val detail: String?, val nextDue: String)
 
     companion object {
+        /** FR-317-41 — the two popover sentences, verbatim from the spec. */
+        const val AVSYNC_MEASURED_ALREADY =
+            "Measured already — measuring again would read the same parts of the file. This unlocks when a file changes."
+        const val AVSYNC_CANT_TELL_ALL =
+            "Couldn't tell from the parts measured — measuring again would read the same parts. This unlocks when the file changes."
+
+        /** FR-317-41 — a reading that is `unknown` because the backend decided to skip the file. */
+        private fun isSkip(reading: AvSyncReading): Boolean = reading.reason in AvSyncReason.SKIPS
+
+        /**
+         * FR-317-41 — the sentence that blocks the step's ↻, or null when it is live. Blocked when every file
+         * the step would re-measure (all of the title's, since ↻ is forced) already has a current reading —
+         * whether clean, a finding, *can't tell* or skipped — because a forced re-measure reads the same
+         * windows and stores the same answer. [readings] in card order, null = no current result.
+         *
+         * Pure, and one function for both callers: the card's DTO and the `check_avsync` route's 409 must
+         * never disagree, or a stale page could run what the fresh one refuses.
+         */
+        fun avSyncRefreshBlock(readings: List<AvSyncReading?>): String? {
+            if (readings.isEmpty() || readings.any { it == null }) return null
+            val all = readings.filterNotNull()
+            val unreadable = all.all { it.state == AvSyncState.UNKNOWN && !isSkip(it) }
+            return if (unreadable) AVSYNC_CANT_TELL_ALL else AVSYNC_MEASURED_ALREADY
+        }
+
         /**
          * FR-317-20 (amendment 2026-10-13) — the A/V sync STEP's `detail` and `next_due`, from the
          * per-file readings in card order (null = this file has no current result).

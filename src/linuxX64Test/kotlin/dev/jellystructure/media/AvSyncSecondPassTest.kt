@@ -13,6 +13,7 @@ import dev.jellystructure.model.TrackKind
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingSnapshot
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
@@ -22,6 +23,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.posix.getpid
@@ -33,6 +36,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -60,6 +65,9 @@ class AvSyncSecondPassTest {
     /** How many `/measure` calls the stand-in has been given, and the window starts of each. */
     private val measures = AtomicInt(0)
     private val asked = AtomicReference<List<List<Double>>>(emptyList())
+
+    /** FR-317-42 — the 1-based `/measure` call from which the stand-in answers 500 (0 = never). */
+    private val failFrom = AtomicInt(0)
 
     /**
      * The table is keyed by the window start the spec names — 35 % of a 90-minute film is 1890 s — but
@@ -100,7 +108,11 @@ class AvSyncSecondPassTest {
                 val body = call.receiveText()
                 val starts = Regex("\"start_s\":\\s*([0-9.]+)").findAll(body).map { it.groupValues[1].toDouble() }.toList()
                 record(starts)
-                measures.incrementAndGet()
+                val n = measures.incrementAndGet()
+                if (failFrom.value in 1..n) {
+                    call.respondText("""{"error":"boom"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                    return@post
+                }
                 val table = offsets.value
                 val windows = starts.joinToString(",") { s ->
                     // conf 3.0 over 800 face frames clears both of FR-317-7's bars; a window with no
@@ -147,13 +159,13 @@ class AvSyncSecondPassTest {
 
     /** A 90-minute film with one audio track, on disk. Its windows land at 1080/2700/4320 s (20/50/80 %)
      *  and the second triple at 1890/3510/4860 s (35/65/90 %) — [AvSyncService]'s own fractions. */
-    private fun film(name: String): MediaItem {
+    private fun film(name: String, minutes: Int = 90): MediaItem {
         val path = "$dir/$name.mp4"
         FileIo.writeText(Path(path), "not a real film — only its size and mtime are read here")
         return MediaItem(
             id = name, title = "Film", year = 2020, kind = MediaKind.MOVIE, path = path, tmdbId = null,
             originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L,
-            runtime = 90,
+            runtime = minutes,
             tracks = listOf(
                 Track(0, "0:v:0", TrackKind.VIDEO, "h264", null, null, true, false),
                 Track(1, "0:a:0", TrackKind.AUDIO, "eac3", "eng", null, true, false),
@@ -200,7 +212,8 @@ class AvSyncSecondPassTest {
     }
 
     @Test
-    fun `six windows that still disagree end unknown — and there is no third pass`() = runBlocking {
+    fun `a file that stays unknown asks for exactly five triples — and then there is no sixth`() = runBlocking {
+        // Six windows that disagree wildly, then nothing: no face track anywhere in passes 3-5 (never confident).
         offsets.value = mapOf(
             1080.0 to 0, 2700.0 to 6, 4320.0 to -4,
             1890.0 to 7, 3510.0 to -5, 4860.0 to 2,
@@ -208,11 +221,162 @@ class AvSyncSecondPassTest {
         val item = film("noisy")
         val reading = service.check(item, item.path).getOrThrow()
 
-        assertEquals(2, measures.value, "one extra pass only — never a third")
+        assertEquals(5, measures.value, "FR-317-42: up to five triples, never a sixth: ${asked.value}")
         assertEquals(AvSyncState.UNKNOWN, reading.state)
         assertEquals(6, reading.confidentWindows)
         assertFalse(reading.isFinding)
         assertTrue(reading.why?.contains("disagree") == true, reading.why)
+        // The fifteen windows are the spec's fractions of 5400 s, in the spec's order.
+        AvSyncVerdict.PASS_FRACTIONS.forEachIndexed { i, triple ->
+            assertStarts(triple.map { it * 5400.0 }, asked.value[i], "pass ${i + 1}")
+        }
+        val row = assertNotNull(service.rowFor(item.path))
+        assertEquals(AvSyncVerdict.PASSES_MAX.toLong(), row.passes_max, "stored with the plan it was measured under")
+    }
+
+    @Test
+    fun `the escalation stops after the pass that first gives an answer`() = runBlocking {
+        // Passes 1 and 2 read nothing; pass 3 (10 / 42.5 / 72.5 %) reads three steady windows.
+        offsets.value = mapOf(540.0 to 4, 2295.0 to 4, 3915.0 to 4)
+        val item = film("late-answer")
+        val reading = service.check(item, item.path).getOrThrow()
+
+        assertEquals(3, measures.value, "no pass after the one that answered: ${asked.value}")
+        assertEquals(AvSyncState.OFFSET, reading.state)
+        assertEquals(3, reading.confidentWindows)
+    }
+
+    @Test
+    fun `an in-sync first pass costs one call`() = runBlocking {
+        offsets.value = mapOf(1080.0 to -1, 2700.0 to -1, 4320.0 to -1)
+        val item = film("in-step")
+        assertEquals(AvSyncState.IN_SYNC, service.check(item, item.path).getOrThrow().state)
+        assertEquals(1, measures.value)
+    }
+
+    @Test
+    fun `a failure on a later pass keeps what came before`() = runBlocking {
+        failFrom.value = 3
+        val item = film("fails-on-three")
+        val reading = service.check(item, item.path).getOrThrow()
+
+        assertEquals(3, measures.value, "pass 3 was asked for and refused: ${asked.value}")
+        assertEquals(AvSyncState.UNKNOWN, reading.state)
+        val row = assertNotNull(service.rowFor(item.path), "the six windows of passes 1-2 are stored, not thrown away")
+        assertEquals(6, Json.parseToJsonElement(row.windows).jsonArray.size)
+        assertEquals(AvSyncVerdict.PASSES_MAX.toLong(), row.passes_max)
+    }
+
+    @Test
+    fun `on a short file no window is asked for twice — and a pass with nothing left ends the run`() = runBlocking {
+        // 6 minutes: pass 1 is 72 / 180 / 288 s; pass 2 would clamp 90 % onto 315 s, 27 s from 288, so it asks
+        // for 126 and 234 only; pass 3 has nothing left that is 45 s clear of those five, and the run ends.
+        val item = film("short", minutes = 6)
+        val reading = service.check(item, item.path).getOrThrow()
+
+        assertEquals(2, measures.value, "the third pass has nothing to ask for: ${asked.value}")
+        assertEquals(AvSyncState.UNKNOWN, reading.state)
+        val starts = asked.value.flatten()
+        assertEquals(5, starts.size)
+        // Across passes, never within a window's length of one already measured (pass 1's own clamping, which
+        // FR-317-8 has always allowed, is not what the rule is about).
+        for ((i, later) in asked.value.withIndex()) for (earlier in asked.value.take(i).flatten()) {
+            assertTrue(later.all { abs(it - earlier) >= 45.0 }, "$later vs $earlier")
+        }
+    }
+
+    // ── FR-317-42 — rows measured under the old plan, and FR-317-41's states ──
+
+    private fun storeAs(item: MediaItem, passesMax: Long, windowsJson: String, reason: String? = null) {
+        val fresh = assertNotNull(service.rowFor(item.path))
+        db.fileAvSyncQueries.put(fresh.path, fresh.size, fresh.mtime, fresh.checked_at, fresh.model, fresh.audio, reason, windowsJson, fresh.others, fresh.mkv_audio_ids, passesMax)
+    }
+
+    private fun confident(vararg starts: Double, frames: Int = 0) =
+        starts.joinToString(",", "[", "]") { """{"start_s":$it,"offset_frames":$frames,"conf":3.0,"frames":800,"faces":[]}""" }
+
+    @Test
+    fun `an unknown row from the two-triple plan is stale — an answered one or a current-plan one is not`() = runBlocking {
+        val item = film("old-plan")
+        service.check(item, item.path).getOrThrow()          // unknown, stored with the current plan
+        assertTrue(item.path in service.rowsCurrentByPath(), "passes_max = 5 with unknown is current")
+        assertNotNull(service.readingFor(item.path))
+
+        val noFace = """[{"start_s":1080.0,"conf":3.0,"frames":800,"faces":[]},{"start_s":2700.0,"conf":3.0,"frames":800,"faces":[]}]"""
+        storeAs(item, 2, noFace)
+        assertFalse(item.path in service.rowsCurrentByPath(), "passes_max = 2 with unknown is stale")
+        assertNull(service.readingFor(item.path), "so it reads as no current result, and ↻ is live")
+
+        storeAs(item, 2, confident(1080.0, 2700.0, 4320.0, frames = -1))
+        assertTrue(item.path in service.rowsCurrentByPath(), "passes_max = 2 with in_sync is current: no answered file is re-measured")
+        assertEquals(AvSyncState.IN_SYNC, assertNotNull(service.readingFor(item.path)).state)
+
+        storeAs(item, 2, "[]", reason = AvSyncReason.ANIMATION)
+        assertTrue(item.path in service.rowsCurrentByPath(), "a skip stands whatever its plan")
+        storeAs(item, 2, "[]", reason = AvSyncReason.VRAM)
+        assertTrue(item.path in service.rowsCurrentByPath(), "a pass-1 failure has no later pass to be missing")
+    }
+
+    @Test
+    fun `an unreadable file says can't tell and blocks the refresh — a changed file unblocks it`() = runBlocking {
+        val item = film("unreadable")
+        val config = configStore.current.copy(
+            scan = configStore.current.scan.copy(
+                pipeline = listOf(PipelineStep(step = "scan_files"), PipelineStep(step = FileCheckSteps.AVSYNC)),
+            ),
+        )
+        val checks = TitleChecks(db, store, null, integrity, null, null, service)
+        fun line() = checks.forItem(item, config).steps.single { it.step == FileCheckSteps.AVSYNC }
+        assertTrue(service.ready(configStore.current))
+
+        // No row: not yet, and nothing to block.
+        assertEquals("unchecked", line().files.single().state)
+        assertFalse(line().refreshBlocked)
+        assertNull(line().refreshBlockedWhy)
+
+        // Measured and settled, unreadable: can't tell, ↻ blocked with the second sentence. Still partial.
+        service.check(item, item.path).getOrThrow()
+        val settled = line()
+        assertEquals("cant_tell", settled.files.single().state)
+        assertTrue(settled.refreshBlocked)
+        assertEquals(TitleChecks.AVSYNC_CANT_TELL_ALL, settled.refreshBlockedWhy)
+        assertEquals("partial", settled.outcome)
+
+        // The file changes (its size does): no current row, so ↻ is live again.
+        FileIo.writeText(Path(item.path), "not a real film — only its size and mtime are read here, and now it is longer")
+        val changed = line()
+        assertEquals("unchecked", changed.files.single().state)
+        assertFalse(changed.refreshBlocked)
+    }
+
+    @Test
+    fun `an answered file blocks the refresh with the general sentence`() = runBlocking {
+        offsets.value = mapOf(1080.0 to -1, 2700.0 to -1, 4320.0 to -1)
+        val item = film("answered")
+        val config = configStore.current.copy(
+            scan = configStore.current.scan.copy(
+                pipeline = listOf(PipelineStep(step = "scan_files"), PipelineStep(step = FileCheckSteps.AVSYNC)),
+            ),
+        )
+        assertTrue(service.ready(configStore.current))
+        service.check(item, item.path).getOrThrow()
+        val step = TitleChecks(db, store, null, integrity, null, null, service).forItem(item, config).steps.single { it.step == FileCheckSteps.AVSYNC }
+        assertEquals("clean", step.files.single().state)
+        assertTrue(step.refreshBlocked)
+        assertEquals(TitleChecks.AVSYNC_MEASURED_ALREADY, step.refreshBlockedWhy)
+    }
+
+    @Test
+    fun `the refresh block is a rule over every file the step would re-measure`() {
+        val inSync = AvSyncVerdict.of((1..4).map { AvSyncWindow(startS = it * 100.0, offsetFrames = -1, conf = 3.0, frames = 800) }, zeroFrames = -1)
+        val unreadable = AvSyncVerdict.of(listOf(AvSyncWindow(startS = 100.0, offsetFrames = 1, conf = 1.0, frames = 100)), zeroFrames = -1)
+        val skipped = AvSyncVerdict.of(emptyList(), zeroFrames = -1, reason = AvSyncReason.ANIMATION)
+
+        assertNull(TitleChecks.avSyncRefreshBlock(emptyList()), "a title with no files has nothing to block")
+        assertEquals(TitleChecks.AVSYNC_CANT_TELL_ALL, TitleChecks.avSyncRefreshBlock(listOf(unreadable, unreadable)))
+        assertEquals(TitleChecks.AVSYNC_MEASURED_ALREADY, TitleChecks.avSyncRefreshBlock(listOf(unreadable, inSync)))
+        assertEquals(TitleChecks.AVSYNC_MEASURED_ALREADY, TitleChecks.avSyncRefreshBlock(listOf(skipped, unreadable)), "a skip is not can't tell")
+        assertNull(TitleChecks.avSyncRefreshBlock(listOf(inSync, null)), "one file without a current reading keeps ↻ live")
     }
 
     @Test

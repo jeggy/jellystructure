@@ -944,3 +944,13 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
    picker's own styles carry the look, because the picker hides that input behind a div of its own.
    Fenced by scripts/check-mobile-css.sh. */
 .lib-card.skipped .lib-skip-gov { opacity: .5; }
+
+/* 317 (FR-317-41, DEB-1688) — the Checks card's ↻ when re-measuring cannot change anything: still in its place, disabled,
+   and a small popover beside it, on hover, focus or tap, says why. The server sends the sentence; the page only draws it. */
+.chk-act-wrap { position: relative; display: inline-block; }
+.btn.chk-blocked { opacity: .45; cursor: not-allowed; }
+.btn.chk-blocked:hover { background: transparent; color: var(--ink-soft); }
+.chk-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; width: 260px; display: none;
+  background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius-s); box-shadow: var(--shadow);
+  padding: 8px 10px; font-size: .72rem; line-height: 1.4; color: var(--ink-soft); text-align: left; white-space: normal; }
+.chk-pop.open { display: block; }

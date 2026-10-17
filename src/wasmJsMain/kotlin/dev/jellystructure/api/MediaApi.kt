@@ -162,7 +162,11 @@ data class StepCheck(
     @SerialName("last_at") val lastAt: Long? = null, val last: String = "not yet",
     val outcome: String? = null, val detail: String? = null,
     @SerialName("next_due_at") val nextDueAt: Long? = null, @SerialName("next_due") val nextDue: String = "",
-    val action: String? = null, val files: List<FileCheckRow> = emptyList(),
+    val action: String? = null,
+    // FR-317-41 — the ↻ is drawn disabled, with this sentence, when the server says re-measuring cannot help.
+    @SerialName("refresh_blocked") val refreshBlocked: Boolean = false,
+    @SerialName("refresh_blocked_why") val refreshBlockedWhy: String? = null,
+    val files: List<FileCheckRow> = emptyList(),
 )
 
 @Serializable

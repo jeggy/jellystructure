@@ -10,6 +10,12 @@
 -- such a file is `unknown`, which is never counted or shown as clean. `windows` and `others` are the
 -- sidecar's JSON verbatim. `mkv_audio_ids` maps each `0:a:N` to its mkvmerge track id, read once here at
 -- check time, so the advice never reads a media file on the request path (255's rule).
+--
+-- `passes_max` (FR-317-42) is the plan the row was measured under: how many window triples a file that
+-- stays unreadable gets before it is *can't tell*. 2 for every row stored before the plan grew to five,
+-- 5 for a new one. An `unknown` row without a skip stored under a smaller number than the current plan is
+-- not current (FR-317-7); an answered row or a skip is, whatever it holds. Must stay byte-for-byte in sync
+-- with 83.sqm's ALTER (the SQLDelight-migration rule).
 CREATE TABLE file_av_sync (
     path TEXT NOT NULL PRIMARY KEY,
     size INTEGER NOT NULL,
@@ -20,12 +26,13 @@ CREATE TABLE file_av_sync (
     reason TEXT,
     windows TEXT NOT NULL,
     others TEXT NOT NULL,
-    mkv_audio_ids TEXT
+    mkv_audio_ids TEXT,
+    passes_max INTEGER NOT NULL DEFAULT 2
 );
 
 put:
-INSERT OR REPLACE INTO file_av_sync(path, size, mtime, checked_at, model, audio, reason, windows, others, mkv_audio_ids)
-VALUES (:path, :size, :mtime, :checked_at, :model, :audio, :reason, :windows, :others, :mkv_audio_ids);
+INSERT OR REPLACE INTO file_av_sync(path, size, mtime, checked_at, model, audio, reason, windows, others, mkv_audio_ids, passes_max)
+VALUES (:path, :size, :mtime, :checked_at, :model, :audio, :reason, :windows, :others, :mkv_audio_ids, :passes_max);
 
 all:
 SELECT * FROM file_av_sync;

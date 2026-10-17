@@ -810,7 +810,14 @@ fun Route.trackRoutes(
             "avsync" -> listOf(dev.jellystructure.media.FileCheckSchedule.AVSYNC_JOB)
             else -> dev.jellystructure.media.FileCheckSchedule.JOB_TYPES
         }
-        val r = mediaJobQueue.enqueueTitleChecks(item, force = call.request.queryParameters["force"] == "true", jobTypes = types)
+        val force = call.request.queryParameters["force"] == "true"
+        // FR-317-41 — a forced re-measure of files that all have a current reading reads the same windows and
+        // stores the same answer, so it is refused with the sentence the card's disabled ↻ shows. The page
+        // already blocks the button; this is for a stale page, or anything that is not the page.
+        if (force && call.request.queryParameters["check"] == "avsync") {
+            mediaJobQueue.avSyncRefreshBlock(item)?.let { return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to it)) }
+        }
+        val r = mediaJobQueue.enqueueTitleChecks(item, force = force, jobTypes = types)
         call.respond(if (r.queued + r.promoted > 0) HttpStatusCode.Accepted else HttpStatusCode.OK, r)
     }
 

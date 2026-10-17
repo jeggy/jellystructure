@@ -224,9 +224,9 @@ class AvSyncShortAudioTest {
         val row = assertNotNull(service.rowFor(item.path))
         assertEquals(AvSyncReason.SHORT_AUDIO, row.reason)
         assertEquals(AvSyncReason.SHORT_AUDIO, service.readingFor(item.path)?.reason)
-        // FR-317-17's second triple was asked for, which is exactly what should happen: three more places
-        // in the file is how a file with local damage gets its answer.
-        assertEquals(2, measures.value)
+        // Every triple was asked for, which is exactly what should happen: more places in the file is how a file
+        // with local damage gets its answer, and none of them gave one (FR-317-42: up to five triples).
+        assertEquals(AvSyncVerdict.PASSES_MAX, measures.value)
     }
 
     @Test

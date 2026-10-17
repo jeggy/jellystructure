@@ -256,10 +256,8 @@ class AvSyncService(
     private val windowsSer = ListSerializer(AvSyncWindow.serializer())
     private val othersSer = ListSerializer(AvSyncOther.serializer())
 
-    /** FR-317-8, FR-317-17 — three windows, then three more when the first three give neither a steady
-     *  offset nor an in-sync reading (too few confident, or confident and disagreeing). */
-    private val firstWindows = listOf(0.20, 0.50, 0.80)
-    private val secondWindows = listOf(0.35, 0.65, 0.90)
+    /** FR-317-8, FR-317-42 — a window is this long, and a later pass never asks for a start within this
+     *  of one already measured. The fractions themselves are [AvSyncVerdict.PASS_FRACTIONS]. */
     private val windowSeconds = 45.0
 
     /** TMDB's Animation id — for films and series alike. Never the localised genre name (dev review item 8:
@@ -480,7 +478,27 @@ class AvSyncService(
         val m = lastModel
         return q.all().executeAsList()
             .filter { m == null || it.model == m || it.reason in SKIP_REASONS }
+            .filterNot { isStaleUnderPlan(it) }
             .associateBy { it.path }
+    }
+
+    /**
+     * FR-317-42 — a row that stayed `unknown` under a plan shorter than the current one was never given the
+     * later passes, so it is not current (FR-317-7) and the enqueue pass measures it again. Only that:
+     *
+     * - an answered row (`in_sync`, `offset`, `drift`) stands, so no answered file is re-measured;
+     * - a skip stands, as it always has (no plan changes whether a title is animation);
+     * - a row with no windows (FR-317-36's `vram`, FR-317-39's `undecodable`) stands, because those were
+     *   failures of pass 1 and the later passes are never reached by them.
+     *
+     * No pipeline-version bump goes with it, which would re-measure the whole library for the same answers.
+     */
+    internal fun isStaleUnderPlan(row: File_av_sync): Boolean {
+        if (row.passes_max >= AvSyncVerdict.PASSES_MAX) return false
+        if (row.reason in SKIP_REASONS) return false
+        val windows = windowsOf(row)
+        if (windows.isEmpty()) return false
+        return AvSyncVerdict.of(windows, zeroFrames(), null, row.reason).state == AvSyncState.UNKNOWN
     }
 
     private fun windowsOf(row: File_av_sync): List<AvSyncWindow> =
@@ -497,6 +515,8 @@ class AvSyncService(
         // A skip (FR-317-8) was decided here, not by the sidecar: a new pipeline version cannot change
         // whether a title is animation, so such a row is not made due by one.
         if (row.reason in SKIP_REASONS) return true
+        // FR-317-42 — an `unknown` reading from a shorter plan is due again, whatever sidecar wrote it.
+        if (isStaleUnderPlan(row)) return false
         val m = lastModel ?: return true          // never spoken to the sidecar: trust what is stored
         return row.model == m
     }
@@ -607,7 +627,7 @@ class AvSyncService(
      *  False when the file is no longer on disk, which is the one case there is nothing to stamp. */
     fun storeSkip(path: String, reason: String): Boolean {
         val stamp = FileIntegrityService.stampOf(path) ?: return false
-        q.put(path, stamp.size, stamp.mtime, nowEpochSec(), lastModel ?: PENDING_MODEL, null, reason, "[]", "[]", null)
+        q.put(path, stamp.size, stamp.mtime, nowEpochSec(), lastModel ?: PENDING_MODEL, null, reason, "[]", "[]", null, AvSyncVerdict.PASSES_MAX.toLong())
         return true
     }
 
@@ -686,23 +706,32 @@ class AvSyncService(
             emptyMap()
         }
 
-        var windows = measure(path, audio, others, runtimeS, firstWindows).getOrElse {
+        val first = windowsFor(runtimeS, AvSyncVerdict.PASS_FRACTIONS[0], emptyList())
+        var windows = measure(path, audio, others, first).getOrElse {
             // FR-317-36 — the one failure that stores a row instead of failing the job. Only the first
-            // triple: a `vram` refusal of FR-317-17's second triple leaves the first triple's windows
-            // standing, which is an answer, and `measure` there is read with `getOrNull` already.
+            // triple: a `vram` refusal of a later triple leaves the windows already measured standing,
+            // which is an answer, and the later passes are read with `getOrNull` already.
             if (it is AvSyncVramExhausted) return storeVramRow(path, runtimeS, it)
-            // FR-317-39 — and the 422, the same way, on the first triple only: a 422 on the second triple
-            // is read with `getOrNull` below and leaves the first triple's reading standing.
+            // FR-317-39 — and the 422, the same way, on the first triple only: a 422 on a later triple
+            // ends the escalation and leaves the earlier readings standing.
             if (it is AvSyncUndecodable) return storeUndecodableRow(path, runtimeS, it)
             return Result.failure(it)
         }
-        if (AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) {
-            // FR-317-8 / FR-317-17 — three more windows elsewhere in the file before giving up: a film whose
-            // 20/50/80 all land on a landscape is common, and so is one whose three confident windows
-            // disagree — a drift needs four of them on a line, which three windows can never reach. One
-            // extra pass only (there is no third), at ~4 s of one card, and only for a file with no answer.
-            val more = measure(path, audio, others, runtimeS, secondWindows).getOrNull()
-            if (more != null) windows = MeasureResponse(windows.windows + more.windows, more.others.ifEmpty { windows.others }, more.decode, windows.seconds + more.seconds)
+        // FR-317-8 / FR-317-17 / FR-317-42 — up to four more triples elsewhere in the file, but only while the
+        // verdict over every window so far is `unknown`: a film whose 20/50/80 all land on a landscape is
+        // common, and so is one whose three confident windows disagree — a drift needs four of them on a
+        // line, which three windows can never reach. The first answer of any kind (in step, offset or
+        // drift) ends it. A window within [windowSeconds] of one already measured is not asked for, and a
+        // pass with nothing left ends the run; a failure on a later pass keeps what came before. At ~4 s of
+        // one card per triple, a file that never reads costs ~20 s.
+        val requested = first.map { it.startS }.toMutableList()
+        for (pass in 1 until AvSyncVerdict.PASSES_MAX) {
+            if (!AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) break
+            val next = windowsFor(runtimeS, AvSyncVerdict.PASS_FRACTIONS[pass], requested)
+            if (next.isEmpty()) break
+            val more = measure(path, audio, others, next).getOrNull() ?: break
+            requested += next.map { it.startS }
+            windows = MeasureResponse(windows.windows + more.windows, more.others.ifEmpty { windows.others }, more.decode, windows.seconds + more.seconds)
         }
         val after = FileIntegrityService.stampOf(path) ?: return Result.failure(AvSyncRefused("the file is no longer on disk"))
         if (after.size != before.size || after.mtime != before.mtime) {
@@ -734,6 +763,7 @@ class AvSyncService(
             path, after.size, after.mtime, nowEpochSec(), lastModel ?: PENDING_MODEL, audio, reason,
             json.encodeToString(windowsSer, windows.windows), json.encodeToString(othersSer, windows.others),
             mkvIds.takeIf { it.isNotEmpty() }?.let { ids -> json.encodeToString(ListSerializer(MkvAudioId.serializer()), ids.map { MkvAudioId(it.key, it.value) }) },
+            AvSyncVerdict.PASSES_MAX.toLong(),
         )
         // The zero moved (every stored window feeds it) whatever the verdict, so the revision bumps on
         // every measured file, not only on a finding (FR-317-6).
@@ -745,13 +775,21 @@ class AvSyncService(
         return Result.success(reading)
     }
 
-    private suspend fun measure(path: String, audio: String, others: List<String>, runtimeS: Double, fractions: List<Double>): Result<MeasureResponse> {
-        val windows = fractions.map { f ->
-            // Clamped inside the file: a 2-minute episode's 80 % window would otherwise ask for 45 s that
-            // is not there, and the sidecar would answer with however much it got.
+    /**
+     * The windows one pass asks for. Placement is the same for every pass: a fraction of the runtime,
+     * clamped inside the file (a 2-minute episode's 80 % window would otherwise ask for 45 s that is not
+     * there, and the sidecar would answer with however much it got). FR-317-42 — a start within
+     * [windowSeconds] of one in [measured], the starts of the earlier passes, is dropped: on a short file
+     * clamping brings windows together, and a window measured twice is not more of the file.
+     */
+    private fun windowsFor(runtimeS: Double, fractions: List<Double>, measured: List<Double>): List<MeasureWindow> =
+        fractions.map { f ->
             val start = (runtimeS * f).coerceIn(0.0, (runtimeS - windowSeconds).coerceAtLeast(0.0))
             MeasureWindow(startS = (start * 10).toLong() / 10.0, durS = minOf(windowSeconds, runtimeS - start))
         }.distinctBy { it.startS }.filter { it.durS >= 10.0 }
+            .filter { w -> measured.none { kotlin.math.abs(it - w.startS) < windowSeconds } }
+
+    private suspend fun measure(path: String, audio: String, others: List<String>, windows: List<MeasureWindow>): Result<MeasureResponse> {
         if (windows.isEmpty()) return Result.failure(AvSyncRefused("the file is too short to measure"))
         return measureOnce(path, audio, others, windows)
     }
@@ -779,7 +817,7 @@ class AvSyncService(
         const val PENDING_MODEL = "unknown"
 
         /** The reasons the backend decides by itself, without ever asking the sidecar (FR-317-8). */
-        val SKIP_REASONS = setOf(AvSyncReason.ANIMATION, AvSyncReason.TOO_SHORT, AvSyncReason.NO_ORIGINAL_TRACK)
+        val SKIP_REASONS = AvSyncReason.SKIPS
 
         /** FR-317-16 — how long [readyNow] will stand by a recorded answer. Five times the lane worker's
          *  own 60 s heartbeat: comfortably longer than a slow `/health` + a `/stat` per root, short enough

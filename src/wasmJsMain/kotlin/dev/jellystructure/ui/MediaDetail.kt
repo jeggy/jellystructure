@@ -3279,14 +3279,27 @@ private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
         """<div class="row center tiny" style="gap:10px;padding:3px 0 3px 8px;flex-wrap:wrap;">
              <span class="mono" style="min-width:74px;">${(f.episodeTag ?: f.name).esc()}</span>
              <span class="muted" style="min-width:84px;">${f.checked.esc()}</span>
-             ${badge(if (f.state == "unchecked") null else f.state)}
+             ${when (f.state) {
+                 "unchecked" -> badge(null)
+                 // FR-317-41 — measured and settled, so neither *not yet* nor a finding: the neutral chip.
+                 "cant_tell" -> """<span class="badge">can't tell</span>"""
+                 "skipped" -> """<span class="badge">skipped</span>"""
+                 else -> badge(f.state)
+             }}
              <span class="muted">${f.nextDue.esc()}</span>
              ${f.detail?.let { """<span style="flex-basis:100%;padding-left:84px;color:var(--bad);">${it.esc()}</span>""" } ?: ""}
            </div>"""
     val isTvShow = item.kind == MediaKind.TV_SHOW
     val lines = checks.steps.joinToString("") { st ->
         val act = st.action?.takeIf { st.enabled }?.let {
-            """<span class="btn sm ghost chk-act" data-action="$it" title="Run it for this title now" style="padding:2px 8px;">↻</span>"""
+            if (st.refreshBlocked) {
+                // FR-317-41 — blocked, not hidden: it keeps its place, is disabled, and the server's sentence
+                // opens beside it on hover, focus or tap. No `chk-act` class, so no click ever runs it.
+                val why = st.refreshBlockedWhy.orEmpty().esc()
+                """<span class="chk-act-wrap"><span class="btn sm ghost chk-blocked" tabindex="0" role="button" aria-disabled="true" aria-label="Run it for this title now (unavailable)" style="padding:2px 8px;">↻</span><span class="chk-pop" role="tooltip">$why</span></span>"""
+            } else {
+                """<span class="btn sm ghost chk-act" data-action="$it" title="Run it for this title now" style="padding:2px 8px;">↻</span>"""
+            }
         } ?: ""
         val files = if (st.files.isEmpty()) "" else {
             val body = if (isTvShow) st.files.groupBy { it.season }.entries.sortedBy { it.key ?: -1 }.joinToString("") { (season, rows) ->
@@ -3310,6 +3323,17 @@ private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
     }
     card.innerHTML = """<div class="row center"><h4 style="margin:0;">Checks</h4><span class="spacer"></span><span class="tiny muted">what this title has been checked against, and when</span></div>
         <hr class="dash" style="margin:10px 0 4px;">$lines"""
+    val blocked = card.querySelectorAll(".chk-blocked")
+    for (i in 0 until blocked.length) {
+        val btn = blocked.item(i) as? HTMLElement ?: continue
+        val pop = btn.nextElementSibling as? HTMLElement ?: continue
+        fun show(on: Boolean) { if (on) pop.classList.add("open") else pop.classList.remove("open") }
+        btn.addEventListener("mouseenter") { show(true) }
+        btn.addEventListener("mouseleave") { show(false) }
+        btn.addEventListener("focus") { show(true) }
+        btn.addEventListener("blur") { show(false) }
+        btn.addEventListener("click") { show(!pop.classList.contains("open")) }   // tap
+    }
     val buttons = card.querySelectorAll(".chk-act")
     for (i in 0 until buttons.length) {
         val btn = buttons.item(i) as? HTMLElement ?: continue
