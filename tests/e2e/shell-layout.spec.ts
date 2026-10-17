@@ -110,4 +110,53 @@ test.describe.serial("App shell layout", () => {
     const navBox = await page.locator('.app-side a.nav[href="#/dashboard"]').boundingBox();
     expect(navBox?.height ?? 0).toBeGreaterThan(10);
   });
+
+  // DEB-1670 — the admin's CSP has no 'unsafe-inline' in script-src, so an inline onclick="…" is refused and the
+  // button silently does nothing (every Copy was dead from 2026-08-02). The markup now carries data attributes and
+  // ui/DelegatedActions.kt listens at the document. This runs against the real server's real CSP header, in this file
+  // only because it already holds the one shared login (the rate limiter is per run, see above). The fixture
+  // elements are injected, so no library title is involved.
+  test("delegated actions run under the page's CSP (Copy, hide, toggle, image fallback)", async () => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await setLocalStorageAndReload(page, {});
+
+    await page.evaluate(() => {
+      const w = window as any;
+      w.__copied = null;
+      if (navigator.clipboard) {
+        const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
+        navigator.clipboard.writeText = (t: string) => { w.__copied = t; return orig(t).catch(() => undefined); };
+      }
+      // a plain-HTTP origin has no navigator.clipboard: the helper falls back to execCommand('copy') on a textarea
+      document.addEventListener("copy", () => {
+        const a = document.activeElement as HTMLTextAreaElement | null;
+        if (w.__copied === null && a && a.tagName === "TEXTAREA") w.__copied = a.value.substring(a.selectionStart, a.selectionEnd);
+      });
+      const host = document.createElement("div");
+      host.id = "dx-fixture";
+      host.innerHTML =
+        '<button id="dx-copy" data-copy="fixture-command --flag \'value\'">Copy</button>' +
+        '<div id="dx-gone">banner</div><button id="dx-hide" data-hide-el="dx-gone">x</button>' +
+        '<div id="dx-body">reason</div><button id="dx-toggle" data-toggle-el="dx-body">why</button>' +
+        '<div id="dx-ph"><img id="dx-img" src="/__no_such_image__.png" data-fallback-initials="AB" data-fallback-color="#123456"></div>';
+      document.body.appendChild(host);
+    });
+
+    await page.click("#dx-copy");
+    await expect(page.locator("#dx-copy")).toHaveText("Copied!");
+    expect(await page.evaluate(() => (window as any).__copied)).toBe("fixture-command --flag 'value'");
+    await expect(page.locator("#dx-copy")).toHaveText("Copy", { timeout: 4_000 });
+
+    await page.click("#dx-hide");
+    await expect(page.locator("#dx-gone")).toBeHidden();
+
+    await page.click("#dx-toggle");
+    await expect(page.locator("#dx-body")).toBeHidden();
+    await page.click("#dx-toggle");
+    await expect(page.locator("#dx-body")).toBeVisible();
+
+    // the failing image is replaced by its initials on the given colour
+    await expect(page.locator("#dx-img")).toHaveCount(0);
+    await expect(page.locator("#dx-ph")).toHaveText("AB");
+  });
 });

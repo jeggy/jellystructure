@@ -1,6 +1,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.api.AppConfig
+import dev.jellystructure.copyToClipboard
 import dev.jellystructure.api.ApiKeys
 import dev.jellystructure.api.LanguageRules
 import dev.jellystructure.api.Behavior
@@ -3651,15 +3652,15 @@ private fun wireChromecast(scope: CoroutineScope) {
     }
     // Phase 226 (FR-226-2) — the two console fields, each with its own Copy.
     document.getElementById("cc-copy-url")?.addEventListener("click") {
-        publicReceiverUrl()?.let { window.navigator.clipboard.writeText(it); flashCopied("cc-copy-url") }
+        publicReceiverUrl()?.let { copyToClipboard(it); flashCopied("cc-copy-url") }
     }
     document.getElementById("cc-copy-pkg")?.addEventListener("click") {
-        window.navigator.clipboard.writeText(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-pkg")
+        copyToClipboard(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-pkg")
     }
     // Phase 237 (FR-237-3) — the Android TV field takes the SAME value as step 3's Package Name. One
     // property (`ravilo.applicationId`) feeds both rows through BuildInfo, so they cannot drift.
     document.getElementById("cc-copy-tvpkg")?.addEventListener("click") {
-        window.navigator.clipboard.writeText(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-tvpkg")
+        copyToClipboard(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-tvpkg")
     }
     // Phase 237 (FR-237-4) — the Listing Details fields. Fixed strings, copied verbatim from the
     // markup above so the Copy and what the admin reads cannot disagree.
@@ -3671,7 +3672,7 @@ private fun wireChromecast(scope: CoroutineScope) {
     )) {
         document.getElementById(btn)?.addEventListener("click") {
             val text = (document.getElementById(el) as? HTMLElement)?.textContent.orEmpty()
-            if (text.isNotBlank()) { window.navigator.clipboard.writeText(text); flashCopied(btn) }
+            if (text.isNotBlank()) { copyToClipboard(text); flashCopied(btn) }
         }
     }
     document.getElementById("pub-check-btn")?.addEventListener("click") {

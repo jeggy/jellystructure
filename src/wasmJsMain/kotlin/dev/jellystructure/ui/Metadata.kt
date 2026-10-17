@@ -182,7 +182,7 @@ private fun renderLogoGrid(entries: List<MetadataEntry>, kind: String, linkPrefi
             } else {
                 """<span style="font-size:.72rem;font-weight:600;color:var(--ink-soft);text-align:center;padding:2px 4px;line-height:1.3">${e.name}</span>"""
             }
-            append("""<a href="#$linkPrefix$encoded" data-filter-name="${e.name.lowercase()}" style="display:flex;align-items:center;gap:13px;padding:14px 15px;text-decoration:none;border-radius:var(--radius-s);background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);color:var(--ink);transition:transform .15s,box-shadow .15s,border-color .15s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow)';this.style.borderColor='var(--hi)'" onmouseout="this.style.transform='';this.style.boxShadow='var(--shadow-s)';this.style.borderColor=''">""")
+            append("""<a href="#$linkPrefix$encoded" data-filter-name="${e.name.lowercase()}" style="display:flex;align-items:center;gap:13px;padding:14px 15px;text-decoration:none;border-radius:var(--radius-s);background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);color:var(--ink);transition:transform .15s,box-shadow .15s,border-color .15s" data-hover="lift">""")
             append("""<div style="width:54px;height:54px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(160,152,255,.42);overflow:hidden">$logoHtml</div>""")
             append("""<div>""")
             append("""<span style="font-size:.9rem;font-weight:600;display:block">${e.name}</span>""")
@@ -228,7 +228,7 @@ private fun renderGenreChips(entries: List<MetadataEntry>): String {
         for (e in entries) {
             val encoded = dev.jellystructure.encodeURIComponent(e.name)
             val filterName = esc((listOf(e.name) + e.labels.map { it.label }).joinToString(" ").lowercase())
-            append("""<a href="#/library?genres=$encoded" data-filter-name="$filterName" style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;text-decoration:none;border-radius:var(--radius-s);background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);color:var(--ink);transition:box-shadow .15s,border-color .15s" onmouseover="this.style.boxShadow='var(--shadow)';this.style.borderColor='var(--hi)'" onmouseout="this.style.boxShadow='var(--shadow-s)';this.style.borderColor=''">""")
+            append("""<a href="#/library?genres=$encoded" data-filter-name="$filterName" style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;text-decoration:none;border-radius:var(--radius-s);background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);color:var(--ink);transition:box-shadow .15s,border-color .15s" data-hover="card">""")
             append("""<span style="display:flex;align-items:baseline;justify-content:space-between;gap:8px"><span style="font-size:.9rem;font-weight:600">${esc(e.name)}</span><span class="tiny muted">${e.count} titles</span></span>""")
             if (e.handAdded) {
                 append("""<span class="tiny muted">Added by hand · not a TMDB genre</span>""")
@@ -261,7 +261,7 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
     } else {
         append("""<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px">""")
         for (tag in data.jsTags) {
-            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-color="${tag.color}" data-desc="${tag.description.replace("\"", "&quot;")}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
+            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-color="${tag.color}" data-desc="${tag.description.replace("\"", "&quot;")}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" data-hover="card">""")
             append("""<span class="tag-dot-lg" style="background:${tag.color};box-shadow:0 0 0 2px ${tag.color}33"></span>""")
             append("""<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">""")
             append("""<span style="color:var(--ink);font-weight:600">${tag.name}</span>""")
@@ -270,7 +270,7 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
             }
             append("</span>")
             val enc102 = dev.jellystructure.encodeURIComponent(tag.name)
-            append("""<a href="#/library?tags=$enc102" onclick="event.stopPropagation()" class="badge info" style="flex-shrink:0;cursor:pointer;text-decoration:none">${tag.count}</a>""")
+            append("""<a href="#/library?tags=$enc102" data-stop-click class="badge info" style="flex-shrink:0;cursor:pointer;text-decoration:none">${tag.count}</a>""")
             append("</div>")
         }
         append("</div>")
@@ -296,7 +296,8 @@ private fun wireTagsTab(content: HTMLElement, scope: CoroutineScope) {
     val cards = content.querySelectorAll(".js-tag-card")
     for (i in 0 until cards.length) {
         val card = cards.item(i) as? HTMLElement ?: continue
-        card.addEventListener("click") { _ ->
+        card.addEventListener("click") { ev ->
+            if (clickIsInside(ev)) return@addEventListener
             val name = card.getAttribute("data-name") ?: return@addEventListener
             val color = card.getAttribute("data-color")
             val desc = card.getAttribute("data-desc")

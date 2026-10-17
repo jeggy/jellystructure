@@ -163,7 +163,7 @@ private fun renderStep1(container: Element, scope: CoroutineScope, state: Wizard
               <span class="spacer"></span>
               <span class="tiny muted">Drag or use ▲▼ to arrange</span>
             </div>
-            <div id="wiz-order-list" style="display:flex;flex-direction:column;gap:4px;" ondragover="return false;"></div>
+            <div id="wiz-order-list" style="display:flex;flex-direction:column;gap:4px;"></div>
             <button id="wiz-add-lang" class="btn sm ghost" style="margin-top:10px;">+ Add language</button>
             <div id="wiz-lang-input-row" style="display:none;margin-top:8px;gap:8px;" class="row">
               <input id="wiz-lang-input" class="inp" type="text" placeholder="e.g. fr, jpn, zh-CN" style="max-width:200px;">
@@ -264,6 +264,8 @@ private fun wireStep1Events(container: Element, scope: CoroutineScope, state: Wi
 
     // Drag-to-reorder
     var dragIdx = -1
+    // a drop only lands on an element whose dragover was cancelled
+    (document.getElementById("wiz-order-list") as? HTMLElement)?.addEventListener("dragover") { e -> e.preventDefault() }
     (document.getElementById("wiz-order-list") as? HTMLElement)?.addEventListener("dragstart") { e ->
         val item = (e.target as? HTMLElement)?.closest("[data-idx]") as? HTMLElement ?: return@addEventListener
         dragIdx = item.getAttribute("data-idx")?.toIntOrNull() ?: -1
@@ -449,15 +451,14 @@ private fun buildEpisodeRow2(ep: BulkPlanEpisode, state: WizardState): String {
     // Phase 209: the Reason panel used to be reachable only via the "+N" chip below, which only
     // exists when there are >3 tracks to show — so a "nothing_to_do" row with 0-2 tracks (exactly the
     // sidecar-only case) had no way to reveal why. The status cell itself is now always the toggle.
-    val toggleReason = "var e=document.getElementById('$bodyId'); if(e){e.style.display = e.style.display==='none' ? '' : 'none';}"
     return """
         <tr class="wiz-ep-row" data-status="${ep.status}" style="border-bottom:1px solid var(--border-soft);">
           <td style="padding:8px 12px;white-space:nowrap;font-weight:500;">${ep.code.esc()}<br><span class="tiny muted">${(ep.title ?: "").esc().take(28)}</span></td>
-          <td style="padding:8px 12px;cursor:pointer;" title="Show reason" onclick="$toggleReason">$statusBadge</td>
+          <td style="padding:8px 12px;cursor:pointer;" title="Show reason" data-toggle-el="$bodyId">$statusBadge</td>
           <td style="padding:8px 6px;">${col(0)}</td>
           <td style="padding:8px 6px;">${col(1)}</td>
           <td style="padding:8px 6px;">${col(2)}</td>
-          <td style="padding:8px 6px;">${if (moreCount > 0) """<span class="chip muted" style="font-size:.72rem;cursor:pointer;" onclick="$toggleReason">+$moreCount</span>""" else ""}</td>
+          <td style="padding:8px 6px;">${if (moreCount > 0) """<span class="chip muted" style="font-size:.72rem;cursor:pointer;" data-toggle-el="$bodyId">+$moreCount</span>""" else ""}</td>
           <td style="padding:8px 12px;text-align:right;">$actionCell</td>
         </tr>
         <tr id="$bodyId" style="display:none;background:var(--surface-alt);">

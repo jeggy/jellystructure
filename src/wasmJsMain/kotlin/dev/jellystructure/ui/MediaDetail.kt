@@ -453,7 +453,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         return """<span class="chip tag-chip" style="cursor:default;">$dot${tag.esc()} <span class="rm tag-rm" data-tag="${tag.esc()}">✕</span></span>"""
     }
     val tagSuggestions = jsTags.joinToString("") { jt ->
-        """<div class="tag-suggest-item" data-tag="${jt.name.esc()}" style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;font-size:.85rem;border-radius:6px" onmouseover="this.style.background='var(--fill-2)'" onmouseout="this.style.background=''"><span class="tag-dot" style="background:${jt.color};"></span>${jt.name.esc()}</div>"""
+        """<div class="tag-suggest-item" data-tag="${jt.name.esc()}" style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;font-size:.85rem;border-radius:6px" data-hover="fill"><span class="tag-dot" style="background:${jt.color};"></span>${jt.name.esc()}</div>"""
     }
     val tagsChipsHtml = """<div class="card" id="tags-section">
       <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted">written to NFO &lt;tag&gt; · <a href="#/metadata?tab=tags">manage tags →</a> <button class="diff-trigger" id="diff-tags">≠</button></span></div>
@@ -4595,16 +4595,14 @@ private fun permCopyBlock(command: String, comment: String? = null): String {
     val display = if (comment != null) "${command.esc()}<span style='color:var(--ink-soft);'> # ${comment.esc()}</span>" else command.esc()
     return """<div style="display:flex;align-items:stretch;background:var(--fill-3);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:4px 0 2px;">
       <code style="flex:1;padding:7px 10px;$MONO_CODE_STYLE;white-space:pre-wrap;word-break:break-all;">$display</code>
-      <button data-copy="$attrSafe" onclick="(function(t){try{navigator.clipboard.writeText(t)}catch(e){var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.focus();a.select();try{document.execCommand('copy')}catch(_){}document.body.removeChild(a)}})(this.dataset.copy);var b=this;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500);" style="padding:0 12px;background:var(--fill-2);border:none;border-left:1px solid var(--line);cursor:pointer;color:var(--ink-soft);font-size:.75rem;white-space:nowrap;flex-shrink:0;">Copy</button>
+      <button data-copy="$attrSafe" style="padding:0 12px;background:var(--fill-2);border:none;border-left:1px solid var(--line);cursor:pointer;color:var(--ink-soft);font-size:.75rem;white-space:nowrap;flex-shrink:0;">Copy</button>
     </div>""".trimIndent()
 }
 
 private fun buildNfoPermFixHtml(path: String): String {
     val p = path.ifBlank { "/path/to/media" }
-    val tabActive = "padding:6px 14px;border:none;cursor:pointer;background:none;border-bottom:2px solid var(--hi);font-weight:600;color:var(--ink);font-size:.82rem;"
-    val tabInactive = "padding:6px 14px;border:none;cursor:pointer;background:none;border-bottom:2px solid transparent;color:var(--ink-soft);font-size:.82rem;"
-    val switchDocker = "document.getElementById('perm-tab-docker').style.display='';document.getElementById('perm-tab-native').style.display='none';document.getElementById('perm-tab-docker-btn').setAttribute('style','$tabActive');document.getElementById('perm-tab-native-btn').setAttribute('style','$tabInactive');"
-    val switchNative = "document.getElementById('perm-tab-native').style.display='';document.getElementById('perm-tab-docker').style.display='none';document.getElementById('perm-tab-native-btn').setAttribute('style','$tabActive');document.getElementById('perm-tab-docker-btn').setAttribute('style','$tabInactive');"
+    val tabActive = permTabActiveStyle()
+    val tabInactive = permTabInactiveStyle()
 
     val dockerTab = """
         <div id="perm-tab-docker">
@@ -4647,8 +4645,8 @@ private fun buildNfoPermFixHtml(path: String): String {
     return """
         <div style="margin-top:10px;">
           <div style="display:flex;border-bottom:1px solid var(--line);margin-bottom:10px;">
-            <button id="perm-tab-docker-btn" onclick="$switchDocker" style="$tabActive">Docker Compose</button>
-            <button id="perm-tab-native-btn" onclick="$switchNative" style="$tabInactive">Native</button>
+            <button id="perm-tab-docker-btn" data-tabswitch="perm:perm-tab-docker" style="$tabActive">Docker Compose</button>
+            <button id="perm-tab-native-btn" data-tabswitch="perm:perm-tab-native" style="$tabInactive">Native</button>
           </div>
           $dockerTab
           $nativeTab
@@ -4685,7 +4683,7 @@ private fun showNfoPermBanner(message: String, path: String) {
           <div style="display:flex;align-items:flex-start;gap:8px;">
             <span class="badge warn" style="flex-shrink:0;">No write access</span>
             <span style="$MONO_CODE_STYLE;word-break:break-all;">${message.esc()}</span>
-            <button onclick="document.getElementById('nfo-perm-banner').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--ink-soft);font-size:1rem;padding:0 2px;flex-shrink:0;" title="Dismiss">✕</button>
+            <button data-hide-el="nfo-perm-banner" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--ink-soft);font-size:1rem;padding:0 2px;flex-shrink:0;" title="Dismiss">✕</button>
           </div>
           ${buildNfoPermFixHtml(path)}
         </div>
@@ -4996,8 +4994,8 @@ private fun renderPersonCardHtml(p: Person, showEpBadge: Boolean = false, inheri
     if (removeAttr.isNotBlank()) append("""<button class="prm" $removeAttr>✕</button>""")
     else if (!inherited) append("""<button class="prm" data-rm-cast="${p.tmdbId}">✕</button>""")
     if (imgSrc.isNotBlank()) {
-        // onerror removes only the <img> and appends initials text — it must NOT clear .ph (that would wipe phBadges)
-        append("""<div class="ph" style="background:$color;">$phBadges<img src="$imgSrc" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;" onerror="var p=this.parentElement;p.style.background='$color';this.remove();p.insertAdjacentText('beforeend','$initials')"></div>""")
+        // the data-fallback-* image error handler (DelegatedActions.kt) removes only the <img> and appends initials text — it must NOT clear .ph (that would wipe phBadges)
+        append("""<div class="ph" style="background:$color;">$phBadges<img src="$imgSrc" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;" data-fallback-initials="${initials.esc()}" data-fallback-color="$color"></div>""")
     } else {
         append("""<div class="ph" style="background:$color;color:#fff;">$phBadges$initials</div>""")
     }

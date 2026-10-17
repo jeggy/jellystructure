@@ -2,6 +2,7 @@ package dev.jellystructure
 
 import dev.jellystructure.api.AuthApi
 import dev.jellystructure.api.UserProfile
+import dev.jellystructure.ui.installDelegatedActions
 import dev.jellystructure.ui.leaveAiPage
 import dev.jellystructure.ui.renderActivity
 import dev.jellystructure.ui.renderAiPage
@@ -31,6 +32,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
 fun main() {
+    installDelegatedActions()
     val scope = MainScope()
     scope.launch {
         App.start()

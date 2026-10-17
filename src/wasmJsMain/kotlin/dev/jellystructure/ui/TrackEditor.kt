@@ -355,7 +355,7 @@ fun wireUnifiedTrackEditor(
               <div class="tiny" style="margin-top:6px;line-height:1.5;">$reason</div>
               <div class="row center" style="gap:6px;margin-top:10px;flex-wrap:wrap;">
                 <span class="mono tiny" style="background:var(--fill-2);padding:4px 8px;border-radius:6px;user-select:all;">${filePath.esc()}</span>
-                <button data-copy="${filePath.esc()}" onclick="(function(t){try{navigator.clipboard.writeText(t)}catch(e){var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.focus();a.select();try{document.execCommand('copy')}catch(_){}document.body.removeChild(a)}})(this.dataset.copy);var b=this;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500);" class="btn sm ghost" style="font-size:.72rem;padding:3px 8px;">Copy</button>
+                <button data-copy="${filePath.esc()}" class="btn sm ghost" style="font-size:.72rem;padding:3px 8px;">Copy</button>
               </div>
               <div class="row center" style="gap:8px;margin-top:10px;flex-wrap:wrap;">
                 <span class="btn sm" data-act="reprobe">Re-probe file</span>
