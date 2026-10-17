@@ -2373,3 +2373,53 @@ Read from a WAL-complete copy of the prod DB. No device or admin session is need
   `others` stream, its row has a verdict, or `unknown` without `undecodable`.
 - **35.** `-2617`'s last failed job before the deploy carries `Last message repeated`. After the deploy, the sidecar's
   log line for its 422 carries `File ended prematurely`.
+
+## Amendment (2026-10-18) — a file that cannot be read says *can't tell*, and ↻ is blocked while re-measuring cannot change anything (FR-317-41, DEB-1076)
+
+The owner, 2026-10-18 (DEB-1076), on a series' Checks card: one episode's row read **not yet** · *when the file
+changes*, with *"only one window read clearly enough to measure"*. He pressed ↻ beside *Sound in step with the picture*,
+it ran, and it *"still shows exactly the same"*. His decision (card `f218cc72`): *"say "can't tell" and block refresh
+(not hide) with a small popover text explaining why until the file changes."*
+
+**Why ↻ changed nothing.** ↻ is `check_avsync`, a forced re-measure of every file of the title
+(`MediaDetail.kt:3330`, `force = true`). The window positions are fixed (`AvSyncService.kt:261-262`) and the
+measurement is repeatable. So for a file whose stored reading is current, a forced re-measure reads the same windows
+and stores the same answer. That holds for a clean file as much as for an unreadable one.
+
+**Why the chip said *not yet*.** `TitleChecks.avSyncStep` maps every `UNKNOWN` reading to the row state `unchecked`
+(`TitleChecks.kt:275`), and the card draws `unchecked` as *not yet* (`MediaDetail.kt:3276`). For a file that was
+measured and settled, that contradicts FR-317-18: *not measured yet* is only for a row with no result.
+
+### FR-317-41 — *can't tell*, and a ↻ that is blocked while it cannot help
+
+- **A new row state, `cant_tell`.** It applies to a file with a **current** stored reading (FR-317-7: same size and
+  mtime, same pipeline version, same model) whose verdict is `UNKNOWN` and that is not a skip. The card's chip
+  reads ***can't tell***, in the neutral style: neither *not yet* nor a finding. The red reason line stays, carrying
+  the verdict's own *why* (FR-317-18), unchanged. `unchecked` (*not yet*) stays for a file with no current row.
+  A `cant_tell` file still makes the title *partial*, never *clean* (FR-317-7, unchanged).
+- **↻ is blocked, not hidden,** when every file the step would re-measure already has a current reading, whether
+  clean, a finding, *can't tell* or skipped. Re-measuring cannot change any of them. The button stays in its place,
+  disabled, and a small popover on hover, focus or tap says why, in one sentence:
+  *"Measured already — measuring again would read the same parts of the file. This unlocks when a file changes."*
+  When a title's files are all *can't tell*, it says instead:
+  *"Couldn't tell from the parts measured — measuring again would read the same parts. This unlocks when the file
+  changes."*
+- **What unlocks it** is exactly what makes a stored reading stale under FR-317-7: the file's size or mtime changes,
+  the pipeline version changes, or the sidecar's model string changes. Then that file is not current, and ↻ is live.
+  Nothing else unlocks it. There is no override on the card. The Activity lane's own controls are untouched.
+- **The server decides, not the page.** The checks DTO carries `refreshBlocked` and the popover sentence for the
+  step, computed by `TitleChecks` from the same staleness rule the enqueue pass uses (`AvSyncService.kt:475-500`).
+  The page renders what it is given (constitution: no derived state). A forced `check_avsync` posted while every
+  file is current answers **409** with the same sentence, so a stale page cannot run it either.
+
+**The number of windows is not changed by this amendment.** The owner also asked for more windows. That half waits
+on his answer to a corrected card on DEB-1076: today's plan already takes six on a hard file (FR-317-17), not three,
+which the first card got wrong. It will be its own dated amendment.
+
+**Tests.** `TitleChecks`: a current `UNKNOWN` reading gives `cant_tell`, and no row gives `unchecked`. All files
+current gives `refreshBlocked = true` with the general sentence; all *can't tell* gives the second sentence; one stale
+file gives `refreshBlocked = false`. The route: a forced `check_avsync` with every file current gets 409.
+
+**Acceptance.** 36. On a title whose files all have current readings, one of them unreadable: that file's chip reads
+*can't tell*, ↻ is visible and disabled, and its popover gives the sentence. After the file is touched (mtime
+changes), ↻ is live again and the file re-measures.
