@@ -2464,6 +2464,12 @@ The owner, 2026-10-18 (DEB-1076, card `f5cac236`), told that a hard file is alre
 - **Cost.** About 4 s of one card per triple, so a worst case of about 20 s on a file that never reads. A file that
   answers in pass 1 or 2 costs exactly what it does today.
 
+**One point the amendment left to the build (DEB-1688).** The 45 s rule is checked against the starts of the
+**earlier** passes only, not between the three windows of one pass. Pass 1's own clamping on a file just above the
+`too_short` floor can already put two of its windows within 45 s, and checking inside the pass would change pass 1,
+which this amendment keeps unchanged so that no answered reading moves. The *Tests* bullet on a short file is read
+the same way: no window repeats one from an earlier pass.
+
 ### Rows measured under the old plan
 
 - **The plan is stored with the row**: a new column `passes_max`, `2` for every existing row and `5` for new ones.
