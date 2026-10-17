@@ -210,31 +210,6 @@ re-rank suggestions, and it is not part of this amendment.
 posts the admins line. A name that does not resolve posts the greeting-less line. A limit forward after a Faroese turn
 posts Faroese. The exact request JSON for a thread that contains a forward line carries no viewer name.
 
-*Amended 2026-10-18 (DEB-1663) — `languageConfidence` rates the language the viewer wrote in, not the interface.* QA on
-DEB-1666 sent the Faroese question from the prod report twice from an `en` interface. One answer came back `fo` with
-`HIGH`, and the Faroese line posted. The other came back `fo` with `LOW`, so the English line posted and the Faroese
-title was dropped. The gate did what the amendment above says. The fault is the system prompt, which defines both
-confidences in one line: *"HIGH only when you are sure the reply is right and in the viewer's language"*. The request
-also names the viewer's interface language. A Faroese reply to an `en` viewer can therefore read, to the model, as
-possibly not "the viewer's language". That contradicts the amendment above, which takes the line language from what the
-viewer wrote.
-
-1. **The system prompt defines the two separately:**
-   - `confidence`: *HIGH only when you are sure the reply is right, otherwise LOW.*
-   - `languageConfidence`: *HIGH when you can tell which language the viewer wrote their messages in and
-     `replyLanguage` names it. LOW only when the messages are too short or too mixed to tell. The interface language
-     does not lower it: a message plainly written in Faroese is `fo` with HIGH, whatever the interface language is.*
-
-   The `reply` line keeps the interface language as the guide for a short message.
-2. **No gate changes.** The line language, the viewer's title (FR-13 of
-   [`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md)), and FR-321-5 rules 2 and 5 still need
-   `languageConfidence` `HIGH`. Only the thing the model is asked to rate changes.
-3. A message too short or too mixed to tell is still the fallback's case: it gets the line in `viewer_language`.
-
-*Tests (added to FR-321-12):* the system prompt carries the two definitions as separate lines, and no line ties
-`languageConfidence` to the interface language. The live check is QA's: the same Faroese message, sent three times from
-an `en` interface, posts the Faroese line and stores the Faroese title every time.
-
 *Amended 2026-10-18 (DEB-1663), after QA (DEB-1666):* the line language **no longer requires `languageConfidence`
 `HIGH`**. QA sent the prod message from an English interface twice. Both times the model answered `replyLanguage` `fo`.
 The first time its `languageConfidence` was `LOW` and the viewer got the English line again. The second time it was
