@@ -456,6 +456,15 @@ class SupportService(
     fun agentRequestsSince(ownerId: String, since: Long): Long = q.aiTurnsSince(ownerId, since).executeAsOne()
     fun agentRepliesSent(ticket: Long): Long = q.aiTurnsSentOf(ticket).executeAsOne()
 
+    /**
+     * DEB-1663 (FR-321-7) — the ticket owner's Jellyfin user name, as the admin row resolves it, for the forward line's greeting.
+     * Null when it does not resolve (never the id). It is filled into a line after the answer comes back and never sent out.
+     */
+    fun agentOwnerName(ownerId: String): String? = nameOf(ownerId)?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** DEB-1663 — every stored answer of the ticket's turns, oldest first, for the line language of a forward with no readable answer. */
+    fun agentStoredAnswers(number: Long): List<String> = q.aiTurnsOf(number).executeAsList().mapNotNull { it.answer }
+
     fun agentTranscript(number: Long): SupportAiTranscript? {
         q.ticket(number).executeAsOneOrNull() ?: return null
         return SupportAiTranscript(number, q.aiTurnsOf(number).executeAsList().map {

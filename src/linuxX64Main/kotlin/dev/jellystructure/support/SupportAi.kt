@@ -46,7 +46,9 @@ object SupportAi {
           and is your guide when the message is short). It is what the viewer will read.
         - replyLanguage: en, da or fo for English, Danish or Faroese, or other.
         - decision: SEND to send the reply, FORWARD to hand the ticket to a person.
-        - forwardTo: ADMIN, or HERVOR for a fault a case-worker could match to a known problem.
+        - forwardTo: HERVOR for anything a person can help with by talking it through — a question that needs more
+          than general how-to, a recommendation of what to watch or listen to, or a fault a case-worker could match
+          to a known problem; ADMIN for what needs the people who run the server.
         - confidence and languageConfidence: HIGH only when you are sure the reply is right and in the viewer's
           language, otherwise LOW.
         - title: a case title in the language of the reply, and englishTitle: the same title in English. Each is a few
@@ -112,10 +114,15 @@ object SupportAi {
     /**
      * FR-321-4 — every `VIEWER`-visible entry, oldest first, each marked with its author kind and never a name. Capped at
      * [maxChars]: past it the oldest entries go, **except the first message**, and the drop is marked in the block.
+     *
+     * DEB-1663 (FR-321-7) — a line `AI_AGENT` wrote may carry the viewer's name (the forward line greets them). [ownerName] is
+     * written as `the viewer` in every `AI_AGENT` entry, so the name never reaches Anthropic on a later turn.
      */
-    fun threadBlock(entries: List<AgentEntry>, maxChars: Int): String {
+    fun threadBlock(entries: List<AgentEntry>, maxChars: Int, ownerName: String? = null): String {
+        val nameRe = ownerName?.takeIf { it.isNotBlank() }?.let { Regex("\\b${Regex.escape(it)}\\b", RegexOption.IGNORE_CASE) }
         val lines = entries.mapNotNull { e ->
-            val text = entryText(e) ?: return@mapNotNull null
+            var text = entryText(e) ?: return@mapNotNull null
+            if (e.author == "AI_AGENT" && nameRe != null) text = nameRe.replace(text, "the viewer")
             e to "[${e.author ?: "SYSTEM"}] $text"
         }
         val firstId = lines.firstOrNull { it.first.kind == "MESSAGE" }?.first?.id
@@ -172,7 +179,12 @@ object SupportAi {
             r.stopReason != "end_turn" -> return null to "the answer did not end normally (${r.stopReason ?: "no stop reason"})"
             r.text == null -> return null to "no answer text"
         }
-        val o = runCatching { json.parseToJsonElement(r.text!!) }.getOrNull() as? JsonObject ?: return null to "the answer was not valid JSON"
+        return parseText(r.text!!)
+    }
+
+    /** The answer's JSON, read the way [parse] reads a succeeded result. Also how a stored `support_ai_turn.answer` is read. */
+    fun parseText(text: String): Pair<Answer?, String> {
+        val o = runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject ?: return null to "the answer was not valid JSON"
         if (FIELDS.any { it !in o }) return null to "the answer was not in the expected form"
         fun str(k: String) = (o[k] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
         fun bool(k: String) = (o[k] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
@@ -291,10 +303,10 @@ object SupportAi {
     /**
      * FR-13 — `englishTitle` is stored when it is one line, at most 60 code points and passes rule 4. `title` passes the
      * same tests and, because it reaches the viewer even when the reply forwards, every check a sent reply's language must:
-     * `languageConfidence` HIGH (rule 2) and a `replyLanguage` that is the viewer's (rule 5). A title that fails stays null
-     * and a later turn may fill it.
+     * `languageConfidence` HIGH (rule 2) and a `replyLanguage` of `en`, `da` or `fo` (rule 5; DEB-1663 — the language the
+     * viewer wrote in, which is not always `viewer_language`). A title that fails stays null and a later turn may fill it.
      */
-    fun titles(a: Answer, viewerLanguage: String): TitleRuling {
+    fun titles(a: Answer): TitleRuling {
         val dropped = ArrayList<String>()
         val english = a.englishTitle?.trim()
         val englishFault = titleFault(english)
@@ -302,7 +314,7 @@ object SupportAi {
         val own = a.title?.trim()
         val ownFault = titleFault(own) ?: when {
             a.languageConfidence != "HIGH" -> "rule 2 — language confidence is LOW"
-            a.replyLanguage == "other" || a.replyLanguage != viewerLanguage.ifBlank { "en" } -> "rule 5 — not in the viewer's language"
+            a.replyLanguage !in LINE_LANGUAGES -> "rule 5 — not in the viewer's language"
             else -> null
         }
         if (ownFault != null && a.title != null) dropped += "title $ownFault"
@@ -314,14 +326,38 @@ object SupportAi {
 
     // ─── The server's own lines (FR-321-7) ───────────────────────────────────
 
+    private val LINE_LANGUAGES = listOf("en", "da", "fo")
+
     /**
-     * Written from this table and never by the model, in the viewer's language. The Danish and Faroese text is round 3's,
-     * character for character (DEB-1500, FR-15); it clears the condition 321 set for itself.
+     * DEB-1663 (FR-321-7) — the language the server's own lines are written in: the answer's `replyLanguage` when it is
+     * `en`, `da` or `fo` and `languageConfidence` is HIGH, otherwise [viewerLanguage] (`en` when blank). [answer] is null
+     * when there is no readable answer.
+     */
+    fun lineLanguage(answer: Answer?, viewerLanguage: String): String =
+        answer?.takeIf { it.replyLanguage in LINE_LANGUAGES && it.languageConfidence == "HIGH" }?.replyLanguage
+            ?: viewerLanguage.ifBlank { "en" }
+
+    /** DEB-1663 — a forward with no readable answer: the ticket's latest turn whose stored answer parses, judged by [lineLanguage]. */
+    fun lineLanguage(storedAnswers: List<String>, viewerLanguage: String): String =
+        lineLanguage(storedAnswers.asReversed().firstNotNullOfOrNull { parseText(it).first }, viewerLanguage)
+
+    /**
+     * Written from this table and never by the model, in the viewer's language and for the holder the ticket moves to.
+     * Owner-approved verbatim (DEB-1663). `{name}` is filled in by the server and never sent to Anthropic.
      */
     private val FORWARD_NOTICE = mapOf(
-        "en" to "I'll forward this and they will answer you soon.",
-        "da" to "Jeg sender det videre, og de svarer dig snart.",
-        "fo" to "Eg sendi hetta víðari, og tey svara tær skjótt.",
+        "fo" to mapOf(
+            "HERVOR" to "Hey {name}, hettar er nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana.",
+            "ADMIN" to "Hey {name}, hettar er nakað umsitararnir kunnu hjálpa við, so eg sendi tað líka víðari til teirra.",
+        ),
+        "da" to mapOf(
+            "HERVOR" to "Hej {name}, det her er noget Hervør kan hjælpe med, så jeg sender det lige videre til hende.",
+            "ADMIN" to "Hej {name}, det her er noget administratorerne kan hjælpe med, så jeg sender det lige videre til dem.",
+        ),
+        "en" to mapOf(
+            "HERVOR" to "Hey {name}, this is something Hervør can help with, so I'm passing it on to her.",
+            "ADMIN" to "Hey {name}, this is something the admins can help with, so I'm passing it on to them.",
+        ),
     )
     private val REQUEST_LOGGED = mapOf(
         "en" to "Thanks — this is logged as request #{n}. Adding it needs a decision from the people who run this server, so it won't happen on its own.",
@@ -329,7 +365,18 @@ object SupportAi {
         "fo" to "Takk — hetta er skrásett sum ynski #{n}. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.",
     )
 
-    fun forwardNotice(language: String): String = FORWARD_NOTICE[language] ?: FORWARD_NOTICE.getValue("en")
+    /**
+     * The forward line for [holder] (`HERVOR`, anything else reads as `ADMIN`) in [language] (any other reads English). A
+     * [name] that is null or blank drops the greeting and starts at the next word with a capital letter; it never falls
+     * back to an id.
+     */
+    fun forwardNotice(language: String, holder: String, name: String?): String {
+        val line = (FORWARD_NOTICE[language] ?: FORWARD_NOTICE.getValue("en")).getValue(if (holder == "HERVOR") "HERVOR" else "ADMIN")
+        val who = name?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return line.substringAfter("{name}, ").replaceFirstChar { it.uppercaseChar() }
+        return line.replace("{name}", who)
+    }
+
     fun requestLogged(language: String, ticket: Long): String =
         (REQUEST_LOGGED[language] ?: REQUEST_LOGGED.getValue("en")).replace("{n}", ticket.toString())
 }

@@ -45,7 +45,7 @@ class SupportAgent(
         }
         passCounts[tk.ownerId] = (passCounts[tk.ownerId] ?: 0) + 1
         val sup = config().ai.support
-        val user = SupportAi.userBlock(tk.language, tk.ticketClass, SupportAi.threadBlock(tk.entries, sup.maxInputChars))
+        val user = SupportAi.userBlock(tk.language, tk.ticketClass, SupportAi.threadBlock(tk.entries, sup.maxInputChars, service.agentOwnerName(tk.ownerId)))
         val request = SupportAi.request(customId, cfg.model, cfg.effort, user)
         return AiJobs.BuiltSupport(request, json.encodeToString(Ctx.serializer(), Ctx(tk.number, tk.ownerId, tk.lastViewerMessageId, tk.language)))
     }
@@ -64,8 +64,20 @@ class SupportAgent(
     private fun forwardWith(tk: SupportService.AgentTicket, why: String) {
         val note = "AI Agent forwarded this without asking the model: $why."
         service.agentForward(tk.number, tk.lastViewerMessageId, SupportService.Classification(null, null),
-            SupportService.HOLDER_ADMIN, SupportAi.forwardNotice(tk.language), note)
+            SupportService.HOLDER_ADMIN, forwardLine(tk.number, tk.ownerId, tk.language, null, SupportService.HOLDER_ADMIN), note)
     }
+
+    /**
+     * DEB-1663 (FR-321-7) — the forward line for [holder], in the line language ([SupportAi.lineLanguage]): the readable
+     * [answer]'s, else the ticket's latest turn that parsed, else [viewerLanguage]. The name is filled in here, after the
+     * answer is back, and goes nowhere but the line.
+     */
+    private fun forwardLine(ticket: Long, ownerId: String, viewerLanguage: String, answer: SupportAi.Answer?, holder: String): String =
+        SupportAi.forwardNotice(lineLanguage(ticket, viewerLanguage, answer), holder, service.agentOwnerName(ownerId))
+
+    private fun lineLanguage(ticket: Long, viewerLanguage: String, answer: SupportAi.Answer?): String =
+        if (answer != null) SupportAi.lineLanguage(answer, viewerLanguage)
+        else SupportAi.lineLanguage(service.agentStoredAnswers(ticket), viewerLanguage)
 
     override fun heldByLimit(subject: String, why: String) {
         val number = subject.toLongOrNull() ?: return
@@ -104,15 +116,15 @@ class SupportAgent(
         val (answer, why) = SupportAi.parse(r)
         val none = SupportService.Classification(null, null)
         if (answer == null) {
-            val applied = service.agentForward(c.t, c.upTo, none, SupportService.HOLDER_ADMIN, SupportAi.forwardNotice(c.lang),
-                "AI Agent forwarded this: $why.")
+            val applied = service.agentForward(c.t, c.upTo, none, SupportService.HOLDER_ADMIN,
+                forwardLine(c.t, c.o, c.lang, null, SupportService.HOLDER_ADMIN), "AI Agent forwarded this: $why.")
             return discarded(applied) ?: done("FORWARDED: $why", null, true)
         }
 
         val ruling = SupportAi.rule(answer, c.lang, service.hervorEffective)
         // DEB-1500 (FR-13) — the titles ride the same pass. ABUSE stores neither (agentFlag takes the summary alone), so it
         // has nothing to report dropped either.
-        val titles = SupportAi.titles(answer, c.lang)
+        val titles = SupportAi.titles(answer)
         val cl = SupportService.Classification(answer.ticketClass, answer.summary, titles.title, titles.englishTitle)
         val dropped = titles.dropped?.takeIf { ruling.kind != SupportAi.Kind.ABUSE }?.let { " | TITLE_DROPPED: $it" }.orEmpty()
         val readable = "${answer.ticketClass} · ${answer.summary}"
@@ -126,11 +138,11 @@ class SupportAgent(
                 discarded(applied) ?: done("FLAGGED", readable, true)
             }
             SupportAi.Kind.REQUEST -> {
-                val applied = service.agentForward(c.t, c.upTo, cl, SupportService.HOLDER_ADMIN, SupportAi.requestLogged(c.lang, c.t), adminNote(ruling))
+                val applied = service.agentForward(c.t, c.upTo, cl, SupportService.HOLDER_ADMIN, SupportAi.requestLogged(lineLanguage(c.t, c.lang, answer), c.t), adminNote(ruling))
                 discarded(applied) ?: done("FORWARDED: ${ruling.reason}$dropped", readable, true)
             }
             SupportAi.Kind.FORWARD -> {
-                val applied = service.agentForward(c.t, c.upTo, cl, ruling.to, SupportAi.forwardNotice(c.lang), adminNote(ruling))
+                val applied = service.agentForward(c.t, c.upTo, cl, ruling.to, forwardLine(c.t, c.o, c.lang, answer, ruling.to), adminNote(ruling))
                 discarded(applied) ?: done("FORWARDED: ${ruling.reason}$dropped", readable, true)
             }
         }

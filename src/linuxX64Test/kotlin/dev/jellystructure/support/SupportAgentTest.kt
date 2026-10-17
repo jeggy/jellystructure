@@ -82,7 +82,7 @@ class SupportAgentTest {
         }
     }
 
-    private class Rig(tag: String) {
+    private class Rig(tag: String, names: (String) -> String? = { "Name-of-$it" }) {
         val dbPath = "/tmp/jellystructure-test-support-ai-$tag-${getpid()}.db"
         val tomlPath = "/tmp/jellystructure-test-support-ai-$tag-${getpid()}.toml"
         val db = createDatabase(dbPath)
@@ -90,7 +90,7 @@ class SupportAgentTest {
         var now = 1_800_000_000L
         val anthropic = FakeAnthropic()
         val jobs = AiJobs(db, store, library = { emptyList() }, client = AnthropicClient(anthropic), clock = { now })
-        val service = SupportService(db, { store.current }, languageOf = { "en" }, nameOf = { "Name-of-$it" }, clock = { now })
+        val service = SupportService(db, { store.current }, languageOf = { "en" }, nameOf = names, clock = { now })
         val viewerPushes = ArrayList<Pair<String, Long>>()
 
         init {
@@ -143,12 +143,13 @@ class SupportAgentTest {
         }
     }
 
-    private inline fun rig(tag: String, body: Rig.() -> Unit) {
-        val r = Rig(tag)
+    private inline fun rig(tag: String, noinline names: (String) -> String? = { "Name-of-$it" }, body: Rig.() -> Unit) {
+        val r = Rig(tag, names)
         try { r.body() } finally { r.close() }
     }
 
-    private val forwardNotice = "I'll forward this and they will answer you soon."
+    /** DEB-1663 — the English admins line for the rig's viewer `u-anna`, whose name resolves to `Name-of-u-anna`. */
+    private val forwardNotice = "Hey Name-of-u-anna, this is something the admins can help with, so I'm passing it on to them."
 
     // ── FR-321-2 ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -225,8 +226,8 @@ class SupportAgentTest {
         assertTrue(verdicts(n).single()!!.contains("TITLE_DROPPED: title rule 2"), verdicts(n).toString())
     }
 
-    @Test fun aReplyLanguageThatIsNotTheViewersDropsTheTitleAndAnEnglishOneStaysEnglish() = rig("title4") {
-        anthropic.answerFor = { FakeAnthropic.good(language = "da", title = "Undertekster altid til") }
+    @Test fun aReplyLanguageThatIsNotEnDaOrFoDropsTheTitleAndAnEnglishOneStaysEnglish() = rig("title4") {
+        anthropic.answerFor = { FakeAnthropic.good(language = "other", title = "Untertitel immer an") }
         val n = file()
         cycle()
         assertEquals(null to "Keeping subtitles on", titles(n))
@@ -581,14 +582,11 @@ class SupportAgentTest {
 
     // DEB-1500 (FR-15) — round 3's Danish and Faroese lines, character for character; the condition 321 set for itself.
     @Test fun theFixedLinesAreInTheViewersLanguageAndAnyOtherLanguageReadsEnglish() {
-        assertEquals("I'll forward this and they will answer you soon.", SupportAi.forwardNotice("en"))
-        assertEquals("Jeg sender det videre, og de svarer dig snart.", SupportAi.forwardNotice("da"))
-        assertEquals("Eg sendi hetta víðari, og tey svara tær skjótt.", SupportAi.forwardNotice("fo"))
         assertEquals("Thanks — this is logged as request #41. Adding it needs a decision from the people who run this server, so it won't happen on its own.", SupportAi.requestLogged("en", 41))
         assertEquals("Tak — det er registreret som ønske #41. At tilføje det kræver en beslutning fra dem, der driver denne server, så det sker ikke af sig selv.", SupportAi.requestLogged("da", 41))
         assertEquals("Takk — hetta er skrásett sum ynski #41. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.", SupportAi.requestLogged("fo", 41))
         // A language the server has no line for reads the English one, never a gap.
-        assertEquals(SupportAi.forwardNotice("en"), SupportAi.forwardNotice("de"))
+        assertEquals(SupportAi.forwardNotice("en", "ADMIN", "Ana"), SupportAi.forwardNotice("de", "ADMIN", "Ana"))
         assertTrue(SupportAi.requestLogged("de", 41).contains("request #41"))
     }
 
@@ -600,7 +598,8 @@ class SupportAgentTest {
         anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "da", reply = "x") }
         val n = (da.file("u-da", "phone", "d1", "Lyden forsvinder") as Outcome.Ok).value.ticket.number
         cycle()
-        assertEquals("Jeg sender det videre, og de svarer dig snart.", da.thread("u-da", n)!!.messages.last { it.author == "AI_AGENT" }.body)
+        assertEquals("Hej Name-of-u-da, det her er noget administratorerne kan hjælpe med, så jeg sender det lige videre til dem.",
+            da.thread("u-da", n)!!.messages.last { it.author == "AI_AGENT" }.body)
         val fo = SupportService(db, { store.current }, languageOf = { "fo" }, nameOf = { it }, clock = { now }).also {
             it.askAgent = { t -> jobs.enqueueSupport(t, "a viewer's message") }
         }
@@ -609,6 +608,169 @@ class SupportAgentTest {
         cycle()
         assertEquals("Takk — hetta er skrásett sum ynski #$m. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.",
             fo.thread("u-fo", m)!!.messages.last { it.author == "AI_AGENT" }.body)
+    }
+
+    // ── DEB-1663 (FR-321-6, FR-321-7) — the forward line: its language, its holder, the viewer's name ────────────────────
+
+    // The six lines, verbatim from the owner-approved table.
+    @Test fun theSixForwardLinesAreVerbatimAndTheNameIsFilledByTheServer() {
+        val table = mapOf(
+            ("fo" to "HERVOR") to "Hey Ana, hettar er nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana.",
+            ("fo" to "ADMIN") to "Hey Ana, hettar er nakað umsitararnir kunnu hjálpa við, so eg sendi tað líka víðari til teirra.",
+            ("da" to "HERVOR") to "Hej Ana, det her er noget Hervør kan hjælpe med, så jeg sender det lige videre til hende.",
+            ("da" to "ADMIN") to "Hej Ana, det her er noget administratorerne kan hjælpe med, så jeg sender det lige videre til dem.",
+            ("en" to "HERVOR") to "Hey Ana, this is something Hervør can help with, so I'm passing it on to her.",
+            ("en" to "ADMIN") to "Hey Ana, this is something the admins can help with, so I'm passing it on to them.",
+        )
+        for ((key, line) in table) assertEquals(line, SupportAi.forwardNotice(key.first, key.second, "Ana"), key.toString())
+    }
+
+    @Test fun aNameThatDoesNotResolveDropsTheGreetingAndStartsAtACapital() {
+        assertEquals("Hettar er nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana.", SupportAi.forwardNotice("fo", "HERVOR", null))
+        assertEquals("Det her er noget administratorerne kan hjælpe med, så jeg sender det lige videre til dem.", SupportAi.forwardNotice("da", "ADMIN", "  "))
+        assertEquals("This is something Hervør can help with, so I'm passing it on to her.", SupportAi.forwardNotice("en", "HERVOR", ""))
+    }
+
+    @Test fun theLineLanguageIsTheAnswersWhenItIsEnDaOrFoAndHighElseTheViewersElseEnglish() {
+        fun a(lang: String, conf: String) = SupportAi.parseText(FakeAnthropic.good(language = lang, languageConfidence = conf)).first!!
+        assertEquals("fo", SupportAi.lineLanguage(a("fo", "HIGH"), "en"))
+        assertEquals("en", SupportAi.lineLanguage(a("fo", "LOW"), "en"))
+        assertEquals("da", SupportAi.lineLanguage(a("other", "HIGH"), "da"))
+        assertEquals("en", SupportAi.lineLanguage(a("other", "HIGH"), ""))
+        assertEquals("fo", SupportAi.lineLanguage(null as SupportAi.Answer?, "fo"))
+        // No readable answer: the latest stored answer that parses, judged by the same test.
+        val stored = listOf(FakeAnthropic.good(language = "da"), FakeAnthropic.good(language = "fo"), "not json")
+        assertEquals("fo", SupportAi.lineLanguage(stored, "en"))
+        assertEquals("en", SupportAi.lineLanguage(listOf(FakeAnthropic.good(language = "fo", languageConfidence = "LOW")), "en"))
+        assertEquals("da", SupportAi.lineLanguage(emptyList(), "da"))
+    }
+
+    private val foAdmins = "Hey Name-of-u-anna, hettar er nakað umsitararnir kunnu hjálpa við, so eg sendi tað líka víðari til teirra."
+    private val foHervor = "Hey Name-of-u-anna, hettar er nakað Hervør kann hjálpa við, so eg sendi tað líka víðari til hana."
+
+    @Test fun aFaroeseAnswerWithHighLanguageConfidenceOnAnEnglishTicketPostsTheFaroeseLineAndLowPostsTheEnglishOne() {
+        rig("line1") {
+            anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "fo", languageConfidence = "HIGH", reply = "x") }
+            val n = file("Hvat skal eg hyggja at?")
+            cycle()
+            assertEquals(foAdmins, lastAiBody(n))
+        }
+        rig("line2") {
+            anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "fo", languageConfidence = "LOW", reply = "x") }
+            val n = file("Hvat skal eg hyggja at?")
+            cycle()
+            assertEquals(forwardNotice, lastAiBody(n))
+        }
+    }
+
+    @Test fun aForwardToHervorNamesHerWhileSheIsOnAndTheAdminsWhileSheIsOff() {
+        rig("hervor-on") {
+            configure(hervor = true)
+            service.seatTokens.issue("root")
+            anthropic.answerFor = { FakeAnthropic.good(cls = "QUESTION", decision = "FORWARD", forwardTo = "HERVOR", language = "fo") }
+            val n = file("Hvat skal eg hyggja at?")
+            cycle()
+            assertEquals("HERVOR", admin(n).ticket.holder)
+            assertEquals(foHervor, lastAiBody(n))
+        }
+        rig("hervor-off") {
+            anthropic.answerFor = { FakeAnthropic.good(cls = "QUESTION", decision = "FORWARD", forwardTo = "HERVOR", language = "fo") }
+            val n = file("Hvat skal eg hyggja at?")
+            cycle()
+            assertEquals("ADMIN", admin(n).ticket.holder, "hervor_enabled is off: the model's forwardTo does not pick the line")
+            assertEquals(foAdmins, lastAiBody(n))
+        }
+        rig("hervor-flag-no-token") {
+            configure(hervor = true) // true in the file and no live token: not effective
+            anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", forwardTo = "HERVOR") }
+            val n = file()
+            cycle()
+            assertEquals("ADMIN", admin(n).ticket.holder)
+            assertEquals(forwardNotice, lastAiBody(n))
+        }
+    }
+
+    @Test fun aNameThatDoesNotResolvePostsTheGreetinglessLineNeverAnId() = rig("noname", names = { null }) {
+        anthropic.answerFor = { FakeAnthropic.good(cls = "BUG", language = "fo") }
+        val n = file()
+        cycle()
+        assertEquals("Hettar er nakað umsitararnir kunnu hjálpa við, so eg sendi tað líka víðari til teirra.", lastAiBody(n))
+        assertFalse("u-anna" in lastAiBody(n)!!)
+    }
+
+    @Test fun aLimitForwardAfterAFaroeseTurnPostsFaroese() = rig("line-limit") {
+        configure(support = AiSupportConfig(turnsPerTicket = 1, requestsPerViewerPerDay = 50))
+        anthropic.answerFor = { FakeAnthropic.good(language = "fo", reply = "Opna undirtekstirnar.") }
+        val n = file("Hvussu fái eg undirtekstir?")
+        cycle()
+        assertEquals("Opna undirtekstirnar.", lastAiBody(n))
+        post(n, "tað riggar ikki")
+        cycle()
+        assertEquals(foAdmins, lastAiBody(n))
+        assertTrue(adminNotes(n).any { "AI replies" in it })
+    }
+
+    @Test fun anUnreadableAnswerAfterAFaroeseTurnPostsFaroeseAndWithNoTurnTheViewersLanguage() {
+        rig("line-unreadable") {
+            anthropic.answerFor = { FakeAnthropic.good(language = "fo", reply = "Opna undirtekstirnar.") }
+            val n = file("Hvussu fái eg undirtekstir?")
+            cycle()
+            anthropic.stopReason = "max_tokens"
+            post(n, "tað riggar ikki")
+            cycle()
+            assertEquals(foAdmins, lastAiBody(n))
+        }
+        rig("line-unreadable-first") {
+            anthropic.stopReason = "refusal"
+            val n = file("Hvussu fái eg undirtekstir?")
+            cycle()
+            assertEquals(forwardNotice, lastAiBody(n), "no turn parsed: viewer_language, which is en")
+        }
+    }
+
+    @Test fun aRequestLoggedLineFollowsTheLineLanguageToo() = rig("line-request") {
+        anthropic.answerFor = { FakeAnthropic.good(cls = "REQUEST", language = "fo", reply = "x") }
+        val n = file("Kunnu tit lagt hetta afturat")
+        cycle()
+        assertEquals("Takk — hetta er skrásett sum ynski #$n. At leggja tað afturat krevur eina avgerð frá teimum, ið reka hendan ambætaran, so tað hendir ikki av sær sjálvum.", lastAiBody(n))
+    }
+
+    @Test fun aFaroeseTitleOnAnEnglishTicketIsStored() = rig("title-fo") {
+        anthropic.answerFor = { FakeAnthropic.good(language = "fo", title = "Undirtekstir altíð á", englishTitle = "Keeping subtitles on") }
+        val n = file("Hvussu fái eg undirtekstir?")
+        cycle()
+        assertEquals("Undirtekstir altíð á" to "Keeping subtitles on", titles(n))
+        assertEquals(listOf<String?>("SENT"), verdicts(n))
+    }
+
+    @Test fun theViewersNameInAnAiAgentLineIsNeverSentOnALaterTurn() {
+        val line = SupportAi.forwardNotice("en", "ADMIN", "Anna")
+        val entries = listOf(
+            SupportService.AgentEntry(1, "VIEWER", "MESSAGE", "I am Anna", null, emptyList()),
+            SupportService.AgentEntry(2, "AI_AGENT", "MESSAGE", line, null, emptyList()),
+            SupportService.AgentEntry(3, "AI_AGENT", "MESSAGE", "Banna and anna: Anna.", null, emptyList()),
+        )
+        val block = SupportAi.threadBlock(entries, 10_000, "Anna")
+        assertTrue("[AI_AGENT] Hey the viewer, this is something the admins can help with" in block, block)
+        assertTrue("[AI_AGENT] Banna and the viewer: the viewer." in block, "whole words only, any case: $block")
+        assertTrue("[VIEWER] I am Anna" in block, "the viewer's own words are theirs: $block")
+        // And through the whole path: a reply of the agent's that greets the viewer by name is read back without it.
+        rig("name-guard") {
+            anthropic.answerFor = { FakeAnthropic.good(reply = "Hi Name-of-u-anna, open the subtitle menu.") }
+            val n = file()
+            cycle()
+            assertEquals("Hi Name-of-u-anna, open the subtitle menu.", lastAiBody(n))
+            post(n, "and the audio?")
+            send()
+            val user = FakeAnthropic.userOf(anthropic.sent.last())
+            assertTrue("[AI_AGENT] Hi the viewer, open the subtitle menu." in user, user)
+            assertFalse("Name-of-u-anna" in anthropic.sent.last().toString())
+        }
+    }
+
+    @Test fun theSystemPromptWidensForwardToToWhatAPersonCanHelpWith() {
+        assertTrue("HERVOR for anything a person can help with by talking it through" in SupportAi.SYSTEM.replace(Regex("\\s+"), " "))
+        assertTrue("ADMIN for what needs the people who run the server" in SupportAi.SYSTEM.replace(Regex("\\s+"), " "))
     }
 
     // ── FR-321-1 — config ────────────────────────────────────────────────────────────────────────────────────────────
