@@ -256,7 +256,8 @@ object RaviloApi {
             contentType(ContentType.Application.Json)
             setBody(ChannelLogoUpload(filename, dataBase64))
         }
-        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+        // DEB-1511 FR-1 — show the server's `error` field ("outline the text…"), not the raw `{"error":…}` body.
+        if (!r.status.isSuccess()) error(runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "HTTP ${r.status.value}")
         return r.body()
     }
 

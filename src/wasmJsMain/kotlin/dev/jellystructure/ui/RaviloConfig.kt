@@ -1467,6 +1467,11 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             val dataUrl = (reader.result as? JsString)?.toString() ?: ""
             if (dataUrl.isNotEmpty()) scope.launch {
                 runCatching { RaviloApi.uploadChannelLogo(file.name, dataUrl) }.onSuccess { logo ->
+                    // DEB-1511 FR-1 — an earlier refusal must not stay above the logo that was just picked.
+                    (container.querySelector("#ch-ed-msg") as? HTMLElement)?.let { msg ->
+                        msg.innerHTML = ""
+                        msg.setAttribute("style", "display:none;margin-bottom:12px")
+                    }
                     setLogoUrl(logo.url)
                     val logos = runCatching { RaviloApi.listChannelLogos() }.getOrDefault(emptyList())
                     renderLogoLibrary(logos, logo.url)

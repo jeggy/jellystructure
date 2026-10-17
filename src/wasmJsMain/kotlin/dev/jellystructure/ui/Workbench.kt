@@ -153,6 +153,8 @@ private var wbChColor = ""                // CSS fill: a preset gradient, a soli
 private var wbChName = ""                 // channel name (for the preview / initials)
 private var wbLogoUrl: String? = null
 private var wbLogos: List<ChannelLogo> = emptyList()
+/** DEB-1511 (FR-1) — the last refused logo upload's reason; cleared by the next upload that works. */
+private var wbLogoUploadError: String? = null
 private var wbOnSaveChannel: ((String, String, String?, ConditionGroup, String) -> Unit)? = null
 private var wbCustomType = "gradient"     // custom builder: "solid" | "gradient"
 private var wbCustomC1 = "#7b6ef0"
@@ -213,6 +215,7 @@ fun openWorkbench(
     wbApplyLabel = applyLabel
     wbOnApply = onApply
     wbChannelMode = channelMode
+    wbLogoUploadError = null
     wbChStyle = if (initialStyle.equals("text", ignoreCase = true)) "text" else "logo"
     wbChColor = initialBrandColor
     wbLogoUrl = initialLogoUrl
@@ -784,7 +787,8 @@ private fun wbRenderChannel() {
         }
         """<div class="tiny muted" style="margin:12px 0 7px;">Pick a logo or upload your own — a transparent PNG/SVG sits cleanly on the brand fill.</div>
            <div class="wbc-grid">$tiles<button class="wbc-tile wbc-up" data-upload><span style="font-size:1.25rem;">⤒</span><span class="tiny">Upload</span></button></div>
-           <input type="file" accept="image/png,image/svg+xml,image/*" class="wbc-file" style="display:none;">"""
+           <input type="file" accept="image/png,image/svg+xml,image/*" class="wbc-file" style="display:none;">
+           ${wbLogoUploadError?.let { """<div class="alert-bad wbc-upload-msg" style="margin-top:8px;">Upload failed: ${it.esc()}</div>""" } ?: ""}"""
     } else {
         """<div class="tiny muted" style="margin:12px 0 2px;">Text mode shows the channel name on the button.</div>"""
     }
@@ -840,8 +844,12 @@ private fun wbWireChannel() {
                 val dataUrl = (reader.result as? JsString)?.toString() ?: ""
                 if (dataUrl.isNotEmpty()) wbScope?.launch {
                     runCatching { RaviloApi.uploadChannelLogo(file.name, dataUrl) }.onSuccess { logo ->
+                        wbLogoUploadError = null
                         wbLogos = listOf(logo) + wbLogos.filter { it.url != logo.url }
                         wbLogoUrl = logo.url
+                        wbRenderChannel()
+                    }.onFailure {
+                        wbLogoUploadError = it.message ?: "upload refused"
                         wbRenderChannel()
                     }
                 }
