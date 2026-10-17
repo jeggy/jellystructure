@@ -246,3 +246,23 @@ entries:
 7. **No client change.** Steps 1 and 3 hold on an installed Android TV build that predates this change.
 8. **Editor.** The sub-row, its switched-off behaviour, the amber `0`, the picker's states and its keys match FR-7 and
    FR-8 and the frames named there, on desktop and at narrow width.
+
+## Amendment 2026-10-17 — the editor as built (DEB-1529, FR-7…FR-9, FR-11)
+
+Five things the round did not draw and the build had to decide. None changes a decision above.
+
+- **The result list scrolls.** The picker lists every tag that contains the query, and the catalogue is about 2 700 tags,
+  so a one-letter query would otherwise draw a popup thousands of rows tall. `.cw-res` (a wrapper around the header and
+  the rows, added to `wf.css` beside the other `.cw-*` rules) caps at 320px and scrolls; ↑/↓ keep the highlighted row in
+  view. The frames show at most seven rows, so none of them changes.
+- **The popup stays on top.** It hangs below its sub-row, usually past the bottom of the card it is in, and each page
+  section is its own stacking context, so the next section's card painted over it and took its clicks. The section
+  holding an open picker is lifted with `:has(.cw-pick)` in `wf.css`.
+- **Quotes and numbers.** The header and no-match lines use the curly quotes the round's strings use (`“kid”`), not the
+  straight quotes this spec's markdown typed. `{n}` in *Search {n} tags…* is grouped with a space (`2 697`), as drawn.
+- **No catalogue (FR-9).** The placeholder reads *Search tags…* (there is no `{n}`). With a query typed, the no-match
+  lines show; with nothing typed there is nothing to list, so only the second line, *Tags come from your library —
+  nothing is created here.*, shows. The chips keep their names and show `–`.
+- **After a Save.** The layout Save and the collection editor's Save each read the saved scope back, and a Continue row's
+  list is redrawn from that read, so what the server tidied (trimmed, de-duplicated) is what the editor shows. If the read
+  fails the editor keeps what it sent. The editor never shows a list as saved before the Save succeeds.
