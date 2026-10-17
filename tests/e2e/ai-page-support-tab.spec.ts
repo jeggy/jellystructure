@@ -380,6 +380,21 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await page.goto("/#/ai?tab=support");
         await expect(rows(page)).toHaveCount(3);
         await expect(panel(page).locator("#tk-seg span")).toHaveText(["All", "Open · 2", "Needs a reply · 1", "Overdue · 0", "Resolved", "Flagged"]);
+        // The six filters are each whole and on one line of their own text, at either width. At ≤ 560 px the row wraps
+        // to get there (amendment 2026-10-17): none hangs past the page, none is clipped, the page never scrolls sideways.
+        const filters = await panel(page).locator("#tk-seg span").evaluateAll((els: Element[]) => els.map((el) => {
+          const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+          const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+          return { text: el.textContent, left: r.left, right: r.right, lines: (r.height - pad) / parseFloat(cs.fontSize), clipped: el.scrollWidth > el.clientWidth };
+        }));
+        expect(filters).toHaveLength(6);
+        for (const f of filters) {
+          expect(f.left, f.text ?? "").toBeGreaterThanOrEqual(0);
+          expect(f.right, f.text ?? "").toBeLessThanOrEqual(vp.viewport.width);
+          expect(f.lines, `${f.text} breaks over more than one line`).toBeLessThan(1.8);
+          expect(f.clipped, `${f.text} is clipped`).toBe(false);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await panel(page).locator('[data-tk-filter="resolved"]').click();
         await expect(rows(page)).toHaveCount(1);
         await expect(row(page, 36)).toContainText("Keeping subtitles on by default");

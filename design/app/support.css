@@ -225,6 +225,12 @@
    and `.st` — and a cell added later cannot shuffle the rest. */
 @media (max-width:560px) {
   .tksup .tk-box, .tksup .tk-logbox { padding-left:14px; padding-right:14px; }
+  /* The filters (amendment 2026-10-17, DEB-1616): the shared `.seg` clips what overflows, so at 412 px the last
+     filter was 22 px of itself and a label broke over four lines. Here each filter is a pill of its own on a wrapping
+     row — whole, pressable, its count on its line. `.seg` itself is untouched; Activity's view switch keeps it. */
+  .tksup .tk-bar .seg { display:flex; flex-wrap:wrap; gap:6px; border:0; border-radius:0; overflow:visible; background:none; }
+  .tksup .tk-bar .seg span { flex:none; white-space:nowrap; border:1px solid var(--line-2); border-radius:var(--radius-s); }
+  .tksup .tk-bar .seg span:not(.on) { background:var(--fill-2); }
   .tksup .tk-tbl { min-width:0; }
   .tksup .tk-row.hd { display:none; }
   .tksup .tk-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px 9px; padding:12px 0; }
