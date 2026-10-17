@@ -118,6 +118,14 @@ them sends model prose:
 
 A sent reply is a `MESSAGE` by `AI_AGENT`, labelled `AI Agent`, and sets `owes = NONE`.
 
+*Amended 2026-10-17 (DEB-1667):* rule 3 gains one narrow exception and a seventh rule checks it by machine. When
+re-rank is on and the viewer is not a kids profile, the request carries up to 30 titles from the viewer's own
+Recommended row. A reply may name up to five of them, **only** as short ids that the server replaces with the title.
+Rule 7 forwards a reply that uses an id it was not handed, more than five, a library title written out, or a title
+the viewer can no longer see. The requirements are in
+[`ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md`](ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md)
+(FR-1–FR-5). Rules 1–6 are otherwise unchanged.
+
 **FR-321-6 — The forward.** `AI Agent` posts the forward notice (FR-321-7) as a `MESSAGE` by
 `AI_AGENT`. The ticket moves to `forwardTo` — `HERVOR` only when FR-320-13's `hervor_enabled` is true,
 otherwise `ADMIN` — with one `VIEWER` `FORWARDED` line and an `ADMIN_ONLY` note. The note carries the
@@ -240,6 +248,11 @@ says the same in one line. **The composer carries no line telling viewers that a
 ticket.** Owner, 2026-10-15 (DEB-1076): *the `AI Agent` label on replies is enough.* That label is
 therefore the only disclosure a viewer gets, and FR-320-8 already makes it the literal `AI Agent` on
 every reply it writes. No later phase may rename it, shorten it, or hide it behind a name.
+
+*Amended 2026-10-17 (DEB-1667):* the support line, and the Support card's line, gain a clause: *… and, while re-rank is
+on, up to 30 titles from the viewer's own Recommended row, with the same details re-rank sends. Never for a kids
+profile, and never their watch history.* See FR-6 of
+[`ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md`](ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md).
 
 **FR-321-12 — Tests.** These run in `linuxX64Test`, against a mocked Anthropic:
 
