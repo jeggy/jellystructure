@@ -135,7 +135,7 @@ async function newPage(ctx: BrowserContext, lane: Lane): Promise<Page> {
     const path = url.pathname.replace(/^\/api\/support/, "");
     const method = req.method();
     if (lane.delayMs && method === "POST") await new Promise((res) => setTimeout(res, lane.delayMs));
-    const body = method === "POST" ? (() => { try { return req.postDataJSON(); } catch { return {}; } })() : {};
+    const body = method === "POST" ? (() => { try { return req.postDataJSON() ?? {}; } catch { return {}; } })() : {};
     let m: RegExpMatchArray | null;
     if (method === "GET" && path === "/summary") { lane.summaryReads++; return r.fulfill({ json: lane.summary() }); }
     if (method === "GET" && path === "/tickets") return r.fulfill({ json: { tickets: lane.list(url.searchParams) } });
@@ -254,7 +254,7 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await expect.poll(() => hash(page)).toBe("#/ai?tab=support");
         await expect(page.locator("#ai-tabs span")).toHaveText(["Support"]);
         await expect(page.locator("#ai-tabs span.on")).toHaveText("Support");
-        const strip = panel(page).locator(".tk-lane.closed");
+        const strip = panel(page).locator("#tk-lane .tk-lane.closed");
         await expect(strip).toContainText("Support is closed. Ravilo shows viewers no Support entry, and nothing can be filed. Tickets already filed are kept.");
         await expect(strip.locator("button")).toHaveText("Open support to viewers");
         // A closed lane still has tickets an admin can read: all three, the resolved one included.
