@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1
 
-FROM eclipse-temurin:21-jdk AS builder
+# DEB-1490 FR-2 — the builder always runs on the build host's own architecture (amd64): Kotlin/Native 2.3 ships no
+# Linux arm64 compiler host, so the arm64 image's executable is CROSS-compiled here (linuxArm64) and only the runtime
+# stage below is built per target. `docker build` with no --platform behaves exactly as before.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS builder
 WORKDIR /app
 
 # Install Node.js (for Ravilo-web's own webpack build) plus two libraries the bare builder image
 # is otherwise missing:
-#   - libsqlite3-dev: the linuxX64 executable{} target links against -lsqlite3 (build.gradle.kts:33,
+#   - libsqlite3-dev: the linuxX64 executable{} target links against -lsqlite3 (build.gradle.kts,
 #     SQLDelight-generated code) via -L/usr/lib/x86_64-linux-gnu -- works on a dev machine that
 #     already has sqlite3 installed, but ld.lld fails with "unable to find library -lsqlite3"
 #     without it. Needs the -dev package specifically (not just the runtime -0 one) for the
@@ -66,10 +69,6 @@ RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     ./gradlew dependencies --no-daemon 2>/dev/null || true
 
 COPY src ./src
-RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./gradlew linkReleaseExecutableLinuxX64 --no-daemon
 # R245 — the Chromecast receiver bundle (Kotlin/JS), dropped next to cast-receiver/index.html.
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
@@ -79,9 +78,38 @@ RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew wasmJsBrowserDistribution --no-daemon
+# DEB-1490 FR-2 — the arm64 cross link needs the arm64 libsqlite3.so (-L/usr/lib/aarch64-linux-gnu, build.gradle.kts).
+# Ubuntu serves arm64 from ports.ubuntu.com, not archive.ubuntu.com, so the existing sources are pinned to amd64 and a
+# ports source is added for arm64 only. A no-op on an amd64 build. Declared here, after every
+# architecture-independent layer, because a declared ARG is part of the cache key of every RUN after it: earlier, the two
+# platforms of a multi-platform build would each run the Gradle and wasm steps instead of sharing them.
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        . /etc/os-release && \
+        dpkg --add-architecture arm64 && \
+        sed -i 's/^Types: deb$/Types: deb\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources && \
+        printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports/\nSuites: %s %s-updates %s-security\nComponents: main universe\nArchitectures: arm64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+            "$VERSION_CODENAME" "$VERSION_CODENAME" "$VERSION_CODENAME" > /etc/apt/sources.list.d/ubuntu-ports.sources && \
+        apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev:arm64 && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# DEB-1490 FR-2 — the executable LAST, for $TARGETARCH, copied to an architecture-neutral path. Everything above is the
+# same for both architectures, so a two-platform build runs it once and only this step forks.
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
+    case "$TARGETARCH" in \
+        amd64) K=X64; D=linuxX64 ;; \
+        arm64) K=Arm64; D=linuxArm64 ;; \
+        *) echo "unsupported TARGETARCH '$TARGETARCH'" >&2; exit 1 ;; \
+    esac && \
+    ./gradlew linkReleaseExecutableLinux$K --no-daemon && \
+    mkdir -p /out && cp build/bin/$D/releaseExecutable/jellystructure.kexe /out/jellystructure
 
 FROM debian:bookworm-slim
 WORKDIR /app
+ARG TARGETARCH
 
 # libsqlite3-0 (runtime library, not the -dev package needed only at link time in the builder
 # stage) -- the binary dynamically links libsqlite3.so.0 and fails to even start without it.
@@ -102,10 +130,17 @@ RUN apt-get update && \
 # dovi_tool -- Phase 314 kind C: converts a Dolby Vision profile 7 picture's RPU to profile 8.1 (the TVs decode 4/5/8,
 # never 7) for a version file beside the film. A static musl binary, pinned by version and checksum; without it the
 # card shows kind C as unavailable and nothing else changes.
+# DEB-1490 FR-2 — one asset and one pinned checksum per architecture.
 ARG DOVI_TOOL_VERSION=2.3.4
-ARG DOVI_TOOL_SHA256=1844258e13c26607b32224bf1fa82b595d3b35949f5467405fda560daad32b3f
-RUN wget -q -O /tmp/dovi.tgz "https://github.com/quietvoid/dovi_tool/releases/download/${DOVI_TOOL_VERSION}/dovi_tool-${DOVI_TOOL_VERSION}-x86_64-unknown-linux-musl.tar.gz" && \
-    echo "${DOVI_TOOL_SHA256}  /tmp/dovi.tgz" | sha256sum -c - && \
+ARG DOVI_TOOL_SHA256_AMD64=1844258e13c26607b32224bf1fa82b595d3b35949f5467405fda560daad32b3f
+ARG DOVI_TOOL_SHA256_ARM64=b4f22a7db56954efe4ed8d02276d0f991799e84602f3584711be6c9df950cb15
+RUN case "$TARGETARCH" in \
+        amd64) T=x86_64; SHA="$DOVI_TOOL_SHA256_AMD64" ;; \
+        arm64) T=aarch64; SHA="$DOVI_TOOL_SHA256_ARM64" ;; \
+        *) echo "unsupported TARGETARCH '$TARGETARCH'" >&2; exit 1 ;; \
+    esac && \
+    wget -q -O /tmp/dovi.tgz "https://github.com/quietvoid/dovi_tool/releases/download/${DOVI_TOOL_VERSION}/dovi_tool-${DOVI_TOOL_VERSION}-${T}-unknown-linux-musl.tar.gz" && \
+    echo "${SHA}  /tmp/dovi.tgz" | sha256sum -c - && \
     tar -xzf /tmp/dovi.tgz -C /usr/local/bin ./dovi_tool && chmod 755 /usr/local/bin/dovi_tool && rm /tmp/dovi.tgz && \
     /usr/local/bin/dovi_tool --version
 
@@ -113,7 +148,7 @@ RUN adduser --system --uid 1000 jellystructure
 
 # --chmod/--chown on the COPY itself (FR-167-2) instead of a separate RUN chmod/chown layer -- the old
 # form duplicated the whole copied content (33MB) into a second layer just to flip permissions.
-COPY --from=builder --chmod=755 --chown=jellystructure /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure
+COPY --from=builder --chmod=755 --chown=jellystructure /out/jellystructure /app/jellystructure
 COPY --from=builder --chown=jellystructure /app/build/dist/wasmJs/productionExecutable/ /app/frontend/
 # Phase 235 — ravilo-web's own bundle, so RAVILO_WEB_DIR (unset by default; opt-in for a
 # single-container self-hoster, see the phase's open question 2) can point at it without needing a

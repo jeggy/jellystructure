@@ -7,18 +7,21 @@
 #
 # A plain Kotlin service, no reverse-proxy technology baked in — the operator fronts it with whatever
 # they already run (Caddy, nginx, a tunnel, nothing). The static-serving half is :web-static-server, a
-# tiny standalone linuxX64 Ktor module built alongside the wasm bundle in this same build stage.
+# tiny standalone linuxX64 / linuxArm64 Ktor module built alongside the wasm bundle in this same build stage.
 #
 # The wasmJsBrowserDistribution output is genuinely self-contained (verified 2026-08-17: skiko.wasm is
 # included content-hashed, no absolute/external refs in index.html, fonts bundled via composeResources)
 # so :web-static-server has no backend reachability requirement baked in either.
 
-FROM eclipse-temurin:21-jdk AS builder
+# DEB-1490 FR-2 — the builder always runs on the build host's own architecture (amd64): Kotlin/Native 2.3 ships no
+# Linux arm64 compiler host, so the arm64 image's server is CROSS-compiled here (linuxArm64) and only the runtime stage
+# below is built per target. The wasm bundle is the same for both. `docker build` with no --platform is unchanged.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS builder
 WORKDIR /app
 
 # Same Node.js + libatomic1 setup as the main Dockerfile's builder stage (webpack + Gradle's own
 # Kotlin/Wasm npm tooling) — see that file's comment for why both are needed. No libsqlite3-dev here:
-# this build never touches the main linuxX64 executable{} target.
+# this build never touches the main linuxX64 executable{} target (so no arm64 libsqlite3 for the cross link either).
 #   - brotli (FR-235-2): :precompressWasmJsDistribution shells out to this CLI for .br siblings when
 #     it's on PATH, silently skipping them (gzip-only) otherwise.
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libatomic1 brotli && \
@@ -63,7 +66,20 @@ COPY src ./src
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./gradlew :ravilo-web:wasmJsBrowserDistribution :web-static-server:linkReleaseExecutableLinuxX64 --no-daemon
+    ./gradlew :ravilo-web:wasmJsBrowserDistribution --no-daemon
+# DEB-1490 FR-2 — the server LAST, for $TARGETARCH, copied to an architecture-neutral path. Declared here, after every
+# architecture-independent layer, because a declared ARG is part of the cache key of every RUN after it.
+ARG TARGETARCH
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
+    case "$TARGETARCH" in \
+        amd64) K=X64; D=linuxX64 ;; \
+        arm64) K=Arm64; D=linuxArm64 ;; \
+        *) echo "unsupported TARGETARCH '$TARGETARCH'" >&2; exit 1 ;; \
+    esac && \
+    ./gradlew :web-static-server:linkReleaseExecutableLinux$K --no-daemon && \
+    mkdir -p /out && cp web-static-server/build/bin/$D/releaseExecutable/web-static-server.kexe /out/web-static-server
 
 FROM debian:bookworm-slim
 WORKDIR /app
@@ -72,7 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf 
 RUN adduser --system --uid 1000 webstatic
 
 COPY --from=builder --chmod=755 --chown=webstatic \
-    /app/web-static-server/build/bin/linuxX64/releaseExecutable/web-static-server.kexe /app/web-static-server
+    /out/web-static-server /app/web-static-server
 COPY --from=builder --chown=webstatic /app/ravilo-web/build/dist/wasmJs/productionExecutable/ /srv/
 
 USER webstatic
