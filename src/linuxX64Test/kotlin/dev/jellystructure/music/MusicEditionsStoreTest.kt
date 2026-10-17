@@ -61,6 +61,8 @@ class MusicEditionsStoreTest {
         for (t in listOf("support_message", "support_ticket")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
         // …and 321's 80 creates support_ai_turn.
         raw.execute(null, "DROP TABLE IF EXISTS support_ai_turn", 0)
+        // …and DEB-1508's 82 creates support_seat_token (its support_message column goes with the table dropped above).
+        raw.execute(null, "DROP TABLE IF EXISTS support_seat_token", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 
