@@ -127,6 +127,53 @@ class MusicNewTracksCatchUpTest {
         assertEquals(emptyList(), mb.calls)
     }
 
+    /** A present file with no track number whose tags name this release's track [n] (DEB-1639). */
+    private fun numberless(n: Int, seconds: Long = 200, state: String? = null, rec: String? = null) = file(n, tag = "kw-r$n", state = state, rec = rec).copy(
+        id = "nn-$n", position = null, durationMs = seconds * 1000L, path = "/music/nn-$n.flac",
+        jellyfinProviderIds = mapOf("MusicBrainzRecording" to "kw-r$n", "MusicBrainzTrack" to "kw-rel-t0-${n - 1}"),
+    )
+
+    @Test
+    fun a_track_with_no_number_is_placed_by_its_release_track_id_on_the_catch_up() = runBlocking<Unit> {
+        matchedThen(listOf(numberless(6), numberless(7, seconds = 205)))
+        assertEquals(1, svc(CountingMb()).matchAlbums(null, scopeAll = false).mapped)
+        val a = store.track("nn-6")!!
+        assertEquals(MusicRecording.AGREES, a.recordingState); assertEquals("kw-r6", a.recordingMbid); assertEquals("kw-rel-t0-5", a.releaseTrackMbid)
+        assertEquals(MusicRecording.DISAGREES, store.track("nn-7")!!.recordingState)   // 5 s off
+        assertEquals("kw-rel-t0-6", store.track("nn-7")!!.releaseTrackMbid)
+    }
+
+    @Test
+    fun a_disagrees_track_with_no_number_is_re_mapped_once_and_not_asked_about_again() = runBlocking<Unit> {
+        // The state DEB-1488 left: the file's tag as a disagrees recording, no release track.
+        matchedThen(listOf(numberless(6, state = MusicRecording.DISAGREES, rec = "kw-r6"), numberless(7, state = MusicRecording.DISAGREES, rec = "kw-r7")
+            .copy(jellyfinProviderIds = mapOf("MusicBrainzTrack" to "not-on-this-release"))))
+        val mb = CountingMb()
+        val svc = svc(mb)
+        assertEquals(1, svc.matchAlbums(null, scopeAll = false).mapped)
+        assertEquals(MusicRecording.AGREES, store.track("nn-6")!!.recordingState); assertEquals("kw-rel-t0-5", store.track("nn-6")!!.releaseTrackMbid)
+        assertEquals(MusicRecording.DISAGREES, store.track("nn-7")!!.recordingState); assertNull(store.track("nn-7")!!.releaseTrackMbid)   // placed by nothing: as it was
+        mb.calls.clear()
+        assertEquals(0, svc.matchAlbums(null, scopeAll = false).mapped)
+        assertEquals(emptyList(), mb.calls)
+    }
+
+    @Test
+    fun a_manual_track_with_no_number_is_untouched() = runBlocking<Unit> {
+        val manual = numberless(6, state = MusicRecording.MANUAL, rec = "chosen-by-hand")
+        matchedThen(listOf(manual))
+        svc(CountingMb()).matchAlbums(null, scopeAll = false)
+        assertEquals(manual, store.track("nn-6"))
+    }
+
+    @Test
+    fun applying_a_match_places_a_track_with_no_number_by_its_ids_and_leaves_the_pick_alone() = runBlocking<Unit> {
+        store.putTracks(listOf(numberless(8)))
+        assertTrue(svc(CountingMb()).applyMatch("kw", "rg-kw", "kw-rel", "search", false) != null)
+        assertEquals("kw-rel-t0-7", store.track("nn-8")!!.releaseTrackMbid); assertEquals(MusicRecording.AGREES, store.track("nn-8")!!.recordingState)
+        assertEquals(5, store.album("kw")!!.release!!.agreeing)   // the five positioned files; the numberless one is not counted
+    }
+
     @Test
     fun an_unreachable_musicbrainz_leaves_the_tracks_unmapped() = runBlocking<Unit> {
         matchedThen(arriving(6..8))

@@ -53,6 +53,66 @@ class MusicMatchTest {
         assertEquals(0, off.agreeing); assertEquals(91, off.offMaxSec)
     }
 
+    // ── FR-276-5a (DEB-1639): a track with no position is placed by its own ids ──
+
+    private fun bare(id: String, seconds: Int?, vararg ids: Pair<String, String>, title: String = "Song", state: String? = null) =
+        MusicTrack(id = id, albumId = "alb", libraryId = "lib", title = title, durationMs = seconds?.let { it * 1000L },
+            jellyfinProviderIds = mapOf(*ids), recordingState = state, path = "/music/$id.mp3")
+
+    private fun place(rel: MbRelease, vararg disk: MusicTrack) = MusicScoring.placeById(rel, disk.toList(), MusicScoring.agreement(rel, disk.toList()))
+
+    @Test
+    fun a_position_less_track_is_found_by_its_release_track_id() {
+        val rel = release("r1", 200, 240)
+        val hit = place(rel, bare("a", 200, "MusicBrainzTrack" to "r1-t2", title = "Song 2"))["a"]!!
+        assertEquals("r1-t2", hit.mb?.id); assertTrue(!hit.agrees)   // 240 s on the release, 200 s on disk
+        assertTrue(place(rel, bare("b", 240, "MusicBrainzTrack" to "r1-t2"))["b"]!!.agrees)
+    }
+
+    @Test
+    fun a_length_five_seconds_off_disagrees_and_a_missing_length_is_judged_by_title() {
+        val rel = release("r1", 200, 240)
+        assertTrue(!place(rel, bare("a", 245, "MusicBrainzTrack" to "r1-t2"))["a"]!!.agrees)
+        assertTrue(place(rel, bare("b", 242, "MusicBrainzTrack" to "r1-t2"))["b"]!!.agrees)
+        assertTrue(place(rel, bare("c", null, "MusicBrainzTrack" to "r1-t2", title = "Song 2"))["c"]!!.agrees)
+        assertTrue(!place(rel, bare("d", null, "MusicBrainzTrack" to "r1-t2", title = "Other"))["d"]!!.agrees)
+    }
+
+    @Test
+    fun the_recording_id_places_a_track_only_when_exactly_one_release_track_has_it() {
+        val rel = release("r1", 200, 240)
+        assertEquals("r1-t1", place(rel, bare("a", 200, "MusicBrainzRecording" to "r1-rec1"))["a"]?.mb?.id)
+        val twice = rel.copy(media = rel.media.map { m -> m.copy(tracks = m.tracks + m.tracks[0].copy(id = "r1-t9", position = 3)) })
+        assertNull(place(twice, bare("a", 200, "MusicBrainzRecording" to "r1-rec1"))["a"])
+        // The release-track id wins over the recording id.
+        assertEquals("r1-t2", place(twice, bare("b", 240, "MusicBrainzTrack" to "r1-t2", "MusicBrainzRecording" to "r1-rec1"))["b"]?.mb?.id)
+    }
+
+    @Test
+    fun an_id_that_is_not_on_the_release_places_nothing() {
+        val rel = release("r1", 200, 240)
+        assertTrue(place(rel, bare("a", 200, "MusicBrainzTrack" to "elsewhere", "MusicBrainzRecording" to "elsewhere-rec")).isEmpty())
+    }
+
+    @Test
+    fun a_manual_track_and_a_position_hit_are_not_placed_by_id() {
+        val rel = release("r1", 200, 240)
+        assertTrue(place(rel, bare("m", 200, "MusicBrainzTrack" to "r1-t1", state = MusicRecording.MANUAL)).isEmpty())
+        val positioned = track("p", 1, 200).copy(jellyfinProviderIds = mapOf("MusicBrainzTrack" to "r1-t2"))
+        assertTrue(place(rel, positioned).isEmpty())          // position 1 hit track 1; the id is not consulted
+        // A position past the release's end finds nothing, so the id places it.
+        val past = track("q", 9, 240).copy(jellyfinProviderIds = mapOf("MusicBrainzTrack" to "r1-t2"))
+        assertEquals("r1-t2", place(rel, past)["q"]?.mb?.id)
+    }
+
+    @Test
+    fun placing_by_id_never_changes_the_agreement_the_pick_rule_counts() {
+        val rel = release("r1", 200, 240)
+        val disk = listOf(bare("a", 240, "MusicBrainzTrack" to "r1-t2"))
+        val a = MusicScoring.agreement(rel, disk)
+        assertEquals(0, a.agreeing); assertEquals(0, a.total)
+    }
+
     @Test
     fun no_disc_number_reads_as_disc_one_and_a_title_decides_without_lengths() {
         val disk = listOf(track("a", 1, 200, disc = null), MusicTrack(id = "b", albumId = "alb", title = "Song 2", disc = null, position = 2))

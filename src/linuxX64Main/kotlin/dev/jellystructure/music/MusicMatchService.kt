@@ -263,7 +263,7 @@ class MusicMatchService(
             .sortedBy { it.sortName ?: it.title }
         for (a in due) {
             val release = a.releaseMbid ?: continue
-            val wanted = tracksOf(a.id).filter { it.recordingState == null && (it.position != null || recordingTag(it) != null) }
+            val wanted = tracksOf(a.id).filter { it.recordingState == null && (it.position != null || recordingTag(it) != null) || isMarkedPositionless(it) }
             if (wanted.isEmpty()) continue
             stillUnmapped[a.id]?.takeIf { it.first == release }?.let { (_, ids) -> if (wanted.all { it.id in ids }) continue }
             val ok = runCatching { mapNewTracks(a.id, release) }.onFailure { Logger.warn("new tracks: ${a.id}: ${it.message}", "music") }.getOrDefault(false)
@@ -272,15 +272,21 @@ class MusicMatchService(
         return n
     }
 
+    /** FR-276-5a — DEB-1488's mark on a track with no position: its file tag as a `disagrees` recording and no release track yet. */
+    private fun isMarkedPositionless(t: MusicTrack): Boolean =
+        t.recordingState == MusicRecording.DISAGREES && t.position == null && t.releaseTrackMbid == null && MusicScoring.trackTag(t) != null
+
     private suspend fun mapNewTracks(albumId: String, releaseMbid: String): Boolean {
         val release = mb.release(releaseMbid) ?: return false
-        val unmapped = tracksOf(albumId).filter { it.recordingState == null }
-        val byTrack = MusicScoring.agreement(release, unmapped).hits.associateBy { it.track.id }
+        val unmapped = tracksOf(albumId).filter { it.recordingState == null || isMarkedPositionless(it) }
+        val positioned = MusicScoring.agreement(release, unmapped)
+        val byTrack = positioned.hits.filter { it.mb != null }.associateBy { it.track.id } + MusicScoring.placeById(release, unmapped, positioned)
         val updated = unmapped.mapNotNull { t ->
             val hit = byTrack[t.id]
             val tag = recordingTag(t)
             when {
                 hit?.mb != null -> withRecording(t, hit.mb, hit.agrees)
+                t.recordingState != null -> null
                 tag != null -> t.copy(recordingMbid = tag, recordingState = MusicRecording.DISAGREES)
                 else -> null
             }
@@ -557,7 +563,7 @@ class MusicMatchService(
             }
             note(albumId, "music_match", "Matched to “${rg.title}” $how · ${agreement.hits.size} of ${tracks.size} tracks agree" + if (lock) " · locked" else "")
         }
-        val byTrack = agreement.hits.associateBy { it.track.id }
+        val byTrack = agreement.hits.associateBy { it.track.id } + MusicScoring.placeById(release, tracks, agreement)
         val updated = tracks.map { t ->
             val hit = byTrack[t.id]
             val mbt = hit?.mb

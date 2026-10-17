@@ -3,6 +3,7 @@ package dev.jellystructure.music
 import dev.jellystructure.model.MusicCandidate
 import dev.jellystructure.model.MusicGenreVote
 import dev.jellystructure.model.MusicMbCredit
+import dev.jellystructure.model.MusicRecording
 import dev.jellystructure.model.MusicReleaseOption
 import dev.jellystructure.model.MusicTrack
 import kotlin.math.abs
@@ -37,16 +38,43 @@ object MusicScoring {
             val disc = t.disc ?: 1
             val media = release.media.filter { it.position == disc }.ifEmpty { if (release.media.size == 1) release.media else emptyList() }
             val mb = media.firstNotNullOfOrNull { m -> m.tracks.firstOrNull { it.position == t.position } }
-            val mbLen = mb?.length ?: mb?.recording?.length
-            val diskLen = t.durationMs
-            when {
-                mb == null -> TrackHit(t, null, false, null)
-                mbLen != null && diskLen != null -> abs(mbLen - diskLen).let { TrackHit(t, mb, it <= LENGTH_TOLERANCE_MS, it) }
-                else -> TrackHit(t, mb, norm(mb.title) == norm(t.title), null)
-            }
+            if (mb == null) TrackHit(t, null, false, null) else judge(t, mb)
         }
         val offMax = hits.filter { !it.agrees }.mapNotNull { it.offMs }.maxOrNull()?.let { ((it + 500) / 1000).toInt() }
         return Agreement(hits.count { it.agrees }, onDisk.size, offMax, hits)
+    }
+
+    /** The file's own release-track id (Jellyfin's `MusicBrainzTrack`). */
+    fun trackTag(t: MusicTrack): String? = t.jellyfinProviderIds["MusicBrainzTrack"]?.takeIf { it.isNotBlank() }
+
+    /**
+     * FR-276-5a (DEB-1639) — a present, non-manual track with no position, or whose position found no track on [release]
+     * (so it has no entry in [positioned] with an `mb`), is placed by its own ids: its `MusicBrainzTrack` if that is a track
+     * on the release, otherwise its `MusicBrainzRecording` if exactly one release track has that recording. Judged as a
+     * position hit is (length within [LENGTH_TOLERANCE_MS], or the title when a length is missing). Deliberately not part of
+     * [agreement]: choosing a release counts position hits only.
+     */
+    fun placeById(release: MbRelease, tracks: List<MusicTrack>, positioned: Agreement): Map<String, TrackHit> {
+        val taken = positioned.hits.filter { it.mb != null }.mapTo(HashSet()) { it.track.id }
+        val onRelease = release.media.flatMap { it.tracks }
+        val byId = onRelease.filter { it.id.isNotBlank() }.associateBy { it.id }
+        val byRecording = onRelease.filter { it.recording?.id?.isNotBlank() == true }.groupBy { it.recording!!.id }
+        val placed = HashMap<String, TrackHit>()
+        for (t in tracks) {
+            if (t.missingSince != null || t.recordingState == MusicRecording.MANUAL || t.id in taken) continue
+            val mb = trackTag(t)?.let { byId[it] }
+                ?: t.jellyfinProviderIds["MusicBrainzRecording"]?.takeIf { it.isNotBlank() }?.let { byRecording[it]?.singleOrNull() }
+                ?: continue
+            placed[t.id] = judge(t, mb)
+        }
+        return placed
+    }
+
+    private fun judge(t: MusicTrack, mb: MbTrack): TrackHit {
+        val mbLen = mb.length ?: mb.recording?.length
+        val diskLen = t.durationMs
+        return if (mbLen != null && diskLen != null) abs(mbLen - diskLen).let { TrackHit(t, mb, it <= LENGTH_TOLERANCE_MS, it) }
+        else TrackHit(t, mb, norm(mb.title) == norm(t.title), null)
     }
 
     /** The pressing that agrees best; ties go to an official release, then the one whose track count is closest to
