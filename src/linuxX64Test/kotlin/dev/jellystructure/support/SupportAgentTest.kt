@@ -33,7 +33,7 @@ import kotlin.test.fail
  */
 class SupportAgentTest {
     /** A stand-in for Anthropic's batch API: records every request, answers each from [answerFor]. */
-    private class FakeAnthropic : AnthropicClient.Transport {
+    internal class FakeAnthropic : AnthropicClient.Transport {
         val sent = ArrayList<JsonObject>()
         var answerFor: (user: String) -> String = { good() }
         var type = "succeeded"
@@ -82,7 +82,7 @@ class SupportAgentTest {
         }
     }
 
-    private class Rig(tag: String, names: (String) -> String? = { "Name-of-$it" }) {
+    internal class Rig(tag: String, names: (String) -> String? = { "Name-of-$it" }, library: SupportAgent.Library? = null) {
         val dbPath = "/tmp/jellystructure-test-support-ai-$tag-${getpid()}.db"
         val tomlPath = "/tmp/jellystructure-test-support-ai-$tag-${getpid()}.toml"
         val db = createDatabase(dbPath)
@@ -98,7 +98,7 @@ class SupportAgentTest {
             service.askAgent = { jobs.enqueueSupport(it, "a viewer's message") }
             service.agentComposing = { jobs.supportComposing(it) }
             service.ticketDeleted = { jobs.supportTicketDeleted(it) }
-            jobs.supportLane = SupportAgent(service, { store.current }, clock = { now })
+            jobs.supportLane = SupportAgent(service, { store.current }, clock = { now }, library = library)
             configure()
         }
 

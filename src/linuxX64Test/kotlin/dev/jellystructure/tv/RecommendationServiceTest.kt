@@ -108,6 +108,16 @@ class RecommendationServiceTest {
         PlaystateCache.replaceForTest("ann", emptyMap())
     }
 
+    @Test
+    fun `reading a first row without queueRebuild queues nothing and the default still queues one`() = runBlocking {
+        (1..10).forEach { mediaStore.addOrUpdate(film(it)) }
+        val a = login("ann")
+        service.servedFor(a, mediaStore.liveItems(), queueRebuild = false)
+        assertEquals(0, service.pendingRebuilds(), "the support job reads and never queues a rebuild (DEB-1667 FR-1)")
+        service.servedFor(a, mediaStore.liveItems())
+        assertEquals(1, service.pendingRebuilds(), "Home's read still queues the first build (FR-269-8 (3))")
+    }
+
     /** The row kinds an app installed before this phase knows, decoded strictly the way it decodes. */
     @Serializable private enum class OldRowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM }
     @Serializable private data class OldRow(val kind: OldRowKind)

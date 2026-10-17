@@ -5,6 +5,10 @@ import dev.jellystructure.ai.AiRequests
 import dev.jellystructure.config.AiJobConfig
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.log.Logger
+import dev.jellystructure.media.visibleTo
+import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
+import dev.jellystructure.auth.DeviceData
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -17,10 +21,28 @@ class SupportAgent(
     private val service: SupportService,
     private val config: () -> AppConfig,
     private val clock: () -> Long = { dev.jellystructure.nowEpochSec() },
+    private val library: Library? = null,
 ) : AiJobs.SupportLane {
-    /** What a batch item remembers about a request: the ticket, who owns it (never sent), and how far the thread went. */
+    /**
+     * DEB-1667 — what the agent reads of the library and of a viewer's Recommended row. Reads only: [row] is Home's served
+     * row without the rebuild a read of it would queue. A null [library] is a server with no suggestions to hand.
+     */
+    class Library(
+        /** The viewer's most recently seen device row, of any age. */
+        val deviceOf: (userId: String) -> DeviceData?,
+        /** Home's row for [DeviceData], in Home's order. */
+        val row: suspend (DeviceData) -> List<MediaItem>,
+        /** Every live item, from every library. */
+        val live: suspend () -> List<MediaItem>,
+    )
+
+    /**
+     * What a batch item remembers about a request: the ticket, who owns it (never sent), and how far the thread went.
+     * [ids] (DEB-1667, FR-1) maps each short id handed in the suggestion block to its Jellyfin id; empty when none was sent,
+     * and for a row queued before that work.
+     */
     @Serializable
-    private data class Ctx(val t: Long, val o: String, val upTo: Long, val lang: String)
+    private data class Ctx(val t: Long, val o: String, val upTo: Long, val lang: String, val ids: Map<String, String> = emptyMap())
 
     private val json = Json { ignoreUnknownKeys = true }
     /** FR-321-8 — requests built for each viewer in the pass in progress, on top of what the ledger already holds. */
@@ -30,7 +52,7 @@ class SupportAgent(
 
     override fun beginPass() = passCounts.clear()
 
-    override fun build(subject: String, customId: String, cfg: AiJobConfig): AiJobs.BuiltSupport? {
+    override suspend fun build(subject: String, customId: String, cfg: AiJobConfig): AiJobs.BuiltSupport? {
         val number = subject.toLongOrNull() ?: return null
         val tk = service.agentTicket(number) ?: return null
         // A ticket a person has taken, flagged, or that nothing is owed on is nothing to ask. The viewer's indicator
@@ -45,9 +67,23 @@ class SupportAgent(
         }
         passCounts[tk.ownerId] = (passCounts[tk.ownerId] ?: 0) + 1
         val sup = config().ai.support
-        val user = SupportAi.userBlock(tk.language, tk.ticketClass, SupportAi.threadBlock(tk.entries, sup.maxInputChars, service.agentOwnerName(tk.ownerId)))
+        val handed = suggestionsFor(tk.ownerId)
+        val block = handed.takeIf { it.isNotEmpty() }?.let { SupportAi.suggestionsBlock(it.mapIndexed { i, item -> AiRequests.describe("s${i + 1}", item) }) }
+        val ids = handed.mapIndexed { i, item -> "s${i + 1}" to item.jellyfinId.orEmpty() }.toMap()
+        val user = SupportAi.userBlock(tk.language, tk.ticketClass, SupportAi.threadBlock(tk.entries, sup.maxInputChars, service.agentOwnerName(tk.ownerId)), block)
         val request = SupportAi.request(customId, cfg.model, cfg.effort, user)
-        return AiJobs.BuiltSupport(request, json.encodeToString(Ctx.serializer(), Ctx(tk.number, tk.ownerId, tk.lastViewerMessageId, tk.language)))
+        return AiJobs.BuiltSupport(request, json.encodeToString(Ctx.serializer(), Ctx(tk.number, tk.ownerId, tk.lastViewerMessageId, tk.language, ids)))
+    }
+
+    /**
+     * DEB-1667 (FR-1) — the first [SUGGESTIONS] titles of what Home would serve [ownerId] now, or none: re-rank is not
+     * active, the viewer has no device row, or the row is empty. Never queues a rebuild, and `isKids` plays no part (FR-4).
+     */
+    private suspend fun suggestionsFor(ownerId: String): List<MediaItem> {
+        val lib = library ?: return emptyList()
+        if (!config().ai.rerankActive()) return emptyList()
+        val device = lib.deviceOf(ownerId) ?: return emptyList()
+        return lib.row(device).filter { it.jellyfinId != null }.take(SUGGESTIONS)
     }
 
     /** FR-321-8 — the per-viewer and per-ticket bounds. A ticket past either forwards, with the reason in words. */
@@ -121,16 +157,25 @@ class SupportAgent(
             return discarded(applied) ?: done("FORWARDED: $why", null, true)
         }
 
-        val ruling = SupportAi.rule(answer, c.lang, service.hervorEffective)
+        // DEB-1667 (FR-3) — rule 7 reads every live film and series, from every library, and the ids as they stand now.
+        val live = library?.live?.invoke().orEmpty()
+        val keys = SupportAi.nameKeys(live.filter { it.kind != MediaKind.MUSIC_VIDEO }.flatMap { listOf(it.title, it.originalTitle) })
+        val device = library?.deviceOf?.invoke(c.o)
+        val seen = live.filter { device != null && it.visibleTo(device) }.mapNotNull { it.jellyfinId?.let { id -> id to it } }.toMap()
+        fun resolved(id: String): MediaItem? = c.ids[id]?.let(seen::get)
+        val faults = if (answer.ticketClass in SupportAi.REPLY_CLASSES) SupportAi.rule7(answer.reply, c.ids.keys, keys) { resolved(it) != null } else emptyList()
+        val ruling = SupportAi.rule(answer, c.lang, service.hervorEffective, faults)
         // DEB-1500 (FR-13) — the titles ride the same pass. ABUSE stores neither (agentFlag takes the summary alone), so it
         // has nothing to report dropped either.
-        val titles = SupportAi.titles(answer)
+        val titles = SupportAi.titles(answer, keys)
         val cl = SupportService.Classification(answer.ticketClass, answer.summary, titles.title, titles.englishTitle)
         val dropped = titles.dropped?.takeIf { ruling.kind != SupportAi.Kind.ABUSE }?.let { " | TITLE_DROPPED: $it" }.orEmpty()
         val readable = "${answer.ticketClass} · ${answer.summary}"
         return when (ruling.kind) {
             SupportAi.Kind.SEND -> {
-                val applied = service.agentSend(c.t, c.upTo, cl, answer.reply)
+                // FR-5 — the server writes every title, as stored, after rules 1–7 have passed.
+                val text = SupportAi.substitute(answer.reply) { id -> resolved(id)?.let { it.title + (it.year?.let { y -> " ($y)" } ?: "") } }
+                val applied = service.agentSend(c.t, c.upTo, cl, text)
                 discarded(applied) ?: done("SENT$dropped", readable, true)
             }
             SupportAi.Kind.ABUSE -> {
@@ -153,6 +198,11 @@ class SupportAgent(
         append("AI Agent forwarded this: ${ruling.reason}.")
         append("\nSummary: ${ruling.answer.summary}")
         ruling.answer.reproduction?.let { append("\nReproduction: $it") }
+    }
+
+    private companion object {
+        /** DEB-1667 (FR-1) — how many titles of the viewer's row the block holds. */
+        const val SUGGESTIONS = 30
     }
 
     override fun lost(ctx: String) {

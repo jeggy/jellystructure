@@ -84,6 +84,9 @@ class RecommendationService(
         staleLock.withLock { if (device.jellyfinUserId !in stale) stale[device.jellyfinUserId] = device to nowSec() }
     }
 
+    /** Viewers waiting on a debounced rebuild. For tests: DEB-1667 (FR-1) reads a row without adding one. */
+    internal fun pendingRebuilds(): Int = staleLock.withLock { stale.size }
+
     private suspend fun rebuildStale() {
         val now = nowSec()
         val due = staleLock.withLock {
@@ -263,14 +266,15 @@ class RecommendationService(
      * 2026-10-04: a title finished, marked watched or started since the build stays where it is, with its tick or
      * progress bar; the weekly build leaves it out next time). A viewer with no list
      * yet gets their scope's starter list at once, and a build is queued (FR-269-8 (3)). [visible] is the
-     * caller's already-fetched `liveItems(device)`.
+     * caller's already-fetched `liveItems(device)`. DEB-1667 (FR-1) — [queueRebuild] false reads the row without that
+     * queued build: the support job reads and never queues a rebuild.
      */
-    fun servedFor(device: DeviceData, visible: List<MediaItem>): List<MediaItem> {
+    fun servedFor(device: DeviceData, visible: List<MediaItem>, queueRebuild: Boolean = true): List<MediaItem> {
         val scope = RecommendationEngine.scopeKey(device)
         var ids = db.recommendationQueries.forViewer(device.jellyfinUserId, scope).executeAsList().map { it.item_id }
         if (ids.isEmpty()) {
             ids = db.recommendationQueries.starterFor(scope).executeAsList().map { it.item_id }
-            markStale(device)
+            if (queueRebuild) markStale(device)
         }
         if (ids.isEmpty()) return emptyList()
         val byJf = visible.mapNotNull { it.jellyfinId?.let { id -> id to it } }.toMap()

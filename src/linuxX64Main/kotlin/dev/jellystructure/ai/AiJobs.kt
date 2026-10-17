@@ -82,7 +82,7 @@ class AiJobs(
         /** FR-321-8 — called before each pass over what waits, so a viewer's count within one batch starts clean. */
         fun beginPass()
         /** One queued ticket as a request, or null when there is nothing to ask (gone, taken by a person, flagged, over a limit — already forwarded). */
-        fun build(subject: String, customId: String, cfg: AiJobConfig): BuiltSupport?
+        suspend fun build(subject: String, customId: String, cfg: AiJobConfig): BuiltSupport?
         /** The request left in [batchId]: the transcript row (FR-321-10). */
         fun sent(ctx: String, batchId: String, customId: String, model: String, sent: String)
         /** One result read: apply it (or discard it) and say what became of it. [cost] is what the ledger takes. */
@@ -731,7 +731,9 @@ class AiJobs(
         val (rerankEst, rerankBasis) = estimate(AiRequests.RERANK_JOB, RERANK_ASSUMED, viewers * RUNS_PER_MONTH)
         val (themesEst, themesBasis) = estimate(AiRequests.THEMES_JOB, THEMES_ASSUMED, untagged.toDouble())
         val (clustersEst, clustersBasis) = estimate(AiRequests.CLUSTERS_JOB, CLUSTERS_ASSUMED, RUNS_PER_MONTH)
-        val (supportEst, supportBasis) = estimate(AiRequests.SUPPORT_JOB, SUPPORT_ASSUMED, SUPPORT_ASKS_PER_MONTH)
+        // DEB-1667 (FR-7) — with re-rank on, every support turn also carries the suggestion block.
+        val supportAssumed = if (configStore.current.ai.rerankActive()) SUPPORT_ASSUMED.copy(input = SUPPORT_ASSUMED.input + SUPPORT_SUGGESTIONS_INPUT) else SUPPORT_ASSUMED
+        val (supportEst, supportBasis) = estimate(AiRequests.SUPPORT_JOB, supportAssumed, SUPPORT_ASKS_PER_MONTH)
         return Status(
             keyHint = key.takeIf { it.length >= 8 }?.let { "…" + it.takeLast(4) },
             pricesAsOf = AiPricing.AS_OF,
@@ -789,6 +791,8 @@ class AiJobs(
         /** Phase 321 — the system prompt and a short thread: ~2.5k in, ~0.5k out; and a guess at how often viewers write. */
         private val SUPPORT_ASSUMED = AiPricing.Usage(input = 2_500, output = 500)
         private const val SUPPORT_ASKS_PER_MONTH = 30.0
+        /** DEB-1667 (FR-7) — up to 30 `describe` lines, about 110 tokens each. */
+        private const val SUPPORT_SUGGESTIONS_INPUT = 3_300L
         /** What a deleted ticket's conversation is blanked to in the batches that still hold it (FR-320-17). */
         const val SCRUBBED = "[deleted with the ticket]"
         /** Phase 274 — a household's watching and 50 candidates as ids: ~9k in, ~2k out. */

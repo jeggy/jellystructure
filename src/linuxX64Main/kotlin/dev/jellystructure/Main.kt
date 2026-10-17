@@ -725,7 +725,11 @@ fun main() = runBlocking {
     supportService.askAgent = { ticket -> aiJobs.enqueueSupport(ticket, "a viewer's message") }
     supportService.agentComposing = { ticket -> aiJobs.supportComposing(ticket) }
     supportService.ticketDeleted = { ticket -> aiJobs.supportTicketDeleted(ticket) }
-    aiJobs.supportLane = dev.jellystructure.support.SupportAgent(supportService, { configStore.current })
+    aiJobs.supportLane = dev.jellystructure.support.SupportAgent(supportService, { configStore.current }, library = dev.jellystructure.support.SupportAgent.Library(
+        deviceOf = { userId -> raviloDeviceService.listByUser(userId).maxByOrNull { it.lastSeen } },
+        row = { device -> recommendationService.servedFor(device, mediaStore.liveItems(device), queueRebuild = false) },   // DEB-1667 — read, never a queued rebuild
+        live = { mediaStore.liveItems() },
+    ))
     // FR-320-17 — tickets resolved with no activity for `retention_days`. Daily, and it runs while the lane is unavailable:
     // an absent key must not turn a retention policy into keeping personal data forever.
     rootScope.launch {

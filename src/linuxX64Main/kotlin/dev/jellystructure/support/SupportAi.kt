@@ -63,6 +63,13 @@ object SupportAi {
         about what the library contains or the server's condition, and anything about the people, teams, files,
         phases or tickets behind the software. Never mention an internal name, a file, a requirement or a person
         other than the viewer. When you are not sure, FORWARD: a person answers soon.
+
+        When a <suggestions> block is given, it lists titles this server already recommends to this viewer. If they
+        ask what to watch, you may answer with up to five of them, and you refer to each only as its id in braces,
+        like {s3}. The server replaces each id with the title, so never write a title yourself, and never name or
+        describe any title that is not in the block. Choosing from the block is not a claim about the library, so it
+        does not make claimsState true. Everything else above still holds. When no block is given, a question about
+        what to watch is forwarded as before.
     """.trimIndent()
 
     // Declared before SCHEMA: an object initialises top to bottom, and SCHEMA reads both.
@@ -148,9 +155,20 @@ object SupportAi {
 
     private fun wrap(body: String) = "<thread>\n$body\n</thread>"
 
-    /** The one user message: the language and class `AI Agent` is also given, then the thread. */
-    fun userBlock(viewerLanguage: String, currentClass: String?, thread: String): String =
-        "Viewer's interface language: ${viewerLanguage.ifBlank { "en" }}\nCurrent class: ${currentClass ?: "none yet"}\n\n$thread"
+    /**
+     * The one user message: the language and class `AI Agent` is also given, then DEB-1667's [suggestions] block when there
+     * is one (FR-1), then the thread. With no block the message is what it was before.
+     */
+    fun userBlock(viewerLanguage: String, currentClass: String?, thread: String, suggestions: String? = null): String =
+        "Viewer's interface language: ${viewerLanguage.ifBlank { "en" }}\nCurrent class: ${currentClass ?: "none yet"}\n\n" +
+            (suggestions?.let { "$it\n\n" } ?: "") + thread
+
+    /** A break-out of the suggestion block is neutralised the same way the thread's is. */
+    private val SUGGESTIONS_DELIMITER = Regex("</?\\s*suggestions", RegexOption.IGNORE_CASE)
+
+    /** DEB-1667 (FR-1) — the block: one [AiRequests.describe] line per title, short ids `s1`… in the order given. */
+    fun suggestionsBlock(lines: List<String>): String =
+        "<suggestions>\n${lines.joinToString("\n") { SUGGESTIONS_DELIMITER.replace(it, "‹suggestions") }}\n</suggestions>"
 
     fun request(customId: String, model: String, effort: String, user: String): JsonObject =
         AiRequests.request(customId, model, effort, AiRequests.SUPPORT_MAX_TOKENS, SYSTEM, user, SCHEMA)
@@ -256,11 +274,60 @@ object SupportAi {
     /** What the answer comes to. [reason] is words: the rules that failed, for the `ADMIN_ONLY` note and the transcript. */
     class Ruling(val kind: Kind, val answer: Answer, val reason: String, val to: String)
 
+    // ─── Rule 7: suggestions (DEB-1667, FR-3) ────────────────────────────────
+
+    private val ID_TOKEN = Regex("\\{([^{}]*)\\}")
+    const val MAX_SUGGESTIONS_NAMED = 5
+    /** The classes whose reply may be sent by [rule]: the only ones rule 7 judges. */
+    val REPLY_CLASSES = listOf("QUESTION", "OTHER")
+    private const val MIN_NAME_LETTERS = 4
+
+    /** `{…}` tokens in [text], without the braces, in order. */
+    private fun idTokens(text: String): List<String> = ID_TOKEN.findAll(text).map { it.groupValues[1] }.toList()
+
+    /** Folded, with everything that is not a letter or digit as one space, so a whole-word match is a plain substring test. */
+    private fun words(s: String): String =
+        fold(s).map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("").trim().replace(Regex(" +"), " ")
+
+    /**
+     * FR-3 part 2 — the keys a reply is checked against: every title in [names] folded, skipping those under four letters
+     * after folding. Built once per answer from every live film and series, in every library.
+     */
+    fun nameKeys(names: Iterable<String?>): Set<String> =
+        names.mapNotNull { n -> n?.let(::words)?.takeIf { w -> w.count { it.isLetter() } >= MIN_NAME_LETTERS } }.toSet()
+
+    /** Whether [text] contains any of [keys] as whole words. */
+    fun namesATitle(text: String, keys: Set<String>): Boolean {
+        if (keys.isEmpty()) return false
+        val padded = " ${words(text)} "
+        return keys.any { padded.contains(" $it ") }
+    }
+
+    /**
+     * FR-3 — rule 7's failures for a reply, worded without quoting a title. [handed] is the set of ids the request's block
+     * carried (empty when none was sent), [keys] the library's [nameKeys], and [visible] whether a handed id still resolves
+     * to a live title this viewer may see.
+     */
+    fun rule7(reply: String, handed: Set<String>, keys: Set<String>, visible: (String) -> Boolean): List<String> {
+        val failed = ArrayList<String>()
+        val tokens = idTokens(reply).distinct()
+        if (tokens.any { it !in handed }) failed += "rule 7 — an id not in the suggestions"
+        if (tokens.size > MAX_SUGGESTIONS_NAMED) failed += "rule 7 — more than five suggestions"
+        if (namesATitle(reply, keys)) failed += "rule 7 — the reply names a library title itself"
+        if (tokens.any { it in handed && !visible(it) }) failed += "rule 7 — a suggestion is no longer visible to this viewer"
+        return failed
+    }
+
+    /** FR-5 — each `{sN}` in [reply] written as [titleOf] gives it; an id [titleOf] does not know is left as it was. */
+    fun substitute(reply: String, titleOf: (String) -> String?): String =
+        ID_TOKEN.replace(reply) { m -> titleOf(m.groupValues[1]) ?: m.value }
+
     /**
      * FR-321-5 — the answer's class decides the path; for `QUESTION` and `OTHER` the reply sends only when every one of
      * rules 1–5 holds. Rule 6 (not flagged meanwhile, job still active) is the caller's, at the moment of applying.
+     * [suggestionFaults] is DEB-1667's rule 7 failures ([rule7]'s result), already worded; it counts only on this path, where a reply sends.
      */
-    fun rule(a: Answer, viewerLanguage: String, hervorEnabled: Boolean): Ruling {
+    fun rule(a: Answer, viewerLanguage: String, hervorEnabled: Boolean, suggestionFaults: List<String> = emptyList()): Ruling {
         val to = if (a.forwardTo == "HERVOR" && hervorEnabled) "HERVOR" else "ADMIN"
         return when (a.ticketClass) {
             "ABUSE" -> Ruling(Kind.ABUSE, a, "flagged as abuse", "ADMIN")
@@ -279,6 +346,7 @@ object SupportAi {
                 else if (a.replyLanguage != viewerLanguage && a.languageConfidence != "HIGH") failed += "rule 5 — the reply is not in the viewer's language"
                 if (a.reply.isBlank()) failed += "the reply is empty"
                 if (a.reply.codePointCount() > MAX_REPLY) failed += "the reply is longer than $MAX_REPLY characters"
+                failed += suggestionFaults
                 if (failed.isEmpty()) Ruling(Kind.SEND, a, "sent", to) else Ruling(Kind.FORWARD, a, failed.joinToString("; "), to)
             }
         }
@@ -292,11 +360,14 @@ object SupportAi {
     class TitleRuling(val title: String?, val englishTitle: String?, val dropped: String?)
 
     /** The first test a title fails, in words that quote nothing of it; null when it may be stored. */
-    private fun titleFault(t: String?): String? = when {
+    private fun titleFault(t: String?, keys: Set<String>): String? = when {
         t == null || t.isBlank() -> "empty"
         t.contains('\n') || t.contains('\r') -> "not one line"
         t.trim().codePointCount() > MAX_TITLE -> "longer than $MAX_TITLE characters"
         internalString(t) != null -> "rule 4 — contains an internal string"
+        // DEB-1667 (FR-3) — a case title takes no suggestion id and names no library title.
+        ID_TOKEN.containsMatchIn(t) -> "rule 7 — contains an id"
+        namesATitle(t, keys) -> "rule 7 — names a library title"
         else -> null
     }
 
@@ -306,13 +377,13 @@ object SupportAi {
      * `languageConfidence` HIGH (rule 2) and a `replyLanguage` of `en`, `da` or `fo` (rule 5; DEB-1663 — the language the
      * viewer wrote in, which is not always `viewer_language`). A title that fails stays null and a later turn may fill it.
      */
-    fun titles(a: Answer): TitleRuling {
+    fun titles(a: Answer, keys: Set<String> = emptySet()): TitleRuling {
         val dropped = ArrayList<String>()
         val english = a.englishTitle?.trim()
-        val englishFault = titleFault(english)
+        val englishFault = titleFault(english, keys)
         if (englishFault != null && a.englishTitle != null) dropped += "englishTitle $englishFault"
         val own = a.title?.trim()
-        val ownFault = titleFault(own) ?: when {
+        val ownFault = titleFault(own, keys) ?: when {
             a.languageConfidence != "HIGH" -> "rule 2 — language confidence is LOW"
             a.replyLanguage !in LINE_LANGUAGES -> "rule 5 — not in the viewer's language"
             else -> null

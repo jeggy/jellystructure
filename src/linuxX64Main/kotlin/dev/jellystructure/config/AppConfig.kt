@@ -202,6 +202,9 @@ data class AiConfig(
 ) {
     /** Phase 321 (FR-321-1) — the job is active when AI is on, there is a key, the job is on, and phase 320's lane is on. */
     fun supportActive(lane: SupportConfig): Boolean = enabled && apiKey.isNotBlank() && support.enabled && lane.enabled
+
+    /** FR-270's `jobOn` for re-rank: AI on, a key, the job on. DEB-1667 (FR-1) — the support job's suggestion block rides on it. */
+    fun rerankActive(): Boolean = enabled && apiKey.isNotBlank() && rerank.enabled
 }
 
 /**
