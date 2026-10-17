@@ -3,15 +3,16 @@
 > Owner, 2026-10-05: *"The ravilo web doesn't have a proper video player, so it's not even possible [to switch audio].
 > Let's create a spec right now to add this video player so it's properly supported on web."*
 
-## Status
+## Scope
 
-`⚠ Partial` — **rebased onto `main` on 2026-10-08 (branch `worktree-agent-ab00abd5d58e10631`), with the dev review's union and the owner's decisions built in; not merged, not deployed.** The FR-R376-1 gate passed in headless Chromium (2026-10-05) and **Safari 27 on the owner's Mac boots it** (2026-10-08: the Compose canvas, signed in, the Home feed and its artwork; no JS error). Not run: a play on Safari (a background window takes no key focus), the iPhone PWA, a real Android phone. Written 2026-10-05
-(dev-authored, from the owner's ask above), checked against `main` `6ee8197c`. Client only (`ravilo-ui` wasmJs
-actuals, `ravilo-web` boot); no server change, no wire change. Picks up the 2026-09-18 research report's option A
+The FR-R376-1 gate passed in headless Chromium (2026-10-05) and Safari 27 on the owner's Mac boots it (2026-10-08).
+Written 2026-10-05 (dev-authored, from the owner's ask above), checked against `main` `6ee8197c`. Client only
+(`ravilo-ui` wasmJs actuals, `ravilo-web` boot); no server change, no wire change. Picks up the 2026-09-18 research report's option A
 (`specs/research-reports/ravilo-web-pwa-player-cast-2026-09-18.md` §4.1, "the single most valuable spike") and its
 §4.4 checklist, which no phase took. Supersedes **R169**'s HTML-chrome fallback and **R157**'s DOM transport, and
 **R284 FR-R284-5** (web audio is a no-op); closes **R218 FR-R218-6**'s web fallback and **R291 FR-R291-4** for the
-browser.
+browser. Amended 2026-10-17: Play fills the tab, and full screen in a tab is the viewer's own click (FR-R376-4a–4e,
+DEB-1671 — see the amendment at the end).
 
 ## What happens today
 
@@ -78,6 +79,10 @@ as on Android, with R218's 400 ms debounce and its strings — no new copy.
 
 ### FR-R376-4 — Fullscreen, orientation and the background, as a browser allows
 
+> **Amended 2026-10-17 (DEB-1671).** The *Fullscreen* and *Orientation* bullets below are replaced for a browser tab
+> by FR-R376-4a–4e in the amendment at the end of this file: Play no longer enters full screen. *Background* and
+> *Media Session* are unchanged.
+
 - **Fullscreen:** the player enters fullscreen on the **page element** (`document.documentElement.requestFullscreen()`,
   not the `<video>`, so the Compose chrome stays on top) when playback starts in a browser tab, and leaves it on exit.
   In an installed app (standalone) there is nothing to enter. **iPhone:** no `requestFullscreen` on non-video elements
@@ -131,7 +136,7 @@ hidden where unsupported (absent, never greyed). Uses R244's existing string set
 4. A direct-playable single-audio file still direct-plays; a multi-audio file is negotiated as HLS with renditions.
 5. A throttled network (DevTools *Slow 4G*) shows R218's stall treatment; a seek shows its seek spinner.
 6. Fullscreen on start in a Chrome tab, exit on Back; Android rotates to landscape; the iPhone PWA plays full screen
-   with the chrome on top.
+   with the chrome on top. *(Replaced 2026-10-17 by the amendment's acceptance, DEB-1671.)*
 7. Hiding the tab pauses and reports progress; the OS media controls name the title.
 8. R216's QoE rows arrive from a browser session with frame counts.
 
@@ -545,3 +550,107 @@ ssh session.
   incrementally after a JS-only change could ship stale code.
 - **The service worker serves the previous build** until a second reload (R263's *Ravilo updated · Reload* toast). This
   is expected, but test runs must unregister it first.
+
+## Amendment 2026-10-17 — Play fills the tab; full screen is the viewer's click (DEB-1671)
+
+> Owner, 2026-10-17: *"Clicking play on Ravilo Web, should not do fullscreen automatically. It should just use 100% of
+> the place it has, but the user should still be the one that clicks on full-screen."*
+
+**What it replaces.** FR-R376-4's *Fullscreen* and *Orientation* bullets, and acceptance item 6, for a browser tab.
+Today `PlayerImmersiveEffect` (wasmJs) calls `requestFullscreen` on `document.documentElement` when the player opens,
+and the shell's own Fullscreen button is hidden while the player is up (`body.rv-playing`), so a viewer who leaves full
+screen has only the F key to get back. *Background*, *Media Session*, the iPhone rule (never `webkitEnterFullscreen`)
+and the installed app are unchanged.
+
+**Prior art in this tree.** The Mac player already works this way (FR-R329-6/7): it never enters full screen by itself,
+**F** and a double-click on the picture toggle it, and leaving the player leaves only a full screen entered while the
+player was up. The web takes the same rules, plus a visible control, because a browser viewer has no menu bar to find
+full screen in and a phone has no F key.
+
+### FR-R376-4a — Play fills the tab and never enters full screen
+
+Opening the player in a browser tab makes no `requestFullscreen` call. The film fills the tab's viewport — which is
+what the player already does underneath today: the `<video>` is `position:fixed` at 100 % × 100 % with
+`object-fit:contain` behind the canvas, and the player destination draws edge to edge with no app bar or bottom bar
+(`RaviloApp`'s `playingFullscreen`). The picture is letterboxed to its own shape; FR-R244-6's fill/fit still applies. A
+viewer who is already in full screen when they press Play (the shell's button or F) plays in it and stays in it.
+
+### FR-R376-4b — The viewer's three ways in, while the player is up
+
+All three toggle, and each runs inside the viewer's own gesture, which `requestFullscreen` requires (call it
+synchronously from the click/key handler, as FR-R376-S1 does for `play()` — Safari is the strict one).
+
+1. **A Full screen control in the player chrome**, in the same places FR-R376-8's picture-in-picture already sits:
+   - the wide (desktop/TV) chrome: a `TrackButton` in the transport row **immediately after Picture in picture**,
+     with its own focus stop (`transportOrder` gains it after `PIP`, so arrow keys and a gamepad reach it);
+   - the handset chrome: a `HandsetIconButton` in the top bar **immediately after the picture-in-picture glyph**
+     (before rotate), drawn in the same style as its neighbours — four outward corner brackets, inward when in full
+     screen.
+
+   The label is the existing `desk.fullscreen` / `desk.exit_fullscreen` (en, da, fo all present) — **no new string**.
+   The control follows the real state: it listens to `fullscreenchange` (and `webkitfullscreenchange`), so when the
+   browser's own Esc leaves full screen the label and glyph flip back.
+
+   **Shown only where the page can go full screen:** a browser tab (not standalone) with `document.fullscreenEnabled`
+   or `webkitFullscreenEnabled` true. **Absent, never greyed**, everywhere else: the installed app (already full
+   screen), iPhone Safari (no element full screen), and every non-web player — Android, TV, Tizen, Cast, and the Mac,
+   which keeps FR-R329-6/7 as it is. That availability is a seam like `pictureInPictureAvailable()`, `false` off the
+   web, so R376's non-goal (*not changing the Android, TV or desktop players*) still holds.
+2. **F**, unchanged: `boot.js`'s shell handler toggles full screen on F with the player up too (only the button was
+   hidden), and not while a text field has focus. Acceptance 6a checks that F still reaches the page past the canvas.
+3. **Double-click on the picture**, where the wide chrome is shown — the Mac's rule (FR-R329-6). **Not on the handset
+   chrome:** there a double-tap in the outer thirds seeks (FR-R244-4), and the control in the top bar is the way in.
+
+The shell's own Fullscreen button stays hidden while the player is up (`body.rv-playing`): it sat over the chrome's
+bottom-right controls, and the chrome's control replaces it.
+
+### FR-R376-4c — Leaving the player leaves only a full screen entered while it was up
+
+The same rule as FR-R329-7. If the viewer went full screen while the player was on screen (any of FR-R376-4b's three),
+Back out of the player leaves full screen too. If the page was already full screen when the player opened, it stays
+full screen. Esc remains the browser's own: it leaves full screen and the viewer stays in the player.
+
+### FR-R376-4d — Android orientation follows full screen, not Play
+
+In a tab, Android's `screen.orientation.lock('landscape')` (which a browser grants only in full screen) is taken when
+the viewer's full screen begins while a film plays, and released when it ends or the player closes. Outside full
+screen a tab follows the phone: rotate it and the tab, and the film in it, go landscape. The installed app is unchanged:
+it locks landscape when the player opens, as before. A refused lock still says nothing.
+
+**No phone carve-out.** The owner's ask names no exception, so an Android phone in a tab also starts in the tab,
+portrait if the phone is held portrait. It is one tap on the top-bar control, or a turn of the phone, to fill the
+screen. (Read from the ask, not asked; the owner can reverse it on DEB-1671.)
+
+### FR-R376-4e — Unchanged
+
+iPhone: no element full screen, never `webkitEnterFullscreen`, and no control in a Safari tab; the installed app is
+already full screen. Background and Media Session are as in FR-R376-4.
+
+### Acceptance (replaces item 6)
+
+6a. **Chrome desktop tab:** Play → the film fills the tab and `document.fullscreenElement` is `null`. The chrome's *Enter
+   full screen* goes full screen and the label becomes *Exit full screen*; Esc leaves it and the label flips back; F and
+   a double-click on the picture each toggle it. Back from a full screen entered in the player leaves full screen; a
+   full screen entered with the shell's button **before** Play is still full screen after Back.
+6b. **The same on Firefox desktop and Safari macOS** (Safari through the `webkit` prefix).
+6c. **Android Chrome (or Pixel emulation):** Play starts in the tab, the handset chrome shows the control in its top
+   bar; tapping it goes full screen (and locks landscape on a real phone — emulation stays portrait, as in the R376
+   build notes); a double-tap at either side still seeks.
+6d. **Installed app (Android and iPhone) and an iPhone Safari tab:** no control; the installed app still fills the
+   screen, and the Android installed app still locks landscape on Play.
+
+### Tests
+
+- `transportOrder` unit test: the full-screen stop sits right after `PIP` when available, and is absent when not.
+- e2e (`reference-e2e-mock-stack`, Chromium): after Play, `document.fullscreenElement === null` and the control is
+  present; a click on it makes `document.fullscreenElement === document.documentElement`; Back leaves it `null`.
+
+### Build notes for the engineer
+
+- The change in `PlayerImmersiveEffect.kt` (wasmJs) is mostly a deletion: drop the `requestFullscreen` on open; keep
+  `rv-playing`; record whether the page was already full screen at open, so FR-R376-4c's exit rule has its input (the
+  Mac's `fullScreenByPlayer` in `DesktopWindow.kt` is the pattern). Android's landscape lock moves to a
+  `fullscreenchange` listener while the player is up; standalone keeps locking at open.
+- `PlayerScreen` is at R258's register limit: the control's availability and state go in the existing snapshot-state
+  holder, as `hasPip` does — no new `var … by remember` locals.
+- No design round: one control in two existing slots, drawn with the components and strings already there.
