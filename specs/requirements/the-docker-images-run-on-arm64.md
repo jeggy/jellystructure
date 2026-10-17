@@ -129,6 +129,18 @@ QEMU: `docker run --platform linux/arm64` against the SHA tag it just pushed. It
 A failure turns the run red. This catches the failures a cross build can hide: a missing shared library, the wrong
 `ld-linux`, a binary for the wrong architecture. It does not test behaviour.
 
+> **Amendment, 2026-10-17 (DEB-1602; Tróndur's decision on that row).** The smoke is **advisory**, not a gate. On the
+> v1.54 release run it hung three times out of three, and on a push run it failed once with `last: 000`. The same
+> v1.54 `jellystructure` arm64 image started cleanly on the owner's M5 and answered on :9505 within seconds (DEB-1490),
+> so the fault is qemu-user on the runner, not the binary. A hung or red smoke must never fail `publish`, because the
+> Play, macOS, Tizen and Linux deploy jobs `need` it. What replaces "a failure turns the run red":
+> - The step is `continue-on-error: true`. On failure it prints a `::warning::` with the container state, the host
+>   listener, the published-port curl, an in-container probe and `docker logs smoke`.
+> - The step stays **bounded**: `timeout-minutes: 10`, `curl --connect-timeout 3 --max-time 5`, `timeout` on the docker
+>   commands, and a 300 s loop deadline.
+> - `Verify the manifest platforms` is the arm64 **gate**: it is deterministic, and it is what makes the pull work.
+> - The amd64 path is unchanged and still gates through `ci / e2e`.
+
 **FR-6 — The README says which architectures there are.** `README.md`'s *Running it* section says that the images cover
 `linux/amd64` and `linux/arm64` (Apple Silicon, 64-bit Raspberry Pi, ARM NAS). It also says the A/V sync sidecar is
 amd64 with an NVIDIA GPU only.
@@ -145,7 +157,8 @@ Jellyfin itself already pulls natively.
 
 1. `docker buildx imagetools inspect ghcr.io/jeggy/jellystructure:<sha>` and the same for `ravilo-web` each list
    `linux/amd64` and `linux/arm64`. `jellystructure-avsync:<sha>` lists `linux/amd64` alone.
-2. FR-5's arm64 smoke step is green on that run.
+2. `Verify the manifest platforms` is green on that run. FR-5's arm64 smoke is advisory (see its 2026-10-17 amendment): a
+   `::warning::` from it does not fail the run.
 3. **On an Apple Silicon Mac with Docker Desktop (QA):**
    - **Setup.** Use the website's example compose with both of our images pinned to the SHA tag and no `platform:`
      line.

@@ -182,12 +182,13 @@ jobs:
       # DEB-1490 FR-5 — the arm64 image the push just made starts, under QEMU, from the digest it pushed (a release has no
       # SHA tag, so the digest is the one name every trigger has). It catches what a cross build can hide: a missing shared
       # library, the wrong ld-linux, a binary for the wrong architecture. It is not a behaviour test.
-      # DEB-1602 — bounded: a connection QEMU accepts and never answers hung the v1.54 release run for 42 min and held back
-      # every deploy job. The step has a timeout, curl has its own, and the loop gives up at a wall-clock deadline that sits
+      # DEB-1602 — advisory (continue-on-error; Tróndur's decision, see FR-5's 2026-10-17 amendment) and bounded: a
+      # connection QEMU accepts and never answers hung the v1.54 release run for 42 min and held back every deploy job. The step has a timeout, curl has its own, and the loop gives up at a wall-clock deadline that sits
       # inside the step's, so the failure path below (which prints the container's log) runs before the runner would kill it.
       - name: Smoke the arm64 image
         if: matrix.smoke_port != ''
         timeout-minutes: 10
+        continue-on-error: true   # advisory since 2026-10-17: a QEMU hang must never skip the four deploy jobs (DEB-1602)
         env:
           REF: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
           PORT: ${{ matrix.smoke_port }}
@@ -195,7 +196,7 @@ jobs:
         run: |
           timeout 240 docker pull --platform linux/arm64 "$REF"
           ARCH=$(timeout 30 docker image inspect --format '{{.Architecture}}' "$REF")
-          [ "$ARCH" = "arm64" ] || { echo "::error::$REF pulled as $ARCH, not arm64"; exit 1; }
+          [ "$ARCH" = "arm64" ] || { echo "::warning::$REF pulled as $ARCH, not arm64"; exit 1; }
           CONFIG=$(mktemp -d)
           chmod 777 "$CONFIG"   # the image runs as uid 1000; /config starts empty
           docker run -d --name smoke --platform linux/arm64 -p "$PORT:$PORT" -v "$CONFIG:/config" "$REF"
@@ -207,7 +208,7 @@ jobs:
             [ "$SECONDS" -lt 300 ] || break
             sleep 5
           done
-          echo "::error::arm64 $REF did not answer GET $SMOKE_PATH with 200 (last: ${CODE:-none})"
+          echo "::warning::arm64 $REF did not answer GET $SMOKE_PATH with 200 (last: ${CODE:-none})"
           # DEB-1602 — what a release-only hang needs to be told apart: the container state, whether the host port is
           # listening, what the published port says versus what the app says from inside, and the app's own log.
           docker ps -a --filter name=smoke || true
