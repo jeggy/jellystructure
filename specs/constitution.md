@@ -81,9 +81,30 @@ Auth follows the Jellyseerr model — there is **no separate Jellystructure acco
 1. Operator signs in with Jellyfin username + password via `POST /Users/AuthenticateByName`.
 2. Jellystructure rejects non-admin users (`Policy.IsAdministrator == false`).
 3. On success, an opaque session token (generated from `/dev/urandom`) is stored in SQLite and set as an `HttpOnly; SameSite=Lax` cookie.
-4. Every `/api/**` route and WebSocket upgrade validates the cookie; missing/expired → 401.
+4. Every `/api/**` route and WebSocket upgrade validates the cookie; missing/expired → 401. The one exception is the support seat token (7), which is accepted in place of the cookie on its own `/api/support/**` routes and nowhere else.
 5. The password is **never** persisted. The per-user Jellyfin access token is stored only in the session row, not in config.
 6. A separate machine token (`jellyfin_token` in config) is used by background jobs so they work with no user session active.
+7. A **support seat token** lets Hervør answer support tickets (below). It is the only credential
+   that is neither an admin session nor the machine token.
+
+#### The support seat token (owner decision, DEB-1508, 2026-10-17)
+Hervør, the second line behind `AI Agent`, needs to post into tickets without being an admin. The
+owner accepted a third credential, the narrowest one that lets her answer:
+
+- **An admin issues it** on AI ▸ Support. It is stored **hashed**, like a session token, and the
+  admin can revoke it there in one click. Revoking it takes effect on the next request.
+- **It reaches the support desk and nothing else.** It may read tickets and post or forward as
+  `HERVOR` under `/api/support/**`. It may not change the support settings (the switches, the
+  limits, the token itself), and it may not reach any other `/api/**` route, a WebSocket, Jellyfin
+  or the library. Anything outside its scope is refused with 403. An unknown or revoked token gets
+  401, the same as a missing one.
+- **Every line it writes is authored `HERVOR`.** It can never write as `ADMIN`, `AI_AGENT`, a
+  viewer or `SYSTEM`.
+- **It is dead while `[support] hervor_enabled` is off.** With the switch off it is refused, even
+  if it has not been revoked.
+- **It is never an admin session.** It is never set as a cookie, never extends to an admin login,
+  and never grants a seat full admin over prod. Giving the Hervør seat an admin login was the
+  alternative, and the owner rejected it.
 
 Before `jellyfin_url` is configured, a one-time setup screen (`/setup`) is served; it 404s once config exists.
 
