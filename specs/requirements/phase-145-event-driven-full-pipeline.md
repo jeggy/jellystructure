@@ -90,3 +90,45 @@ can ingest the wrong id (or nothing).
 - A targeted run and a scheduled scan can run concurrently without either tripping the other's "already
   running" guard.
 - Verified via `compileKotlinLinuxX64` (+ a live import test on the running backend).
+
+## Amendment 2026-10-17 — a single-title run refreshes its own title, not the whole library (DEB-1672)
+
+Found in the processing investigation on DEB-1664. The owner decided on 2026-10-17 on that task's card
+to fix it now, outside the processing redesign.
+
+**What §A.1 bought, and what it costs.** §A.1 ends every targeted run with the library run's own
+`signalPipelineComplete`. That signal is a `POST /Library/Refresh`, and Jellyfin answers it by validating
+**every** library. So each title that arrives by webhook costs one whole-library Jellyfin scan, and a season
+whose episodes land in separate debounce windows costs one scan per window. The same signal also broadcasts
+`Finished`, fires the `scan_complete` webhook and sends the no-match notification once per title. Phase 175
+§7 already calls a per-ingest notification "actively wrong". Its code passes `signalCompletion = false` from
+`RealtimeIngestService`, but `runPipeline` has never read that flag.
+
+**Why the refresh is no longer needed for the rollup.** The rollup the refresh was meant to repair is now
+covered twice:
+- **Ravilo:** since `9433943a` (2026-07-08), Ravilo treats a Series whose `RecursiveItemCount` is 0 as not
+  played, so it never paints the vacuous ✓, whatever Jellyfin's rollup says.
+- **Other Jellyfin clients:** a recursive refresh of the one series recomputes its children and rollup
+  without touching any other title.
+
+**FR-145-7 — a single-title run signals only its title.** From here on, items 1–6 under *Design* read as
+FR-145-1 to FR-145-6.
+- A `RunTarget.SingleItem` run ends with **exactly one** `POST /Items/{id}/Refresh` for the triggered
+  title. For a series this is the series item with `Recursive=true`. The refresh is skipped when
+  `sync_jellyfin` has already refreshed that title in the same run.
+- A `RunTarget.SingleItem` run posts **no** `/Library/Refresh`. It also broadcasts no `Finished`, fires no
+  `scan_complete` webhook and sends no no-match notification.
+- A `RunTarget.Library` run (scheduled, manual, startup or resume) is unchanged and still ends with all
+  four.
+
+This supersedes §A.1's *"ending with the same `signalPipelineComplete` (`/Library/Refresh`)"* for a
+targeted run. The fifth *Acceptance* bullet now reads: a newly-added series is correct in Ravilo
+immediately, because the `9433943` guard holds whatever Jellyfin's rollup says, and the series' own
+recursive refresh recomputes the rollup for every other client.
+
+**Acceptance for FR-145-7:**
+- A title ingested by webhook starts no Jellyfin library scan.
+- Its NFO, artwork and IMDb rating land as before.
+- Its tile shows no false ✓.
+- A `linuxX64Test` over `runPipeline` with a fake Jellyfin records zero `Library/Refresh` calls and one
+  item refresh for a `SingleItem` run, and one `Library/Refresh` plus one `Finished` for a `Library` run.
