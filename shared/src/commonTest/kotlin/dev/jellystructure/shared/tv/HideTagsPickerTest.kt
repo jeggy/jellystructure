@@ -19,7 +19,7 @@ class HideTagsPickerTest {
         assertEquals(6, HideTagsPicker.results(cat, "  ").size)
     }
 
-    @Test fun `a query matches substrings, prefixes first and then by count`() {
+    @Test fun `a query matches substrings with prefixes first and then by count`() {
         // "kid": kids-tv 27, kidnapping 8, kids 6 start with it; old-kids-block merely contains it.
         assertEquals(listOf("kids-tv", "kidnapping", "kids", "old-kids-block"), HideTagsPicker.results(cat, "kid").map { it.name })
     }
@@ -50,7 +50,7 @@ class HideTagsPickerTest {
         assertEquals(listOf("a"), HideTagsPicker.removed(listOf("a", "b"), "b"))
     }
 
-    @Test fun `a chip count is the tag's titles, 0 for an unknown tag, and null with no catalogue`() {
+    @Test fun `a chip count is the tag's titles and 0 for an unknown tag and null with no catalogue`() {
         assertEquals(27, HideTagsPicker.countOf(cat, "KIDS-TV"))
         assertEquals(0, HideTagsPicker.countOf(cat, "old-kids-block"))
         assertEquals(0, HideTagsPicker.countOf(cat, "not-a-tag"))
