@@ -1,11 +1,12 @@
 # Phase 277 — Covers, artist images, `album.nfo` / `artist.nfo`, and lyrics
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **not deployed** (build notes at the end). Written 2026-09-28 from the admin music brief (§B3 Artwork/Genres/NFO, §C2, §E2, §H6, §H7), the
-research report §2.3, §3.4, §3.5 and §4.2, and the mockups `design/app/album.js` and `artist.js`.
-**Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275**, **276**, **133/151** (per-asset locks), **175** (the foreign-NFO rule)
-and the drift detector.
+Written 2026-09-28 from the admin music brief (§B3 Artwork/Genres/NFO, §C2, §E2, §H6, §H7), the research report
+§2.3, §3.4, §3.5 and §4.2, and the mockups `design/app/album.js` and `artist.js`. **Dev-reviewed 2026-09-28
+against `main` `728f22ea`** (below). Builds on **275**, **276**, **133/151** (per-asset locks), **175** (the
+foreign-NFO rule) and the drift detector. Amended 2026-10-17 (an artist Jellyfin keeps no library folder for), at
+the end.
 
 ## Decisions (round 1 — leans; not yet answered)
 
@@ -179,4 +180,73 @@ run. The admin pages that show all of this are 278.
 11. **Routes** (all under the admin session): album/artist artwork candidates · use · upload · clear · lock, the
     image files themselves (`/api/music/image/…`, private, short cache), the two NFO views with drift, album/artist
     save (with or without sync), album sync, and the biography editor.
+
+## Amendment (2026-10-17) — an artist Jellyfin keeps no library folder for has no folder here (DEB-1645)
+
+**What was wrong.** Jellyfin gives an artist that has no folder in the library a path inside **its own** metadata
+store, `/config/metadata/artists/<name>`. `MusicIngest.localPath` passes any path outside the library's
+`jellyfin_path` through unchanged (that fallback is for a library both containers see at the same path), so that
+Jellyfin-container path is stored as the artist's folder. Inside jellystructure's container `/config` is
+jellystructure's own config mount, where no such folder exists. So for every such artist:
+
+- each `fetch_music_artwork` pass with a fanart.tv key tries to write `folder.jpg`, `backdrop.jpg` and `logo.png`
+  there and fails (*"Failed to open /config/metadata/artists/…/folder.jpg.tmp with No such file or directory"*,
+  19 warnings across 7 artists in one pass on 2026-10-16, DEB-1574), and asks fanart.tv again on the next run;
+- `write_music_nfo` cannot write its `artist.nfo`, and the admin's *Upload* and *Use* on its Artwork tab fail with
+  *That image couldn't be used*;
+- `music.artist_images_missing` and the triage list's *no picture* items count it as work that can never be done.
+
+**Creating that folder would not help**, and is not the fix: Jellyfin never reads jellystructure's `/config`, so a
+picture written there lands where nobody looks.
+
+Measured on a read-only copy of prod's DB (2026-10-17, ~17:20Z): of 377 artists, **335** have a folder under the
+music library, **2** are credit-only (no path), and **40** carry a Jellyfin metadata path. Of those 40, 21 are
+matched (18 show Jellyfin's own picture, 3 have none) and 19 are not. **16 of the 75** that
+`artist_images_missing` counts are these artists. The 276 folder-backed artists with a picture file are unaffected,
+so artist artwork as a whole works; only the folderless artists are stuck.
+
+**FR-277-1a — An artist with no folder in the library has no folder here.** When Jellyfin reports an artist item
+whose path does **not** lie inside its library's folder (the library mapping's `jellyfin_path`, when one is set),
+the artist's `path` is **null**: it is treated exactly as FR-277-1 already treats a credit-only artist.
+
+1. **A path already stored is cleared.** The scan's carry rule keeps an earlier folder when a sighting has none
+   (*"a credit-only sighting never erases a folder an earlier scan saw"*). That rule stays for a credit-only
+   sighting, but a stored path that lies outside the library's folder is not a folder an earlier scan saw: the
+   first scan after this change sets it to null. Its `imageState` becomes what Jellyfin shows (`jellyfin`, or none);
+   its backdrop and logo states become none. Its match, MusicBrainz id, biography and every other field are kept.
+2. **What follows is the existing no-folder behaviour, unchanged:** no artwork download, no `artist.nfo`, no
+   Jellyfin refresh for it from this step, not counted by `artist_images_missing`, not a *no picture* triage item,
+   and the admin's Artwork tab shows its no-folder line instead of *Upload* and *Use*.
+3. **The admin's no-folder line drops "only a credit"**, because it now covers both cases: *"This artist has no
+   folder of their own in the library, so there is nowhere to put a picture."* Admin only, English only.
+4. **Unchanged:** a library whose `jellyfin_path` is blank (both containers see it at one path); every artist whose
+   path is inside the library's folder; the picture Jellyfin, Ravilo and the admin's lists show for any artist; the
+   wire (`path` is already null for credit-only artists, so no client meets a new value).
+
+**Not in this amendment:** giving a folderless artist a fanart.tv or Commons picture through Jellyfin's own image
+API (`POST /Items/{id}/Images/{type}`). That is new code, and it would replace Jellyfin's own picture on the 18
+artists that show one today, which viewers see. It is a separate decision.
+
+**Tests** (`linuxX64Test`, `dev.jellystructure.music`):
+
+1. Ingest, library `jellyfin_path = "/media/music/"`: an artist at `/config/metadata/artists/X` gets a null path;
+   one at `/media/music/X` gets the mapped local path; with a blank `jellyfin_path` a path passes unchanged.
+2. Carry: a stored artist whose path is `/config/metadata/artists/X` and whose fresh sighting is the same item is
+   left with a null path; a stored artist with a real folder seen again only as a credit keeps its folder.
+3. `fetchArtwork` with a fanart.tv key does not call the artwork download for a matched folderless artist, and
+   `writeNfos` writes no `artist.nfo` for it.
+4. `artist_images_missing` and the triage *no picture* list leave it out.
+
+**Acceptance** (QA, after a deploy and the first scan and `fetch_music_artwork` pass past it; `prod-backend` plus a
+browser, no device). A read-only DB copy from before the deploy is the "before"; never name an artist in the
+report.
+
+1. The log of that `fetch_music_artwork` pass has no line containing `Failed to open /config/metadata/`.
+2. Every artist whose Jellyfin path lies outside the music library has a null `path`; every artist that had a
+   picture file before still has one; no `imageState` went from `file` to anything else.
+3. `music.artist_images_missing` fell by the number of folderless artists with no picture (16 on 2026-10-17),
+   give or take artists added or matched in between. Report both numbers.
+4. In the admin, a matched folderless artist's Artwork tab shows the no-folder line with no *Upload*, and its
+   picture in the artist list is the same as before. A folder-backed artist's Artwork tab is unchanged.
+5. In Ravilo on the web, that folderless artist's page shows the same picture as before.
 
