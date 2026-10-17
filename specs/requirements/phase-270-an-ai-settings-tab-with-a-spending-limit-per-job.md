@@ -269,8 +269,7 @@ this phase's promises change:
   device; a viewer may type anything into a ticket, including names.* The rest of FR-270-8 stands
   unchanged for `support`: nothing from Jellyfin's user records is sent.
   *Amended 2026-10-17 (DEB-1667):* the support line gains *… and, while re-rank is on, up to 30 titles from the
-  viewer's own Recommended row, with the same details re-rank sends. Never for a kids profile, and never their watch
-  history.* That is a subset of what re-rank already sends for the same viewer. See
+  viewer's own Recommended row, with the same details re-rank sends. Never their watch history.* That is a subset of what re-rank already sends for the same viewer. See
   [`ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md`](ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md) FR-6.
 
 Everything else in this phase holds for `support` as written. That covers the monthly limit as a hard

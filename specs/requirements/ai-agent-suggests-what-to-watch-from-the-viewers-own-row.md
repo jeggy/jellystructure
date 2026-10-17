@@ -32,10 +32,10 @@ ships first.
 - **The scope** (`RecommendationEngine.scopeKey`) is a hash of the viewer's library access and their allowed and blocked
   tags. A Jellyfin policy is per user, and phase 258 keeps every device row of a user in step with it, so one user has
   one live scope.
-- **Kids profiles.** The list is filtered by library access and tag policy, the same visibility the Home feed uses
-  (FR-269-5). **Jellyfin's `MaxParentalRating` is not applied**: in this codebase it only sets `isKids`. Phase 142 left
-  rating-level filtering out on purpose (*Non-goals*), and only R320's Seerr row checks a certification. So a kids
-  profile's Recommended row is only as narrow as the household's library and tag fences for that user.
+- **Visibility.** The list is filtered by library access and tag policy, the same visibility the Home feed uses
+  (FR-269-5). Jellyfin's `MaxParentalRating` is not applied: phase 142 left rating-level filtering out on purpose
+  (*Non-goals*). The owner confirmed on 2026-10-17 (DEB-1667 card) that jellystructure has **no concept of a kids
+  viewer**. A household narrows what a user sees by giving them a collection or a library, and that is the whole fence.
 - **The support job** builds one request per ticket in `SupportAgent.build` from `support_ticket.owner_user_id`, the
   thread and the viewer's language. Today it sends nothing about the library, and the system prompt forwards *"a
   recommendation of what to watch or listen to"* to `HERVOR` (the DEB-1663 amendment to FR-321-7).
@@ -58,12 +58,11 @@ ships first.
 ## Requirements
 
 **FR-1 — The suggestion block.** When `SupportAgent.build` builds a request, it adds a block of suggestions to the user
-message if all four of these hold:
+message if all three of these hold:
 
 - the `rerank` job is **active** (FR-270, the same `jobOn` test). Re-rank already sends these titles and these
   fields for this viewer, so the support job sends nothing that the owner has not already agreed to send;
 - the ticket owner has a device row: their most recently seen `ravilo_device` row for `owner_user_id`, of any age;
-- that device is not `isKids` (FR-4);
 - what Home would serve them now is not empty. That is `servedFor`'s list for that device and its `liveItems(device)`,
   read **without** its `markStale` side effect: the support job reads, and never queues a rebuild.
 
@@ -116,11 +115,11 @@ The case title (FR-13 of [`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab
 library-title check as part 2, and **no** `{…}` ids. A title that fails is dropped, never forwarded, like FR-13's
 other tests.
 
-**FR-4 — Kids profiles get no block.** A ticket whose owner's device row has `isKids` is built without the suggestion
-block. A recommendation question from a kids profile therefore forwards to `HERVOR` or `ADMIN`, as it does today. The
-reason is that the row is not filtered by the parental cap (see *Current behaviour*). A text reply from `AI Agent`
-reads as a personal endorsement, which a row of posters does not. This lifts in its own amendment once Home's
-Recommended row applies `MaxParentalRating`, which is separate work.
+**FR-4 — Every viewer is treated alike.** Owner, 2026-10-17 (DEB-1667 card): *"There is no concept of kids on our
+software. It's just possible to have users and then configure a collection … but this is not specified that only kids
+will see it."* The block depends only on FR-1's three conditions. `isKids` (a Jellyfin `MaxParentalRating` being set)
+plays no part, and no rating filter is added. The fence is the viewer's own visibility, the one their Home row already
+has: `AI Agent` can name nothing that row does not show them.
 
 **FR-5 — The server writes the titles.** On a sent reply, each `{sN}` is replaced with the title and year **as the
 server stores them** (`MediaItem.title`, then ` (year)` when known), the same title Home's card shows. This happens
@@ -136,11 +135,12 @@ itself still does.
 clause:
 
 *… and, while re-rank is on, up to 30 titles from the viewer's own Recommended row, with the same details re-rank
-sends. Never for a kids profile, and never their watch history.*
+sends. Never their watch history.*
 
 FR-270-8's re-rank line is unchanged.
 
-**FR-7 — Cost and lane.** This work rides the batch lane, like every support turn (FR-321-3). The synchronous turn is
+**FR-7 — Cost and lane.** This work rides the batch lane, like every support turn (FR-321-3). The owner chose this on
+2026-10-17 (DEB-1667 card) over waiting for the synchronous turn. The synchronous turn is
 still its own later work. When it lands it carries this block unchanged, because the block is part of the request and
 not of the transport.
 
@@ -153,7 +153,8 @@ card's estimate (FR-270-1) includes the block when re-rank is on.
 **FR-8 — Tests,** in `linuxX64Test` against a mocked Anthropic. Every title is an invented stand-in (below):
 
 - The block is present with re-rank active, a device row and a non-empty row. It is absent, and the request is
-  byte-identical to today's, when any one of the four conditions fails. Kids is one of them.
+  byte-identical to today's, when any one of the three conditions fails. A device row with `isKids` true gets the
+  block like any other.
 - The exact request JSON carries the short ids and the `describe` lines, and no Jellyfin id, user id, user name, re-rank
   reason or watch history.
 - A reply with `{s2}` and `{s5}` sends, and the stored `MESSAGE` holds both titles with their years.
@@ -178,16 +179,16 @@ Invented titles only, in tests, fixtures and this spec. None of them is a real t
 
 ## Acceptance
 
-- With re-rank and support both active, an adult viewer asks in Faroese what to watch tonight, *something calm*. Within
+- With re-rank and support both active, a viewer asks in Faroese what to watch tonight, *something calm*. Within
   a batch round-trip, `AI Agent` replies in Faroese and names two or three titles from that viewer's own Recommended
   row, each exactly as Home shows it. The transcript shows `SENT`.
-- The same question from a kids profile gets the forward line, and the transcript shows no suggestion block.
-- With re-rank off, the same question from an adult forwards, and the request carries no block.
+- A viewer limited to one collection asks the same. Every title named comes from their own row, inside that collection.
+- With re-rank off, the same question forwards, and the request carries no block.
 - A viewer asks how to keep subtitles on. The reply is unchanged in kind and names no title.
 
 ## Non-goals
 
-- Applying `MaxParentalRating` to Home's Recommended row. That is a separate piece of work, and FR-4 lifts once it ships.
+- A parental-rating filter. jellystructure has no kids concept (owner, 2026-10-17), so none is added here or elsewhere.
 - Music and audiobook suggestions. 269's row holds films and series only.
 - A tappable title in the support thread. The reply is text, and a deep link is a client change with its own design.
 - Sending the viewer's watch history or re-rank's reasons to the support job.
