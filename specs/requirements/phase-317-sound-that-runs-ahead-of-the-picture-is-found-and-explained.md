@@ -2423,3 +2423,65 @@ file gives `refreshBlocked = false`. The route: a forced `check_avsync` with eve
 **Acceptance.** 36. On a title whose files all have current readings, one of them unreadable: that file's chip reads
 *can't tell*, ↻ is visible and disabled, and its popover gives the sentence. After the file is touched (mtime
 changes), ↻ is live again and the file re-measures.
+
+## Amendment (2026-10-18, second of the day) — up to five triples, fifteen windows, before a file is *can't tell* (FR-317-42, DEB-1076)
+
+The owner, 2026-10-18 (DEB-1076, card `f5cac236`), told that a hard file is already read from six windows
+(FR-317-17's two triples), not three: *"Do it 5 times, so it becomes 15 instead of 6."* This replaces FR-317-17's
+*"One extra pass only; there is no third"*. Everything else in FR-317-17 stands.
+
+### FR-317-42 — five triples at most, stopping at the first answer
+
+- **Passes.** Up to five triples, at fixed fractions of the runtime, in this order:
+
+  | Pass | Fractions | Note |
+  |---|---|---|
+  | 1 | 0.20 · 0.50 · 0.80 | unchanged |
+  | 2 | 0.35 · 0.65 · 0.90 | unchanged |
+  | 3 | 0.10 · 0.425 · 0.725 | new |
+  | 4 | 0.275 · 0.575 · 0.85 | new |
+  | 5 | 0.15 · 0.3125 · 0.6125 | new |
+
+  The fifteen fractions are all different. Passes 1 and 2 are unchanged, so no answered reading moves. Placement
+  and clamping are the same as today (`AvSyncService.measure`, a window clamped inside the file).
+- **When the next pass runs.** After each pass, the verdict is computed over **every** window so far. The next pass
+  runs only while that verdict is `UNKNOWN` without a stored skip. `in_sync`, `offset` **and `drift`** all end
+  the escalation. This also tightens FR-317-17's trigger, which did not stop on `drift`: with one extra pass that
+  never mattered, and with five it would spend passes after an answer.
+- **No window twice in one file.** On a short file, clamping can bring two windows within 45 s of each other. A
+  window whose start falls within `windowSeconds` (45 s) of a window already measured in this file is not
+  requested. A pass with nothing left to request ends the escalation. A short file therefore stops early on its
+  own, and FR-317-5's `too_short` floor is unchanged.
+- **A failed later pass keeps what came before.** A `vram` refusal (FR-317-36), an undecodable 422 (FR-317-39)
+  or any other failure on passes 2–5 ends the escalation. The windows already measured stand and are stored, as
+  FR-317-17 already does for the second triple. Only pass 1's failures store their special rows.
+- **Cost.** About 4 s of one card per triple, so a worst case of about 20 s on a file that never reads. A file that
+  answers in pass 1 or 2 costs exactly what it does today.
+
+### Rows measured under the old plan
+
+- **The plan is stored with the row**: a new column `passes_max`, `2` for every existing row and `5` for new ones.
+  The column is added in the next migration, with the `.sqm` byte-identical to the `.sq`.
+- **An `UNKNOWN` row without a skip, stored with `passes_max` below the current plan, is not current** under
+  FR-317-7. So the enqueue pass measures it again at the step's existing cadence, and FR-317-41's ↻ is live for it
+  until then. An answered row (`in_sync`, `offset`, `drift`) and a skip stay current, so no answered file is
+  re-measured.
+- The pipeline version is **not** bumped for this, because that would re-measure every file in the library to
+  get the same answers.
+
+### Tests
+
+- The pass order and the fifteen distinct fractions.
+- Escalation stops after the pass that first gives `in_sync`, `offset` or `drift`.
+- A file that stays `UNKNOWN` requests exactly five passes.
+- On a short file, no two requested windows start within 45 s of each other, and the pass that has nothing left
+  ends the run.
+- A failure on pass 3 keeps passes 1–2's windows.
+- `passes_max = 2` with `UNKNOWN` is stale; `passes_max = 2` with `in_sync` is current; `passes_max = 5` with
+  `UNKNOWN` is current, so FR-317-41's ↻ is blocked.
+
+### Acceptance
+
+37. A file stored `UNKNOWN` under the old plan is measured again with no button pressed. It ends with an answer, or
+    with *can't tell* after at most fifteen windows. Its stored windows show the passes that ran, and ↻ is then
+    blocked with FR-317-41's sentence.
