@@ -38,7 +38,8 @@ CREATE TABLE support_message (
     device_id TEXT,
     created_at INTEGER NOT NULL,
     actor TEXT,
-    actor_label TEXT
+    actor_label TEXT,
+    seat_token_id TEXT
 );
 
 CREATE INDEX support_message_ticket ON support_message(ticket_id, id);
@@ -64,6 +65,24 @@ CREATE TABLE support_ai_turn (
 CREATE INDEX support_ai_turn_ticket ON support_ai_turn(ticket_id, id);
 
 CREATE INDEX support_ai_turn_owner ON support_ai_turn(owner_user_id, created_at);
+
+-- DEB-1508 (FR-1) — Hervør's support seat token: one live row per seat, `token_hash` the `sha256Hex` of a `jss_` bearer
+-- that is shown once and never stored. Rows are never deleted: a revoked row is the audit record of a token that existed.
+-- Times are epoch SECONDS. Must stay byte-for-byte in sync with 82.sqm (the SQLDelight-migration rule); `seat` is a column
+-- so a later spec can add a second seat without a migration. `support_message.seat_token_id` (FR-13) is set on every line a
+-- seat call writes and never leaves the server.
+CREATE TABLE support_seat_token (
+    id TEXT NOT NULL PRIMARY KEY,
+    seat TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER,
+    revoked_by TEXT
+);
+
+CREATE INDEX support_seat_token_hash ON support_seat_token(token_hash);
 
 insertTicket:
 INSERT INTO support_ticket(owner_user_id, state, holder, holder_seat, owes, owed_since, viewer_language, created_at, updated_at)
@@ -222,3 +241,51 @@ SELECT created_at FROM support_message WHERE id = :id;
 
 logTurnAt:
 SELECT created_at FROM support_ai_turn WHERE id = :id;
+
+-- ─── DEB-1508 — Hervør's seat token ────────────────────────────────────────
+
+insertSeatToken:
+INSERT INTO support_seat_token(id, seat, token_hash, created_at, created_by) VALUES (:id, :seat, :token_hash, :created_at, :created_by);
+
+liveSeatToken:
+SELECT * FROM support_seat_token WHERE seat = :seat AND revoked_at IS NULL LIMIT 1;
+
+liveSeatTokenByHash:
+SELECT * FROM support_seat_token WHERE token_hash = :token_hash AND revoked_at IS NULL LIMIT 1;
+
+pastSeatTokens:
+SELECT * FROM support_seat_token WHERE seat = :seat AND revoked_at IS NOT NULL ORDER BY revoked_at DESC, created_at DESC LIMIT 5;
+
+revokeSeatToken:
+UPDATE support_seat_token SET revoked_at = :revoked_at, revoked_by = :revoked_by WHERE id = :id AND revoked_at IS NULL;
+
+-- FR-2 — written at most once a minute: the row is touched only when its last use is older than `:before`.
+touchSeatToken:
+UPDATE support_seat_token SET last_used_at = :now WHERE id = :id AND (last_used_at IS NULL OR last_used_at < :before);
+
+-- FR-13 — a line a seat call writes. Every other writer leaves `seat_token_id` null (insertMessage).
+insertSeatMessage:
+INSERT INTO support_message(ticket_id, kind, author, author_label, body, event, event_args, visibility, created_at, actor, actor_label, seat_token_id)
+VALUES (:ticket, :kind, :author, :author_label, :body, :event, :event_args, :visibility, :created_at, :actor, :actor_label, :seat_token_id);
+
+-- FR-6 — the tickets Hervør has written in: a `MESSAGE` authored HERVOR, either visibility.
+ticketsHervorWroteIn:
+SELECT DISTINCT ticket_id FROM support_message WHERE kind = 'MESSAGE' AND author = 'HERVOR';
+
+hervorWroteIn:
+SELECT COUNT(*) FROM support_message WHERE ticket_id = :ticket AND kind = 'MESSAGE' AND author = 'HERVOR';
+
+-- FR-11 rule 6 — what Hervør has said to viewers, counted from the store. The forward's note is `ADMIN_ONLY` and not counted.
+hervorRepliesSince:
+SELECT COUNT(*) FROM support_message WHERE kind = 'MESSAGE' AND author = 'HERVOR' AND visibility = 'VIEWER' AND created_at > :since;
+
+oldestHervorReplySince:
+SELECT MIN(created_at) FROM support_message WHERE kind = 'MESSAGE' AND author = 'HERVOR' AND visibility = 'VIEWER' AND created_at > :since;
+
+hervorRepliesOnTicketSince:
+SELECT COUNT(*) FROM support_message
+WHERE ticket_id = :ticket AND kind = 'MESSAGE' AND author = 'HERVOR' AND visibility = 'VIEWER' AND created_at > :since;
+
+oldestHervorReplyOnTicketSince:
+SELECT MIN(created_at) FROM support_message
+WHERE ticket_id = :ticket AND kind = 'MESSAGE' AND author = 'HERVOR' AND visibility = 'VIEWER' AND created_at > :since;

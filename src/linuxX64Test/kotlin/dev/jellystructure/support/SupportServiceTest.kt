@@ -303,6 +303,7 @@ class SupportServiceTest {
 
         // With Hervør switched on, the same message is owed by her.
         configure { copy(hervorEnabled = true) }
+        service.seatTokens.issue("root")   // DEB-1508 (FR-8): the switch is effective only with a live seat token
         ok(service.reply(n, "root", "answer"))
         now += 100
         ok(service.post("u-anna", n, "phone", "d1", "again"))
@@ -427,6 +428,8 @@ class SupportServiceTest {
         assertTrue(pushed.laneOpen, "an event is only pushed while the lane is open")
         assertFalse(pushed.hervorEnabled)
         configure { copy(hervorEnabled = true) }
+        assertFalse(service.summary().hervorEnabled, "the file says true but no token is live: not effective (DEB-1508 FR-8)")
+        service.seatTokens.issue("root")
         assertTrue(service.summary().hervorEnabled)
         configure { copy(enabled = false) }
         val closed = service.summary()

@@ -1,0 +1,18 @@
+-- DEB-1508 — Hervør's support seat token (FR-1) and the token that wrote a line (FR-13). Must stay byte-for-byte in sync
+-- with Support.sq's CREATE statements (the SQLDelight-migration rule). 81 is DEB-1500's: this one is 82. Times are epoch
+-- SECONDS. Only the hash of a token is stored; a revoked row is kept as the audit record. A line written before this
+-- migration, and every line a viewer or an admin writes, has a null `seat_token_id`.
+CREATE TABLE support_seat_token (
+    id TEXT NOT NULL PRIMARY KEY,
+    seat TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER,
+    revoked_by TEXT
+);
+
+CREATE INDEX support_seat_token_hash ON support_seat_token(token_hash);
+
+ALTER TABLE support_message ADD COLUMN seat_token_id TEXT;

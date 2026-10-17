@@ -218,8 +218,14 @@ data class SupportConfig(
     @SerialName("max_body_chars") val maxBodyChars: Int = 4_000,
     @SerialName("owed_reply_hours") val owedReplyHours: Int = 24,
     @SerialName("retention_days") val retentionDays: Int = 365,
-    /** Hervør's reach into this API is not built (phase 320, *Not in this phase*): false until it is. */
+    /**
+     * Hervør's switch. DEB-1508 (FR-8): what every reader acts on is the *effective* value — this and a live seat token —
+     * and the admin writes it on AI ▸ Support (`POST /api/support/hervor`); `PUT /api/config` still restores `[support]`.
+     */
     @SerialName("hervor_enabled") val hervorEnabled: Boolean = false,
+    /** DEB-1508 (FR-11 rule 6) — what bounds a seat stuck in a loop: replies across all tickets in an hour, and on one ticket in a rolling day. */
+    @SerialName("hervor_messages_per_hour") val hervorMessagesPerHour: Int = 30,
+    @SerialName("hervor_messages_per_ticket_per_day") val hervorMessagesPerTicketPerDay: Int = 6,
 ) {
     fun availableWith(ai: AiConfig): Boolean = enabled && ai.apiKey.isNotBlank()
 }

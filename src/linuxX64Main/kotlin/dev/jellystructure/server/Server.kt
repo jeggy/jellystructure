@@ -307,7 +307,8 @@ fun startServer(
         // policy and its history (finding M1) live in CorsPolicy.kt.
         val corsOrigins = corsAllowedOrigins()
 
-        installAuthPlugin(sessionService, validateDeviceToken = { token, appVersion, platform -> deviceService.validateDeviceToken(token, appVersion, platform) }, validateApiKey = { apiKeyStore.validate(it) })
+        installAuthPlugin(sessionService, validateDeviceToken = { token, appVersion, platform -> deviceService.validateDeviceToken(token, appVersion, platform) }, validateApiKey = { apiKeyStore.validate(it) },
+            validateSeatToken = { token -> supportService?.checkSeatToken(token) ?: dev.jellystructure.auth.SeatTokenCheck.Invalid })
 
         // Security fix (2026-08-02 review, finding H4) — shared between /api/auth/login and
         // /api/tv/login; see LoginRateLimiter's doc comment.

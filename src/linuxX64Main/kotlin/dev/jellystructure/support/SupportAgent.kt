@@ -109,7 +109,7 @@ class SupportAgent(
             return discarded(applied) ?: done("FORWARDED: $why", null, true)
         }
 
-        val ruling = SupportAi.rule(answer, c.lang, config().support.hervorEnabled)
+        val ruling = SupportAi.rule(answer, c.lang, service.hervorEffective)
         // DEB-1500 (FR-13) — the titles ride the same pass. ABUSE stores neither (agentFlag takes the summary alone), so it
         // has nothing to report dropped either.
         val titles = SupportAi.titles(answer, c.lang)

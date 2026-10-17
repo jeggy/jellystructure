@@ -240,7 +240,7 @@ class SupportRoutesTest {
         var configChanged = 0
         store.onSupportAvailabilityChanged = { configChanged++ }
         try {
-            routes("lane", store = store, serviceOf = { SupportService(it.db, { store.current }) }) {
+            routes("lane", store = store, serviceOf = { SupportService(it.db, { store.current }).also { svc -> svc.seatTokens.issue("root") } }) {
                 val closed = json.parseToJsonElement(client.get("/api/support/summary") { header("X-Test-Admin", "1") }.bodyAsText())
                 assertTrue("\"laneOpen\":false" in closed.toString(), closed.toString())
 

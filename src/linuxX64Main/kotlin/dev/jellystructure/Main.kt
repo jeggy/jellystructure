@@ -717,6 +717,9 @@ fun main() = runBlocking {
         nameOf = { userId -> raviloDeviceService.allDevices().firstOrNull { it.jellyfinUserId == userId }?.jellyfinUsername },
     )
     dev.jellystructure.support.wireSupport(supportService, configStore, tvEventBus) { event -> rootScope.launch { broadcaster.broadcast(event) } }
+    // DEB-1508 (FR-9) — Hervør is on only with `hervor_enabled` and a live seat token. If the file says false, or says true with no
+    // token, anything she still holds or owes (a hand edit while the server was down) goes back to admins now, quietly.
+    if (!supportService.hervorEffective) supportService.handBackFromHervor(null)
     // 321 — `AI Agent`: the support job on the AI rail. The rail queues and bills; the agent builds a ticket's request and
     // applies the answer under FR-321-5's rules, through the service's own `agent*` writes.
     supportService.askAgent = { ticket -> aiJobs.enqueueSupport(ticket, "a viewer's message") }

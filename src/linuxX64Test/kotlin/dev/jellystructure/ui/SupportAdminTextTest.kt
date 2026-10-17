@@ -198,4 +198,22 @@ class SupportAdminTextTest {
         assertEquals("Question", SupportText.className("QUESTION"))
         assertNull(SupportText.CLASSES.firstOrNull { it == "ABUSE" }, "ABUSE is the model's class; an admin's select never offers it")
     }
+
+    // ── DEB-1508 (FR-15) — the Hervør strip's words ──────────────────────────────────────────────────────────────────
+
+    @Test fun theHervorStripSaysWhoIssuedTheTokenWhenItWasLastUsedAndWhetherSheIsOn() {
+        val live = dev.jellystructure.model.SupportSeatTokenLive(issuedAt = 1, issuedBy = "Hallur", lastUsedAt = null)
+        assertEquals(
+            "Hervør's token was issued Oct 17, 20:08 by Hallur · last used never. She is switched off, so tickets go to admins.",
+            SupportText.hervorStrip(live, on = false, issued = "Oct 17, 20:08", lastUsed = null),
+        )
+        assertEquals(
+            "Hervør answers what AI Agent forwards to her · token issued Oct 17, 20:08 by Hallur · last used 3m ago.",
+            SupportText.hervorStrip(live, on = true, issued = "Oct 17, 20:08", lastUsed = "3m ago"),
+        )
+        assertEquals("Hervør has no token, so she can't read or answer tickets.", SupportText.HERVOR_NO_TOKEN)
+        assertEquals("Revoked. Hervør is switched off, and her tickets are with admins.", SupportText.HERVOR_REVOKED)
+        assertEquals("Token issued — copy it now, it won't be shown again:", SupportText.HERVOR_TOKEN_SHOWN)
+        assertTrue("never the viewer's name or id" in SupportText.HERVOR_READS)
+    }
 }

@@ -1,5 +1,6 @@
 package dev.jellystructure.support
 
+import dev.jellystructure.auth.SeatTokenCheck
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.jobs.JobEvent
@@ -44,6 +45,9 @@ class SupportService(
     private val clock: () -> Long = { dev.jellystructure.nowEpochSec() },
 ) {
     private val q get() = db.supportQueries
+
+    /** DEB-1508 (FR-1) — Hervør's seat token. Its liveness is half of the effective switch ([hervorEffective]). */
+    val seatTokens = SupportSeatTokens(db, clock)
     private val json = Json { ignoreUnknownKeys = true }
     private val argsSerializer = ListSerializer(String.serializer())
 
@@ -63,6 +67,13 @@ class SupportService(
 
     /** 321 (FR-321-1) — `AI Agent` is on: AI, a key, `[ai.support]` and `[support] enabled`. While it is, a new ticket starts with it. */
     val agentActive: Boolean get() = config().let { it.ai.supportActive(it.support) }
+
+    /**
+     * DEB-1508 (FR-8) — Hervør is on: `[support] hervor_enabled` **and** a live seat token. Every reader of the switch reads
+     * this (the forward target, who owes the next message, the summary), so a hand edit of `config.toml` with no token
+     * cannot send a ticket to someone who cannot answer.
+     */
+    val hervorEffective: Boolean get() = limits.hervorEnabled && seatTokens.hasLive
 
     sealed class Outcome<out T> {
         data class Ok<T>(val value: T, val created: Boolean = false) : Outcome<T>()
@@ -164,16 +175,16 @@ class SupportService(
         val flagged: Boolean = false, val overdue: Boolean? = null,
     )
 
-    fun adminList(f: AdminFilter = AdminFilter()): SupportAdminList {
-        val rows = q.allTickets().executeAsList()
-            .filter { (it.flagged == 1L) == f.flagged }
-            .filter { f.state == null || it.state == f.state }
+    fun adminList(f: AdminFilter = AdminFilter()): SupportAdminList = SupportAdminList(
+        q.allTickets().executeAsList().filter { (it.flagged == 1L) == f.flagged }.matching(f, seat = false),
+    )
+
+    private fun List<dev.jellystructure.db.Support_ticket>.matching(f: AdminFilter, seat: Boolean): List<SupportAdminTicket> =
+        filter { f.state == null || it.state == f.state }
             .filter { f.holder == null || it.holder == f.holder }
             .filter { f.owes == null || it.owes == f.owes }
-            .map { adminRow(it) }
+            .map { adminRow(it, seat) }
             .filter { f.overdue == null || it.overdue == f.overdue }
-        return SupportAdminList(rows)
-    }
 
     fun adminThread(number: Long): SupportAdminThread? = q.ticket(number).executeAsOneOrNull()?.let { adminThreadOf(it) }
 
@@ -185,7 +196,8 @@ class SupportService(
             owedByAdmin = live.count { it.owes == OWES_ADMIN },
             overdue = live.count { isOverdue(it.owes, it.owed_since, t) },
             laneOpen = limits.enabled,
-            hervorEnabled = limits.hervorEnabled,
+            hervorEnabled = hervorEffective,
+            owedByHervor = live.count { it.owes == OWES_HERVOR },
         )
     }
 
@@ -461,6 +473,131 @@ class SupportService(
         if (tk.holder == HOLDER_AI_AGENT && tk.flagged == 0L && tk.owes == OWES_AI_AGENT) askAgent(tk.id)
     }
 
+    // ── Hervør (DEB-1508) ────────────────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * FR-3 — what a `jss_` bearer comes to: unknown or revoked, a live token while she is switched off, or a live token
+     * that may call the allowlisted routes.
+     */
+    fun checkSeatToken(plaintext: String): SeatTokenCheck {
+        val id = seatTokens.validate(plaintext) ?: return SeatTokenCheck.Invalid
+        return if (hervorEffective) SeatTokenCheck.Live(id) else SeatTokenCheck.Disabled
+    }
+
+    /** FR-6 — not flagged, and she holds it, owes it, or has written in it. Any other ticket does not exist for her. */
+    private fun hervorsTicket(tk: dev.jellystructure.db.Support_ticket): Boolean =
+        tk.flagged == 0L && (tk.holder == HOLDER_HERVOR || tk.owes == OWES_HERVOR || q.hervorWroteIn(tk.id).executeAsOne() > 0)
+
+    private fun hervorsTicket(number: Long) = q.ticket(number).executeAsOneOrNull()?.takeIf { hervorsTicket(it) }
+
+    /** FR-4/6 — the list the seat reads: only [hervorsTicket]s, whatever the query asks (a `flagged=true` is ignored). */
+    fun seatList(f: AdminFilter = AdminFilter()): SupportAdminList {
+        val wrote = q.ticketsHervorWroteIn().executeAsList().toSet()
+        return SupportAdminList(
+            q.allTickets().executeAsList()
+                .filter { it.flagged == 0L && (it.holder == HOLDER_HERVOR || it.owes == OWES_HERVOR || it.id in wrote) }
+                .matching(f, seat = true),
+        )
+    }
+
+    fun seatThread(number: Long): SupportAdminThread? = hervorsTicket(number)?.let { adminThreadOf(it, seat = true) }
+
+    /**
+     * FR-11 — a reply as Hervør, the six rules in order: hers (404), support available (409 `support_unavailable`), her turn
+     * (409 `not_hervors_turn`), a body (400), no internal string (422 `internal_string`), within her two rates (429).
+     */
+    fun seatReply(number: Long, tokenId: String, body: String): Outcome<SupportAdminThread> {
+        val tk = hervorsTicket(number) ?: return notFound()
+        seatTurnRefusal(tk)?.let { return it }
+        bodyRefusal(body)?.let { return it }
+        SupportAi.internalKind(body)?.let {
+            return Outcome.Refused(422, "internal_string", "The reply contains $it. Remove it and send again")
+        }
+        val t = now()
+        hervorRateRefusal(tk.id, t)?.let { return it }
+        db.transaction {
+            q.insertSeatMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_HERVOR, HERVOR_LABEL, body, null, null, VISIBLE, t, ACTOR_HERVOR, HERVOR_LABEL, tokenId)
+            q.setOwes(OWES_NONE, t, t, tk.id)
+        }
+        changed(tk.id, viewerVisible = true)
+        return Outcome.Ok(adminThreadOf(q.ticket(tk.id).executeAsOne(), seat = true))
+    }
+
+    /**
+     * FR-12 — a forward as Hervør, FR-11's rules 1–3 and then: the holder is `ADMIN` or `SEAT` (never her own), [owes] is
+     * `ADMIN` or `HERVOR`, and the English [note] is required. Both lines are hers: the `FORWARDED` line's actor and the
+     * note's author.
+     */
+    fun seatForward(number: Long, tokenId: String, holder: String, seat: String?, owes: String, note: String): Outcome<SupportAdminThread> {
+        val tk = hervorsTicket(number) ?: return notFound()
+        seatTurnRefusal(tk)?.let { return it }
+        if (holder != HOLDER_ADMIN && holder != HOLDER_SEAT) return bad("holder", "holder must be ADMIN or SEAT")
+        if (owes !in FORWARD_OWES) return bad("owes", "owes must be ADMIN or HERVOR")
+        val seatName = seat?.trim()?.takeIf { it.isNotEmpty() }
+        if (holder == HOLDER_SEAT && (seatName == null || seatName.length > MAX_SEAT_CHARS)) {
+            return bad("seat", "a seat holder needs a seat name of at most $MAX_SEAT_CHARS characters")
+        }
+        if (note.isBlank()) return bad("note", "a note is required: say in English why you are handing the ticket on")
+        if (note.codePointCount() > MAX_SEAT_NOTE_CHARS) return bad("note", "note is longer than $MAX_SEAT_NOTE_CHARS characters")
+        val t = now()
+        db.transaction {
+            q.setRouting(tk.state, holder, if (holder == HOLDER_SEAT) seatName else null, owes, t, t, tk.id)
+            q.insertSeatMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(viewerHolder(holder)), VISIBLE, t, ACTOR_HERVOR, HERVOR_LABEL, tokenId)
+            q.insertSeatMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_HERVOR, HERVOR_LABEL, note, null, null, ADMIN_ONLY, t, ACTOR_HERVOR, HERVOR_LABEL, tokenId)
+        }
+        changed(tk.id, viewerVisible = true)
+        return Outcome.Ok(adminThreadOf(q.ticket(tk.id).executeAsOne(), seat = true))
+    }
+
+    /** FR-11 rules 2 and 3 — shared by the reply and the forward. */
+    private fun seatTurnRefusal(tk: dev.jellystructure.db.Support_ticket): Outcome.Refused? = when {
+        !available -> Outcome.Refused(409, "support_unavailable", "Support is switched off")
+        tk.owes != OWES_HERVOR && tk.holder != HOLDER_HERVOR -> Outcome.Refused(409, "not_hervors_turn", "This ticket is no longer hers to answer")
+        else -> null
+    }
+
+    /** FR-11 rule 6 — bounds a seat stuck in a loop: an hour across all tickets, a rolling day on one. Counted from the store. */
+    private fun hervorRateRefusal(ticket: Long, t: Long): Outcome.Refused? {
+        val hour = t - HOUR
+        if (q.hervorRepliesSince(hour).executeAsOne() >= limits.hervorMessagesPerHour) {
+            return limited("hervor_messages_per_hour", q.oldestHervorReplySince(hour).executeAsOneOrNull()?.MIN, t, HOUR)
+        }
+        val day = t - DAY
+        if (q.hervorRepliesOnTicketSince(ticket, day).executeAsOne() >= limits.hervorMessagesPerTicketPerDay) {
+            return limited("hervor_messages_per_ticket_per_day", q.oldestHervorReplyOnTicketSince(ticket, day).executeAsOneOrNull()?.MIN, t, DAY)
+        }
+        return null
+    }
+
+    /**
+     * FR-9 — Hervør is gone (switched off, her token revoked, or the effective value false any other way): every ticket she
+     * holds goes to `ADMIN` with the `FORWARDED` line and an `ADMIN_ONLY` reason but **no notice** (she cannot speak), and
+     * every ticket she owes is owed by `ADMIN`. **`owed_since` keeps its age**, so a late ticket is overdue at once. A
+     * flagged ticket moves too, quietly. Switching her back on moves nothing back. [by] is the admin who pressed it, or
+     * null for the server. Returns the numbers moved.
+     */
+    fun handBackFromHervor(by: String?): List<Long> {
+        val t = now()
+        val actor = if (by != null) ACTOR_ADMIN else ACTOR_SYSTEM
+        val rows = q.allTickets().executeAsList().filter { it.holder == HOLDER_HERVOR || it.owes == OWES_HERVOR }
+        for (tk in rows) {
+            val flagged = tk.flagged == 1L
+            val touched = if (flagged) tk.updated_at else t
+            db.transaction {
+                if (tk.holder == HOLDER_HERVOR) {
+                    q.setRouting(tk.state, HOLDER_ADMIN, null, if (tk.owes == OWES_HERVOR) OWES_ADMIN else tk.owes, tk.owed_since, touched, tk.id)
+                    q.insertMessage(tk.id, SupportWire.KIND_SYSTEM, null, null, null, SupportWire.EVENT_FORWARDED, args(HOLDER_ADMIN),
+                        if (flagged) ADMIN_ONLY else VISIBLE, null, null, t, actor, by)
+                    q.insertMessage(tk.id, SupportWire.KIND_MESSAGE, SupportWire.AUTHOR_ADMIN, by ?: "System", "Hervør was switched off", null, null, ADMIN_ONLY, null, null, t, null, null)
+                } else {
+                    q.setOwes(OWES_ADMIN, tk.owed_since, touched, tk.id)
+                }
+            }
+            changed(tk.id, viewerVisible = !flagged && tk.holder == HOLDER_HERVOR)
+        }
+        return rows.map { it.id }
+    }
+
     // ── The Support log (DEB-1500, FR-12) ─────────────────────────────────────────────────────────────────────────────────
 
     /**
@@ -548,7 +685,7 @@ class SupportService(
 
     /** FR-320-13 — the holder if it may answer, else Hervør when she is switched on, else an admin. */
     private fun owesFor(holder: String): String {
-        val hervor = limits.hervorEnabled
+        val hervor = hervorEffective
         val mayAnswer = holder == HOLDER_ADMIN || holder == HOLDER_AI_AGENT || (holder == HOLDER_HERVOR && hervor)
         return when {
             mayAnswer -> holder
@@ -585,20 +722,23 @@ class SupportService(
         },
     )
 
-    private fun adminRow(tk: dev.jellystructure.db.Support_ticket) = SupportAdminTicket(
-        number = tk.id, ownerId = tk.owner_user_id, ownerName = nameOf(tk.owner_user_id) ?: tk.owner_user_id,
+    /** [seat] — DEB-1508 (FR-7): the viewer stays anonymous to Hervør, so the owner's id and name are the empty string. */
+    private fun adminRow(tk: dev.jellystructure.db.Support_ticket, seat: Boolean = false) = SupportAdminTicket(
+        number = tk.id, ownerId = if (seat) "" else tk.owner_user_id, ownerName = if (seat) "" else nameOf(tk.owner_user_id) ?: tk.owner_user_id,
         state = tk.state, holder = tk.holder, holderSeat = tk.holder_seat, owes = tk.owes, owedSince = tk.owed_since,
         overdue = isOverdue(tk.owes, tk.owed_since, now()), ticketClass = tk.class_, englishSummary = tk.english_summary,
         englishTitle = tk.english_title, title = tk.title, viewerLanguage = tk.viewer_language, flagged = tk.flagged == 1L, preview = preview(tk.id),
         lastActivity = tk.updated_at, unread = q.adminUnread(tk.id, tk.admin_read_message_id).executeAsOne().toInt(),
     )
 
-    private fun adminThreadOf(tk: dev.jellystructure.db.Support_ticket) = SupportAdminThread(
-        ticket = adminRow(tk),
+    private fun adminThreadOf(tk: dev.jellystructure.db.Support_ticket, seat: Boolean = false) = SupportAdminThread(
+        ticket = adminRow(tk, seat),
         aiComposing = tk.holder == HOLDER_AI_AGENT && tk.flagged == 0L && agentComposing(tk.id),
         messages = q.messages(tk.id).executeAsList().map {
             SupportAdminMessage(
-                id = it.id, kind = it.kind, author = it.author, authorLabel = it.author_label, body = it.body,
+                id = it.id, kind = it.kind, author = it.author,
+                // FR-7 — an admin's name is the household's, and Hervør is told only that an admin wrote it.
+                authorLabel = if (seat && it.author == SupportWire.AUTHOR_ADMIN) "Admin" else it.author_label, body = it.body,
                 event = it.event, eventArgs = decodeArgs(it.event_args), visibility = it.visibility,
                 devicePlatform = it.device_platform, createdAt = it.created_at,
             )
@@ -641,9 +781,9 @@ class SupportService(
     }
 
     /** 429 with `Retry-After`: the moment the oldest counted entry leaves the rolling day. */
-    private fun limited(what: String, oldest: Long?, t: Long): Outcome.Refused {
-        val wait = ((oldest ?: t) + DAY - t).coerceAtLeast(1L)
-        return Outcome.Refused(429, "limit_$what", "Too many today — try again later", retryAfterSeconds = wait)
+    private fun limited(what: String, oldest: Long?, t: Long, window: Long = DAY): Outcome.Refused {
+        val wait = ((oldest ?: t) + window - t).coerceAtLeast(1L)
+        return Outcome.Refused(429, "limit_$what", if (window == DAY) "Too many today — try again later" else "Too many this hour — try again later", retryAfterSeconds = wait)
     }
 
     companion object {
@@ -679,6 +819,10 @@ class SupportService(
         const val ACTOR_ADMIN = "ADMIN"
         const val ACTOR_AI_AGENT = "AI_AGENT"
         const val ACTOR_SYSTEM = "SYSTEM"
+        const val ACTOR_HERVOR = "HERVOR"
+
+        /** DEB-1508 (FR-11) — the label on every line a seat call writes. */
+        const val HERVOR_LABEL = "Hervør"
 
         /** FR-320-5 — a phone, a computer and the web file; a TV, a Tizen TV, a cast receiver or no header do not. */
         val WRITE_PLATFORMS = setOf("phone", "web", "mac", "linux")
@@ -686,11 +830,14 @@ class SupportService(
         const val LOG_PAGE = 50
         const val LOG_MAX = 200
 
+        const val HOUR = 3_600L
         const val DAY = 86_400L
         const val SAME_HERE_WINDOW = 6 * 3600L
         const val PREVIEW_CHARS = 140
         const val MAX_SEAT_CHARS = 64
         const val MAX_NOTE_CHARS = 2_000
+        /** DEB-1508 (FR-12) — Hervør's forward note is required, English, and shorter than an admin's. */
+        const val MAX_SEAT_NOTE_CHARS = 600
     }
 }
 

@@ -206,12 +206,13 @@ object SupportAi {
     private val SEATS = listOf("sjurdur", "trondur", "bardur", "munin", "rannva", "viti", "svabo", "jogvan", "kambi", "paperclip")
 
     private val INTERNAL = listOf(
-        Regex("\\b(fr|r|deb)-?\\d+", RegexOption.IGNORE_CASE),
-        Regex("\\bphase \\d+", RegexOption.IGNORE_CASE),
-        Regex("(specs|src|design)/", RegexOption.IGNORE_CASE),
-        Regex("\\.md\\b", RegexOption.IGNORE_CASE),
-        Regex("\\.kt\\b", RegexOption.IGNORE_CASE),
+        Regex("\\b(fr|r|deb)-?\\d+", RegexOption.IGNORE_CASE) to "a requirement or task id",
+        Regex("\\bphase \\d+", RegexOption.IGNORE_CASE) to "a phase id",
+        Regex("(specs|src|design)/", RegexOption.IGNORE_CASE) to "a repository path",
+        Regex("\\.md\\b", RegexOption.IGNORE_CASE) to "a file name",
+        Regex("\\.kt\\b", RegexOption.IGNORE_CASE) to "a file name",
     )
+    private const val SEAT_KIND = "a seat name"
 
     /** Lower case with the Faroese and Danish letters folded to ASCII, so `Tróndur` and `trondur` are one name. */
     internal fun fold(s: String): String = buildString {
@@ -222,12 +223,21 @@ object SupportAi {
         })
     }
 
-    /** The first machine-checked internal string the reply contains, or null. */
-    fun internalString(reply: String): String? {
-        INTERNAL.firstNotNullOfOrNull { it.find(reply)?.value }?.let { return it }
+    /** The first machine-checked internal string the reply contains and the kind of string it is, or null. */
+    private fun internalMatch(reply: String): Pair<String, String>? {
+        INTERNAL.firstNotNullOfOrNull { (re, kind) -> re.find(reply)?.let { it.value to kind } }?.let { return it }
         val folded = fold(reply)
-        return SEATS.firstOrNull { Regex("\\b$it\\b").containsMatchIn(folded) }
+        return SEATS.firstOrNull { Regex("\\b$it\\b").containsMatchIn(folded) }?.let { it to SEAT_KIND }
     }
+
+    /** The first machine-checked internal string the reply contains, or null. */
+    fun internalString(reply: String): String? = internalMatch(reply)?.first
+
+    /**
+     * DEB-1508 (FR-11 rule 5) — the same check, answered as the *kind* of string and none of its text, for a refusal that
+     * must name what to remove without quoting it back (FR-320-16).
+     */
+    fun internalKind(reply: String): String? = internalMatch(reply)?.second
 
     enum class Kind { SEND, FORWARD, REQUEST, ABUSE }
 

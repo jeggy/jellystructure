@@ -14,6 +14,34 @@ val SessionKey = AttributeKey<SessionData>("JsSession")
 val DeviceKey = AttributeKey<DeviceData>("RaviloDevice")
 val ApiKeyAttr = AttributeKey<ApiKeyData>("RaviloApiKey")
 
+// DEB-1508 (FR-3) — a request that presented Hervør's support seat token carries the token's id here, and no SessionKey.
+// The route reads it to write as HERVOR; a handler that finds it knows the call is the seat's and not an admin's.
+val SupportSeatKey = AttributeKey<String>("SupportSeatToken")
+
+/** DEB-1508 (FR-3) — what a `jss_` bearer comes to. Unknown or revoked → 401; live with the switch off → 403; live and on → the call is judged against [SEAT_ROUTES]. */
+// Plain objects, compared with `==`: on Kotlin/Native a `data object` answered `is` for its sibling (`Disabled is Invalid` read true).
+sealed interface SeatTokenCheck {
+    object Invalid : SeatTokenCheck
+    object Disabled : SeatTokenCheck
+    class Live(val tokenId: String) : SeatTokenCheck
+}
+
+const val SEAT_TOKEN_PREFIX = "jss_"
+
+private val SEAT_TICKET = Regex("^/api/support/tickets/[^/]+$")
+private val SEAT_TICKET_MESSAGES = Regex("^/api/support/tickets/[^/]+/messages$")
+private val SEAT_TICKET_FORWARD = Regex("^/api/support/tickets/[^/]+/forward$")
+
+/**
+ * DEB-1508 (FR-4) — the five calls the seat token may make, and nothing else. Method and the *decoded* routing path, the same
+ * one every other branch matches on. A ticket outside the seat's reach on one of these is the route's 404, not this 403.
+ */
+internal fun seatMayCall(method: io.ktor.http.HttpMethod, path: String): Boolean = when (method) {
+    io.ktor.http.HttpMethod.Get -> path == "/api/support/summary" || path == "/api/support/tickets" || SEAT_TICKET.matches(path)
+    io.ktor.http.HttpMethod.Post -> SEAT_TICKET_MESSAGES.matches(path) || SEAT_TICKET_FORWARD.matches(path)
+    else -> false
+}
+
 // Phase 236 (FR-236-3, dev review item 5) — every /api/remote/ route now accepts either credential;
 // each one reads this one attribute instead of ApiKeyAttr directly. deviceId is null for an API-key
 // caller (an API key is bound to a user, not a device) and non-null for a device-token caller —
@@ -96,6 +124,8 @@ fun Application.installAuthPlugin(
     // Phase 111 — least-privilege by design: an API key is accepted ONLY for /api/remote/**, never for
     // the admin/media/TV surfaces. Widening that is a deliberate future decision, not a default.
     validateApiKey: ((String) -> ApiKeyData?)? = null,
+    // DEB-1508 (FR-3) — Hervør's support seat token. Null (the tests that do not care) fails closed: every `jss_` bearer is a 401.
+    validateSeatToken: ((String) -> SeatTokenCheck)? = null,
 ) {
     intercept(ApplicationCallPipeline.Plugins) {
         // R225 amendment (2026-09-18) — a CORS preflight never carries credentials (the browser strips
@@ -114,6 +144,32 @@ fun Application.installAuthPlugin(
             // than falling through to native-path (raw) matching, which is the bug this fixes.
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Malformed request path"))
             finish()
+            return@intercept
+        }
+
+        // DEB-1508 (FR-3) — a `jss_` bearer is judged as a seat call on every /api/** path and on the /ws upgrade, before
+        // any other branch: the open paths and /api/health included, and never falling through to the cookie branch.
+        // That is what makes "anything outside its scope is refused with 403" hold on routes that would otherwise answer
+        // 401 to an unknown bearer, or not ask for one at all. An admin's browser never sends a bearer.
+        val seatBearer = call.request.headers["Authorization"]
+            ?.takeIf { it.startsWith("Bearer $SEAT_TOKEN_PREFIX") }?.removePrefix("Bearer ")
+        if (seatBearer != null && (path.startsWith("/api/") || path == "/ws")) {
+            val check = validateSeatToken?.invoke(seatBearer) ?: SeatTokenCheck.Invalid
+            // Logged as status, code and path — never the token, never its hash, never a body (FR-14).
+            suspend fun refuse(status: HttpStatusCode, code: String) {
+                dev.jellystructure.log.Logger.warn("Support seat call refused: ${status.value} $code ${call.request.httpMethod.value} $path", "support")
+                call.respond(status, mapOf("error" to code))
+                finish()
+            }
+            when {
+                check === SeatTokenCheck.Invalid -> refuse(HttpStatusCode.Unauthorized, "seat_token_invalid")
+                check === SeatTokenCheck.Disabled -> refuse(HttpStatusCode.Forbidden, "hervor_disabled")
+                check !is SeatTokenCheck.Live || !seatMayCall(call.request.httpMethod, path) -> refuse(HttpStatusCode.Forbidden, "not_for_seat")
+                else -> {
+                    call.attributes.put(SupportSeatKey, check.tokenId)
+                    proceed()
+                }
+            }
             return@intercept
         }
 

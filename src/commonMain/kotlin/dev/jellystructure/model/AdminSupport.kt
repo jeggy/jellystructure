@@ -72,11 +72,38 @@ data class SupportSummary(
     @EncodeDefault val owedByAdmin: Int = 0,
     @EncodeDefault val overdue: Int = 0,
     @EncodeDefault val laneOpen: Boolean = false,
+    /** DEB-1508 (FR-8) — the **effective** switch: `[support] hervor_enabled` and a live seat token. */
     @EncodeDefault val hervorEnabled: Boolean = false,
+    /** DEB-1508 (FR-10) — tickets Hervør owes the next message on, counted like [owedByAdmin]. Additive. */
+    @EncodeDefault val owedByHervor: Int = 0,
 )
 
 /** DEB-1500 (FR-3) — `POST /api/support/enabled`. */
 @Serializable data class SupportEnabledRequest(val enabled: Boolean)
+
+/** DEB-1508 (FR-8) — `POST /api/support/hervor`. */
+@Serializable data class SupportHervorRequest(val enabled: Boolean)
+
+/**
+ * DEB-1508 (FR-2) — Hervør's seat token as an admin reads it. **No hash and no id leave the server**: the plaintext is in
+ * [SupportSeatTokenIssued] once, and nothing else about a token identifies it.
+ */
+@Serializable
+data class SupportSeatTokenLive(val issuedAt: Long, val issuedBy: String, val lastUsedAt: Long? = null)
+
+@Serializable
+data class SupportSeatTokenPast(val issuedAt: Long, val issuedBy: String, val revokedAt: Long, val revokedBy: String, val lastUsedAt: Long? = null)
+
+/** `GET` and `DELETE /api/support/seat-token`. [live] is null (written out) when there is none; [past] is the five most recent revoked. */
+@Serializable
+data class SupportSeatTokenState(
+    @EncodeDefault val live: SupportSeatTokenLive? = null,
+    @EncodeDefault val past: List<SupportSeatTokenPast> = emptyList(),
+)
+
+/** `POST /api/support/seat-token` → 201. [token] is the plaintext `jss_…`, in this response and nowhere else, ever. */
+@Serializable
+data class SupportSeatTokenIssued(val token: String, val live: SupportSeatTokenLive)
 
 /**
  * DEB-1500 (FR-12) — one line of Activity › Support log. [id] orders it (it is also the `before` cursor), [action] is a

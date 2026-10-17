@@ -2,12 +2,15 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.SessionKey
+import dev.jellystructure.auth.SupportSeatKey
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.model.SupportEnabledRequest
 import dev.jellystructure.model.SupportClassRequest
 import dev.jellystructure.model.SupportFlagRequest
 import dev.jellystructure.model.SupportForwardRequest
+import dev.jellystructure.model.SupportHervorRequest
 import dev.jellystructure.model.SupportStateRequest
+import dev.jellystructure.log.Logger
 import dev.jellystructure.shared.RaviloHeaders
 import dev.jellystructure.shared.tv.SupportPostRequest
 import dev.jellystructure.shared.tv.SupportReadRequest
@@ -93,13 +96,17 @@ internal fun Route.supportRoutes(service: SupportService, configStore: ConfigSto
 
     // ── The admin ────────────────────────────────────────────────────────────────────────────────────────────────────
 
+    // DEB-1508 (FR-4) — the five routes Hervør's seat token reaches are these existing ones: `AuthPlugin` lets a `jss_` bearer
+    // through to exactly them, and each answers a seat call (`SupportSeatKey` set) with her view — only her tickets (FR-6),
+    // the viewer anonymous (FR-7) — and writes as HERVOR (FR-11, FR-12). Every other route here never sees the seat.
     get("/support/tickets") {
         val q = call.request.queryParameters
-        call.respond(service.adminList(SupportService.AdminFilter(
+        val filter = SupportService.AdminFilter(
             state = q["state"]?.takeIf { it.isNotBlank() }, holder = q["holder"]?.takeIf { it.isNotBlank() },
             owes = q["owes"]?.takeIf { it.isNotBlank() }, flagged = q["flagged"] == "true",
             overdue = q["overdue"]?.let { it == "true" },
-        )))
+        )
+        call.respond(if (call.isSeatCall()) service.seatList(filter) else service.adminList(filter))
     }
 
     get("/support/summary") { call.respond(service.summary()) }
@@ -119,6 +126,47 @@ internal fun Route.supportRoutes(service: SupportService, configStore: ConfigSto
         call.respond(service.summary())
     }
 
+    // DEB-1508 (FR-8) — Hervør's switch. It writes `[support] hervor_enabled` through ConfigStore.update and answers the summary,
+    // like `/enabled`. On needs a live seat token (409 `no_seat_token`); off hands every ticket she holds or owes back to admins
+    // (FR-9). `PUT /api/config` still restores `[support]`, so a Settings save never flips it.
+    post("/support/hervor") {
+        val store = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "config_unavailable"))
+        val req = call.receiveOrBadRequest<SupportHervorRequest>() ?: return@post
+        if (req.enabled && !service.seatTokens.hasLive) {
+            return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "no_seat_token", "reason" to "Issue Hervør a token first"))
+        }
+        if (!store.setHervorEnabled(req.enabled)) {
+            return@post call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "config_not_saved"))
+        }
+        val by = call.adminName()
+        val moved = if (req.enabled) emptyList() else service.handBackFromHervor(by)
+        Logger.info("Support: $by switched Hervør ${if (req.enabled) "on" else "off"}" + if (moved.isNotEmpty()) " (${moved.size} ticket(s) handed back)" else "", "support")
+        call.respond(service.summary())
+    }
+
+    // DEB-1508 (FR-2) — Hervør's seat token. Cookie only: the plugin refuses these routes to the seat itself (FR-4).
+    get("/support/seat-token") { call.respond(service.seatTokens.state()) }
+
+    post("/support/seat-token") {
+        val by = call.adminName()
+        val replaced = service.seatTokens.hasLive
+        val issued = service.seatTokens.issue(by)
+        Logger.info("Support: $by ${if (replaced) "replaced" else "issued"} Hervør's seat token", "support")
+        call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+        call.respond(HttpStatusCode.Created, issued)
+    }
+
+    // Revoking also switches her off and hands her tickets back (FR-2, FR-9): one click stops her completely, and a later
+    // token never switches her back on by itself. With no live token it changes nothing.
+    delete("/support/seat-token") {
+        val by = call.adminName()
+        if (!service.seatTokens.revoke(by)) return@delete call.respond(HttpStatusCode.NoContent)
+        configStore?.setHervorEnabled(false)
+        val moved = service.handBackFromHervor(by)
+        Logger.info("Support: $by revoked Hervør's seat token and switched her off (${moved.size} ticket(s) handed back)", "support")
+        call.respond(service.seatTokens.state())
+    }
+
     // DEB-1500 (FR-12) — Activity › Support log: history only, newest first, no bodies.
     get("/support/log") {
         val q = call.request.queryParameters
@@ -127,7 +175,8 @@ internal fun Route.supportRoutes(service: SupportService, configStore: ConfigSto
 
     get("/support/tickets/{n}") {
         val n = call.ticketNumber() ?: return@get call.respondNotFound()
-        call.respond(service.adminThread(n) ?: return@get call.respondNotFound())
+        val thread = (if (call.isSeatCall()) service.seatThread(n) else service.adminThread(n)) ?: return@get call.respondNotFound()
+        call.respond(thread)
     }
 
     // 321 (FR-321-10) — every request `AI Agent` made for this ticket, for the ticket's life.
@@ -137,17 +186,25 @@ internal fun Route.supportRoutes(service: SupportService, configStore: ConfigSto
     }
 
     post("/support/tickets/{n}/messages") {
-        if (!call.adminWriteOpen(service)) return@post
+        val seatToken = call.attributes.getOrNull(SupportSeatKey)
+        // A seat call's rules run in FR-11's order inside the service (the 404 comes before the 409), so it is not gated here.
+        if (seatToken == null && !call.adminWriteOpen(service)) return@post
         val n = call.ticketNumber() ?: return@post call.respondNotFound()
         val req = call.receiveOrBadRequest<SupportPostRequest>() ?: return@post
-        call.respondOutcome(service.reply(n, call.adminName(), req.body))
+        call.respondOutcome(
+            if (seatToken != null) service.seatReply(n, seatToken, req.body) else service.reply(n, call.adminName(), req.body),
+        )
     }
 
     post("/support/tickets/{n}/forward") {
-        if (!call.adminWriteOpen(service)) return@post
+        val seatToken = call.attributes.getOrNull(SupportSeatKey)
+        if (seatToken == null && !call.adminWriteOpen(service)) return@post
         val n = call.ticketNumber() ?: return@post call.respondNotFound()
         val req = call.receiveOrBadRequest<SupportForwardRequest>() ?: return@post
-        call.respondOutcome(service.forward(n, call.adminName(), req.holder, req.seat, req.owes, req.note))
+        call.respondOutcome(
+            if (seatToken != null) service.seatForward(n, seatToken, req.holder, req.seat, req.owes, req.note)
+            else service.forward(n, call.adminName(), req.holder, req.seat, req.owes, req.note),
+        )
     }
 
     post("/support/tickets/{n}/state") {
@@ -183,6 +240,15 @@ internal fun Route.supportRoutes(service: SupportService, configStore: ConfigSto
         val n = call.ticketNumber() ?: return@delete call.respondNotFound()
         if (service.adminDelete(n)) call.respond(HttpStatusCode.NoContent) else call.respondNotFound()
     }
+}
+
+/** DEB-1508 (FR-3) — the call carries Hervør's seat token, not an admin's session. */
+private fun ApplicationCall.isSeatCall(): Boolean = attributes.contains(SupportSeatKey)
+
+/** Writes `[support] hervor_enabled`; true when it is now [enabled], whether or not a write was needed. */
+private suspend fun ConfigStore.setHervorEnabled(enabled: Boolean): Boolean {
+    val current = this.current
+    return current.support.hervorEnabled == enabled || update(current.copy(support = current.support.copy(hervorEnabled = enabled)))
 }
 
 private fun ApplicationCall.ticketNumber(): Long? = parameters["n"]?.toLongOrNull()?.takeIf { it > 0 }
