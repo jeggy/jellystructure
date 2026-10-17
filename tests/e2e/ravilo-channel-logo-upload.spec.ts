@@ -18,6 +18,7 @@ const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
 
 const LIVE_TEXT_SVG = Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><path d="M0 0h4v4z"/><text x="1" y="2">Hi</text></svg>`);
+const CH = "logo-upload-fixture";
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -35,6 +36,13 @@ test.describe.serial("Collection editor — logo upload refusal", () => {
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
     page = await browser.newPage();
     await login(page);
+    // The collection editor needs a collection to open; a fresh stack has none.
+    const cfg = await (await page.request.get("/api/tv/admin/config?scope=global")).json();
+    const channels = [
+      ...((cfg.config.channels ?? []) as any[]).filter((c) => c.id !== CH),
+      { id: CH, name: "Fixture Collection", enabled: true },
+    ];
+    expect((await page.request.put("/api/tv/admin/config?scope=global", { data: { ...cfg.config, channels } })).ok()).toBeTruthy();
     await page.route("**/api/jellyfin/users", (route) =>
       route.fulfill({ contentType: "application/json", body: JSON.stringify([{ id: "u-fixture", display_name: "Fixture User" }]) }));
     await page.goto("/#/ravilo?tab=layout");
@@ -43,7 +51,12 @@ test.describe.serial("Collection editor — logo upload refusal", () => {
     await expect(page.locator("#ch-ed-save")).toBeVisible({ timeout: 15_000 });
   });
 
-  test.afterAll(async () => { await page.close(); });
+  test.afterAll(async () => {
+    // Leave the layout as it was found.
+    const cfg = await (await page.request.get("/api/tv/admin/config?scope=global")).json();
+    await page.request.put("/api/tv/admin/config?scope=global", { data: { ...cfg.config, channels: ((cfg.config.channels ?? []) as any[]).filter((c) => c.id !== CH) } });
+    await page.close();
+  });
 
   test("a refused SVG says why, not the raw JSON body", async () => {
     await page.setInputFiles("#ch-logo-file", { name: "live-text.svg", mimeType: "image/svg+xml", buffer: LIVE_TEXT_SVG });
