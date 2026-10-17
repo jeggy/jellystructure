@@ -7,10 +7,14 @@ import dev.jellystructure.model.SupportClassRequest
 import dev.jellystructure.model.SupportEnabledRequest
 import dev.jellystructure.model.SupportFlagRequest
 import dev.jellystructure.model.SupportForwardRequest
+import dev.jellystructure.model.SupportHervorRequest
 import dev.jellystructure.model.SupportLog
+import dev.jellystructure.model.SupportSeatTokenIssued
+import dev.jellystructure.model.SupportSeatTokenState
 import dev.jellystructure.model.SupportStateRequest
 import dev.jellystructure.model.SupportSummary
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -115,6 +119,41 @@ object SupportApi {
     suspend fun setEnabled(enabled: Boolean): Switched {
         val r = try {
             httpClient.post("/api/support/enabled") { contentType(ContentType.Application.Json); setBody(SupportEnabledRequest(enabled)) }
+        } catch (e: CancellationException) { throw e } catch (_: Throwable) { return Switched.NoResponse }
+        if (r.status != HttpStatusCode.OK) return Switched.Failed(r.status.value)
+        return quietly { r.body<SupportSummary>() }?.let { Switched.Ok(it) } ?: Switched.Failed(r.status.value)
+    }
+
+    /** DEB-1508 (FR-2) — what a seat-token write came to. The plaintext is in [Issued] once and the page puts it in the DOM and nowhere else. */
+    sealed interface SeatWrite {
+        data class Issued(val issued: SupportSeatTokenIssued) : SeatWrite
+        data class State(val state: SupportSeatTokenState) : SeatWrite
+        data object NoResponse : SeatWrite
+        data class Failed(val status: Int) : SeatWrite
+    }
+
+    suspend fun seatToken(): SupportSeatTokenState? = quietly {
+        httpClient.get("/api/support/seat-token").takeIf { it.status == HttpStatusCode.OK }?.body<SupportSeatTokenState>()
+    }
+
+    suspend fun issueSeatToken(): SeatWrite {
+        val r = try { httpClient.post("/api/support/seat-token") } catch (e: CancellationException) { throw e } catch (_: Throwable) { return SeatWrite.NoResponse }
+        if (r.status != HttpStatusCode.Created) return SeatWrite.Failed(r.status.value)
+        return quietly { r.body<SupportSeatTokenIssued>() }?.let { SeatWrite.Issued(it) } ?: SeatWrite.Failed(r.status.value)
+    }
+
+    /** One click: revoking also switches her off and hands her tickets back (FR-2, FR-9). A 204 (none was live) reads as no live token. */
+    suspend fun revokeSeatToken(): SeatWrite {
+        val r = try { httpClient.delete("/api/support/seat-token") } catch (e: CancellationException) { throw e } catch (_: Throwable) { return SeatWrite.NoResponse }
+        if (r.status == HttpStatusCode.NoContent) return SeatWrite.State(SupportSeatTokenState())
+        if (r.status != HttpStatusCode.OK) return SeatWrite.Failed(r.status.value)
+        return quietly { r.body<SupportSeatTokenState>() }?.let { SeatWrite.State(it) } ?: SeatWrite.Failed(r.status.value)
+    }
+
+    /** FR-8 — `POST /api/support/hervor`; answers with the new summary and the strip renders that. */
+    suspend fun setHervor(enabled: Boolean): Switched {
+        val r = try {
+            httpClient.post("/api/support/hervor") { contentType(ContentType.Application.Json); setBody(SupportHervorRequest(enabled)) }
         } catch (e: CancellationException) { throw e } catch (_: Throwable) { return Switched.NoResponse }
         if (r.status != HttpStatusCode.OK) return Switched.Failed(r.status.value)
         return quietly { r.body<SupportSummary>() }?.let { Switched.Ok(it) } ?: Switched.Failed(r.status.value)

@@ -3,6 +3,7 @@ package dev.jellystructure.ui
 import dev.jellystructure.model.SupportAdminMessage
 import dev.jellystructure.model.SupportAdminTicket
 import dev.jellystructure.model.SupportLogEntry
+import dev.jellystructure.model.SupportSeatTokenLive
 import dev.jellystructure.model.SupportSummary
 
 /**
@@ -48,6 +49,28 @@ internal object SupportText {
     }
 
     fun ticketsPath(filter: Filter): String = "/api/support/tickets" + if (filter.query.isEmpty()) "" else "?${filter.query}"
+
+    // ── DEB-1508 (FR-15) — the Hervør strip ──────────────────────────────────────────────────────────────────────────
+
+    const val HERVOR_NO_TOKEN = "Hervør has no token, so she can't read or answer tickets."
+    const val HERVOR_TOKEN_SHOWN = "Token issued — copy it now, it won't be shown again:"
+    const val HERVOR_REVOKED = "Revoked. Hervør is switched off, and her tickets are with admins."
+    const val HERVOR_READS = "Hervør reads the tickets she holds — their text and the viewer's language, never the viewer's name or id."
+    const val HERVOR_OFF_TITLE = "Switch Hervør off?"
+    const val HERVOR_OFF_BODY = "Every ticket she holds or owes goes back to admins. The viewers see it forwarded."
+    const val HERVOR_REPLACE_TITLE = "Replace Hervør's token?"
+    const val HERVOR_REPLACE_BODY = "The one she has stops working at once, and she can't answer until she is given the new one."
+
+    /**
+     * The sentence of a strip whose token is live. [on] is the summary's `hervorEnabled`, the *effective* switch, so a strip can
+     * never say she answers while the server would not send her a ticket. [issued] and [lastUsed] are the browser's own words
+     * for the two times (`lastUsed` null reads *never*).
+     */
+    fun hervorStrip(live: SupportSeatTokenLive, on: Boolean, issued: String, lastUsed: String?): String {
+        val used = lastUsed ?: "never"
+        return if (on) "Hervør answers what AI Agent forwards to her · token issued $issued by ${live.issuedBy} · last used $used."
+        else "Hervør's token was issued $issued by ${live.issuedBy} · last used $used. She is switched off, so tickets go to admins."
+    }
 
     // ── names ────────────────────────────────────────────────────────────────────────────────────────────────────────
 

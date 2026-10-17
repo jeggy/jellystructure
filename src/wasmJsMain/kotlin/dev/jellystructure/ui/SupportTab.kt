@@ -9,6 +9,7 @@ import dev.jellystructure.model.SupportAdminMessage
 import dev.jellystructure.model.SupportAdminThread
 import dev.jellystructure.model.SupportAdminTicket
 import dev.jellystructure.model.SupportAiTranscript
+import dev.jellystructure.model.SupportSeatTokenState
 import dev.jellystructure.model.SupportSummary
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -89,6 +90,10 @@ private var tkRailNote: String? = null
 private var tkClosedByServer = false
 private var tkLaneBusy = false
 private var tkLaneError = false
+/** DEB-1508 (FR-15) — what `GET /api/support/seat-token` last answered (never what was assumed), and whether a write to it is out. */
+private var tkSeat: SupportSeatTokenState? = null
+private var tkSeatBusy = false
+private var tkSeatNote: String? = null
 private var tkReadUpTo = 0L
 private var tkTurns = 0
 private var tkComposerKey = ""
@@ -108,8 +113,10 @@ fun renderSupportTab(panel: Element, scope: CoroutineScope, query: Map<String, S
     tkScope = scope; tkPanel = panel; tkGen++
     tkTickets = null; tkListFailed = false; tkThread = null; tkGone = false; tkOpen = null
     tkClosedByServer = false; tkLaneBusy = false; tkLaneError = false; tkExpanded.clear(); closeSupportDialog()
+    tkSeat = null; tkSeatBusy = false; tkSeatNote = null
     tkListInFlight = false; tkListDirty = false
-    panel.innerHTML = """<div id="tk-lane"></div><div id="tk-body"></div>"""
+    // `tk-hv-token` is its own host: the strip repaints on every write, and the one-time token must outlive that until the tab is left.
+    panel.innerHTML = """<div id="tk-lane"></div><div id="tk-hv"></div><div id="tk-hv-token"></div><div id="tk-body"></div>"""
     bindSupportPanel(panel)
     SupportLive.listen("tab") { onSupportEvent(it) }
     paintLane()
@@ -117,8 +124,14 @@ fun renderSupportTab(panel: Element, scope: CoroutineScope, query: Map<String, S
     scope.launch {
         SupportApi.summary()?.let { SupportLive.seed(it) }
         if (gen != tkGen) return@launch
-        paintLane(); paintSeg()
+        paintLane(); paintHervor(); paintSeg()
         if (tkOpen != null) paintComposer(force = true)
+    }
+    scope.launch {
+        val seat = SupportApi.seatToken()
+        if (gen != tkGen) return@launch
+        tkSeat = seat
+        paintHervor()
     }
     val n = query["ticket"]?.toLongOrNull()?.takeIf { it > 0 }
     if (n != null) openTicket(n, writeUrl = false) else showList()
@@ -127,6 +140,8 @@ fun renderSupportTab(panel: Element, scope: CoroutineScope, query: Map<String, S
 /** Called when the AI page is left or drawn again: the listener goes, and an answer still in flight finds the page changed. */
 fun leaveSupportTab() {
     tkGen++
+    tkEl("tk-hv-token")?.innerHTML = ""   // FR-15 — the plaintext lives in that field until the admin leaves the tab, and no longer
+    tkSeat = null
     tkPanel = null
     closeSupportDialog()
     SupportLive.drop("tab")
@@ -154,6 +169,13 @@ private fun bindSupportPanel(panel: Element) {
             "lane-close" -> showCloseDialog()
             "lane-close-yes" -> setLane(false)
             "dlg-cancel" -> closeSupportDialog()
+            "hv-issue" -> issueSeatToken(replace = false)
+            "hv-on" -> setHervor(true)
+            "hv-off" -> showHervorDialog("off")
+            "hv-off-yes" -> setHervor(false)
+            "hv-replace" -> showHervorDialog("replace")
+            "hv-replace-yes" -> issueSeatToken(replace = true)
+            "hv-revoke" -> revokeSeatToken()
             "back" -> backToList()
             "send" -> sendReply()
             "forward" -> forwardTicket()
@@ -208,6 +230,116 @@ private fun setLane(open: Boolean) {
         paintLane()
         if (tkOpen == null) { paintSeg(); loadList() } else paintComposer(force = true)
     }
+}
+
+// ── Hervør (DEB-1508, FR-15) ─────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The second strip, under the lane's. It is `GET /api/support/seat-token` and the summary's `hervorEnabled` (the effective
+ * switch), and each write redraws it from the answer. It is shown whenever the tab is, lane open or closed.
+ */
+private fun paintHervor() {
+    val host = tkEl("tk-hv") ?: return
+    val seat = tkSeat
+    val summary = SupportLive.summary
+    // Nothing is assumed before the server has said.
+    if (seat == null || summary == null) { host.innerHTML = ""; return }
+    val busy = if (tkSeatBusy) " disabled" else ""
+    val note = tkSeatNote?.let { """ <span class="muted tiny">${it.esc()}</span>""" }.orEmpty()
+    val live = seat.live
+    val strip = if (live == null) {
+        """<div class="tk-lane closed"><i></i><div><b>${SupportText.HERVOR_NO_TOKEN.esc()}</b>$note</div><button type="button" class="btn primary sm" data-tk="hv-issue" data-tk-w$busy>Issue a token</button></div>"""
+    } else {
+        val text = SupportText.hervorStrip(live, summary.hervorEnabled, formatClock(live.issuedAt.toString()), live.lastUsedAt?.let { formatRelativeAgo(it.toString()) })
+        val first = if (summary.hervorEnabled) """<button type="button" class="btn sm" data-tk="hv-off" data-tk-w$busy>Switch Hervør off</button>"""
+            else """<button type="button" class="btn primary sm" data-tk="hv-on" data-tk-w$busy>Switch Hervør on</button>"""
+        """<div class="tk-lane"><div>${text.esc()}$note</div>$first<button type="button" class="btn sm" data-tk="hv-replace" data-tk-w$busy>Replace token</button><button type="button" class="btn sm" data-tk="hv-revoke" data-tk-w$busy>Revoke</button></div>"""
+    }
+    host.innerHTML = strip + """<p class="muted tiny">${SupportText.HERVOR_READS.esc()}</p>"""
+}
+
+private fun setHervor(on: Boolean) {
+    if (aiPageLost() || tkSeatBusy) return
+    val scope = tkScope ?: return
+    val gen = tkGen
+    tkSeatBusy = true; tkSeatNote = null; paintHervor()
+    scope.launch {
+        val r = SupportApi.setHervor(on)
+        if (gen != tkGen) return@launch
+        tkSeatBusy = false
+        closeSupportDialog()
+        if (r is SupportApi.Switched.Ok) SupportLive.seed(r.summary) else tkSeatNote = "Not saved — try again."
+        afterHervorChange()
+    }
+}
+
+private fun issueSeatToken(replace: Boolean) {
+    if (aiPageLost() || tkSeatBusy) return
+    val scope = tkScope ?: return
+    val gen = tkGen
+    tkSeatBusy = true; tkSeatNote = null; paintHervor()
+    scope.launch {
+        val w = SupportApi.issueSeatToken()
+        if (gen != tkGen) return@launch
+        tkSeatBusy = false
+        closeSupportDialog()
+        when (w) {
+            // The plaintext goes into the field and nowhere else: not a variable, not the strip, not a log.
+            is SupportApi.SeatWrite.Issued -> { tkSeat = SupportSeatTokenState(live = w.issued.live, past = tkSeat?.past.orEmpty()); showIssuedToken(w.issued.token) }
+            else -> tkSeatNote = "Not issued — try again."
+        }
+        afterHervorChange()
+    }
+}
+
+private fun revokeSeatToken() {
+    if (aiPageLost() || tkSeatBusy) return
+    val scope = tkScope ?: return
+    val gen = tkGen
+    tkSeatBusy = true; tkSeatNote = null; paintHervor()
+    scope.launch {
+        val w = SupportApi.revokeSeatToken()
+        if (gen != tkGen) return@launch
+        tkSeatBusy = false
+        tkEl("tk-hv-token")?.innerHTML = ""
+        if (w is SupportApi.SeatWrite.State) {
+            tkSeat = w.state
+            tkSeatNote = SupportText.HERVOR_REVOKED
+            // Revoking switched her off, so the summary the strip and the Forward-to list read is read again.
+            SupportApi.summary()?.let { SupportLive.seed(it) }
+        } else tkSeatNote = "Not revoked — try again."
+        afterHervorChange()
+    }
+}
+
+private fun afterHervorChange() {
+    paintHervor(); paintLane()
+    if (tkOpen != null) { paintRail(); paintComposer(force = false) } else { paintSeg() }
+}
+
+/** FR-15 — *Token issued — copy it now* and the token in a read-only `.input.mono` field, set with `textContent` after the markup. */
+private fun showIssuedToken(token: String) {
+    val host = tkEl("tk-hv-token") ?: return
+    host.innerHTML = """<div class="tk-lane"><div><b>${SupportText.HERVOR_TOKEN_SHOWN.esc()}</b><div class="input mono" id="tk-hv-tok" style="margin-top:6px;user-select:all;word-break:break-all;"></div></div></div>"""
+    (tkEl("tk-hv-tok"))?.textContent = token
+}
+
+private fun showHervorDialog(kind: String) {
+    if (aiPageLost()) return
+    val panel = tkPanel ?: return
+    closeSupportDialog()
+    val off = kind == "off"
+    val title = if (off) SupportText.HERVOR_OFF_TITLE else SupportText.HERVOR_REPLACE_TITLE
+    val body = if (off) SupportText.HERVOR_OFF_BODY else SupportText.HERVOR_REPLACE_BODY
+    val yes = if (off) "Switch off" else "Replace"
+    val back = document.createElement("div") as HTMLElement
+    back.className = "modal-back open"
+    back.setAttribute("data-tk-dlg", "hv-$kind")
+    back.innerHTML = """<div class="modal" role="dialog" aria-modal="true" aria-label="${title.esc()}"><h3>${title.esc()}</h3><p>${body.esc()}</p><div class="tk-acts"><button type="button" class="btn primary" data-tk="hv-$kind-yes" data-tk-w>$yes</button><button type="button" class="btn ghost" data-tk="dlg-cancel">Cancel</button></div></div>"""
+    panel.appendChild(back)
+    val onKey: (Event) -> Unit = { e -> if (keyOf(e) == "Escape") closeSupportDialog() }
+    tkEsc = onKey
+    document.addEventListener("keydown", onKey)
 }
 
 private fun showCloseDialog() {
@@ -312,7 +444,7 @@ private fun rowHtml(t: SupportAdminTicket): String {
 }
 
 private fun onSupportEvent(e: JobEvent.SupportTicketChanged) {
-    paintLane()
+    paintLane(); paintHervor()
     val open = tkOpen
     if (open == null) {
         paintSeg()
