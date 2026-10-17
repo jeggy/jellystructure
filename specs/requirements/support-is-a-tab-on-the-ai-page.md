@@ -368,3 +368,17 @@ meaning; each line says what a sentence above left open.
 - **FR-6 — *Open*.** The filter asks `state=OPEN` and the count is `open`, which counts every state but `RESOLVED`. They are
   the same set until something sets `IN_PROGRESS`, which no admin page does. If one ever does, the filter wants a state
   list, not this table.
+
+## Amendment 2026-10-17 — the filters at phone width (DEB-1616)
+
+FR-6 said what the table does at ≤ 560 px and nothing about the filters above it. QA found the gap on a 412 px window
+(DEB-1544): the six filters do not fit on one line, the segmented control hides what overflows, so *Flagged* shows only
+about 22 px of itself, and *Needs a reply · 0* breaks over four lines. That holds on prod, empty, and with tickets.
+
+- **FR-6 — the filters at ≤ 560 px.** The filter row wraps onto as many lines as it needs. Every filter is whole and
+  can be pressed, and each label keeps its count on one line with it. The row never scrolls sideways and never hides
+  a filter. Over 560 px nothing changes.
+- **Where the rule lives.** It is scoped to the Support tab's bar (`.tksup .tk-bar`, in `design/app/support.css`). The
+  shared `.seg` is not changed, so Activity's view switch and every other segmented control stay as they are.
+- **Test.** The Playwright spec's phone viewport (`tests/e2e/ai-page-support-tab.spec.ts`, `phone 412px`) checks that
+  each of the six filters lies wholly inside the page and that no filter is taller than one line of its text.
