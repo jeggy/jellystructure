@@ -1193,7 +1193,8 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
             }
             val badgeCls = if (j.state == "done") "badge ok" else "badge bad"
             // Phase 261 — a retired library sweep has nothing to retry: the pipeline queues its work per file now.
-            val retired = j.error == "retired"
+            // A bulk reorder has none either (FR-213-1): its episodes and options were the request's, so it is run again from the title.
+            val retired = j.error == "retired" || j.type == "bulk_reorder"
             val retryBtn = if ((j.state == "failed" || j.state == "cancelled") && !retired)
                 """<span class="btn sm ghost jq-retry" data-job-id="${j.id}">Retry</span>""" else ""
             """<div class="jobrow">

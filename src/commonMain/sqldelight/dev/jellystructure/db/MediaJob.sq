@@ -46,12 +46,15 @@ VALUES (:id, :type, :media_id, :label, :params, :state, :enqueued_by, :created_a
 
 -- Phase 261 (FR-261-2) — the claim reads ONE candidate per lane, never the whole queue: the lane's next row,
 -- or (while a TV plays and the household defers) its next row that does not wait for playback.
+-- FR-213-1 (DEB-1674) — a `bulk_reorder` row is never the pool's to claim: it runs on its own code path
+-- (TrackRoutes), which starts it with `acquireBulkSlot`. It sits `queued` while it waits for the lane, and a
+-- pool worker that took it there would fail it with "Unknown job type".
 nextQueued:
-SELECT * FROM media_job WHERE lane = :lane AND state = 'queued'
+SELECT * FROM media_job WHERE lane = :lane AND state = 'queued' AND type != 'bulk_reorder'
 ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT 1;
 
 nextQueuedNotDeferred:
-SELECT * FROM media_job WHERE lane = :lane AND state = 'queued' AND defer_while_playing = 0
+SELECT * FROM media_job WHERE lane = :lane AND state = 'queued' AND type != 'bulk_reorder' AND defer_while_playing = 0
 ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT 1;
 
 -- Phase 261 (dev review item 2) — an operator's Check now that meets a waiting cadence row for the same file
@@ -156,8 +159,15 @@ UPDATE media_job SET pct = :pct, speed = :speed, files_done = :files_done, eta_s
 markFinished:
 UPDATE media_job SET state = :state, finished_at = :finished_at, error = :error, files_done = :files_done WHERE id = :id;
 
+-- A `bulk_reorder` row is excluded: its run died with the process, nothing is left to run it again, and a
+-- requeued copy would only fail (FR-213-1, DEB-1674). `failInterruptedBulk` closes it instead.
 requeueRunning:
-UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE state = 'running';
+UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE state = 'running' AND type != 'bulk_reorder';
+
+-- FR-213-1 (DEB-1674) — after a restart a bulk row that is `queued` or `running` has no run behind it.
+failInterruptedBulk:
+UPDATE media_job SET state = 'failed', finished_at = :finished_at, error = :error
+WHERE type = 'bulk_reorder' AND state IN ('queued', 'running');
 
 -- Phase 213 — the subtitles queue's own mid-item stop-and-resume (playback started, or a timed-out
 -- retry still under its cap): puts ONE row back to queued rather than finishing it and inserting a new

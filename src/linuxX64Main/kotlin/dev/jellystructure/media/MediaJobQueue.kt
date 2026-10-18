@@ -262,13 +262,21 @@ class MediaJobQueue(
      *  media-queue row's temp copy, if any, is simply overwritten or ignored on the retry — the original
      *  file was never touched; a segments/subtitles-queue row is idempotent to re-run outright). */
     fun start() {
-        queries.requeueRunning()
+        recoverAfterRestart()
         // Phase 182 (FR-182-6) — background work (ffmpeg remuxes, segment detection, subtitle pre-warm),
         // never request-serving; tags this coroutine and everything launched under it so
         // OutboundHttp/ProcessGate reserve interactive capacity it can never consume.
         appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { poolSupervisorLoop() }
         // Phase 317 (FR-317-8) — one worker of its own for the `avsync` lane, outside the shared pool.
         appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { avSyncWorkerLoop() }
+    }
+
+    /** A bulk reorder runs on its own code path, so a restart leaves nobody to run one that was `queued` or
+     *  `running`: it is closed `failed` with a reason that says to run it again, never requeued (FR-213-1,
+     *  DEB-1674). Everything else that was `running` goes back to `queued` as before. */
+    internal fun recoverAfterRestart() {
+        queries.failInterruptedBulk(epochSeconds(), BULK_RESTART_ERROR)
+        queries.requeueRunning()
     }
 
     /**
@@ -356,7 +364,7 @@ class MediaJobQueue(
     /** Registers a job row for a bulk-reorder run that executes via its own existing code path — see
      *  the class doc. Caller is responsible for [acquireBulkSlot]/[markBulkFinished] around the run. */
     suspend fun registerBulkJob(mediaId: String, label: String, params: MediaJobParams, fileCount: Int): MediaJobSnapshot =
-        enqueue("bulk_reorder", mediaId, label, params, fileCount)
+        enqueue(BULK_REORDER_TYPE, mediaId, label, params, fileCount)
 
     /** Blocks (politely) until no `media`-queue job is running and no other bulk run is in flight, then
      *  claims the slot. Mirrors the media queue's one-active-job guarantee for the bulk path without
@@ -428,6 +436,9 @@ class MediaJobQueue(
         if (row.state != "failed" && row.state != "cancelled") return null
         // Phase 261 — the library sweeps and the whole-title check are retired; the pipeline queues their work per file.
         if (row.type in RETIRED_TYPES) return null
+        // FR-213-1 (DEB-1674) — a bulk reorder has no worker to hand it to, and the request that carried its
+        // episodes and options is gone: run it again from the title page.
+        if (row.type == BULK_REORDER_TYPE) return null
         val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return null
         if (row.type in FileCheckSchedule.JOB_TYPES) {
             val path = params.filePath ?: return null
@@ -640,7 +651,7 @@ class MediaJobQueue(
      *  candidates by `created_at` — comparing age honestly rather than iterating queues in a fixed order,
      *  so a queue with a steady trickle of new jobs can't starve one holding a single old job (open
      *  question 6 in the phase-213 spec). */
-    private suspend fun claimNext(lanes: List<String> = SHARED_POOL_LANES): Media_job? {
+    internal suspend fun claimNext(lanes: List<String> = SHARED_POOL_LANES): Media_job? {
         val candidates = mutableListOf<Media_job>()
         // Phase 261 (FR-261-2, dev review item 3) — ONE candidate per lane, read through the claim index:
         // the lane's next row, or while a TV plays (and the household defers, 262) its next row that does
@@ -1595,6 +1606,9 @@ class MediaJobQueue(
         val SHARED_POOL_LANES = listOf("media", "segments", "subtitles")
         /** Phase 261 (FR-261-1) — job types migration 53 cancelled; kept in Recent until pruned, never retried. */
         val RETIRED_TYPES = setOf("file_integrity_sweep", "track_coverage_sweep", "file_integrity_title")
+        /** FR-213-1 — the media queue's bulk run; executed by its caller, never by the pool. */
+        const val BULK_REORDER_TYPE = "bulk_reorder"
+        const val BULK_RESTART_ERROR = "Interrupted by a restart — run the bulk reorder again"
         /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */
         const val QUEUE_EMPTIED_TYPE = "queue_emptied"
         /** Phase 314 — a file every device can play directly: one file, one kind (FileFixService). */
