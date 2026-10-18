@@ -47,6 +47,7 @@ import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.dashboardRoutes
 import dev.jellystructure.server.routes.DashboardService
 import dev.jellystructure.server.routes.channelLogoAdminRoutes
+import dev.jellystructure.server.routes.playbackActiveRoutes
 import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
@@ -490,17 +491,7 @@ fun startServer(
                     )
                 }
 
-                // Phase 178 §FR-178-1 — "is any TV playing right now" for the admin UI's ambient-dock
-                // deferral state (FR-178-4) and its "Run anyway" override. Reads the same tracker the
-                // stop watchdog does; no new state, no polling of anything else.
-                get("/playback/active") {
-                    runCatching { call.attributes[dev.jellystructure.auth.SessionKey] }.getOrNull()
-                        ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
-                    call.respond(mapOf(
-                        "active" to dev.jellystructure.tv.isPlaybackActive(),
-                        "devices" to dev.jellystructure.tv.activePlaybackDeviceNames(),
-                    ))
-                }
+                playbackActiveRoutes()   // Phase 178 §FR-178-1, DEB-1824
 
                 get("/health/full") {
                     val checks = mutableListOf<HealthCheck>()
