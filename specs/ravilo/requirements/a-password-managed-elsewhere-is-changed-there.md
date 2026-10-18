@@ -61,16 +61,17 @@ client store are by user id.
 
 ## Functional requirements
 
-**FR-1 — Probe before building.** Against the 12.1 server, on a throwaway account switched to the LDAP plugin (never a
-household account), record in this file:
-- the exact `Policy.AuthenticationProviderId` of a switched account and of a local one;
-- what `POST /Users/Password` answers a switched account for a right and for a wrong `CurrentPw`;
-- that `AuthenticateByName` still answers `401` for a wrong password.
-
-Upstream source says the ids are `Jellyfin.Plugin.LDAP_Auth.LdapAuthenticationProviderPlugin` and
-`Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider`, and that the answers are `500` and `403`.
-This is Phase 163 and 187's standing lesson: reading is not probing. FR-2's rule does not depend on the plugin's
-id, only on the default one.
+**FR-1 — Probe, in two halves.** Upstream source says the provider ids are
+`Jellyfin.Plugin.LDAP_Auth.LdapAuthenticationProviderPlugin` and
+`Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider`, and that `POST /Users/Password` answers a
+switched account `500` for a right `CurrentPw` and `403` for a wrong one. This is Phase 163 and 187's standing
+lesson: reading is not probing.
+- **Before building:** read the `Policy.AuthenticationProviderId` of a local account on the 12.1 server (`GET /Users`,
+  read-only) and record it here. FR-2's rule depends on this id alone.
+- **In the QA row:** on a throwaway account switched to the LDAP plugin (never a household account), record here
+  the switched account's id, the two `POST /Users/Password` answers, and that `AuthenticateByName` still answers
+  `401` for a wrong password. This needs the plugin on the server, which is the operator's setup and not part of
+  the build, so the build does not wait for it.
 
 **FR-2 — An account's password is *managed elsewhere* when its provider is not Jellyfin's own.**
 - jellystructure parses `Policy.AuthenticationProviderId`.
