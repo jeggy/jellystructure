@@ -11,13 +11,12 @@
 > Jellyfin, and puts the photo in the admin's user list. **R234** builds the screens; this phase owns the
 > routes, the storage answer and the cache.
 
-**Status:** ✓ Built 2026-09-05, same session as the probe below — design-authored 2026-09-03, all four
-open questions closed by probe/owner-decision the same day, backend built immediately after. Compiles
-clean (`compileKotlinLinuxX64` + `compileKotlinWasmJs`), full suite green (185/185), no schema migration
-needed (FR-187-5 — nothing new is stored). Not dev-reviewed, not live-tested through a running server
-(every write above was verified via direct `curl` against Jellyfin, matching the Kotlin code's exact
-request shape, rather than by starting jellystructure itself). **R234 (the client half) is not built —
-separate session**, per its own dependency on this phase.
+## Scope
+
+The backend half of the pair; **R234** is the client half. Design-authored 2026-09-03; all four open questions
+were closed by probe or owner decision on 2026-09-05. No schema migration: FR-187-5 stores nothing new. The probes
+below were run with direct `curl` against Jellyfin, in the Kotlin code's exact request shape. **Amended 2026-10-19
+by DEB-1854** (FR-187-3): an account whose password Jellyfin does not own is answered without a relay.
 
 ### What's built
 
@@ -258,6 +257,15 @@ right"* rather than a generic failure.
 > distinct outcome on **`403`**. Mapping `401` to "wrong password" would report an expired or revoked
 > admin token as the viewer having mistyped, which is the one failure this requirement exists to avoid
 > confusing.
+
+> **Amended 2026-10-19 (DEB-1854): Jellyfin validates, but some accounts' passwords are not Jellyfin's to change.**
+> Jellyfin checks `CurrentPw` through the account's own authentication provider. For an account on another provider
+> (the LDAP plugin, against a read-only directory), a right current password reaches the provider's
+> `ChangePassword`, which throws, and the relay comes back `500`, reported to the viewer as a generic failure. So:
+> before relaying, the route reads the account's `Policy.AuthenticationProviderId` live. For an account not on
+> Jellyfin's own provider, it answers `{ok: false, managed_elsewhere: true}` without sending the password anywhere.
+> `AccountPasswordResult` gains that field, default `false`. Everything above still holds for a local account. See
+> `specs/ravilo/requirements/a-password-managed-elsewhere-is-changed-there.md` FR-2 and FR-8.
 
 **FR-187-4 — Rate-limit the password route like the login route.** `LoginRateLimiter` exists precisely
 because `POST /api/tv/login` is a synchronous credential proxy on an instance that Phase 167 made

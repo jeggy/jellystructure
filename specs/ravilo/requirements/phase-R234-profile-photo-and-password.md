@@ -9,15 +9,13 @@
 > changed (everywhere). Ravilo already *renders* a photo on every surface — R65 shipped that whole path
 > — so this phase is about the two things it can't do: put one there, and change a password.
 
-**Status:** ✓ Built 2026-09-05 (Phase 187's backend having landed the same session), **✓ live-verified
-the same day on stue TV** (real BRAVIA hardware, release build, AOT-compiled). Compiles clean across
-every target that carries this code (`:ravilo-ui:compileDebugKotlinAndroid`,
-`:ravilo-ui:compileKotlinWasmJs`, `:ravilo-android:compileDebugKotlin`, `:ravilo-web:compileKotlinWasmJs`).
-Not dev-reviewed. The photo picker and web `<input type=file>` flow specifically were **not** exercised
-(user instruction: don't test change-password or photo-upload live — both mutate the real household
-Jellyfin account). `:ravilo-tizen` needed no change (confirmed: it doesn't depend on `:ravilo-ui` at
-all, per its own hand-written-DOM precedent).
-**Depended on Phase 187** for both routes — no longer blocking, both routes are built.
+## Scope
+
+The client half of Phase 187, which owns both routes. It touches `:ravilo-ui` (shared by the TV, phone and web
+apps). `:ravilo-tizen` does not depend on `:ravilo-ui`, follows its own hand-written-DOM precedent, and has no
+password or photo row. Owner instruction: change-password and photo-upload are never tested live on a household
+account, because both mutate the real Jellyfin account. **Amended 2026-10-19 by DEB-1854** (FR-R234-4): an account
+whose password Jellyfin does not own gets a link on phone, web and desktop, and no row on a TV.
 
 ### Live-verified on stue TV, 2026-09-05
 
@@ -174,6 +172,17 @@ phone, web and Tizen, because a password is not a preference — it is the crede
 had to type once, and the TV is where many of this household's viewers actually sit. This is the one part
 of the phase that is not phone/web-only, and it is why the photo and the password ended up on different
 screens rather than one.
+
+> **Amended 2026-10-19 (DEB-1854): for a local account only.** An account whose Jellyfin authentication provider is
+> not Jellyfin's own (the LDAP plugin, for one) cannot have its password changed through Jellyfin. For such an account:
+> - **phone, web and desktop:** the *Change password* row opens the installation's configured password page in the
+>   browser, with an external-link glyph and one subtitle line. With no page configured, the row is replaced by one
+>   non-interactive line;
+> - **TV:** no row and no line (owner, DEB-1854 Q1). That is FR-R234-2's rule applied to the password, and the D-pad
+>   chain closes over the gap.
+>
+> A local account keeps everything this requirement says, on every platform. Owner, DEB-1854 Q4: the form stays
+> for good. Full rule: `a-password-managed-elsewhere-is-changed-there.md` FR-5 to FR-7.
 
 **FR-R234-5 — Three fields, and the server decides.** Current password, new password, repeat new
 password. The client checks only what it can honestly check — a missing current password, a new password
