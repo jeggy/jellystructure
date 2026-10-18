@@ -1665,8 +1665,8 @@ class Scanner(
         tmdb.getTranslationLanguages(tmdbId, isMovie)
 
     /** Phase 184 (FR-184-4) — the picker's coverage list; see [dev.jellystructure.tmdb.TmdbClient.getTranslationCoverage]. */
-    suspend fun translationCoverage(tmdbId: Int, isMovie: Boolean): List<dev.jellystructure.tmdb.TmdbLanguageCoverage> =
-        tmdb.getTranslationCoverage(tmdbId, isMovie)
+    suspend fun translationCoverage(tmdbId: Int, isMovie: Boolean, language: String? = null): List<dev.jellystructure.tmdb.TmdbLanguageCoverage> =
+        tmdb.getTranslationCoverage(tmdbId, isMovie, language)
 
     suspend fun searchMovieTmdb(query: String, year: Int?) =
         tmdb.searchMovieAll(query, year)

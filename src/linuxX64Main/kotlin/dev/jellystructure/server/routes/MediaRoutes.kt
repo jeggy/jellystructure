@@ -772,7 +772,8 @@ fun Route.mediaRoutes(
                         else -> false
                     }
                     val images = item.tmdbId?.let { tid ->
-                        if (item.kind == MediaKind.MOVIE) tmdbClient.getMovieImages(tid) else tmdbClient.getTvImages(tid)
+                        val lang = dev.jellystructure.tmdb.imageLanguageFor(item.metadataLanguage, item.resolvedLanguage)
+                        if (item.kind == MediaKind.MOVIE) tmdbClient.getMovieImages(tid, lang) else tmdbClient.getTvImages(tid, lang)
                     }
                     val list = when (asset) {
                         "poster" -> images?.posters
@@ -1620,7 +1621,7 @@ fun Route.mediaRoutes(
                 call.respond(emptyList<dev.jellystructure.tmdb.TmdbLanguageCoverage>())
                 return@get
             }
-            val coverage = scanner.translationCoverage(tmdbId, item.kind == MediaKind.MOVIE)
+            val coverage = scanner.translationCoverage(tmdbId, item.kind == MediaKind.MOVIE, dev.jellystructure.tmdb.imageLanguageFor(item.metadataLanguage, item.resolvedLanguage))
             call.respond(coverage)
         }
 

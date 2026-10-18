@@ -208,8 +208,9 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         if (!logoExists) {
             val tid = item.tmdbId
             if (tid != null) {
+                val imageLang = dev.jellystructure.tmdb.imageLanguageFor(item.metadataLanguage, item.resolvedLanguage)
                 val images = runCatching {
-                    if (item.kind == MediaKind.TV_SHOW) tmdbClient.getTvImages(tid) else tmdbClient.getMovieImages(tid)
+                    if (item.kind == MediaKind.TV_SHOW) tmdbClient.getTvImages(tid, imageLang) else tmdbClient.getMovieImages(tid, imageLang)
                 }.getOrNull()
                 val candidates = images?.logos.orEmpty()
                 val tier = candidates.filter { it.languageCode == item.resolvedLanguage }

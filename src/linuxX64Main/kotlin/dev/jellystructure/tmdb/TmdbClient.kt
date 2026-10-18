@@ -523,6 +523,15 @@ data class TmdbContentRatingsResponse(val results: List<TmdbContentRatingEntry> 
 /** Phase 269 (FR-269-3) — TMDB recommendation pages kept per title (20 each; owner: "the more the better"). */
 const val RECOMMENDATION_PAGES = 3
 
+/** DEB-1681 — the ISO 639-1 two-letter form of a language tag (`pt-BR` → `pt`), or null when it has none. */
+internal fun imageLanguageCode(tag: String?): String? =
+    tag?.trim()?.substringBefore('-')?.substringBefore('_')?.lowercase()
+        ?.takeIf { it.length == 2 && it.all { c -> c in 'a'..'z' } }
+
+/** DEB-1681 — the language an item's TMDB images are scoped to: `metadataLanguage ?: resolvedLanguage`. */
+fun imageLanguageFor(metadataLanguage: String?, resolvedLanguage: String?): String? =
+    imageLanguageCode(metadataLanguage) ?: imageLanguageCode(resolvedLanguage)
+
 class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
@@ -904,7 +913,7 @@ class TmdbClient(
      * makes (`/translations` + the original-language backfill) plus the images call the Artwork tab
      * already fetches for per-language poster counts — no third TMDB endpoint invented for this.
      */
-    suspend fun getTranslationCoverage(tmdbId: Int, isMovie: Boolean): List<TmdbLanguageCoverage> {
+    suspend fun getTranslationCoverage(tmdbId: Int, isMovie: Boolean, language: String? = null): List<TmdbLanguageCoverage> {
         val key = apiKey()
         if (key.isBlank()) return emptyList()
         val originalLang: String? = runCatching {
@@ -917,7 +926,9 @@ class TmdbClient(
                 .body<TmdbTranslationsResponse>().translations.filter { it.languageCode.isNotBlank() }
         }.getOrElse { emptyList() }
 
-        val images = if (isMovie) getMovieImages(tmdbId) else getTvImages(tmdbId)
+        // DEB-1681: scoped to the original language and the item's own, so a count survives an empty
+        // unfiltered answer.
+        val images = getTitleImages(if (isMovie) "movie/$tmdbId" else "tv/$tmdbId", listOfNotNull(originalLang, language))
         val posterCounts = images?.posters.orEmpty()
             .mapNotNull { it.languageCode }
             .groupingBy { it }.eachCount()
@@ -1104,12 +1115,13 @@ class TmdbClient(
 
     // --- Phase 47: image candidate galleries. No `language` param so TMDB returns every
     // available image across all languages, including textless (iso_639_1 = null). ---
-    private suspend fun getImages(path: String): TmdbImagesResponse? {
+    private suspend fun getImages(path: String, includeImageLanguage: String? = null): TmdbImagesResponse? {
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
             val response = httpGet("$baseUrl/$path/images") {
                 parameter("api_key", key)
+                if (includeImageLanguage != null) parameter("include_image_language", includeImageLanguage)
             }
             if (response.status.value == 404) return null
             response.body<TmdbImagesResponse>()
@@ -1118,8 +1130,32 @@ class TmdbClient(
         return result.getOrNull()
     }
 
-    suspend fun getMovieImages(tmdbId: Int): TmdbImagesResponse? = getImages("movie/$tmdbId")
-    suspend fun getTvImages(tmdbId: Int): TmdbImagesResponse? = getImages("tv/$tmdbId")
+    /**
+     * DEB-1681 (FR-184-5, FR-192-4) — a title's image gallery: the unfiltered `/images` answer (every
+     * language, so the gallery's chips stay as they were) UNIONED with a scoped one,
+     * `include_image_language=<languages>,null`. TMDB's unfiltered answer is sometimes EMPTY for a small
+     * title that answers every scoped request, which blinded the Artwork tab, the automatic clearlogo
+     * pick and the picker's poster counts at once. Deduplicated by `file_path`, unfiltered entries first.
+     * Null only when neither request produced a body.
+     */
+    private suspend fun getTitleImages(path: String, languages: List<String>): TmdbImagesResponse? {
+        val unfiltered = getImages(path)
+        val scoped = getImages(path, (languages.mapNotNull { imageLanguageCode(it) }.distinct() + "null").joinToString(","))
+        if (unfiltered == null) return scoped
+        if (scoped == null) return unfiltered
+        return TmdbImagesResponse(
+            posters = (unfiltered.posters + scoped.posters).distinctBy { it.filePath },
+            backdrops = (unfiltered.backdrops + scoped.backdrops).distinctBy { it.filePath },
+            logos = (unfiltered.logos + scoped.logos).distinctBy { it.filePath },
+            stills = (unfiltered.stills + scoped.stills).distinctBy { it.filePath },
+        )
+    }
+
+    /** The language a title's images are scoped to: the operator's choice, else the resolved one. */
+    suspend fun getMovieImages(tmdbId: Int, language: String? = null): TmdbImagesResponse? =
+        getTitleImages("movie/$tmdbId", listOfNotNull(language))
+    suspend fun getTvImages(tmdbId: Int, language: String? = null): TmdbImagesResponse? =
+        getTitleImages("tv/$tmdbId", listOfNotNull(language))
 
     // --- TMDB keywords → non-JS tags. Not language-localized; returns canonical names. ---
     /**
