@@ -534,7 +534,8 @@ fun main() = runBlocking {
         while (true) {
             kotlinx.coroutines.delay(60_000)
             runCatching {
-                if (!dev.jellystructure.tv.isPlaybackActive()) fileFix.nextToQueue(mediaJobQueue.fileFixJobActive())?.let { row ->
+                // FR-262-1 — the queue's own rule (the row asks to wait; the household switch is read live), not playback alone.
+                if (!dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())) fileFix.nextToQueue(mediaJobQueue.fileFixJobActive())?.let { row ->
                     mediaJobQueue.enqueueFileFix(row.media_id, "Make file play directly · ${row.label}", row.path, row.kind)
                 }
             }.onFailure { Logger.warn("file fix: queue tick failed: ${it.message} (314)", "jobs") }

@@ -663,7 +663,7 @@ class MediaJobQueue(
             val next = if (holding) queries.nextQueuedNotDeferred(lane).executeAsOneOrNull() else queries.nextQueued(lane).executeAsOneOrNull()
             // Phase 295 (FR-295-2) — a row that just stopped for playback waits while playback goes on; its lane waits
             // with it (FIFO), and the worker sleeps instead of spinning.
-            if (next != null && parking.holds(next.id, dev.jellystructure.tv.isPlaybackActive())) continue
+            if (next != null && parking.holds(next.id, holding)) continue
             next?.let { candidates += it }
         }
         for (chosen in candidates.sortedBy { it.created_at }) {

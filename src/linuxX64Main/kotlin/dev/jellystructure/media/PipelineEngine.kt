@@ -153,6 +153,12 @@ private suspend fun awaitPlaybackClear(stillDefers: () -> Boolean, jobId: String
     }
 }
 
+/** FR-262-1/FR-262-2 — the params of a detect_segments row the pipeline enqueues: the row only says "this is
+ *  background work" (`deferWhilePlaying = true`, like the sweeps and the pre-warm); whether it waits is the claim's
+ *  decision, reading `scan.defer_while_playing` live. Never the switch's value at run start. */
+internal fun segmentJobParams(season: Int? = null): dev.jellystructure.jobs.MediaJobParams =
+    dev.jellystructure.jobs.MediaJobParams(segmentSeason = season, deferWhilePlaying = true)
+
 fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
     rawPipeline(cfg).filter { !(it.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfg.music.fetchLyrics) }  // Phase 277 (FR-277-8)
         // Phase 274 (FR-274-1) — no Seerr, no step: absent from runs and from the pre-run dialog, never greyed.
@@ -698,13 +704,11 @@ suspend fun runPipeline(
                     if (scanTracker.stepStopRequested) break
                     when (item.kind) {
                         dev.jellystructure.model.MediaKind.MOVIE -> {
-                            // Phase 178 §FR-178-2 — deferWhilePlaying mirrors this run's own deferEligible:
-                            // a scheduled/event-driven pipeline's detect_segments jobs defer while a TV
-                            // plays; an operator's own pipeline run (or the segment editor's "detect
-                            // again", which never goes through this enqueue path at all) never does.
+                            // FR-262-1 — the row says "this is background work"; the claim reads the household
+                            // switch live. (The segment editor's "detect again" never goes through this path.)
                             val result = mediaJobQueue.enqueueSegments(
                                 "segments_movie", item.id, item.title,
-                                dev.jellystructure.jobs.MediaJobParams(deferWhilePlaying = deferEligible), 1, "seg:movie:${item.id}",
+                                segmentJobParams(), 1, "seg:movie:${item.id}",
                             )
                             if (result.deduped) deduped++ else enqueued++
                         }
@@ -717,7 +721,7 @@ suspend fun runPipeline(
                                     }) continue
                                 val result = mediaJobQueue.enqueueSegments(
                                     "segments_season", item.id, "${item.title} S${season.toString().padStart(2, '0')}",
-                                    dev.jellystructure.jobs.MediaJobParams(segmentSeason = season, deferWhilePlaying = deferEligible), eps.size,
+                                    segmentJobParams(season), eps.size,
                                     "seg:season:${item.id}:$season",
                                 )
                                 if (result.deduped) deduped++ else enqueued++

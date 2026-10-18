@@ -235,9 +235,9 @@ class BazarrSteering(
     private fun budgetLeft(): Boolean = q.downloadsSince(midnight()).executeAsOne() < mode().dailyDownloadBudget
 
     /** FR-273-12 — Bazarr's sync, told which reference, how far and whether to fix the speed; then re-checked.
-     *  The loop waits while a TV plays; a press on a fix button goes ahead (302, amended 2026-10-11). */
+     *  The loop waits while a TV plays and the household switch is on (FR-262-1); a press on a fix button goes ahead (302, amended 2026-10-11). */
     private suspend fun sync(cfg: BazarrConfig, item: MediaItem, t: Target, r: Subtitle_check, manual: Boolean = false): Boolean {
-        if (!manual && dev.jellystructure.tv.isPlaybackActive()) { later(item.id, r.video_path); return false }
+        if (!manual && dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())) { later(item.id, r.video_path); return false }
         val reference = syncReference(t, r)
         val maxOffset = MAX_OFFSETS.firstOrNull { it > abs(r.shift_ms ?: 0) / 1000 + 10 } ?: MAX_OFFSETS.last()
         val (type, id) = when (t) { is Target.Ep -> "episode" to t.episode.sonarrEpisodeId; is Target.Film -> "movie" to t.movie.radarrId }
