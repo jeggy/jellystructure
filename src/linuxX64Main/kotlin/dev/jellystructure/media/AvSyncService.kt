@@ -448,6 +448,9 @@ class AvSyncService(
 
     /** FR-317-39 — the sidecar's 422: nothing in this file could be decoded at any window asked for. */
     class AvSyncUndecodable(message: String) : Exception(message)
+
+    /** FR-164-5 — the job was cancelled while a measurement was in flight: nothing was stored. */
+    class AvSyncCancelled : Exception("cancelled")
     class AvSyncBusy(val retryAfterS: Int) : Exception("the sidecar is already measuring a file")
 
     /** FR-317-36 — the sidecar's `error_kind: "vram"`: this file was not measured and a row says so. */
@@ -668,8 +671,8 @@ class AvSyncService(
      * while the GPU was reading it stores nothing (255's rule) — a half-copied file would otherwise be
      * recorded as a finding under a stamp that no longer describes it.
      */
-    suspend fun check(item: MediaItem, path: String): Result<AvSyncReading> {
-        val result = checkOnce(item, path)
+    suspend fun check(item: MediaItem, path: String, isCancelled: () -> Boolean = { false }): Result<AvSyncReading> {
+        val result = checkOnce(item, path, isCancelled)
         // FR-317-31 — the kept probe answers belong to this claim run, and only a busy sidecar brings the
         // same row back to it. Anything else ends their life: the row is done, and holding them past it
         // would quietly defeat FR-317-23's ↻ retry, whose whole purpose is to ask `mkvmerge` again about
@@ -679,7 +682,7 @@ class AvSyncService(
     }
 
     /** FR-317-31 — one attempt. The memo above outlives it; everything else here does not. */
-    private suspend fun checkOnce(item: MediaItem, path: String): Result<AvSyncReading> {
+    private suspend fun checkOnce(item: MediaItem, path: String, isCancelled: () -> Boolean): Result<AvSyncReading> {
         val before = FileIntegrityService.stampOf(path) ?: return Result.failure(AvSyncRefused("the file is no longer on disk"))
         // The row is stored under the sidecar's own model string (FR-317-7), so ask once if we have never
         // been told it — a row written under [PENDING_MODEL] would be measured all over again next pass.
@@ -691,6 +694,7 @@ class AvSyncService(
         // Only the probe's own answer is kept; the fallback reads the [MediaItem] already in memory.
         val runtimeS = probed.value ?: knownRuntimeS(item, path)
         skipReason(item, path, runtimeS)?.let { reason ->
+            if (isCancelled()) return Result.failure(AvSyncCancelled())
             storeSkip(path, reason)
             return Result.success(AvSyncVerdict.of(emptyList(), zeroFrames(), runtimeS, reason))
         }
@@ -708,6 +712,8 @@ class AvSyncService(
 
         val first = windowsFor(runtimeS, AvSyncVerdict.PASS_FRACTIONS[0], emptyList())
         var windows = measure(path, audio, others, first).getOrElse {
+            // FR-164-5 — the request in flight was allowed to finish; what it answered is not written.
+            if (isCancelled()) return Result.failure(AvSyncCancelled())
             // FR-317-36 — the one failure that stores a row instead of failing the job. Only the first
             // triple: a `vram` refusal of a later triple leaves the windows already measured standing,
             // which is an answer, and the later passes are read with `getOrNull` already.
@@ -726,6 +732,7 @@ class AvSyncService(
         // one card per triple, a file that never reads costs ~20 s.
         val requested = first.map { it.startS }.toMutableList()
         for (pass in 1 until AvSyncVerdict.PASSES_MAX) {
+            if (isCancelled()) break
             if (!AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) break
             val next = windowsFor(runtimeS, AvSyncVerdict.PASS_FRACTIONS[pass], requested)
             if (next.isEmpty()) break
@@ -733,6 +740,7 @@ class AvSyncService(
             requested += next.map { it.startS }
             windows = MeasureResponse(windows.windows + more.windows, more.others.ifEmpty { windows.others }, more.decode, windows.seconds + more.seconds)
         }
+        if (isCancelled()) return Result.failure(AvSyncCancelled())
         val after = FileIntegrityService.stampOf(path) ?: return Result.failure(AvSyncRefused("the file is no longer on disk"))
         if (after.size != before.size || after.mtime != before.mtime) {
             return Result.failure(AvSyncRefused("the file changed while it was being measured — it will be measured again"))

@@ -382,9 +382,9 @@ class MediaJobQueue(
     /** Cancels a queued job outright, or best-effort stops a running one. The media queue kills its
      *  ffmpeg child by matching its unique temp output path in the process list (see class doc on why
      *  that's simpler/safer than tracking a PID through a nested shell/nice/ionice invocation). The
-     *  segments/subtitles queues have no such child to kill (their ffmpeg/fpcalc/HTTP calls only ever
-     *  READ the source file) — cancellation there is cooperative (FR-164-5/Phase 213): the job stops
-     *  after the unit of work currently in flight, not instantly. Returns false if the job wasn't
+     *  segments/subtitles/avsync lanes have no such child to kill (their ffmpeg/fpcalc/HTTP calls only
+     *  ever READ the source file) — cancellation there is cooperative (FR-164-5/Phase 213, FR-317-8):
+     *  the job stops after the unit of work currently in flight, not instantly. Returns false if the job wasn't
      *  cancellable. */
     suspend fun cancel(jobId: String): Boolean {
         val row = queries.findById(jobId).executeAsOneOrNull() ?: return false
@@ -395,7 +395,11 @@ class MediaJobQueue(
                 true
             }
             "running" -> {
-                if (row.lane == "segments" || row.lane == "subtitles") {
+                // FR-164-5 / FR-317-8 — the media lane is the ONLY one whose running row has a temp output to
+                // kill and a `cancelRunning` flag the next media job would inherit. An allow-list on `media`,
+                // not a deny-list of the other lanes: a lane added later is cooperative by default and cannot
+                // pkill a real remux or poison the next media edit (DEB-1673).
+                if (row.lane != "media") {
                     cooperativeCancelledIds = cooperativeCancelledIds + jobId
                     return true
                 }
@@ -411,7 +415,7 @@ class MediaJobQueue(
                 // correctly), THEN shell-quote the result for the single-quoted context.
                 if (tmp != null) {
                     val ereEscaped = tmp.replace(Regex("""([.^$*+?()\[\]{}|\\])"""), """\\$1""")
-                    fireAndForget("pkill -f '${ereEscaped.replace("'", "'\\''")}'")
+                    shellFireAndForget("pkill -f '${ereEscaped.replace("'", "'\\''")}'")
                 }
                 true
             }
@@ -958,9 +962,11 @@ class MediaJobQueue(
             FileCheckSchedule.AVSYNC_JOB -> {
                 val service = avSync ?: return Failure("A/V sync service not available")
                 val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
-                val result = service.check(item, path)
+                val result = service.check(item, path, isCancelled)
                 result.exceptionOrNull()?.let { e ->
-                    if (e is AvSyncService.AvSyncBusy) return avSyncBusyAnswer(row, service, e)
+                    // FR-164-5 — cooperative: the request in flight finished, nothing was stored, the row ends here.
+                    if (e is AvSyncService.AvSyncCancelled) return Cancelled()
+                    if (e is AvSyncService.AvSyncBusy) return avSyncBusyAnswer(row, service, e, isCancelled)
                     return Failure(e.message ?: "the A/V sync measurement failed")
                 }
             }
@@ -986,7 +992,7 @@ class MediaJobQueue(
      * deliberately not built (FR-317-29): a lane that switches itself off is a second silent state, and
      * this amendment exists to remove one.
      */
-    private suspend fun avSyncBusyAnswer(row: Media_job, service: AvSyncService, busy: AvSyncService.AvSyncBusy): Outcome {
+    private suspend fun avSyncBusyAnswer(row: Media_job, service: AvSyncService, busy: AvSyncService.AvSyncBusy, isCancelled: () -> Boolean): Outcome {
         val now = epochSeconds()
         val (previous, since) = avSyncBusyRun[row.id] ?: (0 to now)
         val consecutive = previous + 1
@@ -1001,6 +1007,9 @@ class MediaJobQueue(
         // Nothing else on this lane may run meanwhile — it is one worker and one GPU — so waiting here,
         // rather than spinning through a requeue, is what "busy" should cost.
         delay(busy.retryAfterS.coerceIn(1, 120) * 1000L)
+        // A cancel that arrived during the wait: [runClaimed] drops the id on every outcome, so a requeue here
+        // would lose it and the row would be measured after all.
+        if (isCancelled()) return Cancelled()
         return Requeue(inPlace = true, reason = "the sidecar was measuring another file ($consecutive/${AvSyncBusyGiveUp.AFTER})")
     }
 
@@ -1541,6 +1550,12 @@ class MediaJobQueue(
         filesDone = row.files_done.toInt(), pct = row.pct, speed = row.speed, etaSeconds = row.eta_seconds,
         lane = row.lane,
     )
+
+    /** Test seam (DEB-1673): the one place [cancel] reaches a shell, so a test can prove which lanes never do. */
+    internal var shellFireAndForget: (String) -> Unit = { fireAndForget(it) }
+
+    /** Test seam (DEB-1673): is a media-lane cancel pending for the NEXT media job to trip over? */
+    internal fun mediaCancelPending(): Boolean = cancelRunning
 
     @OptIn(ExperimentalForeignApi::class)
     private fun fireAndForget(cmd: String) {
