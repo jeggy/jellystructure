@@ -95,6 +95,11 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <label>TMDB API key (v3) <span id="tmdb-key-badge" style="display:none;margin-left:8px"></span></label>
                 <input id="tmdb-key" class="input" type="password" placeholder="(unchanged)" style="width:100%">
               </div>
+              <div class="field">
+                <label>Password page for accounts managed outside Jellyfin</label>
+                <input id="pw-change-url" class="input mono" type="url" placeholder="https://" style="width:100%">
+                <span class="hint" id="pw-change-hint">Optional. Where an account whose password Jellyfin does not keep changes it. Ravilo on a phone, in a browser or on a computer opens it in the browser.</span>
+              </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
             </div>
 
@@ -1013,6 +1018,8 @@ private fun populateForm(response: ConfigResponse) {
     // admin saves — the reachability check never trusts it (FR-218-5).
     // Phase 227 — the root key; an old response may still carry the nested one (pre-migration server).
     setInputValue("pub-url", config.publicUrl.ifBlank { cc?.publicUrl.orEmpty() })
+    setInputValue("pw-change-url", config.passwordChangeUrl)   // DEB-1854 (FR-4)
+    renderPasswordChangeHint()
     renderPublicAddress()
     (document.getElementById("cc-max") as? HTMLElement)?.textContent = ccMaxSessions.toString()
     renderChromecastState()
@@ -1360,6 +1367,10 @@ private fun attachListeners(scope: CoroutineScope) {
                 !providersOk -> "Saved, except the Metadata providers — couldn't save those."
                 else -> "Saved."
             }, ok && providersOk)
+            if (result.field == "password_change_url") {
+                (document.getElementById("pw-change-hint") as? HTMLElement)?.innerHTML =
+                    """<span style="color:var(--bad)">${(result.error ?: "That does not look like a web address").esc()}</span>"""
+            }
             if (result.field == "scan_schedule") {
                 pipeCronValid = false
                 (document.getElementById("pipe-cron-check") as? HTMLElement)?.innerHTML =
@@ -1908,6 +1919,7 @@ private fun readForm(): AppConfig = AppConfig(
         maxSessions = ccMaxSessions,
     ) else null,
     publicUrl = getInputValue("pub-url").trim().trimEnd('/'),   // Phase 227 — root, not inside [chromecast]
+    passwordChangeUrl = getInputValue("pw-change-url").trim(),   // DEB-1854 (FR-4)
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
@@ -3629,6 +3641,10 @@ private fun wireChromecast(scope: CoroutineScope) {
         renderChromecastStatus(lastStatus, lastReach)
         refreshTomlPreview(readForm())
     }
+    document.getElementById("pw-change-url")?.addEventListener("input") {
+        renderPasswordChangeHint()
+        refreshTomlPreview(readForm())
+    }
     document.getElementById("pub-url")?.addEventListener("input") {
         lastReach = null
         (document.getElementById("pub-reach") as? HTMLElement)?.innerHTML = ""
@@ -3702,6 +3718,14 @@ private fun publicUrlProblem(): String? = dev.jellystructure.model.PublicUrl.pro
 
 /** FR-227-4 — the one derivation, rendered client-side: `null` when unset or invalid. */
 private fun publicReceiverUrl(): String? = dev.jellystructure.model.PublicUrl.receiverUrl(getInputValue("pub-url"))
+
+/** DEB-1854 (FR-4) — `PasswordChangeUrl.problem` is commonMain, the function the server's 400 uses; the server stays the authority. */
+private fun renderPasswordChangeHint() {
+    val hint = document.getElementById("pw-change-hint") as? HTMLElement ?: return
+    val problem = dev.jellystructure.model.PasswordChangeUrl.problem(getInputValue("pw-change-url"))
+    hint.innerHTML = if (problem != null) """<span style="color:var(--bad)">${problem.esc()}</span>"""
+    else "Optional. Where an account whose password Jellyfin does not keep changes it. Ravilo on a phone, in a browser or on a computer opens it in the browser."
+}
 
 private fun flashCopied(buttonId: String) {
     val b = document.getElementById(buttonId) as? HTMLElement ?: return

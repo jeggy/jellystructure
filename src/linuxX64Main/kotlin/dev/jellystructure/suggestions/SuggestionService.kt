@@ -290,7 +290,7 @@ class SuggestionService(
                 runtime = d?.runtime?.takeIf { it > 0 }, cert = cert, age = cert?.let { ageMap[it] }, synopsis = (d?.overview ?: m?.overview)?.takeIf { it.isNotBlank() },
                 poster = d?.posterPath ?: m?.posterPath, backdrop = d?.backdropPath ?: m?.backdropPath, releaseDate = d?.releaseDate ?: m?.releaseDate,
                 genreIds = c.genreIds.ifEmpty { d?.genres.orEmpty().mapNotNull { it.id } }, keywordIds = d?.keywords.orEmpty().map { it.id },
-                because = p.scored.because.map { SuggestionBecause(it.viewer, it.verb, it.titles) }, viewers = p.scored.viewers,
+                because = p.scored.because.map { SuggestionBecause(it.viewer, it.verb, it.titles, viewerId = it.userId) }, viewers = p.scored.viewers,
                 franchiseOf = p.franchiseOf, fresh = SuggestionEngine.fresh(c, thisYear), shown = shown, sources = p.scored.sources, score = p.scored.score,
             )
         }
@@ -566,7 +566,7 @@ class SuggestionService(
     suspend fun dismiss(tmdbId: Int, reason: String, note: String?, who: String): SuggestionActionResult {
         if (reason !in REASONS) return SuggestionActionResult(false, "Unknown reason")
         val (item, _) = storedItem(tmdbId) ?: return SuggestionActionResult(false, "That film isn't in the list any more")
-        val forUser = item.because.firstOrNull()?.viewer?.let { name -> recommendations?.viewers()?.firstOrNull { it.jellyfinUsername == name }?.jellyfinUserId }
+        val forUser = item.because.firstOrNull()?.let { b -> viewerIdFor(b, recommendations?.viewers().orEmpty().map { it.jellyfinUserId to it.jellyfinUsername }) }
         db.suggestionsQueries.putDismissal(tmdbId.toLong(), item.title, item.year?.toLong(), reason, note?.trim()?.takeIf { it.isNotEmpty() }, who, nowSec(), 0L,
             item.sources.joinToString("|"), forUser)
         val s = seerr()
@@ -629,6 +629,13 @@ class SuggestionService(
     }
 
     companion object {
+        /**
+         * DEB-1854 (FR-9) — the viewer a stored *because* line names: by user id where it carries one (a rename in
+         * Jellyfin must not orphan it), else by the name as it was written, over [viewers] (id to current name).
+         */
+        fun viewerIdFor(because: SuggestionBecause, viewers: List<Pair<String, String>>): String? =
+            because.viewerId?.takeIf { it.isNotBlank() } ?: viewers.firstOrNull { it.second == because.viewer }?.first
+
         /** The process's one instance, for the pipeline step. Set by Main. */
         var current: SuggestionService? = null
         const val SOURCE_AI = "ai"

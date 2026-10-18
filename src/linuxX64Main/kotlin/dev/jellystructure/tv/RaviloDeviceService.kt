@@ -404,6 +404,26 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         return changes
     }
 
+    /**
+     * DEB-1854 (FR-3) — whose password Jellyfin does not keep. Held in memory per user, written at sign-in and by every
+     * reconciler pass, never sent to Jellyfin; an unknown user reads as local, and the pass that follows a restart
+     * refills it within a minute.
+     */
+    val passwordManagement = PasswordManagement()
+
+    /**
+     * DEB-1854 (FR-9) — make every row of [jellyfinUserId] carry [name], the account's name in Jellyfin now. True when
+     * a row moved, in which case its tokens are evicted from [tokenCache] (the cached `DeviceData` holds the old name).
+     */
+    fun refreshUsername(jellyfinUserId: String, name: String): Boolean {
+        if (name.isBlank()) return false
+        val rows = listByUser(jellyfinUserId)
+        if (rows.none { it.jellyfinUsername != name }) return false
+        db.raviloDeviceQueries.updateUsername(jellyfin_username = name, jellyfin_user_id = jellyfinUserId)
+        rows.forEach { tokenCache.remove(it.deviceToken) }
+        return true
+    }
+
     /** Lists all users currently signed in on [deviceId]. */
     fun listSessions(deviceId: String): List<DeviceData> =
         db.raviloDeviceQueries.getByDevice(deviceId).executeAsList().map { row ->

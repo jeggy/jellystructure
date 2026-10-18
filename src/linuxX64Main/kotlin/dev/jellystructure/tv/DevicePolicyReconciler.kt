@@ -19,6 +19,9 @@ import kotlinx.coroutines.sync.withLock
  * for a failure — never an empty list, which would be indistinguishable from "no users" — and a user
  * missing from a successful answer is skipped, never widened and never narrowed.
  *
+ * DEB-1854 rides the same pass: the account's authentication provider (is its password kept elsewhere?) and its live
+ * name are taken from the same `/Users` answer, and a change of either pushes `config_changed`.
+ *
  * Runs at backend start, every five minutes, and on an events-socket connect when that user's last pass
  * is older than 60 s ([reconcileOnConnect]) — a TV that just woke up gets today's policy before its first
  * Home fetch. One mutex: connect storms coalesce on one fetch rather than one per device.
@@ -29,13 +32,19 @@ class DevicePolicyReconciler(
     private val fetchUsers: suspend () -> List<JellyfinUser>?,
     /** R248's `home_changed` for one user, sent only after a rewrite that changed something. */
     private val onPolicyChanged: (jellyfinUserId: String) -> Unit,
+    /** DEB-1854 (FR-3, FR-9) — `config_changed` for one user, sent when the provider answer or the account's name moved. */
+    private val onConfigChanged: (jellyfinUserId: String) -> Unit = {},
     private val clock: () -> Long = ::epochMs,
 ) {
     private val mutex = Mutex()
     private val lastPassForUser = HashMap<String, Long>()
 
     /** Outcome of one pass, for the log line and the tests: `null` when the fetch failed. */
-    data class Pass(val usersSeen: Int, val usersSkipped: Int, val changes: List<PolicyChange>)
+    data class Pass(
+        val usersSeen: Int, val usersSkipped: Int, val changes: List<PolicyChange>,
+        /** DEB-1854 — users whose "password managed elsewhere" answer moved, and users whose name did. */
+        val providerChanges: List<String> = emptyList(), val renames: List<String> = emptyList(),
+    )
 
     /** FR-258-2 — the start and interval trigger: every user with a row. */
     suspend fun reconcileAll(trigger: String): Pass? = mutex.withLock { pass(trigger) }
@@ -66,12 +75,26 @@ class DevicePolicyReconciler(
         val userIds = deviceService.allDevices().map { it.jellyfinUserId }.distinct()
         val now = clock()
         val all = ArrayList<PolicyChange>()
+        val providerChanges = ArrayList<String>()
+        val renames = ArrayList<String>()
         var skipped = 0
         for (uid in userIds) {
             val user = byId[uid]
             if (user == null) { skipped++; continue }   // FR-258-3 — absent is not "unrestricted" and not "gone"
             val changes = deviceService.refreshPolicy(uid, DevicePolicy.of(user.policy), now)
             lastPassForUser[uid] = now
+            // DEB-1854 (FR-3/FR-9) — the same /Users answer carries the provider and the live name; no extra call.
+            val providerMoved = deviceService.passwordManagement.record(uid, user.policy.passwordManagedElsewhere)
+            val renamed = deviceService.refreshUsername(uid, user.name)
+            if (providerMoved) {
+                providerChanges += uid
+                Logger.info("Password management refreshed: user ${user.name}: managed elsewhere = ${user.policy.passwordManagedElsewhere}", "auth")
+            }
+            if (renamed) {
+                renames += uid
+                Logger.info("Username refreshed: user ${user.name}", "auth")
+            }
+            if (providerMoved || renamed) onConfigChanged(uid)
             if (changes.isEmpty()) continue
             // FR-258-7 — one line per (device, field) that changed; silence otherwise.
             for (c in changes) {
@@ -80,7 +103,7 @@ class DevicePolicyReconciler(
             all += changes
             onPolicyChanged(uid)   // FR-258-4 — an open Home re-fetches on the server's word
         }
-        return Pass(usersSeen = userIds.size - skipped, usersSkipped = skipped, changes = all)
+        return Pass(usersSeen = userIds.size - skipped, usersSkipped = skipped, changes = all, providerChanges = providerChanges, renames = renames)
     }
 
     companion object {

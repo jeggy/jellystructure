@@ -437,6 +437,19 @@ class JellyfinClient {
         }
     }
 
+    /**
+     * DEB-1854 (FR-8) — one account as Jellyfin has it now (`GET /Users/{id}`): `null` when Jellyfin was unreachable,
+     * answered non-2xx, or sent a body that is not a user — the password route then falls through to today's behaviour.
+     * Cancellation is rethrown (Phase 205's rule for this file).
+     */
+    suspend fun getUserOrNull(baseUrl: String, token: String, userId: String): JellyfinUser? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Users/${userId.encodeURLParameter()}") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinUser>("getUserOrNull")
+    }.let { r ->
+        r.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        r.getOrNull()
+    }
+
     suspend fun getUsers(baseUrl: String, token: String): List<JellyfinUser> =
         getUsersOrNull(baseUrl, token).orEmpty()
 

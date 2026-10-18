@@ -1238,6 +1238,9 @@ data class AccountPasswordResult(
     val ok: Boolean,
     @SerialName("wrong_current_password") val wrongCurrentPassword: Boolean = false,
     @SerialName("token_survived") val tokenSurvived: Boolean = true,
+    // DEB-1854 (FR-8) — the account's password is kept by a provider other than Jellyfin's own, so nothing was sent to
+    // Jellyfin. A client shows the link (or the one sentence) in place of the form. Omitted when false.
+    @SerialName("managed_elsewhere") val managedElsewhere: Boolean = false,
 )
 
 @Serializable
@@ -1352,6 +1355,13 @@ data class RaviloConfig(
     // (DEB-1273), and omitted at its default like [cast] and [screens]: no `support_enabled` key reads as false.
     // No @EncodeDefault — the server's Json omits defaults on purpose.
     @SerialName("support_enabled") val supportEnabled: Boolean = false,
+    // DEB-1854 (FR-5) — server-resolved per viewer on every read path, never stored, omitted at their defaults (no
+    // @EncodeDefault, like [supportEnabled]). True when Jellyfin's own provider does not keep this account's password:
+    // the apps then draw the link (or the one sentence) in place of the Change password form. An app that does not know
+    // the keys ignores them and keeps drawing the form.
+    @SerialName("password_managed_elsewhere") val passwordManagedElsewhere: Boolean = false,
+    // The installation's password page, sent only while [passwordManagedElsewhere] is true and only when it is an https URL.
+    @SerialName("password_change_url") val passwordChangeUrl: String? = null,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin

@@ -65,7 +65,17 @@ data class JellyfinPolicy(
     // not built here.
     @SerialName("AllowedTags") val allowedTags: List<String> = emptyList(),
     @SerialName("BlockedTags") val blockedTags: List<String> = emptyList(),
-)
+    // DEB-1854 (FR-2) — who checks this account's password. Nullable: an absent field and Jellyfin's own provider
+    // both read as local (see [passwordManagedElsewhere]), so a server that does not send it changes nothing.
+    @SerialName("AuthenticationProviderId") val authenticationProviderId: String? = null,
+) {
+    /** DEB-1854 (FR-2) — the password is kept by a provider other than Jellyfin's own. Names no plugin: any other id counts. */
+    val passwordManagedElsewhere: Boolean
+        get() = authenticationProviderId?.trim()?.let { it.isNotEmpty() && !it.equals(DEFAULT_AUTHENTICATION_PROVIDER_ID, ignoreCase = true) } ?: false
+}
+
+/** DEB-1854 (FR-1) — read from `Policy.AuthenticationProviderId` of every local account on the 12.1 server, 2026-10-19. */
+const val DEFAULT_AUTHENTICATION_PROVIDER_ID = "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider"
 
 @Serializable
 data class JellyfinUser(

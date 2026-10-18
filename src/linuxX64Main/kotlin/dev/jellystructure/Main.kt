@@ -241,6 +241,8 @@ fun main() = runBlocking {
             )
         },
         supportAvailable = { configStore.supportAvailable },   // 320 (FR-320-1)
+        passwordManagedFor = { userId -> raviloDeviceService.passwordManagement.isManagedElsewhere(userId) },   // DEB-1854 (FR-5)
+        passwordPage = { configStore.passwordChangeUrl },
     )
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     raviloConfigService.migrateThemeDefaults()             // R338 (FR-R338-6): one-time, idempotent — follow OFF on an existing server
@@ -699,6 +701,7 @@ fun main() = runBlocking {
             else jellyfinClient.getUsersOrNull(keys.jellyfinUrl, keys.jellyfinToken)
         },
         onPolicyChanged = { userId -> tvEventBus.notifyHomeChanged(userId) },
+        onConfigChanged = { userId -> tvEventBus.notifyConfigChanged(userId) },   // DEB-1854
     )
     rootScope.launch {
         runCatching { devicePolicyReconciler.reconcileAll("start") }

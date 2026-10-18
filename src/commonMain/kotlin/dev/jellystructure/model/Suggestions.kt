@@ -38,7 +38,13 @@ data class SuggestionViewerDto(val name: String, val finished: Int = 0)
 data class SuggestionClusterDto(val name: String, val shown: Int = 0, val more: Int = 0, val finished: Int = 0)
 
 @Serializable
-data class SuggestionBecause(val viewer: String, val verb: String, val titles: List<String> = emptyList())
+data class SuggestionBecause(
+    val viewer: String,
+    val verb: String,
+    val titles: List<String> = emptyList(),
+    /** DEB-1854 (FR-9) — the viewer's Jellyfin user id, stored beside the name: a rename must not orphan *No thanks*. Null on a row stored before. */
+    val viewerId: String? = null,
+)
 
 @Serializable
 data class SuggestionItemDto(

@@ -67,6 +67,11 @@ SET allowed_libraries = :allowed_libraries, allowed_tags = :allowed_tags, blocke
     is_admin = :is_admin, is_kids = :is_kids, policy_refreshed_at = :policy_refreshed_at
 WHERE jellyfin_user_id = :jellyfin_user_id;
 
+-- DEB-1854 (FR-9) — the LDAP plugin renames a Jellyfin account at sign-in, and this copy was written once at login;
+-- the reconciler rewrites it for every row of the user when /Users says the name moved.
+updateUsername:
+UPDATE ravilo_device SET jellyfin_username = :jellyfin_username WHERE jellyfin_user_id = :jellyfin_user_id AND jellyfin_username <> :jellyfin_username;
+
 -- Phase 258 (FR-258-6) — a pass that found every row already right still records that it looked.
 stampPolicyRefreshed:
 UPDATE ravilo_device SET policy_refreshed_at = :policy_refreshed_at WHERE jellyfin_user_id = :jellyfin_user_id;

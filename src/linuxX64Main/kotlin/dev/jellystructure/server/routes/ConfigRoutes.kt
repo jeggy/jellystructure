@@ -299,6 +299,12 @@ fun Route.configureConfigRoutes(
             call.respond(HttpStatusCode.BadRequest, mapOf("field" to "public_url", "error" to reason))
             return@put
         }
+        // DEB-1854 (FR-4) — same rule for the password page: refused on write, never on load.
+        dev.jellystructure.model.PasswordChangeUrl.problem(config.passwordChangeUrl)?.let { reason ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("field" to "password_change_url", "error" to reason))
+            return@put
+        }
+        config = config.copy(passwordChangeUrl = dev.jellystructure.model.PasswordChangeUrl.normalize(config.passwordChangeUrl))
         @Suppress("DEPRECATION")
         config = config.copy(
             publicUrl = dev.jellystructure.model.PublicUrl.normalize(config.publicUrl),
@@ -326,7 +332,7 @@ fun Route.configureConfigRoutes(
         if (ok) dev.jellystructure.ai.AiJobs.current?.configChanged()
         // Phase 218 (FR-218-3) — a changed chromecast block changes every client's resolved `cast`
         // capability, so push the same global-config event a layout save does; clients re-fetch /tv/config.
-        if (ok && (config.chromecast != stored.chromecast || config.publicUrl != stored.publicUrl)) tvEventBus?.notifyGlobalConfigChanged()
+        if (ok && (config.chromecast != stored.chromecast || config.publicUrl != stored.publicUrl || config.passwordChangeUrl != stored.passwordChangeUrl)) tvEventBus?.notifyGlobalConfigChanged()
         // Phase 274 (FR-274-7) — the first save that connects Seerr builds the suggestions once, in the background.
         val seerrOn = { c: dev.jellystructure.config.SeerrConfig? -> c != null && c.enabled && c.url.isNotBlank() && c.apiKey.isNotBlank() }
         if (ok && seerrOn(config.seerr) && !seerrOn(stored.seerr) && dev.jellystructure.suggestions.SuggestionService.current?.lastBuiltAt() == null) {

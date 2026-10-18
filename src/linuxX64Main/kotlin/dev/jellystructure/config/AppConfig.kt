@@ -27,6 +27,9 @@ data class AppConfig(
      *  installation with Chromecast off still has one. Never validated on load (a load that refuses one
      *  string is an outage); `PublicUrl.effective` is what consumers read. */
     @SerialName("public_url") val publicUrl: String = "",
+    /** DEB-1854 (FR-4) — where an account whose password Jellyfin does not keep changes it. Empty = not set; no default,
+     *  no example. Validated on a Settings save only; a client receives it through `PasswordChangeUrl.effective`. */
+    @SerialName("password_change_url") val passwordChangeUrl: String = "",
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),

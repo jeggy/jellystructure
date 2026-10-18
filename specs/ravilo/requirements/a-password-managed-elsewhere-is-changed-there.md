@@ -67,6 +67,10 @@ switched account `500` for a right `CurrentPw` and `403` for a wrong one. This i
 lesson: reading is not probing.
 - **Before building:** read the `Policy.AuthenticationProviderId` of a local account on the 12.1 server (`GET /Users`,
   read-only) and record it here. FR-2's rule depends on this id alone.
+  - **Recorded 2026-10-19 (DEB-1859):** `GET /Users` on the 12.1 server answers every one of its 10 accounts with
+    `Policy.AuthenticationProviderId = Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider` (and
+    `PasswordResetProviderId = …DefaultPasswordResetProvider`). That is the default id FR-2 compares against; the
+    compare is on the trimmed id, ignoring case.
 - **In the QA row:** on a throwaway account switched to the LDAP plugin (never a household account), record here
   the switched account's id, the two `POST /Users/Password` answers, and that `AuthenticateByName` still answers
   `401` for a wrong password. This needs the plugin on the server, which is the operator's setup and not part of

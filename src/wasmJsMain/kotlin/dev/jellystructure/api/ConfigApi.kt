@@ -173,6 +173,8 @@ data class AppConfig(
     val chromecast: ChromecastConfig? = null,
     /** Phase 227 — the installation's one public address (an https origin), at the root. */
     @SerialName("public_url") val publicUrl: String = "",
+    /** DEB-1854 (FR-4) — where an account whose password Jellyfin does not keep changes it; empty = not set. */
+    @SerialName("password_change_url") val passwordChangeUrl: String = "",
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),

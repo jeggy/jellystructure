@@ -71,6 +71,10 @@ class RaviloConfigService(
     // 320 (FR-320-1) — whether the support lane is available, resolved on every read path like [castCapability] and
     // never stored: a stale stored `true` must not draw an entry once the AI key is gone. Null = never.
     private val supportAvailable: (() -> Boolean)? = null,
+    // DEB-1854 (FR-5) — whether this viewer's password is kept by a provider other than Jellyfin's own, and the
+    // installation's password page (already filtered to an https URL). Resolved on every per-user read, never stored.
+    private val passwordManagedFor: ((userId: String) -> Boolean)? = null,
+    private val passwordPage: (() -> String?)? = null,
 ) {
 
     /**
@@ -111,7 +115,9 @@ class RaviloConfigService(
             skipIntro = resolved.skipIntro.value,
             skipCredits = resolved.skipCredits.value,
             skipSecs = resolved.skipSecs.value,
-        ).withResolvedFocusDetail().let { cfg -> screensCapability?.invoke(userId)?.let { cfg.copy(screens = it) } ?: cfg }
+        ).withResolvedFocusDetail()
+            .let { cfg -> screensCapability?.invoke(userId)?.let { cfg.copy(screens = it) } ?: cfg }
+            .withResolvedPasswordManagement(userId)
     }
 
     fun getGlobalConfig(): RaviloConfig {
@@ -126,6 +132,12 @@ class RaviloConfigService(
     /** FR-202-2 — never trust a stored/round-tripped `focus_detail` value; always recompute it from the
      *  two admin-side booleans before a config leaves the server, on every read path. */
     private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail(), cast = castCapability?.invoke(), supportEnabled = supportAvailable?.invoke() ?: false)
+
+    /** DEB-1854 (FR-5) — per viewer, so only the per-user read path calls it; the URL rides only with a `true`. */
+    private fun RaviloConfig.withResolvedPasswordManagement(userId: String): RaviloConfig {
+        val elsewhere = passwordManagedFor?.invoke(userId) ?: false
+        return copy(passwordManagedElsewhere = elsewhere, passwordChangeUrl = if (elsewhere) passwordPage?.invoke() else null)
+    }
 
     fun hasCustomConfig(userId: String): Boolean =
         userId != GLOBAL_USER_ID && db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() != null
@@ -167,6 +179,7 @@ class RaviloConfigService(
         // cast button after the admin switched Chromecast off).
         cast = null,
         supportEnabled = false,   // 320 — server-resolved on read, like cast
+        passwordManagedElsewhere = false, passwordChangeUrl = null,   // DEB-1854 — server-resolved on read, like cast
         // R338 — the viewer's resolved theme fields are written on every read, never stored; the global defaults are
         // kept only when they name a theme of the right kind, and default_skin follows default_theme as its mirror.
         theme = null, themeFollow = null, themeLight = null, themeDark = null,

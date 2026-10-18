@@ -386,6 +386,10 @@ fun Route.tvRoutes(
             return@post
         }
         dev.jellystructure.log.Logger.info("TV login succeeded for user '${authResult.user.name}' on device ${req.deviceId}", "auth")
+        // DEB-1854 (FR-3) — the provider answer comes from the sign-in's own User.Policy; other devices of this account follow.
+        if (deviceService.passwordManagement.record(authResult.user.id, authResult.user.policy.passwordManagedElsewhere)) {
+            tvEventBus?.notifyConfigChanged(authResult.user.id)
+        }
         val (device, deviceToken) = deviceService.loginDevice(
             deviceId = req.deviceId,
             deviceName = req.deviceName,
@@ -524,26 +528,28 @@ fun Route.tvRoutes(
         // FR-187-3 — Jellyfin validates the current password; jellystructure never does. The caller's
         // own device token IS a Jellyfin access token (Phase 141 login mints one per device/user), so it
         // is what's sent — never the shared admin token, and never re-authenticated as a side effect.
-        val outcome = jellyfinClient.updateUserPassword(
-            config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId,
-            req.currentPassword, req.newPassword,
-        )
-        when (outcome) {
-            dev.jellystructure.auth.PasswordChangeOutcome.WRONG_CURRENT ->
-                call.respond(HttpStatusCode.OK, dev.jellystructure.shared.tv.AccountPasswordResult(ok = false, wrongCurrentPassword = true))
-            dev.jellystructure.auth.PasswordChangeOutcome.FAILED ->
-                call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the change"))
-            dev.jellystructure.auth.PasswordChangeOutcome.OK -> {
-                // FR-187-8 — measured, not assumed: re-validate the very token this call used.
-                // Phase 194 — only an actual rejection means the password change killed the token. A
-                // transient failure here is not evidence it died, and reporting it as death would tell
-                // the viewer to sign in again on every device for no reason.
-                val survived = jellyfinClient.checkToken(
+        val result = dev.jellystructure.tv.AccountPassword.change(
+            // DEB-1854 (FR-8) — the account's provider, read live with the server token before anything is relayed.
+            readUser = { jellyfinClient.getUserOrNull(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, device.jellyfinUserId) },
+            onProvider = { managed -> if (deviceService.passwordManagement.record(device.jellyfinUserId, managed)) tvEventBus?.notifyConfigChanged(device.jellyfinUserId) },
+            relay = {
+                jellyfinClient.updateUserPassword(
+                    config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId,
+                    req.currentPassword, req.newPassword,
+                )
+            },
+            // FR-187-8 — measured, not assumed: re-validate the very token this call used.
+            // Phase 194 — only an actual rejection means the password change killed the token. A
+            // transient failure here is not evidence it died, and reporting it as death would tell
+            // the viewer to sign in again on every device for no reason.
+            tokenSurvived = {
+                jellyfinClient.checkToken(
                     config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId,
                 ).outcome != dev.jellystructure.auth.TokenCheck.REJECTED
-                call.respond(dev.jellystructure.shared.tv.AccountPasswordResult(ok = true, tokenSurvived = survived))
-            }
-        }
+            },
+        )
+        if (result == null) call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the change"))
+        else call.respond(HttpStatusCode.OK, result)
     }
 
     // ── Home feed ────────────────────────────────────────────────────────────
@@ -1050,6 +1056,7 @@ fun Route.tvRoutes(
         // Phase 187 (FR-187-9) — read-only photo per user row, same PrimaryImageTag cache-busting
         // shape as the client-facing routes above; one call, reused, not a per-row round trip.
         val jfAvatarTags = jfUsers.associate { it.id to it.primaryImageTag }
+        val jfNames = jfUsers.associate { it.id to it.name }   // DEB-1854 (FR-9) — the live name, not the copy taken at sign-in
         val totalLibraries = config.libraries.size
         val musicLibraryIds = dev.jellystructure.music.MusicScanner.musicLibraries(config).map { it.jellyfinId }
 
@@ -1057,7 +1064,7 @@ fun Route.tvRoutes(
         val users = userIds.map { uid ->
             val userDevices = allDevices.filter { it.jellyfinUserId == uid }
             val userSessions = allSessions.filter { it.jellyfinUserId == uid }
-            val username = userDevices.firstOrNull()?.jellyfinUsername ?: userSessions.firstOrNull()?.jellyfinUsername ?: uid
+            val username = jfNames[uid]?.takeIf { it.isNotBlank() } ?: userDevices.firstOrNull()?.jellyfinUsername ?: userSessions.firstOrNull()?.jellyfinUsername ?: uid
             val policy = jfPolicies[uid]
             OverviewUser(
                 userId = uid,

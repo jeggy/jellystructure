@@ -203,6 +203,9 @@ class ConfigStore(private val filePath: String) {
     /** Phase 320 (FR-320-1) — `[support] enabled` and a non-blank `[ai] api_key`; nothing else decides it. */
     val supportAvailable: Boolean get() = _config.support.availableWith(_config.ai)
 
+    /** DEB-1854 (FR-4/FR-5) — what a client may be sent: the stored page when it parses as `https://`, else null. */
+    val passwordChangeUrl: String? get() = dev.jellystructure.model.PasswordChangeUrl.effective(_config.passwordChangeUrl)
+
     /** Phase 320 (FR-320-1) — called after an update that flipped [supportAvailable]; wired to `config_changed`. */
     @kotlin.concurrent.Volatile var onSupportAvailabilityChanged: (() -> Unit)? = null
 
