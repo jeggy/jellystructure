@@ -66,3 +66,18 @@ client breaks (the TV never reads the admin list).
   the first only.
 - Immediate fix: once the converted logo is live, Ravilo Web's Collections row shows the third card's lettering. A
   QA seat with Ravilo Web checks this. The Android TV card is checked too, now in the intended font.
+
+## Amendment 2026-10-18 — the warning clears whenever the logo changes (DEB-1733)
+
+QA on DEB-1627 (step 4) refused a live-text SVG, then picked a stored logo from *Uploaded logos — click to use*. The
+logo field took the stored logo, but the *Upload failed:* line stayed under it, still naming the refused file. The
+2026-10-17 build (`01f94068`) clears the line only after an upload that works; FR-1 never said when the line goes, so
+this is an addition rather than a restore.
+
+**FR-3. The *Upload failed:* line describes the last upload, and goes once the logo changes.** In the collection
+editor (and the Workbench's logo field), the line clears when the logo field takes a new value by any route: an upload
+that works, a click on a stored logo in the library, or removing the logo where the editor offers that. Nothing else about the line changes. Admin
+only; no wire change.
+
+- FR-3: the existing `ravilo-channel-logo-upload.spec.ts` gains one case: a refused live-text SVG shows the line, a
+  click on a stored tile changes the logo field and the line is gone.
