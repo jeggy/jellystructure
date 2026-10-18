@@ -5,9 +5,8 @@ Task: DEB-1854
 > The owner's ask on DEB-1854 (2026-10-19): support Jellyfin servers that check passwords against LDAP, with an
 > identity provider as the place a password lives. Investigated on the task (document `investigation`). Owner card
 > `73785d9f`, answered 2026-10-19: the TV shows no row (Q1), the optional extras stay out (Q3), the in-app form stays
-> for local accounts for good (Q4). Q2 (what an account sees when the server has set no password page) came back as
-> *"I don't really understand what you are asking?"*, so it is settled here on the recommended answer, FR-6b, and
-> re-asked on the task in plain words. Answering it differently changes one string and nothing else.
+> for local accounts for good (Q4). Q2 (what an account sees when the server has set no password page) was re-asked
+> in plain words and answered on card `20db47f9`, 2026-10-19: the one sentence, FR-6b.
 
 ## Scope
 
@@ -119,7 +118,8 @@ then shows.
   `LocalUriHandler.openUri`: the phone's browser, a new tab on the web, the default browser on desktop. No in-app
   screen opens, no callback is awaited, and the Ravilo session is not touched. The web route `/account/password`,
   opened directly for such an account, lands on Settings.
-- **b. Managed elsewhere, no page set.** No row. In its place, the non-interactive line `account.pw_elsewhere_none`.
+- **b. Managed elsewhere, no page set.** No row. In its place, the non-interactive line `account.pw_elsewhere_none`
+  (owner, Q2).
 - **c. Local.** Today's row and `ChangePasswordScreen`, unchanged (owner, Q4: the form stays for local accounts
   permanently).
 
