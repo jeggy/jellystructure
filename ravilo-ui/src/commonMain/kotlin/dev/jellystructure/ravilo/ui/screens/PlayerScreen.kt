@@ -2112,7 +2112,7 @@ fun PlayerScreen(
                 // nothing at all; the film and where it is now go along (a Chromecast keeps its own hand-off).
                 castSlot = if (castController != null) ({ CastButton(playContext = dev.jellystructure.ravilo.ui.components.ScreenPlayContext(currentItemId, positionMs)) }) else null,
                 onPictureInPicture = if (player.pictureInPictureAvailable()) ({ wake(); player.togglePictureInPicture() }) else null,   // R376 (FR-R376-8)
-                onFullscreen = if (PlayerFullscreen.available) ({ wake(); togglePlayerFullscreen() }) else null, fullscreenActive = PlayerFullscreen.active,   // R376 (FR-R376-4b)
+                onFullscreen = { wake(); togglePlayerFullscreen() },   // R376 (FR-R376-4b) — the chrome shows it only where PlayerFullscreen.available (R258's register limit: no reads here)
                 onSkipBack = { skip(-SKIP_BACK_MS) },
                 onPlayPause = { togglePlay() },
                 onSkipFwd = { skip(SKIP_FWD_MS) },
@@ -2143,7 +2143,6 @@ fun PlayerScreen(
                 focus           = focus,
                 hasNextEp       = resolvedNextEpisodeId != null,
                 hasSpeakers     = TvSpeakers.available,
-                hasFullscreen   = PlayerFullscreen.available, fullscreenActive = PlayerFullscreen.active,   // R376 (FR-R376-4b)
                 hasPip          = player.pictureInPictureAvailable(),   // R376 (FR-R376-8) — absent where unsupported   // R372 — snapshot state, no new locals here (R258's register limit)
                 isSeries        = episodes != null,
                 epRailOpen      = epRailOpen,
@@ -2387,8 +2386,6 @@ private fun PlayerChrome(
     hasNextEp: Boolean,
     hasSpeakers: Boolean = false,
     hasPip: Boolean = false,
-    hasFullscreen: Boolean = false,   // R376 (FR-R376-4b)
-    fullscreenActive: Boolean = false,
     isSeries: Boolean,
     epRailOpen: Boolean,
     pickerOpen: Boolean,
@@ -2541,8 +2538,8 @@ private fun PlayerChrome(
                     onHover = { onControlHover(PlFocus.PIP) },
                 )
                 // R376 (FR-R376-4b) — the browser tab's full screen, right after picture-in-picture; absent, never greyed.
-                if (hasFullscreen) TrackButton(
-                    label = str(if (fullscreenActive) "desk.exit_fullscreen" else "desk.fullscreen"), focused = focus == PlFocus.FULLSCREEN,
+                if (PlayerFullscreen.available) TrackButton(
+                    label = str(if (PlayerFullscreen.active) "desk.exit_fullscreen" else "desk.fullscreen"), focused = focus == PlFocus.FULLSCREEN,
                     onClick = { onControlClick(PlFocus.FULLSCREEN) },
                     onHover = { onControlHover(PlFocus.FULLSCREEN) },
                 )

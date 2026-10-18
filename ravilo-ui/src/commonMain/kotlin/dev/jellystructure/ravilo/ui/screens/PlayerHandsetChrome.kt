@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.PlayerFullscreen
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -173,9 +174,8 @@ internal fun HandsetPlayerChrome(
     castSlot: (@Composable () -> Unit)? = null,
     /** R376 (FR-R376-8) — picture-in-picture, where the platform has it (a browser); null = absent. */
     onPictureInPicture: (() -> Unit)? = null,
-    /** R376 (FR-R376-4b) — the browser tab's full screen, where the page can; null = absent. [fullscreenActive] flips the glyph and label. */
-    onFullscreen: (() -> Unit)? = null,
-    fullscreenActive: Boolean = false,
+    /** R376 (FR-R376-4b) — toggles the browser tab's full screen; drawn only where [PlayerFullscreen.available], and flipped by [PlayerFullscreen.active]. */
+    onFullscreen: () -> Unit = {},
     onSkipBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipFwd: () -> Unit,
@@ -236,7 +236,8 @@ internal fun HandsetPlayerChrome(
                         }
                     }
                 }
-                if (onFullscreen != null) {
+                if (PlayerFullscreen.available) {
+                    val fullscreenActive = PlayerFullscreen.active
                     HandsetIconButton(size = HANDSET_TARGET, onClick = onFullscreen, label = str(if (fullscreenActive) "desk.exit_fullscreen" else "desk.fullscreen"), showLabel = false) { tint ->
                         Canvas(Modifier.size(20.dp)) {
                             // Four corner brackets: outward to enter full screen, inward to leave it.
