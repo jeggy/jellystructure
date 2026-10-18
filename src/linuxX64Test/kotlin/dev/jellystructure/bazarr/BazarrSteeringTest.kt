@@ -181,6 +181,39 @@ class BazarrSteeringTest {
         assertEquals(before, fake.calls.size, "nothing is done twice for the same file: ${fake.calls}")
     }
 
+    private fun syncCalls() = fake.calls.count { it.startsWith("sync ") }
+    private fun defer(on: Boolean) = runBlocking { config.update(config.current.copy(scan = config.current.scan.copy(deferWhilePlaying = on))) }
+
+    @Test
+    fun `an automatic sync waits while a TV plays and the defer switch is on`() = runBlocking {
+        defer(true); steering.playing = { true }
+        filmWithThree()
+        checks.checkVideo(film(), filmVideo, SubtitleCheckService.Mode.INLINE)
+        steering.act("film", filmVideo)
+        assertEquals(0, syncCalls(), "${fake.calls}")
+    }
+
+    @Test
+    fun `an automatic sync goes ahead while a TV plays and the defer switch is off`() = runBlocking {
+        defer(false); steering.playing = { true }
+        filmWithThree()
+        checks.checkVideo(film(), filmVideo, SubtitleCheckService.Mode.INLINE)
+        steering.act("film", filmVideo)
+        assertEquals(1, syncCalls(), "${fake.calls}")
+    }
+
+    @Test
+    fun `a press on a fix button syncs while a TV plays and the defer switch is on`() = runBlocking {
+        defer(true); steering.playing = { true }
+        config.update(config.current.copy(subtitleCheck = config.current.subtitleCheck.copy(action = "report")))
+        filmWithThree()
+        checks.checkVideo(film(), filmVideo, SubtitleCheckService.Mode.INLINE)
+        steering.act("film", filmVideo)
+        assertEquals(0, syncCalls(), "${fake.calls}")
+        steering.fixGroup(FitGroup.SHIFT); waitFor(FitGroup.SHIFT)
+        assertEquals(1, syncCalls(), "${fake.calls}")
+    }
+
     @Test
     fun `ask proposes and an approval does it`() = runBlocking {
         config.update(config.current.copy(subtitleCheck = config.current.subtitleCheck.copy(action = "ask")))
