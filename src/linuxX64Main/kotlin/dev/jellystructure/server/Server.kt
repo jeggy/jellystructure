@@ -46,6 +46,7 @@ import dev.jellystructure.server.routes.segmentRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.dashboardRoutes
 import dev.jellystructure.server.routes.DashboardService
+import dev.jellystructure.server.routes.channelLogoAdminRoutes
 import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
@@ -692,6 +693,7 @@ fun startServer(
                 }
                 supportService?.let { supportRoutes(it, configStore) }   // Phase 320 — /api/tv/support/** and /api/support/**
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
+                channelLogoAdminRoutes(channelLogoStore, dev.jellystructure.tv.ChannelLogoUsage(raviloConfigService, liveTvService, configStore, jellyfinClient))   // DEB-1788
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->

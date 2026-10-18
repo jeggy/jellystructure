@@ -130,6 +130,14 @@ class RaviloConfigService(
     fun hasCustomConfig(userId: String): Boolean =
         userId != GLOBAL_USER_ID && db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() != null
 
+    /** DEB-1788 (FR-2) — every stored layout, the global one and each per-user one, as (user id, layout). Read-only;
+     *  a record that no longer decodes is skipped, as [getConfig] would fall back past it. */
+    fun allLayouts(): List<Pair<String, RaviloConfig>> =
+        db.raviloConfigQueries.allUserIds().executeAsList().mapNotNull { id ->
+            val stored = db.raviloConfigQueries.getByUser(id).executeAsOneOrNull() ?: return@mapNotNull null
+            runCatching { json.decodeFromString<RaviloConfig>(stored) }.getOrNull()?.let { id to it }
+        }
+
     fun removeCustomConfig(userId: String) {
         if (userId == GLOBAL_USER_ID) return
         db.raviloConfigQueries.deleteByUser(userId)

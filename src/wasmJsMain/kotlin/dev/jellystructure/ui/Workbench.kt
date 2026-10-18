@@ -155,6 +155,8 @@ private var wbLogoUrl: String? = null
 private var wbLogos: List<ChannelLogo> = emptyList()
 /** DEB-1511 (FR-1) — the last refused logo upload's reason; cleared by the next upload that works. */
 private var wbLogoUploadError: String? = null
+// DEB-1788 FR-5 — the last ✕ the server refused; goes with the next picker render that follows a successful action.
+private var wbLogoRemoveError: String? = null
 private var wbOnSaveChannel: ((String, String, String?, ConditionGroup, String) -> Unit)? = null
 private var wbCustomType = "gradient"     // custom builder: "solid" | "gradient"
 private var wbCustomC1 = "#7b6ef0"
@@ -216,6 +218,7 @@ fun openWorkbench(
     wbOnApply = onApply
     wbChannelMode = channelMode
     wbLogoUploadError = null
+    wbLogoRemoveError = null
     wbChStyle = if (initialStyle.equals("text", ignoreCase = true)) "text" else "logo"
     wbChColor = initialBrandColor
     wbLogoUrl = initialLogoUrl
@@ -782,10 +785,13 @@ private fun wbRenderChannel() {
       </div>""" else ""
     val logoOrText = if (wbChStyle == "logo") {
         val tiles = wbLogos.joinToString("") { lg ->
-            val title = if (lg.liveText) "${lg.label} — text won't show on web or desktop" else lg.label
-            """<button class="wbc-tile${if (lg.url == wbLogoUrl) " on" else ""}" data-logo="${lg.url.esc()}" title="${title.esc()}"${if (lg.liveText) """ style="position:relative;" """ else ""}><img src="${lg.url.esc()}" alt="">${if (lg.liveText) """<span class="tiny" data-logo-live-text style="position:absolute;top:1px;right:3px;color:var(--warn);">⚠</span>""" else ""}</button>"""
+            val title = lg.pickerTitle("text won't show on web or desktop")
+            val tile = """<button class="wbc-tile${if (lg.url == wbLogoUrl) " on" else ""}" data-logo="${lg.url.esc()}" title="${title.esc()}"${if (lg.liveText) """ style="position:relative;" """ else ""}><img src="${lg.url.esc()}" alt="">${if (lg.liveText) """<span class="tiny" data-logo-live-text style="position:absolute;bottom:1px;right:3px;color:var(--warn);">⚠</span>""" else ""}</button>"""
+            val x = if (lg.removable(wbLogoUrl)) """<button class="logo-x" data-logo-remove="${lg.url.esc()}" title="Remove this logo" aria-label="Remove this logo">✕</button>""" else ""
+            """<div class="logo-cell">$tile$x</div>"""
         }
         """<div class="tiny muted" style="margin:12px 0 7px;">Pick a logo or upload your own — a transparent PNG/SVG sits cleanly on the brand fill.</div>
+           ${wbLogoRemoveError?.let { removeFailedLine(it) } ?: ""}
            <div class="wbc-grid">$tiles<button class="wbc-tile wbc-up" data-upload><span style="font-size:1.25rem;">⤒</span><span class="tiny">Upload</span></button></div>
            <input type="file" accept="image/png,image/svg+xml,image/*" class="wbc-file" style="display:none;">
            ${wbLogoUploadError?.let { """<div class="alert-bad wbc-upload-msg" style="margin-top:8px;">Upload failed: ${it.esc()}</div>""" } ?: ""}"""
@@ -834,7 +840,19 @@ private fun wbWireChannel() {
         }
     }
     // DEB-1511 FR-3 — a picked logo ends the Upload failed line.
-    each("#wb-channel .wbc-tile[data-logo]") { el -> el.addEventListener("click") { wbLogoUrl = el.getAttribute("data-logo"); wbLogoUploadError = null; wbRenderChannel() } }
+    each("#wb-channel .wbc-tile[data-logo]") { el -> el.addEventListener("click") { wbLogoUrl = el.getAttribute("data-logo"); wbLogoUploadError = null; wbLogoRemoveError = null; wbRenderChannel() } }
+    // DEB-1788 FR-4/FR-5 — ✕: confirm, remove, then re-render from a fresh GET (nothing leaves the screen before the answer).
+    each("#wb-channel [data-logo-remove]") { el ->
+        val logo = wbLogos.firstOrNull { it.url == el.getAttribute("data-logo-remove") } ?: return@each
+        el.addEventListener("click") {
+            if (!confirmRemoveLogo(logo)) return@addEventListener
+            wbScope?.launch {
+                wbLogoRemoveError = removeStoredLogo(logo)
+                wbLogos = runCatching { RaviloApi.listChannelLogos() }.getOrDefault(wbLogos)
+                wbRenderChannel()
+            }
+        }
+    }
     val fileInput = document.querySelector("#wb-channel .wbc-file") as? HTMLInputElement
     (document.querySelector("#wb-channel [data-upload]") as? HTMLElement)?.addEventListener("click") { fileInput?.click() }
     fileInput?.let { inp ->
@@ -846,6 +864,7 @@ private fun wbWireChannel() {
                 if (dataUrl.isNotEmpty()) wbScope?.launch {
                     runCatching { RaviloApi.uploadChannelLogo(file.name, dataUrl) }.onSuccess { logo ->
                         wbLogoUploadError = null
+                        wbLogoRemoveError = null
                         wbLogos = listOf(logo) + wbLogos.filter { it.url != logo.url }
                         wbLogoUrl = logo.url
                         wbRenderChannel()

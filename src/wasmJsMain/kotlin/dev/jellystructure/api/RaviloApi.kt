@@ -261,6 +261,12 @@ object RaviloApi {
         return r.body()
     }
 
+    /** DEB-1788 (FR-1) — remove a stored logo nothing uses; throws with the server's sentence on a 404/409. */
+    suspend fun removeChannelLogo(storedName: String) {
+        val r = httpClient.delete("/api/tv/admin/channel-logos/$storedName")
+        if (!r.status.isSuccess()) error(runCatching { r.body<Map<String, kotlinx.serialization.json.JsonElement>>()["error"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } }.getOrNull() ?: "HTTP ${r.status.value}")
+    }
+
     // Phase 143 — Users & Devices Settings tab.
     suspend fun getOverview(): List<OverviewUser> =
         httpClient.get("/api/tv/admin/overview").body()

@@ -828,6 +828,12 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
   border-radius: 6px; color: var(--ink-dim); cursor: pointer; font-size: .82rem; transition: background .15s, color .15s; }
 .pipe-x:hover { background: var(--bad-soft); color: var(--bad); }
 
+/* DEB-1788 — the stored-logo pickers: a tile and its ✕ side by side, so a click on the ✕ never picks the logo. */
+.logo-cell { position: relative; display: inline-flex; }
+.logo-x { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; padding: 0; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line-2); border-radius: 50%; background: var(--fill-3); color: var(--ink-dim); cursor: pointer; font-size: .62rem; line-height: 1; transition: background .15s, color .15s; }
+.logo-x:hover { background: var(--bad-soft); color: var(--bad); }
+
 .pipe-conn { position: relative; display: flex; justify-content: center; height: 26px; }
 .pipe-conn .ln { width: 2px; height: 100%; background: var(--line-2); }
 .pipe-add { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);

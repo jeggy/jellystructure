@@ -1445,16 +1445,19 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             }
         }
     }
-    fun renderLogoLibrary(logos: List<dev.jellystructure.shared.tv.ChannelLogo>, currentUrl: String) {
+    fun renderLogoLibrary(logos: List<dev.jellystructure.shared.tv.ChannelLogo>, currentUrl: String, removeError: String? = null) {
         val lib = container.querySelector("#ch-logo-library") as? HTMLElement ?: return
         if (logos.isEmpty()) { lib.innerHTML = ""; return }
-        lib.innerHTML = """<div class="tiny muted" style="margin-bottom:6px">Uploaded logos — click to use</div><div style="display:flex;gap:6px;flex-wrap:wrap">""" +
+        val field = (container.querySelector("#ch-ed-logo") as? HTMLInputElement)?.value
+        lib.innerHTML = """<div class="tiny muted" style="margin-bottom:6px">Uploaded logos — click to use</div>${removeError?.let { removeFailedLine(it) } ?: ""}<div style="display:flex;gap:6px;flex-wrap:wrap">""" +
             logos.joinToString("") { logo ->
                 val ring = if (logo.url == currentUrl) "outline:2px solid var(--hi);outline-offset:1px;" else ""
                 val caution = "text won't show on web or desktop"
-                val title = if (logo.liveText) "${logo.label} — $caution" else logo.label
+                val title = logo.pickerTitle(caution)
                 val tile = """<button data-logo-pick="${logo.url.htmlEsc()}" title="${title.htmlEsc()}" style="width:60px;height:36px;border:1px solid var(--line);border-radius:7px;background:var(--fill-2);cursor:pointer;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:3px;$ring"><img src="${logo.url.htmlEsc()}" alt="${logo.label.htmlEsc()}" style="max-width:100%;max-height:100%;object-fit:contain"></button>"""
-                if (logo.liveText) """<div data-logo-live-text style="display:flex;flex-direction:column;gap:2px;max-width:96px">$tile<span class="tiny" style="color:var(--warn)">⚠ $caution</span></div>""" else tile
+                val x = if (logo.removable(field)) """<button class="logo-x" data-logo-remove="${logo.url.htmlEsc()}" title="Remove this logo" aria-label="Remove this logo">✕</button>""" else ""
+                val cell = """<div class="logo-cell">$tile$x</div>"""
+                if (logo.liveText) """<div data-logo-live-text style="display:flex;flex-direction:column;gap:2px;max-width:96px">$cell<span class="tiny" style="color:var(--warn)">⚠ $caution</span></div>""" else cell
             } + "</div>"
         lib.querySelectorAll("[data-logo-pick]").let { nodes ->
             for (i in 0 until nodes.length) {
@@ -1463,6 +1466,21 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 btn.addEventListener("click") { _ ->
                     setLogoUrl(url)
                     renderLogoLibrary(logos, url)
+                }
+            }
+        }
+        lib.querySelectorAll("[data-logo-remove]").let { nodes ->
+            for (i in 0 until nodes.length) {
+                val btn = nodes.item(i) as? HTMLElement ?: continue
+                val url = btn.getAttribute("data-logo-remove") ?: continue
+                val logo = logos.firstOrNull { it.url == url } ?: continue
+                btn.addEventListener("click") { _ ->
+                    if (!confirmRemoveLogo(logo)) return@addEventListener
+                    scope.launch {
+                        val failed = removeStoredLogo(logo)
+                        val fresh = runCatching { RaviloApi.listChannelLogos() }.getOrDefault(logos)
+                        renderLogoLibrary(fresh, currentUrl, failed)
+                    }
                 }
             }
         }

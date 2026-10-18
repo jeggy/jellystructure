@@ -1534,11 +1534,7 @@ fun Route.tvRoutes(
 
     // Admin (cookie) uploads + lists; the serve route is public (AuthPlugin OPEN_API_PATHS) so the TV
     // can load a channel's logoUrl without a device token — brand logos are not sensitive.
-    get("/tv/admin/channel-logos") {
-        runCatching { call.attributes[SessionKey] }.getOrNull()
-            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
-        call.respond(channelLogoStore.list())
-    }
+    // The admin list and DELETE are in channelLogoAdminRoutes (DEB-1788) — they need the usage lookup.
     post("/tv/admin/channel-logos") {
         runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))

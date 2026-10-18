@@ -1188,9 +1188,14 @@ data class ChannelConfig(
 )
 
 /** A server-owned channel-button logo asset (R36 §F), served at `/api/tv/channel-logos/<file>`.
- *  `liveText` (DEB-1511 FR-2): a stored `.svg` whose lettering is `<text>`, which Skia-based clients do not draw. */
+ *  `liveText` (DEB-1511 FR-2): a stored `.svg` whose lettering is `<text>`, which Skia-based clients do not draw.
+ *  `usedBy` (DEB-1788 FR-3): who holds this logo's URL — empty means nothing does and the admin may remove it. */
 @Serializable
-data class ChannelLogo(val url: String, val label: String, val liveText: Boolean = false)
+data class ChannelLogo(val url: String, val label: String, val liveText: Boolean = false, val usedBy: List<String> = emptyList())
+
+/** DEB-1788 (FR-1) — the 409 body of `DELETE /api/tv/admin/channel-logos/{name}`: the sentence and the same names. */
+@Serializable
+data class ChannelLogoInUse(val error: String, val usedBy: List<String>)
 
 /** Upload payload for a channel logo: original filename + base64 file bytes (data-URL prefix tolerated). */
 @Serializable

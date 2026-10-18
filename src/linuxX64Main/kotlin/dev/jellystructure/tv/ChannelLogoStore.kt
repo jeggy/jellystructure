@@ -66,6 +66,21 @@ class ChannelLogoStore(dataDir: String) {
             .map { ChannelLogo("$publicBase/$it", labelFor(it), liveText = hasLiveText(it)) }
     }
 
+    /** DEB-1788 (FR-1) — whether [name] is a stored logo this store would serve: no path part, not a `.tmp`, an allowed
+     *  extension, and the file is there. */
+    fun exists(name: String): Boolean =
+        ".." !in name && "/" !in name && "\\" !in name && !name.endsWith(".tmp") &&
+            name.substringAfterLast('.', "").lowercase() in allowedExt && SystemFileSystem.exists(Path("$dir/$name"))
+
+    /** DEB-1788 (FR-1) — delete a stored logo; false when [exists] is false (nothing is touched). The caller decides
+     *  whether anything uses it. */
+    suspend fun remove(name: String): Boolean {
+        if (!exists(name)) return false
+        if (!runCatching { SystemFileSystem.delete(Path("$dir/$name")) }.isSuccess) return false
+        Logger.info("Channel logo removed: $name")
+        return true
+    }
+
     /** DEB-1511 FR-2 — a stored `.svg` that [liveTextRefusal] would refuse today. */
     private fun hasLiveText(stored: String): Boolean {
         if (stored.substringAfterLast('.', "").lowercase() != "svg") return false
