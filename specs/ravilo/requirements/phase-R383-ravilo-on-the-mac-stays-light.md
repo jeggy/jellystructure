@@ -305,3 +305,17 @@ NSApp exists. **Not proved on a Mac**; the QA row launches with `open -g -j` and
 *A fake 100-song queue, memory flat*: `CastQueueMemoryTest` (`:ravilo-castv2:jvmTest`) takes the second route of build review
 item 4 — `CastSession` over a `CastTransport` — so it covers the engine's per-song state (requests, media status, outbox) and
 **not `MusicCast`'s own**. A deliberate per-song retention fails it (3.5 MB over the last 80 songs against a 2 MB budget).
+
+### 2026-10-18 — the About window's figures (DEB-1785; FR-R383-6, its client half)
+
+Ordered by Tróndur (DEB-1781); no amendment, build review item 3 already reads FR-R383-6 this way. **Client only** — the admin half
+(a periodic device-health post, a store, an admin column) is a wire addition across both trees and stays out; if it is wanted it
+gets its own task. `Resources.swift` exports `ravilo_resource_usage(out, count)` over `proc_pid_rusage(RUSAGE_INFO_V4)`: footprint
+(`ri_phys_footprint`, the number Activity Monitor calls *Memory*), user + system CPU time (converted from mach absolute time with
+`mach_timebase_info`, which is not nanoseconds on Apple silicon) and `ri_pkg_idle_wkups` (cumulative; Activity Monitor's *Idle Wake
+Ups*). No ABI bump; a library without it throws and `MacNative.resourceUsage()` reads null. `AppResources` turns two reads and the
+wall clock between them into CPU % (of one core, so two busy cores read 200, as in Activity Monitor) and wakeups per second;
+`AboutWindow` reads every 2 s while it is open (1 s until the first rate exists, which shows a dash) and shows *Memory*, *CPU* and
+*Idle wakeups*. Without the library (Linux, a `gradle run` without Xcode) the three lines are absent and the window is as before.
+Tests: `AppResourcesTest` (`:ravilo-desktop:desktopTest`) pins the arithmetic and the formatting. **Not proved on a Mac**; `ci / macos`
+is the Swift compile check. The QA row opens About beside Activity Monitor and compares the three figures. da/fo copy is draft.

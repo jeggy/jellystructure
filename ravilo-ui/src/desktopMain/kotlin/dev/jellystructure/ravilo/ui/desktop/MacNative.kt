@@ -72,6 +72,11 @@ object MacNative {
         fun ravilo_window_debug(): Pointer?
         /** R383 (FR-R383-3) — 1 when the app is hidden (`open -j`, ⌘H); added without an ABI bump, a library without it throws. */
         fun ravilo_app_hidden(): Int
+        /**
+         * R383 (FR-R383-6) — fills [out] with this process's footprint (bytes), CPU time (ns) and idle wakeups (cumulative);
+         * 0 on success. Added without an ABI bump, a library without it throws.
+         */
+        fun ravilo_resource_usage(out: LongArray, count: Int): Int
 
         // ── R342 — the running Dock icon (Dock.swift; see DesktopDock). Added without an ABI bump, like R338's call:
         // a library without them throws, and DesktopDock / DesktopAppearance catch it. ──
@@ -140,6 +145,12 @@ object MacNative {
 
     /** R383 (FR-R383-3) — the Mac has the app hidden; false off a Mac, without the library, or with one from before the export. */
     fun appHidden(): Boolean = runCatching { lib?.ravilo_app_hidden() == 1 }.getOrDefault(false)
+
+    /** R383 (FR-R383-6) — `[footprint bytes, CPU ns, idle wakeups]` for this process; null off a Mac, without the library, or with one from before the export. */
+    fun resourceUsage(): LongArray? = runCatching {
+        val out = LongArray(3)
+        out.takeIf { lib?.ravilo_resource_usage(it, it.size) == 0 }
+    }.getOrNull()
 
     /** Reads and frees a string the library allocated. */
     fun take(p: Pointer?): String? {
