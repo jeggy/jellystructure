@@ -291,3 +291,17 @@ the list is *scrolling*, so a hero that is composed but out of sight kept dirtyi
 list's first visible item is the hero (`firstVisibleItemIndex == 0`), and the step is 66 ms (about 15 a second) rather than 42 ms.
 Not re-measured. The idle budget (< 2 % CPU, < 600 MB) and the music row (< 10 %) are still open; whether 600 MB is reachable by a JVM
 plus Skia at all is the owner's call after the evidence (build review item 2).
+
+### 2026-10-18 — a launch-hidden app and FR-R383-7's two tests (DEB-1784; restores FR-R383-3, FR-R383-7)
+
+Ordered by Tróndur (DEB-1781); no amendment, the FRs already promise it. **Launched hidden:** AWT raises its hide event only for a
+hide that happens while the app runs, so `open -g -j` left `appHidden` false. The Swift library now answers `ravilo_app_hidden()`
+(`NSApp?.isHidden`, read only — never `NSApplication.shared`, which would pre-empt AWT's own subclass; no ABI bump, an older
+library throws and the call reads false). `AppHidden.now()` seeds `appHidden` at composition, so `visible` is right for the first
+frame, and `AppHidden.readAtStartup` asks again after 0.25–2 s steps for about ten seconds, in case the launch's hide lands after
+NSApp exists. **Not proved on a Mac**; the QA row launches with `open -g -j` and reads `frames:` at 0.0/s.
+**The two tests.** *A hidden window requests no frames*: Compose Desktop's window needs a display, which CI has not, so
+`AppHiddenTest` pins what the window follows from (`AppHidden.windowVisible`, the startup reads) and the QA row reads the counter.
+*A fake 100-song queue, memory flat*: `CastQueueMemoryTest` (`:ravilo-castv2:jvmTest`) takes the second route of build review
+item 4 — `CastSession` over a `CastTransport` — so it covers the engine's per-song state (requests, media status, outbox) and
+**not `MusicCast`'s own**. A deliberate per-song retention fails it (3.5 MB over the last 80 songs against a 2 MB budget).

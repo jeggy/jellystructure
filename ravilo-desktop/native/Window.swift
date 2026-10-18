@@ -133,3 +133,17 @@ public func ravilo_window_debug() -> UnsafeMutablePointer<CChar>? {
     if Thread.isMainThread { work() } else { DispatchQueue.main.sync(execute: work) }
     return cString(out)
 }
+
+/**
+ * R383 (FR-R383-3) — 1 when the app is hidden (⌘H, `open -j`, Hide Others), else 0, and 0 while AppKit has no
+ * application yet. AWT raises its hide event only for a hide that happens while the app runs; one that came with the
+ * launch (`open -g -j`) never does, so the app asks once at startup. `NSApp` is only read: asking for
+ * `NSApplication.shared` here would create the application before AWT's own subclass does.
+ */
+@_cdecl("ravilo_app_hidden")
+public func ravilo_app_hidden() -> Int32 {
+    var hidden: Int32 = 0
+    let work = { hidden = (NSApp?.isHidden ?? false) ? 1 : 0 }
+    if Thread.isMainThread { work() } else { DispatchQueue.main.sync(execute: work) }
+    return hidden
+}

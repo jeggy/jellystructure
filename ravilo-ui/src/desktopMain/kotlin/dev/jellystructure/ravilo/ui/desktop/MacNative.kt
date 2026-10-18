@@ -70,6 +70,8 @@ object MacNative {
         fun ravilo_window_lights_titled(title: String, x: Double, y: Double)
         fun ravilo_window_drag()
         fun ravilo_window_debug(): Pointer?
+        /** R383 (FR-R383-3) — 1 when the app is hidden (`open -j`, ⌘H); added without an ABI bump, a library without it throws. */
+        fun ravilo_app_hidden(): Int
 
         // ── R342 — the running Dock icon (Dock.swift; see DesktopDock). Added without an ABI bump, like R338's call:
         // a library without them throws, and DesktopDock / DesktopAppearance catch it. ──
@@ -135,6 +137,9 @@ object MacNative {
         println("Ravilo: the Mac library is absent ($why) — no playback, tokens in a file")
         return null
     }
+
+    /** R383 (FR-R383-3) — the Mac has the app hidden; false off a Mac, without the library, or with one from before the export. */
+    fun appHidden(): Boolean = runCatching { lib?.ravilo_app_hidden() == 1 }.getOrDefault(false)
 
     /** Reads and frees a string the library allocated. */
     fun take(p: Pointer?): String? {

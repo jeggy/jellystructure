@@ -89,7 +89,9 @@ private fun ApplicationScope.RaviloDesktopApp() {
     var shown by remember { mutableStateOf(true) }
     var aboutOpen by remember { mutableStateOf(false) }
     // R383 (FR-R383-3) — the Mac hid the whole app (⌘H): the window is as good as closed, so it stops drawing.
-    var appHidden by remember { mutableStateOf(false) }
+    // …or launched hidden (`open -g -j`), which raises no event: AppKit is asked, here for the first frame and again
+    // while the app starts (AppHidden).
+    var appHidden by remember { mutableStateOf(AppHidden.now()) }
     // The menu bar speaks the device's language (R279's middle rung), refreshed as the viewer changes it.
     val lang by produceState(LastLanguage.read() ?: "en") {
         while (true) { delay(2_000); value = LastLanguage.read() ?: "en" }
@@ -135,10 +137,14 @@ private fun ApplicationScope.RaviloDesktopApp() {
         dev.jellystructure.ravilo.ui.desktop.DesktopDock.start()
     }
 
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { AppHidden.readAtStartup { hidden -> if (appHidden != hidden) appHidden = hidden } }
+    }
+
     Window(
         onCloseRequest = ::close,
         state = state,
-        visible = shown && !appHidden,
+        visible = AppHidden.windowVisible(shown, appHidden),
         title = "Ravilo",
         icon = AppImages.icon,
         // R337 (FR-R337-5, dev review 11) — GNOME's shape is drawn by Ravilo: an undecorated window with our header bars.
@@ -174,7 +180,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
         // the About window under the main one.
         LaunchedEffect(shown) { if (shown) window.toFront() }
         LaunchedEffect(shown, appHidden, state.isMinimized, focused, state.placement) {
-            DesktopWindow.report(shown && !appHidden, state.isMinimized, focused, state.placement == WindowPlacement.Fullscreen)
+            DesktopWindow.report(AppHidden.windowVisible(shown, appHidden), state.isMinimized, focused, state.placement == WindowPlacement.Fullscreen)
         }
         // R337 — a window that fills the screen has square corners; a floating one has libadwaita's 12 dp.
         val filled = state.placement != WindowPlacement.Floating
