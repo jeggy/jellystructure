@@ -72,4 +72,18 @@ test.describe.serial("Collection editor — logo upload refusal", () => {
     await expect(page.locator("#ch-ed-msg")).toBeHidden({ timeout: 10_000 });
     await expect(page.locator("#ch-ed-msg")).toHaveText("");
   });
+
+  // DEB-1511 FR-3 (DEB-1736) — the line describes the last upload; picking a stored logo is a change of logo too.
+  test("a click on a stored logo clears the refusal", async () => {
+    await page.setInputFiles("#ch-logo-file", { name: "live-text.svg", mimeType: "image/svg+xml", buffer: LIVE_TEXT_SVG });
+    const msg = page.locator("#ch-ed-msg");
+    await expect(msg).toContainText("Upload failed:", { timeout: 10_000 });
+    const tile = page.locator("#ch-logo-library [data-logo-pick]").first();
+    await expect(tile).toBeVisible();
+    const url = await tile.getAttribute("data-logo-pick");
+    await tile.click();
+    await expect(page.locator("#ch-ed-logo")).toHaveValue(url!);
+    await expect(msg).toBeHidden();
+    await expect(msg).toHaveText("");
+  });
 });

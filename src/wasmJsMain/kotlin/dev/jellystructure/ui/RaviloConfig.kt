@@ -1423,7 +1423,16 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     }
 
     // Logo upload + library
+    // DEB-1511 FR-3 — the Upload failed line describes the last upload; it goes once the logo field takes a new
+    // value. A Save failed line shares the element and is not this one's to clear.
+    fun clearUploadFailed() {
+        val msg = container.querySelector("#ch-ed-msg") as? HTMLElement ?: return
+        if (msg.querySelector("[data-upload-failed]") == null) return
+        msg.innerHTML = ""
+        msg.setAttribute("style", "display:none;margin-bottom:12px")
+    }
     fun setLogoUrl(url: String) {
+        clearUploadFailed()
         (container.querySelector("#ch-ed-logo") as? HTMLInputElement)?.value = url
         val previewEl = container.querySelector("#ch-logo-preview-img") as? HTMLElement
         if (previewEl != null) {
@@ -1458,6 +1467,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             }
         }
     }
+    // Typing in or emptying the field is a change of logo too.
+    container.querySelector("#ch-ed-logo")?.addEventListener("input") { _ -> clearUploadFailed() }
     val fileInput = container.querySelector("#ch-logo-file") as? HTMLInputElement
     container.querySelector("#ch-logo-upload-btn")?.addEventListener("click") { _ -> fileInput?.click() }
     fileInput?.addEventListener("change") { _ ->
@@ -1477,7 +1488,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                     renderLogoLibrary(logos, logo.url)
                 }.onFailure {
                     (container.querySelector("#ch-ed-msg") as? HTMLElement)?.let { msg ->
-                        msg.innerHTML = """<div class="alert-bad">Upload failed: ${it.message?.htmlEsc()}</div>"""
+                        msg.innerHTML = """<div class="alert-bad" data-upload-failed>Upload failed: ${it.message?.htmlEsc()}</div>"""
                         msg.setAttribute("style", "display:block;margin-bottom:12px")
                     }
                 }

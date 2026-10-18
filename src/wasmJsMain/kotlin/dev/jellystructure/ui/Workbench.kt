@@ -833,7 +833,8 @@ private fun wbWireChannel() {
             wbChColor = wbCustomCss(); wbLiveUpdateChip()
         }
     }
-    each("#wb-channel .wbc-tile[data-logo]") { el -> el.addEventListener("click") { wbLogoUrl = el.getAttribute("data-logo"); wbRenderChannel() } }
+    // DEB-1511 FR-3 — a picked logo ends the Upload failed line.
+    each("#wb-channel .wbc-tile[data-logo]") { el -> el.addEventListener("click") { wbLogoUrl = el.getAttribute("data-logo"); wbLogoUploadError = null; wbRenderChannel() } }
     val fileInput = document.querySelector("#wb-channel .wbc-file") as? HTMLInputElement
     (document.querySelector("#wb-channel [data-upload]") as? HTMLElement)?.addEventListener("click") { fileInput?.click() }
     fileInput?.let { inp ->
