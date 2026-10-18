@@ -93,6 +93,7 @@ actual fun deviceDisplayName(): String =
 // R80: no-ops on Android — navigation is handled by Key.Back key events.
 actual fun pushRoute(route: String) {}
 actual fun replaceRoute(route: String) {}
+actual fun initialRoute(): String? = null   // DEB-1738 (FR-1) — no URL here
 actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit = {}
 
 // Bug fix: bridges Android's system back gesture/button (which bypasses Compose's Key.Back KeyEvent

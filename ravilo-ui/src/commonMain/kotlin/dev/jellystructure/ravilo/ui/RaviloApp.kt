@@ -231,7 +231,7 @@ private var searchVisitCounter = 0L
 /** R295 — see [Dest.Search.visit]. Main-thread only, like every navigation call. */
 private fun nextSearchVisit(): Long = ++searchVisitCounter
 
-private sealed class Dest {
+internal sealed class Dest {
     data object Login : Dest()
     data object ProfilePicker : Dest()
     data class Home(val displayName: String) : Dest()
@@ -423,6 +423,58 @@ private sealed class Dest {
     }
 }
 
+/**
+ * DEB-1738 (FR-2) — the inverse of [Dest.toRoute] for the routes a load or a browser Back/Forward may open. Edit the two
+ * together. A playback (`/player`, `/livetv/<id>`, `/cast`, `/session`), a route that is not a place (`/login`,
+ * `/profiles`, `/browse-seed`, `/support/new`), every `/music/…` route, a malformed route and `""` give `null`; so does
+ * `/channel/<id>`, which needs the channel list ([channelIdOf]). `/home` gives Home: nothing on top of it.
+ */
+internal fun routeToDest(route: String, displayName: String): Dest? {
+    val parts = route.split('/')
+    if (parts.first() != "") return null
+    val seg = parts.drop(1)
+    if (seg.isEmpty() || seg.any { it.isEmpty() }) return null
+    val head = seg[0]
+    return when (seg.size) {
+        1 -> when (head) {
+            "home" -> Dest.Home(displayName)
+            "search" -> Dest.Search(displayName)
+            "discover" -> Dest.Discover(displayName, null)   // the screen lands on the segment a tap on the tab picks
+            "livetv-guide" -> Dest.LiveTvGuide(displayName)
+            "settings" -> Dest.Settings(displayName)
+            "profile" -> Dest.Profile(displayName)
+            "support" -> Dest.SupportList(displayName)
+            else -> null
+        }
+        2 -> {
+            val a = seg[1]
+            when (head) {
+                "movie" -> Dest.MovieDetail(a, displayName)
+                "series" -> Dest.SeriesDetail(a, displayName)
+                "upcoming" -> Dest.UpcomingDetail(a, displayName)
+                "browse" -> BrowseKind.entries.firstOrNull { it.name.lowercase() == a }?.let { Dest.Browse(it, displayName) }
+                "account" -> when (a) {
+                    "profile" -> Dest.YourProfile(displayName)
+                    "password" -> Dest.ChangePassword(displayName)
+                    "language" -> Dest.AppLanguage(displayName)
+                    else -> null
+                }
+                "discover" -> if (a == "search") Dest.SeerrSearch(displayName) else null
+                "support" -> a.toLongOrNull()?.takeIf { it > 0 }?.let { Dest.SupportThread(displayName, it) }
+                else -> null
+            }
+        }
+        3 -> if (head == "discover" && (seg[1] == "movie" || seg[1] == "tv")) {
+            seg[2].toIntOrNull()?.let { Dest.DiscoverItem(seg[1], it, displayName) }
+        } else null
+        else -> null
+    }
+}
+
+/** DEB-1738 (FR-2) — the id in `/channel/<id>`, or `null` for any other route. The `Channel` itself comes from the list. */
+internal fun channelIdOf(route: String): String? =
+    route.takeIf { it.startsWith("/channel/") }?.removePrefix("/channel/")?.takeIf { it.isNotEmpty() && '/' !in it }
+
 // ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
@@ -468,6 +520,8 @@ fun RaviloApp(
     var configRefreshes by remember { mutableStateOf(0) }
     // R324 (dev review 12) — `RaviloConfig.cast.music`: the receiver on this server plays music queues (286).
     var castMusic by remember { mutableStateOf(false) }
+    // DEB-1738 — false until the first config answer; see the Support lane's close-on-off effect.
+    var configAnswered by remember { mutableStateOf(false) }
     fun refreshConfig() {
         configScope.launch {
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
@@ -475,6 +529,7 @@ fun RaviloApp(
                 castMusic = cfg.cast?.music == true   // R324 (dev review 12)
                 // DEB-1501 (FR-1) — an app that reads no flag draws nothing; a TV never does, even with the flag on.
                 dev.jellystructure.ravilo.ui.support.SupportLane.enabled.value = cfg.supportEnabled && !isTvPlatform
+                configAnswered = true   // DEB-1738
                 screensEnabled = cfg.screens?.enabled == true
                 screensPaired = cfg.screens?.paired == true
                 configRefreshes++
@@ -681,6 +736,8 @@ fun RaviloApp(
         // back into the player at their position, never to Home. Nothing else on the stack is saved.
         val resumeJson = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
         val playerResume = remember { dev.jellystructure.ravilo.ui.screens.PlayerResumeStore(resumeJson.value) { resumeJson.value = it } }
+        // DEB-1738 (FR-1) — the URL this load opened with, read before the first composition writes any route.
+        val loadRoute = remember { initialRoute() }
         // Determine starting screen based on cached sessions
         val initialStack: List<Dest> = remember {
             val sessions = MultiTokenStore.getAll()
@@ -697,7 +754,11 @@ fun RaviloApp(
             }
             val record = playerResume.record
             val active = MultiTokenStore.getActive()
-            if (base is Dest.Home && record != null && active != null &&
+            // DEB-1738 (FR-3) — a page the URL names sits on top of Home; the R292 record is not consulted then.
+            val restored = if (base is Dest.Home) loadRoute?.let { routeToDest(it, base.displayName) } else null
+            if (restored != null) {
+                if (restored is Dest.Home) listOf(base) else listOf(base, restored)
+            } else if (base is Dest.Home && record != null && active != null &&
                 dev.jellystructure.ravilo.ui.screens.resumeRestorable(record, kotlin.time.Clock.System.now().toEpochMilliseconds())
             ) {
                 listOf(base, Dest.Player(
@@ -716,6 +777,9 @@ fun RaviloApp(
             }
         }
         var stack by remember { mutableStateOf(initialStack) }
+        // DEB-1738 (FR-4) — signed out, or on the profile picker: the page the URL named waits here for the first Home.
+        var heldRoute by remember { mutableStateOf(loadRoute.takeIf { initialStack.first().let { it is Dest.Login || it is Dest.ProfilePicker } }) }
+        val navScope = androidx.compose.runtime.rememberCoroutineScope()
         // R92: direction that drives the AnimatedContent transitionSpec.
         var navDir by remember { mutableStateOf(NavDir.Forward) }
         var fpsOverlay by remember { mutableStateOf(false) }  // R94: toggle with F5
@@ -858,8 +922,10 @@ fun RaviloApp(
             dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway)
             dev.jellystructure.ravilo.ui.support.SupportLane.changes.collect { dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway) }
         }
-        LaunchedEffect(supportLaneOpen) {
-            if (!supportLaneOpen) while (stack.size > 1 && stack.last().let { it is Dest.SupportList || it is Dest.SupportThread }) pop()
+        // DEB-1738 — the lane reads `false` until the first config answer, so a restored Support page is not an
+        // "off" lane: the page waits for the answer. A flag that goes off after it is answered returns as before.
+        LaunchedEffect(supportLaneOpen, configAnswered) {
+            if (configAnswered && !supportLaneOpen) while (stack.size > 1 && stack.last().let { it is Dest.SupportList || it is Dest.SupportThread }) pop()
         }
 
         // R100: single funnel for opening a movie/series detail — pre-warm the hero backdrop into
@@ -1107,15 +1173,66 @@ fun RaviloApp(
             }
         }
 
+        // DEB-1738 (FR-2, FR-5) — a channel page needs the whole Channel, so it is found in the list first; an id the
+        // list does not hold opens nothing. Null for every other route.
+        suspend fun channelPageFor(route: String, name: String): Dest? {
+            val id = channelIdOf(route) ?: return null
+            return runCatching { apiClient.getChannels() }.getOrNull()?.firstOrNull { it.id == id }?.let { Dest.ChannelView(it, name) }
+        }
+
+        // DEB-1738 (FR-4) — the first Home after a sign-in or a profile pick: the held page goes on top of it, once.
+        fun openHeldPage(name: String) {
+            val route = heldRoute ?: return
+            heldRoute = null
+            val page = routeToDest(route, name)
+            if (page != null) { if (page !is Dest.Home) push(page) }
+            else if (channelIdOf(route) != null) navScope.launch {
+                val channel = channelPageFor(route, name)
+                if (channel != null && stack.lastOrNull() is Dest.Home) push(channel)
+            }
+        }
+
+        // DEB-1738 (FR-6) — the browser landed on [route] (Back, Forward or a hand-edited hash): the stack becomes the
+        // base (up to and including the first Home) and the page the route names, if any. The URL already shows it.
+        fun openFromUrl(route: String, page: Dest?) {
+            val home = stack.indexOfFirst { it is Dest.Home }
+            if (home < 0) return   // signed out, or no profile picked yet: nothing to open a page over
+            val base = stack.take(home + 1)
+            avatarReturnTo = null
+            forwardStack = emptyList()
+            navDir = if (page != null && page !is Dest.Home) NavDir.Forward else NavDir.Back
+            stack = if (page != null && page !is Dest.Home) base + page else base
+        }
+
         // R80: write the initial URL on first composition, then listen for browser Back/Forward.
         LaunchedEffect(Unit) {
             replaceRoute(stack.last().toRoute())
-            installHashListener { _ ->
-                fromHistory.flag = true
-                navDir = NavDir.Back  // R92: browser Back fires the reverse slide
-                pop()
-                fromHistory.flag = false
+            installHashListener { route ->
+                val under = stack.getOrNull(stack.size - 2)
+                if (route == stack.last().toRoute()) return@installHashListener
+                if (under != null && under.toRoute() == route) {
+                    fromHistory.flag = true
+                    navDir = NavDir.Back  // R92: browser Back fires the reverse slide
+                    pop()
+                    fromHistory.flag = false
+                } else if (channelIdOf(route) != null) {
+                    val seen = stack
+                    launch {
+                        val channel = channelPageFor(route, destDisplayName(seen.lastOrNull()))
+                        if (stack === seen) openFromUrl(route, channel)
+                    }
+                } else {
+                    openFromUrl(route, routeToDest(route, destDisplayName(stack.lastOrNull())))
+                }
             }
+        }
+        // DEB-1738 (FR-2, FR-5) — a pasted `#/channel/<id>` over Home: pushed when the list answers, unless the viewer
+        // has gone elsewhere by then. After the effect above, so the URL has been written as /home first.
+        LaunchedEffect(Unit) {
+            val route = loadRoute ?: return@LaunchedEffect
+            val home = stack.singleOrNull() as? Dest.Home ?: return@LaunchedEffect
+            val channel = channelPageFor(route, home.displayName) ?: return@LaunchedEffect
+            if (stack.size == 1 && stack.last() is Dest.Home) push(channel)
         }
 
         val dest = stack.last()
@@ -2120,6 +2237,7 @@ fun RaviloApp(
                         activeAvatarUrl = session.avatarUrl
                         refreshConfig()
                         push(Dest.Home(session.displayName))
+                        openHeldPage(session.displayName)   // DEB-1738 (FR-4)
                     },
                     onSettings = {
                         push(Dest.Settings(MultiTokenStore.getActive()?.displayName ?: ""))
@@ -2140,8 +2258,9 @@ fun RaviloApp(
                         // and carry the freshly-signed-in user's display name.
                         val name = MultiTokenStore.getActive()?.displayName ?: ""
                         resetTo(Dest.Home(name))
+                        openHeldPage(name)   // DEB-1738 (FR-4)
                     },
-                    onChangeServer = onChangeServer,
+                    onChangeServer = { heldRoute = null; onChangeServer() },   // DEB-1738 (FR-4) — leaving for another server drops it
                 )
             }
 

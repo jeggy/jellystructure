@@ -64,6 +64,12 @@ expect fun pushRoute(route: String)
 expect fun replaceRoute(route: String)
 
 /**
+ * DEB-1738 (FR-1) — the location's hash without its leading `#` (so `/movie/<id>`), read once at load by the web app,
+ * or `null` when there is none. Every target without a URL answers `null`.
+ */
+expect fun initialRoute(): String?
+
+/**
  * Install a listener that fires whenever the browser's current hash URL changes (back/forward/manual).
  * Returns an unsubscribe function. No-op (and returns `{}`) on non-web targets.
  */

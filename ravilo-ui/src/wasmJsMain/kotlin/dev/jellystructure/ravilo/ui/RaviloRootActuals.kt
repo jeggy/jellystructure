@@ -109,6 +109,9 @@ private fun jsGetHash(): String = js("window.location.hash")
 private fun jsPushState(hash: String): Unit = js("window.history.pushState(null,'',hash)")
 private fun jsHistoryReplace(hash: String): Unit = js("window.history.replaceState(null,'',hash)")
 
+// DEB-1738 (FR-1) — read once, before the first composition writes any route.
+actual fun initialRoute(): String? = jsGetHash().removePrefix("#").takeIf { it.isNotEmpty() }
+
 // history.pushState does NOT fire hashchange or popstate — no spurious pop() on every click.
 actual fun pushRoute(route: String) {
     jsPushState("#$route")

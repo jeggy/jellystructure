@@ -117,6 +117,7 @@ private fun scutilComputerName(): String? = runCatching {
 
 actual fun pushRoute(route: String) {}
 actual fun replaceRoute(route: String) {}
+actual fun initialRoute(): String? = null   // DEB-1738 (FR-1) — no URL here
 actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit = {}
 
 /**
