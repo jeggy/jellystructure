@@ -242,7 +242,6 @@ class RealtimeIngestService(
                 jobId = "realtime-ingest-${enriched.id}",
                 scanTracker = ScanTracker(db, persistToDb = false),
                 deps = deps,
-                signalCompletion = false,
                 // Phase 178 §FR-178-2 — realtime ingest is the "event-driven" trigger the spec names
                 // alongside "scheduled"; a webhook/library-changed event is never an operator sitting at
                 // the admin UI clicking a button, so it defers the same way.

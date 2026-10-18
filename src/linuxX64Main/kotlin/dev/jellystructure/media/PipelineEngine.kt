@@ -205,7 +205,6 @@ suspend fun runPipeline(
     scanTracker: ScanTracker,
     deps: PipelineDeps,
     fullRun: Boolean = false,
-    signalCompletion: Boolean = true,
     // Phase 178 §FR-178-2 — true for a scheduled or event-driven (realtime ingest) run; false for an
     // operator-initiated one (a manual click, SCAN_ON_START), which per the phase's invariant is never
     // silently deferred. Gates scan_files' probe-heavy work (the whole run start, for RunTarget.Library)
@@ -243,6 +242,9 @@ suspend fun runPipeline(
     // while later steps were still actually going. This function signals completion itself, once, after
     // every step has truly finished (or on the early "nothing to do" return right below).
     suspend fun signalPipelineComplete(items: List<MediaItem>) {
+        // FR-145-7 — a single-title run signals only its own title (refreshTriggeredTitle below): no
+        // whole-library /Library/Refresh, no Finished, no scan_complete, no no-match notification.
+        if (target is RunTarget.SingleItem) return
         if (scanTracker.cancelRequested) {
             broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
             return
@@ -262,6 +264,24 @@ suspend fun runPipeline(
             if (unmatched > 0)
                 fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched,"music_unmatched":$musicUnmatched}""")
         }
+    }
+
+    // FR-145-7 — the end of a RunTarget.SingleItem run: ONE POST /Items/{id}/Refresh for the triggered title
+    // (a series recursively, so its children and rollup are recomputed), unless sync_jellyfin already
+    // refreshed that title in this run. Never a /Library/Refresh.
+    val syncedByStep = mutableSetOf<String>()
+    val syncedByStepLock = kotlinx.coroutines.sync.Mutex()
+    suspend fun refreshTriggeredTitle() {
+        if (target !is RunTarget.SingleItem || scanTracker.cancelRequested) return
+        if (syncedByStepLock.withLock { syncedByStep.contains(target.item.id) }) return
+        val cfg = configStore.current
+        if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return
+        val item = store.get(target.item.id) ?: target.item
+        val jid = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return
+        jellyfinClient.refreshItem(
+            cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid,
+            full = true, recursive = item.kind == dev.jellystructure.model.MediaKind.TV_SHOW,
+        )
     }
 
     val orderedSteps = planOrder(pipeline).map { it.step }   // Phase 265 — the same order GET /api/pipeline/plan answers
@@ -609,7 +629,7 @@ suspend fun runPipeline(
                     jobId, step.step, if (jellyfinReady) toSync else emptyList(),
                     { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) }, scanTracker, broadcaster, labelOf = { it.title },
                     onItemFailure = failedRun(step.step),
-                ) { item, _ -> PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg); ran(item, step.step) }
+                ) { item, _ -> if (PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg)) syncedByStepLock.withLock { syncedByStep.add(item.id) }; ran(item, step.step) }
             }
             "rescan_arr" -> {
                 Logger.info("rescan_arr: ${workingSet.size} items")
@@ -808,6 +828,7 @@ suspend fun runPipeline(
     Logger.info("Pipeline complete — ${workingSet.size} items processed")
     } finally {
         signalPipelineComplete(workingSet)
+        refreshTriggeredTitle()
     }
     return workingSet
 }
