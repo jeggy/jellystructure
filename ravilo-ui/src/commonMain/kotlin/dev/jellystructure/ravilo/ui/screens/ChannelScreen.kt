@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -164,6 +165,7 @@ fun ChannelScreen(
     val channelBarFR = remember { FocusRequester() }
     val heroFR       = remember { FocusRequester() }
     val firstTileFR  = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val barScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }
@@ -187,7 +189,7 @@ fun ChannelScreen(
                         // R365 (FR-R365-6) — the hero if the collection has one, else the app bar. In Compose 1.9 an
                         // unattached requester returns false rather than throwing, so the old `.onFailure` never
                         // ran and focus stayed on the half-hidden tile of the row below.
-                        focusHeroElseBar(heroFR, channelBarFR)
+                        focusHeroElseBar(heroFR, channelBarFR, firstTileFR)
                     }
                 },
             ),
@@ -245,7 +247,11 @@ fun ChannelScreen(
                         }
                         // R137: else focus the bar when scrolled (fixed overlay; doesn't disturb scroll), hero at top.
                         val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-                        if (hasHero && !wasScrolled) heroFR.tryRequestFocus() else channelBarFR.tryRequestFocus()
+                        // DEB-1745 (FR-R328-5) — a computer's AppBar is the toolbar and never attaches the bar's requester, so a
+                        // collection without a hero used to open with nothing focused: no ring, arrows and Esc unheard. The
+                        // first tile, then a native move, is the entry that exists on every layout.
+                        val landed = if (hasHero && !wasScrolled) heroFR.requestFocusAwaiting(maxFrames = 5) else channelBarFR.tryRequestFocus()
+                        if (!landed && !firstTileFR.requestFocusAwaiting()) focusManager.moveFocus(FocusDirection.Down)
                     }
 
                     @Suppress("OPT_IN_USAGE")
@@ -379,6 +385,11 @@ fun ChannelScreen(
  * R365 (FR-R365-6) — Back-to-top's focus on a collection page: the hero (awaited for a few frames, since the scroll to
  * the top has just brought it back into composition), else the app bar.
  */
-internal suspend fun focusHeroElseBar(heroFR: androidx.compose.ui.focus.FocusRequester, barFR: androidx.compose.ui.focus.FocusRequester) {
-    if (!heroFR.requestFocusAwaiting(maxFrames = 5)) barFR.requestFocusAwaiting()
+internal suspend fun focusHeroElseBar(
+    heroFR: androidx.compose.ui.focus.FocusRequester,
+    barFR: androidx.compose.ui.focus.FocusRequester,
+    tileFR: androidx.compose.ui.focus.FocusRequester? = null,
+) {
+    // DEB-1745 — a computer's toolbar never attaches [barFR], so the first tile is the last place focus can still go.
+    if (!heroFR.requestFocusAwaiting(maxFrames = 5) && !barFR.requestFocusAwaiting(maxFrames = if (tileFR == null) 30 else 5)) tileFR?.requestFocusAwaiting()
 }
