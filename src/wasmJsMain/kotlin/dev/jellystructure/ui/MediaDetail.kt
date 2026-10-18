@@ -3332,7 +3332,9 @@ private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
         btn.addEventListener("mouseleave") { show(false) }
         btn.addEventListener("focus") { show(true) }
         btn.addEventListener("blur") { show(false) }
-        btn.addEventListener("click") { show(!pop.classList.contains("open")) }   // tap
+        // A tap only ever opens: a touch browser has already opened it with mouseenter/focus by the time `click`
+        // fires, so a toggle here would close it again. A tap elsewhere closes it through blur/mouseleave.
+        btn.addEventListener("click") { show(true) }
     }
     val buttons = card.querySelectorAll(".chk-act")
     for (i in 0 until buttons.length) {
