@@ -104,7 +104,9 @@ import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.warmAudioRendition
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
+import dev.jellystructure.ravilo.ui.seams.PlayerFullscreen
 import dev.jellystructure.ravilo.ui.seams.pictureInPictureAvailable
+import dev.jellystructure.ravilo.ui.seams.togglePlayerFullscreen
 import dev.jellystructure.ravilo.ui.seams.togglePictureInPicture
 import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
 import dev.jellystructure.ravilo.ui.seams.rememberHandsetPlayerControls
@@ -183,7 +185,7 @@ private const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
-internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK, SPEAKERS, PIP }   // R372 — SPEAKERS · R376 — PIP
+internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK, SPEAKERS, PIP, FULLSCREEN }   // R372 — SPEAKERS · R376 — PIP, FULLSCREEN
 
 /** R251 — the five D-pad keys the chrome-hidden rule applies to (media keys are not among them, R44). */
 internal enum class PlayerDpadKey { LEFT, RIGHT, UP, DOWN, SELECT }
@@ -208,6 +210,11 @@ internal enum class PlayerDpadKey { LEFT, RIGHT, UP, DOWN, SELECT }
  * auto-hide off while open, so they can never be found hidden — listed so a future hide path cannot swallow a key
  * aimed at them.
  */
+/** R376 (FR-R376-4b) — two clicks on the picture at most this far apart (ms) are a double-click. */
+internal const val DOUBLE_CLICK_SPAN_MS = 400L
+
+internal fun isDoubleClick(lastMs: Long, nowMs: Long): Boolean = lastMs != Long.MIN_VALUE && nowMs - lastMs in 0..DOUBLE_CLICK_SPAN_MS
+
 internal fun dpadRevealsOnly(
     key: PlayerDpadKey,
     chromeVisible: Boolean,
@@ -253,12 +260,13 @@ private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 // the top-left Back button, which read as "Right does Up" instead of a no-op at the row's end. BACK
 // stays reachable via mouse/touch hover (onControlHover sets `focus` directly, independent of this
 // list) and via the hardware Back key (root onBack), which is the primary D-pad way to leave anyway.
-internal fun transportOrder(hasNextEp: Boolean, hasSpeakers: Boolean = false, hasPip: Boolean = false): List<PlFocus> =
+internal fun transportOrder(hasNextEp: Boolean, hasSpeakers: Boolean = false, hasPip: Boolean = false, hasFullscreen: Boolean = false): List<PlFocus> =
     buildList {
         add(PlFocus.SEEK_BAR); add(PlFocus.SKIP_BACK); add(PlFocus.PLAY)
         add(PlFocus.SKIP_FWD); add(PlFocus.TRACKS)
         if (hasNextEp) add(PlFocus.NEXT_EP)
         if (hasPip) add(PlFocus.PIP)   // R376 (FR-R376-8) — the browser's picture-in-picture, before the TV's Speakers
+        if (hasFullscreen) add(PlFocus.FULLSCREEN)   // R376 (FR-R376-4b) — the browser tab's full screen, right after picture-in-picture
         if (hasSpeakers) add(PlFocus.SPEAKERS)   // R372 (owner decision 3) — the TV's Speakers panel, last in the row
     }
 
@@ -301,6 +309,13 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var skipIntroReturn by mutableStateOf<PlFocus?>(null)
     var skipIntroHadFocus by mutableStateOf(false)
     var skipIntroTouchedOther by mutableStateOf(false)
+    // R376 (FR-R376-4b) — when the last click on the bare picture landed; see [isDoubleClick].
+    private var lastPictureClickMs = Long.MIN_VALUE
+    fun pictureClickIsDouble(nowMs: Long): Boolean {
+        val double = isDoubleClick(lastPictureClickMs, nowMs)
+        lastPictureClickMs = if (double) Long.MIN_VALUE else nowMs
+        return double
+    }
     // R363 (FR-R363-6) — a skip or a scrub commit since the poll loop's last tick: a credits card it brings up starts
     // on Watch credits.
     var viewerSeek by mutableStateOf(false)
@@ -1698,7 +1713,7 @@ fun PlayerScreen(
                         // R363 (review item 3) — Left/Right on the pill do nothing (it is not in the order).
                         focus == PlFocus.SKIP_INTRO -> {}
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable())
+                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable(), PlayerFullscreen.available)
                             val idx = order.indexOf(focus)
                             if (idx > 0) focus = order[idx - 1]
                         }
@@ -1719,7 +1734,7 @@ fun PlayerScreen(
                         }
                         focus == PlFocus.SKIP_INTRO -> {}   // R363 (review item 3)
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable())
+                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable(), PlayerFullscreen.available)
                             val idx = order.indexOf(focus)
                             if (idx < order.lastIndex) focus = order[idx + 1]
                         }
@@ -1822,6 +1837,7 @@ fun PlayerScreen(
                         focus == PlFocus.NEXT_EP   -> advanceNext()
                         focus == PlFocus.SPEAKERS  -> TvSpeakers.open = true
                         focus == PlFocus.PIP       -> player.togglePictureInPicture()   // R376 (FR-R376-8)
+                        focus == PlFocus.FULLSCREEN -> togglePlayerFullscreen()   // R376 (FR-R376-4b)
                         focus == PlFocus.BACK      -> onBack()
                         else -> {}
                     }
@@ -1859,8 +1875,10 @@ fun PlayerScreen(
                 // (Android's own "smallest width" convention), so it stays true across rotation.
                 // R244 — on a handset the gesture layer (HandsetGestureLayer, below) owns single AND
                 // double taps, so the root must not also toggle chrome on the first tap of a double-tap.
+                // R376 (FR-R376-4b) — and a second click on the picture within a double-click's span toggles full
+                // screen where the page can (a control that took the click never reaches this root).
                 onTap = if (playerTapTogglesChrome && !handset) {
-                    { if (chromeVisible) hideChrome() else wake() }
+                    { if (PlayerFullscreen.available && bk.pictureClickIsDouble(kotlin.time.Clock.System.now().toEpochMilliseconds())) togglePlayerFullscreen() else if (chromeVisible) hideChrome() else wake() }
                 } else null,
             )
     ) {
@@ -2094,6 +2112,7 @@ fun PlayerScreen(
                 // nothing at all; the film and where it is now go along (a Chromecast keeps its own hand-off).
                 castSlot = if (castController != null) ({ CastButton(playContext = dev.jellystructure.ravilo.ui.components.ScreenPlayContext(currentItemId, positionMs)) }) else null,
                 onPictureInPicture = if (player.pictureInPictureAvailable()) ({ wake(); player.togglePictureInPicture() }) else null,   // R376 (FR-R376-8)
+                onFullscreen = if (PlayerFullscreen.available) ({ wake(); togglePlayerFullscreen() }) else null, fullscreenActive = PlayerFullscreen.active,   // R376 (FR-R376-4b)
                 onSkipBack = { skip(-SKIP_BACK_MS) },
                 onPlayPause = { togglePlay() },
                 onSkipFwd = { skip(SKIP_FWD_MS) },
@@ -2124,6 +2143,7 @@ fun PlayerScreen(
                 focus           = focus,
                 hasNextEp       = resolvedNextEpisodeId != null,
                 hasSpeakers     = TvSpeakers.available,
+                hasFullscreen   = PlayerFullscreen.available, fullscreenActive = PlayerFullscreen.active,   // R376 (FR-R376-4b)
                 hasPip          = player.pictureInPictureAvailable(),   // R376 (FR-R376-8) — absent where unsupported   // R372 — snapshot state, no new locals here (R258's register limit)
                 isSeries        = episodes != null,
                 epRailOpen      = epRailOpen,
@@ -2151,6 +2171,7 @@ fun PlayerScreen(
                         PlFocus.NEXT_EP   -> advanceNext()
                         PlFocus.SPEAKERS  -> TvSpeakers.open = true
                         PlFocus.PIP       -> player.togglePictureInPicture()   // R376 (FR-R376-8)
+                        PlFocus.FULLSCREEN -> togglePlayerFullscreen()   // R376 (FR-R376-4b)
                         else -> {}
                     }
                 },
@@ -2366,6 +2387,8 @@ private fun PlayerChrome(
     hasNextEp: Boolean,
     hasSpeakers: Boolean = false,
     hasPip: Boolean = false,
+    hasFullscreen: Boolean = false,   // R376 (FR-R376-4b)
+    fullscreenActive: Boolean = false,
     isSeries: Boolean,
     epRailOpen: Boolean,
     pickerOpen: Boolean,
@@ -2516,6 +2539,12 @@ private fun PlayerChrome(
                     label = str("player.pip"), focused = focus == PlFocus.PIP,
                     onClick = { onControlClick(PlFocus.PIP) },
                     onHover = { onControlHover(PlFocus.PIP) },
+                )
+                // R376 (FR-R376-4b) — the browser tab's full screen, right after picture-in-picture; absent, never greyed.
+                if (hasFullscreen) TrackButton(
+                    label = str(if (fullscreenActive) "desk.exit_fullscreen" else "desk.fullscreen"), focused = focus == PlFocus.FULLSCREEN,
+                    onClick = { onControlClick(PlFocus.FULLSCREEN) },
+                    onHover = { onControlHover(PlFocus.FULLSCREEN) },
                 )
                 if (hasSpeakers) TrackButton(
                     label = str("tv.speakers"), focused = focus == PlFocus.SPEAKERS,

@@ -642,8 +642,14 @@ already full screen. Background and Media Session are as in FR-R376-4.
 ### Tests
 
 - `transportOrder` unit test: the full-screen stop sits right after `PIP` when available, and is absent when not.
-- e2e (`reference-e2e-mock-stack`, Chromium): after Play, `document.fullscreenElement === null` and the control is
-  present; a click on it makes `document.fullscreenElement === document.documentElement`; Back leaves it `null`.
+- ~~e2e (`reference-e2e-mock-stack`, Chromium): after Play, `document.fullscreenElement === null` and the control is
+  present; a click on it makes `document.fullscreenElement === document.documentElement`; Back leaves it `null`.~~
+  **Not built (2026-10-18, DEB-1671):** every control here is drawn on the Compose canvas, and the e2e specs for the web
+  app never touch it (`ravilo-web.spec.ts` says why) — there is no DOM node to click, and no mock-stack login that
+  reaches a playing film. What CI does cover: `PlayerFullscreenControlTest` (the `transportOrder` stop and the
+  double-click span) and the wasmJs compile of the seam. The browser behaviour — `fullscreenElement` after Play, the
+  control, F, the double-click, Back — is acceptance 6a–6d on the QA ticket.
+- `isDoubleClick` unit test: two clicks within 400 ms; a later one, a first one, and a clock that ran backwards are not.
 
 ### Build notes for the engineer
 

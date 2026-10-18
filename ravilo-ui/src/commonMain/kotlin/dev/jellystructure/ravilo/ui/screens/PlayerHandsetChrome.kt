@@ -173,6 +173,9 @@ internal fun HandsetPlayerChrome(
     castSlot: (@Composable () -> Unit)? = null,
     /** R376 (FR-R376-8) — picture-in-picture, where the platform has it (a browser); null = absent. */
     onPictureInPicture: (() -> Unit)? = null,
+    /** R376 (FR-R376-4b) — the browser tab's full screen, where the page can; null = absent. [fullscreenActive] flips the glyph and label. */
+    onFullscreen: (() -> Unit)? = null,
+    fullscreenActive: Boolean = false,
     onSkipBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipFwd: () -> Unit,
@@ -230,6 +233,24 @@ internal fun HandsetPlayerChrome(
                         Canvas(Modifier.size(20.dp)) {
                             drawRoundRect(tint, Offset(0f, size.height * 0.14f), Size(size.width, size.height * 0.72f), CornerRadius(3.dp.toPx()), style = Stroke(2.dp.toPx()))
                             drawRoundRect(tint, Offset(size.width * 0.5f, size.height * 0.48f), Size(size.width * 0.38f, size.height * 0.28f), CornerRadius(1.5.dp.toPx()))
+                        }
+                    }
+                }
+                if (onFullscreen != null) {
+                    HandsetIconButton(size = HANDSET_TARGET, onClick = onFullscreen, label = str(if (fullscreenActive) "desk.exit_fullscreen" else "desk.fullscreen"), showLabel = false) { tint ->
+                        Canvas(Modifier.size(20.dp)) {
+                            // Four corner brackets: outward to enter full screen, inward to leave it.
+                            val a = size.width * 0.08f; val b = size.width * 0.38f; val c = size.width * 0.62f; val d = size.width * 0.92f
+                            val w = 2.dp.toPx()
+                            fun corner(x0: Float, y0: Float, x1: Float, y1: Float, x2: Float, y2: Float) {
+                                val p = Path().apply { moveTo(x0, y0); lineTo(x1, y1); lineTo(x2, y2) }
+                                drawPath(p, tint, style = Stroke(width = w, cap = StrokeCap.Round))
+                            }
+                            if (fullscreenActive) {
+                                corner(b, a, b, b, a, b); corner(c, a, c, b, d, b); corner(b, d, b, c, a, c); corner(c, d, c, c, d, c)
+                            } else {
+                                corner(a, b, a, a, b, a); corner(c, a, d, a, d, b); corner(a, c, a, d, b, d); corner(c, d, d, d, d, c)
+                            }
                         }
                     }
                 }
