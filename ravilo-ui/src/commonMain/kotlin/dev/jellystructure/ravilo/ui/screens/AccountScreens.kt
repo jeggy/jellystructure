@@ -163,7 +163,7 @@ private fun AccountScreenHeader(
 }
 
 @Composable
-internal fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false, onUp: (() -> Unit)? = null, tag: String? = null) {
+internal fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false, onUp: (() -> Unit)? = null, tag: String? = null, external: Boolean = false) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
     val textColor = if (danger) DangerRed else colors.text
@@ -177,7 +177,10 @@ internal fun AccountActionButton(label: String, focusRequester: FocusRequester, 
             .padding(horizontal = 20.dp, vertical = 14.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Text(label, color = textColor, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+            Text(label, color = textColor, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            if (external) ExternalLinkGlyph(textColor, 15.dp)
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -78,6 +79,8 @@ class PasswordManagedElsewhereTest {
     private fun textCount(text: String, substring: Boolean = true) =
         rule.onAllNodes(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNodes().size
 
+    private fun glyphCount() = rule.onAllNodes(hasTestTag(EXTERNAL_LINK_TAG), useUnmergedTree = true).fetchSemanticsNodes().size
+
     private fun press(key: Key) { rule.onRoot().performKeyInput { pressKey(key) }; rule.waitForIdle() }
 
     private fun focusedWith(text: String) =
@@ -87,7 +90,8 @@ class PasswordManagedElsewhereTest {
 
     @Test fun `a phone sees Change password with the link glyph and the subtitle, and a press opens the page`() {
         renderSettings(configOf(true, page))
-        assertEquals(1, textCount("Change password ↗"))
+        assertEquals(1, textCount("Change password", substring = false))
+        assertEquals(1, glyphCount(), "the external-link glyph follows the label")
         assertEquals(1, textCount(sub))
         assertEquals(0, textCount(none))
         rule.onNode(hasText("Change password", substring = true), useUnmergedTree = true).performScrollTo().performClick()
@@ -97,6 +101,7 @@ class PasswordManagedElsewhereTest {
 
     @Test fun `a phone with no page set sees the one sentence and no row`() {
         renderSettings(configOf(true, null))
+        assertEquals(0, glyphCount())
         assertEquals(0, textCount("Change password"))
         assertEquals(1, textCount(none))
         assertEquals(0, textCount(sub))
@@ -105,7 +110,7 @@ class PasswordManagedElsewhereTest {
     @Test fun `a local account keeps today's row and no glyph`() {
         renderSettings(configOf(false))
         assertEquals(1, textCount("Change password", substring = false))
-        assertEquals(0, textCount("↗"))
+        assertEquals(0, glyphCount())
         assertEquals(0, textCount(none))
     }
 

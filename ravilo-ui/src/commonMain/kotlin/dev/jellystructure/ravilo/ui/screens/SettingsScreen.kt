@@ -479,7 +479,7 @@ fun DesktopSettingsPanel(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (pwRow) {
-                    is PasswordRow.Link -> dev.jellystructure.ravilo.ui.components.DeskButton("${str("account.pw_change")} $EXTERNAL_LINK_GLYPH", onClick = { uriHandler.openUri(pwRow.url) })
+                    is PasswordRow.Link -> dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), trailingIcon = dev.jellystructure.ravilo.ui.components.DeskIcon.EXTERNAL, onClick = { uriHandler.openUri(pwRow.url) })
                     PasswordRow.Form -> dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), onClick = onChangePassword)
                     else -> {}
                 }
@@ -603,7 +603,7 @@ private fun GnomePreferences(
         val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
         when (pwRow) {
             is PasswordRow.Link -> AdwRow(str("account.pw_change"), str("account.pw_elsewhere_sub"), onClick = { uriHandler.openUri(pwRow.url) }) {
-                Text(EXTERNAL_LINK_GLYPH, color = colors.textDim, fontSize = 15.sp, fontFamily = ui)
+                ExternalLinkGlyph(colors.textDim)
             }
             PasswordRow.Line -> AdwRow(str("account.pw_elsewhere_none"))
             PasswordRow.Hidden -> {}
@@ -1179,10 +1179,10 @@ private fun SettingsContent(
             contentAlignment = Alignment.CenterStart,
         ) {
             Column {
-                Text(
-                    if (pwRow is PasswordRow.Link) "${str("account.pw_change")} $EXTERNAL_LINK_GLYPH" else str("account.pw_change"),
-                    color = colors.text, fontSize = 14.sp,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(str("account.pw_change"), color = colors.text, fontSize = 14.sp)
+                    if (pwRow is PasswordRow.Link) ExternalLinkGlyph(colors.text)
+                }
                 if (pwRow is PasswordRow.Link) Text(str("account.pw_elsewhere_sub"), color = colors.textSecondary, fontSize = 12.sp)
             }
         }

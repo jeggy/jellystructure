@@ -63,6 +63,8 @@ enum class DeskIcon(internal val d: String, internal val filled: Boolean = false
     BOOK("M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" + "M19 19v2H6"),
     PHONES("M4 15v-3a8 8 0 0 1 16 0v3" + rect(3f, 14f, 4f, 6f, 1f) + rect(17f, 14f, 4f, 6f, 1f)),
     QUEUE("M4 6h16M4 12h16M4 18h10"),
+    /** DEB-1854 (FR-6a) — a row that opens a page outside the app: a square with an arrow leaving its corner. */
+    EXTERNAL("M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"),
     WAVE("M5 10v4M9 6v12M13 9v6M17 4v16M21 10v4"),
     // Not in the mockup's sidebar (Q13 added the two rows after it was drawn): the same stroke vocabulary.
     GENRES(rect(4f, 4f, 7f, 7f, 1.5f) + rect(13f, 4f, 7f, 7f, 1.5f) + rect(4f, 13f, 7f, 7f, 1.5f) + rect(13f, 13f, 7f, 7f, 1.5f)),
@@ -125,7 +127,7 @@ fun DeskIcon(icon: DeskIcon, tint: Color, size: Dp = 16.dp, modifier: Modifier =
  * [RaviloButton] grows and glows under focus, which a click does not need.
  */
 @Composable
-fun DeskButton(label: String, icon: DeskIcon? = null, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun DeskButton(label: String, icon: DeskIcon? = null, primary: Boolean = false, modifier: Modifier = Modifier, trailingIcon: DeskIcon? = null, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
     val ink = if (primary) colors.background else colors.text
     Row(
@@ -136,6 +138,7 @@ fun DeskButton(label: String, icon: DeskIcon? = null, primary: Boolean = false, 
     ) {
         if (icon != null) DeskIcon(icon, ink, 16.dp)
         if (label.isNotEmpty()) Text(label, color = ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)
+        if (trailingIcon != null) DeskIcon(trailingIcon, ink, 14.dp)
     }
 }
 

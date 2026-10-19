@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -43,8 +44,13 @@ fun passwordRowOf(managedElsewhere: Boolean, url: String?, tv: Boolean): Passwor
 
 fun RaviloConfig.passwordRow(tv: Boolean = isTvPlatform): PasswordRow = passwordRowOf(passwordManagedElsewhere, passwordChangeUrl, tv)
 
-/** FR-6a's glyph, after the label. */
-const val EXTERNAL_LINK_GLYPH = "↗"
+/** Test tag on FR-6a's glyph, so a test can tell the link row from the form's row without reading a character. */
+const val EXTERNAL_LINK_TAG = "pw-external-link"
+
+/** FR-6a's glyph, after the label — drawn, not a character: the web app has no font that carries an arrow (R315). */
+@Composable
+fun ExternalLinkGlyph(tint: androidx.compose.ui.graphics.Color, size: androidx.compose.ui.unit.Dp = 14.dp) =
+    dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.EXTERNAL, tint, size, Modifier.testTag(EXTERNAL_LINK_TAG))
 
 /** FR-6b — the non-interactive sentence that stands where the row would be. */
 @Composable
@@ -61,8 +67,8 @@ internal fun PasswordElsewhereBody(row: PasswordRow, onOpen: (String) -> Unit, l
             Text(str("account.pw_elsewhere_sub"), color = colors.textSecondary, fontSize = 14.sp)
             Spacer(Modifier.height(20.dp))
             AccountActionButton(
-                label = "${str("account.pw_change")} $EXTERNAL_LINK_GLYPH",
-                focusRequester = linkFR, onSelect = { onOpen(row.url) }, onUp = onUp, tag = ChangePasswordTags.LINK,
+                label = str("account.pw_change"),
+                focusRequester = linkFR, onSelect = { onOpen(row.url) }, onUp = onUp, tag = ChangePasswordTags.LINK, external = true,
             )
         }
         else -> Column { PasswordElsewhereLine() }

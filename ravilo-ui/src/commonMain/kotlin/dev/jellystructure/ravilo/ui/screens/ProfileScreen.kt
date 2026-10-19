@@ -244,7 +244,7 @@ fun ProfileScreen(
                 when (passwordRow) {
                     is PasswordRow.Form -> { ProfileRow(str("account.pw_change"), null, onChangePassword); RowDivider() }
                     is PasswordRow.Link -> {
-                        ProfileRow(str("account.pw_change"), str("account.pw_elsewhere_sub"), { uriHandler.openUri(passwordRow.url) }, trailing = EXTERNAL_LINK_GLYPH)
+                        ProfileRow(str("account.pw_change"), str("account.pw_elsewhere_sub"), { uriHandler.openUri(passwordRow.url) }, external = true)
                         RowDivider()
                     }
                     is PasswordRow.Line -> {
@@ -346,7 +346,7 @@ fun AppLanguageScreen(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, trailing: String = "›") {
+private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false) {
     val colors = RaviloTheme.colors
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -359,7 +359,7 @@ private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: 
             if (value != null) Text(value, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
         }
         if (dot) { dev.jellystructure.ravilo.ui.components.UpdateDot(ring = colors.surface); Spacer(Modifier.width(12.dp)) }
-        Text(trailing, color = colors.textDim, fontSize = 20.sp)
+        if (external) ExternalLinkGlyph(colors.textDim, 16.dp) else Text("›", color = colors.textDim, fontSize = 20.sp)
     }
 }
 
