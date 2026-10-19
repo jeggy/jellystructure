@@ -1,7 +1,28 @@
 {
-  "version": "1.55",
-  "tag": "v1.55",
-  "published_at": "2026-10-17T08:04:42Z",
-  "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.55",
-  "assets": {}
+  "version": "1.56",
+  "tag": "v1.56",
+  "published_at": "2026-10-19T02:04:29Z",
+  "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.56",
+  "assets": {
+    "android": {
+      "name": "ravilo-android-1.56.apk",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.56/ravilo-android-1.56.apk",
+      "size": 13351016
+    },
+    "linux": {
+      "name": "ravilo-linux-1.56.flatpak",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.56/ravilo-linux-1.56.flatpak",
+      "size": 71200008
+    },
+    "mac": {
+      "name": "ravilo-mac-1.56.dmg",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.56/ravilo-mac-1.56.dmg",
+      "size": 93804853
+    },
+    "tizen": {
+      "name": "ravilo-tizen-1.56.wgt",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.56/ravilo-tizen-1.56.wgt",
+      "size": 321318
+    }
+  }
 }
