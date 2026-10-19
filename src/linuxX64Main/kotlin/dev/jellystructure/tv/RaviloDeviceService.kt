@@ -218,6 +218,29 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         }
     }
 
+    /**
+     * DEB-1932 (FR-187-8 rule 1) — [device] was signed in to Jellyfin again (a password change replaced its token): its row
+     * takes [newToken], and the borrowing rows that held its old one follow it, as at a sign-in ([loginDevice]). One
+     * transaction; the cached `DeviceData` of every row touched is dropped and [tokenListener] hears each.
+     */
+    fun replaceJellyfinToken(device: DeviceData, newToken: String) {
+        val oldToken = device.jellyfinUserToken
+        if (newToken.isBlank() || newToken == oldToken) return
+        var followers = emptyList<DeviceData>()
+        db.transaction {
+            followers = ReceiverTokenPolicy.followers(device.kind, device.jellyfinUserId, oldToken, newToken, listByUser(device.jellyfinUserId))
+            followers.forEach { db.raviloDeviceQueries.updateUserToken(newToken, it.deviceId, it.jellyfinUserId) }
+            db.raviloDeviceQueries.updateUserToken(newToken, device.deviceId, device.jellyfinUserId)
+        }
+        tokenCache.remove(device.deviceToken)
+        followers.forEach { tokenCache.remove(it.deviceToken) }
+        DeviceIdentityRegistry.forget(oldToken)
+        DeviceIdentityRegistry.remember(device.copy(jellyfinUserToken = newToken))
+        println("[INFO] TV: device ${device.deviceId} of user ${device.jellyfinUserId} was signed in again after a password change; ${followers.size} receiver(s) followed")
+        tokenListener?.invoke(device.copy(jellyfinUserToken = newToken), oldToken)
+        followers.forEach { tokenListener?.invoke(it.copy(jellyfinUserToken = newToken), oldToken) }
+    }
+
     /** Phase 300 (FR-300-4) — the Jellyfin token stored on ([deviceId], [jellyfinUserId]) now; null when the row is gone. */
     override fun storedJellyfinToken(deviceId: String, jellyfinUserId: String): String? =
         db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)

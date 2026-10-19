@@ -528,9 +528,10 @@ fun Route.tvRoutes(
         // FR-187-3 — Jellyfin validates the current password; jellystructure never does. The caller's
         // own device token IS a Jellyfin access token (Phase 141 login mints one per device/user), so it
         // is what's sent — never the shared admin token, and never re-authenticated as a side effect.
+        var liveUser: dev.jellystructure.auth.JellyfinUser? = null
         val result = dev.jellystructure.tv.AccountPassword.change(
             // DEB-1854 (FR-8) — the account's provider, read live with the server token before anything is relayed.
-            readUser = { jellyfinClient.getUserOrNull(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, device.jellyfinUserId) },
+            readUser = { jellyfinClient.getUserOrNull(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, device.jellyfinUserId).also { liveUser = it } },
             onProvider = { managed -> if (deviceService.passwordManagement.record(device.jellyfinUserId, managed)) tvEventBus?.notifyConfigChanged(device.jellyfinUserId) },
             relay = {
                 jellyfinClient.updateUserPassword(
@@ -546,6 +547,22 @@ fun Route.tvRoutes(
                 jellyfinClient.checkToken(
                     config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId,
                 ).outcome != dev.jellystructure.auth.TokenCheck.REJECTED
+            },
+            // DEB-1932 (FR-187-8 rules 1-5) — Jellyfin 12.1 revoked every other token of the account: sign each other device
+            // back in with the new password. The password is only ever inside this closure, for this request.
+            otherDevices = {
+                dev.jellystructure.tv.OtherDevicesResign.run(
+                    caller = device,
+                    rows = deviceService.listByUser(device.jellyfinUserId),
+                    liveUsername = liveUser?.name,
+                    signIn = { username, identity ->
+                        jellyfinClient.authenticateByName(config.apiKeys.jellyfinUrl, username, req.newPassword, identity).accessToken
+                    },
+                    replaceToken = { row, token -> deviceService.replaceJellyfinToken(row, token) },
+                    signOut = { row -> deviceService.unpair(row.deviceToken) },
+                    pushSignedOut = { row -> tvEventBus?.notifySignedOut(row.jellyfinUserId, row.deviceId) },
+                    forget = { token -> dev.jellystructure.tv.forgetTokenValidity(token) },
+                )
             },
         )
         if (result == null) call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the change"))

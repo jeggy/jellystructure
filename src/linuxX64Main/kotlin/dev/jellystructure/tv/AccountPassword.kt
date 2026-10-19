@@ -22,6 +22,8 @@ object AccountPassword {
         onProvider: (managedElsewhere: Boolean) -> Unit,
         relay: suspend () -> PasswordChangeOutcome,
         tokenSurvived: suspend () -> Boolean,
+        // DEB-1932 (FR-187-8 rules 1-5) — after Jellyfin's 204: re-signs the account's other devices; true when one was signed out.
+        otherDevices: suspend () -> Boolean = { false },
     ): AccountPasswordResult? {
         readUser()?.let { user ->
             val managed = user.policy.passwordManagedElsewhere
@@ -31,7 +33,10 @@ object AccountPassword {
         return when (relay()) {
             PasswordChangeOutcome.WRONG_CURRENT -> AccountPasswordResult(ok = false, wrongCurrentPassword = true)
             PasswordChangeOutcome.FAILED -> null
-            PasswordChangeOutcome.OK -> AccountPasswordResult(ok = true, tokenSurvived = tokenSurvived())
+            PasswordChangeOutcome.OK -> {
+                val survived = tokenSurvived()
+                AccountPasswordResult(ok = true, tokenSurvived = survived, otherDevicesSignedOut = otherDevices())
+            }
         }
     }
 }

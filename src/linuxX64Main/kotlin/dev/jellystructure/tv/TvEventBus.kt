@@ -147,6 +147,9 @@ class TvEventBus(private val scope: CoroutineScope) {
     /** R370 — one directive to one device's socket (`session_load`, `cast_relay_load`, `targets_changed`). */
     fun notifyDevice(userId: String, deviceId: String, json: String) = notifySessionCommand(userId, deviceId, json)
 
+    /** DEB-1932 (FR-187-8 rule 4) — [deviceId]'s Jellyfin sign-in ended (a password change it could not be re-signed through). */
+    fun notifySignedOut(userId: String, deviceId: String) = notifyDevice(userId, deviceId, OtherDevicesResign.SIGNED_OUT_EVENT)
+
     /** R141: monotonic rev — exposed so the degrade-to-poll `/api/tv/config/rev` endpoint can serve it. */
     suspend fun currentRev(): Long = mutex.withLock { rev }
 

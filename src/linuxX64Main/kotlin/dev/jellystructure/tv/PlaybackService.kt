@@ -65,7 +65,7 @@ private const val TOKEN_NEGATIVE_TTL_MS = 10 * 60_000L // ~10 minutes, per spec 
 // Phase 205 (FR-205-4) — checkToken's own client is configured requestTimeoutMillis = 120_000; on a
 // cache miss (every 5 min per token) that is not a timeout, it is the absence of one. A wedged Jellyfin
 // could otherwise hold a TV request for two minutes with nothing in between to stop it.
-private const val TOKEN_CHECK_TIMEOUT_MS = 5_000L
+internal const val TOKEN_CHECK_TIMEOUT_MS = 5_000L
 // Phase 300 (FR-300-10) — when a token was last forgotten or rejected, as a ticket from [tokenTicket] taken under
 // [tokenCacheMutex]. A probe takes a ticket at its cache miss; its VALID verdict is stored only if no event for that
 // token carries a later one. The timestamp is only for pruning: no probe outlives two bounded checks and FR-194-5's

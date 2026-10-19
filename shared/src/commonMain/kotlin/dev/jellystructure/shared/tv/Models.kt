@@ -1241,6 +1241,9 @@ data class AccountPasswordResult(
     // DEB-1854 (FR-8) — the account's password is kept by a provider other than Jellyfin's own, so nothing was sent to
     // Jellyfin. A client shows the link (or the one sentence) in place of the form. Omitted when false.
     @SerialName("managed_elsewhere") val managedElsewhere: Boolean = false,
+    // DEB-1932 (FR-187-8 rule 5) — true only when a device of the same account could not be signed back in after the
+    // change and was signed out (it is told by a `signed_out` event). `token_survived` stays the caller's own token.
+    @SerialName("other_devices_signed_out") val otherDevicesSignedOut: Boolean = false,
 )
 
 @Serializable
