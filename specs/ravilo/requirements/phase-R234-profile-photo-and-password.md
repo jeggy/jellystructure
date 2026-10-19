@@ -15,7 +15,8 @@ The client half of Phase 187, which owns both routes. It touches `:ravilo-ui` (s
 apps). `:ravilo-tizen` does not depend on `:ravilo-ui`, follows its own hand-written-DOM precedent, and has no
 password or photo row. Owner instruction: change-password and photo-upload are never tested live on a household
 account, because both mutate the real Jellyfin account. **Amended 2026-10-19 by DEB-1854** (FR-R234-4): an account
-whose password Jellyfin does not own gets a link on phone, web and desktop, and no row on a TV.
+whose password Jellyfin does not own gets a link on phone, web and desktop, and no row on a TV. **Amended 2026-10-19
+by DEB-1926** (FR-R234-7): a local account's other devices are signed out by the change, and the viewer is told.
 
 ### Live-verified on stue TV, 2026-09-05
 
@@ -222,6 +223,30 @@ that, say so once, in words, rather than letting three TVs discover it separatel
 > devices. It does not sign them out. That behaviour would be its own phase, and a sign-out-everywhere
 > control is already an explicit non-goal below.
 
+> **Amended 2026-10-19 (DEB-1926): the other devices *are* affected. The block above is superseded for them.**
+> On Jellyfin 12.1 the device that changed the password stays signed in, and every other device signed in to that
+> account loses its sign-in (187 FR-187-8, amended the same day). This requirement's original text already said
+> what to do: *"say so once, in words, rather than letting three TVs discover it separately"*. So:
+>
+> - **The device that changed it** shows *"Password changed."* and returns to Settings, as before. When 187
+>   reports `other_devices_signed_out`, it adds one line: *"Your other devices will ask you to sign in again."*
+>   (`pw_ok_others`, FR-R234-10). The line is said once, on that screen, with no count and no list of devices. It
+>   rides the form, so it appears wherever the form is: TV, phone, web and desktop, for a local account only. An
+>   account managed elsewhere never reaches it (FR-R234-4's amendment).
+> - **Every other device re-authenticates.** It never sits looking signed in while its requests fail (187
+>   FR-187-8). Today's mechanism is acceptable as that re-authenticate. Browsing keeps working, because the server
+>   uses its own access. The first play answers `409`. On TV, phone, web and desktop, `ravilo-ui` shows its
+>   existing *Sign in again* screen, and its button signs that profile out and returns to sign-in. A cast receiver
+>   or a screen device borrows the sender's sign-in and moves to the surviving one, so neither sees this.
+>   **The acceptance check:** no other device shows a generic playback error where *Sign in again* belongs. That
+>   covers a play started in the first 5 minutes after the change, which 187 FR-187-8 rule 2 closes, and a film
+>   already playing when the change lands.
+> - **Whether the other devices should be signed out at all, and whether they should learn at once rather than at
+>   their next play, are the owner's** (open question 6). The two bullets above are the recommended answers.
+>
+> The copy states what happened; it does not promise protection. It renders from 187's measured field, not from
+> a constant: the 2026-09-05 answer was right on 10.11.11 and wrong on 12.1, and the next Jellyfin may move again.
+
 **FR-R234-8 — A new photo appears everywhere, immediately.** On a successful upload or removal, the
 avatar updates on the Your profile screen, the profile menu header, the appbar and the profile picker
 without an app restart — which means refreshing the session's `avatarUrl` from 187's change-keyed URL
@@ -248,6 +273,7 @@ English one because it reads as broken rather than untranslated.
 | `pw_sub` | `You'll need the new one the next time you sign in on any device.` |
 | `pw_cur` / `pw_new` / `pw_rep` | `Current password` / `New password` / `Repeat new password` |
 | `pw_save` / `pw_busy` / `pw_ok` | `Save password` / `Saving…` / `Password changed.` |
+| `pw_ok_others` | `Your other devices will ask you to sign in again.` — **added 2026-10-19** (DEB-1926, FR-R234-7) |
 | `pw_err_cur` | `Enter your current password.` |
 | `pw_err_new` | `Use at least 6 characters.` |
 | `pw_err_rep` | `The two new passwords don't match.` |
@@ -292,6 +318,8 @@ picture in the Ravilo app on your phone"* as a TV line (FR-R234-2 forbids it ent
 3. ~~**Session consequence** — blocked on 187 open question 2 (FR-R234-7).~~
    **Closed 2026-09-05: tokens survive a password change**, so FR-R234-7 ships its success path only —
    *"Password changed."*, back to Settings, no sign-out and no line about other devices.
+   **Reopened 2026-10-19 (DEB-1926):** on Jellyfin 12.1 the caller's own session still survives, but every other
+   device's does not. See FR-R234-7's amendment and open question 6.
 4. **Does `ravilo-web` get the camera?** `capture` on a file input is a phone-browser affordance; a
    desktop browser will show a webcam or nothing depending on the browser. Current answer: offer
    **Choose a photo** and drag-and-drop on web, and show **Take a photo** only where a camera input is
@@ -304,3 +332,12 @@ picture in the Ravilo app on your phone"* as a TV line (FR-R234-2 forbids it ent
    left. Jellyfin 10.11.11's `UserPolicy` has **no flag** that gates self-service password change (see
    187 open question 4), so there is nothing to consult and nothing that would stop a kids profile at the
    server — the row is shown or hidden entirely by our own choice, and the owner has already made it.
+6. **The account's other devices after a password change (DEB-1926, asked 2026-10-19).** Two choices:
+   - **Should they be signed out at all?** Recommended: yes. Jellyfin already signs them out, and Ravilo says so
+     once (FR-R234-7). The alternative is for the server to sign each other Ravilo device back in with the new
+     password at the moment of change. Nobody would notice, but a lost or stolen device would stay signed in, and
+     Jellyfin's own apps would still be signed out.
+   - **When do they learn it?** Recommended: at their next play, through the existing *Sign in again* screen,
+     which needs nothing new on the wire. The alternative is at once: the server pushes an event and every other
+     device returns to sign-in within seconds. That is a new event and client work on every platform, for a rare
+     action.

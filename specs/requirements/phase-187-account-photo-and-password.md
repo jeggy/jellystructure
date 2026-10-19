@@ -16,7 +16,8 @@
 The backend half of the pair; **R234** is the client half. Design-authored 2026-09-03; all four open questions
 were closed by probe or owner decision on 2026-09-05. No schema migration: FR-187-5 stores nothing new. The probes
 below were run with direct `curl` against Jellyfin, in the Kotlin code's exact request shape. **Amended 2026-10-19
-by DEB-1854** (FR-187-3): an account whose password Jellyfin does not own is answered without a relay.
+by DEB-1854** (FR-187-3): an account whose password Jellyfin does not own is answered without a relay. **Amended
+2026-10-19 by DEB-1926** (FR-187-8): on Jellyfin 12.1 a password change signs out the account's other devices.
 
 ### What's built
 
@@ -237,6 +238,10 @@ and the user list was re-checked clear of probe accounts afterwards):
 *authentications* are affected. FR-187-8 collapses to its simple branch, and R234 FR-R234-7 is unblocked
 and needs only its success path.
 
+> **Superseded 2026-10-19 (DEB-1926) for every token but the caller's.** This probe checked one token, the
+> caller's. On Jellyfin 12.1 a second token of the same account is revoked by the change. See the amendment on
+> FR-187-8.
+
 **FR-187-2 — One route per write, both scoped to the caller's own account.**
 `POST /api/tv/account/photo`, `DELETE /api/tv/account/photo`, `POST /api/tv/account/password`. The
 Jellyfin user id is taken **from the session** (`ravilo_device` → `jellyfinUserId`), never from the
@@ -359,6 +364,47 @@ in and every subsequent request 401s.
 >   is a thing people reasonably expect, and it is **not** what happens here. If that behaviour is ever
 >   wanted it needs its own phase — and note R234 explicitly non-goals a sign-out-everywhere control.
 
+> **Amended 2026-10-19 (DEB-1926): on Jellyfin 12.1 a password change signs out every *other* device of the
+> account. The 2026-09-05 answer above is superseded for them.**
+>
+> **Measured on prod's Jellyfin 12.1.0** (DEB-1861). The test used a throwaway local account with two sign-ins
+> under different DeviceIds, A and B. After `POST /Users/Password` from A:
+> - A's token still answers `200`;
+> - B's token answers `401` on `/Users/Me` and on `/Views`;
+> - `GET /Sessions` lists only A.
+>
+> This is Jellyfin revoking every token of the user except the one that made the call. The 2026-09-05 probe
+> checked only the caller's token, so it never saw this.
+>
+> **Who this reaches.** Each Ravilo device signs in to Jellyfin under its own DeviceId
+> (`ravilo-<deviceId>-<user>`, `TvRoutes` login), so it holds its own token. After a change, every other Ravilo
+> device signed in to that account loses its Jellyfin sign-in, and so does every non-Ravilo Jellyfin app. The
+> borrowing kinds (`cast`, `screen`) do not lose theirs: they move to a surviving token of the same user through
+> Phase 300's heal (FR-300-4). Its device token to jellystructure is untouched, so the device keeps browsing on
+> the server's own access (`tvToken`). Only the calls that hand the device its own token, play start, prepare and
+> restream (`tvTokenForClient`), answer `409`.
+>
+> So the second half of this requirement is live again: **a device whose sign-in died re-authenticates, and
+> nothing may leave it looking signed in while its requests fail.** Three rules make that true:
+>
+> 1. **The route reports the other devices too.** `token_survived` keeps its meaning: the caller's own token.
+>    `AccountPasswordResult` gains `other_devices_signed_out`, default `false`. It is additive, so an installed
+>    client ignores it. It is measured, not assumed: after a successful change, the route checks the token of each
+>    other `ravilo_device` row for the same Jellyfin user, skipping borrowed tokens and the caller's own. It is
+>    `true` when any of them comes back `REJECTED` (Phase 194's outcome, so a transient failure never counts).
+>    With no other device, it is `false`, and R234 says nothing.
+> 2. **A token the change revoked is believed dead at once.** Today a token checked `VALID` stays trusted for
+>    `TOKEN_VALID_TTL_MS` (5 minutes). For up to 5 minutes after the change, B's play start passes the cached
+>    check and hands B a stream URL carrying the revoked token. Jellyfin refuses the stream, and B shows a playback
+>    failure instead of R234's sign-in. That is the state this requirement forbids. So a successful change calls
+>    `forgetTokenValidity` (Phase 300, FR-300-10) on every other token of that user, and the next check of each
+>    goes to Jellyfin. The checks in rule 1 then negative-cache the rejected tokens in the same pass.
+> 3. **What the other device shows** is R234 FR-R234-7's, amended the same day.
+>
+> The two cautions above still hold, re-aimed. Keep reading the field rather than a constant, because the
+> 2026-09-05 answer changed under a Jellyfin upgrade once already. And never describe this to a viewer as a
+> security feature of ours. It is Jellyfin's behaviour, reported because it happened.
+
 **FR-187-9 — Show the photo in the admin, read-only.** Each user row on **Ravilo → Users & devices**
 renders that user's photo in place of its initials chip, from the same `RaviloImageUrl.avatar()` the
 clients use (`getUsers` is already called there — `server/routes/TvRoutes.kt:667`, and its `UserDto`
@@ -406,6 +452,8 @@ TV-specific behaviour and no capability flag — the same route simply never get
    branch and R234 FR-R234-7 is unblocked. Two cautions recorded on FR-187-8: keep the response field
    anyway so the client renders observed truth rather than a hard-coded assumption, and never present
    this to a viewer as "changing your password signs out your other devices", because it does not.
+   **Reopened and re-answered 2026-10-19 (DEB-1926): on Jellyfin 12.1 it does, for every token but the caller's.**
+   See the amendment on FR-187-8.
 3. ~~**Where would a preset colour live?**~~ **✅ Decided 2026-09-05 by the owner: drop the presets.**
    Initials keep their existing deterministic gradient. The two alternatives were a jellystructure-side
    column (which would have made this the one fact Jellyfin does not own, against FR-187-5's "no new
