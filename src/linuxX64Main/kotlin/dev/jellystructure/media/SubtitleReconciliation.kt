@@ -2,6 +2,7 @@ package dev.jellystructure.media
 
 import dev.jellystructure.auth.JellyfinMediaStream
 import dev.jellystructure.resolver.LanguageResolver
+import kotlinx.serialization.Serializable
 
 /**
  * Phase 200 (FR-200-6) — the guard on the "scan the directory ourselves" decision: our per-title
@@ -9,8 +10,13 @@ import dev.jellystructure.resolver.LanguageResolver
  * embedded and external alike) must agree. Report, don't auto-correct — a divergence is a parser bug
  * to fix, not a value to paper over.
  */
+/** The `GET /api/media/health/subtitle-reconciliation` answer. DEB-1906 — it was a `mapOf` of two Ints and a list, which answered 500. */
+@Serializable
+data class SubtitleReconciliationReport(val scanned: Int, val diverged: Int, val divergences: List<SubtitleReconciliation.Divergence>)
+
 object SubtitleReconciliation {
 
+    @Serializable
     data class Divergence(
         val jellyfinId: String,
         /** In Jellyfin's `MediaStreams` but missing from our own subtitle language set. */

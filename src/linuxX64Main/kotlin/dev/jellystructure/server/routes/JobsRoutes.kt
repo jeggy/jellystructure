@@ -42,6 +42,10 @@ data class EmptyQueuesResponse(
     val lanes: List<dev.jellystructure.jobs.LaneSummary>,
 )
 
+/** Phase 260 (FR-260-1) — the 400 for an empty or unknown queue list. DEB-1906 — it was a `mapOf` of a String and a List, which answered 500. */
+@Serializable
+data class EmptyQueuesRejected(val error: String, val unknown: List<String>)
+
 /** Phase 109 (widened Phase 164) — Activity ▸ Jobs & workers: read the media-worker + segments-lane
  *  queues and cancel/retry a job. Live progress streams over the existing `/ws` connection as
  *  `media_job` JobEvents; this is just the initial-load snapshot + the two mutating actions. */
@@ -78,7 +82,7 @@ fun Route.jobsRoutes(mediaJobQueue: MediaJobQueue) {
                 ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Body must be {\"queues\": [...]}"))
             val unknown = req.queues.filter { it !in MediaJobQueue.QUEUE_NAMES }
             if (req.queues.isEmpty() || unknown.isNotEmpty()) {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "queues must be a non-empty subset of ${MediaJobQueue.QUEUE_NAMES}", "unknown" to unknown))
+                return@post call.respond(HttpStatusCode.BadRequest, EmptyQueuesRejected("queues must be a non-empty subset of ${MediaJobQueue.QUEUE_NAMES}", unknown))
             }
             val result = mediaJobQueue.emptyQueues(req.queues, by = session.jellyfinUsername)
             call.respond(EmptyQueuesResponse(removed = result.removed, keptRunning = result.keptRunning, lanes = mediaJobQueue.laneSummaries()))

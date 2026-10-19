@@ -703,7 +703,7 @@ fun Route.trackRoutes(
             val ourSubLangs = item.tracks.filter { it.kind == TrackKind.SUBTITLE }.mapNotNull { it.language }
             dev.jellystructure.media.SubtitleReconciliation.compare(jfId, ourSubLangs, streams).takeUnless { it.agrees }
         }
-        call.respond(mapOf("scanned" to items.size, "diverged" to divergences.size, "divergences" to divergences))
+        call.respond(dev.jellystructure.media.SubtitleReconciliationReport(items.size, divergences.size, divergences))
     }
 
     // Phase 201 (FR-201-6) — a read-only Tracks/Cluster layout sweep the operator can run and read,
