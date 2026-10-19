@@ -144,6 +144,7 @@ import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
+import dev.jellystructure.ravilo.ui.screens.passwordRow
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.NavigateEnvelope
 import dev.jellystructure.shared.tv.PlayItemEnvelope
@@ -522,6 +523,8 @@ fun RaviloApp(
     var castMusic by remember { mutableStateOf(false) }
     // DEB-1738 — false until the first config answer; see the Support lane's close-on-off effect.
     var configAnswered by remember { mutableStateOf(false) }
+    // DEB-1854 (FR-6, FR-7) — server-resolved per viewer, so it rides the same config read; the form until it says otherwise.
+    var passwordRow by remember { mutableStateOf<dev.jellystructure.ravilo.ui.screens.PasswordRow>(dev.jellystructure.ravilo.ui.screens.PasswordRow.Form) }
     fun refreshConfig() {
         configScope.launch {
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
@@ -530,6 +533,7 @@ fun RaviloApp(
                 // DEB-1501 (FR-1) — an app that reads no flag draws nothing; a TV never does, even with the flag on.
                 dev.jellystructure.ravilo.ui.support.SupportLane.enabled.value = cfg.supportEnabled && !isTvPlatform
                 configAnswered = true   // DEB-1738
+                passwordRow = cfg.passwordRow()   // DEB-1854
                 screensEnabled = cfg.screens?.enabled == true
                 screensPaired = cfg.screens?.paired == true
                 configRefreshes++
@@ -2955,6 +2959,7 @@ fun RaviloApp(
                     onItemSelect = { openDetail(it, dest.displayName) },
                     onAppLanguage = { push(Dest.AppLanguage(dest.displayName)) },
                     onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
+                    passwordRow = passwordRow,
                     onSettings = { push(Dest.Settings(dest.displayName)) },
                     // DEB-1501 (FR-1) — the Support row, after Settings, while the flag is on.
                     onSupport = if (supportLaneOpen) ({ push(Dest.SupportList(dest.displayName)) }) else null,
@@ -3141,7 +3146,11 @@ fun RaviloApp(
                 onAvatarChanged = { activeAvatarUrl = it },
             )
 
-            is Dest.ChangePassword -> dev.jellystructure.ravilo.ui.screens.ChangePasswordScreen(
+            is Dest.ChangePassword -> {
+            // DEB-1854 (FR-6a) — `/account/password` opened directly for an account managed elsewhere lands on Settings;
+            // the config answer may arrive after the route does, so this watches it rather than reading it once.
+            LaunchedEffect(passwordRow) { if (passwordRow.managedElsewhere) replaceTop(Dest.Settings(dest.displayName)) }
+            dev.jellystructure.ravilo.ui.screens.ChangePasswordScreen(
                 apiClient = apiClient,
                 onBack = { pop() },
                 // FR-R234-7 — this Jellyfin version never actually takes this branch (probed: tokens
@@ -3154,6 +3163,7 @@ fun RaviloApp(
                     }
                 },
             )
+            }
         } } } } // CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
         // R337 (FR-R337-6) — the desktop's player bar at the content's foot.
         if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(

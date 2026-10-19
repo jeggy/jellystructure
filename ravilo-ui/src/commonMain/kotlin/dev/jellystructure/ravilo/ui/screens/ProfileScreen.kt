@@ -93,6 +93,8 @@ fun ProfileScreen(
     onItemSelect: (MediaCard) -> Unit,
     onAppLanguage: () -> Unit,
     onChangePassword: () -> Unit,
+    /** DEB-1854 (FR-6) — the account's password place; the form row until the config says otherwise. */
+    passwordRow: PasswordRow = PasswordRow.Form,
     onSettings: () -> Unit,
     /** DEB-1501 (FR-1) — opens My tickets; null (no row at all) while the support lane is closed, and on every TV. */
     onSupport: (() -> Unit)? = null,
@@ -237,8 +239,20 @@ fun ProfileScreen(
                 val langName = SUPPORTED_LANGUAGES.firstOrNull { it.code == currentLang }?.name ?: currentLang
                 ProfileRow(str("profile.app_language"), langName, onAppLanguage)
                 RowDivider()
-                ProfileRow(str("account.pw_change"), null, onChangePassword)
-                RowDivider()
+                // DEB-1854 (FR-6) — the link row opens the page; the sentence is a row of its own, not a control.
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                when (passwordRow) {
+                    is PasswordRow.Form -> { ProfileRow(str("account.pw_change"), null, onChangePassword); RowDivider() }
+                    is PasswordRow.Link -> {
+                        ProfileRow(str("account.pw_change"), str("account.pw_elsewhere_sub"), { uriHandler.openUri(passwordRow.url) }, trailing = EXTERNAL_LINK_GLYPH)
+                        RowDivider()
+                    }
+                    is PasswordRow.Line -> {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) { PasswordElsewhereLine(13) }
+                        RowDivider()
+                    }
+                    is PasswordRow.Hidden -> {}
+                }
                 // Dev review item 2 — the phone's Settings still holds skin, autoplay, tile shape and more;
                 // a row rather than a deleted screen.
                 ProfileRow(str("nav.settings"), null, onSettings, dot = dev.jellystructure.ravilo.ui.components.updateDotShows())
@@ -332,7 +346,7 @@ fun AppLanguageScreen(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false) {
+private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, trailing: String = "›") {
     val colors = RaviloTheme.colors
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -345,7 +359,7 @@ private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: 
             if (value != null) Text(value, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
         }
         if (dot) { dev.jellystructure.ravilo.ui.components.UpdateDot(ring = colors.surface); Spacer(Modifier.width(12.dp)) }
-        Text("›", color = colors.textDim, fontSize = 20.sp)
+        Text(trailing, color = colors.textDim, fontSize = 20.sp)
     }
 }
 

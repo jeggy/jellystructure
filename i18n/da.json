@@ -46,6 +46,8 @@
   "account.pw_err_new": "Brug mindst 6 tegn.",
   "account.pw_err_rep": "De to nye adgangskoder er ikke ens.",
   "account.pw_err_wrong": "Den nuværende adgangskode er ikke rigtig.",
+  "account.pw_elsewhere_sub": "Åbner din kontoside i browseren. Den nye adgangskode virker alle steder, kontoen bruges, også i Ravilo.",
+  "account.pw_elsewhere_none": "Din adgangskode styres uden for Ravilo. Spørg den, der driver serveren, hvordan du skifter den.",
   "account.photo_title": "Dit billede",
   "account.photo_sub": "Vises på alle de enheder, du ser på — også tv’et.",
   "account.photo_choose": "Vælg et billede",

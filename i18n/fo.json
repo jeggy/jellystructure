@@ -46,6 +46,8 @@
   "account.pw_err_new": "Brúka minst 6 tøkn.",
   "account.pw_err_rep": "Tey tvey nýggju loyniorðini eru ikki eins.",
   "account.pw_err_wrong": "Tað verandi loyniorðið er skeivt.",
+  "account.pw_elsewhere_sub": "Opnar kontusíðuna hjá tær í kaganum. Nýggja loyniorðið virkar allastaðni, har kontan verður brúkt, eisini í Ravilo.",
+  "account.pw_elsewhere_none": "Loyniorðið hjá tær verður stýrt uttan fyri Ravilo. Spyr tann, ið rekur ambætaran, hvussu tú skiftir tað.",
   "account.photo_title": "Tín mynd",
   "account.photo_sub": "Sýnist á øllum teimum eindum, tú hyggur á — eisini sjónvarpinum.",
   "account.photo_choose": "Vel eina mynd",

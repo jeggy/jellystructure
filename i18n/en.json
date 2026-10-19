@@ -49,6 +49,8 @@
   "account.pw_err_new": "Use at least 6 characters.",
   "account.pw_err_rep": "The two new passwords don’t match.",
   "account.pw_err_wrong": "That current password isn’t right.",
+  "account.pw_elsewhere_sub": "Opens your account page in the browser. The new password works everywhere that account is used, Ravilo included.",
+  "account.pw_elsewhere_none": "Your password is managed outside Ravilo. Ask whoever runs this server how to change it.",
   "account.photo_title": "Your photo",
   "account.photo_sub": "Shows on every device you watch on — including the TV.",
   "account.photo_choose": "Choose a photo",

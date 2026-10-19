@@ -71,6 +71,8 @@ object ChangePasswordTags {
     const val NEW = "pw-new"
     const val REPEAT = "pw-repeat"
     const val SAVE = "pw-save"
+    /** DEB-1854 (FR-8) — the link that stands in for the form when the account is managed elsewhere. */
+    const val LINK = "pw-elsewhere-link"
 }
 
 @Composable
@@ -161,7 +163,7 @@ private fun AccountScreenHeader(
 }
 
 @Composable
-private fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false, onUp: (() -> Unit)? = null, tag: String? = null) {
+internal fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false, onUp: (() -> Unit)? = null, tag: String? = null) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
     val textColor = if (danger) DangerRed else colors.text
@@ -192,6 +194,8 @@ private sealed class PwState {
     // plain (non-composable) function and a coroutine callback, neither of which can call it.
     data class Error(val key: String) : PwState()
     data class Done(val tokenSurvived: Boolean) : PwState()
+    // DEB-1854 (FR-8) — the route said the password is kept elsewhere; the link or the one sentence stands in for the form.
+    data class Elsewhere(val row: PasswordRow) : PwState()
 }
 
 @Composable
@@ -221,6 +225,8 @@ fun ChangePasswordScreen(
     val newEdit = rememberOkToEdit()
     val repEdit = rememberOkToEdit()
     LaunchedEffect(Unit) { runCatching { curFR.requestFocus() } }
+    val linkFR = remember { FocusRequester() }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     fun submit() {
         when {
@@ -235,6 +241,11 @@ fun ChangePasswordScreen(
                 onSuccess = { r: AccountPasswordResult ->
                     if (r.ok) {
                         state = PwState.Done(r.tokenSurvived)
+                    } else if (r.managedElsewhere) {
+                        // FR-8 — the page comes from the viewer's config; a read that fails, or one that has not caught up
+                        // with the route yet, leaves the sentence, which is true either way.
+                        val row = runCatching { apiClient.getConfig().passwordRow() }.getOrNull()
+                        state = PwState.Elsewhere(if (row is PasswordRow.Link) row else PasswordRow.Line)
                     } else if (r.wrongCurrentPassword) {
                         // FR-R234-5 — clear only the field that was wrong; retyping a long new
                         // password because of a mistyped current one is a small cruelty to avoid.
@@ -250,6 +261,7 @@ fun ChangePasswordScreen(
         }
     }
 
+    LaunchedEffect(state is PwState.Elsewhere) { if (state is PwState.Elsewhere) runCatching { linkFR.requestFocus() } }
     LaunchedEffect(state) {
         val s = state
         if (s is PwState.Done) {
@@ -266,7 +278,12 @@ fun ChangePasswordScreen(
                 .padding(horizontal = if (compact) 20.dp else 80.dp, vertical = 40.dp)
                 .width(if (compact) androidx.compose.ui.unit.Dp.Unspecified else 420.dp),
         ) {
-            AccountScreenHeader(str("account.pw_title"), onBack, backFR = backFR, onBackDown = { curFR.requestFocus() })
+            AccountScreenHeader(str("account.pw_title"), onBack, backFR = backFR, onBackDown = { runCatching { (if (state is PwState.Elsewhere) linkFR else curFR).requestFocus() } })
+            val elsewhere = state as? PwState.Elsewhere
+            if (elsewhere != null) {
+                PasswordElsewhereBody(elsewhere.row, onOpen = { uriHandler.openUri(it) }, linkFR = linkFR, onUp = { backFR.requestFocus() })
+                return@Column
+            }
             Text(str("account.pw_sub"), color = colors.textSecondary, fontSize = 14.sp)
             Spacer(Modifier.height(28.dp))
 

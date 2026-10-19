@@ -470,9 +470,24 @@ fun DesktopSettingsPanel(
             heading(str("settings.account"), first)
             Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.text, fontSize = 13.5.sp, fontFamily = ui)
             Spacer(Modifier.height(16.dp))
+            val pwRow = (state as? SettingsState.Loaded)?.config?.passwordRow() ?: PasswordRow.Form
+            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            // DEB-1854 (FR-6) — the link or the one sentence for an account managed elsewhere; the form's button otherwise.
+            if (pwRow is PasswordRow.Line) {
+                PasswordElsewhereLine(13)
+                Spacer(Modifier.height(14.dp))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), onClick = onChangePassword)
+                when (pwRow) {
+                    is PasswordRow.Link -> dev.jellystructure.ravilo.ui.components.DeskButton("${str("account.pw_change")} $EXTERNAL_LINK_GLYPH", onClick = { uriHandler.openUri(pwRow.url) })
+                    PasswordRow.Form -> dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), onClick = onChangePassword)
+                    else -> {}
+                }
                 dev.jellystructure.ravilo.ui.components.DeskButton(str("profile.sign_out"), onClick = onSignOut)
+            }
+            if (pwRow is PasswordRow.Link) {
+                Spacer(Modifier.height(8.dp))
+                Text(str("account.pw_elsewhere_sub"), color = colors.textDim, fontSize = 12.sp, fontFamily = ui)
             }
         }
 
@@ -583,7 +598,17 @@ private fun GnomePreferences(
     }
     AdwGroup(str("settings.account")) {
         AdwRow(str("profile.signed_in", mapOf("name" to displayName)))
-        AdwRow(str("account.pw_change"), onClick = onChangePassword) { AdwChevron() }
+        // DEB-1854 (FR-6) — managed elsewhere: the link row, or the one sentence as a quiet row; never the form.
+        val pwRow = config.passwordRow()
+        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        when (pwRow) {
+            is PasswordRow.Link -> AdwRow(str("account.pw_change"), str("account.pw_elsewhere_sub"), onClick = { uriHandler.openUri(pwRow.url) }) {
+                Text(EXTERNAL_LINK_GLYPH, color = colors.textDim, fontSize = 15.sp, fontFamily = ui)
+            }
+            PasswordRow.Line -> AdwRow(str("account.pw_elsewhere_none"))
+            PasswordRow.Hidden -> {}
+            PasswordRow.Form -> AdwRow(str("account.pw_change"), onClick = onChangePassword) { AdwChevron() }
+        }
         AdwRow(str("profile.sign_out"), onClick = onSignOut) { AdwChevron() }
     }
     // R386 (FR-R386-6) — About: the version and the server. No update block on Linux (Flathub updates the Flatpak): nothing
@@ -963,6 +988,12 @@ private fun SettingsContent(
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
+    // DEB-1854 (FR-6, FR-7) — the account's password place, from the config; the chain below closes over a row not drawn.
+    val pwRow = config.passwordRow()
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val belowAutoplayFR = if (pwRow.focusable) changePwFR else if (isWebPlatform) installFR else signOutFR
+    val aboveInstallFR = if (pwRow.focusable) changePwFR else autoplayFR
+    val aboveSignOutFR = if (isWebPlatform) installFR else if (pwRow.focusable) changePwFR else autoplayFR
 
     // R338 — the theme settings, when the server has them (FR-R338-5); an older server keeps the three skins below.
     val themeEntryFR = if (themesFirst) firstFR else remember { FocusRequester() }
@@ -1075,7 +1106,7 @@ private fun SettingsContent(
         focusRequester = autoplayFR,
         onToggle = { store.saveAutoplayNext(!config.autoplayNext) },
         onUp = { progressFR.requestFocus() },
-        onDown = { changePwFR.requestFocus() },
+        onDown = { belowAutoplayFR.requestFocus() },
     )
     // R322 (FR-R322-9, J6's lean) — Settings ▸ Listening: *Even out volume*, on by default. Wherever music plays
     // and the device is not a TV: the phone, and (R329) the Mac.
@@ -1130,24 +1161,36 @@ private fun SettingsContent(
     // R234 (FR-R234-4) — a password is a credential, not a preference, so it lives here on every
     // platform (TV included) rather than gated like the phone/web-only "Your profile" photo screen.
     var changePwFocused by rememberFocusVisual()
-    Box(
-        modifier = Modifier
-            .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-            .then(if (changePwFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
-            .dpadFocusable(
-                focusRequester = changePwFR,
-                onFocused = { changePwFocused = true },
-                onBlurred = { changePwFocused = false },
-                onUp = { autoplayFR.requestFocus() },
-                onDown = { (if (isWebPlatform) installFR else signOutFR).requestFocus() },
-                onSelect = onChangePassword,
-            )
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(str("account.pw_change"), color = colors.text, fontSize = 14.sp)
+    if (pwRow.focusable) {
+        Box(
+            modifier = Modifier
+                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                .then(if (changePwFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                .dpadFocusable(
+                    focusRequester = changePwFR,
+                    onFocused = { changePwFocused = true },
+                    onBlurred = { changePwFocused = false },
+                    onUp = { autoplayFR.requestFocus() },
+                    onDown = { (if (isWebPlatform) installFR else signOutFR).requestFocus() },
+                    // FR-6a — the page is opened and nothing is awaited; no screen of ours opens.
+                    onSelect = { if (pwRow is PasswordRow.Link) uriHandler.openUri(pwRow.url) else onChangePassword() },
+                )
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Column {
+                Text(
+                    if (pwRow is PasswordRow.Link) "${str("account.pw_change")} $EXTERNAL_LINK_GLYPH" else str("account.pw_change"),
+                    color = colors.text, fontSize = 14.sp,
+                )
+                if (pwRow is PasswordRow.Link) Text(str("account.pw_elsewhere_sub"), color = colors.textSecondary, fontSize = 12.sp)
+            }
+        }
+    } else if (pwRow is PasswordRow.Line) {
+        // FR-6b — a sentence, not a control: nothing for the chain to land on. FR-7 (Hidden) draws nothing at all.
+        PasswordElsewhereLine()
     }
-    Spacer(Modifier.height(16.dp))
+    if (pwRow !is PasswordRow.Hidden) Spacer(Modifier.height(16.dp))
     if (isWebPlatform) {
         var installFocused by rememberFocusVisual()
         Box(
@@ -1158,7 +1201,7 @@ private fun SettingsContent(
                     focusRequester = installFR,
                     onFocused = { installFocused = true },
                     onBlurred = { installFocused = false },
-                    onUp = { changePwFR.requestFocus() },
+                    onUp = { aboveInstallFR.requestFocus() },
                     onDown = { signOutFR.requestFocus() },
                     onSelect = onInstallRavilo,
                 )
@@ -1180,7 +1223,7 @@ private fun SettingsContent(
                 // Bug fix (found via live TV testing) — onBlurred was never wired; Sign out's focus
                 // ring would have stuck the same way ToggleRow's did.
                 onBlurred = { focused = false },
-                onUp = { (if (isWebPlatform) installFR else changePwFR).requestFocus() },
+                onUp = { aboveSignOutFR.requestFocus() },
                 onSelect = onSignOut,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
