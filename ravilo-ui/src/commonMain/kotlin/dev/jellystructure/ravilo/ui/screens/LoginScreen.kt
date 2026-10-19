@@ -140,6 +140,8 @@ fun LoginScreen(
     /** R175 (found live 2026-10-09) — *Add user* is escapable: a Cancel in the form's own flow, under Sign in. It used
      *  to be an overlay pinned to the screen's foot, which the system keyboard pushed up over *Sign in*. */
     onCancel: (() -> Unit)? = null,
+    /** DEB-1933 (FR-R234-7) — the device was signed out by a password change elsewhere; says so under the title. */
+    signedOutNotice: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -192,6 +194,13 @@ fun LoginScreen(
                         str("login.subtitle"), color = colors.textSecondary, fontSize = 14.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
+                    if (signedOutNotice) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            str("account.pw_signed_out"), color = colors.accent, fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
                     Spacer(Modifier.height(28.dp))
 
                     val locked = s is LoginState.SigningIn

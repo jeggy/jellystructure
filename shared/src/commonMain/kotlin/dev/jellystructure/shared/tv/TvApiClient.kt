@@ -992,6 +992,10 @@ class TvApiClient(
         // DEB-1501 (FR-7) — `{"type":"support_changed","ticket":n}`, only to a socket that asked for `support`. A signal:
         // the app reads again, nothing is patched from the event. Never through [onEvent] (that is "the config changed").
         onSupportChanged: suspend (Long) -> Unit = {},
+        // DEB-1933 (FR-187-8 rule 4, FR-R234-7) — `{"type":"signed_out"}`: this device's Jellyfin sign-in ended (a password
+        // change it could not be re-signed through). It belongs to the profile this socket was opened for. Never through
+        // [onEvent]: an unknown type there would be read as "the config changed".
+        onSignedOut: suspend () -> Unit = {},
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -1053,6 +1057,7 @@ class TvApiClient(
                         runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }
                     }
                     "home_changed" -> onHomeChanged(ev.rev)
+                    "signed_out" -> onSignedOut()
                     "support_changed" -> onSupportChanged(runCatching { json.decodeFromString<SupportChangedEnvelope>(text).ticket }.getOrDefault(0L))
                     // R368 — never `else`: an unknown type would be read as "the config changed".
                     "session_list" -> runCatching { json.decodeFromString<SessionListEnvelope>(text) }.getOrNull()?.let { onSessionList(it) }

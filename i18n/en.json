@@ -45,6 +45,8 @@
   "account.pw_save": "Save password",
   "account.pw_busy": "Saving…",
   "account.pw_ok": "Password changed.",
+  "account.pw_ok_others": "Some of your other devices will ask you to sign in again.",
+  "account.pw_signed_out": "Your password was changed on another device. Sign in with the new one.",
   "account.pw_err_cur": "Enter your current password.",
   "account.pw_err_new": "Use at least 6 characters.",
   "account.pw_err_rep": "The two new passwords don’t match.",

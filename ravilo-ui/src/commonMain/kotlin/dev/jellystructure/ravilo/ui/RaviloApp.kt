@@ -570,6 +570,11 @@ fun RaviloApp(
         dev.jellystructure.ravilo.ui.sessions.PlayOnStore.api = apiClient   // R370
     }
     val liveNavigate = remember { MutableSharedFlow<NavigateEnvelope>(replay = 0, extraBufferCapacity = 8) }
+    // DEB-1933 (FR-R234-7) — a `signed_out` event, carrying the profile whose socket heard it; collected below, where the
+    // stack can be reset. Never dropped off screen: the sign-in is already gone, so the device must not wake into the player.
+    val liveSignedOut = remember { MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 4) }
+    // The line Login and the profile picker show after it, until a profile is signed in or picked.
+    var signedOutNotice by remember { mutableStateOf(false) }
     // R248 (FR-R248-2) — the server folded a stop into this user's Home feed; collected below against
     // the retained Home/channel stores (not the screens), so a push that lands while the player is still
     // on top refreshes the feed the viewer is about to return to.
@@ -610,6 +615,8 @@ fun RaviloApp(
     LaunchedEffect(Unit) { liveConfig.collect { refreshConfig() } }
     LaunchedEffect(activeUserId) {
         if (activeUserId == null) return@LaunchedEffect
+        // DEB-1933 — the profile this socket belongs to, fixed when it opens (the effect restarts on a switch).
+        val socketUserId = activeUserId
         val backoff = ReconnectBackoff()
         while (true) {
             // FR-R293-1 — off screen there is no socket, no reconnect and no timer: the loop parks here
@@ -684,6 +691,7 @@ fun RaviloApp(
                         if (cmd != null && acceptsPlayerCommand(onScreenNow, socketWanted.value)) liveRemote.emit(cmd) else if (cmd != null) println("R293: dropped player_command while off screen")
                     },
                     onHomeChanged = { liveHome.emit(it) },
+                    onSignedOut = { liveSignedOut.emit(socketUserId.orEmpty()) },
                     // Home-feed playstate cache/concurrency fix — a live Jellyfin fetch made to satisfy
                     // this or another device's own /api/tv/home request lands here; reuse the existing
                     // R147 patch-in-place path (WatchedBus) instead of forcing a re-fetch.
@@ -1140,6 +1148,17 @@ fun RaviloApp(
             activeAvatarUrl = session.avatarUrl
             refreshConfig()
             resetTo(Dest.Home(session.displayName))
+        }
+        // DEB-1933 (FR-R234-7) — the server ended a profile's sign-in. The active one returns to sign-in at once, wherever the
+        // viewer is (the player included) and says why; a stored profile that is not active is dropped without a sound.
+        LaunchedEffect(Unit) {
+            liveSignedOut.collect { userId ->
+                val route = dev.jellystructure.ravilo.ui.screens.applySignedOutToDevice(apiClient, userId.ifEmpty { null }) ?: return@collect
+                signedOutNotice = true
+                activeUserId = null
+                activeAvatarUrl = null
+                resetTo(if (route == dev.jellystructure.ravilo.ui.screens.SignedOutRoute.PICKER) Dest.ProfilePicker else Dest.Login)
+            }
         }
         LaunchedEffect(Unit) {
             liveNavigate.collect { env ->
@@ -2024,6 +2043,7 @@ fun RaviloApp(
             LocalBackToTop provides backToTop,
             LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
+                signedOutNotice = false   // DEB-1933 — this is the 401 route, not the event's
                 configScope.launch {
                     signOutActiveSession(apiClient)
                     resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
@@ -2236,7 +2256,9 @@ fun RaviloApp(
                 ProfilePickerScreen(
                     store = store,
                     apiClient = apiClient,
+                    signedOutNotice = signedOutNotice,
                     onProfileSelected = { session ->
+                        signedOutNotice = false
                         activeUserId = session.userId
                         activeAvatarUrl = session.avatarUrl
                         refreshConfig()
@@ -2253,7 +2275,9 @@ fun RaviloApp(
                 val store = remember { LoginStore(apiClient) }
                 LoginScreen(
                     store = store,
+                    signedOutNotice = signedOutNotice,
                     onSignedIn = {
+                        signedOutNotice = false
                         val active = MultiTokenStore.getActive()
                         activeUserId = active?.userId
                         activeAvatarUrl = active?.avatarUrl

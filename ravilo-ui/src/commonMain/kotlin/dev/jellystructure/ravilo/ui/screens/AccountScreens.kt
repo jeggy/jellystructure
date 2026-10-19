@@ -73,6 +73,8 @@ object ChangePasswordTags {
     const val SAVE = "pw-save"
     /** DEB-1854 (FR-8) — the link that stands in for the form when the account is managed elsewhere. */
     const val LINK = "pw-elsewhere-link"
+    /** DEB-1933 (FR-R234-7) — the line saying some other devices will ask to sign in again. */
+    const val OTHERS = "pw-others-line"
 }
 
 @Composable
@@ -196,7 +198,8 @@ private sealed class PwState {
     // Error carries a KEY, not a rendered string — str() is @Composable and this state is set from a
     // plain (non-composable) function and a coroutine callback, neither of which can call it.
     data class Error(val key: String) : PwState()
-    data class Done(val tokenSurvived: Boolean) : PwState()
+    // DEB-1933 (FR-R234-7) — [othersSignedOut]: the server could not keep a device of the account signed in (its field, not a constant).
+    data class Done(val tokenSurvived: Boolean, val othersSignedOut: Boolean = false) : PwState()
     // DEB-1854 (FR-8) — the route said the password is kept elsewhere; the link or the one sentence stands in for the form.
     data class Elsewhere(val row: PasswordRow) : PwState()
 }
@@ -243,7 +246,7 @@ fun ChangePasswordScreen(
             result.fold(
                 onSuccess = { r: AccountPasswordResult ->
                     if (r.ok) {
-                        state = PwState.Done(r.tokenSurvived)
+                        state = PwState.Done(r.tokenSurvived, r.otherDevicesSignedOut)
                     } else if (r.managedElsewhere) {
                         // FR-8 — the page comes from the viewer's config; a read that fails, or one that has not caught up
                         // with the route yet, leaves the sentence, which is true either way.
@@ -268,7 +271,8 @@ fun ChangePasswordScreen(
     LaunchedEffect(state) {
         val s = state
         if (s is PwState.Done) {
-            delay(1200)
+            // The extra line (FR-R234-7) needs the time to be read; the plain confirmation keeps its beat.
+            delay(if (s.othersSignedOut) 3500 else 1200)
             if (s.tokenSurvived) onBack() else onForceSignOut()
         }
     }
@@ -314,7 +318,14 @@ fun ChangePasswordScreen(
 
             when (val s = state) {
                 is PwState.Error -> Text(str(s.key), color = DangerRed, fontSize = 13.sp)
-                is PwState.Done -> Text(str("account.pw_ok"), color = colors.accent, fontSize = 13.sp)
+                is PwState.Done -> {
+                    Text(str("account.pw_ok"), color = colors.accent, fontSize = 13.sp)
+                    // FR-R234-7 — one line, once, no count and no list; only when the server says a device could not be kept.
+                    passwordChangedOthersLineKey(s.othersSignedOut)?.let { key ->
+                        Spacer(Modifier.height(6.dp))
+                        Text(str(key), color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.testTag(ChangePasswordTags.OTHERS))
+                    }
+                }
                 else -> {}
             }
             Spacer(Modifier.height(if (state is PwState.Error || state is PwState.Done) 16.dp else 0.dp))

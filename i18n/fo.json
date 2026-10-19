@@ -42,6 +42,8 @@
   "account.pw_save": "Goym loyniorð",
   "account.pw_busy": "Goymir…",
   "account.pw_ok": "Loyniorðið er skift.",
+  "account.pw_ok_others": "Nakrar av tínum øðrum eindum biðja teg um at rita inn aftur.",
+  "account.pw_signed_out": "Loyniorðið hjá tær varð skift á aðrari eind. Rita inn við tí nýggja.",
   "account.pw_err_cur": "Skriva títt verandi loyniorð.",
   "account.pw_err_new": "Brúka minst 6 tøkn.",
   "account.pw_err_rep": "Tey tvey nýggju loyniorðini eru ikki eins.",

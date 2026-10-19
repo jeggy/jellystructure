@@ -101,6 +101,8 @@ fun ProfilePickerScreen(
     apiClient: TvApiClient,
     onProfileSelected: (LocalSession) -> Unit,
     onSettings: () -> Unit = {},
+    /** DEB-1933 (FR-R234-7) — the device was signed out by a password change elsewhere; says so under the title. */
+    signedOutNotice: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -113,6 +115,14 @@ fun ProfilePickerScreen(
                 val showSettings = remember(s.sessions) { MultiTokenStore.getActive() != null }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(str("profile.who"), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    if (signedOutNotice) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            str("account.pw_signed_out"), color = colors.textSecondary, fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
                     Spacer(Modifier.height(40.dp))
                     // R259 — was a plain Row: four tiles are wider than a phone, so the first sat flush at x = 0
                     // and "Settings" was cut off at the right edge (Pixel 9, 2026-09-17). Wraps, centred, inside

@@ -42,6 +42,8 @@
   "account.pw_save": "Gem adgangskode",
   "account.pw_busy": "Gemmer…",
   "account.pw_ok": "Adgangskoden er skiftet.",
+  "account.pw_ok_others": "Nogle af dine andre enheder vil bede dig om at logge ind igen.",
+  "account.pw_signed_out": "Din adgangskode blev ændret på en anden enhed. Log ind med den nye.",
   "account.pw_err_cur": "Indtast din nuværende adgangskode.",
   "account.pw_err_new": "Brug mindst 6 tegn.",
   "account.pw_err_rep": "De to nye adgangskoder er ikke ens.",
