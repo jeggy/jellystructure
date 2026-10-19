@@ -17,7 +17,8 @@ The backend half of the pair; **R234** is the client half. Design-authored 2026-
 were closed by probe or owner decision on 2026-09-05. No schema migration: FR-187-5 stores nothing new. The probes
 below were run with direct `curl` against Jellyfin, in the Kotlin code's exact request shape. **Amended 2026-10-19
 by DEB-1854** (FR-187-3): an account whose password Jellyfin does not own is answered without a relay. **Amended
-2026-10-19 by DEB-1926** (FR-187-8): on Jellyfin 12.1 a password change signs out the account's other devices.
+2026-10-19 by DEB-1926** (FR-187-8): on Jellyfin 12.1 a password change signs out the account's other devices, so
+the route signs each other Ravilo device back in with the new password (owner's choice).
 
 ### What's built
 
@@ -384,26 +385,52 @@ in and every subsequent request 401s.
 > the server's own access (`tvToken`). Only the calls that hand the device its own token, play start, prepare and
 > restream (`tvTokenForClient`), answer `409`.
 >
-> So the second half of this requirement is live again: **a device whose sign-in died re-authenticates, and
-> nothing may leave it looking signed in while its requests fail.** Three rules make that true:
+> **The owner's answers (DEB-1926, 2026-10-19).** Q1: the account's other Ravilo devices **stay signed in**. The
+> server signs each one back in with the new password. Q2: a device that cannot be kept signed in learns it
+> **at once**, not at its next play. The owner accepted the trade-off as it was put to him: a lost or stolen Ravilo
+> device stays signed in across a password change. The remedy for that is Unpair in the admin, or Sign out on the
+> device. Jellyfin's own apps are still signed out, and that is Jellyfin's behaviour, not ours.
 >
-> 1. **The route reports the other devices too.** `token_survived` keeps its meaning: the caller's own token.
->    `AccountPasswordResult` gains `other_devices_signed_out`, default `false`. It is additive, so an installed
->    client ignores it. It is measured, not assumed: after a successful change, the route checks the token of each
->    other `ravilo_device` row for the same Jellyfin user, skipping borrowed tokens and the caller's own. It is
->    `true` when any of them comes back `REJECTED` (Phase 194's outcome, so a transient failure never counts).
->    With no other device, it is `false`, and R234 says nothing.
-> 2. **A token the change revoked is believed dead at once.** Today a token checked `VALID` stays trusted for
->    `TOKEN_VALID_TTL_MS` (5 minutes). For up to 5 minutes after the change, B's play start passes the cached
->    check and hands B a stream URL carrying the revoked token. Jellyfin refuses the stream, and B shows a playback
->    failure instead of R234's sign-in. That is the state this requirement forbids. So a successful change calls
->    `forgetTokenValidity` (Phase 300, FR-300-10) on every other token of that user, and the next check of each
->    goes to Jellyfin. The checks in rule 1 then negative-cache the rejected tokens in the same pass.
-> 3. **What the other device shows** is R234 FR-R234-7's, amended the same day.
+> Five rules, all in the password route, after Jellyfin has answered `204`:
 >
-> The two cautions above still hold, re-aimed. Keep reading the field rather than a constant, because the
-> 2026-09-05 answer changed under a Jellyfin upgrade once already. And never describe this to a viewer as a
-> security feature of ours. It is Jellyfin's behaviour, reported because it happened.
+> 1. **Re-sign every other Ravilo device in the same request.** For each `ravilo_device` row of the same Jellyfin
+>    user that holds its own sign-in, the route calls `AuthenticateByName` with the new password. That excludes
+>    the caller's row and the borrowing kinds (`cast`, `screen`). Each call presents the Jellyfin DeviceId that
+>    device's own sign-in used, so Jellyfin replaces that device's entry instead of adding one.
+>    - The username is read live, from the user record the route already reads (FR-187-3's DEB-1854 amendment),
+>      because an account can be renamed.
+>    - The new token replaces the row's `jellyfinUserToken`. Borrowing receivers that followed the old token follow
+>      the new one, as they do at a sign-in (`ReceiverTokenPolicy.followers`).
+>    - Whether the device is online does not matter, because the token lives on the server.
+>    - Each call is bounded like a token check (Phase 205). They all finish before the route answers, because the
+>      password exists only for that request.
+> 2. **The new password is used, never kept.** It is held in memory for the length of the request. It is never
+>    stored, logged, or put into an error or a response. FR-187-3 still holds: these calls are not a check of the
+>    current password. They come after Jellyfin's verdict, and their only purpose is the re-sign. The
+>    constitution's "the password is **never** persisted" (Authentication, item 5) stands as written.
+> 3. **Nothing hands out a revoked token.** After rule 1, the route calls `forgetTokenValidity` (Phase 300,
+>    FR-300-10) on every token of that user that the change revoked. Without this, a validated token stays trusted
+>    for `TOKEN_VALID_TTL_MS` (5 minutes). In that window a play start passes the cached check and hands out a
+>    stream URL that Jellyfin refuses.
+> 4. **A device that could not be re-signed is signed out at once.** If a call in rule 1 does not come back with a
+>    token, for whatever reason, that device's old sign-in is already dead and no password is left to retry with.
+>    The route then:
+>    - ends that device's sign-in the way Sign out does, revoking its device token;
+>    - pushes the device a new `signed_out` event (`TvEventBus.notifyDevice`). The event is additive: a client that
+>      knows it returns to sign-in at once (R234 FR-R234-7);
+>    - relies on the `401` for an installed client that does not know the event. That client gets `401` on its next
+>      request, which `ravilo-ui` already reads as *Sign in again*. The state FR-187-8 forbids cannot occur.
+> 5. **The route reports it.** `token_survived` keeps its meaning: the caller's own token. `AccountPasswordResult`
+>    gains `other_devices_signed_out`, default `false`. It is `true` only when rule 4 fired for at least one device.
+>    It is additive, so an installed client ignores it.
+>
+> **Open until DEB-1927 reports:** a film already playing on another device when the change lands. Its stream URL
+> carries that device's old token. The product rule is R234 FR-R234-7's: the viewer notices nothing. How that is
+> met depends on what the probe shows the player does today.
+>
+> Keep reading what Jellyfin does rather than assuming it: the 2026-09-05 answer changed under a Jellyfin upgrade.
+> Rule 1 is harmless on a Jellyfin that does not revoke, because it only replaces a working token with another
+> working one.
 
 **FR-187-9 — Show the photo in the admin, read-only.** Each user row on **Ravilo → Users & devices**
 renders that user's photo in place of its initials chip, from the same `RaviloImageUrl.avatar()` the
@@ -453,7 +480,8 @@ TV-specific behaviour and no capability flag — the same route simply never get
    anyway so the client renders observed truth rather than a hard-coded assumption, and never present
    this to a viewer as "changing your password signs out your other devices", because it does not.
    **Reopened and re-answered 2026-10-19 (DEB-1926): on Jellyfin 12.1 it does, for every token but the caller's.**
-   See the amendment on FR-187-8.
+   The owner chose to keep the other Ravilo devices signed in, so the route re-signs them. See the amendment on
+   FR-187-8.
 3. ~~**Where would a preset colour live?**~~ **✅ Decided 2026-09-05 by the owner: drop the presets.**
    Initials keep their existing deterministic gradient. The two alternatives were a jellystructure-side
    column (which would have made this the one fact Jellyfin does not own, against FR-187-5's "no new
