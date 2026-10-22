@@ -286,3 +286,21 @@ capped toast reads ***løgum*** (dative after *av*), not the draft's *sangum*. *
   on Listen and a search, and on the *‹ Genres* line on a genre. It never sits on a row of its own, in en, da and fo.
 - **11 (new, unit).** The scope, sort, genre and query each surface sends. The context kind and label. The toast
   only when `capped`. A second press while in flight sends no second request.
+
+## Amendment (2026-10-22, build): the count line is drawn, because the app had none (DEB-1300)
+
+The 2026-10-22 amendment above places the control on *"the count line, right-aligned (*30 albums ··· ▶ Play all ▾*) …
+the count text is unchanged"*, and the round called counts *"existing and unchanged"*. They are not: the app's Artists /
+Albums / Songs lists have **never drawn a count line** (the round's mockup did). The owner adopted frames that show it, so
+the build draws it, as the row the control shares:
+
+- **The line:** `{total} albums` / `{total} artists` / `{total} songs` (the chip's own `total`, the browse route's), in
+  the `textDim` ink at 12.5 sp, on the left; the control on the right. Below the 600 dp family only. The desktop has no
+  count line and carries the control in its page head, as amended above.
+- **Present or absent:** drawn while the list loads (the control, no count yet) and while the list holds anything; absent
+  when it resolves to nothing or fails (as the control is).
+- **Two strings:** `music.artists_n` / `music.artists_one` (en *{n} artists* / *1 artist*, da *{n} kunstnere* / *1
+  kunstner*, fo *{n} tónleikarar* / *1 tónleikari* — each the word the app already uses for an artist), siblings of
+  `music.albums_n`. `music.albums_n` and `music.songs_n` are reused.
+- **The 44 dp tap target** is real layout in Compose, not an overhang as on the web: the control's row measures 44 dp
+  (the pill is still 28 dp or 38 dp tall, centred in it). QA's acceptance 10 reads the pill's size, not the row's.

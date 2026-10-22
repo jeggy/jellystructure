@@ -18,7 +18,7 @@ enum class RepeatMode { OFF, ALL, ONE }
 /** Where a queue came from: *Playing from {label}*, and whether album gain applies (an album played in order). */
 @Serializable
 data class MusicContext(
-    /** `album` · `artist` · `playlist` · `played` · `search` · `mix` · `songs` · `genre` · `queue`. */
+    /** `album` · `artist` · `playlist` · `played` · `search` · `mix` · `songs` · `genre` · `library` (R388) · `queue`. */
     val kind: String,
     val label: String,
     val id: String? = null,

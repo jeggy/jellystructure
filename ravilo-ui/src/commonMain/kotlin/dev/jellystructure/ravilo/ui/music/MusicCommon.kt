@@ -112,6 +112,10 @@ fun songsCount(n: Int): String = if (n == 1) str("music.songs_one") else str("mu
 @Composable
 fun albumsCount(n: Int): String = if (n == 1) str("music.albums_one") else str("music.albums_n", mapOf("n" to n.toString()))
 
+/** R388 — the Artists chip's count line, the sibling of [albumsCount]. */
+@Composable
+fun artistsCount(n: Int): String = if (n == 1) str("music.artists_one") else str("music.artists_n", mapOf("n" to n.toString()))
+
 /** FR-R321-7 — the type badge, shown only when an album is not an album. */
 @Composable
 fun musicTypeLabel(type: String): String? = when (type) {

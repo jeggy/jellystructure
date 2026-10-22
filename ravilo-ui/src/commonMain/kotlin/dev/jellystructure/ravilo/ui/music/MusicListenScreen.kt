@@ -64,6 +64,8 @@ fun MusicListenScreen(
     /** R323 (FR-R323-2) — *Continue listening* above the rows while a book is in progress. */
     books: AudiobookStore? = null,
     onResumeBook: (String) -> Unit = {},
+    /** R388 — *Play all ▾* for the whole library, in the top bar (the desktop: the page head). Null = no control. */
+    playAll: PlayAll? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by loader.state.collectAsState()
@@ -72,13 +74,15 @@ fun MusicListenScreen(
     OnReselect(scrollToTopTick) { runCatching { list.animateScrollToItem(0) } }
     val desk = isDesktopLayout
     val listenTitle = str("mnav.listen")
+    // R388 (FR-R388-1, amended) — there while Listen loads, gone once it resolves to nothing (an empty library, a failed load).
+    val playAllShown = playAll != null && when (val s = state) { Load.Loading -> true; is Load.Ready -> s.value.rows.isNotEmpty(); Load.Failed -> false }
     Box(Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
             is Load.Ready -> if (s.value.rows.isEmpty() && books == null) EmptyLine(str("mhome.empty")) else LazyColumn(
                 state = list,
                 contentPadding = PaddingValues(top = if (isDesktopLayout) 52.dp else RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
             ) {
-                if (desk) item(key = "title") { DeskPageTitle(listenTitle) }
+                if (desk) item(key = "title") { DeskPageTitle(listenTitle) { if (playAllShown) PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) } }
                 if (books != null) continueListeningRow(books, onResumeBook)
                 items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
             }
@@ -89,7 +93,11 @@ fun MusicListenScreen(
             )
             Load.Loading -> Unit
         }
-        AppBar(onProfile = onProfile, scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0, brandBadge = { MusicModeBadge() })
+        AppBar(
+            onProfile = onProfile, scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0, brandBadge = { MusicModeBadge() },
+            // R388 — Listen's own control, in the top bar's page slot (FR-R267-2).
+            handsetTopSlot = if (playAllShown) ({ PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) }) else null,
+        )
     }
 }
 

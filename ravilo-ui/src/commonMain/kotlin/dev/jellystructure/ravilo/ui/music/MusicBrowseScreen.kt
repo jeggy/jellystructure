@@ -123,6 +123,8 @@ class MusicBrowseStore(private val api: TvApiClient) {
         val what = if (chip == "songs") "tracks" else chip
         MusicPagedList { p -> api.browseMusic(what, sort, p, genre) }
     }
+    /** R388 — *Play all* / *Shuffle all* for whatever this page lists; one press in flight at a time across the page. */
+    val playAll = PlayAll(api)
     val genres = MusicLoader { api.getMusicGenres() }
     val playlists = MusicLoader { api.getMusicPlaylists() }
 
@@ -197,6 +199,12 @@ fun MusicBrowseScreen(
     val listChipActive = query.isBlank() && (chip == "albums" || chip == "artists" || chip == "songs")
     val paged = if (listChipActive) store.list(chip, sorts[chip] ?: "added", if (chip == "albums") genre else null) else null
     val pagedState by (paged?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow<Load<MusicList>>(Load.Loading) }).collectAsState()
+    // R388 (FR-R388-1, amended) — the pair is shown while the list loads and absent once it resolves to nothing.
+    val playAllRequest = browsePlayAllRequest(chip, sorts, genre, query)
+    val selectionEmpty = if (query.isNotBlank()) (results as? Load.Ready)?.value?.let { it.songs.isEmpty() && it.albums.isEmpty() && it.artists.isEmpty() } == true || results is Load.Failed
+    else pagedState.let { it is Load.Failed || (it is Load.Ready && it.value.total == 0) }
+    val playAllShown = playAllRequest != null && !selectionEmpty
+    @Composable fun PlayAllAt(height: Dp) { if (playAllShown) PlayAllControl(playAllRequest!!, store.playAll, height) }
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(colors.background)) {
         val gridWidth = maxWidth - raviloHPad * 2
         // R337 (dev review 5) — on the desktop the sidebar is the chip strip, and its search field opens this page as the
@@ -206,7 +214,7 @@ fun MusicBrowseScreen(
             if (!deskFamily || (externalQuery == null && (ownField || focusInput || query.isNotBlank()))) item(key = "field") {
                 SearchField(query, store::onQuery, fieldFR) { keyboard?.hide() }
             }
-            if (deskFamily && query.isNotBlank()) item(key = "search-title") { DeskPageTitle(str("nav.search")) }
+            if (deskFamily && query.isNotBlank()) item(key = "search-title") { DeskPageTitle(str("nav.search")) { PlayAllAt(PLAY_ALL_BAR_HEIGHT) } }
             // R337 — the desktop page says its own name (`.h1`), with the sort beside it (the phone's top row holds it there).
             if (deskFamily && query.isBlank() && !ownField) item(key = "title") {
                 DeskPageTitle(if (chip == "albums" && genre != null) genre!! else chipLabel(chip)) {
@@ -214,6 +222,9 @@ fun MusicBrowseScreen(
                         sortable -> SortPill(str(SORTS.first { it.first == (sorts[chip] ?: "added") }.second)) { sortOpen = true }
                         bookSortable -> SortPill(str(AUDIOBOOK_SORTS.first { it.first == bookSort }.second)) { sortOpen = true }
                     }
+                    // R388 — right of the title, after the sort pill where there is one.
+                    if (sortable) Spacer(Modifier.width(10.dp))
+                    PlayAllAt(PLAY_ALL_BAR_HEIGHT)
                 }
                 Spacer(Modifier.height(10.dp))
             }
@@ -232,7 +243,9 @@ fun MusicBrowseScreen(
                     else -> {
                         val sort = sorts[chip] ?: "added"
                         val g = if (chip == "albums") genre else null
-                        listChip(store.list(chip, sort, g), pagedState, gridWidth, deskFamily, chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore)
+                        listChip(store.list(chip, sort, g), pagedState, gridWidth, deskFamily, chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore,
+                            // R388 — the phone's count line and ‹ Genres line carry the control; the desktop's page head does.
+                            trailing = if (playAllShown && !deskFamily) ({ PlayAllAt(PLAY_ALL_LINE_HEIGHT) }) else null)
                     }
                 }
             }
@@ -245,6 +258,8 @@ fun MusicBrowseScreen(
             handsetTopSlot = when {
                 sortable -> ({ SortPill(str(SORTS.first { it.first == (sorts[chip] ?: "added") }.second)) { sortOpen = true } })
                 bookSortable -> ({ SortPill(str(AUDIOBOOK_SORTS.first { it.first == bookSort }.second)) { sortOpen = true } })
+                // R388 — a search has no sort pill and no count line: the control takes the page slot.
+                query.isNotBlank() && playAllShown -> ({ PlayAllAt(PLAY_ALL_BAR_HEIGHT) })
                 else -> null
             },
         )
@@ -399,15 +414,34 @@ internal fun LazyListScope.listChip(
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
     onTrackMore: (MusicTrackItem) -> Unit,
+    /** R388 — the *Play all ▾* control, on the *‹ Genres* line of a genre and on the count line of a chip (the phone). */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     item(key = "load-$chip-$genre") { LaunchedEffect(paged) { paged.load() } }
     if (genre != null) item(key = "genre-back") {
-        Row(Modifier.padding(horizontal = raviloHPad, vertical = 6.dp).tap(onBackToGenres), verticalAlignment = Alignment.CenterVertically) {
-            dev.jellystructure.ravilo.ui.components.ChevronGlyph(dev.jellystructure.ravilo.ui.components.GlyphDirection.LEFT, RaviloTheme.colors.accentSecondary, 14.dp)
-            Spacer(Modifier.width(4.dp))
-            Text(str("music.all_genres"), color = RaviloTheme.colors.accentSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
-            Spacer(Modifier.width(10.dp))
-            Text(genre, color = RaviloTheme.colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+        Row(Modifier.fillMaxWidth().padding(horizontal = raviloHPad, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = 44.dp).tap(onBackToGenres), verticalAlignment = Alignment.CenterVertically) {
+                dev.jellystructure.ravilo.ui.components.ChevronGlyph(dev.jellystructure.ravilo.ui.components.GlyphDirection.LEFT, RaviloTheme.colors.accentSecondary, 14.dp)
+                Spacer(Modifier.width(4.dp))
+                Text(str("music.all_genres"), color = RaviloTheme.colors.accentSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+                Spacer(Modifier.width(10.dp))
+                Text(genre, color = RaviloTheme.colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+            }
+            Spacer(Modifier.weight(1f))
+            trailing?.invoke()
+        }
+    } else if (!desk) {
+        // R388 (amended) — the count line: *30 albums* on the left, the control on the right; a chip with nothing in it
+        // has neither.
+        val total = ((state as? Load.Ready)?.value?.total)
+        if (state is Load.Loading || (total != null && total > 0)) item(key = "count-$chip") {
+            Row(Modifier.fillMaxWidth().padding(horizontal = raviloHPad), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when { total == null -> ""; chip == "albums" -> albumsCount(total); chip == "artists" -> artistsCount(total); else -> songsCount(total) },
+                    color = RaviloTheme.colors.textDim, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f),
+                )
+                trailing?.invoke()
+            }
         }
     }
     // R383 (FR-R383-4, DEB-659) — one lazy item per row. The page used to put every loaded row in ONE item, so a

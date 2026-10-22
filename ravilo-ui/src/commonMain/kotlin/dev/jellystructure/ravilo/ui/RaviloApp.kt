@@ -3022,6 +3022,7 @@ fun RaviloApp(
                     scrollToTopTick = reselectTick,
                     books = if (booksAvailable) bookStore else null,
                     onResumeBook = { id -> uiScope.launch { dev.jellystructure.ravilo.ui.music.resumeBook(apiClient, id); bookStore.refresh(id) } },
+                    playAll = keptStore("mlistenplay:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.PlayAll(apiClient) },
                 )
             }
             is Dest.MusicBrowse -> {
