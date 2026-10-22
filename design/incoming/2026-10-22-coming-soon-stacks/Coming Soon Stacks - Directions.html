@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coming Soon — stacking a series' same-day episodes</title>
+<style>
+  /* Canvas rules: dark ink on the host's light backdrop, no content-visibility, no
+     backdrop-filter, no large blur, no infinite animations. Light text only inside dark frames. */
+  @font-face { font-family: 'Space Grotesk'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+  @font-face { font-family: 'Sora'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/sora.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+  :root { --ink: #12141b; --ink-2: #262a35; --line: #d4d7e0; --card: #ffffff; --bg: #eceef3;
+    --ok: #1c7a53; --warn: #8a5600; --bad: #a3331f; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: 'Sora', system-ui, sans-serif;
+    font-size: 16px; line-height: 1.5; padding: 56px 40px 120px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; letter-spacing: -.01em;
+    line-height: 1.12; }
+  h1 { font-size: 40px; }
+  h2 { font-size: 27px; margin-top: 56px; padding-bottom: 10px; border-bottom: 2px solid var(--line); }
+  h3 { font-size: 20px; margin-top: 30px; }
+  p, li { color: var(--ink-2); margin-top: 12px; max-width: 76ch; }
+  li { margin-top: 6px; }
+  ul, ol { padding-left: 22px; }
+  .lede { font-size: 19px; color: var(--ink); margin-top: 14px; }
+  .meta { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: .92em; }
+  figure { margin-top: 20px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 14px; }
+  figure img { display: block; width: 100%; height: auto; border-radius: 10px; }
+  figcaption { font-size: 14px; color: var(--ink-2); padding-top: 10px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  table { border-collapse: collapse; margin-top: 18px; width: 100%; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink); }
+  td { color: var(--ink-2); }
+  .rec { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: #0d5c3d; background: #cdeede; border: 1px solid #8fd1b4;
+    border-radius: 999px; padding: 3px 10px; vertical-align: middle; }
+  .note { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--warn);
+    border-radius: 12px; padding: 14px 18px; margin-top: 20px; }
+  .note b { color: var(--ink); }
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 20px; margin-top: 16px; }
+  .q h3 { margin-top: 0; }
+  .lean { font-weight: 600; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Coming Soon — stacking a series' same-day episodes</h1>
+<p class="lede">Three directions for the one card, on the TV, the phone and the desktop. Drawn in
+this repository on 2026-10-22; 45 rendered frames in <code>png/</code>; sources beside this file.</p>
+<p class="meta">slug coming-soon-stacks · Ravilo · TV 1920×1080 · phone 412×915 · desktop 1440×900 and 560×900</p>
+
+<h2>What is fixed</h2>
+<ul>
+  <li><b>One picture per series.</b> The calendar holds a series poster and backdrop and no episode
+    stills for unaired episodes, so every layer of a stack is the same art or a tint of it.</li>
+  <li><b>A stack is one focus stop</b> on the TV, and Back from whatever it opens returns focus to it.
+    Nothing changes the row's height.</li>
+  <li><b>Server-pushed state only.</b> Every number a stack shows is a number the server can send;
+    nothing on this page is derived or optimistic.</li>
+  <li><b>One card component across the three surfaces</b> in the shipped app — so a direction that
+    needs a different structure per surface costs three implementations, and this document says when
+    one does.</li>
+  <li>All three skins. Read-and-playback only: nothing here offers to edit, re-scan or repair.</li>
+  <li>The date strip, the day rows, the <i>All / Series / Movies</i> chips and the <i>Missing (N)</i>
+    pill are unchanged except where the stack itself necessarily changes them.</li>
+</ul>
+
+<h2>The three directions</h2>
+
+<h3>A — Stacked edge <span class="rec">recommended</span></h3>
+<p>Today's card at today's size, with two offset edges of the series' own art behind it, the episode
+range as the subtitle, and the count in the bottom corner beside the air time. <b>The card's
+footprint is unchanged</b> — 430 px on the 1920 stage, the same as every other card in the row. The
+front face gives up the 32 px the deck occupies, so the row's rhythm, its height and the number of
+cards in it are all untouched.</p>
+<figure><img src="png/coming-soon-stacks-tv-a-today.png" alt="Direction A on the TV: an eight-episode stack beside a single episode">
+<figcaption>A, TV, Today: an eight-episode whole-season drop beside a single episode. The deck reads
+as a deck at three metres; the row still shows the same number of cards.</figcaption></figure>
+<div class="pair">
+  <figure><img src="png/coming-soon-stacks-tv-a-focus.png" alt="A, focused"><figcaption>A, focused. The ring is on the front card; the deck stays behind it.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-ph-a-today.png" alt="A, phone"><figcaption>A on the phone, where Coming Soon is a list: the poster carries the deck, the count sits where a list row's trailing value sits.</figcaption></figure>
+</div>
+
+<h3>B — Wide list card</h3>
+<p>The art and the body keep their shipped geometry and an episode list sits beside them. <b>B cannot
+honour "nothing may change the card's width"</b>: a list of eight episodes needs room. What it keeps
+is the height and the row's baseline; what it spends is two card slots — 878 px where A spends 430.</p>
+<div class="pair">
+  <figure><img src="png/coming-soon-stacks-tv-b-today.png" alt="B, TV, Today"><figcaption>B at its weakest: a whole-season drop where every episode shares one time, so the list's right-hand column is the same value eight times.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-tv-b-mixed.png" alt="B, mixed stack"><figcaption>B at its strongest: on a mixed stack you can see <i>which</i> episode is at 62 % and which is only scheduled. A can only say "4 of 6".</figcaption></figure>
+</div>
+
+<h3>C — Count only</h3>
+<p>The shipped card, unchanged, plus the range in the subtitle it already has and the count badge. No
+new geometry at all. Drawn because "there is only one picture anyway" is a real argument for doing
+nothing to the art — and because it is the control that shows what the deck in A actually buys.</p>
+<figure><img src="png/coming-soon-stacks-tv-c-today.png" alt="C, TV, Today">
+<figcaption>C. Correct, cheap, and at a glance indistinguishable from a single episode until you read
+the badge. That is the whole comparison.</figcaption></figure>
+
+<h2>How they compare</h2>
+<table>
+  <tr><th>&nbsp;</th><th>A — stacked edge</th><th>B — wide list</th><th>C — count only</th></tr>
+  <tr><td>Row width used</td><td>430 px, unchanged</td><td>878 px — two slots</td><td>430 px, unchanged</td></tr>
+  <tr><td>Row height</td><td>unchanged</td><td>unchanged</td><td>unchanged</td></tr>
+  <tr><td>Reads as "more than one" at 3 m</td><td>yes, before you read anything</td><td>yes</td><td>only by reading the badge</td></tr>
+  <tr><td>Says <i>which</i> episodes</td><td>range only</td><td>every one, with its own state</td><td>range only</td></tr>
+  <tr><td>Mixed stack</td><td>"4 of 6 available" + the percent</td><td>per-episode, best of the three</td><td>same as A</td></tr>
+  <tr><td>Missing row</td><td>earliest due date only</td><td>all three due dates</td><td>same as A</td></tr>
+  <tr><td>Scales to the desktop card</td><td>yes</td><td>only by re-flowing to two columns</td><td>yes</td></tr>
+  <tr><td>New structure</td><td>two decorative layers</td><td>a second panel per card</td><td>none</td></tr>
+</table>
+
+<div class="note"><b>Why A.</b> The occasion for this round was a row that stopped reading as "a season
+arrived" and started reading as noise. A fixes exactly that and costs the row nothing. B answers a
+different question — <i>which</i> episodes — and answers it best precisely where the problem is
+smallest (a mixed or overdue stack), while being at its most redundant on the uniform whole-season
+drop that prompted the round. C is honest and cheap and does not fix the thing that was wrong.</div>
+
+<h2>The six decisions</h2>
+
+<div class="q"><h3>1 — Shape</h3>
+<p>A, B, or C. <span class="lean">Lean: A</span>, for the reason above. B is worth keeping in view for
+the Missing row specifically, where it is clearly better; that is a legitimate answer of "A in the day
+rows, B in the Missing row" if the owner wants it.</p></div>
+
+<div class="q"><h3>2 — When a stack forms</h3>
+<p><span class="lean">Lean: two or more episodes of one series on the same day</span>, whatever their
+times; in the Missing row, by series regardless of day. The alternative — three or more — is drawn
+below, and it leaves the two-episode pair as two near-identical cards, which is the same problem at
+a smaller scale.</p>
+<figure><img src="png/coming-soon-stacks-tv-a-min3.png" alt="Three-or-more rule: the two-episode pair is two cards again">
+<figcaption>The "three or more" alternative. Two cards, same art, same series, differing by one digit.</figcaption></figure></div>
+
+<div class="q"><h3>3 — What selecting a stack opens</h3>
+<p><span class="lean">Lean: the detail page each of those cards opens today</span> — Series detail for
+a series we hold, the not-held detail for one we don't, with the stack's episodes listed in its
+schedule. Drawn below with the two states that have no picture behind them yet.</p>
+<div class="trio">
+  <figure><img src="png/coming-soon-stacks-tv-detail-notheld.png" alt="not-held detail"><figcaption>Not held, schedule listed.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-tv-detail-loading.png" alt="detail loading"><figcaption>Loading. Title and network are known — they came from the card.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-tv-detail-error.png" alt="detail error"><figcaption>Error.</figcaption></figure>
+</div></div>
+
+<div class="q"><h3>4 — What the date strip counts</h3>
+<p><span class="lean">Lean: cards</span> — what the row shows. The alternative counts episodes, and
+then Today reads 9 while the row holds two cards.</p>
+<div class="pair">
+  <figure><img src="png/coming-soon-stacks-tv-strip-cards.png" alt="strip counting cards"><figcaption>Counting cards: 2 · 2 · 1 · 1.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-tv-strip-episodes.png" alt="strip counting episodes"><figcaption>Counting episodes: 9 · 3 · 6 · 3.</figcaption></figure>
+</div></div>
+
+<div class="q"><h3>5 — Which time a stack shows when its episodes differ</h3>
+<p><span class="lean">Lean: the earliest.</span> A range is legible and honest; a count of times reads
+badly beside a count of episodes.</p>
+<div class="trio">
+  <figure><img src="png/coming-soon-stacks-tv-a-times.png" alt="earliest time"><figcaption>Earliest — <span class="mono">21:00</span>.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-tv-a-times-range.png" alt="time range"><figcaption>Range — <span class="mono">21:00–21:45</span>.</figcaption></figure>
+  <figure><img src="png/coming-soon-stacks-tv-a-times-count.png" alt="time count"><figcaption>Count — "2 times" beside "2 episodes". Needs a new string and earns little.</figcaption></figure>
+</div></div>
+
+<div class="q"><h3>6 — What the badge says on a mixed stack</h3>
+<p><span class="lean">Lean: "{k} of {n} available"</span>, as a <code>--warn</code> pill rather than a
+green one — warn is this system's "mixed" semantic, and the words carry the state as well, because
+state is never colour alone. A downloading episode keeps its own percent chip.</p>
+<figure><img src="png/coming-soon-stacks-tv-a-da-longest.png" alt="Danish mixed stack, the longest string in the round">
+<figcaption>Danish, which is the longest-string case: <i>4 af 6 tilgængelige</i> alongside
+<i>62 %</i> and <i>6 afsnit</i>. It fits because the count moved to the bottom corner.</figcaption></figure></div>
+
+<h2>States this round drew</h2>
+<table>
+  <tr><th>State</th><th>Frame</th></tr>
+  <tr><td>Two-episode stack</td><td><span class="mono">tv-a-times</span>, <span class="mono">ph-a-today</span></td></tr>
+  <tr><td>Eight-episode stack</td><td><span class="mono">tv-a-today</span> and the A/B/C trio</td></tr>
+  <tr><td>Mixed stack</td><td><span class="mono">tv-a-mixed</span>, <span class="mono">tv-b-mixed</span>, <span class="mono">ph-a-mixed</span>, <span class="mono">dk-a-mixed</span></td></tr>
+  <tr><td>Stack whose episodes differ in time</td><td><span class="mono">tv-a-times</span> ×3 rules</td></tr>
+  <tr><td>Single episode beside a stack</td><td><span class="mono">tv-a-today</span> (Saltmarsh Rangers)</td></tr>
+  <tr><td>Film beside a stack</td><td><span class="mono">tv-a-times</span> (Glass Orchard)</td></tr>
+  <tr><td>Series chip on · Movies chip on</td><td><span class="mono">tv-a-chip-series</span>, <span class="mono">tv-a-chip-movies</span> (no stacks)</td></tr>
+  <tr><td>Date strip, both count rules</td><td><span class="mono">tv-strip-cards</span>, <span class="mono">tv-strip-episodes</span></td></tr>
+  <tr><td>Not-held detail, and its loading and error</td><td><span class="mono">tv-detail-*</span></td></tr>
+  <tr><td>Missing row stacked</td><td><span class="mono">tv-a-missing</span>, <span class="mono">tv-b-missing</span>, <span class="mono">ph-a-missing</span></td></tr>
+  <tr><td>Focused and unfocused, 10-foot</td><td><span class="mono">tv-a/b/c-focus</span></td></tr>
+  <tr><td>Keyboard focus</td><td><span class="mono">dk-a-focus</span>, <span class="mono">dk-a-compact</span></td></tr>
+  <tr><td>Danish and Faroese, and the longest string</td><td><span class="mono">tv-a-da</span>, <span class="mono">tv-a-fo</span>, <span class="mono">tv-a-da-longest</span>, <span class="mono">ph-a-da</span>, <span class="mono">ph-a-fo</span></td></tr>
+  <tr><td>Skins</td><td>TV aurora · midnight · noir; phone aurora · graphite · daylight; desktop aurora · noir</td></tr>
+  <tr><td>Offline</td><td><span class="mono">tv-a-offline</span></td></tr>
+  <tr><td>Phone landscape · compact desktop</td><td><span class="mono">ph-a-land</span>, <span class="mono">dk-a-compact</span></td></tr>
+</table>
+<p><b>Skipped, and why:</b> an <i>empty day in the strip</i> — the shipped strip holds only days that
+carry a release and jumps to the next one with content, so there is no empty day to draw. An
+<i>empty Coming Soon</i> — the page already has that state and this round does not touch it.
+<i>Noir and midnight on the phone</i> — the phone's token file does not define them; see the report.</p>
+
+<h2>Strings</h2>
+<p>Two new keys. Everything else in these pictures is the shipped string, taken from
+<code>i18n/*.json</code>, which wins wherever a string already exists.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Danish (draft, unreviewed)</th><th>Faroese (draft, unreviewed)</th></tr>
+  <tr><td class="mono">up.episodes_count</td><td>{n} episodes</td><td>{n} afsnit</td><td>{n} partar</td></tr>
+  <tr><td class="mono">up.available_of</td><td>{k} of {n} available</td><td>{k} af {n} tilgængelige</td><td>{k} av {n} tøk</td></tr>
+  <tr><td class="mono">up.times_count</td><td colspan="3">{n} times — <b>only if decision 5 picks the count rule.</b> da <i>{n} tidspunkter</i>, fo <i>{n} tíðir</i>.</td></tr>
+</table>
+<p>The episode range on the card is formatted from the data — <span class="mono">S02E01–E08</span> —
+not a string, and needs no key. The detail page's error copy is drawn but is a candidate for the
+existing error vocabulary rather than new keys; the report says so.</p>
+
+<h2>What this document is not</h2>
+<p>It is a set of directions and six open questions. It allocates no number, writes no spec, and
+decides nothing the owner has been asked to pick. The findings — including two places where the
+brief contradicts itself and three where the shipped token files are short of what this needs — are
+in <code>REPORT.md</code> beside it.</p>
+
+</div>
+</body>
+</html>

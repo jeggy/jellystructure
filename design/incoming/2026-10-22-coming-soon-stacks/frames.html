@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coming Soon stacks — frames</title>
+<!--
+  frames.html — every frame this round renders, built from cs-data.js through cs-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=tv|phone|desktop|detail   which frame set to build
+      &skin=aurora|midnight|noir|daylight
+      &lang=en|da|fo
+
+  The set decides which SHIPPED stylesheet is loaded, because the TV and the phone are two
+  different token files and loading both into one document would let one answer for the other.
+  The round's own stylesheet always comes last, so it extends the shipped system and never
+  precedes it.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; render.mjs just
+  drives it over the parameter combinations and screenshots one element per frame.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'tv';
+    const skin = q.get('skin') || 'aurora';
+    const lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.lang = lang;
+    if (skin === 'daylight') document.documentElement.dataset.appearance = 'light';
+    const shipped = (set === 'phone')
+      ? '../../ravilo/mobile/ravilo-phone.css'
+      : '../../ravilo/ravilo.css';
+    document.write('<link rel="stylesheet" href="' + shipped + '">');
+    document.write('<link rel="stylesheet" href="coming-soon-stacks.css">');
+    window.CSOPT = { set, skin, lang };
+  })();
+</script>
+</head>
+<body>
+<div class="cs-frames" id="frames"></div>
+
+<script src="cs-data.js"></script>
+<script src="cs-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { set, lang } = window.CSOPT;
+  const root = document.getElementById('frames');
+  CSKit.setLang(lang);
+
+  const D = CS.DAYS;                     // 22 Oct (today), 23, 25, 26
+  const FROM_TOMORROW = D.slice(1);      // the screen after one scroll
+  const FROM_SUNDAY = D.slice(2);
+
+  function frame(name, cls, html) {
+    const d = document.createElement('div');
+    d.id = 'f-' + name;
+    d.className = cls;
+    d.innerHTML = html;
+    root.appendChild(d);
+  }
+  const tv = (name, opts) => frame(name, 'cs-tvframe', CSKit.tvScreen(opts));
+  const det = (name, key, state) => frame(name, 'cs-tvframe', CSKit.detail(key, state));
+  const ph = (name, opts, cls) => frame(name, 'cs-phoneframe' + (cls ? ' ' + cls : ''),
+    '<div class="cs-pscroll"><div class="cs-pstatus"><span>21:04</span><span>▮▮▮</span></div>'
+    + CSKit.phoneScreen(opts) + '</div>');
+  const dk = (name, opts, cls) => frame(name, 'cs-dtframe' + (cls ? ' ' + cls : ''),
+    CSKit.desktopScreen(opts));
+
+  /* ---------------------------------------------------------------- the TV, 1920×1080 */
+  if (set === 'tv') {
+    /* Today: the eight-episode stack beside a single episode — the occasion for the round. */
+    tv('tv-a-today', { dir: 'a' });
+    tv('tv-a-focus', { dir: 'a', focusKey: 'tidewater@' + CS.TODAY });
+    tv('tv-b-today', { dir: 'b' });
+    tv('tv-b-focus', { dir: 'b', focusKey: 'tidewater@' + CS.TODAY });
+    tv('tv-c-today', { dir: 'c' });
+    tv('tv-c-focus', { dir: 'c', focusKey: 'tidewater@' + CS.TODAY });
+
+    /* Tomorrow: a two-episode stack whose episodes air at different times, beside a film. */
+    tv('tv-a-times', { dir: 'a', days: FROM_TOMORROW });
+    tv('tv-a-times-range', { dir: 'a', days: FROM_TOMORROW, timeRule: 'range' });
+    tv('tv-a-times-count', { dir: 'a', days: FROM_TOMORROW, timeRule: 'count' });
+
+    /* Decision 2's alternative: three or more. The two-episode pair becomes two cards again. */
+    tv('tv-a-min3', { dir: 'a', days: FROM_TOMORROW, minStack: 3 });
+
+    /* The mixed stack, and the not-held series behind it. */
+    tv('tv-a-mixed', { dir: 'a', days: FROM_SUNDAY });
+    tv('tv-b-mixed', { dir: 'b', days: FROM_SUNDAY });
+
+    /* The Missing row, grouped by series regardless of day. */
+    tv('tv-a-missing', { dir: 'a', days: [], missing: true });
+    tv('tv-b-missing', { dir: 'b', days: [], missing: true });
+
+    /* The filter chips. Movies shows no stacks, which is the point of drawing it. */
+    tv('tv-a-chip-series', { dir: 'a', filter: 'series', focusKey: 'chip-series' });
+    tv('tv-a-chip-movies', { dir: 'a', filter: 'movies', days: FROM_TOMORROW, focusKey: 'chip-movies' });
+
+    /* Offline. */
+    tv('tv-a-offline', { dir: 'a', offline: true });
+  }
+
+  /* the date strip under both count rules, shot on its own so the two can be compared */
+  if (set === 'strip') {
+    tv('tv-strip-cards', { dir: 'a', countRule: 'cards', focusKey: 'day-' + CS.TODAY });
+    tv('tv-strip-episodes', { dir: 'a', countRule: 'episodes', focusKey: 'day-' + CS.TODAY });
+  }
+
+  /* ------------------------------------------------- what selecting a stack opens, on the TV */
+  if (set === 'detail') {
+    det('tv-detail-notheld', 'ferrow', 'ready');
+    det('tv-detail-loading', 'ferrow', 'loading');
+    det('tv-detail-error', 'ferrow', 'error');
+  }
+
+  /* ------------------------------------------------------------------ the phone, 412×915 */
+  if (set === 'phone') {
+    ph('ph-a-today', { dir: 'a' });
+    ph('ph-b-today', { dir: 'b' });
+    ph('ph-c-today', { dir: 'c' });
+    ph('ph-a-mixed', { dir: 'a', days: FROM_SUNDAY });
+    ph('ph-a-missing', { dir: 'a', days: [], missing: true });
+    ph('ph-a-land', { dir: 'a' }, 'land');
+    /* The compact desktop window IS the phone layout (the brief fixes this), so it is drawn from
+       the phone's stylesheet in a 560-wide window — and it is where keyboard focus shows up,
+       which a handset never has. */
+    ph('dk-a-compact', { dir: 'a', focusKey: 'tidewater' }, 'wide560');
+  }
+
+  /* ---------------------------------------------------------------- the desktop, 1440×900 */
+  if (set === 'desktop') {
+    dk('dk-a-wide', { dir: 'a' });
+    dk('dk-b-wide', { dir: 'b' });
+    dk('dk-c-wide', { dir: 'c' });
+    dk('dk-a-focus', { dir: 'a', focusKey: 'tidewater@' + CS.TODAY });
+    dk('dk-a-mixed', { dir: 'a', days: FROM_SUNDAY });
+  }
+})();
+</script>
+</body>
+</html>

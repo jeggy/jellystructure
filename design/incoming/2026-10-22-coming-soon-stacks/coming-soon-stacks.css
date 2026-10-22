@@ -1,0 +1,340 @@
+/* coming-soon-stacks.css — the round's own rules, on top of the shipped Ravilo stylesheets.
+
+   Round slug `coming-soon-stacks`, 2026-10-22, lane C.
+
+   This file is loaded AFTER design/ravilo/ravilo.css and design/ravilo/mobile/ravilo-phone.css, so
+   every token, every component and every focus treatment in these pictures is the shipped one. What
+   is here is only (a) the three self-hosted faces, so the round needs no network at render time,
+   (b) the frame scaffolding the renderer screenshots, and (c) the `cs-` classes this round invents.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so these rules are a specification of intent for the Compose port, which is exactly why the hex,
+   px, weight and radius are written out rather than left to the implementer.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. ravilo.css opens with an @import of
+   fonts.googleapis.com, which is normal in a mockup and cannot be relied on: the render runs in a
+   container. These blocks come last in the cascade, so they win, and the picture is the same with
+   or without a network. No file is copied: the url points at the repo's own woff2. */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* ============================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ============================================================================================ */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; }
+
+.cs-frames { padding: 0; margin: 0; }
+
+/* The TV: the shipped fixed 1920×1080 stage, drawn at 1:1 so a measurement off these pictures is
+   a measurement in stage pixels. The app's own #stage is centred by transform; here each frame is
+   a static 1920×1080 block instead, because a frame has to be screenshot-able on its own. */
+.cs-tvframe { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
+  font-family: 'Sora', sans-serif; }
+.cs-tvframe .screen { margin-top: -92px; }
+
+/* The phone: the Pixel 9 bezel out of ravilo-phone.css, 412×915 portrait. */
+.cs-phoneframe { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+.cs-phoneframe.land { width: 915px; height: 412px; }
+/* the compact desktop window: the brief fixes it as the phone layout, so it is the same screen in
+   a 560×900 window rather than a second layout. */
+.cs-phoneframe.wide560 { width: 560px; height: 900px; }
+.cs-phoneframe.wide560 .t10, .cs-phoneframe.wide560 .row h3,
+.cs-phoneframe.wide560 .cs-pchips { padding-left: 28px; padding-right: 28px; }
+.cs-phoneframe.wide560 .cs-pseg { margin-left: 24px; margin-right: 24px; }
+.cs-pscroll { position: absolute; inset: 0; overflow: hidden; padding-top: 10px; }
+.cs-pstatus { height: 34px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+/* The desktop: 1440×900 wide, and 560×900 compact (which is the phone layout, per the brief). */
+.cs-dtframe { width: 1440px; height: 900px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+
+/* ============================================================================================
+   DIRECTION A — the stacked edge.
+   The card's FOOTPRINT is unchanged: 430 px wide on the 1920 stage, the same as every other card
+   in the row. The offset edges peek to the right of the art, and the art face gives up the 16 px
+   they occupy, so the row's rhythm, its height and the number of cards in it are all untouched.
+   Growing the card instead would have re-flowed the row, which the brief forbids.
+   ============================================================================================ */
+
+.cs-artface { position: absolute; inset: 0 32px 0 0; border-radius: 16px; overflow: hidden;
+  background: var(--card); }
+.cs-stacked .cs-artface { box-shadow: 4px 0 14px rgba(0,0,0,.78); }
+.up-card:not(.cs-stacked) .cs-artface,
+.cs-c .cs-artface { inset: 0; }
+.cs-b .cs-bmain .cs-artface { inset: 0; }
+
+/* the shipped .up-art keeps its 242 px height and its radius; it gives up its own background, its
+   scrim and its 2 px transparent border to .cs-artface, and it stops clipping so a focus ring
+   drawn on the face is not cut off at the card's edge. */
+.up-art { background: transparent; border: 0; overflow: visible; }
+.up-art::after { content: none; }
+.cs-artface::after { content: ''; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(0deg, rgba(6,8,14,.76) 0%, rgba(6,8,14,.06) 46%, rgba(6,8,14,.30) 100%); }
+
+/* the initials stand in for the poster, as the shipped mockups do */
+.cs-initials { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 64px; letter-spacing: -2px;
+  color: rgba(255,255,255,.17); z-index: 1; }
+
+/* The edges. Each layer is wider than the 13 px of it that shows, so the part tucked under the
+   face needs no arithmetic and the peek stays 13 px whatever the card is scaled to. They are
+   inset vertically and lit along the top so they read as cards seen edge-on at three metres
+   rather than as a shadow or a rendering seam — the first render had them at 8 px with no
+   separation and they read as a glitch. */
+.cs-edge { position: absolute; top: 14px; bottom: 14px; width: 34px; border-radius: 0 15px 15px 0;
+  background-size: cover; background-position: right center;
+  border: 1px solid rgba(255,255,255,.20); border-left: 0; z-index: 0; overflow: hidden; }
+.cs-edge.e1 { right: 16px; }
+.cs-edge.e2 { right: 0; top: 28px; bottom: 28px; border-color: rgba(255,255,255,.14); }
+/* The dim and the top highlight are ONE layer, not two. As a separate `::before` the highlight
+   needed a z-index to clear the dim, and a positive z-index on a child of an auto-z-index
+   absolute box lifts it above the front card as well — the highlight ran out across the art of
+   the card in front of it. A two-stop gradient has no stacking order to get wrong.
+   Each layer further back is darker, which is what gives the deck depth without a drop shadow. */
+.cs-edge::after { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(rgba(255,255,255,.40) 0 2px, rgba(4,5,10,.42) 2px); }
+.cs-edge.e2::after {
+  background: linear-gradient(rgba(255,255,255,.28) 0 2px, rgba(4,5,10,.64) 2px); }
+
+/* ---- the count badge. Glass + ink in every skin: the status pill already carries the colour
+   semantics on this art, and noir has no accent tint to spend here. */
+.cs-count { flex: none; padding: 6px 12px; border-radius: 9px;
+  font-size: 17px; font-weight: 700; letter-spacing: .1px; white-space: nowrap;
+  color: var(--ink); background: rgba(10,12,19,.74); border: 1px solid rgba(255,255,255,.26); }
+.up-art-top { flex-wrap: nowrap; }
+
+/* the mixed-stack pill. --warn is this system's "dirty / mixed" semantic; the words carry the
+   state as well, because state is never expressed by colour alone. */
+.up-stat.cs-mixed { color: #ffd98a; background: rgba(245,181,66,.16);
+  border: 1px solid rgba(245,181,66,.52); white-space: nowrap; }
+
+/* A stack is ONE focus stop, and the ring is drawn round the FRONT card, with the deck left
+   peeking behind it — not round the whole 430 px box. Round the box the ring traces empty space
+   at the two right-hand corners, because the edges are inset vertically. Drawn this way the
+   focused thing is the card you would press, which is also what it is. */
+.up-card.focused .cs-artface { box-shadow: 0 0 0 4px var(--ring), 0 22px 50px rgba(0,0,0,.6); }
+.up-card.cs-stacked.focused { transform: translateY(-3px) scale(1.02); }
+.up-card.cs-stacked.focused .up-art { transform: none; }
+.up-card.focused .up-art { transform: none; box-shadow: none; }
+
+/* ============================================================================================
+   DIRECTION B — the wide list card.
+   It cannot honour "nothing may change the card's height or width": a list of eight episodes needs
+   room. What it keeps is the HEIGHT and the row's baseline — the list sits beside the art, not
+   under it — and what it spends is two slots of width. See REPORT.md.
+   ============================================================================================ */
+
+/* The internal gap is deliberately TIGHTER than the row's 18 px gap. At 18 px the list read as a
+   separate card sitting next to the art rather than as part of it — the first render showed
+   exactly that. 8 px is the smallest gap that still separates the two surfaces. */
+.cs-bcard { width: 878px; display: flex; gap: 8px; align-items: flex-start; }
+.cs-bmain { width: 430px; flex: none; }
+.cs-blist { flex: 1; min-width: 0; height: 242px; border-radius: 16px; background: var(--card);
+  border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; }
+.cs-bhead { font-size: 15px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
+  color: var(--ink-dim); padding-bottom: 8px; }
+.cs-brows { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px;
+  align-content: start; overflow: hidden; }
+.cs-brow { display: flex; align-items: center; gap: 9px; height: 26px; }
+.cs-bcode { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 500;
+  color: var(--ink); letter-spacing: -.2px; }
+.cs-btime { margin-left: auto; font-size: 14px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; }
+.cs-dot { width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--ink-dim); }
+.cs-dot.ok { background: var(--good); }
+.cs-dot.dl { background: var(--warn); }
+.cs-dot.bad { background: #ff8a5c; }
+/* One focus stop means ONE ring. Ringing the art and the list separately — which is what you get
+   for free from the single-card rule — drew two targets with a gap down the middle, and a D-pad
+   user would reasonably expect Right to move between them. The ring goes round the pair. */
+.cs-bcard.focused .cs-artface { box-shadow: none; }
+.cs-bcard.focused { outline: 4px solid var(--ring); outline-offset: 5px; border-radius: 18px; }
+.cs-bcard.focused .cs-blist { border-color: rgba(255,255,255,.22); }
+
+/* ============================================================================================
+   DIRECTION C — the count alone. No new geometry at all: the shipped card, the range in the
+   subtitle it already has, and the count badge. Drawn because "there is only one picture anyway"
+   is an argument for doing nothing to the art.
+   ============================================================================================ */
+/* (C needs no rules of its own beyond .cs-count — which is the finding.) */
+
+/* ============================================================================================
+   The offline strip, and the detail a stack opens.
+   ============================================================================================ */
+
+.cs-offline { margin: 0 64px 20px; padding: 14px 22px; border-radius: 14px;
+  background: rgba(245,181,66,.13); border: 1px solid rgba(245,181,66,.45);
+  display: flex; align-items: baseline; gap: 14px; }
+.cs-offline b { font-size: 21px; color: #ffd98a; font-weight: 700; }
+.cs-offline span { font-size: 18px; color: var(--ink-soft); }
+
+.cs-nothold { color: #9ab6ff; border: 1px solid rgba(123,140,240,.42); padding: 2px 11px;
+  border-radius: 20px; }
+.cs-dcols { margin-top: 26px; }
+.cs-sched { width: 760px; border-radius: 16px; background: rgba(10,12,19,.58);
+  border: 1px solid var(--line); padding: 18px 22px 16px; }
+.cs-shead { display: flex; align-items: baseline; justify-content: space-between;
+  font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 600; color: var(--ink);
+  padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.cs-shead span { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 500; color: var(--ink-soft); }
+.cs-srow { display: flex; align-items: center; gap: 18px; height: 50px;
+  border-bottom: 1px solid var(--line); }
+.cs-srow:last-of-type { border-bottom: 0; }
+.cs-sday { font-size: 19px; color: var(--ink-soft); }
+.cs-stime { margin-left: auto; font-family: 'Space Grotesk', sans-serif; font-size: 22px;
+  font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cs-sched .cs-bcode { font-size: 19px; width: 108px; }
+.cs-sfoot { padding-top: 12px; font-size: 16px; color: var(--ink-dim); }
+
+.cs-skel { height: 50px; border-radius: 10px; margin-top: 8px;
+  background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.10), rgba(255,255,255,.05)); }
+.cs-loadlbl { padding-top: 14px; font-size: 17px; color: var(--ink-dim); }
+.cs-errtitle { padding-top: 14px; font-family: 'Space Grotesk', sans-serif; font-size: 26px;
+  font-weight: 600; color: var(--ink); }
+.cs-errbody { padding-top: 6px; font-size: 18px; color: var(--ink-soft); }
+.cs-errbtn { margin-top: 16px; display: inline-block; padding: 11px 26px; border-radius: 12px;
+  font-size: 19px; font-weight: 600; color: var(--ink-soft); border: 1px solid var(--line); }
+.cs-errbtn.focused { background: var(--ink); color: #0a0c13; border-color: var(--ink); }
+
+/* the brand mark, drawn rather than imported — the round needs no asset of its own */
+.cs-mark { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--grad);
+  box-shadow: 0 0 18px var(--ring-glow); display: inline-block; }
+
+/* ============================================================================================
+   The phone.
+   ============================================================================================ */
+
+.cs-pseg { display: flex; gap: 4px; padding: 6px; margin: 4px 14px 10px; border-radius: 14px;
+  background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+.cs-pseg span { flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 13px;
+  font-weight: 500; color: var(--ink-soft); }
+.cs-pseg span.cur { color: var(--ink); font-weight: 600; background: var(--card-2); }
+.cs-pchips { display: flex; gap: 7px; padding: 0 18px 8px; }
+.cs-pchips span { padding: 6px 14px; border-radius: 11px; font-size: 12px; font-weight: 500;
+  color: var(--ink-soft); border: 1px solid var(--line); }
+.cs-pchips span.cur { color: var(--ink); background: var(--card-2); }
+
+/* the phone's stacked poster: the same idea as the TV's, at list-row size. The row's height is
+   unchanged, so the list keeps its rhythm; the poster gives up 7 px of its own width. */
+.cs-pstack { position: relative; width: 58px; height: 80px; flex: none; }
+/* `width: auto` is load-bearing. The shipped .t10p carries `width: 58px`, which with `left: 0`
+   over-constrains the box and makes `right` ignored outright — the poster never moved, and all
+   that showed of the deck behind it was two stray highlight lines. Only magnifying the render
+   found it. */
+.cs-pstack .t10p { position: absolute; inset: 0; width: auto; height: auto; }
+/* 9 px of peek per layer, not 7. At 7 px with the same dim as the TV the edges read as a notch
+   rather than as a deck — a 58 px poster has to make the point with proportionally more. */
+.cs-pstack.on .t10p { right: 18px; box-shadow: 4px 0 10px rgba(0,0,0,.85); }
+.cs-pedge { position: absolute; top: 6px; bottom: 6px; width: 20px; border-radius: 0 8px 8px 0;
+  background-size: cover; background-position: right center; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.26); border-left: 0; }
+.cs-pedge.e1 { right: 9px; }
+.cs-pedge.e2 { right: 0; top: 12px; bottom: 12px; border-color: rgba(255,255,255,.18); }
+/* The dim has to step HARDER on the phone than on the TV. At the TV's values the edges were the
+   same colour as the poster they sit behind — the art tint is the same gradient — and only the
+   top highlight distinguished them, which read as two stray lines rather than as a deck. */
+.cs-pedge::after { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(rgba(255,255,255,.40) 0 1px, rgba(4,5,10,.52) 1px); }
+.cs-pedge.e2::after {
+  background: linear-gradient(rgba(255,255,255,.28) 0 1px, rgba(4,5,10,.74) 1px); }
+
+.cs-pcount { flex: none; margin-left: 8px; align-self: center; padding: 4px 9px; border-radius: 8px;
+  font-size: 11px; font-weight: 700; white-space: nowrap; color: var(--ink);
+  background: rgba(255,255,255,.08); border: 1px solid var(--line); }
+/* NOTE FOR THE SPEC: ravilo-phone.css defines --good but NOT --warn, so the phone has no token
+   for "mixed" at all. The fallback below is the TV's value; a real implementation adds the token
+   to the phone's set rather than hard-coding it here. */
+.st.cs-pmixed { color: var(--warn, #f5b542); }
+.st.cs-pmixed .dot { background: var(--warn, #f5b542); }
+/* and the light theme needs its own value, exactly as .badge does in the admin system: amber on
+   white is unreadable at 11 px. */
+html[data-skin="daylight"] .st.cs-pmixed { color: #8a5600; }
+html[data-skin="daylight"] .st.cs-pmixed .dot { background: #b87300; }
+
+/* B on the phone: the row lists its episodes beneath itself. This is the one place B is cheap —
+   a list row can grow downwards without disturbing anything beside it. */
+/* An expanded row is top-aligned. Left centred, the poster floated opposite the middle of the
+   episode list instead of beside the title it belongs to — visible the moment it was rendered. */
+.t10row.cs-pexpanded { align-items: flex-start; }
+.t10row.cs-pexpanded .cs-pstack, .t10row.cs-pexpanded .t10p { margin-top: 3px; }
+.t10row.cs-pexpanded .cs-pcount { align-self: flex-start; margin-top: 3px; }
+
+.cs-plist { margin-top: 7px; display: grid; grid-template-columns: 1fr 1fr; gap: 1px 14px;
+  padding: 7px 9px; border-radius: 9px; background: rgba(255,255,255,.05); }
+.cs-prow { display: flex; align-items: center; gap: 8px; height: 20px; }
+.cs-plist .cs-bcode { font-size: 11.5px; }
+.cs-ptime { margin-left: auto; font-size: 11px; color: var(--ink-soft); }
+
+/* Keyboard focus, which the phone layout gets inside a compact desktop window.
+   NOTE FOR THE SPEC: ravilo-phone.css defines --ring only inside the daylight block — the phone
+   has no focus engine, so the dark phone skins have no ring token at all. Written without the
+   fallback this rule silently drew nothing, which is how it was found. A compact desktop window
+   needs --ring and --ring-glow in the phone set. */
+.t10row.cs-kfocus { border-radius: 10px; box-shadow: 0 0 0 3px var(--ring, #8e82ff); }
+
+/* ============================================================================================
+   The desktop. The rail is indicative; the card and the row are what is under test.
+   ============================================================================================ */
+
+.cs-dshell { display: grid; grid-template-columns: 248px minmax(0, 1fr); height: 900px; }
+.cs-drail { border-right: 1px solid var(--line); padding: 26px 18px; background: var(--bg-2); }
+.cs-dbrand { display: flex; align-items: center; gap: 11px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 21px; letter-spacing: -.6px; padding-bottom: 22px; }
+.cs-dbrand .cs-mark { width: 28px; height: 28px; border-radius: 9px; }
+.cs-dnav { padding: 9px 13px; border-radius: 10px; font-size: 14px; color: var(--ink-soft); }
+.cs-dnav.on { color: var(--ink); background: var(--card-2); font-weight: 600; }
+.cs-dmain { overflow: hidden; padding: 28px 32px 0; }
+.cs-dhead { display: flex; align-items: baseline; gap: 14px; }
+.cs-dhead h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; letter-spacing: -1px; }
+.cs-dsub { font-size: 15px; color: var(--ink-soft); }
+.cs-dchips { display: flex; gap: 8px; padding: 16px 0 4px; }
+.cs-dchips span { padding: 7px 16px; border-radius: 11px; font-size: 13px; color: var(--ink-soft);
+  border: 1px solid var(--line); }
+.cs-dchips span.cur { color: var(--ink); background: var(--card-2); font-weight: 600; }
+.cs-dday { padding-top: 22px; }
+.cs-ddayhead { display: flex; align-items: baseline; gap: 12px; padding-bottom: 12px; }
+.cs-ddayhead h2 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 600;
+  letter-spacing: -.4px; }
+.cs-ddayhead span { font-size: 13px; color: var(--ink-dim); }
+.cs-dgrid { display: flex; gap: 16px; }
+
+/* the desktop card: the same markup at 300 px, which is the width at which four fit the content
+   column with its gaps. Nothing but the numbers changes. */
+.cs-dtframe .up-card { width: 300px; }
+.cs-dtframe .cs-bcard { width: 616px; }
+.cs-dtframe .cs-bmain { width: 300px; }
+.cs-dtframe .up-art { height: 169px; }
+.cs-dtframe .cs-blist { height: 169px; padding: 9px 11px 8px; }
+/* Two columns on the desktop as well, NOT one. At one column an eight-episode list needs 168 px
+   in a 152 px panel and Chromium simply clipped S02E08 — a card whose whole claim is that it
+   lists its episodes, quietly listing seven of eight. That is B's real constraint and it is in
+   REPORT.md: the list does not scale down, it re-flows. */
+.cs-dtframe .cs-brows { grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.cs-dtframe .cs-brow { height: 19px; }
+.cs-dtframe .cs-bhead { font-size: 11px; padding-bottom: 5px; }
+.cs-dtframe .cs-bcode { font-size: 12px; }
+.cs-dtframe .cs-btime { font-size: 11px; }
+.cs-dtframe .cs-dot { width: 6px; height: 6px; }
+.cs-dtframe .cs-initials { font-size: 44px; }
+.cs-dtframe .up-ctitle { font-size: 16px; }
+.cs-dtframe .up-csub { font-size: 13px; }
+.cs-dtframe .up-cnet { font-size: 11.5px; }
+.cs-dtframe .up-time { font-size: 16px; }
+.cs-dtframe .up-src, .cs-dtframe .up-stat { font-size: 10.5px; padding: 4px 8px; }
+.cs-dtframe .cs-count { font-size: 11px; padding: 4px 8px; }
+.cs-dtframe .cs-artface { inset: 0 22px 0 0; }
+.cs-dtframe .up-card:not(.cs-stacked) .cs-artface,
+.cs-dtframe .cs-c .cs-artface, .cs-dtframe .cs-bmain .cs-artface { inset: 0; }
+.cs-dtframe .cs-edge { width: 24px; top: 10px; bottom: 10px; border-radius: 0 11px 11px 0; }
+.cs-dtframe .cs-edge.e1 { right: 11px; }
+.cs-dtframe .cs-edge.e2 { right: 0; top: 19px; bottom: 19px; }
