@@ -26,8 +26,8 @@
     phone: {
       title: 'Ravilo — Phone',
       /* the phone's own font link, exactly as Ravilo Mobile.html had it (no JetBrains Mono: its few mono spots fall back, as before) */
-      head: [js('mobile/ravilo-phone-head.js'), '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">', css('../flags.css'), css('mobile/ravilo-mobile-player.css'), css('mobile/ravilo-phone.css'), css('mobile/ravilo-music.css'), css('mobile/ravilo-sessions.css')],
-      body: [js('mobile/ravilo-phone-markup.js'), ...['ravilo-i18n.js', 'ravilo-data.js', 'mobile/ravilo-phone.js', ...MUSIC, 'mobile/ravilo-music.js', 'mobile/ravilo-music-player.js', '../app/audiobook-data.js', 'mobile/ravilo-books.js', 'sessions-live.js', 'mobile/ravilo-speakers.js', 'mobile/ravilo-sessions.js', 'mobile/ravilo-web-states.js', 'mobile/ravilo-phone-state.js'].map(js)]
+      head: [js('mobile/ravilo-phone-head.js'), '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">', css('../flags.css'), css('mobile/ravilo-mobile-player.css'), css('mobile/ravilo-phone.css'), css('mobile/ravilo-music.css'), css('mobile/ravilo-sessions.css'), css('mobile/ravilo-support.css'), css('mobile/ravilo-motion.css')],
+      body: [js('mobile/ravilo-phone-markup.js'), ...['ravilo-i18n.js', 'ravilo-data.js', 'mobile/ravilo-phone.js', ...MUSIC, 'mobile/ravilo-music.js', 'mobile/ravilo-music-player.js', '../app/audiobook-data.js', 'mobile/ravilo-books.js', 'sessions-live.js', 'mobile/ravilo-speakers.js', 'mobile/ravilo-sessions.js', 'mobile/ravilo-support.js', 'mobile/ravilo-web-states.js', 'mobile/ravilo-phone-state.js'].map(js)]
     },
     desktop: {
       title: 'Ravilo — Desktop',

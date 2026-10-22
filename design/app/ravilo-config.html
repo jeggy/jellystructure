@@ -191,7 +191,7 @@
         </div>
 
         <div id="rowlist">
-          <div class="cfg-row"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Continue Watching</div><div class="src">Continue + Next Up, merged</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          <div class="cfg-row hascond"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Continue Watching</div><div class="src">Continue + Next Up, merged</div></div><span class="muted tiny">show</span><span class="toggle on"></span><div id="cw-home-tags" data-tags="kids-tv"></div></div>
           <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Movies</div><div class="src">kind = movie · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
           <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Series</div><div class="src">kind = series · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
           <div class="cfg-row" data-newly="merged" style="display:none;"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added</div><div class="src">movies + series combined · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
@@ -412,7 +412,12 @@
   })();
 </script>
 <script src="app-shell.js"></script>
+<script src="cw-hide-tags.js"></script>
 <script src="ravilo-builders.js"></script>
+<script>
+  /* Home Continue Watching · hidden tags — part of the layout, saved by the page's Save (no save of its own). */
+  (function () { const el = document.getElementById('cw-home-tags'); if (!el || !window.CwHideTags) return; window.CwHideTags.mount(el, { hideTags: el.dataset.tags ? el.dataset.tags.split(',') : [] }); })();
+</script>
 <script>
 (function () {
   const nav = document.querySelectorAll('#set-nav .navitem[data-goto]');

@@ -233,3 +233,21 @@ body{background:#17181c;overflow:hidden;font-family:'Sora',sans-serif}
 .dx-win .dx-sfrom span,.dx-win .re-under a{color:var(--ink);font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
 .dx-win .re-under{margin-top:12px;font-size:12.5px;color:var(--ink-soft)}
 .dx-win .rv-bonus{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:var(--ink-soft);background:rgba(var(--fg),.07);border:1px solid var(--line-2)}
+
+/* ---- music-play-all v3 (2026-10-22): ▶ Play all | ▾ right of the page title (the search field's row on Search) ---- */
+.dx-win .dx-ph{display:flex;align-items:center;gap:16px}
+.dx-win .dx-ph .h1{flex:1;min-width:0}
+.dx-win .dx-srow{display:flex;align-items:center;gap:14px}
+.dx-win .dx-srow>.dx-srch{flex:1;min-width:0}
+.dx-win #dxPA:empty{display:none}
+.dx-win .dx-pa{position:relative;display:inline-flex;align-items:stretch;flex:none;height:28px;border-radius:14px;background:rgba(var(--fg),.09);border:1px solid var(--line);color:var(--ink)}
+.dx-win .dx-pa>button{display:flex;align-items:center;gap:5px;border:0;background:none;color:inherit;font:inherit;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer}
+.dx-win .dx-pa .a{padding:0 8px 0 10px;border-radius:14px 0 0 14px}
+.dx-win .dx-pa .b{padding:0 9px 0 7px;border-left:1px solid var(--line-2);border-radius:0 14px 14px 0;font-size:11px}
+.dx-win .dx-pa>button:hover,.dx-win .dx-pa.open .b{background:rgba(var(--fg),.08)}
+.dx-win .dx-pa>button:focus-visible{outline:2px solid var(--ring,var(--accent));outline-offset:2px}
+.dx-win .dx-pa .a svg{width:13px;height:13px}
+.dx-win .dx-pam{position:absolute;top:calc(100% + 6px);right:-1px;z-index:30;min-width:176px;padding:6px;border-radius:12px;background:var(--card-2,#1b2031);border:1px solid var(--line-2);box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.dx-win .dx-pam .mi{width:100%;border:0;background:none;font:inherit;text-align:left;display:flex;align-items:center;gap:10px;min-height:34px;padding:0 10px;border-radius:8px;font-size:13.5px;color:var(--ink);cursor:pointer;white-space:nowrap}
+.dx-win .dx-pam .mi:hover,.dx-win .dx-pam .mi:focus-visible{background:rgba(var(--fg),.08);outline:none}
+.dx-win .dx-pam .mi svg{width:16px;height:16px}

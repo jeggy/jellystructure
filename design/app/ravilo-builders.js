@@ -584,10 +584,11 @@
               <div class="cf-sysrows">
                 <div class="cf-eyebrow" style="margin-bottom:2px;">System rows</div>
                 <div class="tiny muted" style="margin:0 0 9px;line-height:1.5;">Time-based rows that pin to the top — not filter-built. Both show <b>only titles from this channel</b>.</div>
-                <div class="cf-sysrow${sysC.show?'':' off'}">
+                <div class="cf-sysrow hascond${sysC.show?'':' off'}">
                   <span class="badge ok" style="flex:none;">system</span>
                   <div class="cf-sysrow-main"><div class="nm">Continue Watching</div><div class="src">In-progress titles from this collection</div></div>
                   <span class="toggle ${sysC.show?'on':''}" data-systog="continue"></span>
+                  <div data-cw-tags></div>
                 </div>
                 <div class="cf-sysrow${sysN.show?'':' off'}">
                   <span class="badge ok" style="flex:none;">system</span>
@@ -869,6 +870,8 @@
         return state.rows;
       }
       node.querySelectorAll('.cf-rowsmode span').forEach(s => s.onclick = () => { ensureRows().mode = s.dataset.rmode; render(); });
+      // this collection's own Continue Watching row has its own hidden-tag list (Same as Home uses Home's)
+      const cwTags = node.querySelector('[data-cw-tags]'); if (cwTags && window.CwHideTags) window.CwHideTags.mount(cwTags, ensureRows().system.continue);
       node.querySelectorAll('[data-systog]').forEach(b => b.onclick = () => { const r = ensureRows(); r.system[b.dataset.systog].show = !r.system[b.dataset.systog].show; render(); });
       const sysMerge = node.querySelector('[data-sysmerge]'); if (sysMerge) sysMerge.onclick = () => { const r = ensureRows(); r.system.newly.merge = !r.system.newly.merge; render(); };
       const rowAddBtn = node.querySelector('[data-rowadd]');

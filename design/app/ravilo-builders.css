@@ -138,6 +138,37 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
 .cf-sysrows { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--fill-2); }
 .cf-sysrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--fill-3); }
 .cf-sysrow + .cf-sysrow { margin-top: 6px; }
+/* Continue Watching · "Hide titles tagged" sub-row (cw-hide-tags.js) — the same sub-row on the Home
+   Continue row (ravilo-config.html) and on a collection's own Continue row (Custom rows). No tint and no
+   explanatory text; the row keeps the look of its neighbours. Hidden while the row is off; tags are kept. */
+.cfg-row.hascond, .cf-sysrow.hascond { flex-wrap: wrap; }
+.cfg-row.off .cw-cond, .cf-sysrow.off .cw-cond { display: none; }
+.cw-cond { position: relative; flex-basis: 100%; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px; margin-top: 2px; border-radius: 9px; border: 1px dashed var(--line-2); }
+.cw-facet { font-size: .8rem; font-weight: 600; color: var(--ink-soft); }
+.cw-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-width: 0; height: 28px; padding: 0 4px 0 9px; border-radius: 7px; background: var(--fill-3); border: 1px solid var(--line-2); font-family: 'JetBrains Mono', monospace; font-size: .74rem; font-weight: 600; color: var(--ink); }
+.cw-chip .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cw-chip .n { flex: none; font-weight: 500; color: var(--ink-soft); }
+.cw-chip .n.zero, .cw-pi .n.zero { color: var(--warn); }
+[data-theme="light"] .cw-chip .n.zero, [data-theme="light"] .cw-pi .n.zero { color: #8a5d00; }
+.cw-chip .x { flex: none; width: 20px; height: 20px; border-radius: 5px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: .7rem; cursor: pointer; }
+.cw-chip .x:hover { color: var(--bad); background: var(--fill-2); }
+.cw-add { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px; border-radius: 7px; border: 1px dashed var(--line-2); background: transparent; font-family: 'Sora', sans-serif; font-size: .76rem; font-weight: 600; color: var(--acc-ink); white-space: nowrap; cursor: pointer; }
+.cw-add:hover, .cw-add.open { border-style: solid; border-color: var(--hi); background: var(--hi-soft); }
+.cw-pick { position: absolute; left: 0; top: calc(100% + 8px); z-index: 40; width: 380px; max-width: calc(100vw - 32px); padding: 8px; border-radius: 12px; background: var(--fill); border: 1px solid var(--line-2); box-shadow: var(--shadow); }
+.cw-ps { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; border-radius: 9px; background: var(--fill-2); border: 1px solid var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); color: var(--ink-soft); }
+.cw-ps input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-family: 'Sora', sans-serif; font-size: .84rem; }
+.cw-ph { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); padding: 11px 10px 4px; }
+.cw-pi { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: .8rem; color: var(--ink); cursor: pointer; }
+.cw-pi.hov, .cw-pi:hover { background: var(--hi-soft); }
+.cw-pi .cw-box { flex: none; width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid var(--line-2); display: flex; align-items: center; justify-content: center; font-family: 'Sora', sans-serif; font-size: .66rem; color: #fff; }
+.cw-pi.on .cw-box { background: var(--hi); border-color: var(--hi); }
+.cw-pi .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
+.cw-pi mark { background: none; color: var(--acc-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.cw-pi .n { flex: none; font-family: 'Sora', sans-serif; font-size: .7rem; color: var(--ink-soft); white-space: nowrap; }
+.cw-none { padding: 14px 10px 10px; font-size: .82rem; line-height: 1.5; }
+.cw-none span { display: block; color: var(--ink-soft); font-size: .76rem; margin-top: 3px; }
+.cw-pf { border-top: 1px solid var(--line); margin-top: 6px; padding: 8px 10px 3px; font-size: .7rem; line-height: 1.45; color: var(--ink-soft); }
+@media (max-width: 560px) { .cw-pick { right: 0; width: auto; } .cw-cond { display: block; line-height: 0; } .cw-cond > * { vertical-align: middle; margin: 3px 6px 3px 0; line-height: 1.4; } .cw-cond > .cw-pick { margin: 0; } .cw-chip .nm { display: block; max-width: 206px; } }
 .cf-sysrow.off { opacity: .5; }
 .cf-sysrow-main { flex: 1; min-width: 0; }
 .cf-sysrow-main .nm { font-weight: 600; font-size: .86rem; }

@@ -435,3 +435,28 @@ body:not(.muq-open) .muq .mq-body{display:none}
 .re-under{margin-top:12px;font-size:13px;line-height:1.55;color:var(--ink-soft)}
 .re-also{padding:16px 20px 6px;border-top:1px solid var(--line);font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;color:var(--ink-soft)}
 .re-arow .mu-cv{flex:none}
+
+/* ---- music-play-all v3 (2026-10-22): the split ▶ Play all | ▾ — the sort pill's fill and border, the album page's shape.
+   28 px on a text line (count line, ‹ Genres line); 38 px in the top bar (.top). Tap area 44 px either way. */
+.mu-pa{position:relative;display:inline-flex;align-items:stretch;flex:none;height:28px;border-radius:14px;background:rgba(var(--fg),.09);border:1px solid var(--line);color:var(--ink)}
+.mu-pa>button{position:relative;display:flex;align-items:center;gap:5px;border:0;background:none;color:inherit;font-family:'Sora',sans-serif;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer}
+.mu-pa>button:after{content:"";position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
+.mu-pa .a{padding:0 8px 0 10px;border-radius:14px 0 0 14px}
+.mu-pa .b{padding:0 8px 0 6px;border-left:1px solid var(--line-2);border-radius:0 14px 14px 0}
+.mu-pa .a svg{width:13px;height:13px;fill:currentColor}
+.mu-pa .b svg{width:12px;height:12px}
+.mu-pa.open .b{background:rgba(var(--fg),.12)}
+.mu-pa>button:focus-visible{outline:2px solid var(--ring,var(--accent));outline-offset:2px}
+.mu-pa.top{height:38px;border-radius:19px}
+.mu-pa.top>button{font-size:13px}
+.mu-pa.top .a{padding:0 8px 0 12px;border-radius:19px 0 0 19px}.mu-pa.top .b{padding:0 10px 0 7px;border-radius:0 19px 19px 0}
+.mu-pa.top .a svg{width:14px;height:14px}
+.mu-pam{position:absolute;top:calc(100% + 6px);right:-1px;z-index:50;min-width:176px;padding:6px;border-radius:14px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:0 18px 40px rgba(0,0,0,.55)}
+.mu-pam button{display:flex;align-items:center;gap:11px;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;color:var(--ink);font-family:'Sora',sans-serif;font-size:14.5px;font-weight:500;text-align:left;cursor:pointer;white-space:nowrap}
+.mu-pam button:hover,.mu-pam button:focus-visible{background:rgba(var(--fg),.08);outline:none}
+.mu-pam svg{width:18px;height:18px}
+.mu-parow{display:flex;align-items:center;gap:10px;min-height:28px}
+.mu-parow .mu-pa{margin-left:auto}
+.mu-bkrow{display:flex;align-items:center;padding-right:18px}
+.mu-bkrow .mu-pa{margin-left:auto}
+.land .mu-bkrow{padding-right:40px}

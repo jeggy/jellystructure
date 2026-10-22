@@ -38,7 +38,21 @@
     requests:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16l-7-4-7 4z"/><path d="M12 8v5M9.5 10.5h5"/></svg>',
     prefs:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><circle cx="6" cy="9" r="2.3" fill="var(--fill-2)"/><circle cx="12" cy="15" r="2.3" fill="var(--fill-2)"/><circle cx="18" cy="8" r="2.3" fill="var(--fill-2)"/></svg>',
     users:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3.2 3.2 0 0 1 0 6M18.6 19a5.5 5.5 0 0 0-3-4.9"/></svg>',
+    ai:        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z"/><path d="M19 15.5c.2 1.6 1.2 2.6 2.8 2.8-1.6.2-2.6 1.2-2.8 2.8-.2-1.6-1.2-2.6-2.8-2.8 1.6-.2 2.6-1.2 2.8-2.8z"/></svg>',
   };
+
+  /* AI nav + status row exist only while an AI API key is set (Settings → Connections) — absent otherwise,
+     never greyed, same rule as Suggestions/Seerr. Mockup: the key's presence is the 'js-ai-key' flag
+     (default present); the AI page's preview fence flips it. */
+  function aiKeySet() { try { return localStorage.getItem('js-ai-key') !== '0'; } catch (e) { return true; } }
+  /* ai-suggestions-tab (owner, 2026-10-16): while a key is set, every link to suggestions.html (the Dashboard card,
+     Ravilo › Requests, old bookmarks) lands on the AI page's Suggestions tab; #dismissed becomes &view=dismissed. */
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="suggestions.html"]');
+    if (!a || !aiKeySet()) return;
+    e.preventDefault();
+    location.href = 'ai.html?tab=suggestions' + (/#dismissed$/.test(a.getAttribute('href')) ? '&view=dismissed' : '');
+  }, true);
 
   /* ---- brand mark: “Quartet Play” (structure tile with the open slot as a play) ---- */
   let _bm = 0;
@@ -62,8 +76,11 @@
     { href: 'index.html',    label: 'Dashboard', icon: 'dashboard', page: 'dashboard' },
     { href: 'library.html',  label: 'Library',   icon: 'library',   page: 'library'   },
     // Phase 274: only while Seerr is connected — absent otherwise, never greyed
-    { href: 'suggestions.html', label: 'Suggestions', icon: 'sugg', page: 'suggestions' },
+    // ai-suggestions-tab (owner, 2026-10-16): with an AI key set, Suggestions is the third tab of the AI page and has no entry here
+    { href: 'suggestions.html', label: 'Suggestions', icon: 'sugg', page: 'suggestions', hideWithAiKey: true },
     { href: 'activity.html', label: 'Activity',  icon: 'activity',  page: 'activity'  },
+    // support-lane (2026-10-14): the AI entry carries the number of open support tickets — the sidebar's first count badge
+    { href: 'ai.html',       label: 'AI',        icon: 'ai',        page: 'ai', needsAiKey: true, count: 'support' },
     { group: 'Setup' },
     { href: 'metadata.html', label: 'Metadata',  icon: 'metadata',  page: 'metadata'  },
     { href: 'settings.html', label: 'Settings',  icon: 'settings',  page: 'settings'  },
@@ -92,8 +109,11 @@
     (function () {
       var CHEV = '<svg class="grp-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
       var navA = function (item) {
+        if (item.needsAiKey && !aiKeySet()) return '';
+        if (item.hideWithAiKey && aiKeySet()) return '';
         var active = (item.href === here) || (item.page === current) ? ' active' : '';
-        return '<a class="nav' + active + '" href="' + item.href + '"><span class="l"><span class="ico">' + I[item.icon] + '</span>' + item.label + '</span></a>';
+        var cnt = item.count === 'support' ? (typeof window.JS_SUPPORT_OPEN === 'number' ? window.JS_SUPPORT_OPEN : 2) : 0;
+        return '<a class="nav' + active + '" href="' + item.href + '"><span class="l"><span class="ico">' + I[item.icon] + '</span>' + item.label + '</span>' + (cnt ? '<span class="count">' + cnt + '</span>' : '') + '</a>';
       };
       var pre = [], groups = [], cur = null;
       NAV.forEach(function (item) { if (item.group) { cur = { label: item.group, items: [] }; groups.push(cur); } else if (cur) cur.items.push(item); else pre.push(item); });
@@ -109,6 +129,7 @@
     '<div class="status">' +
       '<div class="row"><span class="dot ok"></span> Jellyfin online</div>' +
       '<div class="row"><span class="dot ok"></span> TMDB key OK</div>' +
+      (aiKeySet() ? '<div class="row"><span class="dot ok"></span> AI key OK</div>' : '') +
       '<a class="row" href="index.html" style="color:inherit;text-decoration:none"><span class="dot warn"></span> ' + ATTN_TOTAL + ' could be fixed</a>' +
     '</div>' +
     '<a class="nav" href="login.html" style="margin-top:8px"><span class="l"><span class="ico">' + I.signout + '</span>Sign out</span></a>' +
@@ -230,7 +251,7 @@
   document.body.appendChild(palette);
 
   const cmds = [
-    ...NAV.filter(n => !n.group).map(n => ({ label: n.label, kind: 'Page', href: n.href, icon: I[n.icon] })),
+    ...NAV.filter(n => !n.group && !(n.needsAiKey && !aiKeySet()) && !(n.hideWithAiKey && aiKeySet())).map(n => ({ label: n.label, kind: 'Page', href: n.href, icon: I[n.icon] })),
     { label: 'Start library scan', kind: 'Action', href: 'activity.html', icon: I.activity },
     { label: 'Re-pull artwork (all)', kind: 'Action', href: 'index.html', icon: I.dashboard },
   ];

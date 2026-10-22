@@ -606,6 +606,7 @@
       else if(a==='lang') openAcct(langHTML());
       else if(a==='settings') openAcct(settingsHTML(), 'settings');
       else if(a==='mylist') openAcct(myListHTML(), 'mylist');
+      else if(a==='support' && window.RaviloSupport) RaviloSupport.open();   // support-lane: Profile › Support
       else if(a==='signout') openSheet(true);
       return; }
     if(e.target.closest('[data-libsort]')){ window.RaviloWeb && RaviloWeb.sortSheet(LIB_SORTS, libSort, libRev, i => { if(i===libSort){ if(LIB_SORTS[i][1]) libRev = !libRev; } else { libSort = i; libRev = false; } renderLibrary(); }); return; }
@@ -707,6 +708,7 @@
       +   '<div class="pft-grp">'
       +     '<button class="pft-row" data-pf="lang">'+PF_IC.lang+'<span>App language<div class="rsub">'+LANGS[pfLang]+'</div></span>'+PF_IC.chev+'</button>'
       +     (window.RaviloMusic ? RaviloMusic.profileRow() : '')
+      +     (window.RaviloSupport ? RaviloSupport.profileRow() : '')
       +     '<button class="pft-row" data-pf="password">'+PF_IC.key+'<span>Change password</span>'+PF_IC.chev+'</button>'
       +     '<button class="pft-row" data-pf="settings">'+PF_IC.gear+'<span>Settings</span>'+PF_IC.chev+'</button>'
       +   '</div>'
@@ -1445,7 +1447,7 @@
     get detTitle(){ return detail.classList.contains('on') ? detTitle : null; },
     get acctWhat(){ return acct.classList.contains('on') ? acctWhat : null; },
     get srchQ(){ return srchQ; }, setSrchQ(v){ srchQ = v; },
-    openDetail, closeDetail, openMyList: () => openAcct(myListHTML(), 'mylist'),
+    openDetail, closeDetail, openMyList: () => openAcct(myListHTML(), 'mylist'), openAcct,
     knows: title => [].concat(R.hero, ...R.rows.map(r=>r.items), ...R.discover.lists.map(l=>l.items)).some(x => x && x.title === title),
   };
 

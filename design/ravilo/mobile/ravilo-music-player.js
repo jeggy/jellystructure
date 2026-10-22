@@ -23,7 +23,7 @@
   const P = { queue: [], qi: 0, pos: 0, playing: false, buffering: false, repeat: 'off', shuffle: false, ctx: '', open: false, lyrics: q.j4 === 'lyrics', cast: null, fail: false, stickyBuf: false };
   const cur = () => P.queue[P.qi] || null;
   const trk = () => M.track(cur());
-  const ctxName = c => !c ? '' : c.indexOf('alx:') === 0 ? M.album(c.slice(4)).title : c.indexOf('al:') === 0 ? M.album(c.slice(3)).title : c.indexOf('ar:') === 0 ? M.artist(c.slice(3)).name : c.indexOf('pl:') === 0 ? (MS.playlists.find(p => p.id === c.slice(3)) || {}).name : c === 'recent' ? t('mhome.recent_played') : c === 'mix' ? t('mhome.mix') : c === 'songs' ? t('mlib.songs') : c === 'srch' ? t('mnav.search') : '';
+  const ctxName = c => !c ? '' : c.indexOf('alx:') === 0 ? M.album(c.slice(4)).title : c.indexOf('al:') === 0 ? M.album(c.slice(3)).title : c.indexOf('ar:') === 0 ? M.artist(c.slice(3)).name : c.indexOf('pl:') === 0 ? (MS.playlists.find(p => p.id === c.slice(3)) || {}).name : c === 'recent' ? t('mhome.recent_played') : c === 'mix' ? t('mhome.mix') : c === 'songs' ? t('mlib.songs') : c === 'srch' ? t('mnav.search') : c.indexOf('lib:') === 0 ? t('music.from_lib') : c.indexOf('g:') === 0 ? c.charAt(2).toUpperCase() + c.slice(3) : c.indexOf('q:') === 0 ? t('music.from_srch', { q: c.slice(2) }) : '';
   const hasLyrics = x => !!(x && (M.LYRICS[x.id] || M.PLAIN[x.id]));
 
   /* ---- playback model (a stand-in clock; the product's is Media3's) ---- */

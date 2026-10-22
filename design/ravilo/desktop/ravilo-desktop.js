@@ -84,16 +84,28 @@
     if (k === 'songs') return fold(M.tracks).map(t => t.id);
     if (k === 'recent') return recentSongs().map(t => t.id);
     if (k === 'srch') return srchSongs().map(t => t.id);
+    if (k === 'lib') { const L = id === 'albums' ? M.albums.reduce((s, a) => s.concat(M.tracksOf(a.id)), []) : id === 'artists' ? albumArtists().reduce((s, r) => s.concat(M.tracksBy(r.id)), []) : M.tracks, seen = new Set();
+      return fold(L).filter(t => !seen.has(t.id) && seen.add(t.id)).map(t => t.id); }
+    if (k === 'g') { const seen = new Set(); return fold(M.albums.filter(a => a.genres.some(g => g.name === id)).reduce((s, a) => s.concat(M.tracksOf(a.id)), [])).filter(t => !seen.has(t.id) && seen.add(t.id)).map(t => t.id); }
+    if (k === 'q') return srchSongs().map(t => t.id);
     return [];
   }
   function ctxName(ctx) {
     const [k, id] = ctx.split(':');
-    return k === 'al' || k === 'alx' ? (M.album(id) || {}).title : k === 'ar' ? (M.artist(id) || {}).name : k === 'songs' ? 'Songs' : k === 'recent' ? 'Recently played' : 'Search';
+    return k === 'al' || k === 'alx' ? (M.album(id) || {}).title : k === 'ar' ? (M.artist(id) || {}).name : k === 'songs' ? 'Songs' : k === 'recent' ? 'Recently played' : k === 'lib' ? 'Your library' : k === 'g' ? id.charAt(0).toUpperCase() + id.slice(1) : k === 'q' ? 'Search "' + ctx.slice(2) + '"' : 'Search';
   }
   function playCtx(ctx, id, shuffle) {
     let ids = ctxIds(ctx); if (!ids.length) return;
     if (shuffle) { ids = ids.slice(); for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; } }
     R.queue = ids; R.qi = id ? Math.max(0, ids.indexOf(id)) : 0; R.cur = ids[R.qi]; R.pos = 0; R.playing = true; R.ctx = ctx;
+  }
+  // music-play-all v3 (2026-10-22): ▶ Play all | ▾ (▾ → Shuffle all). The ▾ reuses the album page's name. Over 1 000 songs: the first 1 000, with a toast.
+  const pa = ctx => { const o = R.pam === ctx, c = esc(ctx); return `<span class="dx-pa${o ? ' open' : ''}"><button class="a" data-act="paplay" data-ctx="${c}">${ic('play')}Play all</button><button class="b" data-act="pamenu" data-ctx="${c}" title="More ways to play" aria-label="More ways to play" aria-haspopup="menu" aria-expanded="${o}">▾</button>${o ? `<div class="dx-pam" role="menu"><button class="mi" role="menuitem" data-act="pashuf" data-ctx="${c}">${ic('shuffle')}Shuffle all</button></div>` : ''}</span>`; };
+  const phead = (title, ctx, st) => `<div class="dx-ph"><div class="h1"${st ? ` style="${st}"` : ''}>${title}</div>${ctx && ctxIds(ctx).length ? pa(ctx) : ''}</div>`;
+  function playAll(ctx, shuf) {
+    R.pam = null; const n = ctxIds(ctx).length; if (!n) return;
+    playCtx(ctx, null, shuf);
+    if (n > 1000) { R.queue = R.queue.slice(0, 1000); toast('Playing 1\u00a0000 of ' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ' songs'); } else render();
   }
   function next(auto) {
     if (R.qi < R.queue.length - 1) { R.qi++; R.cur = R.queue[R.qi]; R.pos = 0; }
@@ -132,17 +144,17 @@
   P.listen = () => {
     const b = B && B.household, bl = b ? b.parts.reduce((s, p) => s + p.len, 0) : 0, bp = 7920;
     const rs = recentSongs();
-    return { t: 'Listen', h: `<div class="pad" style="padding-top:4px"><div class="h1">Listen</div>`
+    return { t: 'Listen', h: `<div class="pad" style="padding-top:4px">${phead('Listen', 'lib:listen')}`
       + (b ? `${rh('Continue listening')}<div class="bookc" data-book="${b.id}" style="cursor:pointer"><span class="c" style="${M.wordmarkStyle(b.title)}"></span><div><div class="t">${esc(b.title)}</div><div class="s">${esc(B.authorNames(b.authors))} · ${M.fmtTotal(bl - bp)} left</div></div><span class="ring" style="background:conic-gradient(var(--accent-2) 0 ${Math.round(bp / bl * 100)}%,rgba(var(--fg),.12) ${Math.round(bp / bl * 100)}% 100%)"><i>${ic('play')}</i></span></div>` : '')
       + `${rh('Recently added', 'albums')}<div class="row">${RECENT.slice(0, 8).map(albumCard).join('')}</div>`
       + (rs.length ? `${rh('Recently played', 'songs')}${songRows(rs, 'recent')}` : '')
       + `${rh('Artists you play', 'artists')}<div class="row">${albumArtists().slice(0, 9).map(artistCard).join('')}</div></div>` };
   };
-  P.artists = () => ({ t: 'Artists', h: `<div class="pad"><div class="h1">Artists</div><div class="meta-l">${albumArtists().length} artists</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">${albumArtists().map(artistCard).join('')}</div></div>` });
-  P.albums = () => ({ t: 'Albums', h: `<div class="pad"><div class="h1">Albums</div><div class="meta-l">${M.albums.length} albums</div><div class="grid">${M.albums.map(albumCard).join('')}</div></div>` });
-  P.songs = () => { const l = fold(M.tracks); return { t: 'Songs', h: `<div class="pad"><div class="h1">Songs</div><div class="meta-l">${l.length} songs</div></div>${songRows(l, 'songs', true)}` }; };
+  P.artists = () => ({ t: 'Artists', h: `<div class="pad">${phead('Artists', 'lib:artists')}<div class="meta-l">${albumArtists().length} artists</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">${albumArtists().map(artistCard).join('')}</div></div>` });
+  P.albums = () => ({ t: 'Albums', h: `<div class="pad">${phead('Albums', 'lib:albums')}<div class="meta-l">${M.albums.length} albums</div><div class="grid">${M.albums.map(albumCard).join('')}</div></div>` });
+  P.songs = () => { const l = fold(M.tracks); return { t: 'Songs', h: `<div class="pad">${phead('Songs', 'lib:songs')}<div class="meta-l">${l.length} songs</div></div>${songRows(l, 'songs', true)}` }; };
   P.genres = () => ({ t: 'Genres', h: `<div class="pad"><div class="h1">Genres</div><div class="meta-l">${M.genres().length} genres</div><div class="dx-gl">${M.genres().map(g => `<div data-genre="${esc(g.name)}"><b>${esc(g.name)}</b><span>${g.albums} album${g.albums === 1 ? '' : 's'} · ${g.songs} songs</span></div>`).join('')}</div></div>` });
-  P.genre = name => ({ t: name.charAt(0).toUpperCase() + name.slice(1), h: `<div class="pad"><div class="h1" style="text-transform:capitalize">${esc(name)}</div><div class="grid">${M.albums.filter(a => a.genres.some(g => g.name === name)).map(albumCard).join('')}</div></div>` });
+  P.genre = name => ({ t: name.charAt(0).toUpperCase() + name.slice(1), h: `<div class="pad">${phead(esc(name), 'g:' + name, 'text-transform:capitalize')}<div class="grid">${M.albums.filter(a => a.genres.some(g => g.name === name)).map(albumCard).join('')}</div></div>` });
   P.playlists = () => ({ t: 'Playlists', h: '<div class="dx-empty"><b>No playlists yet</b>Making playlists comes in a later phase. Play an album, an artist or a song meanwhile.</div>' });
   P.audiobooks = () => ({ t: 'Audiobooks', h: `<div class="pad"><div class="h1">Audiobooks</div><div class="meta-l">1 book</div><div class="grid">${B ? `<div class="al" data-book="${B.household.id}"><div class="a" style="${M.wordmarkStyle(B.household.title)}"><span style="position:relative">${esc(B.household.title)}</span></div><div class="t">${esc(B.household.title)}</div><div class="s">${esc(B.authorNames(B.household.authors))}</div></div>` : ''}</div></div>` });
   P.book = id => {
@@ -197,7 +209,8 @@
     if (!so.length && !al.length && !ar.length) return `<div class="meta-l">Nothing found for “${esc(R.srch.trim())}”</div>`;
     return (ar.length ? `${rh('Artists')}<div class="row">${ar.map(artistCard).join('')}</div>` : '') + (so.length ? `${rh('Songs')}</div>${songRows(so, 'srch')}<div class="pad">` : '') + (al.length ? `${rh('Albums')}<div class="row">${al.map(albumCard).join('')}</div>` : '');
   }
-  P.search = () => ({ t: 'Search', h: `<div class="pad"><div class="dx-srch">${ic('search')}<input id="dxQ" type="search" placeholder="${S.mode === 'music' ? 'Search music' : 'Search films &amp; series'}" value="${esc(R.srch)}" autocomplete="off"></div><div id="dxRes">${srchResults()}</div></div>` });
+  const srchPA = () => { const q = R.srch.trim(); return S.mode === 'music' && q && srchSongs().length ? pa('q:' + q) : ''; };
+  P.search = () => ({ t: 'Search', h: `<div class="pad"><div class="dx-srow"><div class="dx-srch">${ic('search')}<input id="dxQ" type="search" placeholder="${S.mode === 'music' ? 'Search music' : 'Search films &amp; series'}" value="${esc(R.srch)}" autocomplete="off"></div><span id="dxPA">${srchPA()}</span></div><div id="dxRes">${srchResults()}</div></div>` });
   P.profile = () => ({ t: 'Profile', h: `<div class="dx-prof"><div class="hd"><span class="av">E</span><b>Eyð</b><span>Admin</span></div>`
     + `<div class="dx-grp"><div data-nav="mylist" data-mode-to="films">${ic('bookmark')}My List<span class="v">${myList.size}</span></div></div>`
     + `<h6>Settings</h6><div class="dx-grp"><div data-act="theme">Theme<span class="v">${SKINS.find(x => x[0] === S.skin)[1]}</span></div><div data-act="noop">App language<span class="v">English</span></div></div>`
@@ -432,6 +445,9 @@
       case 'edpick': { const [i, v, k] = sid.split('|'); window.RaviloEditions.setPick(i, v); R.edm = null; playCtx(v + ':' + i, null, k === 'shuf'); render(); break; }
       case 'edbs': R.edbs = R.edbs === sid ? null : sid; render(); break;
       case 'shufctx': playCtx(el.dataset.ctx, null, true); render(); break;
+      case 'paplay': playAll(el.dataset.ctx, false); break;
+      case 'pashuf': playAll(el.dataset.ctx, true); break;
+      case 'pamenu': R.pam = R.pam === el.dataset.ctx ? null : el.dataset.ctx; render(); if (R.pam) { const m = document.querySelector('.dx-pam .mi'); if (m) m.focus(); } break;
       case 'playfilm': R.film = el.dataset.k; R.fpPaused = false; R.fpHide = false; if (R.playing) { R.playing = false; R.toast = 'Music paused'; clearTimeout(toastT); toastT = setTimeout(() => { R.toast = null; render(); }, 2200); } render(); break;
       case 'closefilm': R.film = null; render(); break;
       case 'fpp': R.fpPaused = !R.fpPaused; render(); break;
@@ -466,6 +482,7 @@
     if (R.menu && !e.target.closest('.gpop,.pmenu,[data-act="menu"]')) { R.menu = null; render(); return; }
     if (R.pop && !e.target.closest('.sx-pop,[data-act="cast"],[data-act="sesopen"]')) { R.pop = null; R.ask = null; render(); return; }
     if (R.edm && !e.target.closest('.dx-edm,[data-act="edmenu"]')) { R.edm = null; render(); return; }
+    if (R.pam && !e.target.closest('.dx-pam,[data-act="pamenu"]')) { R.pam = null; render(); return; }
     // FR-R337-8: the overlay queue (< 1200) closes on a click outside it
     if (R.qOpen && S.size !== 'large' && !e.target.closest('.qp,[data-act="queue"]')) { R.qOpen = false; render(); return; }
     const md = e.target.closest('[data-mode]'); if (md) return setMode(md.dataset.mode);
@@ -484,12 +501,12 @@
     if (RS && e.target.dataset && e.target.dataset.sv != null && R.sesId) { RS.cmd(R.sesId, 'vol', { room: e.target.dataset.sv, v: +e.target.value }, FROM); const x = RS.get(R.sesId);
       document.querySelectorAll('[data-svv]').forEach(o => { const r = o.dataset.svv, v = r ? x.vols[r] : RS.master(x.id); o.textContent = v + ' %'; const i = o.parentNode.querySelector('input'); if (i !== e.target) i.value = v; }); return; }
     if (e.target.id === 'sxS') { const t = $('sxT'); if (t) t.textContent = RS.fmt(+e.target.value); return; }
-    if (e.target.id !== 'dxQ') return; R.srch = e.target.value; const r = $('dxRes'); if (r) r.innerHTML = srchResults(); });
+    if (e.target.id !== 'dxQ') return; R.srch = e.target.value; const r = $('dxRes'); if (r) r.innerHTML = srchResults(); const pq = $('dxPA'); if (pq) { R.pam = null; pq.innerHTML = srchPA(); } });
   document.addEventListener('keydown', e => {
     const typing = e.target.tagName === 'INPUT';
     const mod = e.metaKey || e.ctrlKey;
     if (mod && (e.key === '1' || e.key === '2')) { e.preventDefault(); return setMode(e.key === '1' ? 'films' : 'music'); }
-    if (e.key === 'Escape') { if (R.menu || R.dlg) { R.menu = null; R.dlg = null; return render(); } if (R.film) { R.film = null; return render(); } if (R.qOpen) { R.qOpen = false; return render(); } return; }
+    if (e.key === 'Escape') { if (R.pam) { R.pam = null; return render(); } if (R.menu || R.dlg) { R.menu = null; R.dlg = null; return render(); } if (R.film) { R.film = null; return render(); } if (R.qOpen) { R.qOpen = false; return render(); } return; }
     if (typing) return;
     if (e.key === ' ' && !R.film && S.size !== 'compact') { e.preventDefault(); act('pp'); return; }
     if (e.key === ' ' && R.film) { e.preventDefault(); act('fpp'); return; }

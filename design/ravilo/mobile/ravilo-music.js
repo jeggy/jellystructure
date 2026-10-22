@@ -85,6 +85,25 @@
   // contexts: a list of track ids that becomes the queue when one of them is tapped
   const CTX = {};
   MS.CTX = CTX;
+  /* ---- music-play-all v3 (owner pick, 2026-10-22): one split — ▶ Play all | ▾ (▾ → Shuffle all) — never on a row of its own.
+     The top bar on Listen and a search; the count line on Artists / Albums / Songs; the ‹ Genres line on a genre.
+     The ▾ reuses the album page's accessible name (ed.more_play). Over 1 000 songs: the first 1 000 play, with a toast. */
+  const DDS = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const pa = (ctx, top) => '<span class="mu-pa' + (top ? ' top' : '') + '"><button class="a" data-mu="pa-play" data-ctx="' + esc(ctx) + '">' + G.play + t('music.play_all') + '</button><button class="b" data-mu="pa-menu" data-ctx="' + esc(ctx) + '" aria-label="' + esc(t('ed.more_play')) + '" aria-haspopup="menu" aria-expanded="false">' + DDS + '</button></span>';
+  const uniq = l => { const s = new Set(); return l.filter(x => !s.has(x.id) && s.add(x.id)); };
+  function closePA() { document.querySelectorAll('.mu-pa.open').forEach(w => { w.classList.remove('open'); const m = w.querySelector('.mu-pam'); if (m) m.remove(); w.querySelector('.b').setAttribute('aria-expanded', 'false'); }); }
+  function togglePA(b) { const w = b.closest('.mu-pa'), was = w.classList.contains('open'); closePA(); if (was) return;
+    w.classList.add('open'); b.setAttribute('aria-expanded', 'true');
+    w.insertAdjacentHTML('beforeend', '<div class="mu-pam" role="menu"><button role="menuitem" data-mu="pa-shuf" data-ctx="' + esc(b.dataset.ctx) + '">' + G.shuffle + t('music.shuffle_all') + '</button></div>'); }
+  function playAll(ctx, shuf) {
+    closePA(); let ids = (CTX[ctx] || []).slice(); if (!ids.length) return;
+    const n = ids.length, CAP = 1000;
+    if (n > CAP) { if (shuf) for (let k = n - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [ids[k], ids[j]] = [ids[j], ids[k]]; } ids = ids.slice(0, CAP); }
+    MS.P.playCtx(ids, shuf ? Math.floor(Math.random() * ids.length) : 0, ctx, shuf);
+    if (n > CAP) { const f = v => String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0'); H.phToast(t('music.capped', { shown: f(CAP), total: f(n) })); }
+  }
+  document.addEventListener('click', e => { if (document.querySelector('.mu-pa.open') && !e.target.closest('.mu-pa')) closePA(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePA(); });
 
   /* ---- pages ---- */
   function home(listen) {
@@ -93,6 +112,7 @@
     let h = '';
     // no Now-playing card at the top of Listen: the mini bar above the bottom bar already shows it (owner, 2026-09-27)
     void listen;
+    CTX['lib:listen'] = fold(M.tracks).map(x => x.id);
     // R323 FR-R323-2 (owner 2026-09-28: the lean) — a book in progress is one tap from Listen, not two
     if (listen && window.RaviloBooks && RaviloBooks.contRow) h += RaviloBooks.contRow();
     h += row(t('mhome.recent_albums'), '<div class="mu-track">' + recentAlbums().map(acard).join('') + '</div>');
@@ -126,12 +146,14 @@
     if (s === 3) return list.slice().sort((a, b) => M.tracksOf(b.id).reduce((n, x) => n + x.plays, 0) - M.tracksOf(a.id).reduce((n, x) => n + x.plays, 0));
     return RECENT.map(M.album).concat(M.albums.filter(a => RECENT.indexOf(a.id) < 0));
   }
-  function albumsGrid() { const l = sorted(M.albums, 'albums'); return '<div class="mu-meta">' + albumsN(l.length) + '</div><div class="mu-g2">' + l.map(a => '<div class="mu-acard" data-mu="album" data-id="' + a.id + '">' + cover(a) + '<div class="t">' + esc(a.title) + '</div><div class="s">' + esc(artistOf(a).name) + ' · ' + a.year + '</div></div>').join('') + '</div>'; }
-  function artistsGrid() { const l = sorted(albumArtists(), 'artists'); return '<div class="mu-meta">' + l.length + ' ' + t('mlib.artists').toLowerCase() + '</div><div class="mu-g3">' + l.map(r => arc(r, albumsN(M.albumsOf(r.id).length))).join('') + '</div>'; }
-  function songsList() { const l = fold(sorted(M.tracks, 'songs')); CTX.songs = l.map(x => x.id); return '<div class="mu-meta">' + songsN(l.length) + '</div><div class="mu-list">' + l.map((x, i) => songRow(x, 'songs', i)).join('') + '</div>'; }
+  const metaRow = (txt, ctx) => '<div class="mu-meta mu-parow"><span>' + txt + '</span>' + (CTX[ctx] && CTX[ctx].length ? pa(ctx) : '') + '</div>';
+  function albumsGrid() { const l = sorted(M.albums, 'albums'); CTX['lib:albums'] = uniq(fold(l.reduce((s, a) => s.concat(M.tracksOf(a.id)), []))).map(x => x.id); return metaRow(albumsN(l.length), 'lib:albums') + '<div class="mu-g2">' + l.map(a => '<div class="mu-acard" data-mu="album" data-id="' + a.id + '">' + cover(a) + '<div class="t">' + esc(a.title) + '</div><div class="s">' + esc(artistOf(a).name) + ' · ' + a.year + '</div></div>').join('') + '</div>'; }
+  function artistsGrid() { const l = sorted(albumArtists(), 'artists'); CTX['lib:artists'] = uniq(fold(l.reduce((s, r) => s.concat(M.tracksBy(r.id)), []))).map(x => x.id); return metaRow(l.length + ' ' + t('mlib.artists').toLowerCase(), 'lib:artists') + '<div class="mu-g3">' + l.map(r => arc(r, albumsN(M.albumsOf(r.id).length))).join('') + '</div>'; }
+  function songsList() { const l = fold(sorted(M.tracks, 'songs')); CTX.songs = l.map(x => x.id); CTX['lib:songs'] = CTX.songs; return metaRow(songsN(l.length), 'lib:songs') + '<div class="mu-list">' + l.map((x, i) => songRow(x, 'songs', i)).join('') + '</div>'; }
   function genresList() {
-    if (MS.genre) { const al = M.albums.filter(a => a.genres.some(x => x.name === MS.genre));
-      return '<div class="mu-back" data-mu="genre-back">‹ ' + t('mlib.genres') + '</div><div class="row" style="margin-top:0"><h3>' + esc(MS.genre) + '<span class="more" style="cursor:default">' + albumsN(al.length) + '</span></h3></div><div class="mu-g2">' + al.map(acard).join('') + '</div>'; }
+    if (MS.genre) { const al = M.albums.filter(a => a.genres.some(x => x.name === MS.genre)), gc = 'g:' + MS.genre;
+      CTX[gc] = uniq(fold(al.reduce((s, a) => s.concat(M.tracksOf(a.id)), []))).map(x => x.id);
+      return '<div class="mu-bkrow"><div class="mu-back" data-mu="genre-back">‹ ' + t('mlib.genres') + '</div>' + (CTX[gc].length ? pa(gc) : '') + '</div><div class="row" style="margin-top:0"><h3>' + esc(MS.genre) + '<span class="more" style="cursor:default">' + albumsN(al.length) + '</span></h3></div><div class="mu-g2">' + al.map(acard).join('') + '</div>'; }
     return '<div class="mu-gen">' + M.genres().map(g => '<button data-mu="genre" data-id="' + esc(g.name) + '">' + esc(g.name) + ' <span>' + g.albums + '</span></button>').join('') + '</div>';
   }
   // (a) and (c): Playlists is a Library chip; with Playlists in the bar (a′) or no Audiobooks tab (a′, c) books are a chip too
@@ -145,6 +167,10 @@
   }
   function paintSort(tab) {
     const slot = $('libSlot'); if (!slot) return;
+    slot.innerHTML = '';
+    if ((tab === 'm-listen' || tab === 'm-home') && !empty() && CTX['lib:listen'] && CTX['lib:listen'].length) { slot.innerHTML = pa('lib:listen', true); return; }
+    const sq = MS.srch.trim();
+    if (sq && (tab === 'm-search' || ((tab === 'm-library' || tab === 'm-browse') && merged())) && CTX.srch && CTX.srch.length) { CTX['q:' + sq] = CTX.srch; slot.innerHTML = pa('q:' + sq, true); return; }
     if (tab === 'm-books') { if (window.RaviloBooks) RaviloBooks.paintSort(slot); return; }
     if (['m-library', 'm-browse', 'm-albums', 'm-artists'].indexOf(tab) < 0 || empty() || (tab !== 'm-albums' && tab !== 'm-artists' && (MS.libChip === 'genres' || MS.libChip === 'books'))) return;
     slot.innerHTML = '<button class="mu-sortpill" data-mu="sort">' + t(SORTS[MS.libSort]) + '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>';
@@ -155,17 +181,19 @@
   function fillSearch() {
     const res = $('muSrchRes'); if (!res) return;
     const s = MS.srch.trim().toLowerCase();
-    const body = $('muLibBody'); if (body) { body.hidden = !!s; if (!s) { res.innerHTML = ''; return; } }
+    CTX.srch = []; const done = () => paintSort(H.tab);
+    const body = $('muLibBody'); if (body) { body.hidden = !!s; if (!s) { res.innerHTML = ''; done(); return; } }
     if (!s) { const rp = recentPlayed(); CTX.recent = rp.map(x => x.id);
-      res.innerHTML = empty() ? '' : row(t('mhome.recent_played'), '<div class="mu-list">' + rp.map((x, i) => songRow(x, 'recent', i)).join('') + '</div>') + row(t('mhome.artists'), '<div class="mu-track">' + albumArtists().slice(0, 10).map(r => arc(r)).join('') + '</div>'); return; }
+      res.innerHTML = empty() ? '' : row(t('mhome.recent_played'), '<div class="mu-list">' + rp.map((x, i) => songRow(x, 'recent', i)).join('') + '</div>') + row(t('mhome.artists'), '<div class="mu-track">' + albumArtists().slice(0, 10).map(r => arc(r)).join('') + '</div>'); done(); return; }
     const hit = v => String(v).toLowerCase().indexOf(s) >= 0;
     const songs = fold(M.tracks.filter(x => hit(x.title) || hit(M.artistNames(x.artistIds)))), albums = M.albums.filter(a => hit(a.title) || hit(artistOf(a).name)), artists = M.artists.filter(r => hit(r.name));
-    if (!songs.length && !albums.length && !artists.length) { res.innerHTML = '<div class="srchmeta">' + esc(t('music.no_results', { q: MS.srch.trim() })) + '</div>'; return; }
+    if (!songs.length && !albums.length && !artists.length) { res.innerHTML = '<div class="srchmeta">' + esc(t('music.no_results', { q: MS.srch.trim() })) + '</div>'; done(); return; }
     CTX.srch = songs.map(x => x.id);
     const cap = (k, l) => MS.srchAll === k ? l : l.slice(0, 3), more = (k, l) => l.length > 3 && MS.srchAll !== k ? 'srch-all-' + k : null;
     res.innerHTML = (songs.length ? row(t('mlib.songs'), '<div class="mu-list">' + cap('songs', songs).map((x, i) => songRow(x, 'srch', i)).join('') + '</div>', more('songs', songs)) : '')
       + (albums.length ? row(t('mlib.albums'), '<div class="mu-g2">' + cap('albums', albums).map(acard).join('') + '</div>', more('albums', albums)) : '')
       + (artists.length ? row(t('mlib.artists'), '<div class="mu-g3">' + cap('artists', artists).map(r => arc(r)).join('') + '</div>', more('artists', artists)) : '');
+    done();
   }
   function plRow(p) { const al = p.ids.slice(0, 4).map(id => M.album(M.track(id).albumId));
     return '<button class="mu-pl" data-mu="playlist" data-id="' + p.id + '"><div class="col">' + al.map(a => '<i style="' + (a.cover ? M.coverStyle(a) : M.wordmarkStyle(a.title)) + '"></i>').join('') + '</div><div><div class="t">' + esc(p.name) + '</div><div class="s">' + songsN(p.ids.length) + '</div></div></button>'; }
@@ -359,6 +387,8 @@
     const el = e.target.closest('[data-mu]'); if (!el) return;
     const k = el.dataset.mu, id = el.dataset.id;
     if (k === 'menu') { e.stopPropagation(); MS.P.menu(id); return; }
+    if (k === 'pa-menu') { e.stopPropagation(); togglePA(el); return; }
+    if (k === 'pa-play' || k === 'pa-shuf') { playAll(el.dataset.ctx, k === 'pa-shuf'); return; }
     if (k === 'album') openDet('album', id);
     else if (k === 'artist') openDet('artist', id);
     else if (k === 'playlist') openDet('playlist', id);
@@ -388,6 +418,7 @@
     else if (window.RaviloBooks && RaviloBooks.onClick(k, el, e)) {}
   }
   H.app.addEventListener('click', onClick);
+  const slotEl = $('libSlot'); if (slotEl) slotEl.addEventListener('click', e => { if (e.target.closest('[data-mu^="pa-"]')) onClick(e); });
   det.addEventListener('click', onClick);
 
   window.RaviloMusic = {

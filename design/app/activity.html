@@ -6,6 +6,7 @@
 <title>Jellystructure — Activity</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="support.css">
 <link rel="stylesheet" href="music.css">
 <style>.stepchip.mu{border-style:dashed}.stepchip.mu::after{content:'♪';font-family:system-ui,sans-serif;font-size:.7rem;color:var(--ink-dim)}</style>
 <style>
@@ -136,7 +137,10 @@
   </div>
   <p class="page-sub">The full console for the job that's also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Items with problems are flagged for attention and the run keeps going.</p>
 
-  <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count">52</span></span></span></div>
+  <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count">52</span></span><span data-view="support">Support log</span></span></div>
+
+  <!-- support-lane (2026-10-14): history only — the tickets live under AI › Support -->
+  <div id="view-support" style="display:none;"></div>
 
   <div id="view-console">
 
@@ -502,6 +506,7 @@
   </div><!-- /view-jobs -->
 </main>
 
+<script src="support.js"></script>
 <script src="app-shell.js"></script>
 <script src="music-qs.js"></script>
 <script>
@@ -632,9 +637,10 @@
   viewseg.addEventListener('click', e => {
     const s = e.target.closest('[data-view]'); if (!s) return;
     [...viewseg.children].forEach(x => x.classList.toggle('on', x === s));
-    const jobs = s.dataset.view === 'jobs';
-    vConsole.style.display = jobs ? 'none' : '';
-    vJobs.style.display = jobs ? '' : 'none';
+    const v = s.dataset.view, vSup = document.getElementById('view-support');
+    vConsole.style.display = v === 'console' ? '' : 'none';
+    vJobs.style.display = v === 'jobs' ? '' : 'none';
+    if (vSup) vSup.style.display = v === 'support' ? '' : 'none';
   });
 
   /* ---- media-worker job animation + cancel ---- */
@@ -719,7 +725,7 @@
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = removed + ' waiting job' + (removed === 1 ? '' : 's') + ' removed · running jobs untouched'; document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
   });
   paintCounts();
-  if (new URLSearchParams(location.search).get('view') === 'jobs') viewseg.querySelector('[data-view="jobs"]').click();
+  { const v = new URLSearchParams(location.search).get('view'); if (v === 'jobs' || v === 'support') viewseg.querySelector('[data-view="' + v + '"]').click(); }
   document.getElementById('cancel-run').addEventListener('click', function () {
     this.textContent = 'Cancelling…'; this.classList.add('disabled');
   });

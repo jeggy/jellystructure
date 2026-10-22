@@ -226,6 +226,11 @@
     'ed.singles': 'Singlar og B-síður', 'ed.n_bsides': '{n} B-síður', 'ed.one_bside': '1 B-síða', 'ed.show': 'Vís', 'ed.hide': 'Fjal', 'ed.from_single': 'úr {s} (single)', 'ed.single_from': 'Single úr {a}',
     'ed.also_on': 'Eisini á {n} útgávum', 'ed.also_on_one': 'Eisini á 1 útgávu', 'ed.sub_album': '{n} løg · tann almenna raðfylgjan', 'ed.sub_extras': '{n} løg · eyka, síðan B-síðurnar', 'ed.under': '{n} singlar liggja undir fløgu síni', 'ed.album': 'Fløga', 'ed.more_play': 'Fleiri hættir at spæla' });
 
+  // ---- music-play-all v3 (2026-10-22). da/fo are drafts; music.from_srch has no da/fo yet (falls back to en). ----
+  Object.assign(STR.en, { 'music.shuffle_all': 'Shuffle all', 'music.capped': 'Playing {shown} of {total} songs', 'music.from_lib': 'Your library', 'music.from_srch': 'Search "{q}"' });
+  Object.assign(STR.da, { 'music.shuffle_all': 'Bland alle', 'music.capped': 'Afspiller {shown} af {total} sange', 'music.from_lib': 'Dit bibliotek' });
+  Object.assign(STR.fo, { 'music.shuffle_all': 'Blanda øll', 'music.capped': 'Spælir {shown} av {total} sangum', 'music.from_lib': 'Títt savn' });
+
   // ---- song versions (owner 2026-10-01: A · words, in jellystructure and Ravilo). The chip shows the short name. da/fo are drafts. ----
   Object.assign(STR.en, { 'ver.aria': 'Version:', 'ver.live': 'Live', 'ver.demo': 'Demo', 'ver.remix': 'Remix', 'ver.instrumental': 'Instrumental', 'ver.cover': 'Cover',
     'ver.acoustic': 'Acoustic', 'ver.edit': 'Edit', 'ver.alternate': 'Alternate', 'ver.session': 'Session' });
