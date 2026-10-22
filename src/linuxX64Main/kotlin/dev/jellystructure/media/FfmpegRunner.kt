@@ -129,6 +129,27 @@ object FfmpegRunner {
         return ok
     }
 
+    /**
+     * DEB-2051 (FR-7 step 1) — runs [cmd] (an `ffmpeg -y …` command, see `ContainerConvert.copyCommand`) at background
+     * priority with live progress, **without** taking [MediaFileLock]: a conversion holds that lock on the source for the
+     * whole job, and the lock is not re-entrant. The caller owns the work file and removes it on any failure.
+     */
+    suspend fun runConvertTracked(
+        cmd: String,
+        durationSeconds: Double?,
+        onProgress: (pct: Double, speed: String?, etaSeconds: Long?) -> Unit,
+    ): Boolean = runCommandTracked(
+        cmd.replaceFirst("ffmpeg -y ", "nice -n 19 ionice -c3 ffmpeg -y -progress pipe:1 -nostats "),
+        durationSeconds, onProgress,
+    )
+
+    /** DEB-2051 (FR-7 step 2) — how many packets the first video stream holds, counted without decoding; null if unknown. */
+    suspend fun videoPacketCount(filePath: String): Long? {
+        val escaped = filePath.replace("'", "'\\''")
+        val out = captureCommand("ffprobe -v error -count_packets -select_streams v:0 -show_entries stream=nb_read_packets -of csv=p=0 '$escaped' 2>/dev/null")
+        return out?.trim()?.lines()?.firstOrNull()?.trim()?.removeSuffix(",")?.toLongOrNull()
+    }
+
     // Phase 118 (FR C.3) — shared ProcessGate on top of the Phase 109 worker's own single-remux
     // serialization. No bare `return` inside the gated block — ProcessGate.withPermit's lambda isn't
     // inline, so a non-local return isn't allowed there; a nullable pipe + if/else avoids it.

@@ -316,6 +316,8 @@ interface LooseFilmPorts {
      */
     suspend fun carryProvenance(movieId: Int, prov: RadarrProvenance, newVideoName: String): ProvenanceCarry
     suspend fun radarrRefresh(movieId: Int): Boolean
+    /** DEB-2051 (FR-8) — `RescanMovie`: Radarr re-reads the folder it already has. Defaults to the refresh, which rescans too. */
+    suspend fun radarrRescan(movieId: Int): Boolean = radarrRefresh(movieId)
     /** Radarr's file for the movie, as a local path (waits for an asynchronous refresh). */
     suspend fun radarrFilePath(movieId: Int): String?
     /** userId → data, for every viewer. */

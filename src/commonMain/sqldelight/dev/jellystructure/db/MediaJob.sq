@@ -161,8 +161,28 @@ UPDATE media_job SET state = :state, finished_at = :finished_at, error = :error,
 
 -- A `bulk_reorder` row is excluded: its run died with the process, nothing is left to run it again, and a
 -- requeued copy would only fail (FR-213-1, DEB-1674). `failInterruptedBulk` closes it instead.
+-- DEB-2051 (FR-7): a `container_convert` row is closed too, never requeued — a restart counts as a failure at the step it
+-- reached (`failInterruptedConvert`), and the person presses Start migration again.
 requeueRunning:
-UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE state = 'running' AND type != 'bulk_reorder';
+UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE state = 'running' AND type NOT IN ('bulk_reorder', 'container_convert');
+
+failInterruptedConvert:
+UPDATE media_job SET state = 'failed', finished_at = :finished_at, error = :error, speed = 'interrupted'
+WHERE type = 'container_convert' AND state = 'running';
+
+-- DEB-2051 (FR-9): the file's latest conversion, and the one still waiting or running (FR-6's "returns that job").
+latestConvertForMedia:
+SELECT * FROM media_job WHERE type = 'container_convert' AND media_id = :media_id
+ORDER BY created_at DESC, rowid DESC LIMIT 1;
+
+activeConvertForMedia:
+SELECT * FROM media_job WHERE type = 'container_convert' AND media_id = :media_id AND state IN ('queued', 'running')
+ORDER BY created_at ASC, rowid ASC LIMIT 1;
+
+-- DEB-2051 (FR-4): the last finished remux-class rows on the media lane, whose size over time is the estimate.
+recentDoneByTypes:
+SELECT * FROM media_job WHERE lane = 'media' AND state = 'done' AND type IN :types AND started_at IS NOT NULL AND finished_at IS NOT NULL
+ORDER BY finished_at DESC LIMIT :max_rows;
 
 -- FR-213-1 (DEB-1674) — after a restart a bulk row that is `queued` or `running` has no run behind it.
 failInterruptedBulk:

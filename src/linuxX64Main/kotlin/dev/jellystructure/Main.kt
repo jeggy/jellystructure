@@ -531,6 +531,8 @@ fun main() = runBlocking {
     )
     dev.jellystructure.filefix.FileFixService.current = fileFix
     mediaJobQueue.fileFixer = { path, kind, cancelled, progress -> fileFix.runJob(path, kind, cancelled, progress) }
+    // DEB-2051 — the AVI→MKV conversion a failed language edit leads to; films only, started only by a press.
+    mediaJobQueue.containerConverter = dev.jellystructure.media.ContainerConverter(dev.jellystructure.media.ContainerConvertPorts(configStore, seedingGuard, looseFilms))
     runCatching { db.fileFixQueries.resetRunning() }   // a restart mid-job: the row goes back to pending, the work file is swept
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
         while (true) {

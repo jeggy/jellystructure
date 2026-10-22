@@ -27,6 +27,8 @@ object WorkFiles {
         DV_HEVC("dvhevc_", "hevc"), DV_TIMESTAMPS("dvts_", "txt"), DV_TAGS("dvtags_", "xml"), DV_VERSION("dvversion_"),
         // Phase 317 (FR-317-11) — the audio shift's output, and the global-tags XML that records the shift in it.
         AV_SHIFT("avshift_"), AV_TAGS("avtags_", "xml"),
+        // DEB-2051 (FR-7) — the MKV an AVI is copied into; named after the file it will become (`<base>.mkv`).
+        CONVERT("convert_"),
     }
 
     /** The library file's directory. */

@@ -29,6 +29,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.json.Json
 import platform.posix.fgets
 import platform.posix.pclose
@@ -220,6 +222,37 @@ class MediaJobQueue(
             is dev.jellystructure.filefix.FixOutcome.Failed -> Failure(r.reason)
         }
     }
+
+    /** DEB-2051 — the AVI→MKV conversion's body and rules, set once it is wired (Main.kt); the routes read it too. */
+    var containerConverter: ContainerConverter? = null
+
+    /**
+     * DEB-2051 (FR-6) — one `container_convert` job on the media lane for [mediaId]; waits while a TV plays. A job for
+     * the title that is already queued or running is returned instead of a second one (a double press, a second tab).
+     */
+    suspend fun enqueueContainerConversion(mediaId: String, label: String, requested: List<ConversionRequested>): MediaJobSnapshot {
+        queries.activeConvertForMedia(mediaId).executeAsOneOrNull()?.let { return toSnapshot(it) }
+        return enqueue(ContainerConversion.JOB_TYPE, mediaId, label,
+            MediaJobParams(deferWhilePlaying = true, convertLanguages = requested), fileCount = ContainerConversion.STEPS)
+    }
+
+    /** DEB-2051 (FR-9) — the title's latest conversion, from its newest job row; null when it never had one. */
+    fun latestConversion(mediaId: String): ConversionLatest? = queries.latestConvertForMedia(mediaId).executeAsOneOrNull()?.let {
+        val requested = runCatching { json.decodeFromString(MediaJobParams.serializer(), it.params).convertLanguages }.getOrNull().orEmpty()
+        ContainerConversion.latestOf(it.id, it.state, it.files_done.toInt(), it.pct, it.speed, it.error, requested)
+    }
+
+    /** DEB-2051 (FR-4) — bytes per second of the last three finished remux-class jobs, newest first; the preview's time. */
+    suspend fun recentRemuxThroughputs(): List<Double> = queries.recentDoneByTypes(REMUX_CLASS_TYPES, 3).executeAsList().mapNotNull { row ->
+        val seconds = (row.finished_at ?: return@mapNotNull null) - (row.started_at ?: return@mapNotNull null)
+        if (seconds <= 0L) return@mapNotNull null
+        val item = store.resolve(row.media_id) ?: return@mapNotNull null
+        val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull()
+        val path = params?.episodeFilename?.let { f -> item.episodes.firstOrNull { it.filename == f }?.path } ?: item.path
+        val bytes = SystemFileSystem.metadataOrNull(Path(path))?.size?.takeIf { it > 0L } ?: return@mapNotNull null
+        bytes.toDouble() / seconds
+    }
+
     private val queries get() = db.mediaJobQueries
 
     // Phase 213 — the shared worker pool. Replaces the old per-lane pair (media's fixed FIFO-1
@@ -276,6 +309,7 @@ class MediaJobQueue(
      *  DEB-1674). Everything else that was `running` goes back to `queued` as before. */
     internal fun recoverAfterRestart() {
         queries.failInterruptedBulk(epochSeconds(), BULK_RESTART_ERROR)
+        queries.failInterruptedConvert(epochSeconds(), CONVERT_RESTART_ERROR)
         queries.requeueRunning()
     }
 
@@ -825,6 +859,7 @@ class MediaJobQueue(
             "convert_audio" -> runConvertAudio(row, params)
             "write_tags" -> runWriteTags(row)   // Phase 284
             FILE_FIX_JOB -> runFileFix(row, params)   // Phase 314
+            ContainerConversion.JOB_TYPE -> runContainerConvert(row, params)   // DEB-2051
             else -> Failure("Unknown job type '${row.type}'")
         }
     }
@@ -878,6 +913,48 @@ class MediaJobQueue(
         mediaHistory.record(row.media_id, "reorder_tracks", "${params.episodeFilename?.let { "ep=$it " } ?: ""}kind=${params.kind} order=${order.joinToString(",")}")
         postWriteSync(fresh)
         return Success
+    }
+
+    /**
+     * DEB-2051 (FR-7/8) — one AVI→MKV conversion. [ContainerConverter] does the three steps; this maps its outcome to
+     * the row: `files_done` is the step reached and `speed` the machine detail a finished row keeps (so the admin's
+     * *failed-unverified* is never mistaken for a tool failure), `error` the sentence.
+     */
+    private suspend fun runContainerConvert(row: Media_job, params: MediaJobParams): Outcome {
+        val converter = containerConverter ?: return Failure("Conversion isn't set up on this server")
+        val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
+        fun mark(step: Int, pct: Double, detail: String?) { queries.updateProgress(pct, detail, step.toLong(), null, row.id) }
+        mark(1, 0.0, null)
+        val outcome = converter.run(
+            item, params.convertLanguages.orEmpty(),
+            onStep = { step -> mark(step, 0.0, null); kotlinx.coroutines.runBlocking { broadcastSnapshot(row.id) } },
+            onProgress = { pct, speed, eta -> queries.updateProgress(pct, speed, 1L, eta, row.id); kotlinx.coroutines.runBlocking { broadcastSnapshot(row.id) } },
+            isCancelled = { cancelRunning },
+        )
+        return when (outcome) {
+            is ConvertOutcome.Done -> {
+                // The path is already the `.mkv` (the identity move wrote it); read what the new file carries.
+                val fresh = store.resolve(row.media_id) ?: item
+                val newTracks = FfprobeRunner.probe(fresh.path)
+                val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                val resolved = primaryAudioLanguage(configStore.current, fresh.path, newTracks)
+                store.updateOne(fresh.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = resolved))
+                mediaHistory.record(row.media_id, "container_convert", "AVI → MKV verified; the original is kept in ${WorkFiles.DIR}/ beside it")
+                mark(ContainerConversion.STEPS, 100.0, ContainerConversion.JobDetail.verified(!outcome.identity.jellyfinFound, outcome.identity.radarrTaken == false))
+                Success
+            }
+            is ConvertOutcome.Failed -> {
+                mark(outcome.step, 0.0, outcome.code)
+                mediaHistory.record(row.media_id, "container_convert", "FAILED at step ${outcome.step}: ${outcome.message}")
+                Failure(outcome.message)
+            }
+            is ConvertOutcome.Blocked -> {
+                mark(outcome.step, 0.0, ContainerConversion.JobDetail.blocked(outcome.block.reason))
+                mediaHistory.record(row.media_id, "container_convert", "BLOCKED at step ${outcome.step}: ${outcome.block.message}")
+                Failure(outcome.block.message)
+            }
+            is ConvertOutcome.Cancelled -> { mark(outcome.step, 0.0, ContainerConversion.JobDetail.CANCELLED); Cancelled() }
+        }
     }
 
     private suspend fun runRemove(row: Media_job, params: MediaJobParams): Outcome {
@@ -1525,7 +1602,7 @@ class MediaJobQueue(
         val escapedDir = dir.replace("'", "'\\''")
         val out = shellCapture("df -B1 --output=avail '$escapedDir' 2>/dev/null | tail -n1")
         val availBytes = out?.trim()?.toLongOrNull() ?: return true  // df unavailable/unparseable — don't block
-        val required = (sourceBytes * 1.1).toLong()
+        val required = ContainerConversion.requiredFreeBytes(sourceBytes)
         if (availBytes < required) {
             Logger.warn("disk preflight failed for '$filePath': need ~${required / 1_048_576}MB, have ${availBytes / 1_048_576}MB free", "jobs")
             return false
@@ -1541,6 +1618,7 @@ class MediaJobQueue(
 
     private suspend fun tmpFileFor(row: Media_job): String? {
         val item = store.resolve(row.media_id) ?: return null
+        if (row.type == ContainerConversion.JOB_TYPE) return ContainerConversion.workPathOf(item.path)   // DEB-2051
         val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return null
         val path = if (params.episodeFilename != null)
             item.episodes.firstOrNull { it.filename == params.episodeFilename }?.path
@@ -1609,6 +1687,12 @@ class MediaJobQueue(
         /** FR-213-1 — the media queue's bulk run; executed by its caller, never by the pool. */
         const val BULK_REORDER_TYPE = "bulk_reorder"
         const val BULK_RESTART_ERROR = "Interrupted by a restart — run the bulk reorder again"
+
+        /** DEB-2051 (FR-7) — a restart counts as a failure at the step it reached; the original is as it was. */
+        const val CONVERT_RESTART_ERROR = "Interrupted by a restart — the original was not changed; start the migration again"
+
+        /** DEB-2051 (FR-4) — the finished jobs whose size over time says how long a whole-file copy takes. */
+        val REMUX_CLASS_TYPES = listOf("reorder", "remove", ContainerConversion.JOB_TYPE)
         /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */
         const val QUEUE_EMPTIED_TYPE = "queue_emptied"
         /** Phase 314 — a file every device can play directly: one file, one kind (FileFixService). */

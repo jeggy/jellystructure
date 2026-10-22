@@ -38,6 +38,7 @@ import dev.jellystructure.server.routes.liveTvRoutes
 import dev.jellystructure.tv.LiveTvService
 import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
+import dev.jellystructure.server.routes.containerConversionRoutes
 import dev.jellystructure.server.routes.trackRoutes
 import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
@@ -658,6 +659,7 @@ fun startServer(
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
+                containerConversionRoutes(mediaStore, mediaJobQueue, mediaHistory)   // DEB-2051 — FR-4, FR-6
                 jobsRoutes(mediaJobQueue)
                 remoteRoutes(deviceService, tvEventBus, mediaStore, apiKeyStore, screenPairingService, playPushResolver)
                 apiKeyManagementRoutes(apiKeyStore)

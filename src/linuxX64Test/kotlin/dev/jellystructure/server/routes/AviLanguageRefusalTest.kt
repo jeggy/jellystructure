@@ -110,7 +110,9 @@ class AviLanguageRefusalTest {
             }
             routing {
                 route("/api") {
-                    trackRoutes(store, configStore, JellyfinClient(), history, SeedingGuard(SeedingSnapshot(configStore, QBittorrentClient())), null, scope, WsBroadcaster(), queue)
+                    val guard = SeedingGuard(SeedingSnapshot(configStore, QBittorrentClient()))
+                    trackRoutes(store, configStore, JellyfinClient(), history, guard, null, scope, WsBroadcaster(), queue)
+                    triageRoutes(store, JellyfinClient(), configStore, history, guard, dev.jellystructure.media.MediaSegmentStore(db))
                 }
             }
         }
@@ -140,6 +142,18 @@ class AviLanguageRefusalTest {
         val stored = runBlocking { store.resolve(item.id)!! }
         assertNull(stored.tracks.first { it.specifier == audio.specifier }.language, "the track stays Unknown")
         assertTrue(history.forItem(item.id).any { "REFUSED" in it.detail }, "the refusal is in the title's history")
+    }
+
+    @Test fun `Triage's assign-language route refuses an AVI the same way`() {
+        val (item, tracks) = film("avi")
+        val audio = tracks.first { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
+        val before = sizeOf(item.path)
+        post("/api/triage/${item.id}/tracks/${audio.specifier}/language", """{"language":"fao"}""") {
+            assertEquals(HttpStatusCode.UnprocessableEntity, status)
+            assertEquals("container_cannot_store_language", json.decodeFromString(LanguageRefusal.serializer(), bodyAsText()).reason)
+        }
+        assertFalse(exists("$dir/Film (2020)/.jellystructure"), "no work folder")
+        assertEquals(before, sizeOf(item.path))
     }
 
     @Test fun `an MKV language edit is not refused`() {

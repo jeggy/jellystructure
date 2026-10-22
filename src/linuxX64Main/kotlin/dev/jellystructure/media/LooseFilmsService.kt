@@ -238,6 +238,31 @@ class LooseFilmsService(
         )
     }
 
+    /** DEB-2051 (FR-5) — where Jellyfin has [item] right now, in the backend's view; null when it cannot be asked. */
+    suspend fun jellyfinPathOf(item: MediaItem): String? {
+        val cfg = configStore.current
+        val id = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return null
+        if (cfg.apiKeys.jellyfinUrl.isBlank()) return null
+        return jellyfin.getItem(cfg.apiKeys.jellyfinUrl.trimEnd('/'), cfg.apiKeys.jellyfinToken, id)?.path?.let { fromJellyfinView(it, cfg) }
+    }
+
+    /**
+     * DEB-2051 (FR-8) — a verified AVI→MKV conversion moves the title's identity to the `.mkv`: the same ports as the
+     * mover, in place (the film keeps its folder; its video file has a new name). Radarr's plan is read for the *old*
+     * file, which is the file it still maps.
+     */
+    suspend fun moveIdentityAfterConversion(item: MediaItem, oldPath: String, newPath: String): ConversionIdentityResult {
+        val cfg = configStore.current
+        val dir = oldPath.substringBeforeLast('/')
+        val (title, year) = titleAndYear(item, oldPath.substringAfterLast('/'))
+        val base = LooseFilm(
+            key = oldPath, root = dir, mediaId = item.id, title = title, year = year, jellyfinId = item.jellyfinId,
+            video = oldPath.substringAfterLast('/'), sizeBytes = SystemFileSystem.metadataOrNull(Path(newPath))?.size ?: 0L, targetFolder = dir,
+        )
+        val film = attachRadarr(listOf(base), cfg, mapOf(oldPath to item)).first()
+        return ConversionIdentity(Ports(cfg, "${configDir()}/backups/avi-to-mkv/${nowEpochSec()}")).move(film, newPath)
+    }
+
     // ── FR-316-7 — the repair of films bound to the wrong Jellyfin item ─────────────────────────────────────
 
     private val repairLock = dev.jellystructure.ops.SpinLock()
@@ -465,6 +490,11 @@ class LooseFilmsService(
         override suspend fun radarrRefresh(movieId: Int): Boolean {
             val r = cfg.radarr ?: return false
             return arr.refreshMovie(r.url, r.apiKey, movieId)
+        }
+
+        override suspend fun radarrRescan(movieId: Int): Boolean {
+            val r = cfg.radarr ?: return false
+            return arr.rescanMovie(r.url, r.apiKey, movieId)
         }
 
         override suspend fun radarrFilePath(movieId: Int): String? {

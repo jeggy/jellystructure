@@ -30,7 +30,7 @@ while IFS= read -r f; do
 done < <(grep -rlE "mkvpropedit '" "$src" --include=*.kt || true)
 
 # 3 — only rename-based writers may skip the hard-link check.
-allowed_rename='/media/MediaJobQueue\.kt$|/music/MusicTagWriter\.kt$|/music/MusicConvert\.kt$|/audiobooks/AudiobooksMediaService\.kt$|/torrent/SeedingGuard\.kt$'
+allowed_rename='/media/MediaJobQueue\.kt$|/music/MusicTagWriter\.kt$|/music/MusicConvert\.kt$|/audiobooks/AudiobooksMediaService\.kt$|/torrent/SeedingGuard\.kt$|/media/ContainerConvertPorts\.kt$'
 while IFS= read -r f; do
   if ! [[ "$f" =~ $allowed_rename ]]; then
     echo "HARD-LINK CHECK SKIPPED  $f  (passes inPlace = false but is not a known rename-based writer)"; fail=1

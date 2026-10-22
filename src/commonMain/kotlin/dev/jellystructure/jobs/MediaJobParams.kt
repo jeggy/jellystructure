@@ -53,4 +53,8 @@ data class MediaJobParams(
     // that still can't be extracted in 120s likely never will be, and the job fails outright instead of
     // retrying forever (open question 2 in the phase-213 spec).
     val subtitleRetryCount: Int = 0,
+
+    // DEB-2051 — container_convert (the media lane): the language the operator asked for on each track, carried by the
+    // one conversion (FR-3). The file is the title's own, so no path is stored: the job reads it at run time.
+    val convertLanguages: List<dev.jellystructure.media.ConversionRequested>? = null,
 )

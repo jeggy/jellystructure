@@ -248,3 +248,33 @@ These are measured on the 314c rename (DEB-869) and are expected here too:
    `.mkv`, and a stored path that no longer exists.
 5. The seventeen states match direction A as promoted, at 1040 px and 390 px.
 6. The owner reads the da and fo strings, on the QA row's screenshots, before the build is closed.
+
+## Amendment 2026-10-22 — what the build found (DEB-2051)
+
+Five facts the spec could not know, none of which changes a decision the owner made:
+
+- **FR-1 reads the extension only.** The stored probe is a list of tracks and carries no container field; the language
+  route already branches on the file name's extension, so that is what the refusal reads. A case-insensitive `.avi` is
+  the whole test. (Adding a container field to the stored record for a file whose name already says what it is would be a
+  schema change with no case behind it.)
+- **FR-1 covers every route that writes a language.** Besides the movie and episode routes, Triage's two *assign
+  language* routes (`POST /api/triage/{id}/tracks/{specifier}/language` and its episode form) ran the same futile remux;
+  they refuse the same way.
+- **FR-9's payload is `GET …/container-conversion`.** The title's record is stored and shared with the wire installed
+  clients read; a job's step and verdict do not belong in it. The endpoint's `latest` carries the file's newest job
+  (`state`, `step`, `reason`, the languages it carried, and the two verified flags), and the media page asks it again
+  when the push (`JobEvent.MediaJobUpdate`) says a conversion job for the title changed. The job row is the only store:
+  `files_done` is the step, `speed` the machine detail a finished row keeps, `error` the sentence — no new table.
+- **FR-10's strings are in the shared table.** `i18n/<code>.json` is the one table every client and the admin compile
+  against; the admin has no interface language of its own, so it draws the `migrate.*` keys in English unless the URL
+  carries `?lang=da` or `?lang=fo` (remembered in `localStorage` as `js-admin-lang`). That is also how the owner reads
+  the Danish and Faroese drafts on the QA row (Acceptance 6). Cancel and Close reuse the shipped `action.cancel` and
+  `action.close`. Four keys are added beyond the 97 the round drew — `migrate.estTpl`, `migrate.timeSec`,
+  `migrate.timeMin`, `migrate.timeHourMin` — because the drawn *estimate* is a fixed example (*"about 2 minutes · 1.4 GB"*)
+  and the real one is composed from numbers.
+- **A restart closes a running conversion as failed** (FR-7's "a restart counts as a failure at the step it reached"):
+  the row is not requeued, the original is as it was, and the person presses *Start migration* again.
+
+Open, for Tróndur: phase 311's sweep removes any file in a `.jellystructure/` folder whose name starts with a work prefix
+(`remux_`, `replace_`, `convert_`, …) after 24 hours. A film whose own file name began with one of those would have its
+kept original treated as a work file. None exists in the library today; the build does not guard against it.
