@@ -1237,7 +1237,9 @@ data class AccountPasswordChangeRequest(
 data class AccountPasswordResult(
     val ok: Boolean,
     @SerialName("wrong_current_password") val wrongCurrentPassword: Boolean = false,
-    @SerialName("token_survived") val tokenSurvived: Boolean = true,
+    // DEB-1982 (FR-187-8) — always on the wire: the server's Json does not encode defaults, so without ALWAYS the measured
+    // answer `true` was left out of `{"ok":true}`. Decoding is unchanged: an older server's body without it still reads `true`.
+    @SerialName("token_survived") @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val tokenSurvived: Boolean = true,
     // DEB-1854 (FR-8) — the account's password is kept by a provider other than Jellyfin's own, so nothing was sent to
     // Jellyfin. A client shows the link (or the one sentence) in place of the form. Omitted when false.
     @SerialName("managed_elsewhere") val managedElsewhere: Boolean = false,
