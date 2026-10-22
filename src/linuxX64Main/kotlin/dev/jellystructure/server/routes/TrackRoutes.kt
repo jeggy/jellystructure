@@ -352,6 +352,9 @@ fun Route.trackRoutes(
 
             val ext = item.path.substringAfterLast('.').lowercase()
 
+            // FR-1 (DEB-2051) — an AVI cannot keep the tag: refuse before any remux, work file or seeding question.
+            if (call.refuseLanguageEditIfContainerCannot(item.path, mediaHistory, id, "specifier=${req.specifier} language=${req.language}")) return@post
+
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
                 is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }

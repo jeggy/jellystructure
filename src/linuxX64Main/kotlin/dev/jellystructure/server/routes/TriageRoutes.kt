@@ -174,6 +174,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
 
             val ext = ep.path.substringAfterLast('.').lowercase()
 
+            // FR-1 (DEB-2051) — an AVI cannot keep the tag: refuse before any remux or work file.
+            if (call.refuseLanguageEditIfContainerCannot(ep.path, mediaHistory, mediaId, "ep=$epFilename specifier=$specifier language=$lang")) return@post
+
             when (val guard = seedingGuard.check(ep.path, configStore.current)) {
                 is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
@@ -233,6 +236,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             }
 
             val ext = item.path.substringAfterLast('.').lowercase()
+
+            // FR-1 (DEB-2051) — an AVI cannot keep the tag: refuse before any remux or work file.
+            if (call.refuseLanguageEditIfContainerCannot(item.path, mediaHistory, mediaId, "specifier=$specifier language=$lang")) return@post
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
                 is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
