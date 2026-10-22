@@ -20,7 +20,8 @@
     <p>The window chrome is the system's. The background is ours and is the same image in both frames.</p>
     <div class="moa-win is-light" id="win-light">
       <div class="moa-titlebar"><span class="moa-traffic"><i></i><i></i><i></i></span>Ravilo</div>
-      <div class="moa-canvas" data-dmg>
+      <div class="moa-canvas">
+        <div class="moa-dmg" data-dmg-bg></div>
         <span class="moa-finder-icon is-app"><span data-icon="ravilo" data-size="128"></span><span class="moa-lab">Ravilo</span></span>
         <span class="moa-finder-icon is-applications"><span data-icon="folder" data-size="128"></span><span class="moa-lab">Applications</span></span>
       </div>
@@ -32,7 +33,8 @@
     <p>Identical background bytes. Only the chrome and the two icon labels change, and the labels are what the mid-tone bands are for.</p>
     <div class="moa-win is-dark" id="win-dark">
       <div class="moa-titlebar"><span class="moa-traffic"><i></i><i></i><i></i></span>Ravilo</div>
-      <div class="moa-canvas" data-dmg>
+      <div class="moa-canvas">
+        <div class="moa-dmg" data-dmg-bg></div>
         <span class="moa-finder-icon is-app"><span data-icon="ravilo" data-size="128"></span><span class="moa-lab">Ravilo</span></span>
         <span class="moa-finder-icon is-applications"><span data-icon="folder" data-size="128"></span><span class="moa-lab">Applications</span></span>
       </div>
@@ -41,27 +43,9 @@
 
 </div>
 
+<!-- The background is built by mac-open-anyway.js and filled into both windows from the one
+     definition, so the two frames cannot disagree. The icons come after it in the DOM, which is
+     what puts them on top of it — Finder draws them, we only draw their targets. -->
 <script src="mac-open-anyway.js"></script>
-<script>
-/* The background is defined once, in dmg.html, and injected into both windows here so the two
-   frames cannot drift apart — the whole claim being made is that they are the same image. */
-var DMG_BG =
-  '<div class="moa-dmg">' +
-    '<div class="moa-dmg-head"><h1>Ravilo</h1><p>Drag it onto Applications to install.</p></div>' +
-    '<div class="moa-target is-app"></div><div class="moa-target is-applications"></div>' +
-    '<div class="moa-draghint">drag</div><div class="moa-dragarrow"></div>' +
-    '<div class="moa-labelband is-app"></div><div class="moa-labelband is-applications"></div>' +
-    '<div class="moa-after">' +
-      '<p class="moa-afterhead">Then, every time you install a version from the site:</p><ol>' +
-      '<li><span class="moa-n">4</span><span class="moa-txt">Open Ravilo from Applications. macOS refuses it again &mdash; choose <b>Done</b>.</span></li>' +
-      '<li><span class="moa-n">5</span><span class="moa-txt"><b>System&nbsp;Settings &#9656; Privacy&nbsp;&amp;&nbsp;Security &#9656; Open&nbsp;Anyway</b>, then your password. Ravilo opens.</span></li>' +
-      '</ol></div>' +
-  '</div>';
-
-document.querySelectorAll('[data-dmg]').forEach(function (el) {
-  el.insertAdjacentHTML('afterbegin', DMG_BG);
-});
-MOA.renderAll();
-</script>
 </body>
 </html>

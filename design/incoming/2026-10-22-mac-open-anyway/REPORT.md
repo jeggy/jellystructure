@@ -10,6 +10,25 @@ transport changed. Round reported on DEB-1470.
 quarantine and no paste block** — the paste row DEB-1471 was cancelled as superseded before any of
 this was drawn.
 
+**Revision 1, 2026-10-22.** Bárður reviewed the first package, agreed all three recommendations —
+direction A, Toggle 1 and the window layout — and asked for three changes before the owner sees it.
+All three are in and nothing else moved:
+
+1. **The `.dmg` window now carries pictures for steps 4 and 5**, not two lines of text, because FR-1
+   promises a picture and one short sentence on *both* surfaces. They are at the same 236px design
+   width the page uses, in two columns — the only arrangement that fits them at full size inside the
+   fixed 720 × 520 pt. **The content area, the icon centres and the label bands are untouched**, as
+   asked, because the engineer places icons from those numbers.
+2. **Step 5's password sheet no longer covers *Open Anyway*.** Clearing it sideways had failed
+   twice; the sheet is cleared *vertically* instead. Verified at desktop width, at phone width, and
+   in the new window picture.
+3. **Steps 1 and 2 now name the disk image, not the app**, in the dialog and on the Privacy &
+   Security line — macOS names the object it refuses, and the picture should agree with the sentence
+   beside it. Steps 4 and 5 keep *Ravilo*. **The page's sentences are now version-free**
+   (*"Open the `.dmg` you downloaded"*), since the live page outlives 1.52 and the card's own meta
+   line already shows the version. Step 2's sentence moved with its picture: *"choose Open Anyway
+   beside it"* rather than *"on the Ravilo line"*.
+
 Nothing here is promoted, no production file is touched, no spec is written and no number is
 allocated. The page itself lives in the hosting tree, not this repository, and was read for its
 style and never edited.
@@ -135,10 +154,11 @@ one edit in one place rather than a hunt through nine frames.
 
 | Where | Drawn as | Status |
 |---|---|---|
-| Refusal dialog, title | “Ravilo” can't be opened | **working copy** — not recorded on the walk |
+| Refusal dialog, title — steps 1–2 | “ravilo-mac-1.52.dmg” can't be opened | **working copy** — not recorded on the walk |
+| Refusal dialog, title — steps 4–5 | “Ravilo” can't be opened | **working copy** — not recorded on the walk |
 | Refusal dialog, body | macOS cannot check it for malicious software. | **working copy** — not recorded on the walk |
-| Password prompt, title | Enter your password to open Ravilo. | **working copy** — not recorded on the walk |
-| Privacy & Security line | “Ravilo” was blocked to protect your Mac. | **working copy** — from the brief, still unconfirmed |
+| Password prompt, title | Enter your password. | **working copy** — not recorded on the walk |
+| Privacy & Security line | “ravilo-mac-1.52.dmg” / “Ravilo” was blocked to protect your Mac. | **working copy** — from the brief, still unconfirmed. **The subject differs by step**: the disk image in 1–2, the app in 4–5 |
 | *Move to Trash* · *Done* · *Open Anyway* | as drawn | recorded on the walk |
 
 If the real wording differs, the copy changes and none of the layout does.
@@ -163,7 +183,8 @@ If the real wording differs, the copy changes and none of the layout does.
    and is triaged; here the same seat drew it, checked it and committed it. Three defects were found
    only by opening each rendered PNG: a black icon where the jellyfish should be, pictures
    overflowing their card, and a password sheet covering the exact button its sentence told the
-   reader to press. **None of the four fences can see any of those.** Recorded in `PROCESS.md` as
+   reader to press — the last of which took **two** further attempts to clear, and was only settled
+   by moving the sheet vertically rather than sideways. **None of the four fences can see any of those.** Recorded in `PROCESS.md` as
    the lane's standing risk.
 5. **The 192 KiB-per-PNG rule does not apply in this lane and was not applied.** It was the
    `get_file` truncation wall on the pull; lane C has no transport. Several page frames are over it
@@ -192,30 +213,31 @@ filter resolves to; the live page keeps its blur.
 
 | File | Bytes | Lines | sha256 (first 12) |
 |---|---|---|---|
-| `Mac Open Anyway - Directions.html` | 22 575 | 289 | `abb5bee98ab8` |
-| `mac-open-anyway.css` | 19 601 | 399 | `9cf4c7aa324e` |
-| `mac-open-anyway.js` | 14 376 | 249 | `3af9e4f5def6` |
-| `page.html` | 7 154 | 145 | `8d241a162e4b` |
-| `render.mjs` | 4 855 | 108 | `58b2b7ef50df` |
-| `dmg-window.html` | 3 371 | 67 | `8f1e4d2d4a4a` |
-| `dmg.html` | 1 713 | 46 | `59eadc7649de` |
-| `fonts/jetbrains-mono.woff2` | 31 432 | — | `83c005d49d8a` |
-| `fonts/sora.woff2` | 25 284 | — | `811e11966d29` |
-| `fonts/space-grotesk.woff2` | 22 288 | — | `0640890476fc` |
-| `png/mac-open-anyway-a-desktop.png` | 201 694 | — | `049b0352693c` |
-| `png/mac-open-anyway-a-desktop-toggle.png` | 202 688 | — | `3e4be440bdc9` |
-| `png/mac-open-anyway-a-desktop-collapsed.png` | 91 601 | — | `7aa27d42eb54` |
-| `png/mac-open-anyway-a-desktop-noimg.png` | 204 220 | — | `9fb034fc85b1` |
-| `png/mac-open-anyway-a-phone.png` | 256 785 | — | `e1f03e5e39ee` |
-| `png/mac-open-anyway-a-phone-noimg.png` | 219 375 | — | `39b9eb0c6358` |
-| `png/mac-open-anyway-a-phone-da.png` | 255 171 | — | `ae6896ebc741` |
-| `png/mac-open-anyway-a-phone-fo.png` | 254 255 | — | `113b57d04ddc` |
-| `png/mac-open-anyway-b-desktop.png` | 179 937 | — | `695d710e7b66` |
-| `png/mac-open-anyway-b-phone.png` | 169 137 | — | `a8ea7c6885f9` |
-| `png/mac-open-anyway-dmg-bg-1x.png` | 44 183 | — | `7b7d7d879642` |
-| `png/mac-open-anyway-dmg-bg-2x.png` | 97 563 | — | `de4718a57656` |
-| `png/mac-open-anyway-dmg-window-light.png` | 58 248 | — | `c0f7e8fe8dfc` |
-| `png/mac-open-anyway-dmg-window-dark.png` | 59 611 | — | `832a678663f4` |
+| `Mac Open Anyway - Directions.html` | 23 584 | 297 | `0867918e6418` |
+| `dmg-window.html` | 2 449 | 51 | `433c22244804` |
+| `dmg.html` | 889 | 24 | `03334e6c60d4` |
+| `mac-open-anyway.css` | 20 812 | 419 | `4555b5601d1c` |
+| `mac-open-anyway.js` | 17 491 | 296 | `d5d7feea8322` |
+| `page.html` | 7 154 | 145 | `8d241a162e4b` |
+| `render.mjs` | 4 855 | 108 | `58b2b7ef50df` |
+| `fonts/jetbrains-mono.woff2` | 31 432 | — | `83c005d49d8a` |
+| `fonts/sora.woff2` | 25 284 | — | `811e11966d29` |
+| `fonts/space-grotesk.woff2` | 22 288 | — | `0640890476fc` |
+| `png/mac-open-anyway-a-desktop-collapsed.png` | 91 601 | — | `7aa27d42eb54` |
+| `png/mac-open-anyway-a-desktop-noimg.png` | 203 870 | — | `1dc0298052ba` |
+| `png/mac-open-anyway-a-desktop-toggle.png` | 204 047 | — | `f63419e4b87c` |
+| `png/mac-open-anyway-a-desktop.png` | 203 235 | — | `61a9a9211c36` |
+| `png/mac-open-anyway-a-phone-da.png` | 257 915 | — | `3787f95dd701` |
+| `png/mac-open-anyway-a-phone-fo.png` | 257 286 | — | `5bcdb8ad4f21` |
+| `png/mac-open-anyway-a-phone-noimg.png` | 219 600 | — | `77f2e3aeb831` |
+| `png/mac-open-anyway-a-phone.png` | 260 072 | — | `96871c630365` |
+| `png/mac-open-anyway-b-desktop.png` | 180 321 | — | `e39c6ce31d6a` |
+| `png/mac-open-anyway-b-phone.png` | 169 282 | — | `481e1bed599d` |
+| `png/mac-open-anyway-dmg-bg-1x.png` | 64 213 | — | `8aa558e345f4` |
+| `png/mac-open-anyway-dmg-bg-2x.png` | 152 001 | — | `bc300115e459` |
+| `png/mac-open-anyway-dmg-window-dark.png` | 79 371 | — | `238e16a97629` |
+| `png/mac-open-anyway-dmg-window-light.png` | 77 860 | — | `8f88e2b3ff63` |
 
-**24 files, 2 447 117 bytes.** No `STATUS.md`, no `CLAUDE.md`, nothing under a `specs/` path and
-nothing under a `scripts/` path was created by this round.
+**25 files, 2 590 642 bytes.** The table lists 24: it omits `REPORT.md` itself, which cannot
+state its own hash. No `STATUS.md`, no `CLAUDE.md`, nothing under a `specs/` path and nothing under
+a `scripts/` path was created by this round.

@@ -132,7 +132,10 @@ collapses it is exactly the reader about to meet the first refusal.</p>
 <h2>The disk image window</h2>
 <p>Handle: <span class="handle">Window &middot; Targets above, steps 4 and 5 beneath</span></p>
 <p>Steps 1 and 2 are not drawn here: by the time this window is open they are behind the user. The window carries the
-drag (step 3) and then the two steps that have not happened yet.</p>
+drag (step 3) and then the two steps that have not happened yet &mdash; <strong>each with its own picture, at the same
+236px design width the page uses</strong>, so this surface keeps the same promise the page does: every step has a
+picture and one short sentence. Laying them in two columns is what makes that fit; stacked rows would force a
+half-size picture, which is the unreadable smudge direction B was rejected for.</p>
 <div class="two">
   <figure>
     <img src="png/mac-open-anyway-dmg-window-light.png" alt="The disk image window in Light appearance, with the Ravilo icon on its target, an arrow to the Applications folder, and steps 4 and 5 beneath.">
@@ -216,13 +219,13 @@ to translate the page.</p>
       <td>Ravilo er ikke registreret hos Apple, så macOS spørger to gange — hver gang du henter en version fra denne side, ikke kun første gang.</td>
       <td>Ravilo er ikki skrásett hjá Apple, so macOS spyr tvær ferðir — hvørja ferð tú heintar eina útgávu frá hesi síðu, ikki bert fyrstu ferð.</td></tr>
   <tr><td class="mono">step1</td>
-      <td>Open <code>ravilo-mac-1.52.dmg</code>. macOS refuses it — choose <strong>Done</strong>, not <em>Move to Trash</em>.</td>
-      <td>Åbn <code>ravilo-mac-1.52.dmg</code>. macOS afviser den — vælg <strong>Done</strong>, ikke <em>Move to Trash</em>.</td>
-      <td>Lat <code>ravilo-mac-1.52.dmg</code> upp. macOS noktar hana — vel <strong>Done</strong>, ikki <em>Move to Trash</em>.</td></tr>
+      <td>Open the <code>.dmg</code> you downloaded. macOS refuses it — choose <strong>Done</strong>, not <em>Move to Trash</em>.</td>
+      <td>Åbn den <code>.dmg</code>, du har hentet. macOS afviser den — vælg <strong>Done</strong>, ikke <em>Move to Trash</em>.</td>
+      <td>Lat ta <code>.dmg</code>, tú heintaði, upp. macOS noktar hana — vel <strong>Done</strong>, ikki <em>Move to Trash</em>.</td></tr>
   <tr><td class="mono">step2</td>
-      <td>Open <strong>System Settings ▸ Privacy &amp; Security</strong>, scroll down to <em>Security</em>, and choose <strong>Open Anyway</strong> on the Ravilo line. The disk image opens.</td>
-      <td>Åbn <strong>Systemindstillinger ▸ Anonymitet &amp; sikkerhed</strong>, rul ned til <em>Sikkerhed</em>, og vælg <strong>Open Anyway</strong> på Ravilo-linjen. Diskbilledet åbner.</td>
-      <td>Lat <strong>System Settings ▸ Privacy &amp; Security</strong> upp, rulla niður til <em>Security</em>, og vel <strong>Open Anyway</strong> á Ravilo-linjuni. Diskmyndin letur upp.</td></tr>
+      <td>Open <strong>System Settings ▸ Privacy &amp; Security</strong>, scroll down to <em>Security</em>, and choose <strong>Open Anyway</strong> beside it. The disk image opens.</td>
+      <td>Åbn <strong>Systemindstillinger ▸ Anonymitet &amp; sikkerhed</strong>, rul ned til <em>Sikkerhed</em>, og vælg <strong>Open Anyway</strong> ud for den. Diskbilledet åbner.</td>
+      <td>Lat <strong>System Settings ▸ Privacy &amp; Security</strong> upp, rulla niður til <em>Security</em>, og vel <strong>Open Anyway</strong> við hana. Diskmyndin letur upp.</td></tr>
   <tr><td class="mono">step3</td>
       <td>Drag <strong>Ravilo</strong> onto <strong>Applications</strong>.</td>
       <td>Træk <strong>Ravilo</strong> over på <strong>Applications</strong>.</td>
@@ -249,6 +252,10 @@ to translate the page.</p>
       <td>Ravilo / Drag it onto Applications to install.</td><td>—</td><td>—</td></tr>
   <tr><td class="mono">dmg.after</td>
       <td>Then, every time you install a version from the site:</td><td>—</td><td>—</td></tr>
+  <tr><td class="mono">dmg.step4</td>
+      <td>Open Ravilo from Applications. macOS refuses it again — choose <strong>Done</strong>.</td><td>—</td><td>—</td></tr>
+  <tr><td class="mono">dmg.step5</td>
+      <td><strong>Privacy &amp; Security ▸ Open Anyway</strong> once more, then your password.</td><td>—</td><td>—</td></tr>
 </table>
 
 <div class="warn">
@@ -263,8 +270,8 @@ to translate the page.</p>
 <p>Every picture carries the whole instruction, so the page still works with no pictures at all — which is the state
 drawn in <span class="mono">a-desktop-noimg</span> rather than asserted here.</p>
 <ol>
-  <li>Step 1 of 5: a macOS dialog refusing the downloaded disk image. Its two buttons are Move to Trash and Done. Choose Done.</li>
-  <li>Step 2 of 5: the Privacy &amp; Security pane of System Settings, showing the line “Ravilo” was blocked to protect your Mac with an Open Anyway button beside it. Choose Open Anyway, and the disk image opens.</li>
+  <li>Step 1 of 5: a macOS dialog refusing the downloaded disk image by name. Its two buttons are Move to Trash and Done. Choose Done.</li>
+  <li>Step 2 of 5: the Privacy &amp; Security pane of System Settings, showing the downloaded .dmg file named on a line saying it was blocked to protect your Mac, with an Open Anyway button beside it. Choose Open Anyway, and the disk image opens.</li>
   <li>Step 3 of 5: the opened disk image, showing the Ravilo icon and an arrow pointing to the Applications folder. Drag Ravilo onto Applications.</li>
   <li>Step 4 of 5: the same macOS dialog, now refusing Ravilo itself after it has been installed. Its buttons are Move to Trash and Done. Choose Done again.</li>
   <li>Step 5 of 5: the Privacy &amp; Security pane again with its Open Anyway button, and a password prompt with an empty password field. Choose Open Anyway and enter your password; Ravilo opens.</li>
@@ -276,10 +283,11 @@ body, so these are placed, flagged, and cheap to change: they live in one object
 <span class="mono">mac-open-anyway.js</span>, not in nine frames.</p>
 <table>
   <tr><th>Where</th><th>Drawn as</th><th>Status</th></tr>
-  <tr><td>Refusal dialog, title</td><td>“Ravilo” can't be opened</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
+  <tr><td>Refusal dialog, title — steps 1–2</td><td>“ravilo-mac-1.52.dmg” can't be opened</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
+  <tr><td>Refusal dialog, title — steps 4–5</td><td>“Ravilo” can't be opened</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
   <tr><td>Refusal dialog, body</td><td>macOS cannot check it for malicious software.</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
-  <tr><td>Password prompt, title</td><td>Enter your password to open Ravilo.</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
-  <tr><td>Privacy &amp; Security line</td><td>“Ravilo” was blocked to protect your Mac.</td><td class="n"><strong>working copy</strong> — from the brief, still unconfirmed</td></tr>
+  <tr><td>Password prompt, title</td><td>Enter your password.</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
+  <tr><td>Privacy &amp; Security line</td><td>“ravilo-mac-1.52.dmg” / “Ravilo” was blocked to protect your Mac.</td><td class="n"><strong>working copy</strong> — from the brief, still unconfirmed. The subject differs by step: the disk image in 1–2, the app in 4–5</td></tr>
   <tr><td>Buttons: Move to Trash · Done · Open Anyway</td><td>as drawn</td><td class="y">recorded on the walk</td></tr>
 </table>
 <p>If the real wording differs, the copy changes and none of the layout does.</p>
