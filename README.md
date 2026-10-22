@@ -130,6 +130,9 @@ on x86-64 (the Dockerfiles do this; `linuxArm64` needs the arm64 `libsqlite3-dev
 The Android modules are only included when `sdk.dir`/`ANDROID_HOME` is set, so a clone with no
 Android SDK still configures and builds.
 
+`scripts/render-design.sh` renders a design HTML file to PNGs in Docker (nothing else needed on the host); its header has
+the flags.
+
 ## Repository layout
 
 ```
