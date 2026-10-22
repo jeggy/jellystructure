@@ -137,3 +137,20 @@ engineer places the icons from these numbers, not by eye.
 **Renders.** The round's `render.mjs` is the render command lane C recorded, and it is what produces the background
 PNGs. Whether the build renders the background at package time or commits the PNG is the engineer's call. Either way,
 FR-7's ordering holds.
+
+## Amendment (2026-10-22, build): the route, and the title bar (DEB-2122)
+
+**FR-4 route chosen.** The image is built with `dmgbuild` in `deploy-macos.yml`, not by a `jpackage` resource directory: the
+workflow already makes the `.dmg` with `hdiutil` after signing the app, and `dmgbuild` writes Finder's layout file
+with a library, so the runner needs no GUI session. It copies the app with `ditto`, then the workflow mounts the image,
+reads the layout back and re-runs `codesign --verify --deep --strict` on the copy that ships (FR-7's ordering: layout,
+read-back, `.dmg` signature, appcast signature). The two background PNGs are **rendered once and committed**
+(`ravilo-desktop/dmg/`), not rendered at package time; `scripts/render-mac-open-anyway.mjs` regenerates them.
+
+**The delivered background is 28 pt taller than the numbers above — 720 × 548 at 1×, 1440 × 1096 at 2×.** The content
+area, the icon centres (190, 190) and (530, 190), and the label bands are exactly as written. Finder's window bounds
+are the window frame, title bar included, so the window is 720 × 548 and the extra strip, the gradient's own last
+colour, is what keeps the bottom of steps 4 and 5 on screen if the title bar sits inside the bounds. Whether it does
+is not known without a Mac: acceptance 1 gains a measurement — *on the Mac under test, are steps 4 and 5 whole, and
+is the bottom edge of the window the drawn background?* If the title bar is outside the bounds the strip shows as
+28 pt of the same dark colour under the drawing, and nothing else changes.
