@@ -102,6 +102,7 @@ val advisoryResolutions: List<Pair<String, String>> = listOf(
     "webpack" to "^5.104.1",          // Kotlin pins webpack / webpack-dev-server exactly
     "webpack-dev-server" to "^5.2.6",
     "qs" to "^6.16.0",                // express asks for ~6.15, which this one has to cross
+    "follow-redirects" to "^1.16.1",  // 2026-10-22: GHSA-8r9p-f939-6h3c, GHSA-q3jh-wrc6-jgq8 (1.16.0 via http-proxy)
     // Major crossings — kept only while the FR-319-4 checks pass (FR-319-3).
     "serialize-javascript" to "^7.0.5",
     "diff" to "^8.0.3",
