@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<!--
+  A reconstruction of the SHIPPED admin markup for the film detail page, at phone width.
+
+  This is NOT a mockup and NOT a capture: every element below is copied from the Kotlin that renders
+  the live page, with the household's data replaced by stand-in values (Sample Film, /media/movies/…).
+  It exists because design/app/media.html — the mockup — and the shipped page are not the same markup,
+  and the question on this task was whether the sideways scroll is real or mockup-only. Sources, as of
+  this commit:
+
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/Shell.kt:624      .shell / .app-side / .app-main-col / main.app-main2.wide
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/MediaDetail.kt:721 the overview row (flex-wrap:wrap, gap 22)
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/MediaDetail.kt:627 the 220px left rail
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/MediaDetail.kt:675 the Metadata card (.col.fill)
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/MediaDetail.kt:419 Genres, :439 Director/Studio, :460 Tags
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/MediaDetail.kt:313 the Trailer card
+    src/wasmJsMain/kotlin/dev/jellystructure/ui/TrackEditor.kt:189  the Tracks card header
+
+  Three differences from the mockup are recorded here rather than smoothed over, because they are what
+  a build has to know:
+    1. the shipped overview row already carries inline flex-wrap:wrap and a 220px rail (the mockup: no
+       wrap, 240px) — the row still cannot stack, because .col.fill's flex: 1 is a flex base size of 0;
+    2. the shipped Genres field is full width, so the Metadata card's only multi-child row is Title + Year;
+    3. the shipped Tracks column-header strip is an INLINE grid, not .trk-cols — so detail.css's
+       `.trk-cols { display: none }` phone rule does not reach the live page at all.
+
+  The production stylesheets are linked, never copied (design/PROCESS.md). One knock-on: the `≠`
+  diff triggers draw as bare white buttons here, because `.diff-trigger` is styled by a <style> block
+  MediaDetail.kt:4719 injects at runtime and no stylesheet carries it. That is this harness, not a
+  defect on the page.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipped detail-page markup at 390px — stand-in data</title>
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../flags.css">
+<link rel="stylesheet" href="../../app/detail.css">
+<style>
+  /* The glass blur breaks the screenshot render (design/PROCESS.md) — the live admin keeps its. */
+  :root { --blur: none; }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<div class="shell">
+  <aside class="app-side"><div class="logo">Jellystructure</div></aside>
+  <div class="app-main-col">
+    <header class="app-topbar"><div class="tb-logo">Jellystructure</div></header>
+    <main class="app-main2 wide" id="page-content">
+
+      <div class="pagebar"><h1>Sample Film <span class="muted">(2019)</span></h1></div>
+
+      <div class="tabs2" id="detail-tabs"><span class="on">Overview</span><span>Tracks &amp; subtitles</span></div>
+
+      <!-- ============ OVERVIEW ============ MediaDetail.kt:721 -->
+      <div id="tab-overview">
+        <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
+
+          <!-- left rail — MediaDetail.kt:627 -->
+          <div class="col" style="width:220px;flex:none;">
+            <div class="card">
+              <h4 style="margin:0 0 10px;">Poster</h4>
+              <div class="box flat" style="height:264px;"></div>
+            </div>
+            <div class="card">
+              <h4 style="margin:0 0 8px;">Identity</h4>
+              <div class="field" style="margin:0 0 6px;">
+                <label>TMDB id</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input id="tmdb-id-input" type="number" class="input" min="1" value="552" style="width:120px;flex:none;">
+                  <button id="tmdb-id-save-btn" class="btn sm ghost">Save</button>
+                </div>
+                <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                  <button id="find-tmdb-match-btn" class="btn sm ghost" style="font-size:.8rem;">Find / fix match…</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- the Metadata column — MediaDetail.kt:675 -->
+          <div class="col fill">
+            <div class="card">
+              <div class="row center" style="margin-bottom:10px;">
+                <h4 style="margin:0;">Metadata</h4>
+                <span class="spacer"></span>
+                <span class="tiny muted">saved automatically</span>
+              </div>
+              <div class="row">
+                <div class="field fill">
+                  <label>Title <button class="diff-trigger" id="diff-edit-title">≠</button></label>
+                  <input id="edit-title" class="input" value="Sample Film" style="width:100%;">
+                </div>
+                <div class="field" style="width:110px;">
+                  <label>Year <button class="diff-trigger" id="diff-edit-year">≠</button></label>
+                  <input id="edit-year" class="input" type="number" value="2019" style="width:100%;">
+                </div>
+              </div>
+              <div class="field">
+                <label>Original title <button class="diff-trigger" id="diff-edit-original-title">≠</button></label>
+                <input id="edit-original-title" class="input" value="Sample Film" style="width:100%;">
+              </div>
+              <div class="field">
+                <label>Overview <button class="diff-trigger" id="diff-edit-overview">≠</button></label>
+                <textarea id="edit-overview" class="input" rows="4" style="width:100%;resize:vertical;">A stand-in overview, long enough to wrap in the editor the way a real one does.</textarea>
+              </div>
+              <div class="field" id="genres-section">
+                <label>Genres <button class="diff-trigger" id="diff-genres">≠</button></label>
+                <div id="genres-chips" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+                  <span class="chip">Animation <span class="rm">✕</span></span>
+                  <span class="chip">Fantasy <span class="rm">✕</span></span>
+                  <span class="chip ghost" id="genre-add-chip" style="cursor:pointer;">＋ add</span>
+                </div>
+                <div class="tiny muted" style="margin-top:6px;">Your genre edits survive TMDB re-syncs — <span style="color:var(--acc-ink)">●</span> added by you.</div>
+              </div>
+              <div class="field">
+                <label>Director <button class="diff-trigger" id="diff-edit-director">≠</button></label>
+                <input id="edit-director" class="input" value="A. Director" style="width:100%;" placeholder="—">
+              </div>
+              <div class="field">
+                <label>Studio <button class="diff-trigger" id="diff-edit-studio">≠</button></label>
+                <input id="edit-studio" class="input" value="Sample Studio" style="width:100%;" placeholder="—">
+              </div>
+              <div class="field" style="margin-top:12px;">
+                <label>File path</label>
+                <div class="input mono" style="font-size:.82rem;word-break:break-all;">/media/movies/Sample Film (2019)/Sample Film (2019).mkv</div>
+              </div>
+            </div>
+
+            <!-- Tags — MediaDetail.kt:460 -->
+            <div class="card" id="tags-section">
+              <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted">written to NFO &lt;tag&gt; · <a href="#/metadata?tab=tags">manage tags →</a></span></div>
+              <hr class="dash" style="margin:10px 0;">
+              <div id="tags-chips" class="pill-row" style="margin-bottom:10px;">
+                <span class="chip tag-chip" style="cursor:default;"><span class="tag-dot" style="background:#7b6ef0;"></span>open movie <span class="rm tag-rm">✕</span></span>
+                <span class="chip tag-chip" style="cursor:default;">stand-in <span class="rm tag-rm">✕</span></span>
+              </div>
+              <div class="row center" style="gap:8px;position:relative;flex-wrap:wrap;">
+                <div style="position:relative">
+                  <input id="tag-input" class="input" type="text" placeholder="＋ add a tag…" style="max-width:260px;">
+                </div>
+                <button id="tag-add-btn" class="btn sm ghost">Add</button>
+                <span class="tiny muted">Jellystructure tags (dotted) survive re-syncs.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trailer — MediaDetail.kt:313. Full width on the shipped page, as in the mockup. -->
+        <div class="card" id="trailer-card" style="margin-top:16px;">
+          <div class="row center"><h4 style="margin:0;">Trailer</h4><span class="badge info" style="margin-left:8px;">from TMDB</span><span class="spacer"></span><span class="tiny muted">TMDB <b>videos</b> → shown as ▷ Trailer in Ravilo</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="row" style="gap:16px;align-items:flex-start;">
+            <a class="tr-thumb" href="#" title="Open trailer"><span class="tr-play">▶</span></a>
+            <div style="flex:1;min-width:0;">
+              <div class="row center" style="gap:9px;"><b>Official Trailer</b><span class="tr-src yt">YouTube</span></div>
+              <div class="pill-row" style="margin-top:11px;">
+                <a class="btn sm" href="#">▷ Preview ↗</a>
+                <span class="btn sm ghost" id="trailer-refetch">Re-fetch from TMDB</span>
+                <span class="btn sm ghost" id="trailer-clear">Clear</span>
+              </div>
+              <div class="mono tiny muted" style="margin-top:9px;">youtube · standin0000</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ TRACKS ============ TrackEditor.kt:189 -->
+      <div id="tab-tracks">
+        <div class="card" id="trk-main-card" style="margin-top:16px;">
+          <div class="row center">
+            <h4 style="margin:0;white-space:nowrap;">Tracks — language &amp; order</h4>
+            <span class="seg" id="trk-seg" style="margin-left:12px;">
+              <span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span>
+            </span>
+            <span class="spacer"></span>
+            <span class="chip seeded" id="trk-guard" title="qBittorrent seeding guard active.">⛨ guard active</span>
+            <span class="mono tiny muted" id="trk-file">Sample Film (2019).mkv</span>
+          </div>
+          <hr class="dash" style="margin:12px 0;">
+          <!-- the shipped column strip: an inline grid, NOT .trk-cols -->
+          <div style="display:grid;grid-template-columns:30px 30px 58px 1fr auto;gap:12px;align-items:center;padding:0 12px 8px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:600;">
+            <span></span><span>#</span><span>track</span>
+            <span id="trk-col-mid">language &amp; codec</span>
+            <span style="text-align:right;">default</span>
+          </div>
+          <div id="trk-list">
+            <div class="trk">
+              <div class="trk-main">
+                <span class="grip">⠿</span>
+                <span class="mono tiny">1</span>
+                <span class="tiny muted">audio</span>
+                <span class="trk-mid"><span class="lang">en</span><span class="chip mono" style="font-size:.72rem;">eac3 · 5.1</span></span>
+                <span class="trk-right"><span class="btn sm ghost">★</span></span>
+              </div>
+            </div>
+            <div class="trk">
+              <div class="trk-main">
+                <span class="grip">⠿</span>
+                <span class="mono tiny">2</span>
+                <span class="tiny muted">audio</span>
+                <span class="trk-mid"><span class="lang">da</span><span class="chip mono" style="font-size:.72rem;">aac · 2.0</span></span>
+                <span class="trk-right"><span class="btn sm ghost">★</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  /* `?state=before` puts the four promoted declarations back the way they were, so the before and the
+     after are one file and one render rather than a copy of the page kept around in the tree.
+     Keep this list identical to the promotion in wf.css / detail.css. */
+  if (/(\?|&)state=before/.test(location.search)) {
+    const s = document.createElement('style');
+    s.textContent = `.col.fill { min-width: auto; }
+      @media (max-width: 640px) {
+        .row { flex-wrap: nowrap; }
+        .row > .fill { flex-basis: 0%; }
+        .fill { min-width: auto; }
+        #trailer-card .tr-thumb { width: 190px; height: 107px; aspect-ratio: auto; }
+      }`;
+    document.head.appendChild(s);
+    document.title = 'BEFORE — ' + document.title;
+  }
+  /* `?tab=tracks` shows the Tracks panel instead of Overview, as the real page does. */
+  if (/(\?|&)tab=tracks/.test(location.search)) {
+    document.getElementById('tab-overview').style.display = 'none';
+    document.querySelectorAll('#detail-tabs span').forEach((e, i) => e.className = i === 1 ? 'on' : '');
+  } else {
+    document.getElementById('tab-tracks').style.display = 'none';
+  }
+</script>
+</body>
+</html>
