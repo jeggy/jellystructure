@@ -206,7 +206,7 @@ fun buildUnifiedTrackEditorShell(prefix: String, filePath: String): String {
             <span class="mono tiny muted" id="$prefix-file">${fileName.esc()}</span>
           </div>
           <hr class="dash" style="margin:12px 0;">
-          <div style="display:grid;grid-template-columns:30px 30px 58px 1fr auto;gap:12px;align-items:center;padding:0 12px 8px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:600;">
+          <div class="trk-cols" style="display:grid;grid-template-columns:30px 30px 58px 1fr auto;gap:12px;align-items:center;padding:0 12px 8px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:600;">
             <span></span><span>#</span><span>track</span>
             <span id="$prefix-col-mid">language &amp; codec</span>
             <span style="text-align:right;">default</span>
@@ -223,7 +223,7 @@ fun buildUnifiedTrackEditorShell(prefix: String, filePath: String): String {
               <button id="$prefix-apply" class="btn sm">Apply</button>
             </div>
             <div id="$prefix-pending-list" style="display:flex;flex-direction:column;gap:6px;"></div>
-          <div style="margin-top:12px;">
+          <div id="$prefix-cmd-wrap" style="margin-top:12px;">
             <div class="tiny muted" style="margin-bottom:5px;letter-spacing:.05em;text-transform:uppercase;font-size:.65rem;font-weight:600;">Command preview</div>
             <pre id="$prefix-cmd" style="margin:0;background:var(--fill-2);border:1px solid var(--line);border-radius:var(--radius-s);padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:.72rem;line-height:1.6;overflow-x:auto;white-space:pre;color:var(--ink-soft);max-height:200px;overflow-y:auto;"></pre>
           </div>
@@ -286,6 +286,9 @@ fun wireUnifiedTrackEditor(
     }
 
     val listEl = freshById("$prefix-list") ?: return
+    // DEB-2051 — languages this editor saw refused (an AVI cannot keep one), by track; the row says so (FR-2).
+    val refusedHere = LinkedHashMap<String, String>()
+    val isMovieEditor = epFilename == null
     val segEl = freshById("$prefix-seg") ?: return
     val colMidEl = document.getElementById("$prefix-col-mid") as? HTMLElement
     val explainEl = document.getElementById("$prefix-explain") as? HTMLElement
@@ -436,10 +439,13 @@ fun wireUnifiedTrackEditor(
                 t.def -> """<span class="btn sm star-btn" data-act="default" data-i="$i">★ keep this one</span>"""
                 else -> """<span class="btn sm ghost star-btn" data-act="default" data-i="$i">set default ★</span>"""
             }
+            val cvCls = if (isMovieEditor) ContainerConversionUi.rowClass(t.sp) else ""
             val trkCls = buildList {
                 if (isUntagged) add("untagged")
                 if (t.def) add("isdef")
+                if (cvCls.isNotEmpty()) add(cvCls)
             }.joinToString(" ")
+            val cvNote = if (isMovieEditor) ContainerConversionUi.rowNoteHtml(t.sp) else ContainerConversionUi.episodeRowNoteHtml(refusedHere[t.sp])
             """<div class="trk $trkCls" data-trk-i="$i" data-stream="${t.streamIndex}" data-file="${filePath.esc()}" draggable="true">
               <div class="trk-main">
                 <span class="grip" title="Drag to reorder">⠿</span>
@@ -456,7 +462,7 @@ fun wireUnifiedTrackEditor(
                   ${AvSyncMarks.html(filePath, t.streamIndex)}
                 </span>
                 <span class="trk-right">$forcedCell $starBtn</span>
-              </div>
+              </div>$cvNote
             </div>"""
         }.joinToString("") + externalSubsHtml()
 
@@ -596,6 +602,9 @@ fun wireUnifiedTrackEditor(
             rows += pendingRow("Subtitle tracks reordered", "ffmpeg", true)
         }
 
+        // FR-9 — no state prints a command: an AVI's language edit can't be run, so its command is not shown either.
+        (document.getElementById("$prefix-cmd-wrap") as? HTMLElement)?.style?.display =
+            if (filePath.substringAfterLast('.').lowercase() == "avi") "none" else ""
         if (rows.isEmpty()) {
             pendEl.style.display = "none"
         } else {
@@ -620,32 +629,30 @@ fun wireUnifiedTrackEditor(
     }
 
     fun applyChanges() {
+        // DEB-2051 (FR-9) — while a conversion runs the rows are locked; nothing here may write to the file under it.
+        if (isMovieEditor && ContainerConversionUi.locked()) return
         val applyBtn = document.getElementById("$prefix-apply") as? HTMLElement ?: return
         applyBtn.setAttribute("disabled", "")
         applyBtn.textContent = "Applying…"
 
         scope.launch {
             var anyError = false
+            // DEB-2051 (FR-1/FR-2) — what the server refused because the container (AVI) cannot keep a language. The
+            // row goes back to what is on disk — Unknown — and says what was asked for and why it was not kept.
+            val newlyRefused = LinkedHashMap<String, String>()
 
             // 1. Language changes (mkvpropedit/fast — before reorder so specifiers stay valid)
-            for (trk in audioModel) {
-                val orig = audioOriginal.find { it.sp == trk.sp }
+            for (trk in audioModel + subsModel) {
+                val orig = (audioOriginal + subsOriginal).find { it.sp == trk.sp }
                 if (orig != null && trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
                     val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, trk.sp, trk.lang!!)
                               else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, trk.sp, trk.lang!!)
-                    if (res.error != null) anyError = true
+                    if (res.refusal != null) { newlyRefused[trk.sp] = trk.lang!!; trk.lang = orig.lang; anyError = true }
+                    else if (res.error != null) anyError = true
                     else if (res.language != null) trk.lang = res.language
                 }
             }
-            for (trk in subsModel) {
-                val orig = subsOriginal.find { it.sp == trk.sp }
-                if (orig != null && trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
-                    val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, trk.sp, trk.lang!!)
-                              else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, trk.sp, trk.lang!!)
-                    if (res.error != null) anyError = true
-                    else if (res.language != null) trk.lang = res.language
-                }
-            }
+            refusedHere.putAll(newlyRefused)
 
             // 2. Default changes
             val audioDefChanged = defaultChanged(audioModel, audioOriginal)
@@ -698,6 +705,7 @@ fun wireUnifiedTrackEditor(
 
             renderList()
             renderPending()
+            if (isMovieEditor && newlyRefused.isNotEmpty()) ContainerConversionUi.refused(newlyRefused)
             val doneMsg = if (reorderQueued) "Changes applied — reorder queued, see Activity ▸ Jobs" else "Changes applied"
             val finalMsg = if (!anyError) doneMsg else "Some changes failed — see details"
             // Bug fix: #detail-msg lives at the top of the page, well above the fold on the Tracks tab —
@@ -758,6 +766,7 @@ fun wireUnifiedTrackEditor(
         }
 
         val i = el.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
+        if (isMovieEditor && ContainerConversionUi.locked()) return@addEventListener   // FR-9 — locked while the conversion runs
         val arr = model()
         when (act) {
             "up" -> if (i > 0) {
@@ -807,6 +816,7 @@ fun wireUnifiedTrackEditor(
     }
     listEl.addEventListener("drop") { e ->
         e.preventDefault()
+        if (isMovieEditor && ContainerConversionUi.locked()) return@addEventListener
         val row = (e.target as? HTMLElement)?.closest("[data-trk-i]") as? HTMLElement ?: return@addEventListener
         val to = row.getAttribute("data-trk-i")?.toIntOrNull() ?: return@addEventListener
         val from = dragIdx ?: return@addEventListener
@@ -842,6 +852,7 @@ fun wireUnifiedTrackEditor(
     freshById("$prefix-discard")?.addEventListener("click") { _ -> discardChanges() }
 
     // Initial render
+    if (isMovieEditor) ContainerConversionUi.onChange = { renderList() }   // the row sub-line and lock follow the notice
     renderList()
 }
 
@@ -867,7 +878,7 @@ fun injectTrackEditorStyles() {
         .trk.dragging { opacity:.4; }
         .trk.drop-before { box-shadow:0 -3px 0 var(--hi); }
         .trk.drop-after { box-shadow:0 3px 0 var(--hi); }
-        .trk-main { display:grid;grid-template-columns:30px 30px 58px 1fr auto;gap:12px;align-items:center; }
+        /* .trk-main's grid is detail.css's (DEB-2051): a copy here, injected later, would beat its phone-width restack. */
         .grip { cursor:grab;color:var(--ink-dim);font-size:1.05rem;line-height:1;text-align:center;user-select:none;letter-spacing:-2px; }
         .grip:active { cursor:grabbing; }
         .ord { display:flex;flex-direction:column;gap:3px; }

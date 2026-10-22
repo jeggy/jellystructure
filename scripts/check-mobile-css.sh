@@ -76,6 +76,12 @@ check "$APP" "AI page lost-connection disables Download/No thanks/Rebuild, FR-7"
 check "$DETAIL" "NFO raw viewer layout (.nfo-layout)" ".nfo-layout {"
 check "$DETAIL" "NFO raw viewer tree (.nfo-tree)"     ".nfo-tree {"
 check "$DETAIL" "NFO raw viewer caret (.nfo-caret)"   ".nfo-caret {"
+# DEB-2051 (FR-10) — the AVI→MKV notice's hand-authored rules, promoted by DEB-2137: a later copy over detail.css must
+# not lose them silently.
+check "$DETAIL" "container-conversion notice (.cv-card)"          ".cv-card {"
+check "$DETAIL" "container-conversion scoped focus ring"          ".cv-card .btn:focus-visible, .cv-dlg .btn:focus-visible"
+check "$DETAIL" "container-conversion light-theme tints"          "[data-theme=\"light\"] .cv-keep"
+check "$DETAIL" "track row restacks at phone width (FR-9 narrow)" ".trk-main > :nth-child(2), .trk-main > :nth-child(3)"
 
 # ---- wf.css --------------------------------------------------------------------------------------
 # Phase 117/146 — dashboard "Needs your attention" breakdown grid.

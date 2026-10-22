@@ -16,6 +16,11 @@ EXCLUDED_KEYS |= {"player.unavailable"}
 # drafts say *Ravilo spørger, før den genstarter* ("Ravilo asks before it restarts"): `før` is right there, and the
 # file's 21 `for` are right where they are.
 EXCLUDED_KEYS |= {"mac.update.dl_sub", "mac.update.auto_on"}
+# DEB-2051 — the AVI→MKV notice's drafts (the owner reads them on the QA row, Acceptance 6). Danish `før` ("before": `Før
+# start`, `Før andre enheder ser den`, `…, før tjekket svarer`, `…, før stien er afklaret`) against `for`, and Faroese `ta`
+# (the demonstrative: `strika ta fíluna`, `skrásett ta nýggju`) against `tá` ("when"), are different words that differ
+# only by the accent. Named, not inferred: the native read decides.
+EXCLUDED_KEYS |= {"migrate.before", "migrate.othersH", "migrate.unkBody", "migrate.pathBody", "migrate.takenBody", "migrate.others"}
 
 # R288 — unit abbreviations are not words in any language, so they are exempt from folding against
 # words that happen to look like them. `min` is minutes in all three files; Faroese `mín` is "my".

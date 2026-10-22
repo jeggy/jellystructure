@@ -471,14 +471,19 @@ private fun connectDockSocket() {
                 }
                 // DEB-1500 (FR-2, FR-6) — the count in the sidebar, and the open Support tab or log, follow the push.
                 is JobEvent.SupportTicketChanged -> SupportLive.event(event)
+                // DEB-2051 (FR-9) — a conversion job's progress is the push Activity ▸ Jobs uses; the media page asks the server again.
+                is JobEvent.MediaJobUpdate -> ContainerConversionUi.onJob(event.job)
                 else -> {}
             }
         }
     }
 
+    ws.onopen = { _: Event -> ContainerConversionUi.connection(true) }
+
     ws.onclose = { _: Event ->
         if (dockSocket == ws) {
             dockSocket = null
+            ContainerConversionUi.connection(false)   // DEB-2051 (FR-9) — a running conversion's notice says the server is unaffected
             // DEB-1500 (FR-2) — the count is only as current as this socket, so a dropped one is reopened (while the shell is
             // still on the page), and the count is read again for whatever was pushed while it was down.
             window.setTimeout({

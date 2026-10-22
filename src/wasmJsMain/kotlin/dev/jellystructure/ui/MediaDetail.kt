@@ -578,7 +578,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() + subtitleCheckCardShellHtml() + fileFixTitleCardShellHtml() else ""
+    // DEB-2051 (FR-3) — the AVI→MKV conversion's notice is mounted above the Tracks card; empty until the server has something to say.
+    val tracksHtml = if (!isTvShow) """<div id="cv-mount"></div>""" + buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() + subtitleCheckCardShellHtml() + fileFixTitleCardShellHtml() else ""
 
     val resolverTraceHtml = buildMetadataLanguageCard(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
@@ -1150,6 +1151,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     if (tab == "artwork") scope.launch { loadArtworkTab(item, scope) }
                     if (tab == "tracks" && !isTvShow) {
                         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
+                        ContainerConversionUi.attach(container, scope, item)
                         scope.launch { loadBazarrMovieCard(item.id, scope) }
                         scope.launch { loadMovieSegmentsCard(item.id) }
                     }
@@ -1184,6 +1186,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
+        ContainerConversionUi.attach(container, scope, item)
         scope.launch { loadBazarrMovieCard(item.id, scope) }
         scope.launch { loadMovieSegmentsCard(item.id) }
     }

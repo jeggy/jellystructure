@@ -636,7 +636,13 @@ object MediaApi {
 
     /** Result of a track-language write: [error] non-null on failure; [language] is the re-probed
      *  (on-disk) code on success — the client adopts this instead of its optimistic 2-letter guess. */
-    data class TrackLangResult(val error: String?, val language: String?)
+    data class TrackLangResult(val error: String?, val language: String?, val refusal: dev.jellystructure.media.LanguageRefusal? = null)
+
+    /** DEB-2051 (FR-1) — a 422 naming the container as the reason: the AVI cannot keep the tag. Null for any other failure. */
+    private suspend fun languageRefusalOf(response: io.ktor.client.statement.HttpResponse): dev.jellystructure.media.LanguageRefusal? =
+        if (response.status.value != 422) null
+        else runCatching { response.body<dev.jellystructure.media.LanguageRefusal>() }.getOrNull()
+            ?.takeIf { it.reason == dev.jellystructure.media.ContainerLanguage.REASON }
 
     /** Returns null on success, error message string on failure (including seeding guard 409/503). */
     suspend fun setDefaultTrack(id: String, specifier: String): String? = runCatching {
@@ -657,9 +663,30 @@ object MediaApi {
         if (response.status.value in 200..299) {
             TrackLangResult(null, runCatching { response.body<LangWriteBody>().language }.getOrNull())
         } else {
-            TrackLangResult(runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}"), null)
+            val refusal = languageRefusalOf(response)
+            if (refusal != null) TrackLangResult(refusal.error, null, refusal)
+            else TrackLangResult(runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}"), null)
         }
     }.getOrDefault(TrackLangResult("request failed", null))
+
+    /** DEB-2051 (FR-4) — what the conversion notice shows, computed by the server; [requested] is what the operator asked for. */
+    suspend fun containerConversion(id: String, requested: List<dev.jellystructure.media.ConversionRequested>): dev.jellystructure.media.ConversionPreview? = runCatching {
+        val response = httpClient.get("/api/media/$id/container-conversion") {
+            requested.forEach { parameter("track", it.specifier); parameter("language", it.language) }
+        }
+        if (response.status.value in 200..299) response.body<dev.jellystructure.media.ConversionPreview>() else null
+    }.getOrNull()
+
+    /** DEB-2051 (FR-6) — the press of *Start migration*: a job id, or the FR-5 block that refused it, or an error. */
+    suspend fun startContainerConversion(id: String, requested: List<dev.jellystructure.media.ConversionRequested>): dev.jellystructure.media.StartConversionResponse = runCatching {
+        val rows = requested.joinToString(",") { """{"specifier":"${it.specifier.replace("\"", "")}","language":"${it.language.replace("\"", "")}"}""" }
+        val response = httpClient.post("/api/media/$id/container-conversion") {
+            setBody("""{"requested":[$rows]}""")
+            contentType(ContentType.Application.Json)
+        }
+        runCatching { response.body<dev.jellystructure.media.StartConversionResponse>() }.getOrNull()
+            ?: dev.jellystructure.media.StartConversionResponse(error = "HTTP ${response.status.value}")
+    }.getOrDefault(dev.jellystructure.media.StartConversionResponse(error = "request failed"))
 
     suspend fun overrideLanguage(id: String, language: String): MediaItem? = runCatching {
         val response = httpClient.patch("/api/media/$id/language") {
@@ -841,7 +868,9 @@ object MediaApi {
         if (response.status.value in 200..299) {
             TrackLangResult(null, runCatching { response.body<LangWriteBody>().language }.getOrNull())
         } else {
-            TrackLangResult(runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}"), null)
+            val refusal = languageRefusalOf(response)
+            if (refusal != null) TrackLangResult(refusal.error, null, refusal)
+            else TrackLangResult(runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}"), null)
         }
     }.getOrDefault(TrackLangResult("request failed", null))
 
