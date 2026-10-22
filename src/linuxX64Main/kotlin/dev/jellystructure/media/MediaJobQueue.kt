@@ -294,17 +294,17 @@ class MediaJobQueue(
     private suspend fun avSyncWorkerLoop() {
         var readyUntilMs = 0L
         var ready = false
+        val readinessLog = LaneReadinessLog { Logger.info(it, "jobs") }
         while (true) {
             val service = avSync
-            if (service == null || !service.enabled()) { ready = false; delay(10_000); continue }
+            if (service == null || !service.enabled()) { ready = false; readyUntilMs = 0L; readinessLog.note(AvSyncService.LANE_OFF_REASON); delay(10_000); continue }
             if (epochSeconds() * 1000L >= readyUntilMs) {
-                val wasReady = ready
                 // FR-317-16 — `ready()` records its answer in the service, so the Checks card reads the
                 // same one THIS heartbeat took (it cannot ask for itself: `ready()` is suspend and `/stat`s
                 // a file per library root, and the card renders on every title page).
                 ready = service.ready(configStore.current)
                 readyUntilMs = epochSeconds() * 1000L + if (ready) 60_000L else 30_000L
-                if (ready != wasReady) Logger.info("av sync lane: ${if (ready) "the sidecar is ready — claiming" else "the sidecar is not ready — holding"}", "jobs")
+                readinessLog.note(service.lastHoldReason)
             }
             if (!ready) { delay(5_000); continue }
             val row = claimMutex.withLock { claimNext(listOf(FileCheckSchedule.AVSYNC_LANE)) }

@@ -21,6 +21,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -238,6 +240,9 @@ class AvSyncService(
      */
     private val probeRuntimeSeconds: suspend (String) -> Double? = { FfmpegRunner.probeDurationSeconds(it) },
     private val probeMkvIds: (suspend (String) -> Map<String, Int>)? = null,
+    /** FR-317-13's test seam — can *this* process see the file? A mount sample is only evidence about the
+     *  sidecar's mounts when the backend itself can open it (DEB-2111). Production passes nothing. */
+    private val existsLocally: (String) -> Boolean = { SystemFileSystem.exists(Path(it)) },
 ) {
     private val q get() = db.fileAvSyncQueries
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -360,15 +365,22 @@ class AvSyncService(
 
     /** One known video file per configured library root — what the mount check `/stat`s. Cached against the
      *  configured roots, because finding it walks the whole store and the roots do not move. A root with no
-     *  file in the store yet is not in the answer: there is nothing to prove a mount with. */
+     *  file in the store yet is not in the answer: there is nothing to prove a mount with.
+     *
+     *  **A sample is a file this process can open** (FR-317-13, DEB-2111). The store outlives the disk: a
+     *  title whose folder was replaced or removed is still an item until the next scan reconciles it, and
+     *  the first such item in a root used to become that root's sample for good — the sidecar answered
+     *  `exists: false` for a file that is not there, the root read as *not mounted*, and the lane held
+     *  forever (prod, 2026-10-22). A cached sample is dropped the moment this process cannot see it. */
     suspend fun samplePaths(cfg: AppConfig = configStore.current): List<Pair<String, String>> {
         val roots = cfg.libraries.filterNot { it.skip }.map { it.localPath.trimEnd('/') }.filter { it.isNotBlank() }.distinct()
-        if (roots == samplesCacheRoots && samplesCache.size == roots.size) return samplesCache
+        if (roots == samplesCacheRoots && samplesCache.size == roots.size && samplesCache.all { existsLocally(it.second) }) return samplesCache
         val found = LinkedHashMap<String, String>()
         for (item in store.allItems()) {
             for (path in integrity.videoPaths(listOf(item))) {
                 val root = roots.firstOrNull { path.startsWith("$it/") } ?: continue
-                if (root !in found) found[root] = path
+                if (root in found || !existsLocally(path)) continue
+                found[root] = path
             }
             if (found.size == roots.size) break
         }
@@ -404,13 +416,24 @@ class AvSyncService(
 
     /** FR-317-13 — is the check able to run right now? The lane's worker asks this before it claims, and
      *  FR-317-16's [readyNow] hands the same answer to the Checks card without asking again. */
-    suspend fun ready(cfg: AppConfig = configStore.current): Boolean = readyAnswerFor(cfg).also { noteReady(it) }
+    suspend fun ready(cfg: AppConfig = configStore.current): Boolean {
+        val why = holdReasonFor(cfg)
+        lastHoldReason = why
+        return (why == null).also { noteReady(it) }
+    }
 
-    private suspend fun readyAnswerFor(cfg: AppConfig): Boolean {
-        if (!cfg.avsync.enabled) return false
-        val h = health() ?: return false
-        if (!h.ok) return false
-        return unseenRoots(cfg)?.isEmpty() == true
+    /** Why [ready] last answered *no*, as a sentence for the log; null while it answers yes (or before it
+     *  has been asked). Library roots only, never a file. */
+    var lastHoldReason: String? = null
+        private set
+
+    private suspend fun holdReasonFor(cfg: AppConfig): String? {
+        if (!cfg.avsync.enabled) return LANE_OFF_REASON
+        val h = health() ?: return "the sidecar at ${config.baseUrl()} did not answer /health"
+        if (!h.ok) return "the sidecar has no GPU: ${h.gpu}"
+        val unseen = unseenRoots(cfg) ?: return "the sidecar stopped answering /stat"
+        if (unseen.isNotEmpty()) return "the sidecar cannot see ${unseen.joinToString(", ")}"
+        return null
     }
 
     /** FR-317-2 — one `/measure`. Returns the answer, or the failure as a sentence for the job's error. */
@@ -820,6 +843,9 @@ class AvSyncService(
     }
 
     companion object {
+        /** [lastHoldReason] while the switch is off — also what the lane's worker logs without asking. */
+        const val LANE_OFF_REASON = "the check is switched off"
+
         /** The model a row is stored under before `/health` has ever answered — never equal to a real one,
          *  so such a row is re-measured once the sidecar has introduced itself. */
         const val PENDING_MODEL = "unknown"
@@ -1044,3 +1070,21 @@ data class MkvIdentification(
      *  of claiming there was nothing in it to read. */
     val truncated: Boolean = false,
 )
+
+/**
+ * DEB-2111 — the `avsync` lane's readiness, written to the log **once per change**: the reason it holds,
+ * and the moment it clears. The first answer after boot counts as a change, so a lane that never becomes
+ * ready says why on its first heartbeat rather than staying silent for hours. A diagnostic, not a promise.
+ */
+internal class LaneReadinessLog(private val emit: suspend (String) -> Unit) {
+    private var announced = false
+    private var last: String? = null
+
+    /** [holdReason] null = ready. Logs only when this differs from what was last logged. */
+    suspend fun note(holdReason: String?) {
+        if (announced && holdReason == last) return
+        announced = true
+        last = holdReason
+        emit(if (holdReason == null) "av sync lane: the sidecar is ready — claiming" else "av sync lane: holding — $holdReason")
+    }
+}
