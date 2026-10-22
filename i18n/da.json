@@ -121,6 +121,7 @@
   "up.release_digital": "Digital udgivelse",
   "up.release_physical": "Fysisk udgivelse",
   "up.release_cinema": "I biografen",
+  "up.release_expected": {"text": "Forventet", "note": "R168 (FR-R168-8) — draft Danish, review before release."},
   "up.foot_upcoming": "Føjes automatisk til dit bibliotek, når det sendes eller udgives.",
   "up.foot_missing": "Udgivet, men endnu ikke i dit bibliotek.",
   "up.cast": "Medvirkende",

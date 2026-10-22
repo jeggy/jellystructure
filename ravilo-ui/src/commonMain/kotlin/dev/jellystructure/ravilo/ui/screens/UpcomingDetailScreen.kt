@@ -260,7 +260,7 @@ private fun ScheduleGrid(item: UpcomingItem) {
     val rows = listOfNotNull(
         (if (isSeries) str("up.air_date") else str("up.release_date")) to item.date,
         item.time?.let { str("up.air_time") to it },
-        item.releaseType?.let { str("up.release_type") to releaseTypeLabel(it) },
+        releaseTypeLabel(item)?.let { str("up.release_type") to it },
         item.network?.let { str("up.network") to it },
     )
     Column(
@@ -304,9 +304,5 @@ private fun relativeChip(item: UpcomingItem): String {
 }
 
 @Composable
-private fun releaseTypeLabel(releaseType: String): String = when (releaseType) {
-    "digital" -> str("up.release_digital")
-    "physical" -> str("up.release_physical")
-    "cinema" -> str("up.release_cinema")
-    else -> releaseType
-}
+private fun releaseTypeLabel(item: UpcomingItem): String? =
+    releaseTypeLabelKey(item.releaseType, item.dateEstimated)?.let { str(it) } ?: item.releaseType

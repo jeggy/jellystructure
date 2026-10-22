@@ -124,6 +124,7 @@
   "up.release_digital": "Digital Release",
   "up.release_physical": "Physical Release",
   "up.release_cinema": "In Cinemas",
+  "up.release_expected": {"text": "Expected", "note": "R168 (FR-R168-8) — labels a film whose release date is Radarr's estimate (cinema + 90 days) and may move; shown where the release type usually is."},
   "up.foot_upcoming": "Added to your library automatically when it airs or releases.",
   "up.foot_missing": "Released, but not in your library yet.",
   "up.cast": "Cast",

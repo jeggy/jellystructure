@@ -436,7 +436,7 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
 
             Column(Modifier.align(Alignment.BottomStart).padding(8.dp)) {
                 Text(
-                    item.time ?: releaseTypeLabel(item.releaseType) ?: "",
+                    item.time ?: releaseTypeLabel(item) ?: "",
                     color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
                 )
             }
@@ -445,7 +445,7 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
         Text(item.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         val sub = if (item.kind == MediaKind.SERIES && item.season != null && item.episode != null) {
             dev.jellystructure.shared.tv.episodeCode(item.season!!, item.episode!!) + (item.episodeTitle?.let { " · $it" } ?: "")   // R346
-        } else releaseTypeLabel(item.releaseType) ?: ""
+        } else releaseTypeLabel(item) ?: ""
         Text(sub, color = colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         val footer = listOfNotNull(item.network, item.year?.toString()).joinToString("  ·  ")
         if (footer.isNotBlank()) Text(footer, color = colors.textSecondary.copy(alpha = 0.8f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -463,13 +463,18 @@ private fun statusPillText(item: UpcomingItem): Pair<String, Color>? = when (ite
     UpcomingStatus.MONITORED -> null
 }
 
-@Composable
-private fun releaseTypeLabel(releaseType: String?): String? = when (releaseType) {
-    "digital" -> str("up.release_digital")
-    "physical" -> str("up.release_physical")
-    "cinema" -> str("up.release_cinema")
+/** FR-R168-8 — the string key for the label an item carries: its release type, or "Expected" for Radarr's estimate. */
+internal fun releaseTypeLabelKey(releaseType: String?, dateEstimated: Boolean): String? = when {
+    releaseType == "digital" -> "up.release_digital"
+    releaseType == "physical" -> "up.release_physical"
+    releaseType == "cinema" -> "up.release_cinema"
+    dateEstimated -> "up.release_expected"
     else -> null
 }
+
+@Composable
+private fun releaseTypeLabel(item: UpcomingItem): String? =
+    releaseTypeLabelKey(item.releaseType, item.dateEstimated)?.let { str(it) }
 
 @Composable
 private fun dayLabel(dateStr: String): String {

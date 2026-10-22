@@ -121,6 +121,7 @@
   "up.release_digital": "Digital útgáva",
   "up.release_physical": "Fysisk útgáva",
   "up.release_cinema": "Í biografinum",
+  "up.release_expected": {"text": "Væntað", "note": "R168 (FR-R168-8) — draft Faroese, review before release."},
   "up.foot_upcoming": "Verður sett í savnið títt sjálvvirkandi, tá tað kemur út ella verður útgivið.",
   "up.foot_missing": "Útgivið, men ikki í savninum tínum enn.",
   "up.cast": "Leikarar",
