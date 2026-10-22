@@ -105,3 +105,35 @@ before the appcast's EdDSA signature is computed (R386 FR-R386-2). The appcast s
 4. The download page shows the strip open by default, readable at phone and desktop widths, with alt text on every
    picture and no "the first time" left anywhere on it.
 5. `check-deanonymization.sh` is green, and no picture carries a real name, a library title or another app.
+
+## Amendment (2026-10-22): the owner's picks from the drawn round, and the window's numbers (DEB-1076, DEB-1470)
+
+Round 8 was drawn in the repo without the design tool (lane C, `design/incoming/2026-10-22-mac-open-anyway/`, at
+`afd5623b` plus revision `75edecfc`). The owner reviewed it on DEB-1076 (card `ece9c6f7`) and took all three
+recommendations: *"A, the strip below the cards, with pictures at readable size"*, *"always open, no fold"*, and the
+`.dmg` window *"as drawn"*. FR-3 is replaced. FR-4 gains the numbers it was waiting on.
+
+**FR-3, replaced — the strip sits below the download cards, always open.**
+- **The Mac card keeps its shape.** Its one-line `dl-note` becomes a pointer, not the instructions: *"Not notarised.
+  macOS asks twice on every download — the five steps are below."* *Download .dmg* stays the card's primary action,
+  where it is.
+- **Below the three download cards, at full content width,** a section titled *Opening Ravilo on a Mac* carries
+  FR-2's sentence and then the five steps of FR-1: two columns at desktop width, one at phone width, each step a
+  picture beside its sentence. The FR-6 line about work-managed Macs closes the section.
+- **No fold and no toggle.** The steps are always shown. (Direction B, the steps inside the Mac card, was drawn and
+  rejected: at the card's width every picture shrinks to 96px and stops showing anything.)
+- Alt text on every picture carries the whole instruction, as before. Step sentences name no version (*"Open the
+  .dmg you downloaded"*), because the page outlives any one release; the card's meta line already shows the version.
+- **The drawing is the reference.** `page.html` and `mac-open-anyway.css` in the round directory, and the attached
+  renders on DEB-1470 (`mac-open-anyway-a-desktop.png`, `-a-phone.png`). The page's existing style and tokens are kept.
+
+**FR-4, the numbers.** The window's content area is **720 × 520 pt**. The Ravilo icon is centred at **(190, 190)** and
+the Applications shortcut at **(530, 190)**, each with a label band of **190 × 34 pt from y = 252**. Below a divider,
+steps 4 and 5 sit side by side, each a picture at 236 px design width with its sentence beneath. The background is
+delivered at **1× (720 × 520)** and **2× (1440 × 1040)**, and it is identical in Light and Dark appearance. Source:
+`dmg.html` and `dmg-window.html`; bare assets are `mac-open-anyway-dmg-bg-1x.png` and `-2x.png` on DEB-1470. The
+engineer places the icons from these numbers, not by eye.
+
+**Renders.** The round's `render.mjs` is the render command lane C recorded, and it is what produces the background
+PNGs. Whether the build renders the background at package time or commits the PNG is the engineer's call. Either way,
+FR-7's ordering holds.
