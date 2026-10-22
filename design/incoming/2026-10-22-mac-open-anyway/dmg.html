@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — the .dmg window background, 720 × 520 pt (round mac-open-anyway)</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="mac-open-anyway.css">
+<style>
+  /* Nothing but the background itself. The element is exactly 720 x 520 CSS px, which is
+     720 x 520 pt of Finder content area: one image pixel per point at 1x, two at 2x. */
+  body{ margin:0; background:#eceef2; }
+  #dmg{ margin:0; }
+</style>
+</head>
+<body>
+
+<div class="moa-dmg" id="dmg">
+  <div class="moa-dmg-head">
+    <h1>Ravilo</h1>
+    <p>Drag it onto Applications to install.</p>
+  </div>
+
+  <div class="moa-target is-app"></div>
+  <div class="moa-target is-applications"></div>
+
+  <div class="moa-draghint">drag</div>
+  <div class="moa-dragarrow"></div>
+
+  <!-- The two bands Finder prints its own icon labels into. Flat mid-tone, nothing of ours in
+       them: the label is white in Dark appearance and near-black in Light, and this image cannot
+       change with either. -->
+  <div class="moa-labelband is-app"></div>
+  <div class="moa-labelband is-applications"></div>
+
+  <div class="moa-after">
+    <p class="moa-afterhead">Then, every time you install a version from the site:</p>
+    <ol>
+      <li><span class="moa-n">4</span><span class="moa-txt">Open Ravilo from Applications. macOS refuses it again &mdash; choose <b>Done</b>.</span></li>
+      <li><span class="moa-n">5</span><span class="moa-txt"><b>System&nbsp;Settings &#9656; Privacy&nbsp;&amp;&nbsp;Security &#9656; Open&nbsp;Anyway</b>, then your password. Ravilo opens.</span></li>
+    </ol>
+  </div>
+</div>
+
+<script src="mac-open-anyway.js"></script>
+</body>
+</html>

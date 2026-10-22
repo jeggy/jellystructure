@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — the Mac download card's five-step strip (round mac-open-anyway)</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="mac-open-anyway.css">
+<style>
+  /* Canvas furniture only. The frames themselves are .moa-page and carry the live page's own skin.
+     This host backdrop is light, so everything written directly on it is dark ink. */
+  body{ margin:0; background:#eceef2; font-family:'Sora',sans-serif; color:#12141b; }
+  .host{ padding:28px; }
+  .fr{ margin:0 0 34px; }
+  .fr > h2{ font-family:'Space Grotesk',sans-serif; font-size:15px; margin:0 0 4px; color:#12141b; }
+  .fr > p{ margin:0 0 10px; font-size:12.5px; color:#262a35; max-width:70ch; line-height:1.5; }
+  .fr > .id{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#51576a; }
+  .shot{ display:inline-block; background:#16181f; border-radius:10px; overflow:hidden; }
+  html[data-mode="phone"] .only-desktop{ display:none; }
+  html[data-mode="desktop"] .only-phone{ display:none; }
+  html[data-mode="phone"] .host{ padding:0; }
+  html[data-mode="phone"] .fr > h2, html[data-mode="phone"] .fr > p, html[data-mode="phone"] .fr > .id{ display:none; }
+  html[data-mode="phone"] .fr{ margin:0 0 12px; }
+</style>
+</head>
+<body>
+<div class="host">
+
+  <div class="fr only-desktop">
+    <h2>Direction A — the strip below the grid (desktop, 1280)</h2>
+    <p>The Mac card keeps its one-line note and its button; the five steps are a full-width strip under the three-card row. The three cards stay the same height as each other.</p>
+    <p class="id">mac-open-anyway-a-desktop</p>
+    <div class="shot" id="a-desktop"></div>
+  </div>
+
+  <div class="fr only-desktop">
+    <h2>Direction A with the <em>How to open it</em> toggle, open by default (desktop, 1280)</h2>
+    <p>Decision 1(b). Identical content, one control added. It starts open, as the brief requires.</p>
+    <p class="id">mac-open-anyway-a-desktop-toggle</p>
+    <div class="shot" id="a-desktop-toggle"></div>
+  </div>
+
+  <div class="fr only-desktop">
+    <h2>Direction A, the toggle folded away (desktop, 1280)</h2>
+    <p>The state a reader can reach from 1(b), and the reason 1(a) is recommended: folded, the page says less than it does today.</p>
+    <p class="id">mac-open-anyway-a-desktop-collapsed</p>
+    <div class="shot" id="a-desktop-collapsed"></div>
+  </div>
+
+  <div class="fr only-desktop">
+    <h2>Direction B — the strip inside the Mac card (desktop, 1280)</h2>
+    <p>The sentence the spec writes today. The Mac card grows several times the height of Android and Linux and drags the grid row with it, and a picture of a settings pane has 96px to live in.</p>
+    <p class="id">mac-open-anyway-b-desktop</p>
+    <div class="shot" id="b-desktop"></div>
+  </div>
+
+  <div class="fr only-desktop">
+    <h2>Direction A with the pictures not loading (desktop, 1280)</h2>
+    <p>Not a note — a drawn state. Every picture is replaced by its own alt text, which carries the whole instruction.</p>
+    <p class="id">mac-open-anyway-a-desktop-noimg</p>
+    <div class="shot" id="a-desktop-noimg"></div>
+  </div>
+
+  <div class="fr only-phone"><div class="shot" id="a-phone"></div></div>
+  <div class="fr only-phone"><div class="shot" id="b-phone"></div></div>
+  <div class="fr only-phone"><div class="shot" id="a-phone-noimg"></div></div>
+  <div class="fr only-phone"><div class="shot" id="a-phone-da"></div></div>
+  <div class="fr only-phone"><div class="shot" id="a-phone-fo"></div></div>
+
+</div>
+
+<script src="mac-open-anyway.js"></script>
+<script>
+/* Builds the download section for a direction / width / language. The three cards, the section head
+   and the button are restated from the live page so the strip is judged in its real neighbours. */
+(function(){
+  var mode = new URLSearchParams(location.search).get('mode') || 'desktop';
+  document.documentElement.setAttribute('data-mode', mode);
+
+  function card(name, forline, note, ext, extra){
+    return '<div class="moa-card">' +
+      '<h3>' + name + '</h3>' +
+      '<p class="moa-for">' + forline + '</p>' +
+      (extra || '<p class="moa-note">' + note + '</p>') +
+      '<a class="moa-btn" href="#">Download <span class="moa-ext">' + ext + '</span></a>' +
+      '<span class="moa-meta">' + ext.replace('.', '') + ' · 1.52</span>' +
+      '</div>';
+  }
+
+  function section(opts){
+    var lang = opts.lang || 'en';
+    /* No cross-reference by name: in direction A the strip's own heading is "Opening Ravilo on a
+       Mac", and only decision 1(b) calls it "How to open it". A note that names a control the
+       chosen direction does not have is how a page ends up lying about itself. */
+    var macNote = '<p class="moa-note">Not notarised. macOS asks twice on every download — the five steps are below.</p>';
+    var macExtra = null;
+
+    if (opts.dir === 'b'){
+      macExtra = '<div class="moa-strip moa-strip-inside" data-strip data-lang="' + lang + '"' +
+                 (opts.toggle ? ' data-toggle' : '') + (opts.collapsed ? ' data-collapsed' : '') + '></div>';
+    }
+
+    var cards = card('Android', 'Android TV and phones', 'One app for both. To install, allow your browser or file manager to install unknown apps.', '.apk') +
+      card('Mac', 'Apple silicon · macOS 14 or later', '', '.dmg', opts.dir === 'b' ? macExtra : macNote) +
+      card('Linux', 'x86_64 · Flatpak', 'Install the downloaded file with <code>flatpak install</code>. It needs Flathub set up for the runtime.', '.flatpak');
+
+    var below = '';
+    if (opts.dir === 'a'){
+      below = '<div class="moa-strip moa-strip-below">' +
+        '<div class="moa-striphead"><h3>Opening Ravilo on a Mac</h3>' +
+        '<span class="moa-forwhich" data-copy="forwhich" data-lang="' + lang + '"></span></div>' +
+        '<div data-strip data-lang="' + lang + '"' +
+        (opts.toggle ? ' data-toggle' : '') + (opts.collapsed ? ' data-collapsed' : '') + '></div></div>';
+    }
+
+    return '<div class="moa-page' + (mode === 'phone' ? ' moa-phone' : '') + (opts.noimg ? ' moa-noimg' : '') + '">' +
+      '<section class="moa-section alt"><div class="moa-wrap">' +
+      '<div class="moa-section-head"><p class="moa-eyebrow">Download</p><h2>Get Ravilo.</h2>' +
+      '<p>Every button below downloads the file from Ravilo’s latest release.</p></div>' +
+      '<div class="moa-grid">' + cards + '</div>' + below +
+      '</div></section></div>';
+  }
+
+  var frames = {
+    'a-desktop':           { dir:'a' },
+    'a-desktop-toggle':    { dir:'a', toggle:true },
+    'a-desktop-collapsed': { dir:'a', toggle:true, collapsed:true },
+    'b-desktop':           { dir:'b' },
+    'a-desktop-noimg':     { dir:'a', noimg:true },
+    'a-phone':             { dir:'a' },
+    'b-phone':             { dir:'b' },
+    'a-phone-noimg':       { dir:'a', noimg:true },
+    'a-phone-da':          { dir:'a', lang:'da' },
+    'a-phone-fo':          { dir:'a', lang:'fo' }
+  };
+
+  Object.keys(frames).forEach(function(id){
+    var host = document.getElementById(id);
+    if (host) host.innerHTML = section(frames[id]);
+  });
+
+  MOA.renderAll();
+})();
+</script>
+</body>
+</html>

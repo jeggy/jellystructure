@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — the Mac's two Open Anyway steps, in pictures · directions (round mac-open-anyway)</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="mac-open-anyway.css">
+<style>
+  /* Canvas furniture. The backdrop is light, so everything written on it is dark ink; the only
+     light type in this document is inside the dark page frames and the dark .dmg background. */
+  body{ margin:0; background:#eceef2; color:#12141b; font-family:'Sora',sans-serif; line-height:1.6; }
+  .doc{ max-width:1180px; margin:0 auto; padding:40px 28px 80px; }
+  h1{ font-family:'Space Grotesk',sans-serif; font-size:30px; letter-spacing:-.01em; margin:0 0 6px; }
+  h2{ font-family:'Space Grotesk',sans-serif; font-size:21px; margin:48px 0 10px; }
+  h3{ font-family:'Space Grotesk',sans-serif; font-size:16px; margin:26px 0 6px; }
+  .sub{ color:#262a35; font-size:14px; margin:0 0 4px; }
+  .meta{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:#51576a; margin:0 0 24px; }
+  p, li{ font-size:14px; color:#262a35; }
+  .lede{ font-size:15.5px; color:#12141b; max-width:78ch; }
+  table{ border-collapse:collapse; width:100%; margin:14px 0 6px; font-size:13.5px; }
+  th, td{ border:1px solid #cdd2dc; padding:8px 10px; text-align:left; vertical-align:top; color:#262a35; }
+  th{ background:#e2e5ec; color:#12141b; font-weight:600; }
+  td.y{ background:#e8f3ec; }
+  td.n{ background:#f3eee8; }
+  code, .mono{ font-family:'JetBrains Mono',monospace; font-size:12.5px; background:#e2e5ec; padding:1px 5px; border-radius:4px; }
+  .handle{ font-family:'JetBrains Mono',monospace; font-size:12.5px; background:#12141b; color:#f3f4fb; padding:2px 7px; border-radius:4px; }
+  figure{ margin:16px 0 26px; }
+  figure img{ max-width:100%; border-radius:10px; border:1px solid #cdd2dc; display:block; }
+  figcaption{ font-size:12.5px; color:#51576a; margin-top:7px; }
+  .two{ display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+  .two figure{ flex:1 1 380px; margin:16px 0; }
+  .rec{ display:inline-block; background:#12141b; color:#fff; font-size:11px; font-family:'JetBrains Mono',monospace;
+        padding:2px 7px; border-radius:999px; vertical-align:2px; margin-left:6px; }
+  .warn{ border-left:3px solid #b15cd0; padding:8px 0 8px 14px; margin:14px 0; background:#f3eef7; }
+  ul.tight li{ margin-bottom:5px; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>Opening Ravilo on a Mac, in pictures</h1>
+<p class="sub">Two surfaces: the Mac card on the public download page, and the window the disk image opens to.</p>
+<p class="meta">round mac-open-anyway · drawn 2026-10-22 · lane C, drawn in the repo · no phase number</p>
+
+<p class="lede">Ravilo for Mac is signed with our own certificate and is not registered with Apple, so macOS refuses
+<strong>every hand-downloaded copy twice</strong> — the disk image when it is opened, and then the installed app. Each
+refusal is a dialog whose buttons are <em>Move to Trash</em> and <em>Done</em>, and the only way past either is
+System&nbsp;Settings ▸ Privacy&nbsp;&amp;&nbsp;Security ▸ <em>Open Anyway</em>. The second approval also asks for the
+user's password. Today the page names one of those steps, calls it "the first time", and says it in text — so the
+button it names stays invisible.</p>
+
+<h2>What is fixed</h2>
+<ul class="tight">
+  <li><strong>The page is dark</strong> — <code>#16181f</code>, no light theme — and keeps its existing style.</li>
+  <li><strong>The three download cards are one grid row</strong>, <code>repeat(auto-fit, minmax(260px, 1fr))</code>.
+      Anything that makes the Mac card much taller than Android and Linux drags that row with it.</li>
+  <li><strong><em>Download .dmg</em> stays the card's primary action, where it is.</strong></li>
+  <li><strong>The steps are open by default</strong>, and <strong>every picture's alt text carries the whole
+      instruction</strong>.</li>
+  <li><strong>Never "the first time"</strong> — it happens on every download.</li>
+  <li><strong>Never <code>xattr</code>, <code>spctl</code>, or turning Gatekeeper off.</strong> There is one correct
+      route and it is <em>Open Anyway</em>.</li>
+  <li><strong>Drawn, never screenshots.</strong> No real user name, no second application in any list, nothing from
+      anybody's library.</li>
+  <li><strong>A Finder background image cannot change with appearance.</strong> One flat picture must read in Light
+      and in Dark.</li>
+</ul>
+
+<h2>Direction A &middot; The strip below the download grid <span class="rec">recommended</span></h2>
+<p>Handle: <span class="handle">A &middot; The strip below the download grid</span></p>
+<p>The Mac card keeps its one-line note and its button. The five steps are a full-width strip under the three-card
+row, two steps per line, each picture at its full 236px design width. The three cards stay the same height as each
+other and the Download button stays where a returning visitor already expects it.</p>
+<figure>
+  <img src="png/mac-open-anyway-a-desktop.png" alt="Direction A at desktop width: three download cards of equal height, and below them a full-width strip of five numbered steps, each with a drawn picture and one sentence.">
+  <figcaption>A, desktop (1280 viewport, the page's 1080px wrap). <span class="mono">mac-open-anyway-a-desktop</span></figcaption>
+</figure>
+<div class="two">
+  <figure>
+    <img src="png/mac-open-anyway-a-phone.png" alt="Direction A at phone width: the cards stack, and each step becomes a full-width picture above its sentence.">
+    <figcaption>A, phone (390). One step per row, picture above its sentence.
+      <span class="mono">mac-open-anyway-a-phone</span></figcaption>
+  </figure>
+  <figure>
+    <img src="png/mac-open-anyway-a-desktop-noimg.png" alt="Direction A with the pictures not loading: each picture is replaced by its own alt text, which carries the whole instruction.">
+    <figcaption>A, pictures not loading. Each one falls back to its own alt text.
+      <span class="mono">mac-open-anyway-a-desktop-noimg</span></figcaption>
+  </figure>
+</div>
+
+<h2>Direction B &middot; The strip inside the Mac card</h2>
+<p>Handle: <span class="handle">B &middot; The strip inside the Mac card</span></p>
+<p>This is what the spec's own sentence describes today — the card's one-line note <em>becomes</em> the strip. Drawn
+so the cost is visible rather than argued, and the cost is two things at once.</p>
+<div class="two">
+  <figure>
+    <img src="png/mac-open-anyway-b-desktop.png" alt="Direction B at desktop width: the Mac card is about five times the height of the Android and Linux cards, its Download button pushed far below theirs, and its five pictures are 96 pixels wide and illegible.">
+    <figcaption>B, desktop. The Mac card runs to ~1 460px against the others' ~280px, and the Download button ends up
+      far below the other two. <span class="mono">mac-open-anyway-b-desktop</span></figcaption>
+  </figure>
+  <figure>
+    <img src="png/mac-open-anyway-b-phone.png" alt="Direction B at phone width, where the single-column stack hides the cost of the tall card but the pictures are still 96 pixels wide.">
+    <figcaption>B, phone. The height stops mattering once the cards stack — but the pictures do not get any bigger.
+      <span class="mono">mac-open-anyway-b-phone</span></figcaption>
+  </figure>
+</div>
+<div class="warn">
+  <strong>B fails on its own terms, and the drawing is what shows it.</strong> A card is one column of a three-column
+  grid, so a picture inside it has 96px. At 96px the dialog in step 1 is a grey smudge and the Privacy &amp; Security
+  pane is unreadable — which means the <em>pictures</em>, the entire point of this round, stop carrying the
+  instruction and the sentences are doing all the work again. B is drawn, and not recommended.
+</div>
+
+<h2>The toggle</h2>
+<p>Handles: <span class="handle">Toggle 1 &middot; Always open, no control</span> and
+   <span class="handle">Toggle 2 &middot; Under a How to open it summary, open by default</span></p>
+<div class="two">
+  <figure>
+    <img src="png/mac-open-anyway-a-desktop-toggle.png" alt="Direction A with a How to open it summary row above the steps, shown open by default.">
+    <figcaption>Toggle 2, open — the state everyone arrives at.
+      <span class="mono">mac-open-anyway-a-desktop-toggle</span></figcaption>
+  </figure>
+  <figure>
+    <img src="png/mac-open-anyway-a-desktop-collapsed.png" alt="The same toggle folded away, leaving only the summary row and no instructions at all.">
+    <figcaption>Toggle 2, folded. <span class="mono">mac-open-anyway-a-desktop-collapsed</span></figcaption>
+  </figure>
+</div>
+<p><strong>Toggle 1 is recommended.</strong> Folded, the page says <em>less</em> than it does today: the one honest
+line it has now is replaced by a control that hides everything. The folded state is the whole argument — a reader who
+collapses it is exactly the reader about to meet the first refusal.</p>
+
+<h2>The disk image window</h2>
+<p>Handle: <span class="handle">Window &middot; Targets above, steps 4 and 5 beneath</span></p>
+<p>Steps 1 and 2 are not drawn here: by the time this window is open they are behind the user. The window carries the
+drag (step 3) and then the two steps that have not happened yet.</p>
+<div class="two">
+  <figure>
+    <img src="png/mac-open-anyway-dmg-window-light.png" alt="The disk image window in Light appearance, with the Ravilo icon on its target, an arrow to the Applications folder, and steps 4 and 5 beneath.">
+    <figcaption>Light appearance. <span class="mono">mac-open-anyway-dmg-window-light</span></figcaption>
+  </figure>
+  <figure>
+    <img src="png/mac-open-anyway-dmg-window-dark.png" alt="The same window in Dark appearance, using the identical background image, with the icon labels now white.">
+    <figcaption>Dark appearance — <strong>the identical background bytes</strong>. Only the chrome and the two icon
+      labels change. <span class="mono">mac-open-anyway-dmg-window-dark</span></figcaption>
+  </figure>
+</div>
+<div class="warn">
+  <strong>The two grey bands are the whole trick.</strong> Finder draws each icon's text label itself, in a colour
+  this image cannot see and cannot predict — near-black in Light, white in Dark. So the band under each icon is a
+  flat mid-tone (<code>#777e8d</code>, about 4.1:1 against white and 5.2:1 against near-black) and carries
+  <em>nothing of ours</em>. Everywhere else in the picture the text is ours, so its contrast is ours to choose.
+</div>
+
+<h3>The numbers the engineer places the icons from</h3>
+<table>
+  <tr><th>Finder window content area</th><td><strong>720 &times; 520 pt</strong></td></tr>
+  <tr><th>Background image</th><td><strong>720 &times; 520 px at 1&times;</strong>, <strong>1440 &times; 1040 px at 2&times;</strong> — one image pixel per point</td></tr>
+  <tr><th>Icon size</th><td><strong>128 pt</strong></td></tr>
+  <tr><th>Ravilo icon centre</th><td><strong>(190, 190)</strong> pt from the content area's top-left</td></tr>
+  <tr><th>Applications centre</th><td><strong>(530, 190)</strong> pt from the content area's top-left</td></tr>
+  <tr><th>Label bands (do not cover)</th><td>190 &times; 34 pt, centred on each icon's x, top edge at <strong>y = 252</strong> pt</td></tr>
+</table>
+<p>A 128pt icon centred at y=190 ends at y=254, and Finder prints the label immediately beneath it — which is why the
+bands start at 252 and not lower. The window never exceeds 800 &times; 600 pt, so it opens whole on a 1280&times;800
+screen with the title bar above it.</p>
+
+<h2>How they compare</h2>
+<table>
+  <tr><th>&nbsp;</th><th>A · below the grid</th><th>B · inside the card</th></tr>
+  <tr><th>Picture width</th><td class="y">236px — the dialog and the settings pane are readable</td><td class="n">96px — both are unreadable</td></tr>
+  <tr><th>The card row</th><td class="y">Three cards stay equal height</td><td class="n">Mac card ~5&times; the others</td></tr>
+  <tr><th>Download button</th><td class="y">Stays where it is today</td><td class="n">Pushed ~1 200px down the page</td></tr>
+  <tr><th>Steps next to the button</th><td class="n">One section below — the weakest point of A</td><td class="y">In the same card as the button</td></tr>
+  <tr><th>Phone</th><td class="y">Full-width pictures, one step per row</td><td class="n">Still 96px pictures</td></tr>
+  <tr><th>Matches the spec's current sentence</th><td class="n">No — needs a dated amendment</td><td class="y">Yes, as written</td></tr>
+</table>
+<p><strong>A is recommended, and the one thing it gives up is honest:</strong> the steps sit a section below the
+button they belong to. A's heading and the Mac card's note are written to close that gap in words
+(<em>"the five steps are below"</em>) rather than pretend it does not exist.</p>
+
+<h2>Every state, drawn or named</h2>
+<table>
+  <tr><th>State</th><th>Drawn?</th><th>Where</th></tr>
+  <tr><td>Page, desktop width, steps open</td><td class="y">drawn</td><td class="mono">a-desktop</td></tr>
+  <tr><td>Page, phone width, steps open</td><td class="y">drawn</td><td class="mono">a-phone</td></tr>
+  <tr><td>Page, steps collapsed</td><td class="y">drawn</td><td class="mono">a-desktop-collapsed</td></tr>
+  <tr><td>Page, pictures failed to load</td><td class="y">drawn</td><td class="mono">a-desktop-noimg</code>, <span class="mono">a-phone-noimg</span></td></tr>
+  <tr><td>Disk-image window, Light</td><td class="y">drawn</td><td class="mono">dmg-window-light</td></tr>
+  <tr><td>Disk-image window, Dark</td><td class="y">drawn</td><td class="mono">dmg-window-dark</td></tr>
+  <tr><td>The work-managed-Mac line</td><td class="y">drawn</td><td>in every page frame, at the foot of the strip</td></tr>
+  <tr><td>Longest string, Danish</td><td class="y">drawn</td><td class="mono">a-phone-da</td></tr>
+  <tr><td>Longest string, Faroese</td><td class="y">drawn</td><td class="mono">a-phone-fo</td></tr>
+  <tr><td>Loading</td><td class="y">folded in</td><td>the pictures-not-loading frames are the same picture</td></tr>
+  <tr><td>Empty</td><td class="n">not applicable</td><td>a static page with no data to be empty of</td></tr>
+  <tr><td>Error</td><td class="n">not applicable</td><td>nothing is fetched; there is nothing to fail</td></tr>
+  <tr><td>Offline</td><td class="n">not applicable</td><td>once the page is loaded it needs nothing further</td></tr>
+  <tr><td>10-foot focus</td><td class="n">not applicable</td><td>no TV surface is in this round</td></tr>
+</table>
+
+<h2>Decided rows</h2>
+<table>
+  <tr><th>#</th><th>Choice</th><th>Recommendation</th></tr>
+  <tr><td>1</td><td>Toggle, or no toggle</td><td><strong>No toggle</strong> — folded, the page says less than it does today</td></tr>
+  <tr><td>2</td><td>The shape of one step</td><td><strong>Picture + sentence, two per row on desktop, one per row on phone.</strong> Five across cannot survive 390px, and a settings pane at a fifth of a phone is a smudge</td></tr>
+  <tr><td>3</td><td>Where the strip lives</td><td><strong>Below the grid (A)</strong> — see the comparison. This one changes the spec's wording and needs a dated amendment</td></tr>
+  <tr><td>4</td><td>The disk-image window's layout</td><td><strong>Targets above, steps 4 and 5 beneath</strong> — it reads top-to-bottom in the order the reader meets it</td></tr>
+</table>
+
+<h2>Every new string</h2>
+<p>English ships. Danish and Faroese are drafts, carried so the longest-string frames use real words — not a request
+to translate the page.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+  <tr><td class="mono">lead</td>
+      <td>Ravilo isn't registered with Apple, so macOS asks twice — every time you download a version from this page, not just the first.</td>
+      <td>Ravilo er ikke registreret hos Apple, så macOS spørger to gange — hver gang du henter en version fra denne side, ikke kun første gang.</td>
+      <td>Ravilo er ikki skrásett hjá Apple, so macOS spyr tvær ferðir — hvørja ferð tú heintar eina útgávu frá hesi síðu, ikki bert fyrstu ferð.</td></tr>
+  <tr><td class="mono">step1</td>
+      <td>Open <code>ravilo-mac-1.52.dmg</code>. macOS refuses it — choose <strong>Done</strong>, not <em>Move to Trash</em>.</td>
+      <td>Åbn <code>ravilo-mac-1.52.dmg</code>. macOS afviser den — vælg <strong>Done</strong>, ikke <em>Move to Trash</em>.</td>
+      <td>Lat <code>ravilo-mac-1.52.dmg</code> upp. macOS noktar hana — vel <strong>Done</strong>, ikki <em>Move to Trash</em>.</td></tr>
+  <tr><td class="mono">step2</td>
+      <td>Open <strong>System Settings ▸ Privacy &amp; Security</strong>, scroll down to <em>Security</em>, and choose <strong>Open Anyway</strong> on the Ravilo line. The disk image opens.</td>
+      <td>Åbn <strong>Systemindstillinger ▸ Anonymitet &amp; sikkerhed</strong>, rul ned til <em>Sikkerhed</em>, og vælg <strong>Open Anyway</strong> på Ravilo-linjen. Diskbilledet åbner.</td>
+      <td>Lat <strong>System Settings ▸ Privacy &amp; Security</strong> upp, rulla niður til <em>Security</em>, og vel <strong>Open Anyway</strong> á Ravilo-linjuni. Diskmyndin letur upp.</td></tr>
+  <tr><td class="mono">step3</td>
+      <td>Drag <strong>Ravilo</strong> onto <strong>Applications</strong>.</td>
+      <td>Træk <strong>Ravilo</strong> over på <strong>Applications</strong>.</td>
+      <td>Drag <strong>Ravilo</strong> yvir á <strong>Applications</strong>.</td></tr>
+  <tr><td class="mono">step4</td>
+      <td>Open Ravilo from Applications. macOS refuses it again — choose <strong>Done</strong>.</td>
+      <td>Åbn Ravilo fra Programmer. macOS afviser den igen — vælg <strong>Done</strong>.</td>
+      <td>Lat Ravilo upp úr Applications. macOS noktar hana aftur — vel <strong>Done</strong>.</td></tr>
+  <tr><td class="mono">step5</td>
+      <td>Go back to <strong>Privacy &amp; Security</strong>, choose <strong>Open Anyway</strong> once more, and enter your password. Ravilo opens.</td>
+      <td>Gå tilbage til <strong>Anonymitet &amp; sikkerhed</strong>, vælg <strong>Open Anyway</strong> igen, og indtast din adgangskode. Ravilo åbner.</td>
+      <td>Far aftur í <strong>Privacy &amp; Security</strong>, vel <strong>Open Anyway</strong> aftur, og skriva loyniorðið hjá tær. Ravilo letur upp.</td></tr>
+  <tr><td class="mono">managed</td>
+      <td>On a Mac managed by your work or school, <em>Open Anyway</em> may ask for an administrator's password you don't have. That is that Mac's policy, not Ravilo.</td>
+      <td>På en Mac, der styres af dit arbejde eller din skole, kan <em>Open Anyway</em> bede om en administratoradgangskode, du ikke har. Det er den Macs politik, ikke Ravilo.</td>
+      <td>Á eini Mac, sum arbeiðið ella skúlin stýrir, kann <em>Open Anyway</em> biðja um eitt umsitaraloyniorð, sum tú ikki hevur. Tað er politikkurin hjá teirri Mac, ikki Ravilo.</td></tr>
+  <tr><td class="mono">toggle</td>
+      <td>How to open it</td><td>Sådan åbner du den</td><td>Soleiðis letur tú hana upp</td></tr>
+  <tr><td class="mono">striphead</td>
+      <td>Opening Ravilo on a Mac</td><td>—</td><td>—</td></tr>
+  <tr><td class="mono">macnote</td>
+      <td>Not notarised. macOS asks twice on every download — the five steps are below.</td><td>—</td><td>—</td></tr>
+  <tr><td class="mono">dmg.head</td>
+      <td>Ravilo / Drag it onto Applications to install.</td><td>—</td><td>—</td></tr>
+  <tr><td class="mono">dmg.after</td>
+      <td>Then, every time you install a version from the site:</td><td>—</td><td>—</td></tr>
+</table>
+
+<div class="warn">
+  <strong>The macOS button names stay English in all three languages, and that is a decision, not an oversight.</strong>
+  The pictures show an English macOS, because that is the Mac the behaviour was walked on. A reader running a Danish
+  or Faroese macOS sees <em>Åbn alligevel</em>, not <em>Open Anyway</em>. Translating the button names in our text
+  would make the words disagree with the pictures beside them; leaving them English makes the text disagree with
+  that reader's screen. Neither is free, and it is named in the report as open.
+</div>
+
+<h2>Alt text, in full</h2>
+<p>Every picture carries the whole instruction, so the page still works with no pictures at all — which is the state
+drawn in <span class="mono">a-desktop-noimg</span> rather than asserted here.</p>
+<ol>
+  <li>Step 1 of 5: a macOS dialog refusing the downloaded disk image. Its two buttons are Move to Trash and Done. Choose Done.</li>
+  <li>Step 2 of 5: the Privacy &amp; Security pane of System Settings, showing the line “Ravilo” was blocked to protect your Mac with an Open Anyway button beside it. Choose Open Anyway, and the disk image opens.</li>
+  <li>Step 3 of 5: the opened disk image, showing the Ravilo icon and an arrow pointing to the Applications folder. Drag Ravilo onto Applications.</li>
+  <li>Step 4 of 5: the same macOS dialog, now refusing Ravilo itself after it has been installed. Its buttons are Move to Trash and Done. Choose Done again.</li>
+  <li>Step 5 of 5: the Privacy &amp; Security pane again with its Open Anyway button, and a password prompt with an empty password field. Choose Open Anyway and enter your password; Ravilo opens.</li>
+</ol>
+
+<h2>Working copy — to confirm at QA</h2>
+<p>The walk recorded the button names and the Privacy &amp; Security line. It did not record the dialog's title or
+body, so these are placed, flagged, and cheap to change: they live in one object in
+<span class="mono">mac-open-anyway.js</span>, not in nine frames.</p>
+<table>
+  <tr><th>Where</th><th>Drawn as</th><th>Status</th></tr>
+  <tr><td>Refusal dialog, title</td><td>“Ravilo” can't be opened</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
+  <tr><td>Refusal dialog, body</td><td>macOS cannot check it for malicious software.</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
+  <tr><td>Password prompt, title</td><td>Enter your password to open Ravilo.</td><td class="n"><strong>working copy</strong> — not recorded on the walk</td></tr>
+  <tr><td>Privacy &amp; Security line</td><td>“Ravilo” was blocked to protect your Mac.</td><td class="n"><strong>working copy</strong> — from the brief, still unconfirmed</td></tr>
+  <tr><td>Buttons: Move to Trash · Done · Open Anyway</td><td>as drawn</td><td class="y">recorded on the walk</td></tr>
+</table>
+<p>If the real wording differs, the copy changes and none of the layout does.</p>
+
+</div>
+</body>
+</html>

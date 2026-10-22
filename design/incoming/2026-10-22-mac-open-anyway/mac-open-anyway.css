@@ -1,0 +1,399 @@
+/* mac-open-anyway — the Mac download card's five-step strip, and the .dmg window background.
+   Round slug mac-open-anyway, drawn 2026-10-22 in the repo (lane C pilot round 1).
+
+   Every class in this round is prefixed `moa-`.
+
+   The page skin below RESTATES the live download page's own tokens as values. The page is in the
+   hosting tree, not this repo, and is never edited from here — these are a copy made for drawing,
+   and the one place they deliberately differ from the live page is called out at `.moa-card`.
+
+   No network reference of any kind: the three families load from fonts/ beside this file. */
+
+@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:300 700;font-display:block;src:url('fonts/space-grotesk.woff2') format('woff2')}
+@font-face{font-family:'Sora';font-style:normal;font-weight:100 800;font-display:block;src:url('fonts/sora.woff2') format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:100 800;font-display:block;src:url('fonts/jetbrains-mono.woff2') format('woff2')}
+
+/* ---------------------------------------------------------------- page skin (restated) */
+
+.moa-page{
+  --bg:      #16181f;
+  --bg-2:    #1a1d25;
+  --card-bg-solid: #21242e;
+  --line:    rgba(255,255,255,.08);
+  --line-2:  rgba(255,255,255,.16);
+
+  --ink:      #dde1ec;
+  --ink-soft: #9aa0b4;
+  --ink-dim:  rgba(221,225,236,.4);
+
+  --acc-a: #b15cd0;
+  --hi:    #7b6ef0;
+  --acc-b: #00a4dc;
+  --acc-ink: #c6bcfb;
+  --grad: linear-gradient(122deg, var(--acc-a) 0%, var(--hi) 48%, var(--acc-b) 100%);
+
+  --radius:   18px;
+  --radius-s: 10px;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Sora', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --wrap: 1080px;
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.moa-page *, .moa-page *::before, .moa-page *::after{ box-sizing: border-box; }
+.moa-page img, .moa-page svg{ max-width: 100%; display: block; }
+
+.moa-section{ padding: 48px 0; position: relative; }
+.moa-section.alt{
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,.02) 12%, rgba(255,255,255,.02) 88%, transparent);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.moa-wrap{ max-width: var(--wrap); margin: 0 auto; padding: 0 24px; }
+.moa-page h2, .moa-page h3{ font-family: var(--font-display); font-weight: 600; letter-spacing: -.01em; margin: 0; color: #f3f4fb; }
+.moa-eyebrow{
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--acc-ink); margin: 0 0 12px;
+}
+.moa-section-head{ max-width: 620px; margin: 0 0 32px; }
+.moa-section-head h2{ font-size: clamp(24px, 3.4vw, 32px); }
+.moa-section-head p{ color: var(--ink-soft); margin: 14px 0 0; font-size: 16px; }
+
+.moa-grid{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; align-items: start; }
+.moa-card{
+  display: flex; flex-direction: column; align-items: flex-start;
+  /* The live page fills this with rgba(46,51,66,.6) under backdrop-filter: blur(16px) saturate(125%).
+     Drawn here as the solid colour that filter resolves to — a canvas-only substitution, because a
+     backdrop-filter breaks the screenshot tool. The live page keeps its blur. */
+  background: var(--card-bg-solid);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.moa-card h3{ font-size: 19px; }
+.moa-card .moa-for{ font-family: var(--font-mono); font-size: 12.5px; color: var(--acc-ink); margin: 4px 0 12px; }
+.moa-card .moa-note{ color: var(--ink-soft); font-size: 14px; line-height: 1.55; margin: 0 0 20px; flex: 1; }
+.moa-card .moa-note code{ font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 6px; }
+.moa-btn{
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 46px; padding: 0 22px; border-radius: 999px;
+  background: var(--grad); color: #fff; text-decoration: none;
+  font-weight: 600; font-size: 15px;
+  box-shadow: 0 8px 24px rgba(123,110,240,.28);
+}
+.moa-card .moa-btn{ align-self: stretch; }
+.moa-btn .moa-ext{ font-family: var(--font-mono); font-weight: 500; font-size: 13.5px; opacity: .85; }
+.moa-meta{ font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim); margin-top: 10px; min-height: 1.4em; }
+
+/* ---------------------------------------------------------------- the five-step strip */
+
+.moa-strip{ margin: 0; }
+.moa-strip .moa-lead{
+  color: var(--ink); font-size: 14.5px; line-height: 1.55; margin: 0 0 16px;
+  border-left: 2px solid var(--hi); padding-left: 12px;
+}
+.moa-strip .moa-lead b{ color: #f3f4fb; font-weight: 600; }
+
+/* direction A — the strip below the three-card grid, full width */
+.moa-strip-below{ margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+.moa-strip-below .moa-striphead{ display: flex; align-items: baseline; gap: 10px; margin: 0 0 14px; }
+.moa-strip-below .moa-striphead h3{ font-size: 17px; }
+.moa-strip-below .moa-striphead .moa-forwhich{ font-family: var(--font-mono); font-size: 12px; color: var(--acc-ink); }
+
+.moa-steps{ list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.moa-steps > li{
+  display: grid; grid-template-columns: var(--pw) 1fr; gap: 16px; align-items: start;
+  background: rgba(255,255,255,.02);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 12px;
+}
+.moa-steps .moa-say{ font-size: 14px; line-height: 1.55; color: var(--ink-soft); padding-top: 2px; }
+.moa-steps .moa-say b{ color: #f3f4fb; font-weight: 600; }
+.moa-steps .moa-say em{ color: var(--ink); font-style: normal; border-bottom: 1px dotted var(--ink-dim); }
+.moa-num{
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 999px;
+  background: var(--hi); color: #fff;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  margin-right: 8px; vertical-align: 1px;
+}
+
+/* Direction A — the strip below the three-card grid.
+   Two step-cells per row, so five steps are three rows tall rather than five, and every picture
+   still gets its full 236px design width. */
+.moa-strip-below .moa-steps{ grid-template-columns: repeat(2, 1fr); gap: 14px 18px; }
+
+/* Direction B — the strip inside the Mac card. The card is one column of a three-card grid, so a
+   picture can only have 96px here. That is the cost this direction is drawn to show. */
+/* Two class names, so this beats the `.moa-strip` default whatever order the file ends up in.
+   At equal specificity the default won, and every picture in this direction came out 236px wide
+   and overflowed the card — which is a drawing of a layout nobody chose. */
+.moa-strip.moa-strip-inside{ --pw: 96px; --s: .40678; }
+.moa-strip-inside .moa-steps > li{ gap: 12px; padding: 10px; }
+.moa-strip-inside .moa-say{ font-size: 13px; }
+
+/* the toggle (decision 1b). open by default: the checkbox ships checked. */
+.moa-toggle{ margin: 0 0 14px; }
+.moa-toggle summary{
+  cursor: default; list-style: none; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; color: var(--acc-ink); font-weight: 600;
+}
+.moa-toggle summary::-webkit-details-marker{ display: none; }
+.moa-toggle summary::before{
+  content: "▾"; font-size: 11px; color: var(--ink-soft);
+}
+.moa-toggle[open] summary{ margin-bottom: 12px; }
+
+/* Phone. The real page has no media query for the download grid at all — the three cards stack
+   because `auto-fit, minmax(260px, 1fr)` runs out of room, so this is the live behaviour and not a
+   drawn approximation. What the strip does at this width is a design choice, and it is this: one
+   step per row, picture above its sentence, at the widest the column allows. */
+.moa-phone .moa-strip-below .moa-steps{ grid-template-columns: 1fr; }
+.moa-phone .moa-strip-below .moa-steps > li{ grid-template-columns: 1fr; --pw: 316px; --s: 1.33898; }
+.moa-phone .moa-section{ padding: 36px 0; }
+.moa-phone .moa-strip-below{ margin-top: 22px; }
+
+.moa-managed{
+  margin: 16px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-dim);
+  border-top: 1px dashed var(--line); padding-top: 12px;
+}
+.moa-managed em{ font-style: normal; color: var(--ink-soft); }
+
+/* the images-off state: what a reader is actually left with */
+.moa-page.moa-noimg .moa-pic{
+  display: block; width: 100%; min-height: 0;
+  border: 1px dashed var(--line-2); border-radius: 8px; padding: 10px;
+  font-size: 12.5px; line-height: 1.5; color: var(--ink-soft);
+  font-family: var(--font-body);
+  background: rgba(255,255,255,.02);
+}
+.moa-page.moa-noimg .moa-pic > *{ display: none; }
+.moa-page.moa-noimg .moa-pic::after{ content: attr(data-alt); }
+
+/* ---------------------------------------------------------------- drawn macOS pictures
+
+   Everything below is DRAWN. No screenshot, no real user name, no second application in any list,
+   nothing from anybody's media library. The scale is set by --u on .moa-pic so the same picture can
+   be 236px wide in the page strip, 96px inside the card, or 1:1 inside the .dmg background. */
+
+/* Every picture is drawn at one design size — 236 x 150 — and placed at whatever width its context
+   allows by an explicit scale. --pw is the context's picture width and --s is that width / 236;
+   the two always travel together, so a picture never ends up a size nobody chose. */
+.moa-strip{ --pw: 236px; --s: 1; }
+
+.moa-pic{
+  position: relative;
+  width: var(--pw);
+  aspect-ratio: 236 / 150;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #2b2f3c, #22252f);
+  border: 1px solid var(--line-2);
+}
+.moa-pic .moa-inner{
+  position: absolute; left: 0; top: 0;
+  width: 236px; height: 150px;
+  transform: scale(var(--s));
+  transform-origin: 0 0;
+}
+
+/* a macOS alert sheet */
+.moa-alert{
+  position: absolute; left: 34px; top: 12px; width: 168px;
+  background: #ecedf0; border-radius: 9px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.45);
+  padding: 10px 10px 9px; text-align: center;
+  font-family: var(--font-body);
+}
+.moa-alert .moa-appicon{ margin: 0 auto 6px; }
+.moa-alert .moa-t{ font-size: 8.5px; font-weight: 700; color: #16181f; line-height: 1.25; margin: 0 0 3px; }
+.moa-alert .moa-b{ font-size: 7px; color: #4a4f5c; line-height: 1.3; margin: 0 0 8px; }
+.moa-alert .moa-row{ display: flex; gap: 5px; }
+.moa-btn-mac{
+  flex: 1; border-radius: 5px; font-size: 7.5px; font-weight: 600;
+  padding: 4px 2px; border: 1px solid rgba(0,0,0,.14);
+  background: #fbfbfd; color: #16181f; white-space: nowrap;
+}
+.moa-btn-mac.is-default{ background: #2f6df5; border-color: #2f6df5; color: #fff; }
+
+/* the Privacy & Security pane */
+.moa-pane{
+  position: absolute; left: 14px; top: 10px; right: 14px; bottom: 10px;
+  background: #ecedf0; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0,0,0,.4);
+  font-family: var(--font-body);
+}
+.moa-pane .moa-bar{
+  height: 16px; background: #e2e3e8; border-bottom: 1px solid rgba(0,0,0,.09);
+  display: flex; align-items: center; gap: 3px; padding: 0 6px;
+}
+.moa-pane .moa-dot{ width: 4.5px; height: 4.5px; border-radius: 999px; background: #c9ccd4; }
+.moa-pane .moa-bartitle{ font-size: 6.5px; color: #585e6c; margin-left: 5px; font-weight: 600; }
+.moa-pane .moa-body{ padding: 7px 8px; }
+.moa-pane .moa-h{ font-size: 8px; font-weight: 700; color: #16181f; margin: 0 0 5px; }
+.moa-pane .moa-sub{ font-size: 6.5px; font-weight: 700; color: #6b7180; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 4px; }
+.moa-pane .moa-line{
+  background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 6px;
+  padding: 6px; display: flex; align-items: center; gap: 6px;
+}
+.moa-pane .moa-line .moa-say2{ font-size: 7px; color: #16181f; flex: 1; line-height: 1.3; }
+.moa-pane .moa-openanyway{
+  border-radius: 5px; background: #fbfbfd; border: 1px solid rgba(0,0,0,.16);
+  font-size: 7px; font-weight: 600; color: #16181f; padding: 3.5px 7px; white-space: nowrap;
+}
+.moa-pane .moa-openanyway.is-hot{ background: #2f6df5; border-color: #2f6df5; color: #fff; }
+
+/* the password prompt — no user name, the field visually empty */
+/* Step 5 shows the pane AND the password prompt in one 236x150 picture, and the prompt must not
+   cover the Open Anyway button the sentence tells the reader to press. The button sits at the
+   right of the pane's row, so the sheet goes bottom-LEFT and stays narrow: left 8 + width 152
+   ends at 160, clear of the button at ~170. Everything below is sized so the sheet also clears
+   the picture's bottom edge at 150 — it is a tight box, and the first attempt was clipped. */
+.moa-pw{
+  position: absolute; left: 8px; top: 64px; width: 152px;
+  background: #ecedf0; border-radius: 8px; padding: 8px;
+  box-shadow: 0 10px 22px rgba(0,0,0,.5);
+  font-family: var(--font-body);
+}
+.moa-pw .moa-t{ font-size: 7.5px; font-weight: 700; color: #16181f; margin: 0 0 5px; line-height: 1.25; }
+.moa-pw .moa-field{
+  height: 12px; background: #fff; border: 1px solid rgba(0,0,0,.18);
+  border-radius: 4px; margin-bottom: 7px;
+}
+.moa-pw .moa-row{ display: flex; gap: 5px; }
+
+/* the drag frame: icon → arrow → Applications */
+.moa-drag{ position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 14px; }
+.moa-drag .moa-arrow{ color: #8f96a8; font-size: 19px; line-height: 1; }
+.moa-tile{ text-align: center; }
+.moa-tile .moa-cap{ font-size: 7.5px; color: #cfd4e2; margin-top: 4px; font-family: var(--font-body); }
+
+/* the app icon, drawn — a squircle on dark navy with the page's own gradient jellyfish */
+.moa-appicon{ display: block; }
+
+/* the Applications folder, drawn */
+.moa-folder{ display: block; }
+
+/* ---------------------------------------------------------------- the .dmg background
+
+   720 x 520 pt of Finder window content area. One flat image: a Finder background does not change
+   with Light or Dark appearance, so this must read in both. The two label bands are the only
+   places that have to survive BOTH a white and a near-black label drawn on top by Finder, so they
+   are a flat mid-tone and carry nothing of ours. */
+
+.moa-dmg{
+  position: relative;
+  width: 720px; height: 520px;
+  background: linear-gradient(180deg, #1d2130 0%, #171a26 58%, #141722 100%);
+  font-family: 'Sora', sans-serif;
+  color: #e7eaf3;
+  overflow: hidden;
+}
+.moa-dmg .moa-dmg-head{ position: absolute; left: 0; right: 0; top: 26px; text-align: center; }
+.moa-dmg .moa-dmg-head h1{
+  font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 21px;
+  margin: 0 0 6px; color: #f4f6fc; letter-spacing: -.01em;
+}
+.moa-dmg .moa-dmg-head p{ margin: 0; font-size: 13px; color: #a7aec4; }
+
+/* the drag targets. Centres are given in the report; these must agree with it. */
+.moa-dmg .moa-target{
+  position: absolute; width: 148px; height: 148px; margin: -74px 0 0 -74px;
+  border-radius: 24px; border: 2px dashed rgba(255,255,255,.22);
+  background: rgba(255,255,255,.035);
+}
+.moa-dmg .moa-target.is-app{ left: 190px; top: 190px; }
+.moa-dmg .moa-target.is-applications{ left: 530px; top: 190px; }
+
+/* the band Finder prints its own label into: flat mid-tone, nothing of ours in it.
+   #777e8d is ~4.1:1 against white and ~5.2:1 against near-black, so a label reads either way. */
+/* top:252 is not a taste: a 128pt icon centred at y=190 ends at y=254, and Finder prints the label
+   immediately under it. At 272 the band sat below the label and the label fell on the dark
+   background above it — invisible in Light appearance, which is the half this band exists for. */
+.moa-dmg .moa-labelband{
+  position: absolute; width: 190px; height: 34px; margin-left: -95px;
+  top: 252px; border-radius: 8px; background: #777e8d;
+}
+.moa-dmg .moa-labelband.is-app{ left: 190px; }
+.moa-dmg .moa-labelband.is-applications{ left: 530px; }
+
+.moa-dmg .moa-dragarrow{
+  position: absolute; left: 290px; top: 190px; width: 140px; height: 2px; margin-top: -1px;
+  background: linear-gradient(90deg, rgba(177,92,208,.25), #7b6ef0 45%, #00a4dc);
+}
+.moa-dmg .moa-dragarrow::after{
+  content: ""; position: absolute; right: -2px; top: -6px;
+  border: 7px solid transparent; border-left-color: #00a4dc; border-right: 0;
+}
+.moa-dmg .moa-draghint{
+  position: absolute; left: 290px; top: 158px; width: 140px; text-align: center;
+  font-size: 12px; color: #c6bcfb; font-weight: 600;
+}
+
+.moa-dmg .moa-after{
+  position: absolute; left: 44px; right: 44px; top: 338px;
+  border-top: 1px solid rgba(255,255,255,.10); padding-top: 18px;
+}
+.moa-dmg .moa-after .moa-afterhead{
+  font-size: 12px; color: #8d94ab; margin: 0 0 12px; letter-spacing: .02em;
+}
+.moa-dmg .moa-after ol{ list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.moa-dmg .moa-after li{ display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: start; }
+.moa-dmg .moa-after .moa-n{
+  width: 26px; height: 26px; border-radius: 999px; background: #7b6ef0; color: #fff;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+}
+.moa-dmg .moa-after .moa-txt{ font-size: 14.5px; line-height: 1.45; color: #dfe4f0; padding-top: 3px; }
+.moa-dmg .moa-after .moa-txt b{ color: #fff; font-weight: 600; }
+.moa-dmg .moa-after .moa-txt .moa-key{
+  display: inline-block; padding: 0 5px; border-radius: 4px;
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.14);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- the drawn Finder window
+
+   The .dmg background shown in context. The window chrome DOES change with appearance; the
+   background image does not. Both frames use the identical image. */
+
+.moa-win{
+  width: 760px; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  font-family: 'Sora', sans-serif;
+}
+.moa-win .moa-titlebar{
+  height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  border-bottom: 1px solid var(--winline);
+  background: var(--winbar); color: var(--winink);
+  font-size: 13px; font-weight: 600;
+}
+.moa-win .moa-traffic{ display: flex; gap: 6px; margin-right: 8px; }
+.moa-win .moa-traffic i{ width: 11px; height: 11px; border-radius: 999px; display: block; }
+.moa-win .moa-traffic i:nth-child(1){ background: #ff5f57; }
+.moa-win .moa-traffic i:nth-child(2){ background: #febc2e; }
+.moa-win .moa-traffic i:nth-child(3){ background: #28c840; }
+.moa-win .moa-canvas{ position: relative; width: 720px; height: 520px; margin: 0 20px 20px; }
+.moa-win .moa-canvas .moa-dmg{ position: absolute; inset: 0; }
+
+.moa-win.is-light{ --winbar: #e9eaee; --winline: rgba(0,0,0,.12); --winink: #22252e; --winbody: #f4f5f7; --winlabel: #1d1f26; --winlabelshadow: none; }
+.moa-win.is-dark{  --winbar: #2b2d33; --winline: rgba(255,255,255,.10); --winink: #e9eaf0; --winbody: #1f2126; --winlabel: #ffffff; --winlabelshadow: 0 1px 2px rgba(0,0,0,.6); }
+.moa-win{ background: var(--winbody); }
+
+/* the two icons Finder itself draws on top, with the label in the appearance's own colour */
+.moa-win .moa-finder-icon{ position: absolute; width: 128px; margin: -64px 0 0 -64px; text-align: center; }
+.moa-win .moa-finder-icon .moa-lab{
+  display: block;                 /* a span: without this the margin below is silently dropped */
+  margin-top: 4px; font-size: 12.5px; color: var(--winlabel); text-shadow: var(--winlabelshadow);
+}
+.moa-win .moa-finder-icon.is-app{ left: 190px; top: 190px; }
+.moa-win .moa-finder-icon.is-applications{ left: 530px; top: 190px; }

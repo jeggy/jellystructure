@@ -105,6 +105,69 @@ Works today; the only machine in the loop is the owner's clipboard.
    with it — the move is the handover, the comment is why.
 6. From here it is lane A from step 3.
 
+## Lane C — the designer draws in the repo (pilot, 2026-10-22)
+
+**The owner decided on DEB-1076 (card `add49886`) to pilot drawing without the design tool: Claude
+Design goes read-only and is retired after two clean rounds, Rannvá draws everything, the owner only
+reviews, and the pictures go on the task.** Lanes A and B stay exactly as they are until that
+retirement. This section is written from pilot round 1 (`mac-open-anyway`, DEB-1470) and says what
+that round actually needed — it is not a plan, and the next pilot round is expected to correct it.
+
+**The invariant this lane exists under is unchanged and gets easier, not harder: nothing outside
+this repository writes this repository.** In lane C nothing outside it is involved at all. There is
+no paste block, no `DesignSync` call in either direction, and no package to quarantine.
+
+1. **The brief still arrives from Bárður and is still his.** Nothing about who decides what is worth
+   a round changes. What disappears is the airlock, because there is no longer anything on the other
+   side of it.
+2. **The round is drawn under `design/incoming/<YYYY-MM-DD>-<slug>/`**, as HTML and CSS, with JS only
+   where a frame genuinely needs it. Same directory as a quarantined round, because everything
+   downstream — the fences, the archive, the pruning at adoption — already knows that path.
+3. **It is rendered to PNG with the repo's own Playwright, in Docker**, and **the command goes in the
+   round's report verbatim**. The report is the specification of the permanent script; the round's
+   own `render.mjs` is a prototype that lives beside the round it rendered, and **the designer does
+   not write `scripts/`**.
+4. **The four fences run on the *staged* directory**, exactly as for a pulled round —
+   `check-deanonymization.sh` enumerates `git ls-files` and prints a cheerful OK over an untracked
+   tree.
+5. **The PNGs attach to the task and the report goes in the same comment**, because that is where the
+   owner reviews now. Sources commit separately, `design/` only.
+
+### What pilot round 1 learned, in the order it cost time
+
+- **A design decision in this lane has no second pair of eyes before it lands.** In lanes A and B a
+  drawing came back from somewhere else and was triaged; here the designer draws it, checks it and
+  commits it. **So look at every rendered PNG, one at a time, before reporting** — round 1 shipped
+  three defects into its first render that only looking found: a black icon where a jellyfish should
+  be, pictures overflowing their card, and a password sheet covering the very button its sentence
+  told the reader to press. None of the four fences can see any of those.
+- **Resolve Playwright by path, and never symlink `node_modules` into the repo root.** A round sits
+  three levels down and Playwright lives in `tests/`. A bare `import ... from 'playwright'` fails:
+  ESM resolves from the importing *file's* directory upwards and **ignores `NODE_PATH` entirely**.
+  Several sessions share this checkout, so a symlink at the root is not a local convenience.
+- **The image pin and the lockfile are different versions on purpose — do not "fix" it.**
+  `docker-compose.test.yml` pins `mcr.microsoft.com/playwright:v1.45.0-noble` while
+  `tests/package-lock.json` resolves to 1.61.0. The compose service runs
+  `npm ci && npx playwright install chromium` inside the container, so the image supplies the OS
+  dependencies and the lockfile supplies a matching browser. A render run mirrors that and mounts a
+  host browser cache so the install happens once.
+- **Duplicate SVG gradient ids plus a hidden frame give you a black icon in a *visible* one.** A
+  document holding several frames hides the ones for the other width, and Chromium will not resolve
+  a paint server defined inside a `display:none` subtree — every later reference to that id then
+  paints nothing. It does not reproduce when you open the frame on its own. Mint every id from a
+  counter.
+- **The 192 KiB-per-PNG rule does not apply here.** That was the `get_file` truncation wall on the
+  pull, and lane C has no transport — the bytes are written straight into the tree. Half of round
+  1's page frames are over it and nothing is wrong with them. **Do not carry a transport constraint
+  into a lane that has no transport.**
+- **Drawing it yourself finds things a brief cannot.** Round 1's recommended direction contradicts
+  the sentence in its own shipped spec, and that only became visible once both alternatives were
+  drawn at both widths. The report says so and the amendment is Bárður's.
+- **What got cheaper:** no paste block to compose and byte-verify, no queue position to wait for, no
+  one-brief-out-at-a-time rule to hold the round back, no truncation to guard against, and no
+  stand-in corpus to police outbound — the drawing is made from the brief directly. Round 1 went
+  from brief to rendered package in a single heartbeat, which neither lane A nor lane B has done.
+
 ## Lane A — the owner designs, the designer takes over
 
 1. **He designs** in the tool, whenever he likes, in whatever shape he likes. If he says in one line
