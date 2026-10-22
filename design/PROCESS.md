@@ -47,20 +47,30 @@ Verified 2026-10-12/13, not recalled:
   agent doubles the context cost and risks a silent corruption in an archive copy, which is the worst
   kind: it looks like a design change.
 - **Hosted fonts are normal in a mockup and forbidden in the live set.** 46 tracked files under
-  `design/` carry a `fonts.googleapis.com` link; **zero** of the twelve do, and the three woff2 exist
+  `design/` carry a `fonts.googleapis.com` link; **zero** of the thirteen do, and the three woff2 exist
   so that stays true. The gate below means no network reference in a **production** file; a mockup
   that loads Google Fonts is landed as received.
 - **A share link is a viewer, not a transport.** An unauthenticated fetch of a
   `claude.ai/design/p/<id>?…&via=share` URL returns **403**.
-- **The live set is twelve files, not `design/`.** `build.gradle.kts` (`syncDesignAssets`) copies
+- **The live set is thirteen files, not `design/`.** `build.gradle.kts` (`syncDesignAssets`) copies
   exactly `wf.css app.css detail.css metadata.css seeding.css seeding.js segments.css music.css
-  suggestions.css dashboard.css versions.css editions.css` from `design/app/`, plus
+  suggestions.css dashboard.css versions.css editions.css support.css` from `design/app/`, plus
   `design/app/fonts/**`, `design/flags.css` and `design/flags/**`, verbatim into the served admin
   frontend. That is the production surface, and **every one of the nineteen wipes landed inside it**.
-  The other ~420 tracked files under `design/` are mockups that break nothing at runtime.
+  The other tracked files under `design/` are mockups that break nothing at runtime.
+  **Read the list out of `build.gradle.kts`, never out of this sentence.** `support.css` joined it at
+  round 3's promotion (DEB-1503, 2026-10-16) and this line still said twelve six days later; on
+  2026-10-22 the DEB-2115 sweep copied the studio's `support.css` over the hand-authored one on the
+  strength of that count, and `check-mobile-css.sh` is the only reason it did not become the
+  twentieth wipe. A count in prose goes stale; the Gradle task cannot.
 - **A new CSS file is two edits, not one.** It must join both the `syncDesignAssets` include list and
   the `<link>` set in `src/wasmJsMain/resources/index.html`, or the page ships unstyled.
 - **`design/ravilo/` is reference only.** No Gradle task consumes it; Sjúrður reimplements it in Compose.
+- **`check-mobile-css.sh` is the register of hand-authored files, and it reaches past the live set.**
+  Beside the served thirteen it names `ravilo/ravilo-app.js`, `ravilo/ravilo.css`,
+  `ravilo/ravilo-data.js`, `ravilo/ravilo-player.js` and `ravilo/Ravilo Mobile.html` — mockups that
+  nonetheless carry rules authored here. **Anything that script names is hand-edited, never copied,
+  whatever tree it is in.** Grep it for a path before promoting that path.
 - **The fences are detectors, not preventers.** `scripts/check-mobile-css.sh`,
   `check-css-scoping.sh`, `check-deanonymization.sh` and `check-phases.sh` are what made the last
   recurrences cheap. `check-deanonymization.sh` skips only `/vendor/`, `node_modules/` and
@@ -183,7 +193,7 @@ no paste block, no `DesignSync` call in either direction, and no package to quar
 5. **The owner picks** from an `ask_user_questions` card — recommendation first, at most four
    questions, never left in the tool's chat.
 6. **Promotion is a separate hand-made commit** (gate below). Mockup files promote wholesale; any of
-   the twelve production files is **hand-edited to add the new rules — never a file copy.** Every one
+   the thirteen production files is **hand-edited to add the new rules — never a file copy.** Every one
    of the nineteen wipes was a wholesale overwrite of a file that had hand fixes in it.
 7. **Then spec, then number, then build.** Rannvá writes the spec or the dated amendment; the number
    comes from the board **at adoption, not at triage** — a number allocated while the
@@ -331,7 +341,7 @@ images needed him, was wrong.
 The nineteen wipes had one root cause — the studio's copy of a file was stale, and it re-exported
 over fixes made here. Detectors made that cheap; closing it needs the fix to reach the studio.
 
-A repo-side fix to one of the twelve production files is pushed back to the design project **only if
+A repo-side fix to one of the thirteen production files is pushed back to the design project **only if
 the studio's copy is still byte-identical to the copy last mirrored into git** — that is, the studio
 has not touched it since. If it has diverged, the fix goes out as a described change in the next
 brief instead, and a human merges it there. Nothing else is ever pushed: not `specs/`, not
