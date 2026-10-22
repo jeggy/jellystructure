@@ -10,9 +10,10 @@ two live design systems, a dozen screens' worth of vocabulary, three languages, 
 disagree about what an input even is. This file is what a round has to know before it draws.
 
 **Read it with [`PROCESS.md`](PROCESS.md)**, which owns the *lane* — how a round arrives, is drawn,
-rendered, fenced, reported and promoted. This file owns the *material*. On conflict:
-[`../specs/constitution.md`](../specs/constitution.md) wins, then `PROCESS.md`, then this file, then
-any outside design skill.
+rendered, fenced, reported and promoted. There is one lane: the designer draws here, in this
+repository. Claude Design was retired on 2026-10-22 (DEB-2112) and nothing calls it. This file owns
+the *material*. On conflict: [`../specs/constitution.md`](../specs/constitution.md) wins, then
+`PROCESS.md`, then this file, then any outside design skill.
 
 ## The one rule about facts
 
@@ -173,10 +174,13 @@ and Chromium will not resolve a gradient defined inside a `display:none` subtree
 reference to that id then paints nothing, in a *visible* frame, and it does not reproduce when you open
 that frame alone.
 
-**Look at every rendered PNG, one at a time, before reporting.** In lane C there is no second pair of
-eyes before a drawing lands. Pilot round 1 shipped three defects into its first render that only
+**Look at every rendered PNG, one at a time, and magnify it, before reporting.** There is no second
+pair of eyes before a drawing lands. Round 8 shipped three defects into its first render that only
 looking found — a black icon, pictures overflowing their card, and a sheet covering the very button its
-own sentence told the reader to press. None of the four fences can see any of those.
+own sentence told the reader to press; round 9 found a phone width that collapsed every label to one
+word per line and two controls drawn backwards against the owner's own rule; and round 11 found a
+highlight painted over the card in front of it that was **only** visible at 6×. None of the four
+fences can see any of those. `PROCESS.md` carries the full list.
 
 ## Touching production
 
