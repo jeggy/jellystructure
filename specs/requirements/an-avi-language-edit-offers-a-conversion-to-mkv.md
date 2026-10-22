@@ -154,8 +154,8 @@ blocked-path-mismatch, running, verified, failed-tool, failed-unverified, offlin
 
 No state prints a command. The *Command preview* of the track editor is not shown for an AVI.
 
-**FR-10. Strings in en, da and fo.** Every string in the round's `STR` object that direction A uses, with the D2/D3
-changes under *Design*, goes into the admin's i18n files. A key that already ships (language names, *Cancel*, the
+**FR-10. Strings in en, da and fo.** Every string in the promoted `STR` object (`design/app/container-convert.js`,
+see *Design*) goes into the admin's i18n files. A key that already ships (language names, *Cancel*, the
 seeding sentence, *Activity ▸ Jobs*) keeps its shipped string. The Faroese and Danish need a native read before the
 build is closed (Acceptance 6).
 
@@ -175,8 +175,8 @@ Admin: the state mapping from payload to notice.
 
 ## Design
 
-Direction A of the round at `design/incoming/2026-10-22-avi-mkv-migration/` (`app/container-convert.css`,
-`app/container-convert.js`) is promoted by Rannvá before the admin is built, with these changes from the drawn lean:
+Direction A of the round at `design/incoming/2026-10-22-avi-mkv-migration/` is promoted by Rannvá before the admin is
+built, with these changes from the drawn lean:
 
 - **D2:** every *"stays beside the new file"* / *"original · kept beside it"* becomes *"kept in a hidden folder beside
   it, until you remove it"*. The dashed *Tentative* badges go, because the answer is decided.
@@ -184,11 +184,35 @@ Direction A of the round at `design/incoming/2026-10-22-avi-mkv-migration/` (`ap
 - **FR-5.4 and FR-5.5** reuse the *blocked* notice with their own sentences. No new frame is needed.
 - The verified state gains the FR-8 Radarr line, as the same kind of secondary line as *Waiting for Jellyfin to
   index*.
-- `container-convert.css`'s bare `.btn:focus-visible` is scoped to the card, with a `SCOPED_FILES` row in
-  `check-css-scoping.sh` (the round's MANIFEST).
+- The round's bare `.btn:focus-visible` is scoped to the card.
 - The directions doc's strings table is filled from `STR` (key / en / da / fo).
 
 Directions B and C are not built.
+
+**As promoted (2026-10-22, DEB-2137, `0df6354c`).** This is what the admin is built against:
+
+- **The classes live in `design/app/detail.css`**, the media detail page's own stylesheet, not in a
+  `container-convert.css` of their own. That file is already served and already linked by the wasmJs app, so the
+  promotion needed no `syncDesignAssets` row, no `index.html` `<link>` and **no `SCOPED_FILES` row** (that fence
+  covers a new page-scoped stylesheet). The focus ring is written only under `.cv-card` and `.cv-dlg`.
+- **The strings are the `STR` object in `design/app/container-convert.js`** — 97 `migrate.*` keys in en, da and fo.
+  That file is a mockup harness and is not served; FR-10 copies from it. The key/en/da/fo table is in the round's
+  `REPORT.md`.
+- The confirmation's label reads **Destination**, not *Proposed destination*: under D3 nothing about it is proposed.
+- **An episode's notice offers nothing.** It carries FR-2's sentence and no *Review the conversion to MKV* button, the
+  same as its row (see *Non-goals*).
+- **At 640 px and below the track row itself restacks:** the `#` and kind columns are hidden and the row becomes three
+  columns. This is direction A's drawn narrow treatment and the one promoted rule that reaches past this flow; it
+  applies to every film's Tracks card, AVI or not.
+- **The admin build adds four lines to `scripts/check-mobile-css.sh`**, one per hand-authored rule above, so a later
+  copy over `detail.css` cannot lose them silently (`design/PROCESS.md`, promotion gate step 2 and invariant 6):
+
+  ```sh
+  check "$DETAIL" "container-conversion notice (.cv-card)"          ".cv-card {"
+  check "$DETAIL" "container-conversion scoped focus ring"          ".cv-card .btn:focus-visible, .cv-dlg .btn:focus-visible"
+  check "$DETAIL" "container-conversion light-theme tints"          "[data-theme=\"light\"] .cv-keep"
+  check "$DETAIL" "track row restacks at phone width (FR-9 narrow)" ".trk-main > :nth-child(2), .trk-main > :nth-child(3)"
+  ```
 
 ## Non-goals
 
