@@ -38,8 +38,11 @@ data class UpcomingItem(
     val season: Int? = null,
     val episode: Int? = null,
     @SerialName("episode_title") val episodeTitle: String? = null,
-    /** Movies only: "digital" | "physical" | "cinema". */
+    /** Movies only: "digital" | "physical" | "cinema"; null when [dateEstimated] (FR-R168-6). */
     @SerialName("release_type") val releaseType: String? = null,
+    /** FR-R168-7 — true when [date] is Radarr's own estimate (cinema + 90 days), so [releaseType] is null
+     *  and an app that knows the field reads "Expected". Additive: an older app ignores it. */
+    @SerialName("date_estimated") val dateEstimated: Boolean = false,
     /** Series only. */
     val network: String? = null,
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val status: UpcomingStatus = UpcomingStatus.MONITORED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload

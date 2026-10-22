@@ -26,6 +26,7 @@ import dev.jellystructure.shared.tv.MediaKind as TvMediaKind
 private const val UPCOMING_TTL_MS = 5 * 60_000L
 private const val LOOKAHEAD_DAYS = 60
 private const val LOOKBACK_DAYS = 183  // ~6 months, the "missing" bound (FR-H)
+private const val CINEMA_ESTIMATE_DAYS = 90  // FR-R168-5 — Radarr's own estimate when a film has no digital/physical date
 private const val EPISODE_MISSING_GRACE_DAYS = 1  // R168 FR-R168-4 — Sonarr has no per-episode availability flag
 
 /**
@@ -213,7 +214,8 @@ class UpcomingService(
             val queue = runCatching { arrClient.getQueue(radarr.url, radarr.apiKey) }.getOrElse { emptyList() }
             for (mv in movies) {
                 if (!mv.monitored) continue
-                val (date, releaseType) = pickMovieRelease(mv, today, start, end) ?: continue
+                val release = movieRelease(mv, start, end) ?: continue
+                val date = release.date
                 val queued = queue.firstOrNull { it.refId == mv.id }
                 val matched = moviesByTmdb[mv.tmdbId]
                 val itemId = matched?.let { it.jellyfinId ?: it.id }
@@ -232,7 +234,8 @@ class UpcomingService(
                     itemId = itemId,
                     posterUrl = matched?.let { RaviloImageUrl.poster(it.id, artwork.assetVersion(it, "poster")) },
                     date = date,
-                    releaseType = releaseType,
+                    releaseType = release.type,
+                    dateEstimated = release.type == null,
                     status = resolveMovieStatus(date, today, itemId != null, queued != null, mv.isAvailable),
                     progress = queued?.let { downloadProgress(it) },
                     synopsis = matched?.overview?.takeIf { it.isNotBlank() } ?: mv.overview?.takeIf { it.isNotBlank() },
@@ -245,10 +248,7 @@ class UpcomingService(
 
         // A past-dated item that's actively downloading (overdue but actively grabbing, not stuck)
         // still belongs in the forward agenda, not silently dropped between the two lists.
-        val items = all.filter { it.date >= today || it.status == UpcomingStatus.DOWNLOADING }.sortedBy { it.date }
-        val missing = all.filter { it.date < today && it.status == UpcomingStatus.MISSING }
-            .sortedByDescending { it.date }
-        return Triple(UpcomingFeed(enabled = true, items = items, missing = missing), keys, matchedItems)
+        return Triple(splitFeed(all, today), keys, matchedItems)
     }
 
     private fun pickImage(images: List<ArrCalendarImage>, coverType: String): String? =
@@ -272,17 +272,6 @@ class UpcomingService(
         else -> UpcomingStatus.MONITORED
     }
 
-    /** [isAvailable] is Radarr's own computed signal (bakes in the movie's `minimumAvailability`) —
-     *  a "Released"-minimum movie that's only had a cinema release has `isAvailable == false` and is
-     *  therefore never MISSING, even though [date] (from [pickMovieRelease]) may be in the past.
-     *  [held] wins over [queued] for the same reason as [resolveEpisodeStatus] above. */
-    private fun resolveMovieStatus(date: String, today: String, held: Boolean, queued: Boolean, isAvailable: Boolean): UpcomingStatus = when {
-        held -> UpcomingStatus.AVAILABLE
-        queued -> UpcomingStatus.DOWNLOADING
-        isAvailable && date < today -> UpcomingStatus.MISSING
-        else -> UpcomingStatus.MONITORED
-    }
-
     private fun downloadProgress(q: ArrQueueItem): Int? {
         if (q.size <= 0.0) return null
         return (((q.size - q.sizeLeft) / q.size) * 100).toInt().coerceIn(0, 100)
@@ -293,24 +282,58 @@ class UpcomingService(
         if (airDateUtc == null || airDateUtc.length < 16) return null
         return airDateUtc.substring(11, 16)
     }
-
-    /**
-     * A movie carries up to 3 release dates (cinema/physical/digital); Radarr's calendar returns
-     * all 3 unconditionally if ANY falls in [start, end], so we pick the one relevant date+type
-     * ourselves: the soonest one still >= today, else (nothing upcoming) the most recent one < today
-     * (for the missing check). Null when none of the 3 fall in the window at all.
-     */
-    private fun pickMovieRelease(mv: ArrCalendarMovie, today: String, start: String, end: String): Pair<String, String>? {
-        val candidates = listOfNotNull(
-            mv.digitalRelease?.take(10)?.takeIf { it.isNotBlank() }?.let { it to "digital" },
-            mv.physicalRelease?.take(10)?.takeIf { it.isNotBlank() }?.let { it to "physical" },
-            mv.inCinemas?.take(10)?.takeIf { it.isNotBlank() }?.let { it to "cinema" },
-        ).filter { (d, _) -> d in start..end }
-        if (candidates.isEmpty()) return null
-        val upcoming = candidates.filter { (d, _) -> d >= today }.minByOrNull { it.first }
-        return upcoming ?: candidates.maxByOrNull { it.first }
-    }
 }
+
+/** FR-R168-5/6 — the one date a film is shown at, and the release it is (null = Radarr's estimate). */
+internal data class MovieRelease(val date: String, val type: String?)
+
+/**
+ * FR-R168-5 — a film's date is the day Radarr will act on it: its own `releaseDate`, else the same rule
+ * derived from `minimumAvailability` (`tba`/`announced`: earliest of the three; `inCinemas` with a cinema
+ * date: cinema; otherwise min(digital, physical), else cinema + 90 days, else none). Kept only inside
+ * [start]..[end]. FR-R168-6 — the type is the first of digital ▸ physical ▸ cinema on that same calendar
+ * date, null when none is (the cinema + 90 estimate). The cinema date is never shown for a later date
+ * (FR-R168-9).
+ */
+internal fun movieRelease(mv: ArrCalendarMovie, start: String, end: String): MovieRelease? {
+    fun day(s: String?) = s?.take(10)?.takeIf { it.isNotBlank() }
+    val digital = day(mv.digitalRelease)
+    val physical = day(mv.physicalRelease)
+    val cinema = day(mv.inCinemas)
+    val date = day(mv.releaseDate) ?: when {
+        mv.minimumAvailability.equals("tba", true) || mv.minimumAvailability.equals("announced", true) ->
+            listOfNotNull(digital, physical, cinema).minOrNull()
+        mv.minimumAvailability.equals("inCinemas", true) && cinema != null -> cinema
+        else -> listOfNotNull(digital, physical).minOrNull() ?: cinema?.let { shiftDate(it, CINEMA_ESTIMATE_DAYS) }
+    }
+    if (date == null || date !in start..end) return null
+    val type = when (date) {
+        digital -> "digital"
+        physical -> "physical"
+        cinema -> "cinema"
+        else -> null
+    }
+    return MovieRelease(date, type)
+}
+
+/** [isAvailable] is Radarr's own computed signal (bakes in the movie's `minimumAvailability`) —
+ *  a "Released"-minimum movie that's only had a cinema release has `isAvailable == false` and is
+ *  therefore never MISSING, even though [date] may be in the past.
+ *  [held] wins over [queued] for the same reason as [resolveEpisodeStatus]. */
+internal fun resolveMovieStatus(date: String, today: String, held: Boolean, queued: Boolean, isAvailable: Boolean): UpcomingStatus = when {
+    held -> UpcomingStatus.AVAILABLE
+    queued -> UpcomingStatus.DOWNLOADING
+    isAvailable && date < today -> UpcomingStatus.MISSING
+    else -> UpcomingStatus.MONITORED
+}
+
+/** A past-dated item that's actively downloading (overdue but actively grabbing, not stuck)
+ *  still belongs in the forward agenda, not silently dropped between the two lists. */
+internal fun splitFeed(all: List<UpcomingItem>, today: String): UpcomingFeed = UpcomingFeed(
+    enabled = true,
+    items = all.filter { it.date >= today || it.status == UpcomingStatus.DOWNLOADING }.sortedBy { it.date },
+    missing = all.filter { it.date < today && it.status == UpcomingStatus.MISSING }.sortedByDescending { it.date },
+)
 
 // ── UTC date arithmetic (no kotlinx-datetime in this module — see SonarrEnrichService's identical
 // pattern; duplicated rather than shared since both are small, self-contained, and file-private). ──
@@ -351,7 +374,7 @@ private fun ymdFromEpochDays(days: Long): Triple<Int, Int, Int> {
 private fun formatDate(y: Int, m: Int, d: Int): String =
     "$y-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}"
 
-private fun shiftDate(dateStr: String, deltaDays: Int): String {
+internal fun shiftDate(dateStr: String, deltaDays: Int): String {
     val p = dateStr.split("-")
     val days = epochDaysFromYmd(p[0].toInt(), p[1].toInt(), p[2].toInt()) + deltaDays
     val (y, m, d) = ymdFromEpochDays(days)

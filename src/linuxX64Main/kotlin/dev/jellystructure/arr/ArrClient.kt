@@ -760,6 +760,9 @@ data class ArrCalendarMovie(
     val inCinemas: String? = null,       // "2026-07-10" or "2026-07-10T00:00:00Z"
     val physicalRelease: String? = null,
     val digitalRelease: String? = null,
+    /** FR-R168-5 — the date Radarr itself treats as "available" under this film's own
+     *  [minimumAvailability]; absent on an older Radarr, which [movieRelease] then derives the same way. */
+    val releaseDate: String? = null,
     val hasFile: Boolean = false,
     val monitored: Boolean = false,
     val isAvailable: Boolean = false,
