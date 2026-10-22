@@ -68,6 +68,10 @@ jobs:
       # R315 FR-R315-4 — the web app has no system fonts; a character no bundled font carries is a box.
       - name: Every character Ravilo draws is in a bundled font
         run: ./scripts/check-web-glyphs.sh
+      # DEB-1469 FR-4/FR-7 — the Mac .dmg is built only on macos-15, so the window's numbers and the order of
+      # layout -> signature -> appcast are held here, on every push.
+      - name: The Mac .dmg window is the drawn window, laid out before it is signed
+        run: ./scripts/check-dmg-layout.sh
 
   # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
   unit:

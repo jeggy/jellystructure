@@ -246,25 +246,50 @@ jobs:
           # FR-R331-4 — the bundle's own launcher, not `open`: its exit code is the app's.
           "$APP/Contents/MacOS/Ravilo" --self-test | tee "$RUNNER_TEMP/self-test.txt"
 
+      # DEB-1469 / DEB-2122 (FR-4, FR-7) — the window the .dmg opens to: the drawn background at 1x and 2x, and the two icons
+      # on their drawn targets. dmgbuild writes the layout (.DS_Store) with a library, not by driving Finder, so it needs no
+      # GUI session on the runner; it copies the app with ditto, which keeps the signature. The layout goes in HERE, before
+      # the .dmg is signed and before the appcast's EdDSA signature is computed over the final bytes. The .app inside is not
+      # touched, so R331's `codesign --verify --deep --strict` is simply run once more on the copy that ships.
       - name: Make ravilo-mac-${{ needs.version.outputs.version }}.dmg
         env:
           IDENTITY: ${{ steps.keychain.outputs.identity }}
         run: |
           set -euo pipefail
-          STAGE="$RUNNER_TEMP/dmg"
-          mkdir -p "$STAGE" "$RUNNER_TEMP/out"
-          cp -R "$APP" "$STAGE/"
-          ln -s /Applications "$STAGE/Applications"
+          mkdir -p "$RUNNER_TEMP/out"
           DMG="$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg"
-          hdiutil create -volname Ravilo -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          python3 -m venv "$RUNNER_TEMP/dmgvenv"
+          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet dmgbuild==1.6.7 ds_store==1.3.3 mac_alias==2.2.3
+          # tiffutil -cathidpicheck, which dmgbuild runs to combine background.png + background@2x.png, wants 72 and 144 dpi.
+          BG="$RUNNER_TEMP/dmg-background"
+          mkdir -p "$BG"
+          cp ravilo-desktop/dmg/background.png ravilo-desktop/dmg/background@2x.png "$BG/"
+          sips -s dpiWidth 72 -s dpiHeight 72 "$BG/background.png" > /dev/null
+          sips -s dpiWidth 144 -s dpiHeight 144 "$BG/background@2x.png" > /dev/null
+          rm -f "$DMG"
+          "$RUNNER_TEMP/dmgvenv/bin/dmgbuild" -s ravilo-desktop/dmg/dmg-settings.py \
+            -D app="$PWD/$APP" -D background="$BG/background.png" Ravilo "$DMG"
+
+          # What shipped is checked, not assumed: the layout reads back as the drawn window and the app inside still verifies.
+          MNT="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$MNT"
+          hdiutil attach -readonly -nobrowse -noverify -mountpoint "$MNT" "$DMG" > /dev/null
+          trap 'hdiutil detach "$MNT" -force > /dev/null 2>&1 || true' EXIT
+          "$RUNNER_TEMP/dmgvenv/bin/python" ravilo-desktop/dmg/verify-layout.py "$MNT"
+          test -L "$MNT/Applications" || { echo "::error::the .dmg has no Applications shortcut"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$MNT/Ravilo.app"
+          hdiutil detach "$MNT" > /dev/null
+          trap - EXIT
+
           codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$DMG"
           ls -l "$DMG"
           {
             echo "### Ravilo for Mac $VERSION"
             echo
-            echo "**Signed with the Ravilo certificate — not notarised.** The first time on a Mac: System Settings → Privacy & Security → *Open Anyway*."
+            echo "**Signed with the Ravilo certificate — not notarised.** macOS asks to approve every hand-downloaded version twice (System Settings → Privacy & Security → *Open Anyway*); the download page and this .dmg's window show both steps."
             echo
             echo "- \`ravilo-mac-$VERSION.dmg\`: $(du -h "$DMG" | cut -f1)"
+            echo "- window layout: read back from the image — Ravilo and Applications on their drawn targets, background at 1x and 2x"
             echo "- self-test: $(cat "$RUNNER_TEMP/self-test.txt")"
           } >> "$GITHUB_STEP_SUMMARY"
 

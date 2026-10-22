@@ -107,6 +107,23 @@ gh secret set MACOS_SIGNING_P12_PASSWORD --repo jeggy/jellystructure    # paste 
 
 `deploy-macos.yml` refuses to build without both secrets; it never falls back to an ad-hoc signature.
 
+## The `.dmg` window (DEB-1469)
+
+The image opens to a fixed window: the drawn background (steps 4 and 5 of *Open Anyway*, and an arrow), Ravilo and
+the Applications shortcut on their drawn targets. `deploy-macos.yml` builds it with
+[dmgbuild](https://dmgbuild.readthedocs.io), which writes Finder's layout file with a library (no GUI session needed
+on the runner) and copies the app with `ditto` (the signature survives). Then it mounts the result and reads the
+layout back (`verify-layout.py`) and re-runs `codesign --verify --deep --strict` on the copy that ships — and only
+then signs the image and the appcast signs the final bytes.
+
+- `dmg/dmg-settings.py` — the window: 720 × 520 pt of content (the window frame is 28 pt taller, for the title bar),
+  icon centres (190, 190) and (530, 190), 128 pt icons.
+- `dmg/background.png` and `background@2x.png` — drawn, not screenshots. They are **rendered, then committed**:
+  `scripts/render-mac-open-anyway.mjs` (the command is in its header) turns the drawing in `design/` into these two
+  files, and the download page's five pictures. Re-run it only when the drawing changes. The background is the same
+  image in Light and Dark, because a Finder background does not follow the appearance.
+- `scripts/check-dmg-layout.sh` runs in CI on every push; the rest only runs on the macOS runner.
+
 ## The update (R386)
 
 The app updates itself with [Sparkle 2](https://sparkle-project.org) from the release it came from. Three pieces:
