@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Sintel (2010)</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="ravilo-builders.css">
+<link rel="stylesheet" href="seeding.css">
+<link rel="stylesheet" href="../flags.css">
+<link rel="stylesheet" href="detail.css">
+<link rel="stylesheet" href="container-convert.css">
+<style>
+  #bazarr-card .bz-cols{display:grid;grid-template-columns:40px 1fr auto auto;gap:12px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 2px 8px;}
+  #bazarr-card .bz-row{display:grid;grid-template-columns:40px 1fr auto auto;gap:12px;align-items:center;padding:11px 2px;border-top:1px solid var(--line);}
+  #bazarr-card .bz-mid{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  #bazarr-card .bz-mid b{font-size:.88rem;}
+  #bazarr-card .bz-act{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+  #bazarr-card .score{font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:600;}
+  #bazarr-card .score.hi{color:var(--ok);}
+  #bazarr-card .bz-want{opacity:.92;}
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="library" data-screen-label="Movie detail">
+  <div class="backrow">
+    <a class="btn sm ghost" href="library.html">‹ Library</a>
+    <span class="crumb"><a href="library.html">Movies</a> / Sintel (2010)</span>
+  </div>
+
+  <div class="pagebar">
+    <h1>Sintel <span class="muted">(2010)</span></h1>
+    <span class="badge ok" id="match-badge">TMDB matched</span>
+    <span class="audio-flags" id="audio-flags"></span>
+    <span class="audio-flags" id="sub-flags"></span>
+    <span class="cert lvl-2" title="United States · MPA — via region cascade (Denmark had no rating)"><span class="cert-rg">US</span><span class="cert-code">PG</span></span>
+    <a class="imdb-pill" href="https://www.imdb.com/title/tt1727587/" target="_blank" rel="noopener" title="IMDb 7.6/10 · 28,431 votes · synced 2d ago"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><b>7.6</b><span class="imdb-votes">28K</span></a>
+    <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
+    <span class="spacer"></span>
+    <!-- External links (Jellyfin / TMDB) -->
+    <span class="menu-wrap" id="links-menu">
+      <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
+      <div class="menu">
+        <a class="menu-item" href="#" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Library item in the Jellyfin web UI</span></span></a>
+        <a class="menu-item" href="https://www.themoviedb.org/movie/45745" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TMDB<span class="mi-sub">themoviedb.org/movie/45745</span></span></a>
+      </div>
+    </span>
+    <!-- Re-pull (Jellyfin / TMDB) -->
+    <span class="menu-wrap" id="repull-menu">
+      <span class="btn sm ghost menu-btn">Re-pull <span class="caret">▾</span></span>
+      <div class="menu">
+        <div class="menu-item" id="repull-jf-btn"><span class="mi-ic">⟲</span><span>From Jellyfin…<span class="mi-sub">Re-discover name, path, IDs &amp; tracks</span></span></div>
+        <div class="menu-item" id="repull-tmdb-btn"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>
+      </div>
+    </span>
+    <!-- Save (→ NFO) / Sync (Jellyfin reads NFO) — split button -->
+    <span class="split" id="save-split">
+      <span class="btn primary" id="save-tell">Save &amp; Sync ↻</span>
+      <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
+      <div class="menu">
+        <div class="menu-item" id="save-tell-2"><span class="mi-ic">↻</span><span>Save &amp; Sync<span class="mi-sub">Write our setup to the .nfo files, then ask Jellyfin to re-read them</span></span></div>
+        <div class="menu-item" id="save-disk"><span class="mi-ic">↓</span><span>Save → NFO<span class="mi-sub">Write our metadata, tags &amp; artwork to the .nfo files on disk</span></span></div>
+        <div class="menu-item" id="sync-jf"><span class="mi-ic">↻</span><span>Sync Jellyfin<span class="mi-sub">Ask Jellyfin to re-read the .nfo files (no rewrite)</span></span></div>
+      </div>
+    </span>
+  </div>
+
+  <!-- Jellyfin field-lock banner (Phase 22) -->
+  <div class="note red" id="lock-banner" style="margin-bottom:16px;display:flex;gap:13px;align-items:flex-start;">
+    <span class="badge bad" style="flex:none;margin-top:1px;">⚠ Locked in Jellyfin</span>
+    <div style="flex:1;min-width:0;">
+      <b>This item has locked metadata fields in Jellyfin, so your changes here may be ignored.</b>
+      <div class="tiny" style="margin-top:5px;line-height:1.6;">
+        Locked fields: <span class="chip" style="font-size:.66rem;">Overview</span> <span class="chip" style="font-size:.66rem;">Genres</span>.
+        To fix it: open the item in Jellyfin → <b>Edit metadata</b> → scroll to the bottom → <b>uncheck all locks</b> → save.
+      </div>
+      <div class="pill-row" style="margin-top:10px;">
+        <a class="btn sm" href="#" target="_blank" rel="noopener">Open in Jellyfin ↗</a>
+        <span class="btn sm ghost" id="recheck-locks">Re-check locks</span>
+      </div>
+    </div>
+    <span class="x" id="dismiss-lock" style="cursor:pointer;color:var(--ink-soft);">✕</span>
+  </div>
+
+  <!-- Jellyfin ⇄ NFO drift banner (Phase 33) -->
+  <div class="note" id="drift-banner" style="margin-bottom:16px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:13px;align-items:flex-start;">
+    <span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span>
+    <div style="flex:1;min-width:0;">
+      <b>Jellyfin's metadata no longer matches the NFO Jellystructure wrote.</b>
+      <div class="tiny" style="margin-top:5px;line-height:1.6;">Someone edited this item in Jellyfin (or another tool touched the NFO on disk). <b>2 fields</b> differ from your last write — Jellystructure is the source of truth, so re-assert to restore it.</div>
+      <div class="pill-row" style="margin-top:10px;">
+        <span class="btn sm" id="review-drift">Review differences</span>
+        <span class="btn sm ghost" id="reassert-all">Re-assert NFO → Jellyfin</span>
+      </div>
+    </div>
+    <span class="x" id="dismiss-drift" style="cursor:pointer;color:var(--ink-soft);">✕</span>
+  </div>
+
+  <!-- Jellyfin-behind banner (Phase 193 FR-193-4). Distinct from drift: the NFO is current, Jellyfin
+       just hasn't re-read it. It does NOT clear itself, so the copy states elapsed time and offers the
+       sync inline; FR-193-5 suppresses it entirely while a scan is running. -->
+  <div class="note" id="behind-banner" style="margin-bottom:16px;background:var(--info-soft);border-color:rgba(63,182,245,.35);display:flex;gap:13px;align-items:flex-start;">
+    <span class="badge info" style="flex:none;margin-top:1px;">Jellyfin behind</span>
+    <div style="flex:1;min-width:0;">
+      <b>The NFO on disk is current — Jellyfin hasn't re-read it yet.</b>
+      <div class="tiny" style="margin-top:5px;line-height:1.6;">Written <b id="behind-ago">6 days ago</b>. Nothing re-reads it on a timer: Jellyfin will pick it up on its own next scan, or on the next freshness recheck of this title — <b id="behind-due">not due for 22 days</b>. Sync now if you need it sooner.</div>
+      <div class="pill-row" style="margin-top:10px;">
+        <span class="btn sm" id="behind-sync">Sync Jellyfin ↻</span>
+      </div>
+    </div>
+    <span class="x" id="dismiss-behind" style="cursor:pointer;color:var(--ink-soft);">✕</span>
+  </div>
+  <script>
+  (function () {
+    const bar = document.getElementById('behind-banner');
+    // FR-193-5: no banner at all while a scan is running — during a scan it is neither true nor useful.
+    const SCAN_RUNNING = false;
+    if (SCAN_RUNNING) { bar.remove(); return; }
+    document.getElementById('dismiss-behind').addEventListener('click', () => bar.remove());
+    document.getElementById('behind-sync').addEventListener('click', () => {
+      bar.remove();
+      if (typeof toast === 'function') toast('Sync requested — Jellyfin re-reading the .nfo files ↻');
+    });
+  })();
+  </script>
+
+  <!-- MKV track layout (Phase 201 FR-201-11/12) — a view over the last sweep result, never persisted state.
+       Rendered only while this title appears in it; it removes itself on repair and on an empty sweep. -->
+  <div class="note red" id="mkv-banner" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
+    <span class="badge bad" style="flex:none;">Can't play in Ravilo</span>
+    <div class="tiny" style="line-height:1.6;flex:1;"><b id="mkv-msg">This file can't play in Ravilo (track list unreachable).</b><br>A flag edit moved the file's <span class="mono">Tracks</span> element behind the first <span class="mono">Cluster</span>, so Ravilo buffers forever — Jellyfin plays it fine, which is why nothing else here looks wrong. Repair rewrites the header in place: no re-encode, ~0.6s per file.</div>
+    <span class="btn sm primary" id="mkv-fix" style="flex:none;">Fix now</span>
+  </div>
+  <script>
+  (function () {
+    // FR-201-12: the repair is scoped to this title's own paths, never the full library list.
+    let paths = ['/media/movies/Sintel (2010)/Sintel (2010).mkv'];
+    const bar = document.getElementById('mkv-banner'), btn = document.getElementById('mkv-fix'), msg = document.getElementById('mkv-msg');
+    if (!paths.length) { bar.remove(); return; }
+    btn.addEventListener('click', () => {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.textContent = 'Repairing…'; btn.style.opacity = '.6';
+      setTimeout(() => {
+        bar.remove();
+        if (typeof toast === 'function') toast('Track layout repaired · 1 file · Ravilo can play it now');
+      }, 1400);
+    });
+  })();
+  </script>
+
+  <div class="tabs2" id="tabbar">
+    <span class="on" data-tab="overview">Overview</span>
+    <span data-tab="tracks">Tracks &amp; subtitles</span>
+    <span data-tab="segments">Intro &amp; credits</span>
+    <span data-tab="seeding">Seeding</span>
+    <span data-tab="artwork">Artwork</span>
+    <span data-tab="cast">Cast &amp; crew</span>
+    <span data-tab="nfo">NFO (raw)</span>
+    <span data-tab="history">History</span>
+  </div>
+
+  <!-- ================= OVERVIEW TAB ================= -->
+  <div class="tabpanel" data-panel="overview">
+  <div class="row" style="align-items:flex-start;">
+    <!-- LEFT RAIL -->
+    <div class="col" style="width:240px;flex:none;">
+      <!-- Freshness (Phase 196 FR-196-5): a skipped item must be explicable, not just "not due". -->
+      <div class="card">
+        <div class="row center"><h4 style="margin:0;">Freshness</h4><span class="badge info" style="margin-left:8px;">monthly</span></div>
+        <div class="tiny muted" style="margin-top:8px;line-height:1.7;">Files last examined<br><b style="color:var(--ink);">2026-09-05 01:49</b><br>Tier <b style="color:var(--ink);">monthly</b> — premiered 2010, not actively airing.<br>Next due <b style="color:var(--ink);">2026-10-05</b> (in 23 days).</div>
+        <div class="tiny muted" style="margin-top:8px;line-height:1.6;">A scan that skips this title is skipping it for this reason. <b>Re-pull from Jellyfin</b> examines it now regardless of the tier.</div>
+      </div>
+
+      <div class="card">
+        <h4 style="margin:0 0 8px;">Artwork</h4>
+        <div class="imgslot" style="height:240px;margin-bottom:8px;"><span>poster.jpg<br>(drop / fetch)</span></div>
+        <div class="row" style="gap:8px;">
+          <div class="imgslot fill" style="height:58px;"><span>fanart</span></div>
+          <div class="imgslot fill" style="height:58px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">logo · missing</span></div>
+        </div>
+        <div class="pill-row" style="margin-top:10px;"><span class="btn sm">Fetch all</span><span class="btn sm ghost">Upload</span></div>
+        <div class="tiny muted" style="margin-top:8px;">2 of 3 assets present</div>
+      </div>
+
+      <!-- Identity — editable TMDB id (Phase 24) -->
+      <div class="card">
+        <h4 style="margin:0 0 8px;">Identity</h4>
+        <div class="field" style="margin:0 0 8px;">
+          <label>TMDB id</label>
+          <div class="row" style="gap:7px;">
+            <input class="input" type="number" id="tmdb-id" value="45745" style="flex:1;min-width:0;">
+            <span class="btn sm" id="tmdb-save">Save</span>
+          </div>
+        </div>
+        <div class="row center tiny" style="gap:7px;justify-content:space-between;">
+          <span><span class="muted">match</span> <span class="badge ok">exact</span></span>
+          <a href="https://www.themoviedb.org/search?query=Sintel%202010" target="_blank" rel="noopener" class="tiny">Search TMDB ↗</a>
+        </div>
+        <div class="pill-row" style="margin-top:9px;"><span class="btn sm fill" id="find-match-btn" style="justify-content:center;">Find / fix match…</span></div>
+        <div class="pill-row" style="margin-top:6px;"><span class="btn sm bad fill" id="clear-match-btn" style="justify-content:center;">Clear TMDB match</span></div>
+        <div class="tiny muted" style="margin-top:6px;line-height:1.5;">Clearing removes the id <b>and</b> everything it wrote — overview, genres, cast, certifications, poster and backdrop files — then <b>locks</b> the item so the next <span class="mono">pull_tmdb</span> can’t re-apply the same wrong match. Reversible from History.</div>
+      </div>
+
+      <!-- Ravilo TV — feature this title in a viewer's hero carousel -->
+      <div class="card">
+        <div class="row center"><h4 style="margin:0;">Ravilo TV</h4><span class="spacer"></span><span class="badge info">layout</span></div>
+        <div class="tiny muted" style="margin:8px 0 10px;line-height:1.5;">Add this title to a viewer's <b>hero carousel</b> on their TV home screen.</div>
+        <div class="pill-row"><span class="btn sm fill" id="feature-hero" style="justify-content:center;">★ Add to hero carousel…</span></div>
+      </div>
+      <!-- Metadata language — resolved automatically, overridable per title (phase 184 design) -->
+      <div class="override mlang-wrap" id="mlang-card">
+        <div class="row center"><h4 style="margin:0;">Metadata language</h4><span class="spacer"></span><span class="badge info" id="mlang-badge">automatic</span></div>
+        <div class="tiny" style="margin-top:8px;" id="mlang-blurb">
+          The resolver walks this title's audio tracks in physical order and fetches TMDB metadata in the first language that returns a result. Track flags are never touched by this.
+        </div>
+        <!-- Metadata-language mismatch (Phase 191 FR-191-5): what is stored no longer matches what this
+             title resolves to, so the fields on screen were fetched in a language we would not pick today. -->
+        <div class="note" id="mlang-mismatch" style="margin-top:12px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:11px;align-items:flex-start;">
+          <span class="badge warn" style="flex:none;">Language mismatch</span>
+          <div style="flex:1;min-width:0;">
+            <div class="tiny" style="line-height:1.6;">Stored metadata is in <b><span class="lang">da</span> Danish</b>, but this title now resolves to <b><span class="lang">en</span> English</b> — the tracks were re-ordered after the last fetch, so the title and overview on this page came from a language the resolver would no longer choose. Nothing is wrong on disk; it is just stale in the wrong language.</div>
+            <div class="pill-row" style="margin-top:9px;"><span class="btn sm" id="mlang-repull">Re-pull in <span class="lang" style="margin-left:2px;">en</span></span><span class="btn sm ghost" id="mlang-keep">Keep Danish</span></div>
+          </div>
+        </div>
+        <script>
+        (function () {
+          const bar = document.getElementById('mlang-mismatch');
+          document.getElementById('mlang-repull').addEventListener('click', () => {
+            bar.remove();
+            if (typeof toast === 'function') toast('Re-pulling title, overview & artwork from TMDB in en…');
+          });
+          document.getElementById('mlang-keep').addEventListener('click', () => {
+            bar.remove();
+            if (typeof toast === 'function') toast('Danish kept · metadata language pinned for this title');
+          });
+        })();
+        </script>
+        <div class="mlang-band" id="mlang-band" style="display:none;">
+          <div class="mb-top"><span class="lang" id="mlang-band-code">en</span><b id="mlang-band-name">English</b></div>
+          <span class="tiny muted mb-when" id="mlang-band-when">chosen by you</span>
+        </div>
+        <div class="pill-row" style="margin-top:8px;display:none;" id="mlang-change-row"><span class="btn sm fill" id="mlang-change" style="justify-content:center;">Change language…</span></div>
+        <div class="box flat" style="margin-top:10px;background:var(--bg-2);" id="mlang-tracebox">
+          <div class="mlang-trace-hd" id="mlang-trace-hd" style="display:none;">Resolver would pick</div>
+          <div class="mono tiny mlang-trace" style="line-height:2;">
+            <div>0:a:0 <span class="lang">en</span> <span class="okc">✓ TMDB result → winner</span></div>
+            <div class="muted">0:a:1 <span class="lang">fr</span> → not needed</div>
+          </div>
+          <hr class="dash" style="margin:9px 0;" id="mlang-hr">
+          <div class="row center" id="mlang-fetchrow"><span class="tiny">Fetching metadata in</span><span class="spacer"></span><span class="badge ok lang">en</span></div>
+        </div>
+        <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="mlang-open" style="justify-content:center;">Choose another language…</span></div>
+        <div class="pill-row" style="margin-top:6px;display:none;" id="mlang-revert-row"><span class="btn sm ghost fill" id="mlang-revert" style="justify-content:center;">Back to automatic (<span class="lang">en</span>)</span></div>
+        <div class="tiny muted" style="margin-top:8px;" id="mlang-foot">Global fallback is <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a></div>
+        <div class="lmenu" id="mlang-menu">
+          <div class="lm-s"><span class="muted">⌕</span><input id="mlang-search" placeholder="Search the languages TMDB has…" autocomplete="off"></div>
+          <div class="lm-list" id="mlang-list"></div>
+          <div class="lm-ft"><b>Aa</b> title · <b>¶</b> overview · <b>▣</b> posters. Hollow means TMDB doesn't hold it — the usual fallback applies, same as any other title.</div>
+        </div>
+      </div>
+      <!-- Resolved age rating (region cascade trace) -->
+      <div class="override">
+        <div class="row center"><h4 style="margin:0;">Age rating</h4><span class="spacer"></span><span class="badge info">region cascade</span></div>
+        <div class="tiny" style="margin-top:8px;">The certification shown in Ravilo is resolved by walking the global <b>region cascade</b> and using the first region TMDB has a rating for. <a href="settings.html?tab=metadata">Settings → Metadata →</a></div>
+        <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
+          <div class="rc-trace">
+            <div class="rc-tr skip"><span class="rc-cc">DK</span><span class="rc-tn">Denmark · Medierådet</span><span class="rc-tv">no certification</span></div>
+            <div class="rc-tr use"><span class="rc-cc">US</span><span class="rc-tn">United States · MPA</span><span class="cert lvl-2"><span class="cert-rg">US</span><span class="cert-code">PG</span></span></div>
+            <div class="rc-tr rest"><span class="rc-cc">GB</span><span class="rc-tn">United Kingdom · BBFC</span><span class="rc-tv">not reached</span></div>
+          </div>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">Stored on the item &amp; filterable in the <a href="library.html">Library workbench</a>.</div>
+      </div>
+      <!-- IMDb rating (imdbapi.dev — stored + synced) -->
+      <div class="card" id="imdb-card">
+        <div class="row center"><h4 style="margin:0;">IMDb rating</h4><span class="spacer"></span><span class="badge info">synced</span></div>
+        <div class="imdb-big" style="margin-top:10px;">
+          <span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span>
+          <span class="imdb-score"><span>7.6</span><span class="imdb-max">/10</span></span>
+        </div>
+        <div class="tiny muted" style="margin-top:5px;">28,431 votes</div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="row center tiny" style="justify-content:space-between;gap:7px;">
+          <span><span class="muted">id</span> <a href="https://www.imdb.com/title/tt1727587/" target="_blank" rel="noopener" class="mono">tt1727587</a></span>
+          <span class="muted">synced 2d ago</span>
+        </div>
+        <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="imdb-resync" style="justify-content:center;">Re-sync from imdbapi.dev</span></div>
+        <div class="tiny muted" style="margin-top:8px;line-height:1.5;">Fetched from <b>imdbapi.dev</b> by IMDb id, stored on the item &amp; refreshed on a schedule — shown on the title in <b>Ravilo</b>.</div>
+      </div>
+    </div>
+
+    <!-- FIELDS -->
+    <div class="col fill">
+      <div class="card">
+        <div class="row center" style="margin-bottom:4px;"><h4 style="margin:0;">Metadata</h4><span class="spacer"></span><span class="tiny muted">saved to library as you edit · <b>Save</b> writes the NFO ↗</span></div>
+        <hr class="dash" style="margin:6px 0 14px;">
+        <div class="row">
+          <div class="field fill"><label>Title</label><input class="input" id="f-title" value="Sintel"></div>
+          <div class="field" style="width:110px;"><label>Year</label><input class="input" id="f-year" value="2010"></div>
+        </div>
+        <div class="field">
+          <label>Plot</label>
+          <textarea class="input" id="f-plot" rows="3" style="resize:vertical;line-height:1.5;">A lonely young woman, Sintel, helps and befriends a dragon she names Scales. When Scales is taken from her, Sintel embarks on a dangerous quest to find her lost companion.</textarea>
+        </div>
+        <div class="row">
+          <div class="field fill"><label>Genres</label><div class="pill-row" id="genre-pills"><span class="chip">Animation ✕</span><span class="chip">Fantasy ✕</span><span class="chip">Short ✕</span><span class="chip gen-user"><span class="gen-dot"></span>Indie ✕</span><span class="chip ghost">＋</span><span class="chip gen-restore" title="TMDB genre you removed — ↺ to restore"><span class="gx">Comedy</span><span class="gen-undo" data-restore>↺</span></span></div><div class="tiny muted gen-note"><span class="gen-dot"></span> Your genre edits survive TMDB re-syncs — dotted chips are ones you added; greyed chips are TMDB genres you removed.</div></div>
+          <div class="field" style="width:170px;"><label>Original language</label><div class="input"><span class="lang">en</span> · from TMDB</div></div>
+        </div>
+        <div class="row">
+          <div class="field fill"><label>Director</label><input class="input" id="f-director" value="Colin Levy"></div>
+          <div class="field fill"><label>Studio</label><input class="input" id="f-studio" value="Blender Foundation"></div>
+        </div>
+      </div>
+
+      <!-- TAGS with JS-tag dots + dropdown (Phase 19) -->
+      <div class="card" id="tags-section">
+        <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted">written to NFO &lt;tag&gt; · <a href="metadata.html">manage tags →</a></span></div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="pill-row" id="tagrow">
+          <span class="chip tag-chip"><span class="tag-dot" style="background:#7b6ef0;"></span> open movie <span class="rm">✕</span></span>
+          <span class="chip tag-chip"><span class="tag-dot" style="background:#2dd49a;"></span> blender <span class="rm">✕</span></span>
+          <span class="chip tag-chip">short film <span class="rm">✕</span></span>
+        </div>
+        <div class="row center" style="margin-top:10px;gap:8px;position:relative;">
+          <input class="input" id="tagInput" placeholder="＋ add a tag…" style="max-width:260px;" autocomplete="off">
+          <div id="tagMenu" class="card" style="display:none;position:absolute;top:46px;left:0;z-index:20;width:240px;padding:6px;box-shadow:var(--shadow);"></div>
+          <span class="tiny muted">Jellystructure tags (dotted) survive re-syncs.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card" id="trailer-card" style="margin-top:16px;">
+    <div class="row center"><h4 style="margin:0;">Trailer</h4><span class="badge info" style="margin-left:8px;">from TMDB</span><span class="spacer"></span><span class="tiny muted">TMDB <b>videos</b> → shown as ▷ Trailer in Ravilo</span></div>
+    <hr class="dash" style="margin:10px 0 14px;">
+    <div class="row" style="gap:16px;align-items:flex-start;">
+      <a class="tr-thumb" href="https://www.youtube.com/watch?v=eRsGyueVLvQ" target="_blank" rel="noopener" title="Open trailer on YouTube">
+        <img src="https://img.youtube.com/vi/eRsGyueVLvQ/hqdefault.jpg" alt="Sintel trailer thumbnail" loading="lazy">
+        <span class="tr-play">▶</span>
+      </a>
+      <div style="flex:1;min-width:0;">
+        <div class="row center" style="gap:9px;"><b>Official Trailer</b><span class="tr-src yt">YouTube</span></div>
+        <div class="tiny muted" style="margin-top:6px;line-height:1.6;max-width:60ch;">Ingested from the TMDB <b>videos</b> section at scan time — the official trailer, original-language preferred then English. Exposed on the Ravilo TV detail DTO so a <b>▷ Trailer</b> button appears on this title; the button is hidden when TMDB has no video.</div>
+        <div class="pill-row" style="margin-top:11px;">
+          <a class="btn sm" href="https://www.youtube.com/watch?v=eRsGyueVLvQ" target="_blank" rel="noopener">▷ Preview ↗</a>
+          <span class="btn sm ghost" id="trailer-refetch">Re-fetch from TMDB</span>
+          <span class="btn sm ghost" id="trailer-clear">Clear</span>
+        </div>
+        <div class="mono tiny muted" style="margin-top:9px;">youtube · eRsGyueVLvQ</div>
+      </div>
+    </div>
+  </div>
+  <div class="card" id="ts-card" style="margin-top:16px;">
+    <div class="row center"><h4 style="margin:0;">Timestamps</h4><span class="tiny muted" style="margin-left:8px;">when this title was created, updated &amp; scanned — in Jellystructure and in Jellyfin</span></div>
+    <hr class="dash" style="margin:10px 0 14px;">
+    <div class="ts-cols">
+      <div>
+        <div class="ts-h">Jellystructure</div>
+        <div class="ts-row first"><span class="ts-k">Created<span class="help-dot">?<span class="tip"><b>Created in Jellystructure</b> — when this title was first added to your library. This is the timestamp Ravilo's <b>Newly Added</b> rows sort by (for a series, the most-recently-added episode).</span></span></span><span class="ts-v">2024-03-08 14:02 <span class="ago">· 2y ago</span></span></div>
+        <div class="ts-row"><span class="ts-k">Updated</span><span class="ts-v">2026-06-27 09:14 <span class="ago">· 4d ago</span></span></div>
+        <div class="ts-row"><span class="ts-k">Last scanned</span><span class="ts-v">2026-06-30 03:12 <span class="ago">· 2d ago</span></span></div>
+      </div>
+      <div>
+        <div class="ts-h">Jellyfin</div>
+        <div class="ts-row first"><span class="ts-k">Created <span class="mono muted" style="font-size:.7rem;">DateCreated</span></span><span class="ts-v">2024-03-08 14:05</span></div>
+        <div class="ts-row"><span class="ts-k">Updated</span><span class="ts-v">2026-06-27 09:15</span></div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- ================= INTRO & CREDITS TAB (Phase 163) ================= -->
+  <div class="tabpanel" data-panel="segments" style="display:none;">
+    <div class="card">
+      <div class="row center"><h4 style="margin:0;">Intro &amp; credits</h4><span class="badge info" style="margin-left:8px;">detect_segments</span><span class="spacer"></span><span class="tiny muted">published to Jellyfin once you confirm it — every Jellyfin client skips it, not just Ravilo</span></div>
+      <hr class="dash" style="margin:10px 0 14px;">
+      <div class="segwrap" style="margin-top:0;">
+        <div class="seg-head"><span class="seg-lbl">14:48 runtime</span><span class="seg-legend"><span><i class="sw sw-c"></i>Credits</span></span></div>
+        <div class="segbar">
+          <div class="seg-ticks"></div>
+          <div class="seg-cred" style="left:77.5%"><i class="h"></i></div>
+        </div>
+        <div class="seg-foot">
+          <span class="chip mono">Credits 11:28</span>
+          <span class="badge seg-src-fp">matched the outro · 0.91</span>
+          <span class="badge warn">not confirmed</span>
+          <span class="spacer"></span>
+          <a class="btn sm" href="segments.html?movie=sintel">✎ Open the editor</a>
+          <span class="btn sm ghost">↻ Re-detect</span>
+          <span class="btn sm ghost">🔓 Lock</span>
+        </div>
+      </div>
+      <div class="tiny muted" style="margin-top:11px;line-height:1.6;">No intro was found, which is normal for a film — Ravilo uses the credits marker for its <b>Skip credits</b> card. Open the editor to watch the cut, adjust it, add an after-credits scene, or lock it so the next scan leaves it alone.</div>
+    </div>
+  </div>
+
+  <!-- ================= TRACKS & ORDER TAB ================= -->
+  <div class="tabpanel" data-panel="tracks" style="display:none;">
+    <div class="row" style="align-items:flex-start;">
+      <div class="col fill">
+        <!-- standing container card (avi-mkv-migration, direction C) — rendered only for AVI by container-convert.js -->
+        <div id="cv-mount"></div>
+        <!-- cover-art-muxed-as-video repair (Phase 144) — shown when the scan finds an image-codec video stream beside a real one -->
+        <div class="note red" id="cover-video-alert" style="display:flex;gap:11px;align-items:flex-start;">
+          <span class="badge bad" style="flex:none;">Cover as video</span>
+          <div class="tiny" style="line-height:1.6;flex:1;">A <b>cover image is muxed as a selectable video track</b> (<span class="mono">0:v:1 · png · 857×856</span>), alongside the real video (<span class="mono">0:v:0 · h264 · 1920×1080</span>). This is <b>playback-hostile</b> — some players hand the PNG to the video decoder and show nothing. Repairable with a lossless remux.
+            <div class="mono tiny" style="margin-top:7px;color:var(--ink-soft);background:var(--bg-2);border-radius:6px;padding:6px 9px;">ffmpeg -i input.mkv -map 0 -map -0:v:1 -c copy output.mkv</div>
+          </div>
+          <span class="btn sm bad" id="cover-fix-btn" style="flex:none;align-self:center;" title="Drop the cover PNG video stream via a lossless -c copy remux (queued as a background job on the media worker).">Fix cover track</span>
+        </div>
+
+        <!-- cascade-mismatch alert (audio only; shown by the engine when default ≠ resolved) -->
+        <div class="note" id="cascade-alert" style="background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:11px;align-items:flex-start;">
+          <span class="badge warn" style="flex:none;">Default ≠ resolved</span>
+          <div class="tiny" style="line-height:1.6;">The default audio track is <b id="cascade-def"><span class="lang">fr</span> (French)</b> but metadata resolves to <span class="lang">en</span>. Viewers would <b>read English</b> descriptions while <b>hearing French</b>. <span class="btn sm" id="cascade-fix" style="margin-left:4px;">Make <span class="lang" style="margin:0 3px;">en</span> default</span></div>
+        </div>
+
+        <div class="card">
+          <div class="row center"><h4 style="margin:0;white-space:nowrap;">Tracks — language &amp; order</h4>
+            <span class="seg" id="trk-seg" style="margin-left:12px;"><span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span></span>
+            <span class="spacer"></span>
+            <span class="chip seeded" id="guard-chip" title="qBittorrent seeding guard is active — edits to a file currently being seeded are blocked so torrent hashes don't break.">⛨ guard active</span>
+            <span class="mono tiny muted" id="trk-file">Sintel (2010).mkv</span>
+          </div>
+          <hr class="dash" style="margin:12px 0;">
+
+          <!-- column headers -->
+          <div class="trk-cols" id="trk-cols"><span></span><span>#</span><span>track</span><span id="col-mid">language &amp; codec</span><span style="text-align:right;">default</span></div>
+
+          <!-- model-driven rows -->
+          <div id="track-list"></div>
+
+          <!-- contextual explainer (swapped per audio/subs) -->
+          <div class="note blue" id="trk-explain" style="margin-top:14px;"></div>
+          <div class="tiny muted" style="margin-top:10px;">Reorder by dragging the grip or the ▲▼ buttons · click a language to change it · ★ sets the default. Everything is <b>manual</b> and only touches the file when you press <b>Apply</b>.</div>
+        </div>
+
+        <!-- write-through note: track edits are written to disk immediately -->
+        <div class="card" id="trk-writethru">
+          <div class="row center" style="gap:10px;"><span class="op-ic" style="width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;background:var(--ok-soft);color:var(--ok);">✓</span><span class="tiny">Track edits are <b>written to disk immediately</b>.</span></div>
+          <hr class="dash" style="margin:10px 0;">
+          <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file) — so <b>Apply</b> <b>queues a background job</b> on the single media worker (one at a time; watch it in <a href="activity.html">Activity ▸ Jobs</a>) instead of blocking. Jellyfin picks the change up on its next scan, or when the job finishes if you chose <b>Save &amp; sync</b>.</div>
+        </div>
+
+        <!-- SIDECAR SUBTITLES ON DISK (Phase 200 FR-200-5) — read-only: a sidecar has no container flag,
+             so there is no order, no default and nothing to drag. -->
+        <div class="card" id="sidecar-card">
+          <div class="row center"><h4 style="margin:0;white-space:nowrap;">Sidecar subtitles</h4><span class="badge info" style="margin-left:9px;">read-only</span><span class="spacer"></span><span class="mono tiny muted" id="sc-count"></span></div>
+          <div class="tiny muted" style="margin:7px 0 0;line-height:1.6;">Subtitle files found on disk beside <span class="mono">Sintel (2010).mkv</span>. Language, <b>forced</b> and <b>SDH</b> are read from the filename — there is no container flag to set, so these have <b>no order and no default</b>. A filename with no recognisable language stays <b>untagged</b> and routes to Triage rather than being guessed at.</div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="sc-cols"><span>lang</span><span>file</span><span style="text-align:right;">flags</span></div>
+          <div id="sc-list"></div>
+          <div class="tiny muted" style="margin-top:10px;">Sidecars are picked up by the next scan of this title, so the list fills in over the freshness cadence rather than all at once.</div>
+        </div>
+
+        <!-- BAZARR SIDECAR SUBTITLES (Phase 157) -->
+        <div class="card" id="bazarr-card">
+          <div class="row center"><h4 style="margin:0;white-space:nowrap;">Subtitles — Bazarr</h4><span class="badge info" style="margin-left:9px;">sidecar files</span><span class="spacer"></span><span class="chk"><span class="dot ok"></span><span class="tiny muted">profile <b>Nordic default</b></span></span></div>
+          <div class="tiny muted" style="margin:7px 0 0;line-height:1.6;">External <span class="mono">.srt</span> / <span class="mono">.ass</span> files Bazarr manages beside <span class="mono">Sintel (2010).mkv</span> — separate from the embedded subtitle tracks above. This title's profile wants <span class="lang">da</span> <span class="lang">fo</span> <span class="lang">en</span>. Everything here runs through Bazarr; Jellystructure stores nothing.</div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="bz-cols"><span>lang</span><span>subtitle</span><span>score</span><span style="text-align:right;">actions</span></div>
+          <div class="bz-row"><span class="lang">en</span><div class="bz-mid"><b>English</b><span class="mono tiny muted">Sintel.en.srt · Addic7ed · HI</span></div><span class="score hi">96%</span><div class="bz-act"><span class="btn sm ghost bz-a" data-a="Syncing English to audio…">⟲ Sync</span><span class="btn sm ghost bz-a" data-a="Searching a better English match…">▲ Upgrade</span><span class="btn sm ghost bz-del">Delete</span></div></div>
+          <div class="bz-row bz-want"><span class="lang">da</span><div class="bz-mid"><b>Danish</b><span class="tiny" style="color:var(--warn);">wanted · not downloaded</span></div><span class="tiny muted">—</span><div class="bz-act"><span class="btn sm bz-a" data-a="Searching Danish subtitles…">⌕ Search</span></div></div>
+          <div class="bz-row bz-want"><span class="lang">fo</span><div class="bz-mid"><b>Faroese</b><span class="tiny" style="color:var(--warn);">wanted · not downloaded</span></div><span class="tiny muted">—</span><div class="bz-act"><span class="btn sm bz-a" data-a="Searching Faroese subtitles…">⌕ Search</span></div></div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="row center" style="gap:9px;flex-wrap:wrap;"><span class="btn sm" id="bz-search-all">⌕ Search all wanted</span><span class="btn sm ghost" id="bz-upload">↑ Upload a file…</span><span class="spacer"></span><a class="tiny" href="subtitles.html">Subtitles overview →</a></div>
+          <div class="tiny muted" style="margin-top:11px;">Latest · <span class="lang">en</span> upgraded 78% → 96% via Addic7ed · 1h ago — full log on the <a href="#tab=history" id="bz-hist-link">History</a> tab.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SEEDING TAB (Phase 97 — cross-seed surface) ================= -->
+  <div class="tabpanel" data-panel="seeding" style="display:none;">
+    <div class="card">
+      <div class="sd-head">
+        <h4>Seeding &amp; cross-seed</h4>
+        <span class="badge info">qBittorrent</span>
+        <span class="spacer"></span>
+        <span class="mono tiny muted">Sintel (2010).mkv</span>
+      </div>
+      <div class="tiny muted" style="margin:4px 0 2px;line-height:1.5;">Live view of every torrent that references this file, cross-referenced to the Radarr grab history. This is the source of the track-edit guard.</div>
+      <div id="seeding-root"></div>
+    </div>
+  </div>
+
+  <!-- ================= ARTWORK TAB (Phase 40 — asset rail + inline gallery) ================= -->
+  <div class="tabpanel" data-panel="artwork" style="display:none;">
+    <div class="row" style="align-items:flex-start;gap:18px;">
+      <!-- ASSET RAIL -->
+      <div class="col" style="width:272px;flex:none;">
+        <div class="card" style="padding:14px;">
+          <div class="row center" style="margin-bottom:2px;"><h4 style="margin:0;">Assets</h4><span class="spacer"></span><span class="badge warn" id="aw-missing">1 missing</span></div>
+          <hr class="dash" style="margin:10px 0;">
+          <div id="aw-rail" style="display:flex;flex-direction:column;gap:3px;"></div>
+          <div class="pill-row" style="margin-top:13px;"><span class="btn sm primary fill" id="aw-fetch-all" style="justify-content:center;">Fetch all missing</span></div>
+          <div class="tiny muted" style="margin-top:9px;line-height:1.5;">Written beside the movie file as <span class="mono">poster.jpg</span>, <span class="mono">fanart.jpg</span>, <span class="mono">clearlogo.png</span>.</div>
+        </div>
+      </div>
+
+      <!-- INLINE GALLERY for the selected asset -->
+      <div class="col fill">
+        <div class="card" style="padding:16px;">
+          <div class="row center" id="aw-gallery-head"></div>
+
+          <div class="dropz" id="aw-dropz" style="margin-top:13px;">
+            <span class="di">⤓</span>
+            <div style="flex:1;"><b style="color:var(--ink);">Drag an image here</b> to replace <span id="aw-dz-name">the poster</span> <span class="muted">— or</span></div>
+            <span class="btn sm" id="aw-upload">Upload</span>
+            <span class="btn sm ghost" id="aw-paste">Paste URL</span>
+            <input type="file" accept="image/*" id="aw-file" style="display:none;">
+          </div>
+
+          <!-- Phase 173/174 — the asset actually on disk, shown whether or not TMDB has candidates -->
+          <div class="row" id="aw-current" style="margin-top:16px;gap:14px;align-items:stretch;">
+            <div class="imgslot" style="width:98px;height:147px;flex:none;"><span style="font-size:.5rem;">on disk</span></div>
+            <div class="col fill" style="gap:7px;min-width:0;justify-content:center;">
+              <div class="row center" style="gap:8px;"><b>Currently in use</b><span class="badge ok" style="font-size:.62rem;">on disk</span><span class="tiny muted" id="aw-cur-src">from TMDB · <span class="mono">/t/p/original/qGQf2…jpg</span></span></div>
+              <div class="tiny muted mono" id="aw-cur-path">Sintel (2010)/poster.jpg · 1000×1500 · 214 KB</div>
+              <div class="tiny muted" style="line-height:1.5;">This is the file Jellyfin and Ravilo read. A music video routinely has <b>no</b> TMDB candidates at all — the panel still shows what is really there.</div>
+              <div class="pill-row"><span class="btn sm ghost" id="aw-cur-open">Open full size</span><span class="btn sm bad" id="aw-clear">Clear this asset</span></div>
+            </div>
+          </div>
+
+          <div class="row center" id="aw-filterbar" style="margin-top:16px;gap:14px;flex-wrap:wrap;align-items:flex-end;"></div>
+          <div id="aw-explain-wrap" style="margin-top:12px;"></div>
+          <div id="aw-grid" style="margin-top:16px;"></div>
+          <div class="tiny muted" id="aw-foot" style="margin-top:13px;line-height:1.6;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARTWORK LIGHTBOX (Phase 47 — larger preview) -->
+  <div class="aw-lb" id="aw-lb" aria-hidden="true">
+    <button class="aw-lb-x" id="aw-lb-x" title="Close (Esc)">✕</button>
+    <button class="aw-lb-arrow prev" id="aw-lb-prev" title="Previous (←)">‹</button>
+    <div class="aw-lb-stage">
+      <div class="aw-lb-artwrap"><div class="aw-lb-art" id="aw-lb-art"></div></div>
+      <div class="aw-lb-panel" id="aw-lb-panel"></div>
+    </div>
+    <button class="aw-lb-arrow next" id="aw-lb-next" title="Next (→)">›</button>
+    <div class="aw-lb-counter" id="aw-lb-counter"></div>
+  </div>
+
+  <!-- ================= CAST & CREW TAB ================= -->
+  <div class="tabpanel" data-panel="cast" style="display:none;">
+    <div class="row center" style="margin-bottom:14px;gap:12px;flex-wrap:wrap;">
+      <div>
+        <h4 style="margin:0 0 3px;">Cast &amp; crew</h4>
+        <div class="tiny muted">From TMDB · saved to library as you edit · <b>Save</b> writes the NFO ↗</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="btn sm" id="cast-fetch">↻ Fetch from TMDB</span>
+    </div>
+
+    <div class="note blue" style="display:flex;gap:10px;align-items:flex-start;padding:11px 13px;margin-bottom:16px;">
+      <span style="flex:none;">ℹ</span>
+      <div class="tiny" style="line-height:1.55;">
+        Person photos come from TMDB. Jellystructure <b>caches</b> each profile image and writes its URL into the NFO <span class="mono">&lt;actor&gt;&lt;thumb&gt;</span> — Jellyfin downloads the photo from there into its own people store. Directors &amp; writers are written as <span class="mono">&lt;director&gt;</span> / <span class="mono">&lt;writer&gt;</span> (with <span class="mono">&lt;thumb&gt;</span> where Jellyfin supports it).
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row center"><h4 style="margin:0;">Cast</h4><span class="badge info" id="cast-count" style="margin-left:7px;">0</span><span class="spacer"></span><span class="tiny muted">drag to reorder · order is written to &lt;actor&gt;&lt;order&gt;</span></div>
+      <hr class="dash" style="margin:10px 0 14px;">
+      <div class="cast-grid" id="cast-grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="row center"><h4 style="margin:0;">Crew</h4><span class="badge info" id="crew-count" style="margin-left:7px;">0</span><span class="spacer"></span><span class="btn sm ghost" id="crew-add">＋ Add crew</span></div>
+      <hr class="dash" style="margin:10px 0 14px;">
+      <div id="crew-list"></div>
+    </div>
+  </div>
+
+  <!-- ================= NFO TAB ================= -->
+  <div class="tabpanel" data-panel="nfo" style="display:none;">
+    <div class="card">
+      <div class="row center"><h4 style="margin:0;">movie.nfo</h4><span class="spacer"></span><span class="badge ok">unlocked</span><span class="tiny muted">written atomically · .tmp → rename</span></div>
+      <hr class="dash" style="margin:12px 0;">
+      <div class="log" style="max-height:380px;">
+<span class="muted">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>
+&lt;movie&gt;
+  &lt;title&gt;Sintel&lt;/title&gt;
+  &lt;year&gt;2010&lt;/year&gt;
+  &lt;plot&gt;A lonely young woman, Sintel, helps and befriends a dragon…&lt;/plot&gt;
+  &lt;genre&gt;Animation&lt;/genre&gt;
+  &lt;genre&gt;Fantasy&lt;/genre&gt;
+  &lt;tag&gt;open movie&lt;/tag&gt;
+  &lt;tag&gt;blender&lt;/tag&gt;
+  &lt;uniqueid type="tmdb"&gt;45745&lt;/uniqueid&gt;
+  <span class="muted">&lt;!-- no &lt;lockdata&gt; — NFO stays unlocked so Jellyfin re-reads it freely --&gt;</span>
+&lt;/movie&gt;
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= HISTORY TAB ================= -->
+  <div class="tabpanel" data-panel="history" style="display:none;">
+    <div class="card">
+      <div class="row center" style="margin-bottom:12px;"><h4 style="margin:0;">History</h4><span class="spacer"></span><span class="tiny muted">revertable actions roll back — the previous value is restored &amp; re-written to NFO</span></div>
+      <table class="wf-table">
+        <tr><th>When</th><th>Action</th><th>Detail</th><th></th></tr>
+        <tr><td class="muted tiny">09:18</td><td><span class="badge ok">edit</span></td><td class="tiny">Plot edited by hand</td><td><span class="btn sm ghost revert-btn">Revert</span></td></tr>
+        <tr><td class="muted tiny">09:17</td><td><span class="badge warn">track</span></td><td class="tiny">Default audio → 0:a:0 <span class="lang">en</span> (was 0:a:1 <span class="lang">fr</span>)</td><td><span class="btn sm ghost revert-btn">Revert</span></td></tr>
+        <tr><td class="muted tiny">09:15</td><td><span class="badge warn">detect</span></td><td class="tiny">Jellyfin locks found: Overview, Genres</td><td></td></tr>
+        <tr><td class="muted tiny">09:14</td><td><span class="badge ok">nfo</span></td><td class="tiny">Wrote movie.nfo (unlocked)</td><td><span class="btn sm ghost revert-btn">Revert</span></td></tr>
+        <tr><td class="muted tiny">09:14</td><td><span class="badge info">scan</span></td><td class="tiny">Discovered from Jellyfin · matched TMDB 45745 · resolved <span class="lang">en</span></td><td></td></tr>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Re-pull from Jellyfin confirmation modal (Phase 25) -->
+<div class="modal-back" id="repull-modal">
+  <div class="modal">
+    <span class="x" id="repull-x">✕</span>
+    <h3>Re-pull from Jellyfin</h3>
+    <p class="muted" style="line-height:1.6;">Re-fetches this item's name, file path, provider IDs and tracks from Jellyfin, then re-resolves language and TMDB metadata. Use this when the item moved, was renamed, or its Jellyfin match changed.</p>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:8px;">
+      <span class="btn ghost" id="repull-cancel">Cancel</span>
+      <span class="btn primary" id="repull-go">Re-pull</span>
+    </div>
+  </div>
+</div>
+
+<!-- TMDB match picker (Phase 32) -->
+<div class="modal-back" id="tmdb-modal">
+  <div class="modal" style="width:600px;">
+    <span class="x" id="tmdb-x">✕</span>
+    <h3>Find the right TMDB match</h3>
+    <div class="row center" style="gap:8px;margin-bottom:12px;"><input class="input fill" id="tmdb-q" value="Sintel 2010"><span class="btn">Search</span></div>
+    <div id="tmdb-cands">
+      <div class="cand sel"><div class="imgslot"><span style="font-size:.5rem;">poster</span></div><div style="min-width:0;"><div><b>Sintel</b> <span class="muted">(2010)</span> <span class="badge ok" style="margin-left:4px;">tmdb 45745</span></div><div class="tiny muted" style="margin-top:3px;">A lonely young woman befriends a dragon… · Animation · en</div></div></div>
+      <div class="cand"><div class="imgslot"><span style="font-size:.5rem;">poster</span></div><div style="min-width:0;"><div><b>Sintel: The Making Of</b> <span class="muted">(2010)</span> <span class="badge" style="margin-left:4px;">tmdb 91234</span></div><div class="tiny muted" style="margin-top:3px;">Behind the scenes of the Durian open movie · Documentary · en</div></div></div>
+      <div class="cand"><div class="imgslot"><span style="font-size:.5rem;">poster</span></div><div style="min-width:0;"><div><b>Sintel</b> <span class="muted">(2015)</span> <span class="badge" style="margin-left:4px;">tmdb 33871</span></div><div class="tiny muted" style="margin-top:3px;">Unrelated short of the same name · Drama · de</div></div></div>
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px;"><span class="btn ghost" id="tmdb-cancel">Cancel</span><span class="btn primary" id="tmdb-use">Use match &amp; re-pull</span></div>
+  </div>
+</div>
+
+<!-- Jellyfin ⇄ NFO drift modal (Phase 33) -->
+<div class="modal-back" id="drift-modal">
+  <div class="modal">
+    <span class="x" id="drift-x">✕</span>
+    <h3>Jellyfin ⇄ NFO differences</h3>
+    <p class="tiny muted" style="margin:0 0 10px;">Per field: <b>re-assert</b> keeps your NFO value and pushes it back to Jellyfin; <b>accept</b> takes Jellyfin's value into the NFO.</p>
+    <div class="drift-row"><div style="flex:1;min-width:0;"><div class="tiny muted">Overview</div><div class="tiny"><b>NFO:</b> …befriends a dragon she names Scales.</div><div class="tiny"><b>Jellyfin:</b> …befriends a baby dragon.</div></div><span class="btn sm">Re-assert</span><span class="btn sm ghost">Accept</span></div>
+    <div class="drift-row"><div style="flex:1;min-width:0;"><div class="tiny muted">Genres</div><div class="tiny"><b>NFO:</b> Animation, Fantasy, Short</div><div class="tiny"><b>Jellyfin:</b> Animation, Fantasy</div></div><span class="btn sm">Re-assert</span><span class="btn sm ghost">Accept</span></div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px;"><span class="btn ghost" id="drift-close">Close</span><span class="btn primary" id="drift-reassert-all">Re-assert all → Jellyfin</span></div>
+  </div>
+</div>
+
+<!-- Add person (TMDB search) — Phase 75 -->
+<div class="modal-back" id="person-modal">
+  <div class="modal" style="width:520px;">
+    <span class="x" id="person-x">✕</span>
+    <h3 id="person-title">Add cast</h3>
+    <div class="row" id="person-extra" style="gap:8px;margin:8px 0 10px;display:none;">
+      <select class="input" id="person-dept" style="flex:1;">
+        <option>Directing</option><option>Writing</option><option>Production</option><option>Sound</option><option>Art</option><option>Camera</option><option>Editing</option><option>Costume &amp; Make-Up</option><option>Crew</option>
+      </select>
+      <input class="input" id="person-job" placeholder="Job (e.g. Director)" style="flex:1;">
+    </div>
+    <input class="input" id="person-search" placeholder="Search people on TMDB…" autocomplete="off" style="margin:6px 0 12px;">
+    <div id="person-results" class="col" style="gap:4px;max-height:320px;overflow:auto;"></div>
+  </div>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="seeding.js"></script>
+<script>
+(function () {
+  /* ---- URL-addressable tabs (Phase 28) ---- */
+  const tabbar = document.getElementById('tabbar');
+  const panels = document.querySelectorAll('.tabpanel');
+  function showTab(name) {
+    if (![...tabbar.children].some(t => t.dataset.tab === name)) name = 'overview';
+    [...tabbar.children].forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+    panels.forEach(p => { p.style.display = p.dataset.panel === name ? '' : 'none'; });
+  }
+  tabbar.addEventListener('click', e => {
+    const t = e.target.closest('[data-tab]'); if (!t) return;
+    location.hash = 'tab=' + t.dataset.tab;       // push so Back returns to previous tab
+  });
+  function fromHash() {
+    const m = /tab=([a-z]+)/.exec(location.hash || '');
+    showTab(m ? m[1] : 'overview');
+  }
+  window.addEventListener('hashchange', fromHash);
+  fromHash();
+
+  /* ---- lock banner ---- */
+  document.getElementById('dismiss-lock').addEventListener('click', () => document.getElementById('lock-banner').remove());
+  document.getElementById('recheck-locks').addEventListener('click', e => { e.target.textContent = 'Re-checking…'; setTimeout(() => e.target.textContent = 'Re-check locks', 900); });
+
+  /* ---- re-pull from Jellyfin modal ---- */
+  const rm = document.getElementById('repull-modal');
+  const openRm = () => rm.classList.add('open');
+  const closeRm = () => rm.classList.remove('open');
+  document.getElementById('repull-jf-btn').addEventListener('click', openRm);
+  document.getElementById('repull-x').addEventListener('click', closeRm);
+
+  /* ---- pagebar dropdown menus (External links · Re-pull · Save split) ---- */
+  (function () {
+    const wraps = document.querySelectorAll('.menu-wrap, .split');
+    function closeAll() { document.querySelectorAll('.menu-wrap.open, .split.open').forEach(o => o.classList.remove('open')); }
+    wraps.forEach(w => {
+      const btn = w.querySelector('.menu-btn');
+      if (btn) btn.addEventListener('click', e => { e.stopPropagation(); const open = w.classList.contains('open'); closeAll(); if (!open) w.classList.add('open'); });
+      w.querySelectorAll('.menu-item, a.menu-item').forEach(it => it.addEventListener('click', () => closeAll()));
+    });
+    document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap, .split')) closeAll(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+  })();
+  /* save + sync actions — Save writes our setup to the .nfo files; Sync asks Jellyfin to re-read them */
+  const doSaveDisk = () => toast('Saved → NFO · metadata, tags & artwork written to disk');
+  const doSync = () => toast('Sync requested — Jellyfin re-reading the .nfo files ↻');
+  const doSaveSync = () => toast('Saved → NFO & sync requested — Jellyfin re-reading ↻');
+  document.getElementById('save-tell').addEventListener('click', doSaveSync);    // primary face (Save & Sync)
+  document.getElementById('save-tell-2').addEventListener('click', doSaveSync);  // menu · Save & Sync
+  document.getElementById('save-disk').addEventListener('click', doSaveDisk);    // menu · Save → NFO
+  document.getElementById('sync-jf').addEventListener('click', doSync);          // menu · Sync Jellyfin
+  document.getElementById('repull-tmdb-btn').addEventListener('click', () => toast('Re-pulling metadata & artwork from TMDB…'));
+  document.getElementById('repull-cancel').addEventListener('click', closeRm);
+  rm.addEventListener('click', e => { if (e.target === rm) closeRm(); });
+  document.getElementById('repull-go').addEventListener('click', e => { e.target.textContent = 'Re-pulling…'; setTimeout(() => { e.target.textContent = 'Re-pull'; closeRm(); }, 1000); });
+
+  /* ---- TMDB id editable ---- */
+  document.getElementById('tmdb-save').addEventListener('click', () => toast('TMDB id saved — press Re-pull from TMDB to fetch'));
+
+  /* ---- clear a wrong TMDB match (Phase 174) — id, fields, artwork files, then lock ---- */
+  document.getElementById('clear-match-btn').addEventListener('click', () => {
+    toast('TMDB match cleared · poster.jpg and fanart.jpg deleted · <b>locked</b> — use Find / fix match… to re-enable');
+    const mi = document.getElementById('repull-tmdb-btn');
+    if (mi) { mi.style.opacity = '.45'; mi.querySelector('.mi-sub') && (mi.querySelector('.mi-sub').textContent = '🔒 Locked — use Find / fix match… to re-enable'); }
+  });
+  document.getElementById('aw-clear').addEventListener('click', () => toast('poster.jpg removed from disk — the rail now reads “missing”'));
+  document.getElementById('aw-cur-open').addEventListener('click', () => toast('Opening the file that is really on disk — not a TMDB candidate'));
+
+  /* ---- metadata fields: write-through to the library DB (no staging) ---- */
+  // Edits commit to the database on change; the top "Save & sync to Jellyfin / Save → disk"
+  // is what later writes the stored metadata into the NFO files on disk.
+  const FIELD_LABELS = { 'f-title':'Title', 'f-year':'Year', 'f-director':'Director', 'f-studio':'Studio', 'f-plot':'Plot' };
+  Object.keys(FIELD_LABELS).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => toast(FIELD_LABELS[id] + ' saved to library'));
+  });
+  function esc(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal-back.open').forEach(m => m.classList.remove('open')); });
+
+  /* ---- tags: remove, JS-tag dropdown, dirty wrapper ---- */
+  const tagrow = document.getElementById('tagrow');
+  const JS_TAGS = [{n:'open movie',c:'#7b6ef0'},{n:'blender',c:'#2dd49a'},{n:'4k remaster',c:'#f5b542'},{n:'fan favourite',c:'#3fb6f5'}];
+  tagrow.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const name = e.target.closest('.tag-chip').textContent.replace('✕','').trim(); e.target.closest('.tag-chip').remove(); toast('Tag “' + name + '” removed'); } });
+  function addTag(name) {
+    const js = JS_TAGS.find(t => t.n.toLowerCase() === name.toLowerCase());
+    const c = document.createElement('span');
+    c.className = 'chip tag-chip';
+    c.innerHTML = (js ? '<span class="tag-dot" style="background:'+js.c+';"></span> ' : '') + esc(name) + ' <span class="rm">✕</span>';
+    tagrow.appendChild(c); toast('Tag “' + name + '” added');
+  }
+  const tagInput = document.getElementById('tagInput'), tagMenu = document.getElementById('tagMenu');
+  function renderMenu() {
+    const q = tagInput.value.toLowerCase();
+    const hits = JS_TAGS.filter(t => t.n.includes(q));
+    tagMenu.innerHTML = hits.map(t => '<div class="navitem" data-add="'+t.n+'"><span class="l" style="display:flex;align-items:center;gap:8px;"><span class="tag-dot" style="background:'+t.c+';"></span>'+t.n+'</span></div>').join('') || '<div class="tiny muted" style="padding:8px;">Press Enter to add "'+esc(tagInput.value)+'"</div>';
+    tagMenu.style.display = 'block';
+  }
+  tagInput.addEventListener('focus', renderMenu);
+  tagInput.addEventListener('input', renderMenu);
+  tagInput.addEventListener('keydown', e => { if (e.key === 'Enter' && tagInput.value.trim()) { addTag(tagInput.value.trim()); tagInput.value=''; tagMenu.style.display='none'; } });
+  tagMenu.addEventListener('click', e => { const it = e.target.closest('[data-add]'); if (it) { addTag(it.dataset.add); tagInput.value=''; tagMenu.style.display='none'; } });
+  document.addEventListener('click', e => { if (!e.target.closest('#tags-section')) tagMenu.style.display='none'; });
+
+  /* ---- shared searchable language picker (Phase 11 component) ---- */
+  window.RAVILO_LANGS = window.RAVILO_LANGS || [
+    { code:'en', name:'English',   endo:'English' },
+    { code:'fr', name:'French',    endo:'Français' },
+    { code:'de', name:'German',    endo:'Deutsch' },
+    { code:'es', name:'Spanish',   endo:'Español' },
+    { code:'da', name:'Danish',    endo:'Dansk' },
+    { code:'fo', name:'Faroese',   endo:'Føroyskt' },
+    { code:'is', name:'Icelandic', endo:'Íslenska' },
+    { code:'no', name:'Norwegian', endo:'Norsk' },
+    { code:'sv', name:'Swedish',   endo:'Svenska' },
+    { code:'fi', name:'Finnish',   endo:'Suomi' },
+    { code:'nl', name:'Dutch',     endo:'Nederlands' },
+    { code:'it', name:'Italian',   endo:'Italiano' },
+    { code:'pt', name:'Portuguese',endo:'Português' },
+    { code:'pl', name:'Polish',    endo:'Polski' },
+    { code:'ru', name:'Russian',   endo:'Русский' },
+    { code:'ja', name:'Japanese',  endo:'日本語' },
+    { code:'ko', name:'Korean',    endo:'한국어' },
+    { code:'zh', name:'Chinese',   endo:'中文' },
+    { code:'ar', name:'Arabic',    endo:'العربية' },
+    { code:'hi', name:'Hindi',     endo:'हिन्दी' },
+  ];
+  // openLangMenu(anchorEl, currentCode, onPick) — beautiful searchable dropdown, full display names.
+  window.openLangMenu = function (anchor, current, onPick) {
+    document.querySelectorAll('.langmenu').forEach(m => m.remove());
+    const data = window.RAVILO_LANGS;
+    const menu = document.createElement('div');
+    menu.className = 'langmenu';
+    menu.innerHTML = '<div class="lm-search"><span class="muted">⌕</span><input type="text" placeholder="Search language…" autocomplete="off"></div><div class="lm-list"></div>';
+    document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = (window.scrollY + r.bottom + 6) + 'px';
+    menu.style.left = (window.scrollX + Math.min(r.left, window.innerWidth - 280)) + 'px';
+    const search = menu.querySelector('input'), listEl = menu.querySelector('.lm-list');
+    let active = 0, filtered = data.slice();
+    function draw() {
+      listEl.innerHTML = filtered.length ? filtered.map((l, i) =>
+        '<div class="lm-opt' + (i===active?' active':'') + (l.code===current?' cur':'') + '" data-code="' + l.code + '">' +
+        '<span class="lm-name">' + l.name + '</span><span class="lm-endo">' + l.endo + '</span>' +
+        '<span class="lm-code">' + l.code + '</span></div>').join('')
+        : '<div class="lm-empty">No language matches</div>';
+    }
+    function filter() {
+      const q = search.value.trim().toLowerCase();
+      filtered = data.filter(l => !q || l.name.toLowerCase().includes(q) || l.endo.toLowerCase().includes(q) || l.code.includes(q));
+      active = 0; draw();
+    }
+    function choose(code) { if (code) onPick(code); close(); }
+    function close() { menu.remove(); document.removeEventListener('click', outside, true); }
+    function outside(e) { if (!menu.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close(); }
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { active = Math.min(filtered.length-1, active+1); draw(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { active = Math.max(0, active-1); draw(); e.preventDefault(); }
+      else if (e.key === 'Enter') { if (filtered[active]) choose(filtered[active].code); e.preventDefault(); }
+      else if (e.key === 'Escape') { close(); e.preventDefault(); }
+    });
+    listEl.addEventListener('click', e => { const o = e.target.closest('.lm-opt'); if (o) choose(o.dataset.code); });
+    draw(); setTimeout(() => { document.addEventListener('click', outside, true); search.focus(); }, 0);
+  };
+
+  /* ---- unified track & order editor (movie) ---- */
+  (function trackEditor() {
+    const FILE = 'Sintel (2010).mkv';
+    const CONTAINER = 'mkv';                 // mkv → mkvpropedit for flags; reorder always needs remux
+    const RESOLVED = 'en';                   // resolved metadata language (audio cascade target)
+    const LANGS = (window.RAVILO_LANGS || []).map(l => l.code);   // codes, full data in LANGDATA
+    const LANGDATA = window.RAVILO_LANGS || [];
+    const LANGNAME = Object.fromEntries(LANGDATA.map(l => [l.code, l.name]).concat([['', 'untagged']]));
+    // ISO-639-1 → ISO-3166-1-alpha-2 (flag-icons country code) for the pagebar audio strip
+    const LANG_CC = { en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn', ar:'sa', hi:'in' };
+    const FLAG_MAX = 5;
+    // working model (clone of original); each track: {sp, lang, codec, title, def, forced}
+    const model = {
+      audio: [
+        { sp:'0:a:0', lang:'en', codec:'vorbis · stereo', title:'', def:false },
+        { sp:'0:a:1', lang:'fr', codec:'ac3 · 5.1', title:'Français', def:true },
+        { sp:'0:a:2', lang:'fo', codec:'eac3 · 5.1', title:'Føroyskt', def:false },
+        { sp:'0:a:3', lang:'da', codec:'ac3 · 5.1', title:'Dansk', def:false },
+        { sp:'0:a:4', lang:'',   codec:'ac3', title:'commentary', def:false },
+      ],
+      subs: [
+        { sp:'0:s:0', lang:'en', codec:'srt', title:'English', def:true,  forced:false },
+        { sp:'0:s:1', lang:'en', codec:'srt', title:'SDH', def:false, forced:false },
+        { sp:'0:s:2', lang:'',   codec:'subrip', title:'', def:false, forced:true },
+      ],
+    };
+    const orig = JSON.parse(JSON.stringify(model));
+    let kind = 'audio';
+
+    const list = document.getElementById('track-list');
+    const colMid = document.getElementById('col-mid');
+    const explain = document.getElementById('trk-explain');
+    const seg = document.getElementById('trk-seg');
+
+    const AUDIO_EXPLAIN = '<div style="display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:baseline;">' +
+      '<b style="white-space:nowrap;">▲▼ Order</b><span class="tiny">The track\'s index in the file. Jellystructure reads audio tracks <b>top-down</b> to decide the <b>metadata language</b> (first match wins); players also fall back to the first track.</span>' +
+      '<b style="white-space:nowrap;">★ Default</b><span class="tiny">The track the player <b>auto-selects on playback</b>. Independent of order, and changing it <b>never</b> affects the metadata language.</span></div>';
+    const SUBS_EXPLAIN = '<div style="display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:baseline;">' +
+      '<b style="white-space:nowrap;">★ Default</b><span class="tiny">The subtitle shown automatically when subtitles are on.</span>' +
+      '<b style="white-space:nowrap;">⮕ Forced</b><span class="tiny">A <b>separate</b> flag — shows only foreign-dialogue lines over a known-language audio. A track can be forced without being default.</span></div>';
+
+    function rows() { return model[kind]; }
+    const kindName = () => kind === 'audio' ? 'Audio' : 'Subtitle';
+    const ordMsg = () => kindName() + ' order queued · ffmpeg remux job (Activity ▸ Jobs)';
+
+    // Sidecar subtitle files on disk (Phase 200). One list, read by both the pagebar strip and the card.
+    const SIDECARS = [
+      { lang:'en', file:'Sintel (2010).en.srt',     src:'Bazarr · Addic7ed',                      forced:false, sdh:false },
+      { lang:'en', file:'Sintel (2010).en.hi.srt',  src:'on disk · not managed by Bazarr',        forced:false, sdh:true  },
+      { lang:'nl', file:'Sintel (2010).nl.srt',     src:'on disk · not managed by Bazarr',        forced:false, sdh:false },
+      { lang:'',   file:'Sintel (2010).forced.srt', src:'on disk · no language in the filename',  forced:true,  sdh:false },
+    ];
+    (function renderSidecars() {
+      const el = document.getElementById('sc-list'); if (!el) return;
+      const tag = (t, c) => '<span class="chip" style="background:var(--' + c + '-soft);border-color:transparent;color:var(--' + c + ');font-size:.7rem;padding:2px 9px;">' + t + '</span>';
+      el.innerHTML = SIDECARS.map(s => {
+        const lang = s.lang ? '<span class="lang">' + s.lang + '</span>' : '<span class="lang" style="opacity:.45;">—</span>';
+        const tags = [s.sdh ? tag('SDH', 'info') : '', s.forced ? tag('forced', 'warn') : '', s.lang ? '' : tag('untagged', 'bad')].filter(Boolean).join('');
+        return '<div class="sc-row">' + lang + '<div class="sc-main"><span class="sc-name">' + s.file + '</span><span class="sc-sub">' + s.src + '</span></div>' +
+          '<div class="sc-tags">' + (tags || '<span class="tiny muted">—</span>') + '</div></div>';
+      }).join('');
+      document.getElementById('sc-count').textContent = SIDECARS.length + ' files on disk';
+    })();
+
+    // pagebar language strips — AUDIO from model.audio, SUBTITLES from embedded subs + sidecars
+    // (Phase 200 FR-200-5). Physical track order, first occurrence of each language wins; untagged
+    // tracks are skipped, and a strip with nothing tagged is hidden entirely. Deduped by LANGUAGE,
+    // never by track, so +N counts languages — R239's counting rule.
+    const flagStrip = document.getElementById('audio-flags');
+    const subStrip = document.getElementById('sub-flags');
+    function strip(el, label, langs) {
+      if (!el) return;
+      const uniq = [...new Set(langs.filter(l => l && LANG_CC[l]))];
+      if (!uniq.length) { el.innerHTML = ''; return; }
+      const shown = uniq.slice(0, FLAG_MAX);
+      const extra = uniq.length - shown.length;
+      const flags = shown.map(l => '<span class="fi fi-' + LANG_CC[l] + '" title="' + (LANGNAME[l] || l) + '"></span>').join('');
+      const more = extra > 0 ? '<span class="af-more" title="' + extra + ' more">+' + extra + '</span>' : '';
+      el.innerHTML = '<span class="af-label">' + label + '</span><span class="af-row">' + flags + more + '</span>';
+    }
+    function updateHeaderFlags() {
+      strip(flagStrip, 'Audio', model.audio.map(t => t.lang));
+      strip(subStrip, 'Subtitles', model.subs.map(t => t.lang).concat(SIDECARS.map(s => s.lang)));
+    }
+
+    function render() {
+      const arr = rows();
+      colMid.textContent = kind === 'audio' ? 'language & codec' : 'language, codec & forced';
+      list.innerHTML = arr.map((t, i) => {
+        const untag = !t.lang;
+        const cls = 'trk' + (t.def ? ' isdef' : '') + (untag ? ' untagged' : '');
+        const dCount = arr.filter(x => x.def).length;
+        const star = (t.def && dCount === 1)
+          ? '<span class="badge warn">★ default</span>'
+          : '<span class="btn sm ' + (t.def ? '' : 'ghost') + ' star-btn" data-act="default" data-i="' + i + '">' + (t.def ? '★ keep this one' : 'set default ★') + '</span>';
+        const forced = kind === 'subs'
+          ? '<label class="row center tiny" style="gap:6px;cursor:pointer;"><span class="mini-toggle' + (t.forced ? ' on' : '') + '" data-act="forced" data-i="' + i + '"></span> forced</label>'
+          : '';
+        const langCell = untag
+          ? '<span class="lang-pickwrap" data-act="lang" data-i="' + i + '"><span class="badge bad">no language</span> <span class="muted" style="font-size:.7rem;">▾</span></span>'
+          : '<span class="lang-pickwrap" data-act="lang" data-i="' + i + '"><span class="lang">' + t.lang + '</span> <span class="muted tiny">' + (LANGNAME[t.lang] || '') + '</span> <span class="muted" style="font-size:.7rem;">▾</span></span>';
+        const meta = '<span class="muted tiny mono">' + t.codec + (t.title ? ' · "' + t.title + '"' : '') + '</span>';
+        const picker = '';
+        return '<div class="trk ' + cls.replace('trk','').trim() + '" draggable="true" data-i="' + i + '">' +
+          '<div class="trk-main">' +
+            '<span class="grip" title="Drag to reorder">⠿</span>' +
+            '<span class="ord"><span class="ord-btn" data-act="up" data-i="' + i + '"' + (i===0?' disabled':'') + '>▲</span>' +
+              '<span class="ord-btn" data-act="down" data-i="' + i + '"' + (i===arr.length-1?' disabled':'') + '>▼</span></span>' +
+            '<span class="pos">' + (i+1) + '</span>' +
+            '<span class="trk-mid"><span class="num" style="width:48px;">' + t.sp + '</span>' + langCell + meta + '</span>' +
+            '<span class="trk-right">' + forced + star + '</span>' +
+          '</div>' + picker + '</div>';
+      }).join('');
+      explain.innerHTML = kind === 'audio' ? AUDIO_EXPLAIN : SUBS_EXPLAIN;
+      cascade();
+      diff();
+      updateHeaderFlags();
+    }
+
+    // cascade alert: audio default lang ≠ resolved metadata language
+    const cAlert = document.getElementById('cascade-alert');
+    const cDef = document.getElementById('cascade-def');
+    function cascade() {
+      const def = model.audio.find(t => t.def);
+      const show = kind === 'audio' && def && def.lang && def.lang !== RESOLVED;
+      cAlert.style.display = show ? 'flex' : 'none';
+      if (show) cDef.innerHTML = '<span class="lang">' + def.lang + '</span> (' + LANGNAME[def.lang] + ')';
+    }
+    document.getElementById('cascade-fix').addEventListener('click', () => {
+      const t = model.audio.find(x => x.lang === RESOLVED) || model.audio[0];
+      model.audio.forEach(x => x.def = (x === t)); render(); toast('Default audio → ' + RESOLVED + ' written · ~40ms');
+    });
+
+    // ---- interactions (event-delegated) ----
+    list.addEventListener('click', e => {
+      const el = e.target.closest('[data-act]'); if (!el) return;
+      const i = +el.dataset.i, arr = rows();
+      const act = el.dataset.act;
+      if (act === 'up' && i > 0) { [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; render(); toast(ordMsg()); }
+      else if (act === 'down' && i < arr.length-1) { [arr[i+1], arr[i]] = [arr[i], arr[i+1]]; render(); toast(ordMsg()); }
+      else if (act === 'default') { arr.forEach((t,k) => t.def = (k===i)); render(); toast(kindName() + ' default → ' + arr[i].sp + ' written · ~40ms'); }
+      else if (act === 'forced') { arr[i].forced = !arr[i].forced; render(); toast(arr[i].sp + ' forced ' + (arr[i].forced ? 'on' : 'off') + ' written · ~40ms'); }
+      else if (act === 'lang') {
+        const anchor = el.closest('.lang-pickwrap') || el;
+        window.openLangMenu(anchor, arr[i].lang, code => { arr[i].lang = code; render(); toast(arr[i].sp + ' → ' + code + ' (' + (LANGNAME[code]||code) + ') written · ~40ms'); });
+      }
+    });
+
+    // ---- drag reorder ----
+    let dragI = null;
+    list.addEventListener('dragstart', e => { const r = e.target.closest('.trk'); if (!r) return; dragI = +r.dataset.i; r.classList.add('dragging'); });
+    list.addEventListener('dragend', () => { dragI = null; list.querySelectorAll('.trk').forEach(r => r.classList.remove('dragging','drop-before','drop-after')); });
+    list.addEventListener('dragover', e => {
+      e.preventDefault(); const r = e.target.closest('.trk'); if (!r || dragI===null) return;
+      const over = +r.dataset.i; list.querySelectorAll('.trk').forEach(x => x.classList.remove('drop-before','drop-after'));
+      if (over !== dragI) r.classList.add(over < dragI ? 'drop-before' : 'drop-after');
+    });
+    list.addEventListener('drop', e => {
+      e.preventDefault(); const r = e.target.closest('.trk'); if (!r || dragI===null) return;
+      const to = +r.dataset.i, arr = rows(); if (to === dragI) return;
+      const [m] = arr.splice(dragI, 1); arr.splice(to, 0, m); render(); toast(ordMsg());
+    });
+
+    // ---- segmented Audio / Subtitles ----
+    seg.addEventListener('click', e => {
+      const s = e.target.closest('[data-tk]'); if (!s) return;
+      [...seg.children].forEach(x => x.classList.toggle('on', x === s));
+      kind = s.dataset.tk === 'subs' ? 'subs' : 'audio'; render();
+    });
+
+    // ---- write-through: edits commit to disk immediately (no staging) ----
+    // model is the on-disk truth; this keeps orig in sync so nothing is ever "pending".
+    function diff() { ['audio','subs'].forEach(k => orig[k] = JSON.parse(JSON.stringify(model[k]))); }
+
+    render();
+  })();
+
+  /* ---- TMDB match picker (Phase 32) ---- */
+  const tmdbModal = document.getElementById('tmdb-modal');
+  document.getElementById('find-match-btn').addEventListener('click', () => tmdbModal.classList.add('open'));
+  document.getElementById('tmdb-x').addEventListener('click', () => tmdbModal.classList.remove('open'));
+  document.getElementById('tmdb-cancel').addEventListener('click', () => tmdbModal.classList.remove('open'));
+  tmdbModal.addEventListener('click', e => { if (e.target === tmdbModal) tmdbModal.classList.remove('open'); });
+  document.querySelectorAll('#tmdb-cands .cand').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('#tmdb-cands .cand').forEach(x => x.classList.remove('sel')); c.classList.add('sel');
+  }));
+  document.getElementById('tmdb-use').addEventListener('click', () => { tmdbModal.classList.remove('open'); toast('TMDB match set — re-pulling metadata…'); });
+
+  /* ---- metadata language: choose a winner for this title (phase 184 design) ---- */
+  (function () {
+    const card = document.getElementById('mlang-card');
+    if (!card) return;
+    const menu = document.getElementById('mlang-menu'), list = document.getElementById('mlang-list'),
+      search = document.getElementById('mlang-search'), band = document.getElementById('mlang-band'),
+      openBtn = document.getElementById('mlang-open'), revertRow = document.getElementById('mlang-revert-row'),
+      badge = document.getElementById('mlang-badge'), blurb = document.getElementById('mlang-blurb'),
+      traceHd = document.getElementById('mlang-trace-hd'), hr = document.getElementById('mlang-hr'),
+      changeRow = document.getElementById('mlang-change-row'),
+      fetchRow = document.getElementById('mlang-fetchrow');
+    const RESOLVED = { code: 'en', name: 'English', native: 'English' };
+    /* what TMDB currently holds for this title — title / overview / poster count */
+    const AVAIL = [
+      { code: 'en', name: 'English', native: 'English', t: 1, o: 1, p: 34 },
+      { code: 'fr', name: 'French', native: 'Français', t: 1, o: 1, p: 5 },
+      { code: 'de', name: 'German', native: 'Deutsch', t: 1, o: 1, p: 4 },
+      { code: 'es', name: 'Spanish', native: 'Español', t: 1, o: 1, p: 6 },
+      { code: 'it', name: 'Italian', native: 'Italiano', t: 1, o: 1, p: 2 },
+      { code: 'ja', name: 'Japanese', native: '日本語', t: 1, o: 1, p: 3 },
+      { code: 'ko', name: 'Korean', native: '한국어', t: 1, o: 1, p: 12 },
+      { code: 'nl', name: 'Dutch', native: 'Nederlands', t: 1, o: 1, p: 1 },
+      { code: 'pt', name: 'Portuguese', native: 'Português', t: 1, o: 1, p: 3 },
+      { code: 'ru', name: 'Russian', native: 'Русский', t: 1, o: 1, p: 4 },
+      { code: 'sv', name: 'Swedish', native: 'Svenska', t: 1, o: 0, p: 0 },
+      { code: 'da', name: 'Danish', native: 'Dansk', t: 1, o: 0, p: 0 },
+      { code: 'fo', name: 'Faroese', native: 'Føroyskt', t: 1, o: 0, p: 0 },
+      { code: 'zh', name: 'Chinese', native: '中文', t: 1, o: 1, p: 2 }
+    ];
+    let chosen = null;
+
+    const pips = l => '<span class="pips">' +
+      `<span class="pip${l.t ? '' : ' no'}">Aa</span>` +
+      `<span class="pip${l.o ? '' : ' no'}">¶</span>` +
+      (l.p ? `<span class="pip n">${l.p}</span>` : '<span class="pip no">▣</span>') + '</span>';
+
+    function render(q) {
+      const term = (q || '').trim().toLowerCase();
+      const hit = l => !term || l.name.toLowerCase().includes(term) || l.native.toLowerCase().includes(term) || l.code.includes(term);
+      const cur = AVAIL.filter(l => l.code === RESOLVED.code && hit(l));
+      const rest = AVAIL.filter(l => l.code !== RESOLVED.code && hit(l));
+      let html = '';
+      if (cur.length) html += '<div class="lm-hd">Resolved automatically</div>' + cur.map(l =>
+        `<div class="lm-r" data-code="${l.code}"><span class="lang">${l.code}</span><span class="lm-nm">${l.name}<i>${l.native} · current winner</i></span>${pips(l)}</div>`).join('');
+      if (rest.length) html += '<div class="lm-hd">Also available for this title</div>' + rest.map(l =>
+        `<div class="lm-r" data-code="${l.code}"><span class="lang">${l.code}</span><span class="lm-nm">${l.name}<i>${l.native}</i></span>${pips(l)}</div>`).join('');
+      list.innerHTML = html || '<div class="lm-empty">No language matches — TMDB holds 14 for this title.</div>';
+    }
+
+    const close = () => { menu.classList.remove('open'); };
+    const open = () => { render(search.value = ''); menu.classList.add('open'); search.focus(); };
+
+    openBtn.addEventListener('click', e => { e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+    document.getElementById('mlang-change').addEventListener('click', e => { e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+    search.addEventListener('input', () => render(search.value));
+    search.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); } });
+    document.addEventListener('click', e => { if (!card.contains(e.target)) close(); });
+
+    list.addEventListener('click', e => {
+      const r = e.target.closest('[data-code]'); if (!r) return;
+      const l = AVAIL.find(x => x.code === r.dataset.code);
+      close();
+      if (l.code === RESOLVED.code) { setAuto(); return; }
+      chosen = l;
+      card.classList.add('chosen');
+      badge.textContent = 'chosen'; badge.className = 'badge';
+      badge.style.cssText = 'background:var(--hi-soft);border-color:rgba(123,110,240,.45);color:var(--acc-ink);';
+      blurb.style.display = 'none';
+      band.style.display = ''; traceHd.style.display = '';
+      hr.style.display = 'none'; fetchRow.style.display = 'none';
+      document.getElementById('mlang-band-code').textContent = l.code;
+      document.getElementById('mlang-band-name').textContent = l.name;
+      document.getElementById('mlang-band-when').textContent = 'chosen by you · just now';
+      openBtn.parentElement.style.display = 'none';
+      changeRow.style.display = ''; revertRow.style.display = '';
+      document.getElementById('mlang-foot').innerHTML = 'Locked — <span class="mono">pull_tmdb</span> and re-scans can’t move it.';
+      toast(`Metadata language → ${l.name} · re-pulling this title from TMDB…`);
+    });
+
+    function setAuto() {
+      chosen = null;
+      card.classList.remove('chosen');
+      badge.textContent = 'automatic'; badge.className = 'badge info'; badge.style.cssText = '';
+      blurb.style.display = ''; band.style.display = 'none'; traceHd.style.display = 'none';
+      hr.style.display = ''; fetchRow.style.display = '';
+      openBtn.parentElement.style.display = ''; changeRow.style.display = 'none'; revertRow.style.display = 'none';
+      document.getElementById('mlang-foot').innerHTML = 'Global fallback is <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a>';
+      toast('Back to automatic — the resolved winner (en) applies again');
+    }
+    document.getElementById('mlang-revert').addEventListener('click', setAuto);
+  })();
+
+  /* ---- drift banner + modal (Phase 33) ---- */
+  const driftModal = document.getElementById('drift-modal');
+  const driftBanner = document.getElementById('drift-banner');
+  document.getElementById('dismiss-drift').addEventListener('click', () => driftBanner.remove());
+  document.getElementById('review-drift').addEventListener('click', () => driftModal.classList.add('open'));
+  document.getElementById('drift-x').addEventListener('click', () => driftModal.classList.remove('open'));
+  document.getElementById('drift-close').addEventListener('click', () => driftModal.classList.remove('open'));
+  driftModal.addEventListener('click', e => { if (e.target === driftModal) driftModal.classList.remove('open'); });
+  const reassert = () => { driftModal.classList.remove('open'); if (driftBanner) driftBanner.remove(); toast('NFO re-asserted → Jellyfin refreshed'); };
+  document.getElementById('reassert-all').addEventListener('click', reassert);
+  document.getElementById('drift-reassert-all').addEventListener('click', reassert);
+
+  /* ---- history revert (Phase 34) ---- */
+  document.querySelectorAll('.revert-btn').forEach(b => b.addEventListener('click', () => {
+    if (confirm('Revert this change? The previous value is restored and re-written to the NFO.')) toast('Reverted — previous value restored');
+  }));
+
+  /* ---- qBittorrent guard chip (Phase 37) ---- */
+  const gc = document.getElementById('guard-chip'); if (gc) gc.addEventListener('click', () => toast('Seeding guard active — edits to a file being seeded return 409 and are blocked'));
+
+  /* ---- Seeding & cross-seed (Phase 97) ---- */
+  (function () {
+    const root = document.getElementById('seeding-root');
+    let rendered = false;
+    function ensure() {
+      if (rendered || !root) return;
+      const torrents = window.Seeding.renderMovie(root);
+      const link = document.getElementById('seed-pill-link');
+      if (link) link.innerHTML = window.Seeding.pillHTML(torrents);
+      rendered = true;
+    }
+    const link = document.getElementById('seed-pill-link');
+    if (link) link.innerHTML = window.Seeding.pillHTML(window.Seeding.MOVIE.torrents);
+    document.getElementById('tabbar').addEventListener('click', e => { if (e.target.closest('[data-tab="seeding"]')) ensure(); });
+    if (/tab=seeding/.test(location.hash)) ensure();
+    window.addEventListener('hashchange', () => { if (/tab=seeding/.test(location.hash)) ensure(); });
+  })();
+
+  /* ---- Artwork manager (Phase 40 — asset rail + inline gallery) ---- */
+  (function artwork(){
+    const railEl = document.getElementById('aw-rail');
+    if (!railEl) return;
+    const RES = 'en';                                   // this title's resolved metadata language
+    const LN = { en:'English', de:'German', fr:'French', ja:'日本語', es:'Spanish', it:'Italian', xx:'No language' };
+    let _i = 0;
+    function C(lang, vote, w, h, hue, current){ return { lang, vote, w, h, res:w+'×'+h, hue, current:!!current, _i:_i++ }; }
+
+    // assets + TMDB candidates. lang 'xx' = TMDB "no language" (textless) — a real bucket, distinct from "All".
+    const A = {
+      poster:{ key:'poster', label:'Poster', ratio:'2:3', file:'poster.jpg', kind:'portrait', status:'ok', railHue:0,
+        sub:'2:3 · en · 2000×3000', disk:{ lang:'en', res:'2000×3000' },
+        cands:[ C('en',8.4,2000,3000,0,true), C('en',8.1,1400,2100,20), C('en',7.7,1000,1500,300), C('en',6.8,2000,3000,240), C('en',6.5,1000,1500,50),
+          C('xx',7.9,2000,3000,200), C('xx',7.6,2000,3000,150), C('xx',7.0,1400,2100,90), C('xx',6.1,680,1000,170),
+          C('de',7.8,2000,3000,280), C('de',7.2,1400,2100,320), C('de',6.4,1000,1500,110),
+          C('fr',7.3,1400,2100,340), C('fr',6.7,1000,1500,30), C('ja',7.1,1000,1500,60) ] },
+      fanart:{ key:'fanart', label:'Backdrop', ratio:'16:9', file:'fanart.jpg', kind:'land', status:'ok', railHue:200,
+        sub:'16:9 · textless · 3840×2160', disk:{ lang:'xx', res:'3840×2160' },
+        cands:[ C('xx',8.6,3840,2160,200,true), C('xx',8.2,1920,1080,230), C('xx',7.5,1920,1080,160), C('xx',6.7,1920,1080,60),
+          C('en',7.9,3840,2160,280), C('en',7.1,1280,720,320), C('de',6.9,1920,1080,20) ] },
+      clearlogo:{ key:'clearlogo', label:'Clearlogo', ratio:'4:1', file:'clearlogo.png', kind:'logo', status:'bad', railHue:0,
+        sub:'4:1 transparent · missing', disk:null,
+        cands:[ C('xx',8.3,800,200,0), C('xx',7.8,500,125,0), C('xx',7.1,400,100,0),
+          C('de',8.0,800,200,0), C('de',7.4,600,150,0), C('fr',6.9,500,125,0), C('ja',6.5,500,125,0) ] },   // note: no 'en' · real logos run ~5:1
+      banner:{ key:'banner', label:'Banner', ratio:'5.4:1', file:'banner.jpg', kind:'banner', status:'warn', railHue:300,
+        sub:'5.4:1 · low-res 1000×185', disk:{ lang:'en', res:'1000×185', lowres:true },
+        cands:[ C('en',7.4,1000,185,300,true), C('en',7.0,1500,278,330), C('xx',6.8,1500,278,210), C('xx',6.2,1000,185,180) ] },
+    };
+    const ORDER = ['poster','fanart','clearlogo','banner'];
+    let cur = 'poster';
+
+    // ---- per-asset filter state (lazy) ----
+    const state = {};
+    function counts(a){ const m = {}; a.cands.forEach(c => m[c.lang] = (m[c.lang]||0)+1); return m; }
+    function langOrder(a){ const m = counts(a); return Object.keys(m).sort((x,y) => {
+      if (x===RES) return -1; if (y===RES) return 1; if (x==='xx') return -1; if (y==='xx') return 1; return m[y]-m[x]; }); }
+    function initState(a){
+      const m = counts(a), set = new Set(); let mode;
+      if (m[RES]) { set.add(RES); if (m.xx) set.add('xx'); mode='resolved'; }
+      else if (m.xx) { set.add('xx'); mode='fallback-xx'; }
+      else { Object.keys(m).forEach(l => set.add(l)); mode='fallback-any'; }
+      return { active:set, prefer:null, hiRes:false, sort:'vote', mode };
+    }
+    function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
+
+    // ---- rail ----
+    // clearlogo is 4:1 (Phase 192 FR-192-5) — 16/9 cropped a wordmark to its middle third.
+    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,12], banner:[48,18] };
+    function railThumb(a){
+      const d = RDIM[a.key]; let inner;
+      if (a.localUrl && a.kind==='logo') inner = '<div class="aw-checker" style="position:absolute;inset:0;"><img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;"></div>';
+      else if (a.localUrl) inner = '<img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
+      else if (a.kind==='logo') inner = '<div class="aw-checker" style="position:absolute;inset:0;"></div>';
+      else inner = '<div class="aw-fill" style="filter:hue-rotate('+a.railHue+'deg);"></div>';
+      return '<div class="th" style="width:'+d[0]+'px;height:'+d[1]+'px;">'+inner+'</div>';
+    }
+    function drawRail(){
+      railEl.innerHTML = ORDER.map(k => { const a = A[k];
+        return '<div class="aw-rail-item'+(k===cur?' active':'')+'" data-asset="'+k+'">'
+          + railThumb(a)
+          + '<div style="flex:1;min-width:0;"><div class="nm">'+a.label+'</div><div class="sub">'+a.sub+'</div></div>'
+          + '<span class="dot '+a.status+'"></span></div>'; }).join('');
+      const miss = ORDER.filter(k => A[k].status==='bad').length;
+      const mb = document.getElementById('aw-missing');
+      mb.textContent = miss ? miss+' missing' : 'complete';
+      mb.className = 'badge '+(miss?'warn':'ok');
+    }
+    railEl.addEventListener('click', e => { const it = e.target.closest('[data-asset]'); if (!it) return; cur = it.dataset.asset; drawAll(); });
+
+    // ---- gallery ----
+    const head = document.getElementById('aw-gallery-head');
+    const bar = document.getElementById('aw-filterbar');
+    const explainWrap = document.getElementById('aw-explain-wrap');
+    const grid = document.getElementById('aw-grid');
+    const foot = document.getElementById('aw-foot');
+    const dzName = document.getElementById('aw-dz-name');
+    const GDIM = { portrait:[124,186], land:[220,124], logo:[220,55], banner:[300,56] };
+
+    function filtered(a){
+      const s = st(a); let list = a.cands.filter(c => s.active.has(c.lang));
+      if (s.hiRes) { const mx = Math.max.apply(null, a.cands.map(c => c.w)); list = list.filter(c => c.w >= 0.5*mx); }
+      list.sort((x,y) => s.sort==='res' ? (y.w*y.h - x.w*x.h) : (y.vote - x.vote));
+      if (s.prefer==='textless') list.sort((x,y) => (y.lang==='xx') - (x.lang==='xx'));   // stable: push no-language first
+      else if (s.prefer==='text') list.sort((x,y) => (x.lang==='xx') - (y.lang==='xx'));    // stable: push text art first
+      return list;
+    }
+
+    function drawHead(){
+      const a = A[cur]; let badge;
+      if (a.status==='ok') badge = '<span class="badge ok" style="margin-left:8px;">on disk · '+(a.disk.lang==='xx'?'no-language':a.disk.lang)+' · '+a.disk.res+'</span>';
+      else if (a.status==='warn') badge = '<span class="badge warn" style="margin-left:8px;">on disk · low-res '+a.disk.res+'</span>';
+      else badge = '<span class="badge bad" style="margin-left:8px;">not on disk</span>';
+      head.innerHTML = '<h4 style="margin:0;">'+a.label+' <span class="muted" style="font-weight:400;">· '+a.ratio+'</span></h4>'+badge
+        + '<span class="spacer"></span><span class="mono tiny muted">'+a.cands.length+' candidates on TMDB</span>';
+      dzName.textContent = 'the '+a.label.toLowerCase();
+    }
+
+    function drawBar(){
+      const a = A[cur], s = st(a), m = counts(a);
+      const chips = langOrder(a).map(l => {
+        const tl = l==='xx', on = s.active.has(l);
+        return '<span class="chip lchip'+(on?' on':' off')+(tl?' tl':'')+'" data-lang="'+l+'" title="'+(tl?'TMDB no-language / textless art':LN[l]||l)+'">'
+          + (tl?'No language':(LN[l]||l)) + '<span class="n">'+m[l]+'</span></span>';
+      }).join('');
+      const allOn = langOrder(a).every(l => s.active.has(l));
+      const allChip = '<span class="chip lchip'+(allOn?' on':' off')+'" data-all="1" title="Every language including no-language">All<span class="n">'+a.cands.length+'</span></span>';
+      bar.innerHTML =
+        '<div style="flex:1;min-width:0;"><span class="aw-eyebrow">Language</span><div class="pill-row" style="margin-top:6px;">'+chips+allChip+'</div></div>'
+        + '<div><span class="aw-eyebrow">Prefer</span><div class="pill-row" style="margin-top:6px;"><span class="chip lchip'+(s.prefer==='textless'?' on tl':' off')+'" data-pref="textless" title="Sort TMDB no-language (textless) art first — cleanest for posters & logos">Textless</span><span class="chip lchip'+(s.prefer==='text'?' on':' off')+'" data-pref="text" title="Sort art that has baked-in title text first">With text</span></div></div>'
+        + '<div><span class="aw-eyebrow">Quality</span><div class="pill-row" style="margin-top:6px;"><span class="chip lchip'+(s.hiRes?' on':' off')+'" data-hires="1" title="Hide the lower-resolution half">Hi-res only</span></div></div>'
+        + '<div><span class="aw-eyebrow">Sort</span><div class="seg" style="margin-top:6px;"><span class="'+(s.sort==='vote'?'on':'')+'" data-sort="vote">Vote ★</span><span class="'+(s.sort==='res'?'on':'')+'" data-sort="res">Resolution</span></div></div>';
+    }
+
+    function drawExplain(){
+      const a = A[cur], s = st(a);
+      const names = [...s.active].map(l => l==='xx' ? 'No-language' : (LN[l]||l));
+      const hidden = a.cands.filter(c => !s.active.has(c.lang)).length;
+      let warn = false, lead = '';
+      // FR-192-6: say when there is nothing saved yet, before the fallback copy.
+      if (a.kind==='logo' && a.status==='bad') lead = '<b>No logo saved yet</b> — pick one below, or let the next artwork run fetch it. ';
+      if (s.mode==='fallback-xx') { warn = true; lead += '<b>No '+LN[RES]+' '+a.label.toLowerCase()+' on TMDB.</b> Falling back to <b>No-language</b> art'+(a.kind==='logo'?' — the best choice for logos':'')+'. '; }
+      else if (s.mode==='fallback-any') { warn = true; lead += '<b>No '+LN[RES]+' or no-language '+a.label.toLowerCase()+'.</b> Showing every language. '; }
+      const body = lead
+        + 'Showing <b>'+names.join('</b> + <b>')+'</b>'
+        + (s.mode==='resolved' ? ' — matched to this title’s resolved language <span class="lang">en</span>'+(s.prefer==='textless'?', textless preferred':s.prefer==='text'?', with-text preferred':'') : '')
+        + '. ' + (hidden ? '<b>'+hidden+'</b> other-language candidate'+(hidden>1?'s':'')+' hidden.' : 'Nothing hidden.');
+      explainWrap.innerHTML = '<div style="padding:11px 13px;background:var('+(warn?'--warn-soft':'--info-soft')+');border:1px solid '+(warn?'rgba(245,181,66,.35)':'rgba(63,182,245,.3)')+';border-radius:10px;">'
+        + '<div class="aw-filterline"><span class="ic">ⓘ</span><span>'+body+' '+(hidden?'<a href="#" data-showall>Show all '+a.cands.length+' →</a>':'')+'</span></div></div>';
+    }
+
+    function cardHTML(c, a){
+      const tl = c.lang==='xx', d = GDIM[a.kind];
+      let bg;
+      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;"><span class="wm">Sintel</span></div></div>';
+      else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
+      return '<div class="aw-cand'+(c.current?' current':'')+'" data-pick="'+c._i+'" style="width:'+d[0]+'px;height:'+d[1]+'px;">'
+        + bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':'')
+        + '<button class="aw-zoom" data-zoom title="View larger">⤢</button>'
+        + '<div class="aw-tagrow"><span class="aw-lpill'+(tl?' tl':'')+'">'+(tl?'no-lang':c.lang)+'</span><span class="aw-vote">★ '+c.vote.toFixed(1)+'</span></div>'
+        + '<div class="aw-meta"><span>'+c.res+'</span><span style="opacity:.65;">'+a.ratio+'</span></div></div>';
+    }
+
+    function drawGrid(){
+      const a = A[cur], list = filtered(a);
+      grid.style.display = 'flex'; grid.style.flexWrap = 'wrap'; grid.style.gap = '14px';
+      grid.innerHTML = list.length ? list.map(c => cardHTML(c, a)).join('')
+        : '<div class="tiny muted" style="padding:20px;">No candidates match these filters. <a href="#" data-showall>Reset to defaults →</a></div>';
+    }
+
+    function drawFoot(){
+      foot.innerHTML = 'Click any candidate to write it to disk as <span class="mono">'+A[cur].file+'</span> · hover and click <b>⤢</b> to view it large · the <span style="color:var(--ok);font-weight:600;">green</span> outline is what’s on disk now. Changes are written immediately; press <b>Save &amp; sync to Jellyfin</b> to push now, or Jellyfin will pick them up on its next scan.';
+    }
+
+    function drawGallery(){ drawHead(); drawBar(); drawExplain(); drawGrid(); drawFoot(); }
+    function drawAll(){ drawRail(); drawGallery(); }
+
+    // commit a candidate to disk (shared by grid click + lightbox)
+    function saveCand(a, c){ a.cands.forEach(x => x.current = false); c.current = true; a.status = 'ok'; a.localUrl = null;
+      a.disk = { lang:c.lang, res:c.res }; a.sub = a.ratio+' · '+(c.lang==='xx'?'textless':c.lang)+' · '+c.res;
+      drawAll(); toast(a.label+' written → '+a.file); }
+
+    // ---- lightbox (larger preview) ----
+    const lb = document.getElementById('aw-lb'), lbArt = document.getElementById('aw-lb-art'),
+      lbPanel = document.getElementById('aw-lb-panel'), lbPrev = document.getElementById('aw-lb-prev'),
+      lbNext = document.getElementById('aw-lb-next'), lbCounter = document.getElementById('aw-lb-counter');
+    let lbList = [], lbIdx = 0;
+    const LBDIM = { portrait:[348,522], land:[660,372], logo:[660,165], banner:[792,148] };
+    function lbArtHTML(c, a){ const d = LBDIM[a.kind]; let bg;
+      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;"><span class="wm">Sintel</span></div></div>';
+      else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
+      lbArt.style.width = d[0]+'px'; lbArt.style.height = d[1]+'px';
+      return bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':''); }
+    function spec(k,v){ return '<div class="aw-lb-spec"><span class="tiny muted">'+k+'</span><span class="v">'+v+'</span></div>'; }
+    function renderLB(){ const a = A[cur], c = lbList[lbIdx]; if (!c) return;
+      lbArt.innerHTML = lbArtHTML(c, a);
+      const tl = c.lang==='xx';
+      lbPanel.innerHTML = '<div class="aw-eyebrow">'+a.label+' · '+a.ratio+'</div>'
+        + '<div class="row center" style="gap:8px;margin:11px 0 6px;"><span class="aw-lpill'+(tl?' tl':'')+'" style="font-size:.72rem;">'+(tl?'no-language':(LN[c.lang]||c.lang))+'</span><span class="aw-vote" style="font-size:.72rem;">★ '+c.vote.toFixed(1)+'</span></div>'
+        + spec('Resolution', c.res) + spec('Aspect', a.ratio)
+        + spec('Language', tl?'No-language (textless)':(LN[c.lang]||c.lang))
+        + spec('TMDB votes', c.vote.toFixed(1)+' ★')
+        + '<div style="margin-top:16px;">' + (c.current
+            ? '<div class="badge ok" style="width:100%;justify-content:center;padding:9px 0;">✓ Currently on disk</div>'
+            : '<span class="btn sm primary fill" id="aw-lb-save" style="justify-content:center;">Use this artwork</span>')
+        + '</div>'
+        + '<div class="tiny muted" style="margin-top:12px;line-height:1.5;">Writes <span class="mono">'+a.file+'</span> to disk immediately. ‹ › to browse · Esc to go back.</div>';
+      lbCounter.textContent = (lbIdx+1)+' / '+lbList.length;
+      lbPrev.disabled = lbIdx<=0; lbNext.disabled = lbIdx>=lbList.length-1;
+      const vb = document.getElementById('aw-lb-save');
+      if (vb) vb.onclick = () => { saveCand(a, c); closeLB(); }; }
+    function openLBByPick(i){ const a = A[cur]; lbList = filtered(a); lbIdx = Math.max(0, lbList.findIndex(c => c._i===i));
+      lb.classList.add('open'); lb.setAttribute('aria-hidden','false'); renderLB(); }
+    function closeLB(){ lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); }
+    function stepLB(d){ const n = lbIdx+d; if (n>=0 && n<lbList.length){ lbIdx = n; renderLB(); } }
+    lbPrev.addEventListener('click', () => stepLB(-1));
+    lbNext.addEventListener('click', () => stepLB(1));
+    document.getElementById('aw-lb-x').addEventListener('click', closeLB);
+    lb.addEventListener('click', e => { if (e.target===lb) closeLB(); });
+    document.addEventListener('keydown', e => { if (!lb.classList.contains('open')) return;
+      if (e.key==='Escape') closeLB(); else if (e.key==='ArrowLeft') stepLB(-1); else if (e.key==='ArrowRight') stepLB(1); });
+
+    // ---- interactions ----
+    bar.addEventListener('click', e => {
+      const a = A[cur], s = st(a);
+      const lang = e.target.closest('[data-lang]'), all = e.target.closest('[data-all]'),
+        pref = e.target.closest('[data-pref]'), hir = e.target.closest('[data-hires]'), sort = e.target.closest('[data-sort]');
+      if (lang) { const l = lang.dataset.lang; if (s.active.has(l)) { if (s.active.size > 1) s.active.delete(l); } else s.active.add(l); }
+      else if (all) { langOrder(a).forEach(l => s.active.add(l)); }
+      else if (pref) { const p = pref.dataset.pref; s.prefer = (s.prefer===p) ? null : p; }
+      else if (hir) { s.hiRes = !s.hiRes; }
+      else if (sort) { s.sort = sort.dataset.sort; }
+      else return;
+      drawBar(); drawExplain(); drawGrid();
+    });
+    explainWrap.addEventListener('click', e => { if (e.target.closest('[data-showall]')) { e.preventDefault();
+      const a = A[cur], s = st(a); langOrder(a).forEach(l => s.active.add(l)); s.hiRes = false; drawBar(); drawExplain(); drawGrid(); } });
+    grid.addEventListener('click', e => {
+      const zoom = e.target.closest('[data-zoom]');
+      if (zoom) { const z = zoom.closest('[data-pick]'); openLBByPick(+z.dataset.pick); return; }
+      const card = e.target.closest('[data-pick]');
+      if (card) { const a = A[cur], c = a.cands.find(x => x._i === +card.dataset.pick); if (c && !c.current) saveCand(a, c); return; }
+      const sa = e.target.closest('[data-showall]'); if (sa) { e.preventDefault(); const a = A[cur]; state[a.key] = initState(a); drawGallery(); }
+    });
+
+    // ---- drag-drop · upload · paste URL ----
+    const dz = document.getElementById('aw-dropz'), fileIn = document.getElementById('aw-file');
+    function takeFile(f){ if (!f || !/^image\//.test(f.type)) return; const a = A[cur];
+      a.localUrl = URL.createObjectURL(f); a.status = 'ok'; a.disk = { lang:'local', res:'your upload' };
+      a.sub = a.ratio+' · uploaded · '+f.name; drawAll(); toast('Replaced '+a.label.toLowerCase()+' with '+f.name); }
+    ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', e => takeFile(e.dataTransfer.files && e.dataTransfer.files[0]));
+    document.getElementById('aw-upload').addEventListener('click', () => fileIn.click());
+    fileIn.addEventListener('change', () => takeFile(fileIn.files[0]));
+    document.getElementById('aw-paste').addEventListener('click', () => { const u = prompt('Paste an image URL for '+A[cur].label.toLowerCase()+':');
+      if (u) { const a = A[cur]; a.localUrl = u; a.status = 'ok'; a.disk = { lang:'url', res:'from URL' }; a.sub = a.ratio+' · from URL'; drawAll(); toast(A[cur].label+' set from URL'); } });
+    document.getElementById('aw-fetch-all').addEventListener('click', () => {
+      ORDER.forEach(k => { const a = A[k]; if (a.status==='bad') { const best = filtered(a)[0] || a.cands[0];
+        if (best) { a.cands.forEach(x => x.current = false); best.current = true; a.status = 'ok';
+          a.disk = { lang:best.lang, res:best.res }; a.sub = a.ratio+' · '+(best.lang==='xx'?'textless':best.lang)+' · '+best.res; } } });
+      drawAll(); toast('Fetched missing artwork from TMDB'); });
+
+    drawAll();
+  })();
+
+  /* ---- Cast & crew (Phase 75) — write-through to DB; Save → NFO writes <actor>/<director>/<writer> ---- */
+  (function castCrew(){
+    const PAL = ['#7b6ef0','#2dd49a','#f5b542','#3fb6f5','#e36588','#5b8def','#19d6c6','#b15cd0'];
+    const colorFor = n => PAL[[...n].reduce((a,c)=>a+c.charCodeAt(0),0) % PAL.length];
+    const initials = n => n.split(/\s+/).filter(Boolean).map(s=>s[0]).slice(0,2).join('').toUpperCase();
+    const grad = n => 'linear-gradient(150deg,'+colorFor(n)+',rgba(0,0,0,.42))';
+    const q = id => document.getElementById(id);
+
+    let cast = [
+      { name:'Halina Reijn', role:'Sintel (voice)' },
+      { name:'Thom Hoffman', role:'The Shaman (voice)' },
+    ];
+    let crew = [
+      { dept:'Directing', job:'Director', name:'Colin Levy' },
+      { dept:'Writing', job:'Writer', name:'Esther Wouda' },
+      { dept:'Writing', job:'Story', name:'Colin Levy' },
+      { dept:'Production', job:'Producer', name:'Ton Roosendaal' },
+      { dept:'Sound', job:'Composer', name:'Jan Morgenstern' },
+      { dept:'Art', job:'Concept Artist', name:'David Revoy' },
+    ];
+    const grid = q('cast-grid'), crewList = q('crew-list');
+
+    function renderCast(){
+      q('cast-count').textContent = cast.length;
+      grid.innerHTML = cast.map((p,i) =>
+        `<div class="person" draggable="true" data-i="${i}">
+          <span class="pord">#${i+1}</span>
+          <button class="prm" data-rm="${i}" title="Remove">✕</button>
+          <div class="ph" style="background:${grad(p.name)};color:#fff;">${initials(p.name)}</div>
+          <div class="pbody"><div class="pname">${esc(p.name)}</div><div class="prole" data-role="${i}">${p.role ? esc(p.role) : '<span class="muted">＋ role</span>'}</div></div>
+        </div>`
+      ).join('') + `<div class="person add" id="cast-add">＋ Add cast</div>`;
+    }
+    function renderCrew(){
+      q('crew-count').textContent = crew.length;
+      const byDept = {};
+      crew.forEach((c,i) => { (byDept[c.dept] = byDept[c.dept] || []).push(Object.assign({i}, c)); });
+      crewList.innerHTML = Object.keys(byDept).map(d =>
+        `<div class="crew-dept"><h5>${esc(d)}</h5>` + byDept[d].map(c =>
+          `<div class="crew-row">
+            <span class="crew-av" style="background:${grad(c.name)};">${initials(c.name)}</span>
+            <div><div class="crew-name">${esc(c.name)}</div><div class="crew-job">${esc(c.job)}</div></div>
+            <span class="crew-rm" data-crewrm="${c.i}" title="Remove">✕</span>
+          </div>`).join('') + `</div>`
+      ).join('') || '<div class="tiny muted">No crew yet — add one.</div>';
+    }
+
+    grid.addEventListener('click', e => {
+      const rm = e.target.closest('[data-rm]');
+      if (rm) { const i = +rm.dataset.rm, n = cast[i].name; cast.splice(i,1); renderCast(); toast(n + ' removed from cast'); return; }
+      if (e.target.closest('#cast-add')) { openPerson('cast'); return; }
+      const role = e.target.closest('[data-role]');
+      if (role) editRole(+role.dataset.role, role);
+    });
+    function editRole(i, el){
+      const cur = cast[i].role || '';
+      el.innerHTML = `<input class="prole-input input" value="${esc(cur).replace(/"/g,'&quot;')}" placeholder="Character">`;
+      const inp = el.querySelector('input'); inp.focus(); inp.select();
+      let done = false;
+      const commit = () => { if (done) return; done = true; cast[i].role = inp.value.trim(); renderCast(); if (cast[i].role) toast(cast[i].name + ' · role saved to library'); };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', ev => { if (ev.key==='Enter') inp.blur(); else if (ev.key==='Escape') { done = true; renderCast(); } });
+    }
+    let dragI = null;
+    grid.addEventListener('dragstart', e => { const p = e.target.closest('.person'); if (!p || p.id==='cast-add') return; dragI = +p.dataset.i; p.classList.add('dragging'); });
+    grid.addEventListener('dragend', e => { const p = e.target.closest('.person'); if (p) p.classList.remove('dragging'); });
+    grid.addEventListener('dragover', e => e.preventDefault());
+    grid.addEventListener('drop', e => {
+      e.preventDefault();
+      const p = e.target.closest('.person'); if (!p || dragI===null) return;
+      const to = p.id==='cast-add' ? cast.length-1 : +p.dataset.i;
+      if (to===dragI) { dragI = null; return; }
+      const [m] = cast.splice(dragI,1); cast.splice(to,0,m); dragI = null; renderCast(); toast('Cast order saved to library');
+    });
+
+    crewList.addEventListener('click', e => {
+      const rm = e.target.closest('[data-crewrm]');
+      if (rm) { const i = +rm.dataset.crewrm, n = crew[i].name; crew.splice(i,1); renderCrew(); toast(n + ' removed from crew'); }
+    });
+    q('crew-add').addEventListener('click', () => openPerson('crew'));
+    q('cast-fetch').addEventListener('click', () => toast('Fetched ' + cast.length + ' cast · ' + crew.length + ' crew from TMDB'));
+
+    /* add-person (TMDB search) */
+    const POOL = ['Halina Reijn','Thom Hoffman','Colin Levy','Esther Wouda','Ton Roosendaal','Jan Morgenstern','David Revoy','Pablo Vazquez','Angela Guenette','Soenke Maeter','Beorn Leonard','Nathan Vegdahl','Campbell Barton'];
+    const pm = q('person-modal'), presults = q('person-results'), psearch = q('person-search'), pextra = q('person-extra');
+    let pmode = 'cast';
+    function openPerson(mode){ pmode = mode; q('person-title').textContent = mode==='cast' ? 'Add cast' : 'Add crew member'; pextra.style.display = mode==='crew' ? 'flex' : 'none'; psearch.value=''; drawResults(''); pm.classList.add('open'); setTimeout(()=>psearch.focus(),30); }
+    function closePerson(){ pm.classList.remove('open'); }
+    function drawResults(query){
+      const list = POOL.filter(n => n.toLowerCase().includes(query.toLowerCase())).slice(0,8);
+      presults.innerHTML = list.map(n => `<div class="prow" data-add="${esc(n).replace(/"/g,'&quot;')}"><span class="crew-av" style="background:${grad(n)};">${initials(n)}</span><span class="crew-name">${esc(n)}</span><span style="flex:1;"></span><span class="btn sm">Add</span></div>`).join('') || '<div class="tiny muted" style="padding:8px;">No matches — type a name.</div>';
+    }
+    psearch.addEventListener('input', () => drawResults(psearch.value));
+    presults.addEventListener('click', e => {
+      const row = e.target.closest('[data-add]'); if (!row) return;
+      const name = row.dataset.add;
+      if (pmode==='cast') { cast.push({ name, role:'' }); renderCast(); toast(name + ' added to cast'); }
+      else { const dept = q('person-dept').value, job = q('person-job').value.trim() || 'Crew'; crew.push({ dept, job, name }); renderCrew(); toast(name + ' added · ' + job); }
+      closePerson();
+    });
+    q('person-x').addEventListener('click', closePerson);
+    pm.addEventListener('click', e => { if (e.target===pm) closePerson(); });
+
+    renderCast(); renderCrew();
+  })();
+
+  /* ---- toast helper ---- */
+  function toast(msg) {
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+    document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
+  }
+  window.__toast = toast;
+
+  /* ---- Phase 144: Fix cover track (drop image-codec video stream via -c copy remux) ---- */
+  (function coverFix() {
+    const alert = document.getElementById('cover-video-alert');
+    const btn = document.getElementById('cover-fix-btn');
+    if (!alert || !btn) return;
+    btn.addEventListener('click', () => {
+      alert.innerHTML = '<span class="badge ok" style="flex:none;">Queued</span>'
+        + '<div class="tiny" style="line-height:1.6;flex:1;">Cover-track remux <b>queued</b> on the media worker — <span class="mono">-c copy</span>, no re-encode. When it finishes the PNG video stream is gone and this item leaves the <b>cover-as-video</b> triage bucket. Watch it in <a href="activity.html">Activity ▸ Jobs</a>.</div>';
+      toast('Fix cover track queued · ffmpeg -c copy remux (Activity ▸ Jobs)');
+    });
+  })();
+})();
+</script>
+
+<!-- Feature-in-hero uses the shared Ravilo builder -->
+<div id="cf-modal-root"></div>
+<script src="cw-hide-tags.js"></script>
+<script src="ravilo-builders.js"></script>
+<script src="container-convert.js"></script>
+<script>
+  (function () {
+    const btn = document.getElementById('feature-hero');
+    if (!btn || !window.RaviloBuilders) return;
+    btn.addEventListener('click', () => {
+      window.RaviloBuilders.openHero({
+        lockTitle: true,
+        viewerPicker: true,
+        headTitle: 'Add to hero carousel',
+        saveLabel: 'Add to hero carousel',
+        state: {
+          pick: { title: 'Sintel', year: 2010, kind: 'movie', genres: ['Fantasy', 'Adventure'], network: 'Blender' },
+          badge: 'None', tagline: '', backdrop: 0, useLogo: true, viewer: 'Eyð Restorff'
+        },
+        onSave: ({ pick, state }) => (window.__toast || alert)('Added “' + pick.title + '” to ' + (state.viewer || 'the viewer') + '’s hero carousel')
+      });
+    });
+  })();
+  /* genre provenance (Phase 94) — ↺ restores a removed TMDB genre into the list */
+  (function () {
+    const pills = document.getElementById('genre-pills');
+    if (!pills) return;
+    pills.addEventListener('click', e => {
+      const u = e.target.closest('[data-restore]');
+      if (!u) return;
+      const chip = u.closest('.gen-restore');
+      const name = chip.querySelector('.gx').textContent;
+      const plain = document.createElement('span');
+      plain.className = 'chip';
+      plain.textContent = name + ' ✕';
+      pills.insertBefore(plain, pills.querySelector('.chip.ghost'));
+      chip.remove();
+      (window.__toast || function(){})('Restored “' + name + '” — TMDB won’t re-add it on the next sync');
+    });
+  })();
+</script>
+<script>
+(function(){
+  var toast = function(m){ return window.toast ? window.toast(m) : console.log(m); };
+  var card = document.getElementById('bazarr-card'); if(!card) return;
+  card.querySelectorAll('.bz-a').forEach(function(b){ b.addEventListener('click', function(){ toast(b.dataset.a || 'Working with Bazarr…'); }); });
+  card.querySelectorAll('.bz-del').forEach(function(b){ b.addEventListener('click', function(){ var r=b.closest('.bz-row'); r.style.opacity=.4; b.textContent='removed'; toast('Deleted subtitle via Bazarr · language is now wanted again.'); }); });
+  var sa=document.getElementById('bz-search-all'); if(sa) sa.addEventListener('click', function(){ toast('Searching all wanted languages through Bazarr…'); });
+  var up=document.getElementById('bz-upload'); if(up) up.addEventListener('click', function(){ toast('Pick a .srt/.ass to upload to Bazarr for this title.'); });
+})();
+</script>
+</body>
+</html>
