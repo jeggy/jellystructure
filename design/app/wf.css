@@ -208,10 +208,36 @@ code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; fon
 .col { display: flex; flex-direction: column; gap: 16px; }
 .fill { flex: 1; }
 .spacer { flex: 1; }
+/* DEB-2145 — a flex item's min-width defaults to its content, so a `.col.fill` will not shrink below
+   its own contents: it pushes out of its `.row` instead of fitting in it. Measured 2026-10-22 in
+   design/app/media.html, which links this file: a 724 px document against a 390 px viewport on the
+   detail page's overview tab, 669 px on its Tracks tab, and settings.html (1214 px) and
+   ravilo-config.html (1258 px) overflowing a 1040 px desktop viewport for the same reason. Same
+   one-property fix, for the same reason, as `.shell`'s minmax(0, 1fr) in app.css. Guarded by
+   scripts/check-mobile-css.sh — keep this exact rule. */
+.col.fill { min-width: 0; }
 .muted { color: var(--ink-soft); }
 .tiny { font-size: .8rem; }
 .center-x { text-align: center; }
 hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+/* DEB-2145 — phone width. `min-width: 0` above lets a column shrink; it does not give a row anywhere
+   to put a child that cannot. A `.row` that cannot wrap has to overflow, and wrapping is the only
+   thing a row at 390 px can usefully do: the detail page's `Title` + 110 px `Year` pair, and the
+   Tracks card header (title · Audio/Subtitles · guard chip · filename), both fit on two lines and
+   neither fits on one. The `flex-basis` is what makes a `.fill` child take a line of its own instead
+   of sharing one with a 220 px poster rail or a 110 px `Year` — `flex: 1` is a flex base size of 0,
+   so a `.fill` never wraps on its own however little room is left, and the 112 px the detail page's
+   `.col.fill` is then given is where the Tracks header's `Audio | Subtitles` control collapses to a
+   2 px sliver. `min-width: 0` extends the rule above to the `.fill` fields, inputs and buttons.
+   ⚠ A `.row` whose page CSS turns it into a column (`flex-direction: column`) must then also say
+   `flex-wrap: nowrap`, or this rule makes it a MULTI-column container that is wider than its parent
+   rather than narrower. design/app/subtitles.html is the one such row in the tree and carries that
+   line. Guarded by scripts/check-mobile-css.sh — keep these exact rules. */
+@media (max-width: 640px) {
+  .row { flex-wrap: wrap; }
+  .row > .fill { flex-basis: 100%; }
+  .fill { min-width: 0; }
+}
 /* Settings tabbed layout — one panel visible at a time, ?tab= addressable (Phase 55) */
 .set-section[data-tab] { display: none; }
 .set-section[data-tab].tab-show { display: block; }

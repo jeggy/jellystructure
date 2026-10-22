@@ -45,7 +45,10 @@
   .prov .spacer { flex:1; }
   .lp-langs { display:flex;gap:5px;flex-wrap:wrap;margin-top:7px; }
   .side-col { width:308px;flex:none; }
-  @media (max-width: 1080px){ .side-col{ width:100%; } .subwrap{ flex-direction:column; } }
+  /* DEB-2145 — `flex-wrap:nowrap` is required beside `flex-direction:column` here: wf.css wraps every
+     .row at 640px and under, and a wrapping COLUMN container lays its overflow out in a second column,
+     which made this page 405px wide against a 390px viewport (it had been the only admin page that fit). */
+  @media (max-width: 1080px){ .side-col{ width:100%; } .subwrap{ flex-direction:column; flex-wrap:nowrap; } }
 </style>
 </head>
 <body class="wf-body app-body">

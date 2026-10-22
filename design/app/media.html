@@ -19,6 +19,15 @@
   #bazarr-card .score{font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:600;}
   #bazarr-card .score.hi{color:var(--ok);}
   #bazarr-card .bz-want{opacity:.92;}
+  /* DEB-2145 — this card's four desktop columns do not survive 390px: once the page stopped scrolling
+     sideways the 1fr middle collapsed to 0 and the filename read one word per line. Lang + name on the
+     first line, score and the buttons under it. (Mockup-local: the shipped card is a .crew-row flex.) */
+  @media (max-width: 640px){
+    #bazarr-card .bz-cols{display:none;}
+    #bazarr-card .bz-row{grid-template-columns:34px minmax(0,1fr);row-gap:9px;}
+    #bazarr-card .bz-row .score{grid-column:1;justify-self:start;}
+    #bazarr-card .bz-act{grid-column:2;justify-content:flex-start;}
+  }
 </style>
 </head>
 <body class="wf-body app-body">

@@ -605,6 +605,12 @@
   .trk-cols { display: none; }
   .trk-main { grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; }
   .trk-main > :nth-child(2), .trk-main > :nth-child(3) { display: none; }
+  /* DEB-2145 — the trailer card's 190 px thumbnail leaves ~116 px beside it at 390 px, which is less
+     than its own `Re-fetch from TMDB` button is wide, so the button overflowed the viewport by 10 px
+     with every row above already wrapping. The thumb takes the full width and the title, blurb and
+     buttons sit under it. 16/9 is the frame YouTube and Vimeo both deliver (the desktop box is
+     190×107). Guarded by scripts/check-mobile-css.sh — keep this exact rule. */
+  #trailer-card .tr-thumb { width: 100%; height: auto; aspect-ratio: 16 / 9; }
   .modal-back.cv-back { padding: 0; align-items: stretch; }
   .modal.cv-dlg { width: 100%; border-radius: 0; max-height: 100vh; overflow: auto; }
 }
