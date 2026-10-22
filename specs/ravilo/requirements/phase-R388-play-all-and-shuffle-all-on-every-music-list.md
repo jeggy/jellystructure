@@ -164,3 +164,125 @@ The da and fo entries are drafts, and R288's lexicon wins. No string names Jelly
 
 The TV and the web (no music browsing there), audiobooks, a version filter (292), a *Mix* or radio (R326 FR-R326-6),
 and changing what a tap on one song in a list queues.
+
+## Amendment (2026-10-22): the adopted direction — one split control, *▶ Play all | ▾*
+
+The design round (DEB-1294, round 7) came home in `b1743ce5` under `design/incoming/2026-10-22-music-play-all/`. The
+owner drew it at the keyboard over three revisions and **adopted v3** (2026-10-17): he asked for the two buttons to
+be **merged into one control**, and for that control **never to get a row of its own**. This amendment is what the
+client build (DEB-1300) implements. Where it differs from the text above, it wins. The behaviour does not change:
+FR-R388-2…7 and the route (DEB-1299, `578ebfac`) stand as written.
+
+**References** (read-only, never copied into production): `REPORT v3.md`, `music-play-all-v3.js`, the v3 block at the
+end of `music-play-all.css` (`.mpa-sp`, `.mpa-spm`, `.mpa-bkrow`), and the 61 `png/music-play-all-split-*.png`
+frames. The v1 (`a`/`b`/`c`/`d1`/`d2`) and v2 (`quiet`) frames are rejected directions.
+
+**FR-R388-1, amended — the pair is one split control.** *▶ Play all | ▾*. A tap on *Play all* plays (FR-R388-5).
+The ▾ opens a one-item menu, *⤮ Shuffle all*, anchored under the control's right edge. Tapping that item shuffles
+(FR-R388-5). A tap outside closes the menu. **Shuffle is two taps.** That is the cost the owner chose when he merged
+the buttons, and it replaces *"each is one press"*.
+
+- **Shape:** the album page's own split, *Play album ▾* (`SplitPlayButton`, `MusicDetailScreens.kt`), so the two
+  read as siblings.
+- **Fill:** the sort pill's quiet fill, not the album page's primary fill: `rgba(fg, .09)`, a 1 px `line` border,
+  and a 1 px `line-2` divider between the halves.
+- **Heights:** 38 dp in a top bar (the sort pill's and cast's height), 28 dp on a text line. The tap target is
+  44 dp either way.
+- **The ▾'s accessible name** is the album page's own, `ed.more_play` (*More ways to play*). No new string.
+- **Present or absent:** the control is shown while the list loads (the frame *"the split is there; the count is
+  not yet"*). It is absent once the surface resolves to nothing: an empty search, a genre with no songs, or an
+  empty library. It is present for a selection of one song, with its menu.
+- **An empty answer:** if a press answers with no songs, that is FR-R388-8's failure.
+
+**Where it sits — it always shares a row that is already there.**
+
+| Surface | Row it shares | Frame |
+|---|---|---|
+| **Listen** | the **top bar's page slot**, between the brand and cast | `split-phone-listen`, `-crowded-listen` |
+| **A search** (a query on Browse) | the **top bar's page slot** (a search has no sort pill and no count line) | `split-phone-search`, `-crowded-search` |
+| **Artists · Albums · Songs** | the **count line**, right-aligned (*30 albums ··· ▶ Play all ▾*); the row grows to 28 dp; the count text is unchanged | `split-phone-albums`, `-artists`, `-songs` |
+| **A genre** | the **‹ Genres line**, right-aligned; the line keeps its 44 dp height | `split-phone-genre`, `-crowded-genre` |
+| **Desktop, wide** | the **page head**, right of the title (`DeskPageTitle`'s trailing slot, after the sort pill where there is one); on a search, the same slot of its *Search* head | `split-desktop-wide-*` |
+| **Desktop, compact (< 600 dp) and phone landscape** | as the phone | `split-desktop-compact-*`, `split-phone-land-*` |
+
+**The top-bar slot.** On Listen and a search the control fills the phone's top-bar page slot. The round flagged this
+as bending FR-R267-5c. It does not: FR-R267-5c governs the Library page's type filter and the video pages. FR-R267-2
+defines the slot as *"the page's own control if it has one"*, and music mode already puts the sort pill there on the
+chips (R321 FR-R321-6). *Play all ▾* is Listen's and the search's own control, and the owner placed it there himself.
+**R267 is not amended.** On the chips, the slot keeps the sort pill. The two do not fit side by side at 360 dp, which
+is why the control moves to the count line there.
+
+**FR-R388-5, unchanged; the call per surface.** Every press calls `TvApiClient.musicSelection(scope, sort, genre,
+query, shuffle)` and then `MusicPlayback.playQueue`:
+
+| Surface | `scope` | `sort` | `genre` | `query` |
+|---|---|---|---|---|
+| Listen | `library` | — | — | — |
+| Albums chip | `albums` | the chip's sort (`MusicBrowseStore.sorts["albums"]`) | — | — |
+| Artists chip | `artists` | `sorts["artists"]` | — | — |
+| Songs chip | `tracks` | `sorts["songs"]` | — | — |
+| A genre | `genre` | — (the genre view has no sort pill) | the genre's name | — |
+| A search | `search` | — | — | the query as typed |
+
+The chip's sort key goes on the wire as the browse route takes it (`added` is the route's default).
+
+- *Play all* sends `shuffle = false` and calls `playQueue(tracks, 0, context, shuffle = false)`.
+- *Shuffle all* sends `shuffle = true` and calls `playQueue(tracks, tracks.indices.random(), context, shuffle = true)`.
+
+**FR-R388-8, amended — the busy state.** The round did not draw it, so here it is:
+
+- From the press until the route answers, the half that was pressed swaps its glyph for a small progress ring at the
+  glyph's size and in the label's ink. The label and the control's width do not change. (For *Shuffle all*, that
+  half is *Play all*'s, because the menu closes on the tap.)
+- The whole control ignores presses while the request is in flight.
+- A failure, an empty answer, or no connection toasts `music.fail_t` (*Couldn't play this*) through `MusicToasts`.
+  The control does not change and the queue is left as it was (frame `split-phone-error`; offline is the same).
+
+**FR-R388-6, unchanged.** The capped toast goes through `MusicToasts`, only when `capped` (frames `split-phone-capped-{en,da,fo}`,
+`split-desktop-wide-capped`).
+
+**FR-R388-7, unchanged.** The `MusicContext` kinds and labels are as in the table above (frames
+`split-phone-from-library{,-da,-fo}`, `-from-genre`, `-from-search`). Add `library` to the kind list in
+`MusicEngine.kt`. The desktop draws no *Playing from* line, but the label is still stored with the queue.
+
+**FR-R388-9, amended — the desktop keyboard** (frames `split-desktop-wide-focus-play`, `-focus-menu`):
+
+- Tab order is the sidebar, then *Play all* ①, then ▾ ②, then the page's content. Nothing else on the page changes
+  its focus order.
+- Enter or Space on ① plays.
+- Enter or Space on ② opens the menu with *Shuffle all* focused; ↓ and Enter pick it, and Esc closes the menu.
+- The focus ring is the app's own: 2 dp `ring` with a 2 dp `bg` gap.
+
+**Strings, final.** Four new keys. `music.play_all`, `music.fail_t` and `ed.more_play` are reused. R288's lexicon
+wins, which settles the round's Faroese finding: the app already says *løg* (`music.songs_n` = *{n} løg*), so the
+capped toast reads ***løgum*** (dative after *av*), not the draft's *sangum*. *Search "{q}"* takes the curly quotes of
+`music.no_results`.
+
+| Key | en | da | fo |
+|---|---|---|---|
+| `music.shuffle_all` | Shuffle all | Bland alle | Blanda øll |
+| `music.selection_capped` | Playing {shown} of {total} songs | Afspiller {shown} af {total} sange | Spælir {shown} av {total} løgum |
+| `music.from_library` | Your library | Dit bibliotek | Títt savn |
+| `music.from_search` | Search “{q}” | Søgning “{q}” | Leiting “{q}” |
+
+**The round's other findings, and why none of them is a change here:**
+
+- *"The desktop has no sort pill"* is the mockup's gap, not the app's. The desktop page head already carries the
+  sort (`MusicBrowseScreen`, R337), so the desktop sends the same `sort` as the phone.
+- *"The desktop search groups are built in another order"* is also the mockup's. The app draws *Songs · Albums ·
+  Artists* on both, which is FR-R388-3's order.
+- *"The genre menu covers the heading while open"* is accepted. It lasts only while the menu is open.
+- *"At 360 dp the Browse top row already clips cast in Faroese"* predates this phase and is not made worse: this
+  control sits on the count line there, not in the top bar.
+- *Continue listening* not being drawn has no consequence, because Listen's rows are unchanged.
+
+**Acceptance, amended:**
+
+- **3.** A genre → ▾ → *Shuffle all* → *Playing from* names the genre (the rest stands).
+- **5.** *"Shuffle all twice"* means ▾ → *Shuffle all* twice.
+- **8.** On the Mac's Songs, Tab reaches *Play all* and then ▾. Enter on *Play all* starts it. Enter on ▾ opens the
+  menu, and Enter on *Shuffle all* starts a shuffle.
+- **10 (new).** At 360 dp with the mini player docked, the control sits on the count line on Albums, in the top bar
+  on Listen and a search, and on the *‹ Genres* line on a genre. It never sits on a row of its own, in en, da and fo.
+- **11 (new, unit).** The scope, sort, genre and query each surface sends. The context kind and label. The toast
+  only when `capped`. A second press while in flight sends no second request.
