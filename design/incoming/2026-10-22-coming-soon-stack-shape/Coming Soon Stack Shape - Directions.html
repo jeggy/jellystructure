@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coming Soon — the stack's shape — directions</title>
+<style>
+  :root{
+    --ink:#12141b; --ink-2:#262a35; --ink-3:#4c5468; --line:#d6d9e2;
+    --paper:#ffffff; --bg:#e9eaee; --hi:#7b6ef0; --ok:#1d7a52; --warn:#8a5600; --bad:#a33a1c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:'Sora',system-ui,sans-serif;
+    font-size:16px;line-height:1.5;padding:48px 32px 96px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-family:'Space Grotesk',system-ui,sans-serif;font-size:40px;line-height:1.12;
+    letter-spacing:-.01em;color:var(--ink)}
+  h2{font-family:'Space Grotesk',system-ui,sans-serif;font-size:27px;line-height:1.12;
+    letter-spacing:-.01em;margin-top:52px;padding-bottom:10px;border-bottom:2px solid var(--ink)}
+  h3{font-family:'Space Grotesk',system-ui,sans-serif;font-size:20px;margin-top:28px;color:var(--ink)}
+  p,li{color:var(--ink-2);margin-top:12px}
+  ul,ol{padding-left:22px}
+  .lede{font-size:19px;color:var(--ink-2);margin-top:14px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;
+    padding:22px 26px;margin-top:18px}
+  .card.rec{border:2px solid var(--hi)}
+  table{width:100%;border-collapse:collapse;margin-top:18px;background:var(--paper);
+    border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);
+    font-size:15px;color:var(--ink-2);vertical-align:top}
+  th{background:#f3f4f7;color:var(--ink);font-weight:700;font-size:13px;
+    text-transform:uppercase;letter-spacing:.06em}
+  tr:last-child td{border-bottom:0}
+  code,.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13.5px;color:var(--ink)}
+  .tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;
+    letter-spacing:.03em;border:1px solid var(--line);color:var(--ink-2);background:#f3f4f7}
+  .tag.rec{background:#efedff;border-color:var(--hi);color:#4a3fc0}
+  .tag.ok{background:#e6f5ee;border-color:#9ad4ba;color:var(--ok)}
+  .tag.warn{background:#fcf1dd;border-color:#e0bd7a;color:var(--warn)}
+  .tag.bad{background:#fdecE6;border-color:#e8ab93;color:var(--bad)}
+  .fixed{background:#f3f4f7;border-left:4px solid var(--ink);border-radius:0 12px 12px 0;
+    padding:16px 20px;margin-top:16px}
+  .frames{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;color:var(--ink-3)}
+  .note{font-size:14px;color:var(--ink-3);margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Coming Soon — what a stack looks like</h1>
+<p class="lede">Round 11, second revision. Four directions for the <strong>shape</strong> of a stacked
+card on the TV, the phone and the desktop, drawn after the owner saw A, B and C and picked none of
+them. A appears once, as the comparison. Every number in every picture is derived from one array in
+<code>cs2-data.js</code>.</p>
+
+<h2>What the owner fixed, and nothing here reopens</h2>
+<div class="fixed">
+  <p><strong>1 · When a stack forms.</strong> Two or more episodes of one series on the same day. In
+  the <em>Missing</em> row, grouped by series whatever the day. There is no longer a threshold option
+  in the data file, because there is no longer a question.</p>
+  <p><strong>2 · Selecting a stack</strong> opens what each card opens today. Round 11's detail frames
+  stand and are not redrawn here.</p>
+  <p><strong>3 · The date strip counts episodes.</strong> The eight-episode drop adds 8 to Thursday,
+  which reads <span class="mono">9</span> beside a single episode. Every direction below therefore
+  puts the episode count on the card, so the strip and the row agree.</p>
+  <p><strong>4 · A stack shows its earliest air time</strong>, and a mixed stack says
+  <em>{k} of {n} available</em>, with a downloading episode keeping its own percent. Both facts are
+  readable off all four directions.</p>
+</div>
+
+<h2>The four directions</h2>
+
+<div class="card rec">
+  <h3>D — Season band <span class="tag rec">recommended</span></h3>
+  <p>A solid band across the lower third of the art carries the numeral at display size, the plural
+  noun beside it, and the earliest air time at its right end. The band is a flat surface rather than
+  a scrim, so the numeral has guaranteed contrast whatever the artwork behind it happens to be —
+  which matters, because there is one picture per series and it cannot be relied on for anything.</p>
+  <p><strong>Cost to the row:</strong> none. 430&nbsp;px wide, 242&nbsp;px of art, unchanged under
+  focus and in every row. What it spends is <strong>86&nbsp;px of artwork</strong>.</p>
+  <p class="frames">tv-d-today · tv-d-focus · tv-d-two · tv-d-mixed · tv-d-missing · tv-d-24 ·
+  tv-d-midnight · tv-d-noir · tv-d-noir-mixed · tv-d-da · tv-d-da-longest · tv-d-fo · ph-d-today ·
+  dk-d-wide</p>
+</div>
+
+<div class="card">
+  <h3>E — Episode rail</h3>
+  <p>One segment per episode along the art's top edge, each carrying its own state: held, arriving,
+  or still only scheduled. It answers the mixed stack exactly — <em>which</em> episodes, not just how
+  many — without a list and without a second card slot. The count badge is enlarged to 26&nbsp;px,
+  because the rail says "several" and the badge is E's whole answer to "how many".</p>
+  <p><strong>Cost to the row:</strong> none. 10&nbsp;px of art at the top, and the chip row moves down
+  18&nbsp;px to clear it.</p>
+  <p><strong>Above 12 episodes the rail collapses</strong> to one proportional bar, k of n filled.
+  See the spec note below.</p>
+  <p class="frames">tv-e-today · tv-e-focus · tv-e-two · tv-e-mixed · tv-e-missing · tv-e-24 ·
+  ph-e-today · dk-e-wide</p>
+</div>
+
+<div class="card">
+  <h3>F — Focus reveal</h3>
+  <p>At rest the card is the shipped card plus a small count chip, so a row with six stacks in it
+  stays as calm as a row with none. Focused, the whole lockup — number, plural, rail — arrives inside
+  the same 430&nbsp;×&nbsp;242 footprint. Nothing grows and nothing reflows.</p>
+  <p><strong>Cost to the row:</strong> none, resting or focused. <strong>But the cost is not
+  geometric:</strong> at rest F <em>is</em> direction C, which the owner has already seen and not
+  picked. Compare <span class="mono">tv-f-today</span> with round 11's
+  <span class="mono">tv-c-today</span> — they are the same card. The question asks about a glance,
+  and F only answers on focus.</p>
+  <p class="frames">tv-f-today · tv-f-focus · tv-f-two · tv-f-mixed · tv-f-missing · ph-f-today ·
+  dk-f-wide</p>
+</div>
+
+<div class="card">
+  <h3>G — Tall season row</h3>
+  <p>The number lives <em>above</em> the art in a header of its own. G is the only direction that
+  covers no artwork at all, and the only one that shows the number and the per-episode rail together
+  at full size.</p>
+  <p><strong>Cost to the row:</strong> no slots — the card keeps its 430&nbsp;px — but the
+  <strong>row grows 79&nbsp;px</strong>, and every card in that row grows with it, because a row of
+  ragged-topped cards is worse than a taller row. On the 1920 stage that is roughly one fewer day
+  row per screenful, and it applies <em>only to rows that contain a stack</em>, so the page's
+  vertical rhythm becomes data-dependent. That is the thing R367 removed, arriving by a different
+  door.</p>
+  <p class="frames">tv-g-today · tv-g-focus · tv-g-two · tv-g-mixed · tv-g-missing · tv-g-24 ·
+  ph-g-today · dk-g-wide</p>
+</div>
+
+<h2>How they compare</h2>
+<table>
+  <tr>
+    <th>&nbsp;</th><th>A <span class="tag">comparison</span></th><th>D</th><th>E</th><th>F</th><th>G</th>
+  </tr>
+  <tr><td><strong>Reads "N episodes" at 3&nbsp;m, at rest</strong></td>
+    <td><span class="tag bad">no</span> 17&nbsp;px badge</td>
+    <td><span class="tag ok">yes</span> 60&nbsp;px numeral</td>
+    <td><span class="tag warn">partly</span> 26&nbsp;px badge</td>
+    <td><span class="tag bad">no</span> 17&nbsp;px badge</td>
+    <td><span class="tag ok">yes</span> 54&nbsp;px numeral</td></tr>
+  <tr><td><strong>Reads as "a season arrived"</strong></td>
+    <td><span class="tag warn">a deck</span></td>
+    <td><span class="tag ok">yes</span></td>
+    <td><span class="tag warn">a progress bar</span></td>
+    <td><span class="tag bad">no</span></td>
+    <td><span class="tag ok">yes</span></td></tr>
+  <tr><td><strong>Answers the mixed stack</strong></td>
+    <td>pill only</td><td>pill + band line</td>
+    <td><span class="tag ok">per episode</span></td>
+    <td>per episode, on focus</td>
+    <td><span class="tag ok">per episode</span></td></tr>
+  <tr><td><strong>Slots spent</strong></td>
+    <td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+  <tr><td><strong>Row height</strong></td>
+    <td>unchanged</td><td>unchanged</td><td>unchanged</td><td>unchanged</td>
+    <td><span class="tag bad">+79 px, that row only</span></td></tr>
+  <tr><td><strong>Artwork given up</strong></td>
+    <td>16 px of width</td>
+    <td><span class="tag warn">86 px (36 %)</span></td>
+    <td>10 px</td><td>0 at rest</td>
+    <td><span class="tag ok">none</span></td></tr>
+  <tr><td><strong>Survives 24 episodes</strong></td>
+    <td>yes</td><td><span class="tag ok">yes</span></td>
+    <td><span class="tag warn">rail collapses</span></td>
+    <td>yes</td><td><span class="tag warn">rail collapses</span></td></tr>
+</table>
+
+<h3>Why D</h3>
+<p>The question is what reads at a glance from three metres as <em>this series is arriving with N
+episodes</em>. At that distance a viewer reads size and contrast, not detail — so the answer is a
+numeral large enough to survive, on a surface flat enough to guarantee it. D is the only direction
+that does that at zero cost to the row. G does it as well and costs 79&nbsp;px of row height for an
+artwork gain the calendar cannot spend, because there are no episode stills behind it. E answers a
+different and narrower question beautifully, and stops answering it at thirteen episodes. F is C
+until you focus it.</p>
+<p><strong>The honest caveat:</strong> D gives up 86&nbsp;px — more than a third — of the only
+picture the card has. On a real poster that is the bottom third of the art, and
+<span class="mono">tv-d-today</span> is the frame to judge that on. If the owner's answer is that
+the artwork may not be covered, then <strong>G is the direction</strong>, and the 79&nbsp;px row is
+its price.</p>
+<p><strong>One combination not drawn, because it is not mine to decide:</strong> D's band has room
+along its lower edge for E's rail, which would give D the per-episode mixed answer at no further
+cost. It is a legitimate fifth direction and it is named here rather than quietly built.</p>
+
+<h2>Every state the recommended direction holds</h2>
+<table>
+  <tr><th>State</th><th>Frame</th><th>Drawn</th></tr>
+  <tr><td>Eight-episode drop beside a single episode, at rest</td><td class="mono">tv-d-today</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>The same, focused — one focus stop, no reflow</td><td class="mono">tv-d-focus</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Two-episode stack, 21:00 and 21:45 → shows 21:00</td><td class="mono">tv-d-two</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Mixed stack, 4 of 6, one at 62 %</td><td class="mono">tv-d-mixed</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Missing row, grouped by series across three days</td><td class="mono">tv-d-missing</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>24-episode drop — the two-digit numeral</td><td class="mono">tv-d-24</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Aurora / Midnight / Noir</td><td class="mono">tv-d-today · tv-d-midnight · tv-d-noir</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Noir, mixed — the skin whose accent is itself amber</td><td class="mono">tv-d-noir-mixed</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Danish, and the longest string in the set</td><td class="mono">tv-d-da · tv-d-da-longest</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Faroese</td><td class="mono">tv-d-fo</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Phone, Pixel 9 at 412 dp — the card, not a list row</td><td class="mono">ph-d-today</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Desktop, wide</td><td class="mono">dk-d-wide</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td>Loading · Error · Offline · Empty · desktop compact</td><td>—</td><td><span class="tag">skipped — see REPORT.md</span></td></tr>
+</table>
+
+<h2>What a spec would have to say</h2>
+<ol>
+  <li><strong>The band's numeral is the episode count of the stack</strong>, and the plural noun
+  beside it is a separate string from the count string. Splitting <code>{n} episodes</code> on its
+  number works in these three languages and silently breaks in the fourth.
+  <strong>Fallback:</strong> a language that cannot take a bare plural renders the whole
+  <code>up.episodes_count</code> in the word's slot at the word's size.</li>
+  <li><strong>Per-episode marks are drawn up to 12 episodes.</strong> Above that the rail is one
+  proportional bar with k of n filled and the count carries the number — measured on
+  <span class="mono">tv-e-24</span>, where 24 segments are thinner than the gaps between them and at
+  three metres read as a solid bar anyway. This applies to E and to G.</li>
+  <li><strong>A downloading segment's trough is the neutral grey</strong>, not an amber tint. The
+  amber is the fill only.</li>
+  <li><strong>A stack is one focus stop and the ring is one ring</strong>, round the card face — or,
+  in G, round the header and the art together.</li>
+  <li><strong>The band is anchored at both ends.</strong> Where there is no air time — the Missing
+  row — the status pill takes the right-hand slot rather than leaving the band hollow.</li>
+  <li><strong>Nothing changes the row's height or width under focus</strong> in D, E or F. In G the
+  row is taller than a row with no stack in it, permanently.</li>
+</ol>
+
+<h2>Strings</h2>
+<table>
+  <tr><th>Key</th><th>English</th><th>Danish</th><th>Faroese</th><th>Status</th></tr>
+  <tr><td class="mono">up.episodes_count</td><td>{n} episodes</td><td>{n} afsnit</td><td>{n} partar</td>
+    <td>round 11's, reused</td></tr>
+  <tr><td class="mono">up.available_of</td><td>{k} of {n} available</td><td>{k} af {n} tilgængelige</td>
+    <td>{k} av {n} tøk</td><td>round 11's, reused</td></tr>
+  <tr><td class="mono">up.episodes_word</td><td>episodes</td><td>afsnit</td><td>partar</td>
+    <td><span class="tag warn">NEW — da/fo unreviewed</span></td></tr>
+</table>
+<p class="note">No <code>{n} releases</code> key appears anywhere in this round. The brief is explicit
+that the shipped app has no day-header count line, and round 11 found the shipped i18n set carries no
+key for one — so the line round 11 drew is gone rather than restyled. Danish <code>up.episode</code>
+(<em>Episode</em>) still disagrees with <code>up.episodes_count</code> (<em>afsnit</em>); that is
+reported, not fixed, because the shipped file wins wherever a string exists.</p>
+
+</div>
+</body>
+</html>

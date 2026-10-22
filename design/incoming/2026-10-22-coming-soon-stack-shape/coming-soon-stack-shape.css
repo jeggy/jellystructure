@@ -1,0 +1,400 @@
+/* coming-soon-stack-shape.css — round 11 rev 2's own rules, on top of the shipped Ravilo sheets.
+
+   Round slug `coming-soon-stack-shape`, 2026-10-22.
+
+   Loaded AFTER design/ravilo/ravilo.css (TV, desktop) or design/ravilo/mobile/ravilo-phone.css
+   (phone), so every token, component and focus treatment in these pictures is the shipped one.
+   What is here is only (a) the three self-hosted faces, so the round needs no network at render
+   time, (b) the frame scaffolding the renderer screenshots, and (c) the `cs-` classes this round
+   invents.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so these rules are a specification of intent for the Compose port, which is exactly why the
+   hex, px, weight and radius are written out rather than left to the implementer.
+
+   Every number in this file is a STAGE pixel at 1920×1080 on the TV, a dp at 412 on the phone,
+   and a CSS pixel at 1440×900 on the desktop.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. ravilo.css opens with an @import
+   of fonts.googleapis.com, which is normal in a mockup and cannot be relied on: the render runs
+   in a container. These blocks come last in the cascade, so they win, and the picture is the same
+   with or without a network. No file is copied: the url points at the repo's own woff2. */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* ============================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ============================================================================================ */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; }
+.cs-frames { padding: 0; margin: 0; }
+
+/* The TV: the shipped fixed 1920×1080 stage, drawn at 1:1 so a measurement off these pictures is
+   a measurement in stage pixels. The app's own #stage is centred by a transform; here each frame
+   is a static 1920×1080 block instead, because a frame has to be screenshot-able on its own. */
+.cs-tvframe { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
+  font-family: 'Sora', sans-serif; }
+.cs-tvframe .screen { margin-top: -92px; }
+
+/* The phone: Pixel 9 portrait, 412×915. */
+.cs-phoneframe { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+.cs-pscroll { position: absolute; inset: 0; overflow: hidden; padding-top: 10px; }
+.cs-pstatus { height: 34px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+/* The desktop: 1440×900 wide. */
+.cs-dtframe { width: 1440px; height: 900px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+
+/* ============================================================================================
+   THE ART FACE — shared by every direction.
+   The shipped .up-art keeps its 242 px height and its radius; it gives up its own background, its
+   scrim and its 2 px transparent border to .cs-artface, and it stops clipping so a focus ring
+   drawn on the face is not cut off at the card's edge.
+   .cs-artface itself DOES clip, and that is load-bearing: every overlay this round draws (the
+   band, the rail, the reveal) is a positive-z-index child of an absolutely positioned box, and
+   round 11 lost a render to exactly that escaping over the card in front of it. `overflow:
+   hidden` here is what makes that impossible.
+   ============================================================================================ */
+
+.up-art { background: transparent; border: 0; overflow: visible; }
+.up-art::after { content: none; }
+.cs-artface { position: absolute; inset: 0; border-radius: 16px; overflow: hidden;
+  background: var(--card); }
+/* The art fill. `.up-art .grad` is positioned in ravilo.css — which the PHONE frames deliberately
+   do not load, so on the phone the gradient collapsed to a zero-height block and every poster
+   rendered as an empty grey box with initials floating in it. Only looking at the phone render
+   found it. Declared here so the art exists on all three surfaces. */
+.cs-artface .grad { position: absolute; inset: 0; }
+.cs-artface::after { content: ''; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(0deg, rgba(6,8,14,.76) 0%, rgba(6,8,14,.06) 46%, rgba(6,8,14,.30) 100%); }
+
+/* the initials stand in for the poster, as the shipped mockups do */
+.cs-initials { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: 64px; letter-spacing: -2px; color: rgba(255,255,255,.17); z-index: 1; }
+
+/* The kind chip, painted exactly as the shipped source chip but under a name of this round's
+   own, so no source name appears anywhere in these files — not even as a class. */
+.up-src.cs-kind { background: #35c5f0; }
+
+/* the mixed pill. --warn is this system's "dirty / mixed" semantic, and the words carry the state
+   as well, because state is never expressed by colour alone — in NOIR the accent IS amber, so a
+   pill leaning on colour would be indistinguishable from the skin's own accent. */
+.up-stat.cs-mixed { color: #ffd98a; background: rgba(245,181,66,.16);
+  border: 1px solid rgba(245,181,66,.52); white-space: nowrap; }
+.up-art-top { flex-wrap: nowrap; }
+
+/* the count badge. Glass + ink in every skin: the status pill already carries the colour
+   semantics on this art, and noir has no accent tint to spend here. */
+.cs-count { flex: none; padding: 6px 12px; border-radius: 9px; font-size: 17px; font-weight: 700;
+  letter-spacing: .1px; white-space: nowrap; color: var(--ink);
+  background: rgba(10,12,19,.74); border: 1px solid rgba(255,255,255,.26); }
+/* E's badge is deliberately LARGER. E's rail says "several"; this badge is E's whole answer to
+   "how many", and at 17 px that answer was not legible at three metres. */
+.cs-count.cs-count-lg { font-size: 26px; padding: 7px 15px; border-radius: 11px;
+  font-family: 'Space Grotesk', sans-serif; letter-spacing: -.3px; }
+
+/* ---- focus. A stack is ONE focus stop. The ring is drawn round the card face and the card is
+   lifted by a transform, which paints larger without reflowing — the row's height and width are
+   untouched in every direction here, which is the jumpiness R367 removed. */
+.up-card.focused .up-art { border-color: transparent; box-shadow: none; transform: none; }
+.up-card.focused .cs-artface { box-shadow: 0 0 0 4px var(--ring, #8e82ff), 0 22px 50px rgba(0,0,0,.6); }
+.up-card.focused { transform: translateY(-3px) scale(1.02); }
+
+/* ============================================================================================
+   DIRECTION A — stacked edge. ROUND 11's, REPRODUCED UNCHANGED, as the comparison frame only.
+   Not a candidate in this revision: the owner has seen it and did not pick it. It is in the set
+   so the new directions are judged against something rather than against nothing.
+   ============================================================================================ */
+
+.cs-a.cs-stacked .cs-artface { inset: 0 32px 0 0; box-shadow: 4px 0 14px rgba(0,0,0,.78); }
+.cs-edge { position: absolute; top: 14px; bottom: 14px; width: 34px; border-radius: 0 15px 15px 0;
+  background-size: cover; background-position: right center;
+  border: 1px solid rgba(255,255,255,.20); border-left: 0; z-index: 0; overflow: hidden; }
+.cs-edge.e1 { right: 16px; }
+.cs-edge.e2 { right: 0; top: 28px; bottom: 28px; border-color: rgba(255,255,255,.14); }
+/* The dim and the top highlight are ONE layer, not two — round 11's z-index defect, kept fixed. */
+.cs-edge::after { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(rgba(255,255,255,.40) 0 2px, rgba(4,5,10,.42) 2px); }
+.cs-edge.e2::after {
+  background: linear-gradient(rgba(255,255,255,.28) 0 2px, rgba(4,5,10,.64) 2px); }
+
+/* ============================================================================================
+   THE NUMBER LOCKUP — shared by D, F and G.
+   The numeral is the one thing that has to survive three metres, so it gets the display face at
+   display size and everything else on the card gets out of its way. "Spend your boldness in one
+   place": there is no second coloured element competing with it anywhere in D, F or G.
+   ============================================================================================ */
+
+.cs-lnum { flex: none; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 60px;
+  line-height: .88; letter-spacing: -2.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cs-lcol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* .05em, not .07em. At .07em the S-O-D run in "EPISODES" opened a gap wide enough to read as a
+   word break at three metres — visible only once the frame was magnified. Danish "AFSNIT" and
+   Faroese "PARTAR" never showed it, which is exactly why the English frame had to be looked at
+   on its own rather than trusted because its siblings were fine. */
+.cs-lword { font-size: 20px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--ink-soft); white-space: nowrap; }
+.cs-lmix { font-size: 17px; font-weight: 600; color: #ffd98a; white-space: nowrap; }
+/* the band's right-hand slot when there is no air time to put in it — see cs2-kit.js */
+.cs-lright { margin-left: auto; flex: none; display: inline-flex; align-items: center; }
+.cs-ltime { margin-left: auto; flex: none; font-family: 'Space Grotesk', sans-serif;
+  font-size: 26px; font-weight: 700; color: var(--ink); letter-spacing: -.3px;
+  font-variant-numeric: tabular-nums; }
+
+/* ============================================================================================
+   DIRECTION D — THE SEASON BAND.                                             *** RECOMMENDED ***
+   A solid band across the lower third of the art: the numeral, the plural noun, and the earliest
+   air time at its right end. The band is a flat surface rather than a scrim so the numeral has
+   guaranteed contrast whatever the art behind it happens to be — one picture per series means the
+   art cannot be relied on for anything.
+   FOOTPRINT: unchanged. 430 px wide, 242 px of art, on the 1920 stage. Zero slots spent, zero
+   height change, in every row and under focus. What it spends is 86 px of ARTWORK.
+   ============================================================================================ */
+
+/* The band is `--card-2`, a TOKEN, and that is load-bearing in two ways the first render proved.
+   It was `rgba(6,8,14,.90)` — darker than the page itself — and the card's bottom third read as a
+   hole punched through the card rather than as a surface on it: at three metres the card's
+   silhouette shrank to just its artwork. It was also a COOL near-black, so in noir, whose page is
+   a warm #080807, the band was visibly the wrong temperature — a hard-coded colour that does not
+   follow the skin is a skin leak, and noir is where this system's leaks show. `--card-2` is
+   lighter than the page in all three TV skins and in all three phone skins, and it is warm in
+   noir. White numeral on aurora's #1b2031 is ~13:1. */
+.cs-band { position: absolute; left: 0; right: 0; bottom: 0; height: 86px; z-index: 2;
+  display: flex; align-items: center; gap: 14px; padding: 0 16px;
+  background: var(--card-2); border-top: 1px solid var(--line); }
+
+/* ============================================================================================
+   DIRECTION E — THE EPISODE RAIL.
+   One segment per episode along the art's top edge, each carrying its own state: held, arriving,
+   or still only scheduled. It answers the mixed stack exactly — WHICH episodes, not just how many
+   — without a list and without a second card slot.
+   FOOTPRINT: unchanged. The rail is 10 px of art at the very top, and the chip row below it moves
+   down by 18 px to clear it.
+   ============================================================================================ */
+
+.cs-rail { position: absolute; top: 12px; left: 12px; right: 12px; height: 10px; z-index: 2;
+  display: flex; gap: 3px; }
+.cs-seg { flex: 1; min-width: 0; border-radius: 2px; overflow: hidden; position: relative;
+  background: rgba(255,255,255,.22); }
+.cs-seg.ok { background: var(--good, #2dd49a); }
+.cs-seg.bad { background: #ff8a5c; }
+/* A downloading segment's TROUGH is the same grey as a scheduled segment, not an amber tint. It
+   was amber at .26 and over teal artwork that read olive — so the mixed frame showed two
+   different colours both meaning "not here yet", side by side. The amber belongs to the FILL
+   only, which is the part that means something. */
+.cs-seg.dl { background: rgba(255,255,255,.22); }
+.cs-segfill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--warn, #f5b542); }
+/* Above 12 episodes the segments would be thinner than the gaps between them and at three metres
+   would read as a solid bar anyway — so past that the rail BECOMES one proportional bar, k of n
+   filled, and the count badge carries the number. Measured on the 24-episode frame. */
+.cs-rail.cs-rail-bar { display: block; height: 10px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,.22); }
+.cs-railfill { display: block; height: 100%; background: var(--good, #2dd49a); }
+/* the chip row clears the rail */
+.cs-e.cs-stacked .up-art-top, .cs-g.cs-stacked .up-art-top { top: 30px; }
+
+/* ============================================================================================
+   DIRECTION F — THE FOCUS REVEAL.
+   At rest the card is the shipped card plus a small count chip, so a row with six stacks in it
+   stays as calm as a row with none. Focused, the whole lockup — number, plural, rail, range —
+   arrives INSIDE the same 430 × 242 footprint.
+   FOOTPRINT: unchanged, resting and focused. Nothing grows, nothing reflows.
+   THE COST IS NOT GEOMETRIC: at rest F is direction C, and C is what the owner has already seen
+   and not picked. It is drawn because "reveal on focus" was a seed in the brief and because it is
+   the only direction that costs the resting row nothing at all — not because it answers the
+   question, which is about a glance and not about focus. See REPORT.md.
+   ============================================================================================ */
+
+.cs-reveal { position: absolute; left: 0; right: 0; bottom: 0; top: 34%; z-index: 3;
+  padding: 0 16px 12px; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px;
+  background: linear-gradient(0deg, rgba(6,8,14,.97) 0%, rgba(6,8,14,.93) 62%, rgba(6,8,14,0) 100%); }
+.cs-rtop { display: flex; align-items: center; gap: 14px; }
+.cs-reveal .cs-rail { position: static; height: 10px; left: auto; right: auto; top: auto; }
+/* The reveal does NOT repeat the episode range. It did, in "S02E01–E08" at the panel's foot —
+   forty pixels above the card's own subtitle, which says "S02E01–E08". One card saying the same
+   thing twice is round 11's defect in a new costume, and the fix is to delete the second one. */
+
+/* ============================================================================================
+   DIRECTION G — THE TALL SEASON ROW.
+   The number lives ABOVE the art, in a header of its own, so G is the only direction that covers
+   no artwork at all and the only one that can show the number and the rail together at full size.
+   FOOTPRINT: the card keeps its 430 px width — no slots are lost — but the ROW grows 78 px, and
+   every card in that row grows with it, because a row of ragged-topped cards is worse than a
+   taller row. That is G's whole price and it is priced in REPORT.md.
+   ============================================================================================ */
+
+.cs-gwrap { position: relative; }
+.cs-ghead { height: 78px; display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  background: var(--card-2); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 16px 16px 0 0; }
+.cs-g .cs-lnum { font-size: 54px; }
+.cs-g.cs-stacked .cs-artface { border-radius: 0 0 16px 16px; }
+/* A card that is NOT a stack sits in the same row and keeps its own height, so it is pushed down
+   by exactly the header's height and the row's art baselines line up. This is the visible part of
+   G's price: the empty 78 px above every single-episode card in a row that contains one stack. */
+.cs-g:not(.cs-stacked) { padding-top: 79px; }
+/* ONE ring round the header and the art together — a stack is one focus stop. */
+.cs-g.cs-stacked.focused .cs-artface { box-shadow: none; }
+.cs-g.cs-stacked.focused .cs-gwrap { outline: 4px solid var(--ring, #8e82ff); outline-offset: 4px;
+  border-radius: 19px; box-shadow: 0 22px 50px rgba(0,0,0,.6); }
+
+/* ============================================================================================
+   The brand mark, drawn rather than imported — the round needs no asset of its own.
+   ============================================================================================ */
+.cs-mark { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--grad);
+  box-shadow: 0 0 18px var(--ring-glow, rgba(123,110,240,.55)); display: inline-block; }
+
+/* ============================================================================================
+   THE PHONE, 412 dp.
+   The brief fixes the phone as the same CARD component, so the card is drawn here — and
+   ravilo-phone.css defines NONE of the `up-*` card classes (they live in ravilo.css, which the
+   phone frames deliberately do not load, because the two token files name their tokens the same
+   way and loading both lets one answer for the other). So the whole card component is declared
+   below at phone scale, against the phone's own tokens. That is a finding, not a convenience:
+   see REPORT.md.
+   ============================================================================================ */
+
+.cs-pseg { display: flex; gap: 4px; padding: 6px; margin: 4px 14px 10px; border-radius: 14px;
+  background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+.cs-pseg span { flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 13px;
+  font-weight: 500; color: var(--ink-soft); }
+.cs-pseg span.cur { color: var(--ink); font-weight: 600; background: var(--card-2); }
+.cs-pchips { display: flex; gap: 7px; padding: 0 18px 10px; }
+.cs-pchips span { padding: 6px 14px; border-radius: 11px; font-size: 12px; font-weight: 500;
+  color: var(--ink-soft); border: 1px solid var(--line); }
+.cs-pchips span.cur { color: var(--ink); background: var(--card-2); }
+.cs-phead { padding: 4px 18px 8px; }
+.cs-phead h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600;
+  letter-spacing: -.3px; color: var(--ink); }
+/* a card ROW on a handset: horizontal, with the next card peeking. 248 + 12 gap inside 412 dp
+   leaves 134 dp of the second card showing, which is what tells a thumb the row scrolls. */
+.cs-ptrack { display: flex; gap: 12px; padding: 0 18px 18px; overflow: hidden; }
+
+.cs-phoneframe .up-card { flex: none; width: 248px; }
+.cs-phoneframe .up-art { position: relative; width: 100%; height: 139px; }
+.cs-phoneframe .cs-artface { border-radius: 12px; }
+.cs-phoneframe .cs-initials { font-size: 38px; letter-spacing: -1px; }
+.cs-phoneframe .up-art-top { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 2;
+  display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; }
+.cs-phoneframe .up-art-bot { position: absolute; bottom: 8px; left: 9px; right: 8px; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.cs-phoneframe .up-src { padding: 3px 7px; border-radius: 6px; font-size: 9px; font-weight: 800;
+  letter-spacing: .3px; color: #06121a; white-space: nowrap; }
+.cs-phoneframe .up-stat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px;
+  border-radius: 6px; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.cs-phoneframe .up-stat.avail-lib { color: var(--good); background: rgba(45,212,154,.16);
+  border: 1px solid rgba(45,212,154,.5); }
+.cs-phoneframe .up-stat.dl { color: #ffd27a; border: 1px solid rgba(255,210,122,.4); }
+.cs-phoneframe .up-stat.missing { color: #ff9d7a; background: rgba(255,120,80,.15);
+  border: 1px solid rgba(255,120,80,.5); }
+.cs-phoneframe .up-time { font-family: 'Space Grotesk', sans-serif; font-size: 15px;
+  font-weight: 700; color: #fff; letter-spacing: -.2px; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.cs-phoneframe .up-cbody { padding: 8px 2px 0; }
+.cs-phoneframe .up-ctitle { font-size: 14px; font-weight: 700; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-phoneframe .up-csub { font-size: 11.5px; color: var(--ink-soft); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-phoneframe .up-cnet { font-size: 10px; color: var(--ink-dim); margin-top: 3px; }
+.cs-phoneframe .up-cdue { display: inline-flex; align-items: center; gap: 5px; font-size: 10px;
+  font-weight: 700; color: #ff9d7a; margin-top: 6px; padding: 3px 8px 3px 6px; border-radius: 7px;
+  background: rgba(255,120,80,.13); border: 1px solid rgba(255,120,80,.4); }
+.cs-phoneframe .up-cdue-ic { width: 13px; height: 13px; border-radius: 50%;
+  background: rgba(255,120,80,.24); color: #ff9d7a; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 800; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+.cs-phoneframe .cs-count { font-size: 10px; padding: 3px 7px; border-radius: 6px; }
+.cs-phoneframe .cs-count.cs-count-lg { font-size: 14px; padding: 3px 8px; border-radius: 7px; }
+
+/* the lockup at phone scale */
+.cs-phoneframe .cs-band { height: 50px; gap: 8px; padding: 0 10px; }
+.cs-phoneframe .cs-lnum { font-size: 32px; letter-spacing: -1.4px; }
+.cs-phoneframe .cs-g .cs-lnum { font-size: 29px; }
+.cs-phoneframe .cs-lword { font-size: 11px; letter-spacing: .06em; }
+.cs-phoneframe .cs-lmix { font-size: 10px; }
+.cs-phoneframe .cs-ltime { font-size: 15px; }
+.cs-phoneframe .cs-rail { top: 8px; left: 8px; right: 8px; height: 6px; gap: 2px; }
+.cs-phoneframe .cs-rail.cs-rail-bar { height: 6px; }
+.cs-phoneframe .cs-e.cs-stacked .up-art-top,
+.cs-phoneframe .cs-g.cs-stacked .up-art-top { top: 20px; }
+.cs-phoneframe .cs-reveal { padding: 0 10px 8px; gap: 6px; }
+.cs-phoneframe .cs-rtop { gap: 8px; }
+.cs-phoneframe .cs-reveal .cs-rail { height: 6px; }
+.cs-phoneframe .cs-ghead { height: 44px; gap: 8px; padding: 0 11px; border-radius: 12px 12px 0 0; }
+.cs-phoneframe .cs-g.cs-stacked .cs-artface { border-radius: 0 0 12px 12px; }
+.cs-phoneframe .cs-g:not(.cs-stacked) { padding-top: 45px; }
+.cs-phoneframe .cs-a.cs-stacked .cs-artface { inset: 0 18px 0 0; }
+.cs-phoneframe .cs-edge { width: 20px; top: 8px; bottom: 8px; border-radius: 0 9px 9px 0; }
+.cs-phoneframe .cs-edge.e1 { right: 9px; }
+.cs-phoneframe .cs-edge.e2 { right: 0; top: 16px; bottom: 16px; }
+
+/* NOTE FOR THE SPEC, carried from round 11 and still true: ravilo-phone.css defines --good but
+   NOT --warn, so the phone has no token for "mixed" at all; and it defines --ring / --ring-glow
+   only inside the daylight block, so a dark phone skin has no focus-ring token. Every rule in
+   this file that uses either carries a fallback for that reason. A real implementation adds both
+   to the phone's token set rather than hard-coding them. */
+
+/* ============================================================================================
+   THE DESKTOP, 1440×900. The rail is indicative; the card and the row are what is under test.
+   ============================================================================================ */
+
+.cs-dshell { display: grid; grid-template-columns: 248px minmax(0, 1fr); height: 900px; }
+.cs-drail { border-right: 1px solid var(--line); padding: 26px 18px; background: var(--bg-2); }
+.cs-dbrand { display: flex; align-items: center; gap: 11px;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px;
+  letter-spacing: -.6px; padding-bottom: 22px; }
+.cs-dbrand .cs-mark { width: 28px; height: 28px; border-radius: 9px; }
+.cs-dnav { padding: 9px 13px; border-radius: 10px; font-size: 14px; color: var(--ink-soft); }
+.cs-dnav.on { color: var(--ink); background: var(--card-2); font-weight: 600; }
+.cs-dmain { overflow: hidden; padding: 28px 32px 0; }
+.cs-dhead { display: flex; align-items: baseline; gap: 14px; }
+.cs-dhead h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; letter-spacing: -1px; }
+.cs-dsub { font-size: 15px; color: var(--ink-soft); }
+.cs-dchips { display: flex; gap: 8px; padding: 16px 0 4px; }
+.cs-dchips span { padding: 7px 16px; border-radius: 11px; font-size: 13px; color: var(--ink-soft);
+  border: 1px solid var(--line); }
+.cs-dchips span.cur { color: var(--ink); background: var(--card-2); font-weight: 600; }
+.cs-dday { padding-top: 22px; }
+.cs-ddayhead { display: flex; align-items: baseline; gap: 12px; padding-bottom: 12px; }
+.cs-ddayhead h2 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 600;
+  letter-spacing: -.4px; }
+.cs-ddayhead span { font-size: 13px; color: var(--ink-dim); }
+.cs-dgrid { display: flex; gap: 16px; }
+
+/* the desktop card: the same markup at 300 px, which is the width at which four fit the content
+   column with its gaps. Nothing but the numbers changes. */
+.cs-dtframe .up-card { width: 300px; }
+.cs-dtframe .up-art { height: 169px; }
+.cs-dtframe .cs-initials { font-size: 44px; }
+.cs-dtframe .up-ctitle { font-size: 16px; }
+.cs-dtframe .up-csub { font-size: 13px; }
+.cs-dtframe .up-cnet { font-size: 11.5px; }
+.cs-dtframe .up-time { font-size: 16px; }
+.cs-dtframe .up-src, .cs-dtframe .up-stat { font-size: 10.5px; padding: 4px 8px; }
+.cs-dtframe .cs-count { font-size: 11px; padding: 4px 8px; }
+.cs-dtframe .cs-count.cs-count-lg { font-size: 18px; padding: 5px 11px; }
+.cs-dtframe .cs-band { height: 62px; gap: 10px; padding: 0 12px; }
+.cs-dtframe .cs-lnum { font-size: 44px; letter-spacing: -1.8px; }
+.cs-dtframe .cs-g .cs-lnum { font-size: 38px; }
+.cs-dtframe .cs-lword { font-size: 15px; }
+.cs-dtframe .cs-lmix { font-size: 13px; }
+.cs-dtframe .cs-ltime { font-size: 20px; }
+.cs-dtframe .cs-rail { top: 9px; left: 9px; right: 9px; height: 8px; gap: 2px; }
+.cs-dtframe .cs-rail.cs-rail-bar { height: 8px; }
+.cs-dtframe .cs-e.cs-stacked .up-art-top,
+.cs-dtframe .cs-g.cs-stacked .up-art-top { top: 24px; }
+.cs-dtframe .cs-reveal { padding: 0 12px 10px; gap: 8px; }
+.cs-dtframe .cs-reveal .cs-rail { height: 8px; }
+.cs-dtframe .cs-ghead { height: 56px; gap: 10px; padding: 0 13px; }
+.cs-dtframe .cs-g:not(.cs-stacked) { padding-top: 57px; }
+.cs-dtframe .cs-a.cs-stacked .cs-artface { inset: 0 22px 0 0; }
+.cs-dtframe .cs-edge { width: 24px; top: 10px; bottom: 10px; border-radius: 0 11px 11px 0; }
+.cs-dtframe .cs-edge.e1 { right: 11px; }
+.cs-dtframe .cs-edge.e2 { right: 0; top: 19px; bottom: 19px; }

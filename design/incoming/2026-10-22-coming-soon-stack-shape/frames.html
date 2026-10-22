@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coming Soon — the stack's shape — frames</title>
+<!--
+  frames.html — every frame this round renders, built from cs2-data.js through cs2-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=tv|phone|desktop            which frame set to build
+      &skin=aurora|midnight|noir
+      &lang=en|da|fo
+
+  The set decides which SHIPPED stylesheet is loaded, because the TV and the phone are two
+  different token files that name their tokens the same way — loading both into one document lets
+  one answer for the other. The round's own stylesheet always comes last, so it extends the
+  shipped system and never precedes it.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; render.mjs just
+  drives it over the parameter combinations and screenshots one element per frame.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'tv';
+    const skin = q.get('skin') || 'aurora';
+    const lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.lang = lang;
+    const shipped = (set === 'phone')
+      ? '../../ravilo/mobile/ravilo-phone.css'
+      : '../../ravilo/ravilo.css';
+    document.write('<link rel="stylesheet" href="' + shipped + '">');
+    document.write('<link rel="stylesheet" href="coming-soon-stack-shape.css">');
+    window.CSOPT = { set, skin, lang };
+  })();
+</script>
+</head>
+<body>
+<div class="cs-frames" id="frames"></div>
+
+<script src="cs2-data.js"></script>
+<script src="cs2-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { set, lang } = window.CSOPT;
+  const root = document.getElementById('frames');
+  CS2Kit.setLang(lang);
+
+  const D = CS2.DAYS;                    // 22 Oct (today), 23, 25, 26
+  const FROM_TOMORROW = D.slice(1);      // 23 — the two-episode stack, beside the film
+  const FROM_SUNDAY = D.slice(2);        // 25 — the mixed stack, and the not-held stack
+  const BIG = CS2.DAY_BIG;               // 27 — the 24-episode drop, on a day of its own
+
+  function frame(name, cls, html) {
+    const d = document.createElement('div');
+    d.id = 'f-' + name;
+    d.className = cls;
+    d.innerHTML = html;
+    root.appendChild(d);
+  }
+  const tv = (name, opts) => frame(name, 'cs-tvframe', CS2Kit.tvScreen(opts));
+  const ph = (name, opts) => frame(name, 'cs-phoneframe',
+    '<div class="cs-pscroll"><div class="cs-pstatus"><span>21:04</span><span>▮▮▮</span></div>'
+    + CS2Kit.phoneScreen(opts) + '</div>');
+  const dk = (name, opts) => frame(name, 'cs-dtframe', CS2Kit.desktopScreen(opts));
+
+  /* The four frames every direction gets on the TV, so the comparison is like for like. */
+  function tvSet(dir) {
+    /* Today: the eight-episode drop beside a single episode — the occasion for the round. */
+    tv('tv-' + dir + '-today', { dir: dir });
+    tv('tv-' + dir + '-focus', { dir: dir, focusKey: 'tidewater@' + CS2.TODAY });
+    /* The two-episode stack (21:00 and 21:45 → shows 21:00), beside a film that never stacks. */
+    tv('tv-' + dir + '-two', { dir: dir, days: FROM_TOMORROW });
+    /* The mixed stack: 4 of 6 available, one at 62 %. Behind it, a stack we do not hold. */
+    tv('tv-' + dir + '-mixed', { dir: dir, days: FROM_SUNDAY });
+    /* The Missing row, grouped by series regardless of day. */
+    tv('tv-' + dir + '-missing', { dir: dir, days: [], missing: true });
+  }
+
+  /* ---------------------------------------------------------------- the TV, 1920×1080 */
+  if (set === 'tv') {
+    /* A, ONCE, as the comparison frame. The owner has seen A and did not pick it; it is here so
+       the new directions are judged against something rather than against nothing. */
+    tv('tv-a-compare', { dir: 'a' });
+
+    tvSet('d');     /* season band      — recommended */
+    tvSet('e');     /* episode rail */
+    tvSet('f');     /* focus reveal */
+    tvSet('g');     /* tall season row */
+
+    /* The 24-episode drop. The brief asks for it on any per-episode-mark direction (E and G); it
+       is drawn on D as well, because a two-digit numeral is a different typographic case from a
+       one-digit one and D is the direction whose whole claim is the numeral. */
+    tv('tv-d-24', { dir: 'd', days: BIG });
+    tv('tv-e-24', { dir: 'e', days: BIG });
+    tv('tv-g-24', { dir: 'g', days: BIG });
+  }
+
+  /* ------------------------------------------------------------------ the phone, 412×915 */
+  if (set === 'phone') {
+    ph('ph-d-today', { dir: 'd' });
+    ph('ph-e-today', { dir: 'e' });
+    ph('ph-f-today', { dir: 'f' });
+    ph('ph-g-today', { dir: 'g' });
+  }
+
+  /* ---------------------------------------------------------------- the desktop, 1440×900 */
+  if (set === 'desktop') {
+    dk('dk-d-wide', { dir: 'd' });
+    dk('dk-e-wide', { dir: 'e' });
+    dk('dk-f-wide', { dir: 'f' });
+    dk('dk-g-wide', { dir: 'g' });
+  }
+})();
+</script>
+</body>
+</html>
