@@ -444,3 +444,167 @@
 .lm-ft { padding: 9px 12px; border-top: 1px solid var(--line); font-size: .68rem; color: var(--ink-soft); line-height: 1.55; }
 .lm-ft b { color: var(--ink); }
 .lm-empty { padding: 16px 12px; text-align: center; font-size: .78rem; color: var(--ink-dim); }
+
+/* ============================================================================
+   Container conversion (AVI → MKV) — the file-level notice above the Tracks
+   card, its preview, its confirmation dialog and the job's whole life.
+   DEB-2137, promoted by hand from direction A of the 2026-10-22
+   avi-mkv-migration round, with the owner's D2/D3 answers applied.
+
+   Why these rules live in detail.css rather than a container-convert.css of
+   their own: this is the media detail page's stylesheet, it already ships
+   (syncDesignAssets), media.html and the real wasmJs app already link it, and
+   the shared .modal / .modal-back dialog shell the confirmation reuses is
+   defined forty lines up in this same file. A new served file would have
+   needed a syncDesignAssets row, an index.html <link> and a SCOPED_FILES row;
+   none of those three are needed here, and the classes are page-unique —
+   `.cv-*` collides with nothing in wf.css, app.css or any other served sheet
+   (checked class by class before promotion).
+
+   Scope note: `.btn:focus-visible` is deliberately written under `.cv-card` /
+   `.cv-dlg` and never bare. The round's own file had it bare, which would have
+   been a page-wide focus ring on every button in the admin.
+
+   Direction A only. The round's direction B (in-row drawer) and direction C
+   (standing container card, `.cv-std` / `.cv-card.hot`) are not built and
+   their rules are deliberately absent. So is `.badge.cv-tent`: D2 decided
+   where the original goes, so nothing in this flow is tentative any more.
+   ============================================================================ */
+
+/* the notice itself — one container, one variant class per state */
+.cv-card { border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--fill-2); padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+.cv-card.lim { background: var(--info-soft); border-color: rgba(63,182,245,.45); }
+.cv-card.blk { background: var(--warn-soft); border-color: rgba(245,181,66,.5); }
+.cv-card.pth { background: var(--bg-2); border: 2px dashed rgba(255,111,97,.7); }
+.cv-card.fail { background: var(--bad-soft); border-color: rgba(255,111,97,.55); }
+.cv-card.okk { background: var(--ok-soft); border-color: rgba(45,212,154,.5); }
+.cv-card.job { background: var(--fill); border-color: rgba(123,110,240,.5); }
+.cv-card + .card, .cv-card + .note { margin-top: 14px; }
+
+.cv-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cv-lb { font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-soft); }
+.cv-scope { font-family: 'JetBrains Mono', monospace; font-size: .74rem; color: var(--ink-soft); }
+.cv-card h3 { font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 600; margin: 0; letter-spacing: -.01em; text-wrap: pretty; color: var(--ink); }
+.cv-card p { margin: 0; font-size: .88rem; line-height: 1.6; text-wrap: pretty; color: var(--ink); }
+.cv-card p.cv-m { color: var(--ink-soft); font-size: .82rem; }
+.cv-acts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+
+/* status glyph; .s is the small one that sits in a track row's sub-line */
+.cv-ico { width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font: 700 .74rem 'JetBrains Mono', monospace; flex: none; }
+.cv-ico.s { width: 18px; height: 18px; border-radius: 5px; font-size: .64rem; align-self: center; }
+.cv-ico.info { background: var(--info); color: #0b1a24; }
+.cv-ico.warn { background: var(--warn); color: #241a05; }
+.cv-ico.bad { background: var(--bad); color: #2a0a06; }
+.cv-ico.ok { background: var(--ok); color: #06261a; }
+.cv-ico.hi { background: var(--hi); color: #fff; }
+.cv-ico.pth { background: transparent; border: 2px solid var(--bad); color: var(--bad); }
+
+/* preview table (FR-4) */
+.cv-pvt { display: grid; grid-template-columns: 170px minmax(0,1fr); margin: 2px 0 0; border-top: 1px solid var(--line); }
+.cv-pvt dt, .cv-pvt dd { padding: 9px 0; border-bottom: 1px solid var(--line); margin: 0; font-size: .86rem; line-height: 1.55; }
+.cv-pvt dt { color: var(--ink-soft); font-weight: 600; font-size: .8rem; padding-right: 12px; }
+.cv-pvt dd { color: var(--ink); overflow-wrap: anywhere; }
+.cv-pvt dd .cv-m { color: var(--ink-soft); font-size: .8rem; margin-top: 2px; }
+.cv-unk { font-weight: 700; color: var(--warn); }
+/* a plain .badge inside the notice keeps the neutral chrome, not the tinted ground it sits on */
+.cv-card .badge:not(.ok):not(.bad):not(.warn):not(.info) { background: var(--fill-3); border-color: var(--line-2); color: var(--ink); }
+
+/* the job's three steps (FR-7). No percentage is ever drawn: a remux has no honest one. */
+.cv-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.cv-steps li { display: flex; gap: 10px; align-items: center; font-size: .86rem; color: var(--ink-soft); }
+.cv-steps li i { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line-2); display: inline-flex; align-items: center; justify-content: center; font: 700 .68rem 'JetBrains Mono', monospace; font-style: normal; flex: none; }
+.cv-steps li em { font-style: normal; font-size: .78rem; color: var(--ink-soft); }
+.cv-steps li.on { color: var(--ink); font-weight: 600; }
+.cv-steps li.on i { border-color: var(--hi); background: var(--hi-soft); color: var(--acc-ink); }
+.cv-steps li.dn { color: var(--ink); }
+.cv-steps li.dn i { background: var(--fill-3); border-color: var(--fill-3); color: var(--ink); }
+.cv-steps li.x { color: var(--ink); font-weight: 600; }
+.cv-steps li.x i { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+.cv-stp { font-family: 'JetBrains Mono', monospace; font-size: .76rem; color: var(--ink-soft); }
+/* offline (FR-9): the last known step stays legible, the rest dims. Nothing reads as failed. */
+.cv-card.off .cv-steps, .cv-card.off .cv-stp { opacity: .5; }
+.cv-offb { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid rgba(245,181,66,.5); font-size: .84rem; }
+.cv-offb b { color: var(--warn); }
+
+/* verified (FR-8): what is on disk, and what still has to happen */
+.cv-files { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-radius: 8px; background: var(--bg-2); }
+.cv-files .f { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+/* flex:1 + flex:none, not bare wrapping: the kept original's path is the longer of the two (it
+   carries the hidden folder), so without this its badge drops to a line of its own while the new
+   file's badge stays inline — and a badge that has left its own row no longer labels anything. */
+.cv-files .mono { overflow-wrap: anywhere; min-width: 0; flex: 1 1 auto; }
+.cv-files .f .badge { flex: none; }
+.cv-next { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line-2); font-size: .86rem; }
+/* each pending consequence is one secondary line: Jellyfin indexing, and FR-8's Radarr re-link */
+.cv-next .cv-pend { display: flex; flex-direction: column; gap: 4px; }
+.cv-next .cv-pend + .cv-pend { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+
+/* detail-loading: the header and path come from the stored record and render at once; only the
+   track list waits. Static on purpose — no shimmer loop, because an infinite animation breaks the
+   screenshot render and reads as activity when nothing is happening. */
+.cv-skl { display: block; height: 12px; border-radius: 6px; background: var(--fill-3); }
+
+/* the failed row's sub-line, and the two row states the conversion drives (FR-2, FR-9) */
+.trk-sub { margin: 9px 0 0 130px; font-size: .82rem; line-height: 1.55; color: var(--ink-soft); display: flex; gap: 6px 9px; align-items: baseline; flex-wrap: wrap; }
+.trk-sub b { color: var(--ink); }
+.trk.flag { border-color: rgba(63,182,245,.5); }
+.trk.lock .trk-main { opacity: .55; }
+
+/* confirmation (FR-6). .modal / .modal-back are the shared shell defined above. */
+.modal.cv-dlg { width: 840px; display: flex; flex-direction: column; gap: 14px; }
+.cv-dlg h3 { margin: 0; font-size: 1.3rem; font-family: 'Space Grotesk', sans-serif; font-weight: 600; text-wrap: pretty; }
+.cv-cmp { display: grid; grid-template-columns: minmax(0,1fr) 30px minmax(0,1fr); gap: 12px; align-items: stretch; }
+.cv-side { border: 1px solid var(--line-2); border-radius: 12px; padding: 13px; background: var(--bg-2); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cv-path { font-family: 'JetBrains Mono', monospace; font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; color: var(--ink); }
+.cv-arr { align-self: center; text-align: center; color: var(--ink-soft); font-size: 1.2rem; }
+.cv-keep { font-size: .8rem; color: var(--ok); line-height: 1.5; }
+.cv-fld { display: flex; flex-direction: column; gap: 5px; }
+.cv-fld label { font-size: .74rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-soft); }
+/* D3 — the destination file name is fixed: the same name with only the extension changed. It is
+   SHOWN, never edited, so this is static text and not an <input>. Keeping the field's box would
+   invite a drag-select that looks like a caret, which is why it is flush instead. */
+.cv-fname { font-family: 'JetBrains Mono', monospace; font-size: .86rem; font-weight: 600; color: var(--ink); line-height: 1.5; overflow-wrap: anywhere; }
+.cv-sum { font-size: .84rem; color: var(--ink-soft); line-height: 1.6; padding: 10px 12px; border-radius: 8px; background: var(--fill-2); }
+.cv-sum b { color: var(--ink); }
+.cv-dlg .cv-acts { justify-content: flex-end; }
+
+/* Scoped, never bare: a page-wide .btn:focus-visible would have drawn this ring on every button
+   in the admin, since detail.css loads after wf.css on every page index.html serves.
+   var(--acc-ink), not the literal #c6bcfb the round drew: that literal is the DARK value of this
+   very token, and on the light theme's white card it is a pale lilac nobody can see. */
+.cv-card .btn:focus-visible, .cv-dlg .btn:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 3px; }
+/* width: fit-content so the ring hugs the heading instead of spanning the card. A full-width
+   rounded outline around a line of text reads as a text field — which is the one thing D3's
+   fixed, non-editable file name is trying not to look like. */
+.cv-card h3:focus, .cv-dlg h3:focus { outline: 2px solid var(--acc-ink); outline-offset: 3px; border-radius: 4px; width: fit-content; max-width: 100%; }
+
+/* Light theme. --ok/--warn/--bad/--info are deliberately NOT re-tinted per theme in wf.css: it
+   overrides the TEXT colour at each use site instead (see its .badge.ok/.warn/.bad/.info light
+   rules). Coloured text here has to do the same or it is a pale mint/amber on white — which is
+   exactly what the first render of this promotion showed. The tints match wf.css's own values. */
+[data-theme="light"] .cv-keep { color: #128a5f; }
+[data-theme="light"] .cv-unk, [data-theme="light"] .cv-offb b { color: #9a6a06; }
+[data-theme="light"] .cv-ico.pth { color: #c23b2d; border-color: #c23b2d; }
+[data-theme="light"] .cv-steps li.x i { color: #c23b2d; border-color: #c23b2d; }
+
+@media (max-width: 640px) {
+  .cv-pvt { grid-template-columns: minmax(0,1fr); }
+  .cv-pvt dt { border-bottom: 0; padding-bottom: 0; }
+  .cv-cmp { grid-template-columns: minmax(0,1fr); }
+  .cv-arr { transform: rotate(90deg); height: 18px; line-height: 18px; }
+  .cv-acts .btn { white-space: normal; text-align: left; }
+  .cv-acts .btn.primary { width: 100%; justify-content: center; }
+  .cv-card .badge { white-space: normal; }
+  .trk-sub { margin-left: 0; }
+  /* Direction A's narrow treatment, drawn in the round: at phone width the track row drops the #
+     and kind columns and gives the middle all the room. Without this the five desktop columns
+     survive at 390 px and squeeze the language, codec and Triage badge into a stack one word
+     wide — the same failure round 9 found at 412 px.
+     The columns are addressed by position, not by class, because that is how .trk-main's own
+     grid is declared above: grip, #, kind, mid, right. Dropping 2 and 3 leaves exactly three. */
+  .trk-cols { display: none; }
+  .trk-main { grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; }
+  .trk-main > :nth-child(2), .trk-main > :nth-child(3) { display: none; }
+  .modal-back.cv-back { padding: 0; align-items: stretch; }
+  .modal.cv-dlg { width: 100%; border-radius: 0; max-height: 100vh; overflow: auto; }
+}

@@ -413,6 +413,11 @@
           <div class="tiny" style="line-height:1.6;">The default audio track is <b id="cascade-def"><span class="lang">fr</span> (French)</b> but metadata resolves to <span class="lang">en</span>. Viewers would <b>read English</b> descriptions while <b>hearing French</b>. <span class="btn sm" id="cascade-fix" style="margin-left:4px;">Make <span class="lang" style="margin:0 3px;">en</span> default</span></div>
         </div>
 
+        <!-- container conversion (AVI → MKV), direction A — DEB-2137. A file-level notice above the
+             Tracks card, drawn only when the server reports a FR-1 refusal or a conversion job for
+             this file. Empty on every other file, which is every file the mockup shows by default. -->
+        <div id="cv-mount"></div>
+
         <div class="card">
           <div class="row center"><h4 style="margin:0;white-space:nowrap;">Tracks — language &amp; order</h4>
             <span class="seg" id="trk-seg" style="margin-left:12px;"><span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span></span>
@@ -1575,5 +1580,9 @@
   var up=document.getElementById('bz-upload'); if(up) up.addEventListener('click', function(){ toast('Pick a .srt/.ass to upload to Bazarr for this title.'); });
 })();
 </script>
+<!-- container conversion (AVI → MKV), direction A — DEB-2137. Mockup-only: not served, not in
+     syncDesignAssets. Its CSS is production and lives in detail.css, already linked above.
+     Dormant unless ?container=avi is on the query string. -->
+<script src="container-convert.js"></script>
 </body>
 </html>
