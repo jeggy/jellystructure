@@ -123,6 +123,32 @@ move the 1.x consumers onto 2.x, which is a major crossing nobody asked for.
 >   `kotlin-js-store/wasm/yarn.lock` from 2 packages to ~300 (webpack-dev-server and its tree) — alerts we had
 >   just closed, reopened under a new file. Each root declares only what its own tree holds.
 
+> **Note, 2026-10-22 (DEB-2116) — a new advisory, the same remedy.** Two `follow-redirects` advisories were
+> published on 2026-10-22 and opened alerts 47 and 48 on `kotlin-js-store/yarn.lock`, both *high*:
+> GHSA-8r9p-f939-6h3c (the `sensitiveHeaders` pattern is not regex-escaped, so a credential header can survive a
+> cross-origin redirect) and GHSA-q3jh-wrc6-jgq8 (array-form headers bypass the cross-origin credential stripping).
+> Both are vulnerable at `>=1.16.0 <1.16.1`, fixed in 1.16.1; the JS lockfile locks `follow-redirects@^1.0.0` at
+> 1.16.0. Raising it is **a restore of FR-319-1 and acceptance 1, not a change to this spec**: FR-319-1 already
+> covers every advised package, and the table above is the floors measured on 2026-10-15, not a closed list. So:
+>
+> | Package | Locked 2026-10-22 | At least | Crosses a major |
+> |---|---|---|---|
+> | `follow-redirects` | 1.16.0 | 1.16.1 | no |
+>
+> - **JS root only.** `follow-redirects` is not in `kotlin-js-store/wasm/yarn.lock`, and a resolution there would
+>   write it and its tree into that lockfile (the note above).
+> - **Toolchain only, measured.** Its one consumer is `http-proxy` 1.18.1, which two packages pull in: Kotlin's
+>   karma fork (directly) and webpack-dev-server 5.2.6 (through `http-proxy-middleware` 2.0.10). The four
+>   production bundles named in FR-319-4 contain no `follow-redirects` code. The redirect handling the advisories
+>   are about runs only when karma or the dev server proxies a request, on a build host or a developer's machine.
+>   Severity for users: none.
+> - **The toolchain copy outside the repository is not affected.** `~/.kotlin/kotlin-npm-tooling/` holds
+>   `follow-redirects` 1.15.11, below both advisories' ranges.
+> - **`braces` (alert 42) stays open** for the reason FR-319-5 already gives.
+> - The resolution's comment says the floor dates from 2026-10-22, so the "highest first-patched version on
+>   2026-10-15" header above `advisoryResolutions` still describes the rest of the list. The FR-319-4 checks apply
+>   to this commit as written, and the commit cites `restores FR-319-1`.
+
 ### FR-319-3 — A major crossing is kept only if the toolchain still works
 
 The three rows marked *yes* are kept only if every check in FR-319-4 passes with them. If one breaks
