@@ -184,3 +184,7 @@ the custom string as typed.
   also rejects it when posted directly.
 - Manual: hand-edit `config.toml` to `0 9-17/2 * * 1-5`, open Settings, confirm it loads as **Custom**
   with the string intact, and that saving an unrelated field leaves it untouched.
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+The validated cron no longer schedules "the pipeline". It is the interval of the feature *Find new & changed*, offered as *every N hours*, *daily at*, *weekly on* or *Custom*; Custom is this phase's cron, still validated before it can be saved (FR-3.2 there). A saved expression that matches a preset shows as that preset. The other features have intervals of their own. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

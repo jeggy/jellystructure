@@ -1,9 +1,8 @@
 # Phase 261 — Every file check is a pipeline step with its own cadence, one job per file, and a card that says when
 
-## Status
+## Scope
 
-`Built` — written 2026-09-25 with the owner; **dev-reviewed 2026-09-26 against `31dc2d9a`** (nine items, below) and built the same day. Not yet deployed: acceptance 4 is production's. Reshapes how phases
-**254** (whole-file verification) and **255** (track lengths) are scheduled and shown; changes neither check.
+Written 2026-09-25 with the owner; **dev-reviewed 2026-09-26 against `31dc2d9a`** (nine items, below). Acceptance 4 is production's. Reshapes how phases **254** (whole-file verification) and **255** (track lengths) are scheduled and shown; changes neither check.
 
 > Owner, 2026-09-25, on the sweep jobs: *"I'm not a fan of these jobs. […] If there is no real reason for
 > them being merged into a single job, like they are doing cross-checks and have to do it together, like
@@ -265,3 +264,7 @@ indexed reads per lane, grouped `/api/jobs` plus one expand route, `2years`/`5ye
 steps that enqueue per file from the whole library, `item_step_run` written from the step pool and the
 queue, one-time config seeding, `GET /api/media/{id}/checks` and the card. Nothing changes what 254 or 255
 check or store.
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+FR-261-4's two steps are now parts of the feature *File health* (with *Sound in step with the picture*), each switched and re-checked by release age in Settings ▸ Processing, with no pipeline position (FR-1 and FR-3 there). FR-261-7's due rule, FR-261-8's pass and FR-261-9's `item_step_run` are unchanged. The Checks card (FR-261-10/11) lists the nine features, and every ↻ updates its own row (FR-10 there). See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

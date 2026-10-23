@@ -444,3 +444,7 @@ be made to look productive:
 
 A lane idle longer than `pruneOld`'s 14 days reports none, like one that has never finished anything: the
 rows it would have been read from are gone.
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+FR-213-1 stands as written: four lanes, one worker per lane, one shared pool. Activity labels jobs by feature, never by lane, and no screen says a feature has a lane of its own. *Empty* on a feature removes only that feature's waiting jobs, even where two features share a lane (FR-7.3 and FR-8.3 there). See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

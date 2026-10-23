@@ -303,3 +303,7 @@ run-launching logic of their own anymore:
 
 Verified: `compileKotlinLinuxX64` + `compileKotlinWasmJs` clean, `linuxX64Test` 148/148 (same pre-existing
 Gradle test-report-writer flake noted above, non-fatal, unrelated). Not yet live-tested.
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+`runPipeline` stays the one engine. It takes the nine features' switches instead of a configured step list (FR-1 and FR-2 there). The order lives in code as a dependency graph, `wait` is removed, and `notify` folds into Notifications ▸ *Scan finished*. §6's trigger table is unchanged in shape: every trigger still calls `runPipeline`; the list it passes is derived from the features. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

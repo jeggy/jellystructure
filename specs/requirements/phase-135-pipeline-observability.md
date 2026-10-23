@@ -177,3 +177,7 @@ Overall + Now processing + Workers (proper count)** — plus badge the trigger, 
 - Related: **this cycle's** scanTracker-completion fix + "Run pipeline now (full)" flag; **Phase 91**
   (scan pipeline), **Phase 129/134** (`OutboundHttp`/`ProcessGate`/FD budget — the bounds to respect),
   **Phase 131** (`sync_imdb_ratings` throttle).
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+The owner replaced the configurable pipeline with nine fixed features (DEB-1664, 2026-10-17 and 2026-10-23). Activity's step chips (FR-135-3) become the run card on Activity ▸ Now: one line per feature the run touched, saying what it did or queued (FR-7 there). FR-135-1's bounded pools, FR-135-2's protocol and FR-135-4's run descriptor stand; the descriptor now names skipped **parts**, by their product names. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

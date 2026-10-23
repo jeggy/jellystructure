@@ -121,3 +121,7 @@ likely to be looked at.
   `src/linuxX64Main/kotlin/dev/jellystructure/server/routes/MediaRoutes.kt` (`POST /api/pipeline/run`).
 - Runner (unchanged): `src/linuxX64Main/kotlin/dev/jellystructure/Main.kt` (`executePipeline`).
 - Activity label: `src/wasmJsMain/kotlin/dev/jellystructure/ui/Activity.kt` (`stepLabel`).
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+The per-step pre-run dialog (FR-PIPE1-1…8) is replaced by the two-pane Scan dialog, with the nine features on the left and a feature's parts on the right (FR-5 and FR-6 there). Still true: a skip applies to one run and is never written to config (FR-PIPE1-6), Find new & changed cannot be skipped (FR-PIPE1-4), and the last choice is remembered and always shown (FR-PIPE1-5), now per part. FR-PIPE1-3's per-step notes go: the *"by far the slowest step"* note on intro detection has been untrue since August. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

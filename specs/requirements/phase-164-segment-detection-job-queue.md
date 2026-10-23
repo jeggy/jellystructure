@@ -218,3 +218,7 @@ launcher family as the WAL checkpoint in `Main.kt`.
 - Manual: click "detect again" twice on the same season — second click reports already-queued, and
   exactly one job exists.
 - Manual: restart the backend mid-lane — running segment jobs come back as `queued` and drain.
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+`detect_segments` is no longer a configured pipeline step. It is the feature *Intro & credits*, on or off in Settings ▸ Processing, with its own interval (FR-1 and FR-3 there). The job queue, dedupe, cooperative cancel (FR-164-5) and progress are unchanged; Activity labels the jobs by feature. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

@@ -4,11 +4,9 @@
 > pipeline scan, and then skip some steps with the provided popup. We want this same popup to be available
 > when doing a full pipeline scan directly from the Library and Dashboard pages."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Admin frontend plus one route change and one small new route. **Numbering:** verified
-against `STATUS.md` the same day — admin taken through **264**.
+Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review* at the end); *Build notes* at the end. Admin frontend plus one route change and one small new route.
 
 Extends **Phase 154** (the pre-run dialog, FR-PIPE1-1…8) from one page to every manual full run.
 
@@ -171,3 +169,7 @@ config change.
    and its log line reads *· skipped: verify_files*.
 
 **Verified 2026-09-27:** production admin (writes blocked in the browser): Dashboard's and Library's *Scan library* open the dialog titled *Scan library* with 12 rows, the same 12 steps `GET /api/pipeline/plan` answers; both e2e cases pass.
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+The dialog FR-265-1 shared is replaced by the two-pane Scan dialog (FR-5 there). FR-265-2's doors all open it, and so do the two that did not (a library card's *Scan* and Dashboard's *Start new scan*). FR-265-4's `skipSteps` body keeps working for one release, mapped onto parts (FR-9.2 there). FR-265-5's plan route is replaced by the feature list. FR-265-7's one remembered choice stands, per part. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

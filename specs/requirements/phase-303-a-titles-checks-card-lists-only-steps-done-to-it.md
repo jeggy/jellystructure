@@ -3,11 +3,9 @@
 > Found 2026-10-03 from an owner question about a film's page: *"fetch_lyrics · not yet · not yet · next due 2027,
 > with the next scan — why do I see this on movies?"*
 
-## Status
+## Scope
 
-`Planned`. Written 2026-10-03 (dev-authored), against `main` `c01c4a3b`. Number verified free (admin specs top at
-302, locally and on `origin/main`). Dev-reviewed 2026-10-04 (section at the end). FR-303-2's predicate moves
-next to `MusicSteps` and the engine uses it too (item 3). Acceptance 4 becomes a plain unit test (item 4).
+Written 2026-10-03 (dev-authored), against `main` `c01c4a3b`. Dev-reviewed 2026-10-04 (section at the end). FR-303-2's predicate moves next to `MusicSteps` and the engine uses it too (item 3). Acceptance 4 becomes a plain unit test (item 4).
 
 **Amends** phase 261 FR-261-10 (which steps the Checks card lists).
 
@@ -138,3 +136,7 @@ Read against `TitleChecks`, `PipelineEngine.runPipeline`'s step loop, `MusicStep
   `pull_tmdb`, `fetch_artwork` and the three file checks stay in order; an empty list gives `scan_files` alone;
   `scan_files` comes first with its own settings; every `MusicSteps.ALL` step is whole-library. `PipelinePlanTest`
   still green. No device check needed beyond opening a film's page (no music rows on its Checks card).
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+The Checks card lists the nine features, only those that apply to the title (FR-10.4 there). FR-303's rule that it lists only what is done to the title stands. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

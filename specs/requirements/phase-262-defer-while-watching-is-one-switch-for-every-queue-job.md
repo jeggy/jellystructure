@@ -1,8 +1,8 @@
 # Phase 262 — "Defer while a TV is watching" is one switch, and every queue job obeys it
 
-## Status
+## Scope
 
-`Planned` → **built 2026-09-25** (see §Build). Written 2026-09-25 with the owner, not dev-reviewed.
+Written 2026-09-25 with the owner, not dev-reviewed; the build is under §Build. Makes one household switch govern every queue job's wait for playback.
 
 > Owner, 2026-09-25: *"Currently all these jobs get paused while someone is streaming something. Can we
 > make this pause if someone is streaming into a setting? So I can very easily run these jobs, even if
@@ -64,3 +64,7 @@
 `MediaJobQueue.deferDecision()` (pure, companion) is the one rule; `Media_job.deferWhilePlaying()` — used by
 `claimNext` and the health snapshot — and the two sweeps' between-files check now go through it with
 `configStore.current.scan.deferWhilePlaying`. The Settings hint names the queue jobs. `DeferDecisionTest` (1). `awaitPlaybackClear` takes a `stillDefers` lambda and checks it on every tick (FR-262-5).
+
+## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
+
+FR-262-3a: the switch moves from Settings ▸ Libraries ▸ Scanning to the top of Settings ▸ Processing, as *Wait while someone is watching* (FR-4.2 there). FR-262-1's rule is unchanged. The card's line says what is true: scans wait whoever started them (FR-213-6), and work queued from a title's own Refresh ▾ or ↻ never waits. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).
