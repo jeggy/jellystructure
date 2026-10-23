@@ -15,6 +15,8 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
  * @param positionOf the playhead when a wait begins (null: the event's own position is used).
  * @param bufferedAheadOf how much is buffered ahead of the playhead when a wait begins.
  * @param variantBpsOf the video variant playing now, for the stall's record.
+ * @param variantHeightOf that variant's height, and [pendingSubtitlesOf] how many app-fed subtitle fetches were pending
+ *  (DEB-2205 FR-8): both only describe the moment on the stall's entry.
  */
 internal class QoeCounterFeed(
     private val counter: QoeCounter,
@@ -22,6 +24,8 @@ internal class QoeCounterFeed(
     private val positionOf: () -> Long? = { null },
     private val bufferedAheadOf: () -> Long = { 0L },
     private val variantBpsOf: () -> Long? = { null },
+    private val variantHeightOf: () -> Int? = { null },
+    private val pendingSubtitlesOf: () -> Int? = { null },
 ) : AnalyticsListener {
     override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
         synchronized(lock) { counter.firstFrame(eventTime.realtimeMs) }
@@ -40,7 +44,7 @@ internal class QoeCounterFeed(
         when (state) {
             Player.STATE_BUFFERING -> {
                 val pos = positionOf() ?: eventTime.currentPlaybackPositionMs
-                synchronized(lock) { counter.buffering(eventTime.realtimeMs, pos, bufferedAheadOf(), variantBpsOf()) }
+                synchronized(lock) { counter.buffering(eventTime.realtimeMs, pos, bufferedAheadOf(), variantBpsOf(), variantHeightOf(), pendingSubtitlesOf()) }
             }
             Player.STATE_READY -> synchronized(lock) { counter.ready(eventTime.realtimeMs) }
             else -> synchronized(lock) { counter.interrupted() }

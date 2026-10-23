@@ -257,6 +257,17 @@ data class QoeStall(
     /** `start` within 10 s of the first frame, `mid` after. */
     val phase: String,
     @SerialName("variant_bps") val variantBps: Long? = null,
+    /** DEB-2205 (FR-1, FR-8) — why the picture stopped: `buffer_empty`, `frozen_with_buffer`, `decode` or `recovery`.
+     *  Absent on an older app's entries. Additive. */
+    val cause: String? = null,
+    /** DEB-2205 (FR-8) — how much was buffered ahead of the playhead when the stop began (same figure as [bufferedMs],
+     *  under the name the spec uses). Additive. */
+    @SerialName("buffer_ahead_ms") val bufferAheadMs: Long? = null,
+    /** DEB-2205 (FR-8) — the rung the player was on: the variant's height and BANDWIDTH. Additive. */
+    @SerialName("rung_height") val rungHeight: Int? = null,
+    @SerialName("rung_bps") val rungBps: Long? = null,
+    /** DEB-2205 (FR-8) — how many app-fed subtitle fetches were still pending when the stop began (FR-6). Additive. */
+    @SerialName("pending_subtitle_loads") val pendingSubtitleLoads: Int? = null,
 )
 
 /** R381 (FR-R381-7) — the next item's stream, prepared ahead of time with none of a start's side effects: nothing is
@@ -320,6 +331,10 @@ data class SubTrack(
     val url: String?,
     /** R56 — "external" (VTT sideload), "embed" (native in-container, VobSub/DVDSub), "encode" (burn-in transcode, PGS). */
     @SerialName("delivery_method") val deliveryMethod: String = "external",
+    /** DEB-2205 (FR-6) — the container's own stream index (ffprobe's) of an embedded text track; null for a sidecar, an image
+     *  track, or a file the server could not match to its own scan. Unlike [index] (Jellyfin's, which a sidecar shifts) it never
+     *  moves. Informational: a client fetches [url]. */
+    @SerialName("container_index") val containerIndex: Int? = null,
 )
 
 /**

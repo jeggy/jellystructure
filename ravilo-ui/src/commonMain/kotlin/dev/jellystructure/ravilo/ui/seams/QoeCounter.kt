@@ -43,6 +43,8 @@ class QoeCounter {
     private var waitPositionMs = 0L
     private var waitBufferedMs = 0L
     private var waitVariantBps: Long? = null
+    private var waitVariantHeight: Int? = null
+    private var waitPendingSubtitles: Int? = null
 
     /** A new item resets its counts; the same item again (a restream) keeps them. Returns true for a new item. */
     fun beginItem(key: String): Boolean {
@@ -91,8 +93,12 @@ class QoeCounter {
     /** A different video variant reached the playhead (308): a wait within [VARIANT_WINDOW_MS] of it is the switch. */
     fun variantSwitched(nowMs: Long) { variantSwitchAtMs = nowMs }
 
-    /** The player started waiting for data. */
-    fun buffering(nowMs: Long, positionMs: Long, bufferedAheadMs: Long, variantBps: Long?) {
+    /** The player started waiting for data. [variantHeight] and [pendingSubtitleLoads] (DEB-2205 FR-8) only describe the
+     *  moment on the stall's record; null = the player does not know. */
+    fun buffering(
+        nowMs: Long, positionMs: Long, bufferedAheadMs: Long, variantBps: Long?,
+        variantHeight: Int? = null, pendingSubtitleLoads: Int? = null,
+    ) {
         if (waitStartMs >= 0) return   // already waiting
         val cause = when {
             !firstFrameRendered -> if (pendingCause == CAUSE_REBUILD) CAUSE_REBUILD else CAUSE_START
@@ -109,6 +115,8 @@ class QoeCounter {
             waitPositionMs = positionMs
             waitBufferedMs = bufferedAheadMs.coerceAtLeast(0)
             waitVariantBps = variantBps
+            waitVariantHeight = variantHeight
+            waitPendingSubtitles = pendingSubtitleLoads
         }
         waitStartMs = nowMs
     }
@@ -130,6 +138,11 @@ class QoeCounter {
                 durationMs = duration,
                 phase = if (after < START_PHASE_MS) "start" else "mid",
                 variantBps = waitVariantBps,
+                cause = STALL_BUFFER_EMPTY,
+                bufferAheadMs = waitBufferedMs,
+                rungHeight = waitVariantHeight,
+                rungBps = waitVariantBps,
+                pendingSubtitleLoads = waitPendingSubtitles,
             ))
             while (stalls.size > MAX_STALLS) stalls.removeFirst()
         }
@@ -161,6 +174,8 @@ class QoeCounter {
         const val CAUSE_VARIANT = "variant_switch"
         const val CAUSE_REBUILD = "rebuild"
         const val CAUSE_RECOVERY = "recovery"
+        /** DEB-2205 (FR-1) — the `cause` of a stall entry whose buffer ran dry (the only kind this counter sees). */
+        const val STALL_BUFFER_EMPTY = "buffer_empty"
         /** FR-R381-3 — a stall this soon after the item's first frame is in the `start` phase. */
         const val START_PHASE_MS = 10_000L
         /** A wait this soon after a variant switch belongs to the switch. */

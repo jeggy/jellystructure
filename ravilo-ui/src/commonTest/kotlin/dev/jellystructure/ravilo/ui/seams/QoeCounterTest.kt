@@ -125,4 +125,28 @@ class QoeCounterTest {
         c.beginItem("next"); c.load(); c.firstFrame(60_000)   // untimed load: nothing reported
         kotlin.test.assertNull(c.firstFrameMs())
     }
+
+    @Test
+    fun `a stall entry carries its cause, the buffer ahead, the rung and the pending subtitle loads (DEB-2205 FR-8)`() {
+        val c = QoeCounter().start("ep1", 0)
+        c.buffering(120_950, 120_000, 300, 8_000_000L, variantHeight = 1080, pendingSubtitleLoads = 2); c.ready(122_450)
+        val s = c.stallEvents().single()
+        assertEquals("buffer_empty", s.cause)
+        assertEquals(300L, s.bufferAheadMs)
+        assertEquals(1080, s.rungHeight)
+        assertEquals(8_000_000L, s.rungBps)
+        assertEquals(2, s.pendingSubtitleLoads)
+    }
+
+    @Test
+    fun `a stall the player could not describe leaves the optional fields null and the old ones unchanged`() {
+        val c = QoeCounter().start("ep1", 0)
+        c.buffering(120_950, 120_000, 300, null); c.ready(122_450)
+        val s = c.stallEvents().single()
+        assertEquals("buffer_empty", s.cause)
+        kotlin.test.assertNull(s.rungHeight)
+        kotlin.test.assertNull(s.rungBps)
+        kotlin.test.assertNull(s.pendingSubtitleLoads)
+        assertEquals(300L, s.bufferedMs)
+    }
 }

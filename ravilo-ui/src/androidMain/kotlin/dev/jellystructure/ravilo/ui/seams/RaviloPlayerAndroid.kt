@@ -10,7 +10,6 @@ import androidx.media3.ui.SubtitleView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -24,17 +23,12 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import dev.jellystructure.ravilo.ui.RaviloAppContext
+import dev.jellystructure.ravilo.ui.raviloBaseUrl
+import dev.jellystructure.ravilo.ui.TokenStore
+import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
 import kotlin.concurrent.Volatile
-
-/** Strip ASS/SSA override tags from VTT cue text (R68). */
-internal fun cleanCueText(text: String): String =
-    text.replace(Regex("""\{\\[^}]*\}"""), "")
-        .replace("""\N""", "\n")
-        .replace("""\n""", "\n")
-        .replace("""\h""", " ")
-        .trim()
 
 /**
  * Android actual backed by ExoPlayer/Media3.
@@ -76,13 +70,8 @@ actual class RaviloPlayer actual constructor() {
         // R294: the Matroska extractor is swapped for :ravilo-player's patched copy, which follows
         // SeekHead to a Tracks element stored after the first Cluster instead of reading the file to
         // the end; every other extractor is Media3's own.
-        // Phase 179 (FR-179-2) — a sideloaded text-subtitle track (the `.../Subtitles/{index}/0/
-        // Stream.vtt` URL PlaybackService.buildSubtracks() builds) used Media3's plain default policy,
-        // which gave up and permanently disabled the track on the first load failure — observed live as
-        // `Disabling track due to error: ... SocketTimeoutException` mid-session, with no further attempt
-        // for the rest of playback. SubtitleRetryingLoadErrorHandlingPolicy only widens the retry
-        // allowance for that one URL pattern; every other load (video/audio HLS segments, manifests)
-        // delegates straight through to Media3's own DefaultLoadErrorHandlingPolicy, unchanged.
+        // DEB-2205 (FR-6) — no text subtitle is a Media3 load any more: the app fetches the shown track itself
+        // ([AppFedSubtitles]), so the 179 load-error policy for sideloaded subtitles has nothing left to govern.
         val builder = ExoPlayer.Builder(ctx, mediaSourceFactory(null))
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx, preferExtensions)?.let { builder.setRenderersFactory(it) }
         // R216 (FR-R216-3) — an explicit LoadControl instead of inheriting DefaultLoadControl's stock
@@ -127,17 +116,16 @@ actual class RaviloPlayer actual constructor() {
         return builder.build()
     }
 
-    /** The engine's media sources: R294's extractors, 179's subtitle retry policy; [dataSourceFactory] null = the network
+    /** The engine's media sources: R294's extractors; [dataSourceFactory] null = the network
      *  (Media3's default), else R381's prefetch cache in front of it. */
     private fun mediaSourceFactory(dataSourceFactory: androidx.media3.datasource.DataSource.Factory?): androidx.media3.exoplayer.source.DefaultMediaSourceFactory {
         val extractors = RaviloPlayerEngine.extractorsFactoryProvider?.invoke()
-        val f = when {
+        return when {
             dataSourceFactory != null && extractors != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory, extractors)
             dataSourceFactory != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
             extractors != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx, extractors)
             else -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
         }
-        return f.setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
     }
 
     /**
@@ -158,6 +146,7 @@ actual class RaviloPlayer actual constructor() {
             player.addAnalyticsListener(DebugLoadLogger { player.currentPosition to player.bufferedPosition })
         }
         player.addListener(cueListener)
+        if (shownTimeline != null) mainHandler.post { applyShownOnMain() }   // DEB-2205 — a rebuilt engine keeps showing the app-fed track
         currentSurfaceView?.let { player.setVideoSurfaceView(it) }
         if (RaviloAppContext.isTelevision && mediaSessionRef == null) {
             mediaSessionRef = buildSession(player)
@@ -170,6 +159,7 @@ actual class RaviloPlayer actual constructor() {
 
     private val cueListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
+            if (shownTimeline != null) return   // DEB-2205 — an app-fed track is shown: Media3's text type is off and must not fight it
             val view = subtitleViewRef ?: return
             val cleaned = cueGroup.cues.map { cue ->
                 val raw = cue.text?.toString() ?: return@map cue
@@ -179,6 +169,9 @@ actual class RaviloPlayer actual constructor() {
             view.setCues(cleaned)
         }
     }
+
+    /** DEB-2205 (FR-6) — what the engine was handed: the test that no subtitle is part of its preparation reads this. */
+    internal val loadedMediaItem: MediaItem? get() = engine?.currentMediaItem
 
     /** R292 (FR-R292-1) — see the expect's doc. Safe to call with no engine. */
     actual fun releaseEngine() {
@@ -276,6 +269,8 @@ actual class RaviloPlayer actual constructor() {
         positionOf = { engine?.currentPosition },
         bufferedAheadOf = { engine?.let { it.bufferedPosition - it.currentPosition } ?: 0L },
         variantBpsOf = { qoeVariantBps },
+        variantHeightOf = { qoeVariantHeight },
+        pendingSubtitlesOf = { appFed.pendingLoads },   // DEB-2205 (FR-8)
     )
 
     // R218 (FR-R218-1) — fed by this same qoeListener's callbacks below, but distinct fields from the
@@ -387,6 +382,58 @@ actual class RaviloPlayer actual constructor() {
     // R244 (FR-R244-10) — the attached caption view and the phone's chosen size multiplier.
     private var subtitleViewRef: SubtitleView? = null
     private var subtitleScale: Float = 1f
+
+    // DEB-2205 (FR-6) — the ticket's URL-bearing text subtitles are NOT on the media item: the app fetches the one
+    // being shown (off the player's thread, [SubtitleWorkers]) and draws its cues itself. Rows follow Media3's own
+    // text groups, in ticket order, so the indices the picker sees are what they were with sideloaded configs.
+    private var appFedTickets: List<SubTrack> = emptyList()
+    private val subtitleWorkers = SubtitleWorkers()
+    private val appFed = AppFedSubtitles(
+        OkHttpSubtitleSource(OkHttpSubtitleSource.deriveFrom(RaviloAppContext.okHttp), bearerFor = { url ->
+            SubtitleRequest.bearer(url, raviloBaseUrl(), MultiTokenStore.getActive()?.deviceToken ?: TokenStore.get())
+        }),
+        subtitleWorkers,
+        object : AppFedSubtitles.Listener {
+            override fun onShown(timeline: CueTimeline?) {
+                shownTimeline = timeline
+                mainHandler.post { applyShownOnMain() }
+            }
+            override fun onAttemptFailed(url: String) {
+                synchronized(qoeLock) { qoeSubtitleLoadErrors++ }   // 179 (FR-179-3): the app's own fetches count too
+            }
+        },
+    )
+    /** The app-fed track being drawn (null = Media3's own cues, or none). Written by [appFed]'s listener, read on main. */
+    @Volatile private var shownTimeline: CueTimeline? = null
+    private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    private var lastShownCues: List<TextCue>? = null   // main thread only: what the SubtitleView holds from us
+
+    /** Draws the app-fed cues at the playhead: ~150 ms poll, [SubtitleView.setCues] only when the active set changes. */
+    private val cuePoll = object : Runnable {
+        override fun run() {
+            val timeline = shownTimeline ?: return
+            val e = engine ?: return   // no engine: [bindEngine] restarts the poll on the rebuilt one
+            val view = subtitleViewRef
+            if (view != null) {
+                val active = timeline.activeAt(e.currentPosition)
+                if (active != lastShownCues) {
+                    lastShownCues = active
+                    view.setCues(active.map { androidx.media3.common.text.Cue.Builder().setText(it.text).build() })
+                }
+            }
+            mainHandler.postDelayed(this, CUE_POLL_MS)
+        }
+    }
+
+    private fun applyShownOnMain() {
+        mainHandler.removeCallbacks(cuePoll)
+        if (shownTimeline == null) {
+            if (lastShownCues != null) { subtitleViewRef?.setCues(emptyList()); lastShownCues = null }
+            return
+        }
+        lastShownCues = null   // whatever the view holds is another track's: the next poll pushes this one
+        cuePoll.run()
+    }
     // R292 (FR-R292-14, DEB-569) — the one place a session is built: it refuses a play for a short window after a
     // standby return (a sender's or the Cast SDK's resume would otherwise start the film FR-R292-8a left paused).
     private fun buildSession(player: ExoPlayer): MediaSession =
@@ -428,26 +475,11 @@ actual class RaviloPlayer actual constructor() {
         // R381 — this stream's first wait is its start; 309 — and the item's first load is timed to its first frame
         // (elapsedRealtime: the clock Media3's eventTime.realtimeMs is on).
         synchronized(qoeLock) { qoeCounter.load(android.os.SystemClock.elapsedRealtime()) }
-        val subConfigs = subtitles.mapNotNull { sub ->
-            val url = sub.url ?: return@mapNotNull null
-            val mime = when {
-                url.endsWith(".vtt", ignoreCase = true) -> MimeTypes.TEXT_VTT
-                url.endsWith(".srt", ignoreCase = true) -> MimeTypes.APPLICATION_SUBRIP
-                url.endsWith(".ass", ignoreCase = true) || url.endsWith(".ssa", ignoreCase = true) -> MimeTypes.TEXT_SSA
-                else -> MimeTypes.TEXT_VTT
-            }
-            val flags = when {
-                sub.isDefault -> C.SELECTION_FLAG_DEFAULT
-                sub.forced    -> C.SELECTION_FLAG_FORCED
-                else           -> 0
-            }
-            MediaItem.SubtitleConfiguration.Builder(Uri.parse(url))
-                .setMimeType(mime)
-                .setLanguage(sub.language)
-                .setLabel(sub.label)
-                .setSelectionFlags(flags)
-                .build()
-        }
+        // DEB-2205 (FR-6) — NO subtitle is part of the media item: its preparation never waits on a subtitle URL.
+        // The ticket's URL-bearing text tracks are kept, in ticket order, for [AppFedSubtitles] to fetch the SHOWN one.
+        val base = raviloBaseUrl()
+        appFedTickets = subtitles.filter { it.url != null }
+        appFed.reset(appFedTickets.map { SubtitleRequest.absolute(it.url!!, base) ?: it.url!! })
         // R192 — feeds the OS media session (TV only): title + the caller's own "S1 · E3"-style
         // kicker text as subtitle (Media3 has no separate numeric season/episode fields) + a
         // poster/still image. Harmless to set even when no session is ever created (phone).
@@ -460,7 +492,6 @@ actual class RaviloPlayer actual constructor() {
         val prefetchKey = NextPrefetch.cacheKeyFor(streamUrl).also { if (it == null) NextPrefetch.keepOnlyFor(streamUrl) }
         val mediaItem = MediaItem.Builder()
             .setUri(streamUrl)
-            .setSubtitleConfigurations(subConfigs)
             .setMediaMetadata(mediaMetadata)
             .apply { if (prefetchKey != null) setCustomCacheKey(prefetchKey) }
             .build()
@@ -561,32 +592,44 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun selectSubtitleTrack(index: Int) {
         val exo = engine ?: return
-        synchronized(qoeLock) { qoeCounter.trackSwitch() }   // R381 (FR-R381-2)
-        if (index < 0) {
+        val media3Text = media3TextGroups(exo)
+        if (index < 0 || index - media3Text.size >= appFedTickets.size) {
+            // Off. Media3's text type is disabled, the app-fed track dropped (and its fetch cancelled).
+            appFed.select(-1)
+            if (!exo.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+                // Turning the text renderer off re-prepares nothing: no wait follows, so no track-switch is told to the counter.
+                exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
+            return
+        }
+        if (index < media3Text.size) {
+            // One of the container's own tracks (VobSub, `embed`): Media3 selects it in place, the app-fed one goes.
+            appFed.select(-1)
+            synchronized(qoeLock) { qoeCounter.trackSwitch() }   // R381 (FR-R381-2)
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setOverrideForType(TrackSelectionOverride(media3Text[index].mediaTrackGroup, 0))
                 .build()
             return
         }
-        val tracks = exo.currentTracks
-        var textIdx = 0
-        for (i in 0 until tracks.groups.size) {
-            val group = tracks.groups[i]
-            if (group.type == C.TRACK_TYPE_TEXT) {
-                if (textIdx == index) {
-                    exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
-                        .build()
-                    return
-                }
-                textIdx++
-            }
+        // A track the app feeds: Media3's text type off (it emits nothing), THIS track fetched, drawn when it arrives.
+        // No re-prepare, so no track-switch wait to tell the counter about.
+        if (!exo.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
         }
+        appFed.select(index - media3Text.size)
     }
+
+    /** Media3's own text groups, in the order the picker lists them (before the app-fed tracks). */
+    private fun media3TextGroups(exo: ExoPlayer): List<Tracks.Group> = exo.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
 
     actual fun release() {
         if (activeRaviloPlayer === this) activeRaviloPlayer = null
+        appFed.reset(emptyList())   // DEB-2205 — the screen is gone: no fetch outlives it
         releaseEngine()
         releasedForBackground = false   // the screen is gone; nothing will rebuild this
     }
@@ -697,6 +740,9 @@ actual class RaviloPlayer actual constructor() {
         get() {
             val result = mutableListOf<PlayerSubtitleTrack>()
             val tracks = engine?.currentTracks ?: return result
+            // Until the engine has discovered the stream's tracks the list is empty, as it always was: the picker and
+            // the resolver (R181) must not see app-fed rows at indices Media3's own groups are about to take over.
+            if (tracks.groups.isEmpty()) return result
             var idx = 0
             for (i in 0 until tracks.groups.size) {
                 val group = tracks.groups[i]
@@ -716,6 +762,8 @@ actual class RaviloPlayer actual constructor() {
                     idx++
                 }
             }
+            // DEB-2205 (FR-6) — then the ticket's text tracks the app feeds, in ticket order (what sideloaded configs were).
+            for (sub in appFedTickets) { result += appFedSubtitleRow(sub, idx); idx++ }
             return result
         }
 
@@ -796,45 +844,9 @@ actual class RaviloPlayer actual constructor() {
     }
 }
 
-/**
- * Phase 179 (FR-179-2) — widens the retry allowance for a sideloaded text-subtitle load (the
- * `.../Subtitles/{index}/0/Stream.vtt` URL PlaybackService.buildSubtracks() builds) only. Every other
- * load type — video/audio HLS segments, manifests, everything else — delegates straight through to
- * Media3's own [DefaultLoadErrorHandlingPolicy], completely unchanged: this must never make a genuinely
- * dead video/audio connection wait longer to fail, only give a subtitle sideload — which a live incident
- * showed racing Jellyfin's own concurrent ffmpeg extraction of the same source file (see phase-179's
- * Root cause §4) — more patience than Media3's plain default (one attempt, no retry) gave it.
- */
-private class SubtitleRetryingLoadErrorHandlingPolicy(
-    private val default: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy =
-        androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(),
-) : androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy {
-
-    private fun isSubtitleLoad(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Boolean =
-        loadErrorInfo.loadEventInfo.uri.toString().contains("/Subtitles/")
-
-    override fun getFallbackSelectionFor(
-        fallbackOptions: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FallbackOptions,
-        loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo,
-    ) = default.getFallbackSelectionFor(fallbackOptions, loadErrorInfo)
-
-    override fun getRetryDelayMsFor(
-        loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo,
-    ): Long {
-        if (isSubtitleLoad(loadErrorInfo) && loadErrorInfo.errorCount <= SUBTITLE_MAX_RETRIES) {
-            return SUBTITLE_RETRY_DELAY_MS
-        }
-        return default.getRetryDelayMsFor(loadErrorInfo)
-    }
-
-    override fun getMinimumLoadableRetryCount(dataType: Int): Int = default.getMinimumLoadableRetryCount(dataType)
-
-    private companion object {
-        const val SUBTITLE_MAX_RETRIES = 2
-        const val SUBTITLE_RETRY_DELAY_MS = 3_000L
-    }
-}
-
 /** R216 (FR-R216-3) — raised from DefaultLoadControl's stock 5s so a recovered stall resumes with a
  *  real cushion instead of re-stalling seconds later; see this file's `setBufferDurationsMs` call site. */
 private const val QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 10_000
+
+/** DEB-2205 (FR-6) — how often the app-fed subtitle is matched to the playhead; a cue shows within one tick of its time. */
+private const val CUE_POLL_MS = 150L
