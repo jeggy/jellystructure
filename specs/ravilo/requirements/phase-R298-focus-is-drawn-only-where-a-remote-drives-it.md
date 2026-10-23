@@ -3,10 +3,11 @@
 > Owner, 2026-09-24, on the phone showing a TV focus ring and the focus-detail line: *"Yes, let's write a
 > spec that removes this, so this focus ring is only on devices with remotes (TVs)."*
 
-## Status
+## Scope
 
-`Planned` — written 2026-09-24 from the Pixel 9 sweep (Play Store v1.36 and debug builds), not
-dev-reviewed.
+Written 2026-09-24 from the Pixel 9 sweep (Play Store v1.36 and debug builds). It touches the drawing of
+focus on every client that compiles `ravilo-ui`, not focus itself. It extends R254 (row-open TV-only) to
+R240's line. FR-R298-1's rule for the web app is amended on 2026-10-24 (below).
 
 ## What the phone shows today
 
@@ -55,6 +56,22 @@ web window L stays as configured.
 ### FR-R298-4 — The phone's sheet has no focus outline
 The audio & subtitles sheet on a handset shows the selected row by its tick and tint only, the same way
 every other phone list does. The TV picker is unchanged.
+
+### Amendment 2026-10-24 — the web app follows keyboard mode (DEB-2204, FR-7)
+Owner, card `caaf68f0` on DEB-2204, 2026-10-23: on the web app in a wide window, focus is drawn
+*"Like the desktop app: only after a key press, gone when the mouse moves"*.
+
+FR-R298-1's "a desktop web window, whose focus follows the mouse hover per R157 and is its hover state"
+no longer holds. Nothing passes `moveFocusOnHover` today, so the window drew every focus visual all the
+time, and a click left a ring behind. From this amendment, on the web app, a window that is not a handset
+gets `LocalFocusVisible` from `KeyboardMode`, wired at the root exactly as on the desktop app
+(FR-R350-17):
+- Tab, an arrow key, Enter, NumPadEnter or Esc turns the focus visuals on.
+- A pointer press, or a move of more than a pixel, turns them off.
+
+A phone-sized web window stays `false`, and every TV stays `true`. The phone and the desktop app are
+unchanged. FR-R298-3's line stays as configured on the web app. The spec is
+[`focus-rings-and-loaded-content-fade-in.md`](focus-rings-and-loaded-content-fade-in.md), FR-7.
 
 ## Invariants
 - No TV pixel moves: `LocalFocusVisible` is true on every TV, and `effectiveFocusDetailMode` is unchanged
