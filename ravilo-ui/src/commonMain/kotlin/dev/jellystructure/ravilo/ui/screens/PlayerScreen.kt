@@ -294,6 +294,9 @@ private fun Modifier.hoverToCall(onHover: () -> Unit): Modifier {
  * locals were, so reads in composition still recompose.
  */
 private class PlayerBookkeeping(initialCastLink: CastLinkState) {
+    /** DEB-2205 (FR-1, FR-5) — the player's state as the poll loop last read it, for [PlayerStore]'s stop measure. */
+    @kotlin.concurrent.Volatile var watchState: PlayerWatch = PlayerWatch(0L, false, false, false, -1L)
+    fun watch(): PlayerWatch = watchState
     var castLinkSeen by mutableStateOf(initialCastLink)
     var negotiationStartMs by mutableStateOf<Long?>(null)
     var measuredStartupMs by mutableStateOf<Long?>(null)
@@ -996,17 +999,9 @@ fun PlayerScreen(
             qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
             startupMsProvider = { bk.measuredStartupMs },
             failedProvider = { player.playbackFailed },   // R306 (FR-R306-3)
-            // DEB-2205 (FR-1, FR-5) — the stops after the first frame are measured from this screen's own poll state (the
-            // main thread's, refreshed every POLL_MS and only for the item loaded now), never from the engine: the store
-            // reads off the main thread. A player that cannot say how much is buffered (0) reports -1: no buffer in hand is
-            // claimed, so no freeze is declared.
-            watchProvider = {
-                PlayerWatch(
-                    positionMs = positionMs, wantsToPlay = isPlaying, waiting = isBuffering || isSeeking,
-                    firstFrame = hasRenderedFirstFrame, bufferedAheadMs = if (bufferedMs > 0) (bufferedMs - positionMs).coerceAtLeast(0) else -1L,
-                    recovering = videoOutputRecovering,   // R220's ladder seeks and waits by itself: that does not end a freeze
-                )
-            },
+            // DEB-2205 (FR-1, FR-5) — the poll loop below keeps bk.watch; the body only hands the holder over (the release
+            // dex budget of this function is spent: scripts/check-player-dex.sh).
+            watchProvider = bk::watch,
         )
     }
 
@@ -1225,6 +1220,11 @@ fun PlayerScreen(
                 }
                 bufferedMs  = player.bufferedMs
                 isPlaying   = player.isPlaying
+                // DEB-2205 (FR-1, FR-5) — what the stop measure reads: this loop's own values, never the engine from another thread.
+                bk.watchState = PlayerWatch(
+                    positionMs, isPlaying, isBuffering || isSeeking, hasRenderedFirstFrame,
+                    if (bufferedMs > 0) (bufferedMs - positionMs).coerceAtLeast(0) else -1L, videoOutputRecovering,
+                )
                 audioTracks = sessionAudioTracks(bk.sessionAudio, bk.sessionAudioIndex, player.audioTracks)
                 subtitleTracks = player.subtitleTracks
 
