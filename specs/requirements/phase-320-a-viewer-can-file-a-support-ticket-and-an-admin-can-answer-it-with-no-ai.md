@@ -17,6 +17,17 @@
    working when AI is switched off, when the key is revoked, and when the month's limit is reached.
    `AI Agent` usually answers, and an admin can always answer by hand.
 
+> **Amended 2026-10-23 (DEB-2184), owner's decision on DEB-2184's card.** Line 1 now reads: *"Auto applies to
+> talking, never to acting. A reply may send itself. A viewer's words may reach Bárður, the product investigator,
+> through Hervør, and he may start an investigation and a design round from them. Nothing a viewer writes may reach
+> the build queue, a code change or a deploy without the owner's card."* This came from support ticket 2. A viewer
+> asked why there are two remotes, and the desk had no way to get the question to the person who could answer it
+> or act on it. `AI Agent` is unchanged: it has no tools and still only replies, forwards or flags. The route to
+> Bárður belongs to Hervør's seat (her instructions are not a spec, see
+> [`hervor-answers-support-tickets-with-a-seat-token.md`](hervor-answers-support-tickets-with-a-seat-token.md)).
+> What he starts this way is ordinary product work, held to every other rule. That means the de-anonymisation rule,
+> no viewer text on the board or in the repo, and the owner deciding what gets built.
+
 > **Amended 2026-10-15, before any code (DEB-1076).** This spec was adopted at `71e46346` with line 2
 > reading *"the queue, the thread and an admin's reply work with no AI key"*. That came from the
 > design brief's amendment (DEB-1117), not from the owner, and the owner reversed it the same day.

@@ -126,6 +126,16 @@ the viewer can no longer see. The requirements are in
 [`ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md`](ai-agent-suggests-what-to-watch-from-the-viewers-own-row.md)
 (FR-1–FR-5). Rules 1–6 are otherwise unchanged.
 
+*Amended 2026-10-23 (DEB-2184):* **a `REQUEST` goes to Hervør while she is on.** The table's `REQUEST` row read
+*"the ticket moves to `ADMIN`"*. It now moves to `HERVOR` when FR-320-13's effective `hervor_enabled` is true, and
+to `ADMIN` otherwise, the same way FR-321-6 picks a forward target. `owes` follows the holder. The fixed *request
+logged* line is posted unchanged and still promises nothing. Accepting a request is still a human act: Hervør takes it
+to Bárður, and under phase 320's amended first line nothing reaches the build queue without the owner's card. Why: a
+viewer's product feedback is exactly what the owner wants to reach Bárður (DEB-2184), and on the old path it stopped
+at an admin. The admin still sees every ticket on the Support tab, whoever holds it. In code this is the `REQUEST`
+branch of `SupportAi.rule`. Its test is the `REQUEST` case run once with Hervør on (holder and owes are `HERVOR`) and
+once with her off (`ADMIN`).
+
 **FR-321-6 — The forward.** `AI Agent` posts the forward notice (FR-321-7) as a `MESSAGE` by
 `AI_AGENT`. The ticket moves to `forwardTo` — `HERVOR` only when FR-320-13's `hervor_enabled` is true,
 otherwise `ADMIN` — with one `VIEWER` `FORWARDED` line and an `ADMIN_ONLY` note. The note carries the

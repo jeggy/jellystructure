@@ -259,6 +259,11 @@ For Claude Top's track (DEB-1649). None of this is built by the seat; it is what
 - **Phase 320's first line binds the seat too:** nothing a viewer writes may create a spec, a phase, a board task, a
   code change or a deploy without the owner. The seat may tell a viewer a fault is known only from what it has been
   given to read; this API gives it no known-problem list.
+  *Amended 2026-10-23 (DEB-2184):* phase 320's first line is amended. A viewer's words may now reach Bárður through
+  Hervør and start an investigation or a design round, and the build queue and prod still need the owner's card.
+  The owner also asked for her seat to get wider reach across the organisation in Paperclip: asking a teammate,
+  reading the board and the product specs. That reach lives in her instructions, not here. **This API is
+  unchanged**: the token still opens exactly FR-4's five routes.
 
 ## Strings
 
