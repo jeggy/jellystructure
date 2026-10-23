@@ -296,6 +296,23 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         }
     }
 
+    // DEB-2205 (FR-7) — key -> when this client's own last stop of the item finished landing. Memory only: after a
+    // restart nothing is known, and a start then keeps the client's own position (today's behaviour).
+    private val lastStopLandedMs = HashMap<PlaybackKey, Long>()
+
+    /** DEB-2205 (FR-7) — called once a stop's write to Jellyfin has returned; Jellyfin's own date for that write is
+     *  at or before this instant. Bounded: entries older than a day go when the map passes 256. */
+    suspend fun stopLanded(device: DeviceData, jellyfinId: String) = mutex.withLock {
+        val now = clock()
+        if (lastStopLandedMs.size > 256) lastStopLandedMs.entries.removeAll { now - it.value > 24 * 60 * 60 * 1000L }
+        lastStopLandedMs[PlaybackKey(device.deviceId, jellyfinId)] = now
+    }
+
+    /** DEB-2205 (FR-7) — the instant this device's last stop of [jellyfinId] landed, or null when none is known. */
+    suspend fun lastStopLandedAt(device: DeviceData, jellyfinId: String): Long? = mutex.withLock {
+        lastStopLandedMs[PlaybackKey(device.deviceId, jellyfinId)]
+    }
+
     /** Everything currently tracked, snapshotted so callers can suspend while walking it. Also prunes
      *  expired post-stop grace entries — the watchdog tick is the natural janitor. */
     suspend fun tracked(): List<TrackedPlayback> = mutex.withLock {
@@ -1047,13 +1064,20 @@ class PlaybackService(
         val asStartOver = startOver || screenCtx?.startOver == true
         // R343 — a shuffled entry and Start over start at 0:00 on any client (a return from the background still
         // carries its own position).
-        val startPositionTicks = resolveStartPositionTicks(startPositionMsOverride ?: (if (asShuffle || asStartOver) 0L else null), saved)
+        // DEB-2205 (FR-7) — the client's own position yields to Jellyfin's when another app wrote the record since this
+        // client's last stop. A Start over / shuffled start writes its own record, so it never takes this arm.
+        val jellyfinWins = startPositionMsOverride != null && !asShuffle && !asStartOver &&
+            jellyfinIsNewerThanClientStop(saved, playbackTracker.lastStopLandedAt(device, jellyfinId))
+        val clientPositionMs = startPositionMsOverride.takeUnless { jellyfinWins }
+        val startPositionTicks = resolveStartPositionTicks(clientPositionMs ?: (if (asShuffle || asStartOver) 0L else null), saved)
         val startPositionMs = startPositionTicks / TICKS_PER_MS
         val ignoredPositionTicks = saved?.takeIf { it.played }?.playbackPositionTicks?.takeIf { it > 0 }
+        if (jellyfinWins)
+            Logger.info("playback start: device=${device.deviceId} item=$jellyfinId Jellyfin's position ${startPositionMs}ms is newer than the client's (${startPositionMsOverride}ms) — Jellyfin's wins (DEB-2205 FR-7)", "tv")
         if (startPositionMsOverride == null && ignoredPositionTicks != null)
             Logger.info("playback start: device=${device.deviceId} item=$jellyfinId from 0 — played, so Jellyfin's ${ignoredPositionTicks / TICKS_PER_MS}ms is not a resume point (R306)", "tv")
         // R292 — one line per return, so a return that landed at the wrong place is readable from the log.
-        if (startPositionMsOverride != null) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId cut at ${startPositionMs}ms (the client's own position; Jellyfin held ${(itemDetail?.userData?.playbackPositionTicks ?: 0L) / TICKS_PER_MS}ms)", "tv")
+        if (clientPositionMs != null) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId cut at ${startPositionMs}ms (the client's own position; Jellyfin held ${(itemDetail?.userData?.playbackPositionTicks ?: 0L) / TICKS_PER_MS}ms)", "tv")
 
         // Start a Jellyfin playback session so the server tracks Now Playing + resume
         jellyfinClient.startPlaybackSession(jellyfinBase, token, jellyfinId, startPositionTicks, jellyfinId, identity, playSessionId)
@@ -1471,6 +1495,8 @@ class PlaybackService(
         // own forced stop (stopWatchdogTick) never supplies startupMs, so a device that vanished
         // mid-session correctly contributes nothing here.
         if (startupMs != null) recordStartSample(device, jellyfinId, startupMs)
+        // DEB-2205 (FR-7) — Jellyfin's record is as new as this stop now; anything dated later is another app's.
+        if (reason != STOP_REASON_WATCHDOG) playbackTracker.stopLanded(device, jellyfinId)
     }
 
     /** R347 / R343 — what a stop needs about one playable id: the file's length, its trusted-or-not credits
@@ -2518,6 +2544,20 @@ private fun nowMs(): Long = memScoped {
     val ts = alloc<timespec>()
     clock_gettime(CLOCK_REALTIME, ts.ptr)
     ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
+}
+
+/** DEB-2205 (FR-7) — Jellyfin's own write of this client's stop is dated up to this much after the instant we saw it land. */
+internal const val CLIENT_STOP_SLACK_MS = 5_000L
+
+/**
+ * DEB-2205 (FR-7, amends FR-R292-3) — true when Jellyfin's record for the item was written **after** this client's own
+ * last stop of it, i.e. another app or device played it since. False when no stop of ours is known or Jellyfin holds
+ * nothing newer: then the client's own position stands (R292: Jellyfin drops a short position under its minimum-resume
+ * percentage, and that position is the one it was told).
+ */
+internal fun jellyfinIsNewerThanClientStop(saved: dev.jellystructure.auth.JellyfinUserData?, lastStopLandedMs: Long?): Boolean {
+    val written = saved?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochTicks(it) }?.div(TICKS_PER_MS) ?: return false
+    return lastStopLandedMs != null && written > lastStopLandedMs + CLIENT_STOP_SLACK_MS
 }
 
 /**
