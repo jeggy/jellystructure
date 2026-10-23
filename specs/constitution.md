@@ -78,7 +78,11 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 
 ### Authentication
 Auth follows the Jellyseerr model — there is **no separate Jellystructure account**:
-1. Operator signs in with Jellyfin username + password via `POST /Users/AuthenticateByName`.
+1. The operator signs in one of two ways:
+   - with a Jellyfin username and password, via `POST /Users/AuthenticateByName`;
+   - **or through the server's single sign-on**. jellystructure fronts the Jellyfin SSO plugin's callback on its own
+     address, and holds no identity-provider credential. *Amended 2026-10-23, owner, DEB-2233 card `3f471512` (admin SSO
+     "in"); spec `ravilo/requirements/a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md` FR-13.*
 2. Jellystructure rejects non-admin users (`Policy.IsAdministrator == false`).
 3. On success, an opaque session token (generated from `/dev/urandom`) is stored in SQLite and set as an `HttpOnly; SameSite=Lax` cookie.
 4. Every `/api/**` route and WebSocket upgrade validates the cookie; missing/expired → 401. The exceptions are routes fenced to a credential of their own. The support seat token (7) is accepted in place of the cookie on its `/api/support/**` routes and nowhere else. Ravilo device tokens (`/api/tv/**`) and phase 111's API keys (`/api/remote/**`) predate this section and are fenced the same way.

@@ -179,3 +179,17 @@ app, not a bug on its own; it only became a trap in combination with the D-pad d
 
 Verified via `:ravilo-ui:compileDebugKotlinAndroid` (+ the other targets `LoginScreen.kt` compiles into);
 re-verified live on Soveværelse TV as part of the same testing session.
+
+## Amendment 2026-10-23 (owner, DEB-2233): a code-based flow comes back, approved by the viewer
+
+The non-goal *"QuickConnect or any code-based flow (removed)"* is reversed.
+
+- **On the TV.** A TV with no profiles, and *Add user*, now open a screen that shows a code and QR first. The
+  username/password `LoginScreen` this phase built is one press away, under *Sign in with a password instead*, and is
+  unchanged.
+- **On the phone, web and desktop.** `LoginScreen` gains a *Sign in with ‹name›* button for the server's single
+  sign-on when the server offers it. The fields and their D-pad and keyboard behaviour are unchanged.
+- **Who approves.** The code is approved in Ravilo on another device by a signed-in viewer, as themselves. It is not
+  the old admin-approved pairing.
+
+Spec: `a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md` (FR-5, FR-12).

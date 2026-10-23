@@ -5,12 +5,17 @@
 > `RaviloApp`), so a phone on a network with no Chromecast, in a household with no paired TV, shows a cast icon that
 > opens a sheet with nothing in it but *Add a TV*.
 
-## Status
+## Scope
 
-`Planned`. Written 2026-10-03 with the owner, against `main` `ff9746d4`; dev-reviewed 2026-10-03 (section at the end — FR-R360-4 replaced by item 2, and two notify calls on the server, item 3). Number checked free (Ravilo
-specs top at R359 on `origin/main`). **Amends** FR-R245-1 (presence), FR-R265-1 (presence) and **removes** FR-R265-5
-(*Add a TV* from the sheet). Client only (`ravilo-ui`): no route, no DTO and no wire change; the backend's
-`/api/remote/pair` stays for API compatibility. Strings: two keys go out of use (FR-R360-5).
+Written 2026-10-03 with the owner, against `main` `ff9746d4`, and dev-reviewed the same day (section at the end:
+FR-R360-4 replaced by item 2, and two notify calls on the server, item 3).
+
+- **Amends** FR-R245-1 (presence) and FR-R265-1 (presence).
+- **Removes** FR-R265-5 (*Add a TV* from the sheet).
+- Client only (`ravilo-ui`): no route, no DTO and no wire change. The backend's `/api/remote/pair` stays for API
+  compatibility.
+- Strings: two keys go out of use (FR-R360-5).
+- D2 is amended on 2026-10-23 (end of file).
 
 ## Decisions (owner, 2026-10-03)
 
@@ -207,3 +212,17 @@ an offline paired TV keeping the glyph). The design mockups still draw *Add a TV
 On a TV (`isTvPlatform`) `rememberCastIconShown` is always false and `CastController.openSheet` does nothing, so no cast
 glyph, *Play on…* sheet or cast entry appears in the TV app. A TV may still act as a relay (owner: "TV can be a relay, it
 just needs to not show the cast button in its interface").
+
+## Amendment 2026-10-23 (owner, DEB-2233): a TV is signed in from the phone again, as a sign-in rather than a cast target
+
+D2 said *Add a TV is removed entirely … it comes back with Tizen if Tizen comes back*. A new entry, **Sign in a TV**,
+now sits on the phone's, Ravilo Web's and the desktop's account page. It does not return to the cast sheet.
+
+- **What it does.** It approves the code an Android TV shows on its sign-in screen, and signs that TV in as the
+  approving viewer.
+- **The cast sheet is unchanged.** D1 and D3 stand: the icon still follows the sheet's list, and the sheet still has
+  no *Add a TV* row.
+- **`/api/remote/pair` stays.** It keeps its API-compatibility role for the paused Tizen receiver. The new entry uses
+  its own routes.
+
+Spec: `a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md` (FR-6).

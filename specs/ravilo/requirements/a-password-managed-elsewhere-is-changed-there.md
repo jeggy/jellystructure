@@ -215,3 +215,21 @@ Notes:
 Any installation whose Jellyfin uses an authentication provider other than its own, and on this one, every account
 moved to the LDAP plugin. A local account, a server without the plugin, and an installed app from before this see no
 change, apart from the TV row for an account managed elsewhere, which goes away.
+
+## Amendment 2026-10-23 (owner, DEB-2233): sign-in changes, and this spec's rule covers single-sign-on accounts
+
+Two non-goals no longer hold:
+- *"No change to sign-in"*;
+- *"No QR or device-code sign-in"*.
+
+A TV can now be signed in by a code approved in Ravilo on another device, and every client and the admin can sign in
+through the server's single sign-on. Both are specified in `a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md`.
+
+What this spec promises is unchanged, and it already covers the new accounts:
+- **The rule.** Accounts created by the single-sign-on plugin carry `Jellyfin.Plugin.SSO_Auth.Api.SSOController` as
+  their provider (measured), so FR-1's rule (any provider other than the default) reads them as managed elsewhere. No
+  form is shown, no password is relayed, and they are never re-signed (that spec's FR-14).
+- **No identity-provider API call** still holds. jellystructure calls the server's own plugin, never the identity
+  provider.
+- **No provider named in code, config, copy or spec** still holds. The button's name is whatever the plugin reports
+  at run time.

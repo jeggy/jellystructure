@@ -162,10 +162,16 @@ The repository now produces **two distinct WebAssembly bundles**, and they must 
 Ravilo follows the same "no separate account" spirit as jellystructure — viewers sign in with their
 existing **Jellyfin** credentials; there is no separate Ravilo account:
 1. The TV app contacts **only jellystructure** for the control plane. A device begins unauthenticated.
-2. Sign-in is a **username + password login entered on the device** (Ravilo's on-screen keyboard /
-   the remote), **proxied through jellystructure** to Jellyfin (`POST /Users/AuthenticateByName`) —
-   the credential call to Jellyfin is made by jellystructure, not by the TV. There is no pairing code
-   and no admin-approval step.
+2. Sign-in takes one of three paths. Every Jellyfin call in each is made by jellystructure, never by
+   the device:
+   - **(a) username + password**, entered on the device (Ravilo's on-screen keyboard / the remote) and
+     **proxied through jellystructure** to Jellyfin (`POST /Users/AuthenticateByName`);
+   - **(b) a TV code or QR approved in Ravilo on another device** by a viewer already signed in there,
+     **as themselves** (amended 2026-10-23, below);
+   - **(c) the server's single sign-on**, on the phone, web and desktop (amended 2026-10-23, below).
+
+   There is still no admin-approval step, and no device is ever signed in as someone who did not
+   approve it.
 3. jellystructure authenticates as the **chosen** Jellyfin user (never silently as the admin), and —
    unlike the admin web app — **Ravilo permits non-admin Jellyfin users** (it is an end-viewer app,
    not the operator console). Each signed-in profile authenticates under its **own per-(device, user)
@@ -179,7 +185,28 @@ existing **Jellyfin** credentials; there is no separate Ravilo account:
 6. The Jellyfin password is **never stored, logged, or persisted** — jellystructure relays it once to
    Jellyfin at sign-in and discards it, keeping only the resulting scoped tokens. Data-plane tokens
    are scoped and refreshable through jellystructure; the device performs no Jellyfin sign-in call of
-   its own (it posts credentials to jellystructure, which does).
+   its own (it posts credentials to jellystructure, which does). Paths (b) and (c) carry no password
+   at all.
+7. **A TV code is approved only by a signed-in viewer, only for that viewer, and only with that
+   viewer's own token.** The TV shows the code and QR first, with the password form one press away,
+   and never a single-sign-on button. Approving happens in the phone app, Ravilo Web or the desktop,
+   under *Sign in a TV*, which may also sign the approver in first, by password or single sign-on.
+   jellystructure's machine token never approves a sign-in. Jellyfin's Quick Connect is the plumbing
+   for (b), invisible to the viewer.
+8. **Single sign-on goes through the server's own plugin, fronted by jellystructure.**
+   - jellystructure holds no identity-provider credential and names no provider in code.
+   - The identity provider returns the browser to jellystructure's own address, never Jellyfin's.
+   - Completing a sign-in needs a hand-off that only the device which started it can receive.
+9. **The admitting group is the directory's and the plugin's.** jellystructure adds no gate of its
+   own, and opens no path around theirs: approving a TV requires a Ravilo session, which only (a)
+   or (c) can create.
+
+*Amended 2026-10-23 (owner, DEB-2233, card `3f471512`, and DEB-13 `24dbe2fc`/`d0eb0dda`):*
+- Item 2 had said *"There is no pairing code."* That reversed the old admin-approved pairing, which
+  signed every TV in as the admin.
+- Path (b) does not bring that back, because a viewer approves only as themselves.
+- Items 7–9 and Key Invariant 12 are new.
+- Spec: `requirements/a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md`.
 
 ### Per-user configuration is server-owned and synced
 - A viewer's Ravilo layout (hero items, channels, row order/visibility, the merged-"Newly Added"
@@ -277,3 +304,10 @@ Ravilo shares jellystructure's **brand DNA** but is its own TV skin:
     focus + lazy-list hot paths JIT-compiled and janky. Sideloaded deploys MUST use
     `cmd package compile -m speed`; distributed builds MUST ship a generated Baseline Profile journey.
     Measured, not assumed (see invariant rationale above).
+12. **Jellyfin is invisible to viewers** (owner, 2026-10-23: *"I don't want my ravilo users know what
+    jellyfin even is. It's just the backend behind the whole thing."*).
+    - No viewer path shows a page rendered by Jellyfin or its plugins, or an address on Jellyfin's
+      host. Media bytes from that host are the one exception.
+    - No viewer string, page or error, in any language, names Jellyfin, LDAP, Quick Connect, a
+      plugin or a status code. Copy says what the viewer can do.
+    - The admin web is exempt; it is the operator's tool.

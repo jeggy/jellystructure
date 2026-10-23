@@ -202,3 +202,16 @@ Non-goal ("they keep working as admin until each is re-logged-in") to say they *
   and persists the allowed-library set on the device row — but **this spec does not currently fetch or
   persist `policy.enabledFolders`**. Either 141's `loginDevice` must also capture the folder access (add it
   here), or 142 owns that fetch. Make the hand-off explicit in one of the two specs.
+
+## Amendment 2026-10-23 (owner, DEB-2233): the "no Quick Connect" non-goal is reversed
+
+The non-goal *"Jellyfin QuickConnect — considered and explicitly not chosen"* no longer holds. A TV may now be signed
+in by a code that a viewer approves in Ravilo on another device. jellystructure runs Quick Connect behind that
+approval with the **approver's own** token, so the TV still gets a real per-user token under this phase's
+`ravilo-<deviceId>-<username>` identity. Accounts that only sign in through the server's single sign-on use the same
+mechanism.
+
+This phase's root fix stands: no device is ever signed in as the admin. A viewer approves only as themselves, and the
+machine token never approves anything. Password sign-in (§A) is unchanged.
+
+Spec: `specs/ravilo/requirements/a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md` (FR-2–FR-4, FR-9–FR-11).
