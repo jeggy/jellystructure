@@ -82,6 +82,10 @@ fun DesktopMusicBar(
     onOpenAlbum: (String) -> Unit = {},
     /** The queue is open over the content (600–1199 dp): the capsule shortens to stay clear of it (`.qopen .cap-bar`). */
     queueOverlay: Boolean = false,
+    /** DEB-2305 (FR-R337-6 amendment) — on the Playing page the lyrics button goes back, artwork tap is a no-op. */
+    onPlayingPage: Boolean = false,
+    /** DEB-2305 (FR-R337-6 amendment) — when on the Playing page, the lyrics button calls this to leave. */
+    onLeavePlaying: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val mac = isMacPlatform
@@ -135,7 +139,7 @@ fun DesktopMusicBar(
             horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp)) {
-                MusicCover(image, t?.album ?: title, Modifier.size(if (mac) 46.dp else 50.dp).tap(onOpenPlaying), corner = if (mac) 23.dp else 6.dp, requestedWidth = 120, wordmarkSize = 8)
+                MusicCover(image, t?.album ?: title, Modifier.size(if (mac) 46.dp else 50.dp).let { if (onPlayingPage) it else it.tap(onOpenPlaying) }, corner = if (mac) 23.dp else 6.dp, requestedWidth = 120, wordmarkSize = 8)
                 val albumId = barTextAlbumId(t?.albumId, b != null)
                 Column(Modifier.tap { if (albumId != null) onOpenAlbum(albumId) else onOpenPlaying() }.width(if (tight) 96.dp else if (medium) 130.dp else 190.dp)) {
                     Text(title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -157,7 +161,7 @@ fun DesktopMusicBar(
             }
             SeekLine(live, st.durationMs, Modifier.weight(1f), times = !tight)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (!medium) BarButton(DeskIcon.LYRICS, colors.textSecondary, str("desk.show_lyrics"), onClick = onOpenPlaying)
+                if (!medium) BarButton(DeskIcon.LYRICS, colors.textSecondary, str(if (onPlayingPage) "desk.back" else "desk.show_lyrics"), onClick = if (onPlayingPage) onLeavePlaying else onOpenPlaying)
                 BarButton(DeskIcon.QUEUE, if (queueOpen) colors.accentSecondary else colors.textSecondary, str(if (queueOpen) "desk.close_queue" else "desk.show_queue"), on = queueOpen, onClick = onQueue)
                 if (cast != null && castShown) BarButton(DeskIcon.CAST, if (casting) colors.accentSecondary else colors.textSecondary, str("cast.sheet_music"), on = casting) { cast.openSheet(music = true) }
                 if (!medium) {

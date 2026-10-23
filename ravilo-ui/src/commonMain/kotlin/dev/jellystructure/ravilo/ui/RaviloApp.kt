@@ -1556,8 +1556,9 @@ fun RaviloApp(
         }
         // FR-R337-6 / Q2 + Q10 — in music mode the bar is always there; in films mode only while music plays, and a pause
         // from the bar keeps it until the viewer leaves the page. (`deskBarKeptOn` is declared beside the mini bar's rule.)
-        fun deskBarShows(d: Dest) = deskFramed(d) && musicState.active && !sessionOverMusic && d !is Dest.MusicPlaying &&
+        fun deskMusicBarVisible(d: Dest) = deskFramed(d) && musicState.active && !sessionOverMusic &&
             (inMusic || musicState.playing || deskBarKeptOn == d)
+        fun deskBarShows(d: Dest) = deskMusicBarVisible(d) && d !is Dest.MusicPlaying
         // The queue panel goes where the bar goes (and stays on Playing, which hides the bar): in films mode with nothing
         // playing there is no bar, and a queue beside a film's page would be a panel about nothing on screen.
         fun deskQueueShows(d: Dest) = deskFramed(d) && musicState.active && (deskBarShows(d) || d is Dest.MusicPlaying)
@@ -3191,7 +3192,7 @@ fun RaviloApp(
             }
         } } } } // CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
         // R337 (FR-R337-6) — the desktop's player bar at the content's foot.
-        if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
+        if (deskMusicBarVisible(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
             medium = deskMedium,
             queueOpen = queueOpen,
             onOpenPlaying = { if (inMusic) resetTo(Dest.MusicPlaying(destDisplayName(dest))) else push(Dest.MusicPlaying(destDisplayName(dest))) },
@@ -3199,6 +3200,8 @@ fun RaviloApp(
             modifier = Modifier.align(Alignment.BottomCenter),
             queueOverlay = queueOpen && !deskLarge && deskQueueShows(dest),
             onOpenAlbum = { id -> push(Dest.AlbumDetail(id, destDisplayName(dest))) },
+            onPlayingPage = dest is Dest.MusicPlaying,
+            onLeavePlaying = { pop() },
         )
         val deskSession = barSession
         if (deskSession != null && deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopSessionBar(

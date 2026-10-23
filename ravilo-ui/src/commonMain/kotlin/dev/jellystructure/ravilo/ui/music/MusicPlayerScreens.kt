@@ -240,9 +240,6 @@ private fun DeskPlaying(
                 }
                 DeviceChip()
                 Spacer(Modifier.height(18.dp))
-                DeskSeek(st.durationMs)
-                Spacer(Modifier.height(10.dp))
-                DeskTransport(st)
             }
         }
         val pad = if (stacked) 28.dp else 48.dp
