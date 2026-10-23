@@ -65,6 +65,9 @@ class CastSession(
     val receiver: StateFlow<CastReceiverStatus?> = _receiver.asStateFlow()
     private val _media = MutableStateFlow<CastMediaStatus?>(null)
     val media: StateFlow<CastMediaStatus?> = _media.asStateFlow()
+    private val _mediaRaw = MutableSharedFlow<CastMediaStatus>(extraBufferCapacity = 64)
+    /** DEB-2312 — every `MEDIA_STATUS` as it arrives, before [media] drops an identical one (a StateFlow does). */
+    val mediaArrivals: SharedFlow<CastMediaStatus> = _mediaRaw.asSharedFlow()
     private val _custom = MutableSharedFlow<String>(extraBufferCapacity = 64)
     /** Every payload the app sent on [CastNamespaces.RAVILO]. */
     val custom: SharedFlow<String> = _custom.asSharedFlow()
@@ -269,7 +272,9 @@ class CastSession(
                     close(if (status.apps.all { it.appId == BACKDROP_APP_ID }) "the app ended" else "replaced by another app")
             }
             CastNamespaces.MEDIA -> if (body != null && CastParse.type(body) == "MEDIA_STATUS") {
-                _media.value = CastParse.mediaStatus(body)?.withMediaFrom(_media.value)
+                val read = CastParse.mediaStatus(body)
+                read?.let { _mediaRaw.tryEmit(it) }
+                _media.value = read?.withMediaFrom(_media.value)
             }
             CastNamespaces.RAVILO -> m.payloadUtf8?.let { _custom.tryEmit(it) }
             CastNamespaces.RAVILO_LOG -> m.payloadUtf8?.let { _notes.tryEmit(it) }

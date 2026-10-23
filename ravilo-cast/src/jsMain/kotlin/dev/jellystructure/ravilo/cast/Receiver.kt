@@ -146,6 +146,12 @@ private class Receiver {
     private var positionMs = 0L
     private var durationMs = 0L
     private var paused = false
+    // DEB-2312 — a song CAF holds in BUFFERING while it plays: where the media time stood when BUFFERING began, the load
+    // counter that tells one load of a song from the next, the key a play() was last pressed for, whether the load was direct.
+    private var bufferingFromMs: Long? = null
+    private var loadSeq = 0
+    private var healedKey: String? = null
+    private var loadDirect = false
     private var nextUpJob: Job? = null
     /** R384 (FR-R384-3) — the countdown's seconds left while it runs (said in every status too). */
     private var nextUpLeft: Int? = null
@@ -894,6 +900,7 @@ private class Receiver {
         positionMs = startAt ?: ticket.startPositionMs
         durationMs = t.durationMs ?: 0L
         paused = false
+        loadSeq++; loadDirect = ticket.directPlay; bufferingFromMs = positionMs
         // Dev review 4 — advertise next/previous, or the Home app hides its buttons.
         // `or` on a `dynamic` is a JS method call, not a bitwise or — the flags are combined in JS itself.
         runCatching {
@@ -1177,6 +1184,14 @@ private class Receiver {
         val said = ((playerManager.getDurationSec() as Double?) ?: 0.0).times(1000).toLong()
         durationMs = if (said > 0) said else track()?.durationMs ?: 0L
         val data = current ?: return
+        // DEB-2312 — CAF can stay in BUFFERING after its own load of a direct song while the element plays on and the time
+        // advances; no status goes out and the Mac's bar sits at 0:00. The press of play that settles it, once per load.
+        val songKey = "${data.itemId}#$loadSeq"
+        if (dev.jellystructure.shared.tv.castShouldPressPlay(music, paused, playerManager.getPlayerState() as String?, bufferingFromMs, positionMs, healedKey, songKey)) {
+            healedKey = songKey
+            note("heal ${data.itemId} play() after the time moved ${positionMs - (bufferingFromMs ?: 0L)}ms under BUFFERING ${stateNote()}")
+            runCatching { playerManager.play() }
+        }
         if (music) { if (el("buffering").classList.contains("on")) show("nowplaying"); paintProgress(); paintLyrics() }
         else if (el("loading").classList.contains("on")) show()
         // FR-R245-14 — Skip Intro on the receiver, when the household's setting is Auto.
@@ -1205,6 +1220,9 @@ private class Receiver {
 
     private fun onPlayerState() {
         val st = playerManager.getPlayerState() as String
+        // DEB-2312 — BUFFERING notes where it began (a real rebuffer starts a fresh count); a settled state clears it.
+        if (st == "BUFFERING") { if (bufferingFromMs == null) bufferingFromMs = positionMs } else if (st == "PLAYING" || st == "PAUSED") bufferingFromMs = null
+        note("state $st ${stateNote()}")
         qoeState(st)
         when (st) {
             "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
@@ -1605,6 +1623,12 @@ private class Receiver {
         // FR-R356-11 — the size, once per full send and once for the first status without the queue after it.
         if (music && full) { slimNoted = false; note("status ${bytes} B with the queue (${d.tracks.size} songs, rev $queueRev${if (out.size > 1) ", in ${out.size - 1} parts" else ""})") }
         else if (music && !slimNoted) { slimNoted = true; note("status ${bytes} B without the queue (${d.tracks.size} songs, rev $queueRev)") }
+    }
+
+    /** DEB-2312 — what a state line carries besides the state: CAF's media session id if it can be read, `loading`, `direct`. */
+    private fun stateNote(): String {
+        val sid = runCatching { if (jsTypeOf(playerManager.getMediaStatus) == "function") playerManager.getMediaStatus().mediaSessionId else null }.getOrNull()
+        return "media=${sid ?: "?"} loading=$loading direct=$loadDirect"
     }
 
     /** 289 — one line on the log channel ([CAST_LOG_NAMESPACE]); never anything a sender's state depends on. */

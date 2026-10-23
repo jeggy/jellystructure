@@ -26,12 +26,22 @@ internal class CastMediaWatch(
     private var songKey: String? = null
     private var songChangedAt: Long = 0L
     private var askedAt: Long? = null
+    private var rawSinceSong = 0
 
     /** A `MEDIA_STATUS` was read at [nowMs]; [mediaSessionId] tells a new song's session from the same one's update. */
     fun mediaArrived(nowMs: Long, mediaSessionId: Int) {
         lastMediaAt = nowMs
         if (mediaSessionId != session) { session = mediaSessionId; sessionChangedAt = nowMs }
     }
+
+    /**
+     * DEB-2312 — a `MEDIA_STATUS` came off the wire, counted before the StateFlow that [mediaArrived] is fed from drops an
+     * identical one: `age` growing does not by itself say that no reply came.
+     */
+    fun rawArrived() { rawSinceSong++ }
+
+    /** How many raw `MEDIA_STATUS` messages have arrived since the song last changed on our channel, for the log. */
+    fun rawSinceSongChange(): Int = rawSinceSong
 
     /** Milliseconds since the last `MEDIA_STATUS`, for the log; null when none has come. */
     fun ageMs(nowMs: Long): Long? = lastMediaAt?.let { nowMs - it }
@@ -42,7 +52,7 @@ internal class CastMediaWatch(
      * session has come with it). [live] is the link connected and music loaded; [playerState] is the media status's.
      */
     fun due(nowMs: Long, live: Boolean, playerState: String?, songKey: String?): String? {
-        if (this.songKey != songKey) { this.songKey = songKey; songChangedAt = nowMs }
+        if (this.songKey != songKey) { this.songKey = songKey; songChangedAt = nowMs; rawSinceSong = 0 }
         val unsettled = playerState == null || playerState == "BUFFERING" || playerState == "LOADING"
         if (!live || !unsettled) unsettledSince = null else if (unsettledSince == null) unsettledSince = nowMs
         if (!live) return null

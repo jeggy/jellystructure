@@ -90,4 +90,21 @@ class CastMediaWatchTest {
         assertNull(w.due(23_000, true, "BUFFERING", "a#0"))
         assertEquals("buffering", w.due(24_500, true, "BUFFERING", "a#0"))
     }
+
+    @Test
+    fun `raw arrivals are counted since the last song change and an identical reply still counts`() {
+        val w = watch()
+        assertEquals(0, w.rawSinceSongChange())
+        w.due(0, true, "PLAYING", "a#0")
+        w.rawArrived(); w.rawArrived()
+        assertEquals(2, w.rawSinceSongChange())
+        // Our channel moves to song b: the count starts again from there.
+        w.due(10_000, true, "BUFFERING", "b#1")
+        assertEquals(0, w.rawSinceSongChange())
+        // The same BUFFERING reply four times: the StateFlow would hand one to mediaArrived, the raw count sees all four.
+        w.mediaArrived(10_100, 5)
+        repeat(4) { w.rawArrived() }
+        w.due(11_000, true, "BUFFERING", "b#1")
+        assertEquals(4, w.rawSinceSongChange())
+    }
 }

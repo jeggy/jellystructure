@@ -147,6 +147,7 @@ internal object CastSenderDesktop : CastSender {
         mediaWatch = CastMediaWatch(); loggedSong = null
         watch = scope.launch {
             launch { s.media.collect { m -> m?.let { mediaWatch.mediaArrived(System.currentTimeMillis(), it.mediaSessionId) }; rebuild(null) } }
+            launch { s.mediaArrivals.collect { mediaWatch.rawArrived() } }
             launch { s.receiver.collect { r -> r?.volumeLevel?.let { _volume.value = it } } }
             launch {
                 s.custom.collect { raw ->
@@ -223,7 +224,7 @@ internal object CastSenderDesktop : CastSender {
     private fun logPosition(s: CastSession, why: String) {
         val m = s.media.value
         println("${DesktopLog.stamp()} cast: position · $why · state=${m?.playerState} media=${m?.mediaSessionId} " +
-            "age=${mediaWatch.ageMs(System.currentTimeMillis())} shown=${_status.value?.positionMs}")
+            "age=${mediaWatch.ageMs(System.currentTimeMillis())} raw=${mediaWatch.rawSinceSongChange()} shown=${_status.value?.positionMs}")
     }
 
     private fun snapshot(m: CastMediaStatus?) = CastMediaSnapshot(
