@@ -103,6 +103,8 @@ as before and 7 as follows:
    viewer's. The check folds text with `SupportAi.fold`, matches whole words, and skips titles shorter than four
    letters after folding. This also catches a handed title written out instead of by id. A false match forwards, and
    that is the safe direction.
+   *Amended 2026-10-23 (DEB-2306): a one-word title matches only where the reply writes it as a title. See the
+   amendment at the end of this file, which restates this part in full.*
 3. When the result is applied, each id resolves through `ctx` to a title that is still live and still
    `visibleTo(device)` under the owner's current device row. A title that has left the library, or a policy that has
    narrowed while the batch was out, forwards.
@@ -176,6 +178,8 @@ Invented titles only, in tests, fixtures and this spec. None of them is a real t
 | `s3` | Nine Quiet Winters (2009) | film |
 | `s4` | Owl (2018) | film — the three-letter title that part 2 skips |
 | — | Harbour of Small Lights (2014) | film in a library the test viewer cannot see |
+| `s5` | Thereafter (2019) | film — a one-word title that is also an everyday word (DEB-2306) |
+| — | Settings (2020) | series in a library the test viewer cannot see — a one-word title that is also an app label (DEB-2306) |
 
 ## Acceptance
 
@@ -192,3 +196,63 @@ Invented titles only, in tests, fixtures and this spec. None of them is a real t
 - Music and audiobook suggestions. 269's row holds films and series only.
 - A tappable title in the support thread. The reply is text, and a deep link is a client change with its own design.
 - Sending the viewer's watch history or re-rank's reasons to the support job.
+
+## Amendment 2026-10-23 — a one-word title counts only when it is written as a title (DEB-2306)
+
+QA on DEB-1683 found a correct how-to answer forwarded instead of sent. The reply began a sentence with an everyday
+English word, and the library holds a film whose whole title is that word. Part 2 matched it exactly as written, and
+because part 2 runs on **every** turn, whether or not a block was sent, any reply with such a word forwards. Some of
+those words are among the commonest in a how-to. That undoes what DEB-1663 asked for: an easy question answered, not
+escalated. Every new one-word title in the library widens it. Tróndur decided the direction on DEB-2306: titles of
+two or more words match as before, and a one-word title must be marked as a title. No stop list, because a stop list
+has to be kept in three languages and a missed word is the same bug again.
+
+**FR-3 part 2, as amended.** The reply as the model wrote it, before the ids are replaced, contains no film or series
+title from the library: no `title` or `originalTitle` of any live film or series in `MediaStore`, from **every** library
+and not only the viewer's. Each title becomes a key as before: folded with `SupportAi.fold`, everything that is not a
+letter or digit read as a space, and skipped when it has fewer than four letters. Then:
+
+- **A key of two or more words** matches as before: as whole words anywhere in the folded reply.
+- **A key of one word** matches only where the reply writes that word **as a title**, in one of two forms:
+  - followed by a year in parentheses, with at most one space between: `word (2019)` or `word(2019)`, four digits.
+    This is the form FR-5 writes a title in;
+  - as the whole of an italic span: `*word*` or `_word_`, with nothing but the word between the markers.
+
+  The same word anywhere else does not match: in running prose, at the start of a sentence, capitalised, in quotes or
+  in bold. Folding is as before, and the markers are read on the reply as written, so `*Théreafter*` matches like
+  `*thereafter*`.
+
+Quotes and bold are deliberately not markers. A how-to names the app's own buttons and tabs and writes them in quotes
+or bold (*tap "Settings"*, *tryk på »Indstillinger«*, **Stillingar**). Any one-word label in any of Ravilo's three languages can
+also be a film's title, and counting quotes or bold would reproduce this bug in exactly the replies that rule 7 should
+leave alone.
+
+The case-title check (the last paragraph of FR-3, which applies part 2 to FR-13's titles) takes the same rule, so the
+two stay one rule. A case title that uses a one-word title as an everyday word is kept, and one that writes it in
+either marked form is dropped as before.
+
+Parts 1 and 3, the `ADMIN_ONLY` wording and the three-letter skip are unchanged.
+
+**What the narrower rule lets through, and why that is accepted.** A one-word title that the model writes bare, against
+FR-2's prompt, now sends. The model's only knowledge of what this library holds is the block. A bare title is therefore
+either one of the viewer's own suggestions written without its id, which they can already see on Home and which reads
+without its year, or a title from the model's general knowledge, which says nothing about what the library holds.
+Either way the cost is a weaker recommendation, not a title the viewer could not see. Keys of two or more words still
+forward a reply that happens to contain a phrase that is also a title. That is the safe direction and rarer, and it is
+left as it is.
+
+**FR-8, added tests.** With `s5` and *Settings* from the stand-in table among the keys:
+
+- `Thereafter, open the player's menu and choose Subtitles.` sends; so does `… and thereafter it stays on.`
+- `Tap "Settings"`, `Tap **Settings**`, `tryk på »Settings«` and `trýst á „Settings“` all send: the label case, in
+  English, Danish and Faroese.
+- `*Thereafter*`, `_Thereafter_`, `Thereafter (2019)` and `Thereafter(2019)` each forward with *"rule 7 — the reply
+  names a library title itself"*. `*Thereafter it stays on*`, an italic span longer than the title, sends.
+- A two-word stand-in (`the copper orchard`, lower case in prose) still forwards, as before.
+- The case title `Subtitles go off thereafter` is kept; `*Thereafter* will not play` is dropped.
+- The DEB-1683 shape end to end: a how-to reply whose first word is a one-word key, `decision: SEND`, `confidence`
+  HIGH, ruled `SENT`.
+
+**Acceptance, added.** The existing line *"A viewer asks how to keep subtitles on. The reply is unchanged in kind and
+names no title"* holds when the answer uses an everyday word that is also a one-word title in the library: the
+transcript shows `SENT`.
