@@ -906,3 +906,25 @@ with this amendment's rule withdrawn; a fail makes FR-313-17 the build.
 **Tests (if built).** `EncoderPlanTest` / `StreamRecordTest`: a `cast` device and a 2160p source at 51.6 Mbps gets a
 cap ≤ 40 Mbps; the same source at 38 Mbps, a 1080p source at 51.6 Mbps, and a `tv`-platform device with the 2160p
 51.6 Mbps source are uncapped by this rule; an existing lower cap (a 309 record below 40 Mbps) is kept.
+
+## Amendment 2026-10-23 — a frozen play recovers downward, in seconds (DEB-2205)
+
+On 2026-10-22 a 2160p HDR10 play on our encoder froze at 0:02 on the stue TV. F2's stuck watch waited 20 s, then
+restreamed to Jellyfin at the ladder's **top** (4K H.264 at 40 Mbps, tone-mapped to SDR). The owner, on where a
+frozen play should go: *"Whatever you think is best for the user. User should feel as little as possible
+interference."*
+
+- **F2's recovery is replaced.**
+  - A position that does not move for **5 s with ≥ 3 s buffered** (decode or render, not delivery) restreams once to
+    **our encoder** at the rung below the frozen one, in the other codec family where the device has one.
+  - A second freeze goes to Jellyfin (`not_our_encoder`) capped at the rung below the first frozen one.
+  - A third ends on R237's error.
+  - An empty buffer is FR-309-5's step-down, plus a cap one rung down after 3 s, in place, with no restream.
+  - **Nothing recovers upward**, and nothing climbs for 2 min after a recovery.
+- **FR-313-6 on Android:** text subtitles are served by jellystructure's own WebVTT cache (keyed by the container's
+  stream index), sideloaded only when shown, and never part of the stream's preparation. They are still not in the
+  master on Android.
+- **FR-313-13:** each job's stop writes an `encoder_summary` (segments, speed, longest segment wait, input read rate,
+  rungs) to the play's own QoE row and to the activity ring.
+
+See [`a-play-stops-at-most-once-at-its-start.md`](a-play-stops-at-most-once-at-its-start.md) FR-5, FR-6 and FR-8.

@@ -780,3 +780,20 @@ FR-309-4/-5 say "every player", and the first build left the web player alone wh
   browser under a throttle, which the Playwright mock stack does not serve; that behaviour moves to the QA ticket
   (hls.js under a throttled server climbing 4 → 8 Mbps one rung at a time and stepping down before 10 s of buffer —
   this spec's *Tests* section, last bullet).
+
+## Amendment 2026-10-23 — the decode ceiling is learned, and a direct play leaves before it runs dry (DEB-2205)
+
+On 2026-10-22 the stue TV was refused direct play of a 69.6 Mbps HEVC HDR10 remux because of its advertised 60 Mbps
+decode ceiling, and then played it directly in another client. The owner: *"We always want direct-play if the
+network … can handle it … making sure that it never buffers, unless it's only in the beginning."*
+
+- **FR-309-1:** for a client that reports decode health, *what the device can take* drops the advertised
+  `decode ceiling × 0.9` term. The decode side is the ceiling the device has shown, `decode_failed_bps` per codec,
+  learned from dropped frames or a frozen picture during a direct play, and lifted by a clean one.
+- **FR-309-8:** a direct play does not wait for a rebuffer. When its buffer ahead (sized in seconds, ≥ 30 s) falls
+  under 15 s and keeps falling, or its real estimate × 0.8 is under the file's bitrate, it hands over to the ladder
+  **ahead of time**: the ladder starts at *position + buffered − 2 s*, and the switch is made there without a stop.
+  The immediate restream at the current position stays as the fallback when under 4 s is buffered.
+
+See [`a-play-stops-at-most-once-at-its-start.md`](a-play-stops-at-most-once-at-its-start.md)
+FR-2 to FR-4.

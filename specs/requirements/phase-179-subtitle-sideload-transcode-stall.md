@@ -10,17 +10,15 @@
 > hit — out of scope as low-priority. **Phase 177 (shipped earlier today) just changed that priority
 > calculus** by making the exact tier of file this affects transcode far more often than before.
 
-**Status:** Implemented (2026-08-28, same day as design) — built end to end: `prewarm_subtitles` pipeline
-step (`PipelineStepOps.prewarmSubtitles`, `PipelineEngine.kt`, `JellyfinClient.getItemMediaStreams`/
-`warmSubtitleExtraction`), wired into the Settings pipeline builder + Activity step labels (FR-179-1);
-`SubtitleRetryingLoadErrorHandlingPolicy` (2 retries, 3s backoff, subtitle URIs only — every other load
-type delegates untouched to Media3's own `DefaultLoadErrorHandlingPolicy`) on the Android player
-(FR-179-2); `subtitle_load_errors` threaded through `PlayerQoeSnapshot` → `PlaybackQoeReport` →
-`playback_qoe` (new migration `35.sqm`) → `QoeSummary.hasIssue`, so a repeat badges itself on the
-existing Users & devices card with no new UI code (FR-179-3). Compiles clean across every target
-(`compileKotlinLinuxX64`, `verifyCommonMainJellystructureDbMigration`, admin `compileKotlinWasmJs`,
-`:ravilo-web:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
-`:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`).
+## Scope
+
+Written and built 2026-08-28. Touches the pipeline's `prewarm_subtitles` step (`PipelineStepOps.prewarmSubtitles`,
+`PipelineEngine.kt`, `JellyfinClient.getItemMediaStreams` / `warmSubtitleExtraction`) with its Settings and Activity
+labels (FR-179-1); the Android player's `SubtitleRetryingLoadErrorHandlingPolicy` (2 retries, 3 s backoff, subtitle
+URIs only; every other load delegates to Media3's `DefaultLoadErrorHandlingPolicy`) (FR-179-2); and
+`subtitle_load_errors` through `PlayerQoeSnapshot` → `PlaybackQoeReport` → `playback_qoe` (migration `35.sqm`) →
+`QoeSummary.hasIssue` (FR-179-3). **Amended 2026-10-23** (DEB-2205, at the end): text subtitles are extracted and
+served by jellystructure, only the shown track is loaded, and a subtitle load never holds the picture.
 
 **Known deviations from the letter of the spec, and why:**
 - **FR-179-2 shipped as a retry/backoff policy, not a literally separate, longer-timeout
@@ -32,9 +30,6 @@ existing Users & devices card with no new UI code (FR-179-3). Compiles clean acr
   since every non-subtitle URI delegates straight to Media3's unmodified default) with one well-scoped,
   standard extension point, and arguably suits the hypothesized failure mode (intermittent contention,
   not one continuously-slow request) better than a single longer window would.
-- **Not yet on-device verified.** All of the above is compile-verified only — no real pipeline run has
-  pre-warmed a real title's subtitles yet, and the retry policy hasn't been exercised against a real
-  induced failure. Deploy is user-initiated per project convention.
 - **Open question 1 (Jellyfin's cache key scope) remains genuinely open** — tonight's idle-system test
   (§Root cause, point 4) couldn't fully isolate "cached" from "fast when idle." FR-179-1 as built is a
   cheap, harmless fire-and-forget either way (§Requirements, FR-179-1) — if the cache turns out to be
@@ -215,3 +210,22 @@ not the fix.
 - Live evidence: stue TV logcat (`08-28 17:51:36`, `ExoPlayerImplInternal` `SocketTimeoutException`/
   `SocketException: Socket closed` disabling subtitle track id=3), Jellyfin `/Videos/.../Subtitles/...`
   timing checks (idle, 2026-08-28, this session).
+
+## Amendment 2026-10-23 — a subtitle never holds the picture, and is always the track it says (DEB-2205)
+
+Seen on the stue TV on 2026-10-22: a sidecar `.srt` added after this phase's prewarm shifted every embedded stream
+index by one. Jellyfin's extraction cache is keyed by index, and its `.meta` holds only the video file's size and
+mtime. So the next play missed the cache for one index and read the whole 53 GB file for 4 minutes, and the shifted
+indices are answered with the **wrong language** (on that film, *Arabic* shows German). Up to 424 of 4 385 cached
+titles had a sidecar newer than their cache. The player had sideloaded every text track with subtitles off, and the
+picture never passed 0:02.
+
+- **FR-179-1 is replaced for text tracks.** jellystructure extracts every embedded text track to WebVTT itself, in
+  one background pass per file. The cache is keyed by path, size, mtime and the container's own stream index, and is
+  served at `GET /api/tv/subtitles/{item}/{containerIndex}.vtt`. Sidecars keep Jellyfin's URL, which reads the file
+  directly.
+- **FR-179-2 is replaced.** Only the shown track is loaded, and its load is never part of the video's preparation:
+  a subtitle URL that hangs for 5 minutes delays neither the first frame nor the picture.
+- FR-179-3 stands.
+
+See [`a-play-stops-at-most-once-at-its-start.md`](a-play-stops-at-most-once-at-its-start.md) FR-6.

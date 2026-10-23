@@ -555,3 +555,18 @@ nullable ref with one re-bind function that owns every listener (item 6).
   and open Ravilo — the picture is at the place and the position does not advance over 30 s; then press play on the
   phone after 20 s and it plays. Controls: a local film still comes back paused (8a), and a new cast right after a
   wake plays.
+
+## Amended 2026-10-23 — a return starts where Jellyfin says, when someone played it since (DEB-2205)
+
+On 2026-10-22 Ravilo was backgrounded on a film at 0:02. The owner watched 7:34 of it in another client, and when
+Ravilo came back 1 h 50 min later it reopened the film at its own 0:02. The owner: *"jellyfin decides this."*
+
+**FR-R292-3** is amended:
+- The start of a return uses **Jellyfin's** user-data position whenever Jellyfin's record for the item was written
+  after this client's own stop of it, that is, when another app or device played it since. The server decides this
+  at the start; the client sends its position as today.
+- When Jellyfin holds nothing newer, the client's own position stands. That is the case this phase exists for:
+  Jellyfin drops a position under its minimum-resume percentage.
+
+See [`a-play-stops-at-most-once-at-its-start.md`](../../requirements/a-play-stops-at-most-once-at-its-start.md)
+FR-7.

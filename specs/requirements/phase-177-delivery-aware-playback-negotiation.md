@@ -9,15 +9,15 @@
 > populated by the client and **never read by anything** since they were introduced, so 417 of 6798
 > library files hand a lossless track to a software decoder on the TV's CPU whatever the client said.
 
-**Status:** Implemented (2026-08-28, same day as design) — built end to end: `ClientCapabilities`
-extended, `JellyfinClient.deviceProfile()` gains the per-codec bitrate condition + audio codec/channel
-honouring + link-derived `MaxStreamingBitrate`, `playback_qoe` table + `POST /api/tv/playback/qoe` +
-90-day retention sweep, Activity/Users & devices surfacing. Compiles clean
-(`compileKotlinLinuxX64`/`compileKotlinWasmJs`). Depends on **R216** for the new capability fields; ships
-inert (identical behaviour to today) against any client that doesn't send them. FR-177-3's and FR-177-2's
-core assumptions were verified live against the real Jellyfin 10.11.11 instance the same day (see Open
-questions below) — not yet verified against a real Ravilo client end to end (needs an on-device TV test
-with a live TrueHD/DTS-HD MA title, not yet done).
+## Scope
+
+Written and built 2026-08-28. Touches `ClientCapabilities`, `JellyfinClient.deviceProfile()` (the per-codec
+bitrate condition, audio codec/channel honouring, a link-derived `MaxStreamingBitrate`), the `playback_qoe` table
+with `POST /api/tv/playback/qoe` and its 90-day retention sweep, and the Activity / Users & devices surfacing.
+Depends on **R216** for the capability fields; a client that doesn't send them negotiates exactly as before.
+FR-177-3's and FR-177-2's assumptions were checked against Jellyfin 10.11.11 the same day (Open questions below).
+**Amended 2026-10-23** (DEB-2205, at the end): the advertised decode ceiling stops being a direct-play condition
+for a client that reports decode health.
 
 ## Root cause
 
@@ -197,3 +197,14 @@ link state at the time).
    phase's *intended shape*, not an actual Ravilo client — end-to-end verification with a real Ravilo TV
    reporting genuine `audioCodecs`/`maxHevcBitrate` against a live TrueHD/DTS-HD MA title is still
    outstanding (needs an on-device test, not yet done this session).
+
+## Amendment 2026-10-23 — the advertised ceiling is a hint, not a wall (DEB-2205)
+
+The owner, after a 69.6 Mbps HEVC HDR10 remux was refused direct play on the stue TV (advertised 60 Mbps) and then
+played directly in another client on the same TV: *"We always want direct-play if the network … can handle it. But
+we want Ravilo/Jellystructure to be smart and learn."* For a client that sends `reports_decode_health: true`,
+FR-177-2's `VideoBitrate` condition is emitted from the decode ceiling the device has **shown** (a learned
+`decode_failed_bps` per codec), never from the advertised `max_hevc_bitrate` / `max_h264_bitrate`. FR-177-4's
+`MaxStreamingBitrate` drops its advertised-ceiling term for the same clients. A client that does not send the flag
+keeps this phase's rule exactly. See [`a-play-stops-at-most-once-at-its-start.md`](a-play-stops-at-most-once-at-its-start.md)
+FR-2 and FR-3.
