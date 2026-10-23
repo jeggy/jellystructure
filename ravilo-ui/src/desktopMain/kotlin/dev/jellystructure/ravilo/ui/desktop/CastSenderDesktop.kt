@@ -6,6 +6,7 @@ import dev.jellystructure.ravilo.castv2.CastSession
 import dev.jellystructure.ravilo.castv2.openCastTransport
 import dev.jellystructure.ravilo.ui.DesktopApp
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
+import dev.jellystructure.ravilo.ui.seams.CastMediaWatch
 import dev.jellystructure.ravilo.ui.seams.CastMediaSnapshot
 import dev.jellystructure.ravilo.ui.seams.CastRemoteStatus
 import dev.jellystructure.ravilo.ui.seams.CastSender
@@ -78,6 +79,9 @@ internal object CastSenderDesktop : CastSender {
     private var pendingLoad: CastLoadData? = null
     private var watch: Job? = null
     private var reconnectTried = false
+    /** DEB-2294 — when to ask the receiver for its media status again; new with each session. */
+    private var mediaWatch = CastMediaWatch()
+    private var loggedSong: String? = null
     /** The session [stop] was asked for, until it has closed. */
     @Volatile private var stopping: CastSession? = null
 
@@ -140,8 +144,9 @@ internal object CastSenderDesktop : CastSender {
 
     private fun observe(s: CastSession) {
         watch?.cancel()
+        mediaWatch = CastMediaWatch(); loggedSong = null
         watch = scope.launch {
-            launch { s.media.collect { rebuild(null) } }
+            launch { s.media.collect { m -> m?.let { mediaWatch.mediaArrived(System.currentTimeMillis(), it.mediaSessionId) }; rebuild(null) } }
             launch { s.receiver.collect { r -> r?.volumeLevel?.let { _volume.value = it } } }
             launch {
                 s.custom.collect { raw ->
@@ -179,6 +184,7 @@ internal object CastSenderDesktop : CastSender {
                 while (isActive) {
                     delay(1_000)
                     if (s.media.value?.playerState == "PLAYING") rebuild(null)
+                    selfHeal(s)
                     CastNowPlaying.update(_status.value)
                 }
             }
@@ -193,6 +199,31 @@ internal object CastSenderDesktop : CastSender {
     private fun rebuild(event: String?) {
         val s = session ?: return
         _status.value = mergeCastStatus(_status.value, said, snapshot(s.media.value), event, System.currentTimeMillis())
+        // DEB-2294 — each song change leaves a line, so an owner report of a stuck bar can be answered from ravilo.log.
+        val key = songKey(_status.value)
+        if (key != loggedSong) { loggedSong = key; if (key != null) logPosition(s, "song change") }
+    }
+
+    private fun songKey(st: CastRemoteStatus?) = st?.takeIf { it.music && it.itemId != null }?.let { "${it.itemId}#${it.queueIndex}" }
+
+    /**
+     * DEB-2252 / DEB-2294 (FR-R330-7) — the media status the bar is built from can stick at BUFFERING / 0:00 after a song
+     * change, with nothing to read it again (the phone's SDK re-asks; this sender asked only at join). While the link is
+     * up and music is loaded, a status that has read BUFFERING / LOADING / nothing for 3 s, or that has not followed our
+     * channel to another song, is asked for again, at most once in 3 s — the request the sender makes at join.
+     */
+    private fun selfHeal(s: CastSession) {
+        val st = _status.value
+        val live = _link.value == CastLinkState.CONNECTED && st != null && st.music && st.loaded
+        val reason = mediaWatch.due(System.currentTimeMillis(), live, s.media.value?.playerState, songKey(st)) ?: return
+        s.requestMediaStatus()
+        logPosition(s, "asked for the media status ($reason)")
+    }
+
+    private fun logPosition(s: CastSession, why: String) {
+        val m = s.media.value
+        println("${DesktopLog.stamp()} cast: position · $why · state=${m?.playerState} media=${m?.mediaSessionId} " +
+            "age=${mediaWatch.ageMs(System.currentTimeMillis())} shown=${_status.value?.positionMs}")
     }
 
     private fun snapshot(m: CastMediaStatus?) = CastMediaSnapshot(

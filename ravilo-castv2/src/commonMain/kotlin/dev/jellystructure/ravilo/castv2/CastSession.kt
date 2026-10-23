@@ -145,7 +145,16 @@ class CastSession(
         app = target
         post(CastNamespaces.CONNECTION, target.transportId, obj("type" to "CONNECT"))
         _state.value = State.JOINED
-        postRequest(CastNamespaces.MEDIA, target.transportId, obj("type" to "GET_STATUS"))
+        requestMediaStatus()
+    }
+
+    /**
+     * Asks the app for its media status: the receiver answers with a fresh `MEDIA_STATUS`. Done at join, and by the
+     * sender when the status it holds has read BUFFERING for too long (DEB-2294). A no-op before an app is joined.
+     */
+    fun requestMediaStatus() {
+        val a = app ?: return
+        postRequest(CastNamespaces.MEDIA, a.transportId, obj("type" to "GET_STATUS"))
     }
 
     // ── commands ──

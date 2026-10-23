@@ -228,6 +228,43 @@ class CastSessionTest {
     }
 
     @Test
+    fun `asking for the media status sends one GET_STATUS to the app and its reply moves the status`() = runTest {
+        val device = FakeDevice { m, body ->
+            when {
+                m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS" -> listOf(receiverStatus(reqId(body), app(APP)))
+                // The app, asked for its status, answers with the song playing.
+                m.namespace == CastNamespaces.MEDIA && body?.let(CastParse::type) == "GET_STATUS" -> listOf(fromDevice(CastNamespaces.MEDIA,
+                    """{"type":"MEDIA_STATUS","requestId":${reqId(body)},"status":[{"mediaSessionId":9,"playerState":"PLAYING","currentTime":75,"playbackRate":1}]}""", source = "web-7"))
+                else -> emptyList()
+            }
+        }
+        val s = session(device)
+        val joined = async { s.joinIfRunning() }
+        runCurrent(); joined.await()
+        // The join asked once; the song was left at BUFFERING, 0:00.
+        assertEquals(1, device.types(CastNamespaces.MEDIA).count { it == "GET_STATUS" })
+        device.say(fromDevice(CastNamespaces.MEDIA, """{"type":"MEDIA_STATUS","requestId":0,"status":[{"mediaSessionId":9,"playerState":"BUFFERING","currentTime":0}]}""", source = "web-7"))
+        runCurrent()
+        assertEquals("BUFFERING", s.media.value?.playerState)
+        s.requestMediaStatus(); runCurrent()
+        assertEquals(2, device.types(CastNamespaces.MEDIA).count { it == "GET_STATUS" })
+        val ask = device.heard.last { it.namespace == CastNamespaces.MEDIA }
+        assertEquals("web-7", ask.destinationId)
+        assertEquals("PLAYING", s.media.value?.playerState)
+        assertTrue(s.media.value!!.positionMs() >= 75_000)
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
+    fun `asking for the media status before an app is joined sends nothing`() = runTest {
+        val device = FakeDevice()
+        val s = session(device)
+        s.requestMediaStatus(); runCurrent()
+        assertTrue(device.types(CastNamespaces.MEDIA).isEmpty())
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
     fun `media commands carry the last media session and our channel goes both ways`() = runTest {
         val device = FakeDevice { m, body ->
             if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body), app(APP))) else emptyList()
