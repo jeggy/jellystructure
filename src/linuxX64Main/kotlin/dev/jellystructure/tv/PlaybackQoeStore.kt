@@ -64,6 +64,8 @@ data class QoeSummary(
     // 309 (FR-309-11) / 313 (FR-313-13) — the variant the item started on, and who served it (ours/jellyfin/direct).
     @SerialName("start_variant_bps") val startVariantBps: Long? = null,
     val encoder: String? = null,
+    // DEB-2205 (FR-8) — the encoder's own record of this play (null: not served by our encoder, or its job had not stopped).
+    @SerialName("encoder_summary") val encoderSummary: EncoderSummary? = null,
 ) {
     // R292 (dev review item 7) — a recovery-ladder firing and a restore after a recreation are worth a second
     // look; a plain return from the background is not (it is what HOME does), so it is carried, not badged.
@@ -80,11 +82,18 @@ private const val QOE_RETENTION_DAYS = 90L
 class PlaybackQoeStore(private val db: JellystructureDb) {
     private val queries get() = db.playbackQoeQueries
 
+    /** DEB-2205 (FR-8) — a summary that arrived before its play's first QoE report: kept (bounded) and written with the row. */
+    private val pendingSummaries = kotlin.concurrent.AtomicReference<Map<String, EncoderSummary>>(emptyMap())
+    private fun pendingKey(deviceId: String, itemId: String, playKey: String) = "$deviceId\u0000$itemId\u0000$playKey"
+
     /** [deviceId]/[playSessionId] are server-resolved (never client-supplied) — see the route doc in
      *  TvRoutes.kt for why. Upserts: [report]'s counters are the session's running totals (R216 —
      *  PlayerStore never resets them between posts), so a later post for the same session just advances
      *  this row to its latest cumulative state. */
     fun record(deviceId: String, playSessionId: String, report: PlaybackQoeReport, encoder: String? = null) {
+        // INSERT OR REPLACE rewrites the whole row: the encoder's summary, written when its job stopped, is read back and kept.
+        val summaryJson = queries.encoderSummaryOf(deviceId, report.itemId, playSessionId).executeAsOneOrNull()?.encoder_summary
+            ?: takePending(pendingKey(deviceId, report.itemId, playSessionId))?.toJson()
         queries.upsertQoe(
             device_id = deviceId,
             jellyfin_id = report.itemId,
@@ -120,7 +129,36 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             audio_decoder = report.audioDecoder,
             start_variant_bps = report.startVariantBps,
             encoder = encoder,
+            encoder_summary = summaryJson,
         )
+    }
+
+    /**
+     * DEB-2205 (FR-8) — files [summary] on the play's row; when the play's first report has not arrived (the job stops with
+     * the play, and a client posts its last report around then), it waits and [record] writes it. A play with a second stream
+     * (a restream) merges the two.
+     */
+    fun attachEncoderSummary(deviceId: String, itemId: String, playKey: String, summary: EncoderSummary) {
+        val rows = queries.encoderSummaryOf(deviceId, itemId, playKey).executeAsList()
+        if (rows.isNotEmpty()) {
+            val merged = rows.first().encoder_summary?.let { EncoderSummary.fromJson(it) }?.let { it + summary } ?: summary
+            queries.setEncoderSummary(merged.toJson(), deviceId, itemId, playKey)
+            return
+        }
+        val k = pendingKey(deviceId, itemId, playKey)
+        while (true) {
+            val old = pendingSummaries.value
+            val next = (old + (k to (old[k]?.let { it + summary } ?: summary))).let { m -> if (m.size > 50) m.entries.drop(m.size - 50).associate { it.toPair() } else m }
+            if (pendingSummaries.compareAndSet(old, next)) return
+        }
+    }
+
+    private fun takePending(k: String): EncoderSummary? {
+        while (true) {
+            val old = pendingSummaries.value
+            val hit = old[k] ?: return null
+            if (pendingSummaries.compareAndSet(old, old - k)) return hit
+        }
     }
 
     fun recentForDevice(deviceId: String, limit: Int = 10): List<QoeSummary> =
@@ -176,4 +214,5 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     legacyRebufferCount = if (per_item == 1L) 0 else rebuffer_count.toInt(),
     startVariantBps = start_variant_bps,
     encoder = encoder,
+    encoderSummary = encoder_summary?.let { EncoderSummary.fromJson(it) },
 )

@@ -53,7 +53,9 @@ class Encoder(
                         val deviceId: String = "", val itemId: String = "", var prewarmSegment: Int? = null,
                         /** 313 (found live 2026-10-09) — where the play starts: the master says so (`EXT-X-START`) and the
                          *  init segment starts its job there, so a resumed play never encodes from 0:00 first. */
-                        var startMs: Long = 0)
+                        var startMs: Long = 0,
+                        /** DEB-2205 (FR-8) — the play's QoE row key (PlaybackService.qoePlayKey) the stream's summary is filed under. */
+                        var qoeKey: String = "")
 
     private val mutex = Mutex()
     private val entries = mutableMapOf<String, Entry>()
@@ -65,8 +67,17 @@ class Encoder(
         val root = cfg.workDir.takeIf { mkdirs(it) } ?: "/tmp/js-encoder"
         mkdirs(cfg.cudaCacheDir)
         EncoderJobs(root, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
-            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, nowMs()) })
+            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, nowMs()) },
+            onStopped = { id, summary ->
+                // DEB-2205 (FR-8) — a PLAY's job stopped: its summary goes to the play's QoE row. A prewarm nobody played has none.
+                val e = mutex.withLock { entries[id] }
+                if (e != null && e.prewarmSegment == null && e.deviceId.isNotBlank()) onSummary?.invoke(e.deviceId, e.itemId, e.qoeKey, summary)
+            })
     }
+
+    /** DEB-2205 (FR-8) — set by the playback service: (device, item, the play's QoE key, the encoder's summary of it) when its job stops. */
+    @kotlin.concurrent.Volatile
+    var onSummary: (suspend (String, String, String, EncoderSummary) -> Unit)? = null
 
     /** 313 (2026-10-09) — files ffmpeg refused: their next plays go to Jellyfin instead of retrying the same command. */
     internal val refused = RefusedSources()
@@ -163,12 +174,12 @@ class Encoder(
     }
 
     /** Registers [plan] behind a new stream id (the capability, FR-313-7); the job starts when a player reads it. */
-    suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = "", startMs: Long = 0): String {
+    suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = "", startMs: Long = 0, qoeKey: String = ""): String {
         val id = secureHexId()
         mutex.withLock {
             val now = nowMs()
             entries.entries.removeAll { it.value.expiresAt < now }
-            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceAtLeast(0))
+            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceAtLeast(0), qoeKey = qoeKey)
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(id)
         }
         return id
@@ -209,7 +220,7 @@ class Encoder(
      * [jellyfinPlaySessionId], so phase 180 stops it with the play. Otherwise the prewarm is stopped first (never two
      * jobs for one play) and null is returned. Owner, 2026-10-08: the early encode becomes the play's own job.
      */
-    suspend fun adoptPrewarm(deviceId: String, itemId: String, plan: EncoderPlan, startSegment: Int, jellyfinPlaySessionId: String, expiresAt: Long): String? {
+    suspend fun adoptPrewarm(deviceId: String, itemId: String, plan: EncoderPlan, startSegment: Int, jellyfinPlaySessionId: String, expiresAt: Long, qoeKey: String = ""): String? {
         val key = prewarmKey(deviceId, itemId)
         val adopted = mutex.withLock {
             val hit = entries.entries.firstOrNull { (_, e) -> e.prewarmSegment != null && e.deviceId == deviceId && e.itemId == itemId }
@@ -219,6 +230,7 @@ class Encoder(
             e.prewarmSegment = null
             e.startMs = startSegment * ENCODER_SEGMENT_MS
             e.jellyfinPlaySessionId = jellyfinPlaySessionId
+            e.qoeKey = qoeKey
             e.expiresAt = expiresAt
             byPlay[key]?.remove(hit.key)
             if (byPlay[key]?.isEmpty() == true) byPlay.remove(key)

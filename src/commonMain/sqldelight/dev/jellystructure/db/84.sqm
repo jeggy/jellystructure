@@ -1,0 +1,6 @@
+-- DEB-2205 (FR-8) — the encoder's own record of a play (segments made, speed, the longest segment wait, the input read rate,
+-- the rungs it ran, whether it was paused) as JSON, written when the play's job stops. NULL = the play was not served by our
+-- encoder, or the job stopped before the summary could be attached. Must stay byte-for-byte in sync with PlaybackQoe.sq's
+-- CREATE TABLE (the SQLDelight-migration rule). The key of a play's row is now the play's own session (see PlaybackService's
+-- qoePlayKey) — no schema change, the column was always TEXT.
+ALTER TABLE playback_qoe ADD COLUMN encoder_summary TEXT;

@@ -1471,6 +1471,28 @@ fun Route.tvRoutes(
         call.respondText(text, ContentType.parse("text/vtt; charset=utf-8"))
     }
 
+    // DEB-2205 (FR-6) — one embedded text subtitle as WebVTT, from jellystructure's own extraction (keyed by the container's
+    // stream index, so a sidecar never moves it). Device token. A track not extracted yet starts that file's pass and answers
+    // 202 with Retry-After: the client asks again in the background and never waits on it.
+    get("/tv/subtitles/{item}/{file}") {
+        val device = call.attributes[DeviceKey]
+        val item = call.parameters["item"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val file = call.parameters["file"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val index = file.takeIf { it.endsWith(".vtt") }?.removeSuffix(".vtt")?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        when (val r = playbackService.embeddedSubtitle(device, item, index)) {
+            is dev.jellystructure.tv.EmbeddedSubtitleCache.Lookup.Ready -> {
+                val text = runCatching { dev.jellystructure.io.FileIo.readText(kotlinx.io.files.Path(r.file)) }.getOrNull()
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                call.respondText(text, ContentType.parse("text/vtt; charset=utf-8"))
+            }
+            dev.jellystructure.tv.EmbeddedSubtitleCache.Lookup.Pending -> {
+                call.response.headers.append("Retry-After", "3")
+                call.respond(HttpStatusCode.Accepted)
+            }
+            dev.jellystructure.tv.EmbeddedSubtitleCache.Lookup.Unavailable -> call.respond(HttpStatusCode.NotFound)
+        }
+    }
+
     // Phase 313 (FR-313-7) — our own encoder's variants: `v/<rung>` and `a/<audio position>`, each a VOD playlist of
     // the whole file in 2 s segments made on demand, its init segment (fMP4) and its segments, streamed from the file.
     for (kind in listOf("v", "a")) {

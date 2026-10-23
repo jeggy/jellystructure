@@ -579,8 +579,7 @@ suspend fun runPipeline(
                     // Phase 214 (FR-214-2) — see the identical check in detect_segments above.
                     if (scanTracker.stepStopRequested) break
                     if (item.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO) continue
-                    val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
-                    if (!jellyfinReady) continue
+                    // DEB-2205 (FR-6) — the extraction reads the file on this server's disk; it no longer needs Jellyfin.
                     // deferWhilePlaying = true regardless of trigger kind (FR-213-2) — pre-warming is
                     // never urgent enough to be worth stalling a live film for; an operator who genuinely
                     // wants it now still has "Run anyway" (FR-178-4).

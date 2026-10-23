@@ -190,6 +190,8 @@ class MediaJobQueue(
     private val subtitleChecks: dev.jellystructure.subtitles.SubtitleCheckService? = null,
     // Phase 317 (FR-317-8) — the fourth, on its own lane and its own worker.
     private val avSync: AvSyncService? = null,
+    // DEB-2205 (FR-6) — the embedded text subtitles' WebVTT cache the subtitles lane fills; null in tests that run no such job.
+    private val embeddedSubtitles: dev.jellystructure.tv.EmbeddedSubtitleCache? = null,
     // Phase 261 (FR-261-9) — the enqueue-only steps' per-title record, written when their job finishes.
     val stepRuns: StepRunStore? = null,
 ) {
@@ -1512,42 +1514,42 @@ class MediaJobQueue(
 
     // ── subtitles queue: prewarm_subtitles, Phase 213 ───────────────────────────
 
-    /** One job = one movie/series' full subtitle pre-warm. See [PipelineStepOps.prewarmSubtitles] for
-     *  the per-stream playback/cancel checks and the timeout-abandons-the-rest-of-the-list behaviour
-     *  (FR-213-3/213-4) — this function only translates its outcome into a queue [Outcome]. */
+    /** One job = one movie/series' embedded text subtitles extracted to WebVTT (DEB-2205 FR-6). See
+     *  [PipelineStepOps.prewarmSubtitles] for the per-file playback/cancel checks — this function only translates
+     *  its outcome into a queue [Outcome]. */
     private suspend fun runSubtitlesJob(row: Media_job): Outcome {
         fun isCancelled() = row.id in cooperativeCancelledIds
         val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
-        val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return Failure("Corrupt job parameters")
         if (isCancelled()) return Cancelled()
+        val cache = embeddedSubtitles ?: return Failure("Subtitle extraction is not set up on this server")
 
-        var warmedCount = 0
+        var extracted = 0
         val outcome = PipelineStepOps.prewarmSubtitles(
-            item, jellyfinClient, configStore.current,
-            onStreamWarmed = { warmedCount++ },
+            item, cache,
+            onFileExtracted = { extracted++ },
             isCancelled = ::isCancelled,
             references = subtitleChecks?.references,
             yieldToPlayback = { yieldsToPlayback(row) },   // Phase 295 (FR-295-1)
         )
         return when (outcome) {
             is PipelineStepOps.PrewarmOutcome.Warmed -> {
-                Logger.info("prewarm_subtitles: ${outcome.count} stream(s) warmed for '${item.title}'", "jobs")
+                Logger.info("prewarm_subtitles: ${outcome.count} file(s) with embedded text subtitles extracted for '${item.title}'", "jobs")
                 Success
             }
             PipelineStepOps.PrewarmOutcome.Skipped -> Success
-            PipelineStepOps.PrewarmOutcome.LookupFailed -> Failure("Could not read this item's subtitle stream list from Jellyfin")
             PipelineStepOps.PrewarmOutcome.Cancelled -> Cancelled()
             is PipelineStepOps.PrewarmOutcome.Deferred ->
-                Requeue(inPlace = true, reason = "waiting for playback to end (${outcome.warmedSoFar} already warmed)")
-            is PipelineStepOps.PrewarmOutcome.TimedOut -> {
+                Requeue(inPlace = true, reason = "waiting for playback to end (${outcome.warmedSoFar} already extracted)")
+            is PipelineStepOps.PrewarmOutcome.Failed -> {
+                val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return Failure("Corrupt job parameters")
                 val attempt = params.subtitleRetryCount + 1
                 if (attempt > 3) {
-                    Failure("Jellyfin is still busy on this file after 3 attempts — giving up")
+                    Failure("ffmpeg could not extract subtitles from ${outcome.files} file(s) after 3 attempts — giving up")
                 } else {
                     val backoffMinutes = attempt * 5
                     Requeue(
                         inPlace = false,
-                        reason = "Jellyfin busy on this file — retrying in $backoffMinutes min (attempt $attempt/3)",
+                        reason = "ffmpeg could not extract subtitles from ${outcome.files} file(s) — retrying in $backoffMinutes min (attempt $attempt/3)",
                         delayMs = backoffMinutes * 60_000L,
                         nextParams = params.copy(subtitleRetryCount = attempt),
                     )

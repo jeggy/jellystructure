@@ -207,6 +207,12 @@ This applies to an HLS play, ours or Jellyfin's.
     It replaces FR-179-1's Jellyfin warm for text tracks.
   - A request for a track not yet extracted starts that file's pass and answers **202** with `Retry-After`. The
     client retries in the background and shows the subtitle when it arrives. It never waits on it.
+  - *Amendment 2026-10-23 (DEB-2209):* the ticket's `SubTrack` gains an optional `container_index` (the container's own
+    stream index of an embedded text track; absent for a sidecar, an image track, or a file the server could not match to its
+    own scan, in which case that track keeps Jellyfin's URL). Our encoder's WebVTT renditions (FR-313-6) read the same cache,
+    so no path asks Jellyfin's index-keyed extraction for a text track it has scanned. The extraction needs no Jellyfin
+    connection. The client loads the shown track when it is *selected*, not when the ticket arrives, so the picker lists every
+    track with no request made; with subtitles off none is.
 - Image subtitles (PGS, VobSub) are unchanged: burn-in via our encoder (FR-313-6), or Jellyfin.
 - Wire: the ticket shape is unchanged. Only the URL value differs, and an installed client fetches whatever URL it
   is given.
@@ -231,6 +237,11 @@ This applies to an HLS play, ours or Jellyfin's.
   `playback_session.id` it already holds for device + item at report time), so a retry or a re-watch never
   overwrites an earlier play's row. Installed clients need no change. The admin's per-device summaries read the
   newest row per play.
+  - *Amendment 2026-10-23 (DEB-2209):* a start made within the 15 s stop-hold **joins** the live `playback_session`
+    and keeps its id, so a retry one second later would still have shared the key. The key is therefore the session's id
+    **and the time that start was served**: `<playback_session.id>@<start ms>`. A start with no session falls back to
+    `<device>-<item>@<start ms>`. A report that arrives after the stop still finds the play's key (the server keeps the last
+    one per device and item); one from before this build keeps today's `<device>-<item>`.
 - **The encoder's own record of each play.** When a job stops, the backend logs one line to the activity ring and
   stores the same figures on the play's QoE row in a new `encoder_summary` JSON column:
   - segments made;

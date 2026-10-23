@@ -2,7 +2,9 @@
 -- at session end and on a long-session (10 min) interval. Each report carries the session's RUNNING
 -- totals (dropped frames / rebuffer count+duration accumulate for the whole session, never reset
 -- between posts — see PlayerStore.kt), so this is an UPSERT keyed by the same
--- (device_id, jellyfin_id, play_session_id) triple PlaybackTracker already uses (playSessionIdFor()) —
+-- (device_id, jellyfin_id, play_session_id) triple — DEB-2205 (FR-8): play_session_id is now the PLAY's own key (its
+-- playback_session id and start time, PlaybackService.qoePlayKey), no longer the device-and-item pair PlaybackTracker uses, so a
+-- retry or a re-watch never overwrites an earlier play's row —
 -- a mid-session report simply advances the same row to its latest cumulative state, rather than growing
 -- one row per report. Diagnostic, not a ledger: retention-pruned (deleteOlderThan), not append-only.
 CREATE TABLE playback_qoe (
@@ -59,20 +61,29 @@ CREATE TABLE playback_qoe (
     -- 313 (FR-313-13) which encoder served the play: `ours`, `jellyfin` or `direct` (server-resolved). 77.sqm.
     start_variant_bps INTEGER,
     encoder TEXT,
+    -- DEB-2205 (FR-8) — the encoder's own record of this play, as JSON, written when its job stops; NULL = not served by our
+    -- encoder. 84.sqm.
+    encoder_summary TEXT,
     PRIMARY KEY (device_id, jellyfin_id, play_session_id)
 );
 CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
 CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
 
 upsertQoe:
-INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, variant_switches_down, variant_switches_up, variant_bandwidth_bps, variant_height, bandwidth_samples, bandwidth_bytes, first_frame_ms, updated_at, per_item, stalls_json, waits_json, session_rebuffer_count, session_rebuffer_ms, audio_decoder, start_variant_bps, encoder)
-VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :variant_switches_down, :variant_switches_up, :variant_bandwidth_bps, :variant_height, :bandwidth_samples, :bandwidth_bytes, :first_frame_ms, :updated_at, :per_item, :stalls_json, :waits_json, :session_rebuffer_count, :session_rebuffer_ms, :audio_decoder, :start_variant_bps, :encoder);
+INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, variant_switches_down, variant_switches_up, variant_bandwidth_bps, variant_height, bandwidth_samples, bandwidth_bytes, first_frame_ms, updated_at, per_item, stalls_json, waits_json, session_rebuffer_count, session_rebuffer_ms, audio_decoder, start_variant_bps, encoder, encoder_summary)
+VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :variant_switches_down, :variant_switches_up, :variant_bandwidth_bps, :variant_height, :bandwidth_samples, :bandwidth_bytes, :first_frame_ms, :updated_at, :per_item, :stalls_json, :waits_json, :session_rebuffer_count, :session_rebuffer_ms, :audio_decoder, :start_variant_bps, :encoder, :encoder_summary);
 
 recentForDevice:
 SELECT * FROM playback_qoe WHERE device_id = :device_id ORDER BY updated_at DESC LIMIT :result_limit;
 
 recent:
 SELECT * FROM playback_qoe ORDER BY updated_at DESC LIMIT :result_limit;
+
+encoderSummaryOf:
+SELECT encoder_summary FROM playback_qoe WHERE device_id = :device_id AND jellyfin_id = :jellyfin_id AND play_session_id = :play_session_id;
+
+setEncoderSummary:
+UPDATE playback_qoe SET encoder_summary = :encoder_summary WHERE device_id = :device_id AND jellyfin_id = :jellyfin_id AND play_session_id = :play_session_id;
 
 deleteOlderThan:
 DELETE FROM playback_qoe WHERE updated_at < :cutoff;

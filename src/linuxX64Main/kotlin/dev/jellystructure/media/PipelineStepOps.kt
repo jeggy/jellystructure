@@ -57,157 +57,62 @@ object PipelineStepOps {
         store.updateOne(artwork.stampHasStill(current))
     }
 
-    /** Phase 207 (FR-207-3) — three outcomes where the old code only ever reported a count, which is
-     *  exactly how a 400-on-every-call bug read as "nothing needed warming" for the step's entire
-     *  lifetime. [Warmed] with `count == 0` still means the lookup succeeded and genuinely found no text
-     *  subtitle streams — the case that must stay silent. [LookupFailed] means Jellyfin could not answer
-     *  at all, which must not collapse into the same "0 warmed" summary line.
-     *
-     *  Phase 213 (FR-213-3/FR-213-4) — two more outcomes, both mid-item stops rather than failures.
-     *  [Deferred] means a TV started playing between streams and the walk stopped cleanly, carrying
-     *  whatever it already confirmed; the caller re-queues the item. [TimedOut] means Jellyfin was still
-     *  busy on this exact file (a 120 s [JellyfinClient.WarmResult.TimedOut]) and the walk abandoned the
-     *  rest of that item's stream list rather than starting another request against the same busy file —
-     *  the caller retries with backoff, bounded. */
+    /** `prewarm_subtitles`'s outcomes (DEB-2205 FR-6). [Warmed]: how many video files have every text track cached now (zero is a
+     *  title with no embedded text subtitles, and stays silent). [Failed]: ffmpeg could not extract that many files. [Deferred]: a TV
+     *  started playing between two files and the walk stopped cleanly; the caller re-queues the item. */
     sealed interface PrewarmOutcome {
         data class Warmed(val count: Int) : PrewarmOutcome
         data object Skipped : PrewarmOutcome
-        data object LookupFailed : PrewarmOutcome
+        data class Failed(val files: Int, val warmedSoFar: Int) : PrewarmOutcome
         data class Deferred(val warmedSoFar: Int) : PrewarmOutcome
-        data class TimedOut(val warmedSoFar: Int) : PrewarmOutcome
         data object Cancelled : PrewarmOutcome
     }
 
     /**
-     * `prewarm_subtitles` (Phase 179, FR-179-1; moved to its own job lane by Phase 213) — hit Jellyfin's
-     * `.../Subtitles/{index}/0/Stream.vtt` extraction endpoint for every embedded text-subtitle stream
-     * ahead of any real playback, so its own ffmpeg extraction cache is warm by the time a client asks
-     * (R183 measured a 4m37s cold extraction on a 26 GB file; today it can additionally lose the race
-     * against a concurrent transcode reading the same source file and hit a client-side HTTP timeout —
-     * see the phase's Root cause §4). Every text stream, not just ones likely to transcode: which files
-     * transcode now depends on the *playing device's* decode ceiling (Phase 177), not just the file, so
-     * there's no reliable narrower filter. `isExternal` streams are skipped: a sidecar `.srt` is served
-     * as-is, never ffmpeg-extracted, so there is nothing to warm. Silently a no-op with no Jellyfin
-     * connection configured (mirrors `sync_jellyfin`'s own guard).
+     * `prewarm_subtitles` (Phase 179, FR-179-1; moved to its own job lane by Phase 213) — DEB-2205 (FR-6): extracts every
+     * embedded text subtitle of the item's video files to WebVTT, in one background-priority ffmpeg pass per file
+     * ([EmbeddedSubtitleCache]), ahead of any playback. It used to hit Jellyfin's `.../Subtitles/{index}/0/Stream.vtt`, whose cache
+     * is keyed by the stream index **Jellyfin** numbers: a sidecar added later shifted every index (the wrong language,
+     * silently) and a miss made Jellyfin read a 53 GB file for four minutes. Our cache is keyed by path + size + mtime + the
+     * container's own index, so a file that is already extracted costs nothing and a changed one is extracted again.
      *
-     * Phase 207 (FR-207-1/2) — movies use [JellyfinClient.getItemMediaStreams]'s now-corrected `Ids=`
-     * shape (one call). A TV_SHOW uses [JellyfinClient.getSeriesEpisodesMediaStreams] — **one call for
-     * the whole series**, not one per episode (285 calls/14s for a single series, observed before this
-     * fix) — and reads Jellyfin's own episode list directly rather than joining against
-     * `item.episodes`, so an episode this scan hasn't backfilled a `jellyfinId` for is still warmed.
+     * Per FILE, not per stream: a pass is one read of the file for all its text tracks and is not interrupted. [isCancelled]
+     * and [yieldToPlayback] are checked between files (the queue passes the same rule its claim uses, Phase 295), so a TV that
+     * began playing after the job was claimed is not read against.
      *
-     * Phase 210 (FR-210-2/FR-210-4) — [onStreamWarmed] fires the instant an individual stream is
-     * *confirmed* warmed ([JellyfinClient.WarmResult.Success]), not once at the end of a normally-
-     * returning loop over an attempted count. Two reasons: an ordinary per-stream HTTP failure must not
-     * be counted as a success (FR-210-2), and a mid-walk stop must still credit whatever already
-     * succeeded — the Jellyfin-side cache write already happened, and losing that count would misreport
-     * real progress as none (FR-210-4).
-     *
-     * Phase 213 (FR-213-3/FR-213-4) — [isCancelled] and Jellyfin's own [dev.jellystructure.tv.isPlaybackActive]
-     * are both re-checked **between every stream**, not only once per item: one item can hold dozens of
-     * streams (32 on a single film observed in the incident), each a full-file read, and a job that
-     * started legitimately must not keep extracting through a title a TV began playing after it was
-     * claimed. A [JellyfinClient.WarmResult.TimedOut] abandons the rest of that call's stream list
-     * outright — retrying immediately just queues another request behind the one Jellyfin is already
-     * running against the same file, which is precisely how the incident's backlog built.
+     * Phase 273 (FR-273-6) — [references] keeps one track's text per video as the subtitle check's timing reference, now read from
+     * the cache instead of fetched through Jellyfin.
      */
-    /** Phase 213 — per-stream walk result, internal to [prewarmSubtitles] (Kotlin doesn't allow a local
-     *  sealed hierarchy inside a function body, so this lives at object scope instead). */
-    private sealed interface StreamWalkResult {
-        data class Completed(val confirmed: Int) : StreamWalkResult
-        data class Deferred(val confirmed: Int) : StreamWalkResult
-        data class TimedOut(val confirmed: Int) : StreamWalkResult
-        data object Cancelled : StreamWalkResult
-    }
-
     suspend fun prewarmSubtitles(
         item: MediaItem,
-        jellyfinClient: JellyfinClient,
-        cfg: AppConfig,
-        onStreamWarmed: () -> Unit = {},
+        cache: dev.jellystructure.tv.EmbeddedSubtitleCache,
+        onFileExtracted: () -> Unit = {},
         isCancelled: () -> Boolean = { false },
-        // Phase 273 (FR-273-6) — keep one stream's text per video as the subtitle check's reference; null = discard.
         references: dev.jellystructure.subtitles.SubtitleReferences? = null,
-        // Phase 295 (FR-295-1) — whether to stop between streams for playback: the queue passes the SAME rule its
-        // claim uses (the row asked to defer, the household switch is on, and something is playing). Checking
-        // playback alone made the walk yield where the claim never held the row, and the two spun.
         yieldToPlayback: () -> Boolean = { dev.jellystructure.tv.isPlaybackActive() },
     ): PrewarmOutcome {
-        val base = cfg.apiKeys.jellyfinUrl
-        val token = cfg.apiKeys.jellyfinToken
-        if (base.isBlank() || token.isBlank()) return PrewarmOutcome.Skipped
-
-        // Phase 273 (FR-273-6) — each video of this item by its Jellyfin id: where its reference is stored, and the
-        // store's tracks (matched to Jellyfin's streams by position, phase 301: Jellyfin's index is not ffprobe's).
-        val videoById: Map<String, Pair<String, List<dev.jellystructure.model.Track>>> = if (references == null) emptyMap() else
-            (item.episodes.mapNotNull { e -> e.jellyfinId?.let { it to (e.path to e.tracks) } } +
-                listOfNotNull(item.jellyfinId?.takeIf { item.kind == MediaKind.MOVIE }?.let { it to (item.path to item.tracks) })).toMap()
-
-        suspend fun warmedCountOf(streams: List<dev.jellystructure.auth.JellyfinMediaStream>, jellyfinId: String): StreamWalkResult {
-            val textSubs = streams.filter {
-                it.type.equals("Subtitle", ignoreCase = true) &&
-                    !it.isExternal &&
-                    (it.isTextSubtitleStream || dev.jellystructure.tv.isTextSubCodec(it.codec))
-            }
-            val video = videoById[jellyfinId]
-            var needReference = video != null && references != null &&
-                references.stored(video.first, dev.jellystructure.subtitles.SubtitleReferences.EMBEDDED) is dev.jellystructure.subtitles.SubtitleReferences.Stored.Unknown
-            var confirmed = 0
-            for (s in textSubs) {
-                if (isCancelled()) return StreamWalkResult.Cancelled
-                if (yieldToPlayback()) return StreamWalkResult.Deferred(confirmed)
-                // Phase 301 (FR-301-2) — by position among the internal subtitle streams: Jellyfin numbers sidecars first.
-                val track = if (needReference && !s.isForced) dev.jellystructure.subtitles.SubtitleReferences.trackForJellyfinStream(s, video!!.second, streams) else null
-                if (track != null) {
-                    // The same request as the warm, keeping the body: the text is this video's timing reference.
-                    when (val r = jellyfinClient.fetchSubtitleText(base, token, jellyfinId, s.index)) {
-                        is JellyfinClient.SubtitleText.Text -> {
-                            confirmed++; onStreamWarmed()
-                            if (references!!.offerEmbedded(video!!.first, track, r.body, video.second.fileDurationMs())) needReference = false
-                        }
-                        JellyfinClient.SubtitleText.TimedOut -> return StreamWalkResult.TimedOut(confirmed)
-                        is JellyfinClient.SubtitleText.Failed -> {}
-                    }
-                    continue
-                }
-                when (jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)) {
-                    JellyfinClient.WarmResult.Success -> { confirmed++; onStreamWarmed() }
-                    JellyfinClient.WarmResult.TimedOut -> return StreamWalkResult.TimedOut(confirmed)
-                    is JellyfinClient.WarmResult.Failed -> {} // this one stream's own problem — move on
+        val videos: List<Triple<String, List<dev.jellystructure.model.Track>, Long?>> = when (item.kind) {
+            MediaKind.MOVIE -> listOf(Triple(item.path, item.tracks, item.tracks.fileDurationMs()))
+            MediaKind.TV_SHOW -> item.episodes.map { Triple(it.path, it.tracks, it.tracks.fileDurationMs()) }
+            MediaKind.MUSIC_VIDEO -> return PrewarmOutcome.Skipped
+        }.filter { it.first.isNotBlank() }
+        if (videos.isEmpty()) return PrewarmOutcome.Skipped
+        var done = 0
+        var failed = 0
+        for ((path, tracks, durationMs) in videos) {
+            if (isCancelled()) return PrewarmOutcome.Cancelled
+            if (yieldToPlayback()) return PrewarmOutcome.Deferred(done)
+            if (dev.jellystructure.tv.EmbeddedSubtitleCache.textContainerIndices(tracks).isEmpty()) continue
+            if (!cache.ensure(path, tracks)) { failed++; continue }
+            done++; onFileExtracted()
+            if (references != null && references.stored(path, dev.jellystructure.subtitles.SubtitleReferences.EMBEDDED) is dev.jellystructure.subtitles.SubtitleReferences.Stored.Unknown) {
+                for (track in dev.jellystructure.subtitles.SubtitleReferences.embeddedCandidates(tracks).take(3)) {
+                    val body = cache.cachedFile(path, track.streamIndex)?.let { runCatching { dev.jellystructure.io.FileIo.readText(kotlinx.io.files.Path(it)) }.getOrNull() } ?: continue
+                    if (references.offerEmbedded(path, track, body, durationMs)) break
                 }
             }
-            return StreamWalkResult.Completed(confirmed)
         }
-
-        return when (item.kind) {
-            MediaKind.MOVIE -> {
-                val id = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return PrewarmOutcome.Skipped
-                val detail = jellyfinClient.getItemMediaStreams(base, token, id)
-                    ?: return PrewarmOutcome.LookupFailed
-                when (val r = warmedCountOf(detail.mediaStreams, id)) {
-                    is StreamWalkResult.Completed -> PrewarmOutcome.Warmed(r.confirmed)
-                    is StreamWalkResult.Deferred -> PrewarmOutcome.Deferred(r.confirmed)
-                    is StreamWalkResult.TimedOut -> PrewarmOutcome.TimedOut(r.confirmed)
-                    StreamWalkResult.Cancelled -> PrewarmOutcome.Cancelled
-                }
-            }
-            MediaKind.TV_SHOW -> {
-                val seriesId = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return PrewarmOutcome.Skipped
-                val episodes = jellyfinClient.getSeriesEpisodesMediaStreams(base, token, seriesId)
-                    ?: return PrewarmOutcome.LookupFailed
-                var total = 0
-                for (ep in episodes) {
-                    when (val r = warmedCountOf(ep.mediaStreams, ep.id)) {
-                        is StreamWalkResult.Completed -> total += r.confirmed
-                        is StreamWalkResult.Deferred -> return PrewarmOutcome.Deferred(total + r.confirmed)
-                        is StreamWalkResult.TimedOut -> return PrewarmOutcome.TimedOut(total + r.confirmed)
-                        StreamWalkResult.Cancelled -> return PrewarmOutcome.Cancelled
-                    }
-                }
-                PrewarmOutcome.Warmed(total)
-            }
-            MediaKind.MUSIC_VIDEO -> PrewarmOutcome.Skipped
-        }
+        return if (failed > 0) PrewarmOutcome.Failed(failed, done) else PrewarmOutcome.Warmed(done)
     }
 
     /** `sync_imdb_ratings` — fetch + store the IMDb rating for an item that has an imdbId. Returns true

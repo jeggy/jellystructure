@@ -424,6 +424,18 @@ fun activePlaybackDevices(): List<DeviceData> = playbackTracker.activeDeviceObje
 
 private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"
 
+/** DEB-2205 (FR-6) — an [EncoderSubtitle.sourceUrl] that names one of OUR extracted tracks: `js-sub:<jellyfinId>:<containerIndex>`. */
+internal const val LOCAL_SUBTITLE_SCHEME = "js-sub:"
+
+/**
+ * DEB-2205 (FR-8) — the key of one PLAY's QoE row: the play's own `playback_session` id and the time its start was served.
+ * [playSessionIdFor] is the device-and-item pair, so a retry (or a re-watch of the same title) wrote over the row of the
+ * play before it: the 2026-10-22 play that never passed 0:02 left no evidence because a retry one second later replaced
+ * it. A start that joins the live session keeps that session's id, so the start time is part of the key; a start with no
+ * session (tests, or a viewer who left during the negotiation) falls back to [fallback].
+ */
+internal fun qoePlayKey(sessionId: String?, fallback: String, startedAtMs: Long): String = "${sessionId ?: fallback}@$startedAtMs"
+
 /** Security fix (2026-08-02 review, finding H2) — thrown by [PlaybackService.startPlayback] /
  *  [PlaybackService.restream] instead of falling back to (and leaking) the server admin token when a
  *  device's paired Jellyfin token has gone stale. Routes catch this and respond with a clear
@@ -481,7 +493,13 @@ class PlaybackService(
     val audioRenditions = AudioRenditions(jellyfinClient::fetchPlaylist)
 
     /** Phase 313 — our own encoder (every quality from one ffmpeg per play); Jellyfin's transcode is the fallback. */
-    val encoder = Encoder({ configStore.current.encoder }, fetchText = jellyfinClient::fetchPlaylist)
+    val encoder = Encoder({ configStore.current.encoder }, fetchText = ::fetchSubtitleSource).also { enc ->
+        // DEB-2205 (FR-8) — when a play's job stops, its summary goes to the play's QoE row (or waits for the row).
+        enc.onSummary = { deviceId, itemId, qoeKey, summary ->
+            runCatching { playbackQoeStore.attachEncoderSummary(deviceId, itemId, qoeKey.ifBlank { "$deviceId-$itemId" }, summary) }
+                .onFailure { Logger.warn("encoder: summary not filed: ${it.message}", "tv") }
+        }
+    }
 
     /** Phase 180 + R291 — releases the encode AND this server's audio rendition jobs for it. */
     private suspend fun releaseEncodes(jellyfinBase: String, token: String, identity: JellyfinDeviceIdentity, jellyfinPlaySessionId: String) {
@@ -549,6 +567,19 @@ class PlaybackService(
 
     /** 313 (FR-313-13) — who served each (device, item)'s current play: `ours`, `jellyfin` or `direct`. */
     private val servedBy = kotlin.concurrent.AtomicReference<Map<PlaybackKey, ServedNow>>(emptyMap())
+
+    /** DEB-2205 (FR-8) — each (device, item)'s current play's QoE key ([qoePlayKey]); kept after the stop, a last report follows it. */
+    private val qoePlayKeys = kotlin.concurrent.AtomicReference<Map<PlaybackKey, String>>(emptyMap())
+
+    private fun noteQoePlayKey(key: PlaybackKey, value: String) {
+        while (true) {
+            val old = qoePlayKeys.value
+            val next = (old + (key to value)).let { m -> if (m.size > 400) m.entries.drop(m.size - 400).associate { it.toPair() } else m }
+            if (qoePlayKeys.compareAndSet(old, next)) return
+        }
+    }
+
+    private fun qoeKeyOf(device: DeviceData, jellyfinId: String): String? = qoePlayKeys.value[PlaybackKey(device.deviceId, jellyfinId)]
 
     private fun noteServed(device: DeviceData, jellyfinId: String, how: String, detail: String? = null) {
         while (true) {
@@ -650,8 +681,9 @@ class PlaybackService(
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
-                val adopted = device?.let { encoder.adoptPrewarm(it.deviceId, jellyfinId, plan, startSegment, jellyfinPlaySessionId, ticket.expiresAt) }
-                val id = adopted ?: encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt, device?.deviceId ?: "", jellyfinId, startMs = ticket.startPositionMs)
+                val qoeKey = device?.let { qoeKeyOf(it, jellyfinId) } ?: ""
+                val adopted = device?.let { encoder.adoptPrewarm(it.deviceId, jellyfinId, plan, startSegment, jellyfinPlaySessionId, ticket.expiresAt, qoeKey) }
+                val id = adopted ?: encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt, device?.deviceId ?: "", jellyfinId, startMs = ticket.startPositionMs, qoeKey = qoeKey)
                 val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
                 val startStream = rungBandwidth(plan.rungs[plan.startRung], audioPeak)
                 Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +
@@ -720,7 +752,10 @@ class PlaybackService(
         ticket.subtitles.filter { it.deliveryMethod == "hls" }.map { t ->
             EncoderSubtitle(
                 name = t.label ?: t.language ?: "Subtitles", language = t.language, forced = t.forced, default = t.isDefault,
-                sourceUrl = withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${t.index}/0/Stream.vtt", token),
+                // DEB-2205 (FR-6) — an embedded track is read from our own extraction (keyed by the container's index), never
+                // from Jellyfin's index-keyed cache; a sidecar, or a file we could not match, keeps Jellyfin's conversion.
+                sourceUrl = t.containerIndex?.takeIf { embeddedSubtitles != null }?.let { "$LOCAL_SUBTITLE_SCHEME$jellyfinId:$it" }
+                    ?: withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${t.index}/0/Stream.vtt", token),
             )
         }
 
@@ -759,6 +794,31 @@ class PlaybackService(
      *  called for a stop that was abandoned; a throw here never turns the landed stop into a retry. */
     /** R368 — the playback sessions above the tracker (null in tests that never look at sessions). */
     var sessions: PlaybackSessions? = null
+
+    /** DEB-2205 (FR-6) — our own WebVTT of every embedded text subtitle (null in tests that never serve one). */
+    var embeddedSubtitles: EmbeddedSubtitleCache? = null
+
+    /**
+     * DEB-2205 (FR-6) — `GET /api/tv/subtitles/{item}/{containerIndex}.vtt`: the cached WebVTT of one embedded text track, or
+     * [EmbeddedSubtitleCache.Lookup.Pending] after starting that file's pass. The same visibility gate as a start.
+     */
+    suspend fun embeddedSubtitle(device: DeviceData, jellyfinId: String, containerIndex: Int): EmbeddedSubtitleCache.Lookup {
+        requireVisible(device, jellyfinId)
+        val cache = embeddedSubtitles ?: return EmbeddedSubtitleCache.Lookup.Unavailable
+        val file = localFileOf(jellyfinId) ?: return EmbeddedSubtitleCache.Lookup.Unavailable
+        return cache.lookup(file.first, file.tracks, containerIndex)
+    }
+
+    /** What the encoder's [Encoder.fetchText] reads: our own cached WebVTT for a `js-sub:` source, Jellyfin's text otherwise. */
+    private suspend fun fetchSubtitleSource(url: String): String? {
+        if (!url.startsWith(LOCAL_SUBTITLE_SCHEME)) return jellyfinClient.fetchPlaylist(url)
+        val (id, index) = url.removePrefix(LOCAL_SUBTITLE_SCHEME).split(':').let { it.getOrNull(0) to it.getOrNull(1)?.toIntOrNull() }
+        if (id == null || index == null) return null
+        val cache = embeddedSubtitles ?: return null
+        val file = localFileOf(id) ?: return null
+        if (!cache.ensure(file.first, file.tracks)) return null
+        return cache.cachedFile(file.first, index)?.let { runCatching { dev.jellystructure.io.FileIo.readText(kotlinx.io.files.Path(it)) }.getOrNull() }
+    }
 
     /**
      * R368 (FR-R368-4, dev review item 12 b/c) — after a restart: every session that wasn't ended comes back
@@ -1111,6 +1171,8 @@ class PlaybackService(
         val sessionId = if (startResult.stopAlreadyArrived) null else runCatching {
             sessions?.onStart(device, jellyfinId, startPositionMs, jellyfinPlaySessionId, plan = plan, directPlay = !needsTranscode)
         }.onFailure { Logger.warn("Playback sessions: start failed: ${it.message}", "tv") }.getOrNull()
+        // DEB-2205 (FR-8) — this play's own QoE row, from here on (the encoder's summary is filed under it too).
+        if (!startResult.stopAlreadyArrived) noteQoePlayKey(key, qoePlayKey(sessionId, playSessionIdFor(device, jellyfinId), nowMs()))
 
         if (startResult.stopAlreadyArrived) {
             // Phase 180 (FR-180-3) — a stop for this exact key already arrived while we were still
@@ -1632,7 +1694,7 @@ class PlaybackService(
      * authenticated device id regardless).
      */
     fun recordQoe(device: DeviceData, report: PlaybackQoeReport) {
-        playbackQoeStore.record(device.deviceId, playSessionIdFor(device, report.itemId), report, encoder = servedByOf(device.deviceId, report.itemId))
+        playbackQoeStore.record(device.deviceId, qoeKeyOf(device, report.itemId) ?: playSessionIdFor(device, report.itemId), report, encoder = servedByOf(device.deviceId, report.itemId))
         // 309 (FR-309-1) — the device's record learns from every post (a stall, a hold); never awaited by the route.
         val scope = backgroundScope
         if (scope != null) scope.launch { runCatching { foldIntoRecord(device, report) }.onFailure { Logger.warn("record: fold failed: ${it.message}", "tv") } }
@@ -1844,7 +1906,7 @@ class PlaybackService(
      * lost its external English/Danish subtitles entirely while Italian/German (embedded PGS) still
      * showed up twice.
      */
-    private fun buildSubtracks(
+    private suspend fun buildSubtracks(
         itemDetail: JellyfinItemDetail?,
         jellyfinId: String,
         jellyfinBase: String,
@@ -1855,6 +1917,11 @@ class PlaybackService(
         hlsSubtitles: Boolean = false,
     ): List<SubTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()
+        // DEB-2205 (FR-6) — an embedded text track is named by the CONTAINER's index (ffprobe's, from our scan), which a sidecar
+        // cannot shift; Jellyfin's `index` below stays the track's identity on the wire (a burn-in restream asks for it).
+        val local = if (embeddedSubtitles != null) localFileOf(jellyfinId) else null
+        fun containerIndexOf(s: dev.jellystructure.auth.JellyfinMediaStream): Int? =
+            if (s.isExternal || local == null) null else EmbeddedSubtitleCache.containerIndexOf(s, local.tracks, streams)
         return streams
             .filter { it.type.equals("Subtitle", ignoreCase = true) }
             // Phase 273 (FR-273-17) — a sidecar judged not to fit this video is not offered, and so never chosen by
@@ -1875,6 +1942,7 @@ class PlaybackService(
                         isDefault = s.isDefault,
                         url = null,
                         deliveryMethod = "embed",
+                        containerIndex = containerIndexOf(s),
                     )
                     // R265 (FR-R265-8) — in the manifest, not sideloaded: no URL, the client selects the
                     // rendition itself. Same stream order as the manifest's renditions.
@@ -1886,19 +1954,26 @@ class PlaybackService(
                         isDefault = s.isDefault,
                         url = null,
                         deliveryMethod = "hls",
+                        containerIndex = containerIndexOf(s),
                     )
                     // R55: text subs (SRT/ASS/SSA/VTT/muxed, or external — R209) — sideloaded via
                     // Jellyfin's VTT extractor.
-                    s.isTextSubtitleStream || isTextSubCodec(s.codec) -> SubTrack(
-                        index = s.index,
-                        language = s.language,
-                        label = s.displayTitle ?: s.title,
-                        forced = s.isForced,
-                        isDefault = s.isDefault,
-                        // FR-239-2 — sideloaded by the client's own player.
-                        url = withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt", token),
-                        deliveryMethod = "external",
-                    )
+                    s.isTextSubtitleStream || isTextSubCodec(s.codec) -> {
+                        val containerIndex = containerIndexOf(s)
+                        SubTrack(
+                            index = s.index,
+                            language = s.language,
+                            label = s.displayTitle ?: s.title,
+                            forced = s.isForced,
+                            isDefault = s.isDefault,
+                            // FR-239-2 — fetched by the client itself. DEB-2205 (FR-6) — an embedded track comes from our own
+                            // extraction, keyed by the container's index; a sidecar keeps Jellyfin's URL, which reads that file directly.
+                            url = if (containerIndex != null) EmbeddedSubtitleCache.urlFor(jellyfinId, containerIndex)
+                                else withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt", token),
+                            deliveryMethod = "external",
+                            containerIndex = containerIndex,
+                        )
+                    }
                     // R56: VobSub/DVDSub — native in-container rendering via MatroskaExtractor.
                     codec != null && isEmbedImageSubCodec(codec) -> SubTrack(
                         index = s.index,
