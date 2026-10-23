@@ -636,7 +636,9 @@ fun wireUnifiedTrackEditor(
         applyBtn.textContent = "Applying…"
 
         scope.launch {
-            var anyError = false
+            var failed = false
+            var refused = false
+            var othersApplied = false
             // DEB-2051 (FR-1/FR-2) — what the server refused because the container (AVI) cannot keep a language. The
             // row goes back to what is on disk — Unknown — and says what was asked for and why it was not kept.
             val newlyRefused = LinkedHashMap<String, String>()
@@ -647,9 +649,9 @@ fun wireUnifiedTrackEditor(
                 if (orig != null && trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
                     val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, trk.sp, trk.lang!!)
                               else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, trk.sp, trk.lang!!)
-                    if (res.refusal != null) { newlyRefused[trk.sp] = trk.lang!!; trk.lang = orig.lang; anyError = true }
-                    else if (res.error != null) anyError = true
-                    else if (res.language != null) trk.lang = res.language
+                    if (res.refusal != null) { newlyRefused[trk.sp] = trk.lang!!; trk.lang = orig.lang; refused = true }
+                    else if (res.error != null) failed = true
+                    else if (res.language != null) { trk.lang = res.language; othersApplied = true }
                 }
             }
             refusedHere.putAll(newlyRefused)
@@ -660,14 +662,14 @@ fun wireUnifiedTrackEditor(
             if (audioDefChanged && newDefAudio != null) {
                 val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, newDefAudio.sp)
                           else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, newDefAudio.sp)
-                if (err != null) anyError = true
+                if (err != null) failed = true else othersApplied = true
             }
             val subDefChanged = defaultChanged(subsModel, subsOriginal)
             val newDefSub    = subsModel.firstOrNull { it.def }
             if (subDefChanged && newDefSub != null) {
                 val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, newDefSub.sp)
                           else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, newDefSub.sp)
-                if (err != null) anyError = true
+                if (err != null) failed = true else othersApplied = true
             }
 
             // 3. Forced flag changes (subtitles only)
@@ -675,8 +677,8 @@ fun wireUnifiedTrackEditor(
                 val orig = subsOriginal.find { it.sp == trk.sp }
                 if (orig != null && trk.forced != orig.forced) {
                     val ok = if (epFilename == null) MediaApi.setForcedFlag(mediaId, trk.sp, trk.forced)
-                             else MediaApi.setEpisodeForcedFlag(mediaId, epFilename, trk.sp, trk.forced)
-                    if (!ok) anyError = true
+                              else MediaApi.setEpisodeForcedFlag(mediaId, epFilename, trk.sp, trk.forced)
+                    if (!ok) failed = true else othersApplied = true
                 }
             }
 
@@ -687,17 +689,17 @@ fun wireUnifiedTrackEditor(
             val audioNewOrder = audioModel.map { it.sp }
             if (audioNewOrder != audioOriginal.map { it.sp }) {
                 val jobId = if (epFilename == null) MediaApi.reorderTracks(mediaId, "audio", audioNewOrder)
-                         else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "audio", audioNewOrder)
-                if (jobId == null) anyError = true else reorderQueued = true
+                          else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "audio", audioNewOrder)
+                if (jobId == null) failed = true else { reorderQueued = true; othersApplied = true }
             }
             val subsNewOrder = subsModel.map { it.sp }
             if (subsNewOrder != subsOriginal.map { it.sp }) {
                 val jobId = if (epFilename == null) MediaApi.reorderTracks(mediaId, "subtitle", subsNewOrder)
-                         else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "subtitle", subsNewOrder)
-                if (jobId == null) anyError = true else reorderQueued = true
+                          else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "subtitle", subsNewOrder)
+                if (jobId == null) failed = true else { reorderQueued = true; othersApplied = true }
             }
 
-            if (!anyError) {
+            if (!failed) {
                 // Update snapshots to match newly-applied disk state
                 audioOriginal.clear(); audioOriginal.addAll(audioModel.map { it.copy() })
                 subsOriginal.clear();  subsOriginal.addAll(subsModel.map { it.copy() })
@@ -706,22 +708,22 @@ fun wireUnifiedTrackEditor(
             renderList()
             renderPending()
             if (isMovieEditor && newlyRefused.isNotEmpty()) ContainerConversionUi.refused(newlyRefused)
-            val doneMsg = if (reorderQueued) "Changes applied — reorder queued, see Activity ▸ Jobs" else "Changes applied"
-            val finalMsg = if (!anyError) doneMsg else "Some changes failed — see details"
+            val result = ApplyResult(failed, refused, othersApplied, reorderQueued)
+            val finalMsg = result.messageOf()
             // Bug fix: #detail-msg lives at the top of the page, well above the fold on the Tracks tab —
             // a "nothing happened" report turned out to be this message firing invisibly off-screen.
             // Show it right next to the button the user is actually looking at too.
-            showDetailMsg(finalMsg, !anyError)
+            showDetailMsg(finalMsg, !failed)
             (document.getElementById("$prefix-apply-msg") as? HTMLElement)?.let { msgEl ->
-                msgEl.textContent = finalMsg
-                msgEl.style.color = if (anyError) "var(--bad)" else "var(--ok)"
+                msgEl.textContent = finalMsg ?: ""
+                msgEl.style.color = if (failed) "var(--bad)" else "var(--ok)"
                 kotlinx.browser.window.setTimeout({ msgEl.textContent = ""; null }, 5000)
             }
 
             applyBtn.removeAttribute("disabled")
             applyBtn.textContent = "Apply"
 
-            if (!anyError) postApply?.invoke()
+            if (!failed) postApply?.invoke()
         }
     }
 
