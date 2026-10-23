@@ -81,6 +81,13 @@ say so — never rebase or merge the shared checkout to make it go. A newer push
 the one before, so there is no point pushing more often than once a finished task. Tags and GitHub
 Releases stay the owner's.
 
+**Work under review is never pushed by the person who wrote it** (owner, DEB-2264). If your task
+carries a review stage naming someone else — every task on an `emmy5/deb-n` branch does — the push
+rule above is not yours: commit on your branch, set the task `done`, and stop. Never merge your
+branch into `main`, never merge `origin/main` into your branch, and never `git push`. The reviewer
+lands it and pushes. Passing the two checks above is not permission to push; it was read that way
+once (DEB-2275) and put a commit that did not compile on `main`.
+
 ## Building locally
 
 See [`README.md`](README.md#building-from-source) for the task list. Two local gotchas it does not
