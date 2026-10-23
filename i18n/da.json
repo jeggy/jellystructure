@@ -96,6 +96,8 @@
   "up.available": "Allerede tilgængelig",
   "up.missing": "Mangler",
   "up.was_due": "Ventedes {date}",
+  "up.episodes_count": {"text": "{n} afsnit", "note": "DEB-2078 FR-8 — draft Danish, review before release. Danish up.episode is Episode while this reads afsnit, so a stack shows both words."},
+  "up.available_of": {"text": "{k} af {n} tilgængelige", "note": "DEB-2078 FR-8 — draft Danish, review before release."},
   "up.missing_jump": "Mangler ({count})",
   "up.missing_title": "Mangler i dit bibliotek",
   "up.missing_sub": "Udgivet, men aldrig modtaget",

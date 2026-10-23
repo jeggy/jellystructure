@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -170,6 +171,10 @@ fun UpcomingContent(
         map
     }
     val days = remember(grouped) { grouped.keys.toList() }
+    // DEB-2078 FR-2/FR-7 — the rows are stacked entries; `grouped` stays per item, so the date strip's number
+    // and the Missing pill keep counting episodes.
+    val dayEntries = remember(grouped) { grouped.mapValues { (_, items) -> stackUpcoming(items, byDay = true) } }
+    val missingEntries = remember(feed.missing) { stackUpcoming(feed.missing, byDay = false) }
     // Item 0 = controls (filter chips/jump pill/date rail). Then either one "empty" placeholder or one
     // item per day. Used to compute the missing-jump-pill's scroll target correctly in both cases.
     val missingHeaderIndex = 1 + (if (filtered.isEmpty()) 1 else days.size)
@@ -218,11 +223,11 @@ fun UpcomingContent(
                     item(key = "up-day:$day") {
                         StaticContentRow(
                             title = dayLabel(day),
-                            items = grouped[day].orEmpty(),
-                            itemKey = { it.id },
+                            items = dayEntries[day].orEmpty(),
+                            itemKey = { it.restoreKey(inMissingRow = false) },
                             restoreItemKey = store.lastSelectedItemKey,
-                        ) { _, item, fr ->
-                            UpcomingCard(item, fr, onSelect = { store.lastSelectedItemKey = item.id; onItemSelect(item) })
+                        ) { _, entry, fr ->
+                            UpcomingCard(entry, fr, onSelect = { store.lastSelectedItemKey = entry.restoreKey(inMissingRow = false); onItemSelect(entry.opens()) })
                         }
                     }
                 }
@@ -238,11 +243,11 @@ fun UpcomingContent(
                 item(key = "up-missing-row") {
                     StaticContentRow(
                         title = null,
-                        items = feed.missing,
-                        itemKey = { "missing:${it.id}" },
+                        items = missingEntries,
+                        itemKey = { it.restoreKey(inMissingRow = true) },
                         restoreItemKey = store.lastSelectedItemKey,
-                    ) { _, item, fr ->
-                        UpcomingCard(item, fr, onSelect = { store.lastSelectedItemKey = "missing:${item.id}"; onItemSelect(item) })
+                    ) { _, entry, fr ->
+                        UpcomingCard(entry, fr, onSelect = { store.lastSelectedItemKey = entry.restoreKey(inMissingRow = true); onItemSelect(entry.opens()) })
                     }
                 }
             }
@@ -356,9 +361,16 @@ private fun DateRail(days: List<String>, grouped: Map<String, List<UpcomingItem>
     }
 }
 
+/** DEB-2078 FR-3 — the deck: how much of each edge shows, and how far the face gives up for them. */
+private val STACK_EDGE_PEEK = 8.dp
+private val STACK_FACE_INSET = 16.dp
+
 @Composable
-private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, onSelect: () -> Unit) {
+private fun UpcomingCard(entry: UpcomingEntry, focusRequester: FocusRequester?, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
+    val item = entry.opens()
+    val stack = (entry as? UpcomingEntry.Stack)?.members
+    val status = remember(entry) { stack?.let { stackStatus(it) } }
     var focused by rememberFocusVisual()
     val gradient = remember(item.title) { gradientFor(item.title) }
     // Same draw-only focus treatment as Tile.kt (R42/R43): scale + shadow in graphicsLayer, ring in
@@ -369,91 +381,152 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
     val ringWidth by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "upCardRing")
     val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "upCardShadow")
     val cardShape = remember { RoundedCornerShape(10.dp) }
+    // Cross-module `val` properties (item.posterUrl is declared in :shared) aren't
+    // smart-cast — bind to a local val first. R167: not-held items have no on-disk poster —
+    // fall back to the client-direct-CDN remote poster before the gradient placeholder.
+    val posterUrl = item.posterUrl ?: item.posterRemoteUrl
 
     Column(modifier = Modifier.width(220.dp)) {
+        // FR-5 — the whole footprint is the one focus stop and scales together; the shadow, the clip and the ring
+        // belong to the front face alone, so the deck stays visible behind a ring that traces the card you press.
         Box(
             modifier = Modifier
                 .width(220.dp)
                 .height(124.dp)
                 .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
-                .graphicsLayer {
-                    scaleX = scale; scaleY = scale
-                    shadowElevation = glowElevation.toPx()
-                    shape = cardShape
-                    clip = true
-                    ambientShadowColor = colors.focusGlow
-                    spotShadowColor = colors.focusGlow
-                }
-                .drawWithCache {
-                    val radius = CornerRadius(10.dp.toPx())
-                    onDrawWithContent {
-                        drawContent()
-                        val bw = ringWidth.toPx()
-                        if (bw > 0f) drawRoundRect(
-                            color = colors.focusRing,
-                            cornerRadius = radius,
-                            style = Stroke(width = bw),
-                            topLeft = Offset(bw / 2f, bw / 2f),
-                            size = Size(size.width - bw, size.height - bw),
-                        )
-                    }
-                },
+                .graphicsLayer { scaleX = scale; scaleY = scale },
         ) {
-            // Cross-module `val` properties (item.posterUrl is declared in :shared) aren't
-            // smart-cast — bind to a local val first. R167: not-held items have no on-disk poster —
-            // fall back to the client-direct-CDN remote poster before the gradient placeholder.
-            val posterUrl = item.posterUrl ?: item.posterRemoteUrl
-            if (posterUrl != null) {
-                RemoteImage(posterUrl, item.title, Modifier.fillMaxSize())
-            } else {
-                Box(Modifier.fillMaxSize().background(gradient))
+            if (stack != null) {
+                StackEdge(posterUrl, item.title, gradient, Modifier.padding(end = STACK_EDGE_PEEK, top = 7.dp, bottom = 7.dp), dim = 0.42f, highlight = 0.40f)
+                StackEdge(posterUrl, item.title, gradient, Modifier.padding(top = 14.dp, bottom = 14.dp), dim = 0.64f, highlight = 0.28f)
             }
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f))))
-
-            Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    if (item.kind == MediaKind.MOVIE) str("up.movie") else str("up.episode"),
-                    color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-                statusPillText(item)?.let { (label, color) ->
-                    Row(
-                        modifier = Modifier.background(color, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (item.status == UpcomingStatus.DOWNLOADING) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(8.dp),
-                                color = Color.White,
-                                strokeWidth = 1.5.dp,
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(end = if (stack != null) STACK_FACE_INSET else 0.dp)
+                    .graphicsLayer {
+                        shadowElevation = glowElevation.toPx()
+                        shape = cardShape
+                        clip = true
+                        ambientShadowColor = colors.focusGlow
+                        spotShadowColor = colors.focusGlow
+                    }
+                    .drawWithCache {
+                        val radius = CornerRadius(10.dp.toPx())
+                        onDrawWithContent {
+                            drawContent()
+                            val bw = ringWidth.toPx()
+                            if (bw > 0f) drawRoundRect(
+                                color = colors.focusRing,
+                                cornerRadius = radius,
+                                style = Stroke(width = bw),
+                                topLeft = Offset(bw / 2f, bw / 2f),
+                                size = Size(size.width - bw, size.height - bw),
                             )
                         }
-                        Text(label, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    },
+            ) {
+                if (posterUrl != null) {
+                    RemoteImage(posterUrl, item.title, Modifier.fillMaxSize())
+                } else {
+                    Box(Modifier.fillMaxSize().background(gradient))
+                }
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f))))
+
+                Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        if (item.kind == MediaKind.MOVIE) str("up.movie") else str("up.episode"),
+                        color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                    if (status != null) {
+                        stackPillText(status)?.let { (label, color) -> StatusPill(label, color, spinner = false) }
+                        status.downloading?.let { d -> StatusPill(d.progress?.let { "$it%" } ?: "…", Color(0xFF3B82F6), spinner = true) }
+                    } else {
+                        statusPillText(item)?.let { (label, color) -> StatusPill(label, color, spinner = item.status == UpcomingStatus.DOWNLOADING) }
                     }
                 }
-            }
 
-            Column(Modifier.align(Alignment.BottomStart).padding(8.dp)) {
-                Text(
-                    item.time ?: releaseTypeLabel(item) ?: "",
-                    color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
-                )
+                // FR-3 — a stack says the stack's earliest air time (none on a Missing stack) and how many it holds.
+                Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        (if (stack != null) stackEarliestTime(stack) else item.time) ?: releaseTypeLabel(item) ?: "",
+                        color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp,
+                    )
+                    if (stack != null) {
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            str("up.episodes_count", mapOf("n" to stack.size.toString())),
+                            color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                            modifier = Modifier
+                                .background(Color(0xBD0A0C13), RoundedCornerShape(5.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.26f), RoundedCornerShape(5.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(6.dp))
         Text(item.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val episodeLine = if (item.kind == MediaKind.SERIES && item.season != null && item.episode != null) {
-            dev.jellystructure.shared.tv.episodeCode(item.season!!, item.episode!!) + (item.episodeTitle?.let { " · $it" } ?: "")   // R346
-        } else null
+        val episodeLine = when {
+            stack != null -> stackEpisodeRange(stack)
+            item.kind == MediaKind.SERIES && item.season != null && item.episode != null ->
+                dev.jellystructure.shared.tv.episodeCode(item.season!!, item.episode!!) + (item.episodeTitle?.let { " · $it" } ?: "")   // R346
+            else -> null
+        }
         // DEB-2250 FR-1..FR-3: the lines under the title; the year is not one of them.
         upcomingCardSubLines(item.kind == MediaKind.MOVIE, episodeLine, item.network, item.genre).forEachIndexed { i, line ->
             Text(line, color = colors.textSecondary.copy(alpha = if (i == 0) 1f else 0.8f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (item.status == UpcomingStatus.MISSING) {
-            Text(str("up.was_due", mapOf("date" to item.date)), color = Color(0xFFE0393A), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        val wasDue = when {
+            status != null -> if (status.pill == StackPill.ALL_MISSING) stackEarliestDate(stack!!) else null
+            item.status == UpcomingStatus.MISSING -> item.date
+            else -> null
+        }
+        if (wasDue != null) {
+            Text(str("up.was_due", mapOf("date" to wasDue)), color = Color(0xFFE0393A), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
         }
     }
+}
+
+/** FR-3 — one card edge of the deck: the series' own art, dimmed, with a light line along the top. */
+@Composable
+private fun StackEdge(posterUrl: String?, title: String, gradient: Brush, modifier: Modifier, dim: Float, highlight: Float) {
+    val shape = RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp)
+    Box(modifier.fillMaxSize().clip(shape)) {
+        if (posterUrl != null) RemoteImage(posterUrl, title, Modifier.fillMaxSize(), alignment = Alignment.CenterEnd)
+        else Box(Modifier.fillMaxSize().background(gradient))
+        Box(Modifier.fillMaxSize().background(Color(0xFF04050A).copy(alpha = dim)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = highlight)))
+    }
+}
+
+@Composable
+private fun StatusPill(label: String, color: Color, spinner: Boolean) {
+    Row(
+        modifier = Modifier.background(color, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (spinner) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(8.dp),
+                color = Color.White,
+                strokeWidth = 1.5.dp,
+            )
+        }
+        Text(label, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** FR-4 — the stack's own status pill; its words carry the state, the colour only echoes them. */
+@Composable
+private fun stackPillText(status: StackStatus): Pair<String, Color>? = when (status.pill) {
+    StackPill.ALL_AVAILABLE -> str("up.available") to Color(0xFF22A559)
+    StackPill.SOME_AVAILABLE -> str("up.available_of", mapOf("k" to status.available.toString(), "n" to status.size.toString())) to Color(0xFFB7791F)
+    StackPill.ALL_MISSING -> str("up.missing") to Color(0xFFE0393A)
+    StackPill.NONE -> null
 }
 
 /**
@@ -514,7 +587,7 @@ private fun todayUtc(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.
  * every translation.
  */
 @Composable
-private fun weekdayAbbrev(d: DayOfWeek): String = str(
+internal fun weekdayAbbrev(d: DayOfWeek): String = str(
     when (d) {
         DayOfWeek.MONDAY -> "wd.abbr.mon"; DayOfWeek.TUESDAY -> "wd.abbr.tue"; DayOfWeek.WEDNESDAY -> "wd.abbr.wed"
         DayOfWeek.THURSDAY -> "wd.abbr.thu"; DayOfWeek.FRIDAY -> "wd.abbr.fri"; DayOfWeek.SATURDAY -> "wd.abbr.sat"

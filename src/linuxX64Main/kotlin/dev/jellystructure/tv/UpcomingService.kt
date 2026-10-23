@@ -205,6 +205,7 @@ class UpcomingService(
                     // R167 — not-held-only client-direct-CDN fallback art (no jellystructure proxy).
                     posterRemoteUrl = pickImage(series.images, "poster"),
                     backdropRemoteUrl = pickImage(series.images, "fanart"),
+                    seriesKey = seriesKeyOf(ep.seriesId),
                 )
             }
         }
@@ -283,6 +284,9 @@ class UpcomingService(
         return airDateUtc.substring(11, 16)
     }
 }
+
+/** DEB-2078 FR-1 — the opaque key every episode of one Sonarr series shares; no source name reaches the client (R160). */
+internal fun seriesKeyOf(sonarrSeriesId: Int): String = "s$sonarrSeriesId"
 
 /** FR-R168-5/6 — the one date a film is shown at, and the release it is (null = Radarr's estimate). */
 internal data class MovieRelease(val date: String, val type: String?)

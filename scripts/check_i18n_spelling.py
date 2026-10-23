@@ -12,6 +12,8 @@ EXCLUDED_KEYS = {"browse.sort.az", "browse.sort.za", "music.sort_az"}   # R321 �
 # R335 — Faroese `tøk` ("available", player.unavailable) and `tók` ("took", slow_tail_measured) are two different
 # words that differ only by the accent; neither is a typo for the other.
 EXCLUDED_KEYS |= {"player.unavailable"}
+# DEB-2078 FR-8 — the same pair again: `{k} av {n} tøk` ("available", up.available_of) against `tók` ("took").
+EXCLUDED_KEYS |= {"up.available_of"}
 # R386 — Danish `før` ("before") and `for` ("for") are two different words that differ only by the accent. The round's
 # drafts say *Ravilo spørger, før den genstarter* ("Ravilo asks before it restarts"): `før` is right there, and the
 # file's 21 `for` are right where they are.
