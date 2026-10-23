@@ -1,8 +1,8 @@
 # Phase 279 — `/api/tv/music/**`: what the phone reads and plays
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **not deployed** (build notes at the end). Written 2026-09-28 from the research report §2.4, §4.1, §5.1–§5.3 and §6.5, and the phone mockup's
+Written 2026-09-28 from the research report §2.4, §4.1, §5.1–§5.3 and §6.5, and the phone mockup's
 data needs (`design/ravilo/mobile/ravilo-music.js`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275–277**,
 `PlaybackService`/`StreamTicket` (180), **218** (the session ceiling) and **R319** (wire discipline). It serves
 **R321** and **R322**. **281** extends it for audiobooks.
@@ -172,4 +172,18 @@ are the client).
 12. **Added with R321 (2026-09-28):** `GET /tv/music/playlist/{id}` (a playlist's songs, for R321's playlist page) and
     `TvApiClient.getMusicPlaylist`; an artist's `top_tracks` now carries every song of theirs (≤ 200, most played
     first), because *Play all* plays them.
+
+## Amendment 2026-10-23 — playlist writes (DEB-2254)
+
+FR-279-3's *"Creating and editing playlists is phase 2"* is superseded by
+`specs/ravilo/requirements/playlists-you-make-and-change-in-ravilo-music.md` (Task: DEB-2254). Its FR-15 lists the
+additions on `/api/tv/music/**`:
+- **routes:** `POST /tv/music/playlists`, `PUT` and `DELETE /tv/music/playlist/{id}`,
+  `POST /tv/music/playlist/{id}/items`, `DELETE /tv/music/playlist/{id}/items/{entry_id}` and
+  `POST /tv/music/playlist/{id}/move`;
+- **fields:** `MusicPlaylist.mine`, `MusicList.mine` and `MusicTrackItem.entry_id`.
+
+FR-279-1's discipline holds: new paths and new fields only, nothing renamed or retyped. Every write runs with the
+viewer's own token (`tvTokenForClient`), never the server key, and only on a playlist the viewer owns. The reads keep
+`tvToken` as today.
 

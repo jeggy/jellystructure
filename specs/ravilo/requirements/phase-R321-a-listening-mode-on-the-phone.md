@@ -5,9 +5,9 @@
 > and Search together, so Playing is in the middle"* → *"on the home we do not want to show now playing on the
 > top, it is already shown on the bottom on top of the bottom navbar."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **not deployed, not tried on a phone** (build notes at the end). Written 2026-09-28 from `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md` (§A–§C,
+Written 2026-09-28 from `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md` (§A–§C,
 §E placement, §H, §I, §J) and the mockup `design/ravilo/Ravilo Mobile.html` (+ `mobile/ravilo-music.js`,
 `mobile/ravilo-music.css`), including the owner's three same-evening changes. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering
 verified against `main` `f8bdaab4`: Ravilo taken through **R319**, and **R320** is ours (pending export). The
@@ -226,3 +226,16 @@ Built with R322 on `main` after 279. `:ravilo-ui` compiles for Android and the w
     regenerated. Danish *repeat one* is *Gentag sangen* (the spelling fence rejects *én* beside *en*); `music.sort_az`
     joins `browse.sort.az` in the fence's exclusions. Open questions 1 and 2 → the leans (no queue button on Now
     playing; *Continue listening* is R323's).
+
+## Amendment 2026-10-23 — playlists are made and changed here now (DEB-2254)
+
+> Owner, 2026-10-23 (DEB-2254): *"Let's kickstart adding support for playlists within ravilo music"*
+
+`playlists-you-make-and-change-in-ravilo-music.md` (Task: DEB-2254) replaces FR-R321-10's **phase 2** marks:
+- *New playlist* on the Playlists chip is live (its FR-3). It opens a name sheet and creates one of Jellyfin's own
+  playlists, owned by the viewer.
+- *Add to playlist…* in ⋯ is live (its FR-4), and *Coming later* is no longer drawn on either row.
+
+The two states, the four-cover collage and the playlist page (*Play · Shuffle · songs*) stand. A playlist of the
+viewer's own gains a ⋯ (Edit, Rename, Delete playlist); a shared playlist is unchanged.
+

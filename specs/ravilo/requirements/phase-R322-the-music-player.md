@@ -266,3 +266,12 @@ are unverified.
   show in the remote with the head shrunk (`-a-music-lyrics`).
 
 FR-R322-3 (nothing playing), FR-R322-5's states, the queue tab, the mini bar and the background service stand.
+
+## Amendment 2026-10-23 — *Add to playlist…* is live (DEB-2254)
+
+FR-R322-11's *Add to playlist…* is no longer phase 2. It opens the picker of
+`playlists-you-make-and-change-in-ravilo-music.md` (Task: DEB-2254, FR-4): *New playlist*, then the viewer's own
+playlists. Inside a playlist of the viewer's own, the sheet also carries *Remove from playlist* (its FR-9), right
+after it. The queue's *Up next* heading gains *Save as playlist* beside *Clear queue* (its FR-7). FR-R322-8 stands: the
+queue is still client state.
+
