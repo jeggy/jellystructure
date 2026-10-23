@@ -66,7 +66,8 @@ fun desktopMusicBarInset(): Dp = if (isMacPlatform) 62.dp + 14.dp + 12.dp else 7
  * R337 (FR-R337-6) — the desktop's player bar, drawn to `.cap-bar` / `.gbar` in `design/ravilo/desktop-directions.css`.
  * **macOS:** a floating glass capsule at the content's foot (16 dp from its sides, 14 from its foot, 62 dp tall, fully
  * rounded). **GNOME:** a bar docked across the window (72 dp, a thin progress line along its top edge) that also
- * carries shuffle. Artwork · title/artist (opens Playing) · previous/play/next · seek with the times · lyrics · queue ·
+ * carries shuffle. Artwork (opens Playing) · title/artist (opens the song's album; Playing when there is no album id or
+ * a book is playing, DEB-2236) · previous/play/next · seek with the times · lyrics · queue ·
  * *Play on…* · volume. At the medium width shuffle, lyrics and the volume slider go (the keys still work). A book
  * shows its title and its ±30 s transport the same way.
  */
@@ -77,6 +78,8 @@ fun DesktopMusicBar(
     onOpenPlaying: () -> Unit,
     onQueue: () -> Unit,
     modifier: Modifier = Modifier,
+    /** DEB-2236 (FR-R337-6) — the title and artist open the song's album, as the track menu's *Go to album* does. */
+    onOpenAlbum: (String) -> Unit = {},
     /** The queue is open over the content (600–1199 dp): the capsule shortens to stay clear of it (`.qopen .cap-bar`). */
     queueOverlay: Boolean = false,
 ) {
@@ -131,9 +134,10 @@ fun DesktopMusicBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp),
         ) {
-            Row(Modifier.tap(onOpenPlaying), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp)) {
-                MusicCover(image, t?.album ?: title, Modifier.size(if (mac) 46.dp else 50.dp), corner = if (mac) 23.dp else 6.dp, requestedWidth = 120, wordmarkSize = 8)
-                Column(Modifier.width(if (tight) 96.dp else if (medium) 130.dp else 190.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp)) {
+                MusicCover(image, t?.album ?: title, Modifier.size(if (mac) 46.dp else 50.dp).tap(onOpenPlaying), corner = if (mac) 23.dp else 6.dp, requestedWidth = 120, wordmarkSize = 8)
+                val albumId = barTextAlbumId(t?.albumId, b != null)
+                Column(Modifier.tap { if (albumId != null) onOpenAlbum(albumId) else onOpenPlaying() }.width(if (tight) 96.dp else if (medium) 130.dp else 190.dp)) {
                     Text(title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(2.dp))
                     Text(sub, color = colors.textSecondary, fontSize = 12.sp, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -164,6 +168,9 @@ fun DesktopMusicBar(
         }
     }
 }
+
+/** DEB-2236 (FR-R337-6) — the album the bar's title/artist open: the song's, or null (Playing opens) for no album id or a book. */
+internal fun barTextAlbumId(albumId: String?, isBook: Boolean): String? = if (isBook) null else albumId?.takeIf { it.isNotBlank() }
 
 /** `.pb-ctl .b` / `.pb-r .b` — a 30 dp button; a lit one (the queue while it is open) sits on a faint plate. */
 @Composable

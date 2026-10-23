@@ -3198,6 +3198,7 @@ fun RaviloApp(
             onQueue = { queueOpen = !queueOpen },
             modifier = Modifier.align(Alignment.BottomCenter),
             queueOverlay = queueOpen && !deskLarge && deskQueueShows(dest),
+            onOpenAlbum = { id -> push(Dest.AlbumDetail(id, destDisplayName(dest))) },
         )
         val deskSession = barSession
         if (deskSession != null && deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopSessionBar(
