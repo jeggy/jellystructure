@@ -289,7 +289,10 @@ window.ORKit = (function (OR) {
         const glyphState = (st === 'nextup' || st === 'moving' || st === 'movefail' || st === 'lost')
           ? 'playing' : st;
         h += transport(item, glyphState, { greyed });
-        h += volume(set, cfg.vols || { master: OR.VOL.master }, { greyed });
+        /* `noVol` is decision 1's ALTERNATIVE: no slider on a cast at all, because volume
+           belongs to the TV and a slider invites a fight with the TV's own remote. The phone's
+           hardware keys stay the control and raise a transient pill instead. */
+        if (!cfg.noVol) h += volume(set, cfg.vols || { master: OR.VOL.master }, { greyed });
       }
     }
 
@@ -302,6 +305,7 @@ window.ORKit = (function (OR) {
     if (!ro || cfg.canStopOther) h += footer(item, { readonly: ro && !cfg.canStopOther });
     else h += '<div class="or-foot"></div>';
 
+    if (cfg.hwVol != null) h += hwPill(set, cfg.hwVol);
     return h + '</div>';
   }
 
@@ -478,22 +482,356 @@ window.ORKit = (function (OR) {
 
   function capsule(item, set, cfg) {
     const pct = (item.pos / item.dur * 100).toFixed(2);
+    const music = item.kind === 'music' || item.kind === 'book';
     return '<div class="or-cap">'
       + '<span class="th' + (item.kind === 'music' ? ' sq' : '') + '" style="background-image:' + OR.art(item.key) + '"></span>'
-      + '<button class="or-tb sk sm nolbl">' + G.back10 + '</button>'
+      /* The kind picks the controls here too: ±10/30 s for a film or an episode, previous/next
+         for a song. Round 1 drew ±10 s on a 3:41 song, which the Mac music render showed. */
+      + '<button class="or-tb sk sm nolbl">' + (music ? G.prev : G.back10) + '</button>'
       + '<button class="or-pp sm">' + G.pause + '</button>'
-      + '<button class="or-tb sk sm nolbl">' + G.fwd30 + '</button>'
+      + '<button class="or-tb sk sm nolbl">' + (music ? G.next : G.fwd30) + '</button>'
       + '<span class="tx"><span class="n">' + esc(item.title) + '</span>'
-      + '<span class="d">' + pIcon(set.places[0]) + esc(set.line) + '</span></span>'
+      + '<span class="d">' + sIcon(set) + esc(set.line) + '</span></span>'
       + '<span class="or-capseek"><i class="tk"></i><i class="dn" style="width:' + pct + '%"></i></span>'
       + '<span class="tm">' + OR.hms(item.pos) + '</span>'
+      /* Stop, one tap — and from EVERY page, not only Playing. The desktop's left column is
+         380 px wide and the place pill alone fills it, so a Stop beside the pill truncated the
+         place; the capsule is 1 000 px and is where a desktop's transport already lives. */
+      + (cfg && cfg.stopInCap ? '<button class="or-stopb cap">' + G.stop
+        + '<span>' + esc(t('stop')) + '</span></button>' : '')
       + '<button class="or-vb cap' + (cfg && cfg.volOpen ? ' on' : '') + '">' + G.vol + '</button>'
       + (cfg && cfg.volOpen ? '<div class="or-pop">' + volume(set, cfg.vols || { master: OR.VOL.master }, {}) + '</div>' : '')
       + '</div>';
   }
 
+  /* ===============================================================================================
+     MUSIC — rev 2. The SHIPPED Playing page, not a new layout.
+     ===============================================================================================
+
+     Round 1 drew music as its own screen and that was the defect: local music would have kept
+     today's Playing tab while music elsewhere got a second player, which is the complaint the
+     round exists to remove. So these builders emit the SHIPPED markup — `mu-ntop`, `mu-ncov`,
+     `mu-nmeta`, `mu-nsub`, `mu-seek`, `mu-tp`, `mu-nbot`, `bnav` — and frames.html links the
+     shipped `ravilo-music.css` beside `ravilo-phone.css`. Every class below without an `or-`
+     prefix is a shipped class and its look is not this round's to propose.
+
+     The page is read from the Kotlin (`MusicPlayingScreen`, portrait branch) and cross-checked
+     against the mockup (`design/ravilo/mobile/ravilo-music-player.js`). Where they disagree the
+     CODE wins and the report says so — the cover is 80 % of the width in Compose
+     (`SwipeCover`: `fillMaxWidth(0.8f)`) and 84 % in `ravilo-music.css`.
+
+     What the page GAINS, and nothing else:
+       1. the device chip becomes the place pill — it still says *Playing on {place}*, which is
+          the shipped chip's own sentence, and it now opens *Move to…*;
+       2. a *Stop* pill in the shipped bottom row, so Stop is one tap from the page;
+       3. the someone-else line and round 1's state banners, under the pill;
+       4. volume stays where it ships — behind ⋯ — and that sheet gains the rooms. Reasoned in
+          the report: three room rows are 138 px and four with a reason line are over 200, and
+          the page's own slack at 412×915 is about 100. An inline row would push the transport
+          below the fold, which the brief forbids.
+     ----------------------------------------------------------------------------------------- */
+
+  /* The shipped music glyphs, redrawn from ravilo-music-player.js's own `IC` so the picture is
+     the shipped icon and not a near miss. */
+  const MI = {
+    down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+    prev: '<svg viewBox="0 0 24 24"><path d="M18 6v12l-9-6z" fill="currentColor" stroke="none"/><rect x="5" y="6" width="2.4" height="12" rx="1" fill="currentColor" stroke="none"/></svg>',
+    next: '<svg viewBox="0 0 24 24"><path d="M6 6v12l9-6z" fill="currentColor" stroke="none"/><rect x="16.6" y="6" width="2.4" height="12" rx="1" fill="currentColor" stroke="none"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.3"/><rect x="13.5" y="5" width="4" height="14" rx="1.3"/></svg>',
+    repeat: '<svg viewBox="0 0 24 24"><path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3"/><path d="M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3"/></svg>',
+    shuffle: '<svg viewBox="0 0 24 24"><path d="M3 7h3.5c5 0 6 10 11 10H21"/><path d="M3 17h3.5c2 0 3.2-1.6 4.2-3.5M14 8.5c1-1 2-1.5 3.5-1.5H21"/><path d="M18.5 4.5 21 7l-2.5 2.5M18.5 14.5 21 17l-2.5 2.5"/></svg>',
+    lyr: '<svg viewBox="0 0 24 24"><path d="M4 6h12M4 11h9M4 16h6"/><circle cx="17.5" cy="16.5" r="2.5"/><path d="M20 16.5V8l-2 1"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg>',
+    cast: '<svg viewBox="0 0 24 24"><path d="M3 17a4 4 0 0 1 4 4M3 13a8 8 0 0 1 8 8M3 9.5V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></svg>',
+    heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+    heartOn: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    listen: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="17.5" r="2.8"/><path d="M10.3 17.5V5.5l9.2-2v12"/><circle cx="16.7" cy="15.5" r="2.8"/></svg>',
+    browse: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
+    nowp: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 15.5v-3M11 15.5V9M13.5 15.5v-5M16 15.5v-2"/></svg>',
+    queue: '<svg viewBox="0 0 24 24"><path d="M4 6h12M4 11h12M4 16h7"/><path d="M16 14l5 3.2-5 3.2z"/></svg>',
+    /* The shipped speaker-GROUP glyph (ravilo-speakers.js `G.group`). A place-set of several rooms
+       is one place in the product's words and one glyph on the screen. */
+    group: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="8.5" height="15" rx="2.4"/><rect x="13" y="5" width="8.5" height="15" rx="2.4"/><circle cx="6.75" cy="14" r="2.1"/><circle cx="17.25" cy="14" r="2.1"/></svg>',
+  };
+  /* ONE place glyph for the music surfaces: the group mark for a set of rooms, the place's own
+     otherwise. The round-1 film frames keep `pIcon` and are untouched. */
+  const sIcon = set => (set.multi ? MI.group : pIcon(set.places[0]));
+
+  /* The shipped music-mode bottom bar: owner 2026-09-27, `BARS.cnp` + Profile — Listen · Browse ·
+     Playing · Queue · Profile, Playing in the middle because Search merged into Browse. The pill
+     (`.bnind`) is placed by JS in the app; here it is offset to the lit item's own cell. */
+  function bnav(onIndex) {
+    const items = [
+      ['nav_listen', MI.listen], ['nav_browse', MI.browse], ['nav_playing', MI.nowp],
+      ['nav_queue', MI.queue], ['nav_profile', null],
+    ];
+    const cell = 412 / 5;                      /* five items share the 412 px row */
+    const left = cell * onIndex + (cell - 56) / 2;   /* the 56 px pill, centred in its item */
+    return '<nav class="bnav"><div class="brow">'
+      + '<i class="bnind" style="transform:translateX(' + left.toFixed(1) + 'px)"></i>'
+      + items.map((it, i) => '<button class="bn' + (i === onIndex ? ' on' : '') + '">'
+        + '<span class="p">' + (it[1] || '<span class="avatar sm">' + esc(OR.ME.name.charAt(0)) + '</span>') + '</span>'
+        + '<b>' + esc(t(it[0])) + '</b></button>').join('')
+      + '</div><div class="bnsafe"></div></nav>';
+  }
+
+  /* The shipped cover: a `.mu-cv` filling `.mu-ncov`. The art is this round's deterministic
+     gradient, so no frame of the household's library can reach a picture. */
+  const muCover = (item, cls) => '<div class="mu-cv' + (cls ? ' ' + cls : '')
+    + '" style="background:' + OR.art(item.key) + '"></div>';
+
+  /* The shipped seek line, with the two clocks `.mu-seek .tm` computes from one duration. */
+  function muSeek(item) {
+    const pct = (item.pos / item.dur * 100).toFixed(2);
+    return '<div class="mu-seek"><div class="tr">'
+      + '<span class="dn" style="width:' + pct + '%"></span>'
+      + '<span class="kb" style="left:' + pct + '%"></span></div>'
+      + '<div class="tm"><span>' + OR.mmss(item.pos) + '</span>'
+      + '<span>−' + OR.mmss(item.dur - item.pos) + '</span></div></div>';
+  }
+
+  /* The shipped transport: shuffle · previous · ⏯ (64 dp) · next · repeat.
+     `glyph` is passed in rather than derived, because moving, a failed move and lost contact are
+     NOT pauses — the last state the place reported still stands, so ⏯ keeps its glyph. */
+  function muTransport(glyph, opt) {
+    const o = opt || {};
+    return '<div class="mu-tp' + (o.greyed ? ' or-greyed' : '') + '">'
+      + '<button class="mu-ib sm">' + MI.shuffle + '</button>'
+      + '<button class="mu-ib fill">' + MI.prev + '</button>'
+      + '<button class="mu-pp">' + (glyph === 'playing' ? MI.pause : MI.play) + '</button>'
+      + '<button class="mu-ib fill">' + MI.next + '</button>'
+      + '<button class="mu-ib sm">' + MI.repeat + '</button></div>';
+  }
+
+  /* R344's version chips, at the start of the artist · album line, in the shipped `.rv-vb`. */
+  const verChips = item => (item.versions || []).length
+    ? '<span class="rv-vb">' + item.versions.map(v =>
+      '<span class="rv-v" style="--c:' + v.c + '">' + esc(v.label) + '</span>').join('') + '</span>'
+    : '';
+
+  /* ---- the place pill. The shipped device chip's SLOT and the shipped device chip's SENTENCE
+     (cast.playing_on / cast.paused_on — "Playing on {device}"), plus the one thing it gains: it
+     opens Move to…, so the chevron the Cast remote's pill carries comes with it. A place that is
+     not reachable keeps the pill and greys it; it never disappears, because the place still
+     exists and the viewer still needs to read where. ---- */
+  function placePill(set, st, opt) {
+    const o = opt || {};
+    const key = (st === 'paused' || st === 'offline') ? 'paused_on' : 'playing_on';
+    return '<button class="mu-ndev or-pill' + (o.greyed ? ' or-greyed' : '')
+      + (o.readonly ? ' or-ro' : '') + '">'
+      + sIcon(set)
+      + '<span>' + esc(t(key, { place: set.line })) + '</span>'
+      + (o.readonly ? '' : G.move) + '</button>';
+  }
+
+  /* ---- THE PHONE'S PLAYING PAGE ----------------------------------------------------------- */
+  function musicPlaying(cfg) {
+    const item = cfg.item, set = cfg.set, st = cfg.state || 'playing';
+    const ro = st === 'other' || st === 'stopped' || st === 'ended';
+    const greyed = st === 'lost' || st === 'offline';
+    /* `today` draws the page exactly as it ships: the device chip, no pill, no Stop, no banner.
+       It exists so the owner can see what changed rather than be told. */
+    const today = !!cfg.today;
+    const banners = (st === 'lost' || st === 'movefail' || st === 'moving');
+
+    /* The ground. The mockup paints a radial tint off the album's hue; the Kotlin
+       (`playingGround()`) paints a VERTICAL gradient from `accentDim` at 60 % into the
+       background, and flat background in noir. The code wins, and it matters: the album-hue
+       radial is a dark wash and in daylight it painted a brown stain across a white page. The
+       colours are in one-remote.css so the skin can answer for itself. */
+    let h = '<div class="mu-now on tabbed">' + '<div class="bgt"></div>';
+
+    /* 1 — Playing from {context}, and ⋯. `music.from` with its {x} removed and the context as
+       the shipped `<b>` under it. */
+    h += '<div class="mu-ntop"><button class="mu-ib">' + MI.down + '</button>'
+      + '<div class="ctx">♪ ' + esc(t('from', { x: '' }).replace(/\s*$/, ''))
+      + '<b>' + esc(item.album) + '</b></div>'
+      + '<button class="mu-ib">' + MI.more + '</button></div>';
+
+    h += '<div class="mu-nmain"><div class="mu-nspacer"></div>';
+
+    /* 2 — the cover. 80 % of the width (the Kotlin's `SwipeCover`), swipe for next/previous. */
+    h += '<div class="mu-ncov' + (ro || st === 'paused' ? ' or-dim' : '') + '">'
+      + muCover(item) + '</div>';
+
+    /* 3 — title, then the version chips · artist · album line, then the ♥.
+       The ♥ is in THIS row and the chip is a row of its own under it — that is the Kotlin
+       (`Credits(…)` then `DeviceChip()` as siblings). The mockup nests the chip inside
+       `.mu-nmeta .b`, which puts the ♥ beside the chip instead of beside the title. The code
+       wins; the report names the disagreement. */
+    h += '<div class="mu-nmeta"><div class="b">'
+      + '<div class="mu-mq"><span>' + esc(item.title) + '</span></div>'
+      + '<div class="mu-nsub">' + verChips(item)
+      + '<a>' + esc(item.artist) + '</a> · <a>' + esc(item.album) + '</a></div>'
+      + '</div>'
+      + '<button class="mu-ib or-fav' + (item.fav ? ' on' : '') + '">'
+      + (item.fav ? MI.heartOn : MI.heart) + '</button></div>';
+
+    /* 4 — the device chip's row. Today: the chip. Here: the place pill, and under it the one
+       sentence this state needs. A banner states the connection event in full, so the line
+       under the pill must not repeat it — one sentence, one place: lost, couldn't move and
+       moving get a banner and no line, and every other state a line and no banner. */
+    if (today) {
+      h += '<div class="mu-ndev">' + sIcon(set)
+        + '<span>' + esc(t('playing_on', { place: set.line })) + '</span></div>';
+    } else {
+      h += placePill(set, st, { greyed, readonly: st === 'other' });
+      if (ro) {
+        h += '<div class="or-mline">' + G.person + '<span>' + esc(
+          st === 'other' ? t('listening', { who: cfg.who })
+            : st === 'stopped' ? t('stopped_by', { who: cfg.who })
+              : t('ended')) + '</span></div>';
+      }
+      if (st === 'moving') h += banner('busy', t('moving_to', { place: cfg.toPlace }));
+      if (st === 'movefail') h += banner('bad', t('move_failed', { place: cfg.toPlace }), t('try_again'));
+      if (st === 'lost') h += banner('bad', t('lost', { place: set.line }), t('try_again'));
+    }
+
+    h += muSeek(item);
+    /* Moving, a failed move and lost contact are not pauses — see muTransport. */
+    const glyph = (st === 'moving' || st === 'movefail' || st === 'lost') ? 'playing' : st;
+    h += muTransport(ro ? 'paused' : glyph, { greyed });
+    h += '<div class="mu-nspacer"></div></div>';
+
+    /* 5 — the shipped bottom row: Lyrics · the cast glyph · ⋯, and the one control it gains.
+       Stop is a LABELLED pill, not a bare ■: the row is 46 dp tall and has 180 px of slack at
+       412, so naming the destructive action costs no height. Absent on a read-only playback —
+       there is nothing there to press. */
+    h += '<div class="mu-nbot or-bot"><button class="mu-ib">' + MI.lyr + '</button>'
+      /* Lit in BOTH: the shipped cast button is lit whenever a speaker is playing, and `today`
+         must differ from the new page in exactly the three intended places and nowhere else. */
+      + '<button class="mu-ib on">' + MI.cast + '</button>';
+    if (!today && !ro) h += '<button class="or-stopb">' + G.stop + '<span>' + esc(t('stop')) + '</span></button>';
+    h += '<span style="flex:1"></span><button class="mu-ib">' + MI.more + '</button></div>';
+
+    h += '</div>' + bnav(2);
+
+    /* The ⋯ sheet, open, when the frame is about volume. */
+    if (cfg.volSheet) h += volumeSheet(set, cfg.vols || { master: OR.VOL.master });
+    /* The transient hardware-key pill. */
+    if (cfg.hwVol != null) h += hwPill(set, cfg.hwVol);
+    return h;
+  }
+
+  /* ---- volume where it ships: behind ⋯, in 5 % steps, now with a row per room. ------------- */
+  function volumeSheet(set, vols) {
+    /* The heading is the PLACE, drawn as the shipped speakers panel draws it (`.spk-mh`: the
+       group glyph and `roomsLine()`), not the word "Volume" — the sheet already has a master row
+       labelled Volume and an "Applies on {place}" line would have said the place a third time. */
+    return '<div class="or-scrim or-hi"></div><div class="or-sheet or-hi">'
+      + '<div class="or-sh or-vsh"><h4>' + sIcon(set) + '<span>' + esc(set.line) + '</span></h4>'
+      + '<button class="or-ic">' + G.x + '</button></div>'
+      + volume(set, vols, {})
+      + '</div>';
+  }
+
+  /* ---- the transient pill a hardware volume key raises. The shipped toast shape
+     (MusicToastHost: #E6202433, 20 dp radius, a 1 px white .08 border, 16/10 padding, 14 sp
+     SemiBold Sora, bottom-centre). Its TEXT is drawn, not quoted — see the report. ---- */
+  const hwPill = (set, pct) => '<div class="or-hw">'
+    + esc(t('hw_vol', { place: set.line, n: pct })) + '</div>';
+
+  /* ---- the music mini bar, in music mode, above the music bar.
+
+     Rev 2 draws the SHIPPED bar, which already names the place: `.mu-mini .d` becomes
+     `<span class="spk-ar">{artist}</span><span class="spk-on">· 🔊 {rooms}</span>` the moment a
+     speaker is playing (ravilo-speakers.js `afterMini`, and the `:has(.spk-on)` rules in
+     ravilo-music.css), with the rooms line joined exactly as `roomsLine()` joins it and the
+     group glyph for more than one room.
+
+     So the music bar is NOT a redraw after all: round 1 replaced the artist with the place, and
+     the shipped bar carries both. One component with one place slot, in accent-2 behind a place
+     glyph — the same slot the film bar fills with the place alone, because a film has no artist
+     to put in front of it. The only thing it gains is the +N chip. ---- */
+  function musicMini(item, set, opt) {
+    const o = opt || {};
+    const pct = (item.pos / item.dur * 100).toFixed(2);
+    return '<div class="mu-mini on abovenav">'
+      + '<div class="pg"><i style="width:' + pct + '%"></i></div>'
+      + muCover(item, 'sm')
+      + '<div class="tx"><div class="n">' + esc(item.title) + '</div>'
+      /* The second line is the PLACE, and only the place. The shipped bar puts the artist in
+         front of it (`afterMini`, `.mu-mini .d:has(.spk-on)`) — and at 412 with a two-room line
+         `.spk-on`'s `flex:none` takes the whole row, collapses `.spk-ar` to nothing and still
+         clips the place, so the bar reads "· 🔊 Stue + Gæstevær…" with a stray dot where the
+         artist was. Found in the render, not in the markup; reported. */
+      + '<div class="d or-where">' + sIcon(set) + '<span>' + esc(set.line) + '</span></div></div>'
+      + (o.more ? '<button class="or-n2">+' + o.more + '</button>' : '')
+      + '<button>' + MI.pause + '</button><button>' + MI.next + '</button></div>';
+  }
+
+  /* ---- a stand-in Listen page for the mini bar to sit on. Scaffolding, not a proposal. ---- */
+  const musicHome = () => '<div class="or-mhome">'
+    + '<div class="or-mhh">Recently played</div>'
+    + '<div class="or-mhrow"><i></i><i></i><i></i></div>'
+    + '<div class="or-mhh">Albums</div>'
+    + '<div class="or-mhrow"><i></i><i></i><i></i></div></div>';
+
+  /* ===============================================================================================
+     MAC — the desktop Playing page, as it ships: the cover beside the lyrics, the transport under
+     the cover, the capsule along the bottom.
+
+     `.np` and `.lyr` live in design/ravilo/desktop-directions.css, which the frames do NOT link:
+     that file sets `body{background:#1b1c20}` and defines a bare `.ic`, `.cap` and `.note`, all of
+     which reach this round's own canvas and the two Mac frames the owner has already accepted. The
+     numbers are transcribed into `or-np*` instead, out of `.np`/`.lyr` — 380 px cover, 48 px
+     column gap, 70/48 padding, h2 28 px, `.by` 15 px, a 5 px seek line, 26 px transport gap, a
+     58 px ⏯, lyrics 30 px/700/1.25 with the shipped top-and-bottom mask — and the report says so.
+     =============================================================================================== */
+  /* The `.np` body on its own, so the Mac window and the browser pane can both hold it. Ravilo Web
+     at a desk width IS the desktop layout — `MusicPlayingScreen` branches on `isDesktopLayout`
+     before it ever reaches the portrait page — so the 1440 web music frame is this, in browser
+     chrome, and not a wide version of the phone. */
+  function npBody(cfg) {
+    const item = cfg.item, set = cfg.set, st = cfg.state || 'playing';
+    let head = '<div class="or-nphead">'
+      + '<div class="or-npcv" style="background:' + OR.art(item.key) + '"></div>'
+      /* title · ♥ · ⋯, which is the shipped desktop head row. */
+      + '<div class="or-nptt"><h2>' + esc(item.title) + '</h2>'
+      + '<button class="or-npib' + (item.fav ? ' on' : '') + '">' + (item.fav ? MI.heartOn : MI.heart) + '</button>'
+      + '<button class="or-npib">' + MI.more + '</button></div>'
+      + '<div class="or-npby"><span>' + esc(item.artist) + '</span> · <span>' + esc(item.album) + '</span></div>'
+      + '<div class="or-npver">' + verChips(item) + '</div>'
+      /* the device chip's row — the pill, and beside it the Stop the page gains. At a desk width
+         there is room for both on one line, which is why the Mac puts Stop here and the phone
+         puts it in the bottom row. */
+      + '<div class="or-nppl">' + placePill(set, st, {}) + '</div>'
+      + '<div class="or-npseek"><span class="tr"><i style="width:'
+      + (item.pos / item.dur * 100).toFixed(2) + '%"></i></span>'
+      + '<span class="tm"><span>' + OR.mmss(item.pos) + '</span>'
+      + '<span>' + OR.mmss(item.dur) + '</span></span></div>'
+      + '<div class="or-nptp"><button class="sm">' + MI.shuffle + '</button>'
+      + '<button>' + MI.prev + '</button>'
+      + '<span class="pp">' + MI.pause + '</span>'
+      + '<button>' + MI.next + '</button>'
+      + '<button class="sm">' + MI.repeat + '</button></div>'
+      + '</div>';
+    const lyr = '<div class="or-nplyr">' + item.lyrics.map(l =>
+      '<p' + (l.now ? ' class="now"' : '') + '>' + esc(l.t) + '</p>').join('') + '</div>';
+    return '<div class="or-np">' + head + lyr + '</div>';
+  }
+
+  /* The Mac window around it, with the capsule along the bottom. */
+  const macMusicPlaying = cfg =>
+    macWindow('Playing', npBody(cfg),
+      capsule(cfg.item, cfg.set, Object.assign({ stopInCap: true }, cfg)));
+
+  /* The same page in a browser pane at a desk width. No Chromecast on the web: the places here are
+     Ravilo apps reached through the server, so Stue TV never appears in a web frame. */
+  const webMusic = cfg => '<div class="or-web"><div class="or-wchrome">'
+    + '<span class="or-wdots"><i></i><i></i><i></i></span>'
+    + '<span class="or-wurl">ravilo.example.net</span></div>'
+    + '<div class="or-wbody or-wnp">' + npBody(cfg) + '</div>'
+    /* The browser pane gets the same capsule the Mac window has — it is the desktop layout, and
+       Stop has to be reachable from a page that is not Playing. */
+    + capsule(cfg.item, cfg.set, Object.assign({ stopInCap: true }, cfg)) + '</div>';
+
   return {
     setLang, t, G, P, placeSet, remote, remoteB, tracksSheet, moveSheet, miniBar,
     webRemote, macPlaying, macBrowse, capsule, artCard, volume, esc,
+    musicPlaying, musicMini, musicHome, macMusicPlaying, webMusic, npBody,
+    bnav, hwPill, volumeSheet,
   };
 })(window.OR);

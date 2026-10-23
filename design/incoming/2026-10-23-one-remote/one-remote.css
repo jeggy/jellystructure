@@ -539,3 +539,241 @@ html[data-skin="daylight"] .or-cap, html[data-skin="daylight"] .or-pop { backgro
 .or-mright .or-vrow { min-height: 42px; }
 .or-msec { padding: 10px 0 2px; }
 .or-mqr { min-height: 36px; }
+
+
+/* =================================================================================================
+   REV 2 · THE THREE-UP FOOTER
+
+   The brief: make *Subtitles & audio* sit on one line beside single-line siblings, or give all
+   three the same two-line height — whichever reads better at 412 px.
+
+   Measured at 412: three buttons, 16 px of side padding and two 9 px gaps leave 120.7 px each, and
+   each button's own 6 px of padding leaves about 108 px of label. At 12.5 px semibold Sora
+   *Subtitles & audio* is about 103 px and fits, by five; *Undertekster og lyd* is about 112 and
+   *Undirtekstir og ljóð* about 118, and neither does. One line is therefore only achievable in
+   English, and shrinking the type to reach it would cross the 12.5 px floor the footer already
+   sits on.
+
+   So: ALL THREE the same two-line height. The label block always reserves two lines, so a
+   one-word sibling gets the same box, the three icons share one baseline and nothing is
+   truncated. It is also the only one of the two options that survives a longer string later.
+   ================================================================================================= */
+.or-fb { min-height: 68px; }
+/* Two lines of 12.5 px at 1.25 = 31.25. Reserved whether or not the label uses both, which is the
+   whole point: the row is a grid rather than three boxes that happen to differ. */
+.or-fb span { display: flex; align-items: center; justify-content: center; text-align: center;
+  min-height: 31.25px; }
+
+/* =================================================================================================
+   REV 2 · MUSIC ON THE SHIPPED PLAYING PAGE
+
+   Everything in this block is either (a) fitting the shipped page into a 412×915 frame that is not
+   the mockup's own `.phone`/`.screen`, (b) one of the FOUR things the page gains, or (c) the two
+   places where ravilo-music.css and the Kotlin disagree and the code wins. Nothing here restyles
+   the shipped page.
+   ================================================================================================= */
+
+/* (a) — the frame. `.mu-now.tabbed` takes its own `bottom` from the live bar's measured height; in
+   a static frame that is the bar's 92 px: 10 of padding, a 60 px row (36 pill + 16 label + 8) and
+   the 22 px `.bnsafe`. */
+.or-ph .mu-now { bottom: 92px; }
+/* The 0.28 s entry animation is one-shot and harmless live, but a screenshot can catch it
+   mid-flight and a frame that is 60 % faded is not a design decision. */
+.or-ph .mu-now.on { animation: none; }
+.or-ph .bnav { z-index: 88; }
+
+/* (c) — the cover is 80 % of the width in the Kotlin (`SwipeCover`: `fillMaxWidth(0.8f)`) and 84 %
+   in ravilo-music.css. The code wins. */
+.or-ph .mu-ncov { width: 80%; }
+/* (c) — the bottom row is `lyrics · cast · spacer · ⋯` in the Kotlin (`BottomRow`) and
+   `space-between` over four buttons in the mockup, which spreads all four instead of grouping
+   three left and ⋯ right. The code wins, and it is also what leaves room for Stop. */
+.or-ph .mu-nbot.or-bot { justify-content: flex-start; gap: 2px; }
+
+/* The read-only and paused covers dim, as the round-1 art card does. */
+.or-ph .mu-ncov.or-dim { opacity: .55; }
+/* UNREACHABLE greys; UNSUPPORTED is absent. Same rule as the film remote, same 34 %. */
+.or-ph .or-greyed { opacity: .34; }
+
+/* ---- (b1) the place pill. It IS the shipped device chip's slot and the shipped device chip's
+   sentence — cast.playing_on / cast.paused_on, "Playing on {device}" — and it gains exactly one
+   thing: it opens *Move to…*, so it is drawn as a control rather than a label, and it carries the
+   Cast remote's own → glyph. It is never absent: a place that cannot be reached greys, because the
+   place still exists and the viewer still needs to read where. ---- */
+.or-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 38px; margin-top: 10px; padding: 0 12px 0 13px; border-radius: 19px;
+  background: rgba(var(--fg), .07); border: 1px solid var(--line-2);
+  color: var(--accent-2); font: 600 13px 'Sora', sans-serif; cursor: pointer;
+  max-width: 100%; min-width: 0; }
+.or-pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.or-pill svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.or-pill.or-ro { color: var(--ink-soft); cursor: default; }
+/* The shipped chip in the `today` frame is inline-flex, which stretches as a column flex item. */
+.or-ph .mu-ndev { align-self: flex-start; }
+
+/* ---- (b3) the one sentence a read-only playback needs, under the pill ---- */
+.or-mline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13.5px;
+  line-height: 1.45; color: var(--ink-soft); }
+.or-mline svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* The banners are the round's own and keep their own margins inside `.mu-nmain`, which already
+   has the page's 26 px side padding. */
+.or-ph .mu-nmain > .or-ban { margin-left: 0; margin-right: 0; }
+
+/* ---- (b2) Stop, one tap from the page, in the shipped bottom row ---- */
+.or-stopb { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; flex: none;
+  margin-left: 6px; padding: 0 14px; border-radius: 20px; border: 1px solid rgba(255, 155, 138, .4);
+  background: rgba(255, 111, 97, .1); color: #ff9b8a; font: 600 13px 'Sora', sans-serif;
+  cursor: pointer; }
+.or-stopb svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+html[data-skin="daylight"] .or-stopb { color: #c23a28; border-color: rgba(194, 58, 40, .35);
+  background: rgba(194, 58, 40, .08); }
+
+/* ---- (b4) volume stays behind ⋯. The sheet is the round's own `.or-sheet`, and it has to clear
+   the Playing page's own z-index 82. ---- */
+.or-hi { z-index: 92; }
+.or-scrim.or-hi { z-index: 90; }
+
+/* ---- the transient pill a hardware volume key raises. The shipped toast's own geometry
+   (MusicToastHost): #E6202433, 20 dp radius, a 1 px white .08 border, 16/10 padding, 14 sp
+   semibold Sora, bottom-centre 12 above the inset. ---- */
+.or-hw { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); z-index: 95;
+  /* Compose writes ARGB and CSS writes RGBA: `Color(0xE6202433)` is rgb #202433 at 90 %, and the
+     literal 8-digit hex is a dark RED at 20 %. The first render drew a maroon pill. */
+  padding: 10px 16px; border-radius: 20px; background: rgba(32, 36, 51, .9);
+  border: 1px solid rgba(255, 255, 255, .08); color: #fff;
+  font: 600 14px 'Sora', sans-serif; white-space: nowrap; }
+/* In a film remote there is no bottom bar to clear, so the pill sits on the footer's own inset. */
+.or-rem .or-hw { bottom: 112px; }
+
+/* ---- the mini bar's +N chip: round 1's chip, in the shipped bar ---- */
+.or-n2 { height: 30px; min-width: 38px; padding: 0 10px; border: 0; border-radius: 15px;
+  background: rgba(var(--fg), .1); color: var(--ink); font: 700 12.5px 'Space Grotesk', sans-serif;
+  flex: none; cursor: pointer; }
+
+/* ---- a stand-in Listen page, so the mini bar has somewhere to sit. Scaffolding, deliberately
+   shapeless: nothing here is a proposal about Listen. ---- */
+.or-mhome { position: absolute; left: 0; right: 0; top: 44px; padding: 0 18px; }
+.or-mhh { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600;
+  margin: 10px 0 12px; }
+.or-mhrow { display: flex; gap: 12px; margin-bottom: 18px; }
+.or-mhrow i { width: 118px; height: 118px; border-radius: 10px; background: var(--card); flex: none; }
+
+/* =================================================================================================
+   REV 2 · THE MAC'S PLAYING PAGE — the cover beside the lyrics
+
+   Transcribed from `.np` and `.lyr` in design/ravilo/desktop-directions.css rather than linked:
+   that file sets `body{background:#1b1c20}` and defines a bare `.ic`, `.cap` and `.note`, each of
+   which reaches this round's light canvas and the two Mac frames already accepted. Every number
+   below is that file's own — 380 px cover, 48 px gap, 70/48 padding, h2 28 px, `.by` 15 px, a 5 px
+   seek line with 7 px to its clocks, a 26 px transport gap, a 58 px ⏯ in ink on --bg, and the
+   lyrics at 30 px/700/1.25 with 18 px between lines and the shipped top-and-bottom mask.
+   ================================================================================================= */
+.or-np { display: grid; grid-template-columns: 380px 1fr; gap: 48px; padding: 0; height: 100%;
+  box-sizing: border-box; }
+.or-nphead { width: 380px; }
+.or-npcv { width: 380px; height: 380px; border-radius: 16px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .5); background-size: cover; background-position: 50%; }
+.or-nptt { display: flex; align-items: center; gap: 4px; margin: 22px 0 4px; }
+.or-nptt h2 { flex: 1; min-width: 0; margin: 0; font-family: 'Space Grotesk', sans-serif;
+  font-size: 28px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.or-npib { width: 32px; height: 32px; flex: none; border: 0; border-radius: 16px; background: none;
+  color: var(--ink-soft); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.or-npib svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-npib.on { color: var(--accent-2); }
+.or-npib.on svg { fill: currentColor; }
+.or-npby { font-size: 15px; color: var(--ink-soft); font-family: 'Sora', sans-serif; }
+.or-npver { margin-top: 10px; }
+.or-npver:empty { display: none; }
+/* The chip's row on the desktop: the pill and, beside it, the Stop the page gains. A desk width
+   has room for both on one line, which is why the Mac puts Stop here and the phone puts it in the
+   bottom row — a width difference, not two designs. */
+.or-nppl { display: flex; align-items: center; gap: 10px; }
+.or-nppl .or-pill { margin-top: 12px; flex: 0 1 auto; }
+.or-nppl .or-stopb { margin: 12px 0 0; }
+.or-npseek { margin-top: 18px; }
+.or-npseek .tr { display: block; height: 5px; border-radius: 3px; background: rgba(var(--fg), .18);
+  position: relative; }
+.or-npseek .tr i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+  background: var(--ink); }
+.or-npseek .tm { display: flex; justify-content: space-between; font-size: 12px;
+  color: var(--ink-dim); margin-top: 7px; font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', monospace; }
+.or-nptp { display: flex; align-items: center; justify-content: center; gap: 26px; margin-top: 10px; }
+.or-nptp button { width: 34px; height: 34px; border: 0; background: none; color: var(--ink);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.or-nptp button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-nptp button.sm { color: var(--ink-soft); }
+.or-nptp .pp { width: 58px; height: 58px; border-radius: 50%; background: var(--ink);
+  color: var(--bg); display: flex; align-items: center; justify-content: center; flex: none; }
+.or-nptp .pp svg { width: 24px; height: 24px; }
+/* `.lyr` — 30 px Space Grotesk 700, 18 px apart, the sung line in full ink and the rest dim,
+   masked top and bottom so the column reads as a scroll rather than a list that was cut. */
+.or-nplyr { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700;
+  line-height: 1.25; color: var(--ink-dim); display: flex; flex-direction: column; gap: 18px;
+  padding-top: 30px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 10%, #000 75%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 10%, #000 75%, transparent); }
+.or-nplyr p { margin: 0; }
+.or-nplyr p.now { color: var(--ink); }
+
+/* The `.np` page inside the Mac window: `.or-mmain` already pays 34/34, and the shipped page's
+   padding is 70 top / 48 side, so this is the difference and nothing else. */
+.or-mmain > .or-np { padding: 36px 14px 0; }
+/* 100 px taller than the film window, see frames.html: at 800 the shipped head does not clear the
+   capsule and the page scrolls. */
+.or-mframe.tall { height: 900px; }
+/* The same page in a browser pane. The pane pays the shipped 70/48 itself; `.or-wbody`'s centring
+   is for the phone-shaped web remote and would centre a full-height grid to nothing. */
+.or-wbody.or-wnp { display: block; padding: 70px 48px 0; align-items: stretch; }
+.or-wnp > .or-np { height: 100%; }
+
+/* The shipped `.mu-ndev` sizes its glyph through `.rc-ic` (a drawn cast mark, not an SVG), so an
+   SVG dropped into that chip has no size at all and lays out at the 300×150 intrinsic default.
+   Found in the `a-music-today` render: two black slabs where the speaker mark should be. */
+.or-ph .mu-ndev svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* The mini bar's place line: a glyph and the place, both sized, the place ellipsised rather than
+   overflowing. See the note in `musicMini`. */
+.or-ph .mu-mini .d.or-where { display: flex; align-items: center; gap: 6px; min-width: 0;
+  color: var(--accent-2); font-weight: 600; }
+.or-ph .mu-mini .d.or-where svg { width: 14px; height: 14px; flex: none; fill: none;
+  stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.or-ph .mu-mini .d.or-where span { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+/* The volume sheet's heading is the place, in the shipped speakers-panel shape. */
+.or-vsh h4 { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.or-vsh h4 span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.or-vsh h4 svg { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--accent-2); }
+.or-sheet .or-vol { padding-top: 10px; padding-bottom: 8px; }
+
+/* Stop in the capsule: the same pill, sized for a 66 px bar. */
+.or-stopb.cap { min-height: 36px; margin-left: 0; flex: none; }
+/* The browser pane holding the desktop page keeps clear of its own capsule. */
+.or-wnp { padding-bottom: 110px; }
+
+/* The browser pane needs the page's ink: `.or-rem` carries its own `color` and `.or-np` does not,
+   so the 1440 music frame drew its title in near-black on near-black until this landed. */
+.or-web { color: var(--ink); }
+
+/* The Playing page's ground, from `playingGround()`: accentDim at 60 % into the background, and
+   flat in noir. accentDim is #3C2C8A in aurora, #0A3D38 midnight, #7A5B1F noir, #1E3A66 graphite
+   and #E3E0FB in daylight (Colors.kt). The mockup's album-hue radial is NOT this, and in daylight
+   it washed the page brown — found in the `daylight-a-music` render. */
+.or-ph .mu-now .bgt { --or-adim: 60, 44, 138;
+  background: linear-gradient(180deg, rgba(var(--or-adim), .6), var(--bg) 46%, var(--bg)); }
+html[data-skin="daylight"] .or-ph .mu-now .bgt { --or-adim: 227, 224, 251; }
+html[data-skin="midnight"] .or-ph .mu-now .bgt { --or-adim: 10, 61, 56; }
+html[data-skin="noir"] .or-ph .mu-now .bgt { background: var(--bg); }
+
+/* A favourited ♥ is FILLED (the Kotlin's `MusicIcon.HEART_FILLED`). The shipped `.mu-ib svg` sets
+   `fill:none`, and a CSS declaration beats the inline `fill="currentColor"` the mockup's own
+   `IC.heart.replace(…)` writes — so the mockup draws a favourited song's heart as an outline in
+   accent. Seen at 3× in `a-music`; the code wins. */
+.or-ph .mu-ib.or-fav.on svg, .or-npib.on svg { fill: currentColor; stroke: currentColor; }

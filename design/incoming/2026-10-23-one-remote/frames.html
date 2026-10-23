@@ -7,9 +7,14 @@
   frames.html — every frame this round renders, built from or-data.js through or-kit.js.
 
   One document, parameterised, rather than one document per picture:
-      ?set=phone-a | phone-b | states | bars | web | mac
+      ?set=phone-a | phone-b | music | states | bars | web | mac
       &skin=aurora|midnight|noir|daylight
       &lang=en|da|fo
+
+  Rev 2 adds the `music` set, and it is a set of its own for one concrete reason: it is the only
+  set that links the shipped `ravilo-music.css`, and that file REDEFINES the midnight and noir
+  skin tokens (noir's accent becomes amber there and stays blue in ravilo-phone.css). Loading it
+  into `phone-a` would silently change `noir-a-cast-film`, which the owner has already accepted.
 
   The set decides which SHIPPED stylesheet is loaded, because the phone and the TV/desktop are
   different token files and loading both into one document would let one answer for the other.
@@ -31,7 +36,15 @@
        design system at a desk width, which is what makes the 390 px frame the same screen. The
        Mac loads the desktop file beside it for the window chrome's own tokens. */
     document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
-    if (set === 'mac') document.write('<link rel="stylesheet" href="../../ravilo/desktop/ravilo-desktop.css">');
+    /* Music mode's own shipped stylesheet — the Playing page, the mini bar and the speaker rows
+       live in it. Only the sets that draw a music surface load it, see the note above. */
+    if (set === 'music' || set === 'states')
+      document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-music.css">');
+    /* Ravilo Web at a desk width IS the desktop layout, so the web set loads the desktop file
+       too — the version chips (`.rv-v`) and `.lyr` live in it, and without it the 1440 music
+       frame drew "RemasterLive" as two unstyled words. */
+    if (set === 'mac' || set === 'web')
+      document.write('<link rel="stylesheet" href="../../ravilo/desktop/ravilo-desktop.css">');
     document.write('<link rel="stylesheet" href="../../flags.css">');
     document.write('<link rel="stylesheet" href="one-remote.css">');
     window.OROPT = { set, skin, lang };
@@ -95,16 +108,16 @@
     /* A4 · the episode with the place's own next-up countdown mirrored. */
     ph('a-nextup', K.remote({ item: EP, set: P.stuetv, state: 'nextup', vols: { master: D.VOL.master } }));
 
-    /* A5 · music on two rooms, place line, queue reachable in the footer, volume master + two rooms. */
-    ph('a-music', K.remote({ item: SONG, set: P.speakers, state: 'playing', vols: ROOMVOLS }));
-
-    /* A5b · the same, with Kontor added — the room that does not report its volume. The brief
-       fixes two rooms; this third frame exists because "absent vs greyed" needs a picture and
-       a place that cannot answer is the only case where a control is drawn and disabled. */
-    ph('a-music-no-report', K.remote({
-      item: SONG, set: P.threeRooms, state: 'playing',
-      vols: { master: D.VOL.master, stue: D.VOL.stue, gaeste: D.VOL.gaeste, kontor: null },
+    /* A5 · decision 1's ALTERNATIVE: the same cast, with no volume row at all. The shipped reason
+       for no slider is still true — volume belongs to the TV, and a slider invites a fight with
+       the TV's own remote — so the owner should see both and not only the lean. The phone's
+       hardware keys stay the control, and raise the transient pill. */
+    ph('a-cast-film-no-slider', K.remote({
+      item: FILM, set: P.stuetv, state: 'playing', noVol: true, hwVol: D.VOL.master,
     }));
+
+    /* The music frames moved to the `music` set in rev 2: they are drawn on the SHIPPED Playing
+       page now, which needs ravilo-music.css, which this set must not load. */
 
     /* A6 · Move to…, opened from the place line, with Play here in it. */
     ph('a-move-to', K.remote(a1) + K.moveSheet(P.stuetv, FILM));
@@ -135,6 +148,33 @@
   }
 
   /* ---------------------------------------------------------------------------------------
+     MUSIC — rev 2. On today's Playing page, with ravilo-music.css linked, so the pictures ARE
+     the shipped page and the three things it gains are the only things that are this round's.
+     --------------------------------------------------------------------------------------- */
+  if (set === 'music') {
+    /* Today's page, untouched, so "what changed" is a comparison rather than a claim. */
+    ph('a-music-today', K.musicPlaying({
+      item: SONG, set: P.speakers, state: 'playing', today: true }));
+
+    /* The same page with the three things it gains: the place pill in the device chip's row,
+       Stop in the bottom row, and the state line / banners under the pill. */
+    ph('a-music', K.musicPlaying({ item: SONG, set: P.speakers, state: 'playing' }));
+
+    /* Volume, where it ships: behind ⋯, in the sheet, now with a row per room — and Kontor, the
+       room that cannot report, drawn and disabled with its reason. This is the one frame in the
+       round where a control is drawn rather than absent, because the place EXISTS and simply
+       cannot answer. Also the round's tallest string stack, which is why it is the frame the
+       Danish and Faroese renders use. */
+    ph('a-music-no-report', K.musicPlaying({
+      item: SONG, set: P.threeRooms, state: 'playing', volSheet: true,
+      vols: { master: D.VOL.master, stue: D.VOL.stue, gaeste: D.VOL.gaeste, kontor: null },
+    }));
+
+    /* The mini bar in music mode, on a stand-in Listen page, above the music bar. */
+    ph('a-minibar-music', K.musicHome() + K.musicMini(SONG, P.speakers, { more: 1 }) + K.bnav(0));
+  }
+
+  /* ---------------------------------------------------------------------------------------
      THE STATES, as a strip and one by one.
      --------------------------------------------------------------------------------------- */
   const STATES = [
@@ -153,11 +193,17 @@
     ['a-st-ended', 'ended',
       { item: FILM, set: P.stuetv, state: 'ended' }],
   ];
+  /* Rev 2: two of the seven states are a SONG, and a song's remote is now the shipped Playing
+     page. Leaving them on round 1's layout would have put two music players in one package,
+     which is the exact defect this revision removes — so the builder is chosen by kind, from one
+     place, and the strip re-renders with them. Named in the report: the brief asked for the
+     state frames to stay unchanged, and these two could not. */
+  const build = cfg => (cfg.item.kind === 'music' ? K.musicPlaying(cfg) : K.remote(cfg));
   if (set === 'states') {
-    STATES.forEach(s => ph(s[0], K.remote(s[2])));
+    STATES.forEach(s => ph(s[0], build(s[2])));
     frame('a-states-strip', 'or-strip', STATES.map(s =>
       '<div class="or-cell"><div class="or-scap">' + K.esc(s[1]) + '</div>'
-      + '<div class="or-ph">' + phBody(K.remote(s[2])) + '</div></div>').join(''));
+      + '<div class="or-ph">' + phBody(build(s[2])) + '</div></div>').join(''));
   }
 
   /* ---------------------------------------------------------------------------------------
@@ -188,7 +234,10 @@
   if (set === 'web') {
     frame('web-film-1440', 'or-wframe', K.webRemote({
       item: FILM, set: P.sovetv, state: 'playing', vols: { master: D.VOL.master } }));
-    frame('web-music-1440', 'or-wframe', K.webRemote({
+    /* Rev 2: Ravilo Web at a desk width IS the desktop layout — `MusicPlayingScreen` branches on
+       `isDesktopLayout` before it ever reaches the portrait page — so the web's music player is
+       the cover beside the lyrics, not a wide phone. Same body as the Mac frame. */
+    frame('web-music-1440', 'or-wframe', K.webMusic({
       item: SONG, set: P.pixelPlace, state: 'playing', vols: { master: D.VOL.master } }));
     frame('web-film-390', 'or-wframe narrow', K.webRemote({
       item: FILM, set: P.sovetv, state: 'playing', vols: { master: D.VOL.master } }));
@@ -200,13 +249,20 @@
   if (set === 'mac') {
     frame('mac-film', 'or-mframe', K.macPlaying({
       item: FILM, set: P.stuetv, state: 'playing', vols: { master: D.VOL.master } }));
-    frame('mac-music', 'or-mframe', K.macPlaying({
+    /* Rev 2: the shipped desktop Playing page — the cover beside the lyrics, the transport under
+       the cover (`.np` / `.lyr`). The frame is 100 px taller than `mac-film` ON PURPOSE: at 800
+       the shipped head is about 12 px taller than the space above the capsule, so the page
+       scrolls there and a picture at 800 would slice the transport. Reported, not hidden. */
+    frame('mac-music', 'or-mframe tall', K.macMusicPlaying({
       item: SONG, set: P.speakers, state: 'playing', vols: ROOMVOLS }));
     /* The popover is opened from the capsule, which is how you reach volume when you are NOT on
        the Playing page — so it is drawn over Films. On the Playing page the inline block above
        already holds the same sliders, and drawing both open at once put them on screen twice. */
+    /* …and it carries Stop, because on the desktop Stop lives in the capsule — one place, every
+       page, every kind. See the report's open question about `mac-film`, which still has Stop in
+       the Playing page's footer and which this revision does not touch. */
     frame('mac-volume-popover', 'or-mframe', K.macBrowse(SONG, P.speakers,
-      { vols: ROOMVOLS, volOpen: true }));
+      { vols: ROOMVOLS, volOpen: true, stopInCap: true }));
   }
 })();
 </script>

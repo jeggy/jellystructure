@@ -75,6 +75,23 @@ window.OR = (function () {
       { n: 5, title: 'Rope and Salt', len: 3 * 60 + 18 },
       { n: 6, title: 'Morning Tide', len: 5 * 60 + 7 },
     ],
+    /* R344 — the Playing page shows every version of the song, as chips at the start of the
+       artist · album line. Two, so the line has to make room for them. */
+    versions: [{ label: 'Remaster', c: '#3fb6f5' }, { label: 'Live', c: '#7b6ef0' }],
+    fav: true,
+    /* The desktop Playing page puts the lyrics BESIDE the cover, so the Mac frame needs lines.
+       Invented verse about a harbour at night: nothing here is a real lyric or a real title.
+       `now` marks the line the stand-in position (1:12) falls on, which is the shipped `.lyr p.now`. */
+    lyrics: [
+      { t: 'The cannery lights come on at four' },
+      { t: 'and the water keeps the colour of the door' },
+      { t: 'Boots on the boards, a radio low' },
+      { t: 'nobody counts the boats any more', now: true },
+      { t: 'Salt in the rope and salt in the seam' },
+      { t: 'the harbour holds the shape of a dream' },
+      { t: 'Morning will come in on the tide' },
+      { t: 'and the lights will go out one at a time' },
+    ],
   };
 
   /* ---- the volumes the brief fixes ---- */
@@ -115,6 +132,14 @@ window.OR = (function () {
       playing_here: 'Playing here', busy_with: '{who} is watching',
       more_playing: '{n} more playing', song_of: 'Song {i} of {n}',
       size_s: 'S', size_m: 'M', size_l: 'L',
+      /* The shipped Playing page's own strings, taken from i18n/*.json rather than drafted:
+         music.from, mnav.listen/browse/now_short/queue, nav.profile, music.more, music.up_next.
+         They are here so the da/fo music frames read the shipped words. */
+      from: 'Playing from {x}', nav_listen: 'Listen', nav_browse: 'Browse',
+      nav_playing: 'Playing', nav_queue: 'Queue', nav_profile: 'Profile', more: 'More',
+      /* The transient pill a hardware volume key raises while a place is playing. DRAWN, not
+         quoted: no such pill was found in the Kotlin — see the report. */
+      hw_vol: '{place} · {n} %',
     },
     da: {
       playing_on: 'Spiller på {place}', paused_on: 'Sat på pause på {place}',
@@ -136,6 +161,9 @@ window.OR = (function () {
       playing_here: 'Spiller her', busy_with: '{who} ser det',
       more_playing: '{n} mere spiller', song_of: 'Nummer {i} af {n}',
       size_s: 'S', size_m: 'M', size_l: 'L',
+      from: 'Afspiller fra {x}', nav_listen: 'Lyt', nav_browse: 'Gennemse',
+      nav_playing: 'Afspiller', nav_queue: 'Kø', nav_profile: 'Profil', more: 'Mere',
+      hw_vol: '{place} · {n} %',
     },
     fo: {
       playing_on: 'Spælir á {place}', paused_on: 'Steðgað á {place}',
@@ -157,6 +185,9 @@ window.OR = (function () {
       playing_here: 'Spælir her', busy_with: '{who} hyggur at hesum',
       more_playing: '{n} fleiri spæla', song_of: 'Lag {i} av {n}',
       size_s: 'S', size_m: 'M', size_l: 'L',
+      from: 'Spælir úr {x}', nav_listen: 'Lurta', nav_browse: 'Kaga',
+      nav_playing: 'Spælir', nav_queue: 'Bíðirøð', nav_profile: 'Vangi', more: 'Meira',
+      hw_vol: '{place} · {n} %',
     },
   };
 
