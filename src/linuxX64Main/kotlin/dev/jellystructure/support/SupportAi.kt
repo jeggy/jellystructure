@@ -332,7 +332,8 @@ object SupportAi {
         val to = if (a.forwardTo == "HERVOR" && hervorEnabled) "HERVOR" else "ADMIN"
         return when (a.ticketClass) {
             "ABUSE" -> Ruling(Kind.ABUSE, a, "flagged as abuse", "ADMIN")
-            "REQUEST" -> Ruling(Kind.REQUEST, a, "request logged", "ADMIN")
+            // DEB-2184 (FR-321-5) — a request goes to Hervør while she is on, whatever the model put in forwardTo.
+            "REQUEST" -> Ruling(Kind.REQUEST, a, "request logged", if (hervorEnabled) "HERVOR" else "ADMIN")
             "BUG", "ACCOUNT" -> Ruling(Kind.FORWARD, a, "class is ${a.ticketClass} — a person answers it", to)
             else -> {
                 val failed = ArrayList<String>()

@@ -365,6 +365,28 @@ class SupportAgentTest {
         assertEquals("REQUEST", admin(n).ticket.ticketClass)
     }
 
+    // DEB-2184 (FR-321-5) — a REQUEST takes the holder a FORWARD takes: Hervør while she is on, an admin otherwise.
+    @Test fun aRequestGoesToHervorWhileSheIsOnAndToAnAdminWhileSheIsOff() {
+        rig("req-hervor-on") {
+            configure(hervor = true)
+            service.seatTokens.issue("root")
+            anthropic.answerFor = { FakeAnthropic.good(cls = "REQUEST", summary = "Wants a title added.") }
+            val n = file("Please add a film")
+            cycle()
+            assertEquals("HERVOR", admin(n).ticket.holder)
+            assertEquals("HERVOR", admin(n).ticket.owes)
+            assertEquals("REQUEST", admin(n).ticket.ticketClass)
+            assertEquals("Thanks — this is logged as request #$n. Adding it needs a decision from the people who run this server, so it won't happen on its own.", lastAiBody(n))
+        }
+        rig("req-hervor-off") {
+            anthropic.answerFor = { FakeAnthropic.good(cls = "REQUEST", summary = "Wants a title added.") }
+            val n = file("Please add a film")
+            cycle()
+            assertEquals("ADMIN", admin(n).ticket.holder)
+            assertEquals("ADMIN", admin(n).ticket.owes)
+        }
+    }
+
     @Test fun abuseIsFlaggedWithNothingOnTheViewerWireAndNoFurtherSpend() = rig("abuse") {
         anthropic.answerFor = { FakeAnthropic.good(cls = "ABUSE", summary = "Insults the admins.") }
         val n = file("you are all idiots")

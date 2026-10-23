@@ -183,7 +183,7 @@ class SupportAgent(
                 discarded(applied) ?: done("FLAGGED", readable, true)
             }
             SupportAi.Kind.REQUEST -> {
-                val applied = service.agentForward(c.t, c.upTo, cl, SupportService.HOLDER_ADMIN, SupportAi.requestLogged(lineLanguage(c.t, c.lang, answer), c.t), adminNote(ruling))
+                val applied = service.agentForward(c.t, c.upTo, cl, ruling.to, SupportAi.requestLogged(lineLanguage(c.t, c.lang, answer), c.t), adminNote(ruling))
                 discarded(applied) ?: done("FORWARDED: ${ruling.reason}$dropped", readable, true)
             }
             SupportAi.Kind.FORWARD -> {
