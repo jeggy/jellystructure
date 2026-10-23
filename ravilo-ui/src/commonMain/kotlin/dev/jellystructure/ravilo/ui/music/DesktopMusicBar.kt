@@ -161,7 +161,7 @@ fun DesktopMusicBar(
             }
             SeekLine(live, st.durationMs, Modifier.weight(1f), times = !tight)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (!medium) BarButton(DeskIcon.LYRICS, colors.textSecondary, str(if (onPlayingPage) "desk.back" else "desk.show_lyrics"), onClick = if (onPlayingPage) onLeavePlaying else onOpenPlaying)
+                if (!medium) BarButton(DeskIcon.LYRICS, if (onPlayingPage) colors.accentSecondary else colors.textSecondary, str("desk.show_lyrics"), on = onPlayingPage, onClick = if (onPlayingPage) onLeavePlaying else onOpenPlaying)
                 BarButton(DeskIcon.QUEUE, if (queueOpen) colors.accentSecondary else colors.textSecondary, str(if (queueOpen) "desk.close_queue" else "desk.show_queue"), on = queueOpen, onClick = onQueue)
                 if (cast != null && castShown) BarButton(DeskIcon.CAST, if (casting) colors.accentSecondary else colors.textSecondary, str("cast.sheet_music"), on = casting) { cast.openSheet(music = true) }
                 if (!medium) {

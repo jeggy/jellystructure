@@ -38,7 +38,7 @@ class DesktopBarOnPlayingTest {
         dest: Dest,
     ): Boolean = musicBarVisible(framed, musicActive, sessionOverMusic, inMusic, musicPlaying, barKeptOn, dest) && dest !is Dest.MusicPlaying
 
-    @Test fun `deskMusicBarVisible is true on MusicPlaying in music mode`() {
+    @Test fun deskMusicBarVisibleIsTrueOnMusicPlayingInMusicMode() {
         assertTrue(musicBarVisible(
             framed = true, musicActive = true, sessionOverMusic = false,
             inMusic = true, musicPlaying = false, barKeptOn = null,
@@ -46,7 +46,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskMusicBarVisible is true on MusicPlaying while playing in films mode`() {
+    @Test fun deskMusicBarVisibleIsTrueOnMusicPlayingWhilePlayingInFilmsMode() {
         assertTrue(musicBarVisible(
             framed = true, musicActive = true, sessionOverMusic = false,
             inMusic = false, musicPlaying = true, barKeptOn = null,
@@ -54,7 +54,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskMusicBarVisible is true on MusicPlaying when kept by prior pause`() {
+    @Test fun deskMusicBarVisibleIsTrueOnMusicPlayingWhenKeptByPriorPause() {
         assertTrue(musicBarVisible(
             framed = true, musicActive = true, sessionOverMusic = false,
             inMusic = false, musicPlaying = false,
@@ -63,7 +63,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskMusicBarVisible is false when not framed`() {
+    @Test fun deskMusicBarVisibleIsFalseWhenNotFramed() {
         assertFalse(musicBarVisible(
             framed = false, musicActive = true, sessionOverMusic = false,
             inMusic = true, musicPlaying = false, barKeptOn = null,
@@ -71,7 +71,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskMusicBarVisible is false when music not active`() {
+    @Test fun deskMusicBarVisibleIsFalseWhenMusicNotActive() {
         assertFalse(musicBarVisible(
             framed = true, musicActive = false, sessionOverMusic = false,
             inMusic = true, musicPlaying = false, barKeptOn = null,
@@ -79,7 +79,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskMusicBarVisible is false when session over music`() {
+    @Test fun deskMusicBarVisibleIsFalseWhenSessionOverMusic() {
         assertFalse(musicBarVisible(
             framed = true, musicActive = true, sessionOverMusic = true,
             inMusic = true, musicPlaying = false, barKeptOn = null,
@@ -87,7 +87,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskBarShows excludes MusicPlaying even when bar is visible`() {
+    @Test fun deskBarShowsExcludesMusicPlayingEvenWhenBarIsVisible() {
         // musicBarVisible returns true, but deskBarShows excludes MusicPlaying
         assertTrue(musicBarVisible(
             framed = true, musicActive = true, sessionOverMusic = false,
@@ -101,7 +101,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `deskBarShows is true on MusicListen in music mode`() {
+    @Test fun deskBarShowsIsTrueOnMusicListenInMusicMode() {
         assertTrue(barShows(
             framed = true, musicActive = true, sessionOverMusic = false,
             inMusic = true, musicPlaying = true, barKeptOn = null,
@@ -109,7 +109,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `inset uses deskMusicBarVisible: MusicPlaying gets inset`() {
+    @Test fun insetUsesDeskMusicBarVisibleMusicPlayingGetsInset() {
         // The inset calculation at RaviloApp.kt:2220 uses deskMusicBarVisible, not deskBarShows.
         // This means MusicPlaying gets the bar inset applied (the bar is visible on that page).
         val musicPlaying = Dest.MusicPlaying("test")
@@ -136,7 +136,7 @@ class DesktopBarOnPlayingTest {
         ))
     }
 
-    @Test fun `barKeptOn on different page does not show bar on MusicPlaying`() {
+    @Test fun barKeptOnOnDifferentPageDoesNotShowBarOnMusicPlaying() {
         assertFalse(musicBarVisible(
             framed = true, musicActive = true, sessionOverMusic = false,
             inMusic = false, musicPlaying = false,
