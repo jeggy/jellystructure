@@ -278,3 +278,35 @@ Five facts the spec could not know, none of which changes a decision the owner m
 Open, for Tróndur: phase 311's sweep removes any file in a `.jellystructure/` folder whose name starts with a work prefix
 (`remux_`, `replace_`, `convert_`, …) after 24 hours. A film whose own file name began with one of those would have its
 kept original treated as a work file. None exists in the library today; the build does not guard against it.
+
+## Amendment 2026-10-23 — a check before a write reads qBittorrent now (DEB-2217)
+
+QA found this on DEB-2150, on a scratch stack with synthetic files. A torrent was added to qBittorrent after the
+seeding snapshot had been taken, and *Start migration* then converted its file with no *blocked-seeding*.
+`SeedingGuard` answers from the shared `SeedingSnapshot`, which is kept for `qbittorrent.seedingCacheTtl` (600 s by
+default). FR-5 said "re-run" without saying whether that meant a fresh read. It means a fresh read:
+
+- **FR-5 before a write reads qBittorrent now.** At Start (FR-6) and before steps 1 and 3 of the job (FR-7), the
+  seeding block is answered from a new read of qBittorrent's torrent list (`SeedingSnapshot.get(forceRefresh =
+  true)`), never from the cache. Step 3 matters most. It is the last ask before the original is renamed, and a job
+  can wait in the queue for a long time behind `deferWhilePlaying`. A read that fails answers `Unreachable`, so the
+  result is *blocked-unknown*: unknown means no, as before. The fresh read replaces the shared snapshot.
+- **The preview may answer from the snapshot.** It writes nothing, it is drawn on every page load, and Start never
+  trusts it.
+- ***Check again* reads qBittorrent now.** On *blocked-unknown* and *blocked-seeding*, *Check again* asks for the
+  preview with a fresh read (`GET …/container-conversion?fresh=true`). Until now an unreachable answer was cached like
+  any other, so *Check again* kept showing *blocked-unknown* for up to ten minutes after qBittorrent came back. An
+  admin bundle that does not send `fresh` gets today's answer.
+- **A refused language edit is not a failed change.** A `422` with `reason = container_cannot_store_language` no
+  longer turns the save's result into *"Some changes failed — see details"*. FR-2's row and FR-3's notice already say
+  what happened, and direction A's *limitation* state draws no failure banner. If the refusal was the only change, the
+  save shows no result message. If other changes applied, the save reads as it would have without the refusal. Any
+  other failure still reads *Some changes failed*. This applies to films and episodes alike.
+- **Tests (FR-11).** The checks at Start and in steps 1 and 3 ask for a fresh read, and the preview does not unless it
+  is sent `fresh=true`. A fake snapshot that answers *Allowed* from its cache and *Blocked* when read fresh refuses Start
+  with `409`. A torrent that appears after step 1 blocks step 3, with nothing renamed and the original in place. Admin: a save whose
+  only error is that `422` shows no failure message.
+
+This covers only the conversion. Every other writer behind `SeedingGuard` (the language and flag edits, remux, the
+music and audiobook tag writers) still answers from the snapshot. Whether those should read fresh too is a phase 315
+question, and it is raised with Tróndur on DEB-2217 rather than decided here.
