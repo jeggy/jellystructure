@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>One Play album ▾ button, and the ⋯ beside it — directions</title>
+<!-- Self-contained: no network reference, no dependency on any stylesheet outside this file. The
+     only things it loads are the round's own PNGs, which sit in png/ beside it. Dark ink on a
+     light-gray backdrop, per the standing canvas rule. -->
+<style>
+  :root { --ink:#12141b; --ink2:#262a35; --line:#d3d6df; --bad:#9a2a2a; --ok:#1d6a3a; --warn:#8a5a10; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#e9eaef; color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 44px 28px 120px; }
+  h1 { font-size: 30px; line-height:1.2; letter-spacing:-.02em; margin:0 0 6px; }
+  h2 { font-size: 21px; margin: 52px 0 10px; padding-top: 18px; border-top: 2px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 6px; }
+  p, li { color: var(--ink2); max-width: 78ch; }
+  .lede { font-size: 17px; color: var(--ink); }
+  code, .k { font-family: ui-monospace,'SF Mono',Menlo,monospace; font-size: .86em; }
+  table { border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 7px 11px; text-align: left; vertical-align: top; color: var(--ink2); }
+  th { background: #dfe1e9; color: var(--ink); }
+  .no { color: var(--bad); font-weight: 700; }
+  .yes { color: var(--ok); font-weight: 700; }
+  .hm { color: var(--warn); font-weight: 700; }
+  .strip { display: flex; flex-wrap: wrap; gap: 20px; margin: 14px 0 6px; }
+  figure { margin: 0; width: 272px; }
+  figure img { display: block; width: 272px; border-radius: 12px; border: 1px solid var(--line); background:#fff; }
+  figure figcaption { margin-top: 7px; font-size: 12px; line-height: 1.45; color: var(--ink2); }
+  figure figcaption b { color: var(--ink); }
+  figure.wide, figure.wide img { width: 560px; }
+  figure.zoom, figure.zoom img { width: 560px; }
+  .rec { display:inline-block; background:#1d6a3a; color:#fff; font-size:11px; font-weight:800;
+    letter-spacing:.09em; text-transform:uppercase; padding:3px 9px; border-radius:999px; vertical-align:3px; }
+  .tag { display:inline-block; background:#dfe1e9; color:var(--ink); font-size:11px; font-weight:800;
+    letter-spacing:.09em; text-transform:uppercase; padding:3px 9px; border-radius:999px; vertical-align:3px; }
+  blockquote { margin: 12px 0; padding: 10px 0 10px 16px; border-left: 3px solid #b9bdc9; color: var(--ink2); }
+  .ask { background:#fdf6e3; border:1px solid #e0d4ac; border-radius:10px; padding:14px 18px; margin:16px 0; }
+  .ask b { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>One <i>Play album</i> ▾ button, and the ⋯ beside it</h1>
+<p class="lede">Four variants, drawn side by side at 360&nbsp;dp in English, Danish and Faroese,
+plus the desktop. Round slug <span class="k">album-play-button</span>, 2026-10-23. The pictures are
+in <span class="k">png/</span> beside this file.</p>
+
+<h2>What is fixed</h2>
+
+<p>The shape of the row is the owner’s, and no variant varies it:</p>
+<blockquote>I would like the Play Album and Shuffle to merge into a single button, so it says Play
+album, but with a down arrow on the right side of that button, so shuffle is available under that
+sub-menu. So it’s clear we have 1 button for playing the whole album, shuffling it and the Play
+extras etc. These could be grouped by separators within the dropdown, and then we have this …
+button on the right of it which has Add to playlist and probably some more buttons in the
+future</blockquote>
+
+<ul>
+  <li><b>One split button</b>, labelled <i>Play album</i>, with a ▾ on its right. The main part
+    plays the album.</li>
+  <li>The ▾ opens <b>one menu</b> holding every way of playing it, grouped by <b>separators</b>.</li>
+  <li><b>A ⋯ to its right</b> holds <i>Add to playlist…</i> (playlists spec FR-6), and is the home
+    for album actions that join it later.</li>
+  <li><b>No separate <i>Shuffle</i> button.</b></li>
+</ul>
+
+<h2>What ships today, so the variants can be judged against it</h2>
+
+<p>Read out of <span class="k">ravilo-music.js:239-253</span> and <span class="k">ravilo-music.css:412-424</span>,
+not from memory. R373 today draws <b>two</b> split buttons, and <b>both ▾s open the same menu</b>:</p>
+
+<blockquote><i>Play album ▾</i> (primary) and <i>Shuffle ▾</i> as split buttons. The ▾ menu:
+<i>Play album</i> (<i>{n} songs · the official order</i>) · <i>Play album + extras</i>
+(<i>{n} songs · extras, then the B-sides</i>), the current one ticked. The pick is remembered per
+album, per device, relabels the Play button (<i>Play album + extras</i>), and <b>both buttons follow
+it</b>; picking from the menu also starts playback. <span class="k">FR-R373-2 point 3</span></blockquote>
+
+<p>Three consequences, because they decide what the menu can honestly hold:</p>
+<ol>
+  <li>There is <b>one axis</b>, the <b>order</b> — the official album, or the album with its extras
+    and B-sides. It is remembered per album, per device.</li>
+  <li><b>Shuffle is not a second pick.</b> It shuffles inside whichever order is chosen. That is why
+    <i>Shuffle&nbsp;+&nbsp;extras</i> has <b>no shipped string</b> — today it is not a row. Every
+    variant below needs one; it is drafted as <span class="k">ed.shuffle_extras</span> and marked
+    DRAFT wherever it appears.</li>
+  <li>The two shipped rows carry <b>no glyph</b>, because both of them are <i>Play</i>. Once one menu
+    holds the shuffles as well, the glyph is what tells the two kinds of row apart at a glance, so
+    every variant adds one.</li>
+</ol>
+
+<p>Point 1 of the same FR also puts <b>+ {k} extra(s)</b> in the header. Every editions frame here
+draws it, so that an album with extras is never the same picture as one without.</p>
+
+<h2>The first finding: with the menu shut, the four variants are one picture</h2>
+
+<p>The owner has fixed the row. What is left to choose is what the <b>menu</b> holds and whether the
+main part is relabelled afterwards — and with the menu shut, those are invisible. The first render
+drew all sixteen shut-menu frames and compared them pixel by pixel:</p>
+
+<p><b>No two of the four differ by more than 35 pixels out of 280&nbsp;800, at a maximum channel
+delta of 27 out of 255, and every one of those pixels is in a 20&nbsp;px band at the frame’s right
+edge where the page-tint gradient dithers.</b> Nothing in the layout differs at all.</p>
+
+<p>So the shut-menu states are drawn <b>once</b> and their file names say which variants they are.
+Four copies of one picture would not have proved that; it would have hidden which two frames there
+are to compare.</p>
+
+<div class="strip">
+  <figure><img src="png/apb-abcd-rest.png" alt="">
+    <figcaption><b>A, B, C and D · at rest.</b> One button, one ▾, one ⋯. <i>Play album</i> has
+    224&nbsp;dp of label area where R373’s pair gave it about 150.</figcaption></figure>
+  <figure><img src="png/apb-bcd-relabel.png" alt="">
+    <figcaption><b>B, C and D · after picking the extras.</b> The main part becomes the pick, as
+    R373 relabels it today. A has no such state at all.</figcaption></figure>
+  <figure><img src="png/apb-abcd-more.png" alt="">
+    <figcaption><b>A, B, C and D · the ⋯ open.</b> FR-6’s one row, and the home for whatever joins
+    it.</figcaption></figure>
+</div>
+
+<h2>The second finding: the width question is answered, and it is a yes</h2>
+
+<p>The previous round found that R373’s <i>row</i> does not fit a 360&nbsp;dp phone: with two split
+buttons, <i>Shuffle</i> truncated to <b>Sh…</b> and the relabelled primary to <b>Play albu…</b>, in
+English. One split button removes that entirely.</p>
+
+<p>The row is 324&nbsp;dp of content: the ⋯ takes 48, the gap 8, the ▾ half 44, leaving
+<b>224&nbsp;dp</b> for the glyph, its gap, 10&nbsp;px of padding each side, and the label. The
+longest label in the product is Danish:</p>
+
+<div class="strip">
+  <figure class="zoom"><img src="png/apb-zoom-row-da-4x.png" alt="">
+    <figcaption><b>Danish, the longest label, at 4×.</b> <i>Afspil album + ekstra</i> whole, centred,
+    clear of both corner radii. Faroese <i>Spæl fløgu + eyka</i> is shorter again.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/apb-bcd-relabel-da.png" alt="">
+    <figcaption><b>da · the relabelled button.</b> Whole.</figcaption></figure>
+  <figure><img src="png/apb-bcd-relabel-fo.png" alt="">
+    <figcaption><b>fo · the relabelled button.</b> Whole.</figcaption></figure>
+  <figure><img src="png/apb-abcd-rest-fo.png" alt="">
+    <figcaption><b>fo · at rest.</b> <i>Spæl fløguna</i>, whole, with room to spare.</figcaption></figure>
+</div>
+
+<p><b>So R373’s relabel survives the merge in all three languages.</b> That removes the reason the
+previous round had for dropping it, and it is why three of the four variants keep it.</p>
+
+<h2>The four variants</h2>
+
+<p>They differ in two things and nothing else: whether the main part <b>relabels</b> after a pick,
+and how the menu <b>groups</b> its four rows.</p>
+
+<table>
+  <tr><th></th><th>main part after a pick</th><th>menu grouping</th><th>ticked?</th><th>R373’s subtitles</th><th>new strings</th></tr>
+  <tr><td><b>A</b> the label never changes</td><td class="no">never changes</td><td>by order</td><td class="no">no</td><td class="no">dropped</td><td>1</td></tr>
+  <tr><td><b>B</b> relabels · by order</td><td class="yes">becomes the pick</td><td>by order <i>(the owner’s own example)</i></td><td class="yes">yes</td><td class="yes">kept</td><td>1</td></tr>
+  <tr><td><b>C</b> relabels · by action <span class="rec">recommended</span></td><td class="yes">becomes the pick</td><td>by action</td><td class="yes">yes</td><td class="yes">kept</td><td>1</td></tr>
+  <tr><td><b>D</b> relabels · the menu names itself</td><td class="yes">becomes the pick</td><td>by order, under a heading</td><td class="yes">yes</td><td class="yes">kept</td><td>1</td></tr>
+</table>
+
+<div class="strip">
+  <figure><img src="png/apb-a-menu.png" alt="">
+    <figcaption><b>A.</b> Four plain rows, nothing remembered, nothing ticked. Also nothing saying
+    what each one plays: R373’s two subtitles go with the pick.</figcaption></figure>
+  <figure><img src="png/apb-b-menu.png" alt="">
+    <figcaption><b>B.</b> Each group is one <i>order</i> with its two ways of playing it. The
+    owner’s own example. Rows alternate tall, short, tall, short.</figcaption></figure>
+  <figure><img src="png/apb-c-menu.png" alt="">
+    <figcaption><b>C.</b> <span class="rec">recommended</span> The two ways of playing in order
+    above, the two ways of shuffling below. The top group is R373’s shipped menu, row for
+    row.</figcaption></figure>
+  <figure><img src="png/apb-d-menu.png" alt="">
+    <figcaption><b>D.</b> B, with the menu’s own name on screen. <i>More ways to play</i> is already
+    shipped (<span class="k">ed.more_play</span>) and is already this ▾’s accessible
+    name.</figcaption></figure>
+</div>
+
+<h3>A — the label never changes</h3>
+<p>It is the only variant that <b>changes shipped behaviour</b>. R373 remembers the order per album
+per device and says so on the button; A stops doing both. A listener who wants the extras asks for
+them again on every visit, on every album, and the button never says what it will play. The two
+subtitles go with it, so the menu’s four rows become four bare labels.</p>
+<p>Against that: it is the simplest thing to build and the calmest menu on the page, and nothing in
+it can ever disagree with anything else. If the remembered pick is judged not to have earned its
+keep, A is the honest way to drop it — but that is a <b>behaviour decision</b>, not a drawing one,
+and it is not this round’s to make.</p>
+
+<h3>B — relabels, grouped by order</h3>
+<p>The owner’s own example, drawn as written. Each group is self-contained: <i>here is the official
+album, and the two things you can do with it</i>; then the same for the album with its extras. A
+listener who wants to shuffle the extras finds that row under the heading that already says
+<i>extras</i>, which is the clearest mental model of the four.</p>
+<p>Its one cost is visible rather than logical: the subtitled rows and the bare ones alternate, so
+the menu reads tall-short-tall-short and the ✓ sits on a row a head taller than the one under it.</p>
+
+<h3>C — relabels, grouped by action <span class="rec">recommended</span></h3>
+<p><b>Its first group is R373’s shipped menu, unchanged, row for row, subtitle for subtitle, tick
+and all</b> — the two shuffles simply join underneath a separator. A listener who knows today’s menu
+finds it where it was, with two rows added; nothing they already learned moves.</p>
+<p>It is also the calmest of the four to look at, because the two tall rows pair up and the two
+short ones pair up instead of alternating. And it is the only grouping in which the ✓ cannot be
+misread: both ticked-eligible rows are adjacent and both are <i>Play</i>, so the tick plainly marks
+<b>an order</b>, not an action.</p>
+<p>Against it: the order a shuffle row uses is carried only by its words (<i>Shuffle</i> vs
+<i>Shuffle + extras</i>), where B puts it in the grouping as well. <b>That is the trade, and it is
+the owner’s to make — B is his own example and I have not treated that lightly.</b></p>
+
+<h3>D — relabels, the menu names itself</h3>
+<p>B plus a heading, and the heading costs no new string: <span class="k">ed.more_play</span> is
+shipped in all three languages and is already the accessible name a screen reader gives this exact
+▾. Drawing it answers <i>what is this menu?</i> once, which matters more now that one menu holds
+everything rather than two menus holding one thing each.</p>
+<p>It costs 30&nbsp;px, and at 360&nbsp;dp that is exactly the clearance the menu had:</p>
+<div class="strip">
+  <figure class="zoom"><img src="png/apb-zoom-d-menu-3x.png" alt="">
+    <figcaption><b>D at 3×.</b> The menu’s bottom edge lands flush on the bottom bar — no overlap,
+    and no gap either, so it reads as cut off by the bar rather than floating over the
+    page.</figcaption></figure>
+</div>
+<p>And on a plain album the heading is all that is left of D, sitting over two rows:</p>
+<div class="strip">
+  <figure><img src="png/apb-plain-menu.png" alt="">
+    <figcaption><b>A, B and C · a plain album’s ▾.</b> Two rows, no tick, no subtitles.</figcaption></figure>
+  <figure><img src="png/apb-d-plain-menu.png" alt="">
+    <figcaption><b>D · the same.</b> A heading over two rows, one of which is what the button beside
+    it already does.</figcaption></figure>
+</div>
+
+<h2>The plain album</h2>
+
+<p>A plain album has <b>one order</b>, so it has nothing to remember, nothing to tick and nothing to
+subtitle — every one of the three things the variants differ in falls away, and A, B, C and D draw
+the same plain album. Only D’s heading survives onto it.</p>
+
+<div class="strip">
+  <figure><img src="png/apb-plain-rest.png" alt="">
+    <figcaption><b>A plain album, at rest.</b> The same row as the editions album above it, down to
+    the pixel. The only thing in the whole page that says this album has no extras is the missing
+    <i>+ 3 extras</i> in the header line.</figcaption></figure>
+  <figure><img src="png/apb-abcd-rest.png" alt="">
+    <figcaption><b>The editions album, at rest</b>, for comparison. <i>“The two album kinds read as
+    one design”</i> is answered as completely as it can be.</figcaption></figure>
+</div>
+
+<div class="ask"><b>One decision hides in that pair.</b> A plain album’s button says
+<i>Play</i> today (<span class="k">music.play</span>), not <i>Play album</i>. Drawn as
+<i>Play album</i> on both kinds, because that is what makes them one design — but it changes the
+button on <b>every</b> plain album page in Ravilo, and that is a behaviour change, not a drawing
+choice.</div>
+
+<h2>Every language, every skin</h2>
+
+<div class="strip">
+  <figure><img src="png/apb-c-menu-da.png" alt="">
+    <figcaption><b>C · da.</b> The subtitles hold one line each.</figcaption></figure>
+  <figure><img src="png/apb-c-menu-fo.png" alt="">
+    <figcaption><b>C · fo.</b></figcaption></figure>
+  <figure><img src="png/apb-d-menu-fo.png" alt="">
+    <figcaption><b>D · fo.</b> <i>Fleiri mátar at spæla</i> — the shipped value, not the mockup’s
+    draft — holds one line at the heading’s tracking.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure class="zoom"><img src="png/apb-zoom-menu-fo-3x.png" alt="">
+    <figcaption><b>C’s menu in Faroese at 3×.</b> Every row whole, nothing truncated, the ✓
+    vertically centred on a two-line row.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/apb-c-menu-midnight.png" alt="">
+    <figcaption><b>C · midnight.</b></figcaption></figure>
+  <figure><img src="png/apb-c-menu-noir.png" alt="">
+    <figcaption><b>C · noir.</b> Noir redefines the ✓’s ink (<span class="k">ravilo-music.css:434</span>)
+    and the primary fill; both carry.</figcaption></figure>
+  <figure><img src="png/apb-c-relabel-noir.png" alt="">
+    <figcaption><b>C · noir, relabelled.</b></figcaption></figure>
+</div>
+
+<h2>The desktop</h2>
+
+<p>The desktop has room for two buttons, but the owner asked for one, so the desktop header is drawn
+in the same shape rather than letting the two surfaces disagree. With the menu shut it is one
+picture for all four variants, exactly as on the phone.</p>
+
+<div class="strip">
+  <figure class="wide"><img src="png/apb-dk-abcd-rest.png" alt="">
+    <figcaption><b>Desktop · A, B, C and D · at rest.</b> One split, one ⋯, on one row with room to
+    spare.</figcaption></figure>
+  <figure class="wide"><img src="png/apb-dk-c-menu.png" alt="">
+    <figcaption><b>Desktop · C · the ▾ open</b>, anchored under the split it came
+    from.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure class="wide"><img src="png/apb-dk-b-menu.png" alt="">
+    <figcaption><b>Desktop · B.</b></figcaption></figure>
+  <figure class="wide"><img src="png/apb-dk-d-menu.png" alt="">
+    <figcaption><b>Desktop · D.</b></figcaption></figure>
+</div>
+<div class="strip">
+  <figure class="wide"><img src="png/apb-dk-a-menu.png" alt="">
+    <figcaption><b>Desktop · A.</b></figcaption></figure>
+  <figure class="wide"><img src="png/apb-dk-c-more.png" alt="">
+    <figcaption><b>Desktop · the ⋯ open.</b></figcaption></figure>
+</div>
+
+<h2>Two things the pictures found that are nobody’s variant</h2>
+
+<h3>1 · The split paints its gradient twice <span class="tag">production change</span></h3>
+<p>Each half of the shipped split carries <span class="k">background: var(--grad)</span> of its own,
+so a 120° gradient is painted twice: the main part runs purple → cyan and the 44&nbsp;px ▾ beside it
+<b>starts again at purple</b>. It is in R373’s row today, but today the main part is one of two split
+buttons and about 150&nbsp;px wide, so the restart is small. The owner’s single button is 268&nbsp;px,
+the gradient travels much further, and the ▾ reads as a lighter tab bolted to the end.</p>
+<div class="strip">
+  <figure class="zoom"><img src="png/apb-zoom-seam-4x.png" alt="">
+    <figcaption><b>As production draws it, at 4×.</b> Every variant frame in this round is drawn this
+    way, so that the four are compared against the row that exists.</figcaption></figure>
+  <figure class="zoom"><img src="png/apb-zoom-seam-fix-4x.png" alt="">
+    <figcaption><b>One continuous gradient, at 4×.</b> The gradient moves to the wrapper, the halves
+    go transparent, the division becomes an inset hairline.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/apb-seam-fix.png" alt="">
+    <figcaption><b>The whole frame with the fix.</b> <span class="k">apb-seam-fix.png</span> —
+    <b>not a variant</b>, and not a choice for the owner. A production change to spec or
+    drop.</figcaption></figure>
+</div>
+
+<h3>2 · A four-row menu lands on the mini player</h3>
+<p>Shipped <span class="k">.re-menu</span> is <span class="k">z-index: 5</span>, under the mini
+player (71) and the bottom bar (72). That is harmless today because the menu has two rows and stops
+about 90&nbsp;px short of the player. Every variant here has four, and in the first render the
+fourth row — the one the owner asked for — was painted <b>underneath</b> the mini player and could
+not be seen at all. Drawn at <span class="k">z-index: 75</span>, so the open menu covers both.</p>
+<p>It still <i>lands on</i> the mini player rather than beside it, and the player’s ends show past
+the menu’s edges. A scrim, as the shipped sheets use, is the other way to draw it. Raised as a
+question rather than drawn, because it is the same answer for all four variants.</p>
+
+<h2>Decided in this round, and visible in every frame</h2>
+
+<table>
+  <tr><th>What</th><th>Drawn as</th><th>Why</th></tr>
+  <tr><td>A glyph on every menu row</td><td>play ▸ / shuffle ⤬, 18&nbsp;px, <span class="k">--ink-soft</span></td>
+    <td>Today’s two rows need none — both are <i>Play</i>. One menu holding both kinds does.</td></tr>
+  <tr><td>Menu width</td><td>the full 324&nbsp;dp of content, not the shipped <span class="k">min(290px,100%)</span></td>
+    <td>The glyph column costs the row 28&nbsp;px, and in Danish that is exactly the difference
+      between a one-line subtitle and a wrapped one.</td></tr>
+  <tr><td>The ✓</td><td>on the <i>Play</i> row whose order is remembered; never on a shuffle row</td>
+    <td>Nothing in R373 remembers a shuffle. A tick on one would claim otherwise.</td></tr>
+  <tr><td>A plain album’s menu</td><td>no subtitle, no tick, in every variant</td>
+    <td>A subtitle exists to tell two orders apart. A plain album has one.</td></tr>
+  <tr><td>The desktop ⋯’s menu</td><td>hung from the button</td>
+    <td>The linked round anchors it to the header block’s right edge, which here put it 120&nbsp;px
+      away from the ⋯ it came from.</td></tr>
+</table>
+
+<h2>New strings</h2>
+
+<table>
+  <tr><th>Key</th><th>en</th><th>da</th><th>fo</th><th></th></tr>
+  <tr><td><span class="k">ed.shuffle_extras</span></td><td>Shuffle + extras</td><td>Bland + ekstra</td>
+    <td>Blanda + eyka</td><td class="hm">DRAFT — every variant needs it</td></tr>
+</table>
+<p>That is the whole string cost. Everything else in every frame is shipped:
+<span class="k">ed.play_album</span>, <span class="k">ed.play_extras</span>,
+<span class="k">ed.sub_album</span>, <span class="k">ed.sub_extras</span>,
+<span class="k">ed.n_extras</span>, <span class="k">music.shuffle</span>,
+<span class="k">music.add_playlist</span>, and for D <span class="k">ed.more_play</span>. Danish and
+Faroese are read out of <span class="k">i18n/da.json</span> and <span class="k">i18n/fo.json</span>
+at their shipped values, because the shipped file wins wherever a string already exists.</p>
+
+<h2>Still open — for Bárður, not for the drawing</h2>
+
+<ol>
+  <li><b>Does picking a shuffle row move the remembered order?</b> If a listener picks
+    <i>Shuffle + extras</i>, does the main part relabel to <i>Play album + extras</i>? Drawn as
+    <i>no</i> — the ✓ and the relabel follow the two <i>Play</i> rows only — but R373 says the pick
+    is what both buttons follow, and a shuffle row now carries an order in its name.</li>
+  <li><b>A plain album’s button becomes <i>Play album</i></b>, where it says <i>Play</i> today.</li>
+  <li><b>The open menu lands on the mini player.</b> Over it, as drawn, or with a scrim?</li>
+  <li><b>The gradient seam</b> — fix in production, or leave as shipped?</li>
+  <li><b>{k}, the extras count,</b> drawn as <i>+ 3 extras</i>, and <b>13</b> as the extras row’s
+    subtitle count. The shipped subtitle counts official + extras + B-sides; this stand-in album
+    draws no B-sides, so 13 is 10 + 3 and would be larger on a real album. Both are stand-ins the
+    previous round already asked for.</li>
+</ol>
+
+</main>
+</body>
+</html>

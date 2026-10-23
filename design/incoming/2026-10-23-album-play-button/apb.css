@@ -1,0 +1,157 @@
+/* apb.css — the album page's single "Play album ▾" button, its menu, and the ⋯ beside it
+   (round slug album-play-button, 2026-10-23). Phone, plus one desktop frame per variant.
+
+   WHAT THIS FILE IS. It is loaded LAST, after
+     ../../ravilo/music-play-all/music-play-all.css    (shipped, linked — skins, type, shells, fonts)
+     ../2026-10-23-music-playlists/music-playlists.css (linked — .mpl-* components)
+   so every token, component and face in the pictures is one of those two files' and this file adds
+   only what the single split button and its menu are made of. Every class here is apb-, apart from
+   two .mpl- overrides restated at their PRODUCTION numbers, each with the line it corrects.
+
+   WHY THE MENU IS RESTATED HERE RATHER THAN LINKED. The menu this round draws is the shipped
+   .re-menu from design/ravilo/mobile/ravilo-music.css — a stylesheet that is NOT in the linked
+   pair, because the playlists round linked music-play-all and wrote its own .mpl-menu instead.
+   Rather than link a third production stylesheet whose .mu-* shell rules would fight the .mpa-*
+   shell these frames are built from, every .re-menu number is restated below as .apb-menu, with
+   the ravilo-music.css line it came from beside it. A number here that is not a var() is a
+   production number quoted at its source; there is no new token in this file.
+
+   CANVAS RULES OBSERVED. No content-visibility, no backdrop-filter, no large filter: blur, no
+   infinite animations. No network reference of any kind: the faces resolve out of the linked
+   shipped stylesheet's own fonts/ directory. */
+
+/* ============================================================ CORRECTIONS ================= */
+
+/* The shipped split's ▾ half is 44 px wide, not the 40 the playlists round drew
+   (ravilo-music.css:414 — .mu-dacts.re-acts .re-split>.re-dd{width:44px}). Restated, because
+   4 px is the whole margin some of these labels have. First raised in the album-more-placement
+   round's REPORT.md; it is a defect in that earlier drawing, not in the code. */
+.mpl-acts.ed .sp .bt.dd{width:44px}
+/* and its glyph, same source: .mu-dacts .re-dd svg{width:18px;height:18px} */
+.mpl-acts.ed .sp .bt.dd .ic{width:18px;height:18px}
+
+/* NOTHING ELSE IS CORRECTED, on purpose. The shipped action button (ravilo-music.css:99,
+   .mu-dacts button) has ZERO horizontal padding, and the split's left half adds 10 px of its own
+   (ravilo-music.css:413). Both are drawn exactly as production draws them: this round's whole
+   argument is how much label room the row has, so inventing padding would compare the variants
+   against a row that does not exist. */
+
+/* ============================================================ THE HEADER =================== */
+
+/* R373 point 1: "+ {k} extra(s)" after the official album's count and length, in the dimmer ink.
+   Carried over from the album-more-placement round unchanged, so an editions album and a plain
+   one are not the same picture. .mpl-dm is already the dim ink; this is that ink one step quieter
+   again, because the count and the length are the album's own facts and this is a note on them. */
+.apb-ex{color:var(--ink-dim);opacity:.8}
+.mpl-dhead .ml .apb-ex{margin-left:-2px}
+
+/* ============================================================ THE ROW ====================== */
+
+/* The row is .mpl-acts.ed — one .sp split at flex:1 and the ⋯ at the linked round's own
+   .mpl-acts .mb (flex:none; width:48px). There is nothing to add: the single split button is what
+   the linked rule already draws when it is the only flexible item in the row. That is the point
+   of the owner's shape, and it is worth one comment rather than one declaration. */
+
+/* ---- the gradient seam, which is NOT a variant and is drawn once ----
+   The shipped split is two buttons with a 1 px gap, and EACH of them carries
+   `background: var(--grad)` of its own (.mpl-acts .bt.pri ← ravilo-music.css's .mu-dacts .pri).
+   A 120° gradient painted twice restarts: the wide main part runs purple→cyan and the 44 px ▾
+   beside it starts again at purple, so the ▾ reads as a lighter tab bolted to the end of the
+   button rather than half of it. It is shipped behaviour and it is in R373's row today — but
+   today the main part is one of TWO split buttons and only about 150 px wide, so the restart is
+   small. The owner's single button is 268 px, the gradient travels much further before the seam,
+   and apb-zoom-seam-4x.png shows what that looks like at 360 dp.
+
+   EVERY VARIANT FRAME IN THIS ROUND IS DRAWN WITH THE SEAM, as production draws it, so that the
+   four are compared against the row that exists. This rule is used by ONE extra frame,
+   apb-seam-fix, so that the fix can be seen beside it: the gradient moves to the wrapper, the two
+   halves go transparent, and the divider becomes an inset hairline rather than a colour break.
+   That is a production change for Bárður to spec or drop, not a direction for the owner to pick,
+   and REPORT.md puts it to him that way. */
+.mpl-acts.ed .sp.apb-onegrad{background:var(--grad);border-radius:14px}
+[data-skin="noir"] .mpl-acts.ed .sp.apb-onegrad{background:var(--ink)}
+.apb-onegrad .bt.pri{background:none;border-color:transparent}
+/* the 1 px gap now shows the wrapper's own gradient, so the division is drawn as a hairline the
+   same way the shipped track rows draw theirs — ink at low alpha, not a second fill */
+.apb-onegrad .bt.dd{box-shadow:inset 1px 0 0 rgba(0,0,0,.22)}
+
+/* ============================================================ THE ▾ MENU =================== */
+
+/* Every number below is ravilo-music.css:418-424, quoted. The one difference from the shipped
+   menu is stated where it occurs: the rows gain a glyph. Today they cannot need one — both of
+   the shipped rows are Play — and once the menu also holds the shuffles, the glyph is how the
+   two kinds of row are told apart without reading them. */
+/* z-index is the ONE number below that is NOT the shipped one, and it is a correction the first
+   render forced. Shipped .re-menu is z-index:5, which is under the mini player (.mpa-mini, 71)
+   and the bottom bar (.mpa-bnv, 72) — harmless today, because today's menu has TWO rows and stops
+   about 90 px short of the mini player. Every variant in this round has FOUR, and at 360 dp the
+   fourth row and the menu's own bottom edge were painted UNDERNEATH the mini player: the row the
+   owner asked for was the one row that could not be seen. 75 puts the open menu over both, which
+   is what an open menu has to do. It is a real change to shipped CSS and REPORT.md says so. */
+/* width is the SECOND number below that is not the shipped one, and the second correction a
+   picture forced. Shipped .re-menu is width:min(290px,100%) — 290 px inside this page's 324 dp of
+   content. That is enough for a row of R373's two, because those rows have no glyph: label, its
+   subtitle, and the ✓. This round's rows add an 18 px glyph and its 10 px gap, and 28 px is
+   exactly the difference between one line and two for the Danish subtitle "10 sange · den
+   officielle rækkefølge": in apb-b-menu-da it wrapped, which made the ticked row a head taller
+   than the three beside it and left the ✓ floating against nothing. Taking the menu to the full
+   content width gives the row 34 px back and every subtitle in all three languages holds one
+   line. It is a real change to a shipped number and REPORT.md says so — the alternative was to
+   drop the glyph, which is the only thing telling a play row from a shuffle row at a glance now
+   that one menu holds both. */
+.apb-menu{position:absolute;top:calc(100% + 8px);left:0;z-index:75;width:100%;
+  padding:6px;border-radius:14px;background:var(--card-2);border:1px solid var(--line-2);
+  box-shadow:0 18px 40px rgba(0,0,0,.45)}
+/* .re-menu button, with .mi for a static frame's sake rather than a real <button> */
+.apb-menu .mi{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 12px;
+  border-radius:10px;background:none;color:var(--ink);font-family:'Sora',sans-serif;text-align:left}
+.apb-menu .mi.on{background:rgba(var(--fg),.08)}
+.apb-menu .tx{min-width:0;flex:1}
+.apb-menu b{display:block;font-size:14.5px;font-weight:600}
+.apb-menu small{display:block;font-size:12.5px;color:var(--ink-dim);margin-top:2px}
+.apb-menu i{margin-left:auto;font-style:normal;font-weight:700;color:var(--accent-2)}
+[data-skin="noir"] .apb-menu i{color:var(--ink)}
+/* the row glyph, this round's one addition to the shipped row. At the .mpl-menu glyph's size and
+   ink (music-playlists.css:156) so it matches the ⋯ menu sitting beside it on the same page. */
+.apb-menu .mi>.ic{width:18px;height:18px;flex:none;color:var(--ink-soft)}
+/* the separator the owner asked for. The shipped .re-menu has none, so it is .mpl-menu .sep's
+   own numbers (music-playlists.css:158) rather than an invention. */
+.apb-menu .sep{height:1px;background:var(--line);margin:5px 8px}
+/* variant D only: the menu's heading, the shipped ed.more_play drawn. .mpl-dhead .k's numbers
+   (music-playlists.css:298), which is this system's section label. */
+.apb-menu .hd{padding:9px 12px 7px;font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-dim)}
+
+/* ============================================================ THE DESKTOP ================== */
+
+/* the desktop split, at .mpl-bt's own 36 px height and 9 px radius (music-playlists.css:257) */
+.apb-dsp{display:flex;gap:1px}
+.apb-dsp .mpl-bt:first-child{border-radius:9px 0 0 9px}
+.apb-dsp .mpl-bt.dd{border-radius:0 9px 9px 0;width:30px;padding:0}
+.apb-dsp .mpl-bt.dd .ic{width:15px;height:15px}
+/* the ⋯'s own positioning context on the desktop, so its menu hangs from the BUTTON. See the
+   comment in apb-kit.js desk(): against .btns the menu lands at the header block's right edge,
+   which is wherever the album title happens to end. */
+.apb-dmw{position:relative;display:inline-flex}
+
+/* the desktop ▾ menu: .mpl-dmenu's container (music-playlists.css:305), with the two-line row the
+   phone menu has. Anchored left, under the split it came from. */
+.apb-dmenu{position:absolute;top:calc(100% + 8px);left:0;z-index:40;width:290px;padding:5px;
+  border-radius:12px;background:var(--bg-2);border:1px solid var(--line-2);
+  box-shadow:0 20px 48px rgba(0,0,0,.6)}
+.apb-dmenu .mi{display:flex;align-items:center;gap:10px;min-height:42px;padding:5px 10px;
+  border-radius:8px;color:var(--ink)}
+.apb-dmenu .mi.on{background:rgba(var(--fg),.09)}
+.apb-dmenu .mi>.ic{width:16px;height:16px;flex:none;color:var(--ink-soft)}
+.apb-dmenu .tx{min-width:0;flex:1}
+.apb-dmenu b{display:block;font-size:13.5px;font-weight:600}
+.apb-dmenu small{display:block;font-size:12px;color:var(--ink-dim);margin-top:1px}
+.apb-dmenu i{margin-left:auto;font-style:normal;font-weight:700;color:var(--accent-2)}
+[data-skin="noir"] .apb-dmenu i{color:var(--ink)}
+.apb-dmenu .sep{height:1px;background:var(--line);margin:4px 8px}
+.apb-dmenu .hd{padding:8px 10px 6px;font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-dim)}
+
+/* ============================================================ NEW TOKENS =================== */
+/* None. Every colour, radius, face and size above is a var() or a literal restated from one of
+   the two linked stylesheets or from ravilo-music.css, named at its source beside it. */

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>One Play album ▾ button, and the ⋯ beside it — frames</title>
+<!--
+  frames.html — every frame this round renders, built from apb-data.js through apb-kit.js, on top
+  of the album-more-placement and music-playlists rounds' kits and stylesheets, which are LINKED
+  rather than copied (the brief's own instruction). Those rounds in turn link the shipped
+  music-play-all pair, so the shells, skins, type, covers and the three woff2 in these pictures
+  are the ones three earlier rounds settled, byte for byte, and all four rounds' PNGs are
+  diffable.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=phone|desktop
+      &lang=en|da|fo
+      &skin=aurora|midnight|noir
+
+  An id gains its language and its skin as a suffix, so one render per combination writes PNGs
+  that cannot collide.
+
+  The round's own stylesheet always comes last, so it extends the three it is loaded after and
+  never precedes them. No network reference of any kind: the faces resolve out of the shipped
+  stylesheet's own fonts/ directory.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'phone';
+    const skin = q.get('skin') || 'aurora';
+    const lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.lang = lang;
+    document.write('<link rel="stylesheet" href="../../ravilo/music-play-all/music-play-all.css">');
+    document.write('<link rel="stylesheet" href="../2026-10-23-music-playlists/music-playlists.css">');
+    document.write('<link rel="stylesheet" href="../2026-10-23-album-more-placement/amp.css">');
+    document.write('<link rel="stylesheet" href="apb.css">');
+    window.APBOPT = { set, skin, lang };
+  })();
+</script>
+<style>
+  /* Canvas layout only — where a frame sits on the page. Dark ink on a light-gray backdrop, per
+     the standing canvas rule; nothing here is a component, and no .fr is styled from here. */
+  body { margin: 0; background: #e9eaef; font-family: 'Sora', sans-serif; }
+  #frames { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 46px 34px; padding: 34px; }
+  .hold { position: relative; flex: none; }
+  .hold.ph { width: 360px; height: 840px; }
+  .hold.dk { width: 1120px; height: 780px; }
+  .hold > .cap { display: block; margin-bottom: 9px; color: #262a35;
+    font-family: 'JetBrains Mono', monospace; font-size: .7rem; font-weight: 700;
+    letter-spacing: .05em; text-transform: uppercase; line-height: 1.35; }
+  .hold > .cap i { color: #12141b; font-style: normal; }
+  /* The frame is position:absolute (.fr), so the holder gives it its box — and `top` has to clear
+     the CAPTION at its tallest. The first render set it at 26 px, which cleared one line; this
+     round's captions name the variant AND the state and run to three, and the second and third
+     lines painted INSIDE the frame, which the render then cropped into the PNG. A caption is the
+     canvas, not the design, and it had reached the pictures. 58 px clears three lines. */
+  .hold .fr { top: 58px; left: 0; }
+</style>
+</head>
+<body>
+<div id="frames"></div>
+
+<script src="../../ravilo/music-play-all/music-play-all-kit.js"></script>
+<script src="../2026-10-23-music-playlists/mpl-data.js"></script>
+<script src="../2026-10-23-music-playlists/mpl-kit.js"></script>
+<script src="apb-data.js"></script>
+<script src="apb-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { set, skin, lang } = window.APBOPT;
+  const root = document.getElementById('frames');
+  const sfx = (lang === 'en' ? '' : '-' + lang) + (skin === 'aurora' ? '' : '-' + skin);
+  const KS = window.APB.VARIANTS;
+
+  function add(cls, el, cap) {
+    const d = document.createElement('div');
+    d.className = 'hold ' + cls;
+    d.innerHTML = '<span class="cap"><i>' + cap + '</i></span>';
+    d.appendChild(el);
+    root.appendChild(d);
+  }
+  const ph = (id, o, cap) =>
+    add('ph', APBK.phone(Object.assign({ id: id + sfx, lang: lang, skin: skin }, o)), cap);
+  const dk = (id, o, cap) =>
+    add('dk', APBK.desk(Object.assign({ id: id + sfx, lang: lang, skin: skin }, o)), cap);
+
+  /* WHY THE STATES ARE NOT DRAWN FOUR TIMES EACH, which is this round's first finding and is a
+     measurement, not a preference. The owner has FIXED the row: one split button labelled Play
+     album with a ▾, no Shuffle button, a ⋯ to its right. The four variants differ only in what
+     the MENU holds and whether the main part is relabelled afterwards. So with the menu shut,
+     A, B, C and D are not similar — they are the same picture. The first render drew all
+     sixteen; comparing them pixel by pixel, the largest difference between any two of them is
+     27 pixels out of 280 800, at a maximum channel delta of 27, and every one of those pixels
+     is in the cover's own gradient dither. Nothing in the layout differs at all.
+
+     Four copies of one picture in the owner's list would not prove that; it would hide which
+     two frames he actually has to compare. So each shut-menu state is drawn ONCE and its file
+     name says which variants it is — abcd-rest, bcd-relabel, abcd-more — and the four menus,
+     which are the whole question, are drawn per variant. REPORT.md carries the measurement.
+
+     The same collapse holds on the plain album, and for a stronger reason: a plain album has
+     ONE order, so it has nothing to remember, nothing to tick and nothing to subtitle, and all
+     three things the variants differ in fall away. Only D's heading survives onto it, so D's
+     plain menu is the one plain frame drawn twice.
+
+     A has no relabel at all: it is the variant in which the main part never changes, so a frame
+     of it changing would be a frame of something that cannot happen. That absence IS what A has
+     to say about what a listener loses, and the directions doc says it rather than this file
+     inventing a picture for it. */
+
+  if (set === 'phone') {
+    if (lang === 'en' && skin === 'aurora') {
+      ph('abcd-rest', { variant: 'B', album: 'ed', state: 'rest' },
+        'A, B, C and D alike · the album with editions · at rest');
+      ph('bcd-relabel', { variant: 'B', album: 'ed', state: 'relabel' },
+        'B, C and D alike · after picking the extras · the button becomes the pick');
+      ph('abcd-more', { variant: 'B', album: 'ed', state: 'more' },
+        'A, B, C and D alike · the ⋯ open · Add to playlist…');
+      KS.forEach(function (v) {
+        ph(v.k.toLowerCase() + '-menu', { variant: v.k, album: 'ed', state: 'menu' },
+          v.k + ' · ' + v.name + ' — the ▾ open · THIS is where the four differ');
+      });
+      ph('plain-rest', { variant: 'B', album: 'plain', state: 'rest' },
+        'A, B, C and D alike · an album with no editions · at rest');
+      ph('plain-menu', { variant: 'B', album: 'plain', state: 'menu' },
+        'A, B and C alike · the plain album’s ▾ open');
+      ph('d-plain-menu', { variant: 'D', album: 'plain', state: 'menu' },
+        'D · the plain album’s ▾ open · the heading is all that survives here');
+      /* NOT a variant: the shipped split paints its gradient twice, so the ▾ half restarts at
+         purple. Every frame above is drawn with that seam, as production draws it. This one is
+         the same row with one continuous gradient, so the two can be held side by side. */
+      ph('seam-fix', { variant: 'B', album: 'ed', state: 'rest', seam: 'one' },
+        'NOT a variant · the same row with ONE gradient across both halves · compare apb-abcd-rest');
+    } else if (lang !== 'en') {
+      /* THE LONGEST STRINGS, which is what this round is actually judged on at 360 dp. Two
+         different places can overflow and they are drawn separately, because fixing one says
+         nothing about the other: the BUTTON's label (longest when the variant relabels; A never
+         relabels, so its longest is the resting label every variant shares) and the MENU's
+         rows, whose subtitles are far longer than anything on the button. */
+      ph('abcd-rest', { variant: 'B', album: 'ed', state: 'rest' },
+        'A, B, C and D alike · the resting label · ' + lang);
+      ph('bcd-relabel', { variant: 'B', album: 'ed', state: 'relabel' },
+        'B, C and D alike · the button’s longest label · ' + lang);
+      KS.forEach(function (v) {
+        ph(v.k.toLowerCase() + '-menu', { variant: v.k, album: 'ed', state: 'menu' },
+          v.k + ' · the ▾ open · ' + lang);
+      });
+    } else {
+      /* the skins. Music redefines the noir and midnight tokens — and noir redefines the ✓'s
+         ink too (ravilo-music.css:434) — so the recommendation is drawn in both rather than
+         asserted to carry. */
+      ph('c-relabel', { variant: 'C', album: 'ed', state: 'relabel' }, 'C · relabelled · ' + skin);
+      ph('c-menu', { variant: 'C', album: 'ed', state: 'menu' }, 'C · the ▾ open · ' + skin);
+    }
+  }
+
+  if (set === 'desktop') {
+    /* the same collapse as the phone, for the same measured reason: with the menu shut the four
+       variants draw one desktop header, so it is drawn once */
+    dk('dk-abcd-rest', { variant: 'B', album: 'ed', state: 'rest' },
+      'desktop · A, B, C and D alike · the same one-button shape as the phone · at rest');
+    KS.forEach(function (v) {
+      dk('dk-' + v.k.toLowerCase() + '-menu', { variant: v.k, album: 'ed', state: 'menu' },
+        'desktop · ' + v.k + ' · the ▾ open');
+    });
+    dk('dk-c-more', { variant: 'C', album: 'ed', state: 'more' },
+      'desktop · C · the ⋯ open · Add to playlist…');
+  }
+})();
+</script>
+</body>
+</html>

@@ -103,6 +103,26 @@ About the production surface a round can touch — verified facts, not recollect
    attach to the task and the report goes in the same comment**, because that is where the owner
    reviews now.
 
+**A decision on pictures shows the pictures.** Whoever asks the owner to choose between drawn
+options — any seat, any task, not only a design round — puts the pictures **inline in a comment,
+immediately before the card**. A file name, a path, or a pointer to another task is not enough: the
+owner's part is to look, and he should not have to go and find what he is looking at. The comment
+carries **one heading per option, the recommended one first and marked as a recommendation**, and
+under each heading a table of that option's key states, every picture clickable to full size:
+
+```
+[![alt](</api/attachments/{id}/content>)](</api/attachments/{id}/content>)
+```
+
+with the ids from `GET /api/issues/{round}/attachments`. **Each option gets one line saying what it
+gives and what it costs.** Options that were drawn and failed appear as plain links with the reason,
+because knowing what was tried is part of the choice. The card's options carry **the same names as
+the comment's headings**, so the thing he picks and the thing he looked at cannot drift apart. Owner,
+DEB-2254, 2026-10-23: *"if you are asking for a decision on designs then you include them in a nice
+format… for any future scenarios from you or anyone else from the team working with our designer."*
+This is what makes a round's **file names** load-bearing: `<round>-<option>-<state>.png` is what lets
+whoever writes that comment build it without opening every picture to find out which one it is.
+
 Then it is Bárður's: he routes the findings, writes the spec or the dated amendment by hand, and puts
 the open decisions to the owner. Promotion into production CSS is a separate hand-made commit through
 the gate below.
