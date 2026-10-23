@@ -7,17 +7,18 @@
 > (for now)) · Desktop (Macosx and Gnome, maybe more to come in the future) · Mobile (Desktop uses this as well in
 > small windows)."*
 
-## Status
+## Scope
 
-`⚠ Partial` 2026-09-30 (§Build notes: built and compiled; not seen on screen — the verification run hit a host incident) — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` (round 2, all eleven questions
-answered) and `design/ravilo/Desktop - Directions.html` (round 1). **Dev-reviewed 2026-09-30** (§Dev review; the owner took the leans on items 4 and 7 the same day — Q12, Q13). Number verified free: `main`
-tops at R335, and R335 names **R336** for MPRIS and the Inhibit portal, so this starts at R337.
+Written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` (round 2, all eleven questions answered)
+and `design/ravilo/Desktop - Directions.html` (round 1). **Dev-reviewed 2026-09-30** (§Dev review; the owner took the
+leans on items 4 and 7 the same day — Q12, Q13).
 
 **Supersedes R328 D3** (*the TV layout, driven by the keyboard and the mouse*) and the layout half of **FR-R328-5**
 (its minimum window size and its menu bar). R328's target, seams, Keychain, update line and closing rule (D7) stand;
 R329's engine and its film-player chrome (D4, *the TV's chrome with a pointer*) stand; R330/R331/R333–R335 are
 untouched. **Builds on** R256 (the TV layout vs. the phone layout), R267/R304 (the phone's bar and Profile), R321/R326
-(the listening mode), R322 (the player and the Playing tab), R324/R330 (*Play on…*).
+(the listening mode), R322 (the player and the Playing tab), R324/R330 (*Play on…*). FR-R337-7's Playing page is
+amended on 2026-10-23 (end of file).
 
 ## The three view families
 
@@ -562,3 +563,11 @@ display that appears when someone connects. With no display at all it opens at 4
   `chrome`: traffic lights at (24,34)/(44,34)/(64,34), full-size content view. Glass and the system font look right in
   the shots. The Play on… sheet lists Køkken hub, Stue TV and Soveværelse TV as music targets (R380) and a Chromecast
   as not reachable.
+
+## Amendment 2026-10-23 — the desktop Playing page is the one remote (DEB-2185)
+
+**FR-R337-7** — the desktop family's Playing page becomes the one remote's wide layout
+(`one-remote-for-every-playback.md` FR-3, FR-4, FR-10; Task: DEB-2185), drawn in `one-remote-mac-music.png`. The cover
+sits beside the synced lyrics as before, with the remote's column under the cover: the place pill, the transport and
+the inline volume block. Where the window is too short for the volume block, that column scrolls; the capsule never
+covers a slider. Medium still stacks the cover above the lyrics.

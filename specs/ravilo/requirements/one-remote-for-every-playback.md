@@ -20,10 +20,11 @@ The backend change is additive only (FR-14).
 **Designed in three revisions** under `design/incoming/2026-10-23-one-remote/`, all drawn in the repo by Rannvá:
 - round 1, DEB-2187, `49927577`;
 - revision 2, DEB-2202, `5c48c448`;
-- revision 3, DEB-2222, for music and books, the local pair, and the volume outcomes.
+- revision 3, DEB-2222, `7d72f305`, for music and books, the local pair, and the volume outcomes.
 
-The film frames are owner-accepted as drawn in round 1/revision 2. The music frames are revision 3's. The music
-FRs below say what must be there, and revision 3 says where.
+The film frames are owner-accepted as drawn in round 1/revision 2. The music and book frames, and every footer, are
+revision 3's (`one-remote-a-music*`, `-a-book`, `-a-vol-*`, `-mac-music`, `-web-music-1440`). Where a picture and
+this text disagree, this text wins, and the disagreement is a defect to raise.
 
 **Decided by the owner on 2026-10-23 (DEB-2185, card `b22fa326`, and his correction a minute later):**
 1. The Cast remote's shape becomes the one remote. Every function of the session remote and of today's music Playing
@@ -40,8 +41,7 @@ including music playing on this device. That leaves one music screen, not two. F
 - R245 FR-R245-7's "no on-screen slider".
 - *Stop casting* as the remote's word.
 
-Dated amendments sit in R245, R356, R357, R369 and R371. R322 and R337 (the Playing page) get theirs in the commit
-that lands revision 3, before FR-3/FR-4 are built.
+Dated amendments sit in R245, R356, R357, R369 and R371, and in R322 and R337 (the Playing page).
 
 **Not in scope:**
 - the support-desk routing (DEB-2184);
@@ -125,14 +125,26 @@ Playing page and the session remote do today:
 A **book** gets the book variant: chapter line, the whole-book scrubber in book time (R369 FR-R369-9), −30 s · ⏯ ·
 +30 s, speed. On the desktop and the web at a desk width, the lyrics sit beside the cover.
 
-Where each part sits is revision 3's (DEB-2222). This FR's build slice waits for it.
+Where each part sits is revision 3's:
+- `one-remote-a-music.png` (Playing from, ♥ level with the title, version chips, ⋯ in the header's right slot);
+- `-a-music-swipe`, `-a-music-lyrics`, `-a-music-upnext` (*Up next* is a sheet over the remote; tap jumps);
+- `-a-music-idle` (FR-R322-3's last-played song, paused);
+- `-a-book` (chapter strip; speed · −30 s · ⏯ · +30 s · sleep; footer *Chapters* · *Add bookmark* · **Stop**);
+- `-mac-music` and `-web-music-1440` (lyrics beside the cover).
+
+The volume block is inline for every kind, and the square art shrinks to make room. The cover is smaller than
+today's 330 px, which is a known cost of the owner's inline slider, not a defect. The book's speeds stay
+`BOOK_SPEEDS` as shipped; the frame's 1.25× is a stand-in.
 
 ### FR-4 — The Playing page is retired everywhere
 
 Music or a book playing **on this device** opens the same remote, with the place pill reading *This phone* /
-*This Mac* (`one-remote-a-music-local.png`, revision 3, drawn as a pair with the remote case). The music-mode
-*Playing* tab opens it. `MusicPlayingScreen`, `BookPlayingScreen` and the desktop `DeskPlaying` go once this FR is
-built. R322 FR-R322-2/4/6/7 and R337 FR-R337-7 are amended in the revision-3 commit. Built last (see *Scope*).
+*This Mac*, and the state line reading *Playing here* (`one-remote-a-music-pair.png`, `-a-music-here`).
+- **The music-mode *Playing* tab shows the remote inside the tab, with the bottom nav under it**, as today's tab
+  does (`-a-music-here`). The full-screen alternative (`-a-music-full`) is not adopted: keeping the tab is the
+  no-change choice.
+- **The *Queue* tab stays** as it is. *Up next* on the remote is the same queue as a sheet. `MusicPlayingScreen`, `BookPlayingScreen` and the desktop `DeskPlaying` go once this FR is
+built. R322 FR-R322-2/4/6/7 and R337 FR-R337-7 carry dated amendments. Built last (see *Scope*).
 
 ### FR-5 — The source is invisible; the fastest path carries the command
 
@@ -190,6 +202,9 @@ Swipe-down does nothing (FR-R245-6).
   speaker, a group, a Ravilo app.
 - **One place:** one slider. **Several rooms:** R371 FR-R371-4's master *Volume* plus one slider per room, each
   with its own mute.
+- **On the desktop and the web,** the volume block stays inline too. Where a window is too short for it (with three
+  rooms the page needs about 1040 px on the Mac and 960 px in a browser), the remote's column scrolls; the capsule
+  never covers a slider. The capsule's volume popover (R371) stays for pages other than the remote.
 - On the phone, the volume keys move the same level the slider shows (R324's HUD).
 - **A place that does not report its level** shows *—*, cannot be dragged, and gives the shipped reason
   *{place} doesn't report its volume* (`volume.no_report`). It never shows a guessed or zero level.
@@ -210,8 +225,9 @@ TV's own remote can move the level too. FR-12 is what makes that fight visible i
 4. **Settled:** the first report matching the requested level (± 1) ends the in-flight state. From then on the
    slider is the reported level.
 5. **Not taken:** if no matching report arrives within **3 s** of release (R369's *Can't reach* window), the thumb
-   returns to the **latest reported** level. One line under the slider says so for 3 s, in revision 3's words
-   (draft in FR-15).
+   returns to the **latest reported** level. One line under the slider names the level the place actually has,
+   *{place} kept {n} %*, for 3 s (`one-remote-a-vol-reverted-film.png`, `-music`). While a request is in flight
+   nothing is marked (`-a-vol-pending-film`, `-music`).
 6. **Only this app's own request is ever held.** The thumb never shows a level the place did not report, except the
    viewer's own pending request, and that is bounded at 3 s. This is a command in flight, the same class as R369's
    400 ms dim, not a derived or optimistic state. Constitution invariant 4 is read that way here.
@@ -276,11 +292,11 @@ The remote reuses shipped keys:
 
 Round 1's draft table (`One Remote - Directions.html`) maps onto these and is **not** adopted as new keys.
 
-One new key, drafts (revision 3 may replace the wording):
+One new key (revision 3's wording; da/fo are drafts):
 
 | Key | en | da | fo |
 |---|---|---|---|
-| `volume.not_taken` | {place} didn't change its volume | {place} ændrede ikke lydstyrken | {place} broytti ikki ljóðstyrkina |
+| `volume.kept` | {place} kept {n} % | {place} beholdt {n} % | {place} helt {n} % |
 
 `scripts/check-ravilo-strings.sh` green. The lexicon is regenerated (R279/R288).
 
@@ -303,7 +319,7 @@ One new key, drafts (revision 3 may replace the wording):
 1. **Films and episodes:** FR-1 (for films and episodes), FR-2, FR-5, FR-6, FR-7, FR-8, FR-9, FR-13. The one remote,
    both drivers, one mini bar, *Stop*, view-only.
 2. **Volume:** FR-10, FR-11, FR-12 (including the Android TV app's stream volume), FR-15's new key.
-3. **Music and books:** FR-3 and FR-4. Waits for revision 3 (DEB-2222) and R322/R337's amendments.
+3. **Music and books:** FR-3 and FR-4.
 
 ## Acceptance
 

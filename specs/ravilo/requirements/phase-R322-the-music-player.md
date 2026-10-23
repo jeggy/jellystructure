@@ -1,13 +1,15 @@
 # Phase R322 — The music player: Now playing as a tab, the mini bar, the queue, and playing in the background
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **not deployed, not tried on a phone** (build notes at the end). Written 2026-09-28 from the phone brief (§D–§G, §J4–§J6, §M5) and the research report (§5, §6.3,
-§6.4), with the mockup `design/ravilo/mobile/ravilo-music-player.js` (+ `ravilo-music.css`), including the
-owner's *"a full-screen of what's now playing there. If nothing is playing, then it should just be whatever was
-last played in pause mode."* **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **R321** and **279**, **R244** (the time bubble,
-follow-the-sensor), **R218** (the buffering pulse), **R237** (failure copy), **R245/R267** (the cast mini bar's
-docking) and **R292** (the video engine's lifecycle).
+Written 2026-09-28 from the phone brief (§D–§G, §J4–§J6, §M5) and the research report (§5, §6.3, §6.4), with the
+mockup `design/ravilo/mobile/ravilo-music-player.js` (+ `ravilo-music.css`), including the owner's *"a full-screen of
+what's now playing there. If nothing is playing, then it should just be whatever was last played in pause mode."*
+**Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **R321** and **279**, **R244** (the time
+bubble, follow-the-sensor), **R218** (the buffering pulse), **R237** (failure copy), **R245/R267** (the cast mini bar's
+docking) and **R292** (the video engine's lifecycle). The Playing page's screen is retired by
+`one-remote-for-every-playback.md` (amendment at the end); the engine, the service, the mini bar's rules, the queue
+and the lyrics behaviour stand.
 
 ## Decisions
 
@@ -247,3 +249,20 @@ are unverified.
     permission is asked on the first play, once per device (dev review 12).
 12. **Resumption (open question 2 → the queue):** `onPlaybackResumption` restores this viewer's saved queue and opens
     its song. R292's spec carries the one sentence (dev review 9).
+
+## Amendment 2026-10-23 — the Playing page's screen is the one remote now (DEB-2185)
+
+> Owner, 2026-10-23 (DEB-2185): *"The current cast remote is the nice looking one and todays playing page is a bit
+> bad UI, so that one goes. [Its] functionality needs to be there."*
+
+`one-remote-for-every-playback.md` FR-3 and FR-4 (Task: DEB-2185) replace this phase's **screen**:
+- **FR-R322-2** — the *Playing* tab stays a tab with the bar under it. What it shows is the one remote, with the
+  place pill reading *This phone* when music plays here.
+- **FR-R322-4** — the cover-first layout gives way to the remote's shape (revision 3, `one-remote-a-music.png`).
+  Every part listed here is carried, in the remote's slots: *Playing from*, the ♥, the links, the time bubble, the
+  transport and its rules, swipe for next/previous, lyrics, queue (*Up next*), cast (the place pill) and ⋯.
+- **FR-R322-6** — landscape centres the remote's layout (R245's rule) instead of the cover-left layout.
+- **FR-R322-7** — lyrics keep every behaviour here (synced lines, tap to seek, hand scroll stops the follow); they
+  show in the remote with the head shrunk (`-a-music-lyrics`).
+
+FR-R322-3 (nothing playing), FR-R322-5's states, the queue tab, the mini bar and the background service stand.
