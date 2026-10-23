@@ -1556,14 +1556,12 @@ fun RaviloApp(
         }
         // FR-R337-6 / Q2 + Q10 — in music mode the bar is always there; in films mode only while music plays, and a pause
         // from the bar keeps it until the viewer leaves the page. (`deskBarKeptOn` is declared beside the mini bar's rule.)
-        fun deskMusicBarVisible(d: Dest) = deskFramed(d) && musicState.active && !sessionOverMusic &&
-            (inMusic || musicState.playing || deskBarKeptOn == d)
-        fun deskBarShows(d: Dest) = deskMusicBarVisible(d) && d !is Dest.MusicPlaying
-        // The queue panel goes where the bar goes (and stays on Playing, which hides the bar): in films mode with nothing
-        // playing there is no bar, and a queue beside a film's page would be a panel about nothing on screen.
-        fun deskQueueShows(d: Dest) = deskFramed(d) && musicState.active && (deskBarShows(d) || d is Dest.MusicPlaying)
+        fun deskBarShows(d: Dest) = dev.jellystructure.ravilo.ui.music.deskMusicBarVisible(deskFramed(d), musicState.active, sessionOverMusic, inMusic, musicState.playing, deskBarKeptOn == d)
+        // The queue panel goes where the bar goes: in films mode with nothing playing there is no bar, and a queue beside
+        // a film's page would be a panel about nothing on screen.
+        fun deskQueueShows(d: Dest) = deskFramed(d) && musicState.active && deskBarShows(d)
         // R368 (FR-R368-8) — the desktop's bar for a session elsewhere, when nothing plays on this computer.
-        fun deskSessionBarShows(d: Dest) = deskFramed(d) && (!musicState.active || sessionOverMusic) && barSession != null && d !is Dest.MusicPlaying
+        fun deskSessionBarShows(d: Dest) = deskFramed(d) && (!musicState.active || sessionOverMusic) && barSession != null
         // FR-R322-3 — nothing playing: the last queue this device kept (where it was), else the viewer's last-played song,
         // loaded paused and not started. The phone does it on the Playing tab; the desktop on entering music mode, where
         // the player bar is always there (FR-R337-6).
@@ -1613,7 +1611,7 @@ fun RaviloApp(
                     dev.jellystructure.ravilo.ui.components.AppCommand.TOGGLE_QUEUE -> if (musicState.active) {
                         if (handset) { if (top !is Dest.MusicQueue) push(Dest.MusicQueue(destDisplayName(top))) } else queueOpen = !queueOpen
                     }
-                    dev.jellystructure.ravilo.ui.components.AppCommand.SHOW_LYRICS -> if (musicState.active && top !is Dest.MusicPlaying) push(Dest.MusicPlaying(destDisplayName(top)))
+                    dev.jellystructure.ravilo.ui.components.AppCommand.SHOW_LYRICS -> if (top is Dest.MusicPlaying) pop() else if (musicState.active) push(Dest.MusicPlaying(destDisplayName(top)))
                     dev.jellystructure.ravilo.ui.components.AppCommand.SHORTCUTS -> shortcutsOpen = true
                     dev.jellystructure.ravilo.ui.components.AppCommand.NEXT_SONG -> if (musicState.active) dev.jellystructure.ravilo.ui.music.MusicPlayback.next()
                     dev.jellystructure.ravilo.ui.components.AppCommand.PREVIOUS_SONG -> if (musicState.active) dev.jellystructure.ravilo.ui.music.MusicPlayback.previous()
@@ -2217,7 +2215,7 @@ fun RaviloApp(
             // so the four pages do not each have to remember it.
             val navBarInset = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
                 // R337 (FR-R337-6) — and by the desktop's player bar while it shows.
-                (if (deskMusicBarVisible(dest) || deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
+                (if (deskBarShows(dest) || deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
                 // FR-R267-8 — "the content's bottom padding is the sum of the two": while the cast mini
                 // bar floats over this page, the page pads by it as well, or its last row sits under it.
                 (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp) +
@@ -3192,7 +3190,7 @@ fun RaviloApp(
             }
         } } } } // CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
         // R337 (FR-R337-6) — the desktop's player bar at the content's foot.
-        if (deskMusicBarVisible(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
+        if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
             medium = deskMedium,
             queueOpen = queueOpen,
             onOpenPlaying = { if (inMusic) resetTo(Dest.MusicPlaying(destDisplayName(dest))) else push(Dest.MusicPlaying(destDisplayName(dest))) },

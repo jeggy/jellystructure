@@ -1,147 +1,26 @@
 package dev.jellystructure.ravilo.ui.music
 
-import dev.jellystructure.ravilo.ui.Dest
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** DEB-2305 (FR-R337-6/7 amendments) — the desktop Playing page keeps the bar, loses seek/transport. */
+/** DEB-2305 (FR-R337-6 amendment) — the desktop bar's rule has no page term, so Playing gets the bar like any page. */
 class DesktopBarOnPlayingTest {
+    @Test fun music_mode_shows_the_bar() =
+        assertTrue(deskMusicBarVisible(framed = true, musicActive = true, sessionOverMusic = false, inMusic = true, playing = false, keptOnThisPage = false))
 
-    /**
-     * Mirrors `RaviloApp.kt:deskMusicBarVisible` — the predicate that decides whether the bar
-     * is visible (regardless of whether `deskBarShows` later excludes MusicPlaying for layout).
-     */
-    private fun musicBarVisible(
-        framed: Boolean,
-        musicActive: Boolean,
-        sessionOverMusic: Boolean,
-        inMusic: Boolean,
-        musicPlaying: Boolean,
-        barKeptOn: Dest?,
-        dest: Dest,
-    ): Boolean = framed && musicActive && !sessionOverMusic &&
-        (inMusic || musicPlaying || barKeptOn == dest)
+    @Test fun films_mode_while_music_plays_shows_the_bar() =
+        assertTrue(deskMusicBarVisible(framed = true, musicActive = true, sessionOverMusic = false, inMusic = false, playing = true, keptOnThisPage = false))
 
-    /**
-     * Mirrors `RaviloApp.kt:deskBarShows` — delegates to `deskMusicBarVisible` and then
-     * excludes MusicPlaying so the bar is hidden on the Playing page (queue stays visible).
-     */
-    private fun barShows(
-        framed: Boolean,
-        musicActive: Boolean,
-        sessionOverMusic: Boolean,
-        inMusic: Boolean,
-        musicPlaying: Boolean,
-        barKeptOn: Dest?,
-        dest: Dest,
-    ): Boolean = musicBarVisible(framed, musicActive, sessionOverMusic, inMusic, musicPlaying, barKeptOn, dest) && dest !is Dest.MusicPlaying
+    @Test fun films_mode_paused_and_not_kept_hides_the_bar() =
+        assertFalse(deskMusicBarVisible(framed = true, musicActive = true, sessionOverMusic = false, inMusic = false, playing = false, keptOnThisPage = false))
 
-    @Test fun deskMusicBarVisibleIsTrueOnMusicPlayingInMusicMode() {
-        assertTrue(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
+    @Test fun films_mode_paused_and_kept_on_this_page_shows_the_bar() =
+        assertTrue(deskMusicBarVisible(framed = true, musicActive = true, sessionOverMusic = false, inMusic = false, playing = false, keptOnThisPage = true))
 
-    @Test fun deskMusicBarVisibleIsTrueOnMusicPlayingWhilePlayingInFilmsMode() {
-        assertTrue(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = false, musicPlaying = true, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
+    @Test fun a_session_over_music_hides_the_bar() =
+        assertFalse(deskMusicBarVisible(framed = true, musicActive = true, sessionOverMusic = true, inMusic = true, playing = true, keptOnThisPage = true))
 
-    @Test fun deskMusicBarVisibleIsTrueOnMusicPlayingWhenKeptByPriorPause() {
-        assertTrue(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = false, musicPlaying = false,
-            barKeptOn = Dest.MusicPlaying("test"),
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
-
-    @Test fun deskMusicBarVisibleIsFalseWhenNotFramed() {
-        assertFalse(musicBarVisible(
-            framed = false, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
-
-    @Test fun deskMusicBarVisibleIsFalseWhenMusicNotActive() {
-        assertFalse(musicBarVisible(
-            framed = true, musicActive = false, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
-
-    @Test fun deskMusicBarVisibleIsFalseWhenSessionOverMusic() {
-        assertFalse(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = true,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
-
-    @Test fun deskBarShowsExcludesMusicPlayingEvenWhenBarIsVisible() {
-        // musicBarVisible returns true, but deskBarShows excludes MusicPlaying
-        assertTrue(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-        assertFalse(barShows(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
-
-    @Test fun deskBarShowsIsTrueOnMusicListenInMusicMode() {
-        assertTrue(barShows(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = true, barKeptOn = null,
-            dest = Dest.MusicListen("test"),
-        ))
-    }
-
-    @Test fun insetUsesDeskMusicBarVisibleMusicPlayingGetsInset() {
-        // The inset calculation at RaviloApp.kt:2220 uses deskMusicBarVisible, not deskBarShows.
-        // This means MusicPlaying gets the bar inset applied (the bar is visible on that page).
-        val musicPlaying = Dest.MusicPlaying("test")
-        val musicListen = Dest.MusicListen("test")
-
-        // musicBarVisible(true, ...) → true for MusicPlaying → inset applied
-        assertTrue(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = musicPlaying,
-        ))
-
-        // deskBarShows(false, ...) → false for MusicPlaying (excluded)
-        // but deskBarShows(true, ...) → true for MusicListen
-        assertTrue(barShows(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = true, barKeptOn = null,
-            dest = musicListen,
-        ))
-        assertFalse(barShows(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = true, musicPlaying = false, barKeptOn = null,
-            dest = musicPlaying,
-        ))
-    }
-
-    @Test fun barKeptOnOnDifferentPageDoesNotShowBarOnMusicPlaying() {
-        assertFalse(musicBarVisible(
-            framed = true, musicActive = true, sessionOverMusic = false,
-            inMusic = false, musicPlaying = false,
-            barKeptOn = Dest.MusicListen("other"),
-            dest = Dest.MusicPlaying("test"),
-        ))
-    }
+    @Test fun an_unframed_page_hides_the_bar() =
+        assertFalse(deskMusicBarVisible(framed = false, musicActive = true, sessionOverMusic = false, inMusic = true, playing = true, keptOnThisPage = true))
 }

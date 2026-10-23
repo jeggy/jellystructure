@@ -141,7 +141,7 @@ fun DesktopMusicBar(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp)) {
                 MusicCover(image, t?.album ?: title, Modifier.size(if (mac) 46.dp else 50.dp).let { if (onPlayingPage) it else it.tap(onOpenPlaying) }, corner = if (mac) 23.dp else 6.dp, requestedWidth = 120, wordmarkSize = 8)
                 val albumId = barTextAlbumId(t?.albumId, b != null)
-                Column(Modifier.tap { if (albumId != null) onOpenAlbum(albumId) else onOpenPlaying() }.width(if (tight) 96.dp else if (medium) 130.dp else 190.dp)) {
+                Column(Modifier.tap { if (albumId != null) onOpenAlbum(albumId) else if (!onPlayingPage) onOpenPlaying() }.width(if (tight) 96.dp else if (medium) 130.dp else 190.dp)) {
                     Text(title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(2.dp))
                     Text(sub, color = colors.textSecondary, fontSize = 12.sp, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -174,6 +174,10 @@ fun DesktopMusicBar(
 }
 
 /** DEB-2236 (FR-R337-6) — the album the bar's title/artist open: the song's, or null (Playing opens) for no album id or a book. */
+/** FR-R337-6 — whether the desktop music bar shows: music mode always, films mode while music plays or a pause keeps it on this page. Playing is a page like any other. */
+internal fun deskMusicBarVisible(framed: Boolean, musicActive: Boolean, sessionOverMusic: Boolean, inMusic: Boolean, playing: Boolean, keptOnThisPage: Boolean): Boolean =
+    framed && musicActive && !sessionOverMusic && (inMusic || playing || keptOnThisPage)
+
 internal fun barTextAlbumId(albumId: String?, isBook: Boolean): String? = if (isBook) null else albumId?.takeIf { it.isNotBlank() }
 
 /** `.pb-ctl .b` / `.pb-r .b` — a 30 dp button; a lit one (the queue while it is open) sits on a faint plate. */
