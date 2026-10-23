@@ -846,6 +846,9 @@ class MediaStore(
         // has already re-run the search the operator rejected, so the flag AND the match it suppresses
         // both have to come from `old`.
         merged = preserveTmdbMatchLock(merged, old)
+        // DEB-2093 (Phase 131): after the lock guard so its clearing wins — a rescan whose TMDB external-ids
+        // call failed must not blank the stored IMDb id, nor an ordinary rescan the rating.
+        merged = preserveImdb(merged, old)
         // Phase 184: same idea again — an operator's chosen fetch language must survive a fresh scan
         // exactly like the artwork lock and the TMDB match lock do.
         merged = preserveMetadataLanguage(merged, old)
