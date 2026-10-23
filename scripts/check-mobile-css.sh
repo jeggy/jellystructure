@@ -302,6 +302,105 @@ check "$APP" "AI tab strip count badge (.tk-cnt)" ".tk-cnt { display:inline-flex
 check "$APP" "FR-16 lost connection disables every Support write" \
   "main.ws-lost #ai-support :is([data-tk-w],.tk-cp textarea)"
 
+# DEB-2193 (2026-10-23) — the admin's PROCESSING surfaces, promoted by hand from design round
+# `processing-features` revision 1 for processing-runs-as-nine-features.md. Every rule in this file
+# was authored during the promotion: the round's own stylesheet is a mockup that links wf.css and
+# styles a canvas, so a future copy of ANY file over this one is a straight regression of all of it.
+# Nine of the rules below exist only because a rendered picture showed the defect they fix — the
+# fences cannot see any of those, which is exactly why they are pinned here.
+PROCCSS="design/app/processing.css"
+check "$PROCCSS" "Processing is scoped under .pfx, not under the bare .pf- prefix" \
+  ".pfx .pf-head { display: grid; grid-template-columns: 44px minmax(0, 1.25fr) minmax(0, 1fr) auto 26px;"
+check "$PROCCSS" "a feature that is off is dimmed and explained, never hidden (.pf-row.off)" \
+  ".pfx .pf-row.off .pf-name"
+check "$PROCCSS" "the interval LABEL is uppercased, not the shipped .select beside it" \
+  ".pfx .pf-age > span:first-child"
+check "$PROCCSS" "the queues-work note is the info rail (.pf-note.q)" \
+  ".pfx .pf-note.q { border-left: 3px solid var(--info); }"
+check "$PROCCSS" "the Scan dialog's scrim is a real fixed overlay, revealed by .open" \
+  ".pfx.pf-scrim { position: fixed; inset: 0; z-index: 120;"
+check "$PROCCSS" "the dialog is bounded by the viewport and its panes scroll, not the page" \
+  ".pfx .pf-dlg { width: 760px; max-width: 100%; max-height: 100%;"
+check "$PROCCSS" "the owner's two panes (.sd-two 292px + 1fr)" \
+  ".pfx .sd-two { display: grid; grid-template-columns: 292px minmax(0, 1fr);"
+check "$PROCCSS" "the left row keeps its own tick, count and marker on a second line" \
+  ".pfx .sd-two .pick { display: grid; grid-template-columns: 19px minmax(0, 1fr) 10px;"
+check "$PROCCSS" "the drill-in chevron appears in the one-pane face only (.sd-two.one .go)" \
+  ".pfx .sd-two.one .pick .go { display: block; }"
+check "$PROCCSS" "step two does not print the feature name twice (.sd-one-pane h3)" \
+  ".pfx .sd-one-pane .sd-pane-head h3 { display: none; }"
+check "$PROCCSS" "a feature off in Settings is inert in the RIGHT pane too (.sd-parts.off)" \
+  ".pfx .sd-parts.off { opacity: .55; }"
+check "$PROCCSS" "the queues-work legend sits once, under both panes (.sd-legend)" \
+  ".pfx .sd-legend { padding: 14px 20px 0; flex: none; }"
+check "$PROCCSS" "a partly-ticked feature's own tick state (.tick.part)" \
+  ".pfx .tick.part { background: var(--hi-soft); border-color: var(--hi); color: var(--acc-ink); font-weight: 700; }"
+check "$PROCCSS" "the full-rescan switch is warn-tinted when on (.pf-all.on)" \
+  ".pfx .pf-all.on { border-color: var(--warn); background: var(--warn-soft); }"
+check "$PROCCSS" "Queued work overrides wf.css's 8 px .dot inside its own row only" \
+  ".pfx .lane .dot { width: 10px; height: 10px; box-shadow: none;"
+check "$PROCCSS" "the Queued work list is ruled off from the card's lede (.pf-queued)" \
+  ".pfx .pf-queued { border-top: 1px solid var(--line); margin-top: 10px; }"
+check "$PROCCSS" "in the Schedule table the popover opens BESIDE the button, not over the next row" \
+  ".pfx .sched .pf-pop { top: -7px; right: calc(100% + 11px); width: 258px; }"
+check "$PROCCSS" "a title's own checks indent under their feature (.chk-sub)" \
+  ".pfx .chk-sub { padding-left: 18px; border-left: 2px solid var(--line); margin-left: 4px; }"
+check "$PROCCSS" "\`can't tell\` is a neutral badge, never warn or bad (.badge.flat)" \
+  ".pfx .badge.flat { background: var(--fill-3);"
+check "$PROCCSS" "a control that can do nothing new is shown and disabled (.btn.dis)" \
+  ".pfx .btn.dis { opacity: .5; border-style: dashed; }"
+check "$PROCCSS" "the one switch that cannot be turned off is shown and disabled (.toggle.dis)" \
+  ".pfx .toggle.dis { opacity: .55; border-style: dashed; }"
+check "$PROCCSS" "a Refresh ▾ item carries a wrapping sentence, so the shipped nowrap is undone" \
+  "align-items: center; font-size: .88rem; white-space: normal; }"
+check "$PROCCSS" "the toast's queued and cancelled variants (.pf-toast.warn)" \
+  ".pfx .pf-toast.warn { border-left-color: var(--warn); }"
+check "$PROCCSS" "the loading skeleton row (.sk-row)" \
+  ".pfx .sk-row { display: grid;"
+# The light-theme twins. --ok/--warn/--bad/--info are not re-tinted per theme, so each of these is
+# the difference between the shipped colour and a pale mint or amber on white.
+check "$PROCCSS" "light theme: a failing check's reason" \
+  '[data-theme="light"] .pfx .chk-row .why.bad { color: #c23b2d; }'
+check "$PROCCSS" "light theme: the socket-is-gone banner" \
+  '[data-theme="light"] .pfx .pf-offline { color: #9a6a06; }'
+check "$PROCCSS" "light theme: the queues-work marker in the left pane" \
+  '[data-theme="light"] .pfx .sd-two .pick .c .q { color: #1f7fb8; }'
+check "$PROCCSS" "light theme: a toast's own icon" \
+  '[data-theme="light"] .pfx .pf-toast .ic { color: #128a5f; }'
+# The narrow faces, at the house breakpoint. Four of the five were found by rendering at 412 px.
+check "$PROCCSS" "the narrow block is at the house breakpoint" "@media (max-width: 640px) {"
+check "$PROCCSS" "the feature row stacks instead of keeping five columns" \
+  ".pfx .pf-when { flex-basis: 100%; order: 9; padding-left: 56px;"
+check "$PROCCSS" "Queued work's controls drop to their own line" \
+  ".pfx .lane .acts { grid-column: 2; margin-top: 10px; }"
+check "$PROCCSS" "a long chip does not split the feature name on a Schedule card" \
+  ".pfx .sched-card .r1 .f { flex-basis: 100%; }"
+check "$PROCCSS" "the Checks row folds last-ran and next-due under the name" \
+  ".pfx .chk-row { grid-template-columns: minmax(0, 1fr) 34px; }"
+check "$PROCCSS" "…and reveals the folded line, which is not a grid child" \
+  ".pfx .when-ph { display: block; }"
+# Three things that must never come back into this file, each one a decision rather than a tidy-up.
+# Read with the comments stripped: this file's own header explains both of the first two by name, and
+# a guard that trips on the explanation of why a rule is absent is a guard nobody can keep green.
+PROCCODE=$(perl -0777 -pe 's{/\*.*?\*/}{}gs' "$PROCCSS")
+if printf '%s' "$PROCCODE" | grep -qF "Cancel starts nothing"; then
+  echo "REVERTED     the Scan dialog's foot note is back in $PROCCSS"
+  echo "             (\"Cancel starts nothing\" is a rule the Cancel button must OBEY, not copy the"
+  echo "              dialog carries — dropped as correction 4 of the round)"
+  fail=1
+fi
+if printf '%s' "$PROCCODE" | grep -qF -- "--blur: none"; then
+  echo "REVERTED     $PROCCSS carries --blur: none"
+  echo "             (that is the round's CANVAS substitution for the screenshot tool; the live admin"
+  echo "              keeps the glass wf.css gives every .card)"
+  fail=1
+fi
+if printf '%s' "$PROCCODE" | grep -qE "https?:"; then
+  echo "REVERTED     $PROCCSS carries a network reference"
+  echo "             (a served stylesheet never gains one — hosted fonts are a mockup thing only)"
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else

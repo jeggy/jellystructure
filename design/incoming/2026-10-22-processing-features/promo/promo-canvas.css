@@ -1,0 +1,112 @@
+/* promo-canvas.css — the canvas the PROMOTION renders on, 2026-10-23 (DEB-2193).
+
+   This is the half of the round's processing-features.css that was deliberately NOT promoted: the
+   backdrop, the captions, and the frame that stands in for an admin page. It lives here, beside the
+   round, so design/app/processing.css carries production rules and nothing else.
+
+   It also carries the three canvas substitutions the production file needs to be photographable.
+   Each one is a canvas lie, labelled where it is told:
+     1. `--blur: none` — wf.css gives every .card `backdrop-filter: var(--blur)`, and the standing
+        canvas rule forbids backdrop-filter because it breaks the screenshot tool. The live admin
+        keeps its glass.
+     2. the Scan dialog's scrim is `position: fixed` in production, revealed by `.open`, and scrolls.
+        Here it is laid out in the flow of a frame, because a frame has no viewport of its own and a
+        fixed overlay would cover the whole canvas instead of appearing in one picture.
+     3. the panes' own scrolling is switched off, so a picture shows all nine features rather than
+        the first six and a scrollbar.
+   Nothing else here reaches the production file. */
+
+/* ---------- the canvas around the frames (host backdrop: light gray, dark ink) ---------- */
+html, body.canvas {
+  margin: 0;
+  background: #e9eaef;
+  color: #12141b;
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.canvas-head { padding: 28px 28px 4px; max-width: 1100px; }
+.canvas-head h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; margin: 0 0 .35em; color: #12141b; }
+.canvas-head p { color: #262a35; margin: 0 0 .6em; font-size: .95rem; line-height: 1.55; }
+.cap { padding: 26px 28px 8px; max-width: 1100px; }
+.cap h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.02rem; margin: 0 0 .2em; color: #12141b; }
+.cap .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #262a35; }
+.cap p { color: #262a35; font-size: .88rem; margin: .3em 0 0; line-height: 1.5; }
+.shot { padding: 0 28px 10px; }
+
+/* ---------- a frame is one admin screen ---------- */
+.frame {
+  --blur: none;                      /* canvas substitution 1, see the header */
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Sora', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  border: 1px solid rgba(18,20,27,.18);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+/* the shipped aurora wash is `position: fixed` on body::before, which cannot be scoped to a frame;
+   drawn here as the same radial stops, static, no filter, no animation. */
+.frame::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(900px 600px at 12% -8%, rgba(177,92,208,.16), transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgba(0,164,220,.14), transparent 55%);
+}
+.frame > * { position: relative; z-index: 1; }
+/* The `.pfx` host wrapper is `display: contents`, so adding the scope class to the canvas cannot
+   move a single pixel: it stays in the DOM tree (every `.pfx …` selector still matches) and leaves
+   layout entirely. Its children take the stacking rule above in its place. */
+.frame > .pfx { display: contents; }
+.frame > .pfx > * { position: relative; z-index: 1; }
+.frame.desk { width: 1440px; }
+/* 412 px is a real 412 VIEWPORT in render-promo.mjs, not a narrow box in a wide window: the promoted
+   CSS keys its narrow faces off the viewport (@media max-width: 640px), as the admin does, so a box
+   would draw the desktop layout at phone width and lie about both. */
+.frame.ph { width: 412px; }
+
+/* the shell, copied in shape from app.css so a frame reads as the real page */
+.fr-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
+.fr-side { border-right: 1px solid var(--line); padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; }
+.fr-logo { display: flex; align-items: center; gap: 9px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600; font-size: 1.05rem; padding: 2px 8px 18px; }
+.fr-mark { width: 26px; height: 26px; border-radius: 8px; background: var(--grad); flex: none;
+  box-shadow: 0 3px 10px rgba(123,110,240,.42); }
+.fr-nav { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-radius: 10px;
+  color: var(--ink-soft); font-size: .92rem; font-weight: 500; }
+.fr-nav .ic { width: 18px; text-align: center; opacity: .8; font-size: .9rem; }
+.fr-nav.on { background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
+.fr-nav .tag { margin-left: auto; font-size: .68rem; font-weight: 700; color: #1a1204;
+  background: var(--warn); border-radius: 20px; padding: 0 6px; }
+.fr-main { padding: 26px 30px 34px; min-width: 0; }
+.fr-top { display: none; }
+.frame.ph .fr-shell { grid-template-columns: minmax(0, 1fr); }
+.frame.ph .fr-side { display: none; }
+.frame.ph .fr-top { display: flex; align-items: center; gap: 11px; padding: 11px 14px;
+  border-bottom: 1px solid var(--line); }
+.frame.ph .fr-top .burger { width: 34px; height: 34px; border: 1px solid var(--line-2); border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: 1rem; }
+.frame.ph .fr-main { padding: 16px 14px 26px; }
+
+.fr-bar { display: flex; align-items: center; gap: 13px; margin-bottom: 6px; flex-wrap: wrap; }
+.fr-bar h1 { font-size: 2rem; margin: 0; font-family: 'Space Grotesk', sans-serif; }
+.frame.ph .fr-bar h1 { font-size: 1.45rem; }
+.fr-sub { color: var(--ink-soft); max-width: 78ch; margin: 2px 0 22px; font-size: .95rem; line-height: 1.6; }
+
+/* the title header the round drew for its own frames. The real detail page has its own, so this is
+   not in the promotion either. */
+.ti-head { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 22px; }
+.ti-art { width: 104px; height: 156px; border-radius: 12px; flex: none; border: 1px solid var(--line);
+  background: linear-gradient(150deg, #2b3042, #1d2130 60%, #262b3b); }
+.frame.ph .ti-art { width: 76px; height: 114px; }
+.ti-meta h1 { font-size: 1.9rem; margin: 0 0 .15em; font-family: 'Space Grotesk', sans-serif; }
+.frame.ph .ti-meta h1 { font-size: 1.3rem; }
+.ti-meta .line { color: var(--ink-soft); font-size: .88rem; }
+.ti-acts { display: flex; gap: 9px; margin-top: 14px; flex-wrap: wrap; }
+
+/* ---------- canvas substitutions 2 and 3, for the promoted file ---------- */
+/* This file is linked AFTER design/app/processing.css, so these win at equal specificity. */
+.frame .pf-scrim { position: static; z-index: auto; display: flex; padding: 34px 0; overflow: visible; }
+.frame.ph .pf-scrim { padding: 10px 0; }
+.frame .pf-dlg { max-height: none; }
+.frame .sd-two, .frame .sd-two .left, .frame .sd-two .right, .frame .pf-dlg-body { overflow: visible; }

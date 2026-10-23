@@ -1,0 +1,409 @@
+/* ============================================================================
+   processing.css — the admin's PROCESSING surfaces: Settings ▸ Processing, the
+   Scan dialog, Activity (Now · Schedule · History) and a title's Refresh ▾ and
+   Checks card.
+
+   HAND-AUTHORED, promoted from design round `processing-features` revision 1
+   (design/incoming/2026-10-22-processing-features/processing-features.css,
+   51206b00) for the spec processing-runs-as-nine-features.md. Every rule here
+   was written by hand against the round's CSS; this file is NOT a copy of it
+   and must never be overwritten with one. Everything it needs beyond this file
+   — tokens, .card, .btn, .badge, .chip, .seg, .toggle, .select, .input, .menu,
+   .menu-wrap, .row/.fill/.spacer/.tiny/.muted — is the shipped system in
+   wf.css / app.css, and nothing here redefines any of it.
+
+   SCOPE: every selector sits under `.pfx`, which is this file's wrapper class
+   (see scripts/check-css-scoping.sh). index.html links every page's CSS
+   unconditionally and page CSS loads last, so a bare selector here would win
+   the cascade on every page for any shared component of the same name — and
+   this file deliberately styles several (.dot, .tick, .lane, .chk, .sched).
+   A prefix is not a scope: the wrapper is what keeps them in.
+
+   `.pfx` goes on each host, and there are four:
+     1. Settings ▸ Processing — the tab panel.
+     2. Activity — the Now / Schedule / History view container.
+     3. A film or series page — the region holding Refresh ▾ and the Checks card.
+     4. The Scan dialog — on the SCRIM (`.pf-scrim`), because a dialog is
+        rendered at body level and is not a descendant of 1–3.
+   The toasts are drawn by whatever draws toasts, so their host needs it too.
+
+   NOT promoted from the round, on purpose:
+     - the canvas chrome (`html/body.canvas`, `.canvas-head`, `.cap`, `.shot`,
+       `.frame`, `.frame::before`, `.fr-*`): a frame is a picture of a page, and
+       app.css is the real shell;
+     - `--blur: none`: a canvas substitution for the screenshot tool only. The
+       live admin keeps the glass wf.css gives every `.card`;
+     - `.ti-head` / `.ti-art` / `.ti-meta` / `.ti-acts`: the frames drew their
+       own title header. The real one already exists on the detail page;
+     - `.menu-wrap`: already in wf.css (and detail.css), identically;
+     - `grid-column` on `.when-ph`: it is a child of `.n-wrap`, not of the
+       `.chk-row` grid, so the declaration never applied to anything.
+
+   WIDTH: the round drew its narrow faces at 412 px. The media query below is
+   the house breakpoint, `max-width: 640px` (wf.css), so 412 is inside it.
+   Two narrow faces are MARKUP, not CSS, and the frontend has to choose them at
+   the same breakpoint: the Scan dialog's `.sd-two.one` drill-in (one pane plus
+   `.sd-back`, step one then step two) and Schedule's `.sched-cards` instead of
+   the `.sched` table. Nothing here can do either, because which step or which
+   row is showing is state, not width.
+
+   THEMES: `--ok` / `--warn` / `--bad` / `--info` are deliberately NOT
+   re-tinted per theme — wf.css overrides the text colour at each use site. So
+   every rule here that uses one of them as a TEXT colour carries its own
+   `[data-theme="light"]` override at the bottom of this file, with wf.css's own
+   light values (#128a5f / #9a6a06 / #c23b2d / #1f7fb8). Backgrounds, borders
+   and dots use the tokens directly and need none.
+   ============================================================================ */
+
+/* ---------- Settings ▸ Processing: the feature row ---------- */
+.pfx .pf-list { display: flex; flex-direction: column; }
+.pfx .pf-row { border-top: 1px solid var(--line); }
+.pfx .pf-row:first-child { border-top: none; }
+.pfx .pf-head { display: grid; grid-template-columns: 44px minmax(0, 1.25fr) minmax(0, 1fr) auto 26px;
+  align-items: center; gap: 14px; padding: 15px 4px; }
+.pfx .pf-name { font-weight: 600; font-size: .98rem; min-width: 0; }
+.pfx .pf-name .pf-why { display: block; font-weight: 400; font-size: .78rem; color: var(--ink-dim); margin-top: 2px; }
+.pfx .pf-when { font-size: .82rem; color: var(--ink-soft); min-width: 0; }
+.pfx .pf-when b { color: var(--ink); font-weight: 600; }
+.pfx .pf-chev { color: var(--ink-dim); text-align: center; font-size: .8rem; }
+.pfx .pf-row.open .pf-chev { color: var(--ink-soft); transform: rotate(180deg); }
+.pfx .pf-body { padding: 2px 4px 20px 62px; display: flex; flex-direction: column; gap: 16px; }
+/* a feature switched off, and a feature with no library mapped: shown and explained, never hidden */
+.pfx .pf-row.off .pf-name, .pfx .pf-row.off .pf-when { color: var(--ink-dim); }
+.pfx .pf-row.inert { opacity: .72; }
+
+/* a part inside an expanded feature */
+.pfx .pf-part { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: start; gap: 14px;
+  padding: 11px 0; border-top: 1px dashed var(--line); }
+.pfx .pf-part:first-child { border-top: none; }
+.pfx .pf-part .pn { font-size: .9rem; font-weight: 500; }
+.pfx .pf-part .ph-line { font-size: .78rem; color: var(--ink-soft); margin-top: 3px; }
+.pfx .pf-ages { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pfx .pf-age { display: flex; flex-direction: column; gap: 4px; }
+.pfx .pf-age > span:first-child { font-size: .64rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-dim); font-weight: 700; }
+/* the label above a re-check interval, NOT a .select — round 1 had `.pf-age span` uppercasing the
+   shipped .select's own text, which is why this is `> span:first-child` and not `span`. */
+.pfx .pf-age .select { min-width: 118px; font-size: .8rem; padding: 6px 10px; }
+
+/* the note a row explains itself with. `.q` is the queues-work note (info), `.warn` the full-rescan
+   warning, `.flat` the neutral one the dialog's off-pane uses. */
+.pfx .pf-note { font-size: .8rem; color: var(--ink-soft); background: var(--fill-2); border: 1px solid var(--line);
+  border-radius: var(--radius-s); padding: 9px 12px; }
+.pfx .pf-note.q { border-left: 3px solid var(--info); }
+.pfx .pf-note.warn { border-left: 3px solid var(--warn); }
+.pfx .pf-note.flat { border-left: 3px solid var(--line-2); }
+/* a whole card accented the same way: the first-run note (hi) and a cancelled run (warn) */
+.pfx .card.pf-hi { border-left: 3px solid var(--hi); }
+.pfx .card.pf-warn { border-left: 3px solid var(--warn); }
+
+/* the interval picker */
+.pfx .pf-every { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pfx .pf-every .select { min-width: 150px; }
+.pfx .pf-every .input { width: 72px; text-align: center; }
+
+/* a line inside a part that reports a failure. Text in --warn, so it is re-tinted on light below. */
+.pfx .pf-line-warn { color: var(--warn); }
+
+/* ---------- the Scan dialog ---------- */
+/* The round drew the scrim inside a frame, which has no viewport to be bounded by. In production it
+   is the real overlay: fixed, revealed by `.open` like wf.css's `.menu-wrap.open` and detail.css's
+   `.modal-back.open`, and it scrolls rather than pushing the dialog off a short viewport. */
+.pfx.pf-scrim { position: fixed; inset: 0; z-index: 120; background: rgba(7,9,14,.66);
+  display: none; justify-content: center; align-items: flex-start; padding: 34px 20px; overflow: auto; }
+.pfx.pf-scrim.open { display: flex; }
+.pfx .pf-dlg { width: 760px; max-width: 100%; max-height: 100%; background: var(--fill);
+  border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden; display: flex; flex-direction: column; }
+.pfx .pf-dlg.wide { width: 980px; }
+.pfx .pf-dlg-head { padding: 18px 20px 14px; border-bottom: 1px solid var(--line); flex: none; }
+.pfx .pf-dlg-head h2 { font-size: 1.22rem; margin: 0 0 .25em; font-family: 'Space Grotesk', sans-serif; }
+.pfx .pf-dlg-head p { font-size: .84rem; color: var(--ink-soft); margin: 0; }
+.pfx .pf-dlg-body { padding: 4px 20px 6px; overflow: auto; }
+/* No note in the foot. The round printed "Cancel starts nothing." here and dropped it: that is a
+   rule the Cancel button has to OBEY, not copy the dialog has to carry. Do not add it back. */
+.pfx .pf-dlg-foot { display: flex; align-items: center; gap: 12px; padding: 14px 20px; flex: none;
+  border-top: 1px solid var(--line); background: var(--fill-2); }
+
+/* the full-rescan switch: one switch above both panes, and the only thing that changes between the
+   dialog's two faces */
+.pfx .sd-top { padding: 0 20px; flex: none; }
+.pfx .pf-all { display: flex; align-items: center; gap: 13px; padding: 13px 14px; margin: 14px 0 10px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--fill-2); }
+.pfx .pf-all .t { font-size: .9rem; font-weight: 600; }
+.pfx .pf-all .s { font-size: .78rem; color: var(--ink-soft); margin-top: 2px; }
+.pfx .pf-all.on { border-color: var(--warn); background: var(--warn-soft); }
+
+/* a tick: the dialog's own control, five states. `.part` is a feature some of whose parts are
+   unticked; `.lock` is a feature that always runs; `.dis` is one that is off in Settings. */
+.pfx .tick { width: 19px; height: 19px; border-radius: 6px; border: 1px solid var(--line-2);
+  background: var(--fill-2); display: flex; align-items: center; justify-content: center;
+  font-size: .72rem; color: transparent; flex: none; }
+.pfx .tick.on { background: var(--grad); border-color: transparent; color: #fff; font-weight: 700; }
+.pfx .tick.part { background: var(--hi-soft); border-color: var(--hi); color: var(--acc-ink); font-weight: 700; }
+.pfx .tick.dis { opacity: .4; }
+.pfx .tick.lock { background: var(--fill-3); border-style: dashed; color: var(--ink-dim); }
+
+/* ---------- the dialog's two panes ----------
+   The left pane carries every feature's OWN tick, its `n of m` count and the queues-work marker, so
+   "eight of nine fully ticked" is readable without opening anything — and so the count survives the
+   stack at 412, where it is the only thing that says a feature is partly unticked. The count and the
+   marker are on a SECOND LINE of the row: beside the name, at 292 px, a long feature name was left
+   about four characters. */
+.pfx .sd-two { display: grid; grid-template-columns: 292px minmax(0, 1fr);
+  border-top: 1px solid var(--line); min-height: 392px; overflow: hidden; }
+.pfx .sd-two.one { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.pfx .sd-two .left { border-right: 1px solid var(--line); padding: 8px; display: flex;
+  flex-direction: column; gap: 1px; overflow: auto; }
+.pfx .sd-two.one .left { border-right: none; }
+.pfx .sd-two .right { padding: 16px 20px 20px; min-width: 0; overflow: auto; }
+.pfx .sd-two .pick { display: grid; grid-template-columns: 19px minmax(0, 1fr) 10px; gap: 11px;
+  align-items: start; padding: 9px 10px; border-radius: 9px; font-size: .86rem; }
+/* The drill-in affordance, one-pane only: on desktop the selected row's own highlight already says
+   which pane is showing, and a chevron beside it would promise a navigation that does not happen.
+   A feature with no parts has nothing to open, so its row carries no `.go` at all. */
+.pfx .sd-two .pick .go { display: none; color: var(--ink-dim); }
+.pfx .sd-two.one .pick .go { display: block; }
+.pfx .sd-two .pick.on { background: var(--hi-soft); color: var(--acc-ink); }
+.pfx .sd-two .pick .tick { margin-top: 1px; }
+.pfx .sd-two .pick .n { font-weight: 500; }
+.pfx .sd-two .pick.on .n { font-weight: 600; }
+.pfx .sd-two .pick .c { font-size: .72rem; color: var(--ink-dim); margin-top: 2px;
+  font-variant-numeric: tabular-nums; }
+.pfx .sd-two .pick .c .q { color: var(--info); }
+.pfx .sd-two .pick.off .n, .pfx .sd-two .pick.off .c { color: var(--ink-dim); }
+
+.pfx .sd-pane-head { display: flex; align-items: baseline; gap: 12px; }
+.pfx .sd-pane-head h3 { font-size: 1.04rem; margin: 0; flex: 1; min-width: 0; }
+.pfx .sd-pane-head .c { font-size: .74rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.pfx .sd-lede { font-size: .8rem; color: var(--ink-soft); margin: 6px 0 14px; }
+.pfx .sd-parts { display: flex; flex-direction: column; }
+/* a feature that is off in Settings is inert in the RIGHT pane too, not only on the left */
+.pfx .sd-parts.off { opacity: .55; }
+.pfx .sd-one { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; align-items: start;
+  padding: 10px 0; border-top: 1px dashed var(--line); }
+.pfx .sd-one:first-child { border-top: none; }
+.pfx .sd-one .n { font-size: .86rem; }
+.pfx .sd-none { font-size: .82rem; color: var(--ink-dim); padding: 8px 0; }
+/* the queues-work legend, once, under both panes — the panes themselves must not repeat it */
+.pfx .sd-legend { padding: 14px 20px 0; flex: none; }
+
+/* the one-pane drill-in: step two carries a back control, and the dialog TITLE is the feature name,
+   so the pane's own heading would print it a second time in the same picture. The count survives. */
+.pfx .sd-back { font-size: .78rem; color: var(--ink-soft); margin-bottom: 7px; }
+.pfx .sd-one-pane { padding: 10px 0 4px; }
+.pfx .sd-one-pane .sd-pane-head h3 { display: none; }
+.pfx .sd-one-pane .sd-pane-head .c { flex: 1; }
+
+/* ---------- Activity ---------- */
+/* One row per feature that queues work. The round called this `.lane`; the word is deliberately on
+   no screen (the backend's four lanes are not what a viewer is being shown), and the class keeps the
+   name only because the markup does. The dots reuse wf.css's shipped .ok/.bad/.warn state words;
+   `.busy` is this file's own, for a feature that is running. */
+.pfx .lane { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 14px; align-items: center;
+  padding: 14px 4px; border-top: 1px solid var(--line); }
+.pfx .lane:first-child { border-top: none; }
+.pfx .lane .dot { width: 10px; height: 10px; box-shadow: none; background: var(--ink-dim); }
+.pfx .lane .dot.busy { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
+.pfx .lane .dot.ok { background: var(--ok); box-shadow: none; }
+.pfx .lane .dot.bad { background: var(--bad); box-shadow: 0 0 0 4px var(--bad-soft); }
+.pfx .lane .t { font-size: .92rem; font-weight: 500; }
+.pfx .lane .s { font-size: .78rem; color: var(--ink-soft); margin-top: 3px; }
+.pfx .lane .acts { display: flex; gap: 8px; align-items: center; }
+/* the list inside the Queued work card, which is ruled off from the card's own lede */
+.pfx .pf-queued { border-top: 1px solid var(--line); margin-top: 10px; }
+.pfx .prog { height: 6px; border-radius: 20px; background: var(--fill-3); overflow: hidden; margin-top: 8px; }
+.pfx .prog i { display: block; height: 100%; background: var(--grad); }
+
+/* Schedule, as a table at desktop width */
+.pfx .sched { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.pfx .sched th { text-align: left; font-size: .64rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-dim); font-weight: 700; padding: 0 10px 9px 0; }
+.pfx .sched td { padding: 12px 10px 12px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.pfx .sched td.num { font-variant-numeric: tabular-nums; }
+.pfx .sched tr.off td { color: var(--ink-dim); }
+.pfx .sched .acts { display: flex; gap: 7px; justify-content: flex-end; }
+.pfx .sched .f { font-weight: 600; color: var(--ink); }
+.pfx .sched .sub { font-size: .76rem; color: var(--ink-soft); margin-top: 3px; }
+
+/* Schedule's narrow face: a card per feature, not a table squeezed sideways. The markup is the
+   frontend's choice at the same breakpoint as the dialog's drill-in. */
+.pfx .sched-cards { display: flex; flex-direction: column; }
+.pfx .sched-card { border-top: 1px solid var(--line); padding: 13px 2px; }
+.pfx .sched-card:first-child { border-top: none; }
+.pfx .sched-card .r1 { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+.pfx .sched-card .r1 .f { font-size: .92rem; font-weight: 600; flex: 1 1 auto; min-width: 0; }
+.pfx .sched-card .kv { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 2px 10px; font-size: .78rem;
+  color: var(--ink-soft); margin-top: 8px; }
+.pfx .sched-card .kv dt { color: var(--ink-dim); text-transform: uppercase; font-size: .64rem; font-weight: 700;
+  letter-spacing: .06em; padding-top: 2px; }
+.pfx .sched-card .kv dd { margin: 0; }
+.pfx .sched-card .acts { display: flex; gap: 8px; margin-top: 10px; }
+
+/* History's log of one run. It names features, never steps. */
+.pfx .logbox { font-family: 'JetBrains Mono', monospace; font-size: .76rem; color: var(--ink-soft);
+  display: flex; flex-direction: column; gap: 6px; }
+.pfx .logbox .run { color: var(--ink-dim); }
+.pfx .logbox b { color: var(--ink); font-weight: 500; }
+
+/* Empty's one confirmation */
+.pfx .pf-confirm { width: 460px; max-width: 100%; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+.pfx .pf-confirm h3 { font-size: 1.05rem; margin: 0 0 .4em; }
+.pfx .pf-confirm p { font-size: .86rem; color: var(--ink-soft); margin: 0 0 .5em; }
+
+/* the socket is gone: every count is as old as the last push, and nothing pretends to be live */
+.pfx .pf-offline { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-radius: var(--radius-s);
+  background: var(--warn-soft); border: 1px solid rgba(245,181,66,.4); color: var(--warn);
+  font-size: .84rem; margin-bottom: 18px; }
+.pfx .pf-stale { color: var(--ink-dim); }
+
+/* ---------- a title page: Refresh ▾ and the Checks card ---------- */
+/* The menu rides wf.css's .menu-wrap / .menu, so it opens and closes on the shipped behaviour;
+   only what is different about this one is here. */
+.pfx .menu.pf-menu { left: 0; right: auto; width: 330px; padding: 7px; }
+.pfx .pf-menu .mh { font-size: .62rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim);
+  font-weight: 700; padding: 9px 10px 5px; }
+/* `white-space: normal` is the one thing that has to be undone: a shipped .menu-item is a one-line
+   command and never wraps, and these carry a sentence of their own under the feature name. */
+.pfx .pf-menu .menu-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; font-size: .88rem; white-space: normal; }
+.pfx .pf-menu .menu-item.dis { opacity: .55; }
+.pfx .pf-menu .menu-item.dis:hover { background: transparent; }
+.pfx .pf-menu .mfoot { border-top: 1px solid var(--line); margin-top: 6px; padding: 10px 10px 6px;
+  font-size: .76rem; color: var(--ink-soft); }
+/* a series' menu has a scope the film's does not: whole series or one season */
+.pfx .pf-menu .scope { border-bottom: 1px solid var(--line); margin-bottom: 5px; padding: 9px 10px 11px; }
+.pfx .pf-menu .scope .seg { width: 100%; }
+.pfx .pf-menu .scope .seg span { flex: 1; text-align: center; }
+
+/* the Checks card: the same nine features, for this title */
+.pfx .chk { display: flex; flex-direction: column; }
+.pfx .chk-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 120px 34px; gap: 14px;
+  align-items: start; padding: 13px 2px; border-top: 1px solid var(--line); }
+.pfx .chk-row:first-child { border-top: none; }
+.pfx .chk-row .n { font-size: .9rem; }
+.pfx .chk-row .why { font-size: .78rem; margin-top: 4px; color: var(--ink-soft); }
+.pfx .chk-row .why.bad { color: var(--bad); }
+.pfx .chk-row .when { font-size: .78rem; color: var(--ink-soft); }
+.pfx .chk-row .when b { display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-dim); font-weight: 700; }
+/* one feature's own checks, indented under it */
+.pfx .chk-sub { padding-left: 18px; border-left: 2px solid var(--line); margin-left: 4px; }
+/* last-ran and next-due, folded under the name at narrow widths. It sits inside `.n-wrap`, so it is
+   not a grid child and cannot be placed with grid-column — only shown and hidden. */
+.pfx .when-ph { display: none; font-size: .78rem; color: var(--ink-soft); margin-top: 7px; }
+
+/* `can't tell` is settled, not a finding: a neutral sibling of .badge, never .warn or .bad */
+.pfx .badge.flat { background: var(--fill-3); border-color: var(--line-2); color: var(--ink-soft); }
+
+/* the re-run control, and the one state the owner decided: shown, disabled, with its reason */
+.pfx .rr { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--fill-2);
+  color: var(--ink-soft); display: flex; align-items: center; justify-content: center; font-size: .9rem;
+  flex: none; }
+.pfx .rr:hover { border-color: var(--hi); color: var(--ink); }
+.pfx .rr.dis { opacity: .45; border-style: dashed; }
+.pfx .rr.dis:hover { border-color: var(--line-2); color: var(--ink-soft); }
+.pfx .rr-wrap { position: relative; }
+.pfx .pf-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 272px;
+  background: var(--fill); border: 1px solid var(--line-2); border-radius: 11px; box-shadow: var(--shadow);
+  padding: 11px 13px; font-size: .8rem; color: var(--ink-soft); line-height: 1.5; }
+.pfx .pf-pop::before { content: ''; position: absolute; top: -5px; right: 11px; width: 9px; height: 9px;
+  background: var(--fill); border-left: 1px solid var(--line-2); border-top: 1px solid var(--line-2);
+  transform: rotate(45deg); }
+.pfx .pf-pop b { color: var(--ink); font-weight: 600; }
+/* In a table the popover opens BESIDE the button, into the empty part of its own row: downwards it
+   covered the next row's name, its failure line and its own Run now. */
+.pfx .sched .pf-pop { top: -7px; right: calc(100% + 11px); width: 258px; }
+.pfx .sched .pf-pop::before { top: 15px; right: -5px; border: none;
+  border-right: 1px solid var(--line-2); border-top: 1px solid var(--line-2); }
+
+/* ---------- what the run says afterwards ---------- */
+.pfx .pf-toast { display: inline-flex; align-items: center; gap: 12px; background: var(--fill);
+  border: 1px solid var(--line-2); border-left: 3px solid var(--ok); border-radius: var(--radius-s);
+  box-shadow: var(--shadow); padding: 12px 15px; font-size: .86rem; }
+.pfx .pf-toast.info { border-left-color: var(--info); }
+.pfx .pf-toast.warn { border-left-color: var(--warn); }
+.pfx .pf-toast .s { font-size: .78rem; color: var(--ink-soft); margin-top: 3px; }
+.pfx .pf-toast .ic { font-size: 1.1rem; flex: none; color: var(--ok); }
+.pfx .pf-toast.info .ic { color: var(--info); }
+.pfx .pf-toast.warn .ic { color: var(--warn); }
+
+/* ---------- a control that cannot do anything new ----------
+   Shown, disabled, with its reason beside it — never hidden. The owner decided this for a title's
+   re-run control and it is applied to every control in the same position: Run now for a feature that
+   is off, and the one feature's switch that cannot be turned off. */
+.pfx .btn.dis { opacity: .5; border-style: dashed; }
+.pfx .toggle.dis { opacity: .55; border-style: dashed; }
+
+/* ---------- loading ----------
+   Nothing is drawn from a cache, so nothing on screen can be stale: the first paint is a skeleton,
+   not last session's values. */
+.pfx .sk { display: block; background: var(--fill-2); border-radius: 7px; height: 13px; }
+.pfx .sk.w1 { width: 190px; }
+.pfx .sk.w2 { width: 118px; }
+.pfx .sk.w3 { width: 86px; }
+.pfx .sk.w4 { width: 240px; }
+.pfx .sk-row { display: grid; grid-template-columns: 44px minmax(0, 1.25fr) minmax(0, 1fr) 120px 26px;
+  gap: 14px; align-items: center; padding: 18px 4px; border-top: 1px solid var(--line); }
+.pfx .sk-row:first-child { border-top: none; }
+.pfx .sk-sw { width: 44px; height: 25px; border-radius: 20px; background: var(--fill-2); }
+
+/* ---------- light theme ----------
+   Only the rules above that use --ok/--warn/--bad/--info as a TEXT colour. wf.css re-tints at the
+   use site (.badge.ok/.warn/.bad/.info) and these are the same values; without them each one is a
+   pale mint or amber on white. Still scoped: `.pfx` is in every selector. */
+[data-theme="light"] .pfx .chk-row .why.bad { color: #c23b2d; }
+[data-theme="light"] .pfx .pf-offline { color: #9a6a06; }
+[data-theme="light"] .pfx .pf-line-warn { color: #9a6a06; }
+[data-theme="light"] .pfx .sd-two .pick .c .q { color: #1f7fb8; }
+[data-theme="light"] .pfx .pf-toast .ic { color: #128a5f; }
+[data-theme="light"] .pfx .pf-toast.info .ic { color: #1f7fb8; }
+[data-theme="light"] .pfx .pf-toast.warn .ic { color: #9a6a06; }
+
+/* ---------- 640 px and under ----------
+   The house narrow breakpoint (wf.css). The round proved these at 412, which is inside it. */
+@media (max-width: 640px) {
+  /* The five-column feature row stacks. Kept as a grid it turned every label into a column one word
+     wide — "Find new & changed" one word per line — which is the opposite of holding. The switch
+     stays on the left, where the thumb is; the interval and the state go under the name. */
+  .pfx .pf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 14px 2px; }
+  .pfx .pf-name { flex: 1; min-width: 0; }
+  .pfx .pf-when { flex-basis: 100%; order: 9; padding-left: 56px; margin-top: -2px; }
+  .pfx .pf-body { padding: 2px 2px 18px 10px; }
+  .pfx .pf-part { grid-template-columns: 44px minmax(0, 1fr); }
+  .pfx .pf-age .select { min-width: 104px; }
+
+  /* the dialog */
+  .pfx.pf-scrim { padding: 10px; }
+  .pfx .pf-dlg-body { padding: 4px 14px 6px; }
+  .pfx .sd-top, .pfx .sd-legend { padding-left: 14px; padding-right: 14px; }
+  .pfx .sd-two .left { padding: 6px; }
+  /* The drill-in is `.sd-two.one`, which the frontend sets — but if it has not, two panes at this
+     width are unreadable rather than merely wrong, so the split collapses on its own as well. */
+  .pfx .sd-two { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .pfx .sd-two .left { border-right: none; }
+  .pfx .sd-two .pick .go { display: block; }
+
+  /* Activity: the controls drop to their own line. Keeping the three columns left the text about
+     150 px — a running feature's own sentence became four lines and the progress bar a stub. */
+  .pfx .lane { grid-template-columns: 12px minmax(0, 1fr); }
+  .pfx .lane .acts { grid-column: 2; margin-top: 10px; }
+
+  /* The chip takes its own line rather than sharing one with the feature name: a long chip
+     ("Failed · the request app is not answering") squeezed the name into a three-line column beside
+     it and the row read as two broken fragments. */
+  .pfx .sched-card .r1 .f { flex-basis: 100%; }
+
+  /* the Checks card: last ran and next due fold under the name, the control keeps its place */
+  .pfx .chk-row { grid-template-columns: minmax(0, 1fr) 34px; }
+  .pfx .chk-row .when { display: none; }
+  .pfx .when-ph { display: block; }
+
+  /* `max-width` is a guard, not a decision: the menu is positioned from the Refresh button, and the
+     round drew that button in a header of its own. On the real detail page it sits wherever that
+     page's action row puts it, and 300 px from there is not guaranteed to fit. This stops the menu
+     being wider than the screen; whether it should flip to `right: 0` instead is a drawing. */
+  .pfx .pf-menu, .pfx .menu.pf-menu { width: 300px; max-width: calc(100vw - 24px); }
+  .pfx .pf-pop { width: 252px; }
+}

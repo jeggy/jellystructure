@@ -26,6 +26,15 @@ declare -A SCOPED_FILES=(
   # the tab strip. Hence a real wrapper class, carried by both of the file's two hosts — the AI page's
   # Support panel (#ai-support) and Activity's Support log view (#view-support).
   ["design/app/support.css"]=".tksup"
+  # Processing (round `processing-features` rev 1, promoted 2026-10-23 — DEB-2193, for the spec
+  # processing-runs-as-nine-features.md). Its classes are `.pf-*`/`.sd-*`, but it also styles five
+  # names the shared system already owns or could: `.dot` (wf.css's status dot, redefined 10 px
+  # inside the Queued work row), `.tick`, `.lane`, `.chk*` (wf.css has an unrelated `.chk-pop`
+  # family) and `.sched`. Unscoped, any of those would win the cascade on every page, since page CSS
+  # loads last. Hence a real wrapper class, carried by all four of the file's hosts: Settings ▸
+  # Processing, the Activity view, the title page's Refresh ▾ / Checks region, and the Scan dialog's
+  # own scrim (a dialog renders at body level, so it is nobody's descendant).
+  ["design/app/processing.css"]=".pfx"
 )
 
 # Selectors allowed to stay outside the scope for this file, with the reason inline in the file
@@ -33,6 +42,12 @@ declare -A SCOPED_FILES=(
 # only ever matches a standalone mockup page the real app never loads. Pipe-separated regex alternates.
 declare -A ALLOWED_UNSCOPED=(
   ["design/app/segments.css"]="\.sxtoast|#toasts|html\.sxpage|body\.sxpage|#root"
+  # The light-theme text-colour overrides. --ok/--warn/--bad/--info are deliberately NOT re-tinted
+  # per theme (wf.css overrides the text colour at each use site), so every rule using one as a text
+  # colour needs its own `[data-theme="light"]` twin — and the theme attribute sits on <html>, ahead
+  # of the wrapper. These selectors STILL carry `.pfx`; the allowance below requires it, so it
+  # cannot be used to let a bare selector through.
+  ["design/app/processing.css"]="\[data-theme=\"light\"\] \.pfx"
 )
 
 fail=0

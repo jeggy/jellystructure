@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Processing as nine features — the promotion</title>
+<!-- The production admin system, linked rather than copied: wf.css carries the tokens, the
+     components and the three self-hosted woff2 (its @font-face URLs resolve next to the CSS file,
+     so the fonts come from design/app/fonts/ with no copy and no network reference). -->
+<link rel="stylesheet" href="../../../app/wf.css">
+<link rel="stylesheet" href="../../../app/app.css">
+<link rel="stylesheet" href="../../../app/detail.css">
+<!-- the promotion under test -->
+<link rel="stylesheet" href="../../../app/processing.css">
+<!-- the canvas, and the three substitutions a frame needs; linked last on purpose -->
+<link rel="stylesheet" href="promo-canvas.css">
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>Processing as nine features</h1>
+  <p>Round <span class="mono-id">processing-features</span>, <b>revision 1 · 2026-10-23</b>. One model — nine features,
+    each with its own switch, its own interval and its own state — drawn across the four surfaces that
+    have to agree about it: Settings, the Scan dialog, Activity, and a film or series page.</p>
+  <p>Every frame below is the real admin system: these pictures link <span class="mono-id">wf.css</span>
+    and <span class="mono-id">app.css</span>, so every token, button, badge, toggle and card is the
+    shipped one. New components are in <span class="mono-id">processing-features.css</span> and are
+    named to be promoted as they are.</p>
+</div>
+<div id="frames"></div>
+
+<script src="../pf-data.js"></script>
+<script src="../pf-surfaces.js"></script>
+<script src="../pf-surfaces2.js"></script>
+<script src="promo-shim.js"></script>
+<script>
+/* The frame registry. `w` picks which set this document builds, because the phone frames have to be
+   rendered in a real 412-wide viewport: the admin's own breakpoints key off the viewport, not off an
+   element, so a 412px box inside a 1440px window would draw the desktop layout at phone width and
+   lie about both. */
+const DESK = [
+  ['set-desktop', 'Settings ▸ Processing', 'The owner’s pick: its own tab. Nine rows; <i>File health</i> is open, which is the fiddliest of them — three parts, each with its own re-check interval by release age, and the measuring service that is not answering.', () => settingsPage({ open: 'health' })],
+  ['set-light', 'Settings ▸ Processing · light theme', 'The same frame in the light theme. Light is a real theme in this admin, so a direction that only exists in the dark is half a direction.', () => settingsPage({ open: 'health' }), 'light'],
+  ['set-interval', 'Settings ▸ Processing · how an interval is set', '<i>Find new &amp; changed</i> open: the plain picker, the three release-age pickers, and cron surviving as <i>Custom</i> in the one place it still makes sense.', () => settingsPage({ open: 'find' })],
+  ['set-off', 'Settings ▸ Processing · one off, one not mapped', '<i>Recommendations &amp; suggestions</i> switched off, and <i>Audiobooks</i> with no library mapped — shown and explained rather than hidden.', () => settingsPage({ off: 'recs', unmapped: 'books' })],
+  ['set-loading', 'Settings ▸ Processing · loading', 'Nothing has arrived from the server yet. No values are drawn from a cache, so nothing on screen can be stale.', () => settingsPage({ variant: 'loading' })],
+  ['set-firstrun', 'Settings ▸ Processing · first run', 'A fresh install: every feature on, nothing has run, and no <i>last ran</i> anywhere.', () => settingsPage({ variant: 'firstrun' })],
+
+  ['dlg-desktop', 'The Scan dialog · the owner’s two panes', 'Everything ticked, <i>File health</i> open on the right. The left pane keeps every feature’s own tick and its <i>n of m</i>, so "eight of nine fully ticked" is readable without opening anything — and it carries the <i>queues work</i> marker for the two features all of whose parts queue.', () => dialog({ sel: 'health' })],
+  ['dlg-music', 'The Scan dialog · one feature partly unticked', '<i>Music · 5 of 7</i>, selected on the right so the two unticked parts are visible. The count on the left is the only thing that says so when the pane is showing something else.', () => dialog({ sel: 'music', partly: 'music' })],
+  ['dlg-rescan', 'The Scan dialog · the full-rescan face', 'Today’s <i>(full rescan)</i> becomes one switch above both panes, which is the only thing that changes between the two faces.', () => dialog({ full: true, sel: 'find', partly: 'music' })],
+  ['dlg-scoped', 'The Scan dialog · opened from one library card', 'Scoped to Films. Music and audiobooks are not in this library, so they are not in the left pane at all — and the dialog says so rather than greying six rows.', () => dialog({ title: 'Scan Films', scope: 'films', sel: 'health' })],
+  ['dlg-off', 'The Scan dialog · a feature that is off in Settings', '<i>Recommendations &amp; suggestions</i>, off, and <b>selected</b> — so the inert state is drawn in both panes rather than only on the left. Its parts cannot be ticked for one scan either, and the pane says where to change that.', () => dialog({ off: 'recs', sel: 'recs', partly: 'music' })],
+  ['toast', 'What the run says afterwards', 'Three toasts: what was skipped, what was only <i>queued</i>, and a cancelled run offering to continue. The middle one is the honest-queue rule as a sentence.', () => toastFrame()],
+
+  ['act-now', 'Activity · Now', 'The current run, then the four features that queue work — and only those. <i>Intro &amp; credits</i> is running, <i>File health</i> is holding for a TV. Metadata, music, audiobooks and recommendations run inside the run itself, so their <i>Run now</i> is on Schedule. The pacing and AI cards stay as they are.', () => activityNow()],
+  ['act-sched', 'Activity · Schedule', 'Feature · every · last ran · next · waiting, with <i>Run now</i> and <i>Empty</i>. A feature that is off keeps its row and its control, disabled, saying why — the same rule as a title’s re-run control. This is the pattern the downloader apps and the media server already use, and the familiarity is the point.', () => activitySched({ off: 'recs', offPop: true })],
+  ['act-empty', 'Activity · Schedule · Empty, with its confirmation', 'A long queue — 9 600 waiting for A/V sync — and the one confirmation. It never stops what is running, and the confirmation says so.', () => activitySched({ longQueue: true })],
+  ['act-cancel', 'Activity · Now · a cancelled run, then Continue scan', 'Cancelled two minutes ago. What was already queued is still being read, which is the one thing a cancel does not undo.', () => activityNow({ cancelled: true })],
+  ['act-hist', 'Activity · History', 'Past runs and the log of the one picked. The log names features, never steps.', () => activityHist()],
+  ['act-offline', 'Activity · the socket is gone', 'Not in the brief, and the house system asks for it wherever there is a socket: every count is explicitly as old as the last push, and nothing pretends to be live.', () => activityNow({ offline: true })],
+
+  ['title-film', 'A film · Refresh ▾ and the Checks card', '<i>Midsummer Static</i>. One menu replaces about sixty buttons, and the Checks card is the same nine features for this title: one row stale, one failing, one <i>can’t tell</i>.', () => titleFilm({ menu: true })],
+  ['title-film-pop', 'A film · the disabled control says why', 'The card-level control is shown and disabled because every file of this title already has a current reading. The popover is the owner’s wording, exactly.', () => titleFilm({ pop: 'card' })],
+  ['title-row-pop', 'A film · the same control on the can’t-tell row', 'The row’s own control, with the second wording — the one for when everything in scope could not be told either way.', () => titleFilm({ pop: 'row' })],
+  ['title-series', 'A series · four episodes clean, one can’t tell', '<i>Twelve Winters</i> season 2. Four episodes read clearly and <i>Ice Road</i> could not be told either way — settled, not pending, so its control is disabled with the second wording.', () => titleSeries({ pop: 'row' })],
+  ['title-series-menu', 'A series · Refresh ▾ has a scope the film menu does not', 'The same menu with <i>Whole series / Season 2</i> on top. It covers the card beneath it, which is what an open menu does — the card itself is the frame above.', () => titleSeries({ menu: true })],
+  ['title-light', 'A film · the Checks card in the light theme', 'The <i>can’t tell</i> chip is a neutral badge, so this is where it has to prove it reads as settled rather than as a finding in both themes.', () => titleFilm({ pop: 'card' }), 'light'],
+  ['longest-desktop', 'The longest strings', 'The longest feature name, the longest failure line, the longest interval description and a four-digit queue count, in the three places length actually breaks: a Settings row, a Schedule row and a Checks row.', () => longest()],
+];
+
+const PH = [
+  ['set-phone', 'Settings ▸ Processing · 412 px', 'The nine rows at phone width: the interval and the state stack under the name, and the switch stays on the left where the thumb is.', () => settingsPage({ open: 'health' })],
+  ['dlg-phone', 'The Scan dialog · step one, the feature list · 412 px', 'The two panes become two screens. Step one is the whole list, every feature with its own tick and its own count — which is why those are on the left row and not only in the pane.', () => dialogPhone({ step: 'list' })],
+  ['dlg-phone-partly', 'The Scan dialog · step one with one feature partly unticked · 412 px', 'The same list with <i>Music · 5 of 7</i>. At this width the count is the <b>only</b> thing that says a feature is partly unticked, so it has to survive the stack.', () => dialogPhone({ step: 'list', partly: 'music' })],
+  ['dlg-phone-parts', 'The Scan dialog · step two, one feature’s parts · 412 px', 'Music’s seven parts with the two unticked, and the back control. Nothing expands in place.', () => dialogPhone({ step: 'parts', sel: 'music', partly: 'music' })],
+  ['act-now-phone', 'Activity · Now · 412 px', 'The four queue-work features, stacked.', () => activityNow()],
+  ['act-sched-phone', 'Activity · Schedule · 412 px', 'The table becomes a card per feature. It is not a table squeezed sideways.', () => activitySchedPhone({ off: 'recs' })],
+  ['title-phone', 'A film · the Checks card · 412 px', 'Last ran and next due move under the name; the control keeps its place on the right.', () => titleFilm({ pop: 'row' })],
+  ['title-phone-menu', 'A film · Refresh ▾ · 412 px', 'The menu at phone width, with the partly-disabled row.', () => titleFilm({ menu: true })],
+  ['longest-phone', 'The longest strings · 412 px', 'The same longest strings at 412. The schedule table is a card here, because a six-column table at this width is not a table.', () => longest(true)],
+];
+
+const w = new URLSearchParams(location.search).get('w') || 'desktop';
+const set = w === 'phone' ? PH : DESK;
+document.getElementById('frames').innerHTML = set.map(([id, title, note, build, theme]) => `
+  <div class="cap"><h2>${title}</h2><div class="mono-id">${id}.png</div><p>${note}</p></div>
+  <div class="shot">
+    <div class="frame ${w === 'phone' ? 'ph' : 'desk'}" id="${id}"><div class="pfx">${build()}</div></div>
+  </div>`).join('');
+
+/* the round's markup, promoted to the class names design/app/processing.css expects */
+promote(document.getElementById('frames'));
+</script>
+</body>
+</html>
