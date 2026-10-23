@@ -255,69 +255,6 @@ private fun DeskPlaying(
     }
 }
 
-/** `.np .seek` — a 5 dp line in ink with the two times under it; a click or a drag seeks. */
-@Composable
-private fun DeskSeek(durationMs: Long) {
-    val colors = RaviloTheme.colors
-    val live = rememberLivePosition()
-    var dragFrac by remember { mutableStateOf<Float?>(null) }
-    val dur = durationMs.coerceAtLeast(1L)
-    val frac = dragFrac ?: (live.toFloat() / dur).coerceIn(0f, 1f)
-    Column {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(17.dp)) {
-            val wPx = with(LocalDensity.current) { maxWidth.toPx() }
-            Canvas(Modifier.fillMaxSize().pointerInput(dur) {
-                detectHorizontalDragGestures(
-                    onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
-                    onDragEnd = { dragFrac?.let { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
-                    onDragCancel = { dragFrac = null },
-                    onHorizontalDrag = { ch, _ -> dragFrac = (ch.position.x / wPx).coerceIn(0f, 1f) },
-                )
-            }.pointerInput(dur) { detectTapGestures { o -> dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
-                val y = size.height / 2
-                val h = 5.dp.toPx()
-                drawRoundRect(colors.fg.copy(alpha = 0.18f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
-                drawRoundRect(colors.text, Offset(0f, y - h / 2), Size(size.width * frac, h), CornerRadius(h / 2, h / 2))
-                if (dragFrac != null) drawCircle(colors.text, 7.dp.toPx(), Offset(size.width * frac, y))
-            }
-        }
-        Row(Modifier.padding(top = 1.dp)) {
-            Text(fmtLen(dragFrac?.let { (it * dur).toLong() } ?: live), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
-            Spacer(Modifier.weight(1f))
-            Text(fmtLen(durationMs), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
-        }
-    }
-}
-
-/** `.np .tp` — shuffle · previous · play/pause (58 dp, ink) · next · repeat, centred. */
-@Composable
-private fun DeskTransport(st: MusicPlayerState) {
-    val colors = RaviloTheme.colors
-    val graphite = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current == dev.jellystructure.ravilo.ui.theme.ThemeId.GRAPHITE
-    val msgRepeat = mapOf(RepeatMode.OFF to str("music.repeat_all"), RepeatMode.ALL to str("music.repeat_one"), RepeatMode.ONE to str("music.repeat_off"))
-    val msgShuffle = if (st.shuffle) str("music.shuffle_off") else str("music.shuffle_on")
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally)) {
-        Box(Modifier.size(36.dp).tap { MusicPlayback.toggleShuffle(); MusicToasts.show(msgShuffle) }, contentAlignment = Alignment.Center) {
-            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.textSecondary, 22.dp)
-        }
-        Box(Modifier.size(36.dp).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.previous() }, contentAlignment = Alignment.Center) {
-            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.PREVIOUS, colors.text, 22.dp)
-        }
-        val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
-        Box(Modifier.size(58.dp).clip(CircleShape).background(if (graphite) colors.accent else colors.text).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
-            val ink = if (graphite) Color.White else colors.background
-            if (st.buffering) Pulse(ink) else dev.jellystructure.ravilo.ui.components.DeskIcon(if (st.playing) dev.jellystructure.ravilo.ui.components.DeskIcon.PAUSE else dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY, ink, 22.dp)
-        }
-        Box(Modifier.size(36.dp).then(if (st.hasNext) Modifier.tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
-            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, 22.dp)
-        }
-        Box(Modifier.size(36.dp).tap { MusicToasts.show(msgRepeat.getValue(st.repeat)); MusicPlayback.cycleRepeat() }, contentAlignment = Alignment.Center) {
-            MusicGlyph(MusicIcon.REPEAT, if (st.repeat != RepeatMode.OFF) colors.accentSecondary else colors.textSecondary, 20.dp, description = str("music.repeat_all"))
-            if (st.repeat == RepeatMode.ONE) Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(7.dp).background(colors.accentSecondary, CircleShape))
-        }
-    }
-}
-
 /** R324 (FR-R324-4) — *Playing on {device}* under the credits while a speaker plays; a tap opens the sheet. */
 @Composable
 private fun DeviceChip() {

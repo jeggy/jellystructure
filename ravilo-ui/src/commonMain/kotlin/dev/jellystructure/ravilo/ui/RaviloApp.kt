@@ -2217,7 +2217,7 @@ fun RaviloApp(
             // so the four pages do not each have to remember it.
             val navBarInset = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
                 // R337 (FR-R337-6) — and by the desktop's player bar while it shows.
-                (if (deskBarShows(dest) || deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
+                (if (deskMusicBarVisible(dest) || deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
                 // FR-R267-8 — "the content's bottom padding is the sum of the two": while the cast mini
                 // bar floats over this page, the page pads by it as well, or its last row sits under it.
                 (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp) +
