@@ -33,9 +33,17 @@ internal object MacNowPlaying {
     private val callback = object : MacNative.RemoteCallback {
         override fun invoke(command: Int, value: Double) {
             val c = Command.entries.getOrNull(command - 1) ?: return
-            SwingUtilities.invokeLater { owner?.onCommand(c, value) }
+            dispatch(c, value)
         }
     }
+
+    /** A media key or a Dock-menu click (DEB-2249 FR-4): to whoever owns the card when it runs, on the Swing thread. */
+    fun dispatch(command: Command, seconds: Double) {
+        SwingUtilities.invokeLater { currentOwner()?.onCommand(command, seconds) }
+    }
+
+    @Synchronized
+    private fun currentOwner(): Target? = owner
 
     @Synchronized
     fun claim(target: Target, mode: Mode) {
@@ -44,6 +52,7 @@ internal object MacNowPlaying {
         if (owner !== target) artworkUrl = null
         owner = target
         l.ravilo_nowplaying_set_mode(mode.code)
+        MacDockMenu.claim(mode)
     }
 
     @Synchronized
@@ -55,6 +64,7 @@ internal object MacNowPlaying {
         if (owner !== target) return
         lib?.ravilo_nowplaying_update(title, artist.orEmpty(), album.orEmpty(), durationMs, positionMs.coerceAtLeast(0L),
             rate, if (playing) 1 else 0, if (video) 1 else 0)
+        MacDockMenu.playing(playing)
     }
 
     /** The cover by URL; fetched once per URL, applied only if the same owner still holds the card. */
@@ -80,5 +90,6 @@ internal object MacNowPlaying {
         owner = null
         artworkUrl = null
         lib?.ravilo_nowplaying_clear()
+        MacDockMenu.clear()
     }
 }

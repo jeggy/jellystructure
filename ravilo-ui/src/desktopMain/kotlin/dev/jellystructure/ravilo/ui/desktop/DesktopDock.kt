@@ -30,6 +30,10 @@ object DesktopDock {
     @Volatile var applied: String = "nothing yet"
         private set
 
+    /** DEB-2249 (FR-8) — the test driver's `dockmenu`: the Dock menu's playback items now, and a click on item [n] (1-based). */
+    fun dockMenuLine(): String = MacDockMenu.describe()
+    fun dockMenuClick(n: Int): Boolean = MacDockMenu.click(n)
+
     /** From the seam: the mode the screen shows, on every change (and once at first composition). */
     fun report(inMusic: Boolean) { music.value = inMusic }
 

@@ -220,6 +220,10 @@ internal object TestDriver {
             // R342 — the image the app hands the Dock (no picture of the window shows it): `dock /tmp/dock.png`.
             "dock" -> "ok " + dev.jellystructure.ravilo.ui.desktop.DesktopDock.snapshot(parts.getOrElse(1) { "/tmp/ravilo-dock.png" }) +
                 " · style=" + dev.jellystructure.ravilo.ui.desktop.DesktopAppearance.iconStyle.value
+            // DEB-2249 (FR-8) — the Dock menu's playback items: `dockmenu` lists them, `dockmenu 2` clicks the second.
+            "dockmenu" -> parts.getOrNull(1)?.toIntOrNull()?.let { n ->
+                if (dev.jellystructure.ravilo.ui.desktop.DesktopDock.dockMenuClick(n)) "ok" else "err no dock menu item $n"
+            } ?: ("ok " + dev.jellystructure.ravilo.ui.desktop.DesktopDock.dockMenuLine())
             // The Mac's own chrome, which no picture of the canvas shows: where the traffic lights are, who takes a click.
             "chrome" -> "ok " + (dev.jellystructure.ravilo.ui.desktop.DesktopWindow.chromeDebug() ?: "none").trim().replace("\n", " | ")
             // R329 (FR-R329-1) — the spike's numbers, which only the player has: the size it is really showing,
