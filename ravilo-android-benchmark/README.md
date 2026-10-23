@@ -8,18 +8,44 @@ journey, replacing the hand-authored wildcard file (`HSPLdev/jellystructure/**`,
 ## Regenerating
 
 ```
-./gradlew :ravilo-android:generateBaselineProfile
+JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-android:generateBaselineProfile -Pravilo.releaseAsDebugId \
+  -Pandroid.testInstrumentationRunnerArguments.ravilo.server=<server address> \
+  -Pandroid.testInstrumentationRunnerArguments.ravilo.user=<user name> \
+  -Pandroid.testInstrumentationRunnerArguments.ravilo.password=<password>
 ```
 
-Run this against **a local emulator or a personal test device you control directly — never a
-household TV.** This is the same rule that governs *deploying* the app
-([[feedback-no-tv-deploy]]/[[feedback-no-more-stue-tv-testing]]): the benchmark repeatedly
-launches, scrolls, and navigates the app, which is not something to run unattended against a
-device someone else in the house might be using.
+The three arguments are used only if server setup or sign-in is on screen, and are **never committed** — not in
+this file, not in code, not as a default. Supply them at run time; once the build is signed in on the device
+they are not read.
 
-Regenerate whenever a Home-critical-path composable (`HomeScreen.kt`, `HeroCarousel.kt`, `Tile.kt`,
-the detail screens) changes meaningfully. There's no CI gate for this — the CI environment has no
-Android device/emulator available, so this stays a manual/periodic maintenance task.
+### The device
+
+- A **`TV`-type device on API 33 or later**, claimed exclusively on the device board
+  before anything runs. Read `getprop ro.build.version.sdk` first. In practice this is
+  probably `google-tv-streamer` (the Stue TV was API 31); an Android TV emulator you run yourself is equally good.
+- The build installs as **`dev.jellystructure.ravilo.debug`** (`-Pravilo.releaseAsDebugId` — every variant derived
+  from `release`, `nonMinifiedRelease` and `benchmarkRelease`, inherits the suffix), beside the Play build. It is
+  **never installed over the Play build**, and the generator's target package is read from the build
+  (`androidx.benchmark.targetPackageName`), not hard-coded.
+- The Pixel is not a generation device: it runs the phone activity, which is not the journey profiled here.
+
+### What the run does
+
+It launches the **TV** activity (`dev.jellystructure.ravilo.android.MainActivity`) by explicit component, signs in
+if server setup, sign-in or the profile picker is in the way (first profile), then asserts Home is drawn. If Home
+is not there after 90 s the test **fails**, names the screen it is on, and no profile is written. From Home it goes
+down five rows (Right ×8 then Left ×8 in the first two), back up to the hero, opens a detail screen, moves down it
+and presses Back. `maxIterations` is the library default (3).
+
+The TV activity exposes its test tags as UiAutomator resource ids (`setup-address`, `login-username`,
+`profile-picker`, `home-loaded`, …), so the screens are found without depending on the device language.
+
+### Who runs it
+
+A QA seat runs it (the engineer seat has no device reach) and attaches the command's output and the generated
+`ravilo-android/src/main/baseline-prof.txt` to its board row; the engineer commits the file. Regenerate whenever a
+Home-critical-path composable (`HomeScreen.kt`, `HeroCarousel.kt`, `Tile.kt`, the detail screens) changes
+meaningfully. There is no CI gate for the generation itself — CI has no TV or emulator.
 
 ## Why this exists instead of hand-writing rules
 
