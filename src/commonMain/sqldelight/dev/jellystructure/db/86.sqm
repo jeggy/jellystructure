@@ -1,0 +1,5 @@
+-- DEB-2205 (FR-1) — the stops after the first frame where the position did not move with buffer in hand (a frozen picture):
+-- how many, and for how long in total. 0 = none or an older app. Must stay byte-for-byte in sync with PlaybackQoe.sq's CREATE
+-- TABLE (the SQLDelight-migration rule); the `cause` of each entry is inside stalls_json, so it needs no column.
+ALTER TABLE playback_qoe ADD COLUMN frozen_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN frozen_ms INTEGER NOT NULL DEFAULT 0;

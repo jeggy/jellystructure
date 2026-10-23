@@ -218,6 +218,9 @@ data class PlayerQoeSnapshot(
     val bandwidthBytes: Long? = null,
     /** 309 (FR-309-11) — this load's time from the start of loading to its first frame (ms); null before it. */
     val firstFrameMs: Long? = null,
+    /** DEB-2205 (FR-5.2) — the video family of the variant playing now (`hevc`, `h264`, `av1`, `vp9`), where the player
+     *  can tell; null = unknown. Names the codec a freeze recovery leaves. */
+    val variantCodec: String? = null,
 )
 
 // R247 — `languageName()` and its table live in LanguageIdentity.kt (one table, keyed by canonical code).

@@ -40,4 +40,19 @@ class LadderRulesTest {
         assertFalse(LadderRules.mustStepDown(19_000, null))
         assertFalse(LadderRules.mustStepDown(25_000, 40_000))
     }
+
+    // ── DEB-2205 (FR-5.3) — nothing climbs for 2 minutes after a recovery ──
+    @Test fun `a blocked climb stays on the rung however much is buffered`() {
+        assertEquals(6_000_000, LadderRules.allowedMaxBps(rungs, 6_000_000, 90_000, 80_000, oursEncoder = true, climbBlocked = true))
+        assertEquals(6_000_000, LadderRules.allowedMaxBps(rungs, 6_000_000, 90_000, 80_000, oursEncoder = false, climbBlocked = true))
+        assertEquals(12_000_000, LadderRules.allowedMaxBps(rungs, 6_000_000, 90_000, 80_000, oursEncoder = false), "unblocked it climbs")
+    }
+
+    @Test fun `a blocked climb still steps down`() {
+        assertEquals(12_000_000, LadderRules.allowedMaxBps(rungs, 24_000_000, 19_000, 21_000, oursEncoder = true, climbBlocked = true))
+    }
+
+    @Test fun `a blocked climb on the lowest rung stays on it`() {
+        assertEquals(2_400_000, LadderRules.allowedMaxBps(rungs, 2_400_000, 90_000, 80_000, oursEncoder = true, climbBlocked = true))
+    }
 }

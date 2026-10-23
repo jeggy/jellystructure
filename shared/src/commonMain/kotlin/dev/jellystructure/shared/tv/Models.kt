@@ -242,6 +242,11 @@ data class PlaybackQoeReport(
     /** R381 (FR-R381-2) — waits that are not stalls, by cause (`start`, `seek`, `track_switch`, `variant_switch`,
      *  `rebuild`, `recovery`): counted, never hidden, never a stall. */
     val waits: Map<String, Int> = emptyMap(),
+    /** DEB-2205 (FR-1) — the stops after the first frame where the position did not move with buffer in hand (a frozen
+     *  picture, `cause: frozen_with_buffer` in [stalls]): how many, and how long in total. [rebufferCount] keeps the
+     *  buffer-empty kind. 0 from an older app. Additive. */
+    @SerialName("frozen_count") val frozenCount: Int = 0,
+    @SerialName("frozen_ms") val frozenMs: Long = 0,
 )
 
 /** R381 (FR-R381-3) — one counted stall: a wait after this item's first frame that no seek, track switch, variant
@@ -269,6 +274,19 @@ data class QoeStall(
     /** DEB-2205 (FR-8) — how many app-fed subtitle fetches were still pending when the stop began (FR-6). Additive. */
     @SerialName("pending_subtitle_loads") val pendingSubtitleLoads: Int? = null,
 )
+
+/** DEB-2205 (FR-1) — the [QoeStall.cause] values. Only [BUFFER_EMPTY] is a *delivery* stall: it is the one the path caused. */
+object QoeStallCause {
+    const val BUFFER_EMPTY = "buffer_empty"
+    const val FROZEN_WITH_BUFFER = "frozen_with_buffer"
+    const val DECODE = "decode"
+    const val RECOVERY = "recovery"
+}
+
+/** DEB-2205 (FR-1) — true for a stall the delivery path caused: [QoeStallCause.BUFFER_EMPTY], or an older app's entry
+ *  with no cause (every entry it sends is one). A frozen picture, a decode signal or a recovery says nothing about what
+ *  the path can carry, so neither the stream record (FR-309-1) nor [StallRule] counts it. */
+val QoeStall.isDeliveryStall: Boolean get() = cause == null || cause == QoeStallCause.BUFFER_EMPTY
 
 /** R381 (FR-R381-7) — the next item's stream, prepared ahead of time with none of a start's side effects: nothing is
  *  reported to Jellyfin, no session moves, no tracker starts, no encode starts. `directPlay` false ⇒ nothing to
@@ -1616,6 +1634,10 @@ data class PlaybackRestreamRequest(
     /** 313 (found live 2026-10-09, evening) — the player could not play our encoder's stream: answer with Jellyfin's.
      *  Only this restream of this device's play; a server from before the field ignores it. */
     @SerialName("not_our_encoder") val notOurEncoder: Boolean = false,
+    /** DEB-2205 (FR-5.2) — a freeze recovery: serve only our encoder's rungs whose `BANDWIDTH` is under this (the frozen
+     *  rung's), keeping the lowest when none is. Never a rung at or above the one that froze. Null = no bound; a server
+     *  from before the field ignores it (and a client that never sends it is unchanged). */
+    @SerialName("below_bandwidth_bps") val belowBandwidthBps: Long? = null,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */

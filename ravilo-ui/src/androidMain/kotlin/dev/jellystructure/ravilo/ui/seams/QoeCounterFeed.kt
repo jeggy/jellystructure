@@ -17,6 +17,8 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
  * @param variantBpsOf the video variant playing now, for the stall's record.
  * @param variantHeightOf that variant's height, and [pendingSubtitlesOf] how many app-fed subtitle fetches were pending
  *  (DEB-2205 FR-8): both only describe the moment on the stall's entry.
+ * @param onStallBegan called (outside the lock) when a wait that counts as a stall begins: the buffer ran dry mid-play
+ *  (DEB-2205 FR-5.1 starts its 3 s timer from it).
  */
 internal class QoeCounterFeed(
     private val counter: QoeCounter,
@@ -26,6 +28,7 @@ internal class QoeCounterFeed(
     private val variantBpsOf: () -> Long? = { null },
     private val variantHeightOf: () -> Int? = { null },
     private val pendingSubtitlesOf: () -> Int? = { null },
+    private val onStallBegan: () -> Unit = {},
 ) : AnalyticsListener {
     override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
         synchronized(lock) { counter.firstFrame(eventTime.realtimeMs) }
@@ -44,7 +47,8 @@ internal class QoeCounterFeed(
         when (state) {
             Player.STATE_BUFFERING -> {
                 val pos = positionOf() ?: eventTime.currentPlaybackPositionMs
-                synchronized(lock) { counter.buffering(eventTime.realtimeMs, pos, bufferedAheadOf(), variantBpsOf(), variantHeightOf(), pendingSubtitlesOf()) }
+                val stall = synchronized(lock) { counter.buffering(eventTime.realtimeMs, pos, bufferedAheadOf(), variantBpsOf(), variantHeightOf(), pendingSubtitlesOf()) }
+                if (stall) onStallBegan()
             }
             Player.STATE_READY -> synchronized(lock) { counter.ready(eventTime.realtimeMs) }
             else -> synchronized(lock) { counter.interrupted() }

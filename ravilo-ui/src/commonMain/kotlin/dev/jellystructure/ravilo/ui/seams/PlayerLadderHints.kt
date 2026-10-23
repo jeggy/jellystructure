@@ -33,6 +33,15 @@ object PlayerLadderHints {
      */
     @Volatile var rearmTracks: Boolean = false
 
+    /**
+     * DEB-2205 (FR-5.3) — nothing climbs before this wall-clock time (epoch ms): the store sets it for 2 minutes after a
+     * freeze recovery, and the Android player's in-place cap sets it for the same window. Read by the Android track selection.
+     */
+    @Volatile var climbBlockedUntilMs: Long = 0L
+
+    /** DEB-2205 (FR-5.3) — true while a recovery's window holds climbing back at [nowMs]. */
+    fun climbBlocked(nowMs: Long): Boolean = nowMs < climbBlockedUntilMs
+
     /** The ticket a play is about to load (every Ready the store emits). */
     fun noteTicket(t: StreamTicket) {
         adaptive = t.adaptive

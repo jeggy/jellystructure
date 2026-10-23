@@ -115,6 +115,14 @@ internal fun startRung(rungs: List<EncoderRung>, budgetBps: Long?): Int {
     return rungs.indexOfFirst { it.videoBps <= budgetBps }.let { if (it < 0) rungs.lastIndex else it }
 }
 
+/**
+ * DEB-2205 (FR-5.2) — a freeze recovery serves only the rungs under the one that froze: those whose `BANDWIDTH` (FR-313-7's
+ * units, the frozen variant's own number) is strictly under [belowBandwidthBps]. When none is, the lowest rung is kept: a
+ * recovery that has nowhere lower to go still plays, and never above where it was.
+ */
+internal fun rungsBelowBandwidth(rungs: List<EncoderRung>, audioPeakBps: Long, belowBandwidthBps: Long): List<EncoderRung> =
+    rungs.filter { rungBandwidth(it, audioPeakBps) < belowBandwidthBps }.ifEmpty { rungs.takeLast(1) }
+
 /** FR-313-7 — a rung's `BANDWIDTH` in the master (its peak: video × 1.5, plus the loudest audio rendition). */
 internal fun rungBandwidth(r: EncoderRung, audioPeakBps: Long): Long = (r.videoBps * 1.5).roundToLong() + audioPeakBps
 

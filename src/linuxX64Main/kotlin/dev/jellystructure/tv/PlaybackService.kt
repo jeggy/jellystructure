@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.PlaybackQoeReport
+import dev.jellystructure.shared.tv.isDeliveryStall
 import dev.jellystructure.shared.tv.playbackFinished
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
@@ -628,7 +629,7 @@ class PlaybackService(
         val holdKey = "${device.deviceId}|${report.itemId}"
         val now = nowMs() / 1000
         val before = store.get(device.deviceId) ?: StreamRecord()
-        val (after, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls, true), now)
+        val (after, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true), now)
         while (true) {
             val old = holds.value
             val next = (if (hold != null) old + (holdKey to hold) else old - holdKey).let { m -> if (m.size > 200) m.entries.drop(m.size - 200).associate { it.toPair() } else m }
@@ -675,6 +676,8 @@ class PlaybackService(
         burnRequested: Boolean = false,
         /** 313 (found live 2026-10-09, evening) — the player could not play our stream: Jellyfin's, for this restream. */
         notOurEncoder: Boolean = false,
+        /** DEB-2205 (FR-5.2) — a freeze recovery: our rungs whose BANDWIDTH is under this only. */
+        belowBandwidthBps: Long? = null,
     ): StreamTicket {
         val deviceKind = device?.kind ?: "tv"
         val measured = ticket.copy(measuredBandwidthBps = measuredBps,
@@ -694,7 +697,8 @@ class PlaybackService(
             else encoder.planFor(ourCaps, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
-                subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform)
+                subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
+                belowBandwidthBps = belowBandwidthBps)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -2059,8 +2063,10 @@ class PlaybackService(
         mediaSourceId: String? = null,
         /** 313 (found live 2026-10-09, evening) — the player could not play our encoder's stream: answer with Jellyfin's. */
         notOurEncoder: Boolean = false,
+        /** DEB-2205 (FR-5.2) — a freeze recovery: our rungs whose BANDWIDTH is under this only (null: all). */
+        belowBandwidthBps: Long? = null,
     ): StreamTicket {
-        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder)
+        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
@@ -2161,7 +2167,7 @@ class PlaybackService(
             sourceVideoBps = playbackInfo?.mediaSources?.firstOrNull()?.videoBitrate(), measuredBps = measuredBps, take = take,
             // 313d (FR-313-6) — the picked image subtitle's place among the file's own subtitle streams.
             burnSubtitleOrder = embeddedSubtitleOrder(itemDetail?.mediaStreams.orEmpty(), subtitleStreamIndex), burnRequested = true,
-            notOurEncoder = notOurEncoder) }
+            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps) }
     }
 
     /**
@@ -2180,6 +2186,7 @@ class PlaybackService(
         audioStreamIndex: Int?,
         mediaSourceId: String? = null,
         notOurEncoder: Boolean = false,
+        belowBandwidthBps: Long? = null,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
@@ -2232,7 +2239,7 @@ class PlaybackService(
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = take,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
-            notOurEncoder = notOurEncoder) }
+            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps) }
     }
 
     /**

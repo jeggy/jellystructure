@@ -996,6 +996,17 @@ fun PlayerScreen(
             qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
             startupMsProvider = { bk.measuredStartupMs },
             failedProvider = { player.playbackFailed },   // R306 (FR-R306-3)
+            // DEB-2205 (FR-1, FR-5) — the stops after the first frame are measured from this screen's own poll state (the
+            // main thread's, refreshed every POLL_MS and only for the item loaded now), never from the engine: the store
+            // reads off the main thread. A player that cannot say how much is buffered (0) reports -1: no buffer in hand is
+            // claimed, so no freeze is declared.
+            watchProvider = {
+                PlayerWatch(
+                    positionMs = positionMs, wantsToPlay = isPlaying, waiting = isBuffering || isSeeking,
+                    firstFrame = hasRenderedFirstFrame, bufferedAheadMs = if (bufferedMs > 0) (bufferedMs - positionMs).coerceAtLeast(0) else -1L,
+                    recovering = videoOutputRecovering,   // R220's ladder seeks and waits by itself: that does not end a freeze
+                )
+            },
         )
     }
 

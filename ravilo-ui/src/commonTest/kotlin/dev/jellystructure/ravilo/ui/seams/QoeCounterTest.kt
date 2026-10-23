@@ -149,4 +149,29 @@ class QoeCounterTest {
         kotlin.test.assertNull(s.pendingSubtitleLoads)
         assertEquals(300L, s.bufferedMs)
     }
+
+    // ── DEB-2205 (FR-5.1) — the player's 3 s timer asks the counter whether the wait it started on is a stall ──
+    @Test
+    fun `a buffer empty wait mid play says it is a stall and is one until it ends`() {
+        val c = QoeCounter().start("ep1", 0)
+        assertEquals(true, c.buffering(120_000, 120_000, 300, 8_000_000L))
+        assertEquals(true, c.inStall())
+        c.ready(123_500)
+        assertEquals(false, c.inStall())
+    }
+
+    @Test
+    fun `a seek or the start or an interrupted wait is not a stall to cap on`() {
+        val c = QoeCounter()
+        c.beginItem("ep1"); c.load()
+        assertEquals(false, c.buffering(0, 0, 0, null), "the start")
+        c.ready(900); c.firstFrame(950)
+        c.seek()
+        assertEquals(false, c.buffering(60_000, 900_000, 0, null), "a seek")
+        assertEquals(false, c.inStall())
+        c.ready(61_000)
+        assertEquals(true, c.buffering(100_000, 99_000, 0, null))
+        c.interrupted()
+        assertEquals(false, c.inStall(), "a pause ends it")
+    }
 }

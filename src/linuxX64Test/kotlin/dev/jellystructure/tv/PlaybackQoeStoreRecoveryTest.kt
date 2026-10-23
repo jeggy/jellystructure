@@ -43,4 +43,25 @@ class PlaybackQoeStoreRecoveryTest {
         store.record("dev1", "ps2", PlaybackQoeReport(itemId = "i2", restoredAfterRecreate = 1))
         assertTrue(store.recentForDevice("dev1").first { it.playSessionId == "ps2" }.hasIssue)
     }
+
+    // ── DEB-2205 (FR-1) — a frozen picture is a stop: counted, carried, badged ───────────────────────────────────────────────
+    @Test
+    fun `a frozen picture lands in the row with its cause and badges the session`() {
+        val frozen = dev.jellystructure.shared.tv.QoeStall(afterFirstFrameMs = 60_000, positionMs = 61_000, bufferedMs = 9_000, durationMs = 5_500,
+            phase = "mid", variantBps = 20_000_000, cause = "frozen_with_buffer", bufferAheadMs = 9_000, rungHeight = 2160, rungBps = 20_000_000)
+        store.record("dev1", "ps1", PlaybackQoeReport(itemId = "i1", perItem = true, frozenCount = 1, frozenMs = 5_500, stalls = listOf(frozen)))
+        val row = store.recentForDevice("dev1").single()
+        assertEquals(1, row.frozenCount); assertEquals(5_500L, row.frozenMs)
+        assertEquals("frozen_with_buffer", row.stalls.single().cause)
+        assertEquals(0, row.rebufferCount, "the buffer-empty kind stays its own count")
+        assertTrue(row.hasIssue, "one stop of either kind badges the play")
+    }
+
+    @Test
+    fun `a report from an app before the field carries no frozen stop`() {
+        store.record("dev1", "ps1", PlaybackQoeReport(itemId = "i1", perItem = true))
+        val row = store.recentForDevice("dev1").single()
+        assertEquals(0, row.frozenCount); assertEquals(0L, row.frozenMs)
+        assertFalse(row.hasIssue)
+    }
 }

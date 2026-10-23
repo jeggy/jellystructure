@@ -107,9 +107,12 @@ data class QoeSummary(
     @SerialName("video_output_recovery_ms") val videoOutputRecoveryMs: Long = 0,
     @SerialName("background_returns") val backgroundReturns: Int = 0,
     @SerialName("restored_after_recreate") val restoredAfterRecreate: Int = 0,
+    // DEB-2205 (FR-1) — the stops where the position did not move with buffer in hand.
+    @SerialName("frozen_count") val frozenCount: Int = 0,
+    @SerialName("frozen_ms") val frozenMs: Long = 0,
     @SerialName("updated_at") val updatedAt: Long,
 ) {
-    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || videoOutputRecoveries > 0 || restoredAfterRecreate > 0
+    val hasIssue: Boolean get() = rebufferCount > 0 || frozenCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || videoOutputRecoveries > 0 || restoredAfterRecreate > 0
 }
 
 /** Phase 177 §FR-177-5 — mirrors the backend's `QoeActivityRow` (device/title already resolved). */
@@ -120,6 +123,8 @@ data class QoeActivityRow(
     @SerialName("dropped_frames") val droppedFrames: Int,
     @SerialName("rebuffer_count") val rebufferCount: Int,
     @SerialName("rebuffer_ms") val rebufferMs: Long,
+    @SerialName("frozen_count") val frozenCount: Int = 0,
+    @SerialName("frozen_ms") val frozenMs: Long = 0,
     @SerialName("direct_play") val directPlay: Boolean,
     @SerialName("link_kind") val linkKind: String,
     @SerialName("link_mbps") val linkMbps: Int,

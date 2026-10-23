@@ -29,10 +29,12 @@ object LadderRules {
      * The highest variant bandwidth the player may choose now, or null for no bound (nothing playing yet: the start is
      * the server's, FR-309-2). [rungsBps]: the variants' bandwidths, any order; [currentBps]: the one playing.
      */
-    fun allowedMaxBps(rungsBps: List<Long>, currentBps: Long?, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean): Long? {
+    fun allowedMaxBps(rungsBps: List<Long>, currentBps: Long?, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean, climbBlocked: Boolean = false): Long? {
         if (currentBps == null || rungsBps.isEmpty()) return null
         val sorted = rungsBps.distinct().sorted()
         if (mustStepDown(bufferedMs, lastBufferedMs)) return sorted.lastOrNull { it < currentBps } ?: sorted.first()
+        // DEB-2205 (FR-5.3) — for 2 minutes after a freeze recovery nothing climbs, whatever is buffered.
+        if (climbBlocked) return maxOf(currentBps, sorted.first())
         if (bufferedMs < climbBufferMs(oursEncoder)) return maxOf(currentBps, sorted.first())
         return sorted.firstOrNull { it > currentBps } ?: maxOf(currentBps, sorted.last())
     }

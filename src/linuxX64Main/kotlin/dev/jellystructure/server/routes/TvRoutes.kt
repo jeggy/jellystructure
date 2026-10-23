@@ -165,6 +165,9 @@ private data class QoeActivityRow(
     @SerialName("dropped_frames") val droppedFrames: Int,
     @SerialName("rebuffer_count") val rebufferCount: Int,
     @SerialName("rebuffer_ms") val rebufferMs: Long,
+    // DEB-2205 (FR-1) — the stops where the position did not move with buffer in hand.
+    @SerialName("frozen_count") val frozenCount: Int = 0,
+    @SerialName("frozen_ms") val frozenMs: Long = 0,
     @SerialName("direct_play") val directPlay: Boolean,
     @SerialName("link_kind") val linkKind: String,
     @SerialName("link_mbps") val linkMbps: Int,
@@ -884,7 +887,7 @@ fun Route.tvRoutes(
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackRestreamRequest>()
-        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities, req.audioStreamIndex, req.mediaSourceId, notOurEncoder = req.notOurEncoder))
+        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities, req.audioStreamIndex, req.mediaSourceId, notOurEncoder = req.notOurEncoder, belowBandwidthBps = req.belowBandwidthBps))
     }
 
     post("/tv/mark") {
@@ -1195,6 +1198,8 @@ fun Route.tvRoutes(
                 droppedFrames = q.droppedFrames,
                 rebufferCount = q.rebufferCount,
                 rebufferMs = q.rebufferMs,
+                frozenCount = q.frozenCount,
+                frozenMs = q.frozenMs,
                 directPlay = q.directPlay,
                 linkKind = q.linkKind,
                 linkMbps = q.linkMbps,

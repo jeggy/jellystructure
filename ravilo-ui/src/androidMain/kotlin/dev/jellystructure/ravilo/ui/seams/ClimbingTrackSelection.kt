@@ -41,7 +41,8 @@ internal class ClimbingTrackSelection(
         val playing = queue.lastOrNull()?.trackFormat?.bitrate?.takeIf { it > 0 }?.toLong()
         val rungs = (0 until length()).map { getFormat(it).bitrate.toLong() }.filter { it > 0 }
         val bufferedMs = bufferedDurationUs / 1000
-        allowedMaxBps = LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder)
+        allowedMaxBps = LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder,
+            climbBlocked = PlayerLadderHints.climbBlocked(System.currentTimeMillis()))
         lastBufferedMs = bufferedMs
         super.updateSelectedTrack(playbackPositionUs, bufferedDurationUs, availableDurationUs, queue, mediaChunkIterators)
     }

@@ -437,4 +437,26 @@ class EncoderPlanTest {
         assertNull(pruneRange(prunedBelow = 41, furthest = 101, keepBehind = 60))
         assertEquals(300 until 390, pruneRange(prunedBelow = 300, furthest = 400, keepBehind = 10))
     }
+
+    // ── DEB-2205 (FR-5.2) — a freeze recovery never serves the rung that froze, nor one above it ─────────────────────────────
+    @Test fun `a freeze recovery drops the frozen rung and every rung above it`() {
+        val rungs = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null)   // 2160@20000k, 1080, 720, 480
+        val frozen = rungBandwidth(rungs[0], 192_000L)
+        val kept = rungsBelowBandwidth(rungs, 192_000L, frozen)
+        assertEquals(rungs.drop(1), kept)
+        // The rung below froze too: only the ones under it remain, and the top is never offered again.
+        assertEquals(rungs.drop(2), rungsBelowBandwidth(rungs, 192_000L, rungBandwidth(rungs[1], 192_000L)))
+    }
+
+    @Test fun `a freeze recovery with nowhere lower to go keeps the lowest rung and nothing above`() {
+        val rungs = encoderRungs(EncoderCodec.H264, 1920, 1080, 30_000_000, null)
+        val lowest = rungs.last()
+        assertEquals(listOf(lowest), rungsBelowBandwidth(rungs, 192_000L, rungBandwidth(lowest, 192_000L)))
+        assertEquals(listOf(lowest), rungsBelowBandwidth(rungs, 192_000L, 1L))
+    }
+
+    @Test fun `a bound above every rung changes nothing`() {
+        val rungs = encoderRungs(EncoderCodec.H264, 1920, 1080, 30_000_000, null)
+        assertEquals(rungs, rungsBelowBandwidth(rungs, 192_000L, Long.MAX_VALUE))
+    }
 }

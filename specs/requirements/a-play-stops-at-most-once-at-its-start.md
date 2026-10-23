@@ -253,6 +253,32 @@ This applies to an HLS play, ours or Jellyfin's.
 - **The client's stop entries** (FR-1's `stalls_json` with `cause`) carry the buffer ahead, the rung, and the
   pending subtitle loads at that moment.
 
+- *Amendment 2026-10-23 (DEB-2211, slice 3 — the readings FR-1 and FR-5 were built to):*
+  - **Which stops are frozen.** `frozen_with_buffer` is a position that does not advance for **≥ 1 s** while the player
+    wants to play, is not buffering or seeking, has rendered its first frame and holds **≥ 3 s** ahead. It is measured
+    for every play (direct play included), counted in `frozen_count` / `frozen_ms`, and entered in `stalls_json` with
+    its `cause`, the buffer ahead and the rung. Only `buffer_empty` entries are *delivery* stalls: the server's stream
+    record (`stalled_bps`, FR-309-1) and the client's direct-play-to-ladder rule read those and ignore the other
+    causes, because a frozen picture says nothing about what the path can carry (FR-3 is where decode is learned).
+  - **FR-5.1's cap is lifted after 2 min.** The in-place cap (`setMaxVideoBitrate`, one rung below the current one,
+    taken from the rungs the master lists) holds for the "nothing climbs for 2 min" window and is lifted at its end, so
+    FR-309-4's own one-rung-up rule applies again. A new load clears it.
+  - **FR-5.2's units.** The frozen rung is the variant's `BANDWIDTH` the player reports. The restream's ceiling is
+    sent as `ClientCapabilities.max_video_bitrate` = `(BANDWIDTH − 640 kb/s) / 1.5 − 1`, which is always under the
+    frozen rung's own video bitrate (the largest audio allowance is 640 kb/s), so no rung at or above it is offered. The
+    codec flip is `hls_hevc` / `hls_hevc_capable` = false for a frozen HEVC rung; a frozen H.264 rung leaves the
+    declaration as the device made it, and the server picks HEVC where the device declares it and the source allows.
+    No new wire field: an installed server and an installed client keep working in both directions.
+  - **What 20 s still watches.** `OUR_STREAM_STUCK_MS` (20 s) stays for a stream from our encoder that never moves with
+    **no** buffer in hand (313's refused plan): that is a start that did not happen, not a frozen picture. The 5 s watch
+    needs the first frame and ≥ 3 s ahead.
+  - **Every freeze is counted per item, not per stream.** The first, second and third freeze of one item are FR-5.2's
+    three steps whichever encoder served the stream they happened on. A direct play that freezes is measured (FR-1) and
+    does not recover here: its hand-over is FR-4.
+  - **The QA flag.** A debuggable Android build stops the picture on a broadcast
+    (`dev.jellystructure.ravilo.DEBUG_FREEZE_RENDER`): playback holds its frame and position while the buffer fills, and the
+    store reads that as a freeze. A release build binds nothing.
+
 ## Acceptance
 
 1. **The reported film plays.** On the stue TV, the reported film (or any 2160p HDR10 HEVC file of 60–80 Mbps whose

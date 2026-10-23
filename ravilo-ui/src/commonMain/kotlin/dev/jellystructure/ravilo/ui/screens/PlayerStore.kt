@@ -27,6 +27,7 @@ import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.ravilo.ui.seams.PlayerLadderHints
 import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.QoeStall
+import dev.jellystructure.shared.tv.QoeStallCause
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.RestreamStepper
 import dev.jellystructure.shared.tv.StallRule
@@ -281,6 +282,18 @@ class PlayerStore(
     private var reportedStalls = 0
     private var reportedFirstFrame = false
 
+    // ── DEB-2205 (FR-1, FR-5) — the stops after the first frame, and the downward recovery of a frozen ladder play ──
+    private var watchProvider: (() -> PlayerWatch)? = null
+    /** This item's freeze history (the decision table's state); a new item starts a new one. */
+    private var freeze = FreezeRecovery()
+    private var frozenCount = 0
+    private var frozenMs = 0L
+    private var reportedFrozen = 0
+    /** The frozen stops and the recoveries of this item, entered beside the player's own buffer-empty stalls (newest 10). */
+    private val extraStalls = ArrayDeque<QoeStall>()
+    private var itemFirstFrameWallMs = -1L
+    private var pendingRecovery: PendingRecovery? = null
+
     fun startSession(
         itemId: String,
         // R292 (FR-R292-2) — a return from the background asks for the stream cut at the record's position;
@@ -297,11 +310,19 @@ class PlayerStore(
         // R306 (FR-R306-3) — the player's fatal-error flag. Null keeps the one a previous start gave (R237's
         // Retry re-starts without it, and must still be watched).
         failedProvider: (() -> Boolean)? = null,
+        // DEB-2205 (FR-1, FR-5) — what the player is doing each tick (buffer ahead, buffering, first frame). Null keeps
+        // the one a previous start gave; a platform that gives none measures no frozen stops and recovers none.
+        watchProvider: (() -> PlayerWatch)? = null,
     ) {
         failedProvider?.let { this.failedProvider = it }
+        watchProvider?.let { this.watchProvider = it }
         failureWatchJob?.cancel()
         DetailPrewarm.playStarted(itemId)   // 309 — the detail page was left for this play: its early encode is ours now
-        if (currentItemId != itemId) { stuckRestreamedFor = null; lastRestreamAudio = null; notOursFor = null }
+        if (currentItemId != itemId) {
+            stuckRestreamedFor = null; lastRestreamAudio = null; notOursFor = null
+            freeze = FreezeRecovery(); frozenCount = 0; frozenMs = 0L; reportedFrozen = 0
+            extraStalls.clear(); itemFirstFrameWallMs = -1L; pendingRecovery = null
+        }
         currentItemId = itemId
         this.positionProvider = positionProvider
         this.isPausedProvider = isPausedProvider
@@ -453,7 +474,12 @@ class PlayerStore(
         restreamWithSub(itemId, subtitleStreamIndex, positionMs, audioStreamIndex)
     }
 
-    fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null, mediaSourceId: String? = currentMediaSourceId) {
+    fun restreamWithSub(
+        itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null, mediaSourceId: String? = currentMediaSourceId,
+        // DEB-2205 (FR-5.2) — a freeze recovery serves only the rungs under the one that froze; every later restream of the
+        // item keeps that bound (a subtitle pick must not climb back to the rung that froze).
+        belowBandwidthBps: Long? = freeze.lowestFrozenBps,
+    ) {
         // R376 (FR-R376-3) — an audio pick on a player that cannot switch tracks inside one file asks for HLS, where
         // every track is a rendition; the item stays on HLS for its later restreams.
         lastCapabilities?.let { caps ->
@@ -464,7 +490,7 @@ class PlayerStore(
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
                 PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex, mediaSourceId,
-                    notOurEncoder = itemId == notOursFor).onThisServer())
+                    notOurEncoder = itemId == notOursFor, belowBandwidthBps = belowBandwidthBps).onThisServer())
             }.getOrElse {
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)
@@ -608,7 +634,9 @@ class PlayerStore(
                     variantHeight = snapshot.variantHeight,
                     // R381 (FR-R381-1/-3) — this item's own counts, its stalls, the session totals and the named waits.
                     perItem = snapshot.perItem,
-                    stalls = snapshot.stalls,
+                    stalls = mergeStops(snapshot.stalls, extraStalls.toList()),
+                    frozenCount = frozenCount,
+                    frozenMs = frozenMs,
                     sessionRebufferCount = snapshot.sessionRebufferCount,
                     sessionRebufferMs = snapshot.sessionRebufferMs,
                     waits = snapshot.waits,
@@ -683,8 +711,10 @@ class PlayerStore(
         failureWatchJob = scope.launch {
             val latch = FailureLatch()
             val stuck = StuckWatch()
+            val frozenMeter = FrozenMeter()
             while (isActive && _state.value is PlayerSessionState.Ready) {
                 delay(FAILURE_POLL_MS)
+                val nowMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
                 // 313 (found live 2026-10-09) — a stream from our own encoder that fails (a refused plan answers 410) or
                 // never moves is restreamed once at the same place with the same picks, asking for Jellyfin's stream
                 // (found live the same evening: a failure on the player's side was answered with our stream again).
@@ -694,8 +724,16 @@ class PlayerStore(
                 val ours = t?.encoder == "ours" && item != null
                 val pos = positionProvider?.invoke()
                 val failedNow = latch.observe(failed())
+                // DEB-2205 (FR-1) — a position that does not move with buffer in hand is a stop, measured on every play. FR-5.2: on
+                // a ladder play, one that has lasted 5 s is recovered downward (not a failure, not an engine error).
+                val watch = watchProvider?.invoke()
+                val reading = if (watch != null) frozenMeter.observe(nowMs, watch) else null
+                if (watch != null) noteWatch(watch, nowMs)
+                reading?.ended?.let { noteFrozenStop(it) }
+                if (!failedNow && reading != null && reading.heldMs >= FROZEN_RECOVER_MS && t != null && !t.directPlay && item != null &&
+                    recoverFromFreeze(item, t, pos ?: watch!!.positionMs, reading.bufferAheadMs, frozenMeter, nowMs)) break
                 val stuckNow = !failedNow && ours && pos != null &&
-                    stuck.observe(pos, isPausedProvider?.invoke() == true, kotlin.time.Clock.System.now().toEpochMilliseconds())
+                    stuck.observe(pos, isPausedProvider?.invoke() == true, nowMs)
                 if (!failedNow && !stuckNow) continue
                 when (streamRecovery(ours, stuckRestreamedFor == item, failedNow)) {
                     StreamRecovery.RESTREAM_FROM_JELLYFIN -> {
@@ -711,6 +749,95 @@ class PlayerStore(
                 break
             }
         }
+    }
+
+    /** The stop a recovery makes, waiting for the new stream's first movement: [frozenHeight]/[frozenBps]/[frozenCodec] are the rung that froze. */
+    private class PendingRecovery(
+        val startedAtMs: Long, val positionMs: Long, val bufferAheadMs: Long,
+        val frozenHeight: Int?, val frozenBps: Long?, val frozenCodec: String?, val target: String,
+    )
+
+    /** One tick of the player's state: the item's first frame (for the stops' clock) and the end of a recovery's own stop. */
+    private fun noteWatch(w: PlayerWatch, nowMs: Long) {
+        if (w.firstFrame && itemFirstFrameWallMs < 0) itemFirstFrameWallMs = nowMs
+        val r = pendingRecovery ?: return
+        val moved = w.firstFrame && !w.waiting && w.wantsToPlay && w.positionMs > r.positionMs + 500
+        if (!moved && nowMs - r.startedAtMs <= RECOVERY_WATCH_MS) return
+        pendingRecovery = null
+        val snap = qoeSnapshotProvider?.invoke()
+        val duration = nowMs - r.startedAtMs
+        // FR-5.4 — one line per recovery, naming the rung that froze and the one it landed on.
+        val landed = if (moved) "${r.target} ${rungWords(snap?.variantHeight, snap?.variantBandwidthBps)}${snap?.variantCodec?.let { " $it" } ?: ""}"
+            else "${r.target} (no picture within ${RECOVERY_WATCH_MS / 1000} s)"
+        println(recoveryLine(r.frozenHeight, r.frozenBps, r.frozenCodec, r.bufferAheadMs, landed))
+        if (moved && duration >= FROZEN_STOP_MS) addStop(QoeStall(
+            afterFirstFrameMs = afterFirstFrame(r.startedAtMs), positionMs = r.positionMs, bufferedMs = r.bufferAheadMs, durationMs = duration,
+            phase = phaseOf(afterFirstFrame(r.startedAtMs)), variantBps = snap?.variantBandwidthBps, cause = QoeStallCause.RECOVERY,
+            bufferAheadMs = r.bufferAheadMs, rungHeight = r.frozenHeight, rungBps = r.frozenBps,
+        ))
+    }
+
+    private fun afterFirstFrame(atMs: Long): Long = if (itemFirstFrameWallMs >= 0) (atMs - itemFirstFrameWallMs).coerceAtLeast(0) else 0L
+    private fun phaseOf(afterMs: Long) = if (afterMs < 10_000L) "start" else "mid"
+
+    private fun addStop(s: QoeStall) {
+        extraStalls.addLast(s)
+        while (extraStalls.size > MAX_EXTRA_STOPS) extraStalls.removeFirst()
+    }
+
+    /** FR-1 — a finished frozen stop: counted, and entered with its cause, the buffer ahead and the rung. */
+    private fun noteFrozenStop(stop: FrozenStop) {
+        frozenCount++
+        frozenMs += stop.durationMs
+        val snap = qoeSnapshotProvider?.invoke()
+        val after = afterFirstFrame(stop.startedAtMs)
+        addStop(QoeStall(
+            afterFirstFrameMs = after, positionMs = stop.positionMs, bufferedMs = stop.bufferAheadMs, durationMs = stop.durationMs,
+            phase = phaseOf(after), variantBps = snap?.variantBandwidthBps, cause = QoeStallCause.FROZEN_WITH_BUFFER,
+            bufferAheadMs = stop.bufferAheadMs, rungHeight = snap?.variantHeight, rungBps = snap?.variantBandwidthBps,
+        ))
+    }
+
+    /**
+     * DEB-2205 (FR-5.2/-5.3) — a ladder play whose picture has not moved for 5 s with buffer in hand is a decode or render
+     * stall, not delivery: restream once to our encoder at the rung below, in the other codec family where the device has
+     * one; a second freeze goes to Jellyfin under the first; a third ends on R237's error. Never above the rung that froze,
+     * and nothing climbs for 2 min. Returns true when it ended the watch (a restream started, or the error).
+     */
+    private fun recoverFromFreeze(item: String, t: StreamTicket, pos: Long, bufferAheadMs: Long, meter: FrozenMeter, nowMs: Long): Boolean {
+        val caps = lastCapabilities ?: return false
+        meter.flush(nowMs)?.let { noteFrozenStop(it) }
+        val snap = qoeSnapshotProvider?.invoke()
+        val action = freeze.decide(FreezeKind.FROZEN_WITH_BUFFER, snap?.variantBandwidthBps, snap?.variantCodec)
+        PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
+        fun note(target: String) {
+            pendingRecovery = PendingRecovery(nowMs, pos, bufferAheadMs, snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, target)
+            postQoeNow(item)   // the server hears of the stop before the new stream starts
+            PlayerLadderHints.rearmTracks = true
+        }
+        when (action) {
+            is FreezeAction.RestreamOurs -> {
+                lastCapabilities = if (action.leaveHevc) caps.copy(hlsHevc = false, hlsHevcCapable = false) else caps
+                note("ours")
+                restreamWithSub(item, t.burnedSubtitleIndex ?: -1, pos, lastRestreamAudio ?: t.audioStreamIndex, belowBandwidthBps = action.belowBandwidthBps)
+            }
+            is FreezeAction.RestreamJellyfin -> {
+                notOursFor = item
+                val cap = action.maxVideoBps?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+                lastCapabilities = caps.copy(
+                    maxVideoBitrate = if (cap == null) caps.maxVideoBitrate else steppedMaxVideo(caps.maxVideoBitrate, cap.toLong()),
+                    hlsHevc = if (action.leaveHevc) false else caps.hlsHevc, hlsHevcCapable = if (action.leaveHevc) false else caps.hlsHevcCapable,
+                )
+                note("Jellyfin")
+                restreamWithSub(item, t.burnedSubtitleIndex ?: -1, pos, lastRestreamAudio ?: t.audioStreamIndex)
+            }
+            FreezeAction.Fail -> {
+                println(recoveryLine(snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, bufferAheadMs, "error (the third freeze)"))
+                endOnError(PlayerSessionState.Error("The picture froze and could not be recovered", LoadErrorKind.GENERIC), pos)
+            }
+            FreezeAction.CapInPlace -> return false   // the buffer-empty kind is the player's own (FR-5.1)
+        }
+        return true
     }
 
     /**
@@ -751,7 +878,10 @@ class PlayerStore(
                 // sees a stream held long enough to prove it (FR-309-1; one row per play, upserted).
                 val firstFrame = snap?.firstFrameMs != null && !reportedFirstFrame
                 val newStall = (snap?.rebufferCount ?: 0) > reportedStalls
-                if (++qoeTicksSinceReport >= QOE_PROOF_EVERY_N_TICKS || variantMoved || firstFrame || newStall) {
+                // DEB-2205 (FR-1) — a frozen stop is reported as soon as it is known, like a buffer-empty one.
+                val newFrozen = frozenCount > reportedFrozen
+                if (++qoeTicksSinceReport >= QOE_PROOF_EVERY_N_TICKS || variantMoved || firstFrame || newStall || newFrozen) {
+                    reportedFrozen = frozenCount
                     qoeTicksSinceReport = 0
                     reportedVariant = variant
                     if (firstFrame) reportedFirstFrame = true

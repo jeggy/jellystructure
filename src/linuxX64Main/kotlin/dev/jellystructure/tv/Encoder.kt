@@ -111,6 +111,8 @@ class Encoder(
         audio: List<AudioTrack>, carriedIndex: Int?, takeBps: Long?, noRecord: Boolean, sourceVideoRange: String?,
         burnSubtitleOrder: Int? = null, burnRequested: Boolean = burnSubtitleOrder != null, subtitles: List<EncoderSubtitle> = emptyList(),
         platform: String? = null,
+        /** DEB-2205 (FR-5.2) — a freeze recovery: only rungs whose BANDWIDTH is under this (see [rungsBelowBandwidth]). */
+        belowBandwidthBps: Long? = null,
     ): Pair<EncoderPlan?, String> {
         val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
         val range = sourceVideoRange.orEmpty()
@@ -146,6 +148,7 @@ class Encoder(
         }
         val audioPeak = encAudio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
         var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling)
+        if (belowBandwidthBps != null) rungs = rungsBelowBandwidth(rungs, audioPeak, belowBandwidthBps)
         // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that
         // climbs) the 720p 4 Mbps rung, else (a player that can't climb) the top.
         var start = startRungFor(rungs, audioPeak, takeBps, noRecord && caps.hlsAdaptive)

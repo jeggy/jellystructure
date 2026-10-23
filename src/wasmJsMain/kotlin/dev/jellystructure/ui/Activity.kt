@@ -463,6 +463,7 @@ private suspend fun loadRecentPlaybackQuality(container: Element) {
     el.innerHTML = rows.joinToString("") { q ->
         val bits = buildList {
             if (q.rebufferCount > 0) add("${q.rebufferCount} rebuffer${if (q.rebufferCount != 1) "s" else ""} (${q.rebufferMs / 1000}s)")
+            if (q.frozenCount > 0) add("${q.frozenCount} frozen picture${if (q.frozenCount != 1) "s" else ""} (${q.frozenMs / 1000}s)")
             if (q.droppedFrames > 0) add("${q.droppedFrames} dropped frames")
         }
         // A clean session is never badged — only a rebuffer or dropped frame is (FR-177-5's own wording).

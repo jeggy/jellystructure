@@ -12,7 +12,8 @@ object StallRule {
 
     /** The stalls among [stalls] that count. */
     fun counting(stalls: List<QoeStall>): List<QoeStall> {
-        val sorted = stalls.sortedBy { it.afterFirstFrameMs }
+        // DEB-2205 (FR-1) — only a stall the path caused counts: a frozen picture or a recovery is not delivery.
+        val sorted = stalls.filter { it.isDeliveryStall }.sortedBy { it.afterFirstFrameMs }
         return sorted.filterIndexed { i, s ->
             s.durationMs >= COUNTS_MS ||
                 (i > 0 && s.afterFirstFrameMs - sorted[i - 1].afterFirstFrameMs <= PAIR_WINDOW_MS) ||

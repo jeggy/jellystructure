@@ -337,6 +337,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
             val quality = d.recentQuality?.takeIf { it.hasIssue }?.let { q ->
                 val bits = buildList {
                     if (q.rebufferCount > 0) add("${q.rebufferCount} rebuffer${if (q.rebufferCount != 1) "s" else ""} (${q.rebufferMs / 1000}s)")
+                    if (q.frozenCount > 0) add("${q.frozenCount} frozen picture${if (q.frozenCount != 1) "s" else ""} (${q.frozenMs / 1000}s)")
                     if (q.droppedFrames > 0) add("${q.droppedFrames} dropped frames")
                 }.joinToString(", ")
                 """<div class="tiny" style="margin-top:2px"><span class="badge warn">quality</span> $bits · ${q.linkKind}${if (q.linkMbps > 0) " ${q.linkMbps} Mbps" else ""}${if (!q.directPlay) " · transcoding" else ""}</div>"""

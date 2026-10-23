@@ -25,7 +25,12 @@ import androidx.media3.session.SessionResult
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.raviloBaseUrl
 import dev.jellystructure.ravilo.ui.TokenStore
+import dev.jellystructure.ravilo.ui.screens.CLIMB_BLOCK_AFTER_RECOVERY_MS
+import dev.jellystructure.ravilo.ui.screens.IN_PLACE_CAP_AFTER_MS
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
+import dev.jellystructure.ravilo.ui.screens.rungBelow
+import dev.jellystructure.ravilo.ui.screens.rungWords
+import dev.jellystructure.ravilo.ui.screens.videoFamilyOfMime
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
 import kotlin.concurrent.Volatile
@@ -144,6 +149,7 @@ actual class RaviloPlayer actual constructor() {
         // R291 — a debuggable build logs every load (tag R291); a release build binds nothing extra.
         if ((ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             player.addAnalyticsListener(DebugLoadLogger { player.currentPosition to player.bufferedPosition })
+            bindDebugFreeze()   // DEB-2205 — QA's way to stop the picture
         }
         player.addListener(cueListener)
         if (shownTimeline != null) mainHandler.post { applyShownOnMain() }   // DEB-2205 — a rebuilt engine keeps showing the app-fed track
@@ -180,6 +186,9 @@ actual class RaviloPlayer actual constructor() {
         mediaSessionRef = null
         val e = engine ?: return
         engine = null
+        unbindDebugFreeze()
+        mainHandler.removeCallbacks(inPlaceCap)
+        mainHandler.removeCallbacks(liftCap)
         releasedForBackground = true
         _hasRenderedFirstFrame = false
         _isBuffering = false
@@ -224,6 +233,9 @@ actual class RaviloPlayer actual constructor() {
     // 308 (FR-308-5) — the video variant playing (its BANDWIDTH and height) and the switches between variants.
     @Volatile private var qoeVariantBps: Long? = null
     @Volatile private var qoeVariantHeight: Int? = null
+    // DEB-2205 (FR-5) — the playing variant's Media3 `Format.bitrate` (what setMaxVideoBitrate compares) and its video family.
+    @Volatile private var qoeVariantFormatBps: Long? = null
+    @Volatile private var qoeVariantCodec: String? = null
     @Volatile private var qoeVariantDown: Int = 0
     @Volatile private var qoeVariantUp: Int = 0
 
@@ -271,6 +283,7 @@ actual class RaviloPlayer actual constructor() {
         variantBpsOf = { qoeVariantBps },
         variantHeightOf = { qoeVariantHeight },
         pendingSubtitlesOf = { appFed.pendingLoads },   // DEB-2205 (FR-8)
+        onStallBegan = { mainHandler.postDelayed(inPlaceCap, IN_PLACE_CAP_AFTER_MS) },   // DEB-2205 (FR-5.1)
     )
 
     // R218 (FR-R218-1) — fed by this same qoeListener's callbacks below, but distinct fields from the
@@ -344,6 +357,8 @@ actual class RaviloPlayer actual constructor() {
             }
             qoeVariantBps = bps
             qoeVariantHeight = f.height.takeIf { it > 0 }
+            qoeVariantFormatBps = (f.bitrate.takeIf { it > 0 } ?: f.peakBitrate.takeIf { it > 0 })?.toLong()
+            qoeVariantCodec = videoFamilyOfMime(f.codecs?.let { androidx.media3.common.MimeTypes.getVideoMediaMimeType(it) } ?: f.sampleMimeType)
         }
         override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
             qoeVideoDecoder = decoderName
@@ -472,6 +487,8 @@ actual class RaviloPlayer actual constructor() {
         // 308 — a new stream's first variant is not a switch.
         qoeVariantBps = null
         qoeVariantHeight = null
+        qoeVariantFormatBps = null
+        qoeVariantCodec = null
         // R381 — this stream's first wait is its start; 309 — and the item's first load is timed to its first frame
         // (elapsedRealtime: the clock Media3's eventTime.realtimeMs is on).
         synchronized(qoeLock) { qoeCounter.load(android.os.SystemClock.elapsedRealtime()) }
@@ -496,6 +513,7 @@ actual class RaviloPlayer actual constructor() {
             .apply { if (prefetchKey != null) setCustomCacheKey(prefetchKey) }
             .build()
         val p = exo()   // R292 — builds and binds a fresh engine after a background release
+        clearRecoveryState(p)   // DEB-2205 — a new stream starts uncapped, and a QA freeze does not follow it
         // Phase 314b (FR-314-6) — a `.mka` sidecar beside the video, merged in: its audio follows the container's own
         // tracks, which is the order the ticket lists them in (so the ordinal mapping below still holds).
         val sidecars = audio.mapNotNull { it.externalUrl?.takeIf { _ -> it.external } }
@@ -522,6 +540,68 @@ actual class RaviloPlayer actual constructor() {
         p.seekTo(startPositionMs)
         p.prepare()
         ensureMediaSession() // touch/recreate the session so it's active for the OS while this item plays (R44)
+    }
+
+    // ── DEB-2205 (FR-5) — a stalled or frozen ladder play recovers downward ──
+
+    /** The viewer's wait has gone on [IN_PLACE_CAP_AFTER_MS] in a buffer-empty stall: cap the adaptive selection one rung down. */
+    private val inPlaceCap = Runnable {
+        if (!synchronized(qoeLock) { qoeCounter.inStall() }) return@Runnable   // it ended on its own
+        val e = engine ?: return@Runnable
+        val current = qoeVariantFormatBps ?: return@Runnable
+        val rungs = e.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+            .flatMap { g -> (0 until g.length).map { i -> g.getTrackFormat(i).let { f -> (f.bitrate.takeIf { b -> b > 0 } ?: f.peakBitrate.takeIf { b -> b > 0 } ?: 0).toLong() } } }
+        val cap = rungBelow(rungs, current) ?: return@Runnable   // already on the lowest rung: nothing lower to ask for
+        e.trackSelectionParameters = e.trackSelectionParameters.buildUpon().setMaxVideoBitrate(cap.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()).build()
+        // Nothing climbs for 2 min (FR-5.3); then the cap is lifted and FR-309-4's own rule applies again.
+        PlayerLadderHints.climbBlockedUntilMs = System.currentTimeMillis() + CLIMB_BLOCK_AFTER_RECOVERY_MS
+        mainHandler.removeCallbacks(liftCap)
+        mainHandler.postDelayed(liftCap, CLIMB_BLOCK_AFTER_RECOVERY_MS)
+        android.util.Log.i("DEB-2205", "recovery: buffer empty for ${IN_PLACE_CAP_AFTER_MS / 1000} s on ${rungWords(qoeVariantHeight, qoeVariantBps)} → capped in place at ${cap / 1000}k (DEB-2205 FR-5)")
+    }
+
+    private val liftCap = Runnable { engine?.let { liftMaxVideoBitrate(it) } }
+
+    private fun liftMaxVideoBitrate(e: ExoPlayer) {
+        if (e.trackSelectionParameters.maxVideoBitrate != Int.MAX_VALUE)
+            e.trackSelectionParameters = e.trackSelectionParameters.buildUpon().setMaxVideoBitrate(Int.MAX_VALUE).build()
+    }
+
+    /** A new stream is its own start: the cap, its timers and a QA freeze are cleared (the restream's ticket carries the bound). */
+    private fun clearRecoveryState(e: ExoPlayer) {
+        mainHandler.removeCallbacks(inPlaceCap)
+        mainHandler.removeCallbacks(liftCap)
+        liftMaxVideoBitrate(e)
+        debugRenderFrozen = false
+    }
+
+    // QA (spec Acceptance 5) — a DEBUGGABLE build stops the picture on `adb shell am broadcast -p <package>
+    // -a dev.jellystructure.ravilo.DEBUG_FREEZE_RENDER` (`--ez on false` lifts it): the engine holds its frame and position
+    // while the buffer fills, and [isPlaying] still says "wants to play", so the store sees what a frozen decoder looks like.
+    // A release build never registers it.
+    @Volatile private var debugRenderFrozen = false
+    private var debugFreezeReceiver: android.content.BroadcastReceiver? = null
+
+    private fun bindDebugFreeze() {
+        if (debugFreezeReceiver != null) return
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: android.content.Intent) {
+                val e = engine ?: return
+                val on = intent.getBooleanExtra("on", true)
+                debugRenderFrozen = on
+                if (on) e.pause() else e.play()
+                android.util.Log.i("DEB-2205", "QA: render ${if (on) "frozen" else "resumed"} at ${e.currentPosition} ms, ${e.bufferedPosition - e.currentPosition} ms buffered")
+            }
+        }
+        debugFreezeReceiver = r
+        val filter = android.content.IntentFilter(DEBUG_FREEZE_RENDER_ACTION)
+        if (android.os.Build.VERSION.SDK_INT >= 33) ctx.registerReceiver(r, filter, Context.RECEIVER_EXPORTED) else ctx.registerReceiver(r, filter)
+    }
+
+    private fun unbindDebugFreeze() {
+        debugFreezeReceiver?.let { runCatching { ctx.unregisterReceiver(it) } }
+        debugFreezeReceiver = null
+        debugRenderFrozen = false
     }
 
     // R292 — the SurfaceView PlayerVideoSurface currently owns, so a rebuilt engine is bound to it from
@@ -680,7 +760,7 @@ actual class RaviloPlayer actual constructor() {
     // R306 (FR-R306-4) — *wants to play*, as the web's `!video.paused` already is: Media3's own isPlaying
     // is false while buffering, which flipped the Pause glyph to ▶, made OK during a buffer call play()
     // and reported the session paused. Buffering is `isBuffering`'s to say (R218).
-    actual val isPlaying: Boolean get() = engine?.let { it.playWhenReady && it.playbackState != Player.STATE_ENDED && it.playbackState != Player.STATE_IDLE } == true
+    actual val isPlaying: Boolean get() = engine?.let { (it.playWhenReady || debugRenderFrozen) && it.playbackState != Player.STATE_ENDED && it.playbackState != Player.STATE_IDLE } == true
     actual val playbackFailed: Boolean get() = _playbackFailed
     actual val isEnded: Boolean get() = engine?.playbackState == Player.STATE_ENDED
     actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
@@ -807,6 +887,7 @@ actual class RaviloPlayer actual constructor() {
         variantSwitchesUp = qoeVariantUp,
         variantBandwidthBps = qoeVariantBps,
         variantHeight = qoeVariantHeight,
+        variantCodec = qoeVariantCodec,
         perItem = true,
         stalls = qoeCounter.stallEvents(),
         sessionRebufferCount = qoeCounter.sessionRebufferCount,
@@ -850,3 +931,6 @@ private const val QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 10_000
 
 /** DEB-2205 (FR-6) — how often the app-fed subtitle is matched to the playhead; a cue shows within one tick of its time. */
 private const val CUE_POLL_MS = 150L
+
+/** DEB-2205 (spec Acceptance 5) — the broadcast a debuggable build stops the picture on, for QA. */
+const val DEBUG_FREEZE_RENDER_ACTION = "dev.jellystructure.ravilo.DEBUG_FREEZE_RENDER"

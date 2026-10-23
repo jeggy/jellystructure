@@ -66,10 +66,14 @@ data class QoeSummary(
     val encoder: String? = null,
     // DEB-2205 (FR-8) — the encoder's own record of this play (null: not served by our encoder, or its job had not stopped).
     @SerialName("encoder_summary") val encoderSummary: EncoderSummary? = null,
+    // DEB-2205 (FR-1) — the stops where the position did not move with buffer in hand (a frozen picture).
+    @SerialName("frozen_count") val frozenCount: Int = 0,
+    @SerialName("frozen_ms") val frozenMs: Long = 0,
 ) {
     // R292 (dev review item 7) — a recovery-ladder firing and a restore after a recreation are worth a second
     // look; a plain return from the background is not (it is what HOME does), so it is carried, not badged.
-    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || startFailureStatus != null ||
+    // DEB-2205 (FR-1) — a stop of either kind (buffer empty, or frozen with buffer) is worth badging: ≥ 1 stop.
+    val hasIssue: Boolean get() = rebufferCount > 0 || frozenCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || startFailureStatus != null ||
         videoOutputRecoveries > 0 || restoredAfterRecreate > 0
 }
 
@@ -122,7 +126,7 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             first_frame_ms = report.firstFrameMs,
             updated_at = nowEpochSec(),
             per_item = if (report.perItem) 1L else 0L,
-            stalls_json = report.stalls.takeIf { it.isNotEmpty() }?.let { qoeJson.encodeToString(STALLS, it.take(20)) },
+            stalls_json = report.stalls.takeIf { it.isNotEmpty() }?.let { qoeJson.encodeToString(STALLS, it.takeLast(20)) },
             waits_json = report.waits.takeIf { it.isNotEmpty() }?.let { qoeJson.encodeToString(WAITS, it) },
             session_rebuffer_count = report.sessionRebufferCount.toLong(),
             session_rebuffer_ms = report.sessionRebufferMs,
@@ -130,6 +134,8 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             start_variant_bps = report.startVariantBps,
             encoder = encoder,
             encoder_summary = summaryJson,
+            frozen_count = report.frozenCount.toLong(),
+            frozen_ms = report.frozenMs,
         )
     }
 
@@ -215,4 +221,6 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     startVariantBps = start_variant_bps,
     encoder = encoder,
     encoderSummary = encoder_summary?.let { EncoderSummary.fromJson(it) },
+    frozenCount = frozen_count.toInt(),
+    frozenMs = frozen_ms,
 )

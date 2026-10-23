@@ -93,13 +93,13 @@ class QoeCounter {
     /** A different video variant reached the playhead (308): a wait within [VARIANT_WINDOW_MS] of it is the switch. */
     fun variantSwitched(nowMs: Long) { variantSwitchAtMs = nowMs }
 
-    /** The player started waiting for data. [variantHeight] and [pendingSubtitleLoads] (DEB-2205 FR-8) only describe the
+    /** The player started waiting for data. Returns true when this wait is a stall (it will be counted). [variantHeight] and [pendingSubtitleLoads] (DEB-2205 FR-8) only describe the
      *  moment on the stall's record; null = the player does not know. */
     fun buffering(
         nowMs: Long, positionMs: Long, bufferedAheadMs: Long, variantBps: Long?,
         variantHeight: Int? = null, pendingSubtitleLoads: Int? = null,
-    ) {
-        if (waitStartMs >= 0) return   // already waiting
+    ): Boolean {
+        if (waitStartMs >= 0) return false   // already waiting
         val cause = when {
             !firstFrameRendered -> if (pendingCause == CAUSE_REBUILD) CAUSE_REBUILD else CAUSE_START
             pendingCause != null -> pendingCause
@@ -119,7 +119,11 @@ class QoeCounter {
             waitPendingSubtitles = pendingSubtitleLoads
         }
         waitStartMs = nowMs
+        return waitIsStall
     }
+
+    /** DEB-2205 (FR-5.1) — true while the player is waiting on a wait that counts as a stall (the buffer ran dry mid-play). */
+    fun inStall(): Boolean = waitStartMs >= 0 && waitIsStall
 
     /** The player is playing again: a stall ends and is counted. */
     fun ready(nowMs: Long) {
