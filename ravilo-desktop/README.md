@@ -248,6 +248,42 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest /tmp/rav
 Inside the Flatpak the app's files live in `~/.var/app/net.jebster.Ravilo/data/ravilo/` (`$XDG_DATA_HOME`, which
 the sandbox sets). It plays nothing yet on Linux — the player is a later phase; it browses, signs in and casts.
 
+### A release `.flatpak` in the Fedora QA container (DEB-2340)
+
+Before you test a release bundle there, check that the installed app is that bundle. All the bundles and local builds
+share the ref `app/net.jebster.Ravilo/x86_64/master`. A `--local` build stamps itself with the `git describe` tag's
+MAJOR.MINOR (`render.sh`). The container still held one from 2026-09-29, built between the v1.46 and v1.47 tags. On
+2026-10-23 that build answered as "Ravilo 1.46" when the v1.58 bundle had just been installed, though the bundle's own
+metainfo says 1.58. A copy in the other installation (`--user` against `--system`) or one left behind by a refused
+install is what `flatpak run` starts.
+
+```sh
+# as ravilo, in the container (docker exec -u ravilo -e XDG_RUNTIME_DIR=/run/user/1500 fedora-desktop …)
+flatpak list --app --all --columns=application,version,installation,origin | grep -i ravilo   # every copy
+flatpak uninstall --user -y net.jebster.Ravilo; sudo flatpak uninstall --system -y net.jebster.Ravilo   # all of them
+flatpak install --user -y --bundle ~/ravilo-linux-<N>.flatpak
+flatpak info --user net.jebster.Ravilo | grep -E 'Version|Commit'    # must say <N> before anything is tested
+pkill -f 'app/Ravilo/bin/Ravilo'   # a running dev build holds the single-instance socket, and the Flatpak shares it
+```
+
+Then start it in the GNOME session the way the dev build is started (`~/fedora/README.md`), with two differences.
+The test driver's directory must be one the sandbox shares with the container: the sandbox's own `$HOME` and `/tmp`
+are not the container's. Pass the variables with `--env=`:
+
+```sh
+mkdir -p ~/.var/app/net.jebster.Ravilo/td
+export XAUTHORITY=$(ls /run/user/1500/.mutter-Xwaylandauth.* | head -1) DISPLAY=:0
+flatpak run --env=SKIKO_RENDER_API=SOFTWARE \
+  --env=RAVILO_TESTDRIVER=/home/ravilo/.var/app/net.jebster.Ravilo/td net.jebster.Ravilo
+# the log's first line says "Ravilo <N> starting"; the socket is ~/.var/app/net.jebster.Ravilo/td/ctl.sock
+```
+
+`IllegalArgumentException: Width (0) and height (0) cannot be <= 0` on AWT-EventQueue-0 is Skiko's software
+renderer flushing a 0 × 0 layer: the window has no size, usually because the headless session has no monitor yet.
+Builds before v1.48 lack `4c3c476b` (a window opened with no display) and show this most often. If a current build
+shows it, run the dev build in the same session at the same moment. The fault is the product's only when the dev
+build gets a window and the Flatpak does not.
+
 ## Linux: the player (R335)
 
 On Linux the engine is **mpv through `libmpv`** (`ravilo-ui/src/desktopMain/…/desktop/Mpv.kt`, `MpvPlayer.kt`), behind
