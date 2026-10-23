@@ -15,9 +15,13 @@
 > fulfilling the constitution's own "if ever distributed" clause — it is not fixing an active,
 > currently-felt problem the way R210 is.
 
-**Status:** ✓ Built 2026-09-02 (infrastructure built and wired 2026-08-27; generation completed
-2026-09-02 — see the second dev-review addendum below). Not yet dev-reviewed, not yet on-device
-jank-remeasured (per this phase's own Acceptance section, that's a separate, later step).
+## Scope
+
+Infrastructure written 2026-08-27, first profile generated 2026-09-02 (both addenda below). Touches
+the `:ravilo-android-benchmark` module, `ravilo-android/src/main/baseline-prof.txt`, the version
+catalog's `androidx-benchmark` entries and the Android block of `settings.gradle.kts`. **Supersedes**
+R103's hand-authored wildcard `baseline-prof.txt`. The 2026-10-23 amendment below changes where the
+profile is generated and what a generation must prove.
 
 ## Problem
 `ravilo-android/src/main/baseline-prof.txt` is hand-authored with two blanket wildcards:
@@ -198,6 +202,63 @@ requirement — API 33+ or root — already ruled it out permanently; R213 was T
 sense that its *output* targets `:ravilo-android`, never in *where generation runs*). All device
 interaction was against the Pixel 9 Pro, with the owner's explicit go-ahead for this specific attempt;
 the phone returned to its home launcher in a normal, clean state after the final successful run.
+
+## Amendment 2026-10-23 — the profile is generated on a TV, signed in, and proves it reached Home (DEB-2204)
+
+**Why.** Reading the committed profile for DEB-2204 (the owner asked why another TV client feels
+more responsive) showed that the 2026-09-02 generation never reached Home. Of its 139
+`dev/jellystructure` lines, 40 are `ServerSetupScreenKt`. None name `HomeScreen`, `ContentRow`,
+`Tile`, `HeroCarousel` or a detail screen, so FR-RV-R213-1's journey and this phase's Acceptance
+("covers … Home/detail composables") were not met. Three causes, all read from the code:
+1. The generator calls `startActivityAndWait()` with no intent. That launches the
+   `LAUNCHER` activity, which is the **phone** activity (`AndroidManifest.xml`). The TV activity is
+   `LEANBACK_LAUNCHER`. On the Pixel, the journey therefore drove the phone UI, not the TV UI.
+2. The generator installs the benchmark build under the production id `dev.jellystructure.ravilo`. On
+   a device that already has the Play build, that cannot install over it without throwing away the
+   signed-in app. So the journey started unpaired and stopped at server setup.
+3. Nothing in the journey checked where it had landed. A run that never left server setup wrote a
+   profile anyway.
+
+The "never a household TV" rule in FR-RV-R213-3 predates the device board. It protected a TV someone
+might be watching. Since 2026-10-14, a TV row that is ticked, free and claimed on the device board is exactly
+that protection.
+
+**FR-RV-R213-1 (amended)** — the journey runs the **TV** activity
+(`dev.jellystructure.ravilo.android.MainActivity`, launched by explicit component), **signed in**.
+- **Signing in.** When server setup or login is on screen, the generator signs in using a server URL,
+  user name and password passed as **instrumentation arguments at run time**. If a profile picker
+  follows, it takes the first profile. No credential, server address or library title is ever
+  committed — not in code, the README or a test fixture.
+- **Asserting Home.** The generator then asserts that Home is drawn. If it is not, the run **fails**,
+  names the screen it is on, and writes no profile.
+- **The journey from Home:**
+  - Down through at least four rows.
+  - Right through at least eight tiles in at least two rows, so the row scroll and focus detail run.
+  - Back up to the hero.
+  - Open a detail screen, move down it, and press Back.
+- `maxIterations` returns to the library default of 3. The 1 was chosen for a TV that might be in use,
+  and a board claim now covers that.
+
+**FR-RV-R213-3 (amended)** — the profile is generated on a **`TV`-type device on API 33 or later**,
+claimed exclusively on the device board. It is never installed over the Play build.
+- **Device.** The seat reads `getprop ro.build.version.sdk` before generating. The Stue TV was API 31
+  on 2026-08-27, so in practice this is probably `google-tv-streamer`; pin it with this reason. An
+  Android TV emulator the seat runs itself is equally good.
+- **Package.** The benchmark build installs as `dev.jellystructure.ravilo.debug`, beside the Play app
+  (`-Pravilo.releaseAsDebugId`, which every variant derived from `release` must inherit). The
+  generator's target package follows the build rather than being hard-coded.
+- **The Pixel** is no longer the generation device. It runs the phone activity, which is not the
+  journey this phase profiles.
+- **Who runs it.** Generation is run by a QA seat, because the engineer seat has no device reach. The
+  QA seat attaches the generated file to its row, and the engineer commits it.
+
+**FR-RV-R213-4 (new)** — `scripts/check-baseline-profile.sh` fails when the committed
+`ravilo-android/src/main/baseline-prof.txt` names no class from `HomeScreen`, `ContentRow`, `Tile`
+or a detail screen. It is green from the commit that lands the regenerated file, so a generation that
+stopped short can never be committed silently again.
+
+**Non-goal, unchanged:** the phone activity's journey is still not profiled. The one APK serves both,
+and a phone journey would be a second `@Test` on the Pixel's phone activity, left for later.
 
 ## Source references
 - `specs/ravilo/constitution.md`, "Technology Mandates" — the existing mandate this phase fulfills.
