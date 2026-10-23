@@ -8,17 +8,16 @@
 > Owner, 2026-10-02 15:45 (added): the lock-screen media card (*Caster til Stue*, chip *Stue + 1*) showed the right
 > song with **another album's cover**, while Ravilo's Playing page showed the right one.
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-02 (build notes at the end; **amended the same evening** — the second card and Stop, see the amendment at the end, not deployed, not device-tested), not deployed, **device-tested on the Pixel 9 against the Gæsteværelse
-speaker** (the phone side; the receiver change needs a backend deploy and was measured against the real bundle in a
-harness). Written 2026-10-02 (dev-authored, owner-approved the same day) against `main` `f628c2f2`. Number checked
-free on `main` (Ravilo specs top at R355). Context: `specs/research-reports/ravilo-playback-sessions-and-casting-2026-10-02.md`
-§1–§2. **Amends** R245 (FR-R245-11: the Cast SDK's own notification is replaced), R322 (FR-R322-1/13: the music
-service also hosts the cast remote), R324 (FR-R324-9: the notification's actions), 286 (dev review 10: the receiver's
-queue snapshot) and R330 (FR-R330-3: the shared status merge). Android sender, the Cast receiver (`ravilo-cast`) and
-the common merge both senders use (the Mac's included). Additive wire change only; no new string; no backend change
-except that the receiver is served by the backend (a deploy ships it).
+Written 2026-10-02 (dev-authored, owner-approved the same day). Context:
+`specs/research-reports/ravilo-playback-sessions-and-casting-2026-10-02.md` §1–§2. **Amends** R245 (FR-R245-11: the
+Cast SDK's own notification is replaced), R322 (FR-R322-1/13: the music service also hosts the cast remote), R324
+(FR-R324-9: the notification's actions), 286 (dev review 10: the receiver's queue snapshot) and R330 (FR-R330-3: the
+shared status merge). Android sender, the Cast receiver (`ravilo-cast`) and the common merge both senders use (the
+Mac's included). Additive wire change only; no new string; no backend change except that the receiver is served by
+the backend (a deploy ships it). The phone side was measured on the Pixel 9 against the Gæsteværelse speaker, the
+receiver side in a harness against the real bundle (build notes).
 
 ## What happened (logs of the owner's session, reproduced on the Pixel 9 2026-10-02 16:11–16:15)
 
@@ -350,3 +349,10 @@ for Play to send the song back.
   controls for Cast devices*) turns it off, and no app can.
 - The card's ■, Play services' *Stop cast* and Google Home's Stop each end the cast with the song back on the phone,
   paused (acceptance 6–8).
+
+## Amendment 2026-10-23 — the card's button says Stop (DEB-2185)
+
+FR-R356-3 / FR-R356-14(a): the media card's custom action reads **Stop** (`cast.stop_room`), not *Stop casting*.
+The owner decided on 2026-10-23 (DEB-2185) that the word is *Stop* everywhere. What the button does is unchanged: it
+ends the cast with the receiver stopped, and the song comes back to the phone paused. See
+`one-remote-for-every-playback.md` FR-7.

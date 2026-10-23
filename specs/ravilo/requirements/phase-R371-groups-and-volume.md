@@ -1,10 +1,13 @@
 # Phase R371 — More rooms one at a time, and volume for all of them and each room
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: the master volume works everywhere through the receiver; adding a room is new Android work through `MediaRouter2`, unproven on the desktop; only a linked Android app sees the rooms). **Phase 4 of 6** (see R368). Depends on
-R368–R370, R355 (speaker groups from the phone) and R357 (every player reports its volume). Designs:
-`Playback Sessions - Directions.html` §B4 and `… - Desktop, TV & Admin.html` §B4a.
+Written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: the master volume works everywhere
+through the receiver; adding a room is new Android work through `MediaRouter2`, unproven on the desktop; only a linked
+Android app sees the rooms). **Phase 4 of 6** (see R368). Depends on R368–R370, R355 (speaker groups from the phone)
+and R357 (every player reports its volume). Designs: `Playback Sessions - Directions.html` §B4 and
+`… - Desktop, TV & Admin.html` §B4a. Where the volume sits and how the slider behaves are amended on 2026-10-23 (end of
+file).
 
 ## Requirements
 
@@ -400,3 +403,16 @@ thread.
 
 **Only real speakers can confirm:** building the group from the Pixel; Cast's group volume scaling; a room unplugged;
 the desktop road.
+
+## Amendment 2026-10-23 — where the volume sits, and how the slider behaves (DEB-2185)
+
+**FR-R371-4:**
+- **Where.** On the phone, the volume row is on the one remote itself (`one-remote-for-every-playback.md` FR-10), not
+  only in a ⋯ panel, for every kind (a TV included). The exact placement for music is revision 3's (DEB-2222). The
+  master + rooms rule, *Volume* never *All speakers*, and the *—* / *{place} doesn't report its volume* rule stand.
+- **How the slider behaves.** That spec's FR-11 and FR-12 now apply to every slider here, master and room alike:
+  - it opens at the reported level, never 0;
+  - no report moves the thumb during a drag;
+  - the requested level is held while in flight;
+  - it returns to the reported level 3 s after release if no matching report came;
+  - it follows changes from elsewhere live.

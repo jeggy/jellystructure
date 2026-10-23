@@ -6,17 +6,9 @@
 > +30 s, a draggable seek bar and **subtitles one tap away** — applied on the TV, using the same picker
 > component the local player uses.
 
-## Status
+## Scope
 
-`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
-bottom), **implemented 2026-09-16** (see §Implementation notes). Built into the mockups 2026-09-16.
-Compiled for Android (`ravilo-ui`, `ravilo-android` incl. the manifest merge), wasmJs, and the new
-Kotlin/JS receiver bundle; `ravilo-ui` unit tests green. **Not tested against a real Chromecast** —
-acceptance 1–9 need the parents' stick and an iPhone, neither of which this session had.
-
-**Numbering:** verified against `main` on 2026-09-16 — Ravilo taken through **R243**, admin through
-**217**. No `phase-R245-*` file and no `STATUS.md` row for it. Pairs with **218**; follows **R244**, whose
-picker sheet and safe-area work this phase reuses. Next free: **219 / R246.**
+The viewer half of **Phase 218**; follows **R244**, whose picker sheet and safe-area work this phase reuses.
 
 Design / reference implementation: `design/ravilo/Casting - Directions.html` (+ its 8-page print copy) —
 the §B1 flow as nine frames, both remote directions, the seven remote states plus the subtitles sheet, the
@@ -28,6 +20,9 @@ sender, remote and mini bar; `design/ravilo/Ravilo Receiver.html` for the receiv
 Reuses without change: **R218** (the receiver's loading and buffering moments), **R237** (failure copy),
 **R180** + **R195** (the picker), **R222** (the slow-to-start note applies to a cast too), **R110** (the
 TV caption style), **phase 182** (the busy state), **R243**'s wordmark-tile fallback rule.
+
+The remote this phase drew became Ravilo's **one remote** for every playback on 2026-10-23 (see the amendment at the
+end, and `one-remote-for-every-playback.md`).
 
 ## Current state
 
@@ -340,3 +335,21 @@ runtime stage now copies `/app/cast-receiver/` from the builder stage instead.
 
 **Amended:** `ravilo-web/Dockerfile` gains `COPY ravilo-cast ./ravilo-cast` (configured, never built);
 `Dockerfile`'s receiver copy is `COPY --from=builder … /app/cast-receiver/ /app/cast/`. No code change.
+
+## Amendment 2026-10-23 — this remote becomes the one remote (DEB-2185)
+
+> Owner, 2026-10-23 (DEB-2185): *"The current cast remote is the nice looking one … all missing functionality needs to
+> be added to the cast remote, so it's not a cast remote anymore, it's a remote session remote."*
+
+`one-remote-for-every-playback.md` (Task: DEB-2185) now owns this remote. Three promises here change:
+
+- **FR-R245-7 — volume.** The remote **has** an on-screen slider for every place that reports its level, the
+  phone included (that spec's FR-10 to FR-12). "No on-screen slider" is withdrawn by the owner's choice of one volume
+  rule for speakers and screens. The phone's hardware keys still move the same level.
+- **FR-R245-7 / FR-R245-10 — the word.** The footer's and the device chip's *Stop casting* becomes **Stop**
+  (`cast.stop_room`). It is still one tap, with no confirm on your own playback.
+- **FR-R245-7 — the device chip** becomes the place pill, which opens *Move to…* (that spec's FR-6). Switching device
+  and *Play here* live there.
+
+Everything else here stands and is carried into the one remote: the art card on solid ground, −10 s · ⏯ · +30 s,
+the shared tracks sheet (FR-R245-8), the seven states (FR-R245-9), and leaving never stopping (FR-R245-10).

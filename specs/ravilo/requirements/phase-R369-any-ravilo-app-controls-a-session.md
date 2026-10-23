@@ -499,3 +499,16 @@ re-read on the fix (acceptance 2), and if it survives it is its own finding, not
   cannot come back.
 - The capability/handler set equality R380 FR-R380-11 holds for `session_load` arms covers the new token the same
   way: a build that advertises it must have the arm.
+
+## Amendment 2026-10-23 — the remote is one screen again, in the Cast remote's shape (DEB-2185)
+
+The build notes' **deviation** ("the remote is its own screen rather than Now playing / the Playing page re-pointed")
+is reversed. FR-R369-6's intent, one remote pointed at whatever plays, is restored. By the owner's choice on
+2026-10-23 that one remote is the **Cast remote's shape** (R245), not Now playing's.
+
+- `SessionRemoteScreen` and `Dest.SessionRemote` retire.
+- Every session opens `one-remote-for-every-playback.md`'s remote, fed by review item 9's `SessionSender`.
+- The track **chips** give way to the shared tracks sheet (R245 FR-R245-8).
+- The ⋯ entries *Play here* and *Stop* move to the place pill's *Move to…* and the footer's **Stop**.
+- Everything else in FR-R369-1 to FR-R369-9 (commands, revision rule, controllers, the dim and spinner, book-time
+  seek) stands.

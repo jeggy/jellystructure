@@ -3,13 +3,14 @@
 > Owner, 2026-10-02 (after the dashboard tests of 299/R354): *"What does this mean 'its Jellyfin session reports no
 > volume'?"* — then *"Lets fix it"*.
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-02 (build notes at the end); deployed 2026-10-02 (backend + web `v1.48-117-gf0fb5fe0` (commit `575cc8d5` since the 2026-10-02 re-timing)), **device-tested**: the dashboard's *Set volume 35* / *Mute* / *Unmute* read back in Jellyfin's session within 3 s on the Ravilo web app (a film) and the Mac app (music), and *Set volume 8* / *Mute* / *Unmute* plus a level set on the speaker itself on the Cast receiver (Gæsteværelse); a song's first ~10 s show no level until its first heartbeat (the start report carries none); Android not re-tested. Written 2026-10-02 (dev-authored, owner-approved the same day) against `main` `91a12ee8`. Number checked
-free (Ravilo specs top at R356). **Amends** R354 (players got a volume, but never said what it is) and 299 (the
-progress a device reports is forwarded to Jellyfin unchanged except for these two fields). Shared wire models, the
-backend's progress forwarding, the film player, the music player (phone, desktop, web) and the Cast receiver.
-Additive wire change only; no new string; no UI change.
+Written 2026-10-02 (dev-authored, owner-approved the same day). **Amends** R354 (players got a volume, but never said
+what it is) and 299 (the progress a device reports is forwarded to Jellyfin unchanged except for these two fields).
+Shared wire models, the backend's progress forwarding, the film player, the music player (phone, desktop, web) and the
+Cast receiver. Additive wire change only; no new string; no UI change. Measured on 2026-10-02: a level set from the
+dashboard reads back in Jellyfin's session within 3 s, and a song's first ~10 s carry no level until its first
+heartbeat (the start report carries none). FR-R357-5 is amended for the Android TV app on 2026-10-23 (end of file).
 
 ## What is wrong
 
@@ -121,3 +122,20 @@ The dashboard can command the volume but cannot show it.
 `ev.data.level`/`.muted` with `getSystemVolume()` as the fallback, unverified on a device), the engines' collectors
 (platform code), and the live check in *Verification* (`GET /Sessions` showing `VolumeLevel 35` / `IsMuted true` after
 a deploy). Not done: a song sent from the dashboard (FR-R357-6, its own later phase).
+
+## Amendment 2026-10-23 — the Android TV app reports the TV's volume (DEB-2185)
+
+> Owner, 2026-10-23 (DEB-2185), on the one remote's slider: *"it should also live update, so if I change it from 2%
+> to 15%, but then someone else is using the native remote for that specific device and changes it to 10%, then I see
+> that right away as well."*
+
+**FR-R357-5 amended, for the Android TV app only.**
+- A session's level on a Ravilo TV app is the TV's **media stream** volume (`STREAM_MUSIC`, as a percent of its
+  maximum), not the player's own gain, whenever Android reports that stream as adjustable.
+- The app reports it on every change, through a listener rather than a poll, by FR-R357-4's report-at-once path.
+- A `SetVolume` / `set_volume` sets that stream.
+- When the TV's volume is fixed (`AudioManager.isVolumeFixed()`, e.g. volume handed to a soundbar over HDMI-CEC),
+  the app sends **no** level (FR-R357-5's honest-only rule), and every remote shows *—*.
+
+The phone keeps FR-R357-5 as written: its hardware keys move the system stream, which is not reported as the player's
+level. Wire unchanged: the same `volume_percent` / `muted` fields. See `one-remote-for-every-playback.md` FR-12.
