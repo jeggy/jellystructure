@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where the album ⋯ goes when an album has editions — directions</title>
+<!-- Self-contained: no network reference, no dependency on any stylesheet outside this file. The
+     only things it loads are the round's own PNGs, which sit in png/ beside it. Dark ink on a
+     light-gray backdrop, per the standing canvas rule. -->
+<style>
+  :root { --ink:#12141b; --ink2:#262a35; --line:#d3d6df; --bad:#9a2a2a; --ok:#1d6a3a; --warn:#8a5a10; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#e9eaef; color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 44px 28px 120px; }
+  h1 { font-size: 30px; line-height:1.2; letter-spacing:-.02em; margin:0 0 6px; }
+  h2 { font-size: 21px; margin: 52px 0 10px; padding-top: 18px; border-top: 2px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 6px; }
+  p, li { color: var(--ink2); max-width: 78ch; }
+  .lede { font-size: 17px; color: var(--ink); }
+  code, .k { font-family: ui-monospace,'SF Mono',Menlo,monospace; font-size: .86em; }
+  table { border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 7px 11px; text-align: left; vertical-align: top; color: var(--ink2); }
+  th { background: #dfe1e9; color: var(--ink); }
+  .no { color: var(--bad); font-weight: 700; }
+  .yes { color: var(--ok); font-weight: 700; }
+  .hm { color: var(--warn); font-weight: 700; }
+  .strip { display: flex; flex-wrap: wrap; gap: 20px; margin: 14px 0 6px; }
+  figure { margin: 0; width: 272px; }
+  figure img { display: block; width: 272px; border-radius: 12px; border: 1px solid var(--line); background:#fff; }
+  figure figcaption { margin-top: 7px; font-size: 12px; line-height: 1.45; color: var(--ink2); }
+  figure figcaption b { color: var(--ink); }
+  figure.wide, figure.wide img { width: 560px; }
+  .rec { display:inline-block; background:#1d6a3a; color:#fff; font-size:11px; font-weight:800;
+    letter-spacing:.09em; text-transform:uppercase; padding:3px 9px; border-radius:999px; vertical-align:3px; }
+  .tag { display:inline-block; background:#dfe1e9; color:var(--ink); font-size:11px; font-weight:800;
+    letter-spacing:.09em; text-transform:uppercase; padding:3px 9px; border-radius:999px; vertical-align:3px; }
+  blockquote { margin: 12px 0; padding: 10px 0 10px 16px; border-left: 3px solid #b9bdc9; color: var(--ink2); }
+  .ask { background:#fdf6e3; border:1px solid #e0d4ac; border-radius:10px; padding:14px 18px; margin:16px 0; }
+  .ask b { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Where does the album page’s ⋯ go on the phone when the album has editions?</h1>
+<p class="lede">Five options, drawn side by side at 360&nbsp;dp, in English, Danish and Faroese.
+Round slug <span class="k">album-more-placement</span>, 2026-10-23. The pictures are in
+<span class="k">png/</span> beside this file.</p>
+
+<h2>What is fixed</h2>
+
+<p><b>The new ⋯</b> (playlists spec FR-6):</p>
+<blockquote>The album page gains a ⋯ beside <i>Play</i> and <i>Shuffle</i>, on both the phone and the
+desktop header. For now it holds a single row, <i>Add to playlist…</i>, which opens FR-4’s picker
+for the album’s songs in the order <i>Play</i> plays them.</blockquote>
+<p>It will gain more rows later, so every option below draws it as <b>the place secondary album
+actions live</b>, not as a one-off.</p>
+
+<p><b>R373’s split buttons</b> (FR-R373-2 point 3, owner-approved):</p>
+<blockquote><i>Play album ▾</i> (primary) and <i>Shuffle ▾</i> as split buttons. The ▾ menu:
+<i>Play album</i> (<i>{n} songs · the official order</i>) · <i>Play album + extras</i>
+(<i>{n} songs · extras, then the B-sides</i>), the current one ticked. The pick is remembered per
+album, per device, relabels the Play button (<i>Play album + extras</i>), and both buttons follow
+it.</blockquote>
+<p>Point 1 of the same FR also puts <b>+ {k} extra(s)</b> in the header, after the official album’s
+count and length. Every editions frame here draws it; the playlists round’s two frames did not, so
+nothing in those pictures said the album <i>had</i> extras at all.</p>
+
+<p><b>The width.</b> 360&nbsp;dp phone, 324&nbsp;dp of content, every label whole in en, da and fo.
+<b>The longest label</b> is the relabelled primary: <i>Play album + extras</i> /
+<i>Afspil album + ekstra</i> / <i>Spæl fløgu + eyka</i>.</p>
+
+<h2>The finding that decides the question</h2>
+
+<p><b>R373’s row already does not fit the phone, before this round adds anything.</b> With the ⋯
+taken away entirely — which is options B and C — the split pair still truncates:</p>
+
+<div class="strip">
+  <figure><img src="png/amp-b-rest.png" alt="">
+    <figcaption><b>B · at rest, no ⋯ on the row.</b> <i>Play album</i> is whole, but
+    <i>Shuffle</i> is already <i>Sh…</i>. The <span class="k">.re-sh</span> half is
+    <span class="k">flex:.72</span> of 316&nbsp;dp, which leaves 44&nbsp;dp for a word that needs
+    about 62.</figcaption></figure>
+  <figure><img src="png/amp-b-relabel.png" alt="">
+    <figcaption><b>B · relabelled.</b> <i>Play albu…</i> and <i>Sh…</i>. Removing the fifth tap
+    target changed nothing about the labels.</figcaption></figure>
+</div>
+
+<p>So the brief’s own test — <i>every label stays whole</i> — <b>is not a test the ⋯’s placement can
+pass on its own.</b> Three of the five options below fail it for a reason that has nothing to do
+with where the ⋯ went. Only two reach a whole relabelled primary: <b>A</b>, by taking R373’s
+relabel away altogether, and <b>E</b>, by giving the primary a row of its own.</p>
+
+<h2>The five options</h2>
+
+<h3>A — one ⋯ instead of the two ▾ menus <span class="tag">as delivered</span></h3>
+<p>The merge from the playlists round (<span class="k">ph-album-editions-merged</span>). Both ▾s
+give up their split; the one ⋯ carries <i>Play extras</i>, <i>Shuffle extras</i> and
+<i>Add to playlist…</i>. Three controls, one place to look for “anything else”.</p>
+<p><b>What a listener loses, in one line:</b> the remembered pick — the Play button never says what
+it will play, so somebody who wants the extras asks for them again on every visit, on every
+album.</p>
+<div class="strip">
+  <figure><img src="png/amp-a-rest.png" alt="">
+    <figcaption><b>A · at rest, English.</b> Whole, and the row is calm.</figcaption></figure>
+  <figure><img src="png/amp-a-rest-da.png" alt="">
+    <figcaption><b>A · Danish.</b> <span class="hm">Fits, barely.</span> <i>Afspil album</i> runs
+    flush into the 14&nbsp;px corner radius at both ends — the shipped button has no horizontal
+    padding at all.</figcaption></figure>
+  <figure><img src="png/amp-a-rest-fo.png" alt="">
+    <figcaption><b>A · Faroese.</b> <span class="no">Fails.</span> <i>Spæl fløguna</i> wraps to two
+    lines inside a 48&nbsp;px button.</figcaption></figure>
+  <figure><img src="png/amp-a-menu.png" alt="">
+    <figcaption><b>A · the ⋯ open.</b> Three rows, and this is the only option whose menu has to
+    carry the extras.</figcaption></figure>
+  <figure><img src="png/amp-a-plain.png" alt="">
+    <figcaption><b>A · an album with no editions.</b> Identical shape, shorter primary. The most
+    consistent of the five.</figcaption></figure>
+</div>
+
+<h3>B — the ⋯ in the top bar</h3>
+<p>Top right, over the cover, opposite the back button, on every album. The split buttons are left
+exactly as R373 shipped them.</p>
+<div class="strip">
+  <figure><img src="png/amp-b-rest.png" alt="">
+    <figcaption><b>B · at rest.</b> <span class="no"><i>Sh…</i></span></figcaption></figure>
+  <figure><img src="png/amp-b-relabel.png" alt="">
+    <figcaption><b>B · relabelled.</b> <span class="no"><i>Play albu…</i> and <i>Sh…</i></span></figcaption></figure>
+  <figure><img src="png/amp-b-relabel-fo.png" alt="">
+    <figcaption><b>B · Faroese.</b> <span class="no"><i>Spæl fløg…</i> and <i>Bla…</i></span></figcaption></figure>
+  <figure><img src="png/amp-b-menu.png" alt="">
+    <figcaption><b>B · the ⋯ open.</b> The menu opens over the cover, clear of every control.
+    This is the one thing B does better than anything else here.</figcaption></figure>
+  <figure><img src="png/amp-b-plain.png" alt="">
+    <figcaption><b>B · an album with no editions.</b> The ⋯ is in the top bar here too, so a plain
+    album’s action row loses a control it has today.</figcaption></figure>
+</div>
+<p><b>The cost beyond the labels:</b> the ⋯ leaves the action row on <i>every</i> album, which puts
+<i>Add to playlist…</i> a long reach from the thumb and a long way from the buttons it belongs
+with. It also implies the same move on the desktop, where there is no crowding to justify it.</p>
+
+<h3>C — the ⋯ on the title block</h3>
+<p>At the end of the album-title / artist lines. The split buttons are untouched.</p>
+<div class="strip">
+  <figure><img src="png/amp-c-rest.png" alt="">
+    <figcaption><b>C · at rest.</b> <span class="no"><i>Sh…</i></span>. The three header lines give
+    the button 56&nbsp;px of padding so nothing runs under it.</figcaption></figure>
+  <figure><img src="png/amp-c-relabel.png" alt="">
+    <figcaption><b>C · relabelled.</b> <span class="no">Same truncation as B.</span></figcaption></figure>
+  <figure><img src="png/amp-c-menu.png" alt="">
+    <figcaption><b>C · the ⋯ open.</b> <span class="no">The menu opens downward straight onto the
+    primary controls</span>, covering <i>Shuffle</i> and half of <i>Play album</i>. Only the picture
+    shows this.</figcaption></figure>
+  <figure><img src="png/amp-c-plain.png" alt="">
+    <figcaption><b>C · an album with no editions.</b> A ⋯ floating beside the title with a
+    two-button row under it reads as two unrelated things.</figcaption></figure>
+</div>
+
+<h3>D — a compact Shuffle</h3>
+<p>An icon-only <i>Shuffle ▾</i> beside a full <i>Play album ▾</i> and the ⋯, all on one row.</p>
+<div class="strip">
+  <figure><img src="png/amp-d-rest.png" alt="">
+    <figcaption><b>D · at rest.</b> <span class="no"><i>Play alb…</i></span> — the base label does
+    not survive, let alone the relabel.</figcaption></figure>
+  <figure><img src="png/amp-d-relabel.png" alt="">
+    <figcaption><b>D · relabelled.</b> <span class="no">The same picture.</span> At this width both
+    picks truncate to <i>Play alb…</i>, so <b>the relabel is invisible</b> — and telling the listener
+    which pick is active is the only reason R373 relabels at all.</figcaption></figure>
+  <figure><img src="png/amp-d-menu.png" alt="">
+    <figcaption><b>D · the ⋯ open.</b> Five targets across 324&nbsp;dp, three of them unlabelled
+    glyphs.</figcaption></figure>
+  <figure><img src="png/amp-d-plain.png" alt="">
+    <figcaption><b>D · an album with no editions.</b> <span class="no">Inconsistent:</span> a plain
+    album keeps a worded <i>Shuffle</i>, an editions album has a glyph. The same control is two
+    different things on two album pages.</figcaption></figure>
+</div>
+
+<h3>E — the play controls take two rows <span class="rec">recommendation</span></h3>
+<p>The primary takes a row of its own, so its label has the whole 324&nbsp;dp. <i>Shuffle ▾</i> and
+the ⋯ share the row under it. R373 is kept entire — both split buttons, both ▾ menus, the remembered
+per-album, per-device pick and the relabel. The ⋯ stays in the action area, beside the buttons it
+belongs with and inside thumb reach.</p>
+<div class="strip">
+  <figure><img src="png/amp-e-rest.png" alt="">
+    <figcaption><b>E · at rest.</b> <span class="yes">Every label whole.</span></figcaption></figure>
+  <figure><img src="png/amp-e-relabel.png" alt="">
+    <figcaption><b>E · relabelled.</b> <span class="yes"><i>Play album + extras</i> whole</span>,
+    with room to spare — the one state no other option holds.</figcaption></figure>
+  <figure><img src="png/amp-e-relabel-da.png" alt="">
+    <figcaption><b>E · Danish.</b> <span class="yes"><i>Afspil album + ekstra</i> whole.</span></figcaption></figure>
+  <figure><img src="png/amp-e-relabel-fo.png" alt="">
+    <figcaption><b>E · Faroese.</b> <span class="yes"><i>Spæl fløgu + eyka</i> whole.</span></figcaption></figure>
+  <figure><img src="png/amp-e-menu.png" alt="">
+    <figcaption><b>E · the ⋯ open.</b> The menu hangs off the second row, over the track list rather
+    than over the controls.</figcaption></figure>
+  <figure><img src="png/amp-e-menu-fo.png" alt="">
+    <figcaption><b>E · the ⋯ open, Faroese.</b> <i>Legg í spælilista…</i> whole.</figcaption></figure>
+  <figure><img src="png/amp-e-plain.png" alt="">
+    <figcaption><b>E · an album with no editions.</b> One row — <i>Play</i>, <i>Shuffle</i>, ⋯ —
+    exactly today’s page. The second row appears only when there is a longer label to hold, which is
+    a reason a reader can see.</figcaption></figure>
+  <figure><img src="png/amp-e-relabel-noir.png" alt="">
+    <figcaption><b>E · noir.</b> Music redefines the noir tokens, so it is drawn rather than
+    assumed.</figcaption></figure>
+  <figure><img src="png/amp-e-relabel-midnight.png" alt="">
+    <figcaption><b>E · midnight.</b></figcaption></figure>
+  <figure><img src="png/amp-e-menu-midnight.png" alt="">
+    <figcaption><b>E · the ⋯ open, midnight.</b></figcaption></figure>
+</div>
+<p><b>What E costs:</b> 58&nbsp;px of vertical space on an album that has editions — one fewer track
+visible above the mini player. Nothing else; no behaviour changes and no string changes.</p>
+
+<h2>How they compare</h2>
+
+<table>
+  <tr>
+    <th>&nbsp;</th>
+    <th>A · merged</th><th>B · top bar</th><th>C · title block</th><th>D · compact</th><th>E · two rows</th>
+  </tr>
+  <tr><td><b>Keeps R373 whole</b></td>
+    <td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+  <tr><td><b>Primary whole, en</b></td>
+    <td class="yes">yes</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td></tr>
+  <tr><td><b>Primary whole, da</b></td>
+    <td class="hm">flush to the corner</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td></tr>
+  <tr><td><b>Primary whole, fo</b></td>
+    <td class="no">wraps to two lines</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td></tr>
+  <tr><td><b>Shuffle whole</b></td>
+    <td class="yes">yes</td><td class="no">no</td><td class="no">no</td><td class="hm">glyph only</td><td class="yes">yes</td></tr>
+  <tr><td><b>The relabel is visible</b></td>
+    <td class="no">no relabel exists</td><td class="no">truncated</td><td class="no">truncated</td><td class="no">identical pictures</td><td class="yes">yes</td></tr>
+  <tr><td><b>Plain album consistent</b></td>
+    <td class="yes">identical</td><td class="hm">loses its ⋯ too</td><td class="hm">⋯ detached</td><td class="no">Shuffle is two things</td><td class="yes">one row, as today</td></tr>
+  <tr><td><b>The ⋯ menu is clear of the controls</b></td>
+    <td class="yes">yes</td><td class="yes">yes, over the cover</td><td class="no">covers them</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+  <tr><td><b>Tap targets on the action row</b></td>
+    <td>3</td><td>4</td><td>4</td><td>5</td><td>2 + 2</td></tr>
+  <tr><td><b>Vertical cost</b></td>
+    <td>none</td><td>none</td><td>none</td><td>none</td><td class="hm">+58 px on editions albums</td></tr>
+  <tr><td><b>Implies a desktop change</b></td>
+    <td>yes — the ▾ menus go there too</td><td>yes — the ⋯ would move</td><td>yes — the ⋯ would move</td><td>no</td><td class="yes">no</td></tr>
+  <tr><td><b>New strings</b></td>
+    <td class="hm">2 (<i>Play extras</i>, <i>Shuffle extras</i>)</td>
+    <td>none</td><td>none</td><td>none</td><td class="yes">none</td></tr>
+</table>
+
+<h2>The desktop</h2>
+<p>The brief says to redraw it only if an option implies it should change. <b>E does not.</b> The
+desktop header has 1120&nbsp;px and holds R373’s split pair, FR-6’s ⋯ and the relabelled primary on
+one row with room left over — so the phone’s second row is a phone answer and nothing follows from
+it. A, B and C would each move something on the desktop as well.</p>
+<div class="strip">
+  <figure class="wide"><img src="png/amp-dk-e-rest.png" alt="">
+    <figcaption><b>Desktop · at rest.</b> One row: <i>Play album ▾</i> · <i>Shuffle ▾</i> · ⋯, plus
+    the header’s <i>+ 3 extras</i>.</figcaption></figure>
+  <figure class="wide"><img src="png/amp-dk-e-relabel.png" alt="">
+    <figcaption><b>Desktop · relabelled.</b> Still one row, still whole.</figcaption></figure>
+</div>
+
+<h2>Decided in the drawing</h2>
+<ul>
+  <li><b>The ⋯ holds one row today and is drawn as a menu, not a button.</b> FR-6 says more rows
+  join it later, so no option gives it a shape that only works with one item.</li>
+  <li><b>The header carries R373’s <i>+ {k} extras</i>.</b> It is in FR-R373-2 point 1, and without
+  it an editions album is indistinguishable from a plain one in a still picture.</li>
+  <li><b>In E, the second row’s <i>Shuffle ▾</i> fills the row and the ⋯ sits flush right.</b> Left
+  at R373’s <span class="k">flex:.72</span> it stopped growing and left 76&nbsp;px of the row empty
+  past the ⋯ — which only the first render showed.</li>
+  <li><b>The ▾ half is 44&nbsp;px, not 40.</b> That is the shipped number
+  (<span class="k">ravilo-music.css:414</span>); the playlists round drew 40, which quietly gave
+  every Play label 4&nbsp;px it does not have.</li>
+</ul>
+
+<h2>New strings</h2>
+<p><b>The recommendation needs none.</b> Every word in E’s pictures is already in
+<span class="k">i18n/</span>: <span class="k">ed.play_album</span>,
+<span class="k">ed.play_extras</span>, <span class="k">ed.n_extras</span>,
+<span class="k">music.shuffle</span>, and the playlists round’s
+<span class="k">music.add_playlist</span>.</p>
+<p>Option A alone would need two that do not exist, drafted here and not settled:</p>
+<table>
+  <tr><th>key</th><th>en</th><th>da</th><th>fo</th></tr>
+  <tr><td class="k">ed.play_extras_row</td><td>Play extras</td><td>Afspil ekstra</td><td>Spæl eyka</td></tr>
+  <tr><td class="k">ed.shuffle_extras_row</td><td>Shuffle extras</td><td>Bland ekstra</td><td>Blanda eyka</td></tr>
+</table>
+
+<div class="ask">
+<p><b>Still open, and not mine to settle.</b></p>
+<ul>
+  <li><b>{k}, the extras count.</b> Drawn as <i>+ 3 extras</i>; the brief named no number and the
+  playlists round drew none. The album stays 10 official songs · 39 min.</li>
+  <li><b>The nine album track titles</b> beside <i>Northern Lights</i> are still the music mockup’s
+  corpus, carried over from the playlists round, which asked for the real stand-ins and has not had
+  them.</li>
+  <li><b>R373’s phone row truncating today</b> is shipped behaviour, not something this round
+  introduced. Whether that is its own task is Bárður’s call.</li>
+  <li><b>The shipped action button has no horizontal padding at all</b>, so a label that fills it
+  runs flush into the 14&nbsp;px corner radius — <span class="k">png/amp-zoom-glyph-da-4x.png</span>
+  at 4×. It is left as production draws it in every frame here; whether it is worth fixing is a
+  separate question from this one.</li>
+</ul>
+</div>
+
+</main>
+</body>
+</html>

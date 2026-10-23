@@ -1,0 +1,95 @@
+/* amp.css — where the album page's ⋯ goes on the phone when the album has editions
+   (round slug album-more-placement, 2026-10-23). Phone, plus one desktop frame.
+
+   WHAT THIS FILE IS. It is loaded LAST, after
+     ../../ravilo/music-play-all/music-play-all.css   (shipped, linked — skins, type, shells, fonts)
+     ../2026-10-23-music-playlists/music-playlists.css (last round, linked — .mpl-* components)
+   so every token, component and face in the pictures is one of those two files' and this file adds
+   only what the five options are made of. Every class here is amp-, and the four .mpl- rules below
+   are overrides stated at the PRODUCTION number, each one with the line it corrects.
+
+   CANVAS RULES OBSERVED. No content-visibility, no backdrop-filter, no large filter: blur, no
+   infinite animations. The production .mu-dback carries backdrop-filter: blur(6px); the linked
+   round already draws it as a flat rgba fill, and the ⋯ this file adds opposite it matches that
+   flat fill rather than the live blur. No network reference of any kind. */
+
+/* ============================================================ CORRECTIONS ================= */
+
+/* The shipped split's ▾ half is 44 px wide (ravilo-music.css:414, .mu-dacts.re-acts .re-split
+   > .re-dd{width:44px}). The playlists round drew 40, which gave every Play label 4 px it does
+   not have on the phone. Restated at the production number, because 4 px is the difference
+   between a label that fits and one that does not at this width. */
+.mpl-acts.ed .sp .bt.dd{width:44px}
+/* and its glyph, same source: .mu-dacts .re-dd svg{width:18px;height:18px} */
+.mpl-acts.ed .sp .bt.dd .ic{width:18px;height:18px}
+
+/* NOTHING ELSE IS CORRECTED, on purpose. The shipped action button (.mu-dacts button,
+   ravilo-music.css:99) has ZERO horizontal padding, so a label that fills it runs flush into the
+   14 px corner radius — visible at 4x on the Danish "Afspil album" in
+   png/amp-zoom-glyph-da-4x.png. It is left exactly as production draws it: adding padding here
+   would move every measurement below by 24 px, which is the whole width this round is arguing
+   about, and the options would be compared against a row that does not exist. REPORT.md raises it
+   as an observation about today's row instead. */
+
+/* ============================================================ THE HEADER =================== */
+
+/* R373 point 1: "+ {k} extra(s)" after the official album's count and length, in the dimmer ink.
+   .mpl-dm is already the dim ink, so this is the dim ink one step quieter again — the count and
+   the length are the album's own facts and the extras line is a note about them. */
+.amp-ex{color:var(--ink-dim);opacity:.8}
+.mpl-dhead .ml .amp-ex{margin-left:-2px}
+
+/* ============================================================ THE FIVE PLACES ============== */
+
+/* ---- option B: the ⋯ in the top bar, opposite the back button ----
+   .mpl-dback is top:12 left:12, 44x44, a flat rgba(6,8,14,.72) circle (music-playlists.css:124).
+   This is that button mirrored, at the same numbers, so the two read as one pair. */
+.amp-topmore{position:absolute;top:12px;right:12px;z-index:3;width:44px;height:44px;border-radius:50%;
+  background:rgba(6,8,14,.72);color:#fff;display:flex;align-items:center;justify-content:center}
+.amp-topmore .ic{width:20px;height:20px}
+.amp-topmore.hot{background:rgba(6,8,14,.9)}
+/* its menu hangs from it: 12 (the button's top) + 44 (its height) + 8 (the gap .mpl-menu uses) */
+.mpl-menu.amp-mtop{top:64px;right:12px}
+
+/* ---- option C: the ⋯ at the end of the title and artist lines ----
+   .mpl-dbody is padding:18px 18px 0 and position:static, so it is made the positioning context
+   and the three header lines are given the button's width back as padding — a title that ran
+   under it would be the defect this option is supposed to avoid. */
+.mpl-dbody.amp-c{position:relative}
+.amp-titlemore{position:absolute;top:22px;right:18px;z-index:4;width:44px;height:44px;border-radius:14px;
+  border:1px solid var(--line-2);background:rgba(var(--fg),.06);color:var(--ink);
+  display:flex;align-items:center;justify-content:center}
+.amp-titlemore .ic{width:20px;height:20px}
+.amp-titlemore.hot{background:rgba(var(--fg),.14)}
+.amp-c .mpl-dt,.amp-c .mpl-dby,.amp-c .mpl-dm{padding-right:56px}
+/* 22 (the button's top) + 44 + 8 */
+.mpl-menu.amp-mtitle{top:74px;right:18px}
+
+/* ---- option D: Shuffle reduced to its glyph ----
+   The .sp.sh flex:.72 is replaced by a fixed box, because a compact control that still flexes is
+   not compact — it just takes a smaller share of the same crowded row. */
+.mpl-acts.ed .sp.sh.amp-ic{flex:none;width:88px}
+.mpl-acts.ed .sp.sh.amp-ic .bt.a{flex:none;width:44px;padding:0;gap:0;justify-content:center}
+
+/* ---- option E: the primary takes a row of its own ----
+   Two .mpl-acts rows in a column. .mpl-acts carries margin-top:16px of its own, which would
+   become 16 + 16 between the rows; the stack owns the spacing instead. */
+.amp-stack{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.amp-stack .mpl-acts{margin-top:0}
+.mpl-acts.ed .sp.amp-wide{flex:1}
+/* .sp.sh is flex:.72 because it SHARES a row with Play ▾ at flex:1. Alone on the second row it is
+   the only flexible item, so .72 stops growing at 72% of the free space and leaves 76 px of the
+   row empty past the ⋯ — which the first render showed plainly and no rule could. */
+.amp-stack .mpl-acts.ed .sp.sh{flex:1}
+
+/* ============================================================ THE DESKTOP FRAME ============ */
+
+/* the desktop split, at .mpl-bt's own 36 px height and 9 px radius */
+.amp-dsp{display:flex;gap:1px}
+.amp-dsp .mpl-bt:first-child{border-radius:9px 0 0 9px}
+.amp-dsp .mpl-bt.dd{border-radius:0 9px 9px 0;width:30px;padding:0}
+.amp-dsp .mpl-bt.dd .ic{width:15px;height:15px}
+
+/* ============================================================ NEW TOKENS =================== */
+/* None. Every colour, radius, face and size above is a var() or a literal restated from one of
+   the two linked stylesheets, named at its source in the comment beside it. */

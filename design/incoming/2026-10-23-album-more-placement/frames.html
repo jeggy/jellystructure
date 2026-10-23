@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where the album ⋯ goes when an album has editions — frames</title>
+<!--
+  frames.html — every frame this round renders, built from amp-data.js through amp-kit.js, on top
+  of the music-playlists round's kit and stylesheet, which are LINKED rather than copied (the
+  brief's own instruction). That round in turn links the shipped music-play-all stylesheet and
+  kit, so the shells, skins, type, covers and the three woff2 in these pictures are the ones two
+  earlier rounds settled, byte for byte, and all three rounds' PNGs are diffable.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=phone|desktop
+      &lang=en|da|fo
+      &skin=aurora|midnight|noir
+
+  An id gains its language and its skin as a suffix, so one render per combination writes PNGs
+  that cannot collide.
+
+  The round's own stylesheet always comes last, so it extends the two it is loaded after and
+  never precedes them. No network reference of any kind: the faces resolve out of the shipped
+  stylesheet's own fonts/ directory.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'phone';
+    const skin = q.get('skin') || 'aurora';
+    const lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.lang = lang;
+    document.write('<link rel="stylesheet" href="../../ravilo/music-play-all/music-play-all.css">');
+    document.write('<link rel="stylesheet" href="../2026-10-23-music-playlists/music-playlists.css">');
+    document.write('<link rel="stylesheet" href="amp.css">');
+    window.AMPOPT = { set, skin, lang };
+  })();
+</script>
+<style>
+  /* Canvas layout only — where a frame sits on the page. Dark ink on a light-gray backdrop, per
+     the standing canvas rule; nothing here is a component, and no .fr is styled from here. */
+  body { margin: 0; background: #e9eaef; font-family: 'Sora', sans-serif; }
+  #frames { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 46px 34px; padding: 34px; }
+  .hold { position: relative; flex: none; }
+  .hold.ph { width: 360px; height: 780px; }
+  .hold.dk { width: 1120px; height: 720px; }
+  .hold > .cap { display: block; margin-bottom: 9px; color: #262a35;
+    font-family: 'JetBrains Mono', monospace; font-size: .7rem; font-weight: 700;
+    letter-spacing: .05em; text-transform: uppercase; }
+  .hold > .cap i { color: #12141b; font-style: normal; }
+  /* the frame itself is position:absolute (.fr), so the holder gives it its box */
+  .hold .fr { top: 26px; left: 0; }
+</style>
+</head>
+<body>
+<div id="frames"></div>
+
+<script src="../../ravilo/music-play-all/music-play-all-kit.js"></script>
+<script src="../2026-10-23-music-playlists/mpl-data.js"></script>
+<script src="../2026-10-23-music-playlists/mpl-kit.js"></script>
+<script src="amp-data.js"></script>
+<script src="amp-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { set, skin, lang } = window.AMPOPT;
+  const root = document.getElementById('frames');
+  const sfx = (lang === 'en' ? '' : '-' + lang) + (skin === 'aurora' ? '' : '-' + skin);
+
+  function add(cls, el, cap) {
+    const d = document.createElement('div');
+    d.className = 'hold ' + cls;
+    d.innerHTML = '<span class="cap"><i>' + cap + '</i></span>';
+    d.appendChild(el);
+    root.appendChild(d);
+  }
+  const ph = (id, o, cap) =>
+    add('ph', AMPK.phone(Object.assign({ id: id + sfx, lang: lang, skin: skin }, o)), cap);
+  const dk = (id, o, cap) =>
+    add('dk', AMPK.desk(Object.assign({ id: id + sfx, lang: lang, skin: skin }, o)), cap);
+
+  /* The four states the brief asks of every option. A has no `relabel`: the merge takes the
+     remembered pick away, so there is no state in which its Play button says anything else.
+     That absence IS the one line it has to say about what a listener loses, and the directions
+     doc says it rather than this file inventing a frame that could not happen. */
+  const STATES = [
+    ['rest', { album: 'ed', state: 'rest' }, 'the album with editions · at rest'],
+    ['relabel', { album: 'ed', state: 'relabel' }, 'the same album · relabelled Play album + extras'],
+    ['menu', { album: 'ed', state: 'menu' }, 'the ⋯ open'],
+    ['plain', { album: 'plain', state: 'rest' }, 'an album with no editions · at rest'],
+  ];
+
+  if (set === 'phone') {
+    if (lang === 'en' && skin === 'aurora') {
+      /* the full set: every option in every state it has */
+      AMP.OPTIONS.forEach(function (op) {
+        STATES.forEach(function (st) {
+          if (op.k === 'A' && st[0] === 'relabel') return;
+          ph(op.k.toLowerCase() + '-' + st[0], Object.assign({ option: op.k }, st[1]),
+            op.k + ' · ' + op.name + ' — ' + st[2]);
+        });
+      });
+    } else if (lang !== 'en') {
+      /* THE LONGEST STRING, which is the state this round is actually judged on. Faroese is
+         usually the longest and Danish's "Afspil album + ekstra" is close behind, so each option
+         is drawn in the state whose label is its longest: the relabel for the four that keep
+         R373, and plain rest for A, which has no relabel. */
+      AMP.OPTIONS.forEach(function (op) {
+        const st = op.k === 'A' ? STATES[0] : STATES[1];
+        ph(op.k.toLowerCase() + '-' + st[0], Object.assign({ option: op.k }, st[1]),
+          op.k + ' · ' + st[2] + ' · ' + lang);
+      });
+      /* and the recommendation's ⋯ open, where Add to playlist… is at its longest too */
+      ph('e-menu', { option: 'E', album: 'ed', state: 'menu' }, 'E · the ⋯ open · ' + lang);
+    } else {
+      /* the skins. Music redefines the noir and midnight tokens, so the recommendation is drawn
+         in both rather than asserted to carry. */
+      ph('e-relabel', { option: 'E', album: 'ed', state: 'relabel' }, 'E · relabelled · ' + skin);
+      ph('e-menu', { option: 'E', album: 'ed', state: 'menu' }, 'E · the ⋯ open · ' + skin);
+    }
+  }
+
+  if (set === 'desktop') {
+    dk('dk-e-rest', { state: 'rest' }, 'desktop · R373’s split pair and FR-6’s ⋯ on one row · at rest');
+    dk('dk-e-relabel', { state: 'relabel' }, 'desktop · the same row relabelled · still one row');
+  }
+})();
+</script>
+</body>
+</html>
