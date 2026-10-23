@@ -295,6 +295,10 @@ sentence on hover, focus **and** tap. It is never hidden and never live but usel
 - every control on Activity while the socket is down;
 - a Checks-card ↻ with nothing new to do (FR-317-41).
 
+**At phone width (≤ 640 px) the reason opens as a line directly under its row**, not as a popover over it: at
+412 px a popover beside the ↻ has nowhere to go and covers the very sentence and values it explains (found in
+the CSS promotion's both-theme renders, DEB-2193). On wider screens it is a popover beside the control, as drawn.
+
 ### FR-12 — Server-pushed state only
 
 1. Every value on these four surfaces comes from the server: names, the *n of m* counts, states, *last ran*,
