@@ -34,6 +34,15 @@ window.ORKit = (function (OR) {
     pause: '<svg viewBox="0 0 24 24" class="fil"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>',
     back10: sv('<path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/>'),
     fwd30: sv('<path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/>'),
+    /* Rev 3 — the book's own skips are BOTH 30 s (`ab.skip_back` / `ab.skip_fwd`), so the back
+       glyph is the forward one mirrored and not the film's 10 s mark reused. */
+    back30: sv('<path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/>'),
+    sleep: sv('<path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8z"/>'),
+    chapters: sv('<path d="M4 5h9M4 10h9M4 15h6"/><path d="M17 4v16l3-2.4 3 2.4V4z" transform="translate(-2)"/>'),
+    bookmark: sv('<path d="M7 3h10v18l-5-4-5 4z"/>'),
+    /* The drag handle on a queue row — the shipped reorder affordance (FR-R322-8). */
+    drag: sv('<path d="M8 8h8M8 12h8M8 16h8"/>'),
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.9" fill="currentColor" stroke="none"/></svg>',
     prev: sv('<path d="M18 6l-9 6 9 6zM7 6v12"/>'),
     next: sv('<path d="M6 6l9 6-9 6zM17 6v12"/>'),
     shuffle: sv('<path d="M16 4h4v4M20 4l-6.5 6.5M4 20l6-6M16 20h4v-4M4 4l4.5 4.5"/>'),
@@ -49,6 +58,8 @@ window.ORKit = (function (OR) {
     ck: sv('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
     x: sv('<path d="M6 6l12 12M18 6L6 18"/>'),
     person: sv('<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>'),
+    /* The ♪ the shipped page puts in front of *Playing from* (`MusicIcon.NOTE`). */
+    note: sv('<path d="M9 18V6l10-2.4v12"/><circle cx="6.4" cy="18" r="2.6"/><circle cx="16.4" cy="15.6" r="2.6"/>'),
     sp: '<span class="or-eq"><i></i><i></i><i></i></span>',
   };
   const pIcon = p => G[p.icon] || G.spk;
@@ -60,11 +71,18 @@ window.ORKit = (function (OR) {
     const ps = ids.map(i => OR.PLACES[i]);
     return { ids, places: ps, line: ps.map(p => p.name).join(' + '), icon: ps[0].icon, multi: ps.length > 1 };
   }
+  /* The SAME place with one field different: its volume goes to a soundbar, so it cannot report
+     one. A copy rather than a second entry in `PLACES`, so the frame is Soveværelse TV and not a
+     fictional TV invented to carry a state. */
+  const noReport = s => Object.assign({}, s, {
+    places: s.places.map(p => Object.assign({}, p, { reports: false })),
+  });
   const P = {
     stuetv: placeSet(['stuetv']), sovetv: placeSet(['sovetv']),
     speakers: placeSet(['stue', 'gaeste']), threeRooms: placeSet(['stue', 'gaeste', 'kontor']),
     pixelPlace: placeSet(['pixel']),
   };
+  P.sovetvBar = noReport(P.sovetv);
 
   /* ---- a slider drawn rather than an <input type=range>, so the picture carries the exact
      track height, knob size and fill the Compose port has to hit. ---- */
@@ -81,30 +99,43 @@ window.ORKit = (function (OR) {
      mute. A room that does not report shows "—", its slider is disabled, and the reason is a line
      under it — the only place in the remote where a control is drawn and disabled rather than
      absent, because the place EXISTS and simply cannot answer. */
+  /* DECISION 9 (rev 3) — the two outcomes of a drag, and nothing in between.
+     `o.note` is a map keyed by the row ('master' or a place id) to one short line drawn UNDER that
+     row. It is the ONLY mark either outcome has:
+
+       (a) released, the place has not confirmed yet — the thumb stays where the finger left it and
+           there is NO mark. A spinner, a greying or a ghost thumb would all say "this may not have
+           worked" on the 95 % of drags that do, and the viewer is already holding the phone that
+           just moved it. Nothing is drawn because nothing has gone wrong yet.
+       (b) the place never took it — the thumb goes back to the value the place is actually at, and
+           one line says so for 3 s. The revert alone is ambiguous (a thumb that moves back on its
+           own reads as a bug); the line is what makes it a report. */
   function volume(set, vols, opt) {
     const o = opt || {};
-    const row = (label, pct, cls, muteGlyph) =>
+    const note = o.note || {};
+    const row = (key, label, pct, cls, muteGlyph) =>
       '<div class="or-vrow' + (cls || '') + '">'
       + '<button class="or-vb" aria-label="' + esc(label) + '">' + (muteGlyph || G.vol) + '</button>'
       + '<span class="or-vn">' + esc(label) + '</span>'
       + slider(pct, { dis: cls && cls.indexOf('dis') >= 0 })
-      + '<span class="or-vv">' + (pct === null ? '—' : pct + ' %') + '</span></div>';
+      + '<span class="or-vv">' + (pct === null ? '—' : pct + ' %') + '</span></div>'
+      + (note[key] ? '<p class="or-vnote">' + esc(note[key]) + '</p>' : '');
 
     /* A greyed transport means the place cannot be reached, and a slider it cannot reach is
        exactly as inert as a play button it cannot reach. The block greys with it. */
     const g = o.greyed ? ' greyed' : '';
     if (!set.multi) {
       const p = set.places[0];
-      if (!p.reports) return '<div class="or-vol' + g + '">' + row(t('volume'), null, ' dis')
+      if (!p.reports) return '<div class="or-vol' + g + '">' + row('master', t('volume'), null, ' dis')
         + '<p class="or-vwhy">' + esc(t('no_volume', { place: p.name })) + '</p></div>';
-      return '<div class="or-vol' + g + '">' + row(t('volume'), vols.master) + '</div>';
+      return '<div class="or-vol' + g + '">' + row('master', t('volume'), vols.master) + '</div>';
     }
-    let h = '<div class="or-vol' + g + '">' + row(t('volume'), vols.master, ' mst');
+    let h = '<div class="or-vol' + g + '">' + row('master', t('volume'), vols.master, ' mst');
     set.places.forEach(p => {
       const v = vols[p.id];
       h += (p.reports && v != null)
-        ? row(p.name, v, ' rm')
-        : row(p.name, null, ' rm dis') + '<p class="or-vwhy">' + esc(t('no_volume', { place: p.name })) + '</p>';
+        ? row(p.id, p.name, v, ' rm')
+        : row(p.id, p.name, null, ' rm dis') + '<p class="or-vwhy">' + esc(t('no_volume', { place: p.name })) + '</p>';
     });
     return h + '</div>' + (o.panel ? '' : '');
   }
@@ -118,8 +149,12 @@ window.ORKit = (function (OR) {
       /* Someone ELSE'S playback says whose, whether or not you may control it — the place is
          already named in the pill above, and "who" is the thing that changes what this screen
          means. Yours says where, because there is no other answer worth the line. */
+      /* `here` — the same playback, on the phone you are holding. It is the ONE sentence that
+         cannot be *Playing on {place}*, because "this phone" is not a place you are told about.
+         Everything else on the screen is identical, which is the pair's whole point. */
       case 'playing': return who ? { text: t(ctx.item.kind === 'music' ? 'listening' : 'watching', { who }), tone: '' }
-        : { text: t('playing_on', { place }), tone: '' };
+        : ctx.here ? { text: t('playing_here'), tone: '' }
+          : { text: t('playing_on', { place }), tone: '' };
       case 'paused': return who ? { text: t(ctx.item.kind === 'music' ? 'listening' : 'watching', { who }), tone: '' }
         : { text: t('paused_on', { place }), tone: '' };
       case 'buffering': return { text: t('starting_on', { place }), tone: '' };
@@ -127,6 +162,11 @@ window.ORKit = (function (OR) {
       case 'movefail': return { text: t('move_failed', { place: ctx.toPlace }), tone: 'bad' };
       case 'lost': return { text: t('lost', { place }), tone: 'bad' };
       case 'offline': return { text: t('offline', { place, t: OR.hms(ctx.item.pos) }), tone: 'bad' };
+      /* IDLE — FR-R322-3's screen: nothing is playing anywhere, and the last-played song is
+         loaded and paused where it was left. There is no sentence, because there is no place to
+         say anything about: the ⏯ and the clocks are the whole report. A line reading *Paused on
+         this phone* would be the frontend claiming a playback that does not exist. */
+      case 'idle': return { text: '', tone: '' };
       case 'stopped': return { text: t('stopped_by', { who }), tone: 'off' };
       case 'ended': return { text: t('ended'), tone: 'off' };
       case 'other': return { text: t(ctx.item.kind === 'music' ? 'listening' : 'watching', { who }), tone: '' };
@@ -144,19 +184,49 @@ window.ORKit = (function (OR) {
       ? '<span class="or-wm">Ravilo</span>'
       : '';
     const spin = o.spinner ? '<span class="or-ovl"><i class="or-spin"></i></span>' : '';
+    /* Rev 3 — SWIPE. `SwipeCover` slides the cover off and fades it by `abs(dx)/w` capped at .6,
+       and the next song's cover is underneath. A gesture cannot be drawn on a still screen by an
+       arrow or a hint badge — the shipped page has neither, and inventing one would be proposing a
+       control the owner did not ask for. So the swipe is drawn as the MID-GESTURE state, which is
+       a real frame of the real animation: dragged 34 % of the width, alpha 1 − .34 = .66 (the
+       Kotlin's own formula), with the next cover behind it. */
+    if (o.swipe) {
+      const dx = 34;                                   /* % of the cover's own width */
+      const a = (1 - Math.min(dx / 100, 0.6)).toFixed(2);
+      return '<div class="' + cls + ' or-swipe">'
+        + '<i class="or-under" style="background-image:' + OR.art(item.nextKey || 'song2') + '"></i>'
+        + '<i class="or-over" style="background-image:' + OR.art(item.key)
+        + ';transform:translateX(-' + dx + '%);opacity:' + a + '"></i>'
+        + '</div>';
+    }
     return '<div class="' + cls + '" style="background-image:' + OR.art(item.key) + '">' + inner + spin + '</div>';
   }
 
-  /* ---- the header: ONE control, and it names the place. Decision 2's lean. ------------------- */
+  /* ---- the header: ONE control, and it names the place. Decision 2's lean. -------------------
+
+     Rev 3 gives it two options, both of which are read off the shipped code rather than invented:
+
+     - `tab` — FR-R322-2: *"no close chevron (its place is empty)"*. The Playing tab is a page with
+       the bar under it, so the chevron's slot is held open and left empty rather than closed up:
+       the pill then sits in the same place in both frames, and the remote opened over something
+       else is the same screen with one control added back. The spacer is `.ghost`, which is what
+       the right-hand slot has always been.
+     - `menu` — the track ⋯. It goes in the header's right slot, which was already a ghost. The
+       shipped `BottomRow` puts ⋯ at the right of the bottom row, but the remote's bottom row is
+       three LABELLED buttons (Up next · Lyrics · Stop) and a fourth bare glyph beside them reads
+       as a fourth action of the same weight. The header's right slot is empty, 46 dp, and already
+       where a screen's own menu lives in this app. Named in the report as a deliberate move. */
   function header(set, opt) {
     const o = opt || {};
     const dis = o.readonly ? ' disabled' : '';
     return '<div class="or-top">'
-      + '<button class="or-ic" aria-label="Close">' + G.down + '</button>'
+      + (o.tab ? '<span class="or-ic ghost"></span>'
+        : '<button class="or-ic" aria-label="Close">' + G.down + '</button>')
       + '<button class="or-place' + (o.readonly ? ' ro' : '') + '"' + dis + '>'
-      + pIcon(set.places[0]) + '<span>' + esc(set.line) + '</span>'
+      + (o.pin || pIcon(set.places[0])) + '<span>' + esc(o.label || set.line) + '</span>'
       + (o.readonly ? '' : G.move) + '</button>'
-      + '<span class="or-ic ghost"></span></div>';
+      + (o.menu ? '<button class="or-ic" aria-label="' + esc(t('more')) + '">' + G.more + '</button>'
+        : '<span class="or-ic ghost"></span>') + '</div>';
   }
 
   /* ---- the seek bar ---- */
@@ -169,6 +239,53 @@ window.ORKit = (function (OR) {
       + '<span>−' + OR.hms(item.dur - item.pos) + '</span></div></div>';
   }
 
+  /* ---- rev 3: the book's clocks and bars -----------------------------------------------------
+     Every number here is computed from `BOOK.chapters` and nothing is written twice. The two
+     formatters are the shipped ones, transcribed: `fmtLen` is `m:ss`/`h:mm:ss` for a chapter, and
+     `fmtTotal` ROUNDS TO THE NEAREST MINUTE and reads *{h} h {m} min* — which is why the
+     whole-book bar says *4 h 12 min / 9 h 39 min* and not the brief's 4:12:05 of 9:38:40. Found by
+     reading `MusicCommon.kt`, not by assuming; named in the report. */
+  const fmtLen = s => {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = Math.floor(s % 60);
+    return (h > 0 ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(x).padStart(2, '0');
+  };
+  const fmtTotal = s => {
+    const m = Math.round(s / 60);
+    return m >= 60 ? t('hours_minutes', { h: Math.floor(m / 60), m: m % 60 }) : t('minutes', { n: m });
+  };
+  /* `speedText` — 1.0, 1.25, 1.75, exactly as the Kotlin writes it. */
+  const speedText = s => {
+    const c = Math.round(s * 100);
+    return c % 10 === 0 ? (c / 100) + '.' + (Math.floor(c / 10) % 10) : (Math.floor(c / 100)) + '.' + String(c % 100).padStart(2, '0');
+  };
+
+  /* The chapter's own seek bar, in book time underneath (`ChapterSeekBar`: *12:40 / 29:05*). */
+  function bookSeek(item) {
+    const into = item.pos - item.chStart;
+    const pct = (into / item.chLen * 100).toFixed(2);
+    return '<div class="or-seek">' + slider(pct, {})
+      + '<div class="or-tm"><span>' + fmtLen(into) + '</span>'
+      + '<span>' + fmtLen(item.chLen) + '</span></div></div>';
+  }
+  /* `WholeBookBar` — the word BOOK in caps, a 2 px line with a 10 px knob, and elapsed / total; and
+     `ab.left` under it. */
+  function wholeBook(item) {
+    const pct = (item.pos / item.dur * 100).toFixed(2);
+    return '<div class="or-wb">'
+      + '<span class="lb">' + esc(t('whole_book').toUpperCase()) + '</span>'
+      + '<span class="tr"><i class="dn" style="width:' + pct + '%"></i>'
+      + '<i class="kb" style="left:' + pct + '%"></i></span>'
+      + '<span class="tm">' + esc(fmtTotal(item.pos)) + ' / ' + esc(fmtTotal(item.dur)) + '</span></div>'
+      + '<p class="or-wbleft">' + esc(t('left', { t: fmtTotal(item.dur - item.pos) })) + '</p>';
+  }
+  /* `ChapterStrip` — the chapters as proportional segments: the one being read lit, the finished
+     ones quieter, each at least 1.2 % wide so a short chapter is still a target. */
+  function chapterStrip(item) {
+    return '<div class="or-cst">' + item.chapters.map((len, i) =>
+      '<i class="' + (i === item.ch ? 'now' : i < item.ch ? 'done' : '')
+      + '" style="flex:' + Math.max(len / item.dur, 0.012).toFixed(4) + '"></i>').join('') + '</div>';
+  }
+
   /* ---- the transport. A film or an episode gets ±skip; music gets shuffle/prev/next/repeat.
      THAT is direction A: the kind picks the controls, never how the place is reached. ---- */
   function transport(item, st, opt) {
@@ -177,7 +294,17 @@ window.ORKit = (function (OR) {
     const mid = st === 'buffering'
       ? '<span class="or-pp busy"><i class="or-spin"></i></span>'
       : '<button class="or-pp">' + (st === 'playing' ? G.pause : G.play) + '</button>';
-    if (item.kind === 'music' || item.kind === 'book') {
+    /* A BOOK is not a song: `BookTransport` is speed · −30 s · ⏯ · +30 s · sleep. The brief named
+       four of the five; the sleep timer is the fifth and the code wins, so it is drawn. */
+    if (item.kind === 'book') {
+      return '<div class="or-tr book' + greyed + '">'
+        + '<button class="or-spd' + (item.speed !== 1 ? ' on' : '') + '">'
+        + esc(speedText(item.speed)) + '×</button>'
+        + '<button class="or-tb sk30">' + G.back30 + '<b>30 s</b></button>' + mid
+        + '<button class="or-tb sk30">' + G.fwd30 + '<b>30 s</b></button>'
+        + '<button class="or-tb sm">' + G.sleep + '</button></div>';
+    }
+    if (item.kind === 'music') {
       return '<div class="or-tr' + greyed + '">'
         + '<button class="or-tb sm">' + G.shuffle + '</button>'
         + '<button class="or-tb">' + G.prev + '</button>' + mid
@@ -194,11 +321,17 @@ window.ORKit = (function (OR) {
     const o = opt || {};
     const b = (cls, g, label) => '<button class="or-fb' + (cls ? ' ' + cls : '') + '">' + g + '<span>' + esc(label) + '</span></button>';
     let h = '<div class="or-foot">';
-    if (item.kind === 'music' || item.kind === 'book') {
+    if (item.kind === 'book') {
+      /* `BookPlayingScreen`'s own bottom row is chapters · bookmark · ⋯. The ⋯ is in the header
+         here (see `header`), so the third slot is Stop, as it is for every other kind. */
+      h += b('', G.chapters, t('chapters'));
+      h += b('', G.bookmark, t('bookmark_add'));
+    } else if (item.kind === 'music') {
       /* On a surface wide enough to draw the queue inline, the button that opens it is noise —
          the Mac showed "Up next" twice, once as a button and once as the list under it. */
       if (!o.queueInline) h += b('', G.list, t('up_next'));
-      h += b('', G.lyr, t('lyrics'));
+      /* FR-R322-4: *Lyrics (absent when none — never greyed)*, and lit while they show. */
+      if (item.hasLyrics) h += b(o.lyricsOn ? 'lit' : '', G.lyr, t('lyrics'));
     } else {
       h += b('', G.cc, t('subs_audio'));
       if (item.kind === 'episode') h += b('', G.ep, t('next_episode'));
@@ -232,32 +365,96 @@ window.ORKit = (function (OR) {
        place it is still playing on — the song carries on in Stue + Gæsteværelse and every control
        still works. Greying it there said the opposite of what happened. */
     const greyed = st === 'lost' || st === 'offline';
-    const sl = stateLine(st, { set, who: cfg.who, item, toPlace: cfg.toPlace });
+    const here = !!cfg.here;
+    const sl = stateLine(st, { set, who: cfg.who, item, toPlace: cfg.toPlace, here });
+    /* Music and a book are the two kinds the Playing page used to own. Rev 3 draws them in THIS
+       builder — the cast remote's shape — with everything that page did. */
+    const sq = item.kind === 'music' || item.kind === 'book';
+    const lyr = !!cfg.lyricsOn;
 
-    let h = '<div class="or-rem">' + header(set, { readonly: st === 'other' });
+    let h = '<div class="or-rem' + (sq ? ' sq' : '') + (lyr ? ' lyr' : '')
+      + (cfg.tab ? ' or-tabbed' : '') + '">'
+      + header(set, {
+        readonly: st === 'other', tab: !!cfg.tab, menu: sq && !ro,
+        /* The ONE field that differs between the elsewhere frame and the this-phone frame. */
+        pin: here ? G.phone : null, label: here ? t('this_phone') : null,
+      });
 
-    h += artCard(item, {
-      dim: st === 'paused' || st === 'offline' || ro,
-      wordmark: !!cfg.wordmark,
-      /* No spinner on the art: the transport already stands one in for ⏯, which is the shipped
-         rule, and two spinners for one wait is two claims about one fact. */
-    });
+    /* 1 — *Playing from {context}* and the ♪, which is the shipped page's own top line
+       (`music.from` with `contextLabel`). A BOOK's top line is the book's title and nothing else,
+       which is what `BookPlayingScreen` draws there. */
+    if (sq) h += '<div class="or-ctx">' + G.note
+      + '<span>' + esc(item.kind === 'book' ? item.title : t('from', { x: item.album })) + '</span></div>';
 
     /* A banner states the connection event in full, so the line under the title must NOT repeat
        it. One sentence, one place: these three states have a banner and no state line, and every
        other state has a state line and no banner. */
     const banners = (st === 'lost' || st === 'movefail' || st === 'moving');
-    h += '<div class="or-meta">'
-      + (item.kicker ? '<div class="k">' + esc(item.kicker) + '</div>' : '')
-      + '<h3>' + esc(item.title) + '</h3>'
-      + (item.kind === 'music'
-        ? '<div class="alb">' + esc(item.album + ' · ' + t('song_of', { i: item.index, n: item.of })) + '</div>'
-        : '')
-      + (banners ? '' : '<div class="st' + (sl.tone ? ' ' + sl.tone : '') + '">'
-        + (cfg.who && st !== 'stopped' ? G.person
-          : (st === 'playing' || st === 'nextup') ? G.sp : '')
-        + esc(sl.text) + '</div>')
-      + '</div>';
+    const stLine = (banners || !sl.text) ? '' : '<div class="st' + (sl.tone ? ' ' + sl.tone : '') + '">'
+      + (cfg.who && st !== 'stopped' ? G.person
+        : (st === 'playing' || st === 'nextup') ? G.sp : '')
+      + esc(sl.text) + '</div>';
+
+    if (lyr) {
+      /* FR-R322-7 — with lyrics up the head shrinks to a 52 dp cover and the title, and the lines
+         fill what the cover had. The place pill stays in the header, so the one thing the remote
+         adds to this page is the one thing that does not move. */
+      h += '<div class="or-lyh">'
+        + '<i class="cv" style="background-image:' + OR.art(item.key) + '"></i>'
+        + '<span class="tx"><b>' + esc(item.title) + '</b>'
+        + '<span>' + esc(item.artist) + '</span></span></div>'
+        /* The state line has to be INSIDE an `.or-meta`, because that is where its rules live —
+           the first render drew it with no gap, no colour and no flex, the glyph jammed into the
+           first word. A wrapper, not a second copy of the rules. */
+        + '<div class="or-meta lyrst">' + stLine + '</div>'
+        /* `LyricsView`: the line being sung is lit, the lines ALREADY SUNG are `textDim` and the
+           ones to come are `textSecondary`. Three tones, not two, and the "past" one is the
+           quietest — so the column reads downwards even in a still picture. The index comes off
+           the one `now` flag in or-data.js; nothing is written twice. */
+        + (function () {
+          const n = item.lyrics.findIndex(l => l.now);
+          /* `LyricsView` keeps the line being sung at ~40 % of the column. A still frame has no
+             scroller, so the column is shifted up by the same amount: a 24/31 line in a 7 px pad
+             is a 45 px box, and 100 px is about two fifths of the space the lyrics get here. */
+          const off = 0;   /* measured after layout in frames.html — see the note there */
+          return '<div class="or-lyc"><div class="in" style="margin-top:-' + off + 'px">'
+            + item.lyrics.map((l, i) =>
+              '<p class="' + (i === n ? 'now' : i < n ? 'past' : '') + '">' + esc(l.t) + '</p>').join('')
+            + '</div></div>';
+        })();
+    } else {
+      h += artCard(item, {
+        dim: st === 'paused' || st === 'offline' || st === 'idle' || ro,
+        wordmark: !!cfg.wordmark,
+        swipe: !!cfg.swipe,
+        /* No spinner on the art: the transport already stands one in for ⏯, which is the shipped
+           rule, and two spinners for one wait is two claims about one fact. */
+      });
+
+      h += '<div class="or-meta' + (sq ? ' sq' : '') + '">'
+        /* No kicker on a song or a book: the artist is in the line UNDER the title, and the
+           first render drew MARRA QUAY above the title and *Marra Quay* under it. */
+        + (!sq && item.kicker ? '<div class="k">' + esc(item.kicker) + '</div>' : '')
+        /* 3 — the title, and the ♥ beside it. `Credits()` puts ♥ level with the TITLE, not with
+           the chip under it (which is where the mockup's nesting put it). The code wins. */
+        + (sq
+          ? '<div class="or-ttl"><h3>' + esc(item.kind === 'book' ? t('chapter_n', { n: item.ch + 1 }) : item.title) + '</h3>'
+            + (item.kind === 'music'
+              ? '<button class="or-fav' + (item.fav ? ' on' : '') + '" aria-label="' + esc(t('my_list')) + '">'
+                + (item.fav ? MI.heartOn : MI.heart) + '</button>'
+              : '') + '</div>'
+          : '<h3>' + esc(item.title) + '</h3>')
+        /* R344's version chips at the START of the artist · album line, then the artist in accent
+           and the album in secondary — both links. A book has the book and its author instead. */
+        + (item.kind === 'music'
+          ? '<div class="or-sub">' + verChips(item)
+            + '<a class="ar">' + esc(item.artist) + '</a><em>·</em><a>' + esc(item.album) + '</a></div>'
+          : item.kind === 'book'
+            ? '<div class="or-sub"><a>' + esc(item.title) + '</a><em>·</em><a class="ar">' + esc(item.author) + '</a></div>'
+            : '')
+        + stLine
+        + '</div>';
+    }
 
     if (st === 'nextup') h += nextUp(item);
     if (st === 'moving') h += banner('busy', t('moving_to', { place: cfg.toPlace }));
@@ -271,7 +468,8 @@ window.ORKit = (function (OR) {
       h += '<div class="or-end"><button class="or-eb">' + esc(t('watch_again')) + '</button>'
         + '<button class="or-eb">' + esc(t('done')) + '</button></div>';
     } else {
-      h += seek(item, { dis: greyed || ro });
+      /* A book's two bars: the chapter's own, then the whole book's, then *… left*. */
+      h += (item.kind === 'book' ? bookSeek(item) + wholeBook(item) : seek(item, { dis: greyed || ro }));
       if (ro) {
         /* Decision 3's LEAN: the SAME remote, the transport absent, and one line naming who —
            which the state line under the title already is. This card says the OTHER thing, the
@@ -289,10 +487,13 @@ window.ORKit = (function (OR) {
         const glyphState = (st === 'nextup' || st === 'moving' || st === 'movefail' || st === 'lost')
           ? 'playing' : st;
         h += transport(item, glyphState, { greyed });
+        /* The chapters, as proportional segments, where the shipped page puts them. */
+        if (item.kind === 'book') h += chapterStrip(item);
         /* `noVol` is decision 1's ALTERNATIVE: no slider on a cast at all, because volume
            belongs to the TV and a slider invites a fight with the TV's own remote. The phone's
            hardware keys stay the control and raise a transient pill instead. */
-        if (!cfg.noVol) h += volume(set, cfg.vols || { master: OR.VOL.master }, { greyed });
+        if (!cfg.noVol) h += volume(set, cfg.vols || { master: OR.VOL.master },
+          { greyed, note: cfg.volNote });
       }
     }
 
@@ -302,11 +503,23 @@ window.ORKit = (function (OR) {
         + '<button>' + esc(t('cancel')) + '</button></div></div>';
     }
 
-    if (!ro || cfg.canStopOther) h += footer(item, { readonly: ro && !cfg.canStopOther });
+    /* Stop is absent on IDLE as well as on a read-only playback: nothing is playing, so there is
+       nothing to press. The round's rule is that an action a place cannot do is absent, not grey —
+       and the first render of `a-music-idle` offered Stop on a paused song that was not playing
+       anywhere. */
+    if (!ro || cfg.canStopOther) h += footer(item,
+      { readonly: (ro && !cfg.canStopOther) || st === 'idle', lyricsOn: lyr });
     else h += '<div class="or-foot"></div>';
 
     if (cfg.hwVol != null) h += hwPill(set, cfg.hwVol);
-    return h + '</div>';
+    h += '</div>';
+    /* FR-R322-2's lean: the Playing TAB is a page with the bar under it. The bar is outside
+       `.or-rem` because it is the app's, not the remote's. */
+    if (cfg.tab) h += bnav(cfg.tabIndex == null ? 2 : cfg.tabIndex);
+    /* The queue, over the remote, as a sheet. */
+    if (cfg.queue) h += queueSheet(item);
+    if (cfg.moveSheet) h += moveSheet(set, item, { here, hi: !!cfg.tab });
+    return h;
   }
 
   /* =============================================================================================
@@ -379,15 +592,25 @@ window.ORKit = (function (OR) {
     return h + '</div>';
   }
 
-  /* Move to… — opened from the place line, with Play here inside it. */
-  function moveSheet(cur, item) {
-    const ids = item.kind === 'music' ? ['stue', 'gaeste', 'kontor'] : ['stuetv', 'sovetv'];
-    let h = '<div class="or-scrim"></div><div class="or-sheet"><div class="or-sh"><h4>' + esc(t('move_to')) + '</h4>'
+  /* Move to… — opened from the place line, with *Play on this phone* inside it.
+     Rev 3: `o.here` is the frame where the playback is ALREADY on this phone, so the phone's row
+     is the ticked one and the places are the things to move to. Same sheet, same rows, one tick in
+     a different place — which is the pair's argument again, one level down. */
+  function moveSheet(cur, item, o) {
+    const here = !!(o && o.here);
+    const ids = item.kind === 'music' || item.kind === 'book'
+      ? ['stue', 'gaeste', 'kontor'] : ['stuetv', 'sovetv'];
+    /* Over a TABBED remote the sheet has to clear the bottom bar, which is z-index 88: a sheet is
+       in front of the bar it is opened over. Without it the first render of `a-music-move-to` had
+       the bar painted across the one row the frame exists to show — *This phone · Playing here*,
+       ticked. */
+    const hi = (o && o.hi) ? ' or-hi' : '';
+    let h = '<div class="or-scrim' + hi + '"></div><div class="or-sheet' + hi + '"><div class="or-sh"><h4>' + esc(t('move_to')) + '</h4>'
       + '<button class="or-ic">' + G.x + '</button></div>'
       + '<p class="or-applies">One place. ' + (item.kind === 'music'
         ? 'The song carries on where it is.' : 'It picks up 2 seconds back.') + '</p>';
     ids.forEach(id => {
-      const p = OR.PLACES[id], on = cur.ids.indexOf(id) >= 0;
+      const p = OR.PLACES[id], on = !here && cur.ids.indexOf(id) >= 0;
       const busy = id === 'sovetv' && cur.ids.indexOf('sovetv') < 0;
       h += '<button class="or-mrow' + (on ? ' on' : '') + (busy ? ' dis' : '') + '">'
         + '<span class="ic">' + pIcon(p) + '</span><span class="tx"><span class="nm">' + esc(p.name) + '</span>'
@@ -395,9 +618,40 @@ window.ORKit = (function (OR) {
         + '</span></span><span class="rt">' + (on ? G.ck : '') + '</span></button>';
     });
     h += '<div class="or-sdiv"></div>';
-    h += '<button class="or-mrow"><span class="ic">' + G.phone + '</span><span class="tx">'
-      + '<span class="nm">' + esc(t('play_here')) + '</span><span class="sub">' + esc(t('this_phone'))
-      + '</span></span><span class="rt"></span></button>';
+    h += '<button class="or-mrow' + (here ? ' on' : '') + '"><span class="ic">' + G.phone + '</span><span class="tx">'
+      + '<span class="nm">' + esc(here ? t('this_phone') : t('play_here')) + '</span>'
+      + '<span class="sub">' + esc(here ? t('playing_here') : t('this_phone'))
+      + '</span></span><span class="rt">' + (here ? G.ck : '') + '</span></button>';
+    return h + '</div>';
+  }
+
+  /* ---- rev 3: the QUEUE, over the remote ------------------------------------------------------
+     FR-R322-8. A SHEET rather than a page, because it is opened from the remote and the remote is
+     what you go back to — a page would push the thing you are controlling off the screen, and the
+     queue is a list you glance at and dismiss. The Queue TAB stays: it is the queue you go to
+     deliberately, with *Clear queue* and the whole list, and it is not reached from here. (The
+     brief's lean, and the sheet is R322's own "the queue sheet is the same list".)
+
+     *Now playing* has the bars; every other row has a DRAG HANDLE, because a tap plays from there
+     and a drag reorders. The count and the time left are computed from `upNext`, so the heading
+     cannot disagree with the rows under it. */
+  function queueSheet(item) {
+    const rest = item.upNext;
+    const leftSec = (item.dur - item.pos) + rest.reduce((a, s) => a + s.len, 0);
+    let h = '<div class="or-scrim or-hi"></div><div class="or-sheet or-hi or-qsheet">'
+      + '<div class="or-sh"><h4>' + esc(t('up_next')) + '</h4>'
+      + '<button class="or-ic">' + G.x + '</button></div>'
+      + '<p class="or-qcount">' + esc(t('queue_left', { n: rest.length, t: fmtTotal(leftSec) })) + '</p>';
+    h += '<div class="or-qsec">' + esc(t('now_playing')) + '</div>';
+    h += '<div class="or-qrow now"><span class="hd">' + G.sp + '</span>'
+      + '<span class="nm">' + esc(item.title) + '</span>'
+      + '<span class="ln">' + OR.mmss(item.dur) + '</span></div>';
+    h += '<div class="or-qsec">' + esc(t('up_next')) + '</div>';
+    rest.forEach(s => {
+      h += '<div class="or-qrow"><span class="hd">' + G.drag + '</span>'
+        + '<span class="nm">' + esc(s.title) + '</span>'
+        + '<span class="ln">' + OR.mmss(s.len) + '</span></div>';
+    });
     return h + '</div>';
   }
 
@@ -582,29 +836,6 @@ window.ORKit = (function (OR) {
   const muCover = (item, cls) => '<div class="mu-cv' + (cls ? ' ' + cls : '')
     + '" style="background:' + OR.art(item.key) + '"></div>';
 
-  /* The shipped seek line, with the two clocks `.mu-seek .tm` computes from one duration. */
-  function muSeek(item) {
-    const pct = (item.pos / item.dur * 100).toFixed(2);
-    return '<div class="mu-seek"><div class="tr">'
-      + '<span class="dn" style="width:' + pct + '%"></span>'
-      + '<span class="kb" style="left:' + pct + '%"></span></div>'
-      + '<div class="tm"><span>' + OR.mmss(item.pos) + '</span>'
-      + '<span>−' + OR.mmss(item.dur - item.pos) + '</span></div></div>';
-  }
-
-  /* The shipped transport: shuffle · previous · ⏯ (64 dp) · next · repeat.
-     `glyph` is passed in rather than derived, because moving, a failed move and lost contact are
-     NOT pauses — the last state the place reported still stands, so ⏯ keeps its glyph. */
-  function muTransport(glyph, opt) {
-    const o = opt || {};
-    return '<div class="mu-tp' + (o.greyed ? ' or-greyed' : '') + '">'
-      + '<button class="mu-ib sm">' + MI.shuffle + '</button>'
-      + '<button class="mu-ib fill">' + MI.prev + '</button>'
-      + '<button class="mu-pp">' + (glyph === 'playing' ? MI.pause : MI.play) + '</button>'
-      + '<button class="mu-ib fill">' + MI.next + '</button>'
-      + '<button class="mu-ib sm">' + MI.repeat + '</button></div>';
-  }
-
   /* R344's version chips, at the start of the artist · album line, in the shipped `.rv-vb`. */
   const verChips = item => (item.versions || []).length
     ? '<span class="rv-vb">' + item.versions.map(v =>
@@ -626,107 +857,12 @@ window.ORKit = (function (OR) {
       + (o.readonly ? '' : G.move) + '</button>';
   }
 
-  /* ---- THE PHONE'S PLAYING PAGE ----------------------------------------------------------- */
-  function musicPlaying(cfg) {
-    const item = cfg.item, set = cfg.set, st = cfg.state || 'playing';
-    const ro = st === 'other' || st === 'stopped' || st === 'ended';
-    const greyed = st === 'lost' || st === 'offline';
-    /* `today` draws the page exactly as it ships: the device chip, no pill, no Stop, no banner.
-       It exists so the owner can see what changed rather than be told. */
-    const today = !!cfg.today;
-    const banners = (st === 'lost' || st === 'movefail' || st === 'moving');
-
-    /* The ground. The mockup paints a radial tint off the album's hue; the Kotlin
-       (`playingGround()`) paints a VERTICAL gradient from `accentDim` at 60 % into the
-       background, and flat background in noir. The code wins, and it matters: the album-hue
-       radial is a dark wash and in daylight it painted a brown stain across a white page. The
-       colours are in one-remote.css so the skin can answer for itself. */
-    let h = '<div class="mu-now on tabbed">' + '<div class="bgt"></div>';
-
-    /* 1 — Playing from {context}, and ⋯. `music.from` with its {x} removed and the context as
-       the shipped `<b>` under it. */
-    h += '<div class="mu-ntop"><button class="mu-ib">' + MI.down + '</button>'
-      + '<div class="ctx">♪ ' + esc(t('from', { x: '' }).replace(/\s*$/, ''))
-      + '<b>' + esc(item.album) + '</b></div>'
-      + '<button class="mu-ib">' + MI.more + '</button></div>';
-
-    h += '<div class="mu-nmain"><div class="mu-nspacer"></div>';
-
-    /* 2 — the cover. 80 % of the width (the Kotlin's `SwipeCover`), swipe for next/previous. */
-    h += '<div class="mu-ncov' + (ro || st === 'paused' ? ' or-dim' : '') + '">'
-      + muCover(item) + '</div>';
-
-    /* 3 — title, then the version chips · artist · album line, then the ♥.
-       The ♥ is in THIS row and the chip is a row of its own under it — that is the Kotlin
-       (`Credits(…)` then `DeviceChip()` as siblings). The mockup nests the chip inside
-       `.mu-nmeta .b`, which puts the ♥ beside the chip instead of beside the title. The code
-       wins; the report names the disagreement. */
-    h += '<div class="mu-nmeta"><div class="b">'
-      + '<div class="mu-mq"><span>' + esc(item.title) + '</span></div>'
-      + '<div class="mu-nsub">' + verChips(item)
-      + '<a>' + esc(item.artist) + '</a> · <a>' + esc(item.album) + '</a></div>'
-      + '</div>'
-      + '<button class="mu-ib or-fav' + (item.fav ? ' on' : '') + '">'
-      + (item.fav ? MI.heartOn : MI.heart) + '</button></div>';
-
-    /* 4 — the device chip's row. Today: the chip. Here: the place pill, and under it the one
-       sentence this state needs. A banner states the connection event in full, so the line
-       under the pill must not repeat it — one sentence, one place: lost, couldn't move and
-       moving get a banner and no line, and every other state a line and no banner. */
-    if (today) {
-      h += '<div class="mu-ndev">' + sIcon(set)
-        + '<span>' + esc(t('playing_on', { place: set.line })) + '</span></div>';
-    } else {
-      h += placePill(set, st, { greyed, readonly: st === 'other' });
-      if (ro) {
-        h += '<div class="or-mline">' + G.person + '<span>' + esc(
-          st === 'other' ? t('listening', { who: cfg.who })
-            : st === 'stopped' ? t('stopped_by', { who: cfg.who })
-              : t('ended')) + '</span></div>';
-      }
-      if (st === 'moving') h += banner('busy', t('moving_to', { place: cfg.toPlace }));
-      if (st === 'movefail') h += banner('bad', t('move_failed', { place: cfg.toPlace }), t('try_again'));
-      if (st === 'lost') h += banner('bad', t('lost', { place: set.line }), t('try_again'));
-    }
-
-    h += muSeek(item);
-    /* Moving, a failed move and lost contact are not pauses — see muTransport. */
-    const glyph = (st === 'moving' || st === 'movefail' || st === 'lost') ? 'playing' : st;
-    h += muTransport(ro ? 'paused' : glyph, { greyed });
-    h += '<div class="mu-nspacer"></div></div>';
-
-    /* 5 — the shipped bottom row: Lyrics · the cast glyph · ⋯, and the one control it gains.
-       Stop is a LABELLED pill, not a bare ■: the row is 46 dp tall and has 180 px of slack at
-       412, so naming the destructive action costs no height. Absent on a read-only playback —
-       there is nothing there to press. */
-    h += '<div class="mu-nbot or-bot"><button class="mu-ib">' + MI.lyr + '</button>'
-      /* Lit in BOTH: the shipped cast button is lit whenever a speaker is playing, and `today`
-         must differ from the new page in exactly the three intended places and nowhere else. */
-      + '<button class="mu-ib on">' + MI.cast + '</button>';
-    if (!today && !ro) h += '<button class="or-stopb">' + G.stop + '<span>' + esc(t('stop')) + '</span></button>';
-    h += '<span style="flex:1"></span><button class="mu-ib">' + MI.more + '</button></div>';
-
-    h += '</div>' + bnav(2);
-
-    /* The ⋯ sheet, open, when the frame is about volume. */
-    if (cfg.volSheet) h += volumeSheet(set, cfg.vols || { master: OR.VOL.master });
-    /* The transient hardware-key pill. */
-    if (cfg.hwVol != null) h += hwPill(set, cfg.hwVol);
-    return h;
-  }
-
-  /* ---- volume where it ships: behind ⋯, in 5 % steps, now with a row per room. ------------- */
-  function volumeSheet(set, vols) {
-    /* The heading is the PLACE, drawn as the shipped speakers panel draws it (`.spk-mh`: the
-       group glyph and `roomsLine()`), not the word "Volume" — the sheet already has a master row
-       labelled Volume and an "Applies on {place}" line would have said the place a third time. */
-    return '<div class="or-scrim or-hi"></div><div class="or-sheet or-hi">'
-      + '<div class="or-sh or-vsh"><h4>' + sIcon(set) + '<span>' + esc(set.line) + '</span></h4>'
-      + '<button class="or-ic">' + G.x + '</button></div>'
-      + volume(set, vols, {})
-      + '</div>';
-  }
-
+  /* The phone's Playing page — rev 2's `musicPlaying`, `muSeek`, `muTransport` and `volumeSheet` —
+     is GONE from this file. The owner retired that page on 2026-10-23 ("todays playing page is a
+     bit bad UI, so that one goes"), and music is drawn by `remote()` above, on the cast remote's
+     shape, with everything the page did. A builder left behind for a retired page is a
+     specification of intent for a screen that no longer exists, and this file is what the Kotlin
+     gets ported from. The page itself is in git: `5c48c448`. */
   /* ---- the transient pill a hardware volume key raises. The shipped toast shape
      (MusicToastHost: #E6202433, 20 dp radius, a 1 px white .08 border, 16/10 padding, 14 sp
      SemiBold Sora, bottom-centre). Its TEXT is drawn, not quoted — see the report. ---- */
@@ -807,6 +943,13 @@ window.ORKit = (function (OR) {
       + '<span class="pp">' + MI.pause + '</span>'
       + '<button>' + MI.next + '</button>'
       + '<button class="sm">' + MI.repeat + '</button></div>'
+      /* Rev 3 — the volume block, INLINE, under the transport. The owner's decision is an
+         on-screen slider, the same rule as speakers, and a popover hanging off the capsule is not
+         on screen: you have to know it is there. It goes in the cover's column because that is
+         where this page's controls are, and it is the same block, in the same order, as the phone
+         and the film remote. The capsule keeps its volume button — that is for the pages that are
+         NOT Playing, which is what `mac-volume-popover` draws. */
+      + volume(cfg.set, cfg.vols || { master: OR.VOL.master }, { note: cfg.volNote })
       + '</div>';
     const lyr = '<div class="or-nplyr">' + item.lyrics.map(l =>
       '<p' + (l.now ? ' class="now"' : '') + '>' + esc(l.t) + '</p>').join('') + '</div>';
@@ -831,7 +974,7 @@ window.ORKit = (function (OR) {
   return {
     setLang, t, G, P, placeSet, remote, remoteB, tracksSheet, moveSheet, miniBar,
     webRemote, macPlaying, macBrowse, capsule, artCard, volume, esc,
-    musicPlaying, musicMini, musicHome, macMusicPlaying, webMusic, npBody,
-    bnav, hwPill, volumeSheet,
+    musicMini, musicHome, macMusicPlaying, webMusic, npBody,
+    bnav, hwPill, queueSheet,
   };
 })(window.OR);

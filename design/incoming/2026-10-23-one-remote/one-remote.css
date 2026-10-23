@@ -67,6 +67,13 @@ html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; pa
 .or-wframe { width: 1440px; height: 900px; background: var(--bg); overflow: hidden;
   position: relative; }
 .or-wframe.narrow { width: 390px; height: 844px; }
+/* The browser at 1440x960 rather than 1440x900, for the music page and ONLY for it: the desktop
+   Playing page plus rev 3's inline volume row is about 35 px taller than a 900 px window leaves
+   above the capsule, and the first render sliced the Volume row in half. Same honesty as
+   `.or-mframe.tall` — the page scrolls at 900 and the frame shows all of it. This is open
+   question 1 in the report: on a desktop the volume block may be better left in the capsule's
+   popover, where it already ships. */
+.or-wframe.tall { height: 960px; }
 
 /* The Mac window. */
 .or-mframe { width: 1280px; height: 800px; background: var(--bg); overflow: hidden;
@@ -557,41 +564,207 @@ html[data-skin="daylight"] .or-cap, html[data-skin="daylight"] .or-pop { backgro
    So: ALL THREE the same two-line height. The label block always reserves two lines, so a
    one-word sibling gets the same box, the three icons share one baseline and nothing is
    truncated. It is also the only one of the two options that survives a longer string later.
+
+   REV 3 · THE RESERVATION IS REPLACED BY A GRID, which is better than either option.
+
+   The brief maps the footer onto the SHIPPED `player.audio_subs` — *Audio & Subs*, 26 px shorter
+   than round 1's draft — and expects that to end the two-line footer. IN ENGLISH IT DOES. It does
+   not in the other two: *Lyd & undertekster* is about 112 px of label and *Ljóð & undirtekstir*
+   about 118, against the 108 px a button has at 412, so both still wrap. Rendered and looked at
+   before this was written — `fo-a-nextup` without the fix had its first icon sitting 8 px above
+   its two neighbours, which is the exact thing rev 2's reservation existed to stop.
+
+   So neither of rev 2's two options. The button is a GRID of a fixed 20 px icon row and a label
+   row under it, aligned to the start. The icons then share a baseline whatever the label does,
+   the labels all begin on the same line, and the button is only as tall as its language needs:
+   English gets its one-line footer and loses 16 px of height, Danish and Faroese keep two lines
+   and stay aligned. One geometry, three languages, and no string is truncated.
    ================================================================================================= */
-.or-fb { min-height: 68px; }
-/* Two lines of 12.5 px at 1.25 = 31.25. Reserved whether or not the label uses both, which is the
-   whole point: the row is a grid rather than three boxes that happen to differ. */
-.or-fb span { display: flex; align-items: center; justify-content: center; text-align: center;
-  min-height: 31.25px; }
+.or-fb { display: grid; grid-template-rows: 20px auto; gap: 5px; align-content: start;
+  justify-items: center; padding: 10px 6px; }
+.or-fb span { display: block; text-align: center; }
 
 /* =================================================================================================
-   REV 2 · MUSIC ON THE SHIPPED PLAYING PAGE
+   REV 3 · MUSIC AND THE BOOK, IN THE CAST REMOTE'S SHAPE
 
-   Everything in this block is either (a) fitting the shipped page into a 412×915 frame that is not
-   the mockup's own `.phone`/`.screen`, (b) one of the FOUR things the page gains, or (c) the two
-   places where ravilo-music.css and the Kotlin disagree and the code wins. Nothing here restyles
-   the shipped page.
+   The owner retired the Playing page on 2026-10-23. Music is `remote()` now — the same builder,
+   the same blocks, in the same order as the film — and this block is what the kind adds:
+   the *Playing from* line, the title row with ♥, the chips · artist · album line, the lyrics
+   state, the queue sheet, the book's two bars and its chapter strip, and decision 9's one line.
+
+   Nothing here restyles the film remote. Every selector is either new or scoped to `.sq`.
    ================================================================================================= */
 
-/* (a) — the frame. `.mu-now.tabbed` takes its own `bottom` from the live bar's measured height; in
-   a static frame that is the bar's 92 px: 10 of padding, a 60 px row (36 pill + 16 label + 8) and
-   the 22 px `.bnsafe`. */
-.or-ph .mu-now { bottom: 92px; }
-/* The 0.28 s entry animation is one-shot and harmless live, but a screenshot can catch it
-   mid-flight and a frame that is 60 % faded is not a design decision. */
-.or-ph .mu-now.on { animation: none; }
+/* ---- the top line: ♪ *Playing from {album}*, which is the shipped page's own (`music.from` at
+   13 px semibold Sora in textSecondary, the note in accentSecondary). It sits UNDER the header,
+   because the header's one control is the place and that is the remote's identity. ---- */
+.or-ctx { display: flex; align-items: center; gap: 8px; padding: 10px 20px 0; min-width: 0; }
+.or-ctx svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--accent-2); }
+.or-ctx span { font: 600 13px 'Sora', sans-serif; color: var(--ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* A square art card already carries the title under it, so the music frames give the card less
+   top margin than the film's — the ctx line has taken that space. */
+.or-rem.sq > .or-art { margin-top: 12px; }
+/* Three rooms INLINE cost the cover: `.or-art.sq` shrinks rather than pushing the footer off the
+   screen, and the first render of `a-music` left a 145 px cover that read as a thumbnail. The room
+   rows go to 42 (the Mac's own number, and still a 36 px button inside a 42 px row), and the music
+   title block tightens by 6 — about 30 px back into the cover. The one-room frame
+   (`a-music-here`) does not need any of it, and gets a 240 px cover on the same rules. */
+.or-rem.sq .or-vrow.rm { min-height: 42px; }
+.or-meta.sq { padding-top: 14px; }
+
+/* ---- IN THE TAB (frame 5's lean, FR-R322-2). The remote stops above the bar rather than drawing
+   under it: 92 px is the shipped bar's own height — 10 of padding, a 36 px pill, a 16 px label,
+   8 under it and the 22 px safe strip. The footer then needs no inset of its own, because the bar
+   is the inset.
+
+   THE CLASS IS `or-tabbed`, NOT `tab`. `.tab` is a SHIPPED class in ravilo-phone.css — a pill chip
+   with its own padding, border-radius, font-size, background AND `white-space: nowrap` — so
+   `.or-rem.tab` quietly took all of it. The nowrap is what showed: the lyric lines ran off the
+   right edge instead of wrapping, one clipped line each. Nothing in this file or in any markup
+   says so; it took CDP's matched-rules list to see it. Every class this round adds is `or-`
+   prefixed for exactly this reason, and this one had slipped through. ---- */
+.or-rem.or-tabbed { bottom: 92px; }
+.or-rem.or-tabbed > .or-foot { padding-bottom: 14px; }
+
+/* ---- the title row: the title, and ♥ level with IT (`Credits()` — the mockup nests the chip and
+   ends up putting ♥ beside the chip instead). 44 dp, the Kotlin's own target. ---- */
+.or-ttl { display: flex; align-items: flex-start; gap: 6px; }
+.or-ttl h3 { flex: 1; min-width: 0; }
+.or-meta.sq h3 { font-size: 22px; }
+.or-fav { width: 44px; height: 44px; flex: none; margin: -6px -8px 0 0; border: 0; background: none;
+  border-radius: 22px; color: var(--ink-soft); display: flex; align-items: center;
+  justify-content: center; cursor: pointer; }
+.or-fav svg { width: 24px; height: 24px; }
+/* FAVOURITED IS FILLED (`MusicIcon.HEART_FILLED`). The shipped `.mu-ib svg { fill: none }` cannot
+   draw it filled at all — a declaration beats the mockup's inline `fill="currentColor"`. */
+.or-fav.on { color: var(--accent-2); }
+
+/* ---- the chips · artist · album line. `.rv-vb` / `.rv-v` are SHIPPED (ravilo-music.css), at the
+   Now-playing size the shipped `.mu-nsub` gives them. ---- */
+.or-sub { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0;
+  font: 400 14.5px 'Sora', sans-serif; color: var(--ink-soft); }
+.or-sub .rv-vb { margin: 0; flex: none; }
+.or-sub .rv-v { font-size: 11.5px; padding: 3px 7px; }
+.or-sub a { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.or-sub a.ar { color: var(--accent-2); font-weight: 600; }
+.or-sub em { flex: none; font-style: normal; color: var(--ink-dim); }
+
+/* ---- the swipe, drawn as the mid-gesture frame. The next cover is underneath; the current one is
+   34 % across at the alpha `SwipeCover` computes (1 − |dx|/w, capped at .6). ---- */
+/* `overflow: visible` is the whole frame: `.or-art` clips, and with it clipping the sliding cover
+   was cut at the card's own left edge and read as a two-tone album, not a gesture. The cover that
+   is arriving keeps its own clip; the one leaving slides out over the ground, which is what the
+   eye sees on a real swipe. */
+.or-swipe { background-image: none !important; overflow: visible; box-shadow: none; }
+.or-swipe i { position: absolute; inset: 0; border-radius: 16px; background-size: cover;
+  background-position: 50%; display: block; }
+.or-swipe .or-under { overflow: hidden; }
+.or-swipe .or-over { box-shadow: 0 18px 44px rgba(0, 0, 0, .5); }
+
+/* ---- lyrics up (FR-R322-7). The head is a 52 dp cover and the title; the lines take the rest. */
+.or-lyh { display: flex; align-items: center; gap: 12px; padding: 16px 20px 0; }
+.or-lyh .cv { width: 52px; height: 52px; flex: none; border-radius: 8px; background-size: cover;
+  background-position: 50%; background-color: var(--card); }
+.or-lyh .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.or-lyh b { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.or-lyh .tx > span { font-size: 13px; color: var(--ink-soft); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.or-meta.lyrst { padding: 8px 20px 0; }
+/* 24 sp Space Grotesk, 31 sp apart — `LyricsView`'s phone numbers, not the desktop's 30/38. The
+   line being sung is accentSecondary (`lit`), what has been sung is textDim and what is coming is
+   textSecondary: THREE tones, so the column reads downwards in a still picture. The sung line is
+   kept at ~40 % of the column, which is what the frame draws. */
+/* The clear space above the column is a MARGIN, not padding: `overflow` clips at the padding box,
+   so a column scrolled up by a negative margin paints straight through its own top padding and the
+   first render put a clipped lyric line hard against the state line above it. */
+.or-lyc { flex: 1; min-height: 0; overflow: hidden; margin-top: 14px; padding: 0 20px;
+  font-family: 'Space Grotesk', sans-serif; font-size: 24px; line-height: 31px; }
+.or-lyc p { margin: 0; padding: 7px 0; font-weight: 600; color: var(--ink-soft); }
+.or-lyc p.past { color: var(--ink-dim); }
+.or-lyc p.now { color: var(--accent-2); font-weight: 700; }
+html[data-skin="noir"] .or-lyc p.now { color: var(--ink); }
+/* With lyrics up the control group no longer floats: the lines take the slack instead. */
+.or-rem.lyr > .or-seek { margin-top: 0; }
+
+/* ---- the footer's Lyrics, lit while they show (`BottomRow`: accentSecondary). ---- */
+.or-fb.lit { color: var(--accent-2); border-color: rgba(var(--fg), .22); }
+
+/* ---- decision 9's one line, under the row that reverted. The row keeps its height, so nothing
+   else on the screen moves while the line is up for its 3 s. ---- */
+.or-vnote { margin: -6px 0 6px 46px; font-size: 12px; line-height: 1.4; color: var(--accent-2); }
+/* A ROOM row is indented 14 px, so the line under it is too — two blocks of text out by 14 px
+   read as a rendering accident rather than a hierarchy. */
+.or-vrow.rm + .or-vnote { margin-left: 60px; }
+
+/* =================================================================================================
+   REV 3 · THE BOOK
+   ================================================================================================= */
+
+/* `WholeBookBar` — BOOK in caps at 10.5 px/700 with 1 px of tracking, a 2 px line, a 10 px knob,
+   and elapsed / total at 11 px. All three in textDim: it is the quieter of the two bars on
+   purpose, because the chapter is what you are in and the book is where you are. */
+.or-wb { display: flex; align-items: center; gap: 10px; padding: 10px 20px 0; }
+.or-wb .lb { font: 700 10.5px 'Sora', sans-serif; letter-spacing: 1px; color: var(--ink-dim);
+  flex: none; }
+.or-wb .tr { position: relative; flex: 1; min-width: 0; height: 24px; display: block; }
+.or-wb .tr::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+  margin-top: -1px; border-radius: 1px; background: rgba(var(--fg), .25); }
+.or-wb .dn { position: absolute; left: 0; top: 50%; height: 2px; margin-top: -1px;
+  border-radius: 1px; background: var(--accent-2); }
+.or-wb .kb { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: var(--ink); }
+.or-wb .tm { font: 400 11px 'JetBrains Mono', monospace; color: var(--ink-dim); flex: none;
+  font-variant-numeric: tabular-nums; }
+.or-wbleft { margin: 2px 20px 0; font: 400 12px 'Sora', sans-serif; color: var(--ink-soft); }
+
+/* `BookTransport` — speed · −30 s · ⏯ · +30 s · sleep. The speed chip is a bordered label, in
+   accent when it is not 1.0, which is the shipped rule. */
+.or-tr.book { gap: 14px; }
+.or-spd { position: relative; min-width: 54px; height: 46px; flex: none; padding: 0; border: 0;
+  background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font: 700 14px 'Sora', sans-serif; color: var(--ink); }
+.or-spd.on { color: var(--accent-2); }
+/* The 1 px border is drawn around the LABEL rather than around the 46 dp target: a bordered 46 px
+   square reads as a button in a row of glyphs that are not. */
+.or-spd::after { content: ''; position: absolute; inset: 9px 2px;
+  border: 1px solid rgba(var(--fg), .3); border-radius: 12px; }
+/* Both skips are 30 s, so both carry the same label and the glyphs are mirrored. */
+.or-tb.sk30 b { font-size: 10.5px; }
+/* `G.fwd30` is ALREADY the mirror of `G.back30` — mirroring it again in CSS pointed both skips
+   backwards, which the first render of `a-book` showed at 4x. No transform. */
+
+/* `ChapterStrip` — the chapters as proportional segments under the transport, the one being read
+   lit and the finished ones quieter; 2 px apart, 6 px tall. */
+.or-cst { display: flex; gap: 2px; height: 6px; margin: 12px 20px 0; }
+.or-cst i { border-radius: 3px; background: rgba(var(--fg), .22); min-width: 2px; }
+.or-cst i.done { background: rgba(var(--fg), .5); }
+.or-cst i.now { background: var(--accent-2); }
+
+/* =================================================================================================
+   REV 3 · THE QUEUE SHEET
+   ================================================================================================= */
+/* 66 %, so the list is cut MID-ROW and the cut is visible as a scroll. At 72 % the last row
+   ended exactly on the phone's own bottom edge, which reads as "the queue ends here". */
+.or-qsheet { max-height: 66%; }
+.or-qcount { margin: 0 20px 4px; font-size: 12.5px; color: var(--ink-dim); }
+.or-qsec { padding: 12px 20px 6px; font-size: 11.5px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; }
+.or-qrow { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 20px;
+  font-size: 15px; color: var(--ink); }
+.or-qrow .hd { width: 24px; flex: none; color: var(--ink-dim); display: flex; align-items: center;
+  justify-content: center; }
+.or-qrow .hd svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-qrow .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.or-qrow .ln { font: 400 12.5px 'JetBrains Mono', monospace; color: var(--ink-dim); flex: none;
+  font-variant-numeric: tabular-nums; }
+.or-qrow.now .nm { color: var(--accent-2); font-weight: 600; }
+
+/* The bar under the Playing tab, over the remote's own ground. */
 .or-ph .bnav { z-index: 88; }
-
-/* (c) — the cover is 80 % of the width in the Kotlin (`SwipeCover`: `fillMaxWidth(0.8f)`) and 84 %
-   in ravilo-music.css. The code wins. */
-.or-ph .mu-ncov { width: 80%; }
-/* (c) — the bottom row is `lyrics · cast · spacer · ⋯` in the Kotlin (`BottomRow`) and
-   `space-between` over four buttons in the mockup, which spreads all four instead of grouping
-   three left and ⋯ right. The code wins, and it is also what leaves room for Stop. */
-.or-ph .mu-nbot.or-bot { justify-content: flex-start; gap: 2px; }
-
-/* The read-only and paused covers dim, as the round-1 art card does. */
-.or-ph .mu-ncov.or-dim { opacity: .55; }
 /* UNREACHABLE greys; UNSUPPORTED is absent. Same rule as the film remote, same 34 %. */
 .or-ph .or-greyed { opacity: .34; }
 
@@ -609,17 +782,7 @@ html[data-skin="daylight"] .or-cap, html[data-skin="daylight"] .or-pop { backgro
 .or-pill svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
   stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .or-pill.or-ro { color: var(--ink-soft); cursor: default; }
-/* The shipped chip in the `today` frame is inline-flex, which stretches as a column flex item. */
-.or-ph .mu-ndev { align-self: flex-start; }
 
-/* ---- (b3) the one sentence a read-only playback needs, under the pill ---- */
-.or-mline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13.5px;
-  line-height: 1.45; color: var(--ink-soft); }
-.or-mline svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor;
-  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-/* The banners are the round's own and keep their own margins inside `.mu-nmain`, which already
-   has the page's 26 px side padding. */
-.or-ph .mu-nmain > .or-ban { margin-left: 0; margin-right: 0; }
 
 /* ---- (b2) Stop, one tap from the page, in the shipped bottom row ---- */
 .or-stopb { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; flex: none;
@@ -725,19 +888,20 @@ html[data-skin="daylight"] .or-stopb { color: #c23a28; border-color: rgba(194, 5
 /* The `.np` page inside the Mac window: `.or-mmain` already pays 34/34, and the shipped page's
    padding is 70 top / 48 side, so this is the difference and nothing else. */
 .or-mmain > .or-np { padding: 36px 14px 0; }
-/* 100 px taller than the film window, see frames.html: at 800 the shipped head does not clear the
-   capsule and the page scrolls. */
-.or-mframe.tall { height: 900px; }
+/* 240 px taller than the film window, and the report says why rather than hiding it: the desktop
+   Playing page's cover column is the cover (380) + title + credits + chips + the place pill + the
+   seek line + the transport, which is about 656 px before rev 3 adds anything — and rev 3 adds the
+   volume block, which is three rows and about 150 more. At 800 the transport went under the
+   capsule; at 900 the second and third room rows did (seen in the first rev-3 `mac-music` render,
+   Stue sliced in half). The page scrolls there and this frame shows the whole of it. A window with
+   ONE room fits at 900 with room to spare. */
+.or-mframe.tall { height: 1040px; }
 /* The same page in a browser pane. The pane pays the shipped 70/48 itself; `.or-wbody`'s centring
    is for the phone-shaped web remote and would centre a full-height grid to nothing. */
 .or-wbody.or-wnp { display: block; padding: 70px 48px 0; align-items: stretch; }
 .or-wnp > .or-np { height: 100%; }
 
-/* The shipped `.mu-ndev` sizes its glyph through `.rc-ic` (a drawn cast mark, not an SVG), so an
-   SVG dropped into that chip has no size at all and lays out at the 300×150 intrinsic default.
-   Found in the `a-music-today` render: two black slabs where the speaker mark should be. */
-.or-ph .mu-ndev svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor;
-  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
 /* The mini bar's place line: a glyph and the place, both sized, the place ellipsised rather than
    overflowing. See the note in `musicMini`. */
 .or-ph .mu-mini .d.or-where { display: flex; align-items: center; gap: 6px; min-width: 0;
@@ -746,12 +910,7 @@ html[data-skin="daylight"] .or-stopb { color: #c23a28; border-color: rgba(194, 5
   stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .or-ph .mu-mini .d.or-where span { min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-/* The volume sheet's heading is the place, in the shipped speakers-panel shape. */
-.or-vsh h4 { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.or-vsh h4 span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.or-vsh h4 svg { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor;
-  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--accent-2); }
-.or-sheet .or-vol { padding-top: 10px; padding-bottom: 8px; }
+
 
 /* Stop in the capsule: the same pill, sized for a 66 px bar. */
 .or-stopb.cap { min-height: 36px; margin-left: 0; flex: none; }
@@ -762,18 +921,10 @@ html[data-skin="daylight"] .or-stopb { color: #c23a28; border-color: rgba(194, 5
    so the 1440 music frame drew its title in near-black on near-black until this landed. */
 .or-web { color: var(--ink); }
 
-/* The Playing page's ground, from `playingGround()`: accentDim at 60 % into the background, and
-   flat in noir. accentDim is #3C2C8A in aurora, #0A3D38 midnight, #7A5B1F noir, #1E3A66 graphite
-   and #E3E0FB in daylight (Colors.kt). The mockup's album-hue radial is NOT this, and in daylight
-   it washed the page brown — found in the `daylight-a-music` render. */
-.or-ph .mu-now .bgt { --or-adim: 60, 44, 138;
-  background: linear-gradient(180deg, rgba(var(--or-adim), .6), var(--bg) 46%, var(--bg)); }
-html[data-skin="daylight"] .or-ph .mu-now .bgt { --or-adim: 227, 224, 251; }
-html[data-skin="midnight"] .or-ph .mu-now .bgt { --or-adim: 10, 61, 56; }
-html[data-skin="noir"] .or-ph .mu-now .bgt { background: var(--bg); }
+
 
 /* A favourited ♥ is FILLED (the Kotlin's `MusicIcon.HEART_FILLED`). The shipped `.mu-ib svg` sets
    `fill:none`, and a CSS declaration beats the inline `fill="currentColor"` the mockup's own
    `IC.heart.replace(…)` writes — so the mockup draws a favourited song's heart as an outline in
    accent. Seen at 3× in `a-music`; the code wins. */
-.or-ph .mu-ib.or-fav.on svg, .or-npib.on svg { fill: currentColor; stroke: currentColor; }
+.or-fav.on svg, .or-npib.on svg { fill: currentColor; stroke: currentColor; }

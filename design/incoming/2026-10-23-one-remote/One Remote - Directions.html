@@ -58,22 +58,33 @@ both at once — the cast bar opens one, that playback's row in <i>Playing every
 other. This round draws the one remote that replaces them, on the phone, the web and the Mac.</p>
 
 <div class="box pick">
-<p style="margin:0"><b>Recommendation: direction A — the kind picks the remote.</b> A film or an
-episode gets the Cast remote's layout; a song or a book gets the music Playing page; each gains the
-controls only the session remote has today. How the place is reached — a cast link or the server —
+<p style="margin:0"><b>Recommendation: direction A — the kind picks the remote.</b> Every kind
+gets the Cast remote's layout; the kind decides what goes in it — the transport, the two bars a
+book needs, the lyrics a song has — and each gains the controls only the session remote has
+today. How the place is reached — a cast link or the server —
 is never drawn, never named, and never changes a pixel. <b>Direction B is drawn for the film and the
 music frame so the cost is visible rather than asserted</b>, and it is a real alternative, not a
 straw man.</p>
 </div>
 
+<div class="box pick">
+<p style="margin:0"><b>Revision 3 — the owner has decided, and music comes back to the cast
+remote.</b> <i>“The current cast remote is the nice looking one and todays playing page is a bit
+bad UI, so that one goes. [Its] functionality needs to be there.”</i> So <b>today’s Playing page is
+retired everywhere, including for music playing on this phone</b>, and the music frames are the
+cast remote’s shape with everything that page did: <i>Playing from</i>, the version chips, ♥, ⋯,
+the swipe, shuffle · previous · ⏯ · next · repeat, the lyrics, the queue and the book variant.
+Revision 2’s <code>musicPlaying</code> builder is gone from <code>or-kit.js</code> and
+<code>a-music-today</code> is gone from the package: a drawing of a retired page is a
+specification of a screen that no longer exists. <b>The film half is untouched as a design</b> —
+its pixels moved only for the footer, below. Volume is now an on-screen slider everywhere, and
+decision 9 draws its two outcomes.</p>
+</div>
+
 <div class="box">
-<p style="margin:0"><b>Revision 2 — what changed.</b> Round 1 said “a song gets the music Playing
-page” and then drew music a new screen. That would have left local music on today’s <i>Playing</i>
-tab and music elsewhere on a second player — the exact complaint this round exists to remove.
-<b>Music is now drawn on the shipped Playing page</b>, on the phone, the Mac and the web, with
-<code>a-music-today</code> beside it so the difference is a comparison rather than a claim. The
-film half is unchanged as a design. Decision 1’s alternative is now a real frame
-(<code>a-cast-film-no-slider</code>), and the three-up footer is fixed.</p>
+<p style="margin:0"><b>Revision 2</b> drew music on the shipped Playing page. That was the wrong
+correction and it was Bárður’s call, not the designer’s; it is recorded here because the package
+no longer contains it. Round 1’s music frames are what revision 3 starts from.</p>
 </div>
 
 <h2>What is fixed before a line is drawn</h2>
@@ -131,30 +142,52 @@ is someone else’s, <i>whose</i> it is, because that is the thing that changes 
 gets shuffle · prev · ⏯ · next · repeat. Neither gets the other’s.</li>
 <li><b>Volume</b>, inline under the transport <i>on a film or an episode</i>. One place, one
 slider. Several rooms, a master labelled <i>Volume</i> and a room row each, every room with its own
-mute. <b>On music it is behind ⋯, where it ships</b> — see below.</li>
-<li><b>A footer of at most three</b>, on a film or an episode: <i>Subtitles &amp; audio</i> ·
-<i>Next episode</i> (series only) · <i>Stop</i>. All three are the same two-line height, so a
-one-word label gets the same box and the three icons share a baseline. Measured at 412 the label
-column is about 108 px and <i>Subtitles &amp; audio</i>, <i>Undertekster og lyd</i> and
-<i>Undirtekstir og ljóð</i> all wrap; one line is not reachable above the 12.5 px floor.</li>
+mute. <b>Revision 3: it is inline on every kind</b>, music included — see below.</li>
+<li><b>A footer of at most three</b>, on a film or an episode: <i>Audio &amp; Subs</i> ·
+<i>Next episode</i> (series only) · <i>Stop</i>; on a song <i>Up next</i> · <i>Lyrics</i> ·
+<i>Stop</i>; on a book <i>Chapters</i> · <i>Add bookmark</i> · <i>Stop</i>.
+<b>Revision 3 makes the button a two-row grid</b> — a fixed 20&nbsp;px icon row and a label row
+under it — rather than reserving two lines of label. With the shipped <code>player.audio_subs</code>
+English now fits one line and the footer is 16&nbsp;px shorter; <i>Lyd &amp; undertekster</i> and
+<i>Ljóð &amp; undirtekstir</i> are still about 112 and 118&nbsp;px against 108 and still wrap, and
+with the grid their icons stay on one baseline anyway. One geometry, three languages.
+<code>fo-a-nextup</code> is the proof frame.</li>
 </ul>
 
-<h3>Music: the shipped Playing page, plus four things</h3>
-<p>A song keeps the <i>Playing</i> tab of music mode exactly as it is — <i>Playing from {album}</i>
-and ⋯, the cover at 80 % of the width with swipe for next/previous, the title and the version
-chips · artist · album line and the ♥, the seek bar, shuffle · prev · ⏯ · next · repeat, and the
-bottom row. The queue is still its own tab and lyrics still shrink the head to a 52 dp cover. What
-it gains:</p>
+<h3>Music and a book: the cast remote’s shape, with everything the Playing page did <span class="tag">revision 3</span></h3>
+<p>A song is the SAME builder call as a film — the header with the place pill, the art card, the
+title block, the seek bar, the transport, the volume block, the footer — and the kind decides what
+goes in each slot. What music brings in from the retired page, all of it read off
+<code>MusicPlayingScreen</code> and R322:</p>
 <ul>
-<li><b>The place pill</b>, in the device chip’s row and keeping the chip’s own sentence
-(<i>Playing on Stue + Gæsteværelse</i>), gaining only the → that opens <i>Move to…</i>.</li>
-<li><b>Stop</b>, a labelled pill in the shipped bottom row — one tap, and it costs no height.</li>
-<li><b>The someone-else line and the state banners</b>, under the pill.</li>
-<li><b>Volume behind ⋯</b>, that sheet gaining a row per room, headed by the place in the shipped
-speakers-panel shape. <b>Why not inline:</b> measured on <code>a-music</code> at 412×915 the page
-holds about 108 px of slack, and the block is 154 px for a master and two rooms and 222 px with a
-room that cannot report. Inline would push the transport below the fold, which the brief forbids.
-The Mac and the web answer the same way — volume is in the capsule’s popover, where it ships.</li>
+<li><b><i>Playing from {album}</i></b> with the ♪, on its own line under the header (the shipped
+<code>music.from</code>). On a book that line is the book’s title, as
+<code>BookPlayingScreen</code> draws it.</li>
+<li><b>The version chips, the artist and the album</b> as one line under the title — R344’s
+<code>.rv-v</code>, shipped — and <b>♥</b> level with the <i>title</i>, which is where
+<code>Credits()</code> puts it.</li>
+<li><b>⋯</b>, the track menu, in the header’s right slot (decision 8).</li>
+<li><b>Swipe the cover</b> for next/previous. Drawn as the mid-gesture frame
+(<code>a-music-swipe</code>): 34 % across at the alpha <code>SwipeCover</code> computes, the next
+cover underneath. A still frame cannot show a gesture, and the shipped page has no swipe hint to
+draw instead.</li>
+<li><b>Shuffle · previous · ⏯ · next · repeat</b>, already direction A’s music transport.</li>
+<li><b>Lyrics</b> — the head shrinks to a 52 dp cover and the title and the synced lines take the
+space (FR-R322-7, 24 sp Space Grotesk; the sung line lit, what has been sung dim, what is coming
+secondary). The footer’s <i>Lyrics</i> lights. <code>a-music-lyrics</code>.</li>
+<li><b>Up next</b>, as a sheet over the remote, with drag handles and the shipped
+<i>{n} songs · {t} left</i> computed from the queue. <code>a-music-upnext</code>.</li>
+<li><b>Nothing playing yet</b> — the last-played song, loaded paused where it was left
+(FR-R322-3), no state line and no <i>Stop</i>. <code>a-music-idle</code>.</li>
+<li><b>A book</b> — the chapter as the title, the chapter’s seek bar, the whole-book scrubber
+(<i>BOOK</i>, elapsed / total), <i>… left</i>, speed · −30 s · ⏯ · +30 s · sleep, and the chapter
+strip. <code>a-book</code>.</li>
+<li><b>Volume is INLINE</b>, the same block as the film’s. Revision 2 measured that it would not
+fit the shipped Playing page — 108 px of slack against a 154 px block — and that measurement still
+holds <i>of that page</i>, which is why it is no longer the question: the cast remote’s
+composition is built around the block, and the square art shrinks to make room for it rather than
+the transport going below the fold. What it costs is visible: the cover is about 180 px with two
+rooms, 240 with one, and about 120 on a book. Open question 2.</li>
 </ul>
 </div>
 <div>
@@ -263,11 +296,15 @@ portrait page, so the web at a desk width is the cover beside the lyrics, with t
 <li><b>Web, 390.</b> The phone layout, unchanged. Which is the point: it is not a third design.</li>
 <li><b>Mac — a film.</b> The Playing page <i>is</i> the remote: the same blocks, two columns, the
 capsule along the bottom.</li>
-<li><b>Mac — a song.</b> The shipped desktop Playing page: the 380 px cover with the title, the
-place pill, the seek line and the transport under it, and the lyrics beside it in 30 px. Stop is in
-the <b>capsule</b>, not the page — the left column is 380 px and the place pill alone fills it, and
-the capsule puts Stop one tap from every page, not only this one. The capsule’s transport follows
-the kind too: previous/next on a song, ±10/30 s on a film.</li>
+<li><b>Mac — a song.</b> The shipped desktop Playing page, which <b>is</b> the cast remote at a
+desk width and is the one place the Playing page’s shape survives, because the lyrics beside the
+cover are the desktop’s own strength: the 380 px cover with the title, the version chips, the place
+pill, the seek line, the transport and — <b>new in revision 3</b> — the volume block under it, with
+the lyrics beside it in 30 px. Stop is in the <b>capsule</b>, not the page — the left column is
+380 px and the place pill alone fills it, and the capsule puts Stop one tap from every page, not
+only this one. The capsule’s transport follows the kind too: previous/next on a song, ±10/30 s on a
+film. <b>Both desktop music frames are rendered taller than a real window</b> so the whole page is
+visible; see open question 1.</li>
 <li><b>The capsule’s volume popover</b> holds the same sliders, drawn over <b>Films</b>, because a
 popover you open from the capsule is for when you are <i>not</i> on the Playing page; over the
 Playing page it put the same three sliders on screen twice.</li>
@@ -300,6 +337,46 @@ Playing page it put the same three sliders on screen twice.</li>
     round.</td>
     <td>Keep <i>Stop casting</i> on a cast — which would mean the cast frame and the elsewhere frame
     differ by one word, and the identity pair would stop being a pair.</td></tr>
+<tr><td><b>5 · Where the <i>Playing</i> tab’s remote sits</b> <span class="tag">revision 3</span></td>
+    <td><b>In the tab, with the bar under it</b> — FR-R322-2: a page, no close chevron, its slot
+    held open and empty. Every music frame in the package except one.
+    <code>a-music</code>, <code>a-book</code>.</td>
+    <td><b>Full-screen</b>, chevron back, no bar — <code>a-music-full</code>. It is worth looking
+    at: the bar costs 92&nbsp;px and the cover is 70&nbsp;px bigger without it. It is also what the
+    remote already is when it is opened over something else, so the product needs both drawings
+    whichever way this goes.</td></tr>
+<tr><td><b>6 · The bottom bar’s <i>Queue</i> tab</b> <span class="tag">revision 3</span></td>
+    <td><b>Kept.</b> The sheet (<code>a-music-upnext</code>) is the list you glance at from the
+    remote and dismiss; the tab is the one you go to deliberately, and it is where <i>Clear
+    queue</i> belongs — a destructive action does not live under a list you opened to look at.</td>
+    <td>Fold it in and leave only the sheet, freeing a fifth of the bar. Not drawn.</td></tr>
+<tr><td><b>7 · The volume row on <i>This phone</i></b> <span class="tag">revision 3</span></td>
+    <td><b>Present</b>, one row, the phone’s own — <code>a-music-here</code>. The frame exists to
+    prove local and remote are one screen, and a block that disappears when the place is the phone
+    is the exact thing that makes them two.</td>
+    <td>Absent, on the argument that the hardware keys already do it and the platform draws its own
+    slider. Not drawn, deliberately: see the pair.</td></tr>
+<tr><td><b>8 · ⋯, the track menu</b> <span class="tag">revision 3</span></td>
+    <td><b>In the header’s right slot</b>, which was already an empty 46&nbsp;dp ghost.</td>
+    <td>In the footer beside the three labelled buttons — where <code>BottomRow</code> puts it on
+    the shipped page. Not drawn: a fourth, bare glyph next to three labelled buttons reads as a
+    fourth action of the same weight.</td></tr>
+<tr><td><b>9 · The volume slider’s two outcomes</b> <span class="tag">revision 3</span></td>
+    <td><b>(a) Released, not confirmed yet: the thumb stays where the finger left it and NOTHING is
+    marked.</b> <b>(b) The place never took it: the thumb goes back and one short line says so for
+    3&nbsp;s</b> — <i>{place} kept {n}&nbsp;%</i>. Four frames:
+    <code>a-vol-pending-film</code>, <code>a-vol-reverted-film</code>,
+    <code>a-vol-pending-music</code>, <code>a-vol-reverted-music</code>.</td>
+    <td>A mark while waiting — a spinner, a ghost thumb, a greyed value. Not drawn: it would warn
+    about the 95&nbsp;% of drags that work, on a screen the viewer is holding. On the revert the
+    line is <b>not</b> optional: a thumb that walks back on its own with nothing said reads as a
+    bug rather than a report.</td></tr>
+<tr><td><b>10 · A place that cannot report its volume</b> <span class="tag">revision 3</span></td>
+    <td><i>—</i> in the value, the slider drawn and disabled, and the <b>shipped</b>
+    <code>volume.no_report</code> as the line under it. <code>a-film-no-report</code>
+    (Soveværelse TV, sound to a soundbar).</td>
+    <td>Absent. Not drawn, and the rule is in the fixed table above: the place EXISTS and simply
+    cannot answer, which is a different fact from “this cannot be done”.</td></tr>
 </table>
 
 <h2>New strings · en / da / fo drafts</h2>
@@ -329,38 +406,56 @@ the ones this round needs. <code>volume</code>, <code>play_here</code>, <code>st
 <tr><td class="mono">stop_q</td><td>Stop {who}’s {title}?</td><td>Stop {who}s {title}?</td><td>Steðga {title} hjá {who}?</td></tr>
 <tr><td class="mono">cancel</td><td>Cancel</td><td>Annullér</td><td>Avlýs</td></tr>
 <tr><td class="mono">song_of</td><td>Song {i} of {n}</td><td>Nummer {i} af {n}</td><td>Lag {i} av {n}</td></tr>
-<tr><td class="mono">lyrics</td><td>Lyrics</td><td>Sangtekst</td><td>Lagtekstur</td></tr>
+<tr><td class="mono" style="color:#4a5060">lyrics</td><td>Lyrics <i>(shipped <code>music.lyrics</code>)</i></td><td>Sangtekst</td><td><b>Tekstur</b> — corrected in revision 3; round 1 drafted <i>Lagtekstur</i></td></tr>
 <tr><td class="mono">more_playing</td><td>{n} more playing</td><td>{n} mere spiller</td><td>{n} fleiri spæla</td></tr>
-<tr><td class="mono">this_phone</td><td>This phone</td><td>Denne telefon</td><td>Hesin telefonin</td></tr>
+<tr><td class="mono" style="color:#4a5060">this_phone</td><td>This phone <i>(shipped <code>mode.label</code>)</i></td><td>Denne telefon</td><td><b>Hendan telefonin</b> — corrected in revision 3; round 1 drafted <i>Hesin telefonin</i></td></tr>
 <tr><td class="mono">ready</td><td>Ready</td><td>Klar</td><td>Klár</td></tr>
 <tr><td class="mono">playing_here</td><td>Playing here</td><td>Spiller her</td><td>Spælir her</td></tr>
 <tr><td class="mono" style="color:#4a5060">volume</td><td>Volume <i>(shipped)</i></td><td>Lydstyrke</td><td>Ljóðstyrki</td></tr>
-<tr><td class="mono" style="color:#4a5060">no_volume</td><td>{place} doesn’t report its volume <i>(shipped)</i></td><td>{place} melder ikke sin lydstyrke</td><td>{place} boðar ikki frá ljóðstyrkinum</td></tr>
-<tr><td class="mono" style="color:#4a5060">subs_audio</td><td>Subtitles &amp; audio</td><td>Undertekster og lyd</td><td>Undirtekstir og ljóð</td></tr>
+<tr><td class="mono" style="color:#4a5060">no_volume</td><td>{place} doesn't report its volume <i>(shipped <code>volume.no_report</code>, with a straight apostrophe)</i></td><td><b>{place} oplyser ikke lydstyrken</b></td><td><b>{place} sigur ikki ljóðstyrkina</b> — both corrected in revision 3 to the shipped wording</td></tr>
+<tr><td class="mono" style="color:#4a5060">subs_audio</td><td><b>Audio &amp; Subs</b> <i>(shipped <code>player.audio_subs</code>; revision 3 replaces round 1’s draft <i>Subtitles &amp; audio</i> in every frame)</i></td><td><b>Lyd &amp; undertekster</b></td><td><b>Ljóð &amp; undirtekstir</b></td></tr>
 <tr><td class="mono" style="color:#4a5060">player.audio_subs</td><td colspan="3"><b>Correction, revision 2.</b> The shipped key is <code>player.audio_subs</code> — <i>Audio &amp; Subs</i> / <i>Lyd &amp; undertekster</i> / <i>Ljóð &amp; undirtekstir</i> — and <code>CastRemoteScreen.kt</code> draws it in a single-line 46 dp pill with an ellipsis. The row above is the round’s own draft and it is longer than anything that ships. Kept as drawn, flagged for adoption.</td></tr>
 <tr><td class="mono">from</td><td>Playing from {x} <i>(shipped <code>music.from</code>)</i></td><td>Afspiller fra {x}</td><td>Spælir úr {x}</td></tr>
 <tr><td class="mono">hw_vol</td><td>{place} · {n} % <i>(drawn, not found in the code)</i></td><td>{place} · {n} %</td><td>{place} · {n} %</td></tr>
 <tr><td class="mono" style="color:#4a5060">subtitle_size</td><td>Subtitle size <i>(shipped)</i></td><td>Undertekststørrelse</td><td>Stødd á undirtekstum</td></tr>
 <tr><td class="mono" style="color:#4a5060">next_episode</td><td>Next episode <i>(shipped)</i></td><td>Næste afsnit</td><td>Næsti táttur</td></tr>
 <tr><td class="mono" style="color:#4a5060">move_to</td><td>Move to… <i>(shipped)</i></td><td>Flyt til…</td><td>Flyt til…</td></tr>
-<tr><td class="mono" style="color:#4a5060">play_here</td><td>Play here <i>(shipped)</i></td><td>Afspil her</td><td>Spæl her</td></tr>
+<tr><td class="mono" style="color:#4a5060">play_here</td><td><b>Play on this phone</b> <i>(shipped <code>cast.play_here</code>; revision 3 replaces round 1’s <i>Play here</i>)</i></td><td><b>Afspil på denne telefon</b></td><td><b>Spæl á hesi telefonini</b></td></tr>
 <tr><td class="mono" style="color:#4a5060">stop</td><td>Stop <i>(shipped)</i></td><td>Stop</td><td>Steðga</td></tr>
 <tr><td class="mono" style="color:#4a5060">try_again</td><td>Try again <i>(shipped)</i></td><td>Prøv igen</td><td>Royn aftur</td></tr>
 <tr><td class="mono" style="color:#4a5060">up_next</td><td>Up next <i>(shipped)</i></td><td>Næste</td><td>Næst</td></tr>
 <tr><td class="mono" style="color:#4a5060">off</td><td>Off <i>(shipped)</i></td><td>Fra</td><td>Av</td></tr>
+<tr><td class="mono"><b>vol_kept</b></td><td><b>{place} kept {n} %</b> — <i>revision 3, the round’s ONE new string.</i> Decision 9(b): the place never took the drag, the thumb has gone back, and this is up for 3&nbsp;s under that row. It names the place and the value the place is actually at, so it answers “then what is it now?” in the same breath.</td><td>{place} beholdt {n} %</td><td>{place} helt {n} %</td></tr>
+<tr><td class="mono" style="color:#4a5060">now_playing / queue_left / clear_queue / nothing_played / my_list / shuffle</td><td colspan="3"><i>All shipped</i> (<code>music.*</code>, <code>nav.my_list</code>) — used by the queue sheet and the idle page in revision 3, quoted not drafted.</td></tr>
+<tr><td class="mono" style="color:#4a5060">whole_book / chapter_n / left / speed / sleep / chapters / bookmark_add / hours_minutes / minutes</td><td colspan="3"><i>All shipped</i> (<code>ab.*</code>, <code>music.hours_minutes</code>, <code>music.minutes</code>) — the audiobook frame. <b>Note <code>fmtTotal</code> rounds to the nearest minute and reads <i>{h} h {m} min</i></b>, so the whole-book scrubber says <i>4 h 12 min / 9 h 39 min</i> and not the brief’s <i>4:12:05 of 9:38:40</i>.</td></tr>
 </table>
 
 <h2>Open, for Bárður</h2>
 <ol>
+<li><b>New, revision 3 — the volume block does not fit the desktop Playing page at a real window
+height.</b> With three rooms inline the Mac window needs about 1040&nbsp;px and the browser about
+960; at 900 the second and third room rows go under the capsule. Both frames are rendered tall so
+the whole page is visible and this is not hidden. Either the page scrolls there, which a window may
+legitimately do, or on the desktop volume stays in the capsule’s popover where it already ships.
+<b>Not a judgement this round should make.</b></li>
+<li><b>New, revision 3 — three sliders inline cost the cover.</b> At 412 the square cover shrinks
+to about 180&nbsp;px with two rooms and a master, against the 330&nbsp;px the shipped page gives it;
+the one-room frame keeps 240 and the book, which carries two bars and a chapter strip, drops to
+about 120. Compare <code>a-music</code>, <code>a-music-here</code> and <code>a-book</code>. It is
+the honest cost of the owner’s on-screen slider and it is worth his eye.</li>
+<li><b>New, revision 3 — the idle page says <i>Playing from Harbour Lights</i> while nothing is
+playing.</b> That is the shipped code (<code>MusicPlayingScreen</code> falls back to
+<code>music.now_playing</code> only when there is no context at all), and the code wins, so the
+frame draws it. It still reads wrong. A string change, not a design one.</li>
 <li><b>Does the state line keep <i>Playing on {place}</i> when the pill above it already names the
 place?</b> The round keeps it, because it is the shipped string and the shipped cast remote’s own
 shape. Trimming it to <i>Playing</i> is one line of i18n and it would remove the only repetition
 left in the lean.</li>
 <li><s><b>The three-up footer wraps in every language.</b></s> <b>Settled in revision 2:</b> all
-three buttons are the same two-line height. One line is not reachable at 412 above the 12.5 px
-floor — measured, the label column is about 108 px and all three languages wrap. See the note on
-<code>player.audio_subs</code> in the string table: the shipped string is shorter and would fit
-one line, which at adoption may make the whole item moot.</li>
+three buttons are the same two-line height. <b>Re-settled in revision 3:</b> the footer maps onto
+the shipped <code>player.audio_subs</code> and the button becomes a two-row grid, so English gets
+one line and Danish and Faroese keep two with their icons still on one baseline. Nothing is
+truncated in any of the three.</li>
 <li><b>New, revision 2 — the hardware-key pill.</b> Decision 1’s alternative draws a transient
 <i>Stue TV · 60 %</i>, and no such pill exists anywhere in <code>ravilo-ui</code>; the frame draws
 the shipped toast carrying that line. Whether it exists or has to be built is for you and
@@ -380,17 +475,20 @@ because the round was asked to draw it, not because the argument against it got 
 <h2>The frames</h2>
 <div class="pngs">
 <span>a-cast-film</span><span>a-elsewhere-film</span><span>a-identity-pair</span>
-<span>a-tracks-sheet</span><span>a-nextup</span><span>a-music</span><span>a-music-today</span>
-<span>a-music-no-report</span><span>a-cast-film-no-slider</span>
+<span>a-tracks-sheet</span><span>a-nextup</span><span>a-cast-film-no-slider</span>
+<span>a-film-no-report</span><span>a-vol-pending-film</span><span>a-vol-reverted-film</span>
 <span>a-move-to</span><span>a-someone-else</span><span>a-stop-confirm</span><span>a-wordmark</span>
 <span>a-states-strip</span><span>a-st-buffering</span><span>a-st-moving</span><span>a-st-move-failed</span>
 <span>a-st-lost</span><span>a-st-offline</span><span>a-st-stopped</span><span>a-st-ended</span>
-<span>a-minibar-cast</span><span>a-minibar-elsewhere</span><span>a-minibar-music</span>
+<span>a-music</span><span>a-music-here</span><span>a-music-pair</span><span>a-music-move-to</span>
+<span>a-music-lyrics</span><span>a-music-upnext</span><span>a-music-swipe</span><span>a-music-full</span>
+<span>a-music-idle</span><span>a-book</span><span>a-vol-pending-music</span><span>a-vol-reverted-music</span>
+<span>a-minibar-cast</span><span>a-minibar-elsewhere</span><span>a-minibar-music</span><span>a-minibar-music-mode</span>
 <span>b-film</span><span>b-music</span>
 <span>web-film-1440</span><span>web-music-1440</span><span>web-film-390</span>
 <span>mac-film</span><span>mac-music</span><span>mac-volume-popover</span>
-<span>da-a-cast-film</span><span>da-a-music</span><span>da-a-music-no-report</span><span>da-a-tracks-sheet</span>
-<span>fo-a-cast-film</span><span>fo-a-music</span><span>fo-a-music-no-report</span><span>fo-a-nextup</span><span>fo-a-tracks-sheet</span>
+<span>da-a-cast-film</span><span>da-a-music</span><span>da-a-music-lyrics</span><span>da-a-tracks-sheet</span>
+<span>fo-a-cast-film</span><span>fo-a-music</span><span>fo-a-music-lyrics</span><span>fo-a-nextup</span><span>fo-a-tracks-sheet</span>
 <span>daylight-a-cast-film</span><span>daylight-a-music</span><span>noir-a-cast-film</span>
 </div>
 

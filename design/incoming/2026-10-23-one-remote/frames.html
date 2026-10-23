@@ -38,6 +38,12 @@
     document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
     /* Music mode's own shipped stylesheet — the Playing page, the mini bar and the speaker rows
        live in it. Only the sets that draw a music surface load it, see the note above. */
+    /* Both sets that draw a SONG load it, and only those two. The music set needs `bnav` and
+       `mu-mini`, which are shipped components; the states set needs `.rv-vb` / `.rv-v`, R344's
+       version chips, because two of its seven states are a song — without it the first rev-3
+       render of `a-st-moving` drew *Remaster* and *Live* as two unstyled words. The file re-skins
+       noir and midnight, which is why it is not loaded everywhere; neither of these two sets is
+       ever rendered in either skin, so the re-skin cannot reach a picture. */
     if (set === 'music' || set === 'states')
       document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-music.css">');
     /* Ravilo Web at a desk width IS the desktop layout, so the web set loads the desktop file
@@ -79,8 +85,11 @@
   const ph = (id, html, extra) => frame(id, 'or-ph' + (extra ? ' ' + extra : ''), phBody(html));
 
   const P = K.P;
-  const FILM = D.FILM, EP = D.EP, EP4 = D.EP4, SONG = D.SONG;
+  const FILM = D.FILM, EP = D.EP, EP4 = D.EP4, SONG = D.SONG, BOOK = D.BOOK;
   const ROOMVOLS = { master: D.VOL.master, stue: D.VOL.stue, gaeste: D.VOL.gaeste };
+  /* `cfg` with one field changed, written once so a variant frame is visibly the SAME call.
+     Object.assign rather than a spread, to match the rest of the round's ES5 register. */
+  const w = (base, extra) => Object.assign({}, base, extra);
 
   /* ---------------------------------------------------------------------------------------
      PHONE — direction A. The lean, in full.
@@ -137,6 +146,29 @@
     /* The wordmark fallback: no artwork, no redraw. */
     ph('a-wordmark', K.remote({ item: FILM, set: P.stuetv, state: 'playing', wordmark: true,
       vols: { master: D.VOL.master } }));
+
+    /* ---- REV 3 · DECISION 9: the slider's two outcomes, on the film remote -------------------
+       The owner asked for exactly these two and nothing between them. The drag was 2 % → 15 %.
+
+       (a) released, Stue TV has not confirmed yet. The thumb is at 15 and there is NO mark: the
+           viewer just moved it and nothing has gone wrong. A spinner or a ghost thumb would warn
+           about the 95 % of drags that work.
+       (b) Stue TV never took it. The thumb has gone back to the 2 % the TV is actually at, and one
+           line under the slider says so for 3 s — because a thumb that walks back on its own, with
+           nothing said, reads as a bug rather than a report. */
+    ph('a-vol-pending-film', K.remote({
+      item: FILM, set: P.stuetv, state: 'playing', vols: { master: D.VOL.dragged } }));
+    ph('a-vol-reverted-film', K.remote({
+      item: FILM, set: P.stuetv, state: 'playing', vols: { master: D.VOL.low },
+      volNote: { master: K.t('vol_kept', { place: P.stuetv.line, n: D.VOL.low }) } }));
+
+    /* ---- REV 3 · the brief's frame 10: a place that cannot report its volume ------------------
+       Soveværelse TV with its sound going to a soundbar. The slider reads *—*, cannot be dragged,
+       and the SHIPPED reason (`volume.no_report`) is the line under it. This is the one place in
+       the remote where a control is drawn and disabled rather than absent, because the place
+       EXISTS and simply cannot answer — which is a different fact from "this cannot be done". */
+    ph('a-film-no-report', K.remote({
+      item: FILM, set: P.sovetvBar, state: 'playing', vols: { master: D.VOL.master } }));
   }
 
   /* ---------------------------------------------------------------------------------------
@@ -148,30 +180,87 @@
   }
 
   /* ---------------------------------------------------------------------------------------
-     MUSIC — rev 2. On today's Playing page, with ravilo-music.css linked, so the pictures ARE
-     the shipped page and the three things it gains are the only things that are this round's.
+     MUSIC — rev 3. Back in the CAST REMOTE'S SHAPE, with everything today's Playing page does.
+
+     The owner: *"The current cast remote is the nice looking one and todays playing page is a
+     bit bad UI, so that one goes. [Its] functionality needs to be there."* So every frame below
+     is `K.remote()` — the same builder as the film, the same call, with the kind doing the
+     deciding. Rev 2's `musicPlaying` is gone from or-kit.js entirely.
+
+     ONE place-set changes between frames 1 and 2 and nothing else does. That is the round's
+     argument for the third time: a cast, a server place, and the phone in your hand are one
+     screen because they are one builder call.
      --------------------------------------------------------------------------------------- */
   if (set === 'music') {
-    /* Today's page, untouched, so "what changed" is a comparison rather than a claim. */
-    ph('a-music-today', K.musicPlaying({
-      item: SONG, set: P.speakers, state: 'playing', today: true }));
+    /* Frame 1 — *Cannery Lights* on Stue + Gæsteværelse, from this phone's Playing tab.
+       `tab: true` is the brief's frame-5 lean: the remote sits IN the tab with the bar under it
+       (FR-R322-2 — a page, no close chevron), and `bnav(2)` lights Playing. */
+    const mElse = { item: SONG, set: P.speakers, state: 'playing', tab: true, vols: ROOMVOLS };
+    /* Frame 2 — the SAME song on this phone. One field: `here`. The pill reads *This phone* and
+       the state line is the one sentence that cannot be "Playing on {place}". */
+    const mHere = { item: SONG, set: P.pixelPlace, state: 'playing', tab: true, here: true,
+      vols: { master: D.VOL.master } };
 
-    /* The same page with the three things it gains: the place pill in the device chip's row,
-       Stop in the bottom row, and the state line / banners under the pill. */
-    ph('a-music', K.musicPlaying({ item: SONG, set: P.speakers, state: 'playing' }));
+    ph('a-music', K.remote(mElse));
+    ph('a-music-here', K.remote(mHere));
 
-    /* Volume, where it ships: behind ⋯, in the sheet, now with a row per room — and Kontor, the
-       room that cannot report, drawn and disabled with its reason. This is the one frame in the
-       round where a control is drawn rather than absent, because the place EXISTS and simply
-       cannot answer. Also the round's tallest string stack, which is why it is the frame the
-       Danish and Faroese renders use. */
-    ph('a-music-no-report', K.musicPlaying({
-      item: SONG, set: P.threeRooms, state: 'playing', volSheet: true,
-      vols: { master: D.VOL.master, stue: D.VOL.stue, gaeste: D.VOL.gaeste, kontor: null },
-    }));
+    /* …and side by side, because "local and remote are one screen" is a claim a single frame
+       cannot settle and a pair can. The film's `a-identity-pair` does this for a cast and a
+       server place; this one closes the set. */
+    frame('a-music-pair', 'or-pair',
+      '<div class="or-ph">' + phBody(K.remote(mElse)) + '</div>'
+      + '<div class="rule"></div>'
+      + '<div class="or-ph">' + phBody(K.remote(mHere)) + '</div>');
 
-    /* The mini bar in music mode, on a stand-in Listen page, above the music bar. */
-    ph('a-minibar-music', K.musicHome() + K.musicMini(SONG, P.speakers, { more: 1 }) + K.bnav(0));
+    /* Frame 2's sheet: the pill on *This phone* opens the same Move to… the elsewhere pill does,
+       with the phone's row ticked and the places as the things to move to. */
+    ph('a-music-move-to', K.remote(w(mHere, { moveSheet: true })));
+
+    /* Frame 3 — lyrics on. The head shrinks to a 52 dp cover and the title (FR-R322-7), the
+       synced lines fill the space, and the footer's Lyrics is lit. */
+    ph('a-music-lyrics', K.remote(w(mElse, { lyricsOn: true })));
+
+    /* Frame 4 — Up next, as a sheet over the remote. Tap jumps, the handles reorder. */
+    ph('a-music-upnext', K.remote(w(mElse, { queue: true })));
+
+    /* The swipe, drawn as the mid-gesture frame it is: a still cannot show a gesture, and the
+       shipped page has no swipe hint to draw instead. 34 % across, at the alpha `SwipeCover`
+       computes, with the next cover underneath. */
+    ph('a-music-swipe', K.remote(w(mElse, { swipe: true })));
+
+    /* Frame 5's ALTERNATIVE, so the owner picks rather than being told: the same remote
+       full-screen, with the close chevron back and no bar. This is also what the remote already
+       is when it is opened over something else — from the mini bar in video mode, or from
+       Playing everywhere — so it is a frame the product needs either way. */
+    ph('a-music-full', K.remote(w(mElse, { tab: false })));
+
+    /* Frame 6 — nothing playing yet. FR-R322-3: the last-played song, loaded and PAUSED at the
+       position it was left at, and it does not start. No state line: nothing is playing anywhere,
+       so there is nothing to report about a place. */
+    ph('a-music-idle', K.remote({
+      item: SONG, set: P.pixelPlace, state: 'idle', tab: true, here: true,
+      vols: { master: D.VOL.master } }));
+
+    /* Frame 7 — the audiobook. The same remote, the book's own blocks: the chapter as the title,
+       the chapter's seek bar, the whole-book scrubber, *… left*, speed · −30 s · ⏯ · +30 s ·
+       sleep, and the chapter strip. */
+    ph('a-book', K.remote({ item: BOOK, set: P.speakers, state: 'playing', tab: true, vols: ROOMVOLS }));
+
+    /* Frame 9 on the music rooms block: Stue dragged 2 % → 15 %, released. (a) not confirmed yet —
+       the thumb stays at 15 and nothing is marked. (b) Stue never took it — the thumb is back at
+       2 and one line under that row says so for 3 s. The master row and Gæsteværelse do not move
+       in either: one room's drag is one room's business. */
+    ph('a-vol-pending-music', K.remote(w(mElse, {
+      vols: { master: D.VOL.master, stue: D.VOL.dragged, gaeste: D.VOL.gaeste } })));
+    ph('a-vol-reverted-music', K.remote(w(mElse, {
+      vols: { master: D.VOL.master, stue: D.VOL.low, gaeste: D.VOL.gaeste },
+      volNote: { stue: K.t('vol_kept', { place: 'Stue', n: D.VOL.low }) } })));
+
+    /* The shipped mini bar in music mode, on a stand-in Listen page, above the music bar.
+       RENAMED in rev 3: it was `a-minibar-music`, which is also the id the `bars` set uses for
+       round 1's own bar — and `--all` names each PNG after its element id, so one silently
+       overwrote the other. Found by reading the renderer, not the picture. */
+    ph('a-minibar-music-mode', K.musicHome() + K.musicMini(SONG, P.speakers, { more: 1 }) + K.bnav(0));
   }
 
   /* ---------------------------------------------------------------------------------------
@@ -193,17 +282,15 @@
     ['a-st-ended', 'ended',
       { item: FILM, set: P.stuetv, state: 'ended' }],
   ];
-  /* Rev 2: two of the seven states are a SONG, and a song's remote is now the shipped Playing
-     page. Leaving them on round 1's layout would have put two music players in one package,
-     which is the exact defect this revision removes — so the builder is chosen by kind, from one
-     place, and the strip re-renders with them. Named in the report: the brief asked for the
-     state frames to stay unchanged, and these two could not. */
-  const build = cfg => (cfg.item.kind === 'music' ? K.musicPlaying(cfg) : K.remote(cfg));
+  /* Rev 3: ONE builder again. Rev 2 had to pick a builder by kind, because music was on a second
+     screen; it is not any more, so the fork is gone and `a-st-moving` and `a-st-move-failed` are
+     round 1's drawings with rev 3's music blocks in them — which is what makes the strip a
+     comparison of seven STATES rather than of two screens. */
   if (set === 'states') {
-    STATES.forEach(s => ph(s[0], build(s[2])));
+    STATES.forEach(s => ph(s[0], K.remote(s[2])));
     frame('a-states-strip', 'or-strip', STATES.map(s =>
       '<div class="or-cell"><div class="or-scap">' + K.esc(s[1]) + '</div>'
-      + '<div class="or-ph">' + phBody(build(s[2])) + '</div></div>').join(''));
+      + '<div class="or-ph">' + phBody(K.remote(s[2])) + '</div></div>').join(''));
   }
 
   /* ---------------------------------------------------------------------------------------
@@ -237,7 +324,7 @@
     /* Rev 2: Ravilo Web at a desk width IS the desktop layout — `MusicPlayingScreen` branches on
        `isDesktopLayout` before it ever reaches the portrait page — so the web's music player is
        the cover beside the lyrics, not a wide phone. Same body as the Mac frame. */
-    frame('web-music-1440', 'or-wframe', K.webMusic({
+    frame('web-music-1440', 'or-wframe tall', K.webMusic({
       item: SONG, set: P.pixelPlace, state: 'playing', vols: { master: D.VOL.master } }));
     frame('web-film-390', 'or-wframe narrow', K.webRemote({
       item: FILM, set: P.sovetv, state: 'playing', vols: { master: D.VOL.master } }));
@@ -264,6 +351,24 @@
     frame('mac-volume-popover', 'or-mframe', K.macBrowse(SONG, P.speakers,
       { vols: ROOMVOLS, volOpen: true, stopInCap: true }));
   }
+  /* ---------------------------------------------------------------------------------------
+     After layout, and only then: put the line being sung two fifths of the way down its column.
+
+     `LyricsView` keeps it there by scrolling, and a still frame has no scroller — but it also
+     has no way to know how tall a 24 sp line wraps to until the browser has laid it out. The
+     first render guessed 45 px a line, the lines wrapped to two, and the sung line fell off the
+     bottom of the column: the one frame whose whole subject is the sung line did not show it.
+     So it is measured, not guessed. Nothing else in the round reads the DOM back.
+     --------------------------------------------------------------------------------------- */
+  (function () {
+    document.querySelectorAll('.or-lyc').forEach(col => {
+      const inner = col.querySelector('.in'), now = col.querySelector('p.now');
+      if (!inner || !now) return;
+      const target = col.clientHeight * 0.4;
+      const top = now.offsetTop + now.offsetHeight / 2 - inner.offsetTop;
+      inner.style.marginTop = Math.round(Math.min(0, target - top)) + 'px';
+    });
+  })();
 })();
 </script>
 

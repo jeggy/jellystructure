@@ -3,8 +3,272 @@
 **Round** `2026-10-23-one-remote` · Ravilo · phone, web, Mac · drawn in this repository.
 **Brief** from Bárður. **Returns** to him on the brief's task with the PNGs.
 
-Revision 2 is the section immediately below; round 1's report follows it unchanged, because it is
-still the record of what the film half is and why.
+Revision 3 is the section immediately below; revisions 2 and 1 follow it unchanged, because they
+are still the record of what the film half is and of a correction that was made and then reversed.
+
+---
+
+# Revision 3 — music in the cast remote's shape
+
+The brief stood alone. It quoted the owner's own words, named the ten frames, named where to read
+each feature in the code, named the stand-ins exactly, and stated each open decision as a lean. It
+carried no phase number and no task id. Nothing went back.
+
+**The film remote is untouched as a design.** Its pixels moved in every frame that has a footer,
+because §"Not changing" asks for the shipped `player.audio_subs` in every frame I re-render, and
+that is a change to every footer. Three film frames are NEW (decision 9's two outcomes and frame
+10), and nothing else in the film half is different.
+
+## 1 · Music is `remote()` now, and the Playing page is gone from the package
+
+Every music frame is the **same builder call as the film** — `K.remote(…)` — with the kind deciding
+what goes in each slot. Rev 2's `musicPlaying`, `muSeek`, `muTransport` and `volumeSheet` are
+**deleted from `or-kit.js`**, its CSS block is deleted from `one-remote.css`, and `a-music-today`
+and `a-music-no-report` (and their da/fo renders) are deleted from `png/`. A builder left behind for
+a retired page is a specification of intent for a screen that no longer exists, and this file is
+what the Kotlin gets ported from. Rev 2 is in git at `5c48c448` if it is ever wanted.
+
+That also un-does rev 2's one structural concession: the state frames pick a builder by kind no
+longer, because there is only one builder again. `a-st-moving` and `a-st-move-failed` are round 1's
+drawings with rev 3's music blocks in them, so the strip compares seven **states** and not two
+screens.
+
+**What music brought in from the page**, each read off `MusicPlayingScreen` / `BookPlayingScreen`
+and R322, with the code winning every disagreement:
+
+| The brief asked for | Where it went |
+|---|---|
+| the place pill | the header's one control, unchanged from round 1 |
+| *Playing from Harbour Lights* | its own line under the header, with the ♪ (`music.from`) |
+| version chips, ♥ | the line under the title; ♥ level with the **title**, as `Credits()` has it |
+| ⋯ | the header's right slot — see §3 |
+| swipe | `a-music-swipe`, drawn as the mid-gesture frame — see §3 |
+| shuffle · prev · ⏯ · next · repeat | already direction A's music transport |
+| the volume block | **inline** — see §2 |
+| *Up next* · *Lyrics* · *Stop* | the footer, unchanged |
+
+## 2 · Volume went inline, and the rev-2 measurement is why that is now possible
+
+Rev 2 measured **108 px of slack on the shipped Playing page against a 154 px block**, and that
+measurement still holds — *of that page*. It was a fact about a composition with a 330 px cover
+fixed at 80 % of the width and two flex spacers. The cast remote's composition is the other way
+round: `.or-art.sq` **shrinks** (round 1's finding 7), so the block goes in and the cover pays for
+it. So the question rev 2 answered is not the question any more, and the owner's decision —
+an on-screen slider, the same rule as speakers — is drawable without the transport going below the
+fold on any frame in the package.
+
+**What it costs is visible and is open question 2.** The square cover is about **180 px** with a
+master and two rooms (`a-music`), **240 px** with one room (`a-music-here`), **246 px**
+full-screen (`a-music-full`), and about **120 px** on a book (`a-book`, which also carries the
+whole-book scrubber and the chapter strip) — against the 330 px the shipped page gave it. Three
+frames, one rule, and the owner can see the trade rather than be told about it.
+
+On the **desktop** the block went inline too, under the transport in the cover's column, because a
+popover you have to know about is not an on-screen slider. It does not fit a real window: see open
+question 1.
+
+## 3 · The three things the brief left to me, and what I did
+
+- **Frame 2's volume row: present.** One row, the phone's own. The frame exists to prove local and
+  remote are one screen; a block that vanishes when the place is the phone is the exact thing that
+  makes them two. `a-music-pair` is the proof and it is the strongest picture in the round.
+- **Frame 4's *Queue* tab: kept** (the brief's lean). The sheet is the list you glance at from the
+  remote and dismiss; the tab is the one you go to deliberately, and it is where *Clear queue*
+  belongs — a destructive action does not live under a list you opened to look at. The sheet
+  therefore has no *Clear queue*.
+- **Frame 5: in the tab, bar under it** (the brief's lean), FR-R322-2 — a page, **no close
+  chevron**, its 46 dp slot held open and empty so the pill sits in the same place in both. The
+  alternative is drawn (`a-music-full`) and it is not a straw man: the bar costs 92 px and the
+  full-screen cover is 70 px bigger. It is also what the remote already is when it is opened over
+  something else, so the product needs both drawings either way.
+
+Two more I decided and am naming rather than burying:
+
+- **⋯ is in the header's right slot**, not in the footer where `BottomRow` has it. That slot was
+  already an empty 46 dp ghost; a fourth, bare glyph beside three labelled buttons reads as a
+  fourth action of the same weight.
+- **The swipe is drawn mid-gesture.** A still frame cannot show a gesture, and the shipped page has
+  no swipe hint — inventing one would be proposing a control nobody asked for. So the frame is a
+  real frame of the real animation: 34 % across at `1 − |dx|/w` (the Kotlin's own formula), with
+  the next cover underneath.
+
+## 4 · Decision 9 — the slider's two outcomes
+
+Drawn on the film remote (Stue TV) and on the music rooms block (Stue), four frames. The drag is
+2 % → 15 %, released.
+
+- **(a) Not confirmed yet: the thumb stays at 15 % and nothing is marked.** The brief's lean, and
+  it is right for a reason worth writing down: a spinner, a ghost thumb or a greyed value would
+  warn about the 95 % of drags that work, on a screen the viewer is holding and has just touched.
+  Nothing has gone wrong yet, so nothing is said.
+- **(b) The place never took it: the thumb goes back to 2 % and one line says so for 3 s.** The
+  line is **not** optional — a thumb that walks back on its own with nothing said reads as a bug
+  rather than as a report. The row keeps its height while the line is up, so nothing else on the
+  screen moves.
+
+The one new string in the whole round, drafted for your table:
+
+| key | en | da | fo |
+|---|---|---|---|
+| `vol_kept` | **{place} kept {n} %** | {place} beholdt {n} % | {place} helt {n} % |
+
+It names the place *and* the value the place is actually at, so it answers "then what is it now?"
+in the same breath as "that didn't take". *Couldn't set the volume* would need a second line to say
+where the slider has landed.
+
+## 5 · The audiobook, and three numbers that do not agree
+
+`a-book` draws the brief's stand-in: *The Long Ferry* by Ana Leite, chapter 7 of 23, 1.25×. Three
+things to know, none of them a judgement I should be making:
+
+1. **`fmtTotal` rounds to the nearest minute and reads *{h} h {m} min***
+   (`MusicCommon.kt` → `music.hours_minutes`). So the whole-book scrubber says
+   **4 h 12 min / 9 h 39 min**, not the brief's *4:12:05 of 9:38:40*. The clock format the brief
+   names is `fmtLen`, which is what the **chapter's** bar uses — and that reads **17:05 / 36:00**.
+   The seconds are in `or-data.js`; the two formatters are the shipped ones.
+2. **`BOOK_SPEEDS` has no 1.25.** It is `0.8 · 0.9 · 1.0 · 1.1 · 1.2 · 1.5 · 1.75 · 2.0`. The frame
+   draws the brief's 1.25× as named — `speedText(1.25)` renders it correctly — but the shipped app
+   cannot reach it. Adding it is one array entry, or the stand-in becomes 1.2×. **Yours.**
+3. **The brief's three numbers only agree if the first chapters are the long ones.** 4:12:05 is
+   43.6 % of the book and chapter 7 is 30 % of the list. The one chapter table that satisfies all
+   three exactly is in `or-data.js` (chapters 1–6 total 3:55:00, chapter 7 is 36:00), and the book
+   reads as one with long early parts. The chapters carry **no titles**, so `chapterTitle()`'s
+   shipped fallback supplies *Chapter 7* / *Kapitel 7* / *Kapittul 7* and no chapter name is
+   invented.
+
+The transport is **speed · −30 s · ⏯ · +30 s · sleep**. The brief named four; the sleep timer is
+`BookTransport`'s fifth and the code wins.
+
+## 6 · The footer: neither of rev 2's two options
+
+The brief maps the footer onto the shipped `player.audio_subs` and expects that to end the two-line
+footer. **In English it does.** It does not in the other two — *Lyd & undertekster* is about 112 px
+of label and *Ljóð & undirtekstir* about 118, against the 108 px a button has at 412 — and I know
+that because I rendered it and looked: without a fix, `fo-a-nextup` had its first icon sitting 8 px
+above its two neighbours, which is precisely what rev 2's reservation existed to stop.
+
+So the button is now a **grid**: a fixed 20 px icon row and a label row under it, aligned to the
+start. The icons share a baseline whatever the label does, the labels all begin on the same line,
+and the button is only as tall as its language needs. English gets its one-line footer and loses
+16 px of height; Danish and Faroese keep two lines and stay aligned; nothing is truncated in any of
+the three. `fo-a-nextup` beside `a-nextup` is the proof pair.
+
+## What only the pictures showed
+
+Ten, and the first of them is the one that matters.
+
+1. **`.or-rem.tab` silently took a shipped component's styles.** `.tab` is a class in
+   `ravilo-phone.css` — a pill chip with its own padding, border-radius, font-size, colour,
+   background **and `white-space: nowrap`**. Adding `tab` to the remote's class list handed all of
+   it to the whole screen. What showed was the lyrics: every line ran off the right edge instead of
+   wrapping, one clipped line each. Nothing in the markup or in `one-remote.css` says so, the
+   element's own rules say nothing about wrapping, and `document.styleSheets` cannot be read from a
+   `file://` page — it took a CDP `CSS.getMatchedStylesForNode` to name the rule. **The class is
+   `or-tabbed` now**, and every class this round adds is `or-`-prefixed for exactly this reason.
+   PROCESS.md's round-9 note ("two `wf.css` class collisions") is this same defect, and it is still
+   the right trade for linking production CSS.
+2. **Two frames shared one id.** `a-minibar-music` was built in the `music` set (rev 2's shipped
+   bar) **and** in the `bars` set (round 1's own), and `render-design.sh --all` names each PNG
+   after its element id — so whichever set rendered last silently overwrote the other. Found by
+   reading the renderer, not the picture. The music-mode one is `a-minibar-music-mode`.
+3. **Both of the book's skip glyphs pointed backwards.** `G.fwd30` is already the mirror of
+   `G.back30`; mirroring it again in CSS mirrored it back. Visible only at 4×.
+4. **The lyrics state line had no styling at all.** `.or-meta .st`'s rules are scoped to
+   `.or-meta`, and with lyrics up the line is not inside one — so it drew with no gap, no colour
+   and no flex, the ▮▮▮ glyph jammed into the first word. It is wrapped in an `.or-meta` now, not
+   given a second copy of the rules.
+5. **The sung line fell off the bottom of its own column.** The first version guessed 45 px a
+   line; the lines wrap to two at 24 sp in 372 px, so the one frame whose whole subject is the sung
+   line did not show it. It is **measured after layout** now (`frames.html`, one short block) and
+   sits at 40 % of the column, which is where `LyricsView` scrolls it to.
+6. **…and then the top line painted through its own padding.** `overflow` clips at the padding box,
+   so a column shifted up by a negative margin paints over its own top padding — the clipped lyric
+   sat hard against the state line. The clear space is a margin now.
+7. **The swipe read as a two-tone album.** `.or-art` clips, so the sliding cover was cut at the
+   card's own left edge instead of sliding off it. `overflow: visible` on that one card.
+8. **The move sheet's own subject was behind the bottom bar.** `.or-sheet` is z-index 20 and the
+   shipped `bnav` is 88, so *This phone · Playing here*, ticked — the row `a-music-move-to` exists
+   to show — was painted over. A sheet is in front of the bar it is opened over.
+9. **Stop was offered on a song that was not playing.** `a-music-idle` is the last-played song,
+   paused, with nothing playing anywhere. The round's own rule is that an action a place cannot do
+   is absent, not grey.
+10. **The desktop volume block was sliced by the capsule, twice.** At 900 px the Mac window cut the
+    *Stue* row in half and the browser pane cut the single *Volume* row. Both frames are rendered
+    taller and the report says so rather than the picture hiding it — open question 1.
+
+Plus two that the kicker made obvious as soon as the frame existed: **MARRA QUAY** was drawn above
+the title *and* **Marra Quay** under it (no kicker on a song or a book now), and the version chips
+drew as two unstyled words in the states set the moment I stopped loading `ravilo-music.css` there
+— `.rv-v` lives in that file, and two of the seven states are a song.
+
+## Facts about the shipped system this revision ran into
+
+- **`ravilo-music.css` is loaded by the `music` and `states` sets and nowhere else.** The music set
+  needs `bnav` and `mu-mini`; the states set needs `.rv-vb` / `.rv-v`. The file re-skins noir and
+  midnight, and neither set is ever rendered in either skin, so the re-skin cannot reach a picture.
+  The film set still must not load it.
+- **The idle page says *Playing from Harbour Lights* while nothing is playing.**
+  `MusicPlayingScreen` falls back to `music.now_playing` only when there is no context at all, so
+  the shipped page would say this too. The code wins and the frame draws it; it still reads wrong.
+  Open question 3 — a string change, not a design one.
+- **The shipped music mini bar still clips a two-room place at 412** (rev 2's finding 7):
+  `a-minibar-music-mode` reads *Stue + Gæstevær…*. Carried forward unchanged.
+- **The lyrics on the phone are three tones, not two.** `LyricsView`: the sung line lit
+  (accentSecondary; `text` in noir), what has been sung `textDim`, what is coming `textSecondary`.
+  The brief says "the sung line in ink", which is the **desktop**'s rule (`large`). Both are drawn
+  as the code has them.
+- **`volume.no_report` writes a straight apostrophe** — *{place} doesn't report its volume*. Round
+  1 drafted a curly one. Shipped wins.
+
+## Corrected to the shipped strings, in every frame
+
+`player.audio_subs` (*Audio & Subs*), `cast.play_here` (*Play on this phone*), `volume.no_report`
+(da *{place} oplyser ikke lydstyrken*, fo *{place} sigur ikki ljóðstyrkina*), `music.lyrics`
+(fo **Tekstur**, not round 1's *Lagtekstur*) and `mode.label` (fo **Hendan telefonin**, not round
+1's *Hesin telefonin*). Each was a round-1 draft sitting beside a shipped key; the shipped
+`i18n/*.json` wins and a disagreement was a defect, not a design.
+
+## Dropped, and said so
+
+Nothing in the brief's inputs needed dropping — no `STATUS.md`, nothing under `specs/`, `scripts/`
+or `.github/`, no `CLAUDE.md`, no `*.gradle.kts`, no `i18n/*.json`. Shipped strings were **read**
+from `i18n/*.json` and quoted into the round's own data file; no i18n file is touched. The round
+writes under `design/incoming/2026-10-23-one-remote/` and nowhere else.
+
+## Open for you
+
+1. **The volume block does not fit the desktop Playing page at a real window height.** With three
+   rooms the Mac window needs about 1040 px and the browser about 960; at 900 the room rows go
+   under the capsule. Either the page scrolls there — which a window may legitimately do — or on
+   the desktop volume stays in the capsule's popover, where it already ships. **Not mine to
+   settle.**
+2. **Three sliders inline cost the cover**, §2. Worth the owner's eye beside `a-music-here` and
+   `a-music-full`, which are the same screen with fewer rows and with no bottom bar.
+3. **The idle page's *Playing from*** — above.
+4. **`BOOK_SPEEDS` has no 1.25** — §5.
+5. **Decision 5 and decision 6 are the owner's**, not mine: the brief's leans are drawn and the
+   alternatives are named (decision 6's is not drawn, and would be a frame if he wants it).
+6. Revision 2's open items 2 (Stop on the Mac — still in the capsule, and `mac-film` still has one
+   in the footer) and 3 (`player.audio_subs`, now settled, §6) stand as they were. Item 1, the
+   hardware-key pill, is untouched: `a-cast-film-no-slider` is unchanged.
+
+## Canvas and render notes for this revision
+
+- Linked, never copied: `ravilo-phone.css` everywhere, `ravilo-music.css` for the music and states
+  sets only, `ravilo-desktop.css` for the mac and web sets, `flags.css` throughout. Rendered with
+  `scripts/render-design.sh`, `--all .or-frame` per set and `--element` for the language and skin
+  frames, with `--network none`.
+- `.or-mframe.tall` is 1040 px and `.or-wframe.tall` is 960 — both named in the CSS with the
+  measurement that forced them. No other frame is off its set's usual size.
+- One block in `frames.html` reads the DOM back after layout, and only one: the lyrics column's
+  scroll offset, because a 24 sp line's wrapped height is not knowable before the browser lays it
+  out. Everything else in every picture still comes out of `or-data.js`.
+- The static spinner, the static ▮▮▮ mark and the flat capsule are unchanged from round 1.
+- No `content-visibility`, no `backdrop-filter`, no large blur, no infinite animation, no network
+  reference, no SVG paint server, no `toLocaleDateString`.
+- Every new and changed PNG was opened one at a time. The book's transport, the revert line, the
+  da and fo footers, the swipe and the lyrics column were read at 1.6–4×; eight of the ten defects
+  above were found that way and two by probing the page.
 
 ---
 
