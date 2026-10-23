@@ -95,7 +95,12 @@ closes and the toast reads *Created {name}* (or FR-4's toast when songs went in)
 stops being dim and loses its *Coming later* tag. Tapping it opens **the picker**:
 - *New playlist* first, then every playlist with `mine = true`, by name (D6), each drawn as the Playlists chip draws
   one (collage · name · *N songs*);
-- with no playlist of the viewer's own, only *New playlist*.
+- with no playlist of the viewer's own, only *New playlist*, then the line *Playlists you make show up here.*
+  (`music.pl_none`).
+
+*New playlist* is the first row, an action with a + tile in place of the collage (round, direction N1). On the phone the
+picker is a sheet; on the desktop it is a **popover anchored to the ⋯ that opened it**, opening upward when that ⋯ sits
+low in the window, and closing on a click outside it (round, direction 2). A long list scrolls inside either.
 
 Picking a playlist calls `POST /tv/music/playlist/{id}/items` with `MusicPlaylistAdd(item_ids)` and closes the picker.
 The answer is `MusicPlaylistAdded(added, already)`. The toast reads *Added to {name}*, or *Already in {name}* when
@@ -116,7 +121,9 @@ the order *Play* plays them** (`MusicAlbumDetail.tracks`).
 - An album with no songs shows no ⋯.
 
 **FR-7 — *Save queue as playlist*.** The queue's *Up next* heading (`MusicQueueScreen`, `MusicPlayerScreens.kt`, the
-phone tab and the desktop's queue panel) gains *Save as playlist* beside *Clear queue*.
+phone tab and the desktop's queue panel) gains *Save as playlist* beside *Clear queue*. The two sit together **on a
+line of their own inside the heading block**, under *Up next* and its count. On the heading line itself, *Up next*
+wrapped at 360 dp and the Faroese pushed *Clear queue* off the edge (round, Q5).
 - It is shown whenever there is a song playing.
 - It opens FR-3's name sheet and creates a playlist from **the playing song, then *Up next*, in the order shown**, with
   FR-5's rule.
@@ -127,7 +134,7 @@ phone tab and the desktop's queue panel) gains *Save as playlist* beside *Clear 
 (`MusicPlaylistScreen`, `MusicDetailScreens.kt`, phone and desktop) gains a ⋯ beside *Play* and *Shuffle*. It holds
 *Edit*, *Rename* and *Delete playlist*. A shared playlist (`mine = false`) has no ⋯ and stays exactly as today. An empty
 playlist of the viewer's own shows the ⋯ with *Rename* and *Delete playlist* only, and its page reads *No songs yet*
-with the hint *Add songs from their ⋯ menu*.
+with the hint *Add songs from their ⋯ menu*. There, *Play* and *Shuffle* are shown **disabled** (round, Q2).
 
 **FR-9 — Remove a song.** Inside a playlist of the viewer's own, a song's ⋯ sheet gains *Remove from playlist*, right
 after *Add to playlist…*. It calls `DELETE /tv/music/playlist/{id}/items/{entry_id}`, which in turn calls Jellyfin's
@@ -150,7 +157,8 @@ index in the list as shown. That route calls Jellyfin's `POST /Playlists/{id}/It
 the new `MusicList`. The page shows the moved row where it was dropped. When the answer arrives it shows that answer;
 on a failure it puts the row back and toasts FR-13's line.
 
-On the desktop the grip takes a mouse drag. Web and desktop draw the same grip as the queue panel.
+On the desktop the grip takes a mouse drag. Web and desktop draw the same grip as the queue panel. With no swipe for a
+mouse, a row in edit mode shows a **×** at its end on hover, which removes it as the swipe does (round, direction E1).
 
 **FR-11 — Rename.** *Rename* opens FR-3's name sheet with the name filled in and *Save* in place of *Create*. It calls
 `PUT /tv/music/playlist/{id}` with `MusicPlaylistRename(name)`, which calls Jellyfin's `POST /Playlists/{id}` with
@@ -219,6 +227,7 @@ en · da · fo drafts:
 | `music.pl_failed` | Couldn't change the playlist | Kunne ikke ændre playlisten | Tað eydnaðist ikki at broyta spælilistan |
 | `music.pl_empty` | No songs yet | Ingen sange endnu | Eingi løg enn |
 | `music.pl_empty_hint` | Add songs from their ⋯ menu | Føj sange til fra deres ⋯-menu | Legg løg afturat úr ⋯-valmyndini hjá teimum |
+| `music.pl_none` | Playlists you make show up here. | Playlister, du laver, vises her. | Spælilistar, tú stovnar, síggjast her. |
 
 `action.cancel` and `action.save` are reused. The lexicon is regenerated, and the spelling fences
 (`scripts/check-*`) run green.
@@ -227,6 +236,12 @@ en · da · fo drafts:
 the confirm sheet, the album's ⋯ and *Save as playlist* are drawn in one round on the phone and the desktop. The build
 reimplements what the round adopts. Until it is adopted the client slices wait (*Build order*). The rules above stand
 whatever the pictures show; a picture that contradicts one comes back here as a question.
+
+The round is `design/incoming/2026-10-23-music-playlists/` (DEB-2278, `28faff79`): 81 frames, phone and desktop, in all
+three music skins, English with Danish and Faroese where they overrun. Its picks are written into FR-4, FR-7, FR-8 and
+FR-10 above. Its `--pl-bad` token, the destructive red, is the colour of FR-12's *Delete* and the edit-mode ×. Slice 2
+waits on the owner's answer about the album ⋯ on an album with editions (FR-6), where the ⋯ beside R373's two split
+buttons leaves no room on the phone.
 
 ## Acceptance
 
