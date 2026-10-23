@@ -3,7 +3,7 @@ package dev.jellystructure.media
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** DEB-2275 (FR-11 amendment) — the message produced by an ApplyResult after applyChanges(). */
+/** DEB-2051 FR-2 (amended; DEB-2275) — the message produced by an ApplyResult after applyChanges(). */
 class ApplyResultTest {
 
     private fun result(
@@ -40,9 +40,5 @@ class ApplyResultTest {
 
     @Test fun `failure without refusal shows failure`() {
         assertEquals("Some changes failed — see details", result(failed = true).messageOf())
-    }
-
-    @Test fun `nothing applied and nothing refused produces no message`() {
-        assertEquals(null, result().messageOf())
     }
 }

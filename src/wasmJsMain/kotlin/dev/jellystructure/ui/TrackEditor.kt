@@ -3,6 +3,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.media.ApplyResult
 import dev.jellystructure.media.TrackCommandBuilder
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
@@ -651,7 +652,7 @@ fun wireUnifiedTrackEditor(
                               else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, trk.sp, trk.lang!!)
                     if (res.refusal != null) { newlyRefused[trk.sp] = trk.lang!!; trk.lang = orig.lang; refused = true }
                     else if (res.error != null) failed = true
-                    else if (res.language != null) { trk.lang = res.language; othersApplied = true }
+                    else { res.language?.let { trk.lang = it }; othersApplied = true }
                 }
             }
             refusedHere.putAll(newlyRefused)
@@ -708,16 +709,18 @@ fun wireUnifiedTrackEditor(
             renderList()
             renderPending()
             if (isMovieEditor && newlyRefused.isNotEmpty()) ContainerConversionUi.refused(newlyRefused)
-            val result = ApplyResult(failed, refused, othersApplied, reorderQueued)
-            val finalMsg = result.messageOf()
-            // Bug fix: #detail-msg lives at the top of the page, well above the fold on the Tracks tab —
-            // a "nothing happened" report turned out to be this message firing invisibly off-screen.
-            // Show it right next to the button the user is actually looking at too.
-            showDetailMsg(finalMsg, !failed)
-            (document.getElementById("$prefix-apply-msg") as? HTMLElement)?.let { msgEl ->
-                msgEl.textContent = finalMsg ?: ""
-                msgEl.style.color = if (failed) "var(--bad)" else "var(--ok)"
-                kotlinx.browser.window.setTimeout({ msgEl.textContent = ""; null }, 5000)
+            // DEB-2051 FR-2 (amended 2026-10-23) — a refusal alone says nothing; null = show no message at all.
+            val finalMsg = ApplyResult(failed, refused, othersApplied, reorderQueued).messageOf()
+            if (finalMsg != null) {
+                // Bug fix: #detail-msg lives at the top of the page, well above the fold on the Tracks tab —
+                // a "nothing happened" report turned out to be this message firing invisibly off-screen.
+                // Show it right next to the button the user is actually looking at too.
+                showDetailMsg(finalMsg, !failed)
+                (document.getElementById("$prefix-apply-msg") as? HTMLElement)?.let { msgEl ->
+                    msgEl.textContent = finalMsg
+                    msgEl.style.color = if (failed) "var(--bad)" else "var(--ok)"
+                    kotlinx.browser.window.setTimeout({ msgEl.textContent = ""; null }, 5000)
+                }
             }
 
             applyBtn.removeAttribute("disabled")
