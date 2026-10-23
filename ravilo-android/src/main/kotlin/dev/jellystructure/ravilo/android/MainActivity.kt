@@ -5,6 +5,11 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -38,7 +43,12 @@ class MainActivity : FragmentActivity() {
         }
 
         setContent {
-            RaviloRoot()
+            // R213 — test tags become UiAutomator resource ids, so the baseline-profile journey (a separate
+            // instrumentation APK) can find the setup, sign-in and Home screens without depending on the language.
+            @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+            Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                RaviloRoot()
+            }
         }
         // R266 — launched by Cast Connect: the SDK reads its LAUNCH/LOAD intent and calls the load callback.
         CastConnectReceiver.handleIntent(intent)

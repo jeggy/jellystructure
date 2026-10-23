@@ -99,6 +99,8 @@
   "up.available": "Already available",
   "up.missing": "Missing",
   "up.was_due": "Was due {date}",
+  "up.episodes_count": {"text": "{n} episodes", "note": "DEB-2078 FR-8 — the count badge on a Coming Soon stack; n is always 2 or more, so this is the only plural form."},
+  "up.available_of": {"text": "{k} of {n} available", "note": "DEB-2078 FR-8 — a stack with some, not all, of its episodes already in the library; k of n."},
   "up.missing_jump": "Missing ({count})",
   "up.missing_title": "Missing from your library",
   "up.missing_sub": "Released but never arrived",

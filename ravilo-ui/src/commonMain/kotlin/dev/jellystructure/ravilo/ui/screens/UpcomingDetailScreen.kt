@@ -73,6 +73,8 @@ sealed class UpcomingDetailState {
         val genres: List<String> = emptyList(),
         val runtime: Int? = null,
         val cast: List<Person> = emptyList(),
+        /** DEB-2078 FR-6 — every episode of the stack this item sits on, in feed order; just [item] when it sits on none. */
+        val members: List<UpcomingItem> = listOf(item),
     ) : UpcomingDetailState()
     data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : UpcomingDetailState()
 }
@@ -96,15 +98,19 @@ class UpcomingDetailStore(private val apiClient: TvApiClient, private val id: St
         scope.launch {
             val enriched = runCatching { apiClient.getUpcomingItem(id) }.getOrNull()
             if (enriched != null) {
-                _state.value = UpcomingDetailState.Loaded(enriched.item, enriched.genres, enriched.runtime, enriched.cast)
+                // FR-6 — the stack's siblings come from the same feed the list was drawn from; a feed that will not
+                // load leaves the single-item page, never a blank one.
+                val members = runCatching { stackMembersOf(apiClient.getUpcoming(), enriched.item) }.getOrDefault(listOf(enriched.item))
+                _state.value = UpcomingDetailState.Loaded(enriched.item, enriched.genres, enriched.runtime, enriched.cast, members)
                 return@launch
             }
             _state.value = runCatching {
                 val feed = apiClient.getUpcoming()
                 (feed.items + feed.missing).firstOrNull { it.id == id }
+                    ?.let { it to stackMembersOf(feed, it) }
                     ?: error("Not found")
             }.fold(
-                onSuccess = { UpcomingDetailState.Loaded(it) },
+                onSuccess = { (item, members) -> UpcomingDetailState.Loaded(item, members = members) },
                 // R280 — a title that is not in the feed is GONE, not an unclassifiable fault; the
                 // `error("Not found")` below is thrown by us, so it carries no status to classify.
                 onFailure = {
@@ -138,13 +144,13 @@ fun UpcomingDetailScreen(store: UpcomingDetailStore, onBack: () -> Unit = {}) {
                 CircularProgressIndicator(color = colors.textSecondary)
             }
             is UpcomingDetailState.Error -> LoadErrorState(s.kind, onRetry = { store.retry() }, onBack = onBack)
-            is UpcomingDetailState.Loaded -> UpcomingDetailContent(s.item, s.genres, s.runtime, s.cast)
+            is UpcomingDetailState.Loaded -> UpcomingDetailContent(s.item, s.genres, s.runtime, s.cast, s.members)
         }
     }
 }
 
 @Composable
-private fun UpcomingDetailContent(item: UpcomingItem, genres: List<String>, runtime: Int?, cast: List<Person>) {
+private fun UpcomingDetailContent(item: UpcomingItem, genres: List<String>, runtime: Int?, cast: List<Person>, members: List<UpcomingItem>) {
     val colors = RaviloTheme.colors
     val scrim = remember(colors.background) {
         Brush.verticalGradient(0f to Color.Transparent, 0.55f to colors.background.copy(alpha = 0.85f), 1f to colors.background)
@@ -208,7 +214,7 @@ private fun UpcomingDetailContent(item: UpcomingItem, genres: List<String>, runt
                 Spacer(Modifier.height(18.dp))
             }
 
-            ScheduleGrid(item)
+            ScheduleGrid(item, members)
             Spacer(Modifier.height(18.dp))
             Text(
                 if (item.status == UpcomingStatus.MISSING) str("up.foot_missing") else str("up.foot_upcoming"),
@@ -254,7 +260,7 @@ private fun UpcomingCastRow(cast: List<Person>) {
 }
 
 @Composable
-private fun ScheduleGrid(item: UpcomingItem) {
+private fun ScheduleGrid(item: UpcomingItem, members: List<UpcomingItem>) {
     val colors = RaviloTheme.colors
     val isSeries = item.kind == MediaKind.SERIES
     val rows = listOfNotNull(
@@ -277,7 +283,25 @@ private fun ScheduleGrid(item: UpcomingItem) {
                 Text(value, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
+        // DEB-2078 FR-6 — a stack lists every one of its episodes under the single-item rows.
+        if (members.size >= 2) {
+            Spacer(Modifier.height(2.dp))
+            members.forEach { m ->
+                Text(stackMemberLine(m), color = colors.text, fontSize = 13.sp)
+            }
+        }
     }
+}
+
+/** FR-6 — `S01E01 · {weekday, day month} · {time}`; a part the member lacks is left out. */
+@Composable
+private fun stackMemberLine(m: UpcomingItem): String {
+    val date = runCatching { LocalDate.parse(m.date) }.getOrNull()
+    val day = date?.let {
+        str("date.weekday_day_month", mapOf("weekday" to weekdayAbbrev(it.dayOfWeek), "day" to it.day.toString(), "month" to monthAbbrev(it.month)))
+    } ?: m.date
+    val code = if (m.season != null && m.episode != null) dev.jellystructure.shared.tv.episodeCode(m.season!!, m.episode!!) else null
+    return listOfNotNull(code, day, m.time).joinToString(" · ")
 }
 
 @Composable

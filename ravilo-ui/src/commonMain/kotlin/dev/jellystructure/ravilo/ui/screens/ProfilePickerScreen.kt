@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -95,6 +96,11 @@ class ProfilePickerStore {
 
 // ─── ProfilePickerScreen ──────────────────────────────────────────────────────
 
+/** R213 (FR-RV-R213-1) — the picker's tag, so the baseline-profile journey can tell it from Home and take the first profile. */
+object ProfilePickerTags {
+    const val PICKING = "profile-picker"
+}
+
 @Composable
 fun ProfilePickerScreen(
     store: ProfilePickerStore,
@@ -113,7 +119,7 @@ fun ProfilePickerScreen(
                 // Settings is only offered once a user is active (it needs the active token);
                 // at a cold-start gate with no active session it is hidden.
                 val showSettings = remember(s.sessions) { MultiTokenStore.getActive() != null }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.testTag(ProfilePickerTags.PICKING)) {
                     Text(str("profile.who"), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     if (signedOutNotice) {
                         Spacer(Modifier.height(12.dp))

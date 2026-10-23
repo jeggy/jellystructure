@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -98,6 +99,12 @@ import dev.jellystructure.ravilo.ui.focus.resolveReturn
 import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.runtime.withFrameNanos
+
+/** R213 (FR-RV-R213-1) — Home's own tag: drawn only once the feed has loaded, so the baseline-profile journey can
+ *  assert it reached Home before it records anything (the TV activity exposes tags as resource ids). */
+object HomeTags {
+    const val LOADED = "home-loaded"
+}
 
 @Composable
 fun HomeScreen(
@@ -319,7 +326,7 @@ private fun HomeLoaded(
     // R55: Back scrolls a scrolled feed to the top (refocusing the hero / app bar so bring-into-view
     // doesn't yank it back) before falling through to RaviloApp's pop/exit — harder to close by accident.
     Box(
-        modifier = Modifier.fillMaxSize().backToTopOnBack(
+        modifier = Modifier.fillMaxSize().testTag(HomeTags.LOADED).backToTopOnBack(
             atTop = { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 },
             onBackToTop = {
                 // Scroll to the top first, THEN focus the hero — when scrolled down the hero (item 0) is

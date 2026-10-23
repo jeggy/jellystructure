@@ -54,6 +54,10 @@ data class UpcomingItem(
      *  present, else this, else the gradient placeholder. */
     @SerialName("poster_remote_url") val posterRemoteUrl: String? = null,
     @SerialName("backdrop_remote_url") val backdropRemoteUrl: String? = null,
+    /** DEB-2078 FR-1 — which series an episode belongs to: opaque, equal for every episode of one series
+     *  (held or not), null on films. The client compares it for equality and never parses it; an app that
+     *  predates it ignores the field and keeps drawing one card per episode. */
+    @SerialName("series_key") val seriesKey: String? = null,
 )
 
 /**

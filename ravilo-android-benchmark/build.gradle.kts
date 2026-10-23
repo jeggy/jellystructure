@@ -1,6 +1,6 @@
-// R213 — a com.android.test module: instrumentation-only, no APK of its own. Runs against a real
-// device/emulator (never a household TV, per the phase spec) and drives ravilo-android through a
-// cold-start/scroll/detail-nav journey to generate a real Baseline Profile, replacing the hand-
+// R213 — a com.android.test module: instrumentation-only, no APK of its own. Runs against a claimed
+// TV-type device (API 33+) or a TV emulator, as the .debug id, and drives ravilo-android's TV activity
+// through a signed-in Home/rows/detail journey to generate a real Baseline Profile, replacing the hand-
 // authored wildcard file. Not wired into CI (no device available there) — regeneration is a manual/
 // periodic task, see README.md.
 plugins {
