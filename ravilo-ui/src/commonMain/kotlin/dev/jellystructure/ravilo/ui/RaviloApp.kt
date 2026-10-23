@@ -2042,7 +2042,7 @@ fun RaviloApp(
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 signedOutNotice = false   // DEB-1933 — this is the 401 route, not the event's
                 configScope.launch {
@@ -2123,9 +2123,9 @@ fun RaviloApp(
             modifier = Modifier
                 .fillMaxSize()
                 // R337 — a computer's window is the page's colour edge to edge: the sidebar's glass and the toolbar sit on it.
-                .then(if (isDesktopPlatform) Modifier.background(RaviloTheme.colors.background)
-                    // R350 (FR-R350-17) — keys turn the ring on; a pointer that really moves or presses turns it off.
-                    .keyboardMode(deskKeyboard) else Modifier)
+                .then(if (isDesktopPlatform) Modifier.background(RaviloTheme.colors.background) else Modifier)
+                // R350 (FR-R350-17) — keys turn the ring on; a pointer that really moves or presses turns it off.
+                .then(if (isDesktopPlatform || isWebPlatform) Modifier.keyboardMode(deskKeyboard) else Modifier)
                 // R350 (FR-R350-11) — an arrow no focused element consumed moves focus, as the D-pad does on a TV.
                 .arrowKeysMoveFocus(isDesktopPlatform)
                 .onKeyEvent { ev ->

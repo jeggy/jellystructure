@@ -17,6 +17,10 @@ expect val isTvPlatform: Boolean
  *  keeps [isTvPlatform] `false`, and a desktop window under 600 dp is laid out as a phone (R337 FR-R337-2). */
 expect val isDesktopPlatform: Boolean
 
+/** DEB-2347 (FR-7) — whether this is the web target (wasmJs). Used to decide whether keyboard-driven
+ *  focus rings apply (wide web windows only). */
+expect val isWebPlatform: Boolean
+
 /** R337 (FR-R337-5) — the desktop's platform shape: macOS draws its own; every other desktop gets GNOME's. */
 expect val isMacPlatform: Boolean
 

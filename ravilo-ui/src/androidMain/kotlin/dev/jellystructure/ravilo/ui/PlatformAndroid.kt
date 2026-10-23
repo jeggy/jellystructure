@@ -10,4 +10,7 @@ actual val hasCastSdk: Boolean = true
 
 actual val isDesktopPlatform: Boolean = false
 
+/** DEB-2347 (FR-7) — Android is not web. */
+actual val isWebPlatform: Boolean = false
+
 actual val isMacPlatform: Boolean = false

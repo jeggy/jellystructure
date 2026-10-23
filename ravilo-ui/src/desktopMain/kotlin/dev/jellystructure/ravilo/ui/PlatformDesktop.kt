@@ -8,4 +8,7 @@ actual val isDesktopPlatform: Boolean = true
 /** R330 (dev review 9) — the Mac speaks Cast v2 itself (`:ravilo-castv2`), so R324's *needs the Android app* line is absent. */
 actual val hasCastSdk: Boolean = true
 
+/** DEB-2347 (FR-7) — the desktop target is not web. */
+actual val isWebPlatform: Boolean = false
+
 actual val isMacPlatform: Boolean = dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac
