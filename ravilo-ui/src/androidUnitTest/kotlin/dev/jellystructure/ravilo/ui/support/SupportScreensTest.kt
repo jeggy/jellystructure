@@ -9,7 +9,10 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.performTextInput
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.shared.tv.SupportMessageView
@@ -17,6 +20,7 @@ import dev.jellystructure.shared.tv.SupportSendResult
 import dev.jellystructure.shared.tv.SupportThread
 import dev.jellystructure.shared.tv.SupportTicketRow
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -114,6 +118,74 @@ class SupportScreensTest {
         val store = SupportThreadStore(gw, number)
         show { SupportThreadScreen(store, viewerName = "Eyð", isPhone = isPhone, onBack = {}, onFiled = onFiled, onGone = {}) }
         return store
+    }
+
+    // ── FR-4: the thread opens with its newest bubble whole, above the composer (DEB-2180) ───────────────────────────
+    // Robolectric has no glyph widths, so a tall bubble is built from newlines (the 10-16 amendment's note).
+
+    private val tall = (1..40).joinToString("\n") { "line $it of a very long message" }
+
+    private fun tallThread(vararg tail: SupportMessageView, composing: Boolean = false) = SupportThread(
+        row(41, null, null),
+        listOf(viewer(1, tall), receipt(2), viewer(3, tall), viewer(4, tall)) + tail,
+        aiComposing = composing,
+    )
+
+    private fun listBounds() = rule.onNodeWithTag(SupportTags.MESSAGES).fetchSemanticsNode().boundsInRoot
+
+    private fun assertNewestWhole(what: String) {
+        rule.waitForIdle()
+        val list = listBounds()
+        val last = rule.onAllNodesWithTag(SupportTags.BUBBLE).onLast().fetchSemanticsNode().boundsInRoot
+        assertTrue(last.top >= list.top && last.bottom <= list.bottom, "$what: newest bubble $last is not inside the list $list")
+    }
+
+    @Test fun `a thread with tall earlier bubbles opens with its newest bubble whole`() {
+        val gw = Fake().apply { thread = tallThread(viewer(5, "the newest one")) }
+        threadScreen(gw)
+        text("the newest one").assertExists()
+        assertNewestWhole("first open")
+    }
+
+    @Test fun `a thread seeded with its content opens with its newest bubble whole`() {
+        val gw = Fake().apply { thread = tallThread(viewer(5, "the newest one")) }
+        val store = SupportThreadStore(gw, 41, seed = gw.thread)
+        show { SupportThreadScreen(store, viewerName = "Eyð", isPhone = true, onBack = {}, onFiled = {}, onGone = {}) }
+        assertNewestWhole("seeded open")
+    }
+
+    @Test fun `a new message while the viewer is at the end leaves the whole new bubble in view`() {
+        val gw = Fake().apply { thread = tallThread(viewer(5, "the newest one")) }
+        val store = threadScreen(gw)
+        gw.thread = tallThread(viewer(5, "the newest one"), viewer(6, "an admin reply"), viewer(7, "and another one"))
+        runBlocking { store.refresh() }
+        text("and another one").assertExists()
+        assertNewestWhole("after a reply")
+    }
+
+    @Test fun `AI Agent composing flipping on and off keeps the end whole`() {
+        val gw = Fake().apply { thread = tallThread(viewer(5, "the newest one")) }
+        val store = threadScreen(gw)
+        gw.thread = tallThread(viewer(5, "the newest one"), composing = true)
+        runBlocking { store.refresh() }
+        rule.waitForIdle()
+        val list = listBounds()
+        val writing = rule.onNodeWithTag(SupportTags.AI_WRITING).fetchSemanticsNode().boundsInRoot
+        assertTrue(writing.top >= list.top && writing.bottom <= list.bottom, "the writing bubble $writing is not inside the list $list")
+        gw.thread = tallThread(viewer(5, "the newest one"), viewer(6, "the answer"))
+        runBlocking { store.refresh() }
+        assertNewestWhole("after the answer")
+    }
+
+    @Test fun `a viewer who scrolled up is not moved by a new message`() {
+        val gw = Fake().apply { thread = tallThread(viewer(5, "the newest one")) }
+        val store = threadScreen(gw)
+        rule.onNodeWithTag(SupportTags.MESSAGES).performTouchInput { swipeDown(); swipeDown() }
+        rule.waitForIdle()
+        gw.thread = tallThread(viewer(5, "the newest one"), viewer(6, "a reply while reading earlier"))
+        runBlocking { store.refresh() }
+        rule.waitForIdle()
+        assertEquals(0, rule.onAllNodesWithText("a reply while reading earlier").fetchSemanticsNodes().size, "the list followed the new message")
     }
 
     @Test fun `the thread draws the viewer's bubble on the right with the receipt line`() {

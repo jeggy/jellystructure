@@ -37,12 +37,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -51,6 +55,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
@@ -75,6 +80,7 @@ import kotlin.time.Clock
 /** Test tags for the support screens (FR-3 to FR-8): what the Playwright spec and the common UI tests read. */
 object SupportTags {
     const val LIST = "support-list"
+    const val MESSAGES = "support-messages"
     const val ROW = "support-row"
     const val EMPTY = "support-empty"
     const val SKELETON = "support-skeleton"
@@ -416,20 +422,39 @@ private fun FirstMessageBody(isPhone: Boolean) {
     }
 }
 
+/** More than any bubble is tall: `scrollToItem` clamps it to the list's real end. */
+private const val PAST_THE_END = 1_000_000
+
 @Composable
 private fun MessageList(thread: SupportThread, viewerName: String, lang: String) {
     val listState = rememberLazyListState()
     val entries = remember(thread, lang) { thread.messages.map { it to SupportModel.systemLine(it, thread.ticket, lang) }.filter { (m, sys) -> sys != null || m.kind == SupportWire.KIND_MESSAGE } }
-    val count = entries.size + if (thread.aiComposing) 1 else 0
-    // FR-4 — opens at its end, and a re-read keeps it there when it was already there.
-    var atEnd by remember { mutableStateOf(true) }
-    LaunchedEffect(count, thread.aiComposing) {
-        if (atEnd && count > 0) listState.scrollToItem(count - 1)
+    // FR-4 — opens at its end, and a re-read keeps it there when it was already there. Only the viewer's own scroll
+    // decides whether the thread follows its end: a layout that lands short (a tall bubble measured late, a new
+    // entry) is not the viewer leaving, so it must not flip this off.
+    var following by remember { mutableStateOf(true) }
+    val userScroll = remember(listState) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) following = !listState.canScrollForward
+                return Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                following = !listState.canScrollForward
+                return Velocity.Zero
+            }
+        }
     }
-    LaunchedEffect(listState.canScrollForward) { atEnd = !listState.canScrollForward }
+    // Whenever the list sits short of its end while following (first layout, a new entry, `aiComposing`, a bubble
+    // whose height changed after it was measured), scroll past the last item's top to the real end.
+    LaunchedEffect(listState) {
+        snapshotFlow { Triple(following, listState.canScrollForward, listState.layoutInfo.totalItemsCount) }
+            .filter { (follow, canScroll, total) -> follow && canScroll && total > 0 }
+            .collect { (_, _, total) -> listState.scrollToItem(total - 1, PAST_THE_END) }
+    }
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().nestedScroll(userScroll).testTag(SupportTags.MESSAGES),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
