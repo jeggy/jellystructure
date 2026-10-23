@@ -1,0 +1,508 @@
+/* tv-signin.css — the round's own rules, on top of the shipped stylesheets.
+
+   Round `2026-10-23-tv-signin`.
+
+   Loaded AFTER the shipped file the frame set needs — design/ravilo/ravilo.css for the TV,
+   design/ravilo/mobile/ravilo-phone.css for the phone and the web, plus
+   design/ravilo/desktop/ravilo-desktop.css for the Mac, and design/app/wf.css for the admin
+   frame — so every token, colour, radius and font in these pictures is the shipped one. What is
+   here is only (a) the three self-hosted faces so the render needs no network, (b) the frame
+   scaffolding the renderer screenshots, and (c) the `ts-` classes this round invents.
+
+   NOTHING HERE IS PRODUCTION CSS. design/ravilo/ is reference only — no Gradle task consumes it
+   — so these rules are a specification of intent for the Compose port, which is exactly why the
+   hex, px, weight, radius and easing are written out rather than left to the implementer.
+
+   CANVAS RULES HELD: no content-visibility, no backdrop-filter, no large blur, no infinite
+   animation. Three places where a SHIPPED rule breaks one and is overridden here, each named in
+   the report:
+     * `.signin-panel .cursor` in ravilo.css blinks forever  -> the password frame draws no cursor.
+     * `.profiles.switch` in ravilo.css is backdrop-filter    -> only the plain `.profiles` is drawn.
+     * `--blur` on every admin card in wf.css                  -> the admin frame sets `--blur: none`.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. The shipped mockups fetch Google
+   Fonts; the render runs with --network none, so these blocks come last in the cascade and the
+   picture is the same with or without a network. No file is copied: the url points at the repo's
+   own woff2. ---- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ================================================================================================= */
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+.ts-frames { padding: 0; margin: 0; }
+.ts-frames * { box-sizing: border-box; }
+.ts-frames svg { display: block; }
+
+/* `ts-frame` is the renderer's handle and carries NO style of its own, so a phone nested inside a
+   comparison frame is never mistaken for a frame in its own right. */
+.ts-frame { position: relative; }
+
+/* The TV: the shipped 1920x1080 stage, not scaled — measured at 1920, as SKILL-house.md requires. */
+.ts-tvframe { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: 'Sora', sans-serif; position: relative; }
+/* The phone: Pixel 9, 412x915 portrait, the shipped size. The bezel is left off — the renderer
+   crops to the screen and the bezel is not the design. */
+.ts-ph { width: 412px; height: 915px; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: 'Sora', sans-serif; position: relative; }
+.ts-ph.ios { width: 393px; height: 852px; }
+/* A browser at a desk and at a phone width. 390 is Ravilo Web on the phone, which is surface 2(c). */
+.ts-wframe { width: 1440px; height: 900px; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: 'Sora', sans-serif; position: relative; }
+.ts-wframe.narrow { width: 390px; height: 844px; }
+/* The Mac window. */
+.ts-macframe { width: 1440px; height: 900px; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: 'Sora', sans-serif; position: relative; }
+
+/* A side-by-side comparison frame, on the light canvas backdrop with a hairline between. */
+/* `width: max-content` is load-bearing, exactly as it is on `.ts-strip`: without it the flex
+   container takes the 412 px viewport the phone set renders at and the SECOND cell is simply
+   not in the picture. The first render of `ph-signin-weight-pair` is one phone where two were
+   the whole point of the frame. */
+.ts-pair { display: flex; background: #e9eaee; align-items: flex-start; width: max-content; }
+.ts-pair > .rule { width: 40px; flex: none; align-self: stretch; position: relative; }
+.ts-pair > .rule::after { content: ''; position: absolute; left: 50%; top: 30px; bottom: 30px;
+  width: 1px; background: #c3c6d0; }
+/* A strip of phones, rendered as one PNG so the set is compared, each also rendered alone.
+   NOT `.ts-cap` — a caption sharing a name with an absolutely positioned block is how round 9
+   lost two frames. */
+.ts-strip { display: flex; gap: 22px; background: #e9eaee; width: max-content; align-items: flex-start; }
+.ts-strip .ts-cell, .ts-pair .ts-cell { width: 412px; flex: none; }
+.ts-strip .ts-scap, .ts-pair .ts-scap { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: .07em; text-transform: uppercase; color: #262a35; padding: 0 0 10px; }
+
+/* Captions sit on the LIGHT canvas backdrop, so they are DARK INK — never light grays. */
+.ts-note { font-family: 'Sora', sans-serif; font-size: 13px; line-height: 1.5; color: #12141b;
+  max-width: 560px; padding: 12px 0 0; }
+.ts-note b { color: #12141b; }
+.ts-note i { color: #262a35; font-style: normal; }
+
+/* =================================================================================================
+   SURFACE 1 — THE TV
+   ================================================================================================= */
+.ts-tv { position: absolute; inset: 0; display: flex; flex-direction: column;
+  /* The shipped 64 px gutter the appbar and every rail use, PLUS 56 px at the foot. The first
+     render put the focused button's ring 54 px from the bottom edge, and vertical overscan on a
+     set that still does it is 3-5 % of 1080 — 32 to 54 px. A focus ring the TV crops is a D-pad
+     user who cannot see what is selected (R205, R250). */
+  padding: 0 64px 56px;
+}
+/* The aurora wash the shipped body carries, drawn as a flat radial so no filter is involved. */
+.ts-tvframe::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(52% 44% at 18% 8%, rgba(123, 110, 240, .20), transparent 68%),
+    radial-gradient(46% 42% at 88% 96%, rgba(63, 182, 245, .14), transparent 70%); }
+[data-skin="noir"] .ts-tvframe::before {
+  background:
+    radial-gradient(52% 44% at 18% 8%, rgba(245, 181, 66, .16), transparent 68%),
+    radial-gradient(46% 42% at 88% 96%, rgba(224, 121, 47, .12), transparent 70%); }
+[data-skin="midnight"] .ts-tvframe::before {
+  background:
+    radial-gradient(52% 44% at 18% 8%, rgba(25, 214, 198, .18), transparent 68%),
+    radial-gradient(46% 42% at 88% 96%, rgba(42, 140, 240, .14), transparent 70%); }
+
+.ts-tvhead { height: 92px; flex: none; display: flex; align-items: center; }
+.ts-wm { display: inline-flex; align-items: center; gap: 14px; }
+.ts-wm b { font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(var(--wmpx) * .72); letter-spacing: -.02em; color: var(--ink); }
+.ts-wm .ts-mark { width: var(--wmpx); height: var(--wmpx); }
+
+/* The two-column body: the QR left, the words right. 444 + 72 + the rest. */
+.ts-tvbody { flex: 1; min-height: 0; display: flex; align-items: center; gap: 72px; }
+.ts-tvleft { flex: none; }
+.ts-tvright { flex: 1; min-width: 0; max-width: 1060px; }
+/* State (c), no QR. The first render left the whole screen's content jammed against the left
+   gutter with two thirds of 1920 empty, which is precisely what the brief said must not happen:
+   "the layout must still look intentional with the QR gone". Direction A's premise is two
+   columns, and with no QR there is no second column — so A's no-QR state is a CENTRED single
+   column, and the footer centres with it. That is direction B's arrangement, and the report says
+   so plainly: it is a point in B's favour, not something to hide in the CSS. The code grows,
+   because it is now the only thing on the screen to read from the sofa. */
+.ts-tvbody.one { justify-content: center; }
+.ts-tvbody.one .ts-tvright { flex: 0 1 auto; max-width: 1240px; }
+.ts-tv.noqr .ts-tvfoot { justify-content: center; }
+/* The code's size is set inline from ts-data.js, which beats a class rule — so the no-QR state's
+   larger code is chosen in ts-kit.js, where the number lives, and not here. */
+
+.ts-tvtitle { font-family: 'Space Grotesk', sans-serif; font-size: 58px; font-weight: 600;
+  letter-spacing: -1.2px; line-height: 1.04; margin: 0 0 30px; color: var(--ink); }
+
+/* The QR tile: a LIGHT tile with dark modules, which is what a camera wants and what every TV
+   code screen does. The quiet zone is inside the SVG (4 modules), so this padding is margin on
+   top of the standard's and not a substitute for it. */
+/* `flex: none` IS LOAD-BEARING. In direction B the tile is an item in a flex COLUMN, and the
+   default `flex-shrink: 1` squashed it to 444x310 — a non-square QR, which does not scan. The
+   first render of `tv-b-first-run` shows it; no fence can see it and the markup looks right. */
+.ts-qrtile { width: var(--qr); height: var(--qr); flex: none; border-radius: 20px; background: #fff;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, .55); }
+.ts-qrtile svg { width: 100%; height: 100%; }
+
+/* The code. 112 px glyphs, tabular, tracked, grouped 3 + 3 by the one builder in ts-data.js.
+   The prior art is "Play on a TV - Directions.html" §"The code, and why it looks like this":
+   96 px in 1920 space, tabular figures, no ambiguous characters in the alphabet. */
+.ts-code { margin: 0 0 26px; }
+.ts-code .lbl { font-size: 22px; font-weight: 500; color: var(--ink-soft);
+  letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px; }
+.ts-code .val { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;
+  font-size: var(--codepx); font-weight: 700; line-height: 1; letter-spacing: 14px;
+  color: var(--ink); text-shadow: 0 2px 24px rgba(0, 0, 0, .5); }
+
+.ts-how { font-size: 30px; line-height: 1.45; color: var(--ink-soft); margin: 0 0 22px;
+  max-width: 940px;                   /* the Faroese sets this: see the report's measurement */
+  text-wrap: pretty; }
+
+.ts-goto { display: flex; align-items: baseline; gap: 12px; margin: 0 0 26px; font-size: 24px;
+  color: var(--ink-dim); }
+.ts-goto b { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 600;
+  color: var(--ink-soft); letter-spacing: .01em; }
+
+.ts-tvname { display: inline-flex; align-items: center; gap: 14px; padding: 12px 22px;
+  border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+.ts-tvname .k { font-size: 18px; color: var(--ink-dim); letter-spacing: .05em;
+  text-transform: uppercase; }
+.ts-tvname b { font-size: 26px; font-weight: 600; color: var(--ink); }
+
+/* State (b), approving. It REPLACES the instruction: that sentence tells the viewer to do a
+   thing somebody has now already done. Three dots, drawn at three static opacities — an
+   infinite animation would break the render and a still of one is a lie about the frame. */
+.ts-approving { display: flex; align-items: center; gap: 18px; margin: 0 0 22px;
+  font-size: 30px; line-height: 1.4; color: var(--ink); }
+.ts-dots { display: inline-flex; gap: 8px; flex: none; }
+.ts-dots i { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); }
+.ts-dots i:nth-child(2) { opacity: .6; } .ts-dots i:nth-child(3) { opacity: .28; }
+
+.ts-tvfoot { flex: none; height: 168px; display: flex; align-items: center; gap: 28px; }
+.ts-tvfoot.inline { height: auto; justify-content: center; padding-top: 34px; }
+.ts-backhint { font-size: 20px; color: var(--ink-dim); }
+
+/* Direction B: one centred column. The same blocks and the same strings — but NOT the same
+   sizes, because they do not fit stacked (see `qrSideB` in ts-data.js). Everything here that
+   differs from A is a size B had to give up, and each one is a line in the report. */
+.ts-tv.b { align-items: center; }
+.ts-tv.b .ts-tvhead { align-self: flex-start; }
+.ts-tvstack { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 0; text-align: center; }
+.ts-tv.b .ts-tvtitle { font-size: 50px; margin-bottom: 20px; }
+.ts-tv.b .ts-qrtile { margin-bottom: 20px; }
+.ts-tv.b .ts-code { margin-bottom: 20px; }
+.ts-tv.b .ts-code .lbl { font-size: 20px; margin-bottom: 6px; }
+.ts-tv.b .ts-how { font-size: 26px; max-width: 1120px; margin-bottom: 18px; }
+.ts-tv.b .ts-goto { font-size: 22px; margin-bottom: 22px; justify-content: center; }
+.ts-tv.b .ts-goto b { font-size: 24px; }
+.ts-tv.b .ts-tvfoot { justify-content: center; }
+
+/* Context frames: the password panel, the error and the profile picker. `plain` drops the
+   two-column body so the shipped blocks sit on the stage by themselves. */
+.ts-tv.plain { align-items: center; justify-content: center; padding: 0; }
+.ts-tverr { text-align: center; max-width: 1100px; }
+.ts-tverr h2 { font-family: 'Space Grotesk', sans-serif; font-size: 48px; font-weight: 600;
+  letter-spacing: -1px; margin: 26px 0 0; color: var(--ink); }
+.ts-ic.big { width: 72px; height: 72px; margin: 0 auto; }
+.ts-tverr .ts-ic.big { color: #f5667a; stroke-width: 1.5; }
+
+/* =================================================================================================
+   SURFACES 2 and 3 — THE PHONE
+   ================================================================================================= */
+.ts-sb { height: 44px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; font-size: 13px; font-weight: 600; color: var(--ink); flex: none; }
+.ts-sb .ic { letter-spacing: 2px; color: var(--ink-soft); font-size: 10px; }
+
+/* EVERY `.pft-*`, `.acct-*`, `.pf-*` AND `.fld` CLASS BELOW IS SHIPPED in ravilo-phone.css, which
+   has no wrapper selector — the file's indentation is a convention, not a scope, so all of it
+   applies to these frames. The first draft of this stylesheet restated those rules and, loading
+   later, QUIETLY WON: the avatar came out a 22 px rounded square where the shipped one is a
+   circle, the field labels came out uppercase where the shipped phone form is sentence case, and
+   the primary button's ink came out dark where the shipped one is white. Three deviations from
+   the live product, introduced by a round that is supposed to extend it. They are deleted.
+   What is left here is only what the round ADDS. */
+.ts-acct { padding: 0 18px; }
+.ts-acct .acct-sec { margin-top: 26px; }
+/* The round's icons are drawn to the shipped `.pft-row .ic` metrics rather than to new ones. */
+.ts-ic { width: 22px; height: 22px; flex: none; color: var(--ink-soft); }
+.ts-ic.chev { width: 18px; height: 18px; margin-left: auto; color: var(--ink-dim); }
+
+/* The shipped `.pf-sub` is the CENTRED, 280 px-wide line that sits under an avatar. On a form it
+   is wrong, and the shipped `passwordHTML` overrides it inline for exactly that reason
+   (ravilo-phone.js: `max-width:none; text-align:left`). The first render of `ph-code-empty`
+   wrapped "Type the six characters shown on the TV." with "TV." alone on the second line,
+   centred over a left-aligned field. Same override, in CSS rather than inline. */
+.acct-body > .pf-sub { text-align: left; max-width: none; margin: 0 0 20px; font-size: 14px;
+  color: var(--ink-soft); line-height: 1.55; }
+/* SHOWN and disabled, never hidden — the owner's own rule, and round 9 drew two controls
+   backwards against it. The shipped set has no disabled variant, so this one is new. */
+.pf-btn.off, .pf-btn[disabled] { background: rgba(var(--fg, 255, 255, 255), .05); color: var(--ink-dim);
+  border-color: var(--line); }
+.pf-btn.off.primary, .pf-btn[disabled].primary { background: rgba(var(--fg, 255, 255, 255), .07);
+  color: var(--ink-dim); border-color: var(--line); }
+
+/* The new row, marked for the reviewer ONLY on the account frames — one accent rule along its
+   leading edge and nothing else, so the row itself is drawn exactly as it would ship. */
+.ts-newrow { position: relative; }
+.ts-newrow::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--accent); }
+
+/* The round's screens sit in the shipped account sheet's chrome (`.acct-bar`, `.acct-body`,
+   `.fld`, `.pf-btns`, `.pf-btn`), all of it shipped and none of it restated here. */
+.acct-bar { border-bottom: 1px solid var(--line); }
+
+/* Decision 3's lean: ONE field that groups as you type and takes a paste. The value is drawn in
+   the mono face at the code's own tracking, so the field and the TV read as the same string. */
+.ts-onefield { height: 62px; border-radius: 12px; background: var(--bg-2);
+  border: 2px solid var(--line); display: flex; align-items: center; padding: 0 18px; }
+/* `--ring` and `--ring-glow` are TV tokens: ravilo.css declares them, ravilo-phone.css does NOT
+   (only the `daylight` skin does). An undeclared custom property makes the whole declaration
+   invalid at computed-value time, so `border-color: var(--ring)` fell back to currentColor and
+   drew a WHITE focus border with no glow — on the phone AND the Mac, in every code frame. The
+   phone's own focus idiom is the shipped `.fld input:focus`, which is the accent and no halo. */
+.ts-onefield.focused { border-color: var(--accent); }
+.ts-onefield b { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700;
+  letter-spacing: 6px; color: var(--ink); }
+.ts-onefield .ph { font-family: 'JetBrains Mono', monospace; font-size: 28px; letter-spacing: 6px;
+  color: var(--ink-dim); }
+
+/* Decision 3's alternative: six boxes. Drawn at the same height, so the comparison is fair. */
+.ts-boxes { display: flex; align-items: center; gap: 8px; }
+.ts-boxes .cell { width: 46px; height: 62px; border-radius: 10px; background: var(--bg-2);
+  border: 2px solid var(--line); display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; color: var(--ink); }
+.ts-boxes .cell.on { border-color: var(--line-2, rgba(255, 255, 255, .16)); }
+.ts-boxes .cell.caret { border-color: var(--accent); }   /* same TV-token trap as above */
+.ts-boxes .gap { width: 12px; flex: none; }
+
+/* The confirm screen. The TV is named in a card at the top, with the code beside it, because
+   FR-6's reason for naming the TV is "so a viewer can tell a code that is not on a screen in
+   front of them" — which wants the code shown back as well as the name. */
+.ts-tvcard { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 16px;
+  background: var(--card); border: 1px solid var(--line); margin-bottom: 22px; }
+.ts-tvcard .ts-ic.big { width: 30px; height: 30px; margin: 0; color: var(--accent-2); }
+.ts-tvcard b { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; }
+.ts-codechip { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700;
+  letter-spacing: 2px; padding: 6px 10px; border-radius: 8px; background: rgba(255, 255, 255, .08);
+  color: var(--ink-soft); }
+.ts-q { font-family: 'Space Grotesk', sans-serif; font-size: 25px; font-weight: 700;
+  letter-spacing: -.02em; line-height: 1.2; margin: 0 0 12px; text-wrap: balance; }
+.ts-confirm .pf-btns { margin-top: 6px; }
+
+.ts-notyou { display: flex; align-items: center; gap: 12px; margin-top: 24px; padding-top: 20px;
+  border-top: 1px solid var(--line); }
+.ts-notyou > span { flex: 1; min-width: 0; font-size: 14px; color: var(--ink-soft); }
+.ts-notyou button { border: 0; background: none; color: var(--accent-2);
+  font: 600 14px 'Sora', sans-serif; padding: 0; }
+.ts-av { width: 34px; height: 34px; border-radius: 11px; flex: none; display: flex;
+  align-items: center; justify-content: center; background: linear-gradient(140deg, #7b6ef0, #3fb6f5);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 12px; color: #fff; }
+.ts-av.lg { width: 62px; height: 62px; border-radius: 20px; font-size: 22px; }
+
+/* The outcomes. One glyph, one sentence, one way on. */
+.ts-outcome { text-align: center; padding-top: 48px; }
+.ts-oglyph { display: block; margin: 0 auto 24px; }
+.ts-outcome .ts-ic.big { width: 56px; height: 56px; margin: 0 auto; stroke-width: 1.6; }
+.ts-outcome.ok .ts-ic.big { color: #2dd49a; }
+.ts-outcome.warn .ts-ic.big { color: #f5b542; }
+.ts-outcome.bad .ts-ic.big { color: #f5667a; }
+.ts-outcome h3 { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700;
+  letter-spacing: -.02em; line-height: 1.25; margin: 0 0 12px; text-wrap: balance; }
+/* An outcome is one centred column, so here the shipped centring is right — but the 280 px cap
+   is not, at a desk width. */
+.ts-outcome .pf-sub { text-align: center; max-width: 320px; margin-left: auto; margin-right: auto; }
+.ts-outcome .pf-btns { margin-top: 10px; }
+
+/* ---- SURFACE 3 — the sign-in screen ---- */
+.ts-signin { padding: 44px 24px 0; }
+.ts-sihead { margin-bottom: 30px; }
+.ts-signin h2 { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700;
+  letter-spacing: -.02em; margin: 0 0 22px; }
+/* The sign-in screen's heading and fields are left-aligned, so its subtitle is too — the shipped
+   `.pf-sub` is the centred 280 px line that sits under an avatar. */
+.ts-signin > .pf-sub { text-align: left; max-width: none; margin: 0 0 20px; }
+.ts-ssorow { display: flex; flex-direction: column; gap: 10px; }
+/* Decision 4's lean: a full-width filled button above the fields. The glyph is a neutral globe,
+   never a provider's logo — the server's operator chooses the NAME and we are given no artwork,
+   so a mark here would be invented. */
+.ts-ssobtn { width: 100%; min-height: 52px; border-radius: 14px; display: flex; align-items: center;
+  justify-content: center; gap: 10px; font: 600 15.5px 'Sora', sans-serif; border: 1px solid transparent; }
+.ts-ssobtn.filled { background: var(--grad); color: #0a0c13; }
+.ts-ssobtn.filled .ts-ic { color: #0a0c13; }
+.ts-ssobtn.outline { background: rgba(255, 255, 255, .05); border-color: var(--line-2, rgba(255, 255, 255, .16));
+  color: var(--ink); }
+.ts-ssobtn .ts-ic { width: 19px; height: 19px; }
+
+.ts-or { display: flex; align-items: center; gap: 14px; margin: 20px 0; }
+.ts-or i { flex: 1; height: 1px; background: var(--line); }
+.ts-or span { font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-dim); }
+
+.ts-inp { height: 52px; border-radius: 12px; background: var(--bg-2); border: 2px solid var(--line);
+  display: flex; align-items: center; padding: 0 16px; color: var(--ink); font-size: 16px; }
+.ts-inp .ph { color: var(--ink-dim); }
+.ts-siftr { text-align: center; font-size: 12.5px; color: var(--ink-dim); padding: 22px 0 0; }
+.ts-siftr b { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink-soft); }
+
+/* Waiting, while the browser is out. The spinner is drawn STILL, at one angle: an infinite
+   rotation breaks the render and a still frame of one is what a screenshot would show anyway. */
+.ts-waiting { text-align: center; padding-top: 90px; }
+.ts-spin { display: block; margin: 0 auto 26px; }
+.ts-waiting .ts-ic.big { width: 54px; height: 54px; color: var(--accent-2); stroke-width: 1.8;
+  transform: rotate(18deg); }
+.ts-waiting h3 { font-family: 'Space Grotesk', sans-serif; font-size: 23px; font-weight: 700;
+  letter-spacing: -.02em; line-height: 1.3; margin: 0 0 26px; text-wrap: balance; }
+/* The shipped `.pf-btns` is a flex COLUMN, so `flex: 0 1 180px` on a child sets its HEIGHT, not
+   its width — the first render drew Cancel as a 190 px-tall slab. A single centred control wants
+   a row. */
+.ts-waiting .pf-btns { flex-direction: row; justify-content: center; }
+.ts-waiting .pf-btn { flex: 0 0 190px; }
+
+/* =================================================================================================
+   RAVILO WEB — a browser window at a desk and at a phone width
+   ================================================================================================= */
+/* EVERY TOKEN HERE CARRIES A FALLBACK, because the `pages` set loads no shipped stylesheet at
+   all — surface 4's pages ship as single files and cannot reach for a token file. Without the
+   fallbacks the whole browser chrome resolved to `transparent` and vanished, which the first
+   render of `page-ok` shows: a page with no address bar, in a round whose whole constitutional
+   point is WHICH ADDRESS THE VIEWER IS LOOKING AT. */
+.ts-web { position: absolute; inset: 0; display: flex; flex-direction: column;
+  background: var(--bg, #0a0c13); }
+.ts-wchrome { height: 46px; flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 0 16px; background: var(--bg-2, #0e111b);
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, .09)); }
+.ts-wdots { display: flex; gap: 7px; flex: none; }
+.ts-wdots i { width: 11px; height: 11px; border-radius: 50%; background: rgba(255, 255, 255, .18); }
+.ts-wurl { font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: var(--ink-soft, #aeb4cb);
+  padding: 6px 14px; border-radius: 8px; background: rgba(255, 255, 255, .06); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* `position: relative` IS LOAD-BEARING: `.ts-page` is `position: absolute; inset: 0`, and with
+   no positioned ancestor here it resolved against `.ts-frame` and painted straight over the
+   chrome above it. */
+.ts-wbody { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+/* At 390 the body IS the phone layout, unchanged — which is the point of surface 2(c). */
+.ts-wframe.narrow .ts-wbody > * { width: 390px; }
+/* At 1440 the same blocks sit in a centred desk column. */
+.ts-wframe:not(.narrow) .ts-wbody { display: flex; justify-content: center; padding: 54px 0; }
+
+/* =================================================================================================
+   THE DESKTOP — the Mac window
+   ================================================================================================= */
+.ts-mac { position: absolute; inset: 0; display: flex; background: var(--bg); }
+.ts-mside { width: 228px; flex: none; background: var(--bg-2); border-right: 1px solid var(--line);
+  padding: 14px 12px; display: flex; flex-direction: column; }
+.ts-lights { display: flex; gap: 8px; padding: 2px 6px 22px; flex: none; }
+.ts-lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.ts-lights i:nth-child(2) { background: #febc2e; } .ts-lights i:nth-child(3) { background: #28c840; }
+.ts-mnav { display: flex; flex-direction: column; gap: 2px; }
+.ts-mnav span { min-height: 38px; display: flex; align-items: center; padding: 0 12px;
+  border-radius: 9px; font-size: 14px; color: var(--ink-soft); }
+.ts-mnav span.on { background: rgba(255, 255, 255, .09); color: var(--ink); font-weight: 600; }
+.ts-mwho { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px 8px;
+  border-radius: 10px; background: rgba(255, 255, 255, .06); font-size: 13.5px; color: var(--ink); }
+.ts-mmain { flex: 1; min-width: 0; overflow: hidden; padding: 40px 48px; }
+
+.ts-dacct h1, .ts-dpane h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px;
+  font-weight: 700; letter-spacing: -.03em; margin: 0 0 28px; }
+.ts-did { display: flex; align-items: center; gap: 18px; margin-bottom: 30px; }
+.ts-did b { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 22px;
+  font-weight: 700; letter-spacing: -.02em; }
+.ts-did i { display: block; font-size: 13px; font-style: normal; color: var(--ink-dim); margin-top: 3px; }
+.ts-dgrp { max-width: 620px; border-radius: 16px; background: var(--card);
+  border: 1px solid var(--line); overflow: hidden; }
+.ts-drow { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 14px;
+  padding: 0 18px; background: none; border: 0; border-bottom: 1px solid var(--line);
+  color: var(--ink); font: 500 15px 'Sora', sans-serif; text-align: left; }
+.ts-drow:last-child { border-bottom: 0; }
+.ts-drow > span { flex: 1; min-width: 0; }
+.ts-drow i { font-size: 12.5px; font-style: normal; color: var(--ink-dim); margin-left: 10px; }
+
+/* A desk-width pane holding the SAME phone body in a 520 px column. */
+.ts-dpane { max-width: 760px; }
+.ts-dcard { width: 520px; border-radius: 20px; background: var(--card); border: 1px solid var(--line);
+  overflow: hidden; }
+.ts-dcard .acct-body { padding: 28px 28px 30px; }
+.ts-dcard .ts-signin { padding: 34px 28px 30px; }
+.ts-dcard .ts-outcome { padding-top: 40px; padding-bottom: 36px; }
+.ts-dcard .ts-waiting { padding: 70px 28px 60px; }
+
+/* =================================================================================================
+   SURFACE 4 — THE PAGES THE SERVER RENDERS IN THE BROWSER
+   ONE FILE each when they ship: no hosted font, no second stylesheet, no image. So this block
+   declares its OWN colours and a system fallback stack rather than reaching for a token file,
+   which is the honest drawing of what the page can carry. The report lists what it needs.
+   ================================================================================================= */
+.ts-page { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 40px 24px; background: #0a0c13; color: #f3f4fb;
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-image:
+    radial-gradient(60% 46% at 20% 4%, rgba(123, 110, 240, .20), transparent 68%),
+    radial-gradient(52% 44% at 86% 98%, rgba(63, 182, 245, .13), transparent 70%); }
+.ts-pinner { width: 100%; max-width: 420px; text-align: center; }
+.ts-page.wide .ts-pinner { max-width: 560px; }
+.ts-phead { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 40px; }
+.ts-phead b { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px;
+  letter-spacing: -.02em; }
+.ts-page.wide .ts-phead b { font-size: 36px; }
+.ts-pglyph { display: block; margin: 0 auto 26px; }
+.ts-page .ts-ic.big { width: 58px; height: 58px; margin: 0 auto; stroke-width: 1.6; }
+.ts-page.ok .ts-ic.big { color: #2dd49a; }
+.ts-page.warn .ts-ic.big { color: #f5b542; }
+.ts-page.bad .ts-ic.big { color: #f5667a; }
+.ts-page h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: -.025em;
+  font-size: 27px; line-height: 1.25; margin: 0 0 14px; text-wrap: balance; }
+.ts-page.wide h1 { font-size: 34px; }
+.ts-page p { font-size: 15px; line-height: 1.6; color: #aeb4cb; margin: 0 0 8px; }
+/* `#fff`, not dark ink: these pages cannot inherit the shipped `.pf-btn.primary` (they load no
+   token file), so the value is written out — and it is the SHIPPED value. The first render gave
+   the browser pages dark ink on the gradient while every app screen beside them had white, which
+   is two answers to one question in one flow. (The white-on-gradient contrast is low at the blue
+   end; that is the shipped product's, not this round's, and the report notes it once.) */
+.ts-pbtn { margin-top: 24px; min-height: 50px; padding: 0 26px; border-radius: 14px; border: 0;
+  background: linear-gradient(120deg, #7b6ef0, #3fb6f5); color: #fff;
+  font: 600 15.5px 'Sora', sans-serif; }
+/* The hand-back the phone and the web pages do by themselves (FR-11) — drawn as the moment
+   before it happens, three static bars rather than a running animation. */
+.ts-phand { display: flex; gap: 6px; justify-content: center; margin-top: 30px; }
+.ts-phand i { width: 34px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .5); }
+.ts-phand i:nth-child(2) { background: rgba(255, 255, 255, .26); }
+.ts-phand i:nth-child(3) { background: rgba(255, 255, 255, .12); }
+
+/* =================================================================================================
+   THE ADMIN'S SIGN-IN PAGE — wf.css, both themes
+   `--blur: none` because backdrop-filter is production CSS on every admin card and breaks the
+   screenshot render. The live admin keeps its glass; this frame does not have it.
+   ================================================================================================= */
+.ts-adminframe { width: 1100px; height: 760px; overflow: hidden; position: relative;
+  --blur: none; --ambient: 0; }
+.ts-admin { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 40px 20px; background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+/* The aurora wash the shipped `body.wf-body::before` draws, flat. */
+.ts-adminframe::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(48% 40% at 16% 6%, rgba(177, 92, 208, .16), transparent 66%),
+    radial-gradient(44% 38% at 88% 96%, rgba(0, 164, 220, .13), transparent 70%); }
+[data-theme="light"] .ts-adminframe::before {
+  background:
+    radial-gradient(48% 40% at 16% 6%, rgba(177, 92, 208, .10), transparent 66%),
+    radial-gradient(44% 38% at 88% 96%, rgba(0, 164, 220, .09), transparent 70%); }
+.ts-adminwrap { width: 100%; max-width: 408px; }
+.ts-adminbrand { display: flex; align-items: center; gap: 13px; justify-content: center;
+  margin-bottom: 26px; }
+.ts-adminbrand strong { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; font-weight: 600;
+  letter-spacing: -.01em; }
+.ts-admin .card { padding: 34px 32px; }
+.ts-admin .card h2 { font-size: 1.35rem; margin: 0 0 4px; }
+.ts-admin .card > p.muted { margin: 0 0 22px; font-size: .92rem; }
+.ts-adminssorow { display: flex; flex-direction: column; gap: 9px; }
+.ts-adminsso { width: 100%; justify-content: center; gap: 9px; padding: 11px; }
+.ts-adminsso .ts-ic { width: 17px; height: 17px; color: currentColor; }
+.ts-or.admin { margin: 18px 0 16px; }
+.ts-or.admin i { background: var(--line); }
+.ts-admin .input { width: 100%; }
+.ts-adminsubmit { width: 100%; justify-content: center; margin-top: 8px; padding: 11px; }
+.ts-conn { gap: 8px; font-size: .84rem; }
+.ts-conn .mono { color: var(--ink); }
+.ts-admin hr.dash { margin: 20px 0 14px; }
+.ts-adminfoot { text-align: center; margin-top: 22px; }

@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A TV signs in from your phone — Directions</title>
+<!-- Self-contained: no network reference, no shipped stylesheet. The frames link the production
+     CSS; this document is the written half and carries its own small sheet so it opens anywhere
+     in the repository. Dark ink on a light backdrop throughout, per the canvas rules. -->
+<style>
+  @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+  @font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/sora.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+  :root { --ink: #12141b; --ink-2: #262a35; --ink-3: #596074; --line: #d6d9e1; --bg: #f3f4f7;
+          --card: #fff; --acc: #5b4ee0; --ok: #0e7a56; --warn: #8a6208; --bad: #b3243c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+         font-size: 15px; line-height: 1.6; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 28px 120px; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 40px; font-weight: 700;
+       letter-spacing: -.03em; line-height: 1.1; margin: 0 0 10px; }
+  h2 { font-family: 'Space Grotesk', sans-serif; font-size: 25px; font-weight: 700;
+       letter-spacing: -.02em; margin: 54px 0 14px; padding-top: 22px; border-top: 1px solid var(--line); }
+  h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700;
+       letter-spacing: -.01em; margin: 30px 0 8px; }
+  p, li { color: var(--ink-2); }
+  .lede { font-size: 17px; color: var(--ink-2); margin: 0 0 6px; }
+  .meta { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-3);
+          letter-spacing: .02em; margin: 0 0 34px; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: .88em;
+                background: #e7e9ef; padding: 1px 5px; border-radius: 4px; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 10px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+       color: var(--ink-3); border-bottom: 1px solid #b9bdc9; }
+  td:first-child { white-space: nowrap; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 18px 22px; margin: 16px 0; }
+  .rec { border-left: 4px solid var(--acc); }
+  .warnbox { border-left: 4px solid var(--warn); }
+  .badbox { border-left: 4px solid var(--bad); }
+  .tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+         font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px;
+         border-radius: 5px; background: #e2e4ec; color: var(--ink-2); vertical-align: 2px; }
+  .tag.rec { background: #e4e0fb; color: #3b2fb8; border: 0; }
+  .tag.alt { background: #e7e9ef; }
+  ul { padding-left: 20px; } li { margin: 4px 0; }
+  .q { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--acc);
+       border-radius: 12px; padding: 14px 18px; margin: 12px 0; }
+  .q b { display: block; margin-bottom: 4px; }
+  .lang { font-size: 13.5px; }
+  .lang td:first-child { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; white-space: nowrap; }
+  .src { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>A TV signs in from your phone</h1>
+<p class="lede">And a <i>Sign in with ‹name›</i> button on the phone, Ravilo Web, the desktop and the
+admin. Two halves, one visual language.</p>
+<p class="meta">Round 2026-10-23-tv-signin · drawn in this repository · 97 PNGs ·
+TV 1920×1080 · phone 412×915 and 393×852 · web 390 and 1440 · Mac 1440×900 · admin 1100×760</p>
+
+<p>Every frame is built from one data file (<code>ts-data.js</code>) through one kit
+(<code>ts-kit.js</code>), so the pictures agree with each other by construction rather than by
+luck. The frames link the <b>shipped</b> stylesheets — <code>design/ravilo/ravilo.css</code> for
+the TV, <code>design/ravilo/mobile/ravilo-phone.css</code> (plus the desktop file) for the phone,
+web and Mac, <code>design/app/wf.css</code> for the admin — so every token, colour, radius and
+font in the pictures is the production one. Nothing is copied.</p>
+
+<!-- ============================================================================ -->
+<h2>What is fixed, before any direction</h2>
+
+<ul>
+  <li><b>Jellyfin is invisible to viewers.</b> No frame on the TV, the phone, the web, the desktop
+    or the four browser pages names Jellyfin, LDAP, Quick Connect, a plugin or a status code, in
+    any of the three languages, failures included. The browser pages' address bar shows
+    jellystructure's own return route. <b>The admin frame is exempt</b> and keeps its existing
+    copy exactly as <code>Login.kt</code> has it.</li>
+  <li><b>The TV never shows a single-sign-on button.</b> Single sign-on happens on the approving
+    device. There is no frame in this round where a TV offers one.</li>
+  <li><b>Nothing is typed on the TV</b> and the only focusable thing on the sign-in screen is
+    <i>Sign in with a password instead</i>, drawn focused in every TV frame.</li>
+  <li><b>No countdown.</b> The code is re-minted silently, so no frame shows time remaining.</li>
+  <li><b>No camera scanner inside Ravilo.</b> The phone's own camera opens the link.</li>
+  <li><b>The shipped <code>i18n/*.json</code> wins</b> wherever a string already exists. Twelve
+    strings in this round are reused verbatim; the rest are new and their Danish and Faroese are
+    drafts. The table at the end marks which is which.</li>
+</ul>
+
+<!-- ============================================================================ -->
+<h2>1 · The TV — two directions</h2>
+
+<h3><span class="tag rec">Recommended</span> Direction A — “Two columns”</h3>
+<p>The QR on the left at <b>444 px</b>, and the code, the instruction, the address and the TV's
+name stacked beside it in reading order. A viewer who can scan looks left; a viewer who cannot
+reads straight down the one column that concerns them. The password button sits bottom-left under
+the QR, focused.</p>
+<table>
+  <tr><th>Frame</th><th>State</th></tr>
+  <tr><td class="mono">tv-a-first-run</td><td>(a) First run — no profiles yet</td></tr>
+  <tr><td class="mono">tv-a-approving</td><td>(b) <i>Approving on Anna's phone…</i></td></tr>
+  <tr><td class="mono">tv-a-no-qr</td><td>(c) The server does not know where Ravilo Web lives</td></tr>
+  <tr><td class="mono">tv-a-add-user</td><td>(d) Reached from the profile picker's <i>Add user</i></td></tr>
+  <tr><td class="mono">tv-a-no-address</td><td>Decision 2's alternative — no printed web address</td></tr>
+  <tr><td class="mono">tv-a-code-96</td><td>The prior art's 96 px code, against the round's 112 px</td></tr>
+  <tr><td class="mono">…-{da,fo,noir,midnight}-…</td><td>Both languages, and the two skins that change the accent</td></tr>
+</table>
+
+<h3><span class="tag alt">Alternative</span> Direction B — “One column, centred”</h3>
+<p>The same blocks stacked down the middle. <b>It cannot hold the same sizes.</b> With the 92 px
+brand row, the 168 px footer and 56 px of overscan margin, the stack has 764 lines; FR-5's other
+four blocks need about 460 of them, so the QR comes down to <b>300 px</b> and the code to 80 px.
+That is the whole argument between the two directions and it is a measurement, not a taste.</p>
+
+<div class="card warnbox">
+  <b>What 444 px and 300 px mean in the room.</b> A 55-inch set is about 122 cm wide, so 1920 px
+  maps to ~0.64 mm per pixel. A's QR is <b>~28 cm</b> across; B's is <b>~19 cm</b>. The usual field
+  rule for a phone camera is a QR side of roughly a tenth of the reading distance, which at three
+  metres wants ~30 cm. <b>A is a three-metre code. B is a two-metre code.</b> On a 43-inch set A
+  becomes ~22 cm and is already at the rule's limit — that is the smallest screen this size is
+  honest on, and it is worth QA pointing a real phone at both.
+</div>
+
+<h3>What the no-QR state showed</h3>
+<div class="card badbox">
+  The first render of <code>tv-a-no-qr</code> was the defect the brief predicted: with the QR gone,
+  direction A's content sat jammed against the left gutter with two thirds of 1920 empty. A's
+  premise is two columns, and with no QR there is no second column — so <b>A's no-QR state is a
+  centred single column, which is direction B's arrangement</b>. The code grows to 136 px there,
+  because it is now the only thing on the screen to read across the room.
+  <br><br>
+  Say it plainly: <b>in the no-QR state the two directions are the same screen.</b> That is a point
+  in B's favour, and it is only visible because both were drawn.
+</div>
+
+<h3>The code's typography</h3>
+<p>Reused from <code>design/ravilo/Play on a TV - Directions.html</code>, §“The code, and why it
+looks like this”: JetBrains Mono, tabular figures so the string never reflows, grouped 3 + 3, and
+an alphabet with no 0, O, 1 or I. Raised from the prior art's 96 px to <b>112 px</b>, because here
+the code is the screen's subject rather than a line in the corner of an idle receiver.
+<code>tv-a-code-96</code> is the same frame at the old size, so the number is a choice on two
+pictures.</p>
+
+<h3>State (d), Add user — the answer the brief asked for</h3>
+<p>The brief asked whether the heading or the Back hint differs from state (a). <b>Only the Back
+hint differs</b> — <i>Back returns to the profiles</i>, beside the footer button. The heading, the
+code, the QR, the instruction and the TV name are identical. <code>tv-ctx-profiles</code> draws
+where it is reached from.</p>
+
+<h3>Three context frames, which propose nothing</h3>
+<ul>
+  <li><code>tv-ctx-password</code> — R175's shipped <code>LoginScreen</code>, unchanged, so the
+    reviewer can see what “one press away” lands on.</li>
+  <li><code>tv-ctx-unreachable</code> — the ordinary could-not-reach-the-server state FR-5 defers
+    to. The brief's state list does not mention it; the house rule requires it of any surface with
+    a socket. The words are the <b>shipped</b> <code>login.error_unreachable</code>.</li>
+  <li><code>tv-ctx-profiles</code> — the picker, with <i>Add user</i> focused.</li>
+</ul>
+
+<!-- ============================================================================ -->
+<h2>2 · Sign in a TV — phone, Ravilo Web and the desktop</h2>
+
+<p>One flow, three surfaces, and in the source they are literally the same builders: the Mac and
+the wide web frames call the phone's <code>codeScreen</code>, <code>confirmScreen</code> and
+<code>outcomeScreen</code> in a 520 px column. That is the claim the round is making about these
+three surfaces, made in the source rather than only in a caption.</p>
+
+<table>
+  <tr><th>State</th><th>Phone</th><th>Mac / desktop</th><th>Ravilo Web</th></tr>
+  <tr><td>(a) account page</td><td class="mono">ph-account</td><td class="mono">mac-account</td><td>—</td></tr>
+  <tr><td>(b) code, empty</td><td class="mono">ph-code-empty</td><td class="mono">mac-code-empty</td><td class="mono">web-desk-code</td></tr>
+  <tr><td>(b) code, typed</td><td class="mono">ph-code-typed</td><td class="mono">mac-code-typed</td><td class="mono">web-desk-code</td></tr>
+  <tr><td>(c) arriving from the QR</td><td>—</td><td>—</td><td class="mono">web-arrive-qr</td></tr>
+  <tr><td>(d) not signed in yet</td><td class="mono">ph-signin-one/two</td><td class="mono">mac-signin-one/two</td><td class="mono">web-arrive-signed-out</td></tr>
+  <tr><td>(e) confirm</td><td class="mono">ph-confirm</td><td class="mono">mac-confirm</td><td class="mono">web-desk-confirm</td></tr>
+  <tr><td>(e) confirm + switch</td><td class="mono">ph-confirm-switch</td><td class="mono">mac-confirm-switch</td><td class="mono">web-desk-confirm</td></tr>
+  <tr><td>(f) five outcomes</td><td class="mono">ph-out-*, ph-outcomes-strip</td><td class="mono">mac-out-*</td><td>—</td></tr>
+</table>
+
+<h3>Where the row goes</h3>
+<p>FR-6 says “beside the account rows R304 placed”. Drawn <b>below <i>Change password</i> and above
+<i>Settings</i></b>: the rows above it are about this account and this app, <i>Settings</i> is the
+drawer everything else falls into, and signing a TV in is an account action rather than a
+preference. In the account frames the new row carries one accent rule along its leading edge —
+that is a marker for the reviewer, not part of the design.</p>
+
+<h3>Decision 3 — one field, not six boxes</h3>
+<p><span class="tag rec">Recommended</span> <b>One field</b> that groups as you type
+(<code>ph-code-typed</code>): it takes a paste, it survives a code of a different length if the
+alphabet ever changes, it has one focus target instead of six for a screen reader, and it is the
+shipped <code>.fld</code> control rather than a new one. The six-box alternative is drawn in both
+states (<code>ph-code-boxes-empty</code>, <code>ph-code-boxes-typed</code>) and does fit 412 px
+with the 3 + 3 gap — it is a fair option, just a more expensive one.</p>
+<p><i>Continue</i> is drawn <b>shown and disabled</b> until six characters are in, never hidden.</p>
+
+<h3>The confirm screen</h3>
+<p>FR-6's reason for naming the TV is “so a viewer can tell a code that is not on a screen in front
+of them”. That wants the <b>code shown back as well as the name</b>, so the TV sits in a card at the
+top with <code>K7P 4QX</code> beside it. Under the question is one supporting line —
+<i>Your list, your languages and where you got to come with you</i> — which is <b>proposed</b>
+(question Q2 below): the spec gives the question and the two buttons and nothing under them.</p>
+<p><i>Not you? Switch</i> appears only where the device has more than one profile, below a rule,
+with the active profile named beside it.</p>
+
+<h3>The five outcomes</h3>
+<p><code>ph-outcomes-strip</code> is the whole set in one picture. One glyph, one sentence, one way
+on. The spec gives the first two word for word; the other three are proposed.
+“Couldn't reach the server” is <b>not a new string</b> — the shipped
+<code>login.error_unreachable</code> already says it.</p>
+<div class="card warnbox">
+  <b>“Get a new code” was wrong and is now “Enter a new code”.</b> The TV fetches a new code by
+  itself; this button cannot get one. All it does is return to the field so the viewer can type
+  whatever the TV is showing now. A control says what happens when you press it.
+</div>
+
+<!-- ============================================================================ -->
+<h2>3 · The Sign in with ‹name› button</h2>
+
+<p>Full width, above the username field, with an <i>or</i> divider before the fields — all of which
+decision 4 asked for and the pictures agree with. The glyph is a <b>neutral globe, never a
+provider's logo</b>: the operator chooses the name and we are given no artwork, so a mark would be
+invented.</p>
+
+<div class="card badbox">
+  <b>Decision 4's lean moved, and here is why.</b> The brief leaned to a <b>filled</b> button above
+  the fields. Drawn, that put <b>two filled gradient buttons on one screen</b> — the provider button
+  and the form's own <i>Sign in</i> — and the first render of <code>ph-signin-two</code> and
+  <code>admin-signin-two</code> is a page with two equally loud primaries and no answer to “which
+  one is the way in?”. One filled control per screen is the house rule.
+</div>
+
+<table>
+  <tr><th>Weighting</th><th>Frames</th><th>What it says</th></tr>
+  <tr><td><span class="tag rec">Recommended</span><br>outlined provider</td>
+      <td class="mono">ph-signin-one · ph-signin-two · mac-signin-one/two · admin-signin · admin-signin-two</td>
+      <td>The provider buttons are offered first and read as buttons; the filled primary stays on the
+          form's own <i>Sign in</i>, where every other screen in the product puts it.</td></tr>
+  <tr><td><span class="tag alt">The brief's lean</span><br>filled provider</td>
+      <td class="mono">ph-signin-bold-one · ph-signin-bold-two · admin-signin-bold</td>
+      <td>The provider is unmistakably the main way in; the password form steps down to a plain
+          button, so there is still exactly one filled control.</td></tr>
+</table>
+<p><code>ph-signin-weight-pair</code> puts the two side by side at phone width. That is the frame to
+decide on.</p>
+
+<h3>Waiting, and no names</h3>
+<ul>
+  <li><code>ph-signin-waiting</code> / <code>mac-signin-waiting</code> — <i>Finish signing in in
+    your browser</i> and <b>Cancel</b>, while the browser is out. The spinner is drawn <b>still</b>,
+    at one angle: an infinite animation breaks the screenshot render and a still of one is what a
+    screenshot would show anyway.</li>
+  <li><b>(d) No names: the screen is exactly as today.</b> The brief said no frame was needed.
+    <code>ph-signin-none</code> and <code>admin-signin-none</code> are drawn anyway, because
+    “exactly as today” is a claim a picture settles and a sentence does not.</li>
+</ul>
+
+<h3>The admin frame</h3>
+<p><code>admin-signin</code>, <code>-two</code>, <code>-bold</code>, <code>-none</code>, each in
+both themes (the <code class="mono">light-</code> prefix). Reproduced class for class from
+<code>Login.kt</code> in <code>wf.css</code>; the only addition is the button. The page is the
+operator's, so Jellyfin stays on it. <b><code>--blur: none</code></b> is set on the frame, because
+<code>backdrop-filter</code> is production CSS on every admin card and breaks the screenshot
+render — the live admin keeps its glass.</p>
+
+<!-- ============================================================================ -->
+<h2>4 · The four browser pages</h2>
+
+<p>Drawn at phone width (390) and desk width (1440), in a browser frame, because the address bar is
+the point: Key Invariant 12 is “no address on Jellyfin's host”, and these are the only frames in
+the round where a viewer is looking at a URL at all.</p>
+
+<table>
+  <tr><th>Page</th><th>Phone</th><th>Desk</th><th>Call to action</th></tr>
+  <tr><td>signed in</td><td class="mono">page-ok</td><td class="mono">page-ok-desk</td><td>none — it hands back by itself; drawn at the moment before</td></tr>
+  <tr><td>not allowed</td><td class="mono">page-not-allowed</td><td class="mono">page-not-allowed-desk</td><td>none</td></tr>
+  <tr><td>took too long</td><td class="mono">page-too-long</td><td class="mono">page-too-long-desk</td><td><i>Open Ravilo</i></td></tr>
+  <tr><td>cancelled <span class="tag alt">proposed</span></td><td class="mono">page-cancelled</td><td class="mono">page-cancelled-desk</td><td><i>Open Ravilo</i></td></tr>
+  <tr><td>unavailable <span class="tag alt">proposed</span></td><td class="mono">page-unavailable</td><td class="mono">page-unavailable-desk</td><td><i>Open Ravilo</i></td></tr>
+  <tr><td>close this tab</td><td>— desktop only</td><td class="mono">page-close-tab-desk</td><td>none</td></tr>
+</table>
+
+<div class="card">
+  <b>What the shipped page needs, since it is one file.</b> No hosted font, no second stylesheet,
+  no image file. Concretely:
+  <ul>
+    <li><b>Inline <code>&lt;style&gt;</code></b> in the <code>&lt;head&gt;</code>, roughly 2 KB —
+      the <code>.ts-page</code> block in <code>tv-signin.css</code> is the whole of it, and it
+      declares its own colours rather than reaching for a token file.</li>
+    <li><b>Type.</b> Either one embedded woff2 (<code>sora.woff2</code> is ~30 KB and would want to
+      be base64 in the page, taking it to ~40 KB) <b>or</b> a system stack. The frames are drawn
+      with Sora first and a system stack behind it, which is what the page would do if the font is
+      served from the same origin as a normal second request. <b>Our recommendation: serve the
+      woff2 from jellystructure's own origin and keep the system stack as the fallback</b> — the
+      page is on our host, so it is one extra same-origin request and not a network dependency,
+      and the viewer sees the right face.</li>
+    <li><b>The wordmark as inline SVG</b> (~700 bytes). It is already drawn that way here.</li>
+    <li><b>No image file at all.</b> Every glyph on these pages is an inline stroked SVG.</li>
+    <li><b>The language comes from <code>Accept-Language</code></b> (en, da, fo), so the page is
+      rendered server-side with one of three string sets — there is no client-side switch.</li>
+  </ul>
+</div>
+
+<!-- ============================================================================ -->
+<h2>Decisions, as drawn</h2>
+<table>
+  <tr><th>#</th><th>Brief's lean</th><th>What the pictures say</th></tr>
+  <tr><td>1</td><td>QR left, words right</td>
+      <td><b>Held.</b> Direction A. B is drawn in full and loses 144 px of QR to do it. Both
+          directions' no-QR state is the same centred screen.</td></tr>
+  <tr><td>2</td><td>Print <code>ravilo.example.net/tv</code>, when the server knows it</td>
+      <td><b>Held</b> — and it is the only thing on the screen for someone with a laptop and no
+          camera (<code>web-desk-code</code> is where they land).
+          <code>tv-a-no-address</code> is the same frame without it. It costs one line.
+          <b>If it is picked, FR-5 needs the amendment Bárður offered.</b></td></tr>
+  <tr><td>3</td><td>One field that groups as you type</td>
+      <td><b>Held.</b> Six boxes drawn in both states as a fair alternative.</td></tr>
+  <tr><td>4</td><td>A full-width <b>filled</b> button above the fields, with an <i>or</i> divider</td>
+      <td><b>Full width, above the fields, with the divider: held.</b> <b>Filled: moved</b> — it
+          produced two primaries on one screen. Both weightings drawn;
+          <code>ph-signin-weight-pair</code> is the frame to decide on.</td></tr>
+</table>
+
+<!-- ============================================================================ -->
+<h2>Open questions for Bárður</h2>
+
+<div class="q"><b>Q1 · “Approving on ‹name›'s phone…” can be wrong.</b>
+The approver may be at a computer — <code>web-desk-confirm</code> is exactly that path — and FR-3
+sends only <code>approverName</code>, not the device kind. The spec fixes these words, so they are
+drawn as written. Either the wire carries the kind, or the line drops the device:
+<i>Anna is approving…</i>. Needs a decision, and possibly an FR-3 field.</div>
+
+<div class="q"><b>Q2 · The confirm screen's supporting line is proposed.</b>
+The spec gives the question and the two buttons and nothing under them. <i>Your list, your
+languages and where you got to come with you</i> says only what is already true of a profile. Keep,
+change, or drop it and leave the question alone?</div>
+
+<div class="q"><b>Q3 · Three outcome strings are proposed</b> — already used, unavailable, and the
+two new browser pages (cancelled, unavailable). Listed in full in the string table below.</div>
+
+<div class="q"><b>Q4 · The brief names Ravilo Web's host but not the backend's.</b>
+FR-10 puts the four browser pages on a new route on the <b>backend's public origin</b>
+(<code>&lt;public_url&gt;/sso/OID/redirect/&lt;P&gt;</code>), which need not be the same host as
+<code>ravilo_web_url</code>. Rather than invent a second stand-in, those frames reuse
+<code>ravilo.example.net</code> — one stand-in doing two jobs, visibly. Name the second one and the
+pages get re-rendered in a minute.</div>
+
+<div class="q"><b>Q5 · <code>ravilo.css</code>'s Google Fonts <code>@import</code> blocks
+<code>render-design.sh</code>.</b> The new renderer fails the run on any off-host request, so the
+TV set could not be rendered at all; earlier TV rounds used their own <code>render.mjs</code>,
+which had no such check. This round works around it with a four-line Content-Security-Policy in
+<code>frames.html</code> that permits <code>file:</code> and <code>data:</code> and nothing else,
+so Chromium refuses the import at the policy and the renderer never sees a request. <b>That belongs
+in the lane, not in a round</b> — either the script grows a flag, or <code>ravilo.css</code> loses
+the line the way the served admin CSS already has. Until then every round that links
+<code>ravilo.css</code> needs those four lines, and a round that does not know that cannot render
+the TV at all.</div>
+
+<div class="q"><b>Q6 · The signed-out arrival says nothing about the TV that is waiting.</b>
+In <code>web-arrive-signed-out</code> a viewer who just scanned a QR lands on a bare sign-in screen;
+the code is kept, but nothing on the screen says so. A one-line banner would fix it, and the brief
+says not to redesign the sign-in screen — so it is a question rather than a drawing.</div>
+
+<div class="q"><b>Q7 · “This account can't use Ravilo” is a dead end.</b>
+Per the spec it carries no call to action, which is right if there is nothing the viewer can do.
+Worth confirming that a <i>Try a different account</i> link is deliberately not wanted.</div>
+
+<!-- ============================================================================ -->
+<h2>Every string in the round</h2>
+
+<p><span class="src">shipped</span> = reused verbatim from <code>i18n/*.json</code>, not this
+round's to change. <span class="src">new</span> = new, with Danish and Faroese <b>drafts</b>.
+<span class="src">proposed</span> = new <i>and</i> the English is a proposal the spec does not fix.</p>
+
+<table class="lang">
+  <tr><th>Key</th><th>Source</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+
+  <tr><td>login.title</td><td class="src">shipped</td><td>Sign in</td><td>Log ind</td><td>Rita inn</td></tr>
+  <tr><td>login.username</td><td class="src">shipped</td><td>Username</td><td>Brugernavn</td><td>Brúkaranavn</td></tr>
+  <tr><td>login.password</td><td class="src">shipped</td><td>Password</td><td>Kodeord</td><td>Loyniorð</td></tr>
+  <tr><td>login.sign_in</td><td class="src">shipped</td><td>Sign in</td><td>Log ind</td><td>Rita inn</td></tr>
+  <tr><td>login.subtitle</td><td class="src">shipped</td><td>Use your username and password to sign in on this device.</td><td>Brug dit brugernavn og kodeord for at logge ind på denne enhed.</td><td>Brúka títt brúkaranavn og loyniorð fyri at rita inn á hesa eindina.</td></tr>
+  <tr><td>login.error_unreachable</td><td class="src">shipped</td><td>Couldn’t reach the server — try again</td><td>Kunne ikke nå serveren — prøv igen</td><td>Kundi ikki ná ambætaranum — royn aftur</td></tr>
+  <tr><td>login.change_server</td><td class="src">shipped</td><td>Wrong server?</td><td>Forkert server?</td><td>Skeivur ambætari?</td></tr>
+  <tr><td>action.cancel</td><td class="src">shipped</td><td>Cancel</td><td>Annuller</td><td>Angra</td></tr>
+  <tr><td>action.back</td><td class="src">shipped</td><td>Back</td><td>Tilbage</td><td>Aftur</td></tr>
+  <tr><td>action.retry</td><td class="src">shipped</td><td>Retry</td><td>Prøv igen</td><td>Royn aftur</td></tr>
+  <tr><td>profile.add_user</td><td class="src">shipped</td><td>Add user</td><td>Tilføj bruger</td><td>Legg til brúkara</td></tr>
+  <tr><td>profile.sign_out</td><td class="src">shipped</td><td>Sign out</td><td>Log ud</td><td>Rita út</td></tr>
+
+  <tr><td>tvsignin.title</td><td class="src">new</td><td>Sign in on this TV</td><td>Log ind på dette TV</td><td>Rita inn á hesum sjónvarpinum</td></tr>
+  <tr><td>tvsignin.how</td><td class="src">new</td><td>Scan the code with your phone’s camera, or open Ravilo on a phone or computer and choose Sign in a TV.</td><td>Skan koden med telefonens kamera, eller åbn Ravilo på en telefon eller computer og vælg Log et TV ind.</td><td>Skanna koduna við kameranum á telefonini, ella lat Ravilo upp á eini telefon ella teldu og vel Rita eitt sjónvarp inn.</td></tr>
+  <tr><td>tvsignin.how_noqr</td><td class="src">new</td><td>Open Ravilo on a phone or computer and choose Sign in a TV.</td><td>Åbn Ravilo på en telefon eller computer og vælg Log et TV ind.</td><td>Lat Ravilo upp á eini telefon ella teldu og vel Rita eitt sjónvarp inn.</td></tr>
+  <tr><td>tvsignin.code_label</td><td class="src">new</td><td>Your code</td><td>Din kode</td><td>Koda tín</td></tr>
+  <tr><td>tvsignin.this_tv</td><td class="src">new</td><td>This TV</td><td>Dette TV</td><td>Hetta sjónvarpið</td></tr>
+  <tr><td>tvsignin.or_go_to</td><td class="src">new</td><td>Or go to</td><td>Eller gå til</td><td>Ella far til</td></tr>
+  <tr><td>tvsignin.approving</td><td class="src">new</td><td>Approving on {name}’s phone…</td><td>Godkendes på {name}s telefon…</td><td>Verður góðkent á telefonini hjá {name}…</td></tr>
+  <tr><td>tvsignin.password_instead</td><td class="src">new</td><td>Sign in with a password instead</td><td>Log ind med kodeord i stedet</td><td>Rita inn við loyniorði í staðin</td></tr>
+  <tr><td>tvsignin.back_to_profiles</td><td class="src">new</td><td>Back returns to the profiles</td><td>Tilbage fører til profilerne</td><td>Aftur fer til vangarnar</td></tr>
+
+  <tr><td>tvcode.row</td><td class="src">new</td><td>Sign in a TV</td><td>Log et TV ind</td><td>Rita eitt sjónvarp inn</td></tr>
+  <tr><td>tvcode.body</td><td class="src">new</td><td>Type the six characters shown on the TV.</td><td>Indtast de seks tegn, der står på TV’et.</td><td>Skriva teir seks teknini, sum standa á sjónvarpinum.</td></tr>
+  <tr><td>tvcode.field</td><td class="src">new</td><td>Code from the TV</td><td>Kode fra TV’et</td><td>Koda frá sjónvarpinum</td></tr>
+  <tr><td>tvcode.continue</td><td class="src">new</td><td>Continue</td><td>Fortsæt</td><td>Hald fram</td></tr>
+  <tr><td>tvcode.confirm</td><td class="src">new</td><td>Sign in on {tv} as {name}?</td><td>Log ind på {tv} som {name}?</td><td>Rita inn á {tv} sum {name}?</td></tr>
+  <tr><td>tvcode.confirm_body</td><td class="src">proposed</td><td>Your list, your languages and where you got to come with you.</td><td>Din liste, dine sprog og hvor du er kommet til følger med.</td><td>Listin tín, málini tín og hvar tú ert komin fylgja við.</td></tr>
+  <tr><td>tvcode.not_you</td><td class="src">new</td><td>Not you? Switch</td><td>Ikke dig? Skift</td><td>Ikki tú? Skift</td></tr>
+  <tr><td>tvcode.done</td><td class="src">new</td><td>{tv} is signed in</td><td>{tv} er logget ind</td><td>{tv} er innritað</td></tr>
+  <tr><td>tvcode.done_body</td><td class="src">proposed</td><td>It’s ready to watch.</td><td>Det er klar til at se.</td><td>Tað er klárt at hyggja.</td></tr>
+  <tr><td>tvcode.done_cta</td><td class="src">new</td><td>Done</td><td>Færdig</td><td>Liðugt</td></tr>
+  <tr><td>tvcode.expired</td><td class="src">new</td><td>That code has expired — get a new one on the TV</td><td>Koden er udløbet — hent en ny på TV’et</td><td>Kodan er útgingin — fá eina nýggja á sjónvarpinum</td></tr>
+  <tr><td>tvcode.used</td><td class="src">proposed</td><td>That code has already signed a TV in — get a new one on the TV</td><td>Koden har allerede logget et TV ind — hent en ny på TV’et</td><td>Kodan hevur longu ritað eitt sjónvarp inn — fá eina nýggja á sjónvarpinum</td></tr>
+  <tr><td>tvcode.unavailable</td><td class="src">proposed</td><td>Signing a TV in isn’t available right now — try again in a few minutes</td><td>Det er ikke muligt at logge et TV ind lige nu — prøv igen om et par minutter</td><td>Tað ber ikki til at rita eitt sjónvarp inn nú — royn aftur um eitt par minuttir</td></tr>
+  <tr><td>tvcode.get_new</td><td class="src">new</td><td>Enter a new code</td><td>Indtast en ny kode</td><td>Skriva eina nýggja kodu</td></tr>
+
+  <tr><td>sso.button</td><td class="src">new</td><td>Sign in with {name}</td><td>Log ind med {name}</td><td>Rita inn við {name}</td></tr>
+  <tr><td>sso.or</td><td class="src">new</td><td>or</td><td>eller</td><td>ella</td></tr>
+  <tr><td>sso.waiting</td><td class="src">new</td><td>Finish signing in in your browser</td><td>Afslut login i din browser</td><td>Enda innritanina í kagaranum</td></tr>
+
+  <tr><td>ssopage.ok</td><td class="src">new</td><td>You’re signed in — go back to Ravilo</td><td>Du er logget ind — gå tilbage til Ravilo</td><td>Tú ert innritað/ur — far aftur til Ravilo</td></tr>
+  <tr><td>ssopage.ok_body</td><td class="src">proposed</td><td>Taking you back…</td><td>Fører dig tilbage…</td><td>Fer aftur við tær…</td></tr>
+  <tr><td>ssopage.not_allowed</td><td class="src">new</td><td>This account can’t use Ravilo — ask the person who runs it</td><td>Denne konto kan ikke bruge Ravilo — spørg den, der står for den</td><td>Hesin kontoin kann ikki brúka Ravilo — spyr tann, sum stýrir honum</td></tr>
+  <tr><td>ssopage.too_long</td><td class="src">new</td><td>That took too long — try again</td><td>Det tog for lang tid — prøv igen</td><td>Tað tók ov langa tíð — royn aftur</td></tr>
+  <tr><td>ssopage.cancelled</td><td class="src">proposed</td><td>You didn’t finish signing in — try again when you’re ready</td><td>Du afsluttede ikke login — prøv igen, når du er klar</td><td>Tú endaðir ikki innritanina — royn aftur, tá tú ert klár/ur</td></tr>
+  <tr><td>ssopage.unavailable</td><td class="src">proposed</td><td>Signing in isn’t available right now — try again in a few minutes</td><td>Login er ikke muligt lige nu — prøv igen om et par minutter</td><td>Tað ber ikki til at rita inn nú — royn aftur um eitt par minuttir</td></tr>
+  <tr><td>ssopage.close_tab</td><td class="src">new</td><td>You can close this tab</td><td>Du kan lukke denne fane</td><td>Tú kanst lata hetta tabblaðið aftur</td></tr>
+  <tr><td>ssopage.open_ravilo</td><td class="src">new</td><td>Open Ravilo</td><td>Åbn Ravilo</td><td>Lat Ravilo upp</td></tr>
+</table>
+
+<h3>The longest line, measured</h3>
+<p><code>tvsignin.how</code> is the longest string in the round and the TV's right column is sized
+by it. At 30 px on the 1920 stage it sets two lines in all three languages, with the Faroese the
+longest:</p>
+<table>
+  <tr><th>Language</th><th>Characters</th><th>Lines on the TV</th></tr>
+  <tr><td>English</td><td>102</td><td>2</td></tr>
+  <tr><td>Dansk</td><td>102</td><td>2</td></tr>
+  <tr><td>Føroyskt</td><td>118</td><td>2 — 16 % longer than the English, and what sets the column</td></tr>
+</table>
+<p>Both are drawn: <code>tv-signin-da-tv-a-first-run</code> and
+<code>tv-signin-fo-tv-a-first-run</code>, and the same in direction B. The Faroese title
+<i>Rita inn á hesum sjónvarpinum</i> is the longest heading and still sets on one line.</p>
+
+<h3>Notes on the two tables above</h3>
+<ul>
+  <li><b>No new string names a component.</b> No Jellyfin, no LDAP, no Quick Connect, no plugin, no
+    status code, in any of the three languages.</li>
+  <li><b>Faroese gendered forms</b> use the <code>/ur</code> pattern the shipped table already
+    uses (<code>login.success</code> is <i>Innritað/ur sum {name}</i>).</li>
+  <li><b>The desktop window's nav</b> (Home · Movies · Series · Music · Playing) is scaffolding this
+    round proposes nothing about, but it is in every Mac picture, so it is drawn with the shipped
+    labels and the shipped translations. Note it is <code>nav.movies</code> = “Movies”, not
+    “Films”.</li>
+</ul>
+
+</div>
+</body>
+</html>

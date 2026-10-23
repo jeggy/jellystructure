@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  WHY THIS CSP IS HERE, AND WHY IT IS NOT A WORKAROUND FOR A ROUND-LOCAL PROBLEM.
+
+  `design/ravilo/ravilo.css` — the TV's shipped token file, the one PROCESS.md step 3 says to link
+  rather than copy — opens with `@import url('https://fonts.googleapis.com/…')`. That is normal and
+  harmless in a mockup opened in a browser. But `scripts/render-design.sh` (DEB-2125) FAILS THE RUN
+  on any off-host request and deletes the PNGs it wrote, so the TV set could not be rendered at all:
+
+      render-design: failed, 0 PNG(s) removed
+        off-host request: https://fonts.googleapis.com/css2?family=Space+Grotesk…
+
+  Every earlier TV round used its own `render.mjs`, which had no such check, so this round is the
+  first to meet it. The two rules collide: "link the shipped stylesheet, do not copy it" and "no
+  off-host request". Copying ravilo.css to strip one line would break the first rule and put a
+  stale copy of a token file in the tree, which is the exact shape of bytes the nineteen wipes were
+  made of.
+
+  So the document declares a policy that permits `file:` and `data:` and NOTHING ELSE. Chromium
+  refuses the @import at the policy, before it becomes a request, so the renderer never sees one —
+  and the three faces come from the repo's own woff2, re-declared at the end of tv-signin.css.
+  The picture is identical to one rendered with a network.
+
+  It is also a stronger guarantee than the renderer's own: this page CANNOT reach the network, in
+  the renderer or in a browser opened by hand.
+
+  THIS BELONGS IN THE LANE, NOT IN A ROUND. Raised to Bárður as question Q5 — either
+  render-design.sh grows a flag for a shipped mockup's own @import, or ravilo.css loses the line
+  the way the served admin CSS already has. Until one of those happens, every round that links
+  ravilo.css needs these four lines, and a round that does not know that cannot render the TV.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src file: data: blob: 'unsafe-inline'; style-src file: data: 'unsafe-inline'; font-src file: data:; img-src file: data: blob:; script-src file: data: 'unsafe-inline'; connect-src 'none'">
+<title>A TV signs in from your phone — frames</title>
+<!--
+  frames.html — every frame this round renders, built from ts-data.js through ts-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=tv | phone | web | mac | pages | admin
+      &skin=aurora|midnight|noir          (the TV set only)
+      &theme=dark|light                   (the admin set only)
+      &lang=en|da|fo
+
+  THE SET DECIDES WHICH SHIPPED STYLESHEET IS LOADED, and that is not a convenience: the TV, the
+  phone and the admin are three different token files that name their tokens the SAME way
+  (`--bg`, `--ink`, `--card`, `--grad`). Loading two of them into one document would let one
+  answer for the other, and the picture would be of a system that does not exist. The round's own
+  stylesheet always comes last, so it extends the shipped system and never precedes it.
+
+  `pages` loads NO shipped stylesheet at all, on purpose. Surface 4's pages are served as single
+  files by the backend, so they cannot reach for a token file; the `.ts-page` block in
+  tv-signin.css declares its own colours, and loading ravilo-phone.css here would have drawn a
+  page that cannot ship.
+
+  A variant renders FEWER frames than the base: the Danish and Faroese runs draw the frames where
+  the length is the question, and the skin runs draw the one frame that proves the skin. Which is
+  which is in the `WANT` table below, so the render commands in REPORT.md and this document cannot
+  disagree about what exists.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; scripts/render-design.sh
+  drives it over the parameter combinations and screenshots one element per frame.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var set = q.get('set') || 'tv';
+    var skin = q.get('skin') || 'aurora';
+    var theme = q.get('theme') || 'dark';
+    var lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.lang = lang;
+
+    if (set === 'tv') {
+      /* The TV's own token file and skins. */
+      document.write('<link rel="stylesheet" href="../../ravilo/ravilo.css">');
+    } else if (set === 'phone' || set === 'web' || set === 'mac') {
+      /* The phone token file covers the phone AND the web frames — Ravilo Web at a phone width IS
+         the phone's design system, which is what makes the 390 px frame the same screen. The Mac
+         loads the desktop file beside it for the window chrome's own tokens. */
+      document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+      if (set === 'mac' || set === 'web')
+        document.write('<link rel="stylesheet" href="../../ravilo/desktop/ravilo-desktop.css">');
+    } else if (set === 'admin') {
+      /* The admin's own two files, which production actually serves. */
+      document.write('<link rel="stylesheet" href="../../app/wf.css">');
+    }
+    /* set === 'pages' loads nothing shipped: see the note above. */
+    document.write('<link rel="stylesheet" href="tv-signin.css">');
+    window.TSOPT = { set: set, skin: skin, theme: theme, lang: lang };
+  })();
+</script>
+</head>
+<body>
+<div class="ts-frames" id="frames"></div>
+
+<script src="ts-qr.js"></script>
+<script src="ts-data.js"></script>
+<script src="ts-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var O = window.TSOPT, D = window.TS, K = window.TSKit;
+  K.setLang(O.lang);
+  var root = document.getElementById('frames');
+
+  /* Which frames each variant draws. The base run (en, aurora, dark) draws everything in its set;
+     a language run draws the frames where length is the question; a skin run draws the one frame
+     that proves the skin holds. A frame not named for a variant is not rendered for it, and
+     `--all .ts-frame` therefore cannot produce a file this table does not predict. */
+  var WANT = {
+    'tv:da':        ['tv-a-first-run', 'tv-a-no-qr', 'tv-b-first-run', 'tv-a-approving'],
+    'tv:fo':        ['tv-a-first-run', 'tv-a-no-qr', 'tv-b-first-run', 'tv-a-approving'],
+    'tv:noir':      ['tv-a-first-run'],
+    'tv:midnight':  ['tv-a-first-run'],
+    'phone:da':     ['ph-code-typed', 'ph-confirm-switch', 'ph-signin-two', 'ph-out-unavailable'],
+    'phone:fo':     ['ph-code-typed', 'ph-confirm-switch', 'ph-signin-two', 'ph-out-unavailable'],
+    'mac:da':       ['mac-confirm', 'mac-signin-two'],
+    'mac:fo':       ['mac-confirm', 'mac-signin-two'],
+    'pages:da':     ['page-not-allowed', 'page-cancelled', 'page-unavailable'],
+    'pages:fo':     ['page-not-allowed', 'page-cancelled', 'page-unavailable']
+  };
+  var variant = O.set + ':' + (O.lang !== 'en' ? O.lang : (O.skin !== 'aurora' ? O.skin : ''));
+  var want = WANT[variant] || null;     /* null = draw everything in the set */
+
+  /* One frame. `cls` carries the surface's own size; `ts-frame` is the renderer's handle and has
+     no style, so a phone nested inside a comparison frame is never screenshotted as a frame. */
+  function frame(id, cls, html) {
+    if (want && want.indexOf(id) === -1) return null;
+    var d = document.createElement('div');
+    d.id = id;
+    d.className = 'ts-frame ' + cls;
+    d.innerHTML = html;
+    root.appendChild(d);
+    return d;
+  }
+  var tv  = function (id, html) { return frame(id, 'ts-tvframe', html); };
+  var ph  = function (id, html) { return frame(id, 'ts-ph', K.phone(html)); };
+  var mac = function (id, html) { return frame(id, 'ts-macframe', html); };
+
+  /* =============================================================================================
+     SURFACE 1 — THE TV
+     ============================================================================================= */
+  if (O.set === 'tv') {
+
+    /* --- DIRECTION A, the lean: the QR on the left, the words on the right. --- */
+
+    /* (a) First run. No profiles yet; this is the first thing a new TV shows. The one focusable
+       thing on the screen is drawn FOCUSED, because FR-5 makes it the first focus target. */
+    tv('tv-a-first-run', K.tvA({}));
+
+    /* (b) Approving. The line replaces the instruction, which is now telling the viewer to do a
+       thing somebody has already done. */
+    tv('tv-a-approving', K.tvA({ approving: D.ANNA }));
+
+    /* (c) No QR: the server has not been told where Ravilo Web lives. The instruction is a
+       DIFFERENT sentence, not the same one with the camera clause cut out, and the words move
+       into the space the QR had rather than leaving a hole where it was. */
+    tv('tv-a-no-qr', K.tvA({ qr: false }));
+
+    /* (d) Add user, reached from the profile picker when Anna is already on the TV. The ONLY
+       difference from (a) is the Back hint beside the footer button — see the report. */
+    tv('tv-a-add-user', K.tvA({ addUser: true }));
+
+    /* Decision 2's alternative: the same screen WITHOUT the printed web address. Drawn so the
+       decision is made on two pictures rather than on a sentence. */
+    tv('tv-a-no-address', K.tvA({ address: false }));
+
+    /* The prior art's own size, 96 px, beside the round's 112 px. "Does it read from the sofa?"
+       is a question about a number, and this is the number in both values. */
+    tv('tv-a-code-96', K.tvA({ codePx: D.M.codePxPriorArt }));
+
+    /* --- DIRECTION B, the brief's alternative: one centred column. Same blocks, same strings,
+       same sizes — only the arrangement differs, which is what makes them comparable. --- */
+    tv('tv-b-first-run', K.tvB({}));
+    tv('tv-b-no-qr', K.tvB({ qr: false }));
+
+    /* --- CONTEXT. Not proposals: what the round's one press away lands on, the ordinary
+       could-not-reach state FR-5 defers to, and where Add user is reached from. --- */
+    tv('tv-ctx-password', K.tvPassword());
+    tv('tv-ctx-unreachable', K.tvUnreachable());
+    tv('tv-ctx-profiles', K.tvProfiles());
+  }
+
+  /* =============================================================================================
+     SURFACES 2 and 3 — THE PHONE
+     ============================================================================================= */
+  if (O.set === 'phone') {
+
+    /* 2(a) The account page, with the Sign in a TV row in its real company. */
+    ph('ph-account', K.accountPage());
+
+    /* 2(b) The code field: empty with Continue disabled, and typed. Decision 3's lean. */
+    ph('ph-code-empty', K.codeScreen({ typed: false }));
+    ph('ph-code-typed', K.codeScreen({ typed: true }));
+    /* Decision 3's alternative, six boxes, in both states so the comparison is like for like. */
+    ph('ph-code-boxes-empty', K.codeScreen({ typed: false, boxes: true }));
+    ph('ph-code-boxes-typed', K.codeScreen({ typed: true, boxes: true }));
+
+    /* 2(e) The confirm screen: Anna alone, and with the Not you? Switch line. */
+    ph('ph-confirm', K.confirmScreen({}));
+    ph('ph-confirm-switch', K.confirmScreen({ switchable: true, name: D.ANNA }));
+
+    /* 2(f) The outcomes, from the one table, so the phone and the Mac cannot differ. */
+    D.OUTCOMES.forEach(function (o) { ph('ph-out-' + o.id, K.outcomeScreen(o)); });
+
+    /* 2(d) Not signed in yet: the ordinary sign-in comes first, with surface 3's button on it.
+       This frame is BOTH states at once and that is the point — it is the same screen. */
+    ph('ph-signin-one', K.signinScreen({ names: [D.SSO1] }));
+    ph('ph-signin-two', K.signinScreen({ names: [D.SSO1, D.SSO2] }));
+    ph('ph-signin-waiting', K.signinScreen({ names: [D.SSO1], waiting: true }));
+    /* Decision 4's other weighting: the provider button takes the filled primary and the form's
+       own Sign in steps down, so there is still exactly one filled control. */
+    ph('ph-signin-bold-one', K.signinScreen({ names: [D.SSO1], boldSso: true }));
+    ph('ph-signin-bold-two', K.signinScreen({ names: [D.SSO1, D.SSO2], boldSso: true }));
+    /* The two weightings side by side, which is the only way the choice is actually visible. */
+    frame('ph-signin-weight-pair', 'ts-pair',
+      '<div class="ts-cell"><div class="ts-scap">recommended · outlined provider</div>'
+      + '<div class="ts-ph">' + K.phone(K.signinScreen({ names: [D.SSO1, D.SSO2] })) + '</div></div>'
+      + '<div class="rule"></div>'
+      + '<div class="ts-cell"><div class="ts-scap">the brief\'s lean · filled provider</div>'
+      + '<div class="ts-ph">' + K.phone(K.signinScreen({ names: [D.SSO1, D.SSO2], boldSso: true })) + '</div></div>');
+    /* 3(d) No names: the screen is EXACTLY as today. Drawn once anyway, because "exactly as
+       today" is a claim that a picture settles and a sentence does not. */
+    ph('ph-signin-none', K.signinScreen({ names: [] }));
+
+    /* The iPhone bezel, same screen, because the shipped frame set is two phones. */
+    frame('ph-ios-confirm', 'ts-ph ios', K.phone(K.confirmScreen({ switchable: true })));
+
+    /* The five outcomes side by side, so the set is compared and not just listed. */
+    (function () {
+      var cells = D.OUTCOMES.map(function (o) {
+        return '<div class="ts-cell"><div class="ts-scap">' + o.id + '</div>'
+          + '<div class="ts-ph">' + K.phone(K.outcomeScreen(o)) + '</div></div>';
+      }).join('');
+      frame('ph-outcomes-strip', 'ts-strip', cells);
+    })();
+  }
+
+  /* =============================================================================================
+     RAVILO WEB — surface 2(c), and the desk width
+     ============================================================================================= */
+  if (O.set === 'web') {
+    /* 2(c) Arriving from the QR in a PHONE-WIDTH browser, which is Ravilo Web on the phone. The
+       code is already known, so it goes straight to the confirm screen — there is no code field
+       on this path, which is the whole reason the QR exists. */
+    frame('web-arrive-qr', 'ts-wframe narrow',
+      K.browser(D.LINK, K.confirmScreen({}), 'narrow'));
+
+    /* The same arrival in a signed-OUT browser: FR-6 step 2 puts the ordinary sign-in first and
+       keeps the code. The button is on it. */
+    frame('web-arrive-signed-out', 'ts-wframe narrow',
+      K.browser(D.LINK, K.signinScreen({ names: [D.SSO1, D.SSO2] }), 'narrow'));
+
+    /* Ravilo Web at a desk width: the same blocks in the desk column. Someone with a laptop and
+       no camera types the code here, which is decision 2's whole reason. */
+    frame('web-desk-code', 'ts-wframe',
+      K.browser('https://' + D.HOST + '/', K.deskCard(K.stripBar(K.codeScreen({ typed: true })))));
+    frame('web-desk-confirm', 'ts-wframe',
+      K.browser(D.LINK, K.deskCard(K.stripBar(K.confirmScreen({ switchable: true })))));
+    frame('web-desk-signin', 'ts-wframe',
+      K.browser('https://' + D.HOST + '/', K.deskCard(K.signinScreen({ names: [D.SSO1, D.SSO2], wide: true }), false)));
+  }
+
+  /* =============================================================================================
+     THE DESKTOP — the Mac window (the Linux build is the same layout in its own chrome)
+     ============================================================================================= */
+  if (O.set === 'mac') {
+    mac('mac-account', K.macWindow('nav.home', K.macAccount()));
+    mac('mac-code-empty', K.macWindow('nav.home', K.deskCard(K.stripBar(K.codeScreen({ typed: false })))));
+    mac('mac-code-typed', K.macWindow('nav.home', K.deskCard(K.stripBar(K.codeScreen({ typed: true })))));
+    mac('mac-confirm', K.macWindow('nav.home', K.deskCard(K.stripBar(K.confirmScreen({})))));
+    mac('mac-confirm-switch', K.macWindow('nav.home', K.deskCard(K.stripBar(K.confirmScreen({ switchable: true })))));
+    D.OUTCOMES.forEach(function (o) {
+      mac('mac-out-' + o.id, K.macWindow('nav.home', K.deskCard(K.stripBar(K.outcomeScreen(o)))));
+    });
+    /* The desktop's sign-in screen. There is no window sidebar before a sign-in, so these are the
+       window with the panel in it and nothing else. */
+    mac('mac-signin-one', frameless(K.signinScreen({ names: [D.SSO1], wide: true })));
+    mac('mac-signin-two', frameless(K.signinScreen({ names: [D.SSO1, D.SSO2], wide: true })));
+    mac('mac-signin-waiting', frameless(K.signinScreen({ names: [D.SSO1], waiting: true, wide: true })));
+  }
+  /* A desktop window with no sidebar: the sign-in screen, centred, with the traffic lights. */
+  function frameless(body) {
+    return '<div class="ts-mac"><div class="ts-mmain" style="display:flex;align-items:center;'
+      + 'justify-content:center;padding:0"><span class="ts-lights" style="position:absolute;'
+      + 'top:14px;left:18px;padding:0"><i></i><i></i><i></i></span>'
+      + '<div class="ts-dcard">' + body + '</div></div></div>';
+  }
+
+  /* =============================================================================================
+     SURFACE 4 — THE PAGES THE SERVER RENDERS IN THE BROWSER
+     Drawn at both widths the brief names. `close-tab` is the DESKTOP's own page and has no phone
+     width: the desktop app catches its own hand-back on a loopback address (FR-11), so that page
+     is never shown on a phone.
+     ============================================================================================= */
+  if (O.set === 'pages') {
+    D.PAGES.forEach(function (p) {
+      /* The address bar matters more here than anywhere else in the round: Key Invariant 12 is
+         "no address on Jellyfin's host", and these are the only frames where the viewer is
+         looking at a URL bar at all. It shows jellystructure's own return route. */
+      var url = p.id === 'close-tab' ? D.DESK_RETURN : D.SSO_RETURN;
+      if (p.id !== 'close-tab')
+        frame('page-' + p.id, 'ts-wframe narrow', K.browser(url, K.ssoPage(p, false), 'narrow'));
+      frame('page-' + p.id + '-desk', 'ts-wframe', K.browser(url, K.ssoPage(p, true)));
+    });
+  }
+
+  /* =============================================================================================
+     THE ADMIN'S SIGN-IN PAGE — one frame, both themes
+     ============================================================================================= */
+  if (O.set === 'admin') {
+    frame('admin-signin', 'ts-adminframe', K.adminSignin([D.SSO1]));
+    frame('admin-signin-two', 'ts-adminframe', K.adminSignin([D.SSO1, D.SSO2]));
+    frame('admin-signin-bold', 'ts-adminframe', K.adminSignin([D.SSO1, D.SSO2], true));
+    /* 3(d)'s admin twin: no names, the page exactly as today, so the addition is visible as an
+       addition. */
+    frame('admin-signin-none', 'ts-adminframe', K.adminSignin([]));
+  }
+
+  if (!root.children.length) throw new Error('frames.html: no frame drawn for ' + JSON.stringify(O));
+})();
+</script>
+</body>
+</html>
