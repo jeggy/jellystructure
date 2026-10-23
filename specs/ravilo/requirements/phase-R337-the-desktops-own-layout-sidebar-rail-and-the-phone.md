@@ -596,3 +596,48 @@ the cover beside the synced lyrics (FR-R337-7), which is why the click reads as 
 
 **The phone's mini bar is unchanged** (FR-R322-10: *Tap → the Playing tab*). It is a single target the width of the
 screen, and splitting it would leave the thumb two small regions that do different things.
+
+## Amendment 2026-10-23 — the bar stays on the Playing page (DEB-2303)
+
+Owner, 2026-10-23, on DEB-2303, with a picture of the Mac's Playing page while a song played on a speaker: *"On TV /
+casted devices it makes sense to have it here. But on Desktop it's a bit annoying that the bottom bar get's removed
+when on this screen. Let's change it for desktop clients, so that the progress and media controls are not shown on the
+left side of the lyrics, but rather just stays the exact same place on the bottom. So it's always on the bottom, no
+matter which screen you are on in the music mode."*
+
+**FR-R337-6 is amended.** *"The bar hides on the Playing page, which repeats it"* is struck. In the desktop family
+(macOS and GNOME, 600 dp and wider), the bar that shows on every other page shows on the Playing page too, in the same
+place, at the same width variant, with the same controls:
+- **Which bar:** the same rule as every other page. The music bar while this computer plays or holds the music (in
+  music mode always; in films mode while music plays, Q10). The session bar (R368 FR-R368-8) when it would show
+  elsewhere. Whether the song plays here or on a speaker or TV makes no difference.
+- **The bar's doors while Playing is open.** The artwork and the lyrics button are the bar's doors to the Playing page.
+  On that page the lyrics button is drawn in the accent, and a click on it, or ⌥⌘L / Ctrl+L, leaves the page as Back
+  does. A click on the artwork does nothing; it never pushes a second Playing page. The title and artist still open
+  the album (the DEB-2236 amendment).
+- **The queue** opens beside Playing from the bar's queue button exactly as it does on other pages (FR-R337-8).
+
+**FR-R337-7 is amended.** The desktop Playing page no longer draws a seek line or a transport. The cover column keeps:
+- the cover;
+- title, ♥ and ⋯;
+- artist · album;
+- the version chips and *Bonus*;
+- the device chip.
+
+The lyrics stay beside the cover (Expanded and Large) or under it (Medium). The page reserves the bar's height at its
+foot, as every other page does. The lyrics' last line and the column's scroll end above the bar, and the bar never
+covers a line being sung.
+
+**A book** (R323) keeps its own Playing page and its book-only controls (chapter strip, speed, sleep, bookmark),
+because the bar has none of those. The bar now stays under it as well. The page's own scrubber and −30 s · ⏯ · +30 s
+remain for now, because they read book time and chapters. Folding them into the bar is one-remote slice 3's call
+(`one-remote-for-every-playback.md` FR-3/FR-4, DEB-2303 amendment).
+
+**Unchanged:**
+- **Compact** (below 600 dp) is the phone family: its Playing tab and mini bar keep FR-R322-10.
+- **The TV family:** the TV app's Now playing (R380) and the Cast receiver.
+- **The web app:** at a desk width it is still the TV family (*The three view families*). The owner asked about the
+  desktop clients.
+- **Films:** a film's player (FR-R337-9) still hides the sidebar, the rail and the bar.
+
+There is no design round. The bar is the shipped bar, and the page loses two rows; nothing new is drawn.

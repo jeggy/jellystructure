@@ -347,3 +347,25 @@ One new key (revision 3's wording; da/fo are drafts):
    screenshot.)*
 8. **Music** (slice 3): local and remote music are the same screen, and every Playing-page function in FR-3 is
    present. *(After revision 3; listed here so the slice inherits it.)*
+
+## Amendment 2026-10-23 — on the desktop the bar stays under the music remote (DEB-2303)
+
+Owner, 2026-10-23, on DEB-2303: the desktop's bar should stay *"the exact same place on the bottom … no matter which
+screen you are on in the music mode"*, with the progress and the transport there instead of beside the lyrics. R337
+carries the rule (FR-R337-6 and FR-R337-7, amended the same day). For this spec's slice 3 on the desktop family
+(macOS and GNOME, 600 dp and wider):
+- **FR-3 / FR-13.** In `-mac-music` the desktop's music and book remote does **not** draw its own seek line or
+  shuffle · previous · ⏯ · next · repeat. The bar under it carries them. The column under the cover keeps:
+  - the place pill;
+  - *Playing from*;
+  - title, ♥ and ⋯;
+  - the version chips;
+  - the inline volume block (FR-10, as the owner chose for DEB-2185).
+
+  Where `one-remote-mac-music.png` draws a transport, this text wins.
+- **FR-4.** The desktop *Playing* page still opens the remote, now with the bar under it.
+- **FR-7.** Stop is drawn once. On the desktop music remote it is the bar's, so the remote's footer does not repeat it.
+- **A book on the desktop:** slice 3 decides whether the book remote's scrubber and −30 s · ⏯ · +30 s also fold into
+  the bar. Its book-only controls stay on the page either way.
+- **Unchanged:** the film and episode remote on the desktop (FR-2), the phone, the narrow web, and the web at a desk
+  width.
