@@ -65,6 +65,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "DROP TABLE IF EXISTS support_ai_turn", 0)
         // …and DEB-1508's 82 creates support_seat_token (its support_message column goes with the table dropped above).
         raw.execute(null, "DROP TABLE IF EXISTS support_seat_token", 0)
+        // …and DEB-2233's 85 creates tv_signin_code.
+        raw.execute(null, "DROP TABLE IF EXISTS tv_signin_code", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

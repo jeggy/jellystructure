@@ -100,6 +100,16 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <input id="pw-change-url" class="input mono" type="url" placeholder="https://" style="width:100%">
                 <span class="hint" id="pw-change-hint">Optional. Where an account whose password Jellyfin does not keep changes it. Ravilo on a phone, in a browser or on a computer opens it in the browser.</span>
               </div>
+              <div class="field">
+                <label>Ravilo Web address</label>
+                <input id="ravilo-web-url" class="input mono" type="url" placeholder="https://" style="width:100%">
+                <span class="hint" id="ravilo-web-hint">Optional. Where Ravilo Web is served. A TV's sign-in code links here. Scheme and host, no query.</span>
+              </div>
+              <div class="field">
+                <label>Jellyfin internal address</label>
+                <input id="jellyfin-internal-url" class="input mono" type="url" placeholder="http://" style="width:100%">
+                <span class="hint" id="jellyfin-internal-hint">Optional. The address jellystructure reaches Jellyfin at without going through a proxy. Blank uses the Jellyfin URL above.</span>
+              </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
             </div>
 
@@ -1020,6 +1030,9 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("pub-url", config.publicUrl.ifBlank { cc?.publicUrl.orEmpty() })
     setInputValue("pw-change-url", config.passwordChangeUrl)   // DEB-1854 (FR-4)
     renderPasswordChangeHint()
+    setInputValue("ravilo-web-url", config.raviloWebUrl)   // DEB-2233 (FR-1)
+    setInputValue("jellyfin-internal-url", config.jellyfinInternalUrl)
+    renderServiceAddressHints()
     renderPublicAddress()
     (document.getElementById("cc-max") as? HTMLElement)?.textContent = ccMaxSessions.toString()
     renderChromecastState()
@@ -1369,6 +1382,11 @@ private fun attachListeners(scope: CoroutineScope) {
             }, ok && providersOk)
             if (result.field == "password_change_url") {
                 (document.getElementById("pw-change-hint") as? HTMLElement)?.innerHTML =
+                    """<span style="color:var(--bad)">${(result.error ?: "That does not look like a web address").esc()}</span>"""
+            }
+            if (result.field == "ravilo_web_url" || result.field == "jellyfin_internal_url") {
+                val hintId = if (result.field == "ravilo_web_url") "ravilo-web-hint" else "jellyfin-internal-hint"
+                (document.getElementById(hintId) as? HTMLElement)?.innerHTML =
                     """<span style="color:var(--bad)">${(result.error ?: "That does not look like a web address").esc()}</span>"""
             }
             if (result.field == "scan_schedule") {
@@ -1920,6 +1938,8 @@ private fun readForm(): AppConfig = AppConfig(
     ) else null,
     publicUrl = getInputValue("pub-url").trim().trimEnd('/'),   // Phase 227 — root, not inside [chromecast]
     passwordChangeUrl = getInputValue("pw-change-url").trim(),   // DEB-1854 (FR-4)
+    raviloWebUrl = getInputValue("ravilo-web-url").trim(),   // DEB-2233 (FR-1)
+    jellyfinInternalUrl = getInputValue("jellyfin-internal-url").trim(),
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
@@ -3645,6 +3665,10 @@ private fun wireChromecast(scope: CoroutineScope) {
         renderPasswordChangeHint()
         refreshTomlPreview(readForm())
     }
+    for (id in listOf("ravilo-web-url", "jellyfin-internal-url")) document.getElementById(id)?.addEventListener("input") {
+        renderServiceAddressHints()
+        refreshTomlPreview(readForm())
+    }
     document.getElementById("pub-url")?.addEventListener("input") {
         lastReach = null
         (document.getElementById("pub-reach") as? HTMLElement)?.innerHTML = ""
@@ -3725,6 +3749,19 @@ private fun renderPasswordChangeHint() {
     val problem = dev.jellystructure.model.PasswordChangeUrl.problem(getInputValue("pw-change-url"))
     hint.innerHTML = if (problem != null) """<span style="color:var(--bad)">${problem.esc()}</span>"""
     else "Optional. Where an account whose password Jellyfin does not keep changes it. Ravilo on a phone, in a browser or on a computer opens it in the browser."
+}
+
+/** DEB-2233 (FR-1) — `ServiceAddress.problem` is commonMain, the function the server's 400 uses; the server stays the authority. */
+private fun renderServiceAddressHints() {
+    fun hint(inputId: String, hintId: String, what: String, plain: String) {
+        val el = document.getElementById(hintId) as? HTMLElement ?: return
+        val problem = dev.jellystructure.model.ServiceAddress.problem(getInputValue(inputId), what)
+        el.innerHTML = if (problem != null) """<span style="color:var(--bad)">${problem.esc()}</span>""" else plain
+    }
+    hint("ravilo-web-url", "ravilo-web-hint", "Ravilo Web address",
+        "Optional. Where Ravilo Web is served. A TV's sign-in code links here. Scheme and host, no query.")
+    hint("jellyfin-internal-url", "jellyfin-internal-hint", "Jellyfin internal address",
+        "Optional. The address jellystructure reaches Jellyfin at without going through a proxy. Blank uses the Jellyfin URL above.")
 }
 
 private fun flashCopied(buttonId: String) {

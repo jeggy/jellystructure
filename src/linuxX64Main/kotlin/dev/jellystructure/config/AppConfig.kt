@@ -30,6 +30,11 @@ data class AppConfig(
     /** DEB-1854 (FR-4) — where an account whose password Jellyfin does not keep changes it. Empty = not set; no default,
      *  no example. Validated on a Settings save only; a client receives it through `PasswordChangeUrl.effective`. */
     @SerialName("password_change_url") val passwordChangeUrl: String = "",
+    /** DEB-2233 (FR-1) — where Ravilo Web is served (the TV's QR link, the web sign-in's return address, the phone app's App
+     *  Link host). Blank = not set. Validated on a Settings save only; `ServiceAddress.effective` is what consumers read. */
+    @SerialName("ravilo_web_url") val raviloWebUrl: String = "",
+    /** DEB-2233 (FR-1) — the address jellystructure reaches Jellyfin at without a host-routing proxy. Blank = `jellyfin_url`. */
+    @SerialName("jellyfin_internal_url") val jellyfinInternalUrl: String = "",
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),

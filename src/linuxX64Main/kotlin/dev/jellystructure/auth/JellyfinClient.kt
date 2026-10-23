@@ -8,6 +8,7 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -331,6 +332,44 @@ class JellyfinClient {
         }
         return response.body()
     }
+
+    /** DEB-2233 (FR-2) — `GET /QuickConnect/Enabled` (anonymous). Null when Jellyfin cannot be reached or answers nonsense. */
+    suspend fun quickConnectEnabled(baseUrl: String): Boolean? = runCatching {
+        val response = httpGet(baseUrl.trimEnd('/') + "/QuickConnect/Enabled")
+        if (!response.status.isSuccess()) return@runCatching null
+        when (response.bodyAsText().trim().lowercase()) { "true" -> true; "false" -> false; else -> null }
+    }.getOrNull()
+
+    /** DEB-2233 (FR-3 step 1) — `POST /QuickConnect/Initiate` under the TV's own [identity], so the token step 3 returns is that device's. */
+    suspend fun quickConnectInitiate(baseUrl: String, identity: JellyfinDeviceIdentity): JellyfinQuickConnectState? = runCatching {
+        val response = httpPost(baseUrl.trimEnd('/') + "/QuickConnect/Initiate") {
+            header("Authorization", jellyfinIdentityHeader(identity, versionRequired = true))
+        }
+        if (response.status.isSuccess()) response.body<JellyfinQuickConnectState>() else null
+    }.getOrNull()
+
+    /**
+     * DEB-2233 (FR-3 step 2) — `POST /QuickConnect/Authorize?code=` with [userToken]: the approving viewer's OWN Jellyfin token.
+     * Jellyfin lets the machine token approve a code for any user (measured), so a caller must never pass it here; the approve
+     * route only ever passes the calling device row's `jellyfin_user_token`. False on any refusal or failure.
+     */
+    suspend fun quickConnectAuthorize(baseUrl: String, userToken: String, code: String, identity: JellyfinDeviceIdentity? = null): Boolean = runCatching {
+        val response = httpPost(baseUrl.trimEnd('/') + "/QuickConnect/Authorize") {
+            jellyfinAuth(userToken, identity)
+            parameter("code", code)
+        }
+        response.status.isSuccess() && response.bodyAsText().trim().lowercase() != "false"
+    }.getOrDefault(false)
+
+    /** DEB-2233 (FR-3 step 3) — `POST /Users/AuthenticateWithQuickConnect`, under the same [identity] as the Initiate. */
+    suspend fun authenticateWithQuickConnect(baseUrl: String, secret: String, identity: JellyfinDeviceIdentity): JellyfinAuthResponse? = runCatching {
+        val response = httpPost(baseUrl.trimEnd('/') + "/Users/AuthenticateWithQuickConnect") {
+            header("Authorization", jellyfinIdentityHeader(identity, versionRequired = true))
+            contentType(ContentType.Application.Json)
+            setBody("""{"Secret":${secret.jsonEscape()}}""")
+        }
+        if (response.status.isSuccess()) response.body<JellyfinAuthResponse>() else null
+    }.getOrNull()
 
     /**
      * Phase 187 (FR-187-6/7) — set the caller's own Jellyfin user image. [imageBytes] must already be

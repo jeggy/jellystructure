@@ -229,6 +229,8 @@ fun main() = runBlocking {
     // R360 (dev review item 3) — a screen paired or revoked pushes the config, so `screens.paired` (the cast glyph's
     // TV half) reaches that viewer's apps at once.
     raviloDeviceService.onScreensChanged = { userId -> tvEventBus.notifyConfigChanged(userId) }
+    // DEB-2233 (FR-2/FR-3) — a TV signs in from another device's approval (signin/code, preview, approve, poll).
+    val tvSignInService = dev.jellystructure.tv.TvSignInService(db, raviloDeviceService, jellyfinClient, configStore, tvEventBus)
     val raviloConfigService = RaviloConfigService(
         db, tvEventBus, requestLanguageService,
         castCapability = { castService.capability() },
@@ -759,6 +761,7 @@ fun main() = runBlocking {
         castService = castService, castDir = castDir,
         lidarrClient = lidarrClient,
         screenPairingService = screenPairingService,
+        tvSignInService = tvSignInService,
         devicePolicyReconciler = devicePolicyReconciler,
         playPushResolver = playPushResolver,
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),

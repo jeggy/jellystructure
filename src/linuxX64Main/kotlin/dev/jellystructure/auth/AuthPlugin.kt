@@ -71,6 +71,10 @@ private val OPEN_API_PATHS = listOf(
     // same reasoning as /tv/cast/redeem above.
     "/api/tv/screen/code",
     "/api/tv/screen/claim",
+    // DEB-2233 (FR-2) — a TV that holds no credential mints a sign-in code and polls for the approval. Only these two: the same
+    // prefix's preview and approve routes take a device token. Each has its own rate-limit bucket (FR-16), not /api/tv/login's.
+    "/api/tv/signin/code",
+    "/api/tv/signin/poll",
     // Phase 236 (FR-236-3) — the API-caller status stream is a WebSocket; same reasoning as
     // /api/tv/events above (a browser/HA client can't set a header on the handshake), validated from
     // the query string inside the route itself, either credential.
@@ -249,6 +253,14 @@ fun Application.installAuthPlugin(
             if (device != null) {
                 call.attributes.put(DeviceKey, device)
                 proceed()
+                return@intercept
+            }
+
+            // DEB-2233 (FR-3) — an API key on the sign-in approval is a known credential used where it has no meaning: it acts as a
+            // user but holds no sign-in of its own to approve with, so it is refused rather than treated as unauthenticated.
+            if (path.startsWith("/api/tv/signin/") && bearer?.let { validateApiKey?.invoke(it) } != null) {
+                call.respond(HttpStatusCode.Forbidden, mapOf("error" to "This credential can't sign a TV in"))
+                finish()
                 return@intercept
             }
 

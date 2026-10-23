@@ -206,6 +206,13 @@ class ConfigStore(private val filePath: String) {
     /** DEB-1854 (FR-4/FR-5) — what a client may be sent: the stored page when it parses as `https://`, else null. */
     val passwordChangeUrl: String? get() = dev.jellystructure.model.PasswordChangeUrl.effective(_config.passwordChangeUrl)
 
+    /** DEB-2233 (FR-1) — where Ravilo Web is served, or null when not set (or a hand-edited value that fails validation). */
+    val raviloWebUrl: String? get() = dev.jellystructure.model.ServiceAddress.effective(_config.raviloWebUrl, "Ravilo Web address")
+
+    /** DEB-2233 (FR-1) — the address to reach Jellyfin at without a host-routing proxy; `jellyfin_url` when this is blank. */
+    val jellyfinInternalUrl: String get() =
+        dev.jellystructure.model.ServiceAddress.effective(_config.jellyfinInternalUrl, "Jellyfin internal address") ?: _config.apiKeys.jellyfinUrl
+
     /** Phase 320 (FR-320-1) — called after an update that flipped [supportAvailable]; wired to `config_changed`. */
     @kotlin.concurrent.Volatile var onSupportAvailabilityChanged: (() -> Unit)? = null
 

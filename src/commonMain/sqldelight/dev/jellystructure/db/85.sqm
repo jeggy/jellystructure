@@ -1,0 +1,17 @@
+-- DEB-2233 (FR-2, FR-3) — a TV's sign-in code: minted by `signin/code`, previewed and approved by a signed-in viewer,
+-- collected once by the TV's `signin/poll` (which deletes it). Swept like screen_pairing. See TvSigninCode.sq; this
+-- migration must stay byte-for-byte in sync with its CREATE TABLE.
+CREATE TABLE tv_signin_code (
+    code TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    device_name TEXT,
+    platform TEXT,
+    secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'waiting',
+    approver_name TEXT,
+    approved_user_id TEXT,
+    approved_token TEXT,
+    approved_avatar_url TEXT
+);

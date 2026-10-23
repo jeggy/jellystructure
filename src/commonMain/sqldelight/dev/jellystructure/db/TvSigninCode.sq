@@ -1,0 +1,44 @@
+-- DEB-2233 (FR-2, FR-3) — a TV's sign-in code. `signin/code` mints a row (state `waiting`), a signed-in viewer's
+-- `signin/preview` moves it to `approving`, `signin/approve` signs the TV in as that viewer and moves it to
+-- `approved` (the TV's device token and avatar are stashed here), and the TV's `signin/poll` collects them and deletes
+-- the row, so a code signs a TV in exactly once. Must stay byte-for-byte in sync with 85.sqm's CREATE TABLE.
+CREATE TABLE tv_signin_code (
+    code TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    device_name TEXT,
+    platform TEXT,
+    -- Shown to the room as a code and a QR; the secret travels only on the TV's own poll, stored as its SHA-256.
+    secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    -- waiting | approving | approved
+    state TEXT NOT NULL DEFAULT 'waiting',
+    approver_name TEXT,
+    -- NULL until the code is approved; the three are set together.
+    approved_user_id TEXT,
+    approved_token TEXT,
+    approved_avatar_url TEXT
+);
+
+insert:
+INSERT INTO tv_signin_code(code, device_id, device_name, platform, secret_hash, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+getByCode:
+SELECT * FROM tv_signin_code WHERE code = ?;
+
+preview:
+UPDATE tv_signin_code SET state = 'approving', approver_name = :approver_name WHERE code = :code AND state != 'approved';
+
+approve:
+UPDATE tv_signin_code SET state = 'approved', approved_user_id = :user_id, approved_token = :token, approved_avatar_url = :avatar_url
+WHERE code = :code AND state != 'approved';
+
+deleteByCode:
+DELETE FROM tv_signin_code WHERE code = ?;
+
+deleteByDevice:
+DELETE FROM tv_signin_code WHERE device_id = ?;
+
+sweep:
+DELETE FROM tv_signin_code WHERE expires_at < ?;

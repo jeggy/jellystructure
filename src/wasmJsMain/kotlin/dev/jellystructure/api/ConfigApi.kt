@@ -175,6 +175,10 @@ data class AppConfig(
     @SerialName("public_url") val publicUrl: String = "",
     /** DEB-1854 (FR-4) — where an account whose password Jellyfin does not keep changes it; empty = not set. */
     @SerialName("password_change_url") val passwordChangeUrl: String = "",
+    /** DEB-2233 (FR-1) — where Ravilo Web is served; empty = not set. */
+    @SerialName("ravilo_web_url") val raviloWebUrl: String = "",
+    /** DEB-2233 (FR-1) — where jellystructure reaches Jellyfin without a host-routing proxy; empty = `jellyfin_url`. */
+    @SerialName("jellyfin_internal_url") val jellyfinInternalUrl: String = "",
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),

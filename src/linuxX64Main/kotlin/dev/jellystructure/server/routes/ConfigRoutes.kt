@@ -305,6 +305,19 @@ fun Route.configureConfigRoutes(
             return@put
         }
         config = config.copy(passwordChangeUrl = dev.jellystructure.model.PasswordChangeUrl.normalize(config.passwordChangeUrl))
+        // DEB-2233 (FR-1) — the Ravilo Web address and Jellyfin's internal address: refused field by field, on write only.
+        dev.jellystructure.model.ServiceAddress.problem(config.raviloWebUrl, "Ravilo Web address")?.let { reason ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("field" to "ravilo_web_url", "error" to reason))
+            return@put
+        }
+        dev.jellystructure.model.ServiceAddress.problem(config.jellyfinInternalUrl, "Jellyfin internal address")?.let { reason ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("field" to "jellyfin_internal_url", "error" to reason))
+            return@put
+        }
+        config = config.copy(
+            raviloWebUrl = dev.jellystructure.model.ServiceAddress.normalize(config.raviloWebUrl),
+            jellyfinInternalUrl = dev.jellystructure.model.ServiceAddress.normalize(config.jellyfinInternalUrl),
+        )
         @Suppress("DEPRECATION")
         config = config.copy(
             publicUrl = dev.jellystructure.model.PublicUrl.normalize(config.publicUrl),

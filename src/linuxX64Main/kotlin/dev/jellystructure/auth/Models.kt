@@ -107,6 +107,13 @@ data class JellyfinAuthResponse(
     @SerialName("AccessToken") val accessToken: String,
 )
 
+/** DEB-2233 (FR-3) — `POST /QuickConnect/Initiate`: [code] is what an authorised user approves, [secret] what the initiator exchanges. */
+@Serializable
+data class JellyfinQuickConnectState(
+    @SerialName("Secret") val secret: String,
+    @SerialName("Code") val code: String,
+)
+
 @Serializable
 data class JellyfinLibraryOptions(
     // Phase 242 (FR-242-4) — NULLABLE, deliberately, and this is the decision FR-242-7 stands or falls

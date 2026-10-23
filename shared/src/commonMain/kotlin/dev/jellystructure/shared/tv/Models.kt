@@ -1931,6 +1931,61 @@ data class ScreenClaimRequest(
     @SerialName("claim_secret") val claimSecret: String,
 )
 
+// ─── DEB-2233: a TV signs in from another device ─────────────────────────────
+// Field names are the spec's (camelCase) — `a-tv-signs-in-from-your-phone-and-sso-signs-in-everywhere.md` FR-2/FR-3.
+
+/** DEB-2233 (FR-2) — `POST /api/tv/signin/code`, open path. */
+@Serializable
+data class TvSignInCodeRequest(
+    val deviceId: String,
+    val deviceName: String? = null,
+    val platform: String? = null,
+)
+
+/** DEB-2233 (FR-2) — [available] is false (and everything else null) when the server cannot sign a TV in this way; the TV then
+ *  shows only the password form. [linkUrl] is null when `ravilo_web_url` is blank. [available] has no default so it is always sent. */
+@Serializable
+data class TvSignInCodeResponse(
+    val available: Boolean,
+    val code: String? = null,
+    val expiresAt: Long? = null,
+    val secret: String? = null,
+    val linkUrl: String? = null,
+)
+
+/** DEB-2233 (FR-2) — `POST /api/tv/signin/poll`, open path. */
+@Serializable
+data class TvSignInPollRequest(
+    val code: String,
+    val secret: String,
+)
+
+/** DEB-2233 (FR-2) — the 202 body of a poll: `waiting`, or `approving` with the approver's display name. */
+@Serializable
+data class TvSignInPollWaiting(
+    val state: String,
+    val approverName: String? = null,
+)
+
+/** DEB-2233 (FR-3) — `GET /api/tv/signin/preview?code=`, device token: what the approving viewer is asked to confirm. */
+@Serializable
+data class TvSignInPreview(
+    val deviceName: String,
+    val platform: String? = null,
+)
+
+/** DEB-2233 (FR-3) — `POST /api/tv/signin/approve`, device token. The route takes no user parameter: the caller is the user. */
+@Serializable
+data class TvSignInApproveRequest(
+    val code: String,
+)
+
+/** DEB-2233 (FR-3) — the 503 body of an approve, and the only reason any of these routes gives for one. */
+@Serializable
+data class TvSignInUnavailable(
+    val reason: String,
+)
+
 // ─── Browse facets ────────────────────────────────────────────────────────────
 
 /**

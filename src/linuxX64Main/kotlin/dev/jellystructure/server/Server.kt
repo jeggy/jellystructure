@@ -50,6 +50,7 @@ import dev.jellystructure.server.routes.DashboardService
 import dev.jellystructure.server.routes.channelLogoAdminRoutes
 import dev.jellystructure.server.routes.playbackActiveRoutes
 import dev.jellystructure.server.routes.tvRoutes
+import dev.jellystructure.server.routes.tvSignInRoutes
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrPing
@@ -201,6 +202,8 @@ fun startServer(
     castDir: String? = null,
     // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow.
     screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
+    // DEB-2233 (FR-2/FR-3) — a TV signs in from another device's approval.
+    tvSignInService: dev.jellystructure.tv.TvSignInService? = null,
     // Phase 273 — the subtitle check, its Bazarr side and their routes; null in contexts that build none.
     subtitleCheckWiring: SubtitleCheckWiring? = null,
     // Phase 275 — the music library (its store, its scan) and the routes that read it.
@@ -688,6 +691,7 @@ fun startServer(
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 channelLogoAdminRoutes(channelLogoStore, dev.jellystructure.tv.ChannelLogoUsage(raviloConfigService, liveTvService, configStore, jellyfinClient))   // DEB-1788
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
+                tvSignInService?.let { tvSignInRoutes(it) }   // DEB-2233 — its own rate-limit buckets, none of loginRateLimiter's
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->
                     // Phase 281 (FR-281-10) — the phone's audiobooks: our position first, then a mirror to Jellyfin
