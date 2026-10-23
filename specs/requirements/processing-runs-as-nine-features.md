@@ -409,6 +409,14 @@ One engineer, one piece at a time, each a task of its own, in this order. The CS
    still reads a pipeline the server derives.
 2. **Rannvá: promote round 9's CSS** into the production stylesheets, hand-edited, both themes.
 3. **Admin: Settings ▸ Processing** (FR-4), removing the pipeline card (FR-14.1).
+   **It also wires `design/app/processing.css` (Rannvá, `68f26bab`) into the build**, or every admin slice renders
+   unstyled. A new file is not picked up by a glob; three edits are needed:
+   - add it to `syncDesignAssets`' explicit `include(...)` list in `build.gradle.kts` (the development copy);
+   - add it to the `wasmJsBrowserDistribution` `doLast` copy's own `include(...)` list in the same file (the
+     production copy that the Docker image bakes);
+   - add a `<link rel="stylesheet" href="processing.css">` in `src/wasmJsMain/resources/index.html`.
+
+   Found by Viti on the DEB-2229 deploy: the file was absent from the image and served 404.
 4. **Backend + admin: the Scan dialog and its run** (FR-5, FR-6, the run route of FR-9.1).
 5. **Backend + admin: Activity** (FR-7, FR-8, FR-12.2), with per-feature *Empty* and *Run now*.
 6. **Backend + admin: a title's Refresh ▾ and the Checks card** (FR-10), rewiring the per-title buttons.
