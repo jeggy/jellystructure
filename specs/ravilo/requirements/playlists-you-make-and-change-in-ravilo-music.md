@@ -114,9 +114,13 @@ the rule the folded row follows. It also drops repeats inside `item_ids` itself,
 - When nothing is left, the server makes no Jellyfin call.
 - Create (FR-3) applies the same rule to its own `item_ids`.
 
-**FR-6 — *Add album to playlist*.** The album page gains a ⋯ beside *Play* and *Shuffle*, on both the phone and the
-desktop header. For now it holds a single row, *Add to playlist…*, which opens FR-4's picker for **the album's songs in
-the order *Play* plays them** (`MusicAlbumDetail.tracks`).
+**FR-6 — *Add album to playlist*.** The album page gains a ⋯ to the right of its single *Play album ▾* split button, on
+every album page, phone and desktop, with or without editions. R373's amendment of 2026-10-23 (owner, card
+`cb6d0b67`) puts *Play album*, *Shuffle* and the extras in that button's menu, so there is no separate *Shuffle*
+button. The ⋯ is the home of the album's secondary actions. For now it holds one row, *Add to playlist…*, which opens
+FR-4's picker for **the official album's songs in order**, as the button's main part plays them (`official_ids`; on
+an album without editions, `MusicAlbumDetail.tracks`). Artist and playlist pages keep their own buttons; this ⋯ is the
+album page's only.
 - The toast reads *Added {n} songs to {name}*, *Already in {name}* when `added == 0`, and *Added to {name}* when `n == 1`.
 - An album with no songs shows no ⋯.
 
@@ -242,9 +246,13 @@ whatever the pictures show; a picture that contradicts one comes back here as a 
 
 The round is `design/incoming/2026-10-23-music-playlists/` (DEB-2278, `28faff79`): 81 frames, phone and desktop, in all
 three music skins, English with Danish and Faroese where they overrun. Its picks are written into FR-4, FR-7, FR-8 and
-FR-10 above. Its `--pl-bad` token, the destructive red, is the colour of FR-12's *Delete* and the edit-mode ×. On an album with editions, the ⋯ beside R373's two split buttons leaves no room on the phone (`ph-album-editions`). On
-2026-10-23 the owner asked for options drawn to pick from (card `979f4e34`). A follow-up round draws them, and FR-6's
-placement on such an album waits for that pick. Slice 2 waits on it too.
+FR-10 above. Its `--pl-bad` token, the destructive red, is the colour of FR-12's *Delete* and the edit-mode ×. 
+The album row took two more rounds. On an album with editions, a ⋯ beside R373's two split buttons left no room on the
+phone (`ph-album-editions`). Even before it, R373's *Shuffle* already read "Sh…" at 360 dp
+(`2026-10-23-album-more-placement`, DEB-2293). The owner asked for a single *Play album ▾* button with the ⋯ beside
+it, and picked variant **A** of `design/incoming/2026-10-23-album-play-button/` (DEB-2297, `3aed2318`; card
+`cb6d0b67`): frames `apb-a-menu`, `apb-plain-menu` and `apb-dk-a-menu`, plus `apb-abcd-more` for the ⋯. That row is
+specified in R373's amendment of 2026-10-23, and slice 2 builds it.
 
 ## Acceptance
 
@@ -278,7 +286,8 @@ One engineer. Each slice is blocked by the one before.
      including copies, and each route's `403`/`401`.
    - `TvApiClient` gains the calls. No UI.
    - This slice needs no picture.
-2. **Making and adding** (after the round is adopted): FR-3's three entry points and the name sheet, FR-4, FR-6,
+2. **Making and adding** (after the round is adopted): R373's amendment of 2026-10-23 (the single *Play album ▾* row),
+   FR-3's three entry points and the name sheet, FR-4, FR-6,
    FR-7, FR-13 and FR-14.
 3. **Changing**: FR-8, FR-9's ⋯ row, FR-10's edit mode, FR-11 and FR-12.
 

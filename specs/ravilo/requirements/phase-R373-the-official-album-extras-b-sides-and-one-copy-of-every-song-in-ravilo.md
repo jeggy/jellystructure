@@ -4,17 +4,17 @@
 > + extras*, which **also plays the B-sides** (owner, Q3); Shuffle has the same menu (Q2); extras are unnumbered (Q4);
 > lists show one copy of every song, the better file (Q5); a **Bonus** chip after the version chips (Q6).
 
-## Status
+## Scope
 
-`✓ Built 2026-10-05` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · built (see Build notes) · pending export. Written
-2026-10-04 (design-authored) beside **admin 305**, from
+Written 2026-10-04 (design-authored) beside **admin 305**, from
 `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` and the mockups:
 - `design/ravilo/mobile/ravilo-editions.js` (`window.RaviloEditions`), used by `Ravilo Mobile.html` (`re-*` in
   `mobile/ravilo-music.css`) and `Ravilo Desktop.html` (`dx-ed*` in `desktop/ravilo-desktop.css`); both load
   `../app/editions.js` for the stand-in data
 - the round-1 canvas `design/app/Music Editions - Directions.html` (D1 **A** picked)
 
-Number checked free on `main` tree `fdbc126` (Ravilo tops at R367; our sessions specs hold R368–R372).
+Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end). FR-R373-2 point 3's two split buttons and the
+remembered pick are replaced by the amendment of 2026-10-23 at the end.
 
 **Builds on** R321/R326 (the listening mode), R322 (the player, queue, Now playing), R337 (the desktop's layout), R344
 (read-only version chips) and **305** (the server-side model and rules). **Not on the TV** (no music mode).
@@ -336,3 +336,59 @@ the tap.
 **Only devices can confirm:** the Pixel and the Mac showing the folded counts and the real albums' extras and
 B-sides; an installed older app showing today's album page against the new server; *Play album + extras* cast to a
 speaker the owner allows (R359's long-queue split); the chips lining up on the Mac's Songs table at Large and Medium.
+
+## Amendment 2026-10-23 — one *Play album ▾* button, and nothing remembered (DEB-2254)
+
+> Owner, 2026-10-23 (DEB-2254, card `e3a844f5`): *"I would like the Play Album and Shuffle to merge into a single
+> button, so it says Play album, but with a down arrow on the right side of that button, so shuffle is available under
+> that sub-menu. So it's clear we have 1 button for playing the whole album, shuffling it and the Play extras etc.
+> These could be grouped by separators within the dropdown, and then we have this ... button on the right of it which
+> has Add to playlist"*.
+>
+> Then, from the drawn variants (card `cb6d0b67`): **A**, *"the button always says Play album"*; a plain album's
+> button says *Play album* too; the split button is one continuous gradient.
+
+The round is `design/incoming/2026-10-23-album-play-button/` (DEB-2297, `3aed2318`): `apb-a-menu`, `apb-plain-menu`
+and `apb-dk-a-menu`. Two earlier rounds found the reason for the change. At 360 dp, today's pair already truncates:
+*Shuffle* reads "Sh…" and *Play album + extras* reads "Play albu…" (DEB-2293).
+
+**FR-R373-2 point 3 now reads:**
+
+3. **One split button, *Play album ▾*,** on every album page, phone and desktop, with or without editions. A plain
+   album's button says *Play album* (`ed.play_album`) instead of *Play*. **The main part always plays the official
+   album in order** (`official_ids`; on an album without editions, `tracks`). It never relabels.
+   - **The ▾ menu, on an album with editions** (`apb-a-menu`): *Play album* · *Shuffle*, a separator, then
+     *Play album + extras* · *Shuffle + extras*.
+   - **The ▾ menu, on a plain album** (`apb-plain-menu`): *Play album* · *Shuffle*.
+   - The rows carry their icons only: no subtitles and no tick. Picking a row starts playback.
+   - *Shuffle + extras* plays the extended order (`official_ids` → `extra_ids` → `bside_tracks`) shuffled.
+   - The ⋯ to its right is the playlists spec's FR-6 (`playlists-you-make-and-change-in-ravilo-music.md`).
+
+**Nothing is remembered.** The per-album, per-device pick is retired:
+- `AlbumPickStore` (`MusicDeviceStore`, key `album_pick`) is no longer read or written. A value already stored is
+  ignored, and `forgetListening()` still clears it.
+- No pick from the menu, a shuffle included, changes what the button does next time. The owner answered "a shuffle is
+  a one-off" before picking A, and under A nothing at all carries over.
+- **A tap on a row** follows dev review item 3, with the pick always *Play album*. An official song plays the official
+  order from that row. An extra or a B-side plays the extended order from that row.
+
+**The look:**
+- The split button is **one continuous gradient** across both halves. Today the ▾ half paints its own gradient and
+  restarts at purple (`apb-zoom-seam-4x` against `apb-zoom-seam-fix-4x`). The ▾ half stays 44 px.
+- The open ▾ menu, and the ⋯ menu beside it, draw **above** the mini player and the bottom bar. Today's `.re-menu` sits
+  under them, which would hide a four-row menu's last row.
+
+**Strings:**
+- `ed.play_album`, `ed.play_extras` and `music.shuffle` are reused.
+- `ed.sub_album` and `ed.sub_extras` are no longer drawn; they stay in the files.
+- One new key: `ed.shuffle_extras`: en *Shuffle + extras* · da *Bland + ekstra* · fo *Blanda + eyka* (drafts, from the
+  round).
+
+**Superseded acceptance:** the bullet ending *"the button relabels and is remembered"*. *Play album + extras* still queues the
+extended order, from the menu. The `AlbumPickStoreTest` and the relabel assertions in `MusicAlbumEditionsTest` go with
+the build.
+
+**Unchanged:** the header (point 1), the extras section, *Singles & B-sides*, *More from*, the folded lists and the
+chips. Artist pages and playlist pages keep their own *Play* and *Shuffle*: they have one order, so a ▾ there would hide
+*Shuffle* for nothing (Rannvá's report, DEB-2297). This is built in slice 2 of DEB-2254 (DEB-2280).
+
