@@ -443,16 +443,27 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
         }
         Spacer(Modifier.height(6.dp))
         Text(item.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val sub = if (item.kind == MediaKind.SERIES && item.season != null && item.episode != null) {
+        val episodeLine = if (item.kind == MediaKind.SERIES && item.season != null && item.episode != null) {
             dev.jellystructure.shared.tv.episodeCode(item.season!!, item.episode!!) + (item.episodeTitle?.let { " · $it" } ?: "")   // R346
-        } else releaseTypeLabel(item) ?: ""
-        Text(sub, color = colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val footer = listOfNotNull(item.network, item.year?.toString()).joinToString("  ·  ")
-        if (footer.isNotBlank()) Text(footer, color = colors.textSecondary.copy(alpha = 0.8f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        } else null
+        // DEB-2250 FR-1..FR-3: the lines under the title; the year is not one of them.
+        upcomingCardSubLines(item.kind == MediaKind.MOVIE, episodeLine, item.network, item.genre).forEachIndexed { i, line ->
+            Text(line, color = colors.textSecondary.copy(alpha = if (i == 0) 1f else 0.8f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         if (item.status == UpcomingStatus.MISSING) {
             Text(str("up.was_due", mapOf("date" to item.date)), color = Color(0xFFE0393A), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
         }
     }
+}
+
+/**
+ * DEB-2250 FR-1..FR-3 — the lines under a Coming Soon card's title. A film: its genre, if any. A series:
+ * the episode line, then `network · genre` with blank parts dropped. Never the year.
+ */
+internal fun upcomingCardSubLines(isMovie: Boolean, episodeLine: String?, network: String?, genre: String?): List<String> {
+    if (isMovie) return listOfNotNull(genre?.takeIf { it.isNotBlank() })
+    val last = listOfNotNull(network?.takeIf { it.isNotBlank() }, genre?.takeIf { it.isNotBlank() }).joinToString("  ·  ")
+    return listOfNotNull(episodeLine ?: "", last.takeIf { it.isNotEmpty() })
 }
 
 @Composable
