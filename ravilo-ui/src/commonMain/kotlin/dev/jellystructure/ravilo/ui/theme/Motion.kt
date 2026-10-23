@@ -1,8 +1,10 @@
 package dev.jellystructure.ravilo.ui.theme
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
  * Centralized motion tokens (R89). The single source of truth for the app's motion language —
@@ -37,6 +39,12 @@ object RaviloMotion {
     const val CARD_FOCUS_SCALE = 1.06f   // episode cards
     const val PILL_FOCUS_SCALE = 1.06f   // season picker
     const val CAST_FOCUS_SCALE = 1.12f
+
+    // ── Focus ring (DEB-2204, FR-1) ─────────────────────────────────────────────
+    // The mockup's `.tile` border / `.btn` box-shadow transition: `.2s` on `--ease`. The ring's alpha and
+    // colour tween over this in both directions; its width never moves.
+    const val FOCUS_RING_MS = 200
+    val EASE = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)   // ravilo.css --ease: cubic-bezier(.22,.61,.36,1)
 
     // ── Image loading (R87) ─────────────────────────────────────────────────────
     // A short "settle," not the 600ms global "pop." Coil skips the crossfade for memory-cache hits,
@@ -82,3 +90,10 @@ object RaviloMotion {
     const val ROW_OPEN_BG_FADE_IN_MS = 550
     const val ROW_OPEN_BG_FADE_OUT_MS = 500
 }
+
+/**
+ * DEB-2204 (FR-4) — whether this spec's motion is off: the focus ring (FR-1) and the player's scale and glow
+ * (FR-2) jump to their end values. Provided once at the app root from [dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion],
+ * read once per root composition. Animations this spec did not add are unchanged.
+ */
+val LocalReducedMotion = staticCompositionLocalOf { false }

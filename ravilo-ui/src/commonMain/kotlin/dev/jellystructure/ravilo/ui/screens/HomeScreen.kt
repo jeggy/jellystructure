@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.components.GridGlyph
@@ -847,7 +848,7 @@ private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester?
             .width(180.dp).height(180.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .background(colors.surfaceVariant, tileShape)
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, tileShape) else Modifier)
+            .focusRing(focused, tileShape, colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -909,7 +910,7 @@ private fun HomeErrorState(
             Box(
                 modifier = Modifier
                     .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                    .then(if (signOutFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                    .focusRing(signOutFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                     .dpadFocusable(
                         focusRequester = signOutFR,
                         onFocused = { signOutFocused = true },

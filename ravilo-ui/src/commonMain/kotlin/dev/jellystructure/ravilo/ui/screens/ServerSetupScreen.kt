@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -89,7 +90,8 @@ fun ServerSetupScreen(
     // R349 (FR-R349-7) — on a TV the address is focused like a button first and becomes a text field (and opens the
     // keyboard) only on OK, so arriving on this screen shows a focus without throwing the keyboard up.
     var editing by remember { mutableStateOf(false) }
-    var addressHasFocus by remember { mutableStateOf(false) }
+    // DEB-2204 (FR-1) — through rememberFocusVisual like every other ring, so a phone draws none (R298).
+    var addressHasFocus by rememberFocusVisual()
     LaunchedEffect(editing) { if (editing) runCatching { fieldFR.requestFocus() } }
     // A visible focus on arrival: Connect when an address is already there, else the address.
     LaunchedEffect(Unit) { runCatching { if (host.isNotBlank()) connectFR.requestFocus() else addressFR.requestFocus() } }
@@ -127,7 +129,7 @@ fun ServerSetupScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .keepInViewWhileFocused()   // R349 (FR-R349-2)
-                    .then(if (addressHasFocus) Modifier.border(3.dp, colors.focusRing, addressShape) else Modifier)
+                    .focusRing(addressHasFocus, addressShape, colors.focusRing, 3.dp)
                     .onFocusChanged { addressHasFocus = it.hasFocus }
                     .testTag(ServerSetupTags.ADDRESS)
                     .dpadFocusable(
@@ -194,10 +196,7 @@ fun ServerSetupScreen(
                         },
                         RoundedCornerShape(8.dp),
                     )
-                    .then(
-                        if (connectFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp))
-                        else Modifier
-                    )
+                    .focusRing(connectFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                     .testTag(ServerSetupTags.CONNECT)
                     .dpadFocusable(
                         focusRequester = connectFR,

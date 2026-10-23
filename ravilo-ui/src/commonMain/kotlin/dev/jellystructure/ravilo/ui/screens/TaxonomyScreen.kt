@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.fallbackIndex
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
@@ -277,7 +278,7 @@ private fun TaxonomyTile(
                 // one ground per wall. The server says which logos only re-inking can show (FR-R308-3).
                 // Genres keep their dark cards (FR-R308-6).
                 .background(if (!genre) TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
-                .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
+                .focusRing(focused, shape, colors.focusRing, 2.dp)
                 .padding(horizontal = if (handset || item.logoUrl == null) 10.dp else 16.dp),
             contentAlignment = Alignment.Center,
         ) {

@@ -152,6 +152,12 @@ kotlin {
         val desktopTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                // DEB-2204 (FR-3) — composition counts and the ring's alpha over a test clock need a Compose UI test host.
+                // Test-only: nothing here ships.
+                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+                implementation(compose.uiTest)
+                implementation(compose.desktop.currentOs)
+                implementation(libs.kotlinx.coroutines.test)
             }
         }
         if (!desktopOnly) sourceSets.getByName("wasmJsMain") {

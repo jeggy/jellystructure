@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -106,11 +107,9 @@ private fun RequestLanguageOptionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) RaviloTheme.colors.fg.copy(alpha = 0.10f) else Color.Transparent)
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
-                shape = RoundedCornerShape(10.dp),
+            .focusRing(
+                focused, RoundedCornerShape(10.dp), colors.focusRing.copy(0.7f), 2.dp,
+                fillFocused = RaviloTheme.colors.fg.copy(alpha = 0.10f), fillResting = Color.Transparent,
             )
             .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect, onBack = onBack)
             .padding(horizontal = 14.dp, vertical = 12.dp),

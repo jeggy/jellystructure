@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import androidx.compose.runtime.withFrameNanos
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.ui.platform.testTag
@@ -502,7 +503,7 @@ private fun ProfileAvatar(
         modifier = Modifier
             .size(40.dp)
             .background(if (focused) colors.accent else colors.surfaceVariant, CircleShape)
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, CircleShape) else Modifier)
+            .focusRing(focused, CircleShape, colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -551,7 +552,7 @@ private fun SearchIcon(
         modifier = Modifier
             .size(40.dp)
             .background(if (focused) colors.accent else Color.Transparent, CircleShape)
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, CircleShape) else Modifier)
+            .focusRing(focused, CircleShape, colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },

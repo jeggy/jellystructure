@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.derivedStateOf
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -125,35 +129,36 @@ private fun GenreRowLabel(text: String) {
 }
 
 @Composable
-private fun GenreChip(
+internal fun GenreChip(
     text: String,
     lead: Boolean,
     focusRequester: FocusRequester? = null,
     onUp: (() -> Unit)? = null,
     onDown: (() -> Unit)? = null,
     onSelect: (() -> Unit)?,
+    /** DEB-2204 (FR-3) — the test seam that counts this chip's recompositions. */
+    modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
     val skin = LocalRaviloSkin.current
     val sora = Sora
     var focused by rememberFocusVisual()
-    val arrowAlpha by animateFloatAsState(if (focused && onSelect != null) 0.75f else 0f, label = "genreArrow")
+    val arrowWanted = focused && onSelect != null
+    val arrowAlpha by animateFloatAsState(if (arrowWanted) 0.75f else 0f, label = "genreArrow")
     val shape = remember { RoundedCornerShape(50) }
+    val wanted by rememberUpdatedState(arrowWanted)
+    val arrowShown by remember { derivedStateOf { wanted || arrowAlpha > 0f } }
 
     // R221 — Noir's accent IS amber, so a tinted lead chip reads as a warning there (the same collision
     // R222's copy later reused the fix for): keep the weight/ink signal, drop the colour.
     val noir = skin == Skin.NOIR
-    val bg = when {
-        focused -> colors.accent
+    // DEB-2204 (FR-1) — the fill and the lead chip's 1 dp border ease to the focused fill on the ring's timing.
+    val restingBg = when {
         lead && !noir -> colors.accent.copy(alpha = 0.22f)
         lead -> colors.surfaceVariant
         else -> RaviloTheme.colors.fg.copy(alpha = 0.06f)
     }
-    val border = when {
-        focused -> Color.Transparent
-        lead && !noir -> colors.accent.copy(alpha = 0.45f)
-        else -> Color.Transparent
-    }
+    val restingBorder = if (lead && !noir) colors.accent.copy(alpha = 0.45f) else Color.Transparent
     val ink = when {
         focused -> colors.onAccent
         lead -> colors.text
@@ -163,7 +168,7 @@ private fun GenreChip(
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = modifier
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -173,14 +178,15 @@ private fun GenreChip(
                 onSelect = onSelect,
             )
             .clip(shape)
-            .background(bg, shape)
-            .then(if (border != Color.Transparent) Modifier.border(1.dp, border, shape) else Modifier)
+            .focusRing(focused, shape, colors.accent, 1.dp, resting = restingBorder, fillFocused = colors.accent, fillResting = restingBg)
             .padding(horizontal = 16.dp, vertical = 9.dp),
     ) {
         Text(text = text, color = ink, fontSize = 14.sp, fontWeight = weight, fontFamily = sora)
-        if (arrowAlpha > 0f) {
+        // DEB-2204 (FR-3) — the arrow's fade is read in the draw phase; only whether it is there at all is read here, so the chip
+        // recomposes when the fade starts and when it ends, not on the frames between.
+        if (arrowShown) {
             Spacer(Modifier.width(6.dp))
-            Text(text = "›", color = ink.copy(alpha = arrowAlpha), fontSize = 13.sp, fontFamily = sora)
+            Text(text = "›", color = ink, fontSize = 13.sp, fontFamily = sora, modifier = Modifier.graphicsLayer { alpha = arrowAlpha })
         }
     }
 }

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.height
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -21,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -81,7 +83,7 @@ fun RaviloButton(
         ) {
             Box(
                 Modifier.height(38.dp).clip(buttonShape).background(if (primary) colors.text else colors.fg.copy(alpha = 0.10f))
-                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, buttonShape) else Modifier).padding(horizontal = 18.dp)
+                    .focusRing(focused, buttonShape, colors.focusRing, 2.dp).padding(horizontal = 18.dp)
                     // R350 (FR-R350-17) — what is drawn, for the walk tests.
                     .semantics { focusRingShown = focused },
                 contentAlignment = Alignment.Center,
@@ -126,27 +128,14 @@ fun RaviloButton(
             // R350 (FR-R350-8) — the design's `.btn.focused` ring, drawn OUTSIDE the button (a 2 dp ring, 3 dp off
             // it). The primary button's lit fill alone did not read as focus: there was no unfocused primary on screen
             // to compare it with, so the series page's Play looked the same before and after the first key.
-            .then(if (focused) Modifier.drawBehind {
-                val gap = 3.dp.toPx(); val w = 2.dp.toPx()
-                drawRoundRect(
-                    color = colors.focusRing,
-                    topLeft = androidx.compose.ui.geometry.Offset(-gap - w / 2, -gap - w / 2),
-                    size = androidx.compose.ui.geometry.Size(size.width + 2 * gap + w, size.height + 2 * gap + w),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx() + gap + w / 2),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = w),
-                )
-            } else Modifier)
+            // DEB-2204 (FR-1) — the same ring (2 dp, 3 dp clear of the button), now a permanent stroke whose alpha eases
+            // over 200 ms: it was added and removed by an `if`, and a modifier that comes and goes breaks focus (R338).
+            .focusRing(focused, buttonShape, colors.focusRing, 2.dp, outset = 5.dp, over = false)
+            // The primary fill swaps accentDim → accent, and a ghost's 1 dp border gets a 2 dp accent one drawn over it,
+            // on the same easing.
             .then(
-                when {
-                    focused && style == ButtonStyle.PRIMARY ->
-                        Modifier.background(colors.accent, buttonShape)
-                    !focused && style == ButtonStyle.PRIMARY ->
-                        Modifier.background(colors.accentDim, buttonShape)
-                    focused ->
-                        Modifier.border(2.dp, colors.accent, buttonShape)
-                    else ->
-                        Modifier.border(1.dp, ghostBorderColor, buttonShape)
-                }
+                if (style == ButtonStyle.PRIMARY) Modifier.focusRing(focused, buttonShape, Color.Transparent, fillFocused = colors.accent, fillResting = colors.accentDim)
+                else Modifier.focusRing(focused, buttonShape, colors.accent, 2.dp, resting = ghostBorderColor, restingWidth = 1.dp)
             )
             .heightIn(min = 44.dp)
             .padding(horizontal = 18.dp, vertical = 8.dp),

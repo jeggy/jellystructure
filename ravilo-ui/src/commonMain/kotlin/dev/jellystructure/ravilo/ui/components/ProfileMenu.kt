@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -163,7 +164,7 @@ private fun ProfileMenuRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (focused) colors.surfaceVariant else Color.Transparent, RoundedCornerShape(9.dp))
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(9.dp)) else Modifier)
+            .focusRing(focused, RoundedCornerShape(9.dp), colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },

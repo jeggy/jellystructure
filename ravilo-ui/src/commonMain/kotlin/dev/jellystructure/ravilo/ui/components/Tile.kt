@@ -153,6 +153,8 @@ fun Tile(
     onFocused: () -> Unit = {},
     onBlurred: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
+    /** DEB-2204 (FR-3) — applied to the tile's outer column; the test seam that counts this tile's recompositions. */
+    modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -184,7 +186,7 @@ fun Tile(
     // effect specifically — it's a draw-only graphicsLayer on the inner poster box below, so the lazy
     // list's focused-bounds tracking never chases IT (no viewport jump while merely focusing).
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(w)
             .then(
                 if (placeholder) Modifier else Modifier.dpadFocusable(

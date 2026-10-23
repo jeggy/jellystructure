@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -172,7 +173,7 @@ internal fun SeerrSearchPill(onSelect: () -> Unit) {
         fontFamily = Sora,
         modifier = Modifier
             .background(if (focused) colors.text else colors.surfaceVariant, RoundedCornerShape(20.dp))
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(20.dp)) else Modifier)
+            .focusRing(focused, RoundedCornerShape(20.dp), colors.focusRing, 2.dp)
             .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     )

@@ -1464,6 +1464,8 @@ fun RaviloApp(
         // when the pointer is used again (FR-R350-17: really moved or pressed), as the platforms' own focus rings do. (R298's rule for a phone: never.)
         val deskKeyboard = remember { dev.jellystructure.ravilo.ui.focus.KeyboardMode() }
         val deskKeyboardNav = deskKeyboard.on
+        // DEB-2204 (FR-4) — read once per root composition, as R240 reads it.
+        val reducedMotion = remember { dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion() }
         // ─── R337 — the desktop's frame: sidebar or rail, the player bar, the queue panel ────────────────────────
         var queueOpen by remember { mutableStateOf(false) }
         var sidebarHidden by remember { mutableStateOf(runCatching { dev.jellystructure.ravilo.ui.music.MusicDeviceStore.get("desk_sidebar_hidden") }.getOrNull() == "1") }
@@ -2040,7 +2042,7 @@ fun RaviloApp(
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 signedOutNotice = false   // DEB-1933 — this is the 401 route, not the event's
                 configScope.launch {

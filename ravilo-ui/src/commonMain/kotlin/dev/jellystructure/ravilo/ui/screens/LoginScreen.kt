@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.ui.graphics.Color
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -347,7 +349,7 @@ private fun LoginField(
                 .height(52.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(12.dp))
                 // R350 re-test (FR-R350-15) — a TV's focused field shows it (a read-only field draws no cursor).
-                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(12.dp)) else Modifier)
+                .focusRing(edit.focused, RoundedCornerShape(12.dp), colors.focusRing, 3.dp)
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -413,7 +415,7 @@ private fun LoginLink(
     Box(
         modifier = Modifier
             .testTag(tag)
-            .then(if (focused) Modifier.background(colors.accent, shape).border(2.dp, colors.focusRing, shape) else Modifier)
+            .focusRing(focused, shape, colors.focusRing, 2.dp, fillFocused = colors.accent, fillResting = Color.Transparent)
             .dpadFocusable(
                 focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false },
                 onSelect = onSelect, onUp = onUp, onDown = onDown, onBack = onBack,
@@ -442,7 +444,7 @@ private fun LoginButton(label: String, focusRequester: FocusRequester, enabled: 
                 if (!enabled) colors.surfaceVariant else if (focused) colors.accent else colors.surfaceVariant,
                 RoundedCornerShape(10.dp),
             )
-            .then(if (focused && enabled) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
+            .focusRing(focused && enabled, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
             .then(
                 if (enabled) {
                     Modifier.dpadFocusable(

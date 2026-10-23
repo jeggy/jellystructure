@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.focus.GridFocus
 import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
@@ -747,7 +748,7 @@ private fun FacetBar(
             Box(
                 Modifier
                     .background(chipBg, chipShape)
-                    .then(if (focused && !active) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
+                    .focusRing(focused && !active, chipShape, colors.focusRing, 2.dp)
                     .onGloballyPositioned { store.chipX[key.name] = it.positionInRoot().x }
                     .dpadFocusable(
                         focusRequester = facetChipFRs[key],
@@ -779,7 +780,7 @@ private fun FacetBar(
                 Box(
                     Modifier
                         .background(chipIdle, chipShape)
-                        .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
+                        .focusRing(focused, chipShape, colors.focusRing, 2.dp)
                         .dpadFocusable(focusRequester = resetChipFR, onFocused = { focused = true; store.lastChipKey = "reset" }, onBlurred = { focused = false }, onSelect = { store.resetFilters() }, onUp = onBarUp, onDown = onBarDown)
                         .padding(chipPad),
                     contentAlignment = Alignment.Center,
@@ -798,7 +799,7 @@ private fun FacetBar(
             Box(
                 Modifier
                     .background(chipIdle, chipShape)
-                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
+                    .focusRing(focused, chipShape, colors.focusRing, 2.dp)
                     .onGloballyPositioned { store.chipX["sort"] = it.positionInRoot().x }
                     .dpadFocusable(
                         focusRequester = sortChipFR,

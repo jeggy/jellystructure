@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.border
@@ -100,7 +101,7 @@ fun TrailerOverlay(trailer: TvTrailer, title: String, onClose: () -> Unit) {
                 modifier = Modifier
                     .dpadFocusable(focusRequester = closeFR, onFocused = { closeFocused = true }, onBlurred = { closeFocused = false }, onSelect = onClose, onBack = onClose)
                     .background(colors.surfaceVariant, RoundedCornerShape(50))
-                    .then(if (closeFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(50)) else Modifier)
+                    .focusRing(closeFocused, RoundedCornerShape(50), colors.focusRing, 2.dp)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 // R315 — the ✕ is drawn, not typed.

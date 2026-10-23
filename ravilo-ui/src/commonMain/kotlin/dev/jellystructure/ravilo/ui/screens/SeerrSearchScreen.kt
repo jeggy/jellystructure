@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
@@ -153,7 +154,7 @@ fun SeerrSearchScreen(
                 .padding(horizontal = raviloHPad)
                 .height(60.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(14.dp))
-                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(14.dp)) else Modifier)
+                .focusRing(edit.focused, RoundedCornerShape(14.dp), colors.focusRing, 3.dp)
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.CenterStart,
         ) {

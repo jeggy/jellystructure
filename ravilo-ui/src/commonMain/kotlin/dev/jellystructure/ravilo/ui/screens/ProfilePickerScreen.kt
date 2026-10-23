@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.GearGlyph
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
@@ -228,7 +229,7 @@ private fun ProfileTile(
             modifier = Modifier
                 .size(96.dp)
                 .background(if (focused) colors.accent else colors.surfaceVariant, CircleShape)
-                .then(if (focused) Modifier.border(3.dp, colors.focusRing, CircleShape) else Modifier),
+                .focusRing(focused, CircleShape, colors.focusRing, 3.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (avatarUrl != null) {
@@ -291,7 +292,7 @@ private fun ActionTile(
             modifier = Modifier
                 .size(96.dp)
                 .background(colors.surfaceVariant, CircleShape)
-                .then(if (focused) Modifier.border(3.dp, colors.focusRing, CircleShape) else Modifier),
+                .focusRing(focused, CircleShape, colors.focusRing, 3.dp),
             contentAlignment = Alignment.Center,
         ) {
             glyph(if (focused) colors.text else colors.textSecondary)

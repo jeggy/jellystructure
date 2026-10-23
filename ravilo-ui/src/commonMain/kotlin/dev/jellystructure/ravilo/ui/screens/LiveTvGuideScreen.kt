@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -379,7 +380,7 @@ private fun CategoryChip(label: String, selected: Boolean, onSelect: () -> Unit)
     Box(
         modifier = Modifier
             .background(if (selected) colors.accent else colors.surfaceVariant, RoundedCornerShape(20.dp))
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(20.dp)) else Modifier)
+            .focusRing(focused, RoundedCornerShape(20.dp), colors.focusRing, 2.dp)
             .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
@@ -625,7 +626,7 @@ private fun GuideChannelRow(
                         modifier = Modifier
                             .width(cellWidthDp.dp).fillMaxSize()
                             .background(if (isNow) colors.accentDim else colors.surfaceVariant, RoundedCornerShape(6.dp))
-                            .then(if (pFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+                            .focusRing(pFocused, RoundedCornerShape(6.dp), colors.focusRing, 2.dp)
                             .dpadFocusable(
                                 onFocused = { pFocused = true; onCellFocused(startMinutes, endMinutes) },
                                 onBlurred = { pFocused = false },

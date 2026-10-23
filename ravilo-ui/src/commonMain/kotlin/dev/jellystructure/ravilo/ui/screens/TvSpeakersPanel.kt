@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -221,7 +222,7 @@ private fun TvSpeakerRowView(r: TvSpeakerRow, focused: Boolean, multi: Boolean) 
     Column(
         Modifier.fillMaxWidth().heightIn(min = 64.dp)
             .background(if (focused) colors.fg.copy(alpha = 0.12f) else colors.fg.copy(alpha = 0f), shape)
-            .then(if (focused) Modifier.border(3.dp, colors.focusRing, shape) else Modifier)
+            .focusRing(focused, shape, colors.focusRing, 3.dp)
             .padding(horizontal = 18.dp, vertical = 10.dp)
             .testTag("tv-speaker-${if (r.add) "add" else r.castDeviceId ?: "master"}"),
         verticalArrangement = Arrangement.Center,

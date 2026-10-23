@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import androidx.compose.ui.draw.drawBehind
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -52,16 +54,8 @@ fun DetailSynopsis(
         modifier = modifier
             // R350 (FR-R350-8) — the design's `.hero-syn.dsyn.focused` ring, drawn around the text without moving it
             // (a brighter ink alone was hard to see on a backdrop, and a short synopsis has no "More" to light).
-            .then(if (focused) Modifier.drawBehind {
-                val pad = 6.dp.toPx(); val w = 2.dp.toPx()
-                drawRoundRect(
-                    color = colors.focusRing,
-                    topLeft = androidx.compose.ui.geometry.Offset(-pad, -pad),
-                    size = androidx.compose.ui.geometry.Size(size.width + 2 * pad, size.height + 2 * pad),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = w),
-                )
-            } else Modifier)
+            // DEB-2204 (FR-1) — the same 2 dp ring 6 dp out (outer edge 7 dp, corner 8 dp on its centre line), now eased.
+            .focusRing(focused, RoundedCornerShape(2.dp), colors.focusRing, 2.dp, outset = 7.dp, over = false)
             .dpadFocusable(
             focusRequester = focusRequester,
             onFocused = { focused = true },

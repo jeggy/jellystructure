@@ -1,6 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.focus.LocalFocusVisible
+import dev.jellystructure.ravilo.ui.focus.focusScaleGlow
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -2744,19 +2746,15 @@ private fun PlayPauseButton(
 ) {
     val colors = RaviloTheme.colors
     val grad = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
-    val size by animateDpAsState(if (focused) 50.dp else 44.dp, label = "ppScale")
+    val size = 44.dp   // DEB-2204 (FR-2) — the focused 50 dp is a draw-only scale now, so the row never reflows
     val glyphColor = Color.White
     Box(
         modifier = Modifier
+            .focusScaleGlow(focused, 50f / 44f, 14.dp, CircleShape, colors.focusGlow)
             .size(size)
-            .then(if (focused) Modifier.shadow(14.dp, CircleShape, spotColor = colors.focusGlow) else Modifier)
             .clip(CircleShape)
             .background(if (focused) grad else Brush.linearGradient(listOf(Color.White.copy(0.14f), Color.White.copy(0.14f))))
-            .border(
-                width = 1.dp,
-                color = if (focused) colors.focusRing.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.22f),
-                shape = CircleShape,
-            )
+            .focusRing(focused, CircleShape, colors.focusRing.copy(alpha = 0.6f), 1.dp, resting = Color.White.copy(alpha = 0.22f))
             // R157 (FR-R157-2.1/2.2) — a real pointer target: click activates, hover moves logical
             // focus here. Deliberately NOT dpadFocusable/.focusable() — the root Box is the sole real
             // Compose-focus owner (D-pad navigation is hand-rolled via the PlFocus enum); making every
@@ -2810,16 +2808,11 @@ private fun SkipButton(label: String, focused: Boolean, onClick: () -> Unit = {}
     val colors = RaviloTheme.colors
     Box(
         modifier = Modifier
-            .scale(if (focused) 1.06f else 1f)
+            .focusScaleGlow(focused, 1.06f, 14.dp, RoundedCornerShape(10.dp), colors.focusGlow)
             .height(40.dp)
-            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
             .clip(RoundedCornerShape(10.dp))
             .background(Color.White.copy(alpha = 0.08f))
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
-                shape = RoundedCornerShape(10.dp),
-            )
+            .focusRing(focused, RoundedCornerShape(10.dp), colors.accent, 2.dp, resting = Color.White.copy(alpha = 0.22f), restingWidth = 1.dp)
             .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
             .hoverToCall(onHover)
             .padding(horizontal = 12.dp),
@@ -2840,16 +2833,11 @@ private fun TrackButton(label: String, focused: Boolean, onClick: () -> Unit = {
     val colors = RaviloTheme.colors
     Box(
         modifier = Modifier
-            .scale(if (focused) 1.04f else 1f)
+            .focusScaleGlow(focused, 1.04f, 14.dp, RoundedCornerShape(10.dp), colors.focusGlow)
             .height(40.dp)
-            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
             .clip(RoundedCornerShape(10.dp))
             .background(Color.White.copy(alpha = 0.08f))
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
-                shape = RoundedCornerShape(10.dp),
-            )
+            .focusRing(focused, RoundedCornerShape(10.dp), colors.accent, 2.dp, resting = Color.White.copy(alpha = 0.22f), restingWidth = 1.dp)
             .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
             .hoverToCall(onHover)
             .padding(horizontal = 14.dp),
@@ -2880,16 +2868,11 @@ private fun BackButton(focused: Boolean, onClick: () -> Unit = {}, onHover: () -
     ) {
         Box(
             modifier = Modifier
-                .scale(if (focused) 1.06f else 1f)
+                .focusScaleGlow(focused, 1.06f, 14.dp, CircleShape, colors.focusGlow)
                 .size(34.dp)
-                .then(if (focused) Modifier.shadow(14.dp, CircleShape, spotColor = colors.focusGlow) else Modifier)
                 .clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.10f))
-                .border(
-                    width = if (focused) 2.dp else 1.dp,
-                    color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
-                    shape = CircleShape,
-                ),
+                .focusRing(focused, CircleShape, colors.accent, 2.dp, resting = Color.White.copy(alpha = 0.22f), restingWidth = 1.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text("‹", color = Color.White.copy(alpha = if (focused) 1f else 0.85f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -3307,11 +3290,9 @@ private fun PickerPictureRow(label: String, selected: Boolean, focused: Boolean,
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
-                shape = RoundedCornerShape(10.dp),
+            .focusRing(
+                focused, RoundedCornerShape(10.dp), colors.focusRing.copy(0.7f), 2.dp,
+                fillFocused = Color.White.copy(alpha = 0.10f), fillResting = Color.Transparent,
             )
             .clickable(onClick = onTap)
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -3355,11 +3336,9 @@ private fun PickerLanguageRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
-                shape = RoundedCornerShape(10.dp),
+            .focusRing(
+                focused, RoundedCornerShape(10.dp), colors.focusRing.copy(0.7f), 2.dp,
+                fillFocused = Color.White.copy(alpha = 0.10f), fillResting = Color.Transparent,
             )
             .clickable(onClick = onTap)
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -3433,11 +3412,9 @@ private fun PickerVersionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
-                shape = RoundedCornerShape(10.dp),
+            .focusRing(
+                focused, RoundedCornerShape(10.dp), colors.focusRing.copy(0.7f), 2.dp,
+                fillFocused = Color.White.copy(alpha = 0.10f), fillResting = Color.Transparent,
             )
             .clickable(onClick = onTap)
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -3753,24 +3730,15 @@ private fun CountdownRing(colors: RaviloColors, countdown: Int, totalSecs: Int) 
 private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors: RaviloColors, onTap: (() -> Unit)? = null) {
     Box(
         modifier = Modifier
-            .scale(if (focused) 1.04f else 1f)
+            .focusScaleGlow(focused, 1.04f, 12.dp, RoundedCornerShape(8.dp), colors.focusGlow)
             .height(if (onTap != null) 46.dp else 34.dp)   // R244 — a phone target is ≥ 46 dp
             .then(if (onTap != null) Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap) else Modifier)
             .clip(RoundedCornerShape(8.dp))
-            .background(
-                when {
-                    focused && isPrimary -> Color.White
-                    isPrimary -> Color.White.copy(alpha = 0.15f)
-                    focused -> Color.White.copy(alpha = 0.18f)
-                    else -> Color.White.copy(alpha = 0.08f)
-                }
+            .focusRing(
+                focused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp, resting = Color.White.copy(0.15f), restingWidth = 1.dp,
+                fillFocused = if (isPrimary) Color.White else Color.White.copy(alpha = 0.18f),
+                fillResting = if (isPrimary) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.08f),
             )
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) colors.focusRing else Color.White.copy(0.15f),
-                shape = RoundedCornerShape(8.dp),
-            )
-            .then(if (focused) Modifier.shadow(12.dp, RoundedCornerShape(8.dp), spotColor = colors.focusGlow) else Modifier)
             .padding(horizontal = 13.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -3796,17 +3764,14 @@ internal fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
-            .scale(if (focused) 1.04f else 1f)
+            .focusScaleGlow(focused, 1.04f, 12.dp, RoundedCornerShape(10.dp), colors.focusGlow)
             // R244 — a phone taps the pill; the TV's D-pad path is unchanged.
             .then(if (onTap != null) Modifier.heightIn(min = 46.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap) else Modifier)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White else Color(0xFF0E1119).copy(alpha = 0.92f))
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) colors.focusRing else Color.White.copy(alpha = 0.14f),
-                shape = RoundedCornerShape(10.dp),
+            .focusRing(
+                focused, RoundedCornerShape(10.dp), colors.focusRing, 2.dp, resting = Color.White.copy(alpha = 0.14f), restingWidth = 1.dp,
+                fillFocused = Color.White, fillResting = Color(0xFF0E1119).copy(alpha = 0.92f),
             )
-            .then(if (focused) Modifier.shadow(12.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         // R363 (FR-R363-5) — Auto only: in Prompt mode the ring counted down to nothing (the pill just hides).
@@ -3897,7 +3862,7 @@ private fun EpisodeRailCard(
     Column(
         modifier = Modifier
             .width(200.dp)
-            .scale(if (isFocused) 1.05f else 1f),
+            .focusScaleGlow(isFocused, 1.05f, 0.dp, RoundedCornerShape(9.dp), colors.focusGlow),
     ) {
         Box(
             modifier = Modifier
@@ -3905,11 +3870,7 @@ private fun EpisodeRailCard(
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(9.dp))
                 .background(Color(0xFF1A1D28))
-                .border(
-                    width = if (isFocused) 2.dp else if (isCurrent) 2.dp else 0.dp,
-                    color = if (isFocused) colors.focusRing else if (isCurrent) colors.accent else Color.Transparent,
-                    shape = RoundedCornerShape(9.dp),
-                ),
+                .focusRing(isFocused, RoundedCornerShape(9.dp), colors.focusRing, 2.dp, resting = if (isCurrent) colors.accent else Color.Transparent),
         ) {
             // Still image(s) — a single image for a lone episode, a seamed triptych for a group
             // (falls back to the flat box colour when no still is available at all).
@@ -4605,8 +4566,7 @@ private fun PlayerSessionErrorOverlay(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (showRetry || showSignIn) Box(
                     modifier = Modifier
-                        .background(if (retryFocused) Color.White else Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                        .border(2.dp, if (retryFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
+                        .focusRing(retryFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp, fillFocused = Color.White, fillResting = Color.White.copy(alpha = 0.15f))
                         .dpadFocusable(
                             focusRequester = retryFR,
                             onFocused = { retryFocused = true },
@@ -4623,8 +4583,7 @@ private fun PlayerSessionErrorOverlay(
                 }
                 Box(
                     modifier = Modifier
-                        .background(if (backFocused) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                        .border(2.dp, if (backFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
+                        .focusRing(backFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp, fillFocused = Color.White.copy(alpha = 0.18f), fillResting = Color.White.copy(alpha = 0.08f))
                         .dpadFocusable(
                             focusRequester = backFR,
                             onFocused = { backFocused = true },

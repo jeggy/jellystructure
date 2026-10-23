@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.ArrowRow
@@ -1106,7 +1107,7 @@ private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuff
                     .height(36.dp)
                     .clip(shape)
                     .background(colors.surfaceVariant)
-                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
+                    .focusRing(focused, shape, colors.focusRing, 2.dp)
                     .dpadFocusable(focusRequester = shuffleFocusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onShuffle)
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1151,7 +1152,7 @@ private fun EpisodeWatchToggle(watched: Boolean, onToggle: () -> Unit, tag: Stri
             .testTag(tag)
             .clip(shape)
             .background(bg)
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
+            .focusRing(focused, shape, colors.focusRing, 2.dp)
             .dpadFocusable(
                 onFocused = { focused = true },
                 onBlurred = { focused = false },

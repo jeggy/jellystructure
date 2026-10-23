@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import androidx.compose.foundation.layout.width
@@ -279,7 +280,7 @@ fun SettingsScreen(
                 color = if (backFocused) colors.text else colors.textSecondary,
                 fontSize = 13.sp,
                 modifier = Modifier
-                    .then(if (backFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+                    .focusRing(backFocused, RoundedCornerShape(6.dp), colors.focusRing, 2.dp)
                     .dpadFocusable(
                         focusRequester = backFR,
                         onFocused = { backFocused = true }, onBlurred = { backFocused = false },
@@ -770,7 +771,7 @@ fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onC
                 Box(
                     modifier = Modifier
                         .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                        .then(if (cancelFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .focusRing(cancelFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                         .dpadFocusable(
                             focusRequester = cancelFR,
                             onFocused = { cancelFocused = true },
@@ -785,7 +786,7 @@ fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onC
                 Box(
                     modifier = Modifier
                         .background(Color(0xFFE0393A), RoundedCornerShape(8.dp))
-                        .then(if (confirmFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .focusRing(confirmFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                         .dpadFocusable(
                             focusRequester = confirmFR,
                             onFocused = { confirmFocused = true },
@@ -860,7 +861,7 @@ fun SignOutChoiceOverlay(displayName: String, onCancel: () -> Unit, onOnly: () -
                 Box(
                     modifier = Modifier
                         .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                        .then(if (cancelFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .focusRing(cancelFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                         .dpadFocusable(
                             focusRequester = cancelFR,
                             onFocused = { cancelFocused = true },
@@ -876,7 +877,7 @@ fun SignOutChoiceOverlay(displayName: String, onCancel: () -> Unit, onOnly: () -
                 Box(
                     modifier = Modifier
                         .background(Color(0xFFE0393A), RoundedCornerShape(8.dp))
-                        .then(if (confirmFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .focusRing(confirmFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                         .dpadFocusable(
                             focusRequester = confirmFR,
                             onFocused = { confirmFocused = true },
@@ -916,7 +917,7 @@ private fun SignOutChoiceRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (focused || selected) colors.surfaceVariant else Color.Transparent, RoundedCornerShape(12.dp))
-            .border(2.dp, if (focused) colors.focusRing else colors.textDim.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .focusRing(focused, RoundedCornerShape(12.dp), colors.focusRing, 2.dp, resting = colors.textDim.copy(alpha = 0.25f))
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -1016,10 +1017,7 @@ private fun SettingsContent(
                             if (isActive) colors.accent else colors.surfaceVariant,
                             RoundedCornerShape(10.dp),
                         )
-                        .then(
-                            if (focused && !isActive) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp))
-                            else Modifier
-                        )
+                        .focusRing(focused && !isActive, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
                         .dpadFocusable(
                             focusRequester = skinFRs!![i],
                             onFocused = { focused = true },
@@ -1059,10 +1057,7 @@ private fun SettingsContent(
             Box(
                 modifier = Modifier
                     .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
-                    .then(
-                        if (focused && !isActive) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp))
-                        else Modifier
-                    )
+                    .focusRing(focused && !isActive, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
                     .dpadFocusable(
                         focusRequester = langFRs[i],
                         onFocused = { focused = true },
@@ -1165,7 +1160,7 @@ private fun SettingsContent(
         Box(
             modifier = Modifier
                 .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                .then(if (changePwFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                .focusRing(changePwFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                 .dpadFocusable(
                     focusRequester = changePwFR,
                     onFocused = { changePwFocused = true },
@@ -1196,7 +1191,7 @@ private fun SettingsContent(
         Box(
             modifier = Modifier
                 .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                .then(if (installFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                .focusRing(installFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                 .dpadFocusable(
                     focusRequester = installFR,
                     onFocused = { installFocused = true },
@@ -1216,7 +1211,7 @@ private fun SettingsContent(
     Box(
         modifier = Modifier
             .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+            .focusRing(focused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = signOutFR,
                 onFocused = { focused = true },
@@ -1376,7 +1371,7 @@ private fun DeskThemeSection(config: RaviloConfig, store: SettingsStore, entryFR
     var boxFocused by rememberFocusVisual()
     Row(
         Modifier.clip(RoundedCornerShape(6.dp))
-            .then(if (boxFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+            .focusRing(boxFocused, RoundedCornerShape(6.dp), colors.focusRing, 2.dp)
             // Turning it off keeps the theme in use at that moment (the mockup's T·g), whichever pick that was.
             .dpadFocusable(focusRequester = entryFR, onFocused = { boxFocused = true }, onBlurred = { boxFocused = false }, onSelect = { save(follow = !follow, theme = if (follow) drawnId else null) })
             .padding(vertical = 3.dp, horizontal = 2.dp),
@@ -1460,7 +1455,7 @@ private fun ThemePill(
             // Always a border, clear when there is no ring to draw. A modifier that comes and goes ahead of the focus
             // target re-creates it: the pill a D-pad had just picked became the active one, lost its ring's modifier
             // and with it the focus — no ring anywhere on the TV until the next key press (bedroom TV, 2026-09-30).
-            .border(2.dp, if (focused && !active) colors.focusRing else Color.Transparent, RoundedCornerShape(10.dp))
+            .focusRing(focused && !active, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -1511,7 +1506,7 @@ private fun ToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (deskLayout) colors.surface else colors.surfaceVariant, RoundedCornerShape(10.dp))
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
+            .focusRing(focused, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },

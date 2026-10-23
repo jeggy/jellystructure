@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -103,7 +104,7 @@ private fun AccountField(
                 .height(52.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(12.dp))
                 // R350 re-test (FR-R350-14) — a TV's focused field shows it (a read-only field draws no cursor).
-                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(12.dp)) else Modifier)
+                .focusRing(edit.focused, RoundedCornerShape(12.dp), colors.focusRing, 3.dp)
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -155,7 +156,7 @@ private fun AccountScreenHeader(
         color = if (backFocused) colors.text else colors.textSecondary,
         fontSize = 13.sp,
         modifier = Modifier
-            .then(if (backFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+            .focusRing(backFocused, RoundedCornerShape(6.dp), colors.focusRing, 2.dp)
             .dpadFocusable(focusRequester = backFR, onFocused = { backFocused = true }, onBlurred = { backFocused = false }, onSelect = onBack, onDown = onBackDown)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     )
@@ -173,7 +174,7 @@ internal fun AccountActionButton(label: String, focusRequester: FocusRequester, 
         modifier = Modifier
             .fillMaxWidth()
             .background(if (focused) colors.surfaceVariant else colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
+            .focusRing(focused, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
             .then(if (tag != null) Modifier.testTag(tag) else Modifier)
             .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect, onUp = onUp)
             .padding(horizontal = 20.dp, vertical = 14.dp),
