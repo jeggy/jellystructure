@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — one remote, whether you cast or open something already playing</title>
+<style>
+/* Dark ink on the host's light-gray backdrop. No content-visibility, no backdrop-filter, no large
+   blur, no infinite animation — this document has to survive the screenshot renderer. */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #e9eaee; color: #12141b; font-family: 'Sora', sans-serif;
+  font-size: 15px; line-height: 1.55; padding: 44px 40px 90px; }
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700; margin: 0 0 6px;
+  letter-spacing: -.02em; line-height: 1.12; }
+h2 { font-family: 'Space Grotesk', sans-serif; font-size: 23px; font-weight: 700; margin: 48px 0 10px;
+  letter-spacing: -.01em; padding-top: 22px; border-top: 1px solid #c9ccd6; }
+h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 700; margin: 26px 0 6px; }
+p, li { color: #262a35; }
+.lede { font-size: 17px; color: #262a35; margin: 0 0 4px; }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: .86em; }
+.tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  font-weight: 700; letter-spacing: .09em; text-transform: uppercase; padding: 4px 9px;
+  border-radius: 6px; background: #12141b; color: #f2f3f7; }
+.tag.pick { background: #1f7a52; } .tag.no { background: #8a2f26; } .tag.ask { background: #8a6a1a; }
+table { width: 100%; border-collapse: collapse; margin: 14px 0 4px; }
+th { text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: #4a5060; padding: 0 12px 8px 0;
+  border-bottom: 1px solid #c9ccd6; }
+td { font-size: 14px; line-height: 1.5; color: #262a35; padding: 11px 12px 11px 0;
+  border-top: 1px solid #d8dbe3; vertical-align: top; }
+td b, li b, p b { color: #12141b; font-weight: 600; }
+.box { border: 1px solid #c9ccd6; border-radius: 14px; padding: 18px 20px; background: #f4f5f8;
+  margin: 16px 0; }
+.box.pick { border-color: #1f7a52; background: #eef6f1; }
+.box.warn { border-color: #8a6a1a; background: #faf4e6; }
+ul { margin: 10px 0; padding-left: 22px; } li { margin: 6px 0; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+code { font-family: 'JetBrains Mono', monospace; font-size: .86em; background: #dfe2ea;
+  padding: 1px 5px; border-radius: 4px; }
+.pngs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.pngs span { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; background: #dfe2ea;
+  padding: 3px 8px; border-radius: 5px; color: #12141b; }
+</style>
+</head>
+<body><div class="wrap">
+
+<span class="tag">Ravilo · phone, web, Mac · directions · 2026-10-23</span>
+<h1>One remote, whether you cast it or open something already playing</h1>
+<p class="lede">Ravilo has two remotes. The one you get when you cast, and the one you get when you
+open something that is already playing somewhere else. The phone that <i>started</i> a cast has
+both at once — the cast bar opens one, that playback's row in <i>Playing everywhere</i> opens the
+other. This round draws the one remote that replaces them, on the phone, the web and the Mac.</p>
+
+<div class="box pick">
+<p style="margin:0"><b>Recommendation: direction A — the kind picks the remote.</b> A film or an
+episode gets the Cast remote's layout; a song or a book gets the music Playing page; each gains the
+controls only the session remote has today. How the place is reached — a cast link or the server —
+is never drawn, never named, and never changes a pixel. <b>Direction B is drawn for the film and the
+music frame so the cost is visible rather than asserted</b>, and it is a real alternative, not a
+straw man.</p>
+</div>
+
+<h2>What is fixed before a line is drawn</h2>
+<p>None of this is a design choice. It comes out of the constitution and the shipped specs, and
+every frame in this round holds it.</p>
+<table>
+<tr><th style="width:210px">Fixed</th><th>What it does to these frames</th></tr>
+<tr><td><b>Server-pushed state only</b> — no derived or optimistic local state</td>
+    <td>The remote shows what the place reported and nothing it worked out for itself. A press
+    shows that it is in flight — the 400 ms dim, then a spinner past 1 s — and never a predicted
+    result. This is why <code>moving</code>, <code>couldn’t move</code> and <code>lost contact</code>
+    keep the ⏯ glyph they had: the last state the place reported still stands, and drawing ▶ there
+    would be the frontend inventing a pause.</td></tr>
+<tr><td><b>Never the word “session”</b></td>
+    <td>Places and people are named. <i>Stue TV</i>, <i>Stue + Gæsteværelse</i>, <i>Olivar</i>.</td></tr>
+<tr><td><b>Unsupported is absent; unreachable is greyed</b></td>
+    <td>Both rules are in these pictures and they do not collide. A control the place cannot do is
+    not drawn at all — a film has no shuffle anywhere in direction A. A transport that cannot reach
+    the place <i>right now</i> is drawn and greyed, with <i>Try again</i>. The single exception is a
+    room that does not report its volume: the place exists and simply cannot answer, so the slider
+    is drawn, disabled, and the reason is a line under it.</td></tr>
+<tr><td><b>No ink on a picture</b></td>
+    <td>The art is a card on solid ground — 16:9 for a film or an episode, square for music or a
+    book — and it falls back to a wordmark tile with no redraw. The payoff is that this surface
+    light-themes, which the hero card and the film player cannot.</td></tr>
+<tr><td><b>Leaving the remote never stops playback</b></td>
+    <td>Stopping is only ever explicit, from the footer. On someone else’s it asks once, inline.</td></tr>
+<tr><td><b>46 dp minimum on the phone</b></td>
+    <td>Every target in frame: the place pill is 46, the skip buttons 56, ⏯ 72, the footer 60.</td></tr>
+<tr><td><b>The web has no Chromecast</b></td>
+    <td>Its places are Ravilo apps reached through the server, so <i>Stue TV</i> never appears in a
+    web frame. The web frames point at <i>Soveværelse TV</i> and at <i>Pixel 9</i>.</td></tr>
+<tr><td><b>The TV is never a remote</b></td><td>Not in this round at all.</td></tr>
+</table>
+
+<h2>Direction A — the kind picks the remote <span class="tag pick">recommended</span></h2>
+<p>One screen, one builder, and the only thing a cast and a server place disagree about is the name
+in the pill. <b>A1 and A2 are rendered from the same call with one field different</b>, which is why
+<code>one-remote-a-identity-pair.png</code> is in the package: “it is the same screen” is a claim a
+pair settles and a single frame cannot.</p>
+
+<div class="cols">
+<div>
+<h3>What it is, top to bottom</h3>
+<ul>
+<li><b>One header control, and it names the place.</b> <i>Stue TV</i>, <i>Soveværelse TV</i>,
+<i>Stue + Gæsteværelse</i>. Tapping it opens <i>Move to…</i>, which holds <i>Play here</i>. There is
+no device chip beside it, because a second control that also names the place is how you end up with
+two remotes again.</li>
+<li><b>The art card</b>, 16:9 or square by kind, on solid ground.</li>
+<li><b>Kicker, title, state line.</b> The state line says what it is doing — or, when the playback
+is someone else’s, <i>whose</i> it is, because that is the thing that changes what the screen means.</li>
+<li><b>A draggable seek bar</b> with elapsed and remaining.</li>
+<li><b>The transport the kind needs.</b> A film or an episode gets <b>−10 s · ⏯ · +30 s</b>. Music
+gets shuffle · prev · ⏯ · next · repeat. Neither gets the other’s.</li>
+<li><b>Volume</b>, inline under the transport. One place, one slider. Several rooms, a master
+labelled <i>Volume</i> and a room row each, every room with its own mute.</li>
+<li><b>A footer of at most three.</b> <i>Subtitles &amp; audio</i> · <i>Next episode</i> (series
+only) · <i>Stop</i> for a film; <i>Up next</i> · <i>Lyrics</i> · <i>Stop</i> for music.</li>
+</ul>
+</div>
+<div>
+<h3>What it costs</h3>
+<ul>
+<li><b>Two code paths, not one.</b> A film remote and a music remote are two layouts that share
+every component. That is the trade: the controls fit the thing you are controlling, and nobody has
+to look at a shuffle button on a film.</li>
+<li><b>The place is named twice</b> on a plain playing frame — once in the pill and once in
+<i>Playing on Stue TV</i>. That is the shipped cast remote’s own shape and the shipped string, so it
+is kept; see the open questions.</li>
+<li><b>The cast loses its volume rule.</b> Today a cast has no on-screen slider on purpose. Decision
+1 is exactly that question, and it is the owner’s.</li>
+</ul>
+<h3>Why not “fix only the doors”</h3>
+<p>Making the cast bar and the <i>Playing everywhere</i> row open the same remote fixes the one
+phone that started the cast and leaves the second remote standing on every other device. It was
+ruled out in the brief and nothing in the drawing argues with that.</p>
+</div>
+</div>
+
+<h2>Direction B — today’s session remote, extended</h2>
+<p>The single scrolling page becomes the one remote for everything. It gains ±skip, the next-up
+countdown and the full tracks sheet, and a cast opens it too. Two frames, so the cost is in a
+picture.</p>
+<table>
+<tr><th style="width:190px">Axis</th><th style="width:40%">B · the session remote extended</th>
+    <th>A · the kind picks the remote <b>(recommended)</b></th></tr>
+<tr><td><b>A film’s transport</b></td>
+    <td>Shuffle, previous and next are drawn for a film, because today’s page draws them for every
+    kind. ±skip lands as a <b>second transport row under the first</b>.</td>
+    <td>−10 s · ⏯ · +30 s, large and centred. Nothing a film cannot do is on screen.</td></tr>
+<tr><td><b>Fits the screen</b></td>
+    <td>No. In <code>b-music</code> the queue, <i>Play here</i> and <i>Stop</i> are below the fold at
+    412 × 915 — you scroll to stop something.</td>
+    <td>Yes, in every state and in all three languages. The tallest stack — three rooms, one of them
+    not reporting, in Faroese — fits by letting the square art shrink.</td></tr>
+<tr><td><b>Where the place is named</b></td>
+    <td>Twice already today: the sheet header <i>Playing on Stue TV</i> and the place line under the
+    title.</td>
+    <td>Twice on a plain playing frame, and the brief’s decision 2 is whether to trim it to one.</td></tr>
+<tr><td><b>Subtitles</b></td>
+    <td>Chips, which have to grow into the two-level sheet with flags, badges and S · M · L — at
+    which point the chips are a door to the sheet and not a control.</td>
+    <td>One footer button opening the component the local player already opens, with one extra
+    line: <i>Applies on {place}</i>.</td></tr>
+<tr><td><b>How much changes</b></td>
+    <td>Less. It is the page that exists, with rows added.</td>
+    <td>More. But the Cast remote already exists too, and A is mostly <i>deleting</i> the second one.</td></tr>
+<tr><td><b>What a viewer notices</b></td>
+    <td>Casting now looks like the thing in the sheet.</td>
+    <td>Nothing, on the phone that casts. That is the point.</td></tr>
+</table>
+
+<h2>Every state of the recommended direction</h2>
+<p>Drawn as one strip and as seven frames, so they can be compared and read.</p>
+<table>
+<tr><th style="width:190px">State</th><th>What is on screen</th></tr>
+<tr><td><b>Playing</b></td><td>The equaliser mark and <i>Playing on {place}</i>.</td></tr>
+<tr><td><b>Paused</b></td><td>▶, and the art card dims. Nothing else moves.</td></tr>
+<tr><td><b>Starting on the place</b></td><td>A spinner stands in for ⏯ — <b>one</b> spinner, in the
+transport, not also on the art. No explanation, because the viewer cannot act on one.</td></tr>
+<tr><td><b>Moving to Kontor…</b></td><td>A banner with the spinner. The transport keeps its glyph:
+the place has not reported a pause and the remote does not invent one.</td></tr>
+<tr><td><b>Couldn’t move</b></td><td>A banner and <i>Try again</i>. <b>Nothing greys</b> — the failed
+move did not break the place it is still playing on.</td></tr>
+<tr><td><b>Lost contact</b></td><td>A banner, <i>Try again</i>, and the transport <i>and the volume</i>
+greyed, because a slider it cannot reach is exactly as inert as a play button it cannot reach.</td></tr>
+<tr><td><b>Place offline · paused at 48:10</b></td><td>One sentence under the title, the art dimmed,
+the transport greyed. No banner: the state line already says it.</td></tr>
+<tr><td><b>Stopped by Olivar</b></td><td>The state line names him; a card says where it stopped.
+No transport, no footer.</td></tr>
+<tr><td><b>Ended</b></td><td>Two actions: <i>Watch again</i> and <i>Done</i>. Not “Up next” — that
+word already means the queue in the music footer, and a film with nothing after it has no next.</td></tr>
+<tr><td><b>Someone else’s</b></td><td>The same remote, the transport absent, the state line
+<i>Olivar is watching</i>, and a card saying why there is nothing to press.</td></tr>
+<tr><td><b>Stop on someone else’s</b></td><td>One inline confirm, no dialog, drawn as if the
+household switch were on.</td></tr>
+<tr><td><b>No artwork</b></td><td>The wordmark tile, same card, no redraw.</td></tr>
+</table>
+<p><b>Not drawn, and said so rather than quietly skipped:</b> loading (the remote is only ever
+opened on something that already exists — <i>starting on the place</i> is the real wait and it is
+drawn); empty (a remote with nothing playing is not a screen, it is a closed sheet); the TV; the
+Tizen surface; the receiver’s own screens; and landscape, which the shipped Cast spec already
+settles by centring the same layout.</p>
+
+<h2>The one mini bar</h2>
+<p>Today there are two: a cast bar and an “elsewhere” bar. These are <b>one component rendered
+twice</b> — art, title, the place line, a <b>+N</b> chip when something else is playing too, and ⏯.
+Nothing in it says how the place is reached, and the cast glyph is gone from it. That is what stops
+the two bars opening two remotes.</p>
+
+<h2>Web and Mac</h2>
+<ul>
+<li><b>Web, 1440.</b> The same blocks in two columns — art on the left, the whole control stack on
+the right — against <i>Soveværelse TV</i>, with volume as an inline row under the transport. No
+Chromecast anywhere on this surface.</li>
+<li><b>Web, 390.</b> The phone layout, unchanged. Which is the point: it is not a third design.</li>
+<li><b>Mac.</b> The Playing page <i>is</i> the remote: the same blocks, two columns, with the queue
+inline for music and the capsule along the bottom. The capsule’s volume button opens a popover with
+the same sliders — drawn over <b>Films</b>, because a popover you open from the capsule is for when
+you are <i>not</i> on the Playing page; over the Playing page it put the same three sliders on
+screen twice.</li>
+</ul>
+
+<h2>Decisions — the lean is drawn</h2>
+<table>
+<tr><th style="width:180px">Decision</th><th style="width:38%">Drawn (the lean)</th><th>Alternative</th></tr>
+<tr><td><b>1 · Volume on a film playing on a TV</b></td>
+    <td>One slider, as for speakers; the hardware keys drive it on the phone. In every film frame.</td>
+    <td>Keep the Cast rule — no on-screen slider for a TV, hardware keys and a transient pill only.
+    <b>Not drawn as a frame:</b> it is the same picture with the volume row removed, and the round
+    would rather spend a frame on something a picture can settle. The argument for it is still live
+    and it is in the brief: on a cast, volume belongs to the TV, and a slider invites a fight with
+    the TV’s own remote.</td></tr>
+<tr><td><b>2 · Device chip vs place line</b></td>
+    <td>One control at the top that names the place and opens <i>Move to…</i>, with <i>Stop</i> in
+    the footer for every kind.</td>
+    <td>Keep both — a chip for switching or stopping and a line for moving. Not drawn: two controls
+    naming the same place is the shape this round exists to remove.</td></tr>
+<tr><td><b>3 · Someone else’s playback</b></td>
+    <td>The same remote, transport absent, state line <i>Olivar is watching</i>, one card saying why.</td>
+    <td>A smaller read-only card. The drawn frame shows what the lean costs: a lot of empty screen.
+    <b>That emptiness is honest</b> — there is nothing to press — but it is the strongest argument
+    the alternative has, and it is visible in <code>a-someone-else</code>.</td></tr>
+<tr><td><b>4 · Stop’s word</b></td>
+    <td><i>Stop</i> everywhere, the shipped <code>cast.stop_room</code> string. Every footer in the
+    round.</td>
+    <td>Keep <i>Stop casting</i> on a cast — which would mean the cast frame and the elsewhere frame
+    differ by one word, and the identity pair would stop being a pair.</td></tr>
+</table>
+
+<h2>New strings · en / da / fo drafts</h2>
+<p>The shipped <code>i18n/*.json</code> wins wherever a string already exists; these are drafts for
+the ones this round needs. <code>volume</code>, <code>play_here</code>, <code>stop</code>,
+<code>move_to</code>, <code>subs_audio</code>, <code>next_episode</code>, <code>subtitle_size</code>,
+<code>try_again</code>, <code>no_volume</code> and <code>up_next</code> are listed with their
+<b>shipped</b> English so the table is complete, not because this round is proposing them.</p>
+<table>
+<tr><th style="width:150px">Key</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+<tr><td class="mono">playing_on</td><td>Playing on {place}</td><td>Spiller på {place}</td><td>Spælir á {place}</td></tr>
+<tr><td class="mono">paused_on</td><td>Paused on {place}</td><td>Sat på pause på {place}</td><td>Steðgað á {place}</td></tr>
+<tr><td class="mono">starting_on</td><td>Starting on {place}…</td><td>Starter på {place}…</td><td>Byrjar á {place}…</td></tr>
+<tr><td class="mono">moving_to</td><td>Moving to {place}…</td><td>Flytter til {place}…</td><td>Flytur til {place}…</td></tr>
+<tr><td class="mono">move_failed</td><td>Couldn’t move to {place}</td><td>Kunne ikke flytte til {place}</td><td>Kundi ikki flyta til {place}</td></tr>
+<tr><td class="mono">lost</td><td>Lost contact with {place}</td><td>Mistede kontakten med {place}</td><td>Misti sambandið við {place}</td></tr>
+<tr><td class="mono">offline</td><td>{place} is offline · paused at {t}</td><td>{place} er offline · på pause ved {t}</td><td>{place} er ikki á netinum · steðgað við {t}</td></tr>
+<tr><td class="mono">stopped_by</td><td>{who} stopped this</td><td>{who} stoppede det</td><td>{who} steðgaði hesum</td></tr>
+<tr><td class="mono">ended</td><td>Ended</td><td>Slut</td><td>Endað</td></tr>
+<tr><td class="mono">watching</td><td>{who} is watching</td><td>{who} ser det</td><td>{who} hyggur at hesum</td></tr>
+<tr><td class="mono">listening</td><td>{who} is listening</td><td>{who} lytter</td><td>{who} lurtar</td></tr>
+<tr><td class="mono">applies_on</td><td>Applies on {place}</td><td>Gælder på {place}</td><td>Virkar á {place}</td></tr>
+<tr><td class="mono">play_in</td><td>Play in {n}</td><td>Spiller om {n}</td><td>Spælir um {n}</td></tr>
+<tr><td class="mono">watch_credits</td><td>Watch credits</td><td>Se rulletekster</td><td>Hygg at endatekstunum</td></tr>
+<tr><td class="mono">watch_again</td><td>Watch again</td><td>Se igen</td><td>Hygg aftur</td></tr>
+<tr><td class="mono">done</td><td>Done</td><td>Færdig</td><td>Liðugt</td></tr>
+<tr><td class="mono">stop_q</td><td>Stop {who}’s {title}?</td><td>Stop {who}s {title}?</td><td>Steðga {title} hjá {who}?</td></tr>
+<tr><td class="mono">cancel</td><td>Cancel</td><td>Annullér</td><td>Avlýs</td></tr>
+<tr><td class="mono">song_of</td><td>Song {i} of {n}</td><td>Nummer {i} af {n}</td><td>Lag {i} av {n}</td></tr>
+<tr><td class="mono">lyrics</td><td>Lyrics</td><td>Sangtekst</td><td>Lagtekstur</td></tr>
+<tr><td class="mono">more_playing</td><td>{n} more playing</td><td>{n} mere spiller</td><td>{n} fleiri spæla</td></tr>
+<tr><td class="mono">this_phone</td><td>This phone</td><td>Denne telefon</td><td>Hesin telefonin</td></tr>
+<tr><td class="mono">ready</td><td>Ready</td><td>Klar</td><td>Klár</td></tr>
+<tr><td class="mono">playing_here</td><td>Playing here</td><td>Spiller her</td><td>Spælir her</td></tr>
+<tr><td class="mono" style="color:#4a5060">volume</td><td>Volume <i>(shipped)</i></td><td>Lydstyrke</td><td>Ljóðstyrki</td></tr>
+<tr><td class="mono" style="color:#4a5060">no_volume</td><td>{place} doesn’t report its volume <i>(shipped)</i></td><td>{place} melder ikke sin lydstyrke</td><td>{place} boðar ikki frá ljóðstyrkinum</td></tr>
+<tr><td class="mono" style="color:#4a5060">subs_audio</td><td>Subtitles &amp; audio <i>(shipped)</i></td><td>Undertekster og lyd</td><td>Undirtekstir og ljóð</td></tr>
+<tr><td class="mono" style="color:#4a5060">subtitle_size</td><td>Subtitle size <i>(shipped)</i></td><td>Undertekststørrelse</td><td>Stødd á undirtekstum</td></tr>
+<tr><td class="mono" style="color:#4a5060">next_episode</td><td>Next episode <i>(shipped)</i></td><td>Næste afsnit</td><td>Næsti táttur</td></tr>
+<tr><td class="mono" style="color:#4a5060">move_to</td><td>Move to… <i>(shipped)</i></td><td>Flyt til…</td><td>Flyt til…</td></tr>
+<tr><td class="mono" style="color:#4a5060">play_here</td><td>Play here <i>(shipped)</i></td><td>Afspil her</td><td>Spæl her</td></tr>
+<tr><td class="mono" style="color:#4a5060">stop</td><td>Stop <i>(shipped)</i></td><td>Stop</td><td>Steðga</td></tr>
+<tr><td class="mono" style="color:#4a5060">try_again</td><td>Try again <i>(shipped)</i></td><td>Prøv igen</td><td>Royn aftur</td></tr>
+<tr><td class="mono" style="color:#4a5060">up_next</td><td>Up next <i>(shipped)</i></td><td>Næste</td><td>Næst</td></tr>
+<tr><td class="mono" style="color:#4a5060">off</td><td>Off <i>(shipped)</i></td><td>Fra</td><td>Av</td></tr>
+</table>
+
+<h2>Open, for Bárður</h2>
+<ol>
+<li><b>Does the state line keep <i>Playing on {place}</i> when the pill above it already names the
+place?</b> The round keeps it, because it is the shipped string and the shipped cast remote’s own
+shape. Trimming it to <i>Playing</i> is one line of i18n and it would remove the only repetition
+left in the lean.</li>
+<li><b>The three-up footer wraps in every language.</b> <i>Subtitles &amp; audio</i> goes to two
+lines in English and <i>Undertekster og lyd</i> to two in Danish, beside single-line siblings. The
+shipped Cast remote already does this, so it is not a regression — but if the footer is being
+rebuilt anyway, it is the moment to fix it.</li>
+<li><b>Noir on the phone is a darker background and nothing else.</b> <code>ravilo.css</code> inverts
+the accent to amber for noir; <code>mobile/ravilo-phone.css</code> does not. The round reports the
+difference rather than inventing an amber phone — <code>noir-a-cast-film</code> is in the package as
+the evidence.</li>
+<li><b>Decision 1 is the one with real weight.</b> The shipped reason for no slider on a cast — that
+volume belongs to the TV and a slider fights its own remote — is still true. The lean is drawn
+because the round was asked to draw it, not because the argument against it got weaker.</li>
+</ol>
+
+<h2>The frames</h2>
+<div class="pngs">
+<span>a-cast-film</span><span>a-elsewhere-film</span><span>a-identity-pair</span>
+<span>a-tracks-sheet</span><span>a-nextup</span><span>a-music</span><span>a-music-no-report</span>
+<span>a-move-to</span><span>a-someone-else</span><span>a-stop-confirm</span><span>a-wordmark</span>
+<span>a-states-strip</span><span>a-st-buffering</span><span>a-st-moving</span><span>a-st-move-failed</span>
+<span>a-st-lost</span><span>a-st-offline</span><span>a-st-stopped</span><span>a-st-ended</span>
+<span>a-minibar-cast</span><span>a-minibar-elsewhere</span><span>a-minibar-music</span>
+<span>b-film</span><span>b-music</span>
+<span>web-film-1440</span><span>web-music-1440</span><span>web-film-390</span>
+<span>mac-film</span><span>mac-music</span><span>mac-volume-popover</span>
+<span>da-a-cast-film</span><span>da-a-music-no-report</span><span>da-a-tracks-sheet</span>
+<span>fo-a-cast-film</span><span>fo-a-music-no-report</span><span>fo-a-tracks-sheet</span>
+<span>daylight-a-cast-film</span><span>daylight-a-music</span><span>noir-a-cast-film</span>
+</div>
+
+</div></body>
+</html>

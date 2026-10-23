@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>One remote — frames</title>
+<!--
+  frames.html — every frame this round renders, built from or-data.js through or-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=phone-a | phone-b | states | bars | web | mac
+      &skin=aurora|midnight|noir|daylight
+      &lang=en|da|fo
+
+  The set decides which SHIPPED stylesheet is loaded, because the phone and the TV/desktop are
+  different token files and loading both into one document would let one answer for the other.
+  The round's own stylesheet always comes last, so it extends the shipped system and never
+  precedes it.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; scripts/render-design.sh
+  just drives it over the parameter combinations and screenshots one element per frame.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'phone-a';
+    const skin = q.get('skin') || 'aurora';
+    const lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.lang = lang;
+    /* The phone token file covers the phone AND the web frames — the web player is the phone's
+       design system at a desk width, which is what makes the 390 px frame the same screen. The
+       Mac loads the desktop file beside it for the window chrome's own tokens. */
+    document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+    if (set === 'mac') document.write('<link rel="stylesheet" href="../../ravilo/desktop/ravilo-desktop.css">');
+    document.write('<link rel="stylesheet" href="../../flags.css">');
+    document.write('<link rel="stylesheet" href="one-remote.css">');
+    window.OROPT = { set, skin, lang };
+  })();
+</script>
+</head>
+<body>
+<div class="or-frames" id="frames"></div>
+
+<script src="or-data.js"></script>
+<script src="or-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { set, lang } = window.OROPT;
+  const K = window.ORKit, D = window.OR;
+  K.setLang(lang);
+  const root = document.getElementById('frames');
+
+  const STATUS = '<div class="or-sb"><span>21:04</span><span>▮▮▮</span></div>';
+
+  function frame(id, cls, html) {
+    const d = document.createElement('div');
+    /* `or-frame` is the renderer's handle and carries no style: --all targets it so that a
+       phone nested INSIDE a pair frame is never mistaken for a frame of its own. */
+    d.id = id; d.className = 'or-frame ' + cls; d.innerHTML = html;
+    root.appendChild(d);
+    return d;
+  }
+  /* A phone frame: the 412×915 screen with the status bar and whatever the body is. */
+  const phBody = html => STATUS + html;
+  const ph = (id, html, extra) => frame(id, 'or-ph' + (extra ? ' ' + extra : ''), phBody(html));
+
+  const P = K.P;
+  const FILM = D.FILM, EP = D.EP, EP4 = D.EP4, SONG = D.SONG;
+  const ROOMVOLS = { master: D.VOL.master, stue: D.VOL.stue, gaeste: D.VOL.gaeste };
+
+  /* ---------------------------------------------------------------------------------------
+     PHONE — direction A. The lean, in full.
+     --------------------------------------------------------------------------------------- */
+  if (set === 'phone-a') {
+    /* A1 · the film cast from this phone to Stue TV.
+       A2 · the SAME film started from the MacBook on Soveværelse TV, opened here from
+       "Playing everywhere". Same builder, same options, one different place — which is the
+       round's whole argument, made in the source and not only in the caption. */
+    const a1 = { item: FILM, set: P.stuetv, state: 'playing', vols: { master: D.VOL.master } };
+    const a2 = { item: FILM, set: P.sovetv, state: 'playing', vols: { master: D.VOL.master } };
+    ph('a-cast-film', K.remote(a1));
+    ph('a-elsewhere-film', K.remote(a2));
+
+    /* The two side by side, because "the same screen" is a claim a pair settles and a single
+       frame cannot. */
+    frame('a-identity-pair', 'or-pair',
+      '<div class="or-ph">' + phBody(K.remote(a1)) + '</div>'
+      + '<div class="rule"></div>'
+      + '<div class="or-ph">' + phBody(K.remote(a2)) + '</div>');
+
+    /* A3 · the tracks sheet, over the remote it was opened from, applying on Soveværelse TV. */
+    ph('a-tracks-sheet', K.remote(a2) + K.tracksSheet(FILM, P.sovetv));
+
+    /* A4 · the episode with the place's own next-up countdown mirrored. */
+    ph('a-nextup', K.remote({ item: EP, set: P.stuetv, state: 'nextup', vols: { master: D.VOL.master } }));
+
+    /* A5 · music on two rooms, place line, queue reachable in the footer, volume master + two rooms. */
+    ph('a-music', K.remote({ item: SONG, set: P.speakers, state: 'playing', vols: ROOMVOLS }));
+
+    /* A5b · the same, with Kontor added — the room that does not report its volume. The brief
+       fixes two rooms; this third frame exists because "absent vs greyed" needs a picture and
+       a place that cannot answer is the only case where a control is drawn and disabled. */
+    ph('a-music-no-report', K.remote({
+      item: SONG, set: P.threeRooms, state: 'playing',
+      vols: { master: D.VOL.master, stue: D.VOL.stue, gaeste: D.VOL.gaeste, kontor: null },
+    }));
+
+    /* A6 · Move to…, opened from the place line, with Play here in it. */
+    ph('a-move-to', K.remote(a1) + K.moveSheet(P.stuetv, FILM));
+
+    /* A7 · Olivar's playback, view-only: the SAME remote with the transport absent. */
+    ph('a-someone-else', K.remote({
+      item: EP4, set: P.sovetv, state: 'other', who: D.OTHER.name,
+    }));
+
+    /* A8 · Stop on someone else's, with the one inline confirm — drawn as if the household
+       switch were on, so the control exists to be confirmed. */
+    ph('a-stop-confirm', K.remote({
+      item: EP4, set: P.sovetv, state: 'playing', who: D.OTHER.name,
+      vols: { master: D.VOL.master }, confirm: true, canStopOther: true,
+    }));
+
+    /* The wordmark fallback: no artwork, no redraw. */
+    ph('a-wordmark', K.remote({ item: FILM, set: P.stuetv, state: 'playing', wordmark: true,
+      vols: { master: D.VOL.master } }));
+  }
+
+  /* ---------------------------------------------------------------------------------------
+     PHONE — direction B, for the film and music frames only, as the brief asks.
+     --------------------------------------------------------------------------------------- */
+  if (set === 'phone-b') {
+    ph('b-film', K.remoteB({ item: FILM, set: P.stuetv, state: 'playing', vols: { master: D.VOL.master } }));
+    ph('b-music', K.remoteB({ item: SONG, set: P.speakers, state: 'playing', vols: ROOMVOLS }));
+  }
+
+  /* ---------------------------------------------------------------------------------------
+     THE STATES, as a strip and one by one.
+     --------------------------------------------------------------------------------------- */
+  const STATES = [
+    ['a-st-buffering', 'buffering on the place',
+      { item: FILM, set: P.stuetv, state: 'buffering', vols: { master: D.VOL.master } }],
+    ['a-st-moving', 'moving to Kontor…',
+      { item: SONG, set: P.speakers, state: 'moving', toPlace: D.PLACES.kontor.name, vols: ROOMVOLS }],
+    ['a-st-move-failed', 'couldn’t move',
+      { item: SONG, set: P.speakers, state: 'movefail', toPlace: D.PLACES.kontor.name, vols: ROOMVOLS }],
+    ['a-st-lost', 'lost contact · Try again',
+      { item: FILM, set: P.stuetv, state: 'lost', vols: { master: D.VOL.master } }],
+    ['a-st-offline', 'place offline · paused at 48:10',
+      { item: FILM, set: P.sovetv, state: 'offline', vols: { master: D.VOL.master } }],
+    ['a-st-stopped', 'stopped by Olivar',
+      { item: EP4, set: P.sovetv, state: 'stopped', who: D.OTHER.name }],
+    ['a-st-ended', 'ended',
+      { item: FILM, set: P.stuetv, state: 'ended' }],
+  ];
+  if (set === 'states') {
+    STATES.forEach(s => ph(s[0], K.remote(s[2])));
+    frame('a-states-strip', 'or-strip', STATES.map(s =>
+      '<div class="or-cell"><div class="or-scap">' + K.esc(s[1]) + '</div>'
+      + '<div class="or-ph">' + phBody(K.remote(s[2])) + '</div></div>').join(''));
+  }
+
+  /* ---------------------------------------------------------------------------------------
+     THE ONE MINI BAR. Today there are two; these are one component twice.
+     --------------------------------------------------------------------------------------- */
+  if (set === 'bars') {
+    const home = '<div class="or-home">'
+      + '<div class="or-hrow"><i></i><i></i><i></i></div>'
+      + '<div class="or-hh">Continue watching</div>'
+      + '<div class="or-hrow w"><i></i><i></i></div>'
+      + '<div class="or-hh">Newly added</div>'
+      + '<div class="or-hrow"><i></i><i></i><i></i></div></div>';
+    const nav = '<div class="or-nav"><span class="on">Home</span><span>Search</span>'
+      + '<span>Discover</span><span>Live</span></div>';
+    /* For a cast: Stue TV. The bar does not say "cast" and carries no cast glyph — that is the
+       change. +1 because the music on Stue + Gæsteværelse is playing too. */
+    ph('a-minibar-cast', home + K.miniBar(FILM, P.stuetv, { more: 1 }) + nav);
+    /* For a playback elsewhere: Soveværelse TV. Same component, same chip, different name. */
+    ph('a-minibar-elsewhere', home + K.miniBar(FILM, P.sovetv, { more: 1 }) + nav);
+    /* And music on two rooms, so the +N chip and the square thumbnail are both in a picture. */
+    ph('a-minibar-music', home + K.miniBar(SONG, P.speakers, { more: 2 }) + nav);
+  }
+
+  /* ---------------------------------------------------------------------------------------
+     WEB. 1440 and 390. NO Chromecast on the web: the places here are Ravilo apps reached
+     through the server, so Stue TV never appears in a web frame.
+     --------------------------------------------------------------------------------------- */
+  if (set === 'web') {
+    frame('web-film-1440', 'or-wframe', K.webRemote({
+      item: FILM, set: P.sovetv, state: 'playing', vols: { master: D.VOL.master } }));
+    frame('web-music-1440', 'or-wframe', K.webRemote({
+      item: SONG, set: P.pixelPlace, state: 'playing', vols: { master: D.VOL.master } }));
+    frame('web-film-390', 'or-wframe narrow', K.webRemote({
+      item: FILM, set: P.sovetv, state: 'playing', vols: { master: D.VOL.master } }));
+  }
+
+  /* ---------------------------------------------------------------------------------------
+     MAC. The desktop Playing page as the remote, and the capsule's volume popover.
+     --------------------------------------------------------------------------------------- */
+  if (set === 'mac') {
+    frame('mac-film', 'or-mframe', K.macPlaying({
+      item: FILM, set: P.stuetv, state: 'playing', vols: { master: D.VOL.master } }));
+    frame('mac-music', 'or-mframe', K.macPlaying({
+      item: SONG, set: P.speakers, state: 'playing', vols: ROOMVOLS }));
+    /* The popover is opened from the capsule, which is how you reach volume when you are NOT on
+       the Playing page — so it is drawn over Films. On the Playing page the inline block above
+       already holds the same sliders, and drawing both open at once put them on screen twice. */
+    frame('mac-volume-popover', 'or-mframe', K.macBrowse(SONG, P.speakers,
+      { vols: ROOMVOLS, volOpen: true }));
+  }
+})();
+</script>
+
+<style>
+/* Frame furniture that is scaffolding, not design: the phone's status bar and the stand-in home
+   screen the mini-bar frames need something to sit on top of. Deliberately shapeless — nothing
+   here is a proposal about Home. */
+.or-sb { position: absolute; top: 0; left: 0; right: 0; height: 34px; z-index: 40;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 26px;
+  font: 600 12.5px 'Sora', sans-serif; color: var(--ink); }
+.or-home { position: absolute; left: 0; right: 0; top: 44px; padding: 0 18px; }
+.or-hrow { display: flex; gap: 11px; margin-bottom: 16px; }
+.or-hrow i { width: 118px; height: 178px; border-radius: 14px; background: var(--card); flex: none; }
+.or-hrow.w i { width: 170px; height: 96px; border-radius: 12px; }
+.or-hh { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+</style>
+</body>
+</html>

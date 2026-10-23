@@ -1,0 +1,541 @@
+/* one-remote.css — the round's own rules, on top of the shipped Ravilo stylesheets.
+
+   Round slug `one-remote`, 2026-10-23.
+
+   Loaded AFTER design/ravilo/mobile/ravilo-phone.css (or ravilo.css / desktop/ravilo-desktop.css,
+   whichever the frame set needs) and design/flags.css, so every token, every colour and every
+   font in these pictures is the shipped one. What is here is only (a) the three self-hosted
+   faces, so the render needs no network, (b) the frame scaffolding the renderer screenshots, and
+   (c) the `or-` classes this round invents.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so these rules are a specification of intent for the Compose port, which is exactly why the
+   hex, px, weight, radius and easing are written out rather than left to the implementer.
+
+   Canvas rules held: no content-visibility, no backdrop-filter, no large blur, no infinite
+   animation. The shipped capsule bar IS backdrop-filter in design/ravilo/desktop-directions.css;
+   the Mac frames here draw it as a flat approximation and the report says so.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. ravilo-phone.css and ravilo.css
+   are loaded by documents that fetch Google Fonts; the render runs with --network none, so these
+   blocks come last in the cascade and the picture is the same with or without a network. No file
+   is copied: the url points at the repo's own woff2. */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ================================================================================================= */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+.or-frames { padding: 0; margin: 0; }
+.or-frames * { box-sizing: border-box; }
+
+/* The phone: Pixel 9, 412×915 portrait, the shipped size. Screenshot-able on its own, so the
+   bezel is left off — the renderer crops to the screen and the bezel is not the design. */
+.or-ph { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+/* The side-by-side identity frame: two phones with a hairline between them and nothing else, so
+   "is this the same screen?" is a question the picture answers rather than the caption. */
+.or-pair { display: flex; gap: 0; background: #e9eaee; width: 856px; }
+.or-pair .or-ph { flex: none; }
+.or-pair .rule { width: 32px; flex: none; background: #e9eaee; position: relative; }
+.or-pair .rule::after { content: ''; position: absolute; left: 50%; top: 40px; bottom: 40px;
+  width: 1px; background: #c3c6d0; }
+/* The states strip: seven phones in a row. Rendered as one PNG so the seven are compared, and
+   each is also rendered alone. */
+.or-strip { display: flex; gap: 20px; background: #e9eaee; padding: 0; width: max-content; }
+.or-strip .or-cell { width: 412px; flex: none; }
+/* NOT `.or-cap` — that is the Mac capsule bar, and a caption sharing the name would have been
+   absolutely positioned off the strip. Round 9 lost two frames to exactly this. */
+.or-strip .or-scap { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .07em;
+  text-transform: uppercase; color: #262a35; padding: 0 0 10px; }
+
+/* A caption under a frame, drawn in DARK ink because the canvas backdrop is light gray. */
+.or-note { font-family: 'Sora', sans-serif; font-size: 13px; line-height: 1.5; color: #12141b;
+  background: #e9eaee; padding: 12px 2px 0; max-width: 412px; }
+.or-note b { color: #12141b; font-weight: 600; }
+
+/* The web: a browser pane at 1440 and at 390. `position: relative` is NOT decorative — the pane
+   inside is absolutely positioned, and without it the first render laid every web frame out
+   against the viewport instead, which at 1x read as "the 1440 layout did not apply". */
+.or-wframe { width: 1440px; height: 900px; background: var(--bg); overflow: hidden;
+  position: relative; }
+.or-wframe.narrow { width: 390px; height: 844px; }
+
+/* The Mac window. */
+.or-mframe { width: 1280px; height: 800px; background: var(--bg); overflow: hidden;
+  font-family: 'Sora', sans-serif; color: var(--ink); }
+
+/* =================================================================================================
+   THE ONE REMOTE — direction A
+   ================================================================================================= */
+
+.or-rem { position: absolute; inset: 0; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--ink); padding-top: 34px; }
+.or-web .or-rem, .or-mright .or-rem { position: static; padding-top: 0; }
+
+/* ---- the header: ONE control, and it names the place. 46 dp minimum, both of them. ---- */
+.or-top { display: flex; align-items: center; gap: 10px; padding: 14px 16px 2px; }
+.or-ic { width: 46px; height: 46px; flex: none; border: 0; border-radius: 23px; background: none;
+  color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.or-ic svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-ic.ghost { background: none; }
+.or-place { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;
+  gap: 8px; height: 46px; padding: 0 16px; border-radius: 23px;
+  background: rgba(var(--fg), .07); border: 1px solid var(--line-2);
+  color: var(--accent-2); font: 600 14px 'Sora', sans-serif; cursor: pointer; }
+.or-place span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.or-place svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.or-place.ro { color: var(--ink-soft); cursor: default; }
+.or-place:disabled { cursor: default; color: var(--ink-soft); }
+
+/* ---- the art card. On SOLID ground. 16:9 for a film or episode, square for music or a book.
+   No ink ever sits on it — the only thing drawn inside is the wordmark fallback tile. ---- */
+.or-art { margin: 18px 18px 0; border-radius: 16px; overflow: hidden; position: relative;
+  min-height: 0;
+  background-color: var(--card); background-size: cover; background-position: 50%;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .5); flex: none; }
+.or-art.w { aspect-ratio: 16 / 9; }
+/* Square art SHRINKS rather than pushing the footer off the screen: three rooms plus a room that
+   cannot report its volume is the tallest control stack the remote has, and in Faroese it
+   overflowed 915 px by about 40. Height-first with an aspect-ratio, so the width follows. */
+.or-art.sq { height: 248px; width: auto; aspect-ratio: 1 / 1; flex: 0 1 auto;
+  align-self: center; margin-left: 0; margin-right: 0; }
+.or-art.dim { opacity: .55; }
+.or-wm { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--card); font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: 30px; letter-spacing: -.02em; color: var(--ink-dim); }
+.or-ovl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(4, 5, 9, .5); }
+
+/* The spinner is a STATIC three-quarter ring: an infinite animation breaks the screenshot render,
+   and a still frame of a spinner is what a screenshot of a real one would be anyway. */
+.or-spin { width: 30px; height: 30px; border-radius: 50%; display: block;
+  border: 3px solid rgba(var(--fg), .2); border-top-color: var(--accent-2);
+  transform: rotate(120deg); }
+.or-spin.sm { width: 17px; height: 17px; border-width: 2.4px; flex: none; }
+
+/* ---- title block ---- */
+.or-meta { padding: 20px 20px 0; }
+.or-meta .k { font-size: 12.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--accent-2); }
+.or-meta h3 { margin: 6px 0 0; font-family: 'Space Grotesk', sans-serif; font-size: 25px;
+  font-weight: 700; letter-spacing: -.02em; line-height: 1.12; text-wrap: balance; }
+.or-meta .alb { margin-top: 5px; font-size: 13.5px; color: var(--ink-soft); }
+.or-meta .st { margin-top: 9px; font-size: 14px; line-height: 1.4; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 7px; }
+.or-meta .st.bad { color: #ff9b8a; }
+.or-meta .st.busy { color: var(--accent-2); }
+.or-meta .st.off { color: var(--ink-dim); }
+.or-meta .st svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The three-bar "playing" mark, static — the shipped .ses-eq, redrawn here without its animation
+   because an infinite animation breaks the render. */
+.or-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; flex: none; }
+.or-eq i { width: 2.5px; border-radius: 1px; background: var(--accent-2); }
+.or-eq i:nth-child(1) { height: 7px; } .or-eq i:nth-child(2) { height: 11px; } .or-eq i:nth-child(3) { height: 5px; }
+
+/* ---- sliders: one component for seek and for volume, so the two never drift apart ---- */
+.or-sl { position: relative; flex: 1; height: 28px; display: block; min-width: 0; }
+.or-sl i { position: absolute; top: 50%; }
+.or-sl .tk { left: 0; right: 0; height: 4px; margin-top: -2px; border-radius: 3px;
+  background: rgba(var(--fg), .18); }
+.or-sl .dn { left: 0; height: 4px; margin-top: -2px; border-radius: 3px; background: var(--ink); }
+.or-sl .kb { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%;
+  background: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, .45); }
+.or-sl.dis .dn { background: var(--ink-dim); }
+.or-sl.dis .tk { background: rgba(var(--fg), .1); }
+
+/* The control group — seek, transport, volume — floats in whatever the art and the title leave.
+   A film has a lot of slack and three rooms of music have almost none, and both compositions come
+   out of these two `auto` margins rather than two layouts. */
+.or-rem > .or-seek, .or-rem > .or-end { margin-top: auto; }
+.or-rem > .or-vol, .or-rem > .or-end, .or-rem > .or-ro { margin-bottom: auto; }
+.or-seek { padding: 22px 20px 0; }
+.or-seek .or-sl { display: block; width: 100%; }
+.or-seek .or-tm { display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.or-seek.dis { opacity: .4; }
+
+/* ---- the transport. 46 dp minimum on every target; the play button is 72. ---- */
+.or-tr { display: flex; align-items: center; justify-content: center; gap: 26px; padding: 20px 0 0; }
+.or-tb { width: 56px; height: 56px; border: 0; border-radius: 28px; background: none; color: var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  cursor: pointer; flex: none; }
+.or-tb svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-tb b { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
+  color: var(--ink-soft); }
+.or-tb.sm svg { width: 21px; height: 21px; }
+.or-tb.sm { width: 46px; height: 46px; color: var(--ink-soft); }
+.or-pp { width: 72px; height: 72px; flex: none; border: 0; border-radius: 36px; background: var(--ink);
+  color: var(--bg); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.or-pp svg { width: 30px; height: 30px; }
+.or-pp .fil path { fill: currentColor; stroke: none; }
+.or-pp.busy { background: rgba(var(--fg), .1); }
+/* UNREACHABLE is greyed (the control exists and cannot act); UNSUPPORTED is absent and never
+   reaches this file at all. The two rules coexist and this is the only one with a visual. */
+.or-tr.greyed { opacity: .34; }
+.or-tr.b { gap: 18px; padding-top: 14px; }
+.or-tr.b .or-pp { width: 62px; height: 62px; }
+.or-tr.b.skiprow { gap: 34px; padding-top: 6px; }
+
+/* ---- volume ---- */
+.or-vol { padding: 16px 20px 0; display: flex; flex-direction: column; gap: 2px; }
+.or-vrow { display: flex; align-items: center; gap: 10px; min-height: 46px; }
+.or-vb { width: 36px; height: 36px; flex: none; border: 0; border-radius: 18px; background: none;
+  color: var(--ink-soft); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.or-vb svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-vn { font-size: 13px; color: var(--ink-soft); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; flex: none; width: 132px; }
+.or-vrow.mst .or-vn { color: var(--ink); font-weight: 600; }
+/* The room rows indent, and their NAME column narrows by the same 14 px — so every slider in the
+   block starts on the same x. Two rows out by 8 px read as a rendering accident, not a hierarchy. */
+.or-vrow.rm { padding-left: 14px; }
+.or-vrow.rm .or-vn { width: 118px; }
+.or-vol.greyed { opacity: .34; }
+.or-vv { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--ink-soft);
+  width: 46px; text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+.or-vrow.dis { opacity: .5; }
+.or-vwhy { margin: -4px 0 6px 46px; font-size: 12px; line-height: 1.4; color: var(--ink-dim); }
+
+/* ---- the footer: at most three, and Stop is one of them for every kind ---- */
+.or-foot { margin-top: auto; display: flex; gap: 9px; padding: 18px 16px 24px; }
+.or-fb { flex: 1; min-height: 60px; border-radius: 14px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px; background: rgba(var(--fg), .07);
+  border: 1px solid var(--line); color: var(--ink); font: 600 12.5px 'Sora', sans-serif;
+  text-align: center; line-height: 1.25; padding: 8px 6px; cursor: pointer; }
+.or-fb svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-fb.stop { color: #ff9b8a; }
+
+/* ---- banners: an in-flight move, a failed move, lost contact ---- */
+.or-ban { margin: 16px 18px 0; padding: 12px 14px; border-radius: 12px; display: flex;
+  align-items: center; gap: 10px; font-size: 13.5px; line-height: 1.4;
+  background: rgba(var(--fg), .06); border: 1px solid var(--line-2); color: var(--ink); }
+.or-ban svg { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.or-ban span { flex: 1; min-width: 0; }
+.or-ban.bad { color: #ff9b8a; border-color: rgba(255, 155, 138, .4); background: rgba(255, 111, 97, .1); }
+.or-ban.busy { color: var(--accent-2); }
+.or-ba { min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid currentColor;
+  background: none; color: inherit; font: 600 13px 'Sora', sans-serif; cursor: pointer; flex: none; }
+
+/* ---- someone else's, and ended ---- */
+.or-ro { margin: 18px 20px 0; padding: 14px 16px; border-radius: 12px; display: flex;
+  align-items: center; gap: 10px; background: rgba(var(--fg), .05); border: 1px solid var(--line);
+  font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
+.or-ro svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.or-end { display: flex; gap: 10px; padding: 24px 20px 0; }
+.or-eb { flex: 1; min-height: 50px; border-radius: 14px; border: 1px solid var(--line-2);
+  background: rgba(var(--fg), .07); color: var(--ink); font: 600 14px 'Sora', sans-serif; cursor: pointer; }
+
+/* ---- the inline confirm. ONE, inline, no dialog. ---- */
+.or-cf { margin: 16px 18px 0; padding: 14px 16px; border-radius: 12px;
+  background: rgba(var(--fg), .07); border: 1px solid var(--line-2); }
+.or-cf p { margin: 0 0 12px; font-size: 14px; line-height: 1.45; color: var(--ink); }
+.or-cf .bs { display: flex; gap: 10px; }
+.or-cf button { min-height: 46px; flex: 1; padding: 0 14px; border-radius: 23px;
+  border: 1px solid var(--line-2); background: none; color: var(--ink);
+  font: 600 14px 'Sora', sans-serif; cursor: pointer; }
+.or-cf button.go { background: #ff6f61; border-color: transparent; color: #19080a; }
+
+/* ---- next-up, mirrored ---- */
+.or-nx { margin: 16px 18px 0; padding: 13px 14px; border-radius: 12px; display: flex;
+  align-items: center; gap: 12px; background: rgba(var(--fg), .07); border: 1px solid var(--line-2); }
+.or-nxl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.or-nxl b { font-size: 14px; font-weight: 700; font-family: 'Space Grotesk', sans-serif; color: var(--ink); }
+.or-nxl span { font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.or-nxb { min-height: 46px; padding: 0 16px; border-radius: 23px; border: 1px solid var(--line-2);
+  background: none; color: var(--ink); font: 600 13px 'Sora', sans-serif; cursor: pointer; flex: none; }
+
+/* =================================================================================================
+   SHEETS
+   ================================================================================================= */
+/* A sheet dims what it covers. Without this the title behind it is sliced mid-word and the
+   picture reads as a clipping bug rather than a sheet. */
+.or-scrim { position: absolute; inset: 0; z-index: 18; background: rgba(4, 5, 9, .62); }
+html[data-skin="daylight"] .or-scrim { background: rgba(16, 18, 30, .34); }
+.or-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 86%;
+  border-radius: 20px 20px 0 0; background: var(--card); border-top: 1px solid var(--line-2);
+  box-shadow: 0 -20px 50px rgba(0, 0, 0, .55); padding: 6px 0 26px; overflow: hidden; z-index: 20; }
+.or-sh { display: flex; align-items: center; gap: 10px; padding: 8px 10px 4px 20px; }
+.or-sh h4 { flex: 1; margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; }
+/* The ONE line that differs from the local player's sheet. */
+.or-applies { margin: 0 20px 10px; font-size: 13px; line-height: 1.45; color: var(--accent-2); }
+.or-ssec, .or-bsec, .or-msec { padding: 12px 20px 6px; font-size: 11.5px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim);
+  font-family: 'JetBrains Mono', monospace; }
+.or-trk { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 50px;
+  padding: 0 20px; border: 0; background: none; color: var(--ink);
+  font: 400 15px 'Sora', sans-serif; text-align: left; cursor: pointer; }
+.or-trk .fi { width: 22px; height: 16.5px; flex: none; border-radius: 2px; }
+.or-noflag { width: 22px; height: 16.5px; flex: none; border-radius: 2px;
+  border: 1px dashed var(--line-2); }
+.or-trk .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.or-trk .ch { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-dim); }
+.or-trk .rt { width: 24px; flex: none; color: var(--accent); display: flex; }
+.or-trk .rt svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-trk.on .nm { color: var(--accent); font-weight: 600; }
+.or-seg { display: flex; gap: 2px; margin: 2px 20px 0; padding: 3px; border-radius: 12px;
+  background: rgba(var(--fg), .08); }
+.or-seg button { flex: 1; min-height: 42px; border: 0; border-radius: 10px; background: none;
+  color: var(--ink-soft); font: 600 14px 'Sora', sans-serif; cursor: pointer; }
+.or-seg button.on { background: var(--ink); color: var(--bg); }
+.or-mrow { width: 100%; display: flex; align-items: center; gap: 13px; min-height: 60px;
+  padding: 0 20px; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
+.or-mrow .ic { width: 38px; height: 38px; flex: none; border-radius: 19px;
+  background: rgba(var(--fg), .08); display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); }
+.or-mrow .ic svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-mrow .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.or-mrow .nm { font-size: 15px; font-weight: 500; }
+.or-mrow .sub { font-size: 12.5px; color: var(--ink-dim); }
+.or-mrow .rt { width: 24px; flex: none; color: var(--accent); display: flex; }
+.or-mrow .rt svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-mrow.on .nm { color: var(--accent); font-weight: 600; }
+.or-mrow.dis { opacity: .45; }
+.or-sdiv { height: 1px; margin: 8px 20px; background: var(--line); }
+
+/* =================================================================================================
+   THE ONE MINI BAR
+   ================================================================================================= */
+.or-mini { position: absolute; left: 10px; right: 10px; bottom: 104px; height: 64px;
+  border-radius: 15px; display: flex; align-items: center; gap: 11px; padding: 0 6px 0 8px;
+  background: var(--card-2); border: 1px solid var(--line-2); overflow: hidden; z-index: 30;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .45); }
+.or-mini .pg { position: absolute; left: 0; top: 0; height: 2px; background: var(--grad); }
+.or-mini .th { width: 72px; height: 44px; border-radius: 9px; flex: none; background-size: cover;
+  background-position: 50%; background-color: var(--card); }
+.or-mini .th.sq { width: 44px; }
+.or-mini .tx { flex: 1; min-width: 0; }
+.or-mini .n { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; display: block; }
+.or-mini .d { font-size: 12.5px; color: var(--accent-2); font-weight: 600; margin-top: 2px;
+  display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+.or-mini .d svg { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.or-mini .n2 { height: 30px; min-width: 38px; padding: 0 10px; border: 0; border-radius: 15px;
+  background: rgba(var(--fg), .1); color: var(--ink); font: 700 12.5px 'Space Grotesk', sans-serif;
+  flex: none; cursor: pointer; }
+.or-mini .pp { width: 46px; height: 46px; border: 0; border-radius: 23px; background: none;
+  color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; cursor: pointer; }
+.or-mini .pp svg { width: 22px; height: 22px; }
+.or-mini .pp .fil path { fill: currentColor; stroke: none; }
+/* the tab strip under it, so the bar's 104px offset is readable in the picture */
+.or-nav { position: absolute; left: 0; right: 0; bottom: 0; height: 92px; z-index: 28;
+  background: var(--bg-2); border-top: 1px solid var(--line); display: flex; align-items: center; }
+.or-nav span { flex: 1; text-align: center; font-size: 12.5px; font-weight: 600; color: var(--ink-dim); }
+.or-nav span.on { color: var(--ink); }
+
+/* =================================================================================================
+   DIRECTION B — today's session remote, extended
+   ================================================================================================= */
+.or-remb { position: absolute; left: 0; right: 0; bottom: 0; top: 54px; border-radius: 20px 20px 0 0;
+  background: var(--card); border-top: 1px solid var(--line-2); overflow: hidden;
+  display: flex; flex-direction: column; }
+.or-bsh { display: flex; align-items: center; gap: 10px; padding: 10px 10px 2px 20px; flex: none; }
+.or-bsh h4 { flex: 1; margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 17px;
+  font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.or-bscroll { flex: 1; overflow: hidden; padding: 0 0 20px; }
+.or-bart { width: 150px; aspect-ratio: 1 / 1; margin: 6px auto 0; border-radius: 14px;
+  background-size: cover; background-position: 50%; background-color: var(--card-2);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .35); }
+.or-bart[data-w] { width: calc(100% - 40px); aspect-ratio: 16 / 9; }
+.or-btt { display: flex; flex-direction: column; gap: 3px; text-align: center; padding: 12px 20px 0; }
+.or-btt b { font-size: 19px; font-family: 'Space Grotesk', sans-serif; }
+.or-btt span { font-size: 13.5px; color: var(--ink-soft); }
+.or-remb .or-place { margin: 12px auto 0; flex: none; width: auto; max-width: calc(100% - 40px); }
+.or-remb .or-seek { padding-top: 14px; }
+.or-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px 2px; }
+.or-chip { min-height: 34px; display: inline-flex; align-items: center; padding: 0 13px;
+  border-radius: 17px; border: 1px solid var(--line-2); background: rgba(var(--fg), .05);
+  font-size: 12.5px; color: var(--ink-soft); }
+.or-brow { width: 100%; display: flex; align-items: center; gap: 13px; min-height: 56px;
+  padding: 0 20px; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
+.or-brow .ic { width: 34px; flex: none; color: var(--ink-soft); display: flex; align-items: center; }
+.or-brow .ic svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.or-brow .ic .or-n { width: 21px; text-align: center; font: 600 13px 'JetBrains Mono', monospace;
+  color: var(--ink-dim); }
+.or-brow .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.or-brow .nm { font-size: 15px; font-weight: 500; }
+.or-brow .sub { font-size: 12.5px; color: var(--ink-dim); }
+.or-brow.stop .ic, .or-brow.stop .nm { color: #ff9b8a; }
+
+/* =================================================================================================
+   WEB
+   ================================================================================================= */
+.or-web { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.or-wchrome { height: 44px; flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 0 16px; background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.or-wdots { display: flex; gap: 7px; }
+.or-wdots i { width: 11px; height: 11px; border-radius: 50%; background: rgba(var(--fg), .18); }
+.or-wurl { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-dim);
+  padding: 5px 14px; border-radius: 8px; background: rgba(var(--fg), .06); }
+.or-wbody { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: 36px 0; }
+/* At 1440 the remote is a centred column with the art beside it — the SAME blocks, two columns. */
+.or-wframe:not(.narrow) .or-wbody .or-rem { width: 1040px; display: grid; padding: 0;
+  grid-template-columns: 520px minmax(0, 1fr); grid-template-rows: auto auto auto auto auto auto auto;
+  column-gap: 44px; align-content: start; }
+.or-wframe:not(.narrow) .or-rem > .or-top { grid-column: 2; grid-row: 1; padding: 0 0 4px; }
+.or-wframe:not(.narrow) .or-rem > .or-art { grid-column: 1; grid-row: 1 / span 7; margin: 0;
+  align-self: start; }
+.or-wframe:not(.narrow) .or-rem > .or-meta { grid-column: 2; grid-row: 2; padding: 10px 0 0; }
+.or-wframe:not(.narrow) .or-rem > .or-meta h3 { font-size: 34px; }
+.or-wframe:not(.narrow) .or-rem > .or-seek { grid-column: 2; grid-row: 3; padding: 26px 0 0; }
+.or-wframe:not(.narrow) .or-rem > .or-tr { grid-column: 2; grid-row: 4; justify-content: flex-start;
+  padding-top: 18px; }
+.or-wframe:not(.narrow) .or-rem > .or-vol { grid-column: 2; grid-row: 5; padding: 14px 0 0; }
+.or-wframe:not(.narrow) .or-rem > .or-foot { grid-column: 2; grid-row: 6; margin-top: 0;
+  padding: 22px 0 0; max-width: 520px; }
+.or-wframe:not(.narrow) .or-rem > .or-nx { grid-column: 2; grid-row: 7; margin: 18px 0 0; }
+.or-wframe:not(.narrow) .or-rem > .or-place { grid-column: 2; }
+/* At 390 it is the phone layout, unchanged — which is the point. */
+.or-wframe.narrow .or-wbody { padding: 0; }
+.or-wframe.narrow .or-wbody .or-rem { width: 390px; padding-top: 0; }
+
+/* =================================================================================================
+   MAC — the desktop Playing page IS the remote
+   ================================================================================================= */
+.or-mac { position: relative; display: flex; width: 100%; height: 100%; background: var(--bg); }
+.or-mside { width: 228px; flex: none; background: var(--bg-2); border-right: 1px solid var(--line);
+  padding: 14px 12px; }
+.or-lights { display: flex; gap: 8px; padding: 2px 6px 22px; }
+.or-lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.or-lights i:nth-child(2) { background: #febc2e; } .or-lights i:nth-child(3) { background: #28c840; }
+.or-mnav { display: flex; flex-direction: column; gap: 2px; }
+.or-mnav span { min-height: 38px; display: flex; align-items: center; padding: 0 12px;
+  border-radius: 9px; font-size: 14px; color: var(--ink-soft); }
+.or-mnav span.on { background: rgba(var(--fg), .09); color: var(--ink); font-weight: 600; }
+.or-mmain { flex: 1; min-width: 0; position: relative; padding: 34px 34px 0; }
+.or-mcols { display: flex; gap: 40px; align-items: flex-start; }
+.or-mleft { width: 420px; flex: none; }
+.or-mleft .or-art { margin: 0; }
+.or-mleft .or-art.sq { align-self: auto; }
+.or-mright { flex: 1; min-width: 0; }
+.or-mplace { display: flex; }
+.or-mright .or-place { flex: 0 1 auto; justify-content: flex-start; }
+.or-mmeta { padding: 18px 0 0; }
+.or-mmeta .k { font-size: 12.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--accent-2); }
+.or-mmeta h2 { margin: 6px 0 0; font-family: 'Space Grotesk', sans-serif; font-size: 32px;
+  font-weight: 700; letter-spacing: -.02em; }
+.or-mmeta .st { margin-top: 8px; font-size: 14px; color: var(--ink-soft); display: flex;
+  align-items: center; gap: 7px; }
+.or-mright .or-seek, .or-mright .or-vol { padding-left: 0; padding-right: 0; }
+.or-mright .or-tr { justify-content: flex-start; padding-top: 16px; }
+.or-mright .or-foot { margin-top: 0; padding: 20px 0 0; max-width: 520px; }
+.or-mq { display: flex; flex-direction: column; }
+.or-mqr { display: flex; align-items: center; gap: 14px; min-height: 40px; font-size: 14px;
+  color: var(--ink-soft); border-top: 1px solid var(--line); }
+.or-mqr b { width: 22px; font: 600 13px 'JetBrains Mono', monospace; color: var(--ink-dim); }
+.or-mqr span { flex: 1; color: var(--ink); }
+.or-mqr i { font: 400 13px 'JetBrains Mono', monospace; font-style: normal; color: var(--ink-dim); }
+
+/* The capsule. The shipped one is glass (backdrop-filter); a canvas cannot render that, so this
+   is a FLAT approximation of the same bar and the report says so. */
+.or-cap { position: absolute; left: 34px; right: 34px; bottom: 20px; height: 66px; border-radius: 33px;
+  background: #22242e; border: 1px solid var(--line-2); box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+  display: flex; align-items: center; gap: 14px; padding: 0 20px 0 10px; }
+.or-cap .th { width: 74px; height: 46px; border-radius: 10px; flex: none; background-size: cover;
+  background-position: 50%; background-color: var(--card); }
+.or-cap .th.sq { width: 46px; }
+.or-cap .or-tb.sm { width: 40px; height: 40px; color: var(--ink); }
+.or-cap .or-pp.sm { width: 44px; height: 44px; border-radius: 22px; }
+.or-cap .or-pp.sm svg { width: 20px; height: 20px; }
+.or-cap .tx { width: 210px; flex: none; min-width: 0; }
+.or-cap .n { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; display: block; }
+.or-cap .d { font-size: 12px; color: var(--accent-2); font-weight: 600; margin-top: 1px;
+  display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+.or-cap .d svg { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; }
+.or-capseek { position: relative; flex: 1; height: 4px; min-width: 0; }
+.or-capseek .tk { position: absolute; inset: 0; border-radius: 3px; background: rgba(var(--fg), .18); }
+.or-capseek .dn { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--ink); }
+.or-cap .tm { font: 400 12px 'JetBrains Mono', monospace; color: var(--ink-soft); flex: none;
+  font-variant-numeric: tabular-nums; }
+.or-vb.cap { color: var(--ink); }
+.or-vb.cap.on { background: rgba(var(--fg), .14); }
+.or-pop { position: absolute; right: 8px; bottom: 74px; width: 330px; border-radius: 16px;
+  background: #22242e; border: 1px solid var(--line-2); box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
+  padding: 8px 6px 14px; }
+.or-pop .or-vol { padding: 0 14px; }
+
+/* =================================================================================================
+   LIGHT THEME (daylight). The remote's art is a CARD on solid ground, never a backdrop, so unlike
+   the hero card and the film player this surface DOES light-theme. That is the payoff of
+   "no ink on a picture" and it is worth a frame.
+   ================================================================================================= */
+html[data-skin="daylight"] .or-fb.stop, html[data-skin="daylight"] .or-meta .st.bad,
+html[data-skin="daylight"] .or-ban.bad, html[data-skin="daylight"] .or-brow.stop .ic,
+html[data-skin="daylight"] .or-brow.stop .nm { color: #c23a28; }
+html[data-skin="daylight"] .or-ban.bad { border-color: rgba(194, 58, 40, .35);
+  background: rgba(194, 58, 40, .08); }
+html[data-skin="daylight"] .or-cf button.go { background: #c23a28; color: #fff; }
+html[data-skin="daylight"] .or-art { box-shadow: 0 14px 34px rgba(16, 18, 30, .18); }
+html[data-skin="daylight"] .or-mini, html[data-skin="daylight"] .or-sheet {
+  box-shadow: 0 14px 34px rgba(16, 18, 30, .16); }
+html[data-skin="daylight"] .or-cap, html[data-skin="daylight"] .or-pop { background: #ffffff; }
+
+
+/* ---- desktop widths: the volume name column has room, so no room name is truncated ---- */
+.or-mright .or-vn, .or-wframe:not(.narrow) .or-vn { width: 150px; }
+.or-mright .or-vrow.rm .or-vn, .or-wframe:not(.narrow) .or-vrow.rm .or-vn { width: 136px; }
+/* The popover is NOT a desktop width: at 150 px of name the three tracks collapsed to ~30 px and
+   every slider read as a toggle. It keeps the phone's column and gains 50 px of its own. */
+.or-pop { width: 380px; }
+.or-pop .or-vn { width: 104px; }
+.or-pop .or-vrow.rm .or-vn { width: 118px; }
+
+/* The capsule's skip buttons are glyph-only: there is no room for a second-count under them at
+   40 px, and the shipped capsule draws the glyph alone. */
+.or-tb.nolbl b { display: none; }
+
+/* The capsule floats over the page, so the page keeps clear of it. Without this the queue's last
+   row was sliced by the bar in the Mac music frame. */
+.or-mmain { padding-bottom: 110px; }
+.or-mmain > .or-mcols { max-height: 100%; }
+
+/* ---- the Films page, scaffolding only ---- */
+.or-bh { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700;
+  margin: 0 0 20px; letter-spacing: -.02em; }
+.or-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.or-grid i { display: block; aspect-ratio: 2 / 3; border-radius: 14px; }
+
+
+/* The web remote sits in the middle of the pane, and its place pill is as wide as its name —
+   stretched to the column it read as a banner rather than a control. */
+.or-wframe:not(.narrow) .or-wbody { align-items: center; }
+.or-wframe:not(.narrow) .or-rem > .or-top { justify-content: flex-start; }
+.or-wframe:not(.narrow) .or-place { flex: 0 1 auto; }
+/* At a desk width the square art matches the 16:9 card's column, so the music frame and the film
+   frame are the same composition and not two. */
+.or-wframe:not(.narrow) .or-art.sq, .or-mleft .or-art.sq { height: 420px; }
+
+/* The Mac's right column is the tallest thing in the round: place, title, album, state, seek,
+   five transport controls, three volume rows, the footer AND the queue. At 800 px the third
+   queue row was sliced by the capsule, which reads as a clip rather than a scroll. These four
+   trims are what buy it back; nothing else changed. */
+.or-mmain { padding-bottom: 96px; }
+.or-mright .or-foot { padding-top: 14px; }
+.or-mright .or-vrow { min-height: 42px; }
+.or-msec { padding: 10px 0 2px; }
+.or-mqr { min-height: 36px; }
