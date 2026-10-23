@@ -21,6 +21,10 @@ EXCLUDED_KEYS |= {"mac.update.dl_sub", "mac.update.auto_on"}
 # (the demonstrative: `strika ta fíluna`, `skrásett ta nýggju`) against `tá` ("when"), are different words that differ
 # only by the accent. Named, not inferred: the native read decides.
 EXCLUDED_KEYS |= {"migrate.before", "migrate.othersH", "migrate.unkBody", "migrate.pathBody", "migrate.takenBody", "migrate.others"}
+# DEB-2181 — Danish `én` ("one", the numeral: `i én besked`, support.too_long) against `en` ("a", the article, 30 uses).
+# The string round wrote it with the accent on purpose: without it `i en besked` reads as "in a message", not "in ONE
+# message". Different words that differ only by the accent; the spec table gives it character for character (FR-11a).
+EXCLUDED_KEYS |= {"support.too_long"}
 
 # R288 — unit abbreviations are not words in any language, so they are exempt from folding against
 # words that happen to look like them. `min` is minutes in all three files; Faroese `mín` is "my".

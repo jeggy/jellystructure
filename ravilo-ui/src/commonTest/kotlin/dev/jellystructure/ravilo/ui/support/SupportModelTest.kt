@@ -95,8 +95,24 @@ class SupportModelTest {
         fun forwarded(h: String) = line(msg(1, "SYSTEM", null, event = "FORWARDED", args = listOf(h)))?.text
         assertEquals("AI Agent is handling this", forwarded("AI_AGENT"))
         assertEquals("Hervør is handling this", forwarded("HERVOR"))
-        assertEquals("support is handling this", forwarded("ADMIN"))
-        assertEquals("support is handling this", forwarded("TEAM"))
+        assertEquals("Support is handling this", forwarded("ADMIN"))
+        assertEquals("Support is handling this", forwarded("TEAM"))
+        assertEquals("Support is handling this", forwarded("SOMEONE_NEW"))
+        assertEquals("Support is handling this", line(msg(1, "SYSTEM", null, event = "FORWARDED"))?.text)
+    }
+
+    @Test fun `FORWARDED to the desk reads its own line in Danish and Faroese`() {
+        fun forwarded(h: String, lang: String) = SupportModel.systemLine(msg(1, "SYSTEM", null, event = "FORWARDED", args = listOf(h)), ticket(), lang)?.text
+        assertEquals("Support tager sig af det", forwarded("ADMIN", "da"))
+        assertEquals("Supportin tekur sær av hesum", forwarded("TEAM", "fo"))
+        assertEquals("Hervør tekur sær av hesum", forwarded("HERVOR", "fo"))
+    }
+
+    @Test fun `a ticket the desk holds reads its own presence line in every language`() {
+        fun desk(lang: String) = SupportModel.presence(ticket(holder = "ADMIN"), true, false, lang).text
+        assertEquals("Open · with support", desk("en"))
+        assertEquals("Åben · hos support", desk("da"))
+        assertEquals("Opin · hjá supportini", desk("fo"))
     }
 
     @Test fun `a state change to RESOLVED reads Resolved and any other state reads Open`() {
@@ -188,6 +204,7 @@ class SupportModelTest {
         "support.not_sent_offline", "support.try_again", "support.offline_bar", "support.show_rest", "support.empty_title",
         "support.empty_body", "support.tv_said_same_here",
         "support.ticket_n", "support.new_ticket", "support.sys_received_bare", "support.limit", "support.too_long",
+        "support.pres_with_support", "support.sys_handling_support",
     )
 
     @Test fun `every support string resolves in every language`() {
@@ -202,18 +219,31 @@ class SupportModelTest {
         assertEquals("Mínar sakir", t("support.my_tickets", "fo"))
         assertEquals("Modtaget · #41 · registreret som fejl · med titlen “Lyd”", t("support.sys_received", "da", mapOf("n" to "41", "class" to "fejl", "title" to "Lyd")))
         assertEquals("Móttikið · #41 · skrásett sum feilur · við heitinum “Ljóð”", t("support.sys_received", "fo", mapOf("n" to "41", "class" to "feilur", "title" to "Ljóð")))
-        assertEquals("Opin · hjá support", t("support.pres_with", "fo", mapOf("name" to "support")))
+        assertEquals("Opin · hjá supportini", t("support.pres_with_support", "fo"))
+        assertEquals("Supportin tekur sær av hesum", t("support.sys_handling_support", "fo"))
         assertEquals("Skriva til supportina", t("support.write", "fo"))
     }
 
-    /** The five strings of FR-11's second table. Until DEB-1504 lands, da and fo carry English — this keeps the debt visible. */
-    @Test fun `the five new strings still fall back to English in Danish and Faroese`() {
-        for (k in listOf("support.ticket_n", "support.new_ticket", "support.sys_received_bare", "support.limit", "support.too_long")) {
-            for (lang in listOf("da", "fo")) {
-                val v = t(k, lang, mapOf("n" to "41"))
-                if (v == t(k, "en", mapOf("n" to "41"))) println("DEB-1504: $k is still English in $lang")
-                assertNotEquals(k, v)
-            }
+    /** Acceptance 7 (FR-11a, FR-11b): no `support.*` key carries English in `da` or `fo`. */
+    @Test fun `no support string is still English in Danish or Faroese`() {
+        // "Support" and "AI" are the same word in all three languages; a name or a loanword is not an untranslated line.
+        val same = setOf("support.title", "support.badge_support", "support.badge_ai")
+        val args = mapOf("n" to "41", "name" to "x", "class" to "bug", "title" to "y")
+        for (k in keys - same) for (lang in listOf("da", "fo")) {
+            assertNotEquals(t(k, "en", args), t(k, lang, args), "$k is still English in $lang")
         }
+    }
+
+    @Test fun `the five lines of FR-11a read as the table says`() {
+        assertEquals("Sag #41", t("support.ticket_n", "da", mapOf("n" to "41")))
+        assertEquals("Sak #41", t("support.ticket_n", "fo", mapOf("n" to "41")))
+        assertEquals("Ny sag", t("support.new_ticket", "da"))
+        assertEquals("Nýggj sak", t("support.new_ticket", "fo"))
+        assertEquals("Modtaget · #41", t("support.sys_received_bare", "da", mapOf("n" to "41")))
+        assertEquals("Móttikið · #41", t("support.sys_received_bare", "fo", mapOf("n" to "41")))
+        assertEquals("Du har skrevet meget i dag. Prøv igen senere.", t("support.limit", "da"))
+        assertEquals("Tú hevur skrivað nógv í dag. Royn aftur seinni.", t("support.limit", "fo"))
+        assertEquals("Det er for langt til at sende i én besked.", t("support.too_long", "da"))
+        assertEquals("Hetta er ov langt til at senda í einum boði.", t("support.too_long", "fo"))
     }
 }

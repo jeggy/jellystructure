@@ -57,7 +57,8 @@ object SupportModel {
         return when (ticket.holder) {
             SupportWire.HOLDER_AI_AGENT -> Presence(t("support.pres_with", lang, mapOf("name" to AI_AGENT)), Mark.AI_AGENT)
             SupportWire.HOLDER_HERVOR -> Presence(t("support.pres_with", lang, mapOf("name" to HERVOR)), Mark.HERVOR)
-            else -> Presence(t("support.pres_with", lang, mapOf("name" to t("support.badge_support", lang))), Mark.SUPPORT)
+            // FR-11b: the desk has its own line — Faroese declines the word, so it cannot go into {name}.
+            else -> Presence(t("support.pres_with_support", lang), Mark.SUPPORT)
         }
     }
 
@@ -87,7 +88,12 @@ object SupportModel {
                     else t("support.sys_received_bare", lang, mapOf("n" to n)),
                 )
             }
-            SupportWire.EVENT_FORWARDED -> SystemLine(t("support.sys_handling", lang, mapOf("name" to holderName(m.eventArgs.firstOrNull(), lang))))
+            SupportWire.EVENT_FORWARDED -> SystemLine(
+                when (val holder = m.eventArgs.firstOrNull()) {
+                    SupportWire.HOLDER_AI_AGENT, SupportWire.HOLDER_HERVOR -> t("support.sys_handling", lang, mapOf("name" to holderName(holder, lang)))
+                    else -> t("support.sys_handling_support", lang) // FR-11b: the desk, including a holder this app does not know
+                },
+            )
             SupportWire.EVENT_STATE_CHANGED ->
                 SystemLine(t(if (m.eventArgs.firstOrNull() == SupportWire.STATE_RESOLVED) "support.state_resolved" else "support.state_open", lang))
             SupportWire.EVENT_REOPENED -> SystemLine(t("support.sys_reopened", lang), accent = true)
@@ -95,7 +101,7 @@ object SupportModel {
         }
     }
 
-    /** FR-9's naming of a holder code, for `FORWARDED`. */
+    /** FR-9's naming of a holder code: `FORWARDED`'s {name} for AI Agent and Hervør, and the mark's initial for any holder. */
     fun holderName(holder: String?, lang: String): String = when (holder) {
         SupportWire.HOLDER_AI_AGENT -> AI_AGENT
         SupportWire.HOLDER_HERVOR -> HERVOR
