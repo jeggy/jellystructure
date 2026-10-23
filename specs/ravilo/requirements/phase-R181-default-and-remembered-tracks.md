@@ -89,9 +89,9 @@ Within a series, the audio + subtitle selection applied to an episode carries to
 episode** (R179/R176 continuity) — implemented as the per-series remembered choice (FR-RV-TRK1-4) being
 re-resolved on each new `PlayerScreen`, so the language never silently resets mid-binge.
 
-## Open design decision (flag for the design tool / product)
+## Open design decision (for a design round or the owner)
 **Granularity.** This spec adopts a **layered model** — per-series remembered choice (tier 1) *over* a
-learned global language preference (tier 2). Alternatives the design tool may prefer: **(a) global-only**
+learned global language preference (tier 2). Alternatives a design round may prefer: **(a) global-only**
 (one "preferred audio / preferred subtitle language" pair, no per-series memory — simplest, but can't
 honour "English for this one show, Dansk for everything else"); **(b) per-title only** (no global learning
 — every new title is source-default until the viewer chooses). The layered model is the recommendation
@@ -135,10 +135,9 @@ it resolves to, not the mechanism); `LANG_CC` / the R180 endonym map only if a s
 - Two profiles on one device keep **independent** memory; nothing about these choices appears in any
   backend request (verify: no `putViewerSettings`/config call fires on a track change).
 
-## Status
-Design-authored companion to R180, **`Planned`**. `scripts/check-phases.sh` will flag it for a `STATUS.md`
-row — **STATUS.md is code-owned; do not add the row from the design side.** Depends on R180 §2 (widened
-`PlayerAudioTrack`) for variant/channel matching. **Next Ravilo number after this is R182.**
+## Scope
+Design-authored companion to R180. Depends on R180 §2 (widened `PlayerAudioTrack`) for variant/channel
+matching.
 
 ## Source references
 - Hardcoded default to replace: `PlayerScreen.kt:197-198` (`selectedAudio = 0`, `selectedSub = -1`).

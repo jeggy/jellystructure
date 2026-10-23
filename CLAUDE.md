@@ -66,10 +66,11 @@ the DOM through `kotlinx.browser` and renders **server-pushed state only** — n
 state in the frontend.
 
 **Design arrives by a person, never by a pipeline.** Nothing outside this repository writes this
-repository: a design round is received, read and committed by someone who looked at the diff.
-[`design/PROCESS.md`](design/PROCESS.md) is how a design becomes code in both directions — the
-designer briefing the tool, and the owner designing and handing a round over. Read it before
-touching anything under `design/`.
+repository: a design round is drawn, read and committed by someone who looked at the diff.
+[`design/PROCESS.md`](design/PROCESS.md) is how a design becomes code: the designer draws the round
+in this repository and renders it with `scripts/render-design.sh`, the owner reviews the pictures on
+its task, and the gate promotes it. Claude Design was retired on 2026-10-22 (DEB-2112). Read
+`PROCESS.md` before touching anything under `design/`.
 
 **Push `main` to GitHub as you go** (owner, DEB-1173). When you have committed a finished piece of
 work, run `scripts/check-deanonymization.sh` and `scripts/check-phases.sh`; if both pass,
