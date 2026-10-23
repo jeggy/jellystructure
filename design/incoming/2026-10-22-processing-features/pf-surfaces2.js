@@ -15,13 +15,13 @@ function laneFor(f, o = {}) {
   const dot = f.state === 'run' ? 'busy' : f.state === 'bad' ? 'bad' : f.state === 'hold' ? '' : 'ok';
   const wait = (f.wait === null || f.wait === undefined)
     ? (f.waitNote ? f.waitNote : 'nothing waiting')
-    : `${f.wait === 1204 && o.longQueue ? '9 600' : f.wait.toLocaleString('en').replace(/,/g, ' ')} waiting${f.waitNote ? ` · ${f.waitNote}` : ''}`;
+    : `${f.wait === 1204 && o.longQueue ? '9\u00a0600' : f.wait.toLocaleString('en').replace(/,/g, '\u00a0')} waiting${f.waitNote ? ` · ${f.waitNote}` : ''}`;
   const sub = f.state === 'run'
     ? `${f.last} · ${wait}<div class="prog"><i style="width:40%"></i></div>`
     : f.state === 'hold'
       ? `${badge('warn', 'Holding')} ${HOLD.now} · ${wait}`
       : f.state === 'bad'
-        ? `${badge('bad', 'Failed')} the music database is not answering · retry in 20 min`
+        ? `${badge('bad', 'Failed')} ${f.last.replace(/^failed [^·]*· /, '')} · ${f.next}`
         : `${f.last}${f.next ? ` · next ${f.next}` : ''} · ${wait}`;
   return `
   <div class="lane">
@@ -42,15 +42,15 @@ function activityNow(o = {}) {
     <div class="card" style="margin-bottom:16px;border-left:3px solid var(--warn)">
       <div class="row center"><div class="fill">
         <div style="font-weight:600">Scan cancelled 2 min ago</div>
-        <div class="tiny muted" style="margin-top:4px">41 of ${LIB.films} were looked at. Nothing was
-          left half-written, and what was already queued is still being read.</div>
+        <div class="tiny muted" style="margin-top:4px">41 of ${LIB.films} were looked at. What was
+          already queued is still being read — that is the one thing a cancel does not undo.</div>
       </div>${btn('Continue scan', 'primary')}</div>
     </div>` : `
     <div class="card" style="margin-bottom:16px">
       <div class="row center" style="margin-bottom:12px">
         <div class="fill"><div style="font-weight:600;font-size:1.02rem">Scan · started 12 min ago</div>
           <div class="tiny muted" style="margin-top:3px">Started from the dashboard with everything
-            ticked. What it <i>queued</i> is being read in the lanes below — the run did not wait
+            ticked. What it <i>queued</i> is being read in the card below — the run did not wait
             for that.</div></div>
         ${badge('warn', 'Running')}${btn('Cancel run')}
       </div>
@@ -62,7 +62,7 @@ function activityNow(o = {}) {
       <div class="lane">
         <div class="dot ok"></div>
         <div><div class="t">Intro &amp; credits</div>
-          <div class="s">Queued 37 episodes · ${badge('info', 'being read in its lane')}</div></div><div></div>
+          <div class="s">Queued 37 episodes · ${badge('info', 'being read in the background')}</div></div><div></div>
       </div>
       <div class="lane">
         <div class="dot"></div>
@@ -71,7 +71,10 @@ function activityNow(o = {}) {
       </div>
     </div>`;
 
-  const lanes = ['meta', 'intro', 'health', 'subs', 'music', 'play'].map((id) => laneFor(byId(id), o)).join('');
+  /* REVISION 1, correction 2. Only the features that QUEUE work appear here. Metadata & artwork,
+     music, audiobooks and recommendations run inside the run itself and have nothing to show between
+     runs — their `Run now` is on Schedule, which is where a thing you can start lives. */
+  const lanes = ['intro', 'health', 'subs', 'play'].map((id) => laneFor(byId(id), o)).join('');
 
   const offline = o.offline ? `
     <div class="pf-offline">
@@ -83,13 +86,15 @@ function activityNow(o = {}) {
 
   return shell('Activity', `
     <div class="fr-bar"><h1>Activity</h1><span class="spacer"></span>${views('now')}</div>
-    <div class="fr-sub">What is running, what is waiting, and what is due next — one row per feature,
-      the same nine as <a href="#">Settings ▸ Processing</a>.</div>
+    <div class="fr-sub">What is running now, and what is waiting to be read. Every feature's schedule —
+      including the ones that run inside the run and have nothing waiting — is on
+      <a href="#">Schedule</a>.</div>
     ${offline}
     ${run}
     <div class="card" style="margin-bottom:16px">
-      <h3 style="font-size:1.05rem">Lanes</h3>
-      <div class="tiny muted" style="margin-bottom:6px">Each feature has its own lane. A lane that is
+      <h3 style="font-size:1.05rem">Queued work</h3>
+      <div class="tiny muted" style="margin-bottom:6px">The four features that queue work, and what is
+        waiting for each. <i>Empty</i> clears only that feature's waiting work. A feature that is
         holding is waiting for a TV, not stuck.</div>
       <div style="border-top:1px solid var(--line);margin-top:10px"
         class="${o.offline ? 'pf-stale' : ''}">${lanes}</div>
@@ -108,7 +113,7 @@ function schedRow(f, o = {}) {
   const off = o.off === f.id;
   const wait = off ? '—'
     : (f.wait === null || f.wait === undefined) ? (f.waitNote || '—')
-      : `${(f.wait === 1204 && o.longQueue) ? '9 600' : String(f.wait).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${f.waitNote ? ` · ${f.waitNote}` : ''}`;
+      : `${(f.wait === 1204 && o.longQueue) ? '9\u00a0600' : String(f.wait).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}${f.waitNote ? ` · ${f.waitNote}` : ''}`;
   const runNow = off
     ? `<span class="rr-wrap">${btn('Run now', 'dis')}${o.offPop ? `<div class="pf-pop">Off in
         Settings — nothing would run. Switch it on there and it runs by itself.</div>` : ''}</span>`
@@ -146,8 +151,8 @@ function activitySched(o = {}) {
           ${btn('Cancel', 'ghost')}${btn('Empty queue', 'bad')}</div>
       </div>
     </div>` : `
-    <div class="tiny muted" style="margin-top:14px"><i>Empty</i> removes what is waiting and never stops
-      what is running. It asks once and cannot be undone.</div>`}`, { activityTag: '3' });
+    <div class="tiny muted" style="margin-top:14px"><i>Empty</i> removes that feature's waiting work and
+      never stops what is running. It asks once and cannot be undone.</div>`}`, { activityTag: '3' });
 }
 
 function activitySchedPhone(o = {}) {
@@ -155,12 +160,12 @@ function activitySchedPhone(o = {}) {
     const off = o.off === f.id;
     return `
     <div class="sched-card">
-      <div class="r1"><span class="f">${f.name}</span>${off ? badge('flat', 'Off') : STATE[f.state](f.stateText)}</div>
+      <div class="r1"><span class="f">${f.name}</span>${off ? badge('flat', 'Off') : chipFor(f, { short: true })}</div>
       <dl class="kv">
         <dt>Every</dt><dd>${off ? '—' : f.every}</dd>
         <dt>Last ran</dt><dd>${off ? '—' : f.last}</dd>
         <dt>Next</dt><dd>${off ? '—' : (f.next || '—')}</dd>
-        <dt>Waiting</dt><dd>${(f.wait === null || f.wait === undefined) ? (f.waitNote || '—') : String(f.wait).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${f.waitNote && f.wait ? ` · ${f.waitNote}` : ''}</dd>
+        <dt>Waiting</dt><dd>${(f.wait === null || f.wait === undefined) ? (f.waitNote || '—') : String(f.wait).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}${f.waitNote && f.wait ? ` · ${f.waitNote}` : ''}</dd>
       </dl>
       <div class="acts">${btn('Run now', off ? 'dis' : '')}${f.wait && !off ? btn('Empty') : ''}</div>
     </div>`;
@@ -205,35 +210,6 @@ function activityHist() {
     </div>`, { activityTag: '3' });
 }
 
-/* the alternative: no views at all — the schedule IS the page, and running work rises to the top */
-function activityAlt() {
-  return shell('Activity', `
-    <div class="fr-bar"><h1>Activity</h1><span class="spacer"></span>${btn('Open the log')}</div>
-    <div class="fr-sub">One page. What is running is at the top because it is running, not because it is
-      in a different view.</div>
-    <div class="card">
-      <table class="sched">
-        <thead><tr><th>Feature</th><th>Every</th><th>Last ran</th><th>Next</th><th>Waiting</th><th></th></tr></thead>
-        <tbody>
-          <tr style="background:var(--warn-soft)">
-            <td><div class="f">Intro &amp; credits</div><div class="sub">${badge('warn', 'Running')}</div></td>
-            <td>new episodes at once</td>
-            <td><i>Twelve Winters</i> S2, episode 4 of 10<div class="prog" style="width:160px"><i style="width:40%"></i></div></td>
-            <td>—</td><td class="num">37</td>
-            <td><div class="acts">${btn('Cancel')}${btn('Empty')}</div></td></tr>
-          <tr style="background:var(--warn-soft)">
-            <td><div class="f">File health</div><div class="sub">${badge('warn', 'Holding')}</div></td>
-            <td>by release age</td><td>3 h ago</td><td>${HOLD.now}</td>
-            <td class="num">1 204 · sound in step</td>
-            <td><div class="acts">${btn('Run now')}${btn('Empty')}</div></td></tr>
-          ${['find', 'meta', 'subs', 'recs', 'music', 'books', 'play'].map((id) => schedRow(byId(id), {})).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div class="tiny muted" style="margin-top:14px">The cost of this one: the current run has no card of
-      its own, so "what started this?" is only answerable from the log.</div>`, { activityTag: '3' });
-}
-
 /* ================================================================
    4 · A FILM OR SERIES PAGE
    ================================================================ */
@@ -250,7 +226,7 @@ function refreshMenu(kind) {
     const partly = f.id === 'health';
     return `<div class="mi">
         <div>${f.name}${partly ? '<span class="s">Runs two of its three checks. Sound in step is measured already and is skipped.</span>'
-      : f.queueOnly ? '<span class="s">Queues it; the reading shows on Activity.</span>' : ''}</div>
+      : f.queueOnly ? '<span class="s">Queues it; the reading shows on Activity afterwards.</span>' : ''}</div>
         ${partly ? badge('flat', 'skips 1') : ''}
       </div>`;
   }).join('')}
@@ -285,12 +261,12 @@ function checksCard(o = {}) {
     chkRow({ name: 'Find new &amp; changed', chip: ['ok', 'ok'], last: '12 min ago', next: 'in 48 min' }),
     chkRow({
       name: 'Metadata &amp; artwork', chip: ['warn', 'stale'],
-      why: 'The sidecar files were written before the file changed on disk.',
+      why: 'The NFO files were written before the file changed on disk.',
       last: '12 min ago', next: 'with the next look',
     }),
     chkRow({ name: 'Intro &amp; credits', chip: ['ok', 'credits at 1:48:20'], last: '3 h ago', next: 'when the file changes' }),
     `<div class="chk-row" style="padding-bottom:4px"><div><div class="n" style="font-weight:600">File health</div>
-       <div class="why">Three checks. Each one is read in its own lane.</div></div>
+       <div class="why">Three checks. Each one is read in the background and reported here.</div></div>
        <div></div><div></div><div></div></div>`,
     `<div style="padding-left:18px;border-left:2px solid var(--line);margin-left:4px">
       ${chkRow({ name: 'Readable end to end', chip: ['ok', 'read 3 h ago'], last: '3 h ago', next: 'in 1 y' })}
@@ -308,7 +284,7 @@ function checksCard(o = {}) {
     </div>`,
     chkRow({ name: 'Subtitles', chip: ['ok', 'pre-warmed, 3 fit'], last: '2 h ago', next: 'when a subtitle arrives' }),
     chkRow({
-      name: 'Plays directly', chip: ['warn', '1 repair waiting for you'],
+      name: 'Make files play directly', chip: ['warn', '1 repair waiting for you'],
       why: 'Approve it and the file plays without being re-encoded.',
       last: '1 min ago', next: 'every minute',
     }),
@@ -428,8 +404,11 @@ function longest(phone = false) {
     </table>`}
     ${chkRow({
     name: 'Sound in step with the picture', chip: ['flat', "can't tell"],
-    why: 'Only one of the parts measured read clearly enough to measure, and the sidecar that measures it is not answering.',
-    whyBad: true, last: '3 h ago', next: 'when the file changes', disabled: true, pop: 'cantTell',
+    why: 'Only one of the parts measured read clearly enough to measure, and the measuring service is not answering.',
+    /* No popover here. This frame exists to test the LONGEST STRINGS, and an open popover sat on
+       top of the longest one of them — the picture was testing nothing. The wordings are proved in
+       title-film-pop, title-row-pop and title-phone. */
+    whyBad: true, last: '3 h ago', next: 'when the file changes', disabled: true,
   })}
   </div>`;
 }

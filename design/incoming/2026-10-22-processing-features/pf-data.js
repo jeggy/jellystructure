@@ -29,6 +29,26 @@ const STATE = {
   flat: (t) => badge('flat', t),
 };
 
+/* REVISION 1, correction 8. Round 1 had the status chip and the line beside it both saying when the
+   feature last ran ("Ran 12 min ago" next to "Last ran 12 min ago · next in 48 min"). The chip now
+   says only what state the feature is IN; the line keeps last-ran and next. One fact, one place.
+
+   `short` is for a surface that already prints the count beside the chip — the phone Schedule card
+   has a Waiting row, and without it "3 waiting for approval" appeared twice in one card. */
+const chipFor = (f, o = {}) => {
+  if (f.state === 'run') return badge('warn', 'Running');
+  if (f.state === 'hold') return badge('warn', 'Holding');
+  if (f.state === 'bad') return badge('bad', 'Failed');
+  if (f.state === 'warn') return badge('warn', o.short ? 'Waiting for you' : f.stateText);
+  return badge('ok', 'On');
+};
+
+/* REVISION 1, correction 7. A feature whose every part queues work carries the marker on its own
+   row, not only on its parts — derived from the parts rather than flagged by hand, so a part that
+   stops queueing takes the marker off the row with it. */
+const allQueue = (f) => f.subs.length > 0 && f.subs.every((s) => s.q);
+const anyQueue = (f) => f.queueOnly || allQueue(f) || f.subs.some((s) => s.q);
+
 /* ---------- the nine ---------- */
 const F = [
   {
@@ -38,6 +58,7 @@ const F = [
     last: '12 min ago · 3 new, 41 changed', next: 'in 48 min', wait: null,
     state: 'ok', stateText: 'Ran 12 min ago',
     subs: [], scope: ['film', 'series'],
+    lede: 'It is what everything else works on, which is why it cannot be unticked.',
     titleRow: { name: 'Find new &amp; changed', chip: ['ok', 'Looked at 12 min ago'], last: '12 min ago', next: 'in 48 min' },
     opts: () => `
       <div class="pf-every">
@@ -61,7 +82,11 @@ const F = [
           </div>
         </div>
       </div>
-      <div class="pf-note">Need a cron instead? ${sel('Custom · 0 30 * * *')} is kept here, and only here.</div>`,
+      <div class="pf-note">
+        <div>Need a cron instead?</div>
+        <div style="margin-top:8px">${sel('Custom · 0 30 * * *')}</div>
+        <div style="margin-top:8px">This is the only place one survives.</div>
+      </div>`,
   },
   {
     id: 'meta', name: 'Metadata &amp; artwork', on: true,
@@ -70,14 +95,15 @@ const F = [
     state: 'ok', stateText: 'Ran 12 min ago',
     subs: [
       { n: 'Database metadata' }, { n: 'Artwork' }, { n: 'Ratings' },
-      { n: 'Sidecar files' }, { n: 'Drift check' }, { n: 'Rescan in the downloader apps' },
+      { n: 'NFO files' }, { n: 'Drift check' }, { n: 'Rescan in the downloader apps' },
     ],
     scope: ['film', 'series'],
+    lede: 'Six parts. All six are written during the run itself — none of them queue work.',
     titleRow: { name: 'Metadata &amp; artwork', chip: ['warn', 'Stale'],
-      why: 'The sidecar files were written before the file changed on disk.',
+      why: 'The NFO files were written before the file changed on disk.',
       last: '12 min ago', next: 'with the next look' },
     opts: () => `
-      <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Overwrite other tools' fields in the sidecar files</div>
+      <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Overwrite other tools' fields in the NFO files</div>
         <div class="ph-line">Off leaves a field alone once another tool has written it.</div></div><div></div></div>
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Download artwork that is missing</div></div><div></div></div>
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Put our values back when something drifts</div>
@@ -93,6 +119,7 @@ const F = [
     last: 'running · <i>Twelve Winters</i> S2, episode 4 of 10', next: null, wait: 37,
     state: 'run', stateText: 'Running',
     subs: [], scope: ['film', 'series'],
+    lede: 'It queues episodes; the reading happens afterwards, in the background.',
     titleRow: { name: 'Intro &amp; credits', chip: ['ok', 'Credits at 1:48:20'], last: '3 h ago', next: 'when the file changes' },
     opts: () => `
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Match by audio fingerprint</div>
@@ -105,7 +132,7 @@ const F = [
           ${chip('Intro')}${chip('Opening')}${chip('Opening Credits')}${chip('End Credits')}${chip('Recap')}${chip('+ Add', 'ghost')}
         </div></div></div>
       <div class="pf-note q"><b>This queues work.</b> Switching it on or ticking it in a scan puts
-        episodes in a queue; the reading happens in a worker afterwards and shows on
+        episodes in a queue; the reading happens afterwards, in the background, and shows on
         <a href="#">Activity</a>.</div>`,
   },
   {
@@ -116,9 +143,10 @@ const F = [
     subs: [
       { n: 'Read files end to end', q: true },
       { n: 'Track lengths', q: true },
-      { n: 'Sound in step with the picture', q: true, warn: 'The sidecar is not answering' },
+      { n: 'Sound in step with the picture', q: true, warn: 'The measuring service is not answering' },
     ],
     scope: ['film', 'series'],
+    lede: 'Three parts. All three queue work — the reading happens afterwards, in the background.',
     opts: () => `
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Read files end to end</div>
         <div class="ph-line">Proves the file is readable all the way through. This is the expensive one —
@@ -138,11 +166,11 @@ const F = [
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Sound in step with the picture</div>
         <div class="ph-line">Measured once per file. A file is not measured again unless it changes.</div>
         <div class="pf-note" style="margin-top:10px;border-left:3px solid var(--warn)">
-          ${badge('warn', 'The sidecar is not answering')}
+          ${badge('warn', 'The measuring service is not answering')}
           <div style="margin-top:7px">Nothing is measured while it is away, and the queue does not move.
           1 204 files are waiting for it. <a href="#">Where it is configured →</a></div></div>
         </div><div></div></div>
-      <div class="pf-note q"><b>All three queue work.</b> They are read in a worker, one lane each,
+      <div class="pf-note q"><b>All three queue work.</b> They are read afterwards, in the background,
         and what they found shows on <a href="#">Activity</a> and on the title.</div>`,
   },
   {
@@ -152,6 +180,7 @@ const F = [
     state: 'ok', stateText: 'Ran 2 h ago',
     subs: [{ n: 'Pre-warm', q: true }, { n: 'Check fit', q: true }],
     scope: ['film', 'series'],
+    lede: 'Two parts. Both queue work — the fit is read afterwards, in the background.',
     titleRow: { name: 'Subtitles', chip: ['ok', 'Pre-warmed, 3 fit'], last: '2 h ago', next: 'when a subtitle arrives' },
     opts: () => `
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Pre-warm</div>
@@ -162,7 +191,7 @@ const F = [
         <div class="ph-line">Moved here from the subtitle app's own card, because it is a decision about
           our files rather than about that app.</div>
         <div style="margin-top:10px;max-width:420px">${sel('Ask the subtitle app for another one')}</div></div></div>
-      <div class="pf-note q"><b>Both queue work.</b> The fit is read afterwards, in the subtitle lane.</div>`,
+      <div class="pf-note q"><b>Both queue work.</b> The fit is read afterwards, in the background.</div>`,
   },
   {
     id: 'recs', name: 'Recommendations &amp; suggestions', on: true,
@@ -171,6 +200,7 @@ const F = [
     state: 'ok', stateText: 'Ran 2 d ago',
     subs: [{ n: 'Recommendations' }, { n: 'Suggestions' }],
     scope: [],  /* library-wide: it is not a property of one title */
+    lede: 'Two parts, built for the whole library rather than for any one title.',
     opts: () => `
       <div class="pf-every">
         <span class="muted tiny">Rebuild</span>
@@ -192,10 +222,11 @@ const F = [
     state: 'bad', stateText: 'Failed 40 min ago',
     subs: [
       { n: 'Read the music library' }, { n: 'Match on the music database' }, { n: 'Songs held twice' },
-      { n: 'Covers &amp; pictures' }, { n: 'Lyrics' }, { n: 'Album/artist sidecar files' },
-      { n: 'Write tags', dep: 'only while tag writing is on' },
+      { n: 'Covers &amp; pictures' }, { n: 'Lyrics' }, { n: 'Album/artist NFO files' },
+      { n: 'Write tags', dep: 'tag writing is off' },
     ],
     scope: [],
+    lede: 'Seven parts. <i>Write tags</i> is only offered while tag writing is on in Settings.',
     opts: () => `
       <div class="pf-every"><span class="muted tiny">Read the music library</span>${sel('Every N hours')}<span class="input">6</span><span class="muted tiny">hours</span></div>
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Match albums and artists on the music database</div></div><div></div></div>
@@ -213,6 +244,7 @@ const F = [
     last: '9 h ago', next: 'in 15 h', wait: null,
     state: 'ok', stateText: 'Ran 9 h ago',
     subs: [], scope: [],
+    lede: 'It reads the audiobook library and stops.',
     opts: () => `<div class="pf-note">Nothing to configure. It reads the audiobook library and stops.</div>`,
   },
   {
@@ -221,7 +253,8 @@ const F = [
     last: '1 min ago', next: null, wait: null, waitNote: '3 waiting for your approval',
     state: 'warn', stateText: '3 waiting for approval',
     subs: [], scope: ['film', 'series'],
-    titleRow: { name: 'Plays directly', chip: ['warn', '1 repair waiting for you'],
+    lede: 'It applies the repair kinds that are switched on in Settings.',
+    titleRow: { name: 'Make files play directly', chip: ['warn', '1 repair waiting for you'],
       why: 'Approve it and the file plays without being re-encoded.', last: '1 min ago', next: 'every minute' },
     opts: () => `
       <div class="pf-part"><div>${sw(true)}</div><div><div class="pn">Move the index to the front</div></div><div></div></div>

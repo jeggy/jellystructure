@@ -56,9 +56,15 @@ dialog</span>, <span class="k">Activity</span> and <span class="k">a film or ser
 desktop width and at 412&nbsp;px.</p>
 
 <div class="card">
-<p><strong>Round 1 of two.</strong> Everything here is drawn in full so there is something to push
-against: both widths, both themes, every state named in the brief, and the alternative to each open
-decision. Nothing is picked. Round 2 is the owner working from these.</p>
+<p><strong>Revision 1 · 2026-10-23.</strong> The owner has picked, so nothing here is an open
+question any more: <span class="k">Settings ▸ Processing as its own tab</span>, <span class="k">the
+Scan dialog as two panes</span>, <span class="k">Activity as Now · Schedule · History</span>, and
+<span class="k">no per-library switches</span>. The two panes were <em>not</em> round 1's
+recommendation, so that is the direction this revision does the work on: every dialog state in the
+brief is now drawn in it, at both widths. The three directions he did not pick are no longer drawn —
+they are in <code>62dbcd6e</code>'s history, where an unchosen direction belongs.</p>
+<p>Eight corrections from the round-1 review are applied throughout, and they are listed at the end
+with where each one landed.</p>
 <p><strong>These are the real components.</strong> The frames link the shipped <code>wf.css</code> and
 <code>app.css</code>, so every token, button, badge, toggle, segment and card in the pictures is the
 one in production. What is new is in <code>processing-features.css</code> and is named to be promoted
@@ -94,7 +100,7 @@ list — which is the thing to look for when reviewing this.</p>
   <tr><td class="k">Find new &amp; changed</td><td>every 1 h, plus re-check unchanged titles by release age</td><td>Always on. Its switch is drawn on and disabled, with the reason beside it.</td></tr>
   <tr><td class="k">Metadata &amp; artwork</td><td>new titles at once; unchanged ride the next look</td><td>Stale, on a title, when the file changed after the last write.</td></tr>
   <tr><td class="k">Intro &amp; credits</td><td>new episodes at once</td><td>Running, with progress. Queue-only.</td></tr>
-  <tr><td class="k">File health</td><td>by release age, per check</td><td>Holding for a TV; the sidecar not answering; a queue of 1 204. Queue-only, all three.</td></tr>
+  <tr><td class="k">File health</td><td>by release age, per check</td><td>Holding for a TV; the measuring service not answering; a queue of 1 204. Queue-only, all three.</td></tr>
   <tr><td class="k">Subtitles</td><td>new subtitles at once</td><td>Queue-only, both parts.</td></tr>
   <tr><td class="k">Recommendations &amp; suggestions</td><td>weekly, Monday 04:00</td><td>The one feature with no row on a title — it belongs to the library.</td></tr>
   <tr><td class="k">Music</td><td>every 6 h</td><td>Failed, with the retry it will do by itself.</td></tr>
@@ -102,12 +108,14 @@ list — which is the thing to look for when reviewing this.</p>
   <tr><td class="k">Make files play directly</td><td>every minute</td><td>3 repairs waiting for approval, because applying automatically is off.</td></tr>
 </table>
 
-<h2>Direction 1 · Settings ▸ Processing <span class="rec">recommended</span></h2>
+<h2>Direction 1 · Settings ▸ Processing <span class="rec">the owner's pick</span></h2>
 <p>Its own tab, out of Libraries. Nine rows; a row expands to its options.</p>
 <figure class="fig"><img src="png/processing-features-set-desktop.png" alt="Settings ▸ Processing with nine feature rows, File health expanded">
   <figcaption><code>set-desktop</code> — <em>File health</em> open: three parts, each with its own
-  re-check interval by release age, and the sidecar that is not answering stated on the part it
-  belongs to rather than in a banner somewhere else.</figcaption></figure>
+  re-check interval by release age, and the measuring service that is not answering stated on the
+  part it belongs to rather than in a banner somewhere else. The status chip now says only what
+  state the feature is in; <em>last ran</em> and <em>next</em> are on the line beside it and nowhere
+  else (correction 8).</figcaption></figure>
 <div class="two">
   <figure class="fig"><img src="png/processing-features-set-interval.png" alt="Find new and changed expanded, showing the interval picker and three release-age pickers">
     <figcaption><code>set-interval</code> — how an interval is set, and the only place a cron
@@ -116,48 +124,63 @@ list — which is the thing to look for when reviewing this.</p>
     <figcaption><code>set-off</code> — off, and not-mapped. Two different kinds of "not
     running".</figcaption></figure>
 </div>
-<h3>The alternative <span class="alt">drawn, not recommended</span></h3>
-<figure class="fig"><img src="png/processing-features-set-alt.png" alt="The nine rows inside Libraries ▸ Scanning">
-  <figcaption><code>set-alt</code> — the nine rows left under Libraries ▸ Scanning. The tab is
-  already seven cards long, the rows sit under folder mappings they are not about, and only five fit
-  before a "show the other four". It is drawn so the cost is visible rather than
-  argued.</figcaption></figure>
-
-<h2>Direction 2 · The Scan dialog <span class="rec">recommended</span></h2>
-<p>One dialog, every door. Each feature is one row with its own tick and a count of ticked parts; the
-row expands to its sub-ticks.</p>
-<figure class="fig"><img src="png/processing-features-dlg-desktop.png" alt="The scan dialog, nine feature rows, Music partly unticked">
-  <figcaption><code>dlg-desktop</code> — the title names the button that was pressed, the remembered
-  unticks are visible rather than silent, and the queue-only rule is a line in the dialog instead of
-  fine print on two rows.</figcaption></figure>
+<h2>Direction 2 · The Scan dialog, two panes <span class="rec">the owner's pick</span></h2>
+<p>Features on the left, the chosen feature's parts on the right. Round 1 drew this in two frames as
+the alternative; it is now drawn in every state the brief names.</p>
+<p><strong>The one thing the two panes could have lost, and do not.</strong> The expanding rows gave
+you every feature's tick and its <em>n of m</em> at a glance; a plain master list would give that up,
+and "eight of nine are fully ticked" would need the dialog opened nine times to answer. So the left
+row carries its own tick <em>and</em> its own count on a second line — which is also what makes the
+412&nbsp;px drill-in work at all, because at that width the left row is the only place the ticked
+state is visible.</p>
+<figure class="fig"><img src="png/processing-features-dlg-desktop.png" alt="The two-pane scan dialog with File health selected">
+  <figcaption><code>dlg-desktop</code> — everything ticked. The title names the button that was
+  pressed. <em>File health</em> and <em>Subtitles</em> carry the <em>queues work</em> marker on the
+  left row because <strong>all</strong> of their parts queue work (correction 7); the marker is
+  derived from the parts, so a part that stops queueing takes it off the row.</figcaption></figure>
+<div class="two">
+  <figure class="fig"><img src="png/processing-features-dlg-music.png" alt="The dialog with Music partly unticked and selected">
+    <figcaption><code>dlg-music</code> — <em>Music · 5 of 7</em>, selected, so the two unticked parts
+    are visible. The two are not the same kind of unticked: <em>Album/artist NFO files</em> is the
+    admin's own untick, <em>Write tags</em> is disabled because tag writing is off in Settings, and
+    it says so.</figcaption></figure>
+  <figure class="fig"><img src="png/processing-features-dlg-off.png" alt="A feature that is off in Settings, selected">
+    <figcaption><code>dlg-off</code> — off, and <strong>selected</strong>, so the inert state is drawn
+    in both panes rather than only on the left. Its parts cannot be ticked for one scan
+    either.</figcaption></figure>
+</div>
 <div class="two">
   <figure class="fig"><img src="png/processing-features-dlg-rescan.png" alt="The dialog with Re-check everything switched on">
-    <figcaption><code>dlg-rescan</code> — today's <em>(full rescan)</em> becomes one switch, and the
-    switch says what it costs.</figcaption></figure>
+    <figcaption><code>dlg-rescan</code> — today's <em>(full rescan)</em> is one switch above both
+    panes, and it says what it costs. It is the only thing that changes between the two
+    faces.</figcaption></figure>
   <figure class="fig"><img src="png/processing-features-dlg-scoped.png" alt="The dialog scoped to one library">
     <figcaption><code>dlg-scoped</code> — opened from a library card. Music and audiobooks are not in
-    this library, so they are absent and the dialog says why.</figcaption></figure>
+    this library, so they are absent from the left pane and the dialog says why.</figcaption></figure>
 </div>
-<h3>The alternative <span class="alt">drawn, not recommended</span></h3>
+<h3>412 px: the two panes become two screens</h3>
 <div class="two">
-  <figure class="fig"><img src="png/processing-features-dlg-alt.png" alt="Two-pane dialog: features on the left, parts on the right">
-    <figcaption><code>dlg-alt</code> — two panes. The whole list stays visible; one feature's parts
-    at a time.</figcaption></figure>
-  <figure class="fig ph"><img src="png/processing-features-dlg-phone-alt.png" alt="The two-pane dialog as a drill-in at 412px">
-    <figcaption><code>dlg-phone-alt</code> — at 412 it is a drill-in. This is the width the
-    alternative exists for.</figcaption></figure>
+  <figure class="fig ph"><img src="png/processing-features-dlg-phone.png" alt="Step one, the feature list, at 412px">
+    <figcaption><code>dlg-phone</code> — step one. A feature that has parts carries a chevron; a
+    feature that is one tick has nothing to open and has none.</figcaption></figure>
+  <figure class="fig ph"><img src="png/processing-features-dlg-phone-parts.png" alt="Step two, Music's parts, at 412px">
+    <figcaption><code>dlg-phone-parts</code> — step two, with the back control. Nothing expands in
+    place.</figcaption></figure>
 </div>
-<p><strong>Why the expanding rows are still recommended:</strong> at 412&nbsp;px the expanding dialog
-holds (<code>dlg-phone</code>), and it keeps one thing the two-pane version gives up — you can see
-that eight of nine features are fully ticked without opening anything. The two-pane version is better
-the moment a feature grows past about seven parts, and Music already has seven.</p>
+<figure class="fig ph"><img src="png/processing-features-dlg-phone-partly.png" alt="Step one with Music partly unticked">
+  <figcaption><code>dlg-phone-partly</code> — the list with <em>Music · 5 of 7</em>. At this width
+  that count is the <strong>only</strong> thing saying a feature is partly unticked, which is the
+  argument for keeping counts on the left row stated as a picture.</figcaption></figure>
 
-<h2>Direction 3 · Activity, in three views <span class="rec">recommended</span></h2>
+<h2>Direction 3 · Activity, in three views <span class="rec">the owner's pick</span></h2>
 <div class="two">
   <figure class="fig"><img src="png/processing-features-act-now.png" alt="Activity, Now view">
-    <figcaption><code>act-now</code> — the run, then one lane per feature. <strong>The run card says
-    what it <em>queued</em>; the lane says what is being <em>read</em>.</strong> That split is the
-    queue-only rule made visible rather than stated.</figcaption></figure>
+    <figcaption><code>act-now</code> — the run, then <strong>only the four features that queue
+    work</strong> (correction 2). Metadata, music, audiobooks and recommendations run inside the run
+    itself and have nothing waiting between runs, so their <em>Run now</em> is on Schedule.
+    <strong>The run card says what it <em>queued</em>; the card below says what is being
+    <em>read</em>.</strong> No feature has a lane of its own — the backend's lanes are unchanged and
+    Activity only labels work by feature (correction 1).</figcaption></figure>
   <figure class="fig"><img src="png/processing-features-act-sched.png" alt="Activity, Schedule view">
     <figcaption><code>act-sched</code> — feature · every · last ran · next · waiting. The pattern the
     downloader apps and the media server already use.</figcaption></figure>
@@ -171,17 +194,13 @@ the moment a feature grows past about seven parts, and Music already has seven.<
     socket, so it has to have a face for losing it: every count is explicitly as old as the last push,
     and the controls are off because they cannot reach anything.</figcaption></figure>
 </div>
-<h3>The alternative <span class="alt">drawn, not recommended</span></h3>
-<figure class="fig"><img src="png/processing-features-act-alt.png" alt="Activity as one page, running work at the top">
-  <figcaption><code>act-alt</code> — one page: the schedule <em>is</em> the page and running work
-  rises to the top of it. Fewer places to look; but the current run loses its own card, so "what
-  started this?" is then only answerable from the log.</figcaption></figure>
-
-<h2>Direction 4 · A title's Refresh ▾ and its Checks card <span class="rec">recommended</span></h2>
+<h2>Direction 4 · A title's Refresh ▾ and its Checks card <span class="rec">the owner's pick</span></h2>
 <figure class="fig"><img src="png/processing-features-title-row-pop.png" alt="A film's Checks card with five row kinds">
   <figcaption><code>title-row-pop</code> — the Checks card is the same nine features for this title.
   Five row kinds are visible at once: ok, stale, a finding, <em>can't tell</em>, and a repair waiting
-  for approval.</figcaption></figure>
+  for approval. Every row now uses the feature's own name — <em>Make files play directly</em>, not
+  <em>Plays directly</em> (correction 6) — and the stale line says <em>the NFO files</em>, which is
+  the only thing on this page that "sidecar" used to mean (correction 5).</figcaption></figure>
 <div class="two">
   <figure class="fig"><img src="png/processing-features-title-film.png" alt="Refresh menu on a film">
     <figcaption><code>title-film</code> — one menu replacing about sixty buttons. <em>File health</em>
@@ -228,21 +247,35 @@ while the socket is down.</p>
   <tr><td>A feature switched off — in Settings, in the dialog, on Activity, on a title</td><td><code>set-off</code>, <code>dlg-off</code>, <code>act-sched</code>, <code>act-sched-phone</code></td></tr>
   <tr><td>A feature running, with progress</td><td><code>act-now</code>, <code>set-desktop</code></td></tr>
   <tr><td>Waiting while a TV plays</td><td><code>set-desktop</code>, <code>act-now</code>, <code>act-sched</code></td></tr>
-  <tr><td>Failing: the music database; the sidecar off</td><td><code>act-now</code>, <code>set-desktop</code></td></tr>
+  <tr><td>Failing: the music database; the measuring service off</td><td><code>act-sched</code>, <code>set-desktop</code></td></tr>
   <tr><td>A library not mapped</td><td><code>set-off</code> — shown and explained, see below</td></tr>
   <tr><td>A run cancelled, then continued</td><td><code>act-cancel</code>, <code>toast</code></td></tr>
   <tr><td>A long queue, and Empty with its confirmation</td><td><code>act-empty</code></td></tr>
-  <tr><td>The dialog: everything ticked · partly unticked · full rescan · scoped</td><td><code>dlg-desktop</code>, <code>dlg-rescan</code>, <code>dlg-scoped</code></td></tr>
+  <tr><td>The dialog: everything ticked · partly unticked · full rescan · scoped · a feature off</td><td><code>dlg-desktop</code>, <code>dlg-music</code>, <code>dlg-rescan</code>, <code>dlg-scoped</code>, <code>dlg-off</code></td></tr>
+  <tr><td>The dialog at 412: both steps, and the list partly unticked</td><td><code>dlg-phone</code>, <code>dlg-phone-parts</code>, <code>dlg-phone-partly</code></td></tr>
   <tr><td>A ticked queue-only part after the run ends</td><td><code>toast</code>, <code>act-now</code></td></tr>
   <tr><td>Refresh ▾ on a film and on a series</td><td><code>title-film</code>, <code>title-series-menu</code></td></tr>
   <tr><td>The Checks card with one stale and one failing — and one <em>can't tell</em></td><td><code>title-row-pop</code></td></tr>
   <tr><td>The longest strings</td><td><code>longest-desktop</code>, <code>longest-phone</code></td></tr>
-  <tr><td>Every screen at 412 px</td><td>eight phone frames</td></tr>
+  <tr><td>Every screen at 412 px</td><td>nine phone frames</td></tr>
   <tr><td>Light theme</td><td><code>set-light</code>, <code>title-light</code></td></tr>
   <tr><td>Offline / socket lost <em>(added, not in the brief)</em></td><td><code>act-offline</code></td></tr>
   <tr><td><em>Danish and Faroese</em></td><td><strong>skipped deliberately</strong> — the admin is English only, by the brief</td></tr>
   <tr><td><em>10-foot focus</em></td><td><strong>not applicable</strong> — no TV surface in this round</td></tr>
   <tr><td><em>Empty</em></td><td><strong>folded in</strong> — "first run" is this surface's empty state</td></tr>
+</table>
+
+<h2>The eight corrections, and where each one landed</h2>
+<table>
+  <tr><th>#</th><th>Correction</th><th>Where</th></tr>
+  <tr><td>1</td><td>No feature has "its own lane"</td><td>Three places, all reworded to "in the background": Activity's card note, the title's File health line, the dialog's legend. The backend's four lanes are untouched and are not named on any screen.</td></tr>
+  <tr><td>2</td><td>Now lists only the features that queue work</td><td><code>act-now</code>, <code>act-cancel</code>, <code>act-offline</code>, <code>act-now-phone</code> — four rows, not six. The page's own sentence now points at Schedule for the rest.</td></tr>
+  <tr><td>3</td><td>Drop "nothing was left half-written"</td><td><code>toast</code> and also <code>act-cancel</code>, which carried the same claim. Dropped in both: leaving it on the card would have contradicted the toast.</td></tr>
+  <tr><td>4</td><td>Drop the visible "Cancel starts nothing."</td><td>Both dialog faces; the <code>.foot-note</code> rule is gone from the CSS with a note saying why.</td></tr>
+  <tr><td>5</td><td>Two meanings of "sidecar"</td><td>NFO files on the metadata parts and the stale line; <em>the measuring service</em> for sound-in-step, in Settings, the dialog and the longest-strings frame. The word does not appear on any screen.</td></tr>
+  <tr><td>6</td><td>One name per feature on a title</td><td><em>Make files play directly</em> on the Checks card. (The header badge still reads <em>plays directly</em> — that is a fact about the <em>file</em>, not the feature's name.)</td></tr>
+  <tr><td>7</td><td>File health carries the queues-work marker on its own row</td><td>Derived: a feature all of whose parts queue work gets it. That is File health <em>and</em> Subtitles, so both carry it.</td></tr>
+  <tr><td>8</td><td>Settings says "last ran" twice</td><td>The chip is the state (<em>On · Running · Holding · Failed</em>), the line is when. Also applied to the phone Schedule card and the first-run rows, which had the same duplication in their own code paths.</td></tr>
 </table>
 
 <h2>The judgement calls the brief left open</h2>
@@ -265,20 +298,24 @@ exactly.</p>
   <li>Always on. Everything else follows what this finds.</li>
   <li>Re-check titles that have not changed · Nothing on disk has changed, so this decides how often we look anyway. Older titles change less, so they are looked at less.</li>
   <li>Released this year · 1–5 years old · Older</li>
-  <li>Need a cron instead? It is kept here, and only here.</li>
+  <li>Need a cron instead? · This is the only place one survives.</li>
   <li>Telling the media server is not a setting. It happens after every write, every time — nobody has to remember it.</li>
   <li>This queues work. · All three queue work. · queues work</li>
-  <li>The sidecar is not answering · Nothing is measured while it is away, and the queue does not move.</li>
+  <li>The measuring service is not answering · Nothing is measured while it is away, and the queue does not move. · nothing is measured until it comes back, and the queue does not move</li>
   <li>No audiobook library is mapped. Map one under Libraries and this switches on. · Not mapped</li>
   <li>Nothing has run yet · The first look starts within the hour, or press Scan library to start it now. · Not run yet</li>
   <li>Everything ticked runs now. What you untick stays unticked the next time, on every page.</li>
   <li>Re-check everything, not only what is due · Off · only titles that are due. This is the normal scan. · On · every title in the library is read again, not only the ones that are due.</li>
-  <li>A part that queues work is not finished when the scan ends. Ticking it means "queue what is due now" — the reading happens afterwards, in its own lane, and what it found shows on Activity.</li>
-  <li>Off in Settings → · Cancel starts nothing. · Start scan</li>
+  <li>A part that queues work is not finished when the scan ends. Ticking it means "queue what is due now" — the reading happens afterwards, in the background, and what it found shows on Activity.</li>
+  <li>Tap a feature to open its parts. · All features · Tick the parts to run this time. Back keeps whatever you tick here.</li>
+  <li>No parts to tick — the whole feature is the one tick on the left. · n of m ticked · always runs · one tick</li>
+  <li>Off in Settings — nothing here would run. Its parts cannot be ticked for one scan either. Switch the feature on under Settings ▸ Processing and it runs by itself from then on.</li>
+  <li>Off in Settings — tag writing is off, so it cannot be ticked for one scan either.</li>
+  <li>Off in Settings → · Start scan <em>(“Cancel starts nothing” is the button’s behaviour, not copy — correction 4)</em></li>
   <li>Scan started · skipped Intro &amp; credits · You unticked it. It stays unticked until you tick it again.</li>
   <li>Scan finished · 37 episodes queued for intro &amp; credits · Queued work is not done yet — the reading is happening now.</li>
-  <li>Scan cancelled · nothing was left half-written · Continue scan</li>
-  <li>Now · Schedule · History · Lanes · Each feature has its own lane. A lane that is holding is waiting for a TV, not stuck.</li>
+  <li>Scan cancelled · 41 of 1 240 titles were looked at. · Continue scan · What was already queued is still being read — that is the one thing a cancel does not undo.</li>
+  <li>Now · Schedule · History · Queued work · The four features that queue work, and what is waiting for each. <em>Empty</em> clears only that feature’s waiting work. A feature that is holding is waiting for a TV, not stuck.</li>
   <li>Run now · Empty · Cancel run · Open log</li>
   <li>Empty the sound-in-step queue? · 9 600 waiting files are removed from the queue. They are not measured, and they go back in the queue the next time they are due. · What is being measured right now keeps going. This cannot be undone. · Empty queue</li>
   <li>Off in Settings — nothing would run. Switch it on there and it runs by itself.</li>
@@ -286,8 +323,8 @@ exactly.</p>
   <li>Refresh ▾ · Run now, for this film · Run now, for this series · What to refresh · Whole series · Season 2</li>
   <li>Runs two of its three checks. Sound in step is measured already and is skipped. · skips 1</li>
   <li>Each one runs exactly what the automatic run runs. Recommendations are built for the whole library, so they are not here.</li>
-  <li>Checks · The same nine features, for this title · Last ran · Next due</li>
-  <li>can't tell · stale · ok · Only one of the parts measured read clearly enough to measure.</li>
+  <li>Checks · The same nine features, for this title · Last ran · Next due · Three checks. Each one is read in the background and reported here.</li>
+  <li>can't tell · stale · ok · Only one of the parts measured read clearly enough to measure. · The NFO files were written before the file changed on disk.</li>
   <li><strong>Measured already — measuring again would read the same parts of the file. This unlocks when a file changes.</strong> <em>(fixed wording)</em></li>
   <li><strong>Couldn't tell from the parts measured — measuring again would read the same parts. This unlocks when the file changes.</strong> <em>(fixed wording)</em></li>
   <li>Four episodes read clearly. Ice Road could not be told either way — that is settled, not pending, so it is not waiting for anything.</li>
@@ -300,18 +337,21 @@ exactly.</p>
     <em>Repack the audio</em>, <em>Drop a track no player can read</em> — and they are placeholders.
     The real kinds are in the code and nobody wrote them into the brief. The layout does not change
     when the names do.</li>
-  <li><span class="k">Per-library feature switches have a natural place, and it is not where it was
-    expected.</span> Not in Settings ▸ Processing, where it would multiply nine rows by four
-    libraries — but on the <em>library card</em> under Libraries, as a short "this library skips:"
-    line, next to the <em>Scan</em> button that already scopes a run to that library. That is round
-    2's question; nothing here designs it.</li>
+  <li><span class="k">Per-library switches are decided: there are none.</span> The owner chose one
+    set of switches for every library, so the "this library skips:" line round 1 proposed is not
+    drawn and this is no longer an open question.</li>
   <li><span class="k">A running feature in the Schedule table's "Last ran" column reads oddly.</span>
     <em>running · Twelve Winters S2, episode 4 of 10</em> is not a "last ran" value. It is drawn that
     way because the scheduled-task tables this pattern comes from do the same, and the alternative —
     a sixth column — costs more than it fixes. Worth one look in round 2.</li>
   <li><span class="k">The dialog's queue-only legend is a paragraph.</span> Six of the parts carry a
-    <em>queues work</em> badge and a sentence explains it once. If the explanation has to move into
-    the row, every row gets taller; it was left as a legend deliberately.</li>
+    <em>queues work</em> badge and a sentence explains it once, below both panes. The first render of
+    this revision also repeated that sentence inside the right pane; it does not now, because the
+    same fact twice in one picture is the thing this round's one-model claim says to look for.</li>
+  <li><span class="k">A part that is off in Settings is not the same as a part you unticked</span>,
+    and the dialog had been drawing them identically. <em>Write tags</em> is now shown disabled with
+    its reason, like every other control in the round that cannot act. Worth confirming that is the
+    behaviour you want for a dependent part, since the brief only fixed it for a whole feature.</li>
 </ol>
 
 </div>

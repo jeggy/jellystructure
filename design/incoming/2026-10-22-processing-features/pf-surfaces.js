@@ -54,9 +54,13 @@ function holdCard() {
 /* One sentence under the interval, built from the state rather than glued to "Last ran" — which
    produced "Last ran running · …" and "next holding · …" in the first render. */
 function whenLine(f) {
-  if (f.state === 'run') return `Running · ${f.last.replace('running · ', '')}`;
-  if (f.state === 'hold') return `Waiting · ${HOLD.now} · last ran ${f.last}`;
-  if (f.state === 'bad') return `${f.last.charAt(0).toUpperCase()}${f.last.slice(1)} · ${f.next}`;
+  /* The chip carries the state word, so the line must not carry it again — the first pass at
+     correction 8 moved the duplication rather than removing it ("Failed" beside "Failed 40 min
+     ago", "Running" beside "Running · Twelve Winters"). The line says WHEN and WHY; the chip says
+     WHAT. */
+  if (f.state === 'run') return f.last.replace('running · ', '');
+  if (f.state === 'hold') return `Last ran ${f.last} · ${HOLD.now}`;
+  if (f.state === 'bad') return `Last ran ${f.last.replace(/^failed /, '')}${f.next ? ` · ${f.next}` : ''}`;
   return `Last ran ${f.last}${f.next ? ` · next ${f.next}` : ''}`;
 }
 
@@ -75,9 +79,10 @@ function featureRow(f, o = {}) {
     : inert
       ? `<b>—</b><br>Waiting for a library`
       : `<b>${f.every}</b>${f.also ? ` · ${f.also}` : ''}<br>${whenLine(f)}`;
+  /* correction 8: the chip is the state, the line beside it is when. Not both. */
   const state = off ? badge('flat', 'Off')
     : inert ? badge('flat', 'Not mapped')
-      : STATE[f.state](f.stateText);
+      : chipFor(f);
   return `
   <div class="pf-row${open ? ' open' : ''}${off ? ' off' : ''}${inert ? ' inert' : ''}">
     <div class="pf-head">
@@ -113,7 +118,7 @@ function settingsPage(o = {}) {
         <div class="pf-head">
           <div>${f.locked ? sw(true, 'dis') : sw(true)}</div>
           <div class="pf-name">${f.name}${f.why ? `<span class="pf-why">${f.why}</span>` : ''}</div>
-          <div class="pf-when"><b>${f.every}</b><br>Has not run yet</div>
+          <div class="pf-when"><b>${f.every}</b></div>
           <div>${badge('flat', 'Not run yet')}</div>
           <div class="pf-chev">⌄</div>
         </div>
@@ -149,84 +154,107 @@ function settingsPage(o = {}) {
       no order to arrange: what runs when a title changes, and what order it runs in, is fixed.</div>`);
 }
 
-/* the alternative: the same nine rows left under Libraries ▸ Scanning */
-function settingsAlt() {
-  const rows = F.slice(0, 5).map((f) => featureRow(f, {})).join('');
-  return shell('Settings', `
-    <div class="fr-bar"><h1>Libraries</h1></div>
-    <div class="fr-sub">Where the files are, and what we do to them.</div>
-    <div class="row" style="gap:8px;margin-bottom:20px;flex-wrap:wrap">
-      <span class="chip act">Libraries</span><span class="chip">Players</span><span class="chip">Notifications</span>
-      <span class="chip">AI</span><span class="chip">Apps</span>
-    </div>
-    <div class="card" style="margin-bottom:16px">
-      <h3 style="font-size:1.05rem">Folders</h3>
-      <div class="row center" style="border-top:1px solid var(--line);padding-top:12px">
-        <div class="fill"><div style="font-weight:600;font-size:.92rem">Films</div>
-          <div class="tiny muted">${LIB.films}</div></div>${btn('Scan')}${btn('Edit')}</div>
-      <div class="row center" style="border-top:1px solid var(--line);padding-top:12px;margin-top:12px">
-        <div class="fill"><div style="font-weight:600;font-size:.92rem">Series</div>
-          <div class="tiny muted">${LIB.series}</div></div>${btn('Scan')}${btn('Edit')}</div>
-      <div class="row center" style="border-top:1px solid var(--line);padding-top:12px;margin-top:12px">
-        <div class="fill"><div style="font-weight:600;font-size:.92rem">Music</div>
-          <div class="tiny muted">${LIB.music}</div></div>${btn('Scan')}${btn('Edit')}</div>
-    </div>
-    <div class="card">
-      <h3 style="font-size:1.05rem">Scanning</h3>
-      <div class="tiny muted" style="margin-bottom:6px">Nine features, each with its own switch and its
-        own interval. Everything on runs by itself.</div>
-      <div class="pf-list" style="border-top:1px solid var(--line);margin-top:10px">${rows}</div>
-      <div class="pill-row" style="margin-top:14px">${btn('Show the other four')}</div>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <h3 style="font-size:1.05rem">Metadata language</h3>
-      <div class="tiny muted">…and six more cards under this tab.</div>
-    </div>`);
-}
-
 /* ================================================================
-   2 · THE SCAN DIALOG
-   ================================================================ */
+   2 · THE SCAN DIALOG — two panes (the owner's pick, 2026-10-23)
+   ================================================================
 
-function dlgRow(f, o = {}) {
+   REVISION 1. Round 1 recommended one expanding row per feature and drew two panes as the
+   alternative; the owner picked the two panes, so this is now the direction and every state in the
+   brief is drawn in it. The expanding rows are gone from this file — they are in 62dbcd6e's history.
+
+   The left pane has to keep the two things the expanding version gave away for free: every feature's
+   OWN tick, and its `n of m` count. "Eight of nine are fully ticked" is readable here without
+   opening anything, which is the whole reason the counts are on the left and not only on the right.
+*/
+
+/* how many of a feature's parts are ticked. `partly` unticks the last two, which is what makes
+   Music read "5 of 7" — the brief's own example. */
+const tickedOf = (f, o) => (o.partly === f.id ? f.subs.length - 2 : f.subs.length);
+
+/* THE LEFT PANE. One row per feature: its own tick, its own count, and the queues-work marker when
+   every part of it queues work (correction 7 — File health and Subtitles both do). */
+function pickRow(f, o = {}) {
   const off = o.off === f.id;
-  const open = o.open === f.id;
   const partly = o.partly === f.id;
   const n = f.subs.length;
-  const ticked = partly ? n - 2 : n;
-  const state = off ? 'dis' : f.locked ? 'lock' : partly ? 'part' : 'on';
-  const count = off ? `<span class="sd-count"><a href="#">Off in Settings →</a></span>`
-    : f.locked ? `<span class="sd-count">always</span>`
-      : n ? `<span class="sd-count">${ticked} of ${n}</span>` : '';
-  const sub = (open && n) ? `
-    <div class="sd-sub">
-      ${f.subs.map((s, i) => `
-        <div class="sd-one">
-          <span class="tick ${partly && i >= n - 2 ? '' : 'on'}">✓</span>
-          <div class="n">${s.n}${s.q ? ` ${badge('info', 'queues work')}` : ''}${s.dep ? `<span class="muted tiny"> · ${s.dep}</span>` : ''}</div>
-          <div></div>
-        </div>`).join('')}
-    </div>` : (open && !n) ? `
-    <div class="sd-sub"><div class="tiny muted">One tick, no parts.${f.queueOnly ? ` ${badge('info', 'queues work')}` : ''}</div></div>` : '';
+  const tick = off ? 'dis' : f.locked ? 'lock' : partly ? 'part' : 'on';
+  const count = off ? '<a href="#">Off in Settings →</a>'
+    : f.locked ? 'always'
+      : n ? `${tickedOf(f, o)} of ${n}` : 'one tick';
+  const mark = (allQueue(f) || f.queueOnly) ? ' · <span class="q">queues work</span>' : '';
+  /* At 412 the panes are two screens, and nothing in the first render said so — the rows read as a
+     flat list. A feature that HAS parts gets a chevron, which is the only affordance saying the row
+     opens a screen of its own. A feature with no parts has nothing to open, so it has none. */
   return `
-  <div class="sd-row${off ? ' off' : ''}">
-    <div class="sd-head">
-      <span class="tick ${state}">${state === 'part' ? '–' : '✓'}</span>
-      <div class="sd-name">${f.name}${f.queueOnly && !open ? ` ${badge('info', 'queues work')}` : ''}</div>
-      ${count}
-      <div class="pf-chev">⌄</div>
-    </div>
-    ${sub}
+  <div class="pick${o.sel === f.id ? ' on' : ''}${off ? ' off' : ''}">
+    <span class="tick ${tick}">${tick === 'part' ? '–' : '✓'}</span>
+    <div><div class="n">${f.name}</div><div class="c">${count}${off ? '' : mark}</div></div>
+    ${f.subs.length ? '<span class="go">›</span>' : '<span></span>'}
   </div>`;
+}
+
+/* THE RIGHT PANE. The selected feature's parts, each with its own tick. A feature that is off in
+   Settings is inert HERE TOO, not just on the left: the owner's rule is shown-and-disabled with the
+   reason, and a right pane that stayed live would be the one place the rule broke. */
+function pane(f, o = {}) {
+  const off = o.off === f.id;
+  const partly = o.partly === f.id;
+  const n = f.subs.length;
+  /* A part whose own switch is off in Settings (`dep`) is not the same thing as a part the admin
+     unticked for this run, and the first render drew them identically — Music's "Write tags" sat
+     there as a plain empty box while Settings says tag writing is off. It gets the round's standing
+     shape instead: shown, disabled, with the reason. */
+  const parts = n ? f.subs.map((s, i) => `
+    <div class="sd-one">
+      <span class="tick ${off || s.dep ? 'dis' : (partly && i >= n - 2) ? '' : 'on'}">✓</span>
+      <div class="n">${s.n}${s.q ? ` ${badge('info', 'queues work')}` : ''}
+        ${s.dep ? `<div class="tiny muted" style="margin-top:4px">Off in Settings — ${s.dep}, so it cannot
+          be ticked for one scan either. <a href="#">Settings ▸ Processing →</a></div>` : ''}
+        ${s.warn ? `<div class="tiny" style="color:var(--warn);margin-top:4px">${s.warn} · nothing is
+          measured until it comes back, and the queue does not move.</div>` : ''}</div>
+    </div>`).join('') : `
+    <div class="sd-none">No parts to tick — the whole feature is the one tick on the left.</div>`;
+  return `
+    <div class="sd-pane-head">
+      <h3>${f.name}</h3>
+      <span class="c">${off ? 'off' : f.locked ? 'always runs' : n ? `${tickedOf(f, o)} of ${n} ticked` : 'one tick'}</span>
+    </div>
+    <div class="sd-lede">${f.lede}</div>
+    ${off ? `<div class="pf-note" style="border-left:3px solid var(--line-2);margin-bottom:12px"><b>Off in
+      Settings — nothing here would run.</b> Its parts cannot be ticked for one scan either. Switch the
+      feature on under <a href="#">Settings ▸ Processing</a> and it runs by itself from then on.</div>` : ''}
+    <div class="sd-parts${off ? ' off' : ''}">${parts}</div>`;
+  /* No per-pane queue note. The first render printed the legend's sentence ("Ticking it means
+     'queue what is due now' …") a second time, word for word, inside the pane — the same fact twice
+     in one picture, which is exactly what this round's one-model claim says to look for. The lede
+     says the feature queues work, the parts carry the badge, and the legend below both panes
+     explains the badge once. */
+}
+
+/* the full-rescan face is one switch above both panes — the only thing that changes between the two
+   faces of the dialog. */
+function rescanSwitch(o, scoped) {
+  return `
+    <div class="pf-all${o.full ? ' on' : ''}">
+      ${sw(!!o.full)}
+      <div class="fill"><div class="t">Re-check everything, not only what is due</div>
+        <div class="s">${o.full
+    ? `On · every title in ${scoped ? 'Films' : 'the library'} is read again, not only the ones that are due.`
+    : 'Off · only titles that are due. This is the normal scan.'}</div></div>
+    </div>
+    ${o.full ? `<div class="pf-note" style="border-left:3px solid var(--warn);margin:0 0 10px">That is
+      ${scoped ? LIB.films : `${LIB.films} and ${LIB.series}`} read again. It is safe to leave running;
+      nothing waits on it.</div>` : ''}`;
 }
 
 function dialog(o = {}) {
   const title = o.title || 'Scan library';
   const scoped = !!o.scope;
   const list = F.filter((f) => !(scoped && (f.library || f.id === 'recs')));
+  const sel = byId(o.sel || 'health');
   return `
   <div class="pf-scrim">
-    <div class="pf-dlg">
+    <div class="pf-dlg wide">
       <div class="pf-dlg-head">
         <h2>${title}</h2>
         <p>${scoped
@@ -234,24 +262,15 @@ function dialog(o = {}) {
     : 'Everything ticked runs now. What you untick stays unticked the next time, on every page.'}</p>
         ${scoped ? `<div class="pill-row" style="margin-top:10px">${chip('Films', 'act')}</div>` : ''}
       </div>
-      <div class="pf-dlg-body">
-        <div class="pf-all${o.full ? ' on' : ''}">
-          ${sw(!!o.full)}
-          <div class="fill"><div class="t">Re-check everything, not only what is due</div>
-            <div class="s">${o.full
-    ? `On · every title in ${scoped ? 'Films' : 'the library'} is read again, not only the ones that are due.`
-    : 'Off · only titles that are due. This is the normal scan.'}</div></div>
-        </div>
-        ${o.full ? `<div class="pf-note" style="border-left:3px solid var(--warn)">That is
-          ${scoped ? LIB.films : `${LIB.films} and ${LIB.series}`} read again. It is safe to leave
-          running; nothing waits on it.</div>` : ''}
-        ${list.map((f) => dlgRow(f, o)).join('')}
-        <div class="pf-note q" style="margin:14px 0 4px"><b>A part that queues work is not finished when
-          the scan ends.</b> Ticking it means "queue what is due now" — the reading happens afterwards,
-          in its own lane, and what it found shows on <a href="#">Activity</a>.</div>
+      <div class="sd-top">${rescanSwitch(o, scoped)}</div>
+      <div class="sd-two">
+        <div class="left">${list.map((f) => pickRow(f, o)).join('')}</div>
+        <div class="right">${pane(sel, o)}</div>
       </div>
+      <div class="sd-legend"><div class="pf-note q"><b>A part that queues work is not finished when the
+        scan ends.</b> Ticking it means "queue what is due now" — the reading happens afterwards, in the
+        background, and what it found shows on <a href="#">Activity</a>.</div></div>
       <div class="pf-dlg-foot">
-        <span class="foot-note">Cancel starts nothing.</span>
         <span class="spacer" style="flex:1"></span>
         ${btn('Cancel', 'ghost')}${btn('Start scan', 'primary')}
       </div>
@@ -259,40 +278,35 @@ function dialog(o = {}) {
   </div>`;
 }
 
-/* the alternative to nine expanding rows: pick on the left, parts on the right (a drill-in at 412) */
-function dialogAlt(phone = false) {
-  const f = byId('health');
-  const left = F.map((x) => {
-    const on = x.id === 'health' ? ' on' : '';
-    const st = x.id === 'recs' ? '<span class="c">off</span>'
-      : x.subs.length ? `<span class="c">${x.id === 'music' ? '5 of 7' : `${x.subs.length} of ${x.subs.length}`}</span>` : '';
-    return `<div class="pick${on}">
-      <span class="tick ${x.id === 'recs' ? 'dis' : x.locked ? 'lock' : x.id === 'music' ? 'part' : 'on'}">${x.id === 'music' ? '–' : '✓'}</span>
-      <span>${x.name}</span>${st}</div>`;
-  }).join('');
-  const right = `
-    <h3>${f.name}</h3>
-    <div class="tiny muted" style="margin-bottom:12px">Three parts. All three queue work — the reading
-      happens afterwards, in its own lane.</div>
-    ${f.subs.map((s) => `
-      <div class="sd-one sd-one-grid" style="padding:10px 0;border-top:1px dashed var(--line)">
-        <span class="tick on">✓</span>
-        <div class="n">${s.n} ${badge('info', 'queues work')}
-          ${s.warn ? `<div class="tiny" style="color:var(--warn);margin-top:4px">${s.warn} · nothing is measured until it answers</div>` : ''}
-        </div><div></div></div>`).join('')}`;
+/* 412 px: the two panes become two screens. Step one is the list — which is why the counts had to be
+   on the left row: at this width they are the only place the ticked state is visible at all. */
+function dialogPhone(o = {}) {
+  const sel = byId(o.sel || 'music');
+  const parts = o.step === 'parts';
   return `
   <div class="pf-scrim">
-    <div class="pf-dlg" style="width:${phone ? 'auto' : '860px'}">
-      <div class="pf-dlg-head"><h2>Scan library</h2>
-        <p>${phone ? 'Pick a feature to see its parts.' : 'Nine features on the left; the one you are looking at on the right.'}</p></div>
-      ${phone
-    ? `<div class="pf-dlg-body"><div class="sd-two" style="grid-template-columns:minmax(0,1fr);min-height:0">
-          <div class="left" style="border-right:none;padding:0">${left}</div></div>
-         <div class="pf-note q" style="margin:12px 0 4px">Tap a feature to open its parts on their own
-           screen, with a back arrow. Nothing expands in place.</div></div>`
-    : `<div class="sd-two"><div class="left">${left}</div><div class="right">${right}</div></div>`}
-      <div class="pf-dlg-foot"><span class="foot-note">Cancel starts nothing.</span>
-        <span class="spacer" style="flex:1"></span>${btn('Cancel', 'ghost')}${btn('Start scan', 'primary')}</div>
+    <div class="pf-dlg">
+      <div class="pf-dlg-head">
+        ${parts ? `<div class="sd-back">‹ All features</div>` : ''}
+        <h2>${parts ? sel.name : 'Scan library'}</h2>
+        <p>${parts
+    ? 'Tick the parts to run this time. Back keeps whatever you tick here.'
+    : 'Everything ticked runs now. Tap a feature to open its parts.'}</p>
+      </div>
+      ${parts ? `
+      <div class="pf-dlg-body"><div class="sd-one-pane">${pane(sel, o)}</div></div>`
+    : `
+      <div class="sd-top">${rescanSwitch(o, false)}</div>
+      <div class="sd-two one">
+        <div class="left">${F.map((f) => pickRow(f, o)).join('')}</div>
+      </div>
+      <div class="sd-legend"><div class="pf-note q"><b>A part that queues work is not finished when the
+        scan ends.</b> The reading happens afterwards, in the background, and shows on
+        <a href="#">Activity</a>.</div></div>`}
+      <div class="pf-dlg-foot">
+        <span class="spacer" style="flex:1"></span>
+        ${btn('Cancel', 'ghost')}${btn('Start scan', 'primary')}
+      </div>
     </div>
   </div>`;
 }
@@ -313,7 +327,7 @@ function toastFrame() {
     </div>
     <div class="pf-toast" style="border-left-color:var(--warn)">
       <span style="color:var(--warn);font-size:1.1rem">▮</span>
-      <div><div>Scan cancelled · nothing was left half-written</div>
+      <div><div>Scan cancelled</div>
         <div class="s">41 of ${LIB.films} were looked at. <a href="#">Continue scan</a></div></div>
     </div>
   </div>`;
