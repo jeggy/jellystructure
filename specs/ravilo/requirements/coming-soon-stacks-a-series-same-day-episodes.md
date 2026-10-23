@@ -93,7 +93,9 @@ sizes elsewhere. The front face gives up the width the deck needs. The card does
 - **Under the art:**
   - the title;
   - the episode range, formatted from data: `S02E01–E08` within one season, `S01E10–S02E02` across seasons;
-  - `network · year` as today.
+  - ~~`network · year` as today.~~ `network · genre`, the same line as the single series card (amended
+    2026-10-23, DEB-2250: the owner dropped the year from every Coming Soon card. See
+    `the-coming-soon-card-shows-the-genre-not-the-year.md` FR-2).
   - On a Missing stack, the *Was due* line names the **earliest** due date.
 - **The single-episode card is unchanged.**
 
