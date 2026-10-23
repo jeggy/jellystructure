@@ -76,17 +76,29 @@ its task, and the gate promotes it. Claude Design was retired on 2026-10-22 (DEB
 work, run `scripts/check-deanonymization.sh` and `scripts/check-phases.sh`; if both pass,
 `git push origin main`. A push to `main` runs the full CI and publishes images tagged with the commit
 SHA only — it never moves `latest`, cuts a release or deploys anything, so it is not a release call,
-and it is how the constitution's "CI green" becomes something you can actually read. Fast-forward
-`main` only: never `--force`, never `--tags`, never another branch. If the push is rejected, stop and
-say so — never rebase or merge the shared checkout to make it go. A newer push cancels the CI run of
-the one before, so there is no point pushing more often than once a finished task. Tags and GitHub
-Releases stay the owner's.
+and it is how the constitution's "CI green" becomes something you can actually read. Never
+`--force`, never `--tags`, never another branch. A newer push cancels the CI run of the one before,
+so there is no point pushing more often than once a finished task. Tags and GitHub Releases are
+Tróndur's.
+
+**`main` reaches GitHub from the shared checkout only, and a rejected push is merged, not left**
+(Tróndur, DEB-2254, 2026-10-23). This replaces the old "stop and say so": that rule left ten
+commits from several seats stranded for over two hours, and the workaround was a push from a side worktree
+that recopied them under new ids, which broke every SHA the board cites.
+- **Push `main` only from `~/IdeaProjects/jellystructure`.** A side worktree is for building and
+  testing. A reviewer lands a branch in the shared checkout and pushes from there.
+- **If the push is rejected:** `git fetch origin`, then `git merge --no-edit origin/main`. If the merge
+  is clean, run both checks again and push. A merge commit is fine. A commit already on the shared
+  `main` is never rebased or cherry-picked under a new id: other seats' comments cite those SHAs.
+- **If the merge conflicts:** `git merge --abort`, leave `main` as it was, and give Tróndur a row that
+  names both sides. Never resolve another seat's conflict yourself.
+- A red CI on the merge SHA is filed and fixed like any other red CI on `main`.
 
 **Work under review is never pushed by the person who wrote it** (owner, DEB-2264). If your task
 carries a review stage naming someone else — every task on an `emmy5/deb-n` branch does — the push
 rule above is not yours: commit on your branch, set the task `done`, and stop. Never merge your
 branch into `main`, never merge `origin/main` into your branch, and never `git push`. The reviewer
-lands it and pushes. Passing the two checks above is not permission to push; it was read that way
+lands it in the shared checkout and pushes from there. Passing the two checks above is not permission to push; it was read that way
 once (DEB-2275) and put a commit that did not compile on `main`.
 
 ## Building locally
