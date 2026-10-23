@@ -299,3 +299,45 @@ these. None changes what a viewer is promised above, and each is something QA ca
   that case is on the QA plan; the newline case is a Compose test.
 - **Acceptance 7 stays open** for the five new strings until DEB-1504 lands their Danish and Faroese. They carry English in `da`
   and `fo` through the key fallback, and `SupportModelTest` prints which are still English.
+
+## Amendment 2026-10-23 — the five new lines in Danish and Faroese, and two lines of the desk's own (DEB-1504)
+
+The string round that FR-11 waited for has landed: round `music-play-all`, *STRINGS — translation only*, in
+`design/ravilo/music-play-all/REPORT v3.md` (first quarantined at `b1743ce5`). This amendment copies its lines here so they
+outlive the round, as 321's `request_logged` pair did, and it answers the Faroese check FR-11 asked the round to make.
+
+**FR-11a — The five lines, in all three languages.** These replace the English-only table under FR-11, character for
+character. `{n}` appears once in `support.ticket_n` and `support.sys_received_bare`, directly after `#`, and the `·` is
+U+00B7. The other three carry no placeholder.
+
+| Key | en | da | fo |
+|---|---|---|---|
+| `support.ticket_n` | Ticket #{n} | Sag #{n} | Sak #{n} |
+| `support.new_ticket` | New ticket | Ny sag | Nýggj sak |
+| `support.sys_received_bare` | Received · #{n} | Modtaget · #{n} | Móttikið · #{n} |
+| `support.limit` | You've written a lot today. Try again later. | Du har skrevet meget i dag. Prøv igen senere. | Tú hevur skrivað nógv í dag. Royn aftur seinni. |
+| `support.too_long` | That's too long to send in one message. | Det er for langt til at sende i én besked. | Hetta er ov langt til at senda í einum boði. |
+
+**FR-11b — The desk gets its own two lines, instead of `support` put into `{name}`.** The round's answer: in Faroese,
+*support* is a feminine noun (the settled set already writes *til supportina*), so in a name slot it takes the case the slot
+demands, the dative after *hjá* and the nominative as a subject. One substituted word cannot be both. So wherever FR-9 and
+FR-10 name the desk (the holder is `ADMIN`, `TEAM`, or a holder the app does not know), the app uses these two keys and
+does not compose `support.pres_with` or `support.sys_handling` with `support.badge_support`:
+
+| Key | Replaces | en | da | fo |
+|---|---|---|---|---|
+| `support.pres_with_support` | FR-9's last row | Open · with support | Åben · hos support | Opin · hjá supportini |
+| `support.sys_handling_support` | FR-10's `FORWARDED` to the desk | Support is handling this | Support tager sig af det | Supportin tekur sær av hesum |
+
+- **AI Agent and Hervør are unchanged.** They are names, they do not decline here, and they still go through `{name}` in
+  `support.pres_with` and `support.sys_handling`.
+- **What a viewer sees change.** In Faroese, both lines now read correctly. In English and Danish, the presence line reads
+  exactly as before, and the system line now starts with a capital (*Support is handling this*, not *support is handling
+  this*), because it was a substituted badge word at the start of a sentence. The badge itself (`support.badge_support`) and
+  the desk's mark keep the lower-case word, as before.
+- **The wire is untouched.** These are client strings only, and an old app keeps composing the old way.
+
+**Acceptance 7, restated.** A viewer whose app language is Danish, and one whose is Faroese, see every FR-11 string, the
+five in FR-11a and the two in FR-11b in that language. No `support.*` key carries English in `da.json` or `fo.json`, and
+`SupportModelTest` asserts that, instead of printing which keys are still English. With this, the support screen is no
+longer waiting on any string round.
