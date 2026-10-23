@@ -196,6 +196,10 @@ the switch on, it is the full remote, and Stop asks first (FR-7).
 Which playback it shows is R368 FR-R368-8's rule (the one this app touched last). A tap opens FR-1's remote.
 Swipe-down does nothing (FR-R245-6).
 
+*Amended 2026-10-23 (DEB-2236):* on the desktop capsule and the GNOME bar, the playing **song's** title and artist
+open its album, not the remote (FR-R337-6 as amended). There, the artwork is the bar's door to FR-1's remote. A film,
+an episode, a book, a song with no album, and the phone's bar are unchanged: a tap anywhere on them opens the remote.
+
 ### FR-10 — Volume: an on-screen slider for every place that reports one
 
 - Every remote, on the phone, the web and the desktop, has the volume row for every kind and every place: a TV, a

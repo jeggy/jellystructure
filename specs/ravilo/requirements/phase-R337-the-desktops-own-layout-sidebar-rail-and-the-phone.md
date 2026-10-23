@@ -571,3 +571,28 @@ display that appears when someone connects. With no display at all it opens at 4
 sits beside the synced lyrics as before, with the remote's column under the cover: the place pill, the transport and
 the inline volume block. Where the window is too short for the volume block, that column scrolls; the capsule never
 covers a slider. Medium still stacks the cover above the lyrics.
+
+## Amendment 2026-10-23 — the bar's title and artist open the album (DEB-2236)
+
+Owner, 2026-10-23, on DEB-2236: *"I don't like that, when I click on the song title / artist on the left side of the
+play button that it opens the lyrics screen. I would like it to open that album instead."*
+
+Until now the artwork, title and artist were one tap target that opened the Playing page. On the desktop that page is
+the cover beside the synced lyrics (FR-R337-7), which is why the click reads as "it opened the lyrics".
+
+**FR-R337-6 is amended.** On both the macOS capsule and the GNOME bar, and at every width (full, medium, tight):
+- **The title and the artist line are one target. A click opens the playing track's album**: `Dest.AlbumDetail` for
+  `albumId`, pushed exactly like the track menu's *Go to album* (FR-R322-11). This holds in music mode and in films
+  mode. It also holds while the music plays on a speaker: the line then reads *{artist} · {place}*, and a click still
+  opens the album.
+- **The artwork stays the door to the Playing page.** So do the lyrics button, the ⌥⌘L *Show Lyrics* command and
+  any other door this file names. The way into the player and the lyrics is still one click away.
+- **When the track has no `albumId`**, the title and artist do what they did before and open the Playing page. They
+  are never a dead click.
+- **A book is unchanged.** Its title and author still open the Playing page. The owner asked about songs; a book's own
+  page is a separate question.
+- Over the text the pointer becomes a hand, as it already does over the artwork. Nothing is drawn: no underline, no
+  new colour. This is a behaviour change, so there is no design round.
+
+**The phone's mini bar is unchanged** (FR-R322-10: *Tap → the Playing tab*). It is a single target the width of the
+screen, and splitting it would leave the thumb two small regions that do different things.
