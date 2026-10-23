@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Making and changing a playlist in Ravilo music — Directions</title>
+<!--
+  The directions canvas: what is fixed → the named directions → how they compare → every state the
+  recommended direction holds → the decided rows → the new strings.
+
+  Built from the same three files the PNGs are built from (mpl-data.js → mpl-kit.js, with
+  music-playlists.css over the linked music-play-all.css), so a frame here and a frame in png/ are
+  the same markup and cannot drift apart.
+
+  A self-contained copy with every stylesheet, script and face inlined sits beside this file as
+  "Music Playlists - Directions - self-contained.html", built by build-selfcontained.mjs.
+-->
+<link rel="stylesheet" href="../../ravilo/music-play-all/music-play-all.css">
+<link rel="stylesheet" href="music-playlists.css">
+<style>
+  html { background: #e9eaef; }
+  body { margin: 0; background: #e9eaef; font-family: 'Sora', sans-serif; color: #12141b; }
+  .page { position: relative; width: 3760px; margin: 0 auto; padding: 0 0 160px; }
+  .fr { position: absolute; }
+  .band { position: relative; padding: 70px 0 0; }
+  h1.big { font-family: 'Space Grotesk', sans-serif; font-size: 3.4rem; letter-spacing: -.03em;
+    margin: 90px 0 10px 70px; max-width: 1500px; color: #12141b; }
+  p.sub { margin: 0 0 0 70px; max-width: 1050px; font-size: 1.02rem; line-height: 1.68; color: #262a35; }
+  p.sub b { color: #0b0c11; }
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+
+<script src="../../ravilo/music-play-all/music-play-all-kit.js"></script>
+<script src="mpl-data.js"></script>
+<script src="mpl-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  document.documentElement.dataset.skin = 'aurora';
+  const page = document.getElementById('page');
+  MPLK.setLang('en');
+  const ROAD = MPL.MINE[3], SHARED = MPL.SHARED, EMPTY = MPL.EMPTY;
+
+  const el = (html) => { const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; };
+  const put = (node, x, y) => { node.style.left = x + 'px'; node.style.top = y + 'px'; page.appendChild(node); return node; };
+  const ph = (o, x, y) => put(el(MPLK.phone(Object.assign({ skin: 'aurora' }, o))), x, y);
+  const dk = (o, x, y) => put(el(MPLK.desk(Object.assign({ skin: 'aurora' }, o))), x, y);
+  const cap = (t, x, y, w) => put(el('<div class="cap" style="width:' + (w || 330) + 'px">' + t + '</div>'), x, y);
+  const lbl = (html, x, y, cls) => put(el('<div class="lbl ' + (cls || '') + '">' + html + '</div>'), x, y);
+  const sech = (n, h, x, y) => put(el('<div class="sech"><div class="n">' + n + '</div><h2>' + h + '</h2></div>'), x, y);
+  const panel = (html, x, y, w) => put(el('<div class="panel" style="width:' + w + 'px">' + html + '</div>'), x, y);
+  const rule = (x, y, w) => put(el('<div class="rule"></div>'), x, y).style.width = w + 'px';
+
+  /* ============================================================ 0 · the ask ============== */
+  page.appendChild(el('<h1 class="big">How a listener makes and changes a playlist, with the shapes Ravilo music already has</h1>'));
+  page.appendChild(el('<p class="sub">Seven small surfaces and one visual language. Nothing here redesigns the Playlists chip, the playlist page, the album page or the queue — each of those is drawn exactly as it ships, and the round adds one control to it. <b>Phone, desktop and web only</b>: music browsing does not exist on Android TV, and Tizen and Chromecast are receivers, so none of the three gets a surface. Every frame is drawn at 360 dp (phone) or 1120 × 720 (desktop window), one device pixel per CSS pixel.</p>'));
+
+  sech('what is fixed', 'The shapes this round reuses, unchanged', 70, 300);
+  panel(
+    '<h2>Five shipped components do all the work</h2>'
+    + '<p>Not one new component type is introduced. The round is a rearrangement of things the music app already draws, and the table says where each one lives so the build is a port rather than an interpretation.</p>'
+    + '<table class="tbl"><tr><th>This round&rsquo;s surface</th><th>Drawn as</th><th>Shipped in</th></tr>'
+    + '<tr><td><b>The picker</b></td><td>a bottom sheet of playlist rows &mdash; collage · name · <i>N songs</i></td><td><code>.mp-sheet</code> + <code>.mu-pl</code></td></tr>'
+    + '<tr><td><b>The name sheet</b></td><td>label, field, one primary button</td><td><code>.mu-shfield</code> + <code>.mu-shbtn</code></td></tr>'
+    + '<tr><td><b>The ⋯ menu</b></td><td>a rounded card of 44 px rows under the control</td><td><code>.mu-pam</code> / <code>.re-menu</code></td></tr>'
+    + '<tr><td><b>Edit mode</b></td><td>the queue&rsquo;s grip, lift and swipe-to-remove</td><td><code>.mu-qrow</code> + <code>.mu-handle</code></td></tr>'
+    + '<tr><td><b>The confirm</b></td><td>title, one line, two buttons</td><td><code>.mp-fail</code></td></tr></table>'
+    + '<h4>One new token, and it is named rather than typed four times</h4>'
+    + '<p><code>--pl-bad</code>. Music ships no error token: its only destructive surface is the queue row&rsquo;s swipe panel, hard-coded <code>#d64541</code>. This round needs that red in four places &mdash; the swipe panel, <i>Delete playlist</i>, the confirm&rsquo;s <i>Delete</i>, and the name field&rsquo;s error border &mdash; and gives it a per-skin value, because <code>#d64541</code> reads muddy against Noir&rsquo;s amber on near-black.</p>'
+    + '<div class="good"><b>Aurora</b> <code>#d64541</code> &nbsp;·&nbsp; <b>Midnight</b> <code>#e2544e</code> &nbsp;·&nbsp; <b>Noir</b> <code>#e2603f</code></div>'
+    + '<h4>What this round does <i>not</i> touch</h4>'
+    + '<p>The playlist page keeps its centred, artwork-free header and its cover-and-artist rows. The album page keeps its full-width cover and its numbered rows. The queue keeps its rows. A shared playlist keeps every pixel it has today. The only additions are the controls below.</p>',
+    70, 400, 980);
+
+  /* ============================================================ 1 · the picker =========== */
+  sech('direction 1', 'Where New playlist sits in the picker', 70, 1160);
+  lbl('<span class="tag pick">N1 &mdash; the first row, with a + tile</span><h3>Recommended</h3>'
+    + '<small>The row is the picker&rsquo;s own row: 78 px tall, a 62 px tile, 14 px gap. The tile is dashed and carries a +, so it reads as an action without leaving the list&rsquo;s rhythm. <b>It is also what FR-4 says</b> &mdash; <i>New playlist first, then every playlist with mine = true, by name</i> &mdash; so picking it needs no amendment.'
+    + '<span class="pl-lean">lean · and the spec&rsquo;s own order</span></small>', 70, 1290);
+  cap('N1 · five of your own<i>Road Trip, Running, Rainy Day, Morning Coffee, Late Night — by name</i>', 540, 1290);
+  ph({ page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'five', dir: 'N1' }, 540, 1360);
+
+  lbl('<span class="tag no">N2 &mdash; a button pinned under the list</span><h3>The alternative</h3>'
+    + '<small>Cheaper to reach with a thumb, which on a phone is a real argument: the top of a sheet is the furthest point from the hand. But it <b>contradicts FR-4&rsquo;s stated order</b>, so adopting it is an amendment, not a preference. It also spends a fixed strip of the sheet that the list would otherwise use.'
+    + '<span class="pl-lean pl-alt">costs an amendment to FR-4</span></small>', 980, 1290);
+  cap('N2 · the same five<i>the action pinned below, always reachable</i>', 1450, 1290);
+  ph({ page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'five', dir: 'N2' }, 1450, 1360);
+
+  cap('none of your own<i>only New playlist, and one line saying what the list would hold</i>', 1890, 1290);
+  ph({ page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'none', dir: 'N1' }, 1890, 1360);
+
+  cap('fourteen of your own, scrolled<i>name order: Chill · Dinner · Focus · Kitchen · Late Night · Morning Coffee …</i>', 2300, 1290);
+  ph({ page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'long', dir: 'N1', scroll: 150 }, 2300, 1360);
+
+  /* ============================================================ 2 · the desktop picker === */
+  sech('direction 2', 'The picker on the desktop', 70, 2260);
+  lbl('<span class="tag pick">P1 &mdash; a popover anchored to the ⋯</span><h3>Recommended</h3>'
+    + '<small>The window stays readable behind it and the beak says <b>which</b> ⋯ was pressed, which matters on a page that has several. It needs no <i>Cancel</i>: clicking away is the way out, as it is for every other popover in the window. A ⋯ low in the window opens the same popover upward rather than off the bottom edge.'
+    + '<span class="pl-lean">lean</span></small>', 70, 2390);
+  cap('P1 · anchored to the album&rsquo;s ⋯', 70, 2760);
+  dk({ page: 'album', kind: 'album', overlay: 'pop', list: 'five', dir: 'N1', popX: 418, popY: 232 }, 70, 2830);
+
+  cap('P1 · from a song row low in the window<i>the same popover, opening upward</i>', 1250, 2760);
+  dk({ page: 'album', kind: 'album', overlay: 'pop', list: 'five', dir: 'N1', hot: 5, popUp: true, popX: 548, popY: 468, beakX: 277 }, 1250, 2830);
+
+  lbl('<span class="tag no">P2 &mdash; a centred dialog</span><h3>The alternative</h3>'
+    + '<small>It dims the whole window, loses the tie to the control it came from, and has to carry a <i>Cancel</i> to be dismissible &mdash; three costs for one benefit, that a long list has more room. The long list scrolls perfectly well inside the popover, so the benefit is not collected.'
+    + '<span class="pl-lean pl-alt">not recommended</span></small>', 70, 3640);
+  cap('P2 · the centred dialog', 540, 3640);
+  dk({ page: 'album', kind: 'album', overlay: 'dlg-picker', list: 'five', dir: 'N1' }, 540, 3710);
+
+  /* ============================================================ 3 · edit mode ============ */
+  sech('direction 3', 'Removing a song in edit mode, on the desktop', 70, 4560);
+  lbl('<span class="tag pick">E1 &mdash; a × at the row&rsquo;s end on hover</span><h3>Recommended</h3>'
+    + '<small>There is no swipe with a mouse, so the phone&rsquo;s gesture has no desktop twin and something has to stand in for it. A × in the column the row&rsquo;s ⋯ already occupies costs no new column and no new vocabulary.'
+    + '<span class="pl-lean">lean</span></small>', 70, 4690);
+  lbl('<span class="tag no">E2 &mdash; only through the row&rsquo;s ⋯</span><h3>The alternative</h3>'
+    + '<small>Fewer affordances, and nothing can be removed by accident. But it is two clicks for the commonest action in a mode whose whole purpose is removing and reordering, and the ⋯ menu it opens holds one row.'
+    + '<span class="pl-lean pl-alt">not recommended</span></small>', 70, 5000);
+  cap('E1 · the × on the hovered row', 540, 4690);
+  dk({ page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E1', hot: 3 }, 540, 4760);
+  cap('E2 · the hovered row&rsquo;s ⋯', 1720, 4690);
+  dk({ page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E2', hot: 3 }, 1720, 4760);
+
+  /* ============================================================ 4 · every state ========== */
+  sech('every state', 'The seven surfaces, in the recommended direction', 70, 5620);
+
+  const row = (y, items) => items.forEach(([c, o, x, isDk]) => { cap(c, x, y); (isDk ? dk : ph)(o, x, y + 70); });
+
+  lbl('<h3>The playlist page&rsquo;s ⋯</h3><small>Beside <i>Play</i> and <i>Shuffle</i>, 48 px square so its glyph keeps the same 44 px tap area the rest of music uses. It holds <i>Edit</i>, <i>Rename</i> and <i>Delete playlist</i>; an empty playlist of your own drops <i>Edit</i>; a playlist shared with you has no ⋯ at all and is otherwise untouched.</small>', 70, 5750);
+  row(5750, [
+    ['your own · at rest', { page: 'playlist', pl: ROAD, mine: true }, 540],
+    ['your own · ⋯ open', { page: 'playlist', pl: ROAD, mine: true, menu: true }, 940],
+    ['shared with you · no ⋯ · exactly as today', { page: 'playlist', pl: SHARED, mine: false }, 1340],
+    ['your own, empty · No songs yet', { page: 'playlist', pl: EMPTY, mine: true }, 1740],
+    ['your own, empty · ⋯ has no Edit', { page: 'playlist', pl: EMPTY, mine: true, menu: true }, 2140],
+    ['desktop · your own · ⋯ open', { page: 'playlist', pl: ROAD, mine: true, menu: true }, 2540, 1],
+  ]);
+
+  lbl('<h3>Edit mode</h3><small>The header&rsquo;s <i>Play</i>/<i>Shuffle</i> give way to <i>Done</i>, which takes the <b>secondary</b> fill: the action of edit mode is dragging, and a full-width gradient made the way out the loudest thing on the screen. Each row shows the queue&rsquo;s grip; a drag leaves a dashed slot where the row was; a left swipe reveals the queue&rsquo;s own red <i>Remove</i>.</small>', 70, 6620);
+  row(6620, [
+    ['at rest', { page: 'playlist', pl: ROAD, mine: true, edit: true }, 540],
+    ['a row lifted mid-drag', { page: 'playlist', pl: ROAD, mine: true, edit: true, lift: 0 }, 940],
+    ['a row mid-swipe', { page: 'playlist', pl: ROAD, mine: true, edit: true, swipe: 1 }, 1340],
+    ['the delete confirm', { page: 'playlist', pl: ROAD, mine: true, sheet: 'confirm', plName: 'Road Trip' }, 1740],
+    ['desktop · edit at rest', { page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E1' }, 2140, 1],
+  ]);
+
+  lbl('<h3>The name sheet</h3><small>Create and rename are one sheet. It opens with the field focused, so the empty state is an empty focused field &mdash; not a placeholder repeating the label above it. <i>Create</i> is <b>shown and disabled</b> while the field is empty. The error is a rejection of a name that trims to nothing, so the field holds spaces rather than being blank, and <i>Create</i> is live: it had to be, to have been pressed.</small>', 70, 7490);
+  row(7490, [
+    ['empty · Create shown and off', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'empty' }, 540],
+    ['typing', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'typing' }, 940],
+    ['Give it a name', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'error' }, 1340],
+    ['rename · filled in, Save', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'rename' }, 1740],
+  ]);
+
+  lbl('<h3>The album&rsquo;s ⋯, the queue, and the song ⋯</h3><small><i>Add to playlist…</i> is live on the song sheet &mdash; not dim, no <i>Coming later</i> &mdash; and inside a playlist of your own <i>Remove from playlist</i> follows it. The queue&rsquo;s two actions take a line of their own under <i>Up next</i>: on the heading line itself the English wrapped and the Faroese pushed <i>Clear queue</i> off the edge.</small>', 70, 8360);
+  row(8360, [
+    ['album · the new ⋯', { page: 'album', kind: 'album' }, 540],
+    ['album · ⋯ open · one row', { page: 'album', kind: 'album', menu: true }, 940],
+    ['song ⋯ · Add to playlist… is live', { page: 'album', kind: 'album', sheet: 'menu' }, 1340],
+    ['song ⋯ inside your own playlist', { page: 'playlist', pl: ROAD, mine: true, sheet: 'menu', inPlaylist: true }, 1740],
+    ['Queue · Save as playlist', { page: 'queue' }, 2140],
+    ['every toast line, in one frame', { page: 'playlist', pl: ROAD, mine: true, toasts: true }, 2540],
+  ]);
+
+  /* ============================================================ 5 · the crowding ========= */
+  sech('the one thing that does not fit', 'An album with editions already fills this row', 70, 9230);
+  lbl('<small>An album that has editions carries <b>two split controls</b> here already &mdash; <i>Play album ▾</i> and <i>Shuffle ▾</i>. Add the ⋯ and there are five tap targets across 324 dp: <i>Play album</i> truncates and <i>Shuffle</i> collapses to one letter. This is a break on a shipped screen caused by this round, and it is the one picture that asks the brief to change rather than the other way round.</small>'
+    + '<span class="cost"><b>Proposed:</b> on an album with editions both ▾ give up their split and the single ⋯ carries every secondary action &mdash; <i>Play extras</i>, <i>Shuffle extras</i>, <i>Add to playlist…</i>. Three controls, every label whole, and one place to look for &ldquo;anything else&rdquo; instead of two dropdowns and a ⋯. <b>This changes an adopted editions behaviour, so it is not the designer&rsquo;s to decide.</b></span>', 70, 9360);
+  cap('what FR-6 asks for, drawn literally<i>Play al… · S… · ⋯</i>', 540, 9360);
+  ph({ page: 'album', kind: 'album', editions: true }, 540, 9430);
+  cap('the proposal<i>Play album · Shuffle · ⋯ with every extra inside</i>', 940, 9360);
+  ph({ page: 'album', kind: 'album', editions: 'merged', menu: true }, 940, 9430);
+
+  /* ============================================================ 6 · decided rows ========= */
+  sech('decided', 'What this round settles, and what it hands back', 70, 10330);
+  panel(
+    '<h2>Settled in the drawing</h2>'
+    + '<table class="tbl"><tr><th>#</th><th>Row</th><th>Settled as</th></tr>'
+    + '<tr><td>1</td><td>The desktop picker</td><td class="y"><b>A popover anchored to the ⋯</b>, opening upward when it would otherwise run off the bottom</td></tr>'
+    + '<tr><td>2</td><td>Where <i>New playlist</i> sits</td><td class="y"><b>The first row, with a + tile</b> — the lean, and FR-4&rsquo;s own order</td></tr>'
+    + '<tr><td>3</td><td>Removing on the desktop</td><td class="y"><b>A × at the row&rsquo;s end on hover</b></td></tr>'
+    + '<tr><td>4</td><td>The ⋯ control itself</td><td class="y">48 px square beside <i>Play</i> and <i>Shuffle</i> on the phone, 38 px on the desktop; menu right-aligned under it</td></tr>'
+    + '<tr><td>5</td><td>The destructive colour</td><td class="y">One token, <code>--pl-bad</code>, with a value per skin</td></tr>'
+    + '<tr><td>6</td><td><i>Done</i> in edit mode</td><td class="y">The secondary fill, not the primary: dragging is the action, <i>Done</i> is the exit</td></tr>'
+    + '<tr><td>7</td><td>The queue&rsquo;s two actions</td><td class="y">Their own row under <i>Up next</i>, not on the heading line — forced by the Faroese</td></tr></table>'
+    + '<h2>Handed back as questions</h2>'
+    + '<table class="tbl"><tr><th>#</th><th>Question</th><th>Drawn</th></tr>'
+    + '<tr><td>Q1</td><td>An album with editions has no room for the ⋯. Fold both ▾ into it?</td><td class="m">Both, side by side</td></tr>'
+    + '<tr><td>Q2</td><td>An <b>empty</b> playlist cannot be played. Are <i>Play</i> and <i>Shuffle</i> shown-and-disabled, or absent?</td><td class="m">Shown and disabled</td></tr>'
+    + '<tr><td>Q3</td><td>A shared playlist loses its ⋯ with nothing to say why. Is a <i>Shared with you</i> badge wanted?</td><td class="m">Both: as-today, and a badge variant</td></tr>'
+    + '<tr><td>Q4</td><td>The picker needs one line when the viewer owns no playlist. New key?</td><td class="m"><code>music.pl_none</code>, drafted in three languages</td></tr>'
+    + '<tr><td>Q5</td><td>FR-7 says the queue actions sit &ldquo;in the <i>Up next</i> heading&rdquo;. They sit in the heading <b>block</b>, on their own line.</td><td class="m">Own line</td></tr>'
+    + '<tr><td>Q6</td><td>The brief did not name the nine tracks beside <i>Northern Lights</i> on its album.</td><td class="m">Corpus titles, as a stand-in</td></tr></table>'
+    + '<h2>New strings</h2>'
+    + '<p>Every word drawn comes from FR-16&rsquo;s table or from the shipped <code>i18n/*.json</code>, which wins wherever a string already exists. <b>One string is new and is not in FR-16</b>:</p>'
+    + '<table class="tbl"><tr><th>Key</th><th>en</th><th>da</th><th>fo</th></tr>'
+    + '<tr><td><code>music.pl_none</code></td><td>Playlists you make show up here.</td><td>Playlister, du laver, vises her.</td><td>Spælilistar, tú stovnar, síggjast her.</td></tr></table>'
+    + '<div class="warn">The round draws <b>Faroese and Danish</b> on the menu, the confirm, the queue and the toasts even though the brief asked only for English: a ⋯ menu, a confirm and a pair of pills are exactly where those two overrun, and the Faroese found two real breaks. The strings used are FR-16&rsquo;s own drafts and the shipped files&rsquo; values — none was invented in the drawing.</div>',
+    70, 10460, 1100);
+
+  /* the longest-string evidence, beside the panel */
+  cap('Faroese · the queue, after', 1700, 10460);
+  MPLK.setLang('fo');
+  ph({ page: 'queue' }, 1700, 10530);
+  cap('Faroese · the ⋯ menu', 2100, 10460);
+  ph({ page: 'playlist', pl: ROAD, mine: true, menu: true }, 2100, 10530);
+  cap('Faroese · every toast', 2500, 10460);
+  ph({ page: 'playlist', pl: ROAD, mine: true, toasts: true }, 2500, 10530);
+  MPLK.setLang('en');
+
+  /* ============================================================ 7 · the skins =========== */
+  sech('the skins', 'Music redefines Midnight and Noir, so both are drawn', 70, 11450);
+  lbl('<small>Music&rsquo;s own stylesheet overrides the Midnight and Noir token blocks, so a surface that looks right in Aurora proves nothing about the other two. Noir in particular inverts the accent to amber, which is where a destructive red and a gradient <i>Create</i> have to be checked rather than assumed.</small>', 70, 11580);
+  ['midnight', 'noir'].forEach((sk, i) => {
+    const y = 11580 + i * 870;
+    cap(sk + ' · the picker', 540, y);
+    ph({ page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'five', dir: 'N1', skin: sk }, 540, y + 70);
+    cap(sk + ' · the ⋯ menu', 940, y);
+    ph({ page: 'playlist', pl: ROAD, mine: true, menu: true, skin: sk }, 940, y + 70);
+    cap(sk + ' · the swipe', 1340, y);
+    ph({ page: 'playlist', pl: ROAD, mine: true, edit: true, swipe: 1, skin: sk }, 1340, y + 70);
+    cap(sk + ' · the confirm', 1740, y);
+    ph({ page: 'playlist', pl: ROAD, mine: true, sheet: 'confirm', plName: 'Road Trip', skin: sk }, 1740, y + 70);
+    cap(sk + ' · the desktop popover', 2140, y);
+    dk({ page: 'album', kind: 'album', overlay: 'pop', list: 'five', dir: 'N1', popX: 418, popY: 232, skin: sk }, 2140, y + 70);
+  });
+
+  page.style.height = '13400px';
+})();
+</script>
+</body>
+</html>

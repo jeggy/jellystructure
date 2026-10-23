@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Making and changing a playlist in Ravilo music — frames</title>
+<!--
+  frames.html — every frame this round renders, built from mpl-data.js through mpl-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=phone|desktop
+      &skin=aurora|midnight|noir
+      &lang=en|da|fo
+
+  The SHIPPED stylesheet this round links is ../../ravilo/music-play-all/music-play-all.css — the
+  last music round's own, which itself restates ravilo/mobile/ravilo-music.css and
+  ravilo/desktop-directions.css at their exact values and carries the three woff2 in its own
+  fonts/ directory. Linking it rather than copying it is what makes this round's frames diffable
+  against that round's, and it is why there is no font file and no network reference here.
+
+  Music redefines the noir and midnight tokens, so this frame set is kept entirely separate from
+  any video frame set: nothing here loads ravilo.css or ravilo-phone.css, and one surface can
+  never answer for the other.
+
+  The round's own stylesheet always comes last, so it extends the shipped system and never
+  precedes it.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; render.mjs drives
+  it over the parameter combinations and screenshots one element per frame.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'phone';
+    const skin = q.get('skin') || 'aurora';
+    const lang = q.get('lang') || 'en';
+    document.documentElement.dataset.skin = skin;
+    document.documentElement.lang = lang;
+    document.write('<link rel="stylesheet" href="../../ravilo/music-play-all/music-play-all.css">');
+    document.write('<link rel="stylesheet" href="music-playlists.css">');
+    window.MPLOPT = { set, skin, lang };
+  })();
+</script>
+<style>
+  /* Canvas layout only — where a frame sits on the page. Dark ink on a light-gray backdrop, per
+     the standing canvas rule; nothing here is a component. */
+  body { margin: 0; background: #e9eaef; font-family: 'Sora', sans-serif; }
+  #frames { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 46px 34px; padding: 34px; }
+  .hold { position: relative; flex: none; }
+  .hold.ph { width: 360px; height: 780px; }
+  .hold.dk { width: 1120px; height: 720px; }
+  .hold > .cap { position: static; display: block; margin-bottom: 9px; color: #262a35;
+    font-family: 'JetBrains Mono', monospace; font-size: .7rem; font-weight: 700;
+    letter-spacing: .05em; text-transform: uppercase; }
+  .hold > .cap i { color: #12141b; }
+  /* the frame itself is position:absolute (.fr), so the holder gives it its box */
+  .hold .fr { top: 26px; left: 0; }
+</style>
+</head>
+<body>
+<div id="frames"></div>
+
+<script src="../../ravilo/music-play-all/music-play-all-kit.js"></script>
+<script src="mpl-data.js"></script>
+<script src="mpl-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { set, skin, lang } = window.MPLOPT;
+  const root = document.getElementById('frames');
+  MPLK.setLang(lang);
+
+  function add(id, cls, html, cap) {
+    const d = document.createElement('div');
+    d.id = 'f-' + id;
+    d.className = 'hold ' + cls;
+    d.innerHTML = '<span class="cap"><i>' + (cap || id) + '</i></span>' + html;
+    root.appendChild(d);
+  }
+  /* The skin lives on the FRAME, not only on <html>: every .fr carries data-skin, so a builder
+     that defaulted to aurora would silently render an aurora frame inside a noir document. The
+     first render of this round did exactly that and twelve "skin" PNGs were aurora. */
+  const withSkin = o => Object.assign({ skin: skin }, o);
+  const ph = (id, o, cap) => add(id, 'ph', MPLK.phone(withSkin(o)), cap);
+  const dk = (id, o, cap) => add(id, 'dk', MPLK.desk(withSkin(o)), cap);
+
+  const ROAD = MPL.MINE[3];            /* Road Trip, 24 songs — the viewer's own */
+  const SHARED = MPL.SHARED;           /* Family Favourites, 40, someone else's */
+  const EMPTY = MPL.EMPTY;             /* a playlist of the viewer's own with nothing in it */
+
+  /* =============================================================== THE PHONE ============== */
+  if (set === 'phone') {
+    /* --- surface 1: the picker. Opened here from a song's ⋯, which is where it opens most. --- */
+    ph('ph-picker-5-n1', { page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'five', dir: 'N1' },
+      'picker · 5 of your own · N1 first row');
+    ph('ph-picker-5-n2', { page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'five', dir: 'N2' },
+      'picker · 5 of your own · N2 pinned button');
+    ph('ph-picker-none', { page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'none', dir: 'N1' },
+      'picker · none of your own');
+    ph('ph-picker-long', { page: 'playlist', pl: ROAD, mine: true, sheet: 'picker', list: 'long', dir: 'N1', scroll: 150 },
+      'picker · 14 of your own · scrolled');
+
+    /* --- surface 2: the name sheet, with the system keyboard up --- */
+    ph('ph-name-empty', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'empty' },
+      'name sheet · empty · Create shown and off');
+    ph('ph-name-typing', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'typing' },
+      'name sheet · typing');
+    ph('ph-name-error', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'error' },
+      'name sheet · Give it a name');
+    ph('ph-name-rename', { page: 'playlist', pl: ROAD, mine: true, sheet: 'name', state: 'rename' },
+      'name sheet · rename · filled in, Save');
+
+    /* --- surface 3: the playlist page's ⋯ --- */
+    ph('ph-pl-rest', { page: 'playlist', pl: ROAD, mine: true },
+      'your own playlist · at rest');
+    ph('ph-pl-menu', { page: 'playlist', pl: ROAD, mine: true, menu: true },
+      'your own playlist · ⋯ open');
+    /* "A shared playlist has no ⋯ and stays exactly as today" — so the frame that answers the
+       brief adds NOTHING, not even a badge saying whose it is. The badge frame beside it is a
+       proposal, because with the ⋯ simply absent a viewer is given no reason for its absence. */
+    ph('ph-pl-shared', { page: 'playlist', pl: SHARED, mine: false },
+      'a playlist shared with you · no ⋯ · exactly as today');
+    ph('ph-pl-shared-badge', { page: 'playlist', pl: SHARED, mine: false, badge: true },
+      'the same page with a Shared with you badge · a PROPOSAL, not the rule');
+    ph('ph-pl-empty', { page: 'playlist', pl: EMPTY, mine: true },
+      'your own, empty · No songs yet');
+    ph('ph-pl-empty-menu', { page: 'playlist', pl: EMPTY, mine: true, menu: true },
+      'your own, empty · ⋯ has no Edit');
+
+    /* --- surface 4: edit mode --- */
+    ph('ph-edit-rest', { page: 'playlist', pl: ROAD, mine: true, edit: true },
+      'edit mode · at rest');
+    ph('ph-edit-lift', { page: 'playlist', pl: ROAD, mine: true, edit: true, lift: 0 },
+      'edit mode · a row lifted mid-drag');
+    ph('ph-edit-swipe', { page: 'playlist', pl: ROAD, mine: true, edit: true, swipe: 1 },
+      'edit mode · a row mid-swipe');
+
+    /* --- surface 5: the delete confirm --- */
+    ph('ph-confirm', { page: 'playlist', pl: ROAD, mine: true, sheet: 'confirm', plName: ROAD.name },
+      'delete confirm');
+
+    /* --- surface 6: the album page's new ⋯, closed, in the header --- */
+    ph('ph-album-more', { page: 'album', kind: 'album' },
+      'album · the new ⋯ beside Play and Shuffle');
+    ph('ph-album-menu', { page: 'album', kind: 'album', menu: true },
+      'album · ⋯ open · one row');
+    /* the crowding case: an album WITH editions already has two split controls on this row */
+    ph('ph-album-editions', { page: 'album', kind: 'album', editions: true },
+      'an album with editions · the ⋯ makes five targets on one row');
+    ph('ph-album-editions-merged', { page: 'album', kind: 'album', editions: 'merged', menu: true },
+      'the proposal · the ⋯ takes over the Shuffle ▾ · three targets, whole labels');
+
+    /* --- surface 7: Save as playlist in the Queue tab --- */
+    ph('ph-queue-save', { page: 'queue' },
+      'Queue · Save as playlist beside Clear queue');
+
+    /* --- the song ⋯ sheet: Add to playlist… live, and Remove inside your own playlist --- */
+    ph('ph-song-sheet', { page: 'album', kind: 'album', sheet: 'menu' },
+      'song ⋯ · Add to playlist… is live');
+    ph('ph-song-sheet-in-pl', { page: 'playlist', pl: ROAD, mine: true, sheet: 'menu', inPlaylist: true },
+      'song ⋯ inside your own playlist · + Remove');
+
+    /* --- every toast line this round adds, in one frame --- */
+    ph('ph-toasts', { page: 'playlist', pl: ROAD, mine: true, toasts: true },
+      'the six toast lines');
+  }
+
+  /* ============================================================== THE DESKTOP ============= */
+  if (set === 'desktop') {
+    /* The album page's own ⋯ is the anchor: it is FR-6's path and the highest ⋯ in the window,
+       so the picker can be judged at full height without the player bar under it. */
+    const ALBUM_ANCHOR = { popX: 418, popY: 232 };
+
+    /* --- surface 1: the picker, the two directions side by side --- */
+    dk('dk-pop-5', Object.assign({ page: 'album', kind: 'album', menu: false, overlay: 'pop', list: 'five', dir: 'N1' }, ALBUM_ANCHOR),
+      'picker · popover anchored to the ⋯ (the lean)');
+    dk('dk-dlg-5', { page: 'album', kind: 'album', overlay: 'dlg-picker', list: 'five', dir: 'N1' },
+      'picker · centred dialog');
+    dk('dk-pop-n2', Object.assign({ page: 'album', kind: 'album', overlay: 'pop', list: 'five', dir: 'N2' }, ALBUM_ANCHOR),
+      'picker · popover · N2 pinned button');
+    dk('dk-pop-none', Object.assign({ page: 'album', kind: 'album', overlay: 'pop', list: 'none', dir: 'N1' }, ALBUM_ANCHOR),
+      'picker · none of your own');
+    dk('dk-pop-long', Object.assign({ page: 'album', kind: 'album', overlay: 'pop', list: 'long', dir: 'N1', scroll: 108 }, ALBUM_ANCHOR),
+      'picker · 14 of your own · scrolled');
+    /* a song row low in the window: the same popover, opening upward rather than off the bottom */
+    /* anchored by its RIGHT edge: the row's ⋯ sits at main-relative x ≈ 835, so the popover's
+       left edge is 548 and the beak is 277 px into it — under the control, not under the corner */
+    dk('dk-pop-up', { page: 'album', kind: 'album', overlay: 'pop', list: 'five', dir: 'N1', hot: 5, popUp: true, popX: 548, popY: 468, beakX: 277 },
+      'picker · from a low song row · opens upward');
+
+    /* --- surface 2: the name dialog --- */
+    dk('dk-name-empty', { page: 'playlist', pl: ROAD, mine: true, overlay: 'dlg-name', state: 'empty' },
+      'name dialog · empty · Create shown and off');
+    dk('dk-name-typing', { page: 'playlist', pl: ROAD, mine: true, overlay: 'dlg-name', state: 'typing' },
+      'name dialog · typing');
+    dk('dk-name-error', { page: 'playlist', pl: ROAD, mine: true, overlay: 'dlg-name', state: 'error' },
+      'name dialog · Give it a name');
+    dk('dk-name-rename', { page: 'playlist', pl: ROAD, mine: true, overlay: 'dlg-name', state: 'rename' },
+      'name dialog · rename · filled in, Save');
+
+    /* --- surface 3: the playlist page's ⋯ --- */
+    dk('dk-pl-rest', { page: 'playlist', pl: ROAD, mine: true }, 'your own playlist · at rest');
+    dk('dk-pl-menu', { page: 'playlist', pl: ROAD, mine: true, menu: true }, 'your own playlist · ⋯ open');
+    dk('dk-pl-shared', { page: 'playlist', pl: SHARED, mine: false }, 'shared with you · no ⋯ · exactly as today');
+    dk('dk-pl-shared-badge', { page: 'playlist', pl: SHARED, mine: false, badge: true }, 'the same page with a badge · a PROPOSAL');
+    dk('dk-pl-empty', { page: 'playlist', pl: EMPTY, mine: true }, 'your own, empty · No songs yet');
+    dk('dk-pl-empty-menu', { page: 'playlist', pl: EMPTY, mine: true, menu: true }, 'your own, empty · ⋯ has no Edit');
+
+    /* --- surface 4: edit mode, and the two removes --- */
+    dk('dk-edit-rest', { page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E1' },
+      'edit mode · at rest · the grip takes a mouse drag');
+    dk('dk-edit-hover-e1', { page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E1', hot: 3 },
+      'edit mode · E1 · × at the row’s end on hover (the lean)');
+    dk('dk-edit-e2', { page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E2', hot: 3 },
+      'edit mode · E2 · removal only through the row’s ⋯');
+    dk('dk-edit-lift', { page: 'playlist', pl: ROAD, mine: true, edit: true, edir: 'E1', lift: 1 },
+      'edit mode · a row lifted mid-drag');
+
+    /* --- surface 5: the delete confirm --- */
+    dk('dk-confirm', { page: 'playlist', pl: ROAD, mine: true, overlay: 'dlg-confirm', plName: ROAD.name },
+      'delete confirm');
+
+    /* --- surface 6: the album page's new ⋯ --- */
+    dk('dk-album-more', { page: 'album', kind: 'album' }, 'album · the new ⋯ beside Play and Shuffle');
+    dk('dk-album-menu', { page: 'album', kind: 'album', menu: true }, 'album · ⋯ open · one row');
+
+    /* --- surface 7: Save as playlist in the queue panel --- */
+    dk('dk-queue-save', { page: 'playlist', pl: ROAD, mine: true, queue: true },
+      'queue panel · Save as playlist beside Clear queue');
+
+    /* --- a toast --- */
+    dk('dk-toast', { page: 'playlist', pl: ROAD, mine: true, toast: true, toastKey: 'pl_added' },
+      'toast · Added to Road Trip');
+  }
+})();
+</script>
+</body>
+</html>

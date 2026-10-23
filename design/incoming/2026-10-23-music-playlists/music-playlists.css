@@ -1,0 +1,373 @@
+/* music-playlists.css — making and changing a playlist in Ravilo music (round slug music-playlists,
+   2026-10-23). Phone + desktop (Mac, Linux, Ravilo Web). No TV: Android TV has no music browsing,
+   and Tizen and Chromecast are receivers.
+
+   WHAT THIS FILE IS. It is loaded AFTER ../../ravilo/music-play-all/music-play-all.css, which is
+   linked — not copied — so the frames, skins, type, covers, bottom bar, sidebar, player bar and the
+   three woff2 are the ones the last music round settled, byte for byte. Two rounds of music
+   pictures are therefore diffable. Everything below is either (a) a production shape from
+   design/ravilo/mobile/ravilo-music.css and ravilo-mobile-player.css restated at its own exact
+   numbers, or (b) genuinely new to this round, and the new ones are listed in the token block at
+   the end of this file. Every class here is mpl-.
+
+   Restated, not invented — the production class each one answers to:
+     .mpl-scrim .mpl-sheet .mpl-sh .mpl-row   ← .mp-scrim .mp-sheet .mp-sh .mp-row   (ravilo-mobile-player.css)
+     .mpl-plrow                               ← .mu-pl                                (ravilo-music.css)
+     .mpl-newbtn                              ← .mu-newpl                             (ravilo-music.css)
+     .mpl-fld .mpl-sbtn                       ← .mu-shfield .mu-shbtn                 (ravilo-music.css)
+     .mpl-acts .mpl-acts button               ← .mu-dacts .mu-dacts button            (ravilo-music.css)
+     .mpl-menu                                ← .mu-pam / .re-menu                    (ravilo-music.css)
+     .mpl-qr .mpl-grip .mpl-qr .rm            ← .mu-qrow .mu-handle .mu-qrow .rm      (ravilo-music.css)
+     .mpl-qlab                                ← .mu-qlab                              (ravilo-music.css)
+     .mpl-cfm                                 ← .mp-fail                              (ravilo-mobile-player.css)
+     .mpl-trs .mpl-tr                         ← .mu-trs .mu-tr                        (ravilo-music.css)
+     .mpl-dq                                  ← .qp / .qr                             (desktop-directions.css)
+
+   CANVAS RULES OBSERVED. No content-visibility, no backdrop-filter, no large filter: blur, no
+   infinite animations — all four break the screenshot render. Note the trap: the production
+   .mu-dback DOES carry backdrop-filter: blur(6px). The back button below is drawn with a flat
+   rgba fill instead, and REPORT.md says so; the live phone keeps its blur. No network reference of
+   any kind: the faces come from the linked stylesheet's own fonts/ directory. */
+
+/* ============================================================ PHONE ====================== */
+
+/* ---- the scrim and the bottom sheet (.mp-scrim / .mp-sheet) ---- */
+.mpl-scrim{position:absolute;inset:0;background:rgba(4,5,9,.62);z-index:90}
+.mpl-sheet{position:absolute;left:0;right:0;bottom:0;background:var(--bg-2);border-radius:20px 20px 0 0;border-top:1px solid var(--line);z-index:92;padding:0 0 26px;max-height:88%;overflow:hidden}
+.mpl-grab{width:38px;height:4px;border-radius:2px;background:rgba(var(--fg),.22);margin:9px auto 2px}
+.mpl-sh{display:flex;align-items:center;gap:10px;padding:16px 20px 12px}
+.mpl-sh h4{margin:0;font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.mpl-sh .sub{font-size:13px;color:var(--ink-dim);margin-top:2px}
+.mpl-sh .sp{flex:1}
+.mpl-sh .cnt{font-size:13px;color:var(--ink-dim);white-space:nowrap}
+.mpl-sh .tx{min-width:0}
+.mpl-sh .tx h4{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* a plain action row inside a sheet (.mp-row) */
+.mpl-row{display:flex;align-items:center;gap:13px;width:100%;min-height:56px;padding:9px 20px;border-top:1px solid var(--line);color:var(--ink);font-family:'Sora',sans-serif}
+.mpl-row .gl{width:22px;height:22px;flex:none;display:flex;color:var(--ink-soft)}
+.mpl-row .gl .ic{width:22px;height:22px}
+.mpl-row .nm{font-size:15px;font-weight:600;display:block}
+.mpl-row .sub{font-size:13px;color:var(--ink-dim);margin-top:2px;display:block}
+.mpl-row .rt{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-dim)}
+.mpl-row.bad,.mpl-row.bad .gl{color:var(--pl-bad)}
+.mpl-row.hot{background:rgba(var(--fg),.06)}
+
+/* ---- a playlist, drawn exactly as the Playlists chip draws one (.mu-pl) ---- */
+.mpl-plrow{display:flex;align-items:center;gap:14px;width:100%;min-height:78px;padding:8px 18px;color:var(--ink);font-family:'Sora',sans-serif;text-align:left}
+.mpl-plrow .col{width:62px;height:62px;border-radius:10px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;flex:none}
+.mpl-plrow .col i{display:block}
+.mpl-plrow .b{min-width:0}
+.mpl-plrow .t{font-size:15.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-plrow .s{font-size:12.5px;color:var(--ink-dim);margin-top:3px}
+.mpl-plrow.hot{background:rgba(var(--fg),.06)}
+/* inside a sheet the rows carry the sheet's hairline, as .mp-row does */
+.mpl-sheet .mpl-plrow{border-top:1px solid var(--line)}
+.mpl-sheet .mpl-plrow:first-of-type{border-top:0}
+
+/* N1 — New playlist as the first row, with a + tile where the collage sits.
+   Same row rhythm (78 px, 62 px tile, 14 px gap) so the list reads as one list; the tile is dashed
+   and has no artwork, so the row still reads as an action rather than a playlist. */
+.mpl-newtile{width:62px;height:62px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line-2);background:rgba(var(--fg),.04);color:var(--ink-soft)}
+.mpl-newtile .ic{width:24px;height:24px;stroke-width:2.2}
+.mpl-plrow.new .t{font-weight:600}
+.mpl-plrow.new .s{color:var(--ink-dim)}
+
+/* N2 — New playlist as a button pinned under the list (.mu-newpl) */
+.mpl-newbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:calc(100% - 36px);min-height:50px;margin:14px 18px 2px;border-radius:14px;border:1px dashed var(--line-2);color:var(--ink);font-family:'Sora',sans-serif;font-size:15px;font-weight:600}
+.mpl-newbtn .ic{width:17px;height:17px;stroke-width:2.2}
+.mpl-pinbar{border-top:1px solid var(--line);background:var(--bg-2);padding-bottom:6px}
+
+/* a scrolling list inside a sheet: the picker's 14-row case */
+.mpl-plscroll{max-height:402px;overflow:hidden;position:relative}
+.mpl-plscroll .in{margin-top:0}
+.mpl-fade{position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(180deg,transparent,var(--bg-2))}
+
+/* ---- the name sheet (.mu-shfield / .mu-shbtn) ---- */
+.mpl-fld{padding:4px 20px 0}
+.mpl-fld label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px}
+.mpl-fld .inp{display:flex;align-items:center;width:100%;height:48px;border-radius:12px;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:'Sora',sans-serif;font-size:16px;padding:0 14px}
+.mpl-fld .inp.on{border-color:var(--accent)}
+.mpl-fld .inp.err{border-color:var(--pl-bad)}
+.mpl-fld .inp .ph{color:var(--ink-dim)}
+.mpl-fld .inp .val{color:var(--ink)}
+/* the caret is drawn, not blinked: an infinite animation breaks the render */
+.mpl-fld .inp .car{width:2px;height:22px;background:var(--accent);margin-left:1px;flex:none}
+.mpl-fld .inp .sel{background:color-mix(in oklch,var(--accent) 36%,transparent);border-radius:2px;padding:1px 0}
+.mpl-err{display:flex;align-items:center;gap:7px;padding:8px 20px 0;font-size:13px;font-weight:600;color:var(--pl-bad)}
+.mpl-err .ic{width:15px;height:15px;stroke-width:2.2}
+.mpl-sbtn{display:flex;align-items:center;justify-content:center;width:calc(100% - 40px);margin:14px 20px 0;height:50px;border-radius:13px;background:var(--grad);color:#fff;font-family:'Sora',sans-serif;font-size:15px;font-weight:600}
+[data-skin="noir"] .mpl-sbtn{background:var(--ink);color:var(--bg)}
+/* shown-and-disabled, never hidden: an empty name keeps Create in place and inert */
+.mpl-sbtn.off{background:rgba(var(--fg),.10);color:var(--ink-dim);border:1px solid var(--line)}
+[data-skin="noir"] .mpl-sbtn.off{background:rgba(var(--fg),.10);color:var(--ink-dim)}
+.mpl-cancel{display:flex;align-items:center;justify-content:center;width:calc(100% - 40px);margin:4px 20px 0;height:48px;color:var(--ink-soft);font-size:15px;font-weight:600}
+
+/* the system keyboard, drawn so the sheet is judged at the height it really has */
+.mpl-kb{position:absolute;left:0;right:0;bottom:0;z-index:95;background:var(--bg-2);border-top:1px solid var(--line);padding:8px 3px 0}
+.mpl-kb .kr{display:flex;gap:5px;justify-content:center;margin-bottom:9px}
+.mpl-kb .k{flex:1;max-width:32px;height:40px;border-radius:6px;background:rgba(var(--fg),.13);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;color:var(--ink)}
+.mpl-kb .k.w{max-width:46px;background:rgba(var(--fg),.07);font-size:12px}
+.mpl-kb .k.sp{max-width:none;flex:3}
+.mpl-kb .k.go{background:var(--accent);color:#fff;max-width:56px;font-size:12.5px;font-weight:700}
+[data-skin="noir"] .mpl-kb .k.go{background:var(--ink);color:var(--bg)}
+.mpl-kb .safe{height:20px}
+
+/* ---- the detail header: Play · Shuffle · ⋯  (.mu-dacts, with one new control) ---- */
+/* the SHIPPED playlist header (.mu-ahead): centred, no artwork, title and count only */
+.mpl-ahead{position:relative;padding:70px 18px 0;text-align:center}
+.mpl-ahead .mpl-dt{margin-top:0}
+.mpl-ahead .mpl-dm.c{justify-content:center}
+.mpl-ahead .mpl-dback{top:12px;left:12px}
+.mpl-dtop{position:relative}
+.mpl-dtop .mpl-cv{width:100%;aspect-ratio:1;max-height:230px}
+.mpl-dback{position:absolute;top:12px;left:12px;z-index:3;width:44px;height:44px;border-radius:50%;background:rgba(6,8,14,.72);color:#fff;font-size:26px;line-height:44px;text-align:center}
+.mpl-dbody{padding:18px 18px 0}
+.mpl-dt{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;line-height:1.15;letter-spacing:-.01em}
+.mpl-dby{margin-top:6px;font-size:15px;font-weight:600}
+.mpl-dm{margin-top:6px;font-size:13px;color:var(--ink-dim);display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.mpl-acts{display:flex;gap:10px;margin-top:16px;position:relative}
+.mpl-acts .bt{flex:1;height:48px;border-radius:14px;font-family:'Sora',sans-serif;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line-2);background:rgba(var(--fg),.06);color:var(--ink);min-width:0}
+.mpl-acts .bt.pri{background:var(--grad);border-color:transparent;color:#fff}
+[data-skin="noir"] .mpl-acts .bt.pri{background:var(--ink);color:var(--bg)}
+.mpl-acts .bt .ic{width:18px;height:18px}
+/* THE NEW CONTROL: ⋯ at the pair's own height, square, never flexing. 48 px tall like its
+   neighbours, 48 px wide so the glyph has the same 44 px tap area the rest of music uses. */
+.mpl-acts .mb{flex:none;width:48px;padding:0}
+.mpl-acts .mb .ic{width:20px;height:20px}
+.mpl-acts .mb.hot{background:rgba(var(--fg),.14)}
+.mpl-acts .bt.done{flex:1}
+/* shown and disabled, never hidden: an empty playlist keeps Play and Shuffle in place and inert */
+.mpl-acts .bt.off,.mpl-acts .bt.pri.off{background:rgba(var(--fg),.05);border-color:var(--line);color:var(--ink-dim)}
+[data-skin="noir"] .mpl-acts .bt.pri.off{background:rgba(var(--fg),.05);color:var(--ink-dim)}
+
+/* the editions album's split pair (.mu-dacts.re-acts / .re-split), with the ⋯ added beside it */
+.mpl-acts.ed{gap:8px}
+.mpl-acts.ed .sp{flex:1;display:flex;gap:1px;min-width:0}
+.mpl-acts.ed .sp.sh{flex:.72}
+.mpl-acts.ed .sp .bt.a{flex:1;min-width:0;border-radius:14px 0 0 14px;padding:0 10px;gap:6px}
+.mpl-acts.ed .sp .bt.dd{flex:none;width:40px;border-radius:0 14px 14px 0;padding:0}
+.mpl-acts.ed .sp .bt.dd .ic{width:16px;height:16px}
+.mpl-acts.ed .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+/* ---- the ⋯ menu (.mu-pam) ---- */
+.mpl-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:50;min-width:206px;padding:6px;border-radius:14px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:0 18px 40px rgba(0,0,0,.55)}
+.mpl-menu .mi{display:flex;align-items:center;gap:11px;min-height:44px;padding:0 12px;border-radius:10px;color:var(--ink);font-family:'Sora',sans-serif;font-size:14.5px;font-weight:500;white-space:nowrap}
+.mpl-menu .mi .ic{width:18px;height:18px;flex:none;color:var(--ink-soft)}
+.mpl-menu .mi.bad,.mpl-menu .mi.bad .ic{color:var(--pl-bad)}
+.mpl-menu .sep{height:1px;background:var(--line);margin:5px 8px}
+
+/* ---- the track list on a detail page (.mu-trs / .mu-tr) ---- */
+.mpl-trs{margin-top:14px}
+.mpl-tr{display:grid;grid-template-columns:30px minmax(0,1fr) auto 46px;align-items:center;gap:6px;width:100%;min-height:54px;padding:0 0 0 2px;border-top:1px solid var(--line);color:var(--ink);font-family:'Sora',sans-serif}
+.mpl-tr:first-child{border-top:0}
+.mpl-tr .n{font-size:13px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.mpl-tr .t{font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.mpl-tr .t small{font-size:12px;color:var(--ink-dim);font-weight:400;display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-tr .ln{font-size:13px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.mpl-tr .mo{display:flex;align-items:center;justify-content:center;color:var(--ink-dim)}
+.mpl-tr .mo .ic{width:20px;height:20px}
+
+/* ---- edit mode: the queue's row, its grip and its swipe (.mu-qrow / .mu-handle / .rm) ---- */
+.mpl-ed{margin-top:14px}
+.mpl-qr{position:relative;overflow:hidden}
+.mpl-qr .in{position:relative;display:flex;align-items:center;gap:12px;min-height:62px;padding:7px 8px 7px 18px;background:var(--bg-2)}
+.mpl-qr .in .b{flex:1;min-width:0}
+.mpl-qr .in .t{font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-qr .in .s{font-size:12.5px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-qr .rm{position:absolute;inset:0;background:var(--pl-bad);color:#fff;display:flex;align-items:center;justify-content:flex-end;padding-right:22px;font-weight:700;font-size:14px;gap:9px}
+.mpl-qr .rm .ic{width:19px;height:19px;stroke-width:2.2}
+.mpl-qr.lift .in{background:var(--card-2);box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:3}
+.mpl-grip{width:46px;height:46px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink-dim)}
+.mpl-grip .ic{width:20px;height:20px;stroke-width:2}
+/* the gap the lifted row leaves behind */
+.mpl-gap{height:62px;background:rgba(var(--fg),.04);border-top:1px dashed var(--line-2);border-bottom:1px dashed var(--line-2)}
+
+/* ---- the queue's labels and its two buttons (.mu-qlab / .mu-qclear) ---- */
+.mpl-qlab{display:flex;align-items:center;gap:10px;padding:14px 20px 6px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap}
+.mpl-qacts{display:flex;gap:8px;padding:2px 20px 10px}
+.mpl-qact{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px 0 9px;border-radius:14px;background:rgba(var(--fg),.09);border:1px solid var(--line);color:var(--ink);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;white-space:nowrap}
+.mpl-qact .ic{width:13px;height:13px}
+
+/* ---- the delete confirm (.mp-fail) ---- */
+.mpl-cfm{padding:24px 22px 26px;text-align:center}
+.mpl-cfm h4{margin:0;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:700;letter-spacing:-.01em;color:var(--ink);text-wrap:balance}
+.mpl-cfm p{margin:9px 0 0;font-size:14px;line-height:1.5;color:var(--ink-soft)}
+.mpl-cfm .acts{display:flex;gap:10px;margin-top:18px}
+.mpl-cfm .acts .bt{flex:1;height:50px;border-radius:12px;font-size:15px;font-weight:600;background:rgba(var(--fg),.10);border:1px solid var(--line);color:var(--ink);display:flex;align-items:center;justify-content:center}
+.mpl-cfm .acts .bt.bad{background:var(--pl-bad);border-color:transparent;color:#fff}
+
+/* ---- the empty playlist (.mu-empty / .mu-hint) ---- */
+.mpl-empty{margin:40px 22px 0;padding:22px;border-radius:16px;border:1px dashed var(--line-2);text-align:center}
+.mpl-empty b{display:block;color:var(--ink);font-size:15px;font-weight:600;margin-bottom:6px}
+.mpl-empty span{font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+
+/* the picker's one line when the viewer owns no playlist: informative, and it does not restate
+   the New playlist row above it */
+.mpl-hint{padding:14px 22px 6px;font-size:13px;color:var(--ink-dim);text-align:center}
+.mpl-dhint{padding:4px 12px 12px;font-size:12px;color:var(--ink-dim)}
+
+/* a shared playlist's "whose it is" line; no ⋯ anywhere near it */
+.mpl-shared{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid var(--line-2);color:var(--ink-soft)}
+
+/* covers inside this round's own rows */
+.mpl-cv{position:relative;border-radius:10px;overflow:hidden;flex:none}
+.mpl-cv.sm{width:48px;height:48px;border-radius:7px}
+[data-skin="noir"] .mpl-cv{border-radius:6px}
+
+/* toasts: the shipped .mpa-tst, stacked so one frame holds all six */
+.mpl-tstack{position:absolute;left:12px;right:12px;z-index:80;display:flex;flex-direction:column;gap:10px;align-items:center}
+.mpl-tstack .mpa-tst{position:static;transform:none;max-width:100%;white-space:normal;text-align:center}
+
+/* ============================================================ DESKTOP ==================== */
+
+/* the window's own scrim: a dialog dims the window, a popover does not */
+.mpl-dscrim{position:absolute;inset:0;background:rgba(4,5,9,.52);z-index:30}
+
+/* D1 — the picker as a POPOVER anchored to the ⋯ (the lean). The window stays readable, and the
+   anchor says which ⋯ was pressed. */
+.mpl-pop{position:absolute;z-index:40;width:312px;padding:6px;border-radius:14px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:0 22px 54px rgba(0,0,0,.6)}
+.mpl-pop .hd{padding:10px 12px 8px;font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--ink)}
+.mpl-pop .hd span{display:block;font-family:'Sora',sans-serif;font-size:12px;font-weight:400;color:var(--ink-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-pop .sc{max-height:286px;overflow:hidden;position:relative}
+.mpl-pop .mpl-dpl{border-top:0}
+/* the little beak that ties the popover to the ⋯ it came from */
+.mpl-pop .beak{position:absolute;top:-6px;width:11px;height:11px;background:var(--bg-2);border-left:1px solid var(--line-2);border-top:1px solid var(--line-2);transform:rotate(45deg)}
+/* a ⋯ low in the window opens the SAME popover upward rather than off the bottom edge; the beak
+   moves to the bottom so it still names the control it came from */
+.mpl-pop.up{transform:translateY(-100%)}
+.mpl-pop.up .beak{top:auto;bottom:-6px;border-left:0;border-top:0;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2)}
+
+/* D2 — the picker as a CENTRED DIALOG */
+.mpl-dlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;width:392px;border-radius:16px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:0 30px 70px rgba(0,0,0,.6);overflow:hidden}
+.mpl-dlg.sm{width:360px}
+.mpl-dlg .hd{padding:18px 20px 12px}
+.mpl-dlg .hd h4{margin:0;font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;letter-spacing:-.01em}
+.mpl-dlg .hd .sub{font-size:12.5px;color:var(--ink-dim);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-dlg .sc{max-height:300px;overflow:hidden;position:relative}
+.mpl-dlg .bd{padding:0 20px 4px}
+/* the picker's rows carry their own 10 px, so the body gives back 10 and the tiles line up with
+   the dialog's title rather than sitting 10 px to its right */
+.mpl-dlg .bd.rows{padding:0 10px 4px}
+.mpl-dlg .ft{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px 18px}
+.mpl-dlg .ft.wide .bt{flex:1}
+.mpl-dfade{position:absolute;left:0;right:0;bottom:0;height:30px;background:linear-gradient(180deg,transparent,var(--bg-2))}
+
+/* a desktop button (.mpa-bt, at dialog scale) */
+.mpl-bt{height:36px;padding:0 16px;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:13px;background:var(--chip);color:var(--ink);white-space:nowrap;border:1px solid transparent}
+.mpl-bt.pri{background:var(--ink);color:var(--bg)}
+.mpl-bt.bad{background:var(--pl-bad);color:#fff}
+.mpl-bt.off{background:rgba(var(--fg),.07);color:var(--ink-dim);border-color:var(--line)}
+.mpl-bt .ic{width:15px;height:15px}
+
+/* a playlist row on the desktop: the same collage · name · N songs at desktop scale */
+.mpl-dpl{display:flex;align-items:center;gap:11px;padding:7px 10px;border-radius:9px;color:var(--ink)}
+.mpl-dpl .col{width:40px;height:40px;border-radius:7px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;flex:none}
+.mpl-dpl .col i{display:block}
+.mpl-dpl .b{min-width:0}
+.mpl-dpl .t{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-dpl .s{font-size:11.5px;color:var(--ink-dim);margin-top:2px}
+.mpl-dpl.hot{background:rgba(var(--fg),.09)}
+.mpl-dnew{width:40px;height:40px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line-2);background:rgba(var(--fg),.04);color:var(--ink-soft)}
+.mpl-dnew .ic{width:18px;height:18px;stroke-width:2.2}
+.mpl-dnewbtn{display:flex;align-items:center;justify-content:center;gap:7px;height:38px;margin:6px 6px 2px;border-radius:9px;border:1px dashed var(--line-2);color:var(--ink);font-size:13px;font-weight:600}
+.mpl-dnewbtn .ic{width:15px;height:15px;stroke-width:2.2}
+.mpl-dsep{height:1px;background:var(--line);margin:5px 10px}
+
+/* the desktop name field */
+.mpl-dfld{display:flex;align-items:center;height:42px;border-radius:10px;background:rgba(var(--fg),.06);border:1px solid var(--line);padding:0 13px;font-size:14.5px}
+.mpl-dfld.on{border-color:var(--accent)}
+.mpl-dfld.err{border-color:var(--pl-bad)}
+.mpl-dfld .ph{color:var(--ink-dim)}
+.mpl-dfld .car{width:2px;height:20px;background:var(--accent);margin-left:1px;flex:none}
+.mpl-dfld .sel{background:color-mix(in oklch,var(--accent) 36%,transparent);border-radius:2px}
+.mpl-dlabel{font-size:11.5px;color:var(--ink-soft);margin:0 0 6px}
+.mpl-derr{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;font-weight:600;color:var(--pl-bad)}
+.mpl-derr .ic{width:14px;height:14px;stroke-width:2.2}
+
+/* the desktop detail header: title block, then Play · Shuffle · ⋯ */
+.mpl-dhead{display:flex;gap:22px;align-items:flex-end;margin:6px 0 22px}
+.mpl-dhead .art{width:168px;height:168px;border-radius:12px;flex:none;overflow:hidden}
+[data-skin="noir"] .mpl-dhead .art{border-radius:7px}
+/* a playlist's art is its four-tile collage, the same one the Playlists chip draws */
+.mpl-dhead .art.col{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.mpl-dhead .art.col i{display:block}
+.mpl-dhead .art.col.none{display:flex;align-items:center;justify-content:center;border:1px dashed var(--line-2);background:rgba(var(--fg),.04);color:var(--ink-dim)}
+.mpl-dhead .art.col.none .ic{width:40px;height:40px;stroke-width:1.6}
+.mpl-bt.off{background:rgba(var(--fg),.05);color:var(--ink-dim);border-color:var(--line)}
+.mpl-dhead .k{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.mpl-dhead h1{margin:8px 0 0;font-family:'Space Grotesk',sans-serif;font-size:38px;font-weight:700;letter-spacing:-.025em;line-height:1.05}
+.mpl-dhead .ml{font-size:12.5px;color:var(--ink-dim);margin-top:10px;display:flex;align-items:center;gap:8px}
+.mpl-dhead .btns{display:flex;gap:10px;margin-top:16px;position:relative}
+.mpl-dmb{width:38px;padding:0;flex:none}
+.mpl-dmb .ic{width:17px;height:17px}
+.mpl-dmb.hot{background:rgba(var(--fg),.2)}
+.mpl-dmenu{position:absolute;top:calc(100% + 8px);left:0;z-index:40;min-width:196px;padding:5px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:0 20px 48px rgba(0,0,0,.6)}
+.mpl-dmenu .mi{display:flex;align-items:center;gap:10px;min-height:34px;padding:0 10px;border-radius:8px;font-size:13.5px;color:var(--ink)}
+.mpl-dmenu .mi .ic{width:16px;height:16px;color:var(--ink-soft);flex:none}
+.mpl-dmenu .mi.bad,.mpl-dmenu .mi.bad .ic{color:var(--pl-bad)}
+.mpl-dmenu .mi.hot{background:rgba(var(--fg),.09)}
+.mpl-dmenu .sep{height:1px;background:var(--line);margin:4px 8px}
+
+/* the desktop track table in edit mode: a grip column in front, a × at the end on hover (E1) */
+.mpl-dtrk .hd,.mpl-dtrk .tr{display:grid;grid-template-columns:34px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) 60px 30px;gap:10px;align-items:center;padding:0 10px}
+.mpl-dtrk.edit .hd,.mpl-dtrk.edit .tr{grid-template-columns:30px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) 60px 30px}
+.mpl-dtrk .hd{font-size:11.5px;font-weight:700;color:var(--ink-dim);border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:6px}
+.mpl-dtrk .tr{height:40px;border-radius:8px;font-size:13px}
+.mpl-dtrk .tr .nr,.mpl-dtrk .tr .du{color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.mpl-dtrk .tr .du{text-align:right}
+.mpl-dtrk .tr .dm{color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-dtrk .tr .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.mpl-dtrk .tr .gp{color:var(--ink-dim);display:flex;align-items:center;justify-content:center}
+.mpl-dtrk .tr .gp .ic{width:16px;height:16px}
+.mpl-dtrk .tr .en{display:flex;align-items:center;justify-content:center;color:var(--ink-dim)}
+.mpl-dtrk .tr .en .ic{width:16px;height:16px;stroke-width:2.2}
+.mpl-dtrk .tr.hot{background:rgba(var(--fg),.08)}
+.mpl-dtrk .tr.hot .en{color:var(--ink)}
+.mpl-dtrk .tr.lift{background:var(--card-2);box-shadow:0 10px 26px rgba(0,0,0,.5)}
+.mpl-dgap{height:40px;border-radius:8px;background:rgba(var(--fg),.04);border:1px dashed var(--line-2)}
+
+/* the desktop queue panel (.qp / .qr) with Save as playlist beside Clear queue */
+.mpl-dq{position:absolute;right:10px;top:10px;bottom:86px;width:300px;z-index:12;border-radius:14px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:0 24px 60px rgba(0,0,0,.5);padding:0 12px;overflow:hidden}
+.mpl-dq h5{margin:14px 6px 8px;font-size:12px;color:var(--ink-dim);font-weight:700;display:flex;align-items:center;gap:8px}
+.mpl-dq h5 .acts{margin-left:auto;display:flex;gap:6px}
+.mpl-dqacts{display:flex;gap:6px;padding:0 6px 8px}
+.mpl-dqact{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:13px;background:rgba(var(--fg),.09);border:1px solid var(--line);color:var(--ink);font-size:11.5px;font-weight:600;white-space:nowrap}
+.mpl-dqact .ic{width:12px;height:12px}
+.mpl-dqr{display:flex;gap:10px;align-items:center;padding:6px;border-radius:8px}
+.mpl-dqr .c{width:38px;height:38px;border-radius:6px;flex:none}
+.mpl-dqr .b{min-width:0;flex:1}
+.mpl-dqr .t{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-dqr .s{font-size:11.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl-dqr .g{color:var(--ink-dim);display:flex}
+.mpl-dqr .g .ic{width:16px;height:16px}
+.mpl-dqr.now{background:color-mix(in oklch,var(--accent) 22%,transparent)}
+
+/* an annotation pin on a canvas frame (reused from the last round, .mpa-ann) */
+.mpl-pin{position:absolute;z-index:96;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#12141b;background:#ffd666;padding:3px 7px;border-radius:5px;white-space:nowrap}
+
+/* ---------------------------------------------------------------------------------------
+   NEW TOKENS THIS ROUND — the whole list, so a promotion knows what it is taking on.
+
+   --pl-bad   the destructive colour. Ravilo music has no error token of its own: the only
+              destructive surface it ships is the queue row's swipe panel, hard-coded #d64541 in
+              ravilo-music.css (.mu-qrow .rm). This round needs the same red in four places —
+              the swipe panel, Delete in the ⋯ menu, Delete in the confirm, and the name field's
+              error border — so it is named once rather than typed four times, and it is given a
+              per-skin value because #d64541 reads muddy against Noir's amber-on-near-black.
+              Promotion adds the token to ravilo-music.css and leaves .mu-qrow .rm pointing at it.
+
+   Nothing else is new. Every other number in this file is a production number restated, and the
+   header comment names the class each one came from.
+   --------------------------------------------------------------------------------------- */
+[data-skin="aurora"],:root{--pl-bad:#d64541}
+[data-skin="midnight"]{--pl-bad:#e2544e}
+[data-skin="noir"]{--pl-bad:#e2603f}
+
+/* ---------------------------------------------------------------------------------------
+   CANVAS furniture additions. The backdrop is light gray and every word on it is dark ink.
+   --------------------------------------------------------------------------------------- */
+.mpl-canvas{position:relative;background:#e9eaef;min-height:100vh}
+.stage{position:relative}
+.lbl .pl-lean{display:inline-block;margin-top:8px;font-size:.74rem;font-weight:700;font-family:'JetBrains Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:#0b7a52}
+.lbl .pl-alt{color:#4a4f5e}
