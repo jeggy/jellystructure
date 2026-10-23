@@ -132,7 +132,9 @@ wrapped at 360 dp and the Faroese pushed *Clear queue* off the edge (round, Q5).
 
 **FR-8 — The playlist page's ⋯, on a playlist of the viewer's own.** When `mine = true`, the playlist page's header
 (`MusicPlaylistScreen`, `MusicDetailScreens.kt`, phone and desktop) gains a ⋯ beside *Play* and *Shuffle*. It holds
-*Edit*, *Rename* and *Delete playlist*. A shared playlist (`mine = false`) has no ⋯ and stays exactly as today. An empty
+*Edit*, *Rename* and *Delete playlist*. A shared playlist (`mine = false`) has no ⋯. Beside its song count it shows a
+small **Shared with you** label (`music.pl_shared`), on the phone and the desktop (owner, 2026-10-23, card `979f4e34`;
+round frames `ph-pl-shared-badge`, `dk-pl-shared-badge`). Otherwise it stays as today. An empty
 playlist of the viewer's own shows the ⋯ with *Rename* and *Delete playlist* only, and its page reads *No songs yet*
 with the hint *Add songs from their ⋯ menu*. There, *Play* and *Shuffle* are shown **disabled** (round, Q2).
 
@@ -227,6 +229,7 @@ en · da · fo drafts:
 | `music.pl_failed` | Couldn't change the playlist | Kunne ikke ændre playlisten | Tað eydnaðist ikki at broyta spælilistan |
 | `music.pl_empty` | No songs yet | Ingen sange endnu | Eingi løg enn |
 | `music.pl_empty_hint` | Add songs from their ⋯ menu | Føj sange til fra deres ⋯-menu | Legg løg afturat úr ⋯-valmyndini hjá teimum |
+| `music.pl_shared` | Shared with you | Delt med dig | Deilt við teg |
 | `music.pl_none` | Playlists you make show up here. | Playlister, du laver, vises her. | Spælilistar, tú stovnar, síggjast her. |
 
 `action.cancel` and `action.save` are reused. The lexicon is regenerated, and the spelling fences
@@ -239,9 +242,9 @@ whatever the pictures show; a picture that contradicts one comes back here as a 
 
 The round is `design/incoming/2026-10-23-music-playlists/` (DEB-2278, `28faff79`): 81 frames, phone and desktop, in all
 three music skins, English with Danish and Faroese where they overrun. Its picks are written into FR-4, FR-7, FR-8 and
-FR-10 above. Its `--pl-bad` token, the destructive red, is the colour of FR-12's *Delete* and the edit-mode ×. Slice 2
-waits on the owner's answer about the album ⋯ on an album with editions (FR-6), where the ⋯ beside R373's two split
-buttons leaves no room on the phone.
+FR-10 above. Its `--pl-bad` token, the destructive red, is the colour of FR-12's *Delete* and the edit-mode ×. On an album with editions, the ⋯ beside R373's two split buttons leaves no room on the phone (`ph-album-editions`). On
+2026-10-23 the owner asked for options drawn to pick from (card `979f4e34`). A follow-up round draws them, and FR-6's
+placement on such an album waits for that pick. Slice 2 waits on it too.
 
 ## Acceptance
 
