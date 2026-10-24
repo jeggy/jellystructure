@@ -7,19 +7,33 @@ import dev.jellystructure.model.MusicArt
 import dev.jellystructure.music.MusicMediaService
 import dev.jellystructure.music.MusicStore
 import dev.jellystructure.music.MusicTvService
+import dev.jellystructure.music.PlaylistWrite
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.shared.tv.MusicFavoriteRequest
 import dev.jellystructure.shared.tv.MusicPlayRequest
+import dev.jellystructure.shared.tv.MusicPlaylistAdd
+import dev.jellystructure.shared.tv.MusicPlaylistCreate
+import dev.jellystructure.shared.tv.MusicPlaylistMove
+import dev.jellystructure.shared.tv.MusicPlaylistRename
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloArtworkService
 import dev.jellystructure.tv.tvToken
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
+
+/** DEB-2254 (FR-1, FR-13) — a refused playlist write is its status (401 · 403 · 400 · 404 · 502) and a code, never Jellyfin's words. */
+private suspend inline fun <reified T : Any> ApplicationCall.respondWrite(r: PlaylistWrite<T>) = when (r) {
+    is PlaylistWrite.Done -> if (r.value is Unit) respond(HttpStatusCode.NoContent) else respond(r.value)
+    is PlaylistWrite.Refused -> respond(r.why.status, mapOf("error" to r.why.name.lowercase()))
+}
 
 /**
  * Phase 279 — `/api/tv/music/…`, the phone's music. Device-token routes like every other `/api/tv/` path, each scoped
@@ -49,6 +63,31 @@ fun Route.musicTvRoutes(
 
     get("/tv/music/playlist/{id}") {
         call.respond(svc.playlist(call.attributes[DeviceKey], call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+    }
+
+    // DEB-2254 — playlists the viewer makes and changes. Each runs as the viewer (`tvTokenForClient`, 401 without one) on a
+    // playlist Jellyfin says they own (403 otherwise); see MusicTvService.
+    post("/tv/music/playlists") {
+        val req = call.receive<MusicPlaylistCreate>()
+        call.respondWrite(svc.createPlaylist(call.attributes[DeviceKey], req.name, req.itemIds))
+    }
+    put("/tv/music/playlist/{id}") {
+        val req = call.receive<MusicPlaylistRename>()
+        call.respondWrite(svc.renamePlaylist(call.attributes[DeviceKey], call.parameters["id"]!!, req.name))
+    }
+    delete("/tv/music/playlist/{id}") {
+        call.respondWrite(svc.deletePlaylist(call.attributes[DeviceKey], call.parameters["id"]!!))
+    }
+    post("/tv/music/playlist/{id}/items") {
+        val req = call.receive<MusicPlaylistAdd>()
+        call.respondWrite(svc.addToPlaylist(call.attributes[DeviceKey], call.parameters["id"]!!, req.itemIds))
+    }
+    delete("/tv/music/playlist/{id}/items/{entry_id}") {
+        call.respondWrite(svc.removeFromPlaylist(call.attributes[DeviceKey], call.parameters["id"]!!, call.parameters["entry_id"]!!))
+    }
+    post("/tv/music/playlist/{id}/move") {
+        val req = call.receive<MusicPlaylistMove>()
+        call.respondWrite(svc.movePlaylistEntry(call.attributes[DeviceKey], call.parameters["id"]!!, req.entryId, req.to))
     }
     get("/tv/music/album/{id}") {
         call.respond(svc.album(call.attributes[DeviceKey], call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))

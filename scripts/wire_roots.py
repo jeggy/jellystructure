@@ -13,6 +13,8 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     # Phase 279 — the phone's music
     'MusicAlbumDetail', 'MusicArtistDetail', 'MusicGenreCount', 'MusicHome', 'MusicLastPlayed', 'MusicList',
     'MusicPlaylist', 'MusicSearch', 'TrackLyrics',
+    # DEB-2254 — playlists you make and change
+    'MusicPlaylistAdded',
     # R373 — the other copies of a song (Also on)
     'MusicTrackCopies',
     # Phase 281 — the phone's audiobooks
@@ -30,6 +32,7 @@ REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvT
     'PlaybackStopRequest', 'PlayedRequest', 'RemoteCommandRequest', 'RemotePairRequest', 'RemotePlayRequest',
     'ScreenClaimRequest', 'ScreenCodeRequest', 'ScreenStatus', 'SeededBrowseRequest', 'TvLoginRequest',
     'ViewerSettingsRequest', 'MusicPlayRequest', 'MusicFavoriteRequest',
+    'MusicPlaylistCreate', 'MusicPlaylistAdd', 'MusicPlaylistMove', 'MusicPlaylistRename',
     'AudiobookProgressRequest', 'AudiobookSpeedRequest', 'AudiobookFinishedRequest', 'AudiobookBookmarkRequest',
     'SessionCommandRequest', 'SessionQueueReport', 'SessionStartRequest', 'SessionMembersReport', 'CastHandoffRequest', 'SessionMoveRequest',
     'SupportPostRequest', 'SupportReadRequest']

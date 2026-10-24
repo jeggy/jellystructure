@@ -67,6 +67,9 @@ data class MusicTrackItem(
     /** R373 (FR-R373-4) — how many other releases this viewer may open hold the same song (*Also on 3 releases*);
      *  the rows themselves come from `GET /tv/music/track/{id}/copies` on a tap. */
     @SerialName("also_on") val alsoOn: Int = 0,
+    /** DEB-2254 (FR-9) — filled only in a playlist's own answers: the entry's id in that playlist, which *Remove* and
+     *  *Move* take. Null everywhere else, and from an old server. */
+    @SerialName("entry_id") val entryId: String? = null,
 )
 
 /** R373 (FR-R373-4) — one other copy of a song: the track and the release it sits on. */
@@ -131,6 +134,8 @@ data class MusicList(
     val total: Int = 0,
     val page: Int = 0,
     @SerialName("page_size") val pageSize: Int = 0,
+    /** DEB-2254 (FR-2) — on a playlist's page: the viewer owns it, so may change it. False elsewhere and from an old server. */
+    val mine: Boolean = false,
 )
 
 @Serializable
@@ -143,7 +148,29 @@ data class MusicPlaylist(
     @SerialName("track_count") val trackCount: Int = 0,
     /** Up to four album covers from the start of the playlist. */
     val covers: List<String> = emptyList(),
+    /** DEB-2254 (FR-2) — the viewer owns it, so may change it; a playlist shared with them reads false. False from an old server. */
+    val mine: Boolean = false,
 )
+
+/** DEB-2254 (FR-3) — `POST /tv/music/playlists`: the songs go in with it, de-duplicated (FR-5). */
+@Serializable
+data class MusicPlaylistCreate(val name: String, @SerialName("item_ids") val itemIds: List<String> = emptyList())
+
+/** DEB-2254 (FR-4) — `POST /tv/music/playlist/{id}/items`. */
+@Serializable
+data class MusicPlaylistAdd(@SerialName("item_ids") val itemIds: List<String>)
+
+/** DEB-2254 (FR-5) — what went in, and what was left out because the playlist already held the song (or a copy of it). */
+@Serializable
+data class MusicPlaylistAdded(val added: Int, val already: Int)
+
+/** DEB-2254 (FR-10) — `POST /tv/music/playlist/{id}/move`: [to] is the 0-based index in the list as shown. */
+@Serializable
+data class MusicPlaylistMove(@SerialName("entry_id") val entryId: String, val to: Int)
+
+/** DEB-2254 (FR-11) — `PUT /tv/music/playlist/{id}`. */
+@Serializable
+data class MusicPlaylistRename(val name: String)
 
 @Serializable
 data class MusicAlbumDetail(

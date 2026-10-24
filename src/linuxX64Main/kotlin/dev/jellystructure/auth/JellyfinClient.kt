@@ -1454,6 +1454,71 @@ class JellyfinClient {
             .bodyOrNull<JellyfinAudioUserItems>("getPlaylistEntries")?.items
     }.getOrNull()
 
+    // ── DEB-2279: a viewer's playlist writes. Every call takes the VIEWER's token (callers pass `tvTokenForClient`, never
+    //    the server key), so Jellyfin's own owner / CanEdit rules are what let a write through. ──
+
+    private suspend fun statusOf(what: String, block: suspend () -> HttpResponse): Int? = try {
+        block().status.value
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger.warn("Jellyfin $what failed: ${e.message}")
+        null
+    }
+
+    /** FR-2 — `GET /Playlists/{id}/Users`: 200 means [userToken] is the playlist's owner, 403 means it is not. The status,
+     *  or null when Jellyfin did not answer. */
+    suspend fun playlistOwnerStatus(baseUrl: String, userToken: String, playlistId: String): Int? =
+        statusOf("playlistOwnerStatus") { httpGet(baseUrl.trimEnd('/') + "/Playlists/${playlistId.encodeURLParameter()}/Users") { jellyfinAuth(userToken) } }
+
+    /** FR-3 — `POST /Playlists`. The new playlist's id, or null on any failure. */
+    suspend fun createPlaylist(baseUrl: String, userToken: String, userId: String, name: String, ids: List<String>): String? = try {
+        val body = """{"Name":${name.jsonEscape()},"Ids":[${ids.joinToString(",") { it.jsonEscape() }}],"UserId":${userId.jsonEscape()},"MediaType":"Audio"}"""
+        val r = httpPost(baseUrl.trimEnd('/') + "/Playlists") { jellyfinAuth(userToken); contentType(ContentType.Application.Json); setBody(body) }
+        if (r.status.isSuccess()) r.bodyOrNull<JellyfinPlaylistCreated>("createPlaylist")?.id?.takeIf { it.isNotBlank() } else null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger.warn("Jellyfin createPlaylist failed: ${e.message}")
+        null
+    }
+
+    /** FR-11 — `POST /Playlists/{id}` with `Name` only. */
+    suspend fun renamePlaylist(baseUrl: String, userToken: String, playlistId: String, name: String): Boolean =
+        statusOf("renamePlaylist") {
+            httpPost(baseUrl.trimEnd('/') + "/Playlists/${playlistId.encodeURLParameter()}") {
+                jellyfinAuth(userToken); contentType(ContentType.Application.Json); setBody("""{"Name":${name.jsonEscape()}}""")
+            }
+        } in 200..299
+
+    /** FR-5 — `POST /Playlists/{id}/Items?ids=`, appended with no de-duplication (the caller has done it). Sent in
+     *  batches so a long queue never makes a request line Jellyfin refuses. False when any batch failed. */
+    suspend fun addToPlaylist(baseUrl: String, userToken: String, userId: String, playlistId: String, ids: List<String>): Boolean {
+        for (batch in ids.chunked(PLAYLIST_ADD_BATCH)) {
+            val status = statusOf("addToPlaylist") {
+                httpPost(baseUrl.trimEnd('/') + "/Playlists/${playlistId.encodeURLParameter()}/Items?userId=${userId.encodeURLParameter()}&ids=${batch.joinToString(",") { it.encodeURLParameter() }}") { jellyfinAuth(userToken) }
+            }
+            if (status !in 200..299) return false
+        }
+        return true
+    }
+
+    /** FR-9 — `DELETE /Playlists/{id}/Items?entryIds=`. */
+    suspend fun removeFromPlaylist(baseUrl: String, userToken: String, playlistId: String, entryId: String): Boolean =
+        statusOf("removeFromPlaylist") {
+            httpDelete(baseUrl.trimEnd('/') + "/Playlists/${playlistId.encodeURLParameter()}/Items?entryIds=${entryId.encodeURLParameter()}") { jellyfinAuth(userToken) }
+        } in 200..299
+
+    /** FR-10 — `POST /Playlists/{id}/Items/{entryId}/Move/{newIndex}`. */
+    suspend fun movePlaylistEntry(baseUrl: String, userToken: String, playlistId: String, entryId: String, newIndex: Int): Boolean =
+        statusOf("movePlaylistEntry") {
+            httpPost(baseUrl.trimEnd('/') + "/Playlists/${playlistId.encodeURLParameter()}/Items/${entryId.encodeURLParameter()}/Move/$newIndex") { jellyfinAuth(userToken) }
+        } in 200..299
+
+    /** FR-12 — `DELETE /Items/{id}`: Jellyfin lets the playlist's owner (or an administrator) delete it. */
+    suspend fun deleteItem(baseUrl: String, userToken: String, itemId: String): Boolean =
+        statusOf("deleteItem") { httpDelete(baseUrl.trimEnd('/') + "/Items/${itemId.encodeURLParameter()}") { jellyfinAuth(userToken) } } in 200..299
+
     suspend fun markFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/UserFavoriteItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)
@@ -1795,6 +1860,9 @@ data class JellyfinDeviceIdentity(
 
 /** What Jellyfin is told when a Ravilo client signs in without saying which build it is. */
 internal const val UNKNOWN_CLIENT_VERSION = "0.0.0"
+
+/** DEB-2279 — ids per `POST /Playlists/{id}/Items`: 100 × 32 hex stays far under Kestrel's 8 KB request line. */
+private const val PLAYLIST_ADD_BATCH = 100
 
 /**
  * Phase 310 (dev review item 6) — the body of Jellyfin's `POST /Sessions/Playing`. Jellyfin's `PlaybackStartInfo`

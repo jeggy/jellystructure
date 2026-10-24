@@ -23,6 +23,7 @@ import dev.jellystructure.shared.tv.MusicHome
 import dev.jellystructure.shared.tv.MusicLastPlayed
 import dev.jellystructure.shared.tv.MusicList
 import dev.jellystructure.shared.tv.MusicPlaylist
+import dev.jellystructure.shared.tv.MusicPlaylistAdded
 import dev.jellystructure.shared.tv.MusicRow
 import dev.jellystructure.shared.tv.MusicSearch
 import dev.jellystructure.shared.tv.MusicSelection
@@ -35,9 +36,28 @@ import dev.jellystructure.shared.tv.MusicVersionType
 import dev.jellystructure.shared.tv.MusicVideoCard
 import dev.jellystructure.shared.tv.TrackLyrics
 import dev.jellystructure.tv.tvToken
+import dev.jellystructure.tv.tvTokenForClient
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.encodeURLPathPart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/** DEB-2254 (FR-1, FR-13) — why a playlist write changed nothing, and the status the route answers it with. */
+enum class PlaylistRefusal(val status: HttpStatusCode) {
+    /** `tvTokenForClient` gave no token: the paired token is rejected. The server key is never used instead. */
+    UNAUTHORIZED(HttpStatusCode.Unauthorized),
+    /** The viewer does not own the playlist. */
+    NOT_OWNER(HttpStatusCode.Forbidden),
+    BAD_REQUEST(HttpStatusCode.BadRequest),
+    NOT_FOUND(HttpStatusCode.NotFound),
+    /** Jellyfin did not do it. */
+    FAILED(HttpStatusCode.BadGateway),
+}
+
+sealed class PlaylistWrite<out T> {
+    class Done<out T>(val value: T) : PlaylistWrite<T>()
+    class Refused(val why: PlaylistRefusal) : PlaylistWrite<Nothing>()
+}
 
 /**
  * Phase 279 — the phone's music, read from 275's rows and scoped to the viewer (275 FR-275-4: a library the viewer
@@ -59,6 +79,10 @@ class MusicTvService(
         const val PAGE_SIZE = 60
         /** FR-279-2 / open question 1 — below this a mix is the whole library over again (measured: 60 tracks). */
         private const val USER_TTL_MS = 30_000L
+        /** DEB-2254 (FR-3) — the longest name Jellyfin is given for a playlist. */
+        private const val PLAYLIST_NAME_MAX = 100
+        /** DEB-2254 (FR-5) — entries read to de-duplicate against, and to place a move. */
+        private const val PLAYLIST_ENTRY_LIMIT = 20_000
         private val SELECTION_SCOPES = setOf("library", "artists", "albums", "tracks", "genre", "search")
         private val GROUP_ORDER = listOf("album", "single", "compilation", "live", "soundtrack")
 
@@ -157,7 +181,10 @@ class MusicTvService(
         return u
     }
 
-    suspend fun forget(device: DeviceData) = userLock.withLock { userCache.remove(device.jellyfinUserId) }
+    /** DEB-2254 (FR-2) — per viewer, which playlists they own (definitive answers only), under the same clock and the same [forget]. */
+    private val ownerCache = HashMap<String, Pair<Long, HashMap<String, Boolean>>>()
+
+    suspend fun forget(device: DeviceData) = userLock.withLock { userCache.remove(device.jellyfinUserId); ownerCache.remove(device.jellyfinUserId) }
 
     // ── builders ──
 
@@ -319,16 +346,34 @@ class MusicTvService(
         return counts.map { MusicGenreCount(it.key, it.value) }.sortedWith(compareByDescending<MusicGenreCount> { it.albumCount }.thenBy { it.name.lowercase() })
     }
 
+    private fun coversOf(v: View, albumIds: Sequence<String?>): List<String> =
+        albumIds.mapNotNull { a -> a?.let { v.albums[it] }?.let { albumImage(it) } }.distinct().take(4).toList()
+
+    /** FR-2 — does [token]'s user own playlist [id]? Asked of Jellyfin once per [USER_TTL_MS]; a failed ask is `false`, uncached. */
+    private suspend fun isMine(device: DeviceData, base: String, token: String?, id: String): Boolean {
+        if (token == null) return false
+        val now = dev.jellystructure.nowEpochSec() * 1000
+        userLock.withLock { ownerCache[device.jellyfinUserId]?.let { (at, m) -> if (now - at < USER_TTL_MS) m[id]?.let { return it } } }
+        val status = jellyfin.playlistOwnerStatus(base, token, id)
+        if (status != 200 && status != 403) return false
+        val mine = status == 200
+        userLock.withLock {
+            val entry = ownerCache[device.jellyfinUserId]?.takeIf { now - it.first < USER_TTL_MS } ?: (now to HashMap<String, Boolean>()).also { ownerCache[device.jellyfinUserId] = it }
+            entry.second[id] = mine
+        }
+        return mine
+    }
+
     suspend fun playlists(device: DeviceData): List<MusicPlaylist> {
         val v = View(device)
         val cfg = configStore.current
         val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return emptyList()
         val token = jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken)
+        val ownToken = jellyfin.tvTokenForClient(base, device)
         return jellyfin.getMusicPlaylists(base, token, device.jellyfinUserId).orEmpty().map { p ->
-            val covers = jellyfin.getPlaylistEntries(base, token, device.jellyfinUserId, p.id).orEmpty()
-                .mapNotNull { e -> (e.albumId ?: v.tracks[e.id]?.albumId)?.let { v.albums[it] }?.let { albumImage(it) } }.distinct().take(4)
-            MusicPlaylist(p.id, p.name, p.childCount ?: 0, covers)
+            val covers = coversOf(v, jellyfin.getPlaylistEntries(base, token, device.jellyfinUserId, p.id).orEmpty().asSequence().map { e -> e.albumId ?: v.tracks[e.id]?.albumId })
+            MusicPlaylist(p.id, p.name, p.childCount ?: 0, covers, mine = isMine(device, base, ownToken, p.id))
         }
     }
 
@@ -340,8 +385,123 @@ class MusicTvService(
         if (base.isBlank()) return null
         val entries = jellyfin.getPlaylistEntries(base, jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken), device.jellyfinUserId, id, limit = 1000) ?: return null
         val u = userMusic(device)
-        val tracks = entries.mapNotNull { v.tracks[it.id] }
-        return MusicList(tracks = tracks.map { trackItem(v, it, u) }, total = tracks.size, pageSize = tracks.size)
+        val shown = entries.mapNotNull { e -> v.tracks[e.id]?.let { e to it } }
+        // DEB-2254 (FR-9) — each row carries its entry's id in this playlist.
+        return MusicList(
+            tracks = shown.map { (e, t) -> trackItem(v, t, u).copy(entryId = e.playlistItemId) }, total = shown.size, pageSize = shown.size,
+            mine = isMine(device, base, jellyfin.tvTokenForClient(base, device), id),
+        )
+    }
+
+    // ── DEB-2254: playlists the viewer makes and changes. Every write is the viewer's own (FR-1): `tvTokenForClient`,
+    //    never `tvToken` (which falls back to the server key and would blind Jellyfin's owner check), on a playlist
+    //    Jellyfin says they own, and `forget(device)` after, so the next read is fresh. ──
+
+    private suspend fun <T> asViewer(device: DeviceData, block: suspend (base: String, token: String) -> PlaylistWrite<T>): PlaylistWrite<T> {
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        if (base.isBlank()) return PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        val token = jellyfin.tvTokenForClient(base, device) ?: return PlaylistWrite.Refused(PlaylistRefusal.UNAUTHORIZED)
+        return block(base, token)
+    }
+
+    /** FR-1 step 2 — null when the viewer owns [id]; otherwise why not. Always asked fresh: a write never leans on [ownerCache]. */
+    private suspend fun notOwner(base: String, token: String, id: String): PlaylistRefusal? = when (jellyfin.playlistOwnerStatus(base, token, id)) {
+        in 200..299 -> null
+        401 -> PlaylistRefusal.UNAUTHORIZED
+        403 -> PlaylistRefusal.NOT_OWNER
+        404 -> PlaylistRefusal.NOT_FOUND
+        else -> PlaylistRefusal.FAILED
+    }
+
+    private fun cleanName(name: String): String? = name.trim().takeIf { it.isNotEmpty() && it.length <= PLAYLIST_NAME_MAX }
+
+    /** FR-5 — [ids] less what [held] already has, less repeats inside [ids] (the first stays). "Has" is by song: a held
+     *  entry stands for every copy of its song this viewer may open (R373's fold), so a different copy is not added. */
+    private fun dedupe(v: View, ids: List<String>, held: Collection<String>): Pair<List<String>, Int> {
+        fun song(id: String) = v.tracks[id]?.let { v.shown(it).id } ?: id
+        val seen = held.mapTo(HashSet()) { song(it) }
+        val keep = ids.filter { seen.add(song(it)) }
+        return keep to ids.size - keep.size
+    }
+
+    /** FR-3 */
+    suspend fun createPlaylist(device: DeviceData, name: String, itemIds: List<String>): PlaylistWrite<MusicPlaylist> = asViewer(device) { base, token ->
+        val clean = cleanName(name) ?: return@asViewer PlaylistWrite.Refused(PlaylistRefusal.BAD_REQUEST)
+        val v = View(device)
+        if (itemIds.any { it !in v.tracks }) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.BAD_REQUEST)
+        val (ids, _) = dedupe(v, itemIds, emptyList())
+        val id = jellyfin.createPlaylist(base, token, device.jellyfinUserId, clean, ids) ?: return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        forget(device)
+        PlaylistWrite.Done(MusicPlaylist(id, clean, ids.size, coversOf(v, ids.asSequence().map { v.tracks[it]?.albumId }), mine = true))
+    }
+
+    /** FR-4 / FR-5 */
+    suspend fun addToPlaylist(device: DeviceData, playlistId: String, itemIds: List<String>): PlaylistWrite<MusicPlaylistAdded> = asViewer(device) { base, token ->
+        notOwner(base, token, playlistId)?.let { return@asViewer PlaylistWrite.Refused(it) }
+        val v = View(device)
+        if (itemIds.any { it !in v.tracks }) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.BAD_REQUEST)
+        val held = jellyfin.getPlaylistEntries(base, token, device.jellyfinUserId, playlistId, limit = PLAYLIST_ENTRY_LIMIT)
+            ?: return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        val (ids, already) = dedupe(v, itemIds, held.map { it.id })
+        // Nothing left: no Jellyfin call.
+        if (ids.isEmpty()) return@asViewer PlaylistWrite.Done(MusicPlaylistAdded(0, already))
+        val ok = jellyfin.addToPlaylist(base, token, device.jellyfinUserId, playlistId, ids)
+        forget(device)
+        if (!ok) PlaylistWrite.Refused(PlaylistRefusal.FAILED) else PlaylistWrite.Done(MusicPlaylistAdded(ids.size, already))
+    }
+
+    /** FR-9 — the playlist as it now stands. */
+    suspend fun removeFromPlaylist(device: DeviceData, playlistId: String, entryId: String): PlaylistWrite<MusicList> = asViewer(device) { base, token ->
+        notOwner(base, token, playlistId)?.let { return@asViewer PlaylistWrite.Refused(it) }
+        val entries = jellyfin.getPlaylistEntries(base, token, device.jellyfinUserId, playlistId, limit = PLAYLIST_ENTRY_LIMIT)
+            ?: return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        if (entries.none { it.playlistItemId == entryId }) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.NOT_FOUND)
+        val ok = jellyfin.removeFromPlaylist(base, token, playlistId, entryId)
+        forget(device)
+        if (!ok) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        playlist(device, playlistId)?.let { PlaylistWrite.Done(it) } ?: PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+    }
+
+    /**
+     * FR-10 — [to] is the index in the list as the viewer sees it (songs they may not open are not in it), with the
+     * moved row where it was dropped. Jellyfin counts every entry, so [to] is translated: the row goes in front of the
+     * shown row now at [to] (the list without the moved row), or after the last shown row when [to] is past the end.
+     */
+    suspend fun movePlaylistEntry(device: DeviceData, playlistId: String, entryId: String, to: Int): PlaylistWrite<MusicList> = asViewer(device) { base, token ->
+        notOwner(base, token, playlistId)?.let { return@asViewer PlaylistWrite.Refused(it) }
+        if (to < 0) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.BAD_REQUEST)
+        val entries = jellyfin.getPlaylistEntries(base, token, device.jellyfinUserId, playlistId, limit = PLAYLIST_ENTRY_LIMIT)
+            ?: return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        if (entries.none { it.playlistItemId == entryId }) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.NOT_FOUND)
+        val v = View(device)
+        val rest = entries.filter { it.playlistItemId != entryId }
+        val shown = rest.filter { it.id in v.tracks }
+        val index = if (to < shown.size) rest.indexOfFirst { it === shown[to] } else shown.lastOrNull()?.let { last -> rest.indexOfFirst { it === last } + 1 } ?: rest.size
+        val ok = jellyfin.movePlaylistEntry(base, token, playlistId, entryId, index)
+        forget(device)
+        if (!ok) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        playlist(device, playlistId)?.let { PlaylistWrite.Done(it) } ?: PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+    }
+
+    /** FR-11 */
+    suspend fun renamePlaylist(device: DeviceData, playlistId: String, name: String): PlaylistWrite<MusicPlaylist> = asViewer(device) { base, token ->
+        notOwner(base, token, playlistId)?.let { return@asViewer PlaylistWrite.Refused(it) }
+        val clean = cleanName(name) ?: return@asViewer PlaylistWrite.Refused(PlaylistRefusal.BAD_REQUEST)
+        val ok = jellyfin.renamePlaylist(base, token, playlistId, clean)
+        forget(device)
+        if (!ok) return@asViewer PlaylistWrite.Refused(PlaylistRefusal.FAILED)
+        val v = View(device)
+        val entries = jellyfin.getPlaylistEntries(base, token, device.jellyfinUserId, playlistId).orEmpty()
+        val count = jellyfin.getMusicPlaylists(base, token, device.jellyfinUserId)?.firstOrNull { it.id == playlistId }?.childCount ?: entries.size
+        PlaylistWrite.Done(MusicPlaylist(playlistId, clean, count, coversOf(v, entries.asSequence().map { e -> e.albumId ?: v.tracks[e.id]?.albumId }), mine = true))
+    }
+
+    /** FR-12 */
+    suspend fun deletePlaylist(device: DeviceData, playlistId: String): PlaylistWrite<Unit> = asViewer(device) { base, token ->
+        notOwner(base, token, playlistId)?.let { return@asViewer PlaylistWrite.Refused(it) }
+        val ok = jellyfin.deleteItem(base, token, playlistId)
+        forget(device)
+        if (ok) PlaylistWrite.Done(Unit) else PlaylistWrite.Refused(PlaylistRefusal.FAILED)
     }
 
     // ── FR-279-4 ──

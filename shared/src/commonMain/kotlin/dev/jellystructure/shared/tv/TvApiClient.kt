@@ -463,6 +463,60 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    // ─── DEB-2254 — playlists you make and change. A 401 / 403 / 400 / 404 / 502 throws TvApiError.Http. ───
+
+    /** FR-3 — a new playlist holding [itemIds] (de-duplicated by the server); the answer has `mine = true`. */
+    suspend fun createMusicPlaylist(name: String, itemIds: List<String> = emptyList()): MusicPlaylist {
+        val r = client.post("$baseUrl/api/tv/music/playlists") {
+            auth()
+            jsonBody(json.encodeToString(MusicPlaylistCreate(name, itemIds)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** FR-4 / FR-5 — add songs to a playlist the viewer owns; `already` counts what it held. */
+    suspend fun addToMusicPlaylist(id: String, itemIds: List<String>): MusicPlaylistAdded {
+        val r = client.post("$baseUrl/api/tv/music/playlist/${id.encodeURLPathPart()}/items") {
+            auth()
+            jsonBody(json.encodeToString(MusicPlaylistAdd(itemIds)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** FR-9 — remove one entry ([MusicTrackItem.entryId]); the answer is the playlist as it now stands. */
+    suspend fun removeFromMusicPlaylist(id: String, entryId: String): MusicList {
+        val r = client.delete("$baseUrl/api/tv/music/playlist/${id.encodeURLPathPart()}/items/${entryId.encodeURLPathPart()}") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** FR-10 — move an entry to index [to] of the list as shown; the answer is the playlist as it now stands. */
+    suspend fun moveInMusicPlaylist(id: String, entryId: String, to: Int): MusicList {
+        val r = client.post("$baseUrl/api/tv/music/playlist/${id.encodeURLPathPart()}/move") {
+            auth()
+            jsonBody(json.encodeToString(MusicPlaylistMove(entryId, to)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** FR-11 */
+    suspend fun renameMusicPlaylist(id: String, name: String): MusicPlaylist {
+        val r = client.put("$baseUrl/api/tv/music/playlist/${id.encodeURLPathPart()}") {
+            auth()
+            jsonBody(json.encodeToString(MusicPlaylistRename(name)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** FR-12 */
+    suspend fun deleteMusicPlaylist(id: String) {
+        client.delete("$baseUrl/api/tv/music/playlist/${id.encodeURLPathPart()}") { auth() }.assertSuccess()
+    }
+
     suspend fun getMusicAlbum(id: String): MusicAlbumDetail {
         val r = client.get("$baseUrl/api/tv/music/album/$id") { auth() }
         r.assertSuccess()

@@ -633,6 +633,8 @@ data class JellyfinAudioUserItem(
     @SerialName("Type") val type: String = "",
     @SerialName("AlbumId") val albumId: String? = null,
     @SerialName("UserData") val userData: JellyfinUserData? = null,
+    /** DEB-2279 (FR-9) — on a playlist's entries only: the id `entryIds` and `Move` take. Absent everywhere else. */
+    @SerialName("PlaylistItemId") val playlistItemId: String? = null,
 )
 
 @Serializable
@@ -655,6 +657,10 @@ data class JellyfinPlaylistItem(
 
 @Serializable
 data class JellyfinPlaylistItems(@SerialName("Items") val items: List<JellyfinPlaylistItem> = emptyList())
+
+/** DEB-2279 (FR-3) — `POST /Playlists` answers the new playlist's id. */
+@Serializable
+data class JellyfinPlaylistCreated(@SerialName("Id") val id: String = "")
 
 /** Phase 280 — a person on an item (Jellyfin maps a file's composer tag to `Composer`; a narrator is one). */
 @Serializable

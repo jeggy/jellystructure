@@ -68,6 +68,7 @@ bonus
 brasil
 bretland
 broyt
+broyta
 brúk
 brúka
 brúkara
@@ -98,6 +99,7 @@ dagført
 danmark
 daylight
 deil
+deilt
 demo
 des
 desember
@@ -137,6 +139,7 @@ ep
 er
 ert
 eru
+eydnaðist
 eygnabragð
 eyka
 far
@@ -198,12 +201,14 @@ fór
 føroyar
 gekk
 gera
+gerast
 gev
 gjár
 gjørligt
 gloymir
 gongd
 goym
+goymd
 goymir
 goymt
 graphite
@@ -237,6 +242,7 @@ higar
 hini
 hjá
 hon
+honum
 hoyrist
 hvar
 hvat
@@ -357,6 +363,7 @@ líka
 líkt
 lítil
 løg
+løgd
 løtu
 lýsing
 mac
@@ -558,6 +565,8 @@ spæla
 spælaranum
 spæld
 spælilista
+spælilistan
+spælilistanum
 spælilistar
 spælilisti
 spæling
@@ -574,7 +583,11 @@ steðgaði
 stig
 stillingar
 stongt
+stovna
+stovnar
+stovnaður
 strika
+strikaður
 studio
 stytt
 stór
@@ -594,6 +607,7 @@ sæð
 sí
 síggj
 síggja
+síggjast
 síða
 síðan
 síðu
@@ -716,6 +730,7 @@ ymsum
 ætlan
 í
 ísland
+ógjørt
 ótengt
 øll
 øllum

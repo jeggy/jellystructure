@@ -106,6 +106,7 @@ de
 dec
 december
 del
+delt
 dem
 demo
 den
@@ -175,6 +176,7 @@ forlod
 forrige
 forskellige
 forslag
+fortrydes
 fortsæt
 fortsætte
 fortæller
@@ -193,6 +195,7 @@ får
 færdig
 færøerne
 føj
+føjede
 føjes
 føjet
 følg
@@ -205,6 +208,7 @@ gem
 gemmer
 gemmes
 gemt
+gemte
 generelt
 genindlæs
 gennemse
@@ -311,6 +315,7 @@ lad
 land
 lange
 langsom
+laver
 laveste
 ledige
 lige
@@ -410,6 +415,7 @@ ok
 okt
 oktober
 om
+omdøb
 omkring
 ons
 onsdag
@@ -417,6 +423,8 @@ op
 opdag
 opdateret
 oplyser
+opret
+oprettede
 opsamling
 opsamlinger
 optaget
@@ -430,6 +438,7 @@ pauser
 pauset
 planlagt
 playliste
+playlisten
 playlister
 pr
 premiere
@@ -441,6 +450,7 @@ prøv
 prøver
 på
 ravilo
+rediger
 remix
 replikker
 resultat
@@ -510,6 +520,8 @@ skærm
 skærmen
 skærmtekst
 sleep
+slet
+slettede
 slut
 slutning
 slå
@@ -646,4 +658,5 @@ være
 år
 årti
 ældste
+ændre
 øjeblik
