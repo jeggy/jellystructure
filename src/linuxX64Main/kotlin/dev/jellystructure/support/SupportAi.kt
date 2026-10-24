@@ -297,11 +297,42 @@ object SupportAi {
     fun nameKeys(names: Iterable<String?>): Set<String> =
         names.mapNotNull { n -> n?.let(::words)?.takeIf { w -> w.count { it.isLetter() } >= MIN_NAME_LETTERS } }.toSet()
 
-    /** Whether [text] contains any of [keys] as whole words. */
+    /**
+     * Whether [text] names any of [keys] (DEB-2306, FR-3 part 2 as amended). A key of two or more words matches as whole words
+     * anywhere. A key of one word matches only where it is written as a title: see [titledWords].
+     */
     fun namesATitle(text: String, keys: Set<String>): Boolean {
         if (keys.isEmpty()) return false
         val padded = " ${words(text)} "
-        return keys.any { padded.contains(" $it ") }
+        val titled by lazy(LazyThreadSafetyMode.NONE) { titledWords(fold(text)) }
+        return keys.any { if (' ' in it) padded.contains(" $it ") else it in titled }
+    }
+
+    /**
+     * The words of [folded] (already [fold]ed, punctuation kept) written as a title: followed by `(yyyy)` with at most one space
+     * between, or the whole of an italic span, `*word*` or `_word_`. A marker is a run of exactly one `*`/`_`, so bold and bold
+     * italic do not count, and none touches a letter or digit outside the span. Quotes are not markers: a how-to writes the
+     * app's own labels in them.
+     */
+    private fun titledWords(folded: String): Set<String> {
+        val found = HashSet<String>()
+        var i = 0
+        while (i < folded.length) {
+            if (!folded[i].isLetterOrDigit()) { i++; continue }
+            val start = i
+            while (i < folded.length && folded[i].isLetterOrDigit()) i++
+            val word = folded.substring(start, i)
+            val y = if (i < folded.length && folded[i] == ' ') i + 1 else i
+            if (y + 6 <= folded.length && folded[y] == '(' && folded[y + 5] == ')' && (1..4).all { folded[y + it] in '0'..'9' }) found += word
+            val marker = folded.getOrNull(start - 1)
+            if ((marker == '*' || marker == '_') && folded.getOrNull(i) == marker) {
+                val before = folded.getOrNull(start - 2)
+                val after = folded.getOrNull(i + 1)
+                if ((before == null || !(before.isLetterOrDigit() || before == '*' || before == '_')) &&
+                    (after == null || !(after.isLetterOrDigit() || after == '*' || after == '_'))) found += word
+            }
+        }
+        return found
     }
 
     /**

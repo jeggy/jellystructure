@@ -229,6 +229,87 @@ class SupportSuggestionsTest {
         assertFalse(SupportAi.namesATitle("anything", emptySet()))
     }
 
+    // ── DEB-2306 (FR-3 part 2 as amended) — a one-word title counts only when it is written as a title ────────────────
+
+    private val oneWordKeys = SupportAi.nameKeys(listOf("Thereafter", "Settings", "The Copper Orchard"))
+    private fun names(text: String) = SupportAi.namesATitle(text, oneWordKeys)
+    private fun rule7(reply: String) = SupportAi.rule7(reply, emptySet(), oneWordKeys) { true }
+
+    @Test fun aOneWordTitleInProseOrAtASentenceStartDoesNotMatch() {
+        assertFalse(names("Thereafter, open the player's menu and choose Subtitles."))
+        assertFalse(names("Open the menu and thereafter it stays on."))
+        assertFalse(names("THEREAFTER it stays on."))
+    }
+
+    @Test fun aOneWordLabelInQuotesOrBoldDoesNotMatch() {
+        assertFalse(names("Tap \"Settings\""))
+        assertFalse(names("Tap **Settings**"))
+        assertFalse(names("Tap __Settings__"))
+        assertFalse(names("Tap ***Settings***"))
+        assertFalse(names("tryk på »Settings«"))
+        assertFalse(names("trýst á „Settings“"))
+    }
+
+    @Test fun aOneWordTitleWithAYearInParenthesesMatches() {
+        assertTrue(names("Thereafter (2019)"))
+        assertTrue(names("Try Thereafter(2019) tonight"))
+        assertFalse(names("Thereafter  (2019)"), "at most one space")
+        assertFalse(names("Thereafter (19)"))
+        assertFalse(names("Thereafter (20190)"))
+        assertFalse(names("Thereafter (2019 remaster)"))
+    }
+
+    @Test fun aOneWordTitleAsAWholeItalicSpanMatches() {
+        assertTrue(names("Try *Thereafter* tonight"))
+        assertTrue(names("Try _Thereafter_ tonight"))
+        assertTrue(names("*Thereafter*"))
+        assertTrue(names("Try *Théreafter* tonight"), "markers are read on the reply as written and folded")
+    }
+
+    @Test fun anItalicSpanLongerThanTheTitleDoesNotMatch() {
+        assertFalse(names("*Thereafter it stays on*"))
+        assertFalse(names("*it stays on thereafter*"))
+        assertFalse(names("snake_thereafter_case"))
+        assertFalse(names("*Thereafter*s"))
+    }
+
+    @Test fun aTwoWordTitleStillMatchesAnywhereAsWholeWords() {
+        assertTrue(names("try the copper orchard tonight"))
+        assertTrue(names("The Copper Orchard"))
+        assertFalse(names("the copper orchards"))
+    }
+
+    @Test fun rule7ForwardsOnTheMarkedFormsAndNotOnProse() {
+        val named = "rule 7 — the reply names a library title itself"
+        assertEquals(emptyList(), rule7("Thereafter, open the player's menu and choose Subtitles."))
+        assertEquals(listOf(named), rule7("Try *Thereafter* tonight."))
+        assertEquals(listOf(named), rule7("Try Thereafter (2019) tonight."))
+        assertEquals(listOf(named), rule7("the copper orchard is calm"))
+    }
+
+    @Test fun aCaseTitleThatUsesAOneWordTitleAsAnEverydayWordIsKept() {
+        fun answer(title: String) = SupportAi.Answer(
+            ticketClass = "QUESTION", summary = "s", reproduction = null, replyLanguage = "en", reply = "r", decision = "SEND",
+            forwardTo = "ADMIN", confidence = "HIGH", languageConfidence = "HIGH", promisesSomething = false, claimsState = false,
+            title = title, englishTitle = title,
+        )
+        assertEquals("Subtitles go off thereafter", SupportAi.titles(answer("Subtitles go off thereafter"), oneWordKeys).title)
+        val dropped = SupportAi.titles(answer("*Thereafter* will not play"), oneWordKeys)
+        assertEquals(null, dropped.title)
+        assertEquals(null, SupportAi.titles(answer("Thereafter (2019) will not play"), oneWordKeys).englishTitle)
+    }
+
+    @Test fun aHowToWhoseFirstWordIsAOneWordTitleSends() {
+        val a = SupportAi.Answer(
+            ticketClass = "QUESTION", summary = "s", reproduction = null, replyLanguage = "en",
+            reply = "Settings is under the gear icon. Thereafter, pick Subtitles.", decision = "SEND", forwardTo = "ADMIN",
+            confidence = "HIGH", languageConfidence = "HIGH", promisesSomething = false, claimsState = false,
+        )
+        val faults = rule7(a.reply)
+        assertEquals(emptyList(), faults)
+        assertEquals(SupportAi.Kind.SEND, SupportAi.rule(a, "en", false, faults).kind)
+    }
+
     @Test fun substituteLeavesAnUnknownIdAlone() {
         assertEquals("A (1) and {s9}", SupportAi.substitute("{s1} and {s9}") { if (it == "s1") "A (1)" else null })
     }
