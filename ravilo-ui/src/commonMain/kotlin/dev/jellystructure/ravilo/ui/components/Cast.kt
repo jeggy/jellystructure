@@ -650,57 +650,6 @@ fun CastConnectingBar() {
     }
 }
 
-/**
- * FR-R245-6 — the 64 dp mini bar above the bottom safe area on every screen while a cast runs:
- * thumbnail · title · ▶/❚❚ · device name · hairline progress. Tap opens the remote. There is NO swipe
- * to dismiss: while a cast runs this is the only route back to the remote.
- */
-@Composable
-fun CastMiniBar(onOpen: () -> Unit) {
-    val cast = LocalCast.current ?: return
-    val colors = RaviloTheme.colors
-    val link by cast.sender.link.collectAsState()
-    val status by cast.sender.status.collectAsState()
-    val device by cast.sender.deviceName.collectAsState()
-    val st = status
-    val visible = castMiniBarVisible(link, st)
-    AnimatedVisibility(visible = visible, enter = slideInVertically { it } + fadeIn(tween(180)), exit = slideOutVertically { it } + fadeOut(tween(160))) {
-        val s = st ?: return@AnimatedVisibility
-        Column(
-            // R274 (FR-R274-4) — the seam with the IME excluded, not plain safeDrawing: the mini bar
-            // docks above the nav bar (FR-R267-8) and the pair has to move as one block, so when the
-            // keyboard covers the bar it covers this too. safeDrawing also tracks live bar VISIBILITY,
-            // which is what R261 FR-R261-5 replaced everywhere else.
-            Modifier.fillMaxWidth().safeAreaPadding(includeIme = false).padding(horizontal = 12.dp, vertical = RaviloDimens.castMiniBarMargin)
-                .clip(RoundedCornerShape(12.dp)).background(Color(0xFF0E1119).copy(alpha = 0.97f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen),
-        ) {
-            Row(Modifier.fillMaxWidth().height(RaviloDimens.castMiniBarRowHeight).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(64.dp).height(36.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF1A1D28))) {
-                    val art = s.artUrl
-                    if (art != null) RemoteImage(url = art, contentDescription = null, modifier = Modifier.size(64.dp, 36.dp), contentScale = ContentScale.Crop, requestedWidth = 320)
-                    else Text(s.title.orEmpty().take(2).uppercase(), color = Color.White.copy(0.7f), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Center))
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(s.title.orEmpty(), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(str(if (s.playing) "cast.playing_on" else "cast.paused_on", mapOf("device" to (device ?: ""))), color = Color.White.copy(0.55f), fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Box(
-                    Modifier.size(46.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.10f))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { if (s.playing) cast.sender.pause() else cast.sender.play() }),
-                    contentAlignment = Alignment.Center,
-                ) { PlayPauseGlyph(playing = s.playing, tint = Color.White, sizeDp = 18) }
-            }
-            // hairline progress
-            Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(0.12f))) {
-                val frac = if (s.durationMs > 0) (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
-                Box(Modifier.fillMaxWidth(frac).height(2.dp).background(colors.accent))
-            }
-        }
-    }
-}
-
 @Composable
 internal fun PlayPauseGlyph(playing: Boolean, tint: Color, sizeDp: Int) {
     Canvas(Modifier.size(sizeDp.dp)) {

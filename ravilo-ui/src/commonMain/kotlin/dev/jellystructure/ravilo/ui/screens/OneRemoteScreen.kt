@@ -74,46 +74,57 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.testTag
+import dev.jellystructure.ravilo.ui.components.DeskIcon
+import dev.jellystructure.ravilo.ui.components.placeIcon
+import dev.jellystructure.ravilo.ui.remote.OneRemote
+import dev.jellystructure.ravilo.ui.remote.RemoteActions
+import dev.jellystructure.ravilo.ui.remote.RemoteOnScreen
+import dev.jellystructure.ravilo.ui.remote.offers
+import dev.jellystructure.ravilo.ui.remote.viewOnly
+import dev.jellystructure.ravilo.ui.sessions.CommandFeedback
+import dev.jellystructure.ravilo.ui.sessions.PlayOnStore
+import dev.jellystructure.ravilo.ui.sessions.moveTargets
+
+/** The warning colour the remote's alerts and Stop share (the cast sheet's *Stop* row has used it since R265). */
+private val REMOTE_WARN = Color(0xFFFF9B8A)
 
 /**
- * R245 (FR-R245-7/8/9/10) — the remote in your hand, direction 2 · "Now playing": a 16:9 art card on a
- * solid ground (never ink on a picture — a title without art gets a wordmark tile, R243's rule), the
- * device chip as the header AND the control (it is the platform's own cast button), kicker + title,
- * "Playing on {device}", a draggable seek bar, −10 s · ▶/❚❚ · +30 s, and a footer of Subtitles & audio ·
- * Next episode · Stop casting. Seven states, all read from what the receiver reports; the position
- * ticks from its reports, never a local clock. Leaving never stops the cast (FR-R245-10).
+ * DEB-2185 (FR-1, FR-2) — the one remote: R245's Cast remote, direction 2 · "Now playing", for every film or episode
+ * playing anywhere, whether this app cast it or only reaches it through the server. A 16:9 art card on a solid ground
+ * (never ink on a picture — a title without art gets a wordmark tile, R243's rule), the place pill as the header AND
+ * the way to *Move to…*, kicker + title, *Playing on {place}*, a draggable seek bar, −10 s · ▶/❚❚ · +30 s, the volume
+ * (today's, until the volume slice), and a footer of Audio & Subs · Next episode · Stop. What it shows is read from
+ * [RemoteModel]; a control the place cannot do is absent, one it cannot reach right now is greyed. Someone else's
+ * playback, with the household switch off, is the same remote view-only (FR-8). Leaving never stops the playback.
  */
 @Composable
-fun CastRemoteScreen(
-    cast: CastController,
+fun OneRemoteScreen(
+    remote: OneRemote,
     onBack: () -> Unit,
     /** Ended · "Play again" — the app re-casts the same item from the start. */
     onPlayAgain: (itemId: String) -> Unit,
     /** R299 (FR-R299-2) · Failed · "Play on this phone" — the app ends the cast and opens its own player. */
     onPlayHere: (itemId: String, title: String, kicker: String?) -> Unit,
-    /** A computer's window (macOS, Linux): the device's volume, the desktop's failure line, and every control kept on
-     *  screen (FR-R350-18). A parameter so a test can draw the computer's remote. */
+    /** A computer's window (macOS, Linux): the desktop's failure line, and every control kept on screen (FR-R350-18). A
+     *  parameter so a test can draw the computer's remote. */
     desktop: Boolean = dev.jellystructure.ravilo.ui.isDesktopPlatform,
 ) {
     val colors = RaviloTheme.colors
     val portrait = LocalPortrait.current
-    val link by cast.sender.link.collectAsState()
-    val status by cast.sender.status.collectAsState()
-    val device by cast.sender.deviceName.collectAsState()
-    val s = status ?: CastRemoteStatus()
-    val name = device ?: ""
-    val unreachable = link != CastLinkState.CONNECTED
-    // A session that ENDED is not a lost link. Seen on the Pixel 9 (2026-10-06): another sender stopped the film on
-    // Stue TV, the receiver closed, and the remote sat on "Lost contact · It may still be playing" with Retry. As
-    // FR-R245-5 does for a finished cast, the remote leaves quietly; only a suspended link (RECONNECTING) says Lost contact.
-    var wasLinked by remember { mutableStateOf(false) }
-    LaunchedEffect(link) {
-        if (link != CastLinkState.NONE) wasLinked = true
-        else if (wasLinked) onBack()
-    }
-    // The sheet itself is drawn at the root (CastTrackSheetHost), above the bottom bar; leaving the remote closes it.
-    DisposableEffect(cast) { onDispose { cast.trackSheetOpen.value = false } }
+    val m = remote.model
+    val act = remote.actions
+    val s = m.status
+    val name = m.placeName
+    val unreachable = m.unreachable
+    // The tracks sheet is drawn at the root (OneRemoteTrackSheetHost), above the bottom bar; leaving the remote closes it.
+    SideEffect { RemoteOnScreen.remote.value = remote }
+    DisposableEffect(Unit) { onDispose { RemoteOnScreen.trackSheetOpen.value = false; RemoteOnScreen.remote.value = null } }
     var convertedOpen by remember { mutableStateOf(false) }
+    var moveOpen by remember { mutableStateOf(false) }
+    var confirmStop by remember(m.sessionId) { mutableStateOf(false) }
+    LaunchedEffect(moveOpen) { if (moveOpen) PlayOnStore.changed() }
     // Optimistic on drag, resolved to the receiver's number on release (open question 3: it eases by
     // simply adopting the next report; nothing animates a snap).
     var scrubbing by remember { mutableStateOf(false) }
@@ -124,12 +135,12 @@ fun CastRemoteScreen(
         val since = s.busySinceMs ?: return@LaunchedEffect
         while (true) { busyElapsed = ((nowMillis() - since) / 1000).toInt().coerceAtLeast(0); delay(1_000) }
     }
+    fun doStop() { confirmStop = false; act.stop(); if (m.leavesOnStop) onBack() }
 
     // R350 (FR-R350-18) — every control on screen on a computer's window, down to its minimum height (600 dp): the art
     // card takes what the controls leave (16:9, never larger than it was), and a short window tightens the spacing and
-    // the transport. It used to be 60 % of the width at 16:9 — about 500 dp tall in a 1512 × 859 window, which put
-    // Audio & Subs, Next and Stop casting below the fold. A phone keeps its own layout (and its scroll).
-    BoxWithConstraints(Modifier.fillMaxSize().background(colors.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
+    // the transport. A phone keeps its own layout (and its scroll).
+    BoxWithConstraints(Modifier.fillMaxSize().background(colors.background).windowInsetsPadding(WindowInsets.safeDrawing).testTag("one-remote")) {
         val fit = desktop
         val short = fit && maxHeight < REMOTE_SHORT_HEIGHT
         fun gap(d: androidx.compose.ui.unit.Dp) = if (short) d / 2 else d
@@ -138,7 +149,7 @@ fun CastRemoteScreen(
             artFraction = if (portrait) 1f else 0.6f,
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
             top = {
-                // ── Header: back · device chip (the platform's dialog: switch device or stop) ──
+                // ── Header: back · the place pill (FR-6: it names the place and opens *Move to…*) ──
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(46.dp).clip(CircleShape)
@@ -151,14 +162,23 @@ fun CastRemoteScreen(
                         }
                     }
                     Spacer(Modifier.weight(1f))
+                    val pillTint = if (m.viewOnly) colors.textSecondary else colors.accentSecondary
                     Row(
-                        Modifier.background(colors.surfaceVariant, RoundedCornerShape(22.dp)).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        Modifier.heightIn(min = 46.dp).clip(RoundedCornerShape(23.dp)).background(colors.surfaceVariant)
+                            .then(if (m.viewOnly) Modifier else Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                // FR-6 — *Move to…* when the server lists the playback; the platform's own sheet where it does not.
+                                if (m.view != null && remote.extras.onMoveTo != null) moveOpen = true else remote.extras.openCastSheet()
+                            })
+                            .padding(horizontal = 16.dp).testTag("remote-place-pill"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(name, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
-                        // R265 — the same glyph and sheet as everywhere else (Stop casting lives in it), not the SDK's dialog.
-                        dev.jellystructure.ravilo.ui.components.CastButton()
+                        DeskIcon(placeIcon(m.placeIcon ?: "tv"), pillTint, 16.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(name, color = pillTint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp))
+                        if (!m.viewOnly) Text("  →", color = pillTint, fontSize = 14.sp, fontFamily = Sora)
                     }
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.size(46.dp))
                 }
                 Spacer(Modifier.height(gap(18.dp)))
             },
@@ -181,10 +201,10 @@ fun CastRemoteScreen(
 
                 // ── Kicker + title + state line ──
                 s.kicker?.let { Text(it.uppercase(), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1) }
-                Text(s.title ?: "", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(s.title ?: str("loading"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(4.dp))
                 val state = remoteState(s, unreachable)
-                val stateLine = when (state) {
+                val stateLine = m.line ?: when (state) {
                     RemoteState.FAILED -> str("cast.failed", mapOf("device" to name))
                     RemoteState.UNREACHABLE -> str("cast.lost", mapOf("device" to name))
                     RemoteState.NO_SERVER -> str("cast.no_server")
@@ -193,9 +213,19 @@ fun CastRemoteScreen(
                     RemoteState.PLAYING -> str("cast.playing_on", mapOf("device" to name))
                     RemoteState.PAUSED -> str("cast.paused_on", mapOf("device" to name))
                 }
-                Text(stateLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, textAlign = TextAlign.Center)
+                val alert = m.lineAlert || state == RemoteState.UNREACHABLE || state == RemoteState.FAILED
+                // FR-5.4 — *Lost contact* (and *Can't reach*) carry *Try again* beside the line; an offline place has none.
+                if (m.unreachable && m.retryable) Row(
+                    Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).testTag("remote-lost"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stateLine, color = REMOTE_WARN, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    RemotePill(str("action.retry"), primary = false, modifier = Modifier.testTag("remote-retry")) { act.retry() }
+                } else Text(stateLine, color = if (alert) REMOTE_WARN else colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.testTag("remote-state-line"))
+                m.subLine?.let { Text(it, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp)) }
                 // second line for the two "cannot" states + the busy wait
-                when (state) {
+                if (m.line == null) when (state) {
                     RemoteState.FAILED -> Text(str(if (desktop) "cast.failed_sub_desk" else "cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
                     RemoteState.UNREACHABLE -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
                     RemoteState.NO_SERVER -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
@@ -220,7 +250,7 @@ fun CastRemoteScreen(
 
                 // ── Next-up mirrored (the receiver owns the countdown; cancelling is SENT) ──
                 val nextUp = s.nextUpSecs
-                if (nextUp != null && !unreachable) {
+                if (nextUp != null && !unreachable && !m.viewOnly && m.canNextUp) {
                     Column(
                         Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(14.dp),
                     ) {
@@ -228,63 +258,89 @@ fun CastRemoteScreen(
                         Text(s.nextTitle ?: str("detail.episode"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            RemotePill(str("player.play_in", mapOf("secs" to nextUp.toString())), primary = true) { cast.command("nextup_play") }
-                            RemotePill(str("player.watch_credits"), primary = false) { cast.command("nextup_cancel") }
+                            RemotePill(str("player.play_in", mapOf("secs" to nextUp.toString())), primary = true) { act.nextUpPlay() }
+                            RemotePill(str("player.watch_credits"), primary = false) { act.nextUpCancel() }
                         }
                     }
                     Spacer(Modifier.height(gap(18.dp)))
                 }
 
-                // ── Seek bar + times ──
+                // ── Seek bar + times (read-only for someone else's, and where the place takes no seek) ──
+                val seekOffered = m.offers("seek") && !m.viewOnly
                 val transportEnabled = remoteTransportEnabled(s, unreachable)
                 RemoteSeekBar(
-                    colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled,
+                    colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled && seekOffered,
+                    readOnly = !seekOffered,
                     onSeekStart = { ms -> scrubbing = true; scrubPos = ms },
                     onSeekDrag = { ms -> scrubPos = ms },
-                    onSeekEnd = { scrubbing = false; cast.sender.seekTo(scrubPos) },
+                    onSeekEnd = { scrubbing = false; act.seekTo(scrubPos) },
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(hmsLabel(if (scrubbing) scrubPos else s.positionMs), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
+                    if (m.feedback == CommandFeedback.SPINNER) CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.dp, modifier = Modifier.size(14.dp).testTag("remote-spinner"))
                     Text(hmsLabel(s.durationMs), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
                 }
-                Spacer(Modifier.height(gap(16.dp)))
 
-                // ── Transport ──
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (short) 24.dp else 30.dp), modifier = Modifier.alpha(if (transportEnabled) 1f else 0.4f)) {
-                    RemoteSkip(label = "10 s", back = true, enabled = transportEnabled, colors = colors, size = if (short) 44.dp else 54.dp) { cast.sender.seekTo((s.positionMs - 10_000L).coerceAtLeast(0L)) }
-                    Box(
-                        Modifier.size(if (short) 64.dp else 80.dp).clip(CircleShape).background(colors.text)
-                            .clickable(enabled = transportEnabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { if (s.playing) cast.sender.pause() else cast.sender.play() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (s.buffering && transportEnabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
-                        else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 30)
+                // ── Transport (absent for someone else's; each control only where the place obeys its op) ──
+                if (!m.viewOnly) {
+                    Spacer(Modifier.height(gap(16.dp)))
+                    val canToggle = m.offers("play") || m.offers("pause")
+                    val skip = if (short) 44.dp else 54.dp
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (short) 24.dp else 30.dp),
+                        modifier = Modifier.alpha(if (!transportEnabled) 0.4f else if (m.feedback == CommandFeedback.DIM) 0.5f else 1f).testTag("remote-transport")) {
+                        if (seekOffered) RemoteSkip(label = "10 s", back = true, enabled = transportEnabled, colors = colors, size = skip) { act.seekTo((s.positionMs - 10_000L).coerceAtLeast(0L)) }
+                        if (canToggle) Box(
+                            Modifier.size(if (short) 64.dp else 80.dp).clip(CircleShape).background(colors.text)
+                                .clickable(enabled = transportEnabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { if (s.playing) act.pause() else act.play() }
+                                .testTag("remote-play-pause"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (s.buffering && transportEnabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                            else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 30)
+                        }
+                        if (seekOffered) RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors, size = skip) { act.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
                     }
-                    RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors, size = if (short) 44.dp else 54.dp) { cast.sender.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
-                }
-                // R351 (FR-R351-6) — a computer has no volume keys that reach the device: the remote carries its volume, the
-                // same control the music bar has while casting (R337). The phone keeps its hardware keys.
-                if (desktop && !unreachable) {
-                    Spacer(Modifier.height(gap(18.dp)))
-                    RemoteVolume(cast, colors, Modifier.widthIn(max = 360.dp).fillMaxWidth())
+                    // The volume, as each driver has it today (the volume slice replaces both with one slider).
+                    if (!unreachable) {
+                        remote.linkVolume?.let { vol -> Spacer(Modifier.height(gap(18.dp))); vol(Modifier.widthIn(max = 360.dp).fillMaxWidth()) }
+                        remote.sessionVolume?.invoke()
+                    }
                 }
                 Spacer(Modifier.height(gap(22.dp)))
 
-                // ── Footer / state actions ──
+                // ── FR-7 — Stopping someone else's asks first, every time, with one inline confirm ──
+                if (confirmStop && m.confirmStop && !m.viewOnly) {
+                    Column(Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(14.dp).testTag("remote-stop-confirm")) {
+                        Text(str("session.stop_person", mapOf("person" to m.ownerName.orEmpty(), "title" to (s.title ?: name))), color = colors.text, fontSize = 15.sp, fontFamily = Sora)
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            RemotePill(str("cast.stop_room"), primary = true, modifier = Modifier.weight(1f).testTag("remote-stop-yes")) { doStop() }
+                            RemotePill(str("action.cancel"), primary = false, modifier = Modifier.weight(1f).testTag("remote-stop-no")) { confirmStop = false }
+                        }
+                    }
+                    Spacer(Modifier.height(gap(12.dp)))
+                }
+
+                // ── Footer / state actions (none for someone else's: FR-8) ──
                 when {
+                    m.viewOnly -> {}
                     state == RemoteState.FAILED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         s.itemId?.let { id -> RemotePill(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
-                        RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
+                        if (m.offers("stop")) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.testTag("remote-stop")) { doStop() }
                     }
-                    unreachable -> RemotePill(str("action.retry"), primary = true) { cast.command("status") }
                     s.ended -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         s.itemId?.let { id -> RemotePill(str("action.play_again"), primary = true) { onPlayAgain(id) } }
-                        RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
+                        if (m.leavesOnStop) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.testTag("remote-stop")) { doStop() }
+                        else RemotePill(str("action.close"), primary = false, modifier = Modifier.testTag("remote-close"), onClick = onBack)
                     }
                     else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f)) { cast.trackSheetOpen.value = true }
-                        if (s.hasNext) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f)) { cast.command("next") }
-                        RemotePill(str("cast.stop"), primary = false, modifier = Modifier.weight(1f)) { cast.sender.stop(); onBack() }
+                        val tracksOffered = (m.offers("set_audio") || m.offers("set_subtitle")) &&
+                            (m.ops == null || s.audioTracks.size > 1 || s.subtitleTracks.isNotEmpty())
+                        if (tracksOffered) RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f).testTag("remote-tracks")) { RemoteOnScreen.trackSheetOpen.value = true }
+                        if (s.hasNext && m.offers("next")) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f).testTag("remote-next")) { act.next() }
+                        if (m.offers("stop")) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.weight(1f).testTag("remote-stop")) {
+                            if (m.confirmStop) confirmStop = true else doStop()
+                        }
                     }
                 }
                 Spacer(Modifier.height(gap(24.dp)))
@@ -292,16 +348,53 @@ fun CastRemoteScreen(
         )
     }
 
-    // ── FR-R245-8 — subtitles & audio: the SAME picker component the local player opens ──
     if (convertedOpen) ConvertedPopover(deviceName = name, colors = colors) { convertedOpen = false }
+    if (moveOpen) MoveToSheet(remote, onClose = { moveOpen = false })
+}
+
+/** FR-6 (R372 FR-R372-2/3, `one-remote-a-move-to.png`) — the places, the current one ticked, *Play here* last. */
+@Composable
+private fun MoveToSheet(remote: OneRemote, onClose: () -> Unit) {
+    val m = remote.model
+    val view = m.view ?: return
+    val targets by PlayOnStore.targets.collectAsState()
+    HandsetSheet(visible = true, onDismiss = onClose) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("remote-move-sheet")) {
+            Text(str("session.move_to"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.padding(bottom = 8.dp))
+            moveTargets(targets.orEmpty(), view).forEach { (t, current) ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                        .then(if (!current) Modifier.clickable { onClose(); remote.extras.onMoveTo?.invoke(view, t) } else Modifier)
+                        .testTag("remote-move-${t.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DeskIcon(placeIcon(t.icon), Color.White, 18.dp)
+                    Spacer(Modifier.width(12.dp))
+                    val thisDevice = if (dev.jellystructure.ravilo.ui.isDesktopPlatform) str("mode.label_desk") else str("mode.label")
+                    Text(if (t.here) thisDevice else t.name, color = Color.White, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                    if (current) Text("✓", color = Color.White, fontSize = 16.sp)
+                }
+            }
+            if (remote.extras.onPlayHere != null && !m.here) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { onClose(); remote.extras.onPlayHere.invoke(view) }.testTag("remote-play-here"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { Text(remote.extras.playHereLabel ?: str("cast.play_here"), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
 }
 
 /**
- * R351 (FR-R351-6) — the device's volume on a computer: what it last reported ([CastSender.volume]), else the level set
- * here last; a click or a drag sets it ([CastSender.setVolume]). A speaker glyph, then the line.
+ * The device's volume on a computer: what it last reported ([CastSender.volume]), else the level set here last; a
+ * click or a drag sets it ([CastSender.setVolume]). A speaker glyph, then the line. (R351 FR-R351-6, until the volume
+ * slice gives every remote the same slider.)
  */
 @Composable
-private fun RemoteVolume(cast: CastController, colors: RaviloColors, modifier: Modifier = Modifier) {
+internal fun RemoteVolume(cast: CastController, modifier: Modifier = Modifier) {
+    val colors = RaviloTheme.colors
     val reported by cast.sender.volume.collectAsState()
     var local by remember { mutableStateOf<Float?>(null) }
     val level = (reported?.toFloat() ?: local ?: 0.5f).coerceIn(0f, 1f)
@@ -373,16 +466,19 @@ private fun ConvertedPopover(deviceName: String, colors: RaviloColors, onClose: 
 
 /** FR-R245-8 — the remote's audio & subtitles sheet, drawn by RaviloApp at the root (over the bottom bar) while the remote shows. */
 @Composable
-fun CastTrackSheetHost(cast: CastController) {
-    val open by cast.trackSheetOpen.collectAsState()
-    val status by cast.sender.status.collectAsState()
-    val device by cast.sender.deviceName.collectAsState()
-    CastTrackSheet(cast = cast, status = status ?: CastRemoteStatus(), deviceName = device ?: "", open = open, onClose = { cast.trackSheetOpen.value = false })
+fun OneRemoteTrackSheetHost() {
+    val open by RemoteOnScreen.trackSheetOpen.collectAsState()
+    val remote by RemoteOnScreen.remote.collectAsState()
+    val r = remote ?: return
+    CastTrackSheet(
+        actions = r.actions, status = r.model.status, deviceName = r.model.placeName, canSubtitleSize = r.model.canSubtitleSize,
+        open = open, onClose = { RemoteOnScreen.trackSheetOpen.value = false },
+    )
 }
 
-/** The same sheet as R244's local one — one component, two destinations; the only difference is the line naming the device. */
+/** The same sheet as R244's local one — one component, two destinations; the only difference is the line naming the place. */
 @Composable
-private fun CastTrackSheet(cast: CastController, status: CastRemoteStatus, deviceName: String, open: Boolean, onClose: () -> Unit) {
+private fun CastTrackSheet(actions: RemoteActions, status: CastRemoteStatus, deviceName: String, canSubtitleSize: Boolean, open: Boolean, onClose: () -> Unit) {
     val colors = RaviloTheme.colors
     val lang = LocalLang.current
     var tab by remember { mutableIntStateOf(1) }
@@ -403,7 +499,6 @@ private fun CastTrackSheet(cast: CastController, status: CastRemoteStatus, devic
     val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0, clusterSize = 1)
     val subGroupsWithOff = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
     val groups = if (tab == 0) audioGroups else subGroupsWithOff
-    val selectedFlat = if (tab == 0) status.selectedAudio else status.selectedSub
     fun retarget(newTab: Int) {
         tab = newTab; level = 0
         val g = if (newTab == 0) audioGroups else subGroupsWithOff
@@ -412,8 +507,8 @@ private fun CastTrackSheet(cast: CastController, status: CastRemoteStatus, devic
     }
     LaunchedEffect(open) { if (open) retarget(1) }
     fun choose(flat: Int) {
-        if (tab == 0) cast.sender.selectAudio(status.audioTracks.getOrNull(flat)?.trackId)
-        else cast.sender.selectSubtitle(if (flat < 0) null else status.subtitleTracks.getOrNull(flat)?.trackId)
+        if (tab == 0) actions.selectAudio(status.audioTracks.getOrNull(flat)?.trackId)
+        else actions.selectSubtitle(if (flat < 0) null else status.subtitleTracks.getOrNull(flat)?.trackId)
         onClose()
     }
     HandsetSheet(visible = open, onDismiss = { if (level == 1) level = 0 else onClose() }) {
@@ -433,7 +528,7 @@ private fun CastTrackSheet(cast: CastController, status: CastRemoteStatus, devic
             handset = true,
             extraRow = {
                 Column {
-                    if (tab == 1 && level == 0) SubtitleSizeRow(colors, status.subSize, str("cast.applies_on", mapOf("device" to deviceName))) { cast.command("subsize", size = it.toString()) }
+                    if (tab == 1 && level == 0 && canSubtitleSize) SubtitleSizeRow(colors, status.subSize, str("cast.applies_on", mapOf("device" to deviceName))) { actions.subtitleSize(it) }
                     else Text(str("cast.applies_on", mapOf("device" to deviceName)), color = Color.White.copy(0.5f), fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(top = 10.dp))
                 }
             },
@@ -519,7 +614,8 @@ private fun RemoteSkip(label: String, back: Boolean, enabled: Boolean, colors: R
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(size).clip(CircleShape).background(colors.surfaceVariant)
-                .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+                .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+                .testTag(if (back) "remote-skip-back" else "remote-skip-fwd"),
             contentAlignment = Alignment.Center,
         ) {
             // R301 — the local player's glyph (R257 FR-R257-6), not a second copy of it.
@@ -531,7 +627,7 @@ private fun RemoteSkip(label: String, back: Boolean, enabled: Boolean, colors: R
 }
 
 @Composable
-private fun RemoteSeekBar(colors: RaviloColors, positionMs: Long, durationMs: Long, enabled: Boolean, onSeekStart: (Long) -> Unit, onSeekDrag: (Long) -> Unit, onSeekEnd: () -> Unit) {
+private fun RemoteSeekBar(colors: RaviloColors, positionMs: Long, durationMs: Long, enabled: Boolean, readOnly: Boolean = false, onSeekStart: (Long) -> Unit, onSeekDrag: (Long) -> Unit, onSeekEnd: () -> Unit) {
     val frac = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     fun posAt(x: Float, w: Int): Long = if (durationMs <= 0 || w <= 0) 0L else ((x / w) * durationMs).toLong().coerceIn(0L, durationMs)
     val accent = colors.accent; val accentS = colors.accentSecondary; val track = colors.surfaceVariant; val thumb = colors.text
@@ -549,7 +645,7 @@ private fun RemoteSeekBar(colors: RaviloColors, positionMs: Long, durationMs: Lo
         val barH = 5.dp.toPx(); val y = center.y; val w = size.width
         drawRoundRect(track, Offset(0f, y - barH / 2), Size(w, barH), CornerRadius(barH / 2))
         if (frac > 0f) drawRoundRect(Brush.linearGradient(listOf(accent, accentS), Offset.Zero, Offset(w, 0f)), Offset(0f, y - barH / 2), Size(w * frac, barH), CornerRadius(barH / 2))
-        drawCircle(thumb, 9.dp.toPx(), Offset(w * frac, y))
+        if (!readOnly) drawCircle(thumb, 9.dp.toPx(), Offset(w * frac, y))
     }
 }
 

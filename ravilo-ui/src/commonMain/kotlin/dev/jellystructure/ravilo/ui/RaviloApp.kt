@@ -72,10 +72,9 @@ import dev.jellystructure.ravilo.ui.screens.defaultDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.discoverSegments
 import dev.jellystructure.ravilo.ui.screens.nextDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.seedFacet
-import dev.jellystructure.ravilo.ui.screens.CastRemoteScreen
+import dev.jellystructure.ravilo.ui.screens.OneRemoteScreen
 import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.components.CastConnectingBar
-import dev.jellystructure.ravilo.ui.components.CastMiniBar
 import dev.jellystructure.ravilo.ui.components.CastSheetHost
 import dev.jellystructure.ravilo.ui.components.AirPlayNoticeBar
 import dev.jellystructure.ravilo.ui.seams.platformAirPlay
@@ -136,6 +135,7 @@ import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.ravilo.ui.i18n.str
 import coil3.compose.LocalPlatformContext
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.components.BottomNavItem
 import dev.jellystructure.ravilo.ui.components.LibraryTypePill
@@ -370,11 +370,11 @@ internal sealed class Dest {
     // tab) — only from the Home "On now" row or the guide below.
     data class LiveTv(val channelId: String, val displayName: String) : Dest()
     data class LiveTvGuide(val displayName: String) : Dest()
-    // R245 (FR-R245-7) — the full-screen remote for a running cast. Reached from the mini bar, from a
-    // detail screen's "Play on {device}", or by the hand-off from inside the local player.
-    data class CastRemote(val displayName: String) : Dest()
-    /** R369 (FR-R369-6) — a session's remote: a playback on another place, controlled through the server. */
-    data class SessionRemote(val sessionId: String, val displayName: String) : Dest()
+    // DEB-2185 (FR-1) — the one remote, for a playback on another place. Reached from the mini bar, from a *Playing
+    // everywhere* row, from a detail screen's "Play on {device}", or by the hand-off from inside the local player.
+    // [sessionId] is the server's row when the door knew it; null = the cast this app holds a link to. Whether the
+    // remote is driven over this app's own link or through the server is not the destination's to say (FR-5).
+    data class Remote(val displayName: String, val sessionId: String? = null) : Dest()
     /** R380 (FR-R380-3) — the TV's Now playing: music (or a book) the TV plays, a cast's or its own. TV only. */
     data class TvNowPlaying(val displayName: String) : Dest()
     // R321 — music mode's pages (the phone only). The four tabs sit on the bar; the three details hide it (R278's rule).
@@ -418,8 +418,7 @@ internal sealed class Dest {
         is AppLanguage    -> "/account/language"   // R304
         is LiveTv         -> "/livetv/$channelId"
         is LiveTvGuide    -> "/livetv-guide"
-        is CastRemote     -> "/cast"
-        is SessionRemote  -> "/session"
+        is Remote         -> "/remote"
         is TvNowPlaying   -> "/tv/now-playing"   // R380 — TV only
         is MusicListen    -> "/music"
         is MusicBrowse    -> "/music/browse"
@@ -912,7 +911,7 @@ fun RaviloApp(
                 navDir = NavDir.Back
                 // A player is not a page to go forward to: leaving it is the end of that play.
                 val left = stack.last()
-                forwardStack = if (left is Dest.Player || left is Dest.LiveTv || left is Dest.CastRemote) emptyList() else forwardStack + left
+                forwardStack = if (left is Dest.Player || left is Dest.LiveTv || left is Dest.Remote) emptyList() else forwardStack + left
                 stack = stack.dropLast(1)
                 // On browser, hashchange already moved the URL — don't push another entry.
                 // On Android, replaceRoute is a no-op, so calling it is harmless.
@@ -1027,8 +1026,7 @@ fun RaviloApp(
             is Dest.SeerrSearch -> d.displayName
             is Dest.UpcomingDetail -> d.displayName
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
-            is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.CastRemote -> d.displayName
-            is Dest.SessionRemote -> d.displayName   // R369
+            is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.Remote -> d.displayName
             is Dest.TvNowPlaying -> d.displayName   // R380
             is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName; is Dest.SignInTv -> d.displayName
             is Dest.Profile -> d.displayName; is Dest.AppLanguage -> d.displayName   // R304
@@ -1419,7 +1417,7 @@ fun RaviloApp(
             val rest = stack.dropLastWhile { it is Dest.TvNowPlaying }
             val under = rest.lastOrNull()
             println("R380: Now playing hides; under it ${under?.let { it::class.simpleName } ?: "nothing"}")
-            if (under == null || under is Dest.Login || under is Dest.ProfilePicker || under is Dest.Player || under is Dest.LiveTv || under is Dest.CastRemote) {
+            if (under == null || under is Dest.Login || under is Dest.ProfilePicker || under is Dest.Player || under is Dest.LiveTv || under is Dest.Remote) {
                 resetTo(homeDest(MultiTokenStore.getActive()?.displayName ?: destDisplayName(stack.last())))
             } else {
                 navDir = NavDir.Back
@@ -1442,7 +1440,8 @@ fun RaviloApp(
         // FR-R322-12 — a video taking the screen stops the song (the queue stays, paused where it was).
         LaunchedEffect(stack.lastOrNull()) {
             val top = stack.lastOrNull()
-            if (top is Dest.Player || top is Dest.LiveTv || top is Dest.CastRemote) dev.jellystructure.ravilo.ui.music.MusicEngine.stopForVideo()
+            // A remote on a playback elsewhere (a *Playing everywhere* row) is not a picture taking this screen: only the cast this app holds is.
+            if (top is Dest.Player || top is Dest.LiveTv || (top is Dest.Remote && top.sessionId == null)) dev.jellystructure.ravilo.ui.music.MusicEngine.stopForVideo()
         }
         // Dev review 12 — the notification permission is asked on the first play, never at launch.
         val askNotifications = dev.jellystructure.ravilo.ui.music.rememberNotificationAsk()
@@ -1466,7 +1465,7 @@ fun RaviloApp(
         // R386 (FR-R386-4, state 5) — while a film plays here or on a speaker or TV this app casts to, while a song plays, or
         // while a cast this app controls is linked, an update that is ready waits: the notice and the block read this.
         val updateTop = stack.lastOrNull()
-        val updatePlaying = updateTop is Dest.Player || updateTop is Dest.LiveTv || updateTop is Dest.CastRemote || musicState.playing || musicLinkedNow
+        val updatePlaying = updateTop is Dest.Player || updateTop is Dest.LiveTv || updateTop is Dest.Remote || musicState.playing || musicLinkedNow
         LaunchedEffect(updatePlaying) { dev.jellystructure.ravilo.ui.components.SoftwareUpdate.setPlaying(updatePlaying) }
         val sessionOverMusic = musicLinkedNow &&
             dev.jellystructure.ravilo.ui.sessions.touchedTakesBar(sessionsNow.sessions, touchedSession, filmsMode = !inMusic, linkedPlace = musicLinkedPlace)
@@ -1474,10 +1473,10 @@ fun RaviloApp(
         // R352 (FR-R352-6) — on a computer the phone-layout window (< 600 dp) keeps the computer's films-mode rule
         // (Q2 + Q10): paused music stays only on the page it was paused on. A real phone keeps FR-R322-10.
         fun musicMiniOver(d: Dest) = handset && musicState.active && !musicBarHidden && !sessionOverMusic && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
-            d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker &&
+            d !is Dest.Remote && d !is Dest.Login && d !is Dest.ProfilePicker &&
             (!isDesktopPlatform || inMusic || musicState.playing || deskBarKeptOn == d)
         fun sessionBarOver(d: Dest) = handset && (!musicState.active || sessionOverMusic) && barSession != null && d !is Dest.MusicPlaying && d !is Dest.Player &&
-            d !is Dest.LiveTv && d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
+            d !is Dest.LiveTv && d !is Dest.Remote && d !is Dest.Login && d !is Dest.ProfilePicker
         /** The bottom slot the music bar or the session bar takes (the two never show together). */
         fun anyMusicBarOver(d: Dest) = musicMiniOver(d) || sessionBarOver(d)
         // FR-R324-7 — opening Playing brings a hidden bar back.
@@ -1503,7 +1502,7 @@ fun RaviloApp(
         var deskSignOutAsk by remember { mutableStateOf(false) }
         val deskMedium = windowWidth < dev.jellystructure.ravilo.ui.theme.WindowWidths.EXPANDED
         val deskLarge = windowWidth >= dev.jellystructure.ravilo.ui.theme.WindowWidths.LARGE
-        fun deskFramed(d: Dest) = desktop && activeUserId != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.CastRemote &&
+        fun deskFramed(d: Dest) = desktop && activeUserId != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.Remote &&
             d !is Dest.Login && d !is Dest.ProfilePicker
         // FR-R337-9 — a film hides the sidebar, the rail and the bar; ⌃⌘S hides the sidebar at will (remembered).
         fun deskNavShows(d: Dest) = deskFramed(d) && !sidebarHidden
@@ -1968,12 +1967,12 @@ fun RaviloApp(
                 val castId = r.castDeviceId
                 val sid = r.session?.id
                 if (r.loadHere && castId != null && sid != null) castController.startLoad(castId, sid, a.itemId, a.title, null, null, null, lang)
-                r.session?.let { s -> push(Dest.SessionRemote(s.id, destDisplayName(stack.lastOrNull()))) }
+                r.session?.let { s -> push(Dest.Remote(destDisplayName(stack.lastOrNull()), s.id)) }
             }, onRefused = { reason -> println("R370: play there refused: $reason"); a.playHere() })
         }
 
         /** R369 — the remote's extra parts; R371 (volume) and R372 (Move to…, Play here) fill them. */
-        @Composable fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras = dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras(
+        @Composable fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.remote.RemoteExtras = dev.jellystructure.ravilo.ui.remote.RemoteExtras(
             // R371 — and removing the group's first room moves the session to the next one (a Cast device this app sees is
             // its own LOAD, as *Move to…*).
             volume = { d ->
@@ -1998,6 +1997,7 @@ fun RaviloApp(
                 pop()
             },
             playHereLabel = str(when { dev.jellystructure.ravilo.ui.isMacPlatform -> "cast.play_here_mac"; dev.jellystructure.ravilo.ui.isDesktopPlatform -> "cast.play_here_desk"; else -> "cast.play_here" }),
+            openCastSheet = { castController.openSheet() },
         )
         // R369 — a *Playing everywhere* row or the bar opens the session's remote; ⏯ and next go through the server
         // unless the session plays here.
@@ -2008,7 +2008,8 @@ fun RaviloApp(
                     // This device's own playback: its own player is the remote.
                     s.here && (s.kind == "music" || s.kind == "audiobook") -> push(Dest.MusicPlaying(name))
                     s.here -> Unit
-                    else -> push(Dest.SessionRemote(s.id, name))
+                    // FR-1 — one remote for the playback, whether this app holds a link to its place or not.
+                    else -> push(Dest.Remote(name, s.id))
                 }
             }
             castController.sessionPlayPause = { s ->
@@ -2044,7 +2045,8 @@ fun RaviloApp(
         // visibility rule, on the same screens it is drawn over (the overlay below).
         val castLinkNow by castController.sender.link.collectAsState()
         val castStatusNow by castController.sender.status.collectAsState()
-        fun miniBarOver(d: Dest) = castActive != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.CastRemote &&
+        val castDeviceNow by castController.sender.deviceName.collectAsState()
+        fun miniBarOver(d: Dest) = castActive != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.Remote &&
             castMiniBarVisible(castLinkNow, castStatusNow)
         val currentDisplayNameForCast = destDisplayName(dest)
         // R245 (FR-R245-4) / R265 (FR-R265-6) — the in-player hand-off, for a screen exactly as for a
@@ -2068,7 +2070,7 @@ fun RaviloApp(
                 currentIndex = if (rest != null) 0 else d.currentEpIndex, lang = lang,
                 episodesShuffled = rest != null, startOver = d.startOver,
             )
-            replaceTop(Dest.CastRemote(d.displayName))
+            replaceTop(Dest.Remote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
             LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
@@ -2233,13 +2235,13 @@ fun RaviloApp(
             contentKey = { d -> if (d is Dest.Home || d is Dest.Browse || d is Dest.Discover) "section" else d::class },
         ) { dest ->
             // R261 (FR-R261-3/5, dev review item 4) — the two playing destinations render unpadded
-            // (their picture owns the whole panel; the chrome pads itself). Dest.CastRemote is excluded
-            // too: CastRemoteScreen.kt already self-pads with WindowInsets.safeDrawing at its own root,
+            // (their picture owns the whole panel; the chrome pads itself). Dest.Remote is excluded
+            // too: OneRemoteScreen.kt already self-pads with WindowInsets.safeDrawing at its own root,
             // predating this seam — wrapping it again here would double the inset. Everything else gets
             // safeAreaPadding() here (not on the root Box) so it composes with its final insets from the
             // first frame, instead of jumping once the bars finish animating back in (the measured 69 px
             // this phase fixes).
-            val playingFullscreen = dest is Dest.Player || dest is Dest.LiveTv || dest is Dest.CastRemote
+            val playingFullscreen = dest is Dest.Player || dest is Dest.LiveTv || dest is Dest.Remote
             // R267 (FR-R267-7/-12) — nothing scrolls under the bottom bar and nothing is clipped by
             // it. The height comes from RaviloDimens, never repeated as a literal: a phone value wrong
             // by one bar is exactly how a heading ends up underneath one, twice already (R257
@@ -2259,7 +2261,7 @@ fun RaviloApp(
                 // max(ime, systemBars + bar), so a keyboard-up page ends at the keys rather than 68 dp
                 // above them, and a keyboard-down page still clears the gesture inset AND the bar.
                 // R338 amendment (2026-10-03) — the page colour goes under the system bars too, before the padding
-                // (as CastRemoteScreen does): the window behind them is Aurora's fixed #0A0C13, so a light theme had a
+                // (as OneRemoteScreen does): the window behind them is Aurora's fixed #0A0C13, so a light theme had a
                 // near-black status bar band with the clock drawn in dark ink on it.
                 else Modifier.fillMaxSize().background(RaviloTheme.colors.background).safeAreaPadding(plusBottom = navBarInset)
                     // R337 (FR-R337-2) — the phone layout on a computer: a 32 dp strip at the top for the window's controls.
@@ -2738,7 +2740,7 @@ fun RaviloApp(
                                 artUrl = resolveCastArt(apiClient.baseUrl, detail.card.backdropUrl),
                                 positionMs = null, lang = lang,
                             )
-                            push(Dest.CastRemote(dest.displayName))
+                            push(Dest.Remote(dest.displayName))
                         } else push(Dest.Player(
                             detail.card.id,
                             detail.card.title,
@@ -2783,7 +2785,7 @@ fun RaviloApp(
                                 positionMs = if (ctx.startOver) 0L else null, episodes = castEpisodes(ctx.episodes), currentIndex = ctx.currentEpIndex, lang = lang,
                                 startOver = ctx.startOver,
                             )
-                            push(Dest.CastRemote(dest.displayName))
+                            push(Dest.Remote(dest.displayName))
                         } else push(playerDestFor(ctx, dest.displayName))
                     } },
                     // R343 (FR-R343-5/8) — Shuffle: the whole order, here or on the connected TV (which plays the same order).
@@ -2795,7 +2797,7 @@ fun RaviloApp(
                                 artUrl = resolveCastArt(apiClient.baseUrl, first.episodes.getOrNull(first.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),
                                 positionMs = 0L, episodes = castShuffle(plan), currentIndex = 0, lang = lang, episodesShuffled = true,
                             )
-                            push(Dest.CastRemote(dest.displayName))
+                            push(Dest.Remote(dest.displayName))
                         } else push(playerDestFor(first, dest.displayName, plan, 0))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -2940,29 +2942,36 @@ fun RaviloApp(
                 } // CompositionLocalProvider (R343)
             }
 
-            // R369 (FR-R369-6) — a session's remote (R371's volume and R372's Move to / Play here plug in here).
-            is Dest.SessionRemote -> dev.jellystructure.ravilo.ui.sessions.SessionRemoteScreen(
-                sessionId = dest.sessionId, onBack = { pop() }, extras = sessionRemoteExtras(),
-            )
             // R380 (FR-R380-3/-6/-8) — Back hides it (the music plays on); the queue's end closes it.
             is Dest.TvNowPlaying -> dev.jellystructure.ravilo.ui.music.TvNowPlayingScreen(api = apiClient, onHide = { hideTvNowPlaying() })
-            is Dest.CastRemote -> {
+            // DEB-2185 (FR-1) — the one remote. Over this app's own Cast / screen link where it holds one (R356's faster
+            // path), through the server where it does not; the screen cannot tell which (FR-5).
+            is Dest.Remote -> {
                 val cc = castActive
-                if (cc == null) { LaunchedEffect(Unit) { pop() } }
+                val remote = dev.jellystructure.ravilo.ui.remote.rememberOneRemote(
+                    sessionId = dest.sessionId, cast = cc, extras = sessionRemoteExtras(), desktop = isDesktopPlatform, onGone = { pop() },
+                )
                 // R338 — the remote draws the film player's own picker sheets, so it stays dark like the player.
-                else dev.jellystructure.ravilo.ui.theme.KeepDark { CastRemoteScreen(
-                    cast = cc,
+                if (remote == null) dev.jellystructure.ravilo.ui.theme.KeepDark {
+                    Box(Modifier.fillMaxSize().background(RaviloTheme.colors.background).safeAreaPadding(includeIme = false), contentAlignment = Alignment.Center) {
+                        Box(Modifier.align(Alignment.TopStart).size(46.dp).clickable { pop() }, contentAlignment = Alignment.Center) {
+                            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.BACK, RaviloTheme.colors.text, 22.dp)
+                        }
+                        androidx.compose.material3.CircularProgressIndicator(color = RaviloTheme.colors.textDim, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                    }
+                } else dev.jellystructure.ravilo.ui.theme.KeepDark { OneRemoteScreen(
+                    remote = remote,
                     onBack = { pop() },
                     onPlayAgain = { itemId ->
-                        val st = cc.sender.status.value
-                        cc.cast(itemId = itemId, title = st?.title ?: "", kicker = st?.kicker, artUrl = st?.artUrl, positionMs = 0L, lang = lang)
+                        val st = cc?.sender?.status?.value
+                        cc?.cast(itemId = itemId, title = st?.title ?: "", kicker = st?.kicker, artUrl = st?.artUrl, positionMs = 0L, lang = lang)
                     },
                     // R299 (FR-R299-2) — the receiver could not play it; end the cast (or Play would cast
                     // again, FR-R245-4) and open this phone's own player at the start.
                     onPlayHere = { itemId, title, kicker ->
                         // 2026-10-05 — the film goes on where the TV was, not at Jellyfin's resume point.
-                        val at = cc.sender.status.value?.positionMs?.let { dev.jellystructure.ravilo.ui.sessions.moveStartMs(it) }
-                        cc.sender.stop()
+                        val at = cc?.sender?.status?.value?.positionMs?.let { dev.jellystructure.ravilo.ui.sessions.moveStartMs(it) }
+                        cc?.sender?.stop()
                         pop()
                         push(Dest.Player(itemId = itemId, title = title, kicker = kicker, displayName = dest.displayName, startAtMs = at))
                     },
@@ -3464,7 +3473,7 @@ fun RaviloApp(
         }
         // R245 (FR-R245-3/6) — the connecting bar and the mini bar float over every screen except the
         // three that own the picture or ARE the remote. The mini bar never dismisses while a cast runs.
-        if (castActive != null && dest !is Dest.Player && dest !is Dest.LiveTv && dest !is Dest.CastRemote) {
+        if (castActive != null && dest !is Dest.Player && dest !is Dest.LiveTv && dest !is Dest.Remote) {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.align(Alignment.TopCenter)) { CastConnectingBar() }
                 // R267 (FR-R267-8) — the mini bar DOCKS directly above the nav bar; the pair moves as
@@ -3478,7 +3487,21 @@ fun RaviloApp(
                         .padding(bottom = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
                             // R322 (FR-R322-10) — with a film casting too the bars stack: the cast bar on top, music under it.
                             (if (anyMusicBarOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)),
-                ) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
+                ) {
+                    // DEB-2185 (FR-9) — the same bar as a session elsewhere (below), read from this app's own link.
+                    val st = castStatusNow
+                    val linkName = castDeviceNow
+                    val row = dev.jellystructure.ravilo.ui.remote.rowForLink(sessionsNow.sessions, linkName)
+                    if (st != null) dev.jellystructure.ravilo.ui.components.OneMiniBar(
+                        item = dev.jellystructure.ravilo.ui.components.linkMiniBarItem(st, linkName.orEmpty(), row?.target?.icon),
+                        more = dev.jellystructure.ravilo.ui.sessions.barMoreCount(sessionsNow.sessions, row),
+                        onOpen = { push(Dest.Remote(currentDisplayNameForCast)) },
+                        onMore = { castController.openSheet(music = inMusic) },
+                        onPlayPause = { if (st.playing) castController.sender.pause() else castController.sender.play() },
+                        card = true,
+                        visible = castMiniBarVisible(castLinkNow, st),
+                    )
+                }
             }
         }
         // R322 (FR-R322-10) — the music mini bar docks on top of the bottom bar, where the cast mini bar docks; on a
@@ -3497,13 +3520,14 @@ fun RaviloApp(
         if (shownSession != null && sessionBarOver(dest)) {
             Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.BottomCenter) {
                 Box(Modifier.padding(bottom = if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp)) {
-                    dev.jellystructure.ravilo.ui.components.SessionMiniBar(
-                        session = shownSession,
+                    // DEB-2185 (FR-9) — one bar: the same component the cast's slot draws.
+                    dev.jellystructure.ravilo.ui.components.OneMiniBar(
+                        item = dev.jellystructure.ravilo.ui.components.sessionMiniBarItem(shownSession),
                         more = dev.jellystructure.ravilo.ui.sessions.barMoreCount(sessionsNow.sessions, shownSession),
-                        onOpen = { s -> castController.openSession(s) },
+                        onOpen = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touch(shownSession.id); castController.openSession(shownSession) },
                         onMore = { castController.openSheet(music = inMusic) },
-                        onPlayPause = { s -> castController.sessionPlayPause(s) },
-                        onNext = castController.sessionNext,
+                        onPlayPause = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touch(shownSession.id); castController.sessionPlayPause(shownSession) },
+                        onNext = castController.sessionNext?.let { next -> { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touch(shownSession.id); next(shownSession) } },
                     )
                 }
             }
@@ -3535,7 +3559,7 @@ fun RaviloApp(
         // on the Pixel 9). Every cast glyph only asks for it (CastController.openSheet).
         castActive?.let { CastSheetHost(it) }
         // FR-R245-8 — the cast remote's audio & subtitles sheet, likewise above the bottom bar.
-        if (dest is Dest.CastRemote) castActive?.let { dev.jellystructure.ravilo.ui.screens.CastTrackSheetHost(it) }
+        if (dest is Dest.Remote) dev.jellystructure.ravilo.ui.screens.OneRemoteTrackSheetHost()
         // R372 (FR-R372-6, owner decision 3) — the TV's Speakers panel: the player's button follows the viewer's group
         // session (the TV reads the session list since R372), and the panel closes with the player.
         if (isTvPlatform) {
@@ -3562,7 +3586,7 @@ fun RaviloApp(
                         if (dev.jellystructure.ravilo.ui.sessions.sameTitle(a)) {
                             sameKindAsk = null
                             dev.jellystructure.ravilo.ui.sessions.SessionRemote.command(a.elsewhere.id, dev.jellystructure.shared.tv.SessionCommandRequest(op = "play"))
-                            push(Dest.SessionRemote(a.elsewhere.id, destDisplayName(stack.lastOrNull())))
+                            push(Dest.Remote(destDisplayName(stack.lastOrNull()), a.elsewhere.id))
                         } else playThere(a)
                     },
                     onHere = {

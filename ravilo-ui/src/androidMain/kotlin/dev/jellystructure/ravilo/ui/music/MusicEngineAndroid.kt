@@ -176,7 +176,7 @@ actual object MusicEngine {
         runCatching {
             session?.setMediaButtonPreferences(listOf(
                 CommandButton.Builder(CommandButton.ICON_STOP).setSessionCommand(stopCast)
-                    .setDisplayName(dev.jellystructure.ravilo.ui.i18n.t("cast.stop", dev.jellystructure.ravilo.i18n.LastLanguage.read() ?: "en"))
+                    .setDisplayName(dev.jellystructure.ravilo.ui.i18n.t("cast.stop_room", dev.jellystructure.ravilo.i18n.LastLanguage.read() ?: "en"))
                     .setSlots(CommandButton.SLOT_OVERFLOW).build(),
             ))
         }
