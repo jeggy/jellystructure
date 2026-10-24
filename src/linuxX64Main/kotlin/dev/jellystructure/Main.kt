@@ -25,6 +25,7 @@ import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.media.pipelineStepConcurrency
 import dev.jellystructure.media.runPipelineStepPool
 import dev.jellystructure.config.PipelineStep
+import dev.jellystructure.config.processingOrDerived
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.nfo.NfoWriter
@@ -384,6 +385,8 @@ fun main() = runBlocking {
     val trackCoverage = dev.jellystructure.media.TrackCoverageService(db, fileIntegrity)
     // Phase 261 (FR-261-9) — the last run of each pipeline step per title, behind the title page's Checks card.
     val stepRuns = dev.jellystructure.media.StepRunStore(db)
+    // DEB-1664 (FR-9) — when each processing feature last ran.
+    val processingRuns = dev.jellystructure.media.ProcessingRuns(db)
     dev.jellystructure.media.TrackCoverageFlags.service = trackCoverage
     // Phase 273 — does each sidecar subtitle belong to its video; its references; the one rule for what viewers see.
     val subtitleReferences = dev.jellystructure.subtitles.SubtitleReferences(db, jellyfinClient, configStore)
@@ -771,6 +774,7 @@ fun main() = runBlocking {
         musicPipeline = musicPipeline,
         sessionPublisher = sessionPublisher,
         supportService = supportService,
+        processingRuns = processingRuns,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
@@ -787,38 +791,51 @@ fun main() = runBlocking {
         realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
         artworkPresize = { imageProxyService.presize(it) },   // Phase 220 (FR-220-1)
         music = musicPipeline,                                // Phase 275
+        processingRuns = processingRuns,                      // DEB-1664
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
     // (the cron the Settings schedule UI emits), not "interval since boot". Re-reads config every poll
     // chunk so edits apply within a minute, and publishes the next-run time for the admin indicator.
     rootScope.launch {
-        var legacyNextSec = 0L  // armed lazily for the legacy scanIntervalHours fallback
         while (shutdownRequested.value == 0) {
             val cfg = configStore.current
-            val schedule = cfg.scanSchedule
-            val legacyHours = cfg.behavior.scanIntervalHours
+            // DEB-1664 (FR-3.2) — Find new & changed's own interval; the legacy `scan_interval_hours` was carried over into it at load.
+            val schedule = cfg.processingOrDerived().find.schedule
             val nowSec = nowEpochSec()
 
             // ms until the next due run (null = nothing scheduled / schedule not understood).
             val dueInMs: Long? = when {
                 schedule.isNotBlank() -> nextRunDelayMs(schedule, nowSec)
-                    ?: run { Logger.warn("scan_schedule '$schedule' not understood — scheduler idle until it's fixed"); null }
-                legacyHours > 0 -> {
-                    if (legacyNextSec == 0L) legacyNextSec = nowSec + legacyHours * 3_600L
-                    (legacyNextSec - nowSec) * 1_000L
-                }
+                    ?: run { Logger.warn("Find new & changed's schedule '$schedule' not understood — scheduler idle until it's fixed"); null }
                 else -> null
             }
             scanTracker.nextScheduledRunSec.value = if (dueInMs != null && dueInMs > 0L) nowSec + dueInMs / 1_000L else 0L
 
             // Far off (or nothing scheduled) → sleep a poll chunk so config edits are picked up, then recompute.
-            if (dueInMs == null || dueInMs > 60_000L) { delay(60_000L); continue }
+            if (dueInMs == null || dueInMs > 60_000L) {
+                // FR-3.3 — the whole-library features are re-checked on their own interval, independent of Find new & changed:
+                // not while a look is running, and not within a quarter of an hour of the look that would carry them anyway.
+                if (!scanTracker.running && (dueInMs == null || dueInMs > FEATURE_RIDES_LOOK_MS)) {
+                    val due = dev.jellystructure.media.ProcessingSchedule.dueFeatures(
+                        cfg, nowSec, { processingRuns.all()[it] },
+                        { step -> when (step) {
+                            dev.jellystructure.config.RecommendationsStep.STEP -> dev.jellystructure.tv.RecommendationService.current?.lastBuiltAt()
+                            else -> dev.jellystructure.suggestions.SuggestionService.current?.lastBuiltAt()
+                        } },
+                    )
+                    if (due.isNotEmpty()) {
+                        Logger.info("Features due on their own interval: ${due.sorted().joinToString(", ")}", "scan")
+                        val jobId = scanTracker.startNew()
+                        launchScanRun(jobId, "scheduled", scanTracker, rootScope, configStore, pipelineDeps, onlyFeatures = due)
+                    }
+                }
+                delay(60_000L); continue
+            }
 
             delay(dueInMs.coerceAtLeast(0L))
             if (shutdownRequested.value != 0) break
             if (scanTracker.running) { Logger.info("Scheduled run skipped — a scan is already running"); delay(60_000L); continue }
-            if (schedule.isBlank() && legacyHours > 0) legacyNextSec = nowEpochSec() + legacyHours * 3_600L
 
             // Phase 175 (follow-up) — launchScanRun() is the ONE place every trigger (this scheduler,
             // every manual button, resume, SCAN_ON_START) launches a run; no bespoke step list or
@@ -917,6 +934,9 @@ fun nowEpochSec(): Long = time(null)
  *  defects that motivated it), computed against the host's local timezone (the same clock the admin
  *  reads). Signature kept exactly as-is so both existing call sites (the scheduler loop below and
  *  `MediaRoutes.kt`'s `/scan/status`) are untouched. */
+/** DEB-1664 (FR-3.3) — a whole-library feature due on its own interval waits for Find new & changed's next look when that is this close. */
+private const val FEATURE_RIDES_LOOK_MS = 15 * 60_000L
+
 fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? {
     val parsed = dev.jellystructure.cron.parseCron(cron)
     if (parsed !is dev.jellystructure.cron.CronParse.Ok) return null

@@ -28,6 +28,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -150,5 +151,46 @@ class PipelineSingleItemSignalTest {
         assertEquals(1, sent.count { it == "POST /Library/Refresh" }, "$sent")
         assertEquals(1, sent.count { it == "WEBHOOK" }, "the scan_complete webhook fires with Finished: $sent")
         assertTrue(sent.none { it.contains("/Items/") }, "a library run refreshes no single item: $sent")
+    }
+
+    // ── DEB-2194 (DEB-1664, FR-3.1): the features, not a saved list, decide what a single title gets ─────────────────
+
+    private fun withProcessing(f: (dev.jellystructure.config.ProcessingConfig) -> dev.jellystructure.config.ProcessingConfig) = runBlocking {
+        val only = dev.jellystructure.config.ProcessingConfig(
+            metadata = dev.jellystructure.config.MetadataProcessing(tmdb = false, artwork = false, imdb = false, drift = false, rescanArr = false),
+            segments = dev.jellystructure.config.SegmentsProcessing(enabled = false),
+            health = dev.jellystructure.config.HealthProcessing(enabled = false), subtitles = dev.jellystructure.config.SubtitlesProcessing(enabled = false),
+            suggestions = dev.jellystructure.config.SuggestionsProcessing(enabled = false), music = dev.jellystructure.config.MusicProcessing(enabled = false),
+            audiobooks = dev.jellystructure.config.AudiobooksProcessing(enabled = false),
+        )
+        configStore.update(configStore.current.copy(processing = f(only)))
+        effectivePipeline(configStore.current)
+    }
+
+    @Test
+    fun `a title that arrives by webhook gets NFO files and is told to Jellyfin when the Metadata feature has them on`() {
+        val film = title(MediaKind.MOVIE, "jf-nfo-on", nfoWrittenAt = 100L)
+        runBlocking { store.addOrUpdate(film); store.updateOne(film) }
+        val pipeline = withProcessing { it }
+        assertEquals(listOf("scan_files", "write_nfo", "sync_jellyfin"), pipeline.map { it.step })
+        run(RunTarget.SingleItem(film), pipeline)
+        assertTrue((runBlocking { store.get(film.id) }?.jfSyncedAt ?: 0L) > 0L, "telling Jellyfin ran for the title")
+    }
+
+    @Test
+    fun `the same title with NFO files switched off is not told to Jellyfin by a step — only the one closing refresh`() {
+        val film = title(MediaKind.MOVIE, "jf-nfo-off", nfoWrittenAt = 100L)
+        runBlocking { store.addOrUpdate(film); store.updateOne(film) }
+        val pipeline = withProcessing { it.copy(metadata = it.metadata.copy(nfo = false)) }
+        assertEquals(listOf("scan_files"), pipeline.map { it.step })
+        run(RunTarget.SingleItem(film), pipeline)
+        assertNull(runBlocking { store.get(film.id) }?.jfSyncedAt, "no step synced it")
+        assertEquals(1, posts.value.count { it.startsWith("POST /Items/jf-nfo-off/Refresh?") }, "FR-145-7's one closing refresh: ${posts.value}")
+    }
+
+    @Test
+    fun `a run of whole-library features alone looks at nothing — no library refresh and no scan_complete`() {
+        runBlocking { runPipeline(RunTarget.Library(), listOf(PipelineStep(step = "build_recommendations")), "job-feat", ScanTracker(db, persistToDb = false), deps, discover = false) }
+        assertEquals(emptyList(), posts.value, "nothing was sent: ${posts.value}")
     }
 }

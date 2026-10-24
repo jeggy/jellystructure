@@ -30,6 +30,9 @@ import dev.jellystructure.media.parseSkipSteps
 import dev.jellystructure.media.pipelinePlanRows
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.media.PipelineDeps
+import dev.jellystructure.media.ProcessingSchedule
+import dev.jellystructure.config.ProcessingFeatures
+import dev.jellystructure.config.processingOrDerived
 import dev.jellystructure.media.PipelineStepOps
 import dev.jellystructure.media.RunTarget
 import dev.jellystructure.media.effectivePipeline
@@ -202,6 +205,8 @@ fun Route.mediaRoutes(
     imageProxyService: dev.jellystructure.tv.RaviloArtworkService? = null,
     // Phase 275 — so *Scan now* / *Run pipeline* run the music steps too.
     musicPipeline: dev.jellystructure.media.MusicPipeline? = null,
+    // DEB-1664 (FR-9) — when each feature last ran, so a run started here records it and a Music or Audiobooks interval is measured from it.
+    processingRuns: dev.jellystructure.media.ProcessingRuns? = null,
 ) {
     // Phase 175 — shared collaborator bundle for every runPipeline() call these routes make.
     val pipelineDeps = PipelineDeps(
@@ -212,6 +217,7 @@ fun Route.mediaRoutes(
         realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
         artworkPresize = imageProxyService?.let { svc -> { item -> svc.presize(item); Unit } },
         music = musicPipeline,
+        processingRuns = processingRuns,
     )
     route("/media") {
         get {
@@ -2137,7 +2143,7 @@ fun Route.mediaRoutes(
     get("/scan/status") {
         // 93e: compute the next scheduled run FRESH from the current config so the indicator updates
         // the instant the admin saves a new schedule (no waiting for the scheduler loop to recompute).
-        val sched = configStore.current.scanSchedule
+        val sched = configStore.current.processingOrDerived().find.schedule
         val next = if (sched.isNotBlank()) nextRunDelayMs(sched, nowEpochSec())?.let { nowEpochSec() + it / 1000L } else null
         call.respond(scanTracker.status().copy(nextScheduledRun = next))
     }
@@ -2343,14 +2349,29 @@ internal fun launchScanRun(
     full: Boolean = false,
     skipSteps: Set<String> = emptySet(),
     resumeSkipIds: Set<String> = emptySet(),
+    // DEB-1664 (FR-3.3) — a run of these whole-library features alone (no discovery), started by the feature scheduler.
+    onlyFeatures: Set<String>? = null,
 ): List<PipelineStep> {
-    val runsPipeline = configStore.current.scan.pipeline.any { it.enabled }
-    val pipeline = effectivePipeline(configStore.current).filter { it.step !in skipSteps }
-    val kindWord = if (runsPipeline) "pipeline" else "scan"
+    val cfgNow = configStore.current
+    // FR-9.2 — the old `skipSteps` ids map to parts; an id that is not a part (a retired step, telling Jellyfin, junk) is ignored.
+    val skipParts = ProcessingFeatures.skippableParts(skipSteps)
+    val ignoredSkips = ProcessingFeatures.ignoredSkips(skipSteps)
+    val features = effectivePipeline(cfgNow)
+    val pipeline = when {
+        onlyFeatures != null -> ProcessingSchedule.stepsOf(features, onlyFeatures)
+        else -> {
+            // FR-3.3 — Music and Audiobooks run when their own interval says; a run someone started takes everything it was given.
+            val due = ProcessingSchedule.dueFeatures(cfgNow, nowEpochSec(), { pipelineDeps.processingRuns?.all()?.get(it) }, { null })
+            ProcessingSchedule.stepsForRun(features, triggerKind == "manual", due)
+        }
+    }.filter { it.step !in skipParts }
+    val runsPipeline = pipeline.any { it.step != "scan_files" }
+    val kindWord = if (onlyFeatures != null) "feature run" else if (runsPipeline) "pipeline" else "scan"
     val suffix = buildString {
         if (full) append(" (full)")
         if (resumeSkipIds.isNotEmpty()) append(" (resumed)")
-        if (skipSteps.isNotEmpty()) append(" · skipped: ${skipSteps.sorted().joinToString(", ")}")
+        if (skipParts.isNotEmpty()) append(" · skipped: ${skipParts.sorted().joinToString(", ")}")
+        if (ignoredSkips.isNotEmpty()) append(" · ignored: ${ignoredSkips.sorted().joinToString(", ")}")
     }
     val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
     // Phase 178 §FR-178-2 originally restricted deferral to a "scheduled" trigger only; Phase 213
@@ -2371,7 +2392,7 @@ internal fun launchScanRun(
             if (runsPipeline) (if (full) "full" else "normal") else null,
             startMsg, scanTracker,
         ) {
-            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible, byHand = triggerKind == "manual")
+            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible, byHand = triggerKind == "manual", discover = onlyFeatures == null)
         }
     }
     scanTracker.attachJob(job)

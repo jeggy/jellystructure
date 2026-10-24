@@ -28,8 +28,8 @@ class ConfigStore(private val filePath: String) {
     suspend fun load() {
         val path = Path(filePath)
         if (!SystemFileSystem.exists(path)) {
-            // Phase 273 — a new install starts on `fix` and needs no seeding.
-            _config = _config.copy(scan = _config.scan.copy(subtitleCheckSeeded = true))
+            // Phase 273 — a new install starts on `fix` and needs no seeding. DEB-1664 (FR-2.6) — and on the fresh-install features.
+            _config = ProcessingCarryOver.settle(_config.copy(scan = _config.scan.copy(subtitleCheckSeeded = true), processing = ProcessingConfig()))
             persist()
             Logger.info("Created default config at $filePath")
             return
@@ -39,7 +39,20 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps(); seedSuggestionsStep(); seedAvSyncStep() }
+        else {
+            fixAgeRatingMapKeys(); adoptNestedPublicUrl()
+            // DEB-1664 (FR-2.3) — carry-over, once: with no `[processing]` the legacy seeds still run first (they complete the
+            // pipeline the features are derived from), then the features are derived from it and written back.
+            if (_config.processing == null) {
+                seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps(); seedSuggestionsStep(); seedAvSyncStep()
+                ProcessingCarryOver.unknownSteps(_config).forEach { Logger.warn("Config: pipeline step '$it' is not one of the processing features — dropped", "config") }
+                _config = ProcessingCarryOver.settle(_config)
+                persist()
+                Logger.info("Config: [processing] carried over from the saved pipeline and schedule", "config")
+            } else {
+                _config = ProcessingCarryOver.settle(_config)   // the derived [[scan.pipeline]] follows the features, in memory
+            }
+        }
     }
 
     /** Phase 275 — each music step joins the operator's pipeline once (see [MusicSteps.seed]). */
@@ -191,7 +204,7 @@ class ConfigStore(private val filePath: String) {
      *  `MetadataRoutes.kt` for the call sites now surfacing it. */
     suspend fun update(config: AppConfig): Boolean = mutex.withLock {
         val supportWas = supportAvailable
-        _config = config
+        _config = ProcessingCarryOver.settle(config)   // DEB-1664 (FR-2.4) — every save also writes the derived pipeline
         val ok = persist()
         // Phase 320 (FR-320-1) — saving or removing the AI key, and changing `[support] enabled`, both change what
         // `supportEnabled` reports. Here rather than in the one route that happens to carry the key today: every writer

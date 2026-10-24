@@ -19,6 +19,7 @@ import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.publishRoutes
 import dev.jellystructure.server.routes.seedingRoutes
 import dev.jellystructure.server.routes.fileFixRoutes
+import dev.jellystructure.server.routes.processingRoutes
 import dev.jellystructure.server.routes.looseFilmRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.supportRoutes
@@ -216,6 +217,8 @@ fun startServer(
     sessionPublisher: dev.jellystructure.tv.SessionPublisher? = null,
     // 320 — the support lane; null in contexts that build none. Its routes answer 404/409 while unavailable (FR-320-1).
     supportService: dev.jellystructure.support.SupportService? = null,
+    // DEB-1664 (FR-9) — when each processing feature last ran.
+    processingRuns: dev.jellystructure.media.ProcessingRuns? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -651,7 +654,8 @@ fun startServer(
                     })
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, mediaStore)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline, processingRuns = processingRuns)
+                processingRoutes(configStore, processingRuns, mediaJobQueue, scanTracker)   // DEB-1664 (FR-9)
                 activityRoutes(activityLog)
                 aiRoutes(configStore)   // Phase 270
                 aiPageRoutes({ configStore.current }, { suggestionService?.available() == true })   // DEB-1253 (FR-2)

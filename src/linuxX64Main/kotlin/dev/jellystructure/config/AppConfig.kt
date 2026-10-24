@@ -38,6 +38,9 @@ data class AppConfig(
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
+    /** DEB-1664 (FR-2.1) — the nine processing features: switches, intervals, per-part options. Null only before the one-time
+     *  carry-over from `[[scan.pipeline]]` ([ProcessingCarryOver.settle]); after a load or a save it is always set. */
+    val processing: ProcessingConfig? = null,
     // Phase 98 — tracker registry (announce-host → name mapping)
     val trackers: List<TrackerEntry> = emptyList(),
     // Phase 114 — realtime ingest (arr webhooks + Jellyfin LibraryChanged)

@@ -118,6 +118,110 @@ data class PipelineStep(
     @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
     // Phase 269 — build_recommendations: how often a run really rebuilds (`daily` | `weekly`).
     @SerialName("rebuild_every") val rebuildEvery: String = "weekly",
+    // Phase 115 — detect_drift: silently fix "Jellyfin behind" items. Missing here, every Settings save turned it off (DEB-1664, FR-2.5).
+    @SerialName("auto_reassert") val autoReassert: Boolean = false,
+)
+
+/**
+ * DEB-1664 (FR-2.1, FR-2.5) — mirrors the backend's `ProcessingConfig` key for key, so a Settings save sends back every
+ * `[processing]` key it was given. The Processing tab (a later slice) edits it; until then it only round-trips.
+ */
+@Serializable
+data class ProcessingConfig(
+    val find: FindProcessing = FindProcessing(),
+    val metadata: MetadataProcessing = MetadataProcessing(),
+    val segments: SegmentsProcessing = SegmentsProcessing(),
+    val health: HealthProcessing = HealthProcessing(),
+    val subtitles: SubtitlesProcessing = SubtitlesProcessing(),
+    val suggestions: SuggestionsProcessing = SuggestionsProcessing(),
+    val music: MusicProcessing = MusicProcessing(),
+    val audiobooks: AudiobooksProcessing = AudiobooksProcessing(),
+)
+
+@Serializable
+data class AgeTiers(
+    @SerialName("recheck_unchanged") val recheckUnchanged: Boolean = false,
+    @SerialName("this_year") val thisYear: String = "weekly",
+    @SerialName("one_to_five_years") val oneToFiveYears: String = "monthly",
+    val older: String = "6months",
+)
+
+@Serializable
+data class FindProcessing(val schedule: String = "0 */1 * * *")
+
+@Serializable
+data class MetadataProcessing(
+    val enabled: Boolean = true,
+    val tiers: AgeTiers = AgeTiers(recheckUnchanged = true),
+    val tmdb: Boolean = true,
+    @SerialName("tmdb_scope") val tmdbScope: String = "all",
+    val artwork: Boolean = true,
+    @SerialName("artwork_scope") val artworkScope: String = "missing",
+    val imdb: Boolean = true,
+    val nfo: Boolean = true,
+    @SerialName("nfo_overwrite") val nfoOverwrite: Boolean = false,
+    val drift: Boolean = true,
+    @SerialName("auto_reassert") val autoReassert: Boolean = false,
+    @SerialName("rescan_arr") val rescanArr: Boolean = true,
+)
+
+@Serializable
+data class SegmentsProcessing(
+    val enabled: Boolean = false,
+    val scope: String = "missing",
+    @SerialName("detect_fingerprint") val detectFingerprint: Boolean = false,
+    @SerialName("trust_stinger_tags") val trustStingerTags: Boolean = true,
+    @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
+)
+
+@Serializable
+data class HealthProcessing(
+    val enabled: Boolean = true,
+    val verify: Boolean = true,
+    @SerialName("verify_tiers") val verifyTiers: AgeTiers = AgeTiers(true, "5years", "5years", "5years"),
+    val lengths: Boolean = true,
+    @SerialName("lengths_tiers") val lengthsTiers: AgeTiers = AgeTiers(true, "yearly", "2years", "5years"),
+    @SerialName("av_sync") val avSync: Boolean = true,
+    @SerialName("av_sync_tiers") val avSyncTiers: AgeTiers = AgeTiers(),
+)
+
+@Serializable
+data class SubtitlesProcessing(
+    val enabled: Boolean = true,
+    val prewarm: Boolean = true,
+    @SerialName("check_fit") val checkFit: Boolean = true,
+    @SerialName("check_fit_tiers") val checkFitTiers: AgeTiers = AgeTiers(true, "weekly", "weekly", "weekly"),
+)
+
+@Serializable
+data class SuggestionsProcessing(
+    val enabled: Boolean = true,
+    val recommendations: Boolean = true,
+    @SerialName("recommendations_every") val recommendationsEvery: String = "weekly",
+    val suggestions: Boolean = true,
+    @SerialName("suggestions_every") val suggestionsEvery: String = "weekly",
+)
+
+@Serializable
+data class MusicProcessing(
+    val enabled: Boolean = true,
+    val interval: String = "daily",
+    val read: Boolean = true,
+    val match: Boolean = true,
+    @SerialName("match_scope") val matchScope: String = "missing",
+    val compare: Boolean = true,
+    val artwork: Boolean = true,
+    @SerialName("artwork_scope") val artworkScope: String = "missing",
+    val lyrics: Boolean = true,
+    @SerialName("lyrics_scope") val lyricsScope: String = "missing",
+    val nfo: Boolean = true,
+    val tags: Boolean = true,
+)
+
+@Serializable
+data class AudiobooksProcessing(
+    val enabled: Boolean = true,
+    val interval: String = "daily",
 )
 
 @Serializable
@@ -181,6 +285,8 @@ data class AppConfig(
     @SerialName("jellyfin_internal_url") val jellyfinInternalUrl: String = "",
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
+    // DEB-1664 (FR-2.5) — the nine processing features; the server carries it over once, the admin only sends back what it was given.
+    val processing: ProcessingConfig? = null,
     val trackers: List<TrackerConfig> = emptyList(),
     @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
     // Phase 270 — the AI tab. The key arrives as the `##KEEP##` sentinel when one is saved (never the key).

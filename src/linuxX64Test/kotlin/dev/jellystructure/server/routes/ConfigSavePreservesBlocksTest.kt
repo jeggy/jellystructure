@@ -252,7 +252,8 @@ class ConfigSavePreservesBlocksTest {
                 if (!scan.recommendationsStepSeeded) add("recommendations_step_seeded")
                 if (!scan.suggestionsStepSeeded) add("suggestions_step_seeded")
                 if (!scan.subtitleCheckSeeded) add("subtitle_check_seeded")
-                if (scan.musicStepsSeeded != listOf(MusicSteps.SCAN, MusicSteps.MATCH)) add("music_steps_seeded")
+                // DEB-1664 (FR-2.4): every write settles the markers to "all seeded" so a rolled-back image seeds nothing back.
+                if (scan.musicStepsSeeded != MusicSteps.ALL) add("music_steps_seeded")
                 if (!scan.avSyncStepSeeded) add("avsync_step_seeded")
             }
             assertEquals(emptyList<String>(), cleared, "a Settings save carries no seed marker — the route must restore each from the stored config")

@@ -328,8 +328,12 @@ fun Route.configureConfigRoutes(
         // always valid; anything else must parse, actually fire within the search horizon, and not fire
         // more often than every 15 minutes. Rejects with 422 rather than silently persisting a schedule
         // that leaves the scheduler idle with nothing but a repeating log warning (the bug this closes).
-        if (config.scanSchedule.isNotBlank()) {
-            val check = dev.jellystructure.cron.validateSchedule(config.scanSchedule, dev.jellystructure.nowEpochSec())
+        // DEB-1664 (FR-2.5, FR-3.2) — `[processing]` and the legacy pipeline/schedule it is derived to are one thing: whichever side the
+        // sender moved wins (see ProcessingCarryOver.reconcile), and Find new & changed's schedule is what is validated.
+        config = dev.jellystructure.config.ProcessingCarryOver.reconcile(stored, config)
+        val findSchedule = config.processing?.find?.schedule ?: config.scanSchedule
+        if (findSchedule.isNotBlank()) {
+            val check = dev.jellystructure.cron.validateSchedule(findSchedule, dev.jellystructure.nowEpochSec())
             if (check is dev.jellystructure.cron.ScheduleCheck.Invalid) {
                 call.respond(HttpStatusCode.UnprocessableEntity, mapOf("field" to "scan_schedule", "error" to check.message))
                 return@put

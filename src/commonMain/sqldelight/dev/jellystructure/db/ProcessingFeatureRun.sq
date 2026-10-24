@@ -1,0 +1,13 @@
+-- DEB-2194 (DEB-1664, FR-9) — when each processing feature last ran: Settings and Activity read it as the
+-- feature's *last ran* line, and a whole-library feature's own interval (FR-3.3) is measured from it. One row per feature id.
+-- Must stay byte-for-byte in sync with 89.sqm's CREATE TABLE.
+CREATE TABLE processing_feature_run (
+    feature TEXT NOT NULL PRIMARY KEY,
+    last_ran_at INTEGER NOT NULL
+);
+
+put:
+INSERT OR REPLACE INTO processing_feature_run(feature, last_ran_at) VALUES (:feature, :last_ran_at);
+
+all:
+SELECT * FROM processing_feature_run;

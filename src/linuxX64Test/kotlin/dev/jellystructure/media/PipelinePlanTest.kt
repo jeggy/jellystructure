@@ -15,22 +15,29 @@ class PipelinePlanTest {
     private fun cfg(vararg steps: PipelineStep) = AppConfig(scan = ScanConfig(pipeline = steps.toList()))
 
     @Test
-    fun `an install with no step enabled lists the built-in default it really runs`() {
+    fun `an install with no step enabled lists discovery alone — the features are the plan now and no built-in list`() {
         val plan = pipelinePlan(cfg(PipelineStep(step = "scan_files", enabled = false), PipelineStep(step = "detect_segments", enabled = false)))
-        assertEquals(effectivePipeline(cfg()).map { it.step }, plan.map { it.step })
-        assertEquals("scan_files", plan.first().step)
-        assertTrue(plan.size > 1, "the built-in default runs more than discovery: $plan")
+        assertEquals(listOf("scan_files"), plan.map { it.step })
+        assertEquals(plan.map { it.step }, effectivePipeline(cfg(PipelineStep(step = "scan_files", enabled = false))).map { it.step })
     }
 
     @Test
-    fun `only enabled steps are listed — discovery first and the rest in the configured order`() {
+    fun `an install with no saved pipeline lists the fresh install features`() {
+        val plan = pipelinePlan(cfg()).map { it.step }
+        assertEquals("scan_files", plan.first())
+        assertTrue("write_nfo" in plan && "sync_jellyfin" in plan, "NFO files and telling Jellyfin are on: $plan")
+        assertTrue("detect_segments" !in plan, "Intro & credits is off: $plan")
+    }
+
+    @Test
+    fun `only enabled steps are listed — discovery first then the rest in the one dependency order with telling Jellyfin after the NFO files`() {
         val plan = pipelinePlan(cfg(
             PipelineStep(step = "pull_tmdb", scope = "all"),
             PipelineStep(step = "detect_segments", enabled = false),
             PipelineStep(step = "scan_files"),
             PipelineStep(step = "write_nfo"),
         ))
-        assertEquals(listOf("scan_files", "pull_tmdb", "write_nfo"), plan.map { it.step })
+        assertEquals(listOf("scan_files", "pull_tmdb", "write_nfo", "sync_jellyfin"), plan.map { it.step })
         assertEquals("all", plan[1].scope)
     }
 

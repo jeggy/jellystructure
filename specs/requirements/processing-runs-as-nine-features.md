@@ -370,6 +370,29 @@ step list), 213 (FR-213-1's lanes stay, labelled by feature), 261 (FR-261-4's st
 the Checks card is FR-10), 262 (FR-262-3a: the switch moves to Settings ▸ Processing), 265 (FR-265-1…8: the dialog
 is FR-5) and 303 (the Checks card lists features).
 
+## Amendment 2026-10-24 — what slice 1 fixed where this file was silent (DEB-2194)
+
+- **The keys.** `[processing.find]` `schedule` (a cron; blank = no automatic look); `[processing.metadata]` (`enabled`, `tmdb`, `tmdb_scope`,
+  `artwork`, `artwork_scope`, `imdb`, `nfo`, `nfo_overwrite`, `drift`, `auto_reassert`, `rescan_arr`, and `[processing.metadata.tiers]` —
+  `recheck_unchanged`, `this_year`, `one_to_five_years`, `older`); `[processing.segments]`; `[processing.health]` (`verify`, `lengths`, `av_sync`,
+  each with `*_tiers`); `[processing.subtitles]` (`prewarm`, `check_fit`, `check_fit_tiers`); `[processing.suggestions]` (`recommendations`,
+  `suggestions`, each with `*_every`); `[processing.music]` (`interval` = `hourly` | `daily` | `weekly`, one switch per part, three scopes);
+  `[processing.audiobooks]` (`enabled`, `interval`). The release-age tiers that `scan_files` carries today live under Metadata & artwork (FR-3.3),
+  and the derived `scan_files` step reads them from there. Make files play directly has no key: its switches are the database rows (FR-2.2).
+- **Part ids on the wire are the step ids** (`GET /api/processing`, `skipSteps`). They never reach a screen (FR-13.1). `sync_jellyfin` is not a part, so a
+  `skipSteps` that names it is ignored, as `wait`, `notify` and unknown ids are.
+- **Music and Audiobooks carry over as `hourly`.** The pipeline ran their steps with every run, so an hourly Find keeps doing exactly that; a fresh install
+  gets `daily` (FR-2.6). A schedule the install had is kept as it is, including a blank one (manual only): only a new install starts on every hour.
+- **Whole-library features run on their own interval.** A scheduled or start-up run takes Music and Audiobooks only when their interval has passed
+  (measured from the start of the run they last ran in); a feature tick in the scheduler runs them alone — no discovery, no *Scan finished* — when they are
+  due and Find new & changed is more than 15 minutes from its next look. Recommendations and suggestions keep their own "not due" rule and now run
+  even when a look found nothing to examine.
+- **`PUT /api/config`.** Until the Processing tab exists the Settings pipeline card still edits the derived `[[scan.pipeline]]` and `scan_schedule` and
+  sends `[processing]` back untouched. When only those moved, they win and `[processing]` is derived from them; when `[processing]` moved, it wins and they
+  are derived from it. Find new & changed's schedule is what is validated (phase 166), whichever side carried it.
+- **`GET /api/processing`** answers every feature with `enabled`, `locked`, `canRun`, `state`, `reason`, `interval`, `lastRan`, `next`, `waiting`, their
+  epoch-second twins, and its parts with `on`, `canRun` and `reason`; every sentence is built on the server.
+
 ## Code anchors (`main` at `51206b00`)
 
 - **Config:** root `scan_schedule` (`config/AppConfig.kt:34`); `ScanConfig` with `[[scan.pipeline]]`,

@@ -6,6 +6,7 @@ import kotlinx.io.files.Path
 import platform.posix.getpid
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -32,16 +33,19 @@ class FileCheckStepsConfigTest {
         |""".trimMargin()
 
     @Test
-    fun `verify_files false boots with both steps added and off — before the trailing notify`() {
+    fun `verify_files false boots with both steps added and off — and the pipeline carries over to the features`() {
         val path = pathFor("off")
         runBlocking { FileIo.writeText(Path(path), "[behavior]\nverify_files = false\n\n$pipeline") }
         val cfg = load(path).current
-        // Phase 269 seeds build_recommendations the same way, Phase 273 check_subtitles and Phase 317 check_av_sync
-        // (after the subtitle check), all ahead of the trailing notify;
-        // The music steps (275–277) are seeded too; their own order is tested in MusicIngestTest/MusicMatchTest.
-        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "check_track_lengths", "build_recommendations", "build_suggestions", "check_subtitles", "check_av_sync", "notify"), cfg.scan.pipeline.map { it.step }.filterNot { MusicSteps.isMusic(it) })
+        // Phase 269 seeds build_recommendations the same way, Phase 273 check_subtitles and Phase 317 check_av_sync, all of them
+        // enabled; the music steps (275–277) are seeded too, their own order is tested in MusicIngestTest/MusicMatchTest.
+        // DEB-1664 (FR-2.3): the seeded pipeline is then carried over to [processing], and [[scan.pipeline]] is what the features derive to.
+        assertEquals(listOf("scan_files", "pull_tmdb", "check_av_sync", "check_subtitles", "build_recommendations", "build_suggestions"),
+            cfg.scan.pipeline.filter { it.enabled }.map { it.step }.filterNot { MusicSteps.isMusic(it) })
         assertEquals("report", cfg.subtitleCheck.action, "an existing install's subtitle check starts on Only report")
         assertEquals(listOf(false, false), cfg.scan.pipeline.filter { it.step in FileCheckSteps.ALL }.map { it.enabled })
+        val health = cfg.processing!!.health
+        assertTrue(health.enabled && !health.verify && !health.lengths && health.avSync, "the two file checks are off, the sound check on: $health")
         assertTrue(cfg.scan.fileCheckStepsSeeded)
         platform.posix.remove(path)
     }
@@ -60,22 +64,25 @@ class FileCheckStepsConfigTest {
     }
 
     @Test
-    fun `a step the operator removed stays removed`() {
+    fun `a part the operator switched off stays off on the next boot`() {
         val path = pathFor("removed")
         runBlocking { FileIo.writeText(Path(path), pipeline) }
         val store = load(path)
-        runBlocking { store.update(store.current.copy(scan = store.current.scan.copy(pipeline = store.current.scan.pipeline.filter { it.step != FileCheckSteps.LENGTHS }))) }
-        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "build_recommendations", "build_suggestions", "check_subtitles", "check_av_sync", "notify"), load(path).current.scan.pipeline.map { it.step }.filterNot { MusicSteps.isMusic(it) })
+        val p = store.current.processing!!
+        runBlocking { store.update(store.current.copy(processing = p.copy(health = p.health.copy(lengths = false)))) }
+        val again = load(path).current
+        assertFalse(again.processing!!.health.lengths)
+        assertFalse(again.scan.pipeline.single { it.step == FileCheckSteps.LENGTHS }.enabled)
         platform.posix.remove(path)
     }
 
     @Test
-    fun `an empty pipeline stays empty — and the built-in default carries the file steps`() {
+    fun `an empty pipeline carries over to the fresh install features — and they run the file steps`() {
         val path = pathFor("empty")
         runBlocking { FileIo.writeText(Path(path), "[behavior]\nverify_files = true\n") }
         val cfg = load(path).current
-        assertEquals(emptyList(), cfg.scan.pipeline)
-        assertEquals(listOf("scan_files", "pull_tmdb", "fetch_artwork", "verify_files", "check_track_lengths", "check_subtitles", "check_av_sync", "build_recommendations"),
+        assertEquals(ProcessingConfig(), cfg.processing?.copy(find = FindProcessing()))
+        assertEquals(listOf("scan_files", "pull_tmdb", "fetch_artwork", "sync_imdb_ratings", "write_nfo", "detect_drift", "sync_jellyfin", "rescan_arr", "verify_files", "check_track_lengths", "check_av_sync", "prewarm_subtitles", "check_subtitles", "build_recommendations"),
             dev.jellystructure.media.effectivePipeline(cfg).map { it.step }.filterNot { MusicSteps.isMusic(it) })
         platform.posix.remove(path)
     }

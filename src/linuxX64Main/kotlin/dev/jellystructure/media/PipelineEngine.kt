@@ -8,6 +8,8 @@ import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.FileCheckSteps
 import dev.jellystructure.config.PipelineStep
+import dev.jellystructure.config.ProcessingFeatures
+import dev.jellystructure.config.processingSteps
 import dev.jellystructure.imdb.ImdbClient
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
@@ -67,6 +69,8 @@ class PipelineDeps(
     val artworkPresize: (suspend (MediaItem) -> Unit)? = null,
     // Phase 275 — the music library's steps; null where a site builds none (a single-item run never runs them).
     val music: MusicPipeline? = null,
+    // DEB-1664 (FR-9) — when each feature last ran; null where a site keeps no such record (a single-item run).
+    val processingRuns: ProcessingRuns? = null,
 )
 
 /** Phase 275 — what the music steps need. Later music phases add their collaborators here. */
@@ -159,32 +163,17 @@ private suspend fun awaitPlaybackClear(stillDefers: () -> Boolean, jobId: String
 internal fun segmentJobParams(season: Int? = null): dev.jellystructure.jobs.MediaJobParams =
     dev.jellystructure.jobs.MediaJobParams(segmentSeason = season, deferWhilePlaying = true)
 
+/**
+ * DEB-1664 (FR-1, FR-3) — the steps one run executes, taken from the features' switches: every part that is on, in the
+ * one dependency order of [dev.jellystructure.config.ProcessingFeatures.ORDER], each with its options. Discovery
+ * (`scan_files`) is always the first. There is no built-in list any more: an install with no saved pipeline carries over to
+ * the fresh-install features (FR-2.3). A part that depends on a switch elsewhere stays out of a run while that switch is off.
+ */
 fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
-    rawPipeline(cfg).filter { !(it.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfg.music.fetchLyrics) }  // Phase 277 (FR-277-8)
+    cfg.processingSteps().filter { it.enabled }
+        .filter { !(it.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfg.music.fetchLyrics) }  // Phase 277 (FR-277-8)
         // Phase 274 (FR-274-1) — no Seerr, no step: absent from runs and from the pre-run dialog, never greyed.
         .filter { it.step != dev.jellystructure.config.SuggestionsStep.STEP || cfg.seerr?.let { s -> s.enabled && s.url.isNotBlank() } == true }
-
-private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
-    cfg.scan.pipeline.filter { it.enabled }.ifEmpty {
-        buildList {
-            add(PipelineStep(step = "scan_files"))
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.SCAN))  // Phase 275
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.AUDIOBOOKS))  // Phase 280
-            add(PipelineStep(step = "pull_tmdb", scope = "all"))
-            if (cfg.behavior.fetchImages) add(PipelineStep(step = "fetch_artwork"))
-            // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
-            FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
-            add(FileCheckSteps.defaultStep(FileCheckSteps.SUBTITLES))  // Phase 273
-            add(FileCheckSteps.defaultStep(FileCheckSteps.AVSYNC))  // Phase 317 — inert until [avsync] enabled
-            add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
-            add(PipelineStep(step = dev.jellystructure.config.SuggestionsStep.STEP))  // Phase 274
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.MATCH))  // Phase 276
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.COMPARE))  // Phase 305
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.ARTWORK))  // Phase 277
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.LYRICS))
-            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.NFO))
-        }
-    }
 
 /**
  * Phase 175 — the single execution engine, replacing the old `executePipeline` (Main.kt),
@@ -220,6 +209,9 @@ suspend fun runPipeline(
     // Phase 272 (FR-272-7) — a run someone started (the pre-run dialog, *Run pipeline*): the whole-library
     // recommendations step then builds whatever its cadence says. Scheduled and startup runs keep the cadence.
     byHand: Boolean = false,
+    // DEB-1664 (FR-3.3) — false for a run of whole-library features alone (Music, Audiobooks, Recommendations & suggestions on their
+    // own interval): no discovery, no freshness filter, no working set — only the whole-library steps in [pipeline].
+    discover: Boolean = true,
 ): List<MediaItem> {
     val store = deps.store
     val scanner = deps.scanner
@@ -238,6 +230,7 @@ suspend fun runPipeline(
     val dirtyItemStore = deps.dirtyItemStore
 
     val scanStep = pipeline.firstOrNull { it.step == "scan_files" } ?: PipelineStep(step = "scan_files")
+    val runStartSec = nowEpochSec()
 
     Logger.info("Pipeline starting: ${pipeline.joinToString(" → ") { it.step }}${if (fullRun) " (full — no freshness filter)" else ""}")
 
@@ -257,6 +250,9 @@ suspend fun runPipeline(
         }
         scanTracker.complete()
         broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
+        // FR-3.3 — a run of whole-library features alone looked at nothing: no Scan finished, no library refresh (the music steps tell Jellyfin themselves).
+        if (!discover) return
+        deps.processingRuns?.record(ProcessingFeatures.FIND)
         val cfg = configStore.current
         if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
             jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
@@ -290,10 +286,10 @@ suspend fun runPipeline(
         )
     }
 
-    val orderedSteps = planOrder(pipeline).map { it.step }   // Phase 265 — the same order GET /api/pipeline/plan answers
+    val orderedSteps = (if (discover) planOrder(pipeline) else pipeline).map { it.step }   // Phase 265 — the same order GET /api/pipeline/plan answers
     scanTracker.setStepPlan(orderedSteps)
     broadcaster.broadcast(JobEvent.PipelinePlan(jobId, orderedSteps))
-    scanTracker.setActiveStep("scan_files")
+    scanTracker.setActiveStep(if (discover) "scan_files" else orderedSteps.firstOrNull())
 
     // Phase 178 §FR-178-2 — defer the whole run's start (covers scan_files' probe-heavy work, which
     // isn't itself a skippable step — see RunTarget.Library below) rather than starting it only to have
@@ -301,7 +297,7 @@ suspend fun runPipeline(
     awaitPlaybackClear({ deferEligible && configStore.current.scan.deferWhilePlaying }, jobId, broadcaster, scanTracker)
 
     val workingSet: List<MediaItem> = when (target) {
-        is RunTarget.Library -> {
+        is RunTarget.Library -> if (!discover) emptyList() else {
             // Phase 181 (FR-181-1/FR-181-1a/FR-181-5) — converge on Jellyfin's actual catalog before the
             // (predictive) freshness filter runs, so a title stuck in a slow recheck tier can never fully
             // hide a file Jellyfin already has (the Fjollerne incident this phase exists for). Cheap enough
@@ -372,8 +368,11 @@ suspend fun runPipeline(
         is RunTarget.SingleItem -> listOf(target.item)
     }
 
-    // Phase 275 — the music steps are whole-library: nothing changing among films is no reason to skip them.
-    val musicSteps = if (target is RunTarget.Library && deps.music != null) pipeline.filter { dev.jellystructure.config.MusicSteps.isMusic(it.step) } else emptyList()
+    // Phase 275 — the music steps are whole-library: nothing changing among films is no reason to skip them. DEB-1664 (FR-3.3) — nor the
+    // recommendations and suggestions, which have their own interval; the music ones still need the music collaborators.
+    val musicSteps = if (target is RunTarget.Library) pipeline.filter {
+        dev.jellystructure.config.WholeLibrarySteps.contains(it.step) && (!dev.jellystructure.config.MusicSteps.isMusic(it.step) || deps.music != null)
+    } else emptyList()
     if (workingSet.isEmpty() && musicSteps.isEmpty()) {
         Logger.info("Pipeline scan_files: no items in working set, skipping action steps")
         signalPipelineComplete(workingSet)
@@ -392,7 +391,7 @@ suspend fun runPipeline(
     // run didn't touch. The full-library sweep is the same one the on-demand routes already run and is
     // cheap (FR-201-6: well under a minute for the whole production library). Same
     // runCatching-swallow-and-log posture as sonarrEnrich above it — this must never fail the scan.
-    runCatching { MkvHealthCache.refresh(store.allItems()) }
+    if (discover) runCatching { MkvHealthCache.refresh(store.allItems()) }
         .onFailure { Logger.warn("MKV structure sweep failed: ${it.message}", "scan") }
 
     val cfg = configStore.current
@@ -409,9 +408,6 @@ suspend fun runPipeline(
         // A realtime single-item run already matched TMDB via scanItem() — running pull_tmdb again
         // would be a wasted second fetch for the same item in the same run.
         if (target is RunTarget.SingleItem && step.step == "pull_tmdb") continue
-        // A per-webhook 5-minute wait, or a notify firing on every single realtime ingest, would be
-        // actively wrong — not just unimplemented — so these are explicitly excluded for SingleItem.
-        if (target is RunTarget.SingleItem && (step.step == "wait" || step.step == "notify")) continue
         // Phase 269/274, one list since 303 — a whole-library step; one new download is no reason to rebuild every
         // viewer (the music steps are already skipped above for anything but a Library run with music deps).
         if (target is RunTarget.SingleItem && dev.jellystructure.config.WholeLibrarySteps.contains(step.step)) continue
@@ -420,6 +416,11 @@ suspend fun runPipeline(
         scanTracker.resetStepStop()
         withContext(RunContext(jobId, step.step)) {
         Logger.info("Pipeline step: ${step.step}")
+        // DEB-1664 (FR-9) — the feature this step belongs to ran now, whatever the step goes on to say. A cancelled run records nothing.
+        // A whole-library step is measured from when the run began, so an hourly Music is due again at the next hourly look.
+        if (!scanTracker.cancelRequested) ProcessingFeatures.featureOfStep(step.step)?.let {
+            deps.processingRuns?.record(it, if (dev.jellystructure.config.isWholeLibraryStep(step.step)) runStartSec else nowEpochSec())
+        }
         when (step.step) {
             dev.jellystructure.config.MusicSteps.SCAN -> {
                 // Phase 275 (FR-275-2) — three paged Jellyfin reads per music library, no file probing.
@@ -809,21 +810,6 @@ suspend fun runPipeline(
                 }
                 Logger.info("build_suggestions: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
-            }
-            "wait" -> {
-                Logger.info("wait: ${step.minutes} min")
-                scanTracker.setActiveStep(step.step)
-                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
-                delay(step.minutes * 60_000L)
-                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, "${step.minutes} min elapsed"))
-            }
-            "notify" -> {
-                scanTracker.setActiveStep(step.step)
-                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
-                val payload = """{"event":"pipeline_complete","items":${workingSet.size},"on":"${step.on}"}"""
-                runCatching { fireWebhook(cfg, payload) }
-                    .onFailure { Logger.warn("notify webhook failed: ${it.message}") }
-                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, "notified"))
             }
         }
         }
