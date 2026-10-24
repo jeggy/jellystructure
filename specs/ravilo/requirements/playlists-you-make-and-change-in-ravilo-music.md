@@ -316,3 +316,35 @@ The proof is `PlaylistFlowTest` (`:ravilo-ui:desktopTest`: the picker's contents
 `PlaylistHostTest` and `MusicAlbumEditionsTest` (`:ravilo-ui:testDebugUnitTest`: the picker and name sheet over a stand-in
 server, the album row's menus for an album with editions and a plain one).
 What no automated test can show stays with QA: the picture of the album row against `apb-a-menu`, and the popover under a real ⋯ on a Mac and on Linux.
+
+## Amendment 2026-10-24 — what slice 3 settled while building (DEB-2281)
+
+What the build had to decide that the spec above left open. None changes what a viewer was promised.
+
+- **FR-16 gains two keys**, the two words the round drew that no key held: `music.pl_remove_swipe`, en *Remove* · da *Fjern* · fo
+  *Tak úr* (the red panel a swipe uncovers, `ph-edit-swipe`), and `music.pl_delete_do`, en *Delete* · da *Slet* · fo *Strika*
+  (FR-12's button). *Cancel* is `action.cancel`.
+- **FR-10, Back.** *Done* and the page's own Back arrow leave edit mode; so does the system Back (the Android gesture, the
+  browser's Back), which `RaviloApp` hands to the page first (`PlaylistEditBack`) and pops the page only when edit mode was
+  not up. Edit mode is the page's own state: leaving the page leaves it, and a playlist that empties leaves it.
+- **FR-10, what a row shows.** In edit mode a row is cover · title over artist · grip, with no ⋯ and no length on the phone, and
+  grip · cover · title over artist · length · × on a computer (round frames `ph-edit-rest`, `dk-edit-hover-e1`). The × is drawn
+  while the pointer is over the row, in the text colour as the frame shows it; `--pl-bad` stays the swipe panel's and
+  *Delete*'s. A swipe that does not reach the threshold, or whose write fails, brings the row back.
+- **FR-10, the drop.** `to` is the dragged row's index plus the rows it was dragged past (rounded), kept inside the list.
+  The row sits at `to` at once; a failed write puts the order back to what it was before the drop, never to a half-answered
+  state, and the writes of one page go one at a time.
+- **FR-11, the name on the page.** The page and the back stack carry the name the server answered, so the header, the
+  *Playlists* chip (FR-14) and a later Back all show it. Saving the name it already has writes nothing.
+- **FR-8, *Shared with you*.** The label the owner picked (card `979f4e34`) is drawn beside the count of a playlist whose
+  `mine` is false, once its list has loaded. On a server older than this spec every playlist reads `mine = false`, so every
+  page shows it; that is the same accepted case as FR-15's.
+
+The proof is `PlaylistEditTest` (`:ravilo-ui:desktopTest` and `:ravilo-ui:testDebugUnitTest`: the drop index, the move sent
+equals the drop position, a failed move restores the order, a failed remove keeps the list, rename and delete) and
+`PlaylistPageTest` (`:ravilo-ui:testDebugUnitTest`, the phone layout over a stand-in server: a shared playlist draws no ⋯ and
+says *Shared with you*, an own one draws the menu, an empty one has no *Edit*, delete asks first and *Cancel* keeps it, delete
+goes back and toasts, a failed delete changes nothing, rename saves the trimmed name, edit mode, Back, a drag by the grip, a
+refused drag). What no automated test can show stays with QA: the picture against the round on a real phone and a real
+desktop, the mouse drag and the hover × (no pointer in the test), the swipe gesture's feel, the menu under a real ⋯, and
+acceptance 4 (it needs a second Jellyfin user who shares a playlist).

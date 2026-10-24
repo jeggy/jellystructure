@@ -84,6 +84,8 @@ class MusicLoader<T>(private val fetch: suspend () -> T) {
     /** R345 — why the last fetch failed, so a failed page can say *couldn't reach the server* rather than *no music*. */
     var lastFailure: Throwable? = null
         private set
+    /** DEB-2254 — a write's answer is the page's new list: shown now, and what Back finds. */
+    fun put(value: T) { lastFailure = null; _state.value = Load.Ready(value) }
     fun load() {
         scope.launch {
             runCatching { fetch() }
@@ -333,7 +335,8 @@ fun androidx.compose.foundation.layout.RowScope.pillWidth(): Modifier = if (isDe
 
 // ── the track sheet (FR-R322-11) ──
 
-data class TrackSheetRequest(val track: MusicTrackItem)
+/** [remove] — DEB-2254 (FR-9): inside a playlist of the viewer's own, the sheet gains *Remove from playlist*; null elsewhere. */
+data class TrackSheetRequest(val track: MusicTrackItem, val remove: (() -> Unit)? = null)
 
 /** ⋯ on a song: Play next · Add to queue · Add to playlist… · Go to album · Go to artist · My List. */
 @Composable
@@ -370,6 +373,8 @@ fun TrackActionsSheet(
                 onDismiss()
                 PlaylistFlow.addTo(PlaylistAddRequest(PlaylistSource.SONG, listOf(t.id), listOfNotNull(t.title, artistLine(t).ifBlank { null }).joinToString(" — "), anchor))
             }
+            // DEB-2254 (FR-9) — right after *Add to playlist…*, in a playlist of the viewer's own.
+            request?.remove?.let { remove -> SheetRow(str("music.pl_remove"), MusicIcon.MINUS_RING) { onDismiss(); remove() } }
             t.albumId?.let { id -> SheetRow(str("music.go_album"), MusicIcon.BROWSE) { onDismiss(); onGoAlbum(id) } }
             t.artists.firstOrNull()?.let { a -> SheetRow(str("music.go_artist"), MusicIcon.LISTEN) { onDismiss(); onGoArtist(a.id) } }
             val favs by MusicFavorites.overrides.collectAsState()

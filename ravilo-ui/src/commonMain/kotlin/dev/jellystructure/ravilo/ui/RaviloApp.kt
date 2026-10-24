@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui
 
 import dev.jellystructure.ravilo.ui.music.asPlaylistWrites
+import dev.jellystructure.ravilo.ui.music.asPlaylistChanges
 import dev.jellystructure.ravilo.ui.screens.TvApproveStore
 import dev.jellystructure.ravilo.ui.screens.TvClientApproveApi
 import dev.jellystructure.ravilo.ui.screens.TvLinkInbox
@@ -2123,6 +2124,7 @@ fun RaviloApp(
             when {
                 profileMenuOpen -> profileMenuOpen = false
                 trackSheet != null -> trackSheet = null   // R322 — Back with the ⋯ sheet up closes the sheet
+                dev.jellystructure.ravilo.ui.music.PlaylistEditBack.consume() -> Unit   // DEB-2254 (FR-10) — Back leaves a playlist's edit mode
                 backToTop.consumeBack() -> Unit
                 dest is Dest.TvNowPlaying -> hideTvNowPlaying()   // R380 — hide, never leave the app
                 stack.size > 1 -> pop()
@@ -3142,11 +3144,16 @@ fun RaviloApp(
             )
             is Dest.PlaylistDetail -> {
                 val loader = keptStore("mplaylist:${dest.id}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicPlaylist(dest.id) } }
+                // DEB-2254 (FR-8 to FR-12) — the page of a playlist of the viewer's own changes it through the viewer's own token.
+                val playlistChanges = remember(apiClient) { apiClient.asPlaylistChanges() }
                 dev.jellystructure.ravilo.ui.music.MusicPlaylistScreen(
+                    id = dest.id,
                     name = dest.name,
                     loader = loader,
+                    changes = playlistChanges,
                     onBack = { pop() },
-                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                    onTrackMore = { trackSheet = it },
+                    onRenamed = { n -> replaceTop(dest.copy(name = n)) },
                 )
             }
 

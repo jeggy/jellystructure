@@ -891,6 +891,8 @@
   "music.pl_shared": "Shared with you",
   "music.pl_none": "Playlists you make show up here.",
   "music.pl_add_title": "Add to playlist",
+  "music.pl_remove_swipe": "Remove",
+  "music.pl_delete_do": "Delete",
   "music.type.album": "Album",
   "music.type.live": "Live",
   "music.type.compilation": "Compilation",

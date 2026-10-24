@@ -171,9 +171,10 @@ fun playlistNameReady(text: String): Boolean = text.trim().isNotEmpty()
 fun isNameRefusal(e: Throwable): Boolean = e is TvApiError.Http && e.status == 400
 
 /** The desktop popover's corner: under the anchor, or above it when it would run off the window; centred without an anchor. */
-fun popoverPosition(anchor: IntRect?, window: IntSize, content: IntSize, gap: Int, edge: Int): IntOffset {
+fun popoverPosition(anchor: IntRect?, window: IntSize, content: IntSize, gap: Int, edge: Int, alignEnd: Boolean = false): IntOffset {
     if (anchor == null) return IntOffset((window.width - content.width) / 2, (window.height - content.height) / 2)
-    val x = (anchor.left - edge).coerceIn(edge, (window.width - content.width - edge).coerceAtLeast(edge))
+    // A page's ⋯ menu hangs from the control's right edge (the round's `.mpl-pm`); the picker's starts at its left.
+    val x = (if (alignEnd) anchor.right - content.width else anchor.left - edge).coerceIn(edge, (window.width - content.width - edge).coerceAtLeast(edge))
     val below = anchor.bottom + gap
     val y = if (below + content.height <= window.height - edge) below
     else (anchor.top - gap - content.height).takeIf { it >= edge } ?: (window.height - content.height - edge).coerceAtLeast(edge)
@@ -340,14 +341,14 @@ private fun NewTile(size: Dp) {
  * over it, closing on a click outside. [anchor] is that control in window pixels; null centres the card.
  */
 @Composable
-internal fun AnchoredPopover(anchor: IntRect?, onDismiss: () -> Unit, width: Dp, content: @Composable () -> Unit) {
+internal fun AnchoredPopover(anchor: IntRect?, onDismiss: () -> Unit, width: Dp, alignEnd: Boolean = false, content: @Composable () -> Unit) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gap = with(density) { 6.dp.roundToPx() }
     val edge = with(density) { 12.dp.roundToPx() }
-    val provider = remember(anchor, gap, edge) {
+    val provider = remember(anchor, gap, edge, alignEnd) {
         object : PopupPositionProvider {
             override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize) =
-                popoverPosition(anchor, windowSize, popupContentSize, gap, edge)
+                popoverPosition(anchor, windowSize, popupContentSize, gap, edge, alignEnd)
         }
     }
     val colors = RaviloTheme.colors

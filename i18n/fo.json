@@ -822,6 +822,8 @@
   "music.pl_shared": "Deilt við teg",
   "music.pl_none": "Spælilistar, tú stovnar, síggjast her.",
   "music.pl_add_title": "Legg í spælilista",
+  "music.pl_remove_swipe": "Tak úr",
+  "music.pl_delete_do": "Strika",
   "music.type.album": "Fløga",
   "music.type.live": "Livandi",
   "music.type.compilation": "Savnsfløga",

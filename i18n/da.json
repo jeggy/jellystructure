@@ -822,6 +822,8 @@
   "music.pl_shared": "Delt med dig",
   "music.pl_none": "Playlister, du laver, vises her.",
   "music.pl_add_title": "Føj til playliste",
+  "music.pl_remove_swipe": "Fjern",
+  "music.pl_delete_do": "Slet",
   "music.type.album": "Album",
   "music.type.live": "Live",
   "music.type.compilation": "Opsamling",

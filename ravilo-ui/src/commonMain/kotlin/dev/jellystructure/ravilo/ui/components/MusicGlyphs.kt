@@ -36,6 +36,9 @@ enum class MusicIcon {
     BACK30, FWD30, SLEEP, BOOKMARK, CHAPTERS, CHECK,
     // DEB-2254 — making a playlist: the picker's + tile, *Add to playlist…*, *Save as playlist*, and the × of *Clear queue*.
     PLUS, PLAYLIST_ADD, SAVE, CLOSE,
+    // DEB-2254 — changing one: the page ⋯'s rows (*Edit*, *Rename*, *Delete playlist*), the song sheet's *Remove from
+    // playlist* and the *Shared with you* label.
+    REORDER, PENCIL, TRASH, MINUS_RING, SHARED,
 }
 
 @Composable
@@ -158,6 +161,33 @@ private fun DrawScope.drawMusicIcon(icon: MusicIcon, tint: Color) {
             path { m(it(5f, 3.5f)); l(it(16.5f, 3.5f)); l(it(20.5f, 7.5f)); l(it(20.5f, 20.5f)); l(it(5f, 20.5f)); close() }
             path { m(it(8f, 3.5f)); l(it(8f, 8.5f)); l(it(15f, 8.5f)); l(it(15f, 3.5f)) }
             rrect(8f, 13f, 8f, 7.5f, 1f)
+        }
+        // The round's `reorder`: three short lines and a double arrow — *Edit*.
+        MusicIcon.REORDER -> {
+            line(4f, 7f, 13f, 7f); line(4f, 12f, 13f, 12f); line(4f, 17f, 13f, 17f); line(17f, 5f, 17f, 19f)
+            path { m(it(14.5f, 7.5f)); l(it(17f, 5f)); l(it(19.5f, 7.5f)) }
+            path { m(it(14.5f, 16.5f)); l(it(17f, 19f)); l(it(19.5f, 16.5f)) }
+        }
+        // A pencil: *Rename*.
+        MusicIcon.PENCIL -> {
+            path { m(it(4f, 20f)); l(it(5f, 15.5f)); l(it(16.5f, 4.5f)); l(it(19.5f, 7.5f)); l(it(8.5f, 19f)); close() }
+            line(14.5f, 6.5f, 17.5f, 9.5f)
+        }
+        // A bin: *Delete playlist* — and nothing else, so a song's removal is not mistaken for it.
+        MusicIcon.TRASH -> {
+            line(4f, 7f, 20f, 7f)
+            path { m(it(9.5f, 7f)); l(it(9.5f, 4.5f)); l(it(14.5f, 4.5f)); l(it(14.5f, 7f)) }
+            path { m(it(6.5f, 7f)); l(it(7.5f, 20f)); l(it(16.5f, 20f)); l(it(17.5f, 7f)) }
+            line(10.5f, 10.5f, 10.5f, 16.5f); line(13.5f, 10.5f, 13.5f, 16.5f)
+        }
+        // A minus in a ring: *Remove from playlist*.
+        MusicIcon.MINUS_RING -> { circle(12f, 12f, 8.5f); line(8f, 12f, 16f, 12f) }
+        // Two heads: *Shared with you*.
+        MusicIcon.SHARED -> {
+            circle(9f, 8f, 3.2f)
+            path { m(it(3f, 20f)); c(it(3.8f, 16.7f), it(6.2f, 15f), it(9f, 15f)); c(it(11.8f, 15f), it(14.2f, 16.7f), it(15f, 20f)) }
+            path { m(it(16f, 5.6f)); c(it(17.5f, 6.9f), it(17.5f, 9.1f), it(16f, 10.4f)) }
+            path { m(it(18.4f, 3.4f)); c(it(21f, 6f), it(21f, 10f), it(18.4f, 12.6f)) }
         }
         MusicIcon.CHAPTERS -> {
             circle(5f, 6f, 1.3f, fill = true); circle(5f, 12f, 1.3f, fill = true); circle(5f, 18f, 1.3f, fill = true)
