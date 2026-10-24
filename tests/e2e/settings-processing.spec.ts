@@ -49,7 +49,8 @@ test.describe.serial("Settings ▸ Processing (DEB-1664, FR-4)", () => {
 
   test("the tab sits right after Libraries and lists the nine features", async () => {
     await page.goto("/#/settings");
-    const tabs = await page.locator(".settings-nav-item span:first-child").allTextContents();
+    await expect(page.locator(".settings-nav-item").first()).toBeVisible();
+    const tabs = (await page.locator(".settings-nav-item > span:first-child").allTextContents()).map((t) => t.trim());
     expect(tabs.indexOf("Processing")).toBe(tabs.indexOf("Libraries") + 1);
     await openProcessing(page);
     const names = await page.locator("#sect-processing .pf-name").allTextContents();
