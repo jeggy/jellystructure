@@ -75,6 +75,11 @@ private val OPEN_API_PATHS = listOf(
     // prefix's preview and approve routes take a device token. Each has its own rate-limit bucket (FR-16), not /api/tv/login's.
     "/api/tv/signin/code",
     "/api/tv/signin/poll",
+    // DEB-2233 (FR-8, FR-9) — the admin's sign-in page has no session yet: which single-sign-on names there are, and the start of one.
+    // (The viewers' `/api/tv/login/providers`, `/sso/start` and `/sso/claim` sit under `/api/tv/login` above.) The route the identity
+    // provider returns to, `/sso/OID/redirect/{provider}`, is not under /api and so is never asked for a session at all.
+    "/api/auth/providers",
+    "/api/auth/sso/",
     // Phase 236 (FR-236-3) — the API-caller status stream is a WebSocket; same reasoning as
     // /api/tv/events above (a browser/HA client can't set a header on the handshake), validated from
     // the query string inside the route itself, either credential.

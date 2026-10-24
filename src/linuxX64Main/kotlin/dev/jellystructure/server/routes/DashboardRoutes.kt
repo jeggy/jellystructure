@@ -217,6 +217,9 @@ class DashboardService(
                 "Tick *Supports casting to audio-only devices* on the console, then cast a song to a speaker once.", fix = "info", href = "/settings?tab=connections")
         }
 
+        // DEB-2233 (FR-9) — the identity provider would return viewers somewhere that is not this server.
+        dev.jellystructure.tv.SsoSetupFlag.dashboardRow(configStore)?.let { rows += it }
+
         // ── Phase 310 (FR-310-3) — the one writer every watch position goes through; critical, since it stops watch history.
         playbackWriterRow(runCatching { playbackService.writerStats() }.getOrNull())?.let { rows += it }
         // Phase 310 (FR-310-7) / 312 (FR-312-5) — places Jellyfin lost that can be put back; the owner presses Apply.

@@ -2043,6 +2043,53 @@ data class TvSignInUnavailable(
     val reason: String,
 )
 
+/** DEB-2233 (FR-8) — `GET /api/tv/login/providers` and `GET /api/auth/providers`: the names the server's single sign-on lists, each shown
+ *  verbatim as *Sign in with ‹name›*. `[]` when there is none, or it cannot be asked. No default, so the empty list is always sent. */
+@Serializable
+data class SsoProviders(
+    val providers: List<String>,
+)
+
+/** DEB-2233 (FR-9) — `POST /api/tv/login/sso/start`, open path. [returnTo] is `"app"`, `"web"`, or (desktop) a loopback address
+ *  `http://127.0.0.1:<port>/signin` the app is listening on. */
+@Serializable
+data class SsoStartRequest(
+    val provider: String,
+    val deviceId: String,
+    val deviceName: String? = null,
+    val platform: String? = null,
+    val returnTo: String,
+)
+
+/** DEB-2233 (FR-9) — what a start answers: where to send the viewer, and the two values the client keeps to finish (FR-11). The
+ *  [secret] lives in memory only. */
+@Serializable
+data class SsoStartResponse(
+    val authorizeUrl: String,
+    val attemptId: String,
+    val secret: String,
+)
+
+/** DEB-2233 (FR-9) — `POST /api/auth/sso/start`, the admin's own: the secret rides the `js_sso` cookie, not the body. */
+@Serializable
+data class AdminSsoStartRequest(
+    val provider: String,
+)
+
+/** DEB-2233 (FR-9) — the admin's start answer. */
+@Serializable
+data class AdminSsoStartResponse(
+    val authorizeUrl: String,
+)
+
+/** DEB-2233 (FR-11) — `POST /api/tv/login/sso/claim`: 200 [PairResult], or 401. [handoff] is what the success page delivered by redirect. */
+@Serializable
+data class SsoClaimRequest(
+    val attemptId: String,
+    val secret: String,
+    val handoff: String,
+)
+
 // ─── Browse facets ────────────────────────────────────────────────────────────
 
 /**

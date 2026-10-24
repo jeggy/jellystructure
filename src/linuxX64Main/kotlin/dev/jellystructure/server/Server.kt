@@ -51,6 +51,8 @@ import dev.jellystructure.server.routes.channelLogoAdminRoutes
 import dev.jellystructure.server.routes.playbackActiveRoutes
 import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.server.routes.tvSignInRoutes
+import dev.jellystructure.server.routes.singleSignOnApiRoutes
+import dev.jellystructure.server.routes.singleSignOnReturnRoute
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrPing
@@ -204,6 +206,8 @@ fun startServer(
     screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
     // DEB-2233 (FR-2/FR-3) — a TV signs in from another device's approval.
     tvSignInService: dev.jellystructure.tv.TvSignInService? = null,
+    // DEB-2233 (FR-8 to FR-11, FR-13) — single sign-on: the providers, start, claim, and the identity provider's return.
+    singleSignOnService: dev.jellystructure.tv.SingleSignOnService? = null,
     // Phase 273 — the subtitle check, its Bazarr side and their routes; null in contexts that build none.
     subtitleCheckWiring: SubtitleCheckWiring? = null,
     // Phase 275 — the music library (its store, its scan) and the routes that read it.
@@ -692,6 +696,7 @@ fun startServer(
                 channelLogoAdminRoutes(channelLogoStore, dev.jellystructure.tv.ChannelLogoUsage(raviloConfigService, liveTvService, configStore, jellyfinClient))   // DEB-1788
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 tvSignInService?.let { tvSignInRoutes(it) }   // DEB-2233 — its own rate-limit buckets, none of loginRateLimiter's
+                singleSignOnService?.let { singleSignOnApiRoutes(it) }   // DEB-2233 — likewise: start 10/min, claim 40/min (a success refunds)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->
                     // Phase 281 (FR-281-10) — the phone's audiobooks: our position first, then a mirror to Jellyfin
@@ -873,6 +878,9 @@ fun startServer(
                     }
                 }
             }
+
+            // DEB-2233 (FR-10) — where the identity provider returns the viewer's browser. The path is the plugin's, the origin ours.
+            singleSignOnService?.let { singleSignOnReturnRoute(it) }
 
             // Phase 218 (FR-218-1) — the Chromecast receiver, served under /cast/** exactly like the
             // Ravilo web app below. The X-Ravilo-Cast header is what FR-218-5's reachability check looks

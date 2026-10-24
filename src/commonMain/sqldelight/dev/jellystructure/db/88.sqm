@@ -1,0 +1,22 @@
+-- DEB-2233 (FR-9, FR-10, FR-11) — a single-sign-on attempt: opened by `sso/start` (keyed by the OIDC `state`), finished by the
+-- identity provider's return on jellystructure's own address, collected once by `sso/claim` (which deletes it). Swept like
+-- tv_signin_code. See SsoAttempt.sq; this migration must stay byte-for-byte in sync with its CREATE TABLE.
+CREATE TABLE sso_attempt (
+    state TEXT NOT NULL PRIMARY KEY,
+    attempt_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    device_id TEXT,
+    device_name TEXT,
+    platform TEXT,
+    app_version TEXT,
+    return_to TEXT,
+    secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    handoff_hash TEXT,
+    completed_user_id TEXT,
+    completed_token TEXT,
+    completed_avatar_url TEXT
+);
+CREATE INDEX sso_attempt_by_id ON sso_attempt(attempt_id);

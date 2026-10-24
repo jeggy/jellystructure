@@ -18,6 +18,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 
@@ -387,6 +388,71 @@ class JellyfinClient {
         }
         if (response.status.isSuccess()) response.body<JellyfinAuthResponse>() else null
     }.getOrNull()
+
+    /**
+     * DEB-2233 (FR-3 steps 1–3, FR-10 step 3) — one Quick Connect cycle in which [userToken]'s own account approves the code, so
+     * the token that comes back is [identity]'s and belongs to the same user: initiate under [identity], authorise with
+     * [userToken] (under [userIdentity]), exchange the secret. Null on any refusal or failure. [userToken] is a viewer's own;
+     * Jellyfin lets the machine token approve for anyone (measured), so a caller must never pass it.
+     */
+    suspend fun quickConnectSelfApprove(
+        baseUrl: String, userToken: String, userIdentity: JellyfinDeviceIdentity, identity: JellyfinDeviceIdentity,
+    ): JellyfinAuthResponse? {
+        val started = quickConnectInitiate(baseUrl, identity) ?: return null
+        if (!quickConnectAuthorize(baseUrl, userToken, started.code, userIdentity)) return null
+        return authenticateWithQuickConnect(baseUrl, started.secret, identity)
+    }
+
+    /** DEB-2233 (FR-10 step 3) — `POST /Sessions/Logout` with [token]: ends the bootstrap session the plugin's `Auth` opened. */
+    suspend fun logoutSession(baseUrl: String, token: String, identity: JellyfinDeviceIdentity? = null): Boolean = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/Sessions/Logout") { jellyfinAuth(token, identity) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    // ── DEB-2233 (FR-8 to FR-10) — the server's single-sign-on plugin: four routes, and a redirect that is read, never followed ──
+
+    /** One reply of the plugin: its HTTP [status] (null = unreachable) and, when asked for one, the [location] it redirected to. */
+    class SsoReply(val status: Int?, val location: String? = null)
+
+    /** A client that does not follow a redirect: `start`'s `Location` is the answer, not a page to fetch. Shares [http]'s engine. */
+    private val noRedirectHttp by lazy { http.config { followRedirects = false } }
+
+    /** [retry] only for a read that changes nothing: the return's replay spends a one-time code, so it is never sent twice. */
+    private suspend fun ssoGet(url: String, host: String?, retry: Boolean = true): HttpResponse =
+        OutboundHttp.withPermit(retryForeignCancellation = retry) {
+            noRedirectHttp.get(url) { host?.let { header(io.ktor.http.HttpHeaders.Host, it) } }
+        }
+
+    /** FR-8 — `GET /SSO/OID/GetNames`: the provider names, in the plugin's order. Null when the plugin is absent, errors or answers nonsense. */
+    suspend fun ssoProviderNames(baseUrl: String): List<String>? = runCatching {
+        val response = ssoGet(baseUrl.trimEnd('/') + "/SSO/OID/GetNames", host = null)
+        if (!response.status.isSuccess()) return@runCatching null
+        kotlinx.serialization.json.Json.parseToJsonElement(response.bodyAsText()).let { it as? kotlinx.serialization.json.JsonArray }
+            ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { p -> p.isString }?.content?.takeIf { n -> n.isNotBlank() } }
+    }.getOrNull()
+
+    /** FR-9 — `GET /SSO/OID/start/{provider}` with `Host: [host]` and the redirect NOT followed: the plugin builds its `redirect_uri` from the Host. */
+    suspend fun ssoStart(baseUrl: String, host: String, provider: String): SsoReply = runCatching {
+        val response = ssoGet(baseUrl.trimEnd('/') + "/SSO/OID/start/" + provider.encodeURLPathPart(), host)
+        SsoReply(response.status.value, response.headers[io.ktor.http.HttpHeaders.Location])
+    }.getOrElse { SsoReply(null) }
+
+    /** FR-10 step 1 — replays the identity provider's return, [rawQuery] verbatim, with the same `Host`. Only the status is read: the plugin's page is discarded. */
+    suspend fun ssoRedirect(baseUrl: String, host: String, provider: String, rawQuery: String): SsoReply = runCatching {
+        val query = if (rawQuery.isEmpty()) "" else "?$rawQuery"
+        SsoReply(ssoGet(baseUrl.trimEnd('/') + "/sso/OID/redirect/" + provider.encodeURLPathPart() + query, host, retry = false).status.value)
+    }.getOrElse { SsoReply(null) }
+
+    /** FR-10 step 2 — `POST /sso/OID/Auth/{provider}`: the account's `AuthenticationResult`, its token bound to the DeviceID we chose. Null unless 200. */
+    suspend fun ssoAuth(
+        baseUrl: String, host: String, provider: String, deviceId: String, deviceName: String, appVersion: String, state: String,
+    ): Pair<Int?, JellyfinAuthResponse?> = runCatching {
+        val response = httpPost(baseUrl.trimEnd('/') + "/sso/OID/Auth/" + provider.encodeURLPathPart()) {
+            header(io.ktor.http.HttpHeaders.Host, host)
+            contentType(ContentType.Application.Json)
+            setBody("""{"DeviceID":${deviceId.jsonEscape()},"DeviceName":${deviceName.jsonEscape()},"AppName":"Ravilo","AppVersion":${appVersion.jsonEscape()},"Data":${state.jsonEscape()}}""")
+        }
+        response.status.value to (if (response.status.isSuccess()) response.body<JellyfinAuthResponse>() else null)
+    }.getOrElse { null to null }
 
     /**
      * Phase 187 (FR-187-6/7) — set the caller's own Jellyfin user image. [imageBytes] must already be

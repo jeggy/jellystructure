@@ -71,6 +71,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "DROP TABLE IF EXISTS support_seat_token", 0)
         // …and DEB-2233's 85 creates tv_signin_code.
         raw.execute(null, "DROP TABLE IF EXISTS tv_signin_code", 0)
+        // …and DEB-2233's 88 creates sso_attempt (and its index, which goes with it).
+        raw.execute(null, "DROP TABLE IF EXISTS sso_attempt", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

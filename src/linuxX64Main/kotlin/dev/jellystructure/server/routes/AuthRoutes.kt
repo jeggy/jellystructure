@@ -87,28 +87,7 @@ fun Route.authRoutes(
                 authResult.accessToken,
             )
 
-            call.response.cookies.append(
-                Cookie(
-                    name = "js_session",
-                    value = token,
-                    httpOnly = true,
-                    // Security fix (2026-08-02 review, finding M2) — was never set (defaults false),
-                    // so a 7-day admin session token would go out in cleartext over any accidental
-                    // plain-HTTP reach (a misconfigured vhost, an http:// bookmark, no HSTS on first
-                    // visit). This server itself only ever speaks plain HTTP (see D1's deployment
-                    // guide for why TLS termination belongs at a reverse proxy, not in-process) — the
-                    // Secure attribute is enforced by the BROWSER based on the page's own origin
-                    // scheme, so it's correct and safe to set even though the Kotlin/Native process
-                    // never sees TLS directly, as long as a proxy is actually terminating it. Default
-                    // off (matches today's LAN-only, no-proxy deployments, where forcing Secure would
-                    // silently break login by having the browser refuse to send the cookie back over
-                    // http://) — set COOKIE_SECURE=1 once a TLS-terminating reverse proxy is in front.
-                    secure = dev.jellystructure.env("COOKIE_SECURE", "0") == "1",
-                    path = "/",
-                    maxAge = 7 * 24 * 60 * 60,
-                    extensions = mapOf("SameSite" to "Lax"),
-                ),
-            )
+            call.setAdminSessionCookie(token)
             call.respond(UserProfile(authResult.user.id, authResult.user.name))
         }
 
@@ -129,4 +108,25 @@ fun Route.authRoutes(
             call.respond(UserProfile(session.jellyfinUserId, session.jellyfinUsername))
         }
     }
+}
+
+/**
+ * The admin's `js_session` cookie, as `/api/auth/login` and DEB-2233's single sign-on both set it.
+ */
+internal fun io.ktor.server.application.ApplicationCall.setAdminSessionCookie(token: String) {
+    response.cookies.append(
+        Cookie(
+            name = "js_session",
+            value = token,
+            httpOnly = true,
+            // Security fix (2026-08-02 review, finding M2) — the Secure attribute is enforced by the BROWSER from the page's own
+            // origin scheme, so it is correct to set even though this process never sees TLS, as long as a proxy terminates it.
+            // Default off (LAN-only, no-proxy deployments would otherwise silently fail to log in) — COOKIE_SECURE=1 once a
+            // TLS-terminating reverse proxy is in front.
+            secure = dev.jellystructure.env("COOKIE_SECURE", "0") == "1",
+            path = "/",
+            maxAge = 7 * 24 * 60 * 60,
+            extensions = mapOf("SameSite" to "Lax"),
+        ),
+    )
 }

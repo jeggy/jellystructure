@@ -231,6 +231,8 @@ fun main() = runBlocking {
     raviloDeviceService.onScreensChanged = { userId -> tvEventBus.notifyConfigChanged(userId) }
     // DEB-2233 (FR-2/FR-3) — a TV signs in from another device's approval (signin/code, preview, approve, poll).
     val tvSignInService = dev.jellystructure.tv.TvSignInService(db, raviloDeviceService, jellyfinClient, configStore, tvEventBus)
+    // DEB-2233 (FR-8 to FR-11) — single sign-on, jellystructure fronting the identity provider's return.
+    val singleSignOnService = dev.jellystructure.tv.SingleSignOnService(db, raviloDeviceService, jellyfinClient, configStore, sessionService, tvEventBus)
     val raviloConfigService = RaviloConfigService(
         db, tvEventBus, requestLanguageService,
         castCapability = { castService.capability() },
@@ -762,6 +764,7 @@ fun main() = runBlocking {
         lidarrClient = lidarrClient,
         screenPairingService = screenPairingService,
         tvSignInService = tvSignInService,
+        singleSignOnService = singleSignOnService,
         devicePolicyReconciler = devicePolicyReconciler,
         playPushResolver = playPushResolver,
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),

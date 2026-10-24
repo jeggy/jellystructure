@@ -1,0 +1,45 @@
+-- DEB-2233 (FR-9, FR-10, FR-11) — a single-sign-on attempt. `sso/start` writes a row keyed by the OIDC `state` (the secret only
+-- as its SHA-256); the identity provider's return finishes it — a viewer's attempt stashes the signed-in device's token, user
+-- and avatar here and a hand-off value (again only as its SHA-256) that the success page delivers by redirect alone; the
+-- client's `sso/claim` collects the token with secret AND hand-off and deletes the row, so an attempt signs a device in exactly
+-- once. `kind` is `device` (a Ravilo client) or `admin` (the admin web; its cookie is the binding, so it has no hand-off).
+-- Must stay byte-for-byte in sync with 88.sqm's CREATE TABLE.
+CREATE TABLE sso_attempt (
+    state TEXT NOT NULL PRIMARY KEY,
+    attempt_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    device_id TEXT,
+    device_name TEXT,
+    platform TEXT,
+    app_version TEXT,
+    return_to TEXT,
+    secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    handoff_hash TEXT,
+    completed_user_id TEXT,
+    completed_token TEXT,
+    completed_avatar_url TEXT
+);
+CREATE INDEX sso_attempt_by_id ON sso_attempt(attempt_id);
+
+insert:
+INSERT INTO sso_attempt(state, attempt_id, provider, kind, device_id, device_name, platform, app_version, return_to, secret_hash, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+getByState:
+SELECT * FROM sso_attempt WHERE state = ?;
+
+getByAttemptId:
+SELECT * FROM sso_attempt WHERE attempt_id = ?;
+
+complete:
+UPDATE sso_attempt SET handoff_hash = :handoff_hash, completed_user_id = :user_id, completed_token = :token, completed_avatar_url = :avatar_url
+WHERE state = :state AND completed_user_id IS NULL;
+
+deleteByState:
+DELETE FROM sso_attempt WHERE state = ?;
+
+sweep:
+DELETE FROM sso_attempt WHERE expires_at < ?;
