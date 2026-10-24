@@ -22,7 +22,26 @@ data class StreamRecord(
     val measuredAt: Long? = null,
     val stalledBps: Long? = null,
     val stalledAt: Long? = null,
+    /** DEB-2205 (FR-3) — per video codec family, the decode this device has shown it does NOT reach (see [DecodeFailure]). */
+    val decodeFailed: Map<String, DecodeFailure> = emptyMap(),
 )
+
+/**
+ * DEB-2205 (FR-3) — a decode that failed: the **video** bitrate of the direct-play stream whose picture dropped frames or froze
+ * with buffer in hand, and when (epoch seconds). One per codec family ([DECODE_FAMILIES]); it never expires with time, because a
+ * decoder does not get faster. A file of that family above [DECODE_FAILED_HEADROOM] × [bps] goes to the ladder; a clean direct
+ * play of that family at a higher bitrate lifts it ([liftDecodeFailed]).
+ */
+data class DecodeFailure(val bps: Long, val at: Long)
+
+/** DEB-2205 (FR-3) — the video codec families a decode failure is kept for. */
+internal val DECODE_FAMILIES = listOf("hevc", "h264", "av1", "vp9")
+/** DEB-2205 (FR-3) — a file of the family above this share of the bitrate that failed goes to the ladder (JellyfinClient's 0.9 margin). */
+internal const val DECODE_FAILED_HEADROOM = 0.9
+/** DEB-2205 (FR-3) — a direct play this long, with no stop and almost no dropped frame, shows the decoder handles it. */
+internal const val DECODE_LIFT_HOLD_SEC = 600L
+/** DEB-2205 (FR-3) — …when under this share of its rendered frames were dropped (0.1 %). */
+internal const val DECODE_LIFT_MAX_DROPPED = 0.001
 
 /** A stream held this long with no stall proves it (FR-309-1). */
 internal const val PROOF_HOLD_SEC = 120L
@@ -46,7 +65,7 @@ internal const val NO_RECORD_START_STREAM_BPS = 4_500_000L
 /** Owner decision 3 (2026-10-07): with no record, a file up to this plays directly; above it, the ladder. */
 internal const val NO_RECORD_DIRECT_PLAY_BPS = 8_000_000L
 
-private fun fresh(at: Long?, now: Long, maxAge: Long): Boolean = at != null && now - at in 0..maxAge
+internal fun fresh(at: Long?, now: Long, maxAge: Long): Boolean = at != null && now - at in 0..maxAge
 
 /**
  * FR-309-1 — what the device can take now: its proof or its measurement × 0.7, whichever is higher, under a recent
@@ -112,6 +131,76 @@ internal fun directPlayStreamBps(fileSizeBytes: Long?, durationMs: Long?, videoB
     return videoBps?.takeIf { it > 0 }?.let { (it * 1.05).toLong() + 256_000L }
 }
 
+/**
+ * DEB-2205 (FR-4) — what a ladder started in place of a direct play may start on. The record's take holds the direct play's own
+ * proof (the file's whole bitrate, held for two minutes), so by itself it would start the ladder at its top rung; a hand-over starts
+ * at the best rung within what the player's path last measured × 0.7 ([throughputBudget]), never above the take.
+ */
+internal fun ladderTakeFor(leavingDirectPlay: Boolean, take: Long?, measuredBps: Long?): Long? =
+    if (!leavingDirectPlay) take else listOfNotNull(take, throughputBudget(measuredBps)).minOrNull()
+
+/** DEB-2205 (FR-3) — the video codec family ([DECODE_FAMILIES]) a codec name belongs to (`h265` → `hevc`, `avc` → `h264`); null for any other. */
+internal fun videoFamilyOf(codec: String?): String? = when (codec?.lowercase()?.trim()) {
+    "hevc", "h265", "h.265", "hvc1", "hev1" -> "hevc"
+    "h264", "avc", "avc1", "h.264" -> "h264"
+    "av1", "av01" -> "av1"
+    "vp9", "vp09" -> "vp9"
+    else -> null
+}
+
+/** DEB-2205 (FR-3) — family → the video bits/s its decode failed at, the form [dev.jellystructure.auth.deviceProfile] takes. */
+internal fun decodeFailedBps(record: StreamRecord?): Map<String, Long> =
+    record?.decodeFailed?.mapValues { it.value.bps }?.filterValues { it > 0 } ?: emptyMap()
+
+/**
+ * DEB-2205 (FR-3) — [record] with a decode failure of [family] at [videoBps] noted. A device that has failed lower already keeps
+ * the lower figure (a failure at a higher bitrate says nothing new about where the decoder gives out); [at] is the newest failure.
+ */
+internal fun noteDecodeFailed(record: StreamRecord, family: String, videoBps: Long, now: Long): StreamRecord {
+    if (family !in DECODE_FAMILIES || videoBps <= 0) return record
+    val was = record.decodeFailed[family]
+    val bps = if (was != null) minOf(was.bps, videoBps) else videoBps
+    return record.copy(decodeFailed = record.decodeFailed + (family to DecodeFailure(bps, now)))
+}
+
+/**
+ * DEB-2205 (FR-3) — a clean direct play of [family] at [playedVideoBps] lifts that family's ceiling (sets it to null) when it
+ * played at a bitrate above the one that failed. [record] unchanged when there is nothing to lift.
+ */
+internal fun liftDecodeFailed(record: StreamRecord, family: String, playedVideoBps: Long): StreamRecord {
+    val failed = record.decodeFailed[family] ?: return record
+    return if (playedVideoBps > failed.bps) record.copy(decodeFailed = record.decodeFailed - family) else record
+}
+
+/**
+ * DEB-2205 (FR-3) — a direct play clean enough to lift a ceiling: held [heldSec] ≥ 10 min on the same stream, no stop of any kind
+ * ([stops] counts every cause, [frozenCount] the frozen kind), and under 0.1 % of [renderedFrames] dropped (a report with no
+ * rendered count — an older app — never lifts).
+ */
+internal fun cleanDirectPlay(heldSec: Long, droppedFrames: Long, renderedFrames: Long, stops: Int, frozenCount: Int): Boolean =
+    heldSec >= DECODE_LIFT_HOLD_SEC && stops == 0 && frozenCount == 0 && renderedFrames > 0 &&
+        droppedFrames.toDouble() / renderedFrames < DECODE_LIFT_MAX_DROPPED
+
+/** DEB-2205 (FR-3) — the three parallel comma-separated lists the record keeps its failures in (families, bits/s, epoch seconds); null when none. */
+internal fun encodeDecodeFailed(failed: Map<String, DecodeFailure>): Triple<String?, String?, String?> {
+    val entries = DECODE_FAMILIES.mapNotNull { f -> failed[f]?.let { f to it } }
+    if (entries.isEmpty()) return Triple(null, null, null)
+    return Triple(entries.joinToString(",") { it.second.bps.toString() }, entries.joinToString(",") { it.first }, entries.joinToString(",") { it.second.at.toString() })
+}
+
+internal fun parseDecodeFailed(bps: String?, codec: String?, at: String?): Map<String, DecodeFailure> {
+    if (bps == null || codec == null || at == null) return emptyMap()
+    val b = bps.split(',')
+    val c = codec.split(',')
+    val a = at.split(',')
+    if (b.size != c.size || a.size != c.size) return emptyMap()
+    return c.indices.mapNotNull { i ->
+        val f = c[i].takeIf { it in DECODE_FAMILIES } ?: return@mapNotNull null
+        val bb = b[i].toLongOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        f to DecodeFailure(bb, a[i].toLongOrNull() ?: 0L)
+    }.toMap()
+}
+
 /** 309 — the Ravilo app on a TV (Android TV / Google TV): `platform = tv`, and never a Cast receiver's row. */
 internal val DeviceData.isTvApp: Boolean get() = platform == "tv" && kind != "cast"
 
@@ -165,10 +254,12 @@ class StreamRecordStore(private val db: JellystructureDb) {
     fun get(deviceId: String): StreamRecord? = queries.get(deviceId).executeAsOneOrNull()?.toRecord()
 
     fun put(deviceId: String, r: StreamRecord, now: Long) {
-        queries.upsert(deviceId, r.provenBps, r.provenAt, r.measuredBps, r.measuredAt, r.stalledBps, r.stalledAt, now)
+        val (failedBps, failedCodec, failedAt) = encodeDecodeFailed(r.decodeFailed)
+        queries.upsert(deviceId, r.provenBps, r.provenAt, r.measuredBps, r.measuredAt, r.stalledBps, r.stalledAt, now, failedBps, failedCodec, failedAt)
     }
 
     fun all(): Map<String, StreamRecord> = queries.all().executeAsList().associate { it.device_id to it.toRecord() }
 }
 
-private fun Device_stream_record.toRecord() = StreamRecord(proven_bps, proven_at, measured_bps, measured_at, stalled_bps, stalled_at)
+private fun Device_stream_record.toRecord() = StreamRecord(proven_bps, proven_at, measured_bps, measured_at, stalled_bps, stalled_at,
+    parseDecodeFailed(decode_failed_bps, decode_failed_codec, decode_failed_at))

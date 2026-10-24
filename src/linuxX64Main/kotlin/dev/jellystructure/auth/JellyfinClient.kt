@@ -72,13 +72,13 @@ internal fun audioDeviceProfile(capabilities: ClientCapabilities): String {
         """"CodecProfiles":[${audioChannelCondition(capabilities, "Audio") ?: ""}],"SubtitleProfiles":[]}"""
 }
 
-internal fun deviceProfile(capabilities: ClientCapabilities, throughputCapBps: Long? = null): String {
+internal fun deviceProfile(capabilities: ClientCapabilities, throughputCapBps: Long? = null, decodeFailed: Map<String, Long> = emptyMap()): String {
     val audioCodecs = capabilities.audioCodecs.takeIf { it.isNotEmpty() }
         ?.joinToString(",") ?: "aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"
     val codecProfiles = buildList {
         add("""{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"${allowedVideoRangeTypes(capabilities).joinToString("|")}","IsRequired":true}]}""")
         add("""{"Type":"Video","Codec":"h264","Conditions":${h264TargetConditions(capabilities)}}""")
-        addAll(videoBitrateConditions(capabilities))
+        addAll(videoBitrateConditions(capabilities, decodeFailed))
         // R351 (FR-R351-10) — a film's audio is a `VideoAudio` profile in Jellyfin; an `Audio` one is read only for a
         // song. 177 wrote `Audio` here, so no film negotiation ever saw the channel limit.
         audioChannelCondition(capabilities, "VideoAudio")?.let { add(it) }
@@ -136,16 +136,29 @@ internal fun deviceProfile(capabilities: ClientCapabilities, throughputCapBps: L
  * leaves headroom for container/audio overhead `VideoBitrate` doesn't account for, and for short peaks a
  * rolling average hides (Offboarding averages 24 Mbps but peaks at 88.9 Mbps over 1s).
  */
-private fun videoBitrateConditions(capabilities: ClientCapabilities): List<String> = buildList {
+private fun videoBitrateConditions(capabilities: ClientCapabilities, decodeFailed: Map<String, Long> = emptyMap()): List<String> = buildList {
+    // DEB-2205 (FR-2, FR-3) — a client that reports decode health is not held to the decoder bitrate it *advertises*: only to what it
+    // has *shown* it cannot decode. Per codec family, a file above 0.9 × the bitrate its decode failed at goes to the ladder
+    // ([decodeFailed]: family → the failed video bits/s). Nothing learned means no condition at all. An installed client that does
+    // not report decode health keeps the advertised ceilings below, exactly as before: it cannot hand over, so it must not be sent
+    // into a decoder it never measured.
+    if (capabilities.reportsDecodeHealth) {
+        for ((family, failedBps) in decodeFailed.entries.sortedBy { it.key }) {
+            if (failedBps <= 0) continue
+            add(videoBitrateCondition(family, (failedBps * BITRATE_SAFETY_MARGIN).toLong()))
+        }
+        return@buildList
+    }
     capabilities.maxHevcBitrate.takeIf { it > 0 }?.let { ceiling ->
-        val safe = (ceiling * BITRATE_SAFETY_MARGIN).toLong()
-        add("""{"Type":"Video","Codec":"hevc","Conditions":[{"Condition":"LessThanEqual","Property":"VideoBitrate","Value":"$safe","IsRequired":true}]}""")
+        add(videoBitrateCondition("hevc", (ceiling * BITRATE_SAFETY_MARGIN).toLong()))
     }
     capabilities.maxH264Bitrate.takeIf { it > 0 }?.let { ceiling ->
-        val safe = (ceiling * BITRATE_SAFETY_MARGIN).toLong()
-        add("""{"Type":"Video","Codec":"h264","Conditions":[{"Condition":"LessThanEqual","Property":"VideoBitrate","Value":"$safe","IsRequired":true}]}""")
+        add(videoBitrateCondition("h264", (ceiling * BITRATE_SAFETY_MARGIN).toLong()))
     }
 }
+
+private fun videoBitrateCondition(codec: String, safe: Long) =
+    """{"Type":"Video","Codec":"$codec","Conditions":[{"Condition":"LessThanEqual","Property":"VideoBitrate","Value":"$safe","IsRequired":true}]}"""
 
 /** Phase 177 §FR-177-3 / R351 (FR-R351-10) — the client's channel limit, or null when it takes everything (8, the
  *  default, or nonsense), so a client that never set it keeps today's negotiation byte for byte. */
@@ -179,6 +192,10 @@ internal fun withChannelLimit(url: String, capabilities: ClientCapabilities?): S
  * deterministic and gets 90%. A client reporting no link info is unaffected — this only ever narrows the
  * cap, and doing so makes Jellyfin choose a transcode rather than a direct play the link can't feed,
  * which is strictly better than today's outcome (see the phase's own invariant).
+ *
+ * DEB-2205 (FR-2) — for a client that reports decode health ([ClientCapabilities.reportsDecodeHealth]) `maxVideoBitrate` is an
+ * explicit cap (a freeze recovery's ceiling, a stepping restream's), never the advertised decoder bitrate: such a client does not
+ * send the advertised value there, so this term drops out of its direct-play decision. An installed client keeps it, as before.
  */
 internal fun maxStreamingBitrate(capabilities: ClientCapabilities, throughputCapBps: Long? = null): Long {
     var cap = 120_000_000L
@@ -1145,6 +1162,8 @@ class JellyfinClient {
         audio: Boolean = false,
         /** 308 (FR-308-4) — the bitrate this device's own measurements say its path carries with headroom; null = none. */
         throughputCapBps: Long? = null,
+        /** DEB-2205 (FR-3) — a client that reports decode health: per codec family, the video bits/s its decode failed at. */
+        decodeFailed: Map<String, Long> = emptyMap(),
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
             (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
@@ -1155,7 +1174,7 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"DeviceProfile":${if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities, throughputCapBps)}$mediaSourceBody$subBody}""")
+            setBody("""{"DeviceProfile":${if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities, throughputCapBps, decodeFailed)}$mediaSourceBody$subBody}""")
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 

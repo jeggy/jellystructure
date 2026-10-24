@@ -363,10 +363,10 @@ class TvApiClient(
     }
 
     /** R56 — re-stream with a subtitle burned in via Jellyfin HLS transcode (encode/PGS path). */
-    suspend fun restream(itemId: String, subtitleStreamIndex: Int, positionMs: Long, capabilities: ClientCapabilities? = null, audioStreamIndex: Int? = null, mediaSourceId: String? = null, notOurEncoder: Boolean = false, belowBandwidthBps: Long? = null): StreamTicket {
+    suspend fun restream(itemId: String, subtitleStreamIndex: Int, positionMs: Long, capabilities: ClientCapabilities? = null, audioStreamIndex: Int? = null, mediaSourceId: String? = null, notOurEncoder: Boolean = false, belowBandwidthBps: Long? = null, handoverAtMs: Long? = null): StreamTicket {
         val r = client.post("$baseUrl/api/tv/playback/restream") {
             auth()
-            jsonBody(json.encodeToString(PlaybackRestreamRequest(itemId, subtitleStreamIndex, positionMs, capabilities, audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps)))
+            jsonBody(json.encodeToString(PlaybackRestreamRequest(itemId, subtitleStreamIndex, positionMs, capabilities, audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps, handoverAtMs)))
         }
         r.assertSuccess()
         return json.decodeFromString<StreamTicket>(r.bodyAsText())

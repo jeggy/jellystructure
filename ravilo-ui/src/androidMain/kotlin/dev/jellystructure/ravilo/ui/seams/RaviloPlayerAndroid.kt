@@ -99,16 +99,9 @@ actual class RaviloPlayer actual constructor() {
         builder.setTrackSelector(
             androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx, ClimbingTrackSelection.Factory())
         )
-        builder.setLoadControl(
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                    DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
-                    DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                    QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
-                )
-                .build()
-        )
+        // DEB-2205 (FR-4) — a direct play's buffer is sized in seconds (time over size), bounded by the memory class; every other
+        // stream keeps the byte bound it always had. See [TimeFirstLoadControl].
+        builder.setLoadControl(TimeFirstLoadControl(deviceMemoryClassMb(), { PlayerLadderHints.directStreamBps }, QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS))
         // R292 (FR-R292-12) — take audio focus as a movie: Ravilo pauses when another app takes focus and
         // never plays over it; a may-duck transient ducks rather than pausing (Media3's own behaviour).
         builder.setAudioAttributes(
@@ -247,6 +240,8 @@ actual class RaviloPlayer actual constructor() {
     // callbacks Media3 itself serializes), so @Volatile alone (no mutex) is sufficient for cross-thread
     // visibility, matching this file's other cross-thread state (_videoSize).
     @Volatile private var qoeDroppedFrames: Int = 0
+    // DEB-2205 (FR-3) — frames drawn by video decoders that have since been released this item (the live decoder's are added on read).
+    @Volatile private var qoeRenderedBase: Long = 0
     @Volatile private var qoeBandwidthEstimateBps: Long? = null
     // 309 (FR-309-13) — the transfers behind the estimate, this item's.
     @Volatile private var qoeBandwidthSamples: Int = 0
@@ -303,6 +298,11 @@ actual class RaviloPlayer actual constructor() {
         override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
             qoeDroppedFrames += droppedFrames
         }
+        // DEB-2205 (FR-3) — a decoder going away (a new stream, a re-init) keeps the frames it drew in the item's total.
+        override fun onVideoDisabled(eventTime: AnalyticsListener.EventTime, decoderCounters: androidx.media3.exoplayer.DecoderCounters) {
+            decoderCounters.ensureUpdated()
+            qoeRenderedBase += decoderCounters.renderedOutputBufferCount
+        }
         override fun onBandwidthEstimate(eventTime: AnalyticsListener.EventTime, totalLoadTimeMs: Int, totalBytesLoaded: Long, bitrateEstimate: Long) {
             qoeBandwidthEstimateBps = bitrateEstimate
             // 309a0 / FR-309-13 — what the estimate rests on: this item's transfers and bytes (each callback is one
@@ -349,6 +349,8 @@ actual class RaviloPlayer actual constructor() {
             val f = mediaLoadData.trackFormat ?: return
             val video = mediaLoadData.trackType == C.TRACK_TYPE_VIDEO || (mediaLoadData.trackType == C.TRACK_TYPE_DEFAULT && f.height > 0)
             if (!video) return
+            // DEB-2205 (FR-3) — a direct-played Matroska video track has no bitrate to report, but its codec is what a decode failure names.
+            qoeVariantCodec = videoFamilyOfMime(f.codecs?.let { androidx.media3.common.MimeTypes.getVideoMediaMimeType(it) } ?: f.sampleMimeType)
             val bps = (f.peakBitrate.takeIf { it > 0 } ?: f.bitrate.takeIf { it > 0 })?.toLong() ?: return
             val was = qoeVariantBps
             if (was != null && bps != was) {
@@ -358,7 +360,6 @@ actual class RaviloPlayer actual constructor() {
             qoeVariantBps = bps
             qoeVariantHeight = f.height.takeIf { it > 0 }
             qoeVariantFormatBps = (f.bitrate.takeIf { it > 0 } ?: f.peakBitrate.takeIf { it > 0 })?.toLong()
-            qoeVariantCodec = videoFamilyOfMime(f.codecs?.let { androidx.media3.common.MimeTypes.getVideoMediaMimeType(it) } ?: f.sampleMimeType)
         }
         override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
             qoeVideoDecoder = decoderName
@@ -852,6 +853,7 @@ actual class RaviloPlayer actual constructor() {
         val fresh = synchronized(qoeLock) { qoeCounter.beginItem(itemKey) }
         if (!fresh) return
         qoeDroppedFrames = 0
+        qoeRenderedBase = -renderedVideoFrameCount()   // the live decoder's frames so far are the previous item's
         qoeBandwidthEstimateBps = null
         // The decoder is the engine's, not the item's: a reused engine keeps it without a new init event (seen live on
         // Stue TV, 2026-10-08: the second item's report carried no decoder), so its name is kept.
@@ -888,6 +890,7 @@ actual class RaviloPlayer actual constructor() {
         variantBandwidthBps = qoeVariantBps,
         variantHeight = qoeVariantHeight,
         variantCodec = qoeVariantCodec,
+        renderedFrames = (qoeRenderedBase + renderedVideoFrameCount()).coerceAtLeast(0),
         perItem = true,
         stalls = qoeCounter.stallEvents(),
         sessionRebufferCount = qoeCounter.sessionRebufferCount,

@@ -87,6 +87,8 @@ private data class OverviewDevice(
     @SerialName("stream_holds_bps") val streamHoldsBps: Long? = null,
     @SerialName("stream_stalled_bps") val streamStalledBps: Long? = null,
     @SerialName("stream_stalled_at") val streamStalledAt: Long? = null,
+    // DEB-2205 (FR-3) — per codec family, the video bits/s this device's decode failed at (empty = none): the learned ceiling.
+    @SerialName("stream_decode_failed") val streamDecodeFailed: Map<String, Long> = emptyMap(),
     // Phase 224 (FR-224-5) — the build and platform this device last reported (R252). Both null ⇒ the
     // device has never said (an un-updated client); the row spells that out.
     @SerialName("app_version") val appVersion: String? = null,
@@ -849,6 +851,8 @@ fun Route.tvRoutes(
     post("/tv/playback/qoe") {
         val device = call.attributes[DeviceKey]
         val req = runCatching { call.receive<PlaybackQoeReport>() }.getOrNull()
+        // DEB-2205 (FR-3, FR-4) — a hand-over's facts are written before this answers: the client restreams once it has the answer.
+        if (req != null) runCatching { playbackService.recordHandoverFacts(device, req) }
         if (req != null) playbackService.recordQoe(device, req)
         call.respond(mapOf("status" to "ok"))
     }
@@ -887,7 +891,7 @@ fun Route.tvRoutes(
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackRestreamRequest>()
-        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities, req.audioStreamIndex, req.mediaSourceId, notOurEncoder = req.notOurEncoder, belowBandwidthBps = req.belowBandwidthBps))
+        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities, req.audioStreamIndex, req.mediaSourceId, notOurEncoder = req.notOurEncoder, belowBandwidthBps = req.belowBandwidthBps, handoverAtMs = req.handoverAtMs))
     }
 
     post("/tv/mark") {
@@ -1131,6 +1135,7 @@ fun Route.tvRoutes(
                         streamHoldsBps = playbackService.takeOf(d.deviceId),   // 309 (FR-309-11)
                         streamStalledBps = playbackService.recordSummary(d.deviceId)?.takeIf { (it.stalledAt ?: 0) > dev.jellystructure.nowEpochSec() - dev.jellystructure.tv.STALL_HOLD_SEC }?.stalledBps,
                         streamStalledAt = playbackService.recordSummary(d.deviceId)?.takeIf { (it.stalledAt ?: 0) > dev.jellystructure.nowEpochSec() - dev.jellystructure.tv.STALL_HOLD_SEC }?.stalledAt,
+                        streamDecodeFailed = dev.jellystructure.tv.decodeFailedBps(playbackService.recordSummary(d.deviceId)),   // DEB-2205 (FR-3)
                         appVersion = d.appVersion,
                         platform = d.platform,
                         reconnectsLastHour = tvEventBus?.unstable(d.deviceId)?.connectsLastHour,   // Phase 256 (FR-256-3)

@@ -549,6 +549,9 @@ class PlaybackService(
     /** 309 (FR-309-1) — this device's record (null without the store, or with no row yet). */
     private fun recordOf(device: DeviceData): StreamRecord? = runCatching { streamRecords?.get(device.deviceId) }.getOrNull()
 
+    /** DEB-2205 (FR-3) — per codec family, the video bits/s this device's decode failed at; what a client that reports decode health is held to. */
+    private fun decodeFailedOf(device: DeviceData): Map<String, Long> = decodeFailedBps(recordOf(device))
+
     /**
      * 309 (FR-309-1) — what [device] can take now (its proof, its newest measurement × 0.7, a recent stall's cap), in the
      * master's own units; null = it has shown nothing yet. One decision for the negotiation's cap, the start rung and
@@ -621,26 +624,87 @@ class PlaybackService(
         return directPlayStreamBps(size, file.second, video)
     }
 
+    /** DEB-2205 (FR-3) — the file's video codec family and its video bitrate (bits/s), from our scan; null parts when it has none. */
+    private suspend fun fileVideoOf(jellyfinId: String): Pair<String?, Long?> {
+        val video = localFileOf(jellyfinId)?.tracks?.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO } ?: return null to null
+        return videoFamilyOf(video.codec) to video.videoBitrate?.toLong()?.takeIf { it > 0 }
+    }
+
+    /** DEB-2205 — the record is read, changed and written whole: one writer at a time, or a hand-over's facts could be overwritten by a fold that read the row first. */
+    private val recordMutex = Mutex()
+
+    /**
+     * DEB-2205 (FR-3, FR-4) — the writes a hand-over's restream depends on, made **before** the route answers the QoE post (the client
+     * waits for that answer, then restreams, and the restream's negotiation must see them):
+     *  - `stalled_bps` — a direct play left because its path could not carry it: the file's stream bitrate is the stalled one (24 h
+     *    hold, FR-309-1), written beside the stall that would otherwise have said so. Idempotent: a repeat never restarts the hold.
+     *  - `decode_failed_*` — a direct play whose picture dropped frames or froze with buffer in hand: this codec family does not decode
+     *    this bitrate. The family is the client's (else the file's own), the bitrate the client's when it knows it (else the file's video bitrate).
+     */
+    suspend fun recordHandoverFacts(device: DeviceData, report: PlaybackQoeReport) {
+        val store = streamRecords ?: return
+        if (!report.perItem || (report.stalledBps == null && report.decodeFailedCodec == null)) return
+        val file = if (report.decodeFailedCodec != null) fileVideoOf(report.itemId) else null to null
+        val now = nowMs() / 1000
+        recordMutex.withLock {
+            val before = store.get(device.deviceId) ?: StreamRecord()
+            var after = before
+            report.stalledBps?.takeIf { it > 0 }?.let { bps ->
+                if (after.stalledBps != bps || !fresh(after.stalledAt, now, STALL_HOLD_SEC)) after = after.copy(stalledBps = bps, stalledAt = now)
+            }
+            report.decodeFailedCodec?.let { named ->
+                val family = videoFamilyOf(named) ?: file.first
+                val bps = report.decodeFailedBps?.takeIf { it > 0 } ?: file.second
+                if (family != null && bps != null) after = noteDecodeFailed(after, family, bps, now)
+            }
+            if (after != before) {
+                store.put(device.deviceId, after, now)
+                logRecordChange(device, before, after)
+            }
+        }
+    }
+
+    private suspend fun logRecordChange(device: DeviceData, before: StreamRecord, after: StreamRecord) {
+        if (after.stalledAt != before.stalledAt && after.stalledBps != null)
+            Logger.info("record: device=${device.deviceId} stalled on ${after.stalledBps / 1000}k — holds ×0.8 for 24 h (309)", "tv")
+        if (after.provenBps != before.provenBps && after.provenBps != null)
+            Logger.info("record: device=${device.deviceId} proved ${after.provenBps / 1000}k (309)", "tv")
+        for ((family, f) in after.decodeFailed)
+            if (before.decodeFailed[family] != f)
+                Logger.info("record: device=${device.deviceId} $family decode failed at ${f.bps / 1000}k of video — files above ${(f.bps * DECODE_FAILED_HEADROOM).toLong() / 1000}k go to the ladder (DEB-2205 FR-3)", "tv")
+        for (family in before.decodeFailed.keys - after.decodeFailed.keys)
+            Logger.info("record: device=${device.deviceId} $family decode ceiling lifted — a clean direct play above ${before.decodeFailed[family]!!.bps / 1000}k (DEB-2205 FR-3)", "tv")
+    }
+
     /** 309 (FR-309-1) — [report] folded into its device's record (only an R381 per-item report is read). */
     private suspend fun foldIntoRecord(device: DeviceData, report: PlaybackQoeReport) {
         val store = streamRecords ?: return
         if (!report.perItem) return
         val variant = report.variantBandwidthBps?.takeIf { it > 0 } ?: if (report.directPlay) fileStreamBpsOf(report.itemId) else null
         val holdKey = "${device.deviceId}|${report.itemId}"
+        // DEB-2205 (FR-3) — the file behind a direct play that may be clean enough to lift a ceiling, looked up before the record is held.
+        val lifting = report.directPlay && report.renderedFrames > 0 && report.stalls.isEmpty() && report.frozenCount == 0 && report.droppedFrames.toLong() * 1000 < report.renderedFrames
+        val played = if (lifting) fileVideoOf(report.itemId) else null to null
         val now = nowMs() / 1000
-        val before = store.get(device.deviceId) ?: StreamRecord()
-        val (after, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true), now)
-        while (true) {
-            val old = holds.value
-            val next = (if (hold != null) old + (holdKey to hold) else old - holdKey).let { m -> if (m.size > 200) m.entries.drop(m.size - 200).associate { it.toPair() } else m }
-            if (holds.compareAndSet(old, next)) break
-        }
-        if (after != before) {
-            store.put(device.deviceId, after, now)
-            if (after.stalledAt != before.stalledAt && after.stalledBps != null)
-                Logger.info("record: device=${device.deviceId} stalled on ${after.stalledBps / 1000}k — holds ×0.8 for 24 h (309)", "tv")
-            if (after.provenBps != before.provenBps && after.provenBps != null)
-                Logger.info("record: device=${device.deviceId} proved ${after.provenBps / 1000}k (309)", "tv")
+        recordMutex.withLock {
+            val before = store.get(device.deviceId) ?: StreamRecord()
+            val (folded, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true), now)
+            var after = folded
+            // A clean direct play of a family at a bitrate above the one its decode failed at lifts that ceiling.
+            if (lifting && hold != null && after.decodeFailed.isNotEmpty() &&
+                cleanDirectPlay(now - hold.sinceSec, report.droppedFrames.toLong(), report.renderedFrames, report.stalls.size, report.frozenCount)) {
+                val (family, videoBps) = played
+                if (family != null && videoBps != null) after = liftDecodeFailed(after, family, videoBps)
+            }
+            while (true) {
+                val old = holds.value
+                val next = (if (hold != null) old + (holdKey to hold) else old - holdKey).let { m -> if (m.size > 200) m.entries.drop(m.size - 200).associate { it.toPair() } else m }
+                if (holds.compareAndSet(old, next)) break
+            }
+            if (after != before) {
+                store.put(device.deviceId, after, now)
+                logRecordChange(device, before, after)
+            }
         }
     }
 
@@ -678,6 +742,8 @@ class PlaybackService(
         notOurEncoder: Boolean = false,
         /** DEB-2205 (FR-5.2) — a freeze recovery: our rungs whose BANDWIDTH is under this only. */
         belowBandwidthBps: Long? = null,
+        /** DEB-2205 (FR-4) — a hand-over ahead of time: our encoder's job starts at the ticket's position now, and the answer waits (bounded) for its first segment. */
+        handover: Boolean = false,
     ): StreamTicket {
         val deviceKind = device?.kind ?: "tv"
         val measured = ticket.copy(measuredBandwidthBps = measuredBps,
@@ -705,6 +771,12 @@ class PlaybackService(
                 val qoeKey = device?.let { qoeKeyOf(it, jellyfinId) } ?: ""
                 val adopted = device?.let { encoder.adoptPrewarm(it.deviceId, jellyfinId, plan, startSegment, jellyfinPlaySessionId, ticket.expiresAt, qoeKey) }
                 val id = adopted ?: encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt, device?.deviceId ?: "", jellyfinId, startMs = ticket.startPositionMs, qoeKey = qoeKey)
+                // DEB-2205 (FR-4) — the player is still on its direct stream and switches at H: the job starts at H's segment now, and
+                // this answer waits for that segment, so a ticket that arrives means the first segment the player reads is made.
+                if (handover) {
+                    val ready = encoder.warmAndWait(id, startSegment, HANDOVER_SEGMENT_WAIT_MS)
+                    Logger.info("playback: item=$jellyfinId hand-over to ours at ${ticket.startPositionMs}ms (segment $startSegment) — ${if (ready) "its first segment is made" else "its first segment is not made yet, the player waits for it"} (DEB-2205 FR-4)", "tv")
+                }
                 val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
                 val startStream = rungBandwidth(plan.rungs[plan.startRung], audioPeak)
                 Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +
@@ -727,7 +799,7 @@ class PlaybackService(
             }
         }
         // 308 (FR-308-1) — a ladder for a player that adapts, on a transcode that re-encodes the picture.
-        val ceiling = decodeCeiling(capabilities, master)
+        val ceiling = decodeCeiling(capabilities, master, device?.let { decodeFailedOf(it) } ?: emptyMap())
         // 309 (FR-309-2) — Jellyfin's own ladder starts where the record says too: what the device can take, else the
         // 4 Mbps rung (never the top first).
         val startBudget = take ?: NO_RECORD_START_STREAM_BPS
@@ -781,10 +853,12 @@ class PlaybackService(
         }
 
     /** 308 — the decode ceiling (bits/s) for the codec [transcodingUrl] encodes to, or null when the device gave none. */
-    private fun decodeCeiling(c: ClientCapabilities, transcodingUrl: String): Long? {
+    private fun decodeCeiling(c: ClientCapabilities, transcodingUrl: String, decodeFailed: Map<String, Long> = emptyMap()): Long? {
         val codec = queryParam(transcodingUrl, "VideoCodec")?.substringBefore(',')?.lowercase()
-        val perCodec = if (codec == "hevc" || codec == "h265") c.maxHevcBitrate else c.maxH264Bitrate
-        return listOf(perCodec, c.maxVideoBitrate).filter { it > 0 }.minOrNull()?.toLong()
+        // DEB-2205 (FR-2) — a client that reports decode health is held to what its decode has failed at (0.9 ×), not to what it advertises.
+        val perCodec = if (c.reportsDecodeHealth) (videoFamilyOf(codec)?.let { decodeFailed[it] }?.let { (it * DECODE_FAILED_HEADROOM).toLong() } ?: 0L)
+        else (if (codec == "hevc" || codec == "h265") c.maxHevcBitrate else c.maxH264Bitrate).toLong()
+        return listOf(perCodec, c.maxVideoBitrate.toLong()).filter { it > 0 }.minOrNull()
     }
 
     /** R291 — the file on this server's disk behind a Jellyfin id (a movie, or one series' episode), and its
@@ -1125,7 +1199,7 @@ class PlaybackService(
         // direct-plays. No record: a player that climbs takes files up to 8 Mbps directly; one that can't is not capped.
         val take = takeOf(device)
         val cap = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = mediaSourceId ?: jellyfinId, audioStreamIndex = copyIndex ?: wantedAudioIndex, throughputCapBps = cap)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = mediaSourceId ?: jellyfinId, audioStreamIndex = copyIndex ?: wantedAudioIndex, throughputCapBps = cap, decodeFailed = decodeFailedOf(device))
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         Logger.info("playback start: device=${device.deviceId} item=$jellyfinId takes ${take?.let { "${it / 1000}k" } ?: "no record"}" +
@@ -1238,6 +1312,8 @@ class PlaybackService(
             sessionId = sessionId,   // R368 (dev review item 8)
             versions = ticketVersions(itemDetail?.mediaSources.orEmpty(), mediaSourceId),   // phase 314c
             mediaSourceId = mediaSourceId,
+            // DEB-2205 (FR-4) — a direct play tells a client that watches its own decode health how big its stream is.
+            streamBps = if (!needsTranscode && capabilities.reportsDecodeHealth) fileStreamBpsOf(jellyfinId) else null,
         ), negotiatedCaps, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, device = device,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = take,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
@@ -1268,7 +1344,7 @@ class PlaybackService(
         // not preloaded (R381's owner decision 2).
         val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), null))
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps,
-            identity = identity, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device), device.isTvApp))   // 309 — the start's own cap
+            identity = identity, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device), device.isTvApp), decodeFailed = decodeFailedOf(device))   // 309 — the start's own cap
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val direct = source != null && (source.supportsDirectPlay || source.transcodingUrl == null)
         Logger.info("playback prepare: device=${device.deviceId} item=$jellyfinId directPlay=$direct from ${startPositionMs}ms (R381, nothing reported)", "tv")
@@ -1325,7 +1401,7 @@ class PlaybackService(
         }
         val take = takeOf(target)
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, target.jellyfinUserId, jellyfinId, capabilities = caps, identity = identity,
-            audioStreamIndex = wantedAudioIndex, throughputCapBps = negotiationCap(caps.hlsAdaptive, take, target.isTvApp))
+            audioStreamIndex = wantedAudioIndex, throughputCapBps = negotiationCap(caps.hlsAdaptive, take, target.isTvApp), decodeFailed = decodeFailedOf(target))
         val source = playbackInfo?.mediaSources?.firstOrNull() ?: return none("no PlaybackInfo")
         if (source.supportsDirectPlay || source.transcodingUrl == null) return dev.jellystructure.shared.tv.PrewarmResult("direct")
         val master = source.transcodingUrl
@@ -2065,8 +2141,10 @@ class PlaybackService(
         notOurEncoder: Boolean = false,
         /** DEB-2205 (FR-5.2) — a freeze recovery: our rungs whose BANDWIDTH is under this only (null: all). */
         belowBandwidthBps: Long? = null,
+        /** DEB-2205 (FR-4) — a hand-over ahead of time: the playhead position the player will switch at (null: restream at [positionMs] now). */
+        handoverAtMs: Long? = null,
     ): StreamTicket {
-        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps)
+        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps, handoverAtMs)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
@@ -2187,6 +2265,7 @@ class PlaybackService(
         mediaSourceId: String? = null,
         notOurEncoder: Boolean = false,
         belowBandwidthBps: Long? = null,
+        handoverAtMs: Long? = null,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
@@ -2194,12 +2273,17 @@ class PlaybackService(
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+        // DEB-2205 (FR-4) — a hand-over ahead of time starts the new stream where the player will switch (H), not where it is now.
+        val handoverAt = handoverAtMs?.takeIf { it >= positionMs }
+        val startMs = handoverAt ?: positionMs
         val measuredBps = measuredThroughputOf(device)   // 308 (FR-308-4)
         val chosenSource = chooseMediaSource(itemDetail?.mediaSources.orEmpty(), mediaSourceId, decodesDolbyVisionEl(capabilities))   // phase 314c
         // R379 — an audio switch to (or on) an AC-3 track on a device without the platform decoder is re-encoded.
         val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), audioStreamIndex))
         val take = takeOf(device)   // 309 (FR-309-1)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp))
+        // DEB-2205 (FR-4) — a ladder that takes the place of a direct play starts within what the path measured, not at the file's own proof.
+        val ladderTake = ladderTakeFor(servedByOf(device.deviceId, jellyfinId) == "direct", take, measuredBps)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp), decodeFailed = decodeFailedOf(device))
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         // 2026-09-24 — this path serves an un-burn AND a plain audio switch (R284), and cannot tell them
@@ -2227,7 +2311,7 @@ class PlaybackService(
             container = "mkv",
             directPlay = !needsTranscode,
             hlsUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode }, negotiatedCaps, chosenSource),
-            startPositionMs = positionMs,
+            startPositionMs = startMs,
             subtitles = subtitles,
             audio = ticketAudio(itemDetail, jellyfinId, needsTranscode, capabilities, chosenSource),
             trickplayUrl = null,
@@ -2235,11 +2319,12 @@ class PlaybackService(
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
             versions = ticketVersions(itemDetail?.mediaSources.orEmpty(), chosenSource),   // phase 314c
             mediaSourceId = chosenSource,
+            streamBps = if (!needsTranscode && capabilities.reportsDecodeHealth) fileStreamBpsOf(jellyfinId) else null,   // DEB-2205 (FR-4)
         ).let { withRenditions(it, negotiatedCaps, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, device = device,
-            sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = take,
+            sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = ladderTake,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
-            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps) }
+            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps, handover = handoverAt != null) }
     }
 
     /**
@@ -2304,6 +2389,9 @@ class PlaybackService(
     private fun isPgsSubCodec(c: String): Boolean =
         c in setOf("hdmv_pgs_subtitle", "pgssub", "pgs")
 }
+
+/** DEB-2205 (FR-4) — how long a hand-over's restream waits for our encoder's first segment at H before it answers anyway. */
+internal const val HANDOVER_SEGMENT_WAIT_MS = 8_000L
 
 /**
  * Phase 253 (FR-253-2) — the audio track a transcoded stream really carries: the `AudioStreamIndex`

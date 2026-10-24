@@ -279,6 +279,50 @@ This applies to an HLS play, ours or Jellyfin's.
     (`dev.jellystructure.ravilo.DEBUG_FREEZE_RENDER`): playback holds its frame and position while the buffer fills, and the
     store reads that as a freeze. A release build binds nothing.
 
+- *Amendment 2026-10-24 (DEB-2212, slice 4 — how FR-2, FR-3 and FR-4 sit on the wire and in the player):*
+  - **Who is relieved of the advertised ceiling.** `ClientCapabilities.reports_decode_health` (default `false`) is sent by the
+    Android app (TV and phone) only. For a client that sends it:
+    - the per-codec `max_hevc_bitrate` / `max_h264_bitrate` are still reported, stored and shown *advertised*, and are **not**
+      conditions;
+    - `max_video_bitrate` is read as an **explicit cap** (FR-5.2's recovery ceiling, a stepping restream's) and the app sends it as 0
+      otherwise, so FR-177-4's `MaxStreamingBitrate` has no advertised term left for it;
+    - FR-177-2's `VideoBitrate` condition is emitted per codec family from the learned ceiling only, at **0.9 × `decode_failed_bps`**
+      (one `LessThanEqual` profile per family: `hevc`, `h264`, `av1`, `vp9`), and not at all for a family with nothing learned;
+    - the ladder's top for Jellyfin's own transcode (`decodeCeiling`) reads the same learned figure.
+    An installed client keeps today's rule byte for byte, and ignores nothing it sent.
+  - **Where a decode failure is kept.** `87.sqm` adds `decode_failed_bps`, `decode_failed_codec` and `decode_failed_at` to the
+    device's stream record as three **parallel comma-separated lists** (the failed video bits/s, the families, the epoch seconds), so one
+    row holds one entry per family. A new failure of a family keeps the **lower** bitrate (a failure higher up says nothing new); the
+    time is the newest. It never expires. `playback_qoe` gains `rendered_frames`.
+  - **The QoE report carries the facts, the server writes the record.** New optional fields: `rendered_frames`; `decode_failed_codec`
+    and `decode_failed_bps` (the family and, where the client knows it, the stream's video bitrate; the server reads it from the file
+    when it is absent); and `stalled_bps` (the file's stream bitrate of a direct play left because the path could not carry it, written
+    as FR-309-1's stalled stream). Each is sent **once**, on the post that precedes the restream, and the restream waits for that post.
+    A repeat of `stalled_bps` never restarts the 24 h hold.
+  - **The lift.** A direct play of a family with a failed ceiling lifts it when the *same stream* has been held ≥ 10 min between
+    posts, the report has no stop of any cause and no frozen picture, under 0.1 % of `rendered_frames` were dropped (a report with no
+    rendered count never lifts), and the file's video bitrate is above the failed one.
+  - **The signals.** (a) Dropped frames are judged over a 10 s window of the renderer's cumulative counts; a window that rendered
+    under 120 frames says nothing, and a pause, a seek or a decoder re-init starts it again. (b) The frozen picture is FR-1's own meter:
+    held ≥ 3 s with ≥ 5 s buffered. The frozen stop is counted as `frozen_with_buffer` as FR-1 says; the dropped-frame signal, which is
+    not a stop, enters `stalls_json` as a `decode` entry with no duration. Both hand over at once.
+  - **The hand-over ahead of time.** `PlaybackRestreamRequest.handover_at_ms` carries H. The server negotiates as a restream, starts
+    its encoder at H's segment and **answers when that segment of the start rung exists, or after 8 s**, with the ticket starting at H
+    (`startPositionMs = H`). The player keeps the direct stream, holds the ticket, and cuts over when the playhead is within 250 ms of
+    H, starting the new stream at the later of H and the playhead. Three exits besides: the buffer runs dry before H (under 1 s ahead
+    while waiting) cuts over at once at the playhead; a ticket that arrives after H cuts over at once ("the first segment that
+    exists"); a seek away (back 1.5 s, or forward past H by 30 s), no answer in 30 s, a failed restream, or an answer that is the
+    direct play again drops the hand-over and the existing stall path (FR-309-8) is free again. The ticket of a direct play carries
+    `stream_bps`, the file's whole stream bitrate (size × 8 / length), so the player can compare it with its own estimate; the rule
+    reads the estimate only when it rests on ≥ 3 transfers and ≥ 2 MB (FR-309-13).
+  - **The buffer.** `DefaultLoadControl` is subclassed (`TimeFirstLoadControl`): time over size, a 50 s target (above the ≥ 30 s the
+    spec asks for), **for a direct play only**, stopped at what `getMemoryClass()` × 0.25 holds at the file's bitrate. Every other
+    stream, an HLS ladder above all, keeps the byte bound it always had: a 2160p rung at 50 s does not fit the heap of the TV this
+    runs on. The thresholds above (15 s, 30 s, 4 s) scale by `holdable / 30 s` where the device holds less than 30 s of the file.
+  - **What CI cannot prove** and moves to the QA ticket: the reported 4K HDR10 remux direct-playing on the stue TV for 10 min with
+    no stop (Acceptance 1), a hand-over on a shaped link on that TV (Acceptance 4), and the memory class the TV really reports. The
+    timing rule is tested against a throttled local server (`DirectPlayHandoverTimingTest`); the Media3 cut itself is not.
+
 ## Acceptance
 
 1. **The reported film plays.** On the stue TV, the reported film (or any 2160p HDR10 HEVC file of 60–80 Mbps whose

@@ -19,6 +19,8 @@ import dev.jellystructure.ravilo.ui.seams.supportedContainers
 import dev.jellystructure.ravilo.ui.seams.switchesAudioInFile
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.playsAdaptiveHls
+import dev.jellystructure.ravilo.ui.seams.reportsDecodeHealth
+import dev.jellystructure.ravilo.ui.seams.deviceMemoryClassMb
 import dev.jellystructure.ravilo.ui.seams.mergesExternalAudio
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
@@ -220,7 +222,12 @@ internal fun currentClientCapabilities(
         linkMbps = link.mbps,
         // Phase 314b — this player merges a `.mka` sidecar with a direct-played video.
         externalAudio = mergesExternalAudio(),
-    )
+        // DEB-2205 (FR-2) — a player that watches its decode health is not held to the decoder bitrate it advertises, so the
+        // per-codec figures above are still reported (the admin shows them as *advertised*) but `max_video_bitrate` — which the
+        // server reads as an explicit cap from such a player — is left unsent. An older server ignores the flag and keeps the
+        // per-codec figures as the condition it always applied.
+        reportsDecodeHealth = reportsDecodeHealth(),
+    ).let { if (it.reportsDecodeHealth) it.copy(maxVideoBitrate = 0) else it }
     return capabilities
 }
 
@@ -294,6 +301,21 @@ class PlayerStore(
     private var itemFirstFrameWallMs = -1L
     private var pendingRecovery: PendingRecovery? = null
 
+    // ── DEB-2205 (FR-3, FR-4) — a direct play's decode health and its hand-over to the ladder ──
+    private val decodeMonitor = DecodeHealthMonitor()
+    private var handoverRule: DirectPlayHandover? = null
+    private var handoverRuleFor: String? = null
+    /** A hand-over ahead of time that is waiting for the playhead to reach H (the direct stream plays on meanwhile). */
+    @kotlin.concurrent.Volatile private var pendingHandover: PendingHandover? = null
+    /** Sent once on the next QoE post: the codec (and, where known, the video bitrate) a direct play's decode failed on (FR-3). */
+    private var decodeFailedToReport: Pair<String, Long?>? = null
+    /** Sent once on the next QoE post: the stream bitrate of a direct play left because its path could not carry it (FR-4). */
+    private var stalledBpsToReport: Long? = null
+
+    private class PendingHandover(val atMs: Long, val askedAtPositionMs: Long, val askedAtWallMs: Long, val streamBps: Long, val bufferAheadMs: Long, val reason: String) {
+        @kotlin.concurrent.Volatile var ticket: StreamTicket? = null
+    }
+
     fun startSession(
         itemId: String,
         // R292 (FR-R292-2) — a return from the background asks for the stream cut at the record's position;
@@ -322,6 +344,8 @@ class PlayerStore(
             stuckRestreamedFor = null; lastRestreamAudio = null; notOursFor = null
             freeze = FreezeRecovery(); frozenCount = 0; frozenMs = 0L; reportedFrozen = 0
             extraStalls.clear(); itemFirstFrameWallMs = -1L; pendingRecovery = null
+            decodeMonitor.reset(); handoverRule = null; handoverRuleFor = null; pendingHandover = null
+            decodeFailedToReport = null; stalledBpsToReport = null
         }
         currentItemId = itemId
         this.positionProvider = positionProvider
@@ -423,6 +447,11 @@ class PlayerStore(
         currentMediaSourceId = mediaSourceId   // phase 314c — every ticket says which version it plays
         currentTicket = this                   // 309 (FR-309-8/-9) — what the store's own restreams start from
         dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.noteTicket(this)
+        return resolvedOnThisServer()
+    }
+
+    /** The ticket with its paths made absolute against the server the app talks to; no other effect (a hand-over's ticket waits as this). */
+    private fun StreamTicket.resolvedOnThisServer(): StreamTicket {
         val base = apiClient.baseUrl.trimEnd('/')
         val withHls = hlsUrl?.takeIf { it.startsWith("/") }?.let { copy(hlsUrl = base + it) } ?: this
         // Phase 314b — a sidecar's URL is a path on this server too.
@@ -608,6 +637,9 @@ class PlayerStore(
     /** Posts this play's QoE now; the returned job ends when the post has (309: a ladder switch waits for it). */
     private fun postQoeNow(itemId: String): Job? {
         val snapshot = qoeSnapshotProvider?.invoke() ?: return null
+        // DEB-2205 (FR-3, FR-4) — said once, with the post that precedes the hand-over: the server writes it to the device's record.
+        val decodeFailed = decodeFailedToReport.also { decodeFailedToReport = null }
+        val stalledBps = stalledBpsToReport.also { stalledBpsToReport = null }
         return exitScope.launch {
             apiClient.postPlaybackQoe(
                 PlaybackQoeReport(
@@ -637,6 +669,10 @@ class PlayerStore(
                     stalls = mergeStops(snapshot.stalls, extraStalls.toList()),
                     frozenCount = frozenCount,
                     frozenMs = frozenMs,
+                    renderedFrames = snapshot.renderedFrames,
+                    decodeFailedCodec = decodeFailed?.first,
+                    decodeFailedBps = decodeFailed?.second,
+                    stalledBps = stalledBps,
                     sessionRebufferCount = snapshot.sessionRebufferCount,
                     sessionRebufferMs = snapshot.sessionRebufferMs,
                     waits = snapshot.waits,
@@ -708,6 +744,7 @@ class PlayerStore(
     private fun startFailureWatch() {
         failureWatchJob?.cancel()
         val failed = failedProvider
+        decodeMonitor.reset(); handoverRule = null   // a new stream is its own window (DEB-2205 FR-3/-4)
         failureWatchJob = scope.launch {
             val latch = FailureLatch()
             val stuck = StuckWatch()
@@ -730,6 +767,11 @@ class PlayerStore(
                 val reading = if (watch != null) frozenMeter.observe(nowMs, watch) else null
                 if (watch != null) noteWatch(watch, nowMs)
                 reading?.ended?.let { noteFrozenStop(it) }
+                // DEB-2205 (FR-3, FR-4) — a direct play of a player that watches its decode health: dropped frames or a frozen
+                // picture hand it over at once; a buffer that falls behind hands it over ahead of time. True = a restream or the
+                // switch to one has replaced the stream (the watch is re-armed for the new one).
+                if (!failedNow && watch != null && t != null && t.directPlay && item != null && lastCapabilities?.reportsDecodeHealth == true &&
+                    watchDirectPlay(item, t, watch, reading, frozenMeter, nowMs)) break
                 if (!failedNow && reading != null && reading.heldMs >= FROZEN_RECOVER_MS && t != null && !t.directPlay && item != null &&
                     recoverFromFreeze(item, t, pos ?: watch!!.positionMs, reading.bufferAheadMs, frozenMeter, nowMs)) break
                 val stuckNow = !failedNow && ours && pos != null &&
@@ -755,6 +797,8 @@ class PlayerStore(
     private class PendingRecovery(
         val startedAtMs: Long, val positionMs: Long, val bufferAheadMs: Long,
         val frozenHeight: Int?, val frozenBps: Long?, val frozenCodec: String?, val target: String,
+        /** DEB-2205 (FR-4) — set for a hand-over (not a freeze): the words that replace "froze on …" in the log line. */
+        val handover: String? = null,
     )
 
     /** One tick of the player's state: the item's first frame (for the stops' clock) and the end of a recovery's own stop. */
@@ -769,7 +813,7 @@ class PlayerStore(
         // FR-5.4 — one line per recovery, naming the rung that froze and the one it landed on.
         val landed = if (moved) "${r.target} ${rungWords(snap?.variantHeight, snap?.variantBandwidthBps)}${snap?.variantCodec?.let { " $it" } ?: ""}"
             else "${r.target} (no picture within ${RECOVERY_WATCH_MS / 1000} s)"
-        println(recoveryLine(r.frozenHeight, r.frozenBps, r.frozenCodec, r.bufferAheadMs, landed))
+        println(r.handover?.let { handoverLine(it, r.bufferAheadMs, landed) } ?: recoveryLine(r.frozenHeight, r.frozenBps, r.frozenCodec, r.bufferAheadMs, landed))
         if (moved && duration >= FROZEN_STOP_MS) addStop(QoeStall(
             afterFirstFrameMs = afterFirstFrame(r.startedAtMs), positionMs = r.positionMs, bufferedMs = r.bufferAheadMs, durationMs = duration,
             phase = phaseOf(afterFirstFrame(r.startedAtMs)), variantBps = snap?.variantBandwidthBps, cause = QoeStallCause.RECOVERY,
@@ -838,6 +882,142 @@ class PlayerStore(
             FreezeAction.CapInPlace -> return false   // the buffer-empty kind is the player's own (FR-5.1)
         }
         return true
+    }
+
+    // ── DEB-2205 (FR-3, FR-4) — a direct play watches its decode health and its buffer, and leaves before the picture stops ──
+
+    /**
+     * One tick of a direct play of a player that reports decode health. In order: a hand-over already asked for waits for the
+     * playhead (and switches when it gets there); the decoder's two signals (FR-3) hand over at once; the buffer rule (FR-4) hands
+     * over ahead of time, or at once when under 4 s is buffered. Returns true when it replaced the stream (or the stream's watch).
+     */
+    private fun watchDirectPlay(item: String, t: StreamTicket, w: PlayerWatch, reading: FrozenReading?, meter: FrozenMeter, nowMs: Long): Boolean {
+        pendingHandover?.let { return servePendingHandover(item, it, w, nowMs) }
+        if (ladderSwitchedFor == item) return false
+        val snap = qoeSnapshotProvider?.invoke() ?: return false
+        val playing = w.firstFrame && w.wantsToPlay && !w.waiting && !w.recovering
+        // FR-3 — dropped frames over 10 s, or a frozen picture with buffer in hand.
+        val signal = decodeMonitor.observe(nowMs, snap.droppedFrames.toLong(), snap.renderedFrames, playing)
+            ?: reading?.let { frozenDecodeSignal(it.heldMs, it.bufferAheadMs) }
+        if (signal != null) {
+            handOverForDecode(item, t, w, signal, snap, meter, nowMs)
+            return true
+        }
+        // FR-4 — the buffer and the path.
+        val streamBps = t.streamBps?.takeIf { it > 0 } ?: return false
+        if (handoverRuleFor != "$item|$streamBps") {
+            handoverRuleFor = "$item|$streamBps"
+            handoverRule = DirectPlayHandover(streamBps, handoverScale(directBufferMs(deviceMemoryClassMb(), streamBps)))
+        }
+        val estimate = snap.bandwidthEstimateBps?.takeIf {
+            (snap.bandwidthSamples ?: 0) >= HANDOVER_ESTIMATE_MIN_SAMPLES && (snap.bandwidthBytes ?: 0L) >= HANDOVER_ESTIMATE_MIN_BYTES
+        }
+        val decision = handoverRule?.observe(nowMs, w.positionMs, w.bufferedAheadMs, estimate, w.firstFrame && w.wantsToPlay && !w.recovering)
+            ?: return false
+        return when (decision) {
+            is HandoverDecision.Immediate -> { handOverNow(item, t, w, streamBps, decision.reason, snap, nowMs); true }
+            is HandoverDecision.Ahead -> { handOverAhead(item, t, w, streamBps, decision, nowMs); false }
+        }
+    }
+
+    /** FR-3 — the decoder could not keep up: record it (once, with the post before the restream) and restream at the position now. */
+    private fun handOverForDecode(item: String, t: StreamTicket, w: PlayerWatch, signal: DecodeSignal, snap: PlayerQoeSnapshot, meter: FrozenMeter, nowMs: Long) {
+        meter.flush(nowMs)?.let { noteFrozenStop(it) }
+        val after = afterFirstFrame(nowMs)
+        addStop(QoeStall(
+            afterFirstFrameMs = after, positionMs = w.positionMs, bufferedMs = w.bufferedAheadMs.coerceAtLeast(0), durationMs = 0, phase = phaseOf(after),
+            variantBps = snap.variantBandwidthBps, cause = QoeStallCause.DECODE, bufferAheadMs = w.bufferedAheadMs.coerceAtLeast(0),
+            rungHeight = snap.variantHeight, rungBps = snap.variantBandwidthBps,
+        ))
+        decodeFailedToReport = (snap.variantCodec ?: "unknown") to null
+        ladderSwitchedFor = item
+        PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
+        pendingRecovery = PendingRecovery(nowMs, w.positionMs, w.bufferedAheadMs.coerceAtLeast(0), snap.variantHeight, snap.variantBandwidthBps, snap.variantCodec,
+            "the ladder", handover = "decode failed (${if (signal == DecodeSignal.DROPPED_FRAMES) "dropped frames over 10 s" else "picture frozen with buffer in hand"}) on ${snap.variantCodec ?: "the direct play"}")
+        println("[player] DEB-2205 FR-3: the direct play's decode failed (${signal.name.lowercase()}) at ${w.positionMs}ms — handing over to the ladder now")
+        restreamAfterPost(item, t, w.positionMs)
+    }
+
+    /** FR-4's immediate form — under 4 s buffered: write the stream's bitrate as stalled and restream at the position now. */
+    private fun handOverNow(item: String, t: StreamTicket, w: PlayerWatch, streamBps: Long, reason: String, snap: PlayerQoeSnapshot, nowMs: Long) {
+        stalledBpsToReport = streamBps
+        ladderSwitchedFor = item
+        PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
+        pendingRecovery = PendingRecovery(nowMs, w.positionMs, w.bufferedAheadMs.coerceAtLeast(0), snap.variantHeight, snap.variantBandwidthBps, snap.variantCodec,
+            "the ladder", handover = "direct play at ${streamBps / 1000}k ($reason)")
+        println("[player] DEB-2205 FR-4: the direct play (${streamBps / 1000}k) cannot be carried — $reason, ${w.bufferedAheadMs.coerceAtLeast(0) / 1000} s buffered at ${w.positionMs}ms — handing over now")
+        restreamAfterPost(item, t, w.positionMs)
+    }
+
+    /**
+     * FR-4 — the buffer falls behind with picture to spare: ask for the ladder at H = position + buffered − 2 s and keep playing the
+     * direct stream. The server prewarms its encoder at H and answers once the first segment exists; [servePendingHandover] cuts over
+     * when the playhead gets there.
+     */
+    private fun handOverAhead(item: String, t: StreamTicket, w: PlayerWatch, streamBps: Long, d: HandoverDecision.Ahead, nowMs: Long) {
+        val p = PendingHandover(d.atMs, w.positionMs, nowMs, streamBps, w.bufferedAheadMs.coerceAtLeast(0), d.reason)
+        pendingHandover = p
+        stalledBpsToReport = streamBps
+        ladderSwitchedFor = item
+        println("[player] DEB-2205 FR-4: the direct play (${streamBps / 1000}k) is falling behind — ${p.reason}, ${p.bufferAheadMs / 1000} s buffered at ${w.positionMs}ms — asking for the ladder at ${d.atMs}ms")
+        val posted = postQoeNow(item)
+        val caps = lastCapabilities
+        val audio = lastRestreamAudio ?: t.audioStreamIndex
+        scope.launch {
+            posted?.join()
+            val got = runCatching {
+                apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs)
+            }
+            val ticket = got.getOrNull()
+            if (ticket == null || pendingHandover !== p) {
+                // Failed, or the viewer moved on: the direct play carries on, and the stall path (309 FR-309-8) is free again.
+                if (pendingHandover === p) { pendingHandover = null; if (ladderSwitchedFor == item) ladderSwitchedFor = null }
+                if (ticket == null) println("[player] DEB-2205 FR-4: the hand-over was not made (${got.exceptionOrNull()?.message}) — the direct play carries on")
+                return@launch
+            }
+            p.ticket = ticket
+        }
+    }
+
+    /** A hand-over asked for waits here: dropped when the viewer left (a seek) or the server answered with the direct play again, cut over at H. */
+    private fun servePendingHandover(item: String, p: PendingHandover, w: PlayerWatch, nowMs: Long): Boolean {
+        fun drop(why: String) {
+            println("[player] DEB-2205 FR-4: the hand-over to ${p.atMs}ms is dropped — $why")
+            pendingHandover = null
+            if (ladderSwitchedFor == item) ladderSwitchedFor = null
+        }
+        val pos = w.positionMs
+        if (handoverStale(pos, p.askedAtPositionMs, p.atMs)) { drop("the viewer moved to ${pos}ms"); return false }
+        val ticket = p.ticket
+        if (ticket == null) {
+            if (nowMs - p.askedAtWallMs > HANDOVER_TICKET_GIVE_UP_MS) drop("no answer in ${HANDOVER_TICKET_GIVE_UP_MS / 1000} s")
+            return false
+        }
+        if (ticket.directPlay) { drop("the server answered with the direct play again"); return false }
+        // Dry before H (the buffer ran out faster than it was read): the first segment that exists is the one at the playhead.
+        val dry = w.firstFrame && w.waiting && w.bufferedAheadMs in 0 until 1_000
+        if (!handoverSwitchDue(pos, p.atMs) && !dry) return false
+        pendingHandover = null
+        val start = if (dry) pos else handoverStartMs(pos, p.atMs)
+        val snap = qoeSnapshotProvider?.invoke()
+        pendingRecovery = PendingRecovery(nowMs, pos, w.bufferedAheadMs.coerceAtLeast(0), snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec,
+            if (ticket.encoder == "ours") "ours" else "Jellyfin", handover = "direct play at ${p.streamBps / 1000}k (${p.reason}, asked ${(nowMs - p.askedAtWallMs) / 1000} s earlier for ${p.atMs}ms)")
+        PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
+        PlayerLadderHints.rearmTracks = true
+        _state.value = PlayerSessionState.Ready(ticket.copy(startPositionMs = start).onThisServer())
+        startFailureWatch()
+        return true
+    }
+
+    /** Posts the QoE (which carries the one-shot decode/stalled fields) and, once it has landed, restreams at [positionMs]. */
+    private fun restreamAfterPost(item: String, t: StreamTicket, positionMs: Long) {
+        PlayerLadderHints.rearmTracks = true
+        val posted = postQoeNow(item)
+        val audio = lastRestreamAudio ?: t.audioStreamIndex
+        scope.launch {
+            posted?.join()
+            restreamWithSub(item, t.burnedSubtitleIndex ?: -1, positionMs, audio)
+        }
     }
 
     /**
@@ -933,6 +1113,9 @@ class PlayerStore(
         restreamWithSub(itemId, t.burnedSubtitleIndex ?: -1, positionMs, t.audioStreamIndex)
     }
 }
+
+/** DEB-2205 (FR-4) — a hand-over whose ticket has not arrived by then is dropped, and the stall path is free again. */
+internal const val HANDOVER_TICKET_GIVE_UP_MS = 30_000L
 
 /** 309 (FR-309-8) — a direct play that stalled the way that counts ([StallRule]) moves to the ladder, once per item. */
 internal fun shouldMoveToLadder(directPlay: Boolean, alreadyMoved: Boolean, stalls: List<QoeStall>): Boolean =

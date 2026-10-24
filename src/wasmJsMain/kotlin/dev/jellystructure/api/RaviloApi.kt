@@ -59,6 +59,8 @@ data class OverviewDevice(
     @SerialName("stream_holds_bps") val streamHoldsBps: Long? = null,
     @SerialName("stream_stalled_bps") val streamStalledBps: Long? = null,
     @SerialName("stream_stalled_at") val streamStalledAt: Long? = null,
+    // DEB-2205 (FR-3) — per codec family, the video bits/s this device's decode failed at (empty = none).
+    @SerialName("stream_decode_failed") val streamDecodeFailed: Map<String, Long> = emptyMap(),
     // Phase 224 (FR-224-5) — the build and platform this device last reported; both null ⇒ never said.
     @SerialName("app_version") val appVersion: String? = null,
     val platform: String? = null,

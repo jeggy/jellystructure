@@ -71,3 +71,10 @@ actual fun switchesAudioInFile(): Boolean = true
 
 /** Phase 314b — Media3 merges a sidecar with the direct-played video (MergingMediaSource). */
 actual fun mergesExternalAudio(): Boolean = true
+
+/** DEB-2205 — Media3's dropped-frame counts and [dev.jellystructure.ravilo.ui.screens.PlayerStore]'s frozen-picture watch (FR-3), and its hand-over (FR-4). */
+actual fun reportsDecodeHealth(): Boolean = true
+
+actual fun deviceMemoryClassMb(): Int = runCatching {
+    (dev.jellystructure.ravilo.ui.RaviloAppContext.get().getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).memoryClass
+}.getOrDefault(0)

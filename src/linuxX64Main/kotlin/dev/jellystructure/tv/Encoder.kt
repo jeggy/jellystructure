@@ -245,6 +245,19 @@ class Encoder(
         return adopted
     }
 
+    /**
+     * DEB-2205 (FR-4) — a hand-over ahead of time: starts stream [id]'s job at [startSegment] now and returns when that segment of the
+     * start rung exists, or after [waitMs] (whichever is first) — true only when it exists. The caller answers the player's
+     * restream with it, so a ticket that arrives means the first segment the player will read is already made. The wait is the
+     * caller's own bound: the job itself carries on either way.
+     */
+    suspend fun warmAndWait(id: String, startSegment: Int, waitMs: Long): Boolean {
+        val e = entry(id) ?: return false
+        if (!kickJobs) return false
+        val made = kotlinx.coroutines.withTimeoutOrNull(waitMs) { jobs.segment(id, e.plan, ffmpegPath, e.plan.startRung, startSegment) }
+        return made != null
+    }
+
     /** 309 — the viewer left the detail page without pressing Play: the prewarm stops at once (owner). */
     suspend fun cancelPrewarm(deviceId: String, itemId: String): Int = stopFor(prewarmKey(deviceId, itemId))
 

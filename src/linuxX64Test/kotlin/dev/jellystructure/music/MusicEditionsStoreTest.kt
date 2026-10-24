@@ -59,6 +59,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN encoder_summary", 0)
         // …and DEB-2205's 86 adds the frozen-stop counters.
         for (c in listOf("frozen_count", "frozen_ms")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
+        // …and DEB-2205's 87 adds the rendered-frame count (its three device_stream_record columns go with the table dropped above).
+        raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN rendered_frames", 0)
         // …and 317's 78 creates file_av_sync.
         raw.execute(null, "DROP TABLE IF EXISTS file_av_sync", 0)
         // …and 320's 79 creates support_ticket and support_message.

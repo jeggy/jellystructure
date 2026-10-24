@@ -122,3 +122,8 @@ actual fun switchesAudioInFile(): Boolean = true
 
 /** Phase 314b — not built for mpv or AVPlayer yet: the sidecar comes through Jellyfin's stream there. */
 actual fun mergesExternalAudio(): Boolean = false
+
+/** DEB-2205 — mpv and AVPlayer give no dropped-frame or frozen-picture signal that this app reads. */
+actual fun reportsDecodeHealth(): Boolean = false
+
+actual fun deviceMemoryClassMb(): Int = 0

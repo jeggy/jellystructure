@@ -98,3 +98,14 @@ expect fun switchesAudioInFile(): Boolean
  * the sidecar on a direct play (it would be a row that does nothing) and gets it through Jellyfin's stream instead.
  */
 expect fun mergesExternalAudio(): Boolean
+
+/**
+ * DEB-2205 (FR-2, FR-3, FR-4) — this player watches its own decode health on a direct play (dropped frames, a frozen picture with
+ * buffer in hand) and hands over to the ladder before its buffer runs dry. Only a player that does so is relieved of the
+ * advertised decoder bitrate as a direct-play condition (the server then negotiates from what its decode has failed at), because
+ * only it can leave a decoder that turns out not to keep up. False where there is no such signal (the web, the desktop, the Cast receiver).
+ */
+expect fun reportsDecodeHealth(): Boolean
+
+/** DEB-2205 (FR-4) — the device's memory class in MB (`ActivityManager.getMemoryClass()`), which bounds the direct-play buffer; 0 = unknown. */
+expect fun deviceMemoryClassMb(): Int

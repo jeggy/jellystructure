@@ -78,13 +78,22 @@ private fun decodeCapabilityLine(d: dev.jellystructure.api.OverviewDevice): Stri
     val h264 = d.decodeMaxBitrateH264
     if (hevc == null && h264 == null) return "picture it can take · not measured yet"
     fun mbps(bps: Long) = "${bps / 1_000_000} Mbps"
+    // DEB-2205 (FR-2) — the decoder's own claim is shown as what it is: advertised, not a limit the server enforces.
     val parts = buildList {
-        hevc?.let { add("up to ${mbps(it)} HEVC") }
-        h264?.let { add("up to ${mbps(it)} H.264") }
+        hevc?.let { add("advertised up to ${mbps(it)} HEVC") }
+        h264?.let { add("advertised up to ${mbps(it)} H.264") }
     }
     val whenPart = d.decodeMeasuredAt?.let { " · measured ${usersAgo(it)}" } ?: ""
-    return "picture it can take · ${parts.joinToString(" · ")}$whenPart" + streamRecordWords(d.streamHoldsBps, d.streamStalledBps, d.streamStalledAt?.let { usersAgo(it * 1000L) })
+    return "picture it can take · ${parts.joinToString(" · ")}$whenPart" + streamRecordWords(d.streamHoldsBps, d.streamStalledBps, d.streamStalledAt?.let { usersAgo(it * 1000L) }) +
+        decodeFailedWords(d.streamDecodeFailed)
 }
+
+/** DEB-2205 (FR-3) — *· decode failed at 70 Mbps HEVC*: the learned ceiling, per codec family; nothing when none has been learned. */
+internal fun decodeFailedWords(failed: Map<String, Long>): String =
+    failed.entries.filter { it.value > 0 }.sortedBy { it.key }.joinToString("") { (family, bps) ->
+        val name = when (family) { "hevc" -> "HEVC"; "h264" -> "H.264"; "av1" -> "AV1"; "vp9" -> "VP9"; else -> family }
+        " · $name decode failed at ${bps / 1_000_000} Mbps"
+    }
 
 /** 309 (FR-309-11) — *· holds 8 Mbps · stalled at 24 Mbps yesterday*; nothing when the device has shown nothing. */
 internal fun streamRecordWords(holdsBps: Long?, stalledBps: Long?, stalledAgo: String?): String {

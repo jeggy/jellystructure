@@ -69,6 +69,8 @@ data class QoeSummary(
     // DEB-2205 (FR-1) — the stops where the position did not move with buffer in hand (a frozen picture).
     @SerialName("frozen_count") val frozenCount: Int = 0,
     @SerialName("frozen_ms") val frozenMs: Long = 0,
+    // DEB-2205 (FR-3) — frames the renderer drew, beside [droppedFrames] (0: an older app).
+    @SerialName("rendered_frames") val renderedFrames: Long = 0,
 ) {
     // R292 (dev review item 7) — a recovery-ladder firing and a restore after a recreation are worth a second
     // look; a plain return from the background is not (it is what HOME does), so it is carried, not badged.
@@ -136,6 +138,7 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             encoder_summary = summaryJson,
             frozen_count = report.frozenCount.toLong(),
             frozen_ms = report.frozenMs,
+            rendered_frames = report.renderedFrames,
         )
     }
 
@@ -223,4 +226,5 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     encoderSummary = encoder_summary?.let { EncoderSummary.fromJson(it) },
     frozenCount = frozen_count.toInt(),
     frozenMs = frozen_ms,
+    renderedFrames = rendered_frames,
 )

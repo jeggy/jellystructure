@@ -42,9 +42,17 @@ object PlayerLadderHints {
     /** DEB-2205 (FR-5.3) — true while a recovery's window holds climbing back at [nowMs]. */
     fun climbBlocked(nowMs: Long): Boolean = nowMs < climbBlockedUntilMs
 
+    /**
+     * DEB-2205 (FR-4) — the whole-file bitrate of the direct play about to load (bits/s), or 0 for any stream that is not one. The
+     * Android load control sizes a direct play's buffer in seconds, bounded by memory at this bitrate; every other stream keeps the
+     * byte-bounded buffer it always had.
+     */
+    @Volatile var directStreamBps: Long = 0L
+
     /** The ticket a play is about to load (every Ready the store emits). */
     fun noteTicket(t: StreamTicket) {
         adaptive = t.adaptive
         startVariantBps = t.startVariantBps
+        directStreamBps = if (t.directPlay) t.streamBps?.takeIf { it > 0 } ?: 0L else 0L
     }
 }

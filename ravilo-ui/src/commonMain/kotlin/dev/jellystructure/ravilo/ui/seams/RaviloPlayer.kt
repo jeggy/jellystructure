@@ -221,6 +221,8 @@ data class PlayerQoeSnapshot(
     /** DEB-2205 (FR-5.2) — the video family of the variant playing now (`hevc`, `h264`, `av1`, `vp9`), where the player
      *  can tell; null = unknown. Names the codec a freeze recovery leaves. */
     val variantCodec: String? = null,
+    /** DEB-2205 (FR-3) — frames the video renderer drew for this item (across decoder re-inits), beside [droppedFrames]; 0 = unknown. */
+    val renderedFrames: Long = 0,
 )
 
 // R247 — `languageName()` and its table live in LanguageIdentity.kt (one table, keyed by canonical code).

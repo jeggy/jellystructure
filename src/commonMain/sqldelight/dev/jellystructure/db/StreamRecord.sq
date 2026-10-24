@@ -2,7 +2,7 @@
 -- (a QoE estimate or 309's probe), and the stream it was on at its last stall that counts (≥ 2 s, or two within a
 -- minute). One row per device (a Cast receiver is its own device). Bits per second as the master advertises a stream
 -- (its BANDWIDTH; a direct play's own file bitrate). Times are epoch SECONDS. Must stay byte-for-byte in sync with
--- 77.sqm (the SQLDelight-migration rule).
+-- 77.sqm and 87.sqm (the SQLDelight-migration rule).
 CREATE TABLE device_stream_record (
     device_id TEXT NOT NULL PRIMARY KEY,
     proven_bps INTEGER,
@@ -11,15 +11,20 @@ CREATE TABLE device_stream_record (
     measured_at INTEGER,
     stalled_bps INTEGER,
     stalled_at INTEGER,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    -- DEB-2205 (FR-3) — the decode ceiling this device has shown it does NOT reach, one entry per video codec family as three
+    -- parallel comma-separated lists (families / failed video bits per second / epoch SECONDS). NULL = none. 87.sqm.
+    decode_failed_bps TEXT,
+    decode_failed_codec TEXT,
+    decode_failed_at TEXT
 );
 
 get:
 SELECT * FROM device_stream_record WHERE device_id = :device_id;
 
 upsert:
-INSERT OR REPLACE INTO device_stream_record(device_id, proven_bps, proven_at, measured_bps, measured_at, stalled_bps, stalled_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO device_stream_record(device_id, proven_bps, proven_at, measured_bps, measured_at, stalled_bps, stalled_at, updated_at, decode_failed_bps, decode_failed_codec, decode_failed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 all:
 SELECT * FROM device_stream_record;

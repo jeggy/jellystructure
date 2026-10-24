@@ -1,0 +1,10 @@
+-- DEB-2205 (FR-3) — the decode ceiling a device has shown it does NOT reach, learned from a direct play whose picture dropped
+-- frames or froze with buffer in hand: one entry per video codec family (hevc, h264, av1, vp9), kept as three parallel
+-- comma-separated lists (families, the failed video bits/s, the failure's epoch SECONDS) so one row holds every family. NULL = none.
+-- Lifted (the family leaves all three lists) by a clean direct play at a higher bitrate. See StreamRecord.kt `DecodeFailures`.
+ALTER TABLE device_stream_record ADD COLUMN decode_failed_bps TEXT;
+ALTER TABLE device_stream_record ADD COLUMN decode_failed_codec TEXT;
+ALTER TABLE device_stream_record ADD COLUMN decode_failed_at TEXT;
+-- DEB-2205 (FR-3) — frames the video renderer drew this item, beside dropped_frames (the 2 % decode signal and the 0.1 % lift
+-- rule read the pair). 0 = none, or an older app. Must stay byte-for-byte in sync with PlaybackQoe.sq's CREATE TABLE.
+ALTER TABLE playback_qoe ADD COLUMN rendered_frames INTEGER NOT NULL DEFAULT 0;

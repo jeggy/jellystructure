@@ -124,3 +124,8 @@ actual fun platformAudioDecoders(): List<String>? = null
 
 /** Phase 314b — a <video> element plays one source: no sidecar on a direct play. */
 actual fun mergesExternalAudio(): Boolean = false
+
+/** DEB-2205 — a <video> element reports neither; the browser keeps today's rule. */
+actual fun reportsDecodeHealth(): Boolean = false
+
+actual fun deviceMemoryClassMb(): Int = 0

@@ -171,6 +171,14 @@ data class ClientCapabilities(
      *  ([AudioTrack.externalUrl]) together with a direct-played video. Opt-in: an older client is never handed
      *  an external track on a direct play, since its player could not open it. */
     @SerialName("external_audio") val externalAudio: Boolean = false,
+    /**
+     * DEB-2205 (FR-2, FR-3) — this client watches its own decode health on a direct play (dropped frames over 10 s, a frozen
+     * picture with buffer in hand) and hands over to the ladder before its buffer runs dry. Only a client that says so loses the
+     * advertised decoder bitrate as a condition: the server then negotiates its direct play from what the device has *shown* it can
+     * decode (the learned ceiling), and treats [maxVideoBitrate] as an explicit cap, never as the advertised value. Default false —
+     * an installed client keeps today's rule exactly, advertised ceiling included, because it cannot hand over.
+     */
+    @SerialName("reports_decode_health") val reportsDecodeHealth: Boolean = false,
 )
 
 /**
@@ -247,6 +255,17 @@ data class PlaybackQoeReport(
      *  buffer-empty kind. 0 from an older app. Additive. */
     @SerialName("frozen_count") val frozenCount: Int = 0,
     @SerialName("frozen_ms") val frozenMs: Long = 0,
+    /** DEB-2205 (FR-3) — frames the video renderer drew this item, beside [droppedFrames] (dropped / rendered is what the 2 %
+     *  rule and the lift's 0.1 % rule read). 0 from an older app. Additive. */
+    @SerialName("rendered_frames") val renderedFrames: Long = 0,
+    /** DEB-2205 (FR-3) — this direct play's decoder failed: the file's video codec family (`hevc`, `h264`, `av1`, `vp9`) and the
+     *  video bitrate of the stream that failed (bits/s; null = the server reads it from the file). Sent once, with the hand-over
+     *  that follows. Additive. */
+    @SerialName("decode_failed_codec") val decodeFailedCodec: String? = null,
+    @SerialName("decode_failed_bps") val decodeFailedBps: Long? = null,
+    /** DEB-2205 (FR-4) — this direct play was left because its path could not carry it: the file's stream bitrate, which the
+     *  server writes as `stalled_bps` (24 h hold, FR-309-1) beside the stall that would otherwise have said so. Additive. */
+    @SerialName("stalled_bps") val stalledBps: Long? = null,
 )
 
 /** R381 (FR-R381-3) — one counted stall: a wait after this item's first frame that no seek, track switch, variant
@@ -480,6 +499,9 @@ data class StreamTicket(
     /** Phase 314c — the Jellyfin media source this stream plays (one of [versions]); a restream echoes it to keep
      *  the version, or names another to switch. Null when the film has a single version. */
     @SerialName("media_source_id") val mediaSourceId: String? = null,
+    /** DEB-2205 (FR-4) — on a direct play, the file's whole stream bitrate (bits/s: size × 8 / length, what Jellyfin weighs, FR-309-15),
+     *  so the player can compare it with its own bandwidth estimate. Null on a transcode and from an older server. Additive. */
+    @SerialName("stream_bps") val streamBps: Long? = null,
 )
 
 @Serializable
@@ -1638,6 +1660,11 @@ data class PlaybackRestreamRequest(
      *  rung's), keeping the lowest when none is. Never a rung at or above the one that froze. Null = no bound; a server
      *  from before the field ignores it (and a client that never sends it is unchanged). */
     @SerialName("below_bandwidth_bps") val belowBandwidthBps: Long? = null,
+    /** DEB-2205 (FR-4) — a hand-over ahead of time: the playhead position the player will switch at (H = position + buffered −
+     *  2 s). The server prewarms our encoder at the segment containing H, waits (bounded) until that segment exists, and answers
+     *  with the ladder's ticket starting at H; the player keeps its direct stream until H. Null = a restream at [positionMs] at
+     *  once. A server from before the field ignores it (and the ticket then starts at [positionMs]). */
+    @SerialName("handover_at_ms") val handoverAtMs: Long? = null,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */
