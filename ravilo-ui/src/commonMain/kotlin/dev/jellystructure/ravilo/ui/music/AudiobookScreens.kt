@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -203,45 +204,48 @@ internal fun LazyListScope.audiobookShelf(
         val state by loader.state.collectAsState()
         val colors = RaviloTheme.colors
         val s = (state as? Load.Ready)?.value
-        when {
-            state is Load.Loading -> Box(Modifier.fillMaxWidth().height(120.dp))
-            s == null || s.books.isEmpty() -> Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyLine(str("ab.empty")) }
-            else -> Column {
-                if (s.continueListening.isNotEmpty()) {
-                    Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("ab.continue")) }
-                    s.continueListening.forEach { c -> ContinueCard(c) { onResume(c.id) } }
-                }
-                Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("ab.all_books"), count = booksCount(s.books.size)) }
-                // FR-R323-1.3 — Authors / Series only when there is more than one author or any series.
-                if (s.authors.isNotEmpty() || s.series.isNotEmpty()) LazyRow(
-                    contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 12.dp),
-                ) {
-                    item(key = "all") { Chip(str("ab.all_books"), view == "books") { store.view.value = "books" } }
-                    if (s.authors.isNotEmpty()) item(key = "authors") { Chip(str("ab.authors"), view == "authors") { store.view.value = "authors" } }
-                    if (s.series.isNotEmpty()) item(key = "series") { Chip(str("ab.series"), view == "series") { store.view.value = "series" } }
-                }
-                when (view) {
-                    "authors" -> Column(Modifier.padding(horizontal = raviloHPad)) {
-                        s.authors.forEach { a ->
-                            val n = s.books.count { b -> b.authors.any { it.id == a.id } }
-                            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).tap { onOpenAuthor(a.id) }, verticalAlignment = Alignment.CenterVertically) {
-                                ArtistCircle(null, a.name, Modifier.size(50.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(a.name, color = colors.text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, fontFamily = Sora, maxLines = 1)
-                                    Text(booksCount(n), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
+        // DEB-2349 (FR-5) — the shelf fades in once over the empty loading box; a shelf already loaded (the viewer comes back to it) does not.
+        Box(Modifier.fadeInOnLoad(loading = state is Load.Loading)) {
+            when {
+                state is Load.Loading -> Box(Modifier.fillMaxWidth().height(120.dp))
+                s == null || s.books.isEmpty() -> Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyLine(str("ab.empty")) }
+                else -> Column {
+                    if (s.continueListening.isNotEmpty()) {
+                        Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("ab.continue")) }
+                        s.continueListening.forEach { c -> ContinueCard(c) { onResume(c.id) } }
+                    }
+                    Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("ab.all_books"), count = booksCount(s.books.size)) }
+                    // FR-R323-1.3 — Authors / Series only when there is more than one author or any series.
+                    if (s.authors.isNotEmpty() || s.series.isNotEmpty()) LazyRow(
+                        contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 12.dp),
+                    ) {
+                        item(key = "all") { Chip(str("ab.all_books"), view == "books") { store.view.value = "books" } }
+                        if (s.authors.isNotEmpty()) item(key = "authors") { Chip(str("ab.authors"), view == "authors") { store.view.value = "authors" } }
+                        if (s.series.isNotEmpty()) item(key = "series") { Chip(str("ab.series"), view == "series") { store.view.value = "series" } }
+                    }
+                    when (view) {
+                        "authors" -> Column(Modifier.padding(horizontal = raviloHPad)) {
+                            s.authors.forEach { a ->
+                                val n = s.books.count { b -> b.authors.any { it.id == a.id } }
+                                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).tap { onOpenAuthor(a.id) }, verticalAlignment = Alignment.CenterVertically) {
+                                    ArtistCircle(null, a.name, Modifier.size(50.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(a.name, color = colors.text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, fontFamily = Sora, maxLines = 1)
+                                        Text(booksCount(n), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
+                                    }
                                 }
                             }
                         }
-                    }
-                    "series" -> Column {
-                        s.series.forEach { name ->
-                            val inSeries = s.books.filter { it.series == name }.sortedBy { it.seriesPosition?.toDoubleOrNull() ?: 0.0 }
-                            Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(name, count = booksCount(inSeries.size)) }
-                            Grid(inSeries, 2, 12.dp, {}) { c, w -> BookCell(c, w) { onOpenBook(c.id) } }
+                        "series" -> Column {
+                            s.series.forEach { name ->
+                                val inSeries = s.books.filter { it.series == name }.sortedBy { it.seriesPosition?.toDoubleOrNull() ?: 0.0 }
+                                Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(name, count = booksCount(inSeries.size)) }
+                                Grid(inSeries, 2, 12.dp, {}) { c, w -> BookCell(c, w) { onOpenBook(c.id) } }
+                            }
                         }
+                        else -> Grid(s.books, 2, 12.dp, {}) { c, w -> BookCell(c, w) { onOpenBook(c.id) } }
                     }
-                    else -> Grid(s.books, 2, 12.dp, {}) { c, w -> BookCell(c, w) { onOpenBook(c.id) } }
                 }
             }
         }

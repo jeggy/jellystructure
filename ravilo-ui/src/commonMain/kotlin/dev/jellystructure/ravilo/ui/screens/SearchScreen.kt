@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.rememberFadeInOnLoad
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.focus.fallbackIndex
@@ -189,6 +191,9 @@ fun SearchScreen(
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
     val state by store.state.collectAsState()
+    // DEB-2349 (FR-5) — made here, not at the grid: the grid leaves composition while a query loads, and its fade must not reset
+    // with it. The results fade in once over the "loading" line; the page Back returns to, already loaded, does not.
+    val resultsFade = rememberFadeInOnLoad(loading = state is SearchState.Loading)
 
     // R259 — the store outlives this composable (it survives a push to a detail page), the text field
     // did not: Back from a result showed the previous results under an EMPTY field, relabelled
@@ -442,6 +447,7 @@ fun SearchScreen(
                 columns = if (desk) GridCells.Adaptive(138.dp) else GridCells.Fixed(cols),
                 state = gridState,
                 modifier = Modifier
+                    .fadeInOnLoad(resultsFade)
                     .focusRequester(gridFR)
                     .focusRestorer()
                     // Native traversal moves between cells; intercept only the top-edge (Up) and

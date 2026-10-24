@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import dev.jellystructure.ravilo.ui.focus.resolveReturn
@@ -194,172 +195,175 @@ fun ChannelScreen(
                 },
             ),
     ) {
-        when (val s = storeState) {
-            is HomeState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
-            }
-            is HomeState.Error -> LoadErrorState(
-                s.kind,
-                onRetry = { store.refresh() },
-                onBack = onBack,
-            )
-            is HomeState.Loaded -> {
-                val hasHero = s.feed.heroes.isNotEmpty()
-                val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }
-                if (!hasHero && nonEmpty.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
-                    }
-                } else {
-                    // R159 — same portrait-override selection as HomeScreen.
-                    val portraitHeroPct = s.feed.portraitHeroHeightPct
-                    val heroPct = if (LocalPortrait.current && portraitHeroPct != null)
-                        portraitHeroPct.coerceIn(20, 100) else s.feed.heroHeightPct.coerceIn(40, 100)
-                    val tvHeroHeight = if (containerH > 0)
-                        with(density) { containerH.toDp() } * (heroPct / 100f)
-                    else 460.dp
-                    // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
-                    val heroHeight = if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout && containerH > 0) maxOf(380.dp, with(density) { containerH.toDp() } * 0.5f) else tvHeroHeight
-
-                    // R361 (FR-R361-1/5/6) — the Back-return is resolved once against the rows about to be laid out
-                    // (the same tile, else its neighbour, else the row now in its place), and the store's keys are
-                    // spent at once; the resolved row's own R139 effect scrolls and focuses the tile.
-                    val rowOrder = nonEmpty.map { r -> r.id to r.items.map { it.id } }
-                    var pendingRestore by remember {
-                        val rk = store.focusRowKey
-                        val ik = store.focusItemKey
-                        mutableStateOf(if (rk == null || ik == null) null else resolveReturn(rowOrder, rk, ik, store.focusRowIndex, store.focusItemIndex))
-                    }
-                    LaunchedEffect(hasHero) {
-                        store.focusRowKey = null
-                        store.focusItemKey = null
-                        val target = pendingRestore
-                        if (target != null) {
-                            // A resolved row the column has not composed is scrolled in first, so its restore can run.
-                            withFrameNanos { }
-                            if (listState.layoutInfo.visibleItemsInfo.none { it.key == target.rowKey }) {
-                                val lazyIndex = (if (hasHero) 1 else 0) + rowOrder.indexOfFirst { it.first == target.rowKey }
-                                runCatching { listState.scrollToItem(lazyIndex) }
-                            }
-                            kotlinx.coroutines.delay(1_000)
-                            if (pendingRestore == target) pendingRestore = null
-                            return@LaunchedEffect
+        // DEB-2349 (FR-5) — the channel (or the error) fades in once over the loading line; the nav bar below does not.
+        Box(Modifier.fillMaxSize().fadeInOnLoad(loading = storeState is HomeState.Loading)) {
+            when (val s = storeState) {
+                is HomeState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
+                }
+                is HomeState.Error -> LoadErrorState(
+                    s.kind,
+                    onRetry = { store.refresh() },
+                    onBack = onBack,
+                )
+                is HomeState.Loaded -> {
+                    val hasHero = s.feed.heroes.isNotEmpty()
+                    val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }
+                    if (!hasHero && nonEmpty.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
                         }
-                        // R137: else focus the bar when scrolled (fixed overlay; doesn't disturb scroll), hero at top.
-                        val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-                        // DEB-1745 (FR-R328-5) — a computer's AppBar is the toolbar and never attaches the bar's requester, so a
-                        // collection without a hero used to open with nothing focused: no ring, arrows and Esc unheard. The
-                        // first tile, then a native move, is the entry that exists on every layout.
-                        val landed = if (hasHero && !wasScrolled) heroFR.requestFocusAwaiting(maxFrames = 5) else channelBarFR.tryRequestFocus()
-                        if (!landed && !firstTileFR.requestFocusAwaiting()) focusManager.moveFocus(FocusDirection.Down)
-                    }
+                    } else {
+                        // R159 — same portrait-override selection as HomeScreen.
+                        val portraitHeroPct = s.feed.portraitHeroHeightPct
+                        val heroPct = if (LocalPortrait.current && portraitHeroPct != null)
+                            portraitHeroPct.coerceIn(20, 100) else s.feed.heroHeightPct.coerceIn(40, 100)
+                        val tvHeroHeight = if (containerH > 0)
+                            with(density) { containerH.toDp() } * (heroPct / 100f)
+                        else 460.dp
+                        // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
+                        val heroHeight = if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout && containerH > 0) maxOf(380.dp, with(density) { containerH.toDp() } * 0.5f) else tvHeroHeight
 
-                    @Suppress("OPT_IN_USAGE")
-                    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.CHANNEL)   // R140 / R367
-                    @OptIn(ExperimentalFoundationApi::class)
-                    CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize().focusRequester(firstTileFR),
-                            contentPadding = PaddingValues(
-                                top = if (hasHero) 0.dp else 60.dp, // leave room for bar when no hero
-                                bottom = 240.dp, // R140: last row lifts to the focus band
-                            ),
-                        ) {
-                            // Hero carousel (R52: per-channel page hero)
-                            if (hasHero) {
-                                item(key = "hero") {
-                                    Box(modifier = Modifier.onFocusChanged {
-                                        if (it.hasFocus) scope.launch { listState.scrollToItem(0) }
-                                    }) {
-                                        HeroCarousel(
-                                            items = s.feed.heroes,
-                                            focusRequester = heroFR,
-                                            heightDp = heroHeight,
-                                            autoAdvanceSeconds = s.feed.autoAdvanceSeconds,
-                                            onOpenDetail = { store.focusRowKey = null; store.focusItemKey = null; onItemSelect(it) },  // R139
-                                            onUp = { runCatching { channelBarFR.requestFocus() } },
-                                            // Bug fix: native focus search from the full-width hero into the row
-                                            // below picked whichever tile sat nearest the hero's horizontal
-                                            // center, not index 0 (same off-by-one confirmed live on Home's
-                                            // "On Now" row) — bridge explicitly to the real first tile.
-                                            onDown = { runCatching { firstTileFR.requestFocus() } },
-                                            initialHeroId = store.heroId,   // R365 (FR-R365-10)
-                                            onActiveChanged = { store.heroId = it },
+                        // R361 (FR-R361-1/5/6) — the Back-return is resolved once against the rows about to be laid out
+                        // (the same tile, else its neighbour, else the row now in its place), and the store's keys are
+                        // spent at once; the resolved row's own R139 effect scrolls and focuses the tile.
+                        val rowOrder = nonEmpty.map { r -> r.id to r.items.map { it.id } }
+                        var pendingRestore by remember {
+                            val rk = store.focusRowKey
+                            val ik = store.focusItemKey
+                            mutableStateOf(if (rk == null || ik == null) null else resolveReturn(rowOrder, rk, ik, store.focusRowIndex, store.focusItemIndex))
+                        }
+                        LaunchedEffect(hasHero) {
+                            store.focusRowKey = null
+                            store.focusItemKey = null
+                            val target = pendingRestore
+                            if (target != null) {
+                                // A resolved row the column has not composed is scrolled in first, so its restore can run.
+                                withFrameNanos { }
+                                if (listState.layoutInfo.visibleItemsInfo.none { it.key == target.rowKey }) {
+                                    val lazyIndex = (if (hasHero) 1 else 0) + rowOrder.indexOfFirst { it.first == target.rowKey }
+                                    runCatching { listState.scrollToItem(lazyIndex) }
+                                }
+                                kotlinx.coroutines.delay(1_000)
+                                if (pendingRestore == target) pendingRestore = null
+                                return@LaunchedEffect
+                            }
+                            // R137: else focus the bar when scrolled (fixed overlay; doesn't disturb scroll), hero at top.
+                            val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                            // DEB-1745 (FR-R328-5) — a computer's AppBar is the toolbar and never attaches the bar's requester, so a
+                            // collection without a hero used to open with nothing focused: no ring, arrows and Esc unheard. The
+                            // first tile, then a native move, is the entry that exists on every layout.
+                            val landed = if (hasHero && !wasScrolled) heroFR.requestFocusAwaiting(maxFrames = 5) else channelBarFR.tryRequestFocus()
+                            if (!landed && !firstTileFR.requestFocusAwaiting()) focusManager.moveFocus(FocusDirection.Down)
+                        }
+
+                        @Suppress("OPT_IN_USAGE")
+                        val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.CHANNEL)   // R140 / R367
+                        @OptIn(ExperimentalFoundationApi::class)
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize().focusRequester(firstTileFR),
+                                contentPadding = PaddingValues(
+                                    top = if (hasHero) 0.dp else 60.dp, // leave room for bar when no hero
+                                    bottom = 240.dp, // R140: last row lifts to the focus band
+                                ),
+                            ) {
+                                // Hero carousel (R52: per-channel page hero)
+                                if (hasHero) {
+                                    item(key = "hero") {
+                                        Box(modifier = Modifier.onFocusChanged {
+                                            if (it.hasFocus) scope.launch { listState.scrollToItem(0) }
+                                        }) {
+                                            HeroCarousel(
+                                                items = s.feed.heroes,
+                                                focusRequester = heroFR,
+                                                heightDp = heroHeight,
+                                                autoAdvanceSeconds = s.feed.autoAdvanceSeconds,
+                                                onOpenDetail = { store.focusRowKey = null; store.focusItemKey = null; onItemSelect(it) },  // R139
+                                                onUp = { runCatching { channelBarFR.requestFocus() } },
+                                                // Bug fix: native focus search from the full-width hero into the row
+                                                // below picked whichever tile sat nearest the hero's horizontal
+                                                // center, not index 0 (same off-by-one confirmed live on Home's
+                                                // "On Now" row) — bridge explicitly to the real first tile.
+                                                onDown = { runCatching { firstTileFR.requestFocus() } },
+                                                initialHeroId = store.heroId,   // R365 (FR-R365-10)
+                                                onActiveChanged = { store.heroId = it },
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Content rows
+                                items(nonEmpty.size, key = { ri -> nonEmpty[ri].id }) { ri ->
+                                    val row = nonEmpty[ri]
+                                    // R187 (FR-RV-BROWSE1-1) — see HomeScreen's ContentRowItem for the same check.
+                                    val canSeeAll = row.offersSeeAll()   // R187 / R318
+                                    val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
+                                                      else s.feed.tileShape.toTileVariant()
+                                    Spacer(Modifier.height(raviloRowGap))
+                                    StaticContentRow(
+                                        title = row.title,
+                                        items = row.items,
+                                        trailingItem = if (canSeeAll) ({
+                                            SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
+                                        }) else null,
+                                        itemKey = { card -> card.id },
+                                        restoreItemKey = pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey,  // R139 / R361
+                                        // Bug fix: consume the restore once it fires — else scrolling this row
+                                        // out of the LazyColumn's composed window and back in re-triggers it
+                                        // and yanks focus back here.
+                                        onRestored = { pendingRestore = null },
+                                    ) { idx, card, fr ->
+                                        val variant = rowVariant
+                                        Tile(
+                                            title = card.title,
+                                            subtitle = card.nextUpLabel,
+                                            posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
+                                            variant = variant,
+                                            progressPct = card.progressPct ?: 0f,
+                                            watched = card.watched,
+                                            upcomingLabel = card.upcomingEpisode,
+                                            upcomingAirUtc = card.upcomingAirUtc,
+                                            qualityBadge = card.qualityBadge,   // R325
+                                            focusRequester = fr ?: if (ri == 0 && idx == 0) firstTileFR else null,  // R139
+                                            onSelect = { store.rememberReturn(row.id, card.id, ri, idx); onItemSelect(card) },  // R139 / R361
                                         )
                                     }
                                 }
                             }
-
-                            // Content rows
-                            items(nonEmpty.size, key = { ri -> nonEmpty[ri].id }) { ri ->
-                                val row = nonEmpty[ri]
-                                // R187 (FR-RV-BROWSE1-1) — see HomeScreen's ContentRowItem for the same check.
-                                val canSeeAll = row.offersSeeAll()   // R187 / R318
-                                val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
-                                                  else s.feed.tileShape.toTileVariant()
-                                Spacer(Modifier.height(raviloRowGap))
-                                StaticContentRow(
-                                    title = row.title,
-                                    items = row.items,
-                                    trailingItem = if (canSeeAll) ({
-                                        SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
-                                    }) else null,
-                                    itemKey = { card -> card.id },
-                                    restoreItemKey = pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey,  // R139 / R361
-                                    // Bug fix: consume the restore once it fires — else scrolling this row
-                                    // out of the LazyColumn's composed window and back in re-triggers it
-                                    // and yanks focus back here.
-                                    onRestored = { pendingRestore = null },
-                                ) { idx, card, fr ->
-                                    val variant = rowVariant
-                                    Tile(
-                                        title = card.title,
-                                        subtitle = card.nextUpLabel,
-                                        posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                                        variant = variant,
-                                        progressPct = card.progressPct ?: 0f,
-                                        watched = card.watched,
-                                        upcomingLabel = card.upcomingEpisode,
-                                        upcomingAirUtc = card.upcomingAirUtc,
-                                        qualityBadge = card.qualityBadge,   // R325
-                                        focusRequester = fr ?: if (ri == 0 && idx == 0) firstTileFR else null,  // R139
-                                        onSelect = { store.rememberReturn(row.id, card.id, ri, idx); onItemSelect(card) },  // R139 / R361
-                                    )
-                                }
-                            }
                         }
                     }
-                }
 
-                // R136: full nav bar (section tabs) + the channel name as page context (replaces ChannelBar).
-                AppBar(
-                    navItems = navItems,
-                    activeNav = -1,   // a channel isn't one of the section tabs → no tab highlighted
-                    onNavSelect = onNavSelect,
-                    navFR = channelBarFR,
-                    onDown = {
-                        // Bug fix: heroFR.requestFocus() used to be called directly here — if the list had
-                        // been scrolled down, the hero (lazy item 0) was disposed and requestFocus() threw,
-                        // silently swallowed, stranding focus in the nav bar (D-pad Down did nothing).
-                        // Same root cause + fix as HomeScreen's identical AppBar.onDown bridge. Scroll to
-                        // the top first (same idiom as this screen's own backToTopOnBack above) so the hero
-                        // is back in composition before focusing it.
-                        if (hasHero) {
-                            scope.launch {
-                                runCatching { listState.scrollToItem(0) }
-                                runCatching { heroFR.requestFocus() }
+                    // R136: full nav bar (section tabs) + the channel name as page context (replaces ChannelBar).
+                    AppBar(
+                        navItems = navItems,
+                        activeNav = -1,   // a channel isn't one of the section tabs → no tab highlighted
+                        onNavSelect = onNavSelect,
+                        navFR = channelBarFR,
+                        onDown = {
+                            // Bug fix: heroFR.requestFocus() used to be called directly here — if the list had
+                            // been scrolled down, the hero (lazy item 0) was disposed and requestFocus() threw,
+                            // silently swallowed, stranding focus in the nav bar (D-pad Down did nothing).
+                            // Same root cause + fix as HomeScreen's identical AppBar.onDown bridge. Scroll to
+                            // the top first (same idiom as this screen's own backToTopOnBack above) so the hero
+                            // is back in composition before focusing it.
+                            if (hasHero) {
+                                scope.launch {
+                                    runCatching { listState.scrollToItem(0) }
+                                    runCatching { heroFR.requestFocus() }
+                                }
+                            } else {
+                                runCatching { firstTileFR.requestFocus() }
                             }
-                        } else {
-                            runCatching { firstTileFR.requestFocus() }
-                        }
-                    },
-                    userInitials = displayName.take(2).uppercase(),
-                    onProfile = onProfile,
-                    onSearch = onSearch,
-                    scrolled = barScrolled,
-                    title = channel.name,
-                )
+                        },
+                        userInitials = displayName.take(2).uppercase(),
+                        onProfile = onProfile,
+                        onSearch = onSearch,
+                        scrolled = barScrolled,
+                        title = channel.name,
+                    )
+                }
             }
         }
 

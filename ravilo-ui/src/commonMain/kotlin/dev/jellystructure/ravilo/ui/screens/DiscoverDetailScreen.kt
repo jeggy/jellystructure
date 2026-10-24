@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -73,7 +74,8 @@ fun DiscoverDetailScreen(
     val acq = LocalLiveAcquisition.current
     LaunchedEffect(acq) { acq?.collect { store.applyAcquisition(it) } }
 
-    Box(Modifier.fillMaxSize().background(colors.background)) {
+    // DEB-2349 (FR-5) — the detail (or the error) fades in once where the empty loading view was.
+    Box(Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is DiscoverDetailState.Loading)) {
         when (val s = state) {
             is DiscoverDetailState.Loading -> {}
             is DiscoverDetailState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)

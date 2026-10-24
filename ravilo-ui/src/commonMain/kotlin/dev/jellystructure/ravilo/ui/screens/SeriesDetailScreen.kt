@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
@@ -140,7 +141,8 @@ fun SeriesDetailScreen(
     LaunchedEffect(prewarmEp) { prewarmEp?.let { store.prewarm.dwell(it, seriesId = loadedSeries?.card?.id) } }
     dev.jellystructure.ravilo.ui.components.PublishPagePlayTarget(prewarmEp)   // R265 FR-R265-7a — the episode Play starts
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
+    // DEB-2349 (FR-5) — the page fades in once over the loading shell; one from `DetailStore`'s cache does not.
+    Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is SeriesDetailState.Loading)) {
         when (val s = state) {
             is SeriesDetailState.Loading -> DetailLoadingShell()
             is SeriesDetailState.Error -> DetailErrorState(kind = s.kind, onRetry = { store.retry() }, onBack = onBack)

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
@@ -114,7 +115,8 @@ fun MovieDetailScreen(
     LaunchedEffect(prewarmId) { prewarmId?.let { store.prewarm.dwell(it) } }
     dev.jellystructure.ravilo.ui.components.PublishPagePlayTarget(prewarmId)   // R265 FR-R265-7a — the app bar's cast sheet starts it
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
+    // DEB-2349 (FR-5) — the page fades in once over the loading shell; one from `DetailStore`'s cache does not.
+    Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is MovieDetailState.Loading)) {
         when (val s = state) {
             is MovieDetailState.Loading -> DetailLoadingShell()
             is MovieDetailState.Error -> DetailErrorState(kind = s.kind, onRetry = { store.retry() }, onBack = onBack)

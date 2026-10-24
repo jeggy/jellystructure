@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.isDesktopLayout
 import androidx.compose.foundation.background
@@ -77,21 +78,24 @@ fun MusicListenScreen(
     // R388 (FR-R388-1, amended) — there while Listen loads, gone once it resolves to nothing (an empty library, a failed load).
     val playAllShown = playAll != null && when (val s = state) { Load.Loading -> true; is Load.Ready -> s.value.rows.isNotEmpty(); Load.Failed -> false }
     Box(Modifier.fillMaxSize().background(colors.background)) {
-        when (val s = state) {
-            is Load.Ready -> if (s.value.rows.isEmpty() && books == null) EmptyLine(str("mhome.empty")) else LazyColumn(
-                state = list,
-                contentPadding = PaddingValues(top = if (isDesktopLayout) 52.dp else RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
-            ) {
-                if (desk) item(key = "title") { DeskPageTitle(listenTitle) { if (playAllShown) PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) } }
-                if (books != null) continueListeningRow(books, onResumeBook)
-                items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
+        // DEB-2349 (FR-5) — the rows (or the failure) fade in once where the empty loading view was; the app bar below does not.
+        Box(Modifier.fillMaxSize().fadeInOnLoad(loading = state is Load.Loading)) {
+            when (val s = state) {
+                is Load.Ready -> if (s.value.rows.isEmpty() && books == null) EmptyLine(str("mhome.empty")) else LazyColumn(
+                    state = list,
+                    contentPadding = PaddingValues(top = if (isDesktopLayout) 52.dp else RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
+                ) {
+                    if (desk) item(key = "title") { DeskPageTitle(listenTitle) { if (playAllShown) PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) } }
+                    if (books != null) continueListeningRow(books, onResumeBook)
+                    items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
+                }
+                // R345 — a failed load is not "no music": it says why (most often, the server could not be reached).
+                Load.Failed -> dev.jellystructure.ravilo.ui.components.LoadErrorState(
+                    dev.jellystructure.ravilo.ui.components.loadErrorKindOf(loader.lastFailure),
+                    onRetry = { loader.load() },
+                )
+                Load.Loading -> Unit
             }
-            // R345 — a failed load is not "no music": it says why (most often, the server could not be reached).
-            Load.Failed -> dev.jellystructure.ravilo.ui.components.LoadErrorState(
-                dev.jellystructure.ravilo.ui.components.loadErrorKindOf(loader.lastFailure),
-                onRetry = { loader.load() },
-            )
-            Load.Loading -> Unit
         }
         AppBar(
             onProfile = onProfile, scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0, brandBadge = { MusicModeBadge() },

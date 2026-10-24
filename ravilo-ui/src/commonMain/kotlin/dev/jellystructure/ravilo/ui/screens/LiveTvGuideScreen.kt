@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
@@ -182,162 +183,165 @@ fun LiveTvGuideScreen(
     LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background).dpadFocusable(onBack = onBack)) {
-        when (val s = state) {
-            is LiveTvGuideState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = colors.accent)
-            }
-            is LiveTvGuideState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
-            is LiveTvGuideState.Loaded -> {
-                val categories = remember(s.channels) { s.channels.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
-                val visibleChannels = remember(s.channels, selectedCategory) {
-                    if (selectedCategory == null) s.channels else s.channels.filter { it.category == selectedCategory }
+        // DEB-2349 (FR-5) — the guide (or the error) fades in once over the spinner; the app bar and the details overlay do not.
+        Box(Modifier.fillMaxSize().fadeInOnLoad(loading = state is LiveTvGuideState.Loading)) {
+            when (val s = state) {
+                is LiveTvGuideState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = colors.accent)
                 }
-                val nowMs = remember { Clock.System.now().toEpochMilliseconds() }
-
-                // Bug fix history — three rounds, each surfaced by the next: each channel's program row
-                // used to scroll independently (dragging one row left every other row showing whatever
-                // time slice it happened to be at, not one shared timeline). Fixed by anchoring every
-                // row to the same guideOriginMs (the earliest program start across the whole grid) and
-                // fanning drag deltas out to every row's LazyListState via scrollBy — which then
-                // resurfaced as a subtler desync once the guide's range grew to 4h back/2 days forward:
-                // rows with many short programs (DRTV's ~15min TVA segments, each stretched to a 90dp
-                // floor) accumulated MORE rendered pixels per real hour than rows with long programs
-                // (DR1), so equal scrollBy deltas covered different amounts of real time per row. Fixed
-                // by replacing per-row relative scrollBy with one canonical `viewportStartMinutes`
-                // (minutes since guideOriginMs, the single source of truth for "what time is the left
-                // edge showing") — each row (GuideChannelRow) computes, from its OWN programs list,
-                // exactly which item + pixel-offset represents that real clock time and calls
-                // `scrollToItem` to jump there directly, never an accumulated-and-clamped delta. That in
-                // turn surfaced the root cause of the pixel-vs-time mismatch itself: real EPG scheduling
-                // gaps between two programs on the same channel weren't rendered as space at all (see
-                // buildGuideCells), and the 90dp stretch floor made a "minute" mean a different number of
-                // pixels in different rows. Both are fixed now: every gap is its own spacer cell, and no
-                // cell is ever wider than duration*PX_PER_MINUTE — so PX_PER_MINUTE means the exact same
-                // thing in every row, and the hour ruler below lines up with all of them unconditionally.
-                val guideOriginMs = remember(s.programs) { s.programs.minOfOrNull { it.startMs } ?: nowMs }
-                val maxEndMs = remember(s.programs) { s.programs.maxOfOrNull { it.endMs } ?: (guideOriginMs + 3_600_000L) }
-                val maxViewportMinutes = remember(guideOriginMs, maxEndMs) { ((maxEndMs - guideOriginMs) / 60_000f).coerceAtLeast(0f) }
-                var viewport by remember { mutableStateOf(GuideViewport(0f, animate = false)) }
-                val sharedScrollableState = rememberScrollableState { delta ->
-                    viewport = GuideViewport(
-                        (viewport.minutes - delta / PX_PER_MINUTE).coerceIn(0f, maxViewportMinutes),
-                        animate = false,
-                    )
-                    delta
-                }
-                // Bug fix: D-pad LEFT/RIGHT used to rely on Compose's native "scroll the focused item
-                // into view" behaviour on a per-program-cell focus target — that only scrolls the ONE
-                // focused row's own LazyListState, never touches viewportStartMinutes, so every other
-                // row froze in place (confirmed: worked correctly on mobile, where dragging a row
-                // instead drives sharedScrollableState above, which every row already reacts to via its
-                // own LaunchedEffect/scrollToItem — see the extensive fix history in the Loaded branch
-                // below). Rather than intercepting LEFT/RIGHT (which would still need native focus
-                // search to actually move between program cells), every cell reports its own start time
-                // whenever it gains focus — native search still drives which cell focuses next, this
-                // just keeps the shared canonical state (and therefore every other row) truthful about
-                // where the newly-focused cell actually is. animate = true here (see GuideViewport) is
-                // the fix for the follow-up "jumpy" report: a focus move is a discrete jump, not a drag.
-                //
-                // Second bug fix ("navigating left just goes into the channel logo"): this used to set
-                // viewport.minutes = startMinutes unconditionally — the focused cell's own start ALWAYS
-                // became the viewport's left edge, on every single focus move. That pins whichever cell
-                // is focused to be the leftmost one on screen, permanently — there is never a cell to
-                // its left within the visible (or even composed/lazy-loaded) window, so LEFT has nothing
-                // to land on except the channel column. Fixed by only moving the viewport when the
-                // newly-focused cell is actually clipped, and only by the minimum amount to reveal it —
-                // the same "don't move a fully-visible tile, reveal a clipped one at the edge" pattern
-                // StaticContentRow's own BringIntoViewSpec already uses (ContentRow.kt), just computed
-                // in minutes instead of pixels since that's this screen's own canonical unit.
-                val density = LocalDensity.current.density
-                val screenWidthPx = LocalWindowInfo.current.containerSize.width
-                val viewportWidthMinutes = remember(screenWidthPx, density) {
-                    ((screenWidthPx / density) - CHANNEL_COL_WIDTH_DP - CHANNEL_COL_SPACER_DP)
-                        .coerceAtLeast(0f) / PX_PER_MINUTE
-                }
-                fun onCellFocused(startMinutes: Float, endMinutes: Float) {
-                    val visibleStart = viewport.minutes
-                    val visibleEnd = visibleStart + viewportWidthMinutes
-                    val newStart = when {
-                        startMinutes < visibleStart -> startMinutes
-                        endMinutes > visibleEnd -> endMinutes - viewportWidthMinutes
-                        else -> return // already fully visible — don't move anything
+                is LiveTvGuideState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
+                is LiveTvGuideState.Loaded -> {
+                    val categories = remember(s.channels) { s.channels.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
+                    val visibleChannels = remember(s.channels, selectedCategory) {
+                        if (selectedCategory == null) s.channels else s.channels.filter { it.category == selectedCategory }
                     }
-                    viewport = GuideViewport(newStart.coerceIn(0f, maxViewportMinutes), animate = true)
-                }
+                    val nowMs = remember { Clock.System.now().toEpochMilliseconds() }
 
-                // User request: open on the start of the OLDEST currently-active program (across every
-                // channel), with a 10min lead-in so its start isn't flush against the left edge — "now"
-                // then sits close to (but not necessarily at) the left, depending on which channel's
-                // current program started earliest. Capped at 1h before "now": a long-running program
-                // (e.g. a 3h movie) shouldn't drag the whole guide back that far just because it's still
-                // playing. Falls back to "now" itself if nothing is currently active in the fetched
-                // window (shouldn't normally happen since the guide always spans "now").
-                val oldestActiveStartMs = remember(s.programs, nowMs) {
-                    val oldest = s.programs.filter { nowMs in it.startMs until it.endMs }.minOfOrNull { it.startMs } ?: nowMs
-                    maxOf(oldest, nowMs - 3_600_000L)
-                }
-                LaunchedEffect(guideOriginMs, oldestActiveStartMs) {
-                    viewport = GuideViewport(
-                        ((oldestActiveStartMs - guideOriginMs) / 60_000f - 10f).coerceAtLeast(0f),
-                        animate = false,
-                    )
-                }
-
-                // This screen had no initial-focus target — every other screen requests focus onto
-                // a nav bar / first cell on load, but this one never did, so a D-pad landing here had
-                // nothing to move focus away from the (non-directional) root box: LEFT/RIGHT/DOWN were
-                // all silently swallowed. Land on the first channel's row like BrowseScreen's firstCellFR.
-                LaunchedEffect(visibleChannels.isNotEmpty()) {
-                    if (visibleChannels.isNotEmpty()) runCatching { firstChannelFR.requestFocus() }
-                }
-
-                Column(modifier = Modifier.fillMaxSize().padding(top = 88.dp)) {
-                    Text(
-                        str("livetv.guide"),
-                        color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 28.dp),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (categories.isNotEmpty()) {
-                        LazyRow(
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 28.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            item(key = "__all") {
-                                CategoryChip(str("browse.all").ifBlank { "All" }, selectedCategory == null) { selectedCategory = null }
-                            }
-                            items(categories, key = { it }) { cat ->
-                                CategoryChip(cat, selectedCategory == cat) { selectedCategory = cat }
-                            }
+                    // Bug fix history — three rounds, each surfaced by the next: each channel's program row
+                    // used to scroll independently (dragging one row left every other row showing whatever
+                    // time slice it happened to be at, not one shared timeline). Fixed by anchoring every
+                    // row to the same guideOriginMs (the earliest program start across the whole grid) and
+                    // fanning drag deltas out to every row's LazyListState via scrollBy — which then
+                    // resurfaced as a subtler desync once the guide's range grew to 4h back/2 days forward:
+                    // rows with many short programs (DRTV's ~15min TVA segments, each stretched to a 90dp
+                    // floor) accumulated MORE rendered pixels per real hour than rows with long programs
+                    // (DR1), so equal scrollBy deltas covered different amounts of real time per row. Fixed
+                    // by replacing per-row relative scrollBy with one canonical `viewportStartMinutes`
+                    // (minutes since guideOriginMs, the single source of truth for "what time is the left
+                    // edge showing") — each row (GuideChannelRow) computes, from its OWN programs list,
+                    // exactly which item + pixel-offset represents that real clock time and calls
+                    // `scrollToItem` to jump there directly, never an accumulated-and-clamped delta. That in
+                    // turn surfaced the root cause of the pixel-vs-time mismatch itself: real EPG scheduling
+                    // gaps between two programs on the same channel weren't rendered as space at all (see
+                    // buildGuideCells), and the 90dp stretch floor made a "minute" mean a different number of
+                    // pixels in different rows. Both are fixed now: every gap is its own spacer cell, and no
+                    // cell is ever wider than duration*PX_PER_MINUTE — so PX_PER_MINUTE means the exact same
+                    // thing in every row, and the hour ruler below lines up with all of them unconditionally.
+                    val guideOriginMs = remember(s.programs) { s.programs.minOfOrNull { it.startMs } ?: nowMs }
+                    val maxEndMs = remember(s.programs) { s.programs.maxOfOrNull { it.endMs } ?: (guideOriginMs + 3_600_000L) }
+                    val maxViewportMinutes = remember(guideOriginMs, maxEndMs) { ((maxEndMs - guideOriginMs) / 60_000f).coerceAtLeast(0f) }
+                    var viewport by remember { mutableStateOf(GuideViewport(0f, animate = false)) }
+                    val sharedScrollableState = rememberScrollableState { delta ->
+                        viewport = GuideViewport(
+                            (viewport.minutes - delta / PX_PER_MINUTE).coerceIn(0f, maxViewportMinutes),
+                            animate = false,
+                        )
+                        delta
+                    }
+                    // Bug fix: D-pad LEFT/RIGHT used to rely on Compose's native "scroll the focused item
+                    // into view" behaviour on a per-program-cell focus target — that only scrolls the ONE
+                    // focused row's own LazyListState, never touches viewportStartMinutes, so every other
+                    // row froze in place (confirmed: worked correctly on mobile, where dragging a row
+                    // instead drives sharedScrollableState above, which every row already reacts to via its
+                    // own LaunchedEffect/scrollToItem — see the extensive fix history in the Loaded branch
+                    // below). Rather than intercepting LEFT/RIGHT (which would still need native focus
+                    // search to actually move between program cells), every cell reports its own start time
+                    // whenever it gains focus — native search still drives which cell focuses next, this
+                    // just keeps the shared canonical state (and therefore every other row) truthful about
+                    // where the newly-focused cell actually is. animate = true here (see GuideViewport) is
+                    // the fix for the follow-up "jumpy" report: a focus move is a discrete jump, not a drag.
+                    //
+                    // Second bug fix ("navigating left just goes into the channel logo"): this used to set
+                    // viewport.minutes = startMinutes unconditionally — the focused cell's own start ALWAYS
+                    // became the viewport's left edge, on every single focus move. That pins whichever cell
+                    // is focused to be the leftmost one on screen, permanently — there is never a cell to
+                    // its left within the visible (or even composed/lazy-loaded) window, so LEFT has nothing
+                    // to land on except the channel column. Fixed by only moving the viewport when the
+                    // newly-focused cell is actually clipped, and only by the minimum amount to reveal it —
+                    // the same "don't move a fully-visible tile, reveal a clipped one at the edge" pattern
+                    // StaticContentRow's own BringIntoViewSpec already uses (ContentRow.kt), just computed
+                    // in minutes instead of pixels since that's this screen's own canonical unit.
+                    val density = LocalDensity.current.density
+                    val screenWidthPx = LocalWindowInfo.current.containerSize.width
+                    val viewportWidthMinutes = remember(screenWidthPx, density) {
+                        ((screenWidthPx / density) - CHANNEL_COL_WIDTH_DP - CHANNEL_COL_SPACER_DP)
+                            .coerceAtLeast(0f) / PX_PER_MINUTE
+                    }
+                    fun onCellFocused(startMinutes: Float, endMinutes: Float) {
+                        val visibleStart = viewport.minutes
+                        val visibleEnd = visibleStart + viewportWidthMinutes
+                        val newStart = when {
+                            startMinutes < visibleStart -> startMinutes
+                            endMinutes > visibleEnd -> endMinutes - viewportWidthMinutes
+                            else -> return // already fully visible — don't move anything
                         }
-                        Spacer(Modifier.height(16.dp))
+                        viewport = GuideViewport(newStart.coerceIn(0f, maxViewportMinutes), animate = true)
                     }
-                    // User request: hour markers above the first channel row, scrolling in lockstep with
-                    // every program row (same viewportStartMinutes/scrollableState every row reacts to).
-                    GuideTimeRuler(
-                        guideOriginMs = guideOriginMs,
-                        maxEndMs = maxEndMs,
-                        viewport = { viewport },
-                        scrollableState = sharedScrollableState,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    LazyColumn(
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        itemsIndexed(visibleChannels, key = { _, ch -> ch.channelId }) { index, ch ->
-                            GuideChannelRow(
-                                channel = ch,
-                                programs = s.programs.filter { it.channelId == ch.channelId }.sortedBy { it.startMs },
-                                nowMs = nowMs,
-                                guideOriginMs = guideOriginMs,
-                                viewport = { viewport },
-                                scrollableState = sharedScrollableState,
-                                onTune = { onTuneChannel(ch) },
-                                onCellFocused = ::onCellFocused,
-                                onProgramSelect = { p -> selectedProgram = ch to p },
-                                channelFocusRequester = if (index == 0) firstChannelFR else null,
-                            )
+
+                    // User request: open on the start of the OLDEST currently-active program (across every
+                    // channel), with a 10min lead-in so its start isn't flush against the left edge — "now"
+                    // then sits close to (but not necessarily at) the left, depending on which channel's
+                    // current program started earliest. Capped at 1h before "now": a long-running program
+                    // (e.g. a 3h movie) shouldn't drag the whole guide back that far just because it's still
+                    // playing. Falls back to "now" itself if nothing is currently active in the fetched
+                    // window (shouldn't normally happen since the guide always spans "now").
+                    val oldestActiveStartMs = remember(s.programs, nowMs) {
+                        val oldest = s.programs.filter { nowMs in it.startMs until it.endMs }.minOfOrNull { it.startMs } ?: nowMs
+                        maxOf(oldest, nowMs - 3_600_000L)
+                    }
+                    LaunchedEffect(guideOriginMs, oldestActiveStartMs) {
+                        viewport = GuideViewport(
+                            ((oldestActiveStartMs - guideOriginMs) / 60_000f - 10f).coerceAtLeast(0f),
+                            animate = false,
+                        )
+                    }
+
+                    // This screen had no initial-focus target — every other screen requests focus onto
+                    // a nav bar / first cell on load, but this one never did, so a D-pad landing here had
+                    // nothing to move focus away from the (non-directional) root box: LEFT/RIGHT/DOWN were
+                    // all silently swallowed. Land on the first channel's row like BrowseScreen's firstCellFR.
+                    LaunchedEffect(visibleChannels.isNotEmpty()) {
+                        if (visibleChannels.isNotEmpty()) runCatching { firstChannelFR.requestFocus() }
+                    }
+
+                    Column(modifier = Modifier.fillMaxSize().padding(top = 88.dp)) {
+                        Text(
+                            str("livetv.guide"),
+                            color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 28.dp),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        if (categories.isNotEmpty()) {
+                            LazyRow(
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 28.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                item(key = "__all") {
+                                    CategoryChip(str("browse.all").ifBlank { "All" }, selectedCategory == null) { selectedCategory = null }
+                                }
+                                items(categories, key = { it }) { cat ->
+                                    CategoryChip(cat, selectedCategory == cat) { selectedCategory = cat }
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                        }
+                        // User request: hour markers above the first channel row, scrolling in lockstep with
+                        // every program row (same viewportStartMinutes/scrollableState every row reacts to).
+                        GuideTimeRuler(
+                            guideOriginMs = guideOriginMs,
+                            maxEndMs = maxEndMs,
+                            viewport = { viewport },
+                            scrollableState = sharedScrollableState,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyColumn(
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            itemsIndexed(visibleChannels, key = { _, ch -> ch.channelId }) { index, ch ->
+                                GuideChannelRow(
+                                    channel = ch,
+                                    programs = s.programs.filter { it.channelId == ch.channelId }.sortedBy { it.startMs },
+                                    nowMs = nowMs,
+                                    guideOriginMs = guideOriginMs,
+                                    viewport = { viewport },
+                                    scrollableState = sharedScrollableState,
+                                    onTune = { onTuneChannel(ch) },
+                                    onCellFocused = ::onCellFocused,
+                                    onProgramSelect = { p -> selectedProgram = ch to p },
+                                    channelFocusRequester = if (index == 0) firstChannelFR else null,
+                                )
+                            }
                         }
                     }
                 }

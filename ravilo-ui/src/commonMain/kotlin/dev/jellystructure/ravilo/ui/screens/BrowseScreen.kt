@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.isTvPlatform
@@ -303,7 +304,8 @@ fun BrowseScreen(
                 },
             ),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(top = RaviloDimens.appBarHeight + 24.dp)) {
+        // DEB-2349 (FR-5) — the grid (or the error) fades in once over the loading line; a list kept by the store does not.
+        Column(modifier = Modifier.fillMaxSize().padding(top = RaviloDimens.appBarHeight + 24.dp).fadeInOnLoad(loading = state is BrowseState.Loading)) {
             when (val s = state) {
                 is BrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)

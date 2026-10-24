@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
@@ -133,7 +134,8 @@ fun HomeScreen(
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
     LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
+    // DEB-2349 (FR-5) — the loaded feed (or the error) fades in once over the loading shell; a feed from R212's snapshot does not.
+    Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is HomeState.Loading)) {
         when (val s = state) {
             is HomeState.Loading -> HomeLoadingShell()
             is HomeState.Error   -> HomeErrorState(

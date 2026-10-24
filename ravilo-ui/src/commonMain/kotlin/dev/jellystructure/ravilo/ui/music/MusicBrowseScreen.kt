@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.rememberFadeInOnLoad
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
+import dev.jellystructure.ravilo.ui.components.FadeInOnLoadState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -201,6 +204,9 @@ fun MusicBrowseScreen(
     val listChipActive = query.isBlank() && (chip == "albums" || chip == "artists" || chip == "songs")
     val paged = if (listChipActive) store.list(chip, sorts[chip] ?: "added", if (chip == "albums") genre else null) else null
     val pagedState by (paged?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow<Load<MusicList>>(Load.Loading) }).collectAsState()
+    // DEB-2349 (FR-5) — the rows of a chip's list fade in once over the empty loading item; a list already loaded (the viewer
+    // comes back to it) does not. Keyed by the list, so each chip, sort and genre has its own.
+    val listFade = rememberFadeInOnLoad(loading = pagedState is Load.Loading, key = paged)
     // R388 (FR-R388-1, amended) — the pair is shown while the list loads and absent once it resolves to nothing.
     val playAllRequest = browsePlayAllRequest(chip, sorts, genre, query)
     val selectionEmpty = if (query.isNotBlank()) (results as? Load.Ready)?.value?.let { it.songs.isEmpty() && it.albums.isEmpty() && it.artists.isEmpty() } == true || results is Load.Failed
@@ -247,7 +253,7 @@ fun MusicBrowseScreen(
                         val g = if (chip == "albums") genre else null
                         listChip(store.list(chip, sort, g), pagedState, gridWidth, deskFamily, chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore,
                             // R388 — the phone's count line and ‹ Genres line carry the control; the desktop's page head does.
-                            trailing = if (playAllShown && !deskFamily) ({ PlayAllAt(PLAY_ALL_LINE_HEIGHT) }) else null)
+                            trailing = if (playAllShown && !deskFamily) ({ PlayAllAt(PLAY_ALL_LINE_HEIGHT) }) else null, fade = listFade)
                     }
                 }
             }
@@ -418,6 +424,8 @@ internal fun LazyListScope.listChip(
     onTrackMore: (MusicTrackItem) -> Unit,
     /** R388 — the *Play all ▾* control, on the *‹ Genres* line of a genre and on the count line of a chip (the phone). */
     trailing: (@Composable () -> Unit)? = null,
+    /** DEB-2349 (FR-5) — the rows' fade-in over the loading item; null = none. */
+    fade: FadeInOnLoadState? = null,
 ) {
     item(key = "load-$chip-$genre") { LaunchedEffect(paged) { paged.load() } }
     if (genre != null) item(key = "genre-back") {
@@ -452,10 +460,10 @@ internal fun LazyListScope.listChip(
     val l = (state as? Load.Ready)?.value
     when {
         l == null -> item(key = "list-$chip-$genre") { Box(Modifier.fillMaxWidth().height(120.dp)) }
-        chip == "albums" -> gridRows(l.albums, gridWidth, desk, 2, 12.dp, "$chip-$genre", { paged.more() }) { a, w -> AlbumCardView(a, w, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
-        chip == "artists" -> gridRows(l.artists, gridWidth, desk, 3, 12.dp, "$chip-$genre", { paged.more() }) { a, w -> ArtistCardView(a, w) { onOpenArtist(a.id) } }
+        chip == "albums" -> gridRows(l.albums, gridWidth, desk, 2, 12.dp, "$chip-$genre", { paged.more() }, fade) { a, w -> AlbumCardView(a, w, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
+        chip == "artists" -> gridRows(l.artists, gridWidth, desk, 3, 12.dp, "$chip-$genre", { paged.more() }, fade) { a, w -> ArtistCardView(a, w) { onOpenArtist(a.id) } }
         else -> itemsIndexed(l.tracks, key = { i, t -> "t-$i-${t.id}" }) { i, t ->
-            Box(Modifier.padding(horizontal = raviloHPad)) {
+            Box(Modifier.fadeInOnLoad(fade).padding(horizontal = raviloHPad)) {
                 TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(l.tracks, i, MusicContext("songs", t.title)) }, onMore = { onTrackMore(t) })
             }
             if (i == l.tracks.lastIndex) LaunchedEffect(l.tracks.size) { paged.more() }
@@ -465,7 +473,7 @@ internal fun LazyListScope.listChip(
 
 /** [Grid]'s rows as lazy items: [width] is the page less its padding, and the last row asks for the next page. */
 private fun <T> LazyListScope.gridRows(
-    items: List<T>, width: Dp, desk: Boolean, columns: Int, gap: Dp, keyBase: String, onEnd: () -> Unit, cell: @Composable (T, Dp) -> Unit,
+    items: List<T>, width: Dp, desk: Boolean, columns: Int, gap: Dp, keyBase: String, onEnd: () -> Unit, fade: FadeInOnLoadState?, cell: @Composable (T, Dp) -> Unit,
 ) {
     // The same arithmetic as Grid: the desktop fits as many 150 dp columns as there is room for, the phone's count is the floor.
     val colGap = if (desk) 18.dp else gap
@@ -473,7 +481,7 @@ private fun <T> LazyListScope.gridRows(
     val w = (width - colGap * (cols - 1)) / cols
     val rows = items.chunked(cols)
     itemsIndexed(rows, key = { r, _ -> "g-$keyBase-$r" }) { r, row ->
-        Row(Modifier.padding(horizontal = raviloHPad).padding(bottom = if (desk) 22.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(colGap)) {
+        Row(Modifier.fadeInOnLoad(fade).padding(horizontal = raviloHPad).padding(bottom = if (desk) 22.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(colGap)) {
             row.forEach { cell(it, w) }
         }
         if (r == rows.lastIndex) LaunchedEffect(items.size) { onEnd() }

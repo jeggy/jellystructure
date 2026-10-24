@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.runtime.getValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -138,7 +139,8 @@ fun UpcomingDetailScreen(store: UpcomingDetailStore, onBack: () -> Unit = {}) {
     val rootFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { rootFR.requestFocus() } }
 
-    Box(Modifier.fillMaxSize().background(colors.background).dpadFocusable(focusRequester = rootFR)) {
+    // DEB-2349 (FR-5) — the detail (or the error) fades in once over the spinner. The focus target is outside the fade.
+    Box(Modifier.fillMaxSize().background(colors.background).dpadFocusable(focusRequester = rootFR).fadeInOnLoad(loading = state is UpcomingDetailState.Loading)) {
         when (val s = state) {
             is UpcomingDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.textSecondary)

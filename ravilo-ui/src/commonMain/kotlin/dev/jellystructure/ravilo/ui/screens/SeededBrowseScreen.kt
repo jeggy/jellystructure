@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.focus.GridFocus
@@ -588,91 +589,94 @@ fun SeededBrowseScreen(
             }
             Spacer(Modifier.height(16.dp))
 
-            when (val s = state) {
-                is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
-                }
-                is SeededBrowseState.Error -> Box(Modifier.fillMaxWidth().weight(1f)) {
-                    LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
-                }
-                is SeededBrowseState.Loaded -> {
-                    if (showFacetBar) {
-                        FacetBar(
-                            store = store, all = s.items, showTypeFacet = showTypeFacet,
-                            facetChipFRs = facetChipFRs, sortChipFR = sortChipFR, resetChipFR = resetChipFR,
-                            onBarUp = { requestFocusRetrying(scope, navBarFR) },
-                            onBarDown = { focusGridTop(FocusDirection.Down) },
-                        )
-                        // R187 fix — small, restrained open/close motion (fade + vertical expand, ~150ms)
-                        // instead of the popover just snapping in; matches AppBar's own tween(180) idiom.
-                        AnimatedVisibility(
-                            visible = store.popoverOpen,
-                            enter = fadeIn(tween(150)) + expandVertically(tween(150)),
-                            exit = fadeOut(tween(120)) + shrinkVertically(tween(120)),
-                        ) {
-                            val open = store.openFacet
-                            if (open != null) {
-                                FacetPopover(
-                                    store = store, all = s.items, key = open,
-                                    onClose = { store.openFacet = null; requestFocusRetrying(scope, facetChipFRs.getValue(open)) },
-                                )
-                            } else if (store.sortOpen) {
-                                SortPopover(store = store, onClose = { store.sortOpen = false; requestFocusRetrying(scope, sortChipFR) })
+            // DEB-2349 (FR-5) — the grid (or the error) fades in once over the loading line; the title above it does not.
+            Column(Modifier.fillMaxWidth().weight(1f).fadeInOnLoad(loading = state is SeededBrowseState.Loading)) {
+                when (val s = state) {
+                    is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
+                    }
+                    is SeededBrowseState.Error -> Box(Modifier.fillMaxWidth().weight(1f)) {
+                        LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
+                    }
+                    is SeededBrowseState.Loaded -> {
+                        if (showFacetBar) {
+                            FacetBar(
+                                store = store, all = s.items, showTypeFacet = showTypeFacet,
+                                facetChipFRs = facetChipFRs, sortChipFR = sortChipFR, resetChipFR = resetChipFR,
+                                onBarUp = { requestFocusRetrying(scope, navBarFR) },
+                                onBarDown = { focusGridTop(FocusDirection.Down) },
+                            )
+                            // R187 fix — small, restrained open/close motion (fade + vertical expand, ~150ms)
+                            // instead of the popover just snapping in; matches AppBar's own tween(180) idiom.
+                            AnimatedVisibility(
+                                visible = store.popoverOpen,
+                                enter = fadeIn(tween(150)) + expandVertically(tween(150)),
+                                exit = fadeOut(tween(120)) + shrinkVertically(tween(120)),
+                            ) {
+                                val open = store.openFacet
+                                if (open != null) {
+                                    FacetPopover(
+                                        store = store, all = s.items, key = open,
+                                        onClose = { store.openFacet = null; requestFocusRetrying(scope, facetChipFRs.getValue(open)) },
+                                    )
+                                } else if (store.sortOpen) {
+                                    SortPopover(store = store, onClose = { store.sortOpen = false; requestFocusRetrying(scope, sortChipFR) })
+                                }
                             }
+                            Spacer(Modifier.height(14.dp))
                         }
-                        Spacer(Modifier.height(14.dp))
+                        val filtered = remember(s.items, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.people, store.sortField, store.sortDir) {
+                            sortedFiltered(store, s.items)
+                        }
+                        // Bug fix — a sort change kept whatever grid position/focus the viewer had before,
+                        // so "A–Z" could open still scrolled halfway down showing unrelated titles with the
+                        // old focused tile silently re-highlighted. A new sort is a new list: drop the stale
+                        // focus target and jump back to the top so the first (now differently-ordered) items
+                        // are what's actually on screen — focus itself stays on the sort chip (unchanged).
+                        // R187 (FR-RV-BROWSE1-10) — only on a real change. An effect also runs when it first
+                        // composes, and this page composes afresh on every Back, so this used to throw away
+                        // the kept scroll position (and R139's tile to refocus) on each return.
+                        LaunchedEffect(store.sortField, store.sortDir) {
+                            val sort = store.sortField to store.sortDir
+                            if (sort == store.laidOutSort) return@LaunchedEffect
+                            store.laidOutSort = sort
+                            store.focusItemKey = null
+                            runCatching { gridState.scrollToItem(0) }
+                        }
+                        val seerrOverflow by store.seerrOverflow.collectAsState()
+                        val gridCards = remember(filtered) { filtered.map { it.card } }
+                        SideEffect { gridKeys = gridCards.map { it.id } }
+                        BrowseCardGrid(
+                            items = gridCards,
+                            gridState = gridState,
+                            gridFocus = gridFocus,
+                            firstCellFR = firstCellFR,
+                            // R267 (FR-R267-6) — never on a handset. R257 hands focus to the first cell so
+                            // a D-pad has somewhere to land; a touch screen has no D-pad, and the result
+                            // is a focus ring drawn around one poster that the viewer never asked for and
+                            // cannot clear. Seen on the Pixel 9. Selection on a phone is carried by the
+                            // bottom bar's pill, never by focus.
+                            focusFirstOnLoad = freshEntry && !movedOffBar && !handsetLayout,
+                            // R187 (FR-RV-BROWSE1-10) — a TV refocuses the opened tile (R139). A phone
+                            // focuses nothing: focus brings the tile fully into view, so a poster tapped
+                            // at the screen's edge would move the grid the viewer came back to.
+                            restoreItemKey = if (handsetLayout) null else store.focusItemKey,
+                            // R361 (FR-R361-4) — a title that left the filtered list: the tile now at its index.
+                            restoreItemIndex = store.focusItemIndex,
+                            onRestoreResolved = { store.focusItemKey = null },
+                            // An empty grid on return: the facet bar (the grid's own empty state shows), else the bar.
+                            onEmpty = { requestFocusRetrying(scope, if (showFacetBar) firstFacetFR else navBarFR) },
+                            onItemSelect = { card ->
+                                store.focusItemKey = card.id
+                                store.focusItemIndex = filtered.indexOfFirst { it.card.id == card.id }.coerceAtLeast(0)
+                                onItemSelect(card)
+                            },
+                            seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
+                            seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
+                            onRequestSelect = onRequestSelect,
+                            onFirstRowUp = if (showFacetBar) focusFacetBar else null,
+                        )
                     }
-                    val filtered = remember(s.items, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.people, store.sortField, store.sortDir) {
-                        sortedFiltered(store, s.items)
-                    }
-                    // Bug fix — a sort change kept whatever grid position/focus the viewer had before,
-                    // so "A–Z" could open still scrolled halfway down showing unrelated titles with the
-                    // old focused tile silently re-highlighted. A new sort is a new list: drop the stale
-                    // focus target and jump back to the top so the first (now differently-ordered) items
-                    // are what's actually on screen — focus itself stays on the sort chip (unchanged).
-                    // R187 (FR-RV-BROWSE1-10) — only on a real change. An effect also runs when it first
-                    // composes, and this page composes afresh on every Back, so this used to throw away
-                    // the kept scroll position (and R139's tile to refocus) on each return.
-                    LaunchedEffect(store.sortField, store.sortDir) {
-                        val sort = store.sortField to store.sortDir
-                        if (sort == store.laidOutSort) return@LaunchedEffect
-                        store.laidOutSort = sort
-                        store.focusItemKey = null
-                        runCatching { gridState.scrollToItem(0) }
-                    }
-                    val seerrOverflow by store.seerrOverflow.collectAsState()
-                    val gridCards = remember(filtered) { filtered.map { it.card } }
-                    SideEffect { gridKeys = gridCards.map { it.id } }
-                    BrowseCardGrid(
-                        items = gridCards,
-                        gridState = gridState,
-                        gridFocus = gridFocus,
-                        firstCellFR = firstCellFR,
-                        // R267 (FR-R267-6) — never on a handset. R257 hands focus to the first cell so
-                        // a D-pad has somewhere to land; a touch screen has no D-pad, and the result
-                        // is a focus ring drawn around one poster that the viewer never asked for and
-                        // cannot clear. Seen on the Pixel 9. Selection on a phone is carried by the
-                        // bottom bar's pill, never by focus.
-                        focusFirstOnLoad = freshEntry && !movedOffBar && !handsetLayout,
-                        // R187 (FR-RV-BROWSE1-10) — a TV refocuses the opened tile (R139). A phone
-                        // focuses nothing: focus brings the tile fully into view, so a poster tapped
-                        // at the screen's edge would move the grid the viewer came back to.
-                        restoreItemKey = if (handsetLayout) null else store.focusItemKey,
-                        // R361 (FR-R361-4) — a title that left the filtered list: the tile now at its index.
-                        restoreItemIndex = store.focusItemIndex,
-                        onRestoreResolved = { store.focusItemKey = null },
-                        // An empty grid on return: the facet bar (the grid's own empty state shows), else the bar.
-                        onEmpty = { requestFocusRetrying(scope, if (showFacetBar) firstFacetFR else navBarFR) },
-                        onItemSelect = { card ->
-                            store.focusItemKey = card.id
-                            store.focusItemIndex = filtered.indexOfFirst { it.card.id == card.id }.coerceAtLeast(0)
-                            onItemSelect(card)
-                        },
-                        seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
-                        seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
-                        onRequestSelect = onRequestSelect,
-                        onFirstRowUp = if (showFacetBar) focusFacetBar else null,
-                    )
                 }
             }
         }

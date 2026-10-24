@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -175,18 +176,21 @@ fun DiscoverScreen(
                             val store = upcomingStore
                             if (store == null) DiscoverLoading() else {
                                 val upcomingState by store.state.collectAsState()
-                                when (val s = upcomingState) {
-                                    is UpcomingState.Loading -> DiscoverLoading()
-                                    is UpcomingState.Error -> DiscoverError(s.kind, onRetry = { store.load() })
-                                    is UpcomingState.Loaded -> UpcomingContent(
-                                        store = store,
-                                        feed = s.feed,
-                                        listState = activeListState,
-                                        navBarFR = navBarFR,
-                                        columnFR = activeColumnFR,
-                                        focusSegmentOnEntry = focusSegmentOnEntry,
-                                        onItemSelect = onUpcomingItemSelect,
-                                    )
+                                // DEB-2349 (FR-5) — each tab's content (or its error) fades in once over its own loading view; a tab already loaded does not.
+                                Box(Modifier.fillMaxSize().fadeInOnLoad(loading = upcomingState is UpcomingState.Loading)) {
+                                    when (val s = upcomingState) {
+                                        is UpcomingState.Loading -> DiscoverLoading()
+                                        is UpcomingState.Error -> DiscoverError(s.kind, onRetry = { store.load() })
+                                        is UpcomingState.Loaded -> UpcomingContent(
+                                            store = store,
+                                            feed = s.feed,
+                                            listState = activeListState,
+                                            navBarFR = navBarFR,
+                                            columnFR = activeColumnFR,
+                                            focusSegmentOnEntry = focusSegmentOnEntry,
+                                            onItemSelect = onUpcomingItemSelect,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -194,36 +198,40 @@ fun DiscoverScreen(
                             val store = requestStore
                             if (store == null) DiscoverLoading() else {
                                 val requestState by store.state.collectAsState()
-                                when (val s = requestState) {
-                                    is DiscoverState.Loading -> DiscoverLoading()
-                                    is DiscoverState.Error -> DiscoverError(s.kind, onRetry = { store.load() })
-                                    is DiscoverState.Loaded -> RequestContent(
-                                        store = store,
-                                        data = s.data,
-                                        listState = activeListState,
-                                        navBarFR = navBarFR,
-                                        columnFR = activeColumnFR,
-                                        focusSegmentOnEntry = focusSegmentOnEntry,
-                                        onEntrySelect = onEntrySelect,
-                                    )
+                                Box(Modifier.fillMaxSize().fadeInOnLoad(loading = requestState is DiscoverState.Loading)) {
+                                    when (val s = requestState) {
+                                        is DiscoverState.Loading -> DiscoverLoading()
+                                        is DiscoverState.Error -> DiscoverError(s.kind, onRetry = { store.load() })
+                                        is DiscoverState.Loaded -> RequestContent(
+                                            store = store,
+                                            data = s.data,
+                                            listState = activeListState,
+                                            navBarFR = navBarFR,
+                                            columnFR = activeColumnFR,
+                                            focusSegmentOnEntry = focusSegmentOnEntry,
+                                            onEntrySelect = onEntrySelect,
+                                        )
+                                    }
                                 }
                             }
                         }
                         DiscoverSegment.STUDIOS, DiscoverSegment.NETWORKS, DiscoverSegment.GENRES -> {
                             val taxState by taxonomyStore.state.collectAsState()
-                            when (val s = taxState) {
-                                is TaxonomyState.Loading -> DiscoverLoading()
-                                is TaxonomyState.Error -> DiscoverError(s.kind, onRetry = { taxonomyStore.load() })
-                                is TaxonomyState.Loaded -> TaxonomyContent(
-                                    store = taxonomyStore,
-                                    facets = s.facets,
-                                    segment = segment,
-                                    listState = activeListState,
-                                    navBarFR = navBarFR,
-                                    columnFR = activeColumnFR,
-                                    focusSegmentOnEntry = focusSegmentOnEntry,
-                                    onTileSelect = onTileSelect,
-                                )
+                            Box(Modifier.fillMaxSize().fadeInOnLoad(loading = taxState is TaxonomyState.Loading)) {
+                                when (val s = taxState) {
+                                    is TaxonomyState.Loading -> DiscoverLoading()
+                                    is TaxonomyState.Error -> DiscoverError(s.kind, onRetry = { taxonomyStore.load() })
+                                    is TaxonomyState.Loaded -> TaxonomyContent(
+                                        store = taxonomyStore,
+                                        facets = s.facets,
+                                        segment = segment,
+                                        listState = activeListState,
+                                        navBarFR = navBarFR,
+                                        columnFR = activeColumnFR,
+                                        focusSegmentOnEntry = focusSegmentOnEntry,
+                                        onTileSelect = onTileSelect,
+                                    )
+                                }
                             }
                         }
                     }
