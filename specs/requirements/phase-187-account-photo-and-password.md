@@ -428,6 +428,19 @@ in and every subsequent request 401s.
 > carries that device's old token. The product rule is R234 FR-R234-7's: the viewer notices nothing. How that is
 > met depends on what the probe shows the player does today.
 >
+> **Answered 2026-10-24 (DEB-1927): the rule already holds, and nothing more is built.** Høgni measured it on prod
+> (`v1.58-7-g0df68fad`, which carries rules 1–5), with a throwaway local account signed in on a TV and on Ravilo
+> Web, the password changed twice from Web:
+> - A film playing on the TV (direct play, about 50 s buffered) kept playing for 4 min 17 s after the first change.
+>   Another kept playing for over 10 min after the second. Neither showed a stop, an error or an overlay.
+> - A play pressed 4 min 17 s after a change started within 8 s, and one pressed 11 min after started within 5 s.
+>   Browsing kept working. The TV never showed *Sign in again*.
+> - The backend logged one re-sign per change, and no `rejected this device's paired token`.
+>
+> So the film already playing needs no mechanism of its own: the stream it is already pulling keeps being served.
+> The longest watch was about 11 minutes, and a seek after the change was not tried. If either ever ends in an
+> error, that is a defect against this rule and R234 FR-R234-7, not a new behaviour.
+>
 > Keep reading what Jellyfin does rather than assuming it: the 2026-09-05 answer changed under a Jellyfin upgrade.
 > Rule 1 is harmless on a Jellyfin that does not revoke, because it only replaces a working token with another
 > working one.

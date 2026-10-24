@@ -238,8 +238,11 @@ that, say so once, in words, rather than letting three TVs discover it separatel
 >   a screen device follows its sender's new sign-in.
 >   - A film already playing when the change lands keeps playing, or recovers by itself, with no error screen and
 >     nothing for the viewer to do.
->   - How that is met waits for DEB-1927's measurement of what the player does today. It is the one part of this
->     amendment with no mechanism yet.
+>   - ~~How that is met waits for DEB-1927's measurement of what the player does today. It is the one part of this
+>     amendment with no mechanism yet.~~ **Answered 2026-10-24 (DEB-1927):** it needs none. On prod, with 187's
+>     re-sign in place, a TV's film kept playing for over 10 minutes after a password change on Ravilo Web, with
+>     no error and no overlay, and later plays started normally. The measurement is in 187 FR-187-8. Nothing more
+>     is built for it.
 > - **A device the server could not re-sign returns to sign-in at once**, on 187's `signed_out` event, wherever it
 >   is, including in the player. It does what its *Sign in again* button already does: signs that profile out,
 >   then goes to Login, or to the profile picker when other profiles remain. It shows one line there:
