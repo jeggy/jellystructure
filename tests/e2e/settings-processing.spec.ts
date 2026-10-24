@@ -20,8 +20,17 @@ async function login(page: Page) {
 
 async function openProcessing(page: Page) {
   await page.goto("/#/settings?tab=processing");
+  // a hash change alone does not reload: start from what the server holds, with every row closed
+  await page.reload();
   await expect(page.locator("#sect-processing")).toBeVisible();
   await expect(page.locator("#sect-processing .pf-row")).toHaveCount(9, { timeout: 15_000 });
+}
+
+/** Opens a feature's row if it is closed (a second click would close it). */
+async function openRow(page: Page, name: string) {
+  const row = page.locator("#sect-processing .pf-row", { hasText: name }).first();
+  if (!(await row.evaluate((el) => el.classList.contains("open")))) await row.locator(".pf-head").click();
+  await expect(row).toHaveClass(/\bopen\b/);
 }
 
 async function save(page: Page) {
@@ -80,7 +89,7 @@ test.describe.serial("Settings ▸ Processing (DEB-1664, FR-4)", () => {
 
   test("a part switched off and saved is still off after a reload, and the drift option survives a save", async () => {
     await openProcessing(page);
-    await page.locator("#sect-processing .pf-row", { hasText: "Metadata & artwork" }).locator(".pf-head").click();
+    await openRow(page, "Metadata & artwork");
     const imdb = page.locator('#sect-processing .toggle[data-part="sync_imdb_ratings"]');
     const reassert = page.locator('#sect-processing .toggle[data-opt="auto_reassert"]');
     const imdbWas = await imdb.evaluate((el) => el.classList.contains("on"));
@@ -91,13 +100,13 @@ test.describe.serial("Settings ▸ Processing (DEB-1664, FR-4)", () => {
     await save(page);
 
     await openProcessing(page);
-    await page.locator("#sect-processing .pf-row", { hasText: "Metadata & artwork" }).locator(".pf-head").click();
+    await openRow(page, "Metadata & artwork");
     const imdbNow = await page.locator('#sect-processing .toggle[data-part="sync_imdb_ratings"]').evaluate((el) => el.classList.contains("on"));
     expect(imdbNow).toBe(!imdbWas);
     // a second save that touches nothing here keeps it (the admin's model round-trips auto_reassert)
     await save(page);
     await openProcessing(page);
-    await page.locator("#sect-processing .pf-row", { hasText: "Metadata & artwork" }).locator(".pf-head").click();
+    await openRow(page, "Metadata & artwork");
     await expect(page.locator('#sect-processing .toggle[data-opt="auto_reassert"]')).toHaveClass(/\bon\b/);
 
     // put both back
@@ -110,7 +119,7 @@ test.describe.serial("Settings ▸ Processing (DEB-1664, FR-4)", () => {
 
   test("Find new & changed's picker is validated before it can be saved (phase 166)", async () => {
     await openProcessing(page);
-    await page.locator("#sect-processing .pf-row").first().locator(".pf-head").click();
+    await openRow(page, "Find new & changed");
     await page.selectOption('[data-find="mode"]', "custom");
     await page.fill('[data-find="cron"]', "not a cron");
     await expect(page.locator("#pf-find-check .badge.bad")).toBeVisible({ timeout: 5_000 });
@@ -126,7 +135,7 @@ test.describe.serial("Settings ▸ Processing (DEB-1664, FR-4)", () => {
       await page.setViewportSize({ width: 412, height: 900 });
       await page.evaluate((t) => { localStorage.setItem("js-theme", t); document.documentElement.setAttribute("data-theme", t); }, theme);
       await openProcessing(page);
-      await page.locator("#sect-processing .pf-row").nth(3).locator(".pf-head").click();
+      await openRow(page, "File health");
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(0);
       await page.setViewportSize({ width: 1280, height: 900 });
