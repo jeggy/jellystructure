@@ -31,6 +31,7 @@ ALLOWED="
   music/MusicCommon.kt                          4
   music/MusicDetailScreens.kt                   3
   music/MusicPlayerScreens.kt                   3
+  qr/QrCodeImage.kt                             1   # DEB-2324 — the QR tile: white in every skin on purpose, a scanner wants the contrast (DEB-2319)
   screens/BrowserSoundHint.kt                   1
   screens/CastRemoteScreen.kt                   2
   screens/HomeScreen.kt                         1

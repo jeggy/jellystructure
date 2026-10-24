@@ -82,6 +82,34 @@ class TvApiClient(
         return json.decodeFromString<PairResult>(r.bodyAsText())
     }
 
+    // ─── A TV signs in from another device (DEB-2233, FR-2) — both routes are open, no token ─────────────────────────
+
+    /** `POST /api/tv/signin/code` — a code for this TV to show. [TvSignInCodeResponse.available] is false when the server cannot sign a TV
+     *  in this way; throws [TvApiError.Http] (429 when minting too often) otherwise. */
+    suspend fun signInCode(deviceId: String, deviceName: String?): TvSignInCodeResponse {
+        val r = client.post("$baseUrl/api/tv/signin/code") {
+            identify()
+            jsonBody(json.encodeToString(TvSignInCodeRequest.serializer(), TvSignInCodeRequest(deviceId, deviceName, platform)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<TvSignInCodeResponse>(r.bodyAsText())
+    }
+
+    /** `POST /api/tv/signin/poll` — 200 is the sign-in, 202 is still waiting (or being approved), 401 is a code that is no longer any good. */
+    suspend fun signInPoll(code: String, secret: String): TvSignInPoll {
+        val r = client.post("$baseUrl/api/tv/signin/poll") {
+            identify()
+            jsonBody(json.encodeToString(TvSignInPollRequest.serializer(), TvSignInPollRequest(code, secret)))
+        }
+        return when (r.status.value) {
+            200 -> TvSignInPoll.Done(json.decodeFromString<PairResult>(r.bodyAsText()))
+            202 -> json.decodeFromString<TvSignInPollWaiting>(r.bodyAsText())
+                .let { TvSignInPoll.Waiting(it.state == "approving", it.approverName) }
+            401 -> TvSignInPoll.Invalid
+            else -> { r.assertSuccess(); throw TvApiError.Http(r.status.value, r.bodyAsText()) }
+        }
+    }
+
     // ─── Feed ────────────────────────────────────────────────────────────────
 
     suspend fun getHome(): HomeFeed {

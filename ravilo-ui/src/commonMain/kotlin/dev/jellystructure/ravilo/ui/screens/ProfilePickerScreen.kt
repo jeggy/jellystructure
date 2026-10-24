@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.TvApiClient
@@ -188,14 +189,17 @@ fun ProfilePickerScreen(
                 val loginStore = remember { LoginStore(apiClient) }
                 // Found live 2026-10-09 — Cancel is part of the form (under Sign in), so it scrolls with it inside what the
                 // system keyboard leaves; as an overlay pinned to the foot it drew over Sign in with the keyboard up.
-                LoginScreen(
-                    store = loginStore,
-                    onSignedIn = {
-                        val active = MultiTokenStore.getActive()
-                        if (active != null) onProfileSelected(active) else store.cancelAdd()
-                    },
-                    onCancel = { store.cancelAdd() },
-                )
+                val onAddedSignedIn = {
+                    val active = MultiTokenStore.getActive()
+                    if (active != null) onProfileSelected(active) else store.cancelAdd()
+                }
+                val passwordForm: @Composable () -> Unit = {
+                    LoginScreen(store = loginStore, onSignedIn = onAddedSignedIn, onCancel = { store.cancelAdd() })
+                }
+                // DEB-2233 (FR-4, FR-5) — on a TV, *Add user* opens the code and QR; Back returns to the picker.
+                if (isTvPlatform) TvSignInScreen(
+                    apiClient = apiClient, onSignedIn = onAddedSignedIn, onBack = { store.cancelAdd() }, passwordForm = passwordForm,
+                ) else passwordForm()
             }
         }
     }

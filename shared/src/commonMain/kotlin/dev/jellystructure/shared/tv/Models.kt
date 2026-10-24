@@ -1989,6 +1989,14 @@ data class TvSignInPollWaiting(
     val approverName: String? = null,
 )
 
+/** DEB-2233 (FR-2) — what one poll answered. [Done] is the 200 (the code is spent and the TV is signed in), [Invalid] the 401 (an unknown, expired or used
+ *  code, or a wrong secret). Any other status is a [TvApiError.Http]. */
+sealed class TvSignInPoll {
+    data class Waiting(val approving: Boolean, val approverName: String?) : TvSignInPoll()
+    data class Done(val result: PairResult) : TvSignInPoll()
+    data object Invalid : TvSignInPoll()
+}
+
 /** DEB-2233 (FR-3) — `GET /api/tv/signin/preview?code=`, device token: what the approving viewer is asked to confirm. */
 @Serializable
 data class TvSignInPreview(

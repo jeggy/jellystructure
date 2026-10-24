@@ -56,6 +56,7 @@ import dev.jellystructure.ravilo.ui.components.loadErrorTitleKey
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CoroutineScope
@@ -106,20 +107,7 @@ class LoginStore(private val apiClient: TvApiClient) {
             }
             result.fold(
                 onSuccess = { r ->
-                    // Persist token + append the profile so the session survives app restart —
-                    // same shape the retired pairing flow wrote (MultiTokenStore is unchanged) — and
-                    // switch to it: every entry point (first launch, ProfilePicker's Add-user tile,
-                    // ProfileMenu's Add-user row) lands the viewer on the freshly signed-in profile.
-                    TokenStore.set(r.deviceToken)
-                    MultiTokenStore.add(LocalSession(
-                        userId = r.session.userId,
-                        displayName = r.session.displayName,
-                        deviceToken = r.deviceToken,
-                        isAdmin = r.session.isAdmin,
-                        isKids = r.session.isKids,
-                        avatarUrl = r.session.avatarUrl,
-                    ))
-                    MultiTokenStore.setActive(r.session.userId)
+                    persistSignIn(r)
                     _state.value = LoginState.Success(r.session.displayName)
                 },
                 onFailure = { e ->
@@ -132,6 +120,25 @@ class LoginStore(private val apiClient: TvApiClient) {
 
     /** Back to the editable form after an error, keeping whatever the user typed. */
     fun dismissError() { _state.value = LoginState.Idle }
+}
+
+/**
+ * Persist token + append the profile so the session survives app restart — same shape the retired pairing flow wrote
+ * (MultiTokenStore is unchanged) — and switch to it: every entry point (first launch, ProfilePicker's Add-user tile,
+ * ProfileMenu's Add-user row) lands the viewer on the freshly signed-in profile. DEB-2233 (FR-5) — the TV's code sign-in
+ * ([TvSignInStore]) stores its `PairResult` through this too, "exactly as a password sign-in does".
+ */
+internal fun persistSignIn(r: PairResult) {
+    TokenStore.set(r.deviceToken)
+    MultiTokenStore.add(LocalSession(
+        userId = r.session.userId,
+        displayName = r.session.displayName,
+        deviceToken = r.deviceToken,
+        isAdmin = r.session.isAdmin,
+        isKids = r.session.isKids,
+        avatarUrl = r.session.avatarUrl,
+    ))
+    MultiTokenStore.setActive(r.session.userId)
 }
 
 @Composable

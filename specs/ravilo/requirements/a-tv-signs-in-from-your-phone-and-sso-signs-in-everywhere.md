@@ -186,6 +186,23 @@ Each of these carries a dated amendment in its own file.
 - Needs a QR encoder in `:ravilo-ui` common code: pure Kotlin, drawn on a Compose `Canvas`, with no platform
   dependency.
 
+**Amendment 2026-10-24 (DEB-2324) — what FR-5's build settled.** None of this contradicts FR-5; it fixes what the text left open.
+
+- **The layout is the round's direction A** (`design/incoming/2026-10-23-tv-signin/`): the QR on the left at 222 dp, the title, code, instruction and TV name
+  beside it. DEB-2319 records no owner pick between A and B; A is the round's recommendation and the one that holds the 3-metre rule.
+  Without `linkUrl` it is one centred column and the code grows.
+- **The web address is not printed** under the instruction (the round's decision 2). It is open with the owner. If he picks it, FR-5 gains one line.
+- **While a viewer is approving**, *Approving on ‹name›'s phone…* replaces the instruction, on the same two-line height so the code does not move.
+- **The could-not-reach-the-server state** shows the ordinary line with **Retry** focused and *Sign in with a password instead* beside it.
+  - A failed request for a code is that state.
+  - A failed *poll* is not, until five fail in a row (15 s). One dropped packet does not replace a code someone is typing on their phone.
+- **DEB-1933's signed-out line** (*the password changed elsewhere*) is shown on the code screen too, under the title, because the password form it used to sit on is now one press away.
+- **Opening the password form stops the polling.** Back from it asks for a fresh code.
+- **The QR is black on white in every skin**, a whole number of pixels per module, with the standard's four-module quiet zone inside the tile.
+- **The design round's QR does not scan.** Its `ts-qr.js` writes the format information transposed (bit 0 at row 8, column 0 instead of column 8, row 0), and `verify-qr.py`
+  reads the same layout, so it passes. OpenCV's decoder cannot read that matrix and reads this slice's encoder's output on every size from version 1 to 16. The pictures
+  in the round show a code that will not scan; the shipped screen's does.
+
 **FR-6 — *Sign in a TV* on the phone, Ravilo Web and the desktop.**
 
 - **Two ways in:**

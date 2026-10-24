@@ -102,6 +102,7 @@ import dev.jellystructure.ravilo.ui.screens.MovieDetailScreen
 import dev.jellystructure.ravilo.ui.screens.MovieDetailStore
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.ravilo.ui.screens.LoginScreen
+import dev.jellystructure.ravilo.ui.screens.TvSignInScreen
 import dev.jellystructure.ravilo.ui.screens.LoginStore
 import dev.jellystructure.ravilo.ui.screens.PlayerScreen
 import dev.jellystructure.ravilo.ui.screens.PlayerStore
@@ -2274,23 +2275,34 @@ fun RaviloApp(
 
             is Dest.Login -> {
                 val store = remember { LoginStore(apiClient) }
-                LoginScreen(
-                    store = store,
+                val onLoginSignedIn = {
+                    signedOutNotice = false
+                    val active = MultiTokenStore.getActive()
+                    activeUserId = active?.userId
+                    activeAvatarUrl = active?.avatarUrl
+                    refreshConfig()
+                    // Reset the stack so Back from Home doesn't return to the login screen,
+                    // and carry the freshly-signed-in user's display name.
+                    val name = MultiTokenStore.getActive()?.displayName ?: ""
+                    resetTo(Dest.Home(name))
+                    openHeldPage(name)   // DEB-1738 (FR-4)
+                }
+                val passwordForm: @Composable () -> Unit = {
+                    LoginScreen(
+                        store = store,
+                        signedOutNotice = signedOutNotice,
+                        onSignedIn = onLoginSignedIn,
+                        onChangeServer = { heldRoute = null; onChangeServer() },   // DEB-1738 (FR-4) — leaving for another server drops it
+                    )
+                }
+                // DEB-2233 (FR-5) — a TV with no profiles opens on the code and QR; the password form is one press away.
+                // Every other client keeps today's screen (their own entry is a later slice).
+                if (isTvPlatform) TvSignInScreen(
+                    apiClient = apiClient,
+                    onSignedIn = onLoginSignedIn,
                     signedOutNotice = signedOutNotice,
-                    onSignedIn = {
-                        signedOutNotice = false
-                        val active = MultiTokenStore.getActive()
-                        activeUserId = active?.userId
-                        activeAvatarUrl = active?.avatarUrl
-                        refreshConfig()
-                        // Reset the stack so Back from Home doesn't return to the login screen,
-                        // and carry the freshly-signed-in user's display name.
-                        val name = MultiTokenStore.getActive()?.displayName ?: ""
-                        resetTo(Dest.Home(name))
-                        openHeldPage(name)   // DEB-1738 (FR-4)
-                    },
-                    onChangeServer = { heldRoute = null; onChangeServer() },   // DEB-1738 (FR-4) — leaving for another server drops it
-                )
+                    passwordForm = passwordForm,
+                ) else passwordForm()
             }
 
             is Dest.Home -> {
