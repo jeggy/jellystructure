@@ -5,6 +5,7 @@ import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.ops.boundedOrNull
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.ClientCapabilities
 import kotlinx.cinterop.ByteVar
@@ -254,7 +255,9 @@ class Encoder(
     suspend fun warmAndWait(id: String, startSegment: Int, waitMs: Long): Boolean {
         val e = entry(id) ?: return false
         if (!kickJobs) return false
-        val made = kotlinx.coroutines.withTimeoutOrNull(waitMs) { jobs.segment(id, e.plan, ffmpegPath, e.plan.startRung, startSegment) }
+        val made = boundedOrNull(waitMs, "encoder warm-and-wait (DEB-2205 FR-4)") {
+            jobs.segment(id, e.plan, ffmpegPath, e.plan.startRung, startSegment)
+        }
         return made != null
     }
 
