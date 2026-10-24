@@ -387,6 +387,10 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var autoplayNextEnabled by mutableStateOf(true)
 }
 
+/** R194 — a relative image path against the server base. Top level, so the player's body carries no local function (DEB-2280: the release player was one register over its limit). */
+internal fun resolvePlayerImageUrl(serverBaseUrl: String, url: String?): String? =
+    url?.let { if (it.startsWith("/") && serverBaseUrl.isNotBlank()) "$serverBaseUrl$it" else it }
+
 @Composable
 fun PlayerScreen(
     itemId: String,
@@ -435,8 +439,6 @@ fun PlayerScreen(
     // URL, same rule RemoteImage applies for on-screen art. Needed here separately because the OS media
     // session's artwork URI is handed straight to the platform player, bypassing Coil entirely.
     val serverBaseUrl = LocalServerBaseUrl.current
-    fun resolveImageUrl(url: String?): String? =
-        url?.let { if (it.startsWith("/") && serverBaseUrl.isNotBlank()) "$serverBaseUrl$it" else it }
 
     // Bug fix: the poll loop below is a LaunchedEffect(Unit) that's deliberately never restarted
     // across an episode transition (see loadedForItemId's comment — same underlying `player`
@@ -1114,7 +1116,7 @@ fun PlayerScreen(
         // when this season has none, then the movie-path `posterUrl` (no `episodes` list at all).
         // `posterUrl` already carries the series' own poster for episodes (threaded from
         // EpisodePlayContext.seriesPosterUrl) or the movie's poster for movies — a single fallback.
-        val artworkUrl = resolveImageUrl(episodes?.getOrNull(currentEpIndex)?.seasonPosterUrl ?: posterUrl)
+        val artworkUrl = resolvePlayerImageUrl(serverBaseUrl, episodes?.getOrNull(currentEpIndex)?.seasonPosterUrl ?: posterUrl)
         // 2026-09-24 — a new stream has no frame yet, from THIS moment: the poll tick would otherwise keep
         // the outgoing stream's `true` for up to POLL_MS, and VideoShutter below would let the decoder's
         // reconfiguration show through (a green frame with a quarter-size stale picture, soveværelse TV).
