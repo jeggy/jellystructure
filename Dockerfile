@@ -96,15 +96,19 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 
 # DEB-1490 FR-2 — the executable LAST, for $TARGETARCH, copied to an architecture-neutral path. Everything above is the
 # same for both architectures, so a two-platform build runs it once and only this step forks.
+# DEB-2400 — the arm64 release link ran out of the 4 GB Gradle heap (Kotlin/Native runs inside that JVM) on one run in
+# a few. The heap is raised for this one invocation and for arm64 only; amd64 keeps gradle.properties' -Xmx4g. The two
+# links never overlap (the locked gradle-shared mount serialises them), so one large heap is live at a time. The task is
+# root-qualified so the link does not also build :web-static-server, which this image never copies.
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     case "$TARGETARCH" in \
-        amd64) K=X64; D=linuxX64 ;; \
-        arm64) K=Arm64; D=linuxArm64 ;; \
+        amd64) K=X64; D=linuxX64; J="-Xmx4g -XX:+UseParallelGC" ;; \
+        arm64) K=Arm64; D=linuxArm64; J="-Xmx6g -XX:+UseParallelGC" ;; \
         *) echo "unsupported TARGETARCH '$TARGETARCH'" >&2; exit 1 ;; \
     esac && \
-    ./gradlew linkReleaseExecutableLinux$K --no-daemon && \
+    ./gradlew :linkReleaseExecutableLinux$K -Dorg.gradle.jvmargs="$J" --no-daemon && \
     mkdir -p /out && cp build/bin/$D/releaseExecutable/jellystructure.kexe /out/jellystructure
 
 FROM debian:bookworm-slim
