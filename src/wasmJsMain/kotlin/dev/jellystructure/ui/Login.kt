@@ -4,6 +4,7 @@ import dev.jellystructure.api.AuthApi
 import dev.jellystructure.api.httpClient
 import io.ktor.client.request.get
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLElement
@@ -21,6 +22,7 @@ fun renderLogin(onSuccess: suspend () -> Unit) {
             <div class="card" style="padding:34px 32px">
               <h2 style="font-size:1.35rem;margin:0 0 4px">Sign in</h2>
               <p class="muted" style="margin:0 0 22px;font-size:.92rem">Use your <b>Jellyfin administrator</b> account. Only admin accounts can manage metadata.</p>
+              <div id="sso-buttons" style="display:none"></div>
               <form id="login-form">
                 <div class="field">
                   <label>Jellyfin username</label>
@@ -50,6 +52,9 @@ fun renderLogin(onSuccess: suspend () -> Unit) {
           </div>
         </div>
     """.trimIndent()
+
+    // DEB-2233 (FR-13) — *Sign in with ‹name›* from the same list the viewers' clients read. No name, no button: the page is as it was.
+    MainScope().launch { showSsoButtons(AuthApi.ssoProviders()) }
 
     document.getElementById("login-form")?.addEventListener("submit") { e ->
         e.preventDefault()
@@ -105,4 +110,39 @@ private fun showError(msg: String) {
 private fun hideError() {
     val el = document.getElementById("login-error") ?: return
     (el as? HTMLElement)?.style?.display = "none"
+}
+
+/**
+ * DEB-2233 (FR-13) — one outlined `.btn` per name above the form, an *or* divider after them. The form's own `Sign in` stays the page's one
+ * `.btn.primary`. The names come from the server's operator, so they go in as text, never as markup. A tap starts the attempt and leaves this page
+ * for the identity provider; the return, the cookie and the redirect to `/admin` are the server's.
+ */
+private fun showSsoButtons(names: List<String>) {
+    val box = document.getElementById("sso-buttons") as? HTMLElement ?: return
+    if (names.isEmpty()) return
+    box.style.display = "block"
+    names.forEach { name ->
+        val btn = document.createElement("button") as HTMLElement
+        btn.className = "btn"
+        btn.setAttribute("type", "button")
+        btn.setAttribute("style", "width:100%;justify-content:center;padding:11px;margin-bottom:10px")
+        btn.textContent = "Sign in with $name"
+        btn.addEventListener("click") {
+            hideError()
+            btn.setAttribute("disabled", "true")
+            MainScope().launch {
+                AuthApi.ssoStart(name)
+                    .onSuccess { url -> window.location.href = url }
+                    .onFailure { err ->
+                        showError(err.message ?: "Single sign-on can’t be started")
+                        btn.removeAttribute("disabled")
+                    }
+            }
+        }
+        box.appendChild(btn)
+    }
+    val divider = document.createElement("div") as HTMLElement
+    divider.setAttribute("style", "display:flex;align-items:center;gap:14px;margin:18px 0 16px")
+    divider.innerHTML = "<hr class=\"dash\" style=\"flex:1;margin:0\"><span class=\"tiny muted\" style=\"letter-spacing:.08em;text-transform:uppercase;font-weight:600\">or</span><hr class=\"dash\" style=\"flex:1;margin:0\">"
+    box.appendChild(divider)
 }

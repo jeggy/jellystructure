@@ -10,6 +10,8 @@ import dev.jellystructure.ravilo.player.RaviloRenderers
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.RaviloRoot
 import dev.jellystructure.ravilo.ui.screens.TvLinkInbox
+import dev.jellystructure.ravilo.ui.screens.ssoReturnFromQuery
+import dev.jellystructure.ravilo.ui.screens.ssoReturnInbox
 import dev.jellystructure.ravilo.ui.screens.tvCodeFromLocation
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayerEngine
 
@@ -44,6 +46,8 @@ class MainActivity : FragmentActivity() {
 
         // DEB-2233 (FR-7) — the App Link that opened this activity; a recreation (rotation, process death) is not a new link.
         if (savedInstanceState == null) offerTvLink(intent)
+        // DEB-2233 (FR-11) — single sign-on's return, the same way: only a fresh launch carries one.
+        if (savedInstanceState == null) offerSsoReturn(intent)
 
         setContent {
             RaviloRoot()
@@ -55,6 +59,13 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         offerTvLink(intent)
+        offerSsoReturn(intent)
+    }
+
+    /** `dev.jellystructure.ravilo:/signin?attempt=…&h=…` (the manifest's filter has matched the scheme and path) is the hand-off for the attempt the sign-in screen holds. */
+    private fun offerSsoReturn(intent: Intent?) {
+        val uri = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.takeIf { it.scheme == "dev.jellystructure.ravilo" } ?: return
+        ssoReturnInbox.offer(ssoReturnFromQuery("?" + uri.encodedQuery.orEmpty(), "attempt"))
     }
 
     /** `https://<host>/tv?c=<code>` hands its code to the app; the manifest's filter has already matched the host. */

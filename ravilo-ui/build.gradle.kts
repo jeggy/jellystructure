@@ -113,6 +113,7 @@ kotlin {
                 implementation(libs.androidx.media3.exoplayer.hls)
                 implementation(libs.androidx.media3.session) // R44: MediaSession for hardware transport keys
                 implementation(libs.androidx.media3.ui)      // R55: SubtitleView cue rendering
+                implementation(libs.androidx.browser)         // DEB-2233 (FR-12) — the Custom Tab behind *Sign in with ‹name›*
                 implementation(libs.androidx.core)            // WindowCompat/WindowInsetsControllerCompat (PlayerImmersiveEffect)
                 implementation(libs.androidx.activity.compose) // BackHandler (PlatformBackHandler bug fix)
                 implementation(libs.play.services.cast.framework) // R245 — the Cast sender (CastContext, RemoteMediaClient, MediaRouteButton)

@@ -31,6 +31,11 @@ fun main() {
     val location = window.location
     dev.jellystructure.ravilo.ui.screens.tvCodeFromLocation(location.pathname, location.search)?.let { dev.jellystructure.ravilo.ui.screens.TvLinkInbox.offer(it) }
     if (location.pathname == "/tv") window.history.replaceState(null, "", "/" + location.hash)
+    // DEB-2233 (FR-11) — single sign-on's success page redirects here with `?signin=<attempt>&h=<hand-off>`. The sign-in screen claims it
+    // against the secret waiting in sessionStorage; the address loses both at once, so a reload, a bookmark or a shared link never carries a hand-off.
+    dev.jellystructure.ravilo.ui.screens.ssoReturnFromQuery(location.search, "signin")?.let { dev.jellystructure.ravilo.ui.screens.ssoReturnInbox.offer(it) }
+    val kept = dev.jellystructure.ravilo.ui.screens.ssoQueryWithoutReturn(location.search)
+    if (kept != location.search) window.history.replaceState(null, "", location.pathname + kept + location.hash)
     val container = document.getElementById("ComposeTarget") ?: error("index.html has no #ComposeTarget")
     ComposeViewport(
         viewportContainer = container,

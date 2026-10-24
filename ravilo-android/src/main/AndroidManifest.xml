@@ -92,12 +92,23 @@
         <activity
             android:name=".phone.MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:screenOrientation="portrait"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|orientation|uiMode|colorMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- DEB-2233 (FR-11) — where single sign-on's success page sends the browser back: `dev.jellystructure.ravilo:/signin?attempt=…&h=…`,
+                 a reverse-domain private-use scheme in the RFC 8252 style. It works for any server, with no App Link to verify. singleTask: the
+                 return reaches the running activity through onNewIntent, with the sign-in screen and the attempt's saved state still under it,
+                 rather than starting a second one. Only this activity declares it: a TV never shows the button. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dev.jellystructure.ravilo" android:path="/signin" />
             </intent-filter>
         </activity>
     </application>

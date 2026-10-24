@@ -114,6 +114,12 @@ fun ProfilePickerScreen(
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
+    // DEB-2233 (FR-11) — single sign-on's return found the picker: Ravilo Web is loaded afresh by the redirect, and a device that already has a
+    // profile opens here, not on the sign-in screen the viewer left. *Add user* is where the claim is made.
+    // Once, on arrival: a return nobody claims stays in the inbox, and a Cancel from *Add user* must not open it again.
+    LaunchedEffect(Unit) {
+        if (ssoReturnInbox.pending.value != null && !isTvPlatform && store.state.value is ProfilePickerState.Picking) store.showAddUser()
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background), contentAlignment = Alignment.Center) {
         when (val s = state) {

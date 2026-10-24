@@ -7,6 +7,9 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import dev.jellystructure.shared.tv.AdminSsoStartRequest
+import dev.jellystructure.shared.tv.AdminSsoStartResponse
+import dev.jellystructure.shared.tv.SsoProviders
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -40,6 +43,26 @@ object AuthApi {
                 val err = runCatching { response.body<LoginError>() }.getOrNull()
                 throw Exception(err?.error ?: "Login failed (${response.status.value})")
             }
+        }
+    }
+
+    /** DEB-2233 (FR-8, FR-13) — the names the server's single sign-on lists, for *Sign in with ‹name›*. `[]` when there is none or it cannot be asked. */
+    suspend fun ssoProviders(): List<String> = runCatching {
+        val response = httpClient.get("/api/auth/providers")
+        if (response.status == HttpStatusCode.OK) response.body<SsoProviders>().providers else emptyList()
+    }.getOrDefault(emptyList())
+
+    /** DEB-2233 (FR-9, FR-13) — where to send this browser. The server also sets the `js_sso` cookie that binds the return to this browser. */
+    suspend fun ssoStart(provider: String): Result<String> = runCatching {
+        val response = httpClient.post("/api/auth/sso/start") {
+            contentType(ContentType.Application.Json)
+            setBody(AdminSsoStartRequest(provider))
+        }
+        when (response.status) {
+            HttpStatusCode.OK -> response.body<AdminSsoStartResponse>().authorizeUrl
+            HttpStatusCode.ServiceUnavailable -> throw Exception("Single sign-on is set up wrong — check the dashboard")
+            HttpStatusCode.TooManyRequests -> throw Exception("Too many attempts — try again in a minute")
+            else -> throw Exception("Single sign-on can’t be started (${response.status.value})")
         }
     }
 

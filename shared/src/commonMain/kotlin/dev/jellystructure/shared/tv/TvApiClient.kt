@@ -110,6 +110,36 @@ class TvApiClient(
         }
     }
 
+    // ─── Single sign-on (DEB-2233, FR-8, FR-9, FR-11) — all three are open, no token ─────────────────────────────────
+
+    /** `GET /api/tv/login/providers` — the names to show as *Sign in with ‹name›*. `[]` when there is none; a failed read is also `[]`,
+     *  because the button is an offer and a sign-in screen that cannot ask for it looks exactly as it does today. */
+    suspend fun ssoProviders(): List<String> = runCatching {
+        val r = client.get("$baseUrl/api/tv/login/providers") { identify() }
+        r.assertSuccess()
+        json.decodeFromString<SsoProviders>(r.bodyAsText()).providers
+    }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else emptyList() }
+
+    /** `POST /api/tv/login/sso/start`. 503 [TvApiError.Http] is the misconfiguration case (the button is hidden), 429 too many starts. */
+    suspend fun ssoStart(provider: String, deviceId: String, deviceName: String?, returnTo: String): SsoStartResponse {
+        val r = client.post("$baseUrl/api/tv/login/sso/start") {
+            identify()
+            jsonBody(json.encodeToString(SsoStartRequest.serializer(), SsoStartRequest(provider, deviceId, deviceName, platform, returnTo)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<SsoStartResponse>(r.bodyAsText())
+    }
+
+    /** `POST /api/tv/login/sso/claim` — 200 is the sign-in; 401 (single use, wrong secret or hand-off, expired) throws [TvApiError.Http]. */
+    suspend fun ssoClaim(attemptId: String, secret: String, handoff: String): PairResult {
+        val r = client.post("$baseUrl/api/tv/login/sso/claim") {
+            identify()
+            jsonBody(json.encodeToString(SsoClaimRequest.serializer(), SsoClaimRequest(attemptId, secret, handoff)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<PairResult>(r.bodyAsText())
+    }
+
     // ─── Signing a TV in from this device (DEB-2233, FR-3, FR-6) — both routes take this device's own token ───────────
 
     /** `GET /api/tv/signin/preview?code=` — the TV's name. Throws [TvApiError.Http] (404 for an unknown or expired code). */

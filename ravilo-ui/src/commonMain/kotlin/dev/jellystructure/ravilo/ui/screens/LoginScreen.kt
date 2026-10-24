@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +56,7 @@ import dev.jellystructure.ravilo.ui.components.loadErrorBodyKey
 import dev.jellystructure.ravilo.ui.components.loadErrorTitleKey
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
+import dev.jellystructure.ravilo.ui.seams.rememberSsoPlatform
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.TvApiClient
@@ -94,6 +96,12 @@ class LoginStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<LoginState>(LoginState.Idle)
     val state: StateFlow<LoginState> = _state.asStateFlow()
+
+    /** DEB-2233 (FR-12) — *Sign in with ‹name›*. A claim's [PairResult] is stored exactly as a password sign-in's is. */
+    val sso = SsoSignInStore(
+        api = TvSsoApi(apiClient), scope = scope, deviceId = { DeviceIdStore.get() }, deviceName = { deviceDisplayName() },
+        onPaired = { r -> persistSignIn(r); _state.value = LoginState.Success(r.session.displayName) },
+    )
 
     fun signIn(username: String, password: String) {
         if (username.isBlank() || password.isBlank()) {
@@ -163,12 +171,24 @@ fun LoginScreen(
     val signInFR = remember { FocusRequester() }
     val changeServerFR = remember { FocusRequester() }
     val cancelFR = remember { FocusRequester() }
+    // DEB-2233 (FR-12) — the buttons, from the names the server lists; none on a TV (no platform) and none when it lists none.
+    val ssoPlatform = rememberSsoPlatform()
+    val ssoNames by store.sso.providers.collectAsState()
+    val ssoState by store.sso.state.collectAsState()
+    val ssoFRs = remember(ssoNames) { ssoNames.map { FocusRequester() } }
+    val ssoCancelFR = remember { FocusRequester() }
+    // FR-11 — the attempt's secret lives in this screen's saved state (a process death while the Custom Tab is open) and nowhere else.
+    val savedAttempt = rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(ssoPlatform) {
+        store.sso.onAttemptChanged = { savedAttempt.value = it?.encode().orEmpty() }
+        store.sso.attach(ssoPlatform, SsoAttempt.decode(savedAttempt.value))
+    }
     val keyboardController = LocalSoftwareKeyboardController.current
     // R350 re-test (FR-R350-15) — on a TV each field is focused first (a ring, no keyboard) and edited on OK.
     val usernameEdit = rememberOkToEdit()
     val passwordEdit = rememberOkToEdit()
 
-    LaunchedEffect(Unit) { awaitFieldReady(); usernameFR.requestFocus() }   // R350 re-test — see OkToEdit
+    LaunchedEffect(Unit) { awaitFieldReady(); runCatching { usernameFR.requestFocus() } }   // R350 re-test — see OkToEdit
 
     LaunchedEffect(state) {
         if (state is LoginState.Success) {
@@ -196,7 +216,10 @@ fun LoginScreen(
                         color = colors.badgeWatched, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
                     )
                 }
-                else -> {
+                else -> if (ssoState is SsoState.Waiting) {
+                    SsoWaiting(cancelRequester = ssoCancelFR, onCancel = { store.sso.cancel() })
+                    LaunchedEffect(Unit) { runCatching { ssoCancelFR.requestFocus() } }
+                } else {
                     Text(str("login.title"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -212,7 +235,23 @@ fun LoginScreen(
                     }
                     Spacer(Modifier.height(28.dp))
 
+                    val closeTabText = str("ssopage.close_tab")
                     val locked = s is LoginState.SigningIn
+                    if (ssoNames.isNotEmpty()) {
+                        SsoButtons(
+                            names = ssoNames, requesters = ssoFRs, enabled = !locked && ssoState !is SsoState.Starting,
+                            onChosen = { name -> keyboardController?.hide(); store.sso.start(name, closeTabText) },
+                            onUpFromFirst = {}, onDownFromLast = { usernameFR.requestFocus() },
+                        )
+                    }
+                    (ssoState as? SsoState.Errored)?.let { e ->
+                        Text(
+                            str(if (e.kind == SsoErrorKind.UNREACHABLE) "login.error_unreachable" else "sso.failed"),
+                            color = colors.badgeNew, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.testTag(SsoTags.ERROR),
+                        )
+                        Spacer(Modifier.height(14.dp))
+                    }
                     LoginField(
                         label = str("login.username"),
                         value = username,
@@ -224,6 +263,7 @@ fun LoginScreen(
                         imeAction = ImeAction.Next,
                         // The keyboard's Next: the viewer is typing, so the password field takes the typing on.
                         onImeAction = { passwordEdit.continueTyping(); passwordFR.requestFocus() },
+                        onMoveUp = if (ssoFRs.isNotEmpty()) ({ ssoFRs.last().requestFocus() }) else null,
                         onMoveDown = { passwordFR.requestFocus() },
                     )
                     Spacer(Modifier.height(14.dp))
