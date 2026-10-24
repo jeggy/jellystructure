@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Guards the release-only PlayerScreen VerifyError (2026-09-06, again 2026-09-17).
 #
-# PlayerScreen is a ~3 500-line composable. In the R8 build its single dex method has needed MORE
+# PlayerScreen was a ~2 000-line composable body. In the R8 build its single dex method needed MORE
 # THAN 256 REGISTERS — most Dalvik instructions can only address v0–v255, R8 has to shuffle values
 # through low registers, and past that point ART's verifier rejects the class ("register vN has type
 # Reference but expected Integer"): the app dies the moment any title is played. Nothing else catches
 # it — debug builds, unit tests, Wasm and every compile check pass.
+#
+# DEB-2392 split it: the state and logic live in PlayerScreenState, the picture in layer composables
+# (PlayerScreen.kt), and the widest method fell from 256–270 to under 100. The guard measures all three
+# classes, and its limit stays at 250: that is the margin, not the problem.
 #
 # Usage: scripts/check-player-dex.sh [path/to/release.apk]   (default: newest ravilo-android release APK)
 # Needs a built release APK + its mapping.txt (./gradlew :ravilo-android:assembleRelease).
@@ -23,7 +27,7 @@ DEXDUMP=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/dexdump | sor
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 unzip -q -o "$APK" 'classes*.dex' -d "$TMP"
 worst=0; report=""
-for kt in PlayerScreenKt LiveTvPlayerScreenKt; do
+for kt in PlayerScreenKt PlayerScreenState LiveTvPlayerScreenKt; do
   obf=$(grep -m1 -E "^dev\.jellystructure\.ravilo\.ui\.screens\.$kt -> " "$MAP" | sed -E 's/.* -> (.*):/\1/')
   [ -n "$obf" ] || { echo "FAIL — $kt not found in mapping.txt"; exit 2; }
   desc="L${obf//./\/};"

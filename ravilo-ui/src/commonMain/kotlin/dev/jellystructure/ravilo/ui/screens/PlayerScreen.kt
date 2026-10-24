@@ -41,6 +41,7 @@ import androidx.compose.foundation.interaction.HoverInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -150,22 +151,22 @@ import org.jetbrains.compose.resources.painterResource
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-private const val CHROME_HIDE_MS = 3_600L
+internal const val PLAYER_CHROME_HIDE_MS = 3_600L
 /** R77's screen-relative subtitle floor; R251 (FR-R251-4) adds the transport band's height to it while the chrome is up. */
 private val SUBTITLE_FLOOR_INSET = 28.dp
-private const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
-private const val EPRAIL_HIDE_MS = 30_000L // R208: auto-close the episode rail after inactivity
+internal const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
+internal const val EPRAIL_HIDE_MS = 30_000L // R208: auto-close the episode rail after inactivity
 // R182 — replaces the old hardcoded COUNTDOWN_SECS = 8: the "Skip button countdown" viewer setting
 // (RaviloConfig.skipSecs, one of 4/6/8) now governs both the Skip Intro pill and this next-up/credits
 // countdown. This is only the pre-fetch seed (RaviloConfig's own default) until getConfig() resolves.
-private const val DEFAULT_SKIP_SECS = 6
-private const val SKIP_BACK_MS   = 10_000L
-private const val SKIP_FWD_MS    = 30_000L
-private const val POLL_MS        = 500L
+internal const val DEFAULT_SKIP_SECS = 6
+internal const val SKIP_BACK_MS   = 10_000L
+internal const val SKIP_FWD_MS    = 30_000L
+internal const val POLL_MS        = 500L
 // Bug fix (auto-advance retry loop): how long a requested advance gets to actually take effect before
 // we treat it as failed. Navigating to the next episode is a synchronous state swap in practice, so
 // this sits generously above any real transition.
-private const val ADVANCE_TIMEOUT_MS = 5_000L
+internal const val ADVANCE_TIMEOUT_MS = 5_000L
 // Bug fix (auto-advance retry loop): a trustworthy creditsStartMs can never sit in the first half of a
 // title. A bogus marker (0, or one that belongs to a different episode inside a multi-episode file)
 // used to satisfy the credits check on the very first poll tick, so the next-episode countdown fired
@@ -180,10 +181,10 @@ private const val ADVANCE_TIMEOUT_MS = 5_000L
 // C and D alike... a spinner that flashes for 200ms is itself a defect." Untested on a real TV per the
 // phase's own Open question #1 — tune against R216's rebuffer telemetry once data accumulates, not
 // guessed at again.
-private const val BUFFER_MOMENT_DEBOUNCE_MS = 400L
+internal const val BUFFER_MOMENT_DEBOUNCE_MS = 400L
 // R218 (FR-R218-3) — "a wait that passes 60 seconds is pathological... at that point Moment C dims
 // further and raises the centre spinner." Stall only — cold start and seek don't deepen.
-private const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
+internal const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
@@ -242,15 +243,15 @@ internal enum class NuFocus { PLAY, STAY }
 // deriving this from the player's own polled signals would break that. The requirement's real substance
 // — one state, not three independently-racing overlays — is what this enum (and the single
 // LaunchedEffect debouncing it below) delivers.
-private enum class PlBufferMoment { NONE, COLD, STALL, SEEK }
+internal enum class PlBufferMoment { NONE, COLD, STALL, SEEK }
 
 /** R381 — with no trusted credits marker, the next episode is preloaded this long before the end (owner: 60 s). */
-private const val NEXT_PREFETCH_BEFORE_END_MS = 60_000L
+internal const val NEXT_PREFETCH_BEFORE_END_MS = 60_000L
 
 // R182 (FR-RV-SKIP1-2) — the credits card's ONE primary action, chosen by priority: a stinger (from
 // Phase 150 §C) always wins (never auto-skip past it); else a real next episode; else a plain
 // skip-credits/exit. "Watch credits" (NuFocus.STAY) is offered in every mode alongside this one action.
-private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
+internal enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 
 // R363 (FR-R363-1) — SKIP_INTRO is never in the order: Left from −10 s used to pass through the seek bar (which
 // consumes Left as a scrub), so the pill was in the order but unreachable. It is reached by Up from the controls
@@ -288,6 +289,7 @@ private fun Modifier.hoverToCall(onHover: () -> Unit): Modifier {
 
 /**
  * PlayerScreen's bookkeeping state, held in ONE object instead of sixteen `var … by remember` locals.
+ * Since DEB-2392 it lives inside [PlayerScreenState] (which also holds the rest of the screen's state and its logic).
  * Not a refactor for taste: PlayerScreen's R8-compiled dex method needed 257–266 registers, and past
  * ~256 ART's verifier rejects the whole class — the release app crashes the moment a title is played,
  * while every debug build, unit test and compile check passes (2026-09-06, and again 2026-09-17 when a
@@ -295,7 +297,7 @@ private fun Modifier.hoverToCall(onHover: () -> Unit): Modifier {
  * register count from the release APK and runs in CI. Every property is snapshot state, exactly as the
  * locals were, so reads in composition still recompose.
  */
-private class PlayerBookkeeping(initialCastLink: CastLinkState) {
+internal class PlayerBookkeeping(initialCastLink: CastLinkState) {
     /** DEB-2205 (FR-1, FR-5) — the player's state as the poll loop last read it, for [PlayerStore]'s stop measure. */
     @kotlin.concurrent.Volatile var watchState: PlayerWatch = PlayerWatch(0L, false, false, false, -1L)
     fun watch(): PlayerWatch = watchState
@@ -424,1941 +426,607 @@ fun PlayerScreen(
      *  R370/R372); null = the usual (Jellyfin's resume point). */
     startAtMs: Long? = null,
 ) {
-    // R237 (FR-R237-3) — the action that can actually resolve a re-auth failure, in place of a Retry
-    // that is guaranteed to fail again: the same exit R234's forced sign-out already uses (sign the
-    // session out, land on the profile picker or the login gate) rather than a login takeover layered
-    // over a dead player — see phase-R237's open question 2. Null ⇒ Back alone.
+    // DEB-2392 — a shell. The state and the logic live in [PlayerScreenState] (PlayerScreenState.kt), the effects in
+    // [PlayerScreenEffects] and the picture in the layers below: this function used to hold all of them and needed 251–270
+    // registers in the R8 build against ART's cliff of 256 (scripts/check-player-dex.sh). Add new state THERE, a new effect
+    // to PlayerScreenEffects and a new piece of picture to its own layer — never back into this body.
     //
-    // Read from a CompositionLocal, NOT taken as a parameter. As a 16th parameter it produced a
-    // release-build-only `VerifyError` that killed the player on open — see [LocalReauthRequired]'s
-    // doc for the full account. Do not turn this back into a parameter.
-    val onReauthRequired = LocalReauthRequired.current
-    val colors = RaviloTheme.colors
-    val sessionState by store.state.collectAsState()
-    // R194 — resolves a relative /api/tv/image/... path (season/series poster) against the server base
-    // URL, same rule RemoteImage applies for on-screen art. Needed here separately because the OS media
-    // session's artwork URI is handed straight to the platform player, bypassing Coil entirely.
-    val serverBaseUrl = LocalServerBaseUrl.current
-
-    // Bug fix: the poll loop below is a LaunchedEffect(Unit) that's deliberately never restarted
-    // across an episode transition (see loadedForItemId's comment — same underlying `player`
-    // instance is reused so the outgoing stream doesn't visibly restart). But `itemId` and
-    // `nextEpisodeId` are plain function parameters — a coroutine launched once captures their
-    // VALUE at that moment and never sees later recompositions' updates. After the first
-    // successful auto-advance, this loop's `itemId` stayed frozen on the very first episode
-    // forever while `loadedForItemId` correctly kept moving on, so `playerLoadedForCurrentItem`
-    // went permanently false — silently disabling next-up/auto-advance/end-of-stream detection
-    // for the rest of this screen's life. Reported as "stuck" after a couple of episodes, with
-    // "auto play next" never working again. rememberUpdatedState gives the poll loop a live
-    // reference that always reflects the latest recomposition, without needing to restart it.
-    val currentItemId by rememberUpdatedState(itemId)
-    // R381 — the poll loop's live store: an auto-advance builds a new PlayerStore per episode (RaviloApp's
-    // remember(dest.itemId)) and closes the old one.
-    val currentStore by rememberUpdatedState(store)
-    val currentNextEpisodeId by rememberUpdatedState(nextEpisodeId)
-    // R372 (FR-R372-10) — the same staleness: "is there anything to advance to" is `advanceNext`'s own test (a next
-    // episode AND a host that can navigate to it), and the poll loop must read this composition's host, not the one
-    // the loop was launched with.
-    val currentNavigateToEpisode by rememberUpdatedState(onNavigateToEpisode)
-    // R181/R180 — same staleness risk as itemId/nextEpisodeId above: these are read inside the poll
-    // loop's resolution/remember logic, which must see the current recomposition's value.
-    val currentSeriesId by rememberUpdatedState(seriesId)
-    val currentOriginalLanguage by rememberUpdatedState(originalLanguage)
-    // Phase 150 — same staleness risk: the near-end/skip-intro checks (R182) run inside the poll loop.
-    val currentSegments by rememberUpdatedState(segments)
-
-    // Bug fix (auto-advance retry loop): a "next episode" id that IS the episode already playing is not
-    // a next episode — navigating to it can only be a no-op, while the credits card kept offering it and
-    // the countdown kept re-firing it forever. Resolved once here so every consumer (credits-card mode,
-    // transport order, the Next Episode control, MediaKey.NEXT) agrees on whether a next episode exists.
-    val resolvedNextEpisodeId = nextEpisodeId?.takeIf { it != itemId }
-
-    // R182 — resolved per-viewer skip behaviour (jellystructure Ravilo config → Preferences; there is
-    // no in-app settings screen for these — see PlayerStore.getConfig()). Re-fetched every episode (the
-    // LaunchedEffect(itemId) below) so a mid-binge settings change takes effect on the next episode.
-    // The four playback settings + their rememberUpdatedState mirrors (8 locals) → PlayerBookkeeping:
-    // a holder's properties are always current inside a long-lived lambda, so the mirrors are gone.
-
-    val player = remember { RaviloPlayer() }
-
-    // R244 — the handset chrome's own state; none of it exists on a TV. `handset` is LocalHandset
-    // (smallest side < 600 dp, orientation-stable) — the gate the spec's dev review confirmed.
-    val handset = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform   // R337 dev review 9 — R329's chrome at every desktop width
-    val portrait = LocalPortrait.current
-    val handsetControls = if (handset) rememberHandsetPlayerControls() else null
-    val haptics = LocalHapticFeedback.current
-    var locked by remember { mutableStateOf(false) }          // FR-R244-8
-    var fillMode by remember { mutableStateOf(false) }        // FR-R244-6 — never persists across titles
-    var subtitleSize by remember { mutableStateOf('M') }      // FR-R244-10 — phone-local
-    var landscapeForced by remember { mutableStateOf(false) } // FR-R244-7 — only while the system is locked
-    // FR-R244-14 — a light tick on skip, lock and seek release; nothing on play/pause. Compose's own
-    // haptic primitive: a no-op on web, so no seam was needed (the dev review expected one).
-    fun tick() { if (handset) runCatching { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) } }
-    // R245 (FR-R245-4) — pressing cast INSIDE the player: the instant the session connects, the app
-    // hands the current position over, stops local playback and swaps straight to the remote. Read
-    // through CompositionLocals, not parameters (the 16th-parameter VerifyError, see onReauthRequired).
+    // Read from CompositionLocals, NOT taken as parameters. As a 16th parameter `onReauthRequired` produced a release-build-only
+    // `VerifyError` that killed the player on open — see [LocalReauthRequired]'s doc for the full account. Do not turn any of
+    // these back into a parameter.
     val castController = LocalCast.current
-    val castHandoff = LocalCastHandoff.current
-    val castLink = castController?.sender?.link?.collectAsState()?.value ?: CastLinkState.NONE
-    // R258/scripts/check-player-dex.sh — this function's R8 dex method sat at 257–266 registers, on ART's
-    // 256-register cliff (VerifyError on open, release build only, 2026-09-06 and 2026-09-17). Sixteen
-    // bookkeeping states now live in ONE holder instead of sixteen locals. Add new state THERE (or in its
-    // own @Composable), never as another `var … by remember` in this body.
-    val bk = remember { PlayerBookkeeping(castLink) }
-
-
-    // Playback state — polled every 500 ms from the player
-    var positionMs   by remember { mutableLongStateOf(0L) }
-    var durationMs   by remember { mutableLongStateOf(0L) }
-    var bufferedMs   by remember { mutableLongStateOf(0L) }
-    var isPlaying    by remember { mutableStateOf(false) }
-    var audioTracks  by remember { mutableStateOf<List<PlayerAudioTrack>>(emptyList()) }
-    var subtitleTracks by remember { mutableStateOf<List<PlayerSubtitleTrack>>(emptyList()) }
-
-    // R218 — the same poll loop's signal for the four buffering moments (see PlayerBufferMoment below).
-    var hasRenderedFirstFrame by remember { mutableStateOf(false) }
-    var isBuffering    by remember { mutableStateOf(false) }
-    var isSeeking      by remember { mutableStateOf(false) }
-    // Phase R220 (FR-R220-5) — true for the whole time the Android actual's video-output recovery ladder
-    // is running; folded into rawBufferMoment below so a rung past R218's own debounce shows the existing
-    // STALL presentation instead of a silent frozen frame (isPlaying/isBuffering/isSeeking all read
-    // healthy throughout a video-output stall — see PlayerVideoSurface's own doc for why).
-    var videoOutputRecovering by remember { mutableStateOf(false) }
-
-    // Phase 185/R222 (FR-185-4 client half) — negotiation-to-first-frame timing. negotiationStartMs is
-    // stamped in armSession() itself (the single chokepoint for both the initial start and the
-    // background/foreground re-arm — see that function's own doc), consumed by the poll loop below the
-    // instant hasRenderedFirstFrame's false→true transition is observed. measuredStartupMs is what
-    // armSession hands PlayerStore as this session's startupMsProvider, read once at stop time; null is
-    // an honest "never measured" (still buffering, or the session ended some other way), not an error.
-
-    // Chrome visibility — bumping chromeRevision restarts the auto-hide timer.
-    // R290 (FR-R290-1, dev review item 1) — starts FALSE: the chrome is raised, and its timer armed, on
-    // the first frame the viewer will keep (the latch in the poll loop), never on a stream loading.
-    var chromeVisible  by remember { mutableStateOf(false) }
-    // R251 (FR-R251-4) — the bottom transport band's measured height, reported by PlayerChrome.
-    var transportBandPx by remember { mutableStateOf(0) }
-    var chromeRevision by remember { mutableLongStateOf(0L) }
-    // R157 (FR-R157-3.2) — bumping restarts the cursor auto-hide timer, independently of chrome.
-    var pointerActivityRevision by remember { mutableLongStateOf(0L) }
-
-    // R182 — Skip Intro pill (FR-RV-SKIP1-1). skipIntroCountingDown mirrors the design prototype's own
-    // skipPromptOn: true only during the brief grace window right after entering the intro; the pill's
-    // visibility beyond that rides the SAME chrome show/hide seam (chromeVisible) rather than a separate
-    // latch, so it reappears on wake() and can hide again with chrome — see skipIntroPillVisible below.
-    // skipIntroCountdownDone guards against re-arming a second countdown for the same intro window.
-
-    // Focus
-    var focus    by remember { mutableStateOf(PlFocus.PLAY) }
-
-    // Scrubbing
-    // R258 — a scrub preview belongs to the episode it was started on: keyed on itemId, so an episode
-    // switch (rail / Next / auto-advance) drops a pending preview instead of freezing the elapsed label
-    // at the OLD episode's target and drawing its tick on the new bar (stue TV, 2026-09-17).
-    // Deliberately a remember KEY and not a LaunchedEffect: this function sits at ART's 256-register
-    // cliff in the R8 build (scripts/check-player-dex.sh) — the effect form crashed the release player.
-    var scrubbing by remember(itemId) { mutableStateOf(false) }
-    var scrubPos  by remember { mutableLongStateOf(0L) }
-
-    // Track picker
-    var pickerOpen by remember { mutableStateOf(false) }
-    var pickerTab  by remember { mutableIntStateOf(0) }   // 0=audio, 1=subs
-    // R195 — two levels: pickerIdx indexes PickerLanguage groups (level 1); pickerVersionIdx indexes
-    // groups[pickerIdx].versions (level 2, only meaningful while pickerLevel == 1).
-    var pickerIdx  by remember { mutableIntStateOf(0) }
-    var pickerLevel by remember { mutableIntStateOf(0) }        // 0 = language list, 1 = version list
-    var pickerVersionIdx by remember { mutableIntStateOf(0) }
-    var selectedAudio by remember { mutableIntStateOf(0) }
-    var selectedSub   by remember { mutableIntStateOf(-1) } // -1 = off
-    // R181 — which itemId the layered resolver has already run for; compared against currentItemId
-    // (rememberUpdatedState) each poll tick so it re-arms exactly once per episode, same mechanism as
-    // loadedForItemId above, and never re-fires mid-playback or fights a later manual pick.
-    // R246 (FR-R246-5) — the track set the last resolve ran against, so a set that GROWS later (HLS
-    // renditions or a sideload arriving after prepare) is resolved once more — only to fill in an
-    // `Off` that resolved before the subtitle group existed (open question 2's recommendation), and
-    // never over a manual pick.
-
-    // Next-up card
-    var nextUpVisible by remember { mutableStateOf(false) }
-    // R111: once the viewer picks "Watch credits" we latch it dismissed so the near-end poll doesn't
-    // re-show the card on the very next tick. Reset per-episode in LaunchedEffect(itemId).
-    var nextUpDismissed by remember { mutableStateOf(false) }
-    var countdown     by remember { mutableIntStateOf(DEFAULT_SKIP_SECS) }
-    var nuFocus       by remember { mutableStateOf(NuFocus.PLAY) }
-    // Bug fix: PlayerScreen is reused across an episode transition (replaceTop keeps this composable —
-    // see LaunchedEffect(itemId) below), and so is `player` itself (remembered once, above) — its
-    // outgoing stream keeps playing (and reporting near-the-end position/duration) for as long as the
-    // new episode's stream ticket takes to round-trip, before `player.load()` actually swaps it. The
-    // poll loop (LaunchedEffect(Unit) below, never restarts either) kept reading that stale position
-    // every tick, so right after a manual "next episode" pick it could re-satisfy the near-end/isEnded
-    // check using the OUTGOING episode's tail end and re-arm nextUpVisible — starting a fresh 8s
-    // countdown that then auto-advances a SECOND time while the new episode is already playing,
-    // restarting it. Tracks which itemId the player is actually loaded for; the poll loop's near-end/
-    // isEnded checks are gated on this matching the current itemId so a stale outgoing stream can never
-    // trigger next-up again.
-    // R184 (FR-RV-POS1-2) — which itemId positionMs/durationMs actually reflect right now. Bug fix: a
-    // lifecycle stop (PlayerLifecycleEffect's onBackground below) landing in the gap between advanceNext()
-    // swapping to the next episode's PlayerStore and that episode's stream actually loading could read
-    // the OUTGOING episode's still-playing near-the-end positionMs and report it as the NEW episode's own
-    // stop position — Jellyfin then resumed the new episode minutes in on the very next play. Mirrors
-    // loadedForItemId above but tracked separately since it must stay valid even when this screen never
-    // reaches a poll tick before onBackground fires.
-    // Bug fix (auto-advance retry loop): which itemId we have already asked the host to advance away
-    // from. advanceNext() only *requests* a navigation — if the host can't act on it (no episode list,
-    // an id that isn't in it, or a target equal to the current item) nothing changes, and the poll loop
-    // below happily re-armed the credits card on the very next tick, restarting the countdown and
-    // re-requesting the same advance forever ("auto play next doesn't work and ends in a forever loop").
-    // One attempt per episode: the re-arm checks are gated on this, and a request that never takes
-    // effect leaves the player instead (see the ADVANCE_TIMEOUT_MS effect below).
-
-    // Episode rail
-    var epRailOpen  by remember { mutableStateOf(false) }
-    var focusedEpIdx by remember { mutableIntStateOf(currentEpIndex) }
-
-    // Pause flash
-
-    // R56: encode subs (PGS) from the server-pushed ticket, appended after native tracks in the picker.
-    val encodeSubTracks: List<PlayerSubtitleTrack> = remember(sessionState) {
-        val subs = (sessionState as? PlayerSessionState.Ready)?.ticket?.subtitles
-            ?.filter { it.deliveryMethod == "encode" } ?: emptyList()
-        subs.mapIndexed { i, sub ->
-            PlayerSubtitleTrack(
-                index = -1, // not an ExoPlayer track index
-                label = sub.label?.takeIf { it.isNotBlank() }
-                    ?: languageName(sub.language) ?: sub.language?.uppercase() ?: "Sub ${i + 1}",
-                language = sub.language,
-                forced = sub.forced,
-                isDefault = sub.isDefault,
-                deliveryMethod = "encode",
-                jellyfinStreamIndex = sub.index,
-            )
-        }
-    }
-
-    // Subtitle options: Off + native player tracks (embed/external) + encode (PGS burn-in) from ticket.
-    val subOptions: List<PlayerSubtitleTrack?> = remember(subtitleTracks, encodeSubTracks) {
-        listOf(null) + subtitleTracks + encodeSubTracks
-    }
-
-    // R195 §3 — language groups for the two-level picker. `flatIndex` on each PickerVersion is an
-    // index into `audioTracks` (audio) or `subtitleTracks + encodeSubTracks` starting at 0 (subtitles —
-    // Off is its own pseudo-language, never grouped, matching subOptions' existing "index 0 = Off, then
-    // native+encode" scheme so choosePick/resolveTrackSelection keep working off the same indices).
-    val pickerLang = LocalLang.current
-    val audioGroups: List<PickerLanguage> = remember(audioTracks, originalLanguage, pickerLang) {
-        val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
-        // Phase 314b — an added copy rides its source's row.
-        foldedAudioGroups(effectiveAudio) { list ->
-            buildLanguageGroups(list.map {
-                PickerEntryInput(it.language, it.label, forced = false, isDefault = it.isDefault, badges = audioBadges(it, originalLanguage, pickerLang))
-            })
-        }
-    }
-    val subVersionOptions: List<PlayerSubtitleTrack> = remember(subtitleTracks, encodeSubTracks) { subtitleTracks + encodeSubTracks }
-    val subGroups: List<PickerLanguage> = remember(subVersionOptions, pickerLang) {
-        buildLanguageGroups(subVersionOptions.map {
-            PickerEntryInput(it.language, it.label, forced = it.forced, isDefault = it.isDefault, badges = subtitleBadges(it, pickerLang))
-        })
-    }
-    // Off is a permanent, always-single-version pseudo-language ahead of every real group (§A: "Off is
-    // the first row, as today"). flatIndex -1 is a sentinel `group.isOff`/choosePick() checks for.
-    val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0, clusterSize = 1)
-    val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
-    // Phase 314c — the Picture tab: one row per version, offered only when the film has two or more.
-    val pickerGroups: List<PickerLanguage> = when (pickerTab) { 0 -> audioGroups; 1 -> subGroupsWithOff; else -> pictureVersionGroups(bk.videoVersions) }
-
-    // R246 (FR-R246-2) — the poll loop resolves against the exact track lists it read in that tick;
-    // nothing derived from the lists is read from composed state. The `currentAudioGroups` /
-    // `currentSubGroups` readers R196 added were one composition behind those lists on the very tick
-    // the tracks arrive — empty, or the outgoing episode's — which is why a remembered subtitle never
-    // reached the next episode (three live repros on 2026-09-16 with R241's build installed).
-
-    // ─── Helper functions ───────────────────────────────────────────────────
-
-    fun wake() { chromeVisible = true; chromeRevision++ }
-    fun scheduleHide() { chromeRevision++ }
-    // Every chrome-hide goes through this single choke point rather than a bare `chromeVisible = false`.
-    // R350 (FR-R350-7) — it no longer moves `focus` (R178 FR-RV-SEL1-1 parked it on PLAY): the control the
-    // viewer last focused is still focused when the chrome comes back, and Left/Right move from it. A Select
-    // that finds the chrome hidden still never fires that control (R178 FR-RV-SEL1-2, see `dpadRevealsOnly`).
-    fun hideChrome() { chromeVisible = false }
-
-    fun skip(ms: Long) {
-        val newPos = (positionMs + ms).coerceIn(0L, durationMs.coerceAtLeast(0L))
-        player.seekTo(newPos)
-        positionMs = newPos
-        bk.viewerSeek = true   // R363 (FR-R363-6)
-        tick()
-        wake()
-    }
-
-    fun commitScrub() {
-        player.seekTo(scrubPos)
-        positionMs = scrubPos
-        bk.viewerSeek = true   // R363 (FR-R363-6)
-        scrubbing = false
-        tick()   // FR-R244-9 — on release, never during the drag
-        wake()
-    }
-
-    fun togglePlay() {
-        if (isPlaying) {
-            player.pause(); isPlaying = false
-            bk.pauseFlashIsPlay = false
-        } else {
-            player.play(); isPlaying = true
-            bk.pauseFlashIsPlay = true
-        }
-        bk.pauseFlash = true
-        wake()
-    }
-
-    fun advanceNext() {
-        nextUpVisible = false
-        val nextId = resolvedNextEpisodeId
-        if (nextId == null || onNavigateToEpisode == null) {
-            // Nothing to advance to. Latch the card dismissed so the poll loop can't re-show it (and,
-            // with it, re-run this countdown) every tick for the rest of the file.
-            nextUpDismissed = true
-            return
-        }
-        // R142: a genuinely finished episode is marked played as we advance, so up-next stays correct; a
-        // manual skip mid-episode is not (it stays in-progress with its resume sliver). R347 (FR-R347-3) —
-        // finished is past 90 % OR past a trusted credits marker: a short episode's card fires at its
-        // credits (often ~86 %), and the bare 90 % test left it unticked with a resume point there.
-        if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, currentSegments.creditsStartMs)) store.markWatched(itemId)
-        // Latched BEFORE the call: see advanceRequestedForItemId — exactly one advance attempt per
-        // episode, never a retry loop.
-        bk.advanceRequestedForItemId = itemId
-        onNavigateToEpisode.invoke(nextId)
-    }
-
-    // R111: "Watch credits" — hide the card AND latch it so the near-end poll won't immediately re-show
-    // it. It can still re-appear at the true end of the file (the isEnded branch ignores the latch).
-    fun stayThrough() { nextUpVisible = false; nextUpDismissed = true; chromeVisible = true; scheduleHide() }
-
-    // R182 (FR-RV-SKIP1-2) — CreditsCardMode.STINGER's primary action. Stinger.atMs is null in every
-    // title today (TMDB's during/aftercreditsstinger keywords carry no timestamp — see Phase 150
-    // SegmentDetection.stingerFromTmdbKeywords); "never blindly skip past it" means we can't just jump
-    // to the natural end either, so without a known position this lands 2s before the file's actual end
-    // — past the long credits ROLL (whose start we DO know) while still leaving the tail of the file,
-    // where a mid/post-credits scene always sits, to play out normally.
-    fun skipToScene() {
-        val target = currentSegments.stinger?.atMs ?: (durationMs - 2_000L).coerceAtLeast(positionMs)
-        player.seekTo(target)
-        positionMs = target
-        nextUpVisible = false
-        wake()
-    }
-
-    // R182 (FR-RV-SKIP1-2) — CreditsCardMode.SKIP_CREDITS's primary action: a movie or a series' last
-    // episode with no stinger has nothing to seek forward TO, so this is simply "I'm done" — the same
-    // exit the pre-R182 isEnded handler used to trigger unconditionally (and silently, with no card) for
-    // any item with no next episode.
-    fun skipCredits() {
-        nextUpVisible = false
-        if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, currentSegments.creditsStartMs)) store.markWatched(itemId)   // R347
-        onBack()
-    }
-
-    // R182 (FR-RV-SKIP1-1) — fires on an explicit OK press on the pill AND from the countdown-elapsed
-    // auto-trigger in Auto mode (see the skipIntroCountingDown LaunchedEffect below) — same action either
-    // way, matching the design prototype's own single skipIntro() used from both paths.
-    fun skipIntro() {
-        val end = currentSegments.introEndMs ?: return
-        player.seekTo(end)
-        positionMs = end
-        bk.skipIntroCountingDown = false
-        bk.skipIntroCountdownDone = true
-        if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
-        wake()
-    }
-
-    fun chooseEpisode() {
-        if (focusedEpIdx == currentEpIndex) { epRailOpen = false; return }
-        episodes?.getOrNull(focusedEpIdx)?.id?.let { onNavigateToEpisode?.invoke(it) }
-    }
-
-    // R181 — client-local only (never sent to the jellystructure backend), keyed per profile via
-    // MultiTokenStore.getActive()?.userId, same store family as the auth-session cache. Read-modify-
-    // write against whatever's already persisted so an audio-only (or subtitle-only) pick doesn't
-    // clobber the other axis's remembered choice. Off is a real persisted state (subtitlesOff = true),
-    // not "no preference" (null subtitleLanguage with subtitlesOff = false).
-    fun persistChoice(
-        newAudioLanguage: String? = null, newSubtitleLanguage: String? = null, newSubtitlesOff: Boolean? = null,
-        // R195 (FR-RV §5.4) — which same-language VERSION, not just the language. Cleared/carried
-        // forward alongside its own axis's language (a stale signature must never survive onto a
-        // DIFFERENT language than the one it was computed for).
-        newAudioVariant: String? = null, newSubtitleVariant: String? = null,
-    ) {
-        val profileId = MultiTokenStore.getActive()?.userId ?: return
-        val seriesKey = currentSeriesId ?: currentItemId
-        val existing = PlaybackPrefsStore.getSeriesChoice(profileId, seriesKey) ?: PlaybackPrefsStore.getGlobalChoice(profileId)
-        val choice = RememberedChoice(
-            audioLanguage = newAudioLanguage ?: existing?.audioLanguage,
-            subtitleLanguage = if (newSubtitlesOff == true) null else (newSubtitleLanguage ?: existing?.subtitleLanguage),
-            subtitlesOff = newSubtitlesOff ?: existing?.subtitlesOff ?: false,
-            audioVariant = if (newAudioLanguage != null) newAudioVariant else existing?.audioVariant,
-            subtitleVariant = if (newSubtitlesOff == true) null else if (newSubtitleLanguage != null) newSubtitleVariant else existing?.subtitleVariant,
-        )
-        PlaybackPrefsStore.setSeriesChoice(profileId, seriesKey, choice)
-        PlaybackPrefsStore.setGlobalChoice(profileId, choice)
-    }
-
-    // R181 (FR-RV-TRK1) — layered resolution, run once per item the first tick after track discovery
-    // completes (see the call site in the poll loop below): per-series remembered choice → learned
-    // global-language preference → source default → first-track/Off. Matches by language (and, since
-    // R195, by exact remembered variant signature first — see resolveTrackChoice's doc), never by
-    // ExoPlayer track index (indices differ across episodes/files). Scope note: only matches against
-    // native/external subtitleTracks, never encodeSubTracks (PGS burn-in) — a remembered language that
-    // exists only as a PGS track in this file falls through instead of silently triggering an autoplay
-    // transcode; PGS stays a manual pick, same as today.
-    //
-    // R196 (FR-RV-TRK2-1/2/4) — the actual tier logic lives in the pure, unit-tested top-level
-    // resolveTrackChoice() (near buildLanguageGroups below). R246 — it is handed the TRACK LISTS the
-    // calling poll tick read and builds its own groups from them; the composed audioGroups/subGroups
-    // (and R196's rememberUpdatedState readers of them) are picker UI only. A group list composed
-    // before the tick the tracks arrive is empty or the outgoing episode's, which is why every
-    // remembered tier returned null on exactly that tick — the 2026-09-16 repros.
-    // R246 (FR-R246-1/2) — takes the lists the calling tick read; the resolver builds its own groups
-    // from them, so no caller can hand it a group list that is one composition behind.
-    // R376 (FR-R376-3) — the audio a player could not select in place is asked of the server instead: the stream cut
-    // with that track (R284's restream; on a composed master it becomes the master's default).
-    fun restreamForAudio(flatIndex: Int) {
-        val wanted = bk.ticketAudio.getOrNull(flatIndex) ?: return
-        bk.rearmResolveOnLoad = true
-        store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
-    }
-
-    fun resolveTrackSelection(tickAudio: List<PlayerAudioTrack>, tickSubs: List<PlayerSubtitleTrack>) {
-        val profileId = MultiTokenStore.getActive()?.userId
-        val seriesKey = currentSeriesId ?: currentItemId
-        val seriesChoice = profileId?.let { PlaybackPrefsStore.getSeriesChoice(it, seriesKey) }
-        val globalChoice = profileId?.let { PlaybackPrefsStore.getGlobalChoice(it) }
-
-        val result = resolveTrackChoice(seriesChoice, globalChoice, tickAudio, tickSubs)
-        // R284 (FR-R284-3) — on a single-audio session the player has nothing to select: if the stream
-        // does not carry the resolved track, ask the server for it — once per item — else show the truth.
-        val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
-        val wanted = bk.sessionAudio.getOrNull(result.audioIndex)
-        if (carried == null) {
-            val play = playableAudio(result.audioIndex, tickAudio)   // phase 314b — a copy where the source can't be decoded
-            selectedAudio = play
-            // R376 (FR-R376-3) — a player that could not switch says so, and the stream is cut with that audio
-            // instead, once per item, rather than nothing happening.
-            if (!player.selectAudioTrack(play) && bk.audioRestreamTriedFor != currentItemId) {
-                bk.audioRestreamTriedFor = currentItemId
-                bk.startRestreamPending = true   // R290 (FR-R290-4)
-                restreamForAudio(play)
-            }
-        } else if (wanted != null && result.audioIndex != carried && bk.audioRestreamTriedFor != currentItemId) {
-            bk.audioRestreamTriedFor = currentItemId
-            selectedAudio = result.audioIndex
-            bk.rearmResolveOnLoad = true
-            bk.startRestreamPending = true   // R290 (FR-R290-4) — this stream is not the one the viewer will keep
-            store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
-        } else {
-            selectedAudio = carried
-        }
-        // R282 (FR-R282-2) — while a subtitle is burned in, nothing automatic may add a text track.
-        val subIndex = if (bk.burnedSubIndex != null) -1 else result.subIndex
-        player.selectSubtitleTrack(subIndex)
-        selectedSub = subIndex
-        bk.resolvedTrackSig = trackSetSignature(tickAudio, tickSubs)
-        bk.resolvedTrackCount = tickAudio.size + tickSubs.size
-        bk.manualPickSinceResolve = false
-    }
-
-    // R380 (FR-R380-7) — the pick itself, for [tab] (0 = audio, 1 = subtitles) — the picker's OK and a cast remote's
-    // `audio`/`subtitle` command (castChannelVideo below) choose through this one door.
-    fun applyPick(tab: Int, group: PickerLanguage, version: PickerVersion) {
-        bk.manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
-        if (tab == 2) {
-            // Phase 314c — another picture version: the same item at the playhead from that version's file. The audio and
-            // subtitle choices are resolved again from the viewer's remembered choice once the new stream loads.
-            val v = bk.videoVersions.getOrNull(version.flatIndex) ?: return
-            if (!v.current) {
-                bk.rearmResolveOnLoad = true
-                store.restreamVersion(itemId, v.id, player.positionMs, bk.burnedSubIndex ?: -1, bk.sessionAudio.getOrNull(selectedAudio)?.index)
-            }
-            return
-        }
-        if (tab == 0) {
-            persistChoice(newAudioLanguage = group.language, newAudioVariant = version.signature())
-            // R284 (FR-R284-2) — a single-audio stream changes audio by restream (keeping the burn-in);
-            // re-picking the carried track does nothing. Direct play selects in the player, as always.
-            val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
-            val wanted = bk.sessionAudio.getOrNull(version.flatIndex)
-            if (carried == null) {
-                val play = playableAudio(version.flatIndex, audioTracks)   // phase 314b
-                selectedAudio = play
-                if (!player.selectAudioTrack(play)) restreamForAudio(play)   // R376 (FR-R376-3)
-            } else if (wanted != null && version.flatIndex != carried) {
-                selectedAudio = version.flatIndex
-                bk.rearmResolveOnLoad = true
-                store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
-            }
-        } else {
-            // R282 (FR-R282-4) — persisted FIRST: an un-burn re-resolves from this choice. (R181: a
-            // PGS pick is still worth remembering — it helps other titles and a rewatch where the
-            // language exists as a native track — though the resolver never auto-starts a burn-in.)
-            val sub = if (group.isOff) null else subVersionOptions.getOrNull(version.flatIndex)
-            if (group.isOff) persistChoice(newSubtitlesOff = true)
-            else persistChoice(newSubtitleLanguage = group.language, newSubtitlesOff = false, newSubtitleVariant = version.signature())
-            when (subPickAction(sub?.deliveryMethod == "encode", sub?.jellyfinStreamIndex, bk.burnedSubIndex)) {
-                SubPickAction.NONE -> Unit
-                // R56: PGS burn-in — restream with the subtitle baked into the Jellyfin transcode.
-                SubPickAction.BURN_IN -> store.restreamWithSub(itemId, sub?.jellyfinStreamIndex ?: -1, player.positionMs, restreamAudioIndex(bk.sessionAudioIndex, bk.ticketAudio, selectedAudio))
-                // Off or a text track while one is burned in: only a restream can take it out again.
-                SubPickAction.UNBURN -> { bk.rearmResolveOnLoad = true; store.restreamWithSub(itemId, -1, player.positionMs, restreamAudioIndex(bk.sessionAudioIndex, bk.ticketAudio, selectedAudio)) }
-                SubPickAction.SELECT -> {
-                    selectedSub = if (group.isOff) -1 else version.flatIndex
-                    player.selectSubtitleTrack(selectedSub)
-                }
-            }
-        }
-    }
-
-    // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
-    // or level-2's focused pickerVersionIdx). Never touches pickerOpen/pickerLevel itself — callers
-    // (pickerSelect(), touch taps) decide whether picking should close the picker or leave it open.
-    fun choosePick() {
-        val group = pickerGroups.getOrNull(pickerIdx) ?: return
-        val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
-        applyPick(pickerTab, group, version)
-    }
-
-    // R195 §A / R197 (FR-RV-PICK1-1) — OK on a level-1 row: a single-version language selects
-    // immediately and closes; a multi-version language instead ENTERS level 2, focused on whichever
-    // version is already playing. OK on a level-2 row: select AND CLOSE, same as level 1. R195
-    // originally shipped level 2 as "select, stay open" so a viewer could audition versions without
-    // reopening the picker — reversed by R197 (live report: with the video still covered and nothing
-    // on screen distinguishing "applied, still open" from "didn't take", a many-version language felt
-    // broken next to a one-version language, which dismisses on the same press). See R195 §D's amended
-    // table for the superseded decision.
-    fun pickerSelect() {
-        val group = pickerGroups.getOrNull(pickerIdx) ?: return
-        if (pickerLevel == 0 && group.versions.size > 1) {
-            pickerLevel = 1
-            val currentFlat = if (pickerTab == 0) shownAudio(selectedAudio, audioTracks) else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
-            pickerVersionIdx = group.versions.indexOfFirst { it.flatIndex == currentFlat }.coerceAtLeast(0)
-            wake()
-            return
-        }
-        if (pickerLevel == 0) pickerVersionIdx = 0
-        choosePick()
-        pickerOpen = false
-        pickerLevel = 0
-        wake()
-    }
-
-    // R195 §D — Back in level 2 returns to level 1 (must NOT close the picker); level 1 closes it,
-    // unchanged from pre-R195.
-    fun pickerBack() {
-        if (pickerLevel == 1) pickerLevel = 0 else pickerOpen = false
-        wake()
-    }
-
-    // R195 bug fix — the exact same tab-switch logic the D-pad's onLeft/onRight already run,
-    // extracted so a touch tap on a PickerTab pill (which has no D-pad to trigger onLeft/onRight)
-    // can reach it too. Always resets to level 1 (§D) and re-targets the new tab's group containing
-    // the live selection for that axis.
-    fun pickerTapTab(tab: Int) {
-        pickerTab = tab
-        pickerLevel = 0
-        pickerIdx = if (tab == 2) {
-            bk.videoVersions.indexOfFirst { it.current }.coerceAtLeast(0)
-        } else if (tab == 0) {
-            audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == shownAudio(selectedAudio, audioTracks) } }.coerceAtLeast(0)
-        } else {
-            subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex) } }.coerceAtLeast(0)
-        }
-        wake()
-    }
-
-    fun scrubStep() = SKIP_BACK_MS.coerceAtMost(maxOf(5_000L, (durationMs * 0.012).toLong()))
-
-    // Single place that arms a playback session, shared by the initial start and by the return-from-
-    // background re-arm (PlayerLifecycleEffect's onForeground) so both hand the store the same providers.
-    // durationProvider lets the store take the ≥90% mark-played decision itself if it is closed without
-    // an explicit stopSession — see PlayerStore.close().
-    fun armSession(id: String, startPositionMs: Long? = null) {
-        // Phase 185/R222 (FR-185-4 client half) — a real StreamTicket negotiation starts the instant
-        // startSession below is called, whether this is the episode's initial start or a background/
-        // foreground re-arm (both reload the player — see RaviloPlayerAndroid.load()'s own
-        // _hasRenderedFirstFrame reset), so both get timed the same way from this one chokepoint.
-        bk.negotiationStartMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
-        // R291 (FR-R291-1) — the FIRST negotiation asks for the audio R181's resolver would pick (series
-        // choice, else global choice), so a remembered non-default audio no longer costs a second start.
-        val remembered = MultiTokenStore.getActive()?.userId?.let { pid ->
-            PlaybackPrefsStore.getSeriesChoice(pid, currentSeriesId ?: id) ?: PlaybackPrefsStore.getGlobalChoice(pid)
-        }
-        store.startSession(
-            id,
-            startPositionMs = startPositionMs,   // R292 (FR-R292-2) — the record's position on a return, else Jellyfin's
-            audioLanguage = remembered?.audioLanguage, audioVariant = remembered?.audioVariant,   // R291
-            positionProvider = { positionMs },
-            isPausedProvider = { !isPlaying },
-            durationProvider = { durationMs },
-            qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
-            startupMsProvider = { bk.measuredStartupMs },
-            failedProvider = { player.playbackFailed },   // R306 (FR-R306-3)
-            // DEB-2205 (FR-1, FR-5) — the poll loop below keeps bk.watch; the body only hands the holder over (the release
-            // dex budget of this function is spent: scripts/check-player-dex.sh).
-            watchProvider = bk::watch,
-        )
-    }
-
-    // R155 → R354 (FR-R354-3/-4) — remote commands (the Jellyfin dashboard via 299's bridge, Home Assistant, a phone
-    // remote) drive this player as its own controls do, while it is composed — which is itself R155's "ignore when no
-    // player is open" (with none, music takes the command). Set, not toggle, so a stale/duplicate command is idempotent.
-    RemoteVideoCommands(
-        player = player,
-        isPlaying = { isPlaying },
-        togglePlay = { togglePlay() },
-        seekTo = { ms -> val clamped = ms.coerceIn(0L, durationMs.coerceAtLeast(0L)); player.seekTo(clamped); positionMs = clamped; wake() },
-        skip = { ms -> skip(ms) },
-        stop = { onBack() },
-        next = { if (resolvedNextEpisodeId != null) advanceNext() },
-        previous = { episodes?.getOrNull(currentEpIndex - 1)?.id?.let { onNavigateToEpisode?.invoke(it) } },
+    val inputs = PlayerScreenInputs(
+        itemId = itemId, itemTitle = itemTitle, itemKicker = itemKicker,
+        nextEpisodeId = nextEpisodeId, nextEpisodeLabel = nextEpisodeLabel, nextEpisodeTitle = nextEpisodeTitle,
+        episodes = episodes, currentEpIndex = currentEpIndex, seriesId = seriesId, originalLanguage = originalLanguage,
+        posterUrl = posterUrl, segments = segments, logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,
+        resume = resume, store = store, onBack = onBack, onNavigateToEpisode = onNavigateToEpisode, startAtMs = startAtMs,
+        sessionState = store.state.collectAsState().value,
+        // R194 — resolves a relative /api/tv/image/... path (season/series poster) against the server base URL, same rule
+        // RemoteImage applies for on-screen art; the OS media session's artwork URI bypasses Coil entirely.
+        serverBaseUrl = LocalServerBaseUrl.current,
+        // R244 — the handset chrome's gate: LocalHandset (smallest side < 600 dp, orientation-stable).
+        handset = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform,   // R337 dev review 9 — R329's chrome at every desktop width
+        lang = LocalLang.current,
+        haptics = LocalHapticFeedback.current,
+        // R245 (FR-R245-4) — pressing cast INSIDE the player: the instant the session connects, the app hands the current
+        // position over, stops local playback and swaps straight to the remote.
+        castLink = castController?.sender?.link?.collectAsState()?.value ?: CastLinkState.NONE,
     )
-    // R380 (FR-R380-7) — a cast remote's view of this player (TV only): fields, not parameters (R258).
-    val castSource = remember { CastVideoSource() }
-    // One closure (R258): the eight lambdas are built inside it, so their captures don't spend PlayerScreen's registers.
-    if (isTvPlatform) SideEffect {
-        castSource.title = { itemTitle }
-        castSource.kicker = { itemKicker }
-        castSource.lists = { castVideoLists(audioGroups, subGroupsWithOff, audioTracks, subVersionOptions, shownAudio(selectedAudio, audioTracks), shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)) }
-        castSource.subSize = { subtitleSize }
-        castSource.hasNext = { resolvedNextEpisodeId != null }
-        castSource.applyPick = { tab, g, v -> applyPick(tab, g, v) }
-        castSource.setSubSize = { subtitleSize = it }
-        castSource.next = { if (resolvedNextEpisodeId != null) advanceNext() }
-    }
-    CastChannelVideoHost(itemId, castSource)
-
-    // ─── Effects ────────────────────────────────────────────────────────────
-
-    // Start the playback session
-    LaunchedEffect(itemId) {
-        // Bug fix: also reset the next-up card/countdown here, not just nextUpDismissed — see
-        // loadedForItemId's comment above. Belt-and-suspenders alongside the loadedForItemId gate below:
-        // this clears any next-up state left over from the outgoing episode the instant a new one
-        // starts loading, rather than waiting for the (already-gated) poll loop to notice.
-        nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
-        nextUpVisible = false
-        countdown = bk.skipSecs
-        // R184 (FR-RV-POS1-1): positionMs/durationMs are screen-scoped, not per-episode (this composable
-        // is reused across the whole binge — see loadedForItemId's comment above) — reset them the instant
-        // a new episode starts loading so nothing can read the outgoing episode's near-the-end values
-        // during the round-trip before its own stream is loaded.
-        positionMs = 0L
-        durationMs = 0L
-        bk.positionKnownForItemId = null
-        hasRenderedFirstFrame = false  // R218 — the new episode's own cold start, not the outgoing one's
-        isBuffering = false
-        isSeeking = false
-        bk.measuredStartupMs = null  // R185/R222 — a stale prior episode's number must never carry over
-        // R290 — a fresh start for this item: black for R218's 400 ms, then the start screen, until the latch.
-        bk.startScreenDue = false
-        bk.startRestreamPending = false
-        bk.firstFrameAtMs = null
-        bk.playHeldForLatch = false
-        // R292 (FR-R292-6) — the app composed from saved state with a record for THIS item: start from it,
-        // exactly as a return from the background does, and count the restore.
-        val restored = resume.recordFor(itemId)?.takeIf { resume.consumeRestored() }
-        if (restored != null) {
-            bk.playOnLatch = resumePlayIntent(restored, kotlin.time.Clock.System.now().toEpochMilliseconds())
-            bk.returnRecord = restored
-            bk.reapplyChoicesForItemId = itemId
-            selectedAudio = restored.audioIndex
-            selectedSub = restored.subIndex
-            player.recordRestoredAfterRecreate()
-            armSession(itemId, restored.positionMs)
-        } else {
-            bk.playOnLatch = true
-            // 2026-10-05 — a film moved here from the phone at 0:45 began at 0:00: the place it was sent with goes in.
-            armSession(itemId, startAtMs?.takeIf { it > 0 })
-        }
-        delay(BUFFER_MOMENT_DEBOUNCE_MS)
-        bk.startScreenDue = true   // FR-R290-2 — the start screen fades in once, and stays up across a restream
-    }
-
-    // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an
-    // extra round-trip). Falls back to the current (previous episode's, or the DEFAULT_SKIP_SECS-seeded)
-    // values on failure — never blocks or breaks playback.
-    LaunchedEffect(itemId) {
-        store.getConfig()?.let { cfg ->
-            bk.skipIntroMode = cfg.skipIntro
-            bk.skipCreditsMode = cfg.skipCredits
-            bk.skipSecs = cfg.skipSecs
-            bk.autoplayNextEnabled = cfg.autoplayNext
-        }
-    }
-
-    // Load player when the StreamTicket is ready (initial load or R56 restream)
-    LaunchedEffect(sessionState) {
-        val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
-        // R271 (FR-R271-2) — a client selects, it never composes. This line used to template a
-        // Jellyfin stream URL from the ticket when `hlsUrl` was null, with `api_key=` — a spelling
-        // Jellyfin 12.1 does not honour at all (measured 401 on an enforcing route, 2026-09-20) — and
-        // it was the only consumer of the raw `accessToken` anywhere in the product.
-        //
-        // The fallback was also **dead code**: both server-side producers set `hls_url`
-        // unconditionally (`PlaybackService.kt`'s direct-play/TranscodingUrl branch and the burn-in
-        // restream), so it never ran. A null here is a real failure and is reported as one rather
-        // than papered over with a URL that would not have worked either.
-        // Unreachable: PlayerStore rejects a ticket with no stream URL before it can become Ready.
-        val streamUrl = s.ticket.hlsUrl ?: return@LaunchedEffect
-        // R192/R194 — feed title/episode-kicker/artwork into the OS media session (TV-only; see
-        // RaviloPlayer.load doc). Artwork prefers the current episode's SEASON poster over an episode
-        // still (season art reads better at media-session size); falls back to the series' own poster
-        // when this season has none, then the movie-path `posterUrl` (no `episodes` list at all).
-        // `posterUrl` already carries the series' own poster for episodes (threaded from
-        // EpisodePlayContext.seriesPosterUrl) or the movie's poster for movies — a single fallback.
-        val artworkUrl = resolvePlayerImageUrl(serverBaseUrl, episodes?.getOrNull(currentEpIndex)?.seasonPosterUrl ?: posterUrl)
-        // 2026-09-24 — a new stream has no frame yet, from THIS moment: the poll tick would otherwise keep
-        // the outgoing stream's `true` for up to POLL_MS, and VideoShutter below would let the decoder's
-        // reconfiguration show through (a green frame with a quarter-size stale picture, soveværelse TV).
-        hasRenderedFirstFrame = false
-        bk.firstFrameAtMs = null
-        bk.startRestreamPending = false   // R290 — the restream the resolver asked for is this ticket
-        // R290 (FR-R290-3, dev review item 3) — the first position shown is the target, never the poll's 0.
-        positionMs = s.ticket.startPositionMs
-        // 308 (FR-308-3) — an adaptive stream starts from what this device measured, never from a guess about where it is.
-        player.seedBandwidthEstimate(s.ticket.measuredBandwidthBps?.takeIf { s.ticket.adaptive })
-        // 309 / 313 (FR-313-14) — on our own encoder every rung is already running: a climb waits only the stock buffer.
-        dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.oursEncoder = s.ticket.encoder == "ours"
-        // R381 (FR-R381-1) — the QoE counters are this item's: a new item resets them, a restream of it keeps them.
-        player.beginQoeItem(itemId)
-        player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
-        // R282 (FR-R282-1/-4) — relate the two subtitle mechanisms, here, on every ticket. A burn-in
-        // ticket turns the text renderer OFF unconditionally: the reload reuses this ExoPlayer, whose
-        // text selection survives load(), so a text track that was on kept rendering over the
-        // burned-in one ("two subtitles at once", Honeyman). An un-burn ticket re-arms the resolver.
-        bk.burnedSubIndex = s.ticket.burnedSubtitleIndex
-        // R284 (FR-R284-1) — on a single-audio session the ticket, not the player, knows the tracks.
-        // R291 (FR-R291-2) — a master with every audio track as a rendition carries no single track: an
-        // audio pick is a player track selection, exactly as on direct play, never a restream.
-        bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay && !s.ticket.audioRenditions }
-        bk.videoVersions = s.ticket.versions   // phase 314c
-        bk.sessionAudio = if (bk.sessionAudioIndex != null) s.ticket.audio else emptyList()
-        bk.ticketAudio = s.ticket.audio   // R376 (FR-R376-3)
-        carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)?.let { selectedAudio = it }
-        if (s.ticket.burnedSubtitleIndex != null) {
-            player.selectSubtitleTrack(-1)
-            selectedSub = -1
-        } else if (bk.rearmResolveOnLoad) {
-            bk.resolvedForItemId = null
-        }
-        bk.rearmResolveOnLoad = false
-        // R292 (FR-R292-5) — a return's ticket comes from the server's rules; the viewer's burn-in or
-        // single-audio choice is restored by ONE restream, invisibly under R290's start screen.
-        bk.returnRecord?.let { r ->
-            bk.returnRecord = null
-            val wantAudio = r.sessionAudioIndex
-            val needsRestream = (r.burnedSubIndex != null && s.ticket.burnedSubtitleIndex != r.burnedSubIndex) ||
-                (wantAudio != null && !s.ticket.directPlay && s.ticket.audioStreamIndex != wantAudio)
-            if (needsRestream) {
-                bk.startRestreamPending = true
-                store.restreamWithSub(itemId, r.burnedSubIndex ?: -1, s.ticket.startPositionMs, wantAudio)
-            }
-        }
-        if (bk.latchedForItemId == itemId) {
-            // A restream after the start (a subtitle burn-in, a manual audio pick): as before this phase.
-            player.play()
-            isPlaying = true
-            wake()
-        } else {
-            // R290 (FR-R290-4, dev review item 4) — prepare, resolve, then play: ExoPlayer renders the
-            // first frame on READY whether or not it is playing, and the tracks arrive at prepare, so the
-            // resolver's verdict and the frame are both in hand before a sample is heard. The poll loop's
-            // latch calls play() — a stream the resolver sends back is never played at all.
-            bk.playHeldForLatch = true
-        }
-        bk.loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.
-    }
-
-    // Poll player state
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(POLL_MS)
-            try {
-                // Bug fix: gate every next-up/end-of-stream check on the player actually being loaded
-                // for the CURRENT itemId — otherwise, right after a manual (or auto) advance, these
-                // checks kept reading the OUTGOING episode's near-the-end position/duration during the
-                // brief gap before the new episode's stream ticket loads, re-arming next-up and
-                // auto-advancing a second time into the episode that had just started. See
-                // loadedForItemId's declaration comment above. Uses currentItemId (rememberUpdatedState),
-                // not the raw itemId parameter — see that declaration's comment for why this loop
-                // specifically needs the live reference.
-                val playerLoadedForCurrentItem = bk.loadedForItemId == currentItemId
-
-                // R184 (FR-RV-POS1-1/2): same staleness this loop already guards next-up/end-of-stream
-                // checks against also applied to positionMs/durationMs themselves — they were assigned
-                // unconditionally every tick, so during this same gap they held the OUTGOING episode's
-                // near-the-end values, observable by anything reading them (e.g. a lifecycle stop, see
-                // positionKnownForItemId's declaration comment). Only update — and only mark them
-                // known-fresh for currentItemId — once the player is actually loaded for it.
-                if (playerLoadedForCurrentItem) {
-                    positionMs = player.positionMs
-                    durationMs = player.durationMs
-                    bk.positionKnownForItemId = currentItemId
-                    // R218 — same staleness guard as positionMs/durationMs above: only read the live
-                    // player's signal once it is actually loaded for THIS item, or a stale
-                    // hasRenderedFirstFrame=true from the outgoing episode could suppress moment B here.
-                    val renderedNow = player.hasRenderedFirstFrame
-                    // Phase 185/R222 (FR-185-4 client half) — the false→true transition this negotiation
-                    // was timing. Consumed (negotiationStartMs cleared) so a later re-arm's own transition
-                    // is never mistaken for this one, and a session that never renders never reports.
-                    if (renderedNow && !hasRenderedFirstFrame) {
-                        bk.negotiationStartMs?.let { start ->
-                            bk.measuredStartupMs = kotlin.time.Clock.System.now().toEpochMilliseconds() - start
-                        }
-                        bk.negotiationStartMs = null
-                        bk.firstFrameAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()   // R290
-                    }
-                    hasRenderedFirstFrame = renderedNow
-                    isBuffering = player.isBuffering
-                    isSeeking = player.isSeeking
-                }
-                bufferedMs  = player.bufferedMs
-                isPlaying   = player.isPlaying
-                // DEB-2205 (FR-1, FR-5) — what the stop measure reads: this loop's own values, never the engine from another thread.
-                bk.watchState = PlayerWatch(
-                    positionMs, isPlaying, isBuffering || isSeeking, hasRenderedFirstFrame,
-                    if (bufferedMs > 0) (bufferedMs - positionMs).coerceAtLeast(0) else -1L, videoOutputRecovering,
-                )
-                audioTracks = sessionAudioTracks(bk.sessionAudio, bk.sessionAudioIndex, player.audioTracks)
-                subtitleTracks = player.subtitleTracks
-
-                // R181 — resolve once per item, the first tick after the (now-current) stream's tracks
-                // are actually discovered. Gated on playerLoadedForCurrentItem for the same reason as
-                // the next-up checks below: right after an advance, audioTracks/subtitleTracks can
-                // still briefly reflect the OUTGOING episode until the new load swaps in, and resolving
-                // against stale tracks could pick a bogus index for the new one.
-                // R246 (FR-R246-2) — resolved against the exact lists this tick read (tickAudio/tickSubs),
-                // never against groups composed earlier.
-                val tickAudio = audioTracks
-                val tickSubs = subtitleTracks
-                // R292 (FR-R292-5) — the viewer's own choice, re-applied to the NEW engine once its tracks
-                // are known; the resolver is not re-run for this item (it already ran before the background).
-                if (playerLoadedForCurrentItem && bk.reapplyChoicesForItemId == currentItemId && tickAudio.isNotEmpty()) {
-                    bk.reapplyChoicesForItemId = null
-                    if (carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex) == null) player.selectAudioTrack(selectedAudio)
-                    player.selectSubtitleTrack(if (bk.burnedSubIndex != null) -1 else selectedSub)
-                }
-                if (playerLoadedForCurrentItem && bk.resolvedForItemId != currentItemId && tickAudio.isNotEmpty()) {
-                    resolveTrackSelection(tickAudio, tickSubs)
-                    bk.resolvedForItemId = currentItemId
-                } else if (playerLoadedForCurrentItem && bk.resolvedForItemId == currentItemId && !bk.manualPickSinceResolve && selectedSub == -1 && bk.burnedSubIndex == null) {
-                    // R246 (FR-R246-5) — the set grew after the first resolve: run once more, keyed on
-                    // the set's signature, only while nothing is selected that a grown set could change.
-                    val sig = trackSetSignature(tickAudio, tickSubs)
-                    if (bk.resolvedTrackSig != null && sig != bk.resolvedTrackSig && tickSubs.size + tickAudio.size > bk.resolvedTrackCount) {
-                        resolveTrackSelection(tickAudio, tickSubs)
-                    }
-                }
-
-                // R290 (FR-R290-1/4) — the latch: the first frame of the stream the viewer will keep. Opens
-                // once per item, AFTER this tick's resolver ran (so a restream it asked for is already
-                // pending); the held play() runs, the chrome is raised and its hide timer armed — here, and
-                // never on a load.
-                if (playerLoadedForCurrentItem && bk.latchedForItemId != currentItemId) {
-                    val renderedFor = bk.firstFrameAtMs?.let { kotlin.time.Clock.System.now().toEpochMilliseconds() - it } ?: 0L
-                    if (startLatchOpens(sessionState is PlayerSessionState.Ready, hasRenderedFirstFrame, bk.resolvedForItemId == currentItemId, bk.startRestreamPending, renderedFor)) {
-                        bk.latchedForItemId = currentItemId
-                        // R292 (open question 2) — a return after more than 30 minutes lands paused at the position.
-                        if (bk.playHeldForLatch) { if (bk.playOnLatch) { player.play(); isPlaying = true }; bk.playHeldForLatch = false }
-                        wake()
-                    }
-                }
-
-                // Credits card trigger (R111/R182 FR-RV-SKIP1-2): the real creditsStartMs when known,
-                // else R384 (FR-R384-2) — 1 s before the end (`NEXT_UP_NO_MARKER_MS`; it was 20 s, which on a
-                // 1-minute episode covered the last third and, with autoplay, never played the last ~14 s). The
-                // countdown then runs its full length over the finished picture: nothing below ends or restarts it
-                // when the file ends, and the natural-end trigger starts it if the last second was never seen. R182 also drops the old "no next episode ⇒ exit immediately, no
-                // card at all" special case below — a movie/last-episode now gets the same card, with a
-                // Skip credits action, instead of being silently kicked out at the natural end.
-                // Bug fix (auto-advance retry loop): only a marker that plausibly belongs to THIS stream is
-                // trusted — positive, inside the known duration, and in its back half (see
-                // CREDITS_MARKER_MIN_FRACTION). Anything else falls back to the end-of-file heuristic
-                // rather than declaring the episode finished seconds after it started.
-                val creditsStart = dev.jellystructure.shared.tv.trustedCreditsStartMs(currentSegments.creditsStartMs, durationMs)
-                val creditsReached = if (creditsStart != null) positionMs >= creditsStart
-                    else durationMs > 0 && (durationMs - positionMs) in 1..dev.jellystructure.shared.tv.NEXT_UP_NO_MARKER_MS
-                val advanceAlreadyRequested = bk.advanceRequestedForItemId == currentItemId
-                // R230 (FR-R230-1) — Skip Credits: Off means no mid-playback interruption at all, so this
-                // early trigger (segment creditsStartMs, or R384's last second for an unscanned
-                // title) is suppressed entirely while Off. The real end of file (below) becomes the only
-                // trigger point in that mode.
-                if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
-                    !nextUpVisible && !nextUpDismissed && !player.isEnded &&
-                    bk.skipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
-                    nextUpVisible = true
-                    nuFocus = nextUpStartsOn(bk.viewerSeek)   // R363 (FR-R363-6)
-                }
-
-                // R381 (owner, 2026-10-08) — preload the next episode at the credits marker (or 60 s before the end with
-                // no trusted marker), autoplay on or off; a seek back out of the credits drops it again.
-                // R384 (FR-R384-6) — never before half way: on a 1-minute episode "60 s before the end" was its first
-                // second, and the preload competed with the episode's own start.
-                val prefetchAt = creditsStart ?: maxOf(durationMs - NEXT_PREFETCH_BEFORE_END_MS, durationMs / 2)
-                // The live next episode and the live store (rememberUpdatedState), never `resolvedNextEpisodeId` or
-                // `store`: this loop is launched once per player, while an auto-advance swaps in a new episode and a new
-                // PlayerStore (closing the old one, its scope cancelled). Holding the first episode's values, every later
-                // episode prepared nothing — the call went to a closed store (found on the Pixel 2026-10-08: S01E01 →
-                // E02 preloaded, E02 → E03 did not).
-                val nextForPrefetch = currentNextEpisodeId?.takeIf { it != currentItemId }
-                if (playerLoadedForCurrentItem && nextForPrefetch != null && durationMs > 0) {
-                    if (bk.prefetchedForItemId != currentItemId && positionMs >= prefetchAt) {
-                        bk.prefetchedForItemId = currentItemId
-                        currentStore.prepareNext(nextForPrefetch)
-                    } else if (bk.prefetchedForItemId == currentItemId && positionMs < prefetchAt - 5_000) {
-                        bk.prefetchedForItemId = null
-                        currentStore.discardNext()
-                    }
-                }
-
-                // Natural end — safety net for a title whose duration/creditsStartMs never satisfied the
-                // check above (e.g. bad metadata); still shows the card rather than exiting silently.
-                // Bug fix: this was missing the same !nextUpDismissed guard the trigger above has, so a
-                // movie/last-episode's credits card became un-dismissable — "Watch credits" (or Back,
-                // which calls the same stayThrough()) hid it, but the instant playback reached its real
-                // end a moment later, this check fired again (it only looked at nextUpVisible, not
-                // whether the viewer had already dismissed it) and popped it right back up, forever.
-                // R230 (FR-R230-2) — while Off, this is the ONLY trigger left, and it no longer just shows
-                // the card: a next episode with Autoplay next episode on still gets the ordinary
-                // Next-Episode countdown here (re-anchored to the real end instead of the early one, per
-                // the owner's decision that Off must not disable Autoplay); anything else — no next
-                // episode, or Autoplay off — exits silently via the same fallback skipCredits() already
-                // uses, with no card ever shown.
-                if (playerLoadedForCurrentItem && player.isEnded && !advanceAlreadyRequested &&
-                    !nextUpVisible && !nextUpDismissed) {
-                    if (bk.skipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF) {
-                        if (resolvedNextEpisodeId != null && bk.autoplayNextEnabled) {
-                            nextUpVisible = true; nuFocus = NuFocus.PLAY
-                        } else {
-                            skipCredits()
-                        }
-                    } else {
-                        nextUpVisible = true; nuFocus = NuFocus.PLAY
-                    }
-                }
-
-                // R372 (FR-R372-10, amendment 2026-10-12) — the item ran out and there is nothing to advance to: the
-                // session ends here and the heartbeat stops. Deliberately NOT guarded on `nextUpVisible` the way the
-                // branch above is: with the credits card already up from the early trigger, the end of the file was
-                // never acted on at all, and the 10 s heartbeat went on posting `paused` at the end position for as
-                // long as the app lived (three rows in the owner's 2026-10-12 *Playing now*). The card is left exactly
-                // where it is — the spec says it may stay — and the picture with it (see PlayerStore.endOfPlay, which
-                // keeps the store's state rather than going Idle).
-                if (bk.endOfPlay.observe(
-                        itemId = currentItemId,
-                        loaded = playerLoadedForCurrentItem,
-                        ended = player.isEnded,
-                        // advanceNext's own test, with the live values (see currentNavigateToEpisode).
-                        hasNext = nextForPrefetch != null && currentNavigateToEpisode != null,
-                        advanceRequested = advanceAlreadyRequested,
-                    )
-                ) {
-                    currentStore.endOfPlay(positionMs, durationMs)
-                }
-
-                // R182 (FR-RV-SKIP1-1) — Skip Intro pill. Entering [introStartMs, introEndMs) for the
-                // first time this episode arms the brief grace-window countdown (skipIntroCountingDown);
-                // beyond that the pill's visibility rides chromeVisible (see skipIntroPillVisible in the
-                // composable body) rather than anything tracked here. Leaving the window (playback moved
-                // past introEndMs, or a fresh episode with no intro at all) resets the once-per-window
-                // latch so a later intro (rare, but not impossible) can arm again.
-                val iStart = currentSegments.introStartMs
-                val iEnd = currentSegments.introEndMs
-                val insideIntro = playerLoadedForCurrentItem && iStart != null && iEnd != null && iEnd > iStart &&
-                    positionMs in iStart until iEnd
-                bk.skipIntroInside = insideIntro   // R363 — read by the key handlers' `skipIntroArmed`
-                if (insideIntro && bk.skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
-                    !bk.skipIntroCountingDown && !bk.skipIntroCountdownDone) {
-                    bk.skipIntroCountingDown = true
-                    // R363 (FR-R363-2/3) — the intro began: the pill's focus effect sees this edge once.
-                    bk.skipIntroArmingEdge = true
-                    bk.skipIntroReturn = null
-                    bk.skipIntroHadFocus = false
-                    bk.skipIntroTouchedOther = false
-                }
-                if (!insideIntro && (bk.skipIntroCountingDown || bk.skipIntroCountdownDone)) {
-                    bk.skipIntroCountingDown = false
-                    bk.skipIntroCountdownDone = false
-                    bk.skipIntroArmingEdge = false
-                    bk.skipIntroHadFocus = false
-                    if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
-                }
-                bk.viewerSeek = false   // R363 (FR-R363-6) — only the tick right after a skip/scrub counts
-            } catch (e: Throwable) {
-                // Bug fix: an exception on any single tick (e.g. a transient native-player getter
-                // failure) used to kill this whole polling loop for the rest of the PlayerScreen's
-                // lifetime — silently ending all next-up/auto-advance/end-of-stream detection with no
-                // crash and no visible symptom beyond "playback just stops responding". Keep polling
-                // instead of dying on one bad tick.
-            }
-        }
-    }
-
-    // Auto-hide chrome timer (restarted every time chromeRevision bumps)
-    // R244 (FR-R244-3) — a handset hides after 3 000 ms, holds open while a sheet is up or a seek drag
-    // is in progress, keeps its chrome while paused, and never runs while locked (the lock overlay is
-    // what shows then). The TV's 3 600 ms rule is unchanged.
-    LaunchedEffect(chromeRevision) {
-        if (chromeRevision == 0L) return@LaunchedEffect
-        delay(if (handset) HANDSET_CHROME_HIDE_MS else CHROME_HIDE_MS)
-        // R350 (FR-R350-7) — the TV keeps its chrome while paused (and while scrubbing) too; play re-arms the hide
-        // (togglePlay wakes).
-        val hold = scrubbing || locked || !isPlaying
-        if (!pickerOpen && !nextUpVisible && !epRailOpen && !hold) hideChrome()
-    }
-
-    // R208 — auto-close the episode rail after inactivity. chromeRevision bumps on every D-pad input
-    // via wake() (onLeft/onRight/onUp/onDown/onSelect all call it first, including rail nav), so this
-    // naturally restarts while the viewer is actively browsing episodes and only fires after a real
-    // idle stretch. Mirrors onUp's own manual-close behavior (epRailOpen = false; scheduleHide()) so
-    // the ambient chrome-hide timer resumes normally once the rail's own guard is gone.
-    LaunchedEffect(epRailOpen, chromeRevision) {
-        if (!epRailOpen) return@LaunchedEffect
-        delay(EPRAIL_HIDE_MS)
-        epRailOpen = false
-        scheduleHide()
-    }
-
-    // R218 (FR-R218-1) — the one derived buffering moment; see PlBufferMoment's own doc for why this
-    // lives here rather than inside PlayerStore. Priority order matters: a wait BEFORE any first frame
-    // is always COLD even if isSeeking/isBuffering also happen to be true (there is no "last frame" yet
-    // for a seek's lighter treatment to make sense against), then SEEK (a seek's own buffering must
-    // never read as an organic STALL), then plain STALL.
-    val rawBufferMoment = when {
-        sessionState !is PlayerSessionState.Ready -> PlBufferMoment.NONE  // moment A owns this wait
-        !hasRenderedFirstFrame -> PlBufferMoment.COLD
-        // R220 (FR-R220-5) — ahead of SEEK/isBuffering: a video-output recovery in progress must always
-        // read as STALL, even if rung 2's own no-op seek happens to flip isSeeking true mid-ladder.
-        videoOutputRecovering -> PlBufferMoment.STALL
-        isSeeking -> PlBufferMoment.SEEK
-        isBuffering -> PlBufferMoment.STALL
-        else -> PlBufferMoment.NONE
-    }
-    var displayedBufferMoment by remember { mutableStateOf(PlBufferMoment.NONE) }
-    // R290 — the one derived start phase (dev review item 7: one val from a pure helper).
-    val startPhase = startPhase(latched = bk.latchedForItemId == itemId, startScreenDue = bk.startScreenDue)
-    // R218 (FR-R218-2) — ~400ms debounce before ANY presentation appears (a direct play that starts
-    // immediately must show nothing at all); clearing is immediate — a wait that just ended should stop
-    // being shown right away, not linger for its own debounce. Keyed on the raw (undebounced) moment so
-    // a rapid COLD→SEEK→COLD flicker restarts the delay each time rather than showing a stale one.
-    LaunchedEffect(rawBufferMoment) {
-        if (rawBufferMoment == PlBufferMoment.NONE) {
-            displayedBufferMoment = PlBufferMoment.NONE
-        } else {
-            delay(BUFFER_MOMENT_DEBOUNCE_MS)
-            displayedBufferMoment = rawBufferMoment
-        }
-    }
-    // R218 (FR-R218-3) — "a wait that passes 60 seconds is pathological... at that point Moment C dims
-    // further and raises the centre spinner. The wording does NOT change." Stall only.
-    LaunchedEffect(displayedBufferMoment) {
-        bk.stallDeepened = false
-        if (displayedBufferMoment == PlBufferMoment.STALL) {
-            delay(BUFFER_MOMENT_DEEPEN_MS)
-            bk.stallDeepened = true
-        }
-    }
-
-    // R182 (FR-RV-SKIP1-1) — derived every recomposition (the composable body always sees the latest
-    // positionMs/segments — no staleness risk here, unlike the long-lived effects above): visible once
-    // inside [introStartMs, introEndMs), for the brief grace countdown OR whenever chrome itself is up
-    // (matching the design prototype's own refreshSkipIntro() — reappears on wake(), no separate latch),
-    // and never over another modal overlay.
-    val skipIntroStart = segments.introStartMs
-    val skipIntroEnd = segments.introEndMs
-    val insideIntroWindow = skipIntroStart != null && skipIntroEnd != null && skipIntroEnd > skipIntroStart &&
-        positionMs in skipIntroStart until skipIntroEnd
-    val skipIntroPillVisible = insideIntroWindow && bk.skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
-        (bk.skipIntroCountingDown || chromeVisible) && !pickerOpen && !nextUpVisible && !epRailOpen
-
-    // R363 (FR-R363-2) — the pill takes focus only when it appears on its own (the countdown's arming edge with the
-    // controls hidden), never because the viewer is already using the controls. It still releases focus the
-    // instant it is gone (so a later Select never dispatches on a control that's no longer shown) — back to where
-    // it was reached from, and remembering that it had focus (FR-R363-3). Not a new effect: the old one, re-bodied.
-    LaunchedEffect(skipIntroPillVisible) {
-        if (skipIntroPillVisible) {
-            if (bk.skipIntroArmingEdge) {
-                bk.skipIntroArmingEdge = false
-                if (skipIntroGrabsFocus(armingEdge = true, chromeVisible = chromeVisible)) { focus = PlFocus.SKIP_INTRO; bk.skipIntroReturn = null }
-            }
-        } else if (focus == PlFocus.SKIP_INTRO) {
-            bk.skipIntroHadFocus = true
-            focus = skipIntroDownTarget(bk.skipIntroReturn)
-        }
-    }
-
-    // R182 (FR-RV-SKIP1-2) — priority: a stinger always wins (never auto-skip past it), else a real
-    // next episode, else plain skip-credits/exit. Derived every recomposition — segments/nextEpisodeId
-    // only ever change across an episode transition, when nextUpVisible/nextUpDismissed also reset.
-    // R230 (FR-R230-3) — Skip Credits: Off only ever reaches this card via the isEnded-trigger's
-    // Autoplay branch above, which guarantees resolvedNextEpisodeId != null — Stinger's "skip to scene"
-    // and the plain Skip-Credits exit are both meaningless once already at the real end of the file, so
-    // neither variant is reachable while Off regardless of what segments/next-episode data says.
-    val creditsCardMode = when {
-        bk.skipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF -> CreditsCardMode.NEXT_EPISODE
-        segments.stinger != null -> CreditsCardMode.STINGER
-        resolvedNextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
-        else -> CreditsCardMode.SKIP_CREDITS
-    }
-
-    // R157 (FR-R157-3.2) — cursor auto-hides after a couple of seconds of no pointer movement during
-    // playback (no-op on Android/TV); reappears immediately on the next move via the restart above.
-    LaunchedEffect(pointerActivityRevision) {
-        setPointerCursorHidden(false)
-        delay(CURSOR_HIDE_MS)
-        if (isPlaying) setPointerCursorHidden(true)
-    }
-    DisposableEffect(Unit) { onDispose { setPointerCursorHidden(false) } }
-
-    // Next-up countdown
-    // R182 (FR-RV-SKIP1-2): "the auto-advance countdown ring appears ONLY in the Next Episode case" —
-    // the stinger case pauses auto-skip entirely (no countdown) and skip-credits simply waits for input.
-    LaunchedEffect(nextUpVisible) {
-        if (!nextUpVisible || creditsCardMode != CreditsCardMode.NEXT_EPISODE) return@LaunchedEffect
-        countdown = bk.skipSecs
-        repeat(bk.skipSecs) {
-            delay(1_000)
-            countdown--
-        }
-        // R182 (dev-review addendum §2) — autoplayNext gates only the countdown's OWN auto-invocation;
-        // a manual pick (Select on the PLAY button, the transport's Next Episode control, or MediaKey.NEXT)
-        // still calls advanceNext() directly through their own existing call sites, untouched. With
-        // autoplayNext off the card simply sits at 0 waiting for one of those instead of navigating itself.
-        if (nextUpVisible && bk.autoplayNextEnabled) advanceNext()
-    }
-
-    // Bug fix (auto-advance retry loop): an advance we requested but that never took effect used to be
-    // invisible — the credits card simply came back and tried again, forever, on an episode that had
-    // already finished playing. A successful advance swaps itemId within a frame, so if we are still on
-    // the same item after this grace period the navigation genuinely failed: leave the player (Back is
-    // always meaningful — see the Ravilo constitution) instead of retrying or freezing on the last frame.
-    LaunchedEffect(bk.advanceRequestedForItemId) {
-        val requested = bk.advanceRequestedForItemId ?: return@LaunchedEffect
-        delay(ADVANCE_TIMEOUT_MS)
-        if (currentItemId == requested) onBack()
-    }
-
-    // R182 — Skip Intro pill's own brief grace-window countdown (FR-RV-SKIP1-1): governs the pill's
-    // INITIAL visibility only (see skipIntroPillVisible below, which takes over via chromeVisible once
-    // this elapses) — Auto mode additionally seeks past the intro once the countdown runs out, unless
-    // the viewer already pressed OK sooner (skipIntro() sets skipIntroCountingDown = false itself).
-    LaunchedEffect(bk.skipIntroCountingDown) {
-        if (!bk.skipIntroCountingDown) return@LaunchedEffect
-        bk.skipIntroCountdownSecs = bk.skipSecs
-        repeat(bk.skipSecs) {
-            delay(1_000)
-            bk.skipIntroCountdownSecs--
-        }
-        // Cancelled (not reaching here) if skipIntro() already flipped skipIntroCountingDown to false —
-        // same cancel-on-key-change idiom the existing next-up countdown effect above relies on.
-        bk.skipIntroCountingDown = false
-        bk.skipIntroCountdownDone = true
-        if (bk.skipIntroMode == dev.jellystructure.shared.tv.SkipMode.AUTO) skipIntro()
-    }
-
-    // Pause-flash auto-dismiss
-    LaunchedEffect(bk.pauseFlash) {
-        if (!bk.pauseFlash) return@LaunchedEffect
-        delay(550)
-        bk.pauseFlash = false
-    }
-
-    // Pause/resume when activity goes to background (Home button) and returns. Bug fix: also END the
-    // playback session while we are away instead of leaving it open with a paused heartbeat (phantom
-    // "streaming" in the Jellyfin dashboard, and no final resume position if the app is then killed),
-    // and re-arm it for the SAME item if the viewer comes back. Uses currentItemId (rememberUpdatedState),
-    // not the raw itemId parameter, so a re-arm after a binge starts the episode we are actually on.
-    PlayerLifecycleEffect(
-        player,
-        wasPlaying = { isPlaying },
-        // R292 (FR-R292-2, dev review item 3) — the record is captured from the ENGINE (exact, not a tick
-        // stale) under R184's guard: during a binge replaceTop the engine may already be loading the next
-        // episode, and (episode 2, position of episode 1) is that bug in a new place — then nothing is
-        // recorded and nothing is reported. Stop and record carry the same number, so they cannot disagree.
-        onBackground = { wasPlaying ->
-            val positionIsFresh = bk.loadedForItemId == currentItemId && bk.positionKnownForItemId == currentItemId
-            val enginePos = if (positionIsFresh) player.positionMs else 0L
-            if (positionIsFresh) resume.capture(ResumeRecord(
-                itemId = currentItemId, positionMs = enginePos, playIntent = wasPlaying,
-                awayAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds(),
-                audioIndex = selectedAudio, subIndex = selectedSub, burnedSubIndex = bk.burnedSubIndex,
-                sessionAudioIndex = bk.sessionAudioIndex, subtitleScale = when (subtitleSize) { 'S' -> 0.85f; 'L' -> 1.25f; else -> 1f },
-                title = itemTitle, kicker = itemKicker, seriesId = seriesId, originalLanguage = originalLanguage,
-                posterUrl = posterUrl, logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,
-                nextEpId = nextEpisodeId, nextEpLabel = nextEpisodeLabel, nextEpTitle = nextEpisodeTitle,
-                displayName = resume.record?.displayName ?: "",
-                startOver = store.startOver, shuffle = store.shuffle,   // R343
-            ))
-            store.stopSession(enginePos, if (positionIsFresh) durationMs else 0L)
-        },
-        // R292 (FR-R292-3) — coming back is a START, not a re-attach: a new engine, a fresh ticket cut at the
-        // record's position, R290's one start moment (the latch is re-armed), play only if the intent says so
-        // — and never after the screen went off (FR-R292-8a, found live 2026-10-09).
-        onForeground = { afterStandby ->
-            val r = resume.recordFor(currentItemId)
-            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            bk.playOnLatch = resumePlayOn(r, now, afterStandby)
-            bk.returnRecord = r
-            bk.reapplyChoicesForItemId = currentItemId
-            bk.latchedForItemId = null
-            isPlaying = false
-            armSession(currentItemId, r?.positionMs)
-        },
-    )
-    // Bug fix: force landscape + hide system bars for as long as the player is on screen — the
-    // phone app is portrait-locked with visible system bars everywhere else, which left the player
-    // stuck in portrait (heavy top/bottom letterboxing on any normal landscape video) plus a status/
-    // nav-bar-shaped margin baked in on top of that.
-    PlayerImmersiveEffect(followSensor = handset)   // R244 (FR-R244-7) — a phone follows the sensor
-    // R245 (FR-R245-4) — a NEW connection while this player is up is the hand-off; a session that was
-    // already connected when the player opened is not (the app routes play to the remote in that case).
-    LaunchedEffect(castLink) {
-        val was = bk.castLinkSeen
-        bk.castLinkSeen = castLink
-        if (handset && castLink == CastLinkState.CONNECTED && was != CastLinkState.CONNECTED && castHandoff != null) {
-            player.pause(); isPlaying = false
-            castHandoff(positionMs)
-        }
-    }
-    // R244 (FR-R244-10) — S · M · L applied live to the caption renderer; phone-local.
-    LaunchedEffect(subtitleSize) {
-        if (handset) player.setSubtitleScale(when (subtitleSize) { 'S' -> 0.85f; 'L' -> 1.25f; else -> 1f })
-    }
-
-    // Stop the playback session for the item we are leaving. Bug fix: this used to be keyed on Unit
-    // together with the player teardown below, so the effect block ran exactly once and its onDispose
-    // captured the `store` from the FIRST composition. After a binge (each episode replaceTops a new
-    // Dest.Player with its own store — see RaviloApp) pressing Back therefore stopped EPISODE 1's
-    // session, using episode 5's positionMs/durationMs — clobbering episode 1's resume position and
-    // even mark-playing it when episode 5 happened to be ≥90% — while episode 5's own session was never
-    // stopped at all. Keying on `store` makes this fire once per episode with that episode's own
-    // playhead, which is also what makes the resume point (and Continue Watching) correct.
-    //
-    // Phase 180/R218 bug fix: this called stopSession() directly, which reports the stop but leaves
-    // PlayerStore's own `scope` running — the coroutine backing startSession()'s up-to-5-attempt retry
-    // loop (~15s worst case) was never cancelled. Pressing Back during that window (R218's abandon-
-    // during-negotiation case, exactly what a cold-start wait makes more likely to happen) let a late
-    // retry complete AFTER the stop had already been sent and forgotten, silently minting a fresh
-    // orphaned Jellyfin session with its own heartbeat loop reading position from an already-released
-    // player. close() already does the right thing — armSession's own comment above has said so since
-    // before this call site existed (see armSession's durationProvider doc) — it just was never called
-    // from here. close() calls stopSession() itself using the same positionProvider/durationProvider
-    // (which close over these same positionMs/durationMs, so behaviour for an established session is
-    // unchanged) AND cancels `scope`, which is what actually closes the race.
-    DisposableEffect(store) {
-        onDispose { store.close() }  // R142: ≥90% → mark played (inside stopSession, called by close())
-    }
-
-    // Release the player engine only when the screen itself goes away — the engine is remembered per
-    // screen and deliberately REUSED across episodes, so this must NOT be keyed on the store/itemId.
-    DisposableEffect(Unit) {
-        onDispose {
-            player.release()
-        }
-    }
-
-    // ─── Key handling ────────────────────────────────────────────────────────
-
-    val playerFR = remember { FocusRequester() }
-    // R372 — and again when the TV's Speakers panel closes over it.
-    LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { TvSpeakers.open }.collect { if (!it) runCatching { playerFR.requestFocus() } } }
-
-    // R260 (FR-R260-1) — hoisted so the TV remote/keyboard entrance (dpadFocusable's onBack below) and
-    // the phone's gesture/button entrance (playerBackGesture — Android's system back never arrives as
-    // a KeyEvent) run the exact same decision.
-    val playerBack: () -> Unit = {
-        when {
-            // R290 (FR-R290-5) — Back while nothing is playing yet (negotiating, or the start screen)
-            // leaves at once. chromeVisible starts true, so this used to take two presses on a phone:
-            // the first only hid a chrome drawn behind the loader.
-            startPhase != StartPhase.PLAYING || sessionState !is PlayerSessionState.Ready || displayedBufferMoment == PlBufferMoment.COLD -> onBack()
-            // R295 (FR-R295-2) — a phone's sheet sits over the chrome it was opened from; Back out of it
-            // goes back to the picture, not to the chrome (which cost a fourth Back to leave from the
-            // versions list). The TV keeps its focus on Audio & Subs, as before.
-            pickerOpen && handset && pickerLevel == 0 -> { pickerOpen = false; hideChrome() }
-            pickerOpen    -> pickerBack()
-            epRailOpen    -> { epRailOpen = false; wake() }
-            nextUpVisible -> stayThrough()
-            scrubbing     -> { scrubbing = false; wake() }
-            // R112: if the controls are showing, Back just hides them → fullscreen video.
-            // Only Back with nothing on screen leaves the player (so it takes two presses).
-            chromeVisible -> hideChrome()
-            else          -> onBack()
-        }
-    }
-
+    val s = remember { PlayerScreenState(inputs) }
+    s.inputs = inputs
+    s.handsetControls = if (inputs.handset) rememberHandsetPlayerControls() else null
+    PlayerScreenEffects(s)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(playerBackdropColor)
-            .wakeOnPointerMove { wake(); pointerActivityRevision++ }
-            .playerBackGesture(onBack = playerBack)
+            .wakeOnPointerMove { s.wake(); s.pointerActivityRevision++ }
+            .playerBackGesture(onBack = { s.playerBack() })
             .dpadFocusable(
-                focusRequester = playerFR,
+                focusRequester = s.playerFR,
                 onFocused = {},
-                onLeft = {
-                    // R329 (FR-R329-6) — on the Mac the arrows seek by the TV's steps; next-up, the rail and
-                    // the picker keep them for moving.
-                    if (playerArrowsSeek && !nextUpVisible && !epRailOpen && !pickerOpen) { skip(-SKIP_BACK_MS); return@dpadFocusable }
-                    // R251 / R350 (FR-R350-7) — captured before wake(), like onSelect's. Left/Right/Up act on
-                    // the first press from the remembered control; see `dpadRevealsOnly`.
-                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.LEFT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
-                    wake()
-                    if (!revealOnly && focus != PlFocus.SKIP_INTRO) bk.skipIntroTouchedOther = true   // R363
-                    if (!revealOnly) when {
-                        nextUpVisible -> nuFocus = NuFocus.PLAY
-                        epRailOpen -> focusedEpIdx = (focusedEpIdx - 1).coerceAtLeast(0)
-                        // R195 §D — switching tab always resets to level 1, focused on whichever
-                        // group currently contains the live selection.
-                        pickerOpen -> pickerTapTab(if (pickerTab == 2) 1 else 0)   // phase 314c — Picture sits right of Subtitles
-                        focus == PlFocus.SEEK_BAR -> {
-                            if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
-                            scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
-                        }
-                        // R363 (review item 3) — Left/Right on the pill do nothing (it is not in the order).
-                        focus == PlFocus.SKIP_INTRO -> {}
-                        else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable(), PlayerFullscreen.available)
-                            val idx = order.indexOf(focus)
-                            if (idx > 0) focus = order[idx - 1]
-                        }
-                    }
-                },
-                onRight = {
-                    if (playerArrowsSeek && !nextUpVisible && !epRailOpen && !pickerOpen) { skip(SKIP_FWD_MS); return@dpadFocusable }   // R329
-                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.RIGHT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
-                    wake()
-                    if (!revealOnly && focus != PlFocus.SKIP_INTRO) bk.skipIntroTouchedOther = true   // R363
-                    if (!revealOnly) when {
-                        nextUpVisible -> nuFocus = NuFocus.STAY
-                        epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
-                        pickerOpen -> pickerTapTab(if (pickerTab >= 1 && bk.videoVersions.size >= 2) 2 else 1)   // phase 314c
-                        focus == PlFocus.SEEK_BAR -> {
-                            if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
-                            scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
-                        }
-                        focus == PlFocus.SKIP_INTRO -> {}   // R363 (review item 3)
-                        else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable(), PlayerFullscreen.available)
-                            val idx = order.indexOf(focus)
-                            if (idx < order.lastIndex) focus = order[idx + 1]
-                        }
-                    }
-                },
-                onUp = {
-                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.UP, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
-                    // R363 (FR-R363-3) — Up that wakes hidden controls inside the armed intro offers the skip first.
-                    val wakeTo = if (chromeVisible) null else skipIntroWakeFocus(PlayerDpadKey.UP,
-                        skipIntroArmed(bk.skipIntroInside, bk.skipIntroMode, pickerOpen, nextUpVisible, epRailOpen), bk.skipIntroHadFocus, bk.skipIntroTouchedOther)
-                    wake()
-                    if (wakeTo != null) { focus = wakeTo; bk.skipIntroReturn = null }
-                    else if (!revealOnly) when {
-                        epRailOpen -> { epRailOpen = false; scheduleHide() }
-                        // R195 §D — Up/Down moves within whichever level is active.
-                        pickerOpen -> if (pickerLevel == 1) { if (pickerVersionIdx > 0) pickerVersionIdx-- }
-                                      else { if (pickerIdx > 0) pickerIdx-- }
-                        nextUpVisible -> {}
-                        // R363 (FR-R363-1) — the seek bar, Audio & Subs and Next reach the pill above them.
-                        else -> skipIntroUpTarget(focus, skipIntroPillVisible)?.let { t ->
-                            if (t == PlFocus.SKIP_INTRO) bk.skipIntroReturn = focus else bk.skipIntroTouchedOther = true
-                            focus = t
-                        }
-                    }
-                },
-                onDown = {
-                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.DOWN, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
-                    wake()
-                    if (!revealOnly) when {
-                        nextUpVisible -> {}
-                        epRailOpen -> {}
-                        pickerOpen -> if (pickerLevel == 1) {
-                            val vsize = pickerGroups.getOrNull(pickerIdx)?.versions?.size ?: 1
-                            if (pickerVersionIdx < vsize - 1) pickerVersionIdx++
-                        } else {
-                            if (pickerIdx < pickerGroups.size - 1) pickerIdx++
-                        }
-                        focus == PlFocus.SEEK_BAR -> {
-                            if (scrubbing) commitScrub()
-                            focus = PlFocus.PLAY
-                        }
-                        // R363 (FR-R363-1) — back to the control the pill was reached from (Play if it took focus itself).
-                        focus == PlFocus.SKIP_INTRO -> focus = skipIntroDownTarget(bk.skipIntroReturn)
-                        episodes != null -> { epRailOpen = true; chromeVisible = true }
-                        else -> {}
-                    }
-                },
-                onSelect = {
-                    // R178 (FR-RV-SEL1-2): captured *before* wake() (which flips chromeVisible to true
-                    // unconditionally) — this is the only way to know whether chrome was actually hidden
-                    // when Select was pressed. Defense in depth alongside hideChrome() (FR-RV-SEL1-1):
-                    // even if some future path hides chrome without resetting `focus`, Select still can't
-                    // re-trigger a hidden control's action while nothing is visibly focused.
-                    //
-                    // Bug fix: the Skip Intro pill (skipIntroPillVisible) and the Next-up/credits card
-                    // (nextUpVisible) both render independent of chromeVisible by design — chrome can
-                    // still be auto-hidden (CHROME_HIDE_MS) when either shows, since neither forces
-                    // chromeVisible = true. The plain !chromeVisible check treated that as "everything's
-                    // hidden, just wake" and swallowed the real Select into a togglePlay(), even though
-                    // the pill/card was visibly focused on screen the whole time. Both are genuinely
-                    // interactive whenever they're showing, regardless of chrome.
-                    // R251 (FR-R251-1) — the same rule the four direction keys now use.
-                    // R363 (FR-R363-4) — inside the armed intro, OK on a hidden screen reveals the controls with the
-                    // pill focused (a second OK skips) instead of pausing.
-                    val hidden = hiddenSelect(
-                        dpadRevealsOnly(PlayerDpadKey.SELECT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen),
-                        skipIntroArmed(bk.skipIntroInside, bk.skipIntroMode, pickerOpen, nextUpVisible, epRailOpen),
-                    )
-                    wake()
-                    if (hidden == HiddenSelect.REVEAL_TO_PILL) { focus = PlFocus.SKIP_INTRO; bk.skipIntroReturn = null }
-                    else if (hidden == HiddenSelect.PLAY_PAUSE) {
-                        // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
-                        // R350 (FR-R350-7) — and the highlight lands on Play, the control OK just acted as.
-                        focus = PlFocus.PLAY
-                        togglePlay()
-                    } else when {
-                        nextUpVisible -> {
-                            if (nuFocus == NuFocus.STAY) stayThrough()
-                            else when (creditsCardMode) {
-                                CreditsCardMode.STINGER -> skipToScene()
-                                CreditsCardMode.NEXT_EPISODE -> advanceNext()
-                                CreditsCardMode.SKIP_CREDITS -> skipCredits()
-                            }
-                        }
-                        epRailOpen -> chooseEpisode()
-                        pickerOpen -> pickerSelect()
-                        focus == PlFocus.SKIP_INTRO -> skipIntro()
-                        focus == PlFocus.SEEK_BAR -> {
-                            if (scrubbing) commitScrub() else { scrubbing = true; scrubPos = positionMs }
-                        }
-                        focus == PlFocus.PLAY     -> togglePlay()
-                        focus == PlFocus.SKIP_BACK -> skip(-SKIP_BACK_MS)
-                        focus == PlFocus.SKIP_FWD  -> skip(SKIP_FWD_MS)
-                        focus == PlFocus.TRACKS    -> {
-                            pickerOpen = true
-                            pickerLevel = 0
-                            val currentFlat = if (pickerTab == 0) shownAudio(selectedAudio, audioTracks) else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
-                            pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
-                        }
-                        focus == PlFocus.NEXT_EP   -> advanceNext()
-                        focus == PlFocus.SPEAKERS  -> TvSpeakers.open = true
-                        focus == PlFocus.PIP       -> player.togglePictureInPicture()   // R376 (FR-R376-8)
-                        focus == PlFocus.FULLSCREEN -> togglePlayerFullscreen()   // R376 (FR-R376-4b)
-                        focus == PlFocus.BACK      -> onBack()
-                        else -> {}
-                    }
-                },
-                onBack = playerBack,
-                // R44: physical remote / keyboard transport keys → playback actions, regardless of
-                // which on-screen control is focused and even when the chrome is hidden.
-                onMediaKey = { mk ->
-                    when (mk) {
-                        MediaKey.PLAY_PAUSE   -> togglePlay()
-                        MediaKey.PLAY         -> if (!isPlaying) togglePlay() else wake()
-                        MediaKey.PAUSE        -> if (isPlaying) togglePlay() else wake()
-                        MediaKey.FAST_FORWARD -> skip(SKIP_FWD_MS)
-                        MediaKey.REWIND       -> skip(-SKIP_BACK_MS)
-                        MediaKey.NEXT         -> if (resolvedNextEpisodeId != null) advanceNext() else wake()
-                        MediaKey.PREVIOUS     -> { player.seekTo(0); positionMs = 0; wake() }
-                        MediaKey.STOP         -> onBack()
-                    }
-                },
-                // R157 (FR-R157-2.4) — on web, a click on empty space toggles chrome instead of
-                // activating the focused control (the web convention; a click has no D-pad "focus"
-                // concept to act on). TV: playerTapTogglesChrome is false and LocalHandset is false (R256:
-                // by platform — a TV window IS handset-sized, 960 x 540 dp), so this stays null there and
-                // dpadFocusable's default (onTap falls back to onSelect) preserves the D-pad behaviour.
-                // Bug fix: ravilo-ui's androidMain is shared by both the TV and phone apps, so the old
-                // `playerTapTogglesChrome` platform constant (false for "Android") couldn't distinguish
-                // them — a phone tap fell through to onSelect, i.e. "activate whatever the D-pad focus
-                // happens to be on," not the tap-to-toggle-chrome behaviour every mobile video player
-                // has.
-                // Bug fix: this used to read LocalCompact (< 600dp window WIDTH), which flips to false
-                // the instant a phone rotates to landscape for playback — width becomes the long edge.
-                // Once the auto-hide timer fired, tapping the video could never bring the controls back
-                // on a phone (confirmed live: pause worked once from the initially-visible chrome, but
-                // there was no way to reveal it again after it hid). LocalHandset uses the SMALLEST side
-                // (Android's own "smallest width" convention), so it stays true across rotation.
-                // R244 — on a handset the gesture layer (HandsetGestureLayer, below) owns single AND
-                // double taps, so the root must not also toggle chrome on the first tap of a double-tap.
-                // R376 (FR-R376-4b) — and a second click on the picture within a double-click's span toggles full
-                // screen where the page can (a control that took the click never reaches this root).
-                onTap = if (playerTapTogglesChrome && !handset) {
-                    { if (PlayerFullscreen.available && bk.pictureClickIsDouble(kotlin.time.Clock.System.now().toEpochMilliseconds())) togglePlayerFullscreen() else if (chromeVisible) hideChrome() else wake() }
-                } else null,
+                onLeft = { s.dpadLeft() },
+                onRight = { s.dpadRight() },
+                onUp = { s.dpadUp() },
+                onDown = { s.dpadDown() },
+                onSelect = { s.dpadSelect() },
+                onBack = { s.playerBack() },
+                onMediaKey = { mk -> s.onMediaKey(mk) },
+                // R157 (FR-R157-2.4) — a click on empty space toggles chrome instead of activating the focused control
+                // (see [PlayerScreenState.pictureTap]). TV: playerTapTogglesChrome is false and LocalHandset is false (R256:
+                // by platform — a TV window IS handset-sized, 960 x 540 dp), so this stays null there and dpadFocusable's
+                // default (onTap falls back to onSelect) preserves the D-pad behaviour. R244 — on a handset the gesture layer
+                // (HandsetGestureLayer) owns single AND double taps, so the root must not also toggle chrome on the first tap
+                // of a double-tap. LocalHandset uses the SMALLEST side, so it stays true across a phone's rotation (the
+                // window's WIDTH, LocalCompact, does not).
+                onTap = if (playerTapTogglesChrome && !s.handset) ({ s.pictureTap() }) else null,
             )
     ) {
-        // ── Platform video surface (SurfaceView on Android, <video> element on WASM) ───
-        // Phase R220 (FR-R220-3 rung 4) — the Android actual's recovery ladder calls this only after
-        // re-attach/seek-flush/surface-recreate have all failed while the player is genuinely still
-        // playing. Re-arming mirrors PlayerLifecycleEffect's own onForeground path exactly (same
-        // re-negotiate-without-a-full-player-rebuild shape) rather than inventing a second one.
-        // FR-R220-5 — feeds rawBufferMoment above so a rung running past R218's debounce shows STALL.
-        // R251 (FR-R251-4) — subtitles rise above the transport band while the TV chrome is up: R77's
-        // screen-relative 28 dp floor plus the band's measured height, on the chrome's own fade timing;
-        // back to the floor when hidden. Same visibility test as the chrome's AnimatedVisibility below.
-        // The handset chrome (R244) is not lifted here — R244 owns the phone player.
-        val chromeUpForSubs = !handset && (chromeVisible || displayedBufferMoment == PlBufferMoment.STALL) &&
-            displayedBufferMoment != PlBufferMoment.COLD
-        val transportBandDp = with(LocalDensity.current) { transportBandPx.toDp() }
-        val subtitleInset by animateDpAsState(
-            targetValue = if (chromeUpForSubs) SUBTITLE_FLOOR_INSET + transportBandDp else SUBTITLE_FLOOR_INSET,
-            animationSpec = tween(if (chromeUpForSubs) RaviloMotion.CHROME_FADE_IN_MS else RaviloMotion.CHROME_FADE_OUT_MS),
-            label = "subtitleInset",
+        PlayerVideoLayer(s)
+        PlayerStatusLayer(s)
+        PlayerChromeLayer(s)
+        PlayerPickerLayer(s)
+        PlayerCardLayer(s)
+    }
+}
+
+/**
+ * Every effect of the player screen, in one composable of its own. Each is the effect the screen body used to carry, with
+ * the same key; the work is in [PlayerScreenState].
+ */
+@Composable
+private fun PlayerScreenEffects(s: PlayerScreenState) {
+    val castHandoff = LocalCastHandoff.current
+    val itemId = s.itemId
+
+    // R155 → R354 (FR-R354-3/-4) — remote commands (the Jellyfin dashboard via 299's bridge, Home Assistant, a phone remote)
+    // drive this player as its own controls do, while it is composed — which is itself R155's "ignore when no player is open"
+    // (with none, music takes the command). Set, not toggle, so a stale/duplicate command is idempotent.
+    RemoteVideoCommands(
+        player = s.player,
+        isPlaying = { s.isPlaying },
+        togglePlay = { s.togglePlay() },
+        seekTo = { ms -> s.seekTo(ms) },
+        skip = { ms -> s.skip(ms) },
+        stop = { s.onBack() },
+        next = { if (s.resolvedNextEpisodeId != null) s.advanceNext() },
+        previous = { s.previousEpisode() },
+    )
+    // R380 (FR-R380-7) — a cast remote's view of this player (TV only).
+    if (isTvPlatform) SideEffect { s.bindCastSource() }
+    CastChannelVideoHost(itemId, s.castSource)
+
+    LaunchedEffect(itemId) { s.startItem() }
+    // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an extra round-trip).
+    // Falls back to the current (previous episode's, or the DEFAULT_SKIP_SECS-seeded) values on failure — never blocks or
+    // breaks playback.
+    LaunchedEffect(itemId) { s.loadConfig() }
+    // Load player when the StreamTicket is ready (initial load or R56 restream)
+    val sessionState = s.sessionState
+    LaunchedEffect(sessionState) { s.loadTicket(sessionState) }
+    // Poll player state
+    LaunchedEffect(Unit) { s.pollLoop() }
+
+    LaunchedEffect(s.chromeRevision) { s.chromeHideTimer() }
+    LaunchedEffect(s.epRailOpen, s.chromeRevision) { s.epRailHideTimer() }
+
+    val rawBufferMoment = s.rawBufferMoment
+    LaunchedEffect(rawBufferMoment) { s.settleBufferMoment(rawBufferMoment) }
+    LaunchedEffect(s.displayedBufferMoment) { s.deepenStall() }
+
+    val skipIntroPillVisible = s.skipIntroPillVisible
+    LaunchedEffect(skipIntroPillVisible) { s.skipIntroPillChanged(skipIntroPillVisible) }
+
+    LaunchedEffect(s.pointerActivityRevision) { s.cursorHideTimer() }
+    DisposableEffect(Unit) { onDispose { setPointerCursorHidden(false) } }
+
+    LaunchedEffect(s.nextUpVisible) { s.nextUpCountdown() }
+    LaunchedEffect(s.bk.advanceRequestedForItemId) { s.advanceTimeout() }
+    LaunchedEffect(s.bk.skipIntroCountingDown) { s.skipIntroCountdown() }
+    LaunchedEffect(s.bk.pauseFlash) { s.pauseFlashDismiss() }
+
+    // Pause/resume when activity goes to background (Home button) and returns. Bug fix: also END the playback session while
+    // we are away instead of leaving it open with a paused heartbeat (phantom "streaming" in the Jellyfin dashboard, and no
+    // final resume position if the app is then killed), and re-arm it for the SAME item if the viewer comes back.
+    PlayerLifecycleEffect(
+        s.player,
+        wasPlaying = { s.isPlaying },
+        onBackground = { wasPlaying -> s.onBackground(wasPlaying) },
+        onForeground = { afterStandby -> s.onForeground(afterStandby) },
+    )
+    // Bug fix: force landscape + hide system bars for as long as the player is on screen — the phone app is portrait-locked
+    // with visible system bars everywhere else, which left the player stuck in portrait (heavy top/bottom letterboxing on any
+    // normal landscape video) plus a status/nav-bar-shaped margin baked in on top of that.
+    PlayerImmersiveEffect(followSensor = s.handset)   // R244 (FR-R244-7) — a phone follows the sensor
+    val castLink = s.inputs.castLink
+    LaunchedEffect(castLink) { s.castLinkChanged(castLink, castHandoff) }
+    // R244 (FR-R244-10) — S · M · L applied live to the caption renderer; phone-local.
+    LaunchedEffect(s.subtitleSize) {
+        if (s.handset) s.player.setSubtitleScale(s.subtitleScale())
+    }
+
+    // Stop the playback session for the item we are leaving. Bug fix: this used to be keyed on Unit together with the player
+    // teardown below, so the effect block ran exactly once and its onDispose captured the `store` from the FIRST composition.
+    // After a binge (each episode replaceTops a new Dest.Player with its own store — see RaviloApp) pressing Back therefore
+    // stopped EPISODE 1's session, using episode 5's positionMs/durationMs — clobbering episode 1's resume position and even
+    // mark-playing it when episode 5 happened to be ≥90% — while episode 5's own session was never stopped at all. Keying on
+    // `store` makes this fire once per episode with that episode's own playhead, which is also what makes the resume point
+    // (and Continue Watching) correct.
+    //
+    // Phase 180/R218 bug fix: this called stopSession() directly, which reports the stop but leaves PlayerStore's own `scope`
+    // running — the coroutine backing startSession()'s up-to-5-attempt retry loop (~15s worst case) was never cancelled.
+    // close() already does the right thing: it calls stopSession() itself using the same positionProvider/durationProvider
+    // AND cancels `scope`, which is what actually closes the race.
+    val store = s.store
+    DisposableEffect(store) {
+        onDispose { store.close() }  // R142: ≥90% → mark played (inside stopSession, called by close())
+    }
+
+    // Release the player engine only when the screen itself goes away — the engine is remembered per screen and deliberately
+    // REUSED across episodes, so this must NOT be keyed on the store/itemId.
+    DisposableEffect(Unit) {
+        onDispose { s.player.release() }
+    }
+
+    // R372 — the key handler takes focus again when the TV's Speakers panel closes over it.
+    LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { TvSpeakers.open }.collect { if (!it) runCatching { s.playerFR.requestFocus() } } }
+}
+
+/** The picture itself: the video surface, its shutter, and the browser hints. */
+@Composable
+private fun BoxScope.PlayerVideoLayer(s: PlayerScreenState) = with(s) {
+    // ── Platform video surface (SurfaceView on Android, <video> element on WASM) ───
+    // Phase R220 (FR-R220-3 rung 4) — the Android actual's recovery ladder calls this only after re-attach/seek-flush/
+    // surface-recreate have all failed while the player is genuinely still playing. Re-arming mirrors
+    // PlayerLifecycleEffect's own onForeground path exactly (same re-negotiate-without-a-full-player-rebuild shape) rather
+    // than inventing a second one. FR-R220-5 — feeds rawBufferMoment so a rung running past R218's debounce shows STALL.
+    // R251 (FR-R251-4) — subtitles rise above the transport band while the TV chrome is up: R77's screen-relative 28 dp floor
+    // plus the band's measured height, on the chrome's own fade timing; back to the floor when hidden. Same visibility test as
+    // the chrome's AnimatedVisibility. The handset chrome (R244) is not lifted here — R244 owns the phone player.
+    val chromeUpForSubs = !handset && (chromeVisible || displayedBufferMoment == PlBufferMoment.STALL) &&
+        displayedBufferMoment != PlBufferMoment.COLD
+    val transportBandDp = with(LocalDensity.current) { transportBandPx.toDp() }
+    val subtitleInset by animateDpAsState(
+        targetValue = if (chromeUpForSubs) SUBTITLE_FLOOR_INSET + transportBandDp else SUBTITLE_FLOOR_INSET,
+        animationSpec = tween(if (chromeUpForSubs) RaviloMotion.CHROME_FADE_IN_MS else RaviloMotion.CHROME_FADE_OUT_MS),
+        label = "subtitleInset",
+    )
+    PlayerVideoSurface(
+        player,
+        Modifier.fillMaxSize(),
+        onVideoOutputStuck = { armSession(itemId) },
+        onVideoOutputRecovering = { videoOutputRecovering = it },
+        fill = fillMode,   // R244 (FR-R244-6)
+        subtitleBottomInset = subtitleInset,   // R251 (FR-R251-4)
+    )
+    // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
+    VideoShutter(startPhaseNow != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
+    BrowserSoundHint(player)   // R376 — a browser that played muted says how to get the sound
+    // R376 (owner, 2026-10-08) — Safari direct-plays; picking AirPlay restarts the item as HLS where it is.
+    AirPlayHlsRestart(itemId, streamIsHls = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay != true) {
+        bk.rearmResolveOnLoad = true
+        store.restreamForAirPlay(itemId, bk.burnedSubIndex ?: -1, player.positionMs, bk.ticketAudio.getOrNull(selectedAudio)?.index)
+    }
+}
+
+/** What the viewer is told about the stream: dim scrim, gestures, the start screen, spinners, errors, the pause flash. */
+@Composable
+private fun BoxScope.PlayerStatusLayer(s: PlayerScreenState) = with(s) {
+    val colors = RaviloTheme.colors
+    // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
+    val dimAlpha = when {
+        // R218 (FR-R218-3) — "Moment C dims further... because the chrome alone stops being enough of a signal" past the 60s
+        // deepen threshold; ~38% before that, per the chosen direction.
+        displayedBufferMoment == PlBufferMoment.STALL && bk.stallDeepened -> 0.55f
+        displayedBufferMoment == PlBufferMoment.STALL                 -> 0.38f
+        chromeVisible && !isPlaying -> 0.50f
+        chromeVisible               -> 0.34f
+        else                        -> 0f
+    }
+    if (dimAlpha > 0f) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAlpha)))
+    }
+
+    // R244 (FR-R244-4/5/6) — the handset gesture surface, under the chrome so controls take their own taps first. A double-tap
+    // seeks WITHOUT raising the chrome (it is not a request to see the controls); inert while locked, while a sheet is up, or
+    // before a session is ready.
+    if (handset) {
+        HandsetGestureLayer(
+            enabled = !locked && !pickerOpen && !epRailOpen && !nextUpVisible && sessionState is PlayerSessionState.Ready,
+            brightness = handsetControls?.brightness, setBrightness = handsetControls?.setBrightness,
+            volume = handsetControls?.volume, setVolume = handsetControls?.setVolume,
+            fill = fillMode,
+            onSingleTap = { if (chromeVisible) hideChrome() else wake() },
+            onDoubleTapSeek = { inc -> doubleTapSeek(inc) },
+            onFillChange = { fillMode = it },
         )
-        PlayerVideoSurface(
-            player,
-            Modifier.fillMaxSize(),
-            onVideoOutputStuck = { armSession(currentItemId) },
-            onVideoOutputRecovering = { videoOutputRecovering = it },
-            fill = fillMode,   // R244 (FR-R244-6)
-            subtitleBottomInset = subtitleInset,   // R251 (FR-R251-4)
+    }
+
+    // ── R218 moment B: cold start (ticket in hand, no first frame yet) ────
+    // Direction B "Grounded": pulse + title context (already-seen catalog data, no delivery information) + an indeterminate
+    // sweep so a long wait never looks frozen + the existing undebounced "Loading…" string — the SAME string moment A uses
+    // (FR-R218-4: one string, already translated, no drift between moments).
+    // R290 (FR-R290-1/2, open question 2) — ONE start screen from the press to the latch (negotiation, cold start, a restream,
+    // R237's retry) — and R218's own COLD moment for a restream after it. R237's "still trying" line is the one variation.
+    val startPhase = startPhaseNow
+    if (startPhase == StartPhase.START || (startPhase == StartPhase.PLAYING && displayedBufferMoment == PlBufferMoment.COLD)) {
+        PlayerStartScreen(
+            colors = colors, itemKicker = itemKicker, itemTitle = itemTitle,
+            retrying = startPhase == StartPhase.START && (sessionState as? PlayerSessionState.Loading)?.retrying == true,
         )
-        // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
-        VideoShutter(startPhase != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
-        BrowserSoundHint(player)   // R376 — a browser that played muted says how to get the sound
-        // R376 (owner, 2026-10-08) — Safari direct-plays; picking AirPlay restarts the item as HLS where it is.
-        AirPlayHlsRestart(currentItemId, streamIsHls = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay != true) {
-            bk.rearmResolveOnLoad = true
-            store.restreamForAirPlay(itemId, bk.burnedSubIndex ?: -1, player.positionMs, bk.ticketAudio.getOrNull(selectedAudio)?.index)
-        }
+    }
 
-        // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
-        val dimAlpha = when {
-            // R218 (FR-R218-3) — "Moment C dims further... because the chrome alone stops being enough
-            // of a signal" past the 60s deepen threshold; ~38% before that, per the chosen direction.
-            displayedBufferMoment == PlBufferMoment.STALL && bk.stallDeepened -> 0.55f
-            displayedBufferMoment == PlBufferMoment.STALL                 -> 0.38f
-            chromeVisible && !isPlaying -> 0.50f
-            chromeVisible               -> 0.34f
-            else                        -> 0f
-        }
-        if (dimAlpha > 0f) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAlpha)))
-        }
+    // R218 moment C (deepened, 60s+): the chrome-up spinner (PlayerChrome's play button, forced visible) stops being enough of
+    // a signal on its own — raise a second, centre spinner too.
+    if (displayedBufferMoment == PlBufferMoment.STALL && bk.stallDeepened) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { BufferingSpinner(colors) }
+    }
 
-        // R244 (FR-R244-4/5/6) — the handset gesture surface, under the chrome so controls take their
-        // own taps first. A double-tap seeks WITHOUT raising the chrome (it is not a request to see
-        // the controls); inert while locked, while a sheet is up, or before a session is ready.
-        if (handset) {
-            HandsetGestureLayer(
-                enabled = !locked && !pickerOpen && !epRailOpen && !nextUpVisible && sessionState is PlayerSessionState.Ready,
-                brightness = handsetControls?.brightness, setBrightness = handsetControls?.setBrightness,
-                volume = handsetControls?.volume, setVolume = handsetControls?.setVolume,
-                fill = fillMode,
-                onSingleTap = { if (chromeVisible) hideChrome() else wake() },
-                onDoubleTapSeek = { inc ->
-                    val newPos = (positionMs + inc).coerceIn(0L, durationMs.coerceAtLeast(0L))
-                    player.seekTo(newPos)
-                    positionMs = newPos
-                    tick()
-                },
-                onFillChange = { fillMode = it },
-            )
-        }
-
-        // ── R218 moment B: cold start (ticket in hand, no first frame yet) ────
-        // Direction B "Grounded": pulse + title context (already-seen catalog data, no delivery
-        // information) + an indeterminate sweep so a long wait never looks frozen + the existing
-        // undebounced "Loading…" string — the SAME string moment A uses (FR-R218-4: one string,
-        // already translated, no drift between moments).
-        // R290 (FR-R290-1/2, open question 2) — ONE start screen from the press to the latch (negotiation,
-        // cold start, a restream, R237's retry) — and R218's own COLD moment for a restream after it. Its
-        // own composable, outside this body (dex budget). R237's "still trying" line is the one variation.
-        if (startPhase == StartPhase.START || (startPhase == StartPhase.PLAYING && displayedBufferMoment == PlBufferMoment.COLD)) {
-            PlayerStartScreen(
-                colors = colors, itemKicker = itemKicker, itemTitle = itemTitle,
-                retrying = startPhase == StartPhase.START && (sessionState as? PlayerSessionState.Loading)?.retrying == true,
-            )
-        }
-
-        // R218 moment C (deepened, 60s+): the chrome-up spinner (PlayerChrome's play button, forced
-        // visible below) stops being enough of a signal on its own — raise a second, centre spinner too.
-        if (displayedBufferMoment == PlBufferMoment.STALL && bk.stallDeepened) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { BufferingSpinner(colors) }
-        }
-
-        // ── Loading overlay ───────────────────────────────────────────────────
-        val sessionLoading = sessionState as? PlayerSessionState.Loading
-        if (sessionLoading != null && startPhase == StartPhase.PLAYING) {   // R290 — during the start it is the start screen
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                // Incidental layout correction: these were direct children of the Box above, which
-                // centre-stacks its children — so the 48.dp Spacer did nothing and "Loading..." was
-                // drawn ON TOP of the spinner. A Column is what the spacing was always written for,
-                // and R237's second line below needs it to be legible rather than a third overlap.
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    BufferingSpinner(colors)
-                    Spacer(Modifier.height(48.dp))
-                    // R180 (FR-RV-ASP1-2) — a neutral loading string regardless of cause; naming the PGS
-                    // burn-in restream here would leak the delivery method, which the picker keeps invisible.
-                    Text(
-                        str("loading"),
-                        color = Color.White.copy(0.7f), fontSize = 18.sp,
-                    )
-                    // R237 (FR-R237-5) — additive, and the ONLY change to R218's states: once a first
-                    // attempt has already failed this is provably not a normal cold start, and R218's own
-                    // deepen-at-60s is far past the point a viewer gives up (measured: ~4s). No new visual
-                    // language, no progress count, no attempt number.
-                    if (sessionLoading.retrying) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(str("loading.still_trying"), color = Color.White.copy(0.45f), fontSize = 14.sp)
-                    }
+    // ── Loading overlay ───────────────────────────────────────────────────
+    val sessionLoading = sessionState as? PlayerSessionState.Loading
+    if (sessionLoading != null && startPhase == StartPhase.PLAYING) {   // R290 — during the start it is the start screen
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            // Incidental layout correction: these were direct children of the Box above, which centre-stacks its children — so
+            // the 48.dp Spacer did nothing and "Loading..." was drawn ON TOP of the spinner. A Column is what the spacing was
+            // always written for, and R237's second line below needs it to be legible rather than a third overlap.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                BufferingSpinner(colors)
+                Spacer(Modifier.height(48.dp))
+                // R180 (FR-RV-ASP1-2) — a neutral loading string regardless of cause; naming the PGS burn-in restream here
+                // would leak the delivery method, which the picker keeps invisible.
+                Text(
+                    str("loading"),
+                    color = Color.White.copy(0.7f), fontSize = 18.sp,
+                )
+                // R237 (FR-R237-5) — additive, and the ONLY change to R218's states: once a first attempt has already failed
+                // this is provably not a normal cold start, and R218's own deepen-at-60s is far past the point a viewer gives
+                // up (measured: ~4s). No new visual language, no progress count, no attempt number.
+                if (sessionLoading.retrying) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(str("loading.still_trying"), color = Color.White.copy(0.45f), fontSize = 14.sp)
                 }
             }
         }
+    }
 
-        // ── Error overlay ──────────────────────────────────────────────────────
-        // Bug fix: PlayerSessionState.Error was never checked anywhere in this screen — a failed
-        // startPlayback (all retries exhausted, see PlayerStore.startSession) used to leave the player
-        // sitting on the outgoing episode's frozen last frame forever, with no indication anything had
-        // gone wrong and no way to recover short of backing out entirely. Reported as "stuck" with
-        // "auto play next doesn't work".
-        val sessionError = sessionState as? PlayerSessionState.Error
-        if (sessionError != null) {
-            // R237 — extracted into its own composable rather than inlined here. PlayerScreen's body is
-            // already ~3.5k lines, and inlining this overlay pushed the Compose-generated method for it
-            // past what ART's verifier accepts in the R8-minified release build:
-            //   java.lang.VerifyError: Verifier rejected class …PlayerScreen…
-            //   register vN has type Precise Reference: java.lang.String but expected Integer
-            // The player then died the instant it was opened — release build only, so every compile
-            // check and unit test passed. Caught by opening an episode on the stue TV, 2026-09-06.
-            // Keep new player chrome in its own composable; do not inline it back into this function.
-            PlayerSessionErrorOverlay(
-                error = sessionError,
-                colors = colors,
-                handset = handset,
-                onReauthRequired = onReauthRequired,
-                onRetry = { store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying }) },
-                onBack = onBack,
-            )
-        }
+    // ── Error overlay ──────────────────────────────────────────────────────
+    // Bug fix: PlayerSessionState.Error was never checked anywhere in this screen — a failed startPlayback (all retries
+    // exhausted, see PlayerStore.startSession) used to leave the player sitting on the outgoing episode's frozen last frame
+    // forever, with no indication anything had gone wrong and no way to recover short of backing out entirely.
+    val sessionError = sessionState as? PlayerSessionState.Error
+    if (sessionError != null) {
+        // R237 — its own composable. Inlined into the screen body, this overlay once pushed the Compose-generated method past
+        // what ART's verifier accepts in the R8-minified release build (java.lang.VerifyError: Verifier rejected class …
+        // PlayerScreen…; the player died the instant it was opened — release build only, stue TV, 2026-09-06).
+        PlayerSessionErrorOverlay(
+            error = sessionError,
+            colors = colors,
+            handset = handset,
+            onReauthRequired = LocalReauthRequired.current,
+            onRetry = { store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying }) },
+            onBack = inputs.onBack,
+        )
+    }
 
-        // ── Buffering spinner (while playing but stalled) ────────────────────
-        // (In a real integration the engine signals buffering; we skip this for now)
-
-        // ── Center pause flash ────────────────────────────────────────────────
-        // R90: scale-bounce matches the CSS plflash spec — pop in from 0.9→1.0, expand out to 1.4.
-        AnimatedVisibility(
-            bk.pauseFlash,
-            enter = scaleIn(initialScale = RaviloMotion.PAUSE_FLASH_FROM_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_IN_MS)) +
-                    fadeIn(tween(RaviloMotion.PAUSE_FLASH_IN_MS)),
-            exit  = scaleOut(targetScale = RaviloMotion.PAUSE_FLASH_TO_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_OUT_MS)) +
-                    fadeOut(tween(RaviloMotion.PAUSE_FLASH_OUT_MS)),
-        ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(0.42f))
-                        .border(2.dp, Color.White.copy(0.5f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(modifier = Modifier.size(28.dp)) {
-                        if (bk.pauseFlashIsPlay) {
-                            val path = Path().apply {
-                                moveTo(size.width * 0.15f, 0f)
-                                lineTo(size.width, size.height / 2)
-                                lineTo(size.width * 0.15f, size.height)
-                                close()
-                            }
-                            drawPath(path, Color.White)
-                        } else {
-                            val bw = size.width * 0.28f
-                            val bh = size.height
-                            val gap = size.width * 0.15f
-                            val cx = size.width / 2
-                            val cy = size.height / 2
-                            drawRect(Color.White, topLeft = Offset(cx - gap / 2 - bw, cy - bh / 2), size = Size(bw, bh))
-                            drawRect(Color.White, topLeft = Offset(cx + gap / 2, cy - bh / 2), size = Size(bw, bh))
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Player chrome (auto-hiding transport + metadata) ──────────────────
-        // R90: 300ms fade-in / 200ms fade-out matches the CSS spec (was enter=200/exit=300, reversed).
-        // R218 (FR-R218-1, moment C, Open question #2) — "the chrome comes up on its own" during a
-        // stall; forced visible here WITHOUT touching chromeVisible/chromeRevision themselves, so R208's
-        // 30s auto-hide timer is never armed or reset by it, and it retracts the instant the stall clears
-        // (displayedBufferMoment leaves STALL) rather than needing its own separate hide timer. A chrome
-        // the viewer had already raised manually is unaffected either way — this only ever ADDS
-        // visibility, never removes it.
-        //
-        // R218 moment B, bug fix found live on-device (2026-08-29): chromeVisible defaults to true, so
-        // without the extra condition below the cold-start overlay (drawn earlier/underneath in this
-        // same Box) showed simultaneously WITH the normal transport chrome layered on top of it — top
-        // bar and bottom transport visible around the pulse/title/sweep, contradicting "full-screen on
-        // black" (moment C's chrome-forcing is the opposite intent: RAISE chrome over a stall so the
-        // viewer keeps their position; moment B has no position to keep yet, so it suppresses chrome
-        // instead). Moment A (unrelated, out of scope, unchanged) has the same underlying layering but
-        // was not reported as a problem and its own overlay is small/centered, not full-black.
-        val stallActive = displayedBufferMoment == PlBufferMoment.STALL
-        val coldActive = displayedBufferMoment == PlBufferMoment.COLD
-        AnimatedVisibility(
-            visible = startPhase == StartPhase.PLAYING && (chromeVisible || stallActive) && !coldActive && !(handset && locked),   // R290 (FR-R290-1)
-            enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
-            exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
-        ) {
-            // R244 (FR-R244-1) — the handset gets its own chrome (its own composable, its own file);
-            // the TV layout below is untouched.
-            if (handset) HandsetPlayerChrome(
-                colors = colors, itemTitle = itemTitle, itemKicker = itemKicker,
-                logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,  // R303
-                positionMs = positionMs, durationMs = durationMs, bufferedMs = bufferedMs,
-                scrubbing = scrubbing, scrubPos = scrubPos, isPlaying = isPlaying,
-                railItems = handsetRailFor(hasNextEp = resolvedNextEpisodeId != null, hasSeason = episodes != null),
-                stallActive = stallActive, seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
-                showRotate = handsetControls?.systemRotationLocked == true, landscapeForced = landscapeForced,
-                onBack = onBack,
-                onRotate = { landscapeForced = !landscapeForced; handsetControls?.setLandscape(landscapeForced); wake() },
-                onTitleTap = if (episodes != null) ({ epRailOpen = true; chromeVisible = true }) else null,
-                // 2026-10-05 — with no play context a tap on a Ravilo app (a TV, the Mac) in the player's sheet did
-                // nothing at all; the film and where it is now go along (a Chromecast keeps its own hand-off).
-                castSlot = if (castController != null) ({ CastButton(playContext = dev.jellystructure.ravilo.ui.components.ScreenPlayContext(currentItemId, positionMs)) }) else null,
-                onPictureInPicture = if (player.pictureInPictureAvailable()) ({ wake(); player.togglePictureInPicture() }) else null,   // R376 (FR-R376-8)
-                onFullscreen = { wake(); togglePlayerFullscreen() },   // R376 (FR-R376-4b) — the chrome shows it only where PlayerFullscreen.available (R258's register limit: no reads here)
-                onSkipBack = { skip(-SKIP_BACK_MS) },
-                onPlayPause = { togglePlay() },
-                onSkipFwd = { skip(SKIP_FWD_MS) },
-                onRail = { item ->
-                    wake()
-                    when (item) {
-                        HandsetRailItem.SUBTITLES -> { pickerOpen = true; pickerTapTab(1) }
-                        HandsetRailItem.NEXT -> advanceNext()
-                        HandsetRailItem.EPISODES -> { epRailOpen = true; chromeVisible = true }
-                        HandsetRailItem.LOCK -> { locked = true; tick(); hideChrome() }
-                        HandsetRailItem.GUIDE -> {}
-                    }
-                },
-                onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
-                onSeekDrag = { ms -> scrubPos = ms },
-                onSeekEnd = { commitScrub() },
-            ) else PlayerChrome(
-                colors          = colors,
-                itemTitle       = itemTitle,
-                itemKicker      = itemKicker,
-                logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,  // R303
-                positionMs      = positionMs,
-                durationMs      = durationMs,
-                bufferedMs      = bufferedMs,
-                scrubbing       = scrubbing,
-                scrubPos        = scrubPos,
-                isPlaying       = isPlaying,
-                focus           = focus,
-                hasNextEp       = resolvedNextEpisodeId != null,
-                hasSpeakers     = TvSpeakers.available,
-                hasPip          = player.pictureInPictureAvailable(),   // R376 (FR-R376-8) — absent where unsupported   // R372 — snapshot state, no new locals here (R258's register limit)
-                isSeries        = episodes != null,
-                epRailOpen      = epRailOpen,
-                pickerOpen      = pickerOpen,
-                nextUpVisible   = nextUpVisible,
-                stallActive      = stallActive,
-                seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
-                onTransportBandHeight = { transportBandPx = it },  // R251 (FR-R251-4)
-                // R157 — PlayerChrome is a stateless presentational composable; it reports which
-                // logical control was clicked/hovered and this dispatcher (which has wake/skip/
-                // togglePlay/etc in scope) does the actual work, mirroring the root's onSelect dispatch.
-                onControlClick = { clicked ->
-                    wake()
-                    when (clicked) {
-                        PlFocus.BACK      -> onBack()
-                        PlFocus.SKIP_BACK -> skip(-SKIP_BACK_MS)
-                        PlFocus.PLAY      -> togglePlay()
-                        PlFocus.SKIP_FWD  -> skip(SKIP_FWD_MS)
-                        PlFocus.TRACKS    -> {
-                            pickerOpen = true
-                            pickerLevel = 0
-                            val currentFlat = if (pickerTab == 0) shownAudio(selectedAudio, audioTracks) else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
-                            pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
-                        }
-                        PlFocus.NEXT_EP   -> advanceNext()
-                        PlFocus.SPEAKERS  -> TvSpeakers.open = true
-                        PlFocus.PIP       -> player.togglePictureInPicture()   // R376 (FR-R376-8)
-                        PlFocus.FULLSCREEN -> togglePlayerFullscreen()   // R376 (FR-R376-4b)
-                        else -> {}
-                    }
-                },
-                onControlHover = { hovered -> focus = hovered },
-                onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
-                onSeekDrag = { ms -> scrubPos = ms },
-                onSeekEnd = { commitScrub() },
-            )
-        }
-
-        // ── Skip Intro pill (R182, FR-RV-SKIP1-1) ─────────────────────────────
-        // Bottom-end, but padded up well above the transport row (design: right:64px/bottom:210px) so it
-        // never overlaps the seek bar/controls — those two never show at once in practice anyway (intro
-        // is at the episode's start, the transport padding here is what matters).
-        AnimatedVisibility(
-            visible = skipIntroPillVisible,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-            // R244 (FR-R244-2/12) — on a handset the pill sits bottom-START, above the seek bar and
-            // left of the rail, so the two can never overlap at any frame size; ≥ 46 dp tall.
-            modifier = if (handset) Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (portrait) 150.dp else 96.dp)
-                       else Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 160.dp),
-        ) {
-            SkipIntroPill(
-                colors = colors,
-                countdown = bk.skipIntroCountdownSecs,
-                totalSecs = bk.skipSecs,
-                focused = focus == PlFocus.SKIP_INTRO,
-                onTap = if (handset) ({ skipIntro() }) else null,
-                showRing = skipIntroShowsRing(bk.skipIntroMode),   // R363 (FR-R363-5)
-            )
-        }
-
-        // ── Track picker popup (Audio / Subtitles) ────────────────────────────
-        // R195 bug fix: on touch (phone/web), there was no way to dismiss the picker without making
-        // a selection — no D-pad Back reaches this screen's key handler on a phone (no hardware D-pad),
-        // and nothing else called pickerBack(). A full-screen scrim behind the picker gives touch users
-        // the same "tap away to back out" a modal is expected to have; tapping it runs the exact same
-        // pickerBack() Back already uses (steps out of level 2 first, closes from level 1), so touch and
-        // D-pad still can't diverge in behaviour. No ripple — a screen-spanning tap target shouldn't show one.
-        // R244 (FR-R244-10) — on a handset the SAME picker renders inside a bottom sheet, gaining only
-        // the Subtitle size row (one component, two destinations — R245's remote opens this too).
-        if (handset) HandsetSheet(visible = pickerOpen, onDismiss = { pickerBack() }) {
-            TrackPicker(
-                colors           = colors,
-                pickerTab        = pickerTab,
-                pickerLevel      = pickerLevel,
-                audioGroups      = audioGroups,
-                subGroups        = subGroupsWithOff,
-                pickerIdx        = pickerIdx,
-                pickerVersionIdx = pickerVersionIdx,
-                selectedAudio    = shownAudio(selectedAudio, audioTracks),
-                pictureVersions  = bk.videoVersions,
-                selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
-                onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
-                onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
-                onTapBack     = { pickerBack() },
-                onTapTab      = { tab -> pickerTapTab(tab) },
-                handset = true,
-                extraRow = if (pickerTab == 1 && pickerLevel == 0) ({
-                    SubtitleSizeRow(colors, subtitleSize, str("pl.sub_size_note")) { subtitleSize = it; wake() }
-                }) else null,
-            )
-        }
-        if (!handset) AnimatedVisibility(visible = pickerOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+    // ── Center pause flash ────────────────────────────────────────────────
+    // R90: scale-bounce matches the CSS plflash spec — pop in from 0.9→1.0, expand out to 1.4.
+    AnimatedVisibility(
+        bk.pauseFlash,
+        enter = scaleIn(initialScale = RaviloMotion.PAUSE_FLASH_FROM_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_IN_MS)) +
+                fadeIn(tween(RaviloMotion.PAUSE_FLASH_IN_MS)),
+        exit  = scaleOut(targetScale = RaviloMotion.PAUSE_FLASH_TO_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_OUT_MS)) +
+                fadeOut(tween(RaviloMotion.PAUSE_FLASH_OUT_MS)),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { pickerBack() },
-                    ),
-            )
-        }
-        if (!handset) AnimatedVisibility(
-            visible = pickerOpen,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-            modifier = Modifier.align(Alignment.BottomEnd),
-        ) {
-            TrackPicker(
-                colors           = colors,
-                pickerTab        = pickerTab,
-                pickerLevel      = pickerLevel,
-                audioGroups      = audioGroups,
-                subGroups        = subGroupsWithOff,
-                pickerIdx        = pickerIdx,
-                pickerVersionIdx = pickerVersionIdx,
-                selectedAudio    = shownAudio(selectedAudio, audioTracks),
-                pictureVersions  = bk.videoVersions,
-                selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
-                // R195 — touch parity with the D-pad: a tap just moves the target index then runs the
-                // EXACT SAME pickerSelect()/pickerBack() logic Select/Back already use, so touch (phone)
-                // and D-pad (TV) can never diverge in behaviour.
-                onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
-                onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
-                onTapBack     = { pickerBack() },
-                onTapTab      = { tab -> pickerTapTab(tab) },
-            )
-        }
-
-        // ── Next-up card ──────────────────────────────────────────────────────
-        // R90: slide-up from below + fade matches the CSS translateY(112%)→0 spec (was fade-only).
-        AnimatedVisibility(
-            visible = nextUpVisible,
-            enter = slideInVertically { it } + fadeIn(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
-            exit  = slideOutVertically { it } + fadeOut(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
-            // R244 (FR-R244-12) — a corner card in landscape, a full-width strip in portrait.
-            modifier = if (handset) Modifier.align(if (portrait) Alignment.BottomCenter else Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing)
-                       else Modifier.align(Alignment.BottomEnd),
-        ) {
-            NextUpCard(
-                colors         = colors,
-                mode           = creditsCardMode,
-                itemKicker     = itemKicker,
-                isSeries       = episodes != null,
-                nextEpLabel    = nextEpisodeLabel,
-                nextEpTitle    = nextEpisodeTitle,
-                // Bug fix: the card's thumbnail was always an empty placeholder box — `episodes` (the
-                // same grouped list `currentEpIndex` indexes into) already carries each entry's still(s),
-                // so the next episode's is one lookup away rather than needing new plumbing end-to-end.
-                nextEpStillUrls = episodes?.getOrNull(currentEpIndex + 1)?.stillUrls ?: emptyList(),
-                countdown      = countdown,
-                totalSecs      = bk.skipSecs,
-                nuFocus        = nuFocus,
-                handsetFull    = handset && portrait,
-                onPrimaryTap   = if (handset) ({
-                    when (creditsCardMode) {
-                        CreditsCardMode.STINGER -> skipToScene()
-                        CreditsCardMode.NEXT_EPISODE -> advanceNext()
-                        CreditsCardMode.SKIP_CREDITS -> skipCredits()
-                    }
-                }) else null,
-                onStayTap      = if (handset) ({ stayThrough() }) else null,
-            )
-        }
-
-        // ── Episode rail (series only) ────────────────────────────────────────
-        val epList = episodes
-        // R244 (FR-R244-11) — the TV's horizontal rail is a vertical season sheet on a handset.
-        if (epList != null && handset) {
-            HandsetSheet(visible = epRailOpen, onDismiss = { epRailOpen = false; wake() }) {
-                SeasonSheet(colors, epList, currentEpIndex, onPick = { idx -> focusedEpIdx = idx; chooseEpisode() })
-            }
-        }
-        if (epList != null && !handset) {
-            AnimatedVisibility(
-                visible = epRailOpen,
-                enter = slideInVertically { it } + fadeIn(tween(300)),
-                exit = slideOutVertically { it } + fadeOut(tween(250)),
-                modifier = Modifier.align(Alignment.BottomCenter),
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.42f))
+                    .border(2.dp, Color.White.copy(0.5f), CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
-                EpisodeRail(
-                    colors          = colors,
-                    episodes        = epList,
-                    currentEpIndex  = currentEpIndex,
-                    focusedEpIdx    = focusedEpIdx,
-                )
+                Canvas(modifier = Modifier.size(28.dp)) {
+                    if (bk.pauseFlashIsPlay) {
+                        val path = Path().apply {
+                            moveTo(size.width * 0.15f, 0f)
+                            lineTo(size.width, size.height / 2)
+                            lineTo(size.width * 0.15f, size.height)
+                            close()
+                        }
+                        drawPath(path, Color.White)
+                    } else {
+                        val bw = size.width * 0.28f
+                        val bh = size.height
+                        val gap = size.width * 0.15f
+                        val cx = size.width / 2
+                        val cy = size.height / 2
+                        drawRect(Color.White, topLeft = Offset(cx - gap / 2 - bw, cy - bh / 2), size = Size(bw, bh))
+                        drawRect(Color.White, topLeft = Offset(cx + gap / 2, cy - bh / 2), size = Size(bw, bh))
+                    }
+                }
             }
         }
-
-        // R244 (FR-R244-8) — locked: everything but a lock glyph; tap hints, long-press unlocks; the
-        // system back still leaves (locking already calls hideChrome(), so playerBack's chrome-visible
-        // branch is false and it falls through to onBack() — R260's dev review).
-        if (handset && locked) {
-            HandsetLockOverlay(onUnlock = { locked = false; tick(); wake() })
-        }
-
-        // R295 (FR-R295-5) — last, so it covers everything: a phone shows plain black until the window
-        // has rotated into the player's orientation (or 700 ms pass), never a portrait frame first.
-        VideoShutter(!rememberWindowShapeSettled(handset))
     }
+}
+
+/** The transport chrome (TV or handset) and the Skip Intro pill. */
+@Composable
+private fun BoxScope.PlayerChromeLayer(s: PlayerScreenState) = with(s) {
+    val colors = RaviloTheme.colors
+    val portrait = LocalPortrait.current
+    // ── Player chrome (auto-hiding transport + metadata) ──────────────────
+    // R90: 300ms fade-in / 200ms fade-out matches the CSS spec (was enter=200/exit=300, reversed).
+    // R218 (FR-R218-1, moment C, Open question #2) — "the chrome comes up on its own" during a stall; forced visible here
+    // WITHOUT touching chromeVisible/chromeRevision themselves, so R208's 30s auto-hide timer is never armed or reset by it,
+    // and it retracts the instant the stall clears (displayedBufferMoment leaves STALL) rather than needing its own separate
+    // hide timer. A chrome the viewer had already raised manually is unaffected either way — this only ever ADDS visibility,
+    // never removes it.
+    //
+    // R218 moment B, bug fix found live on-device (2026-08-29): chromeVisible defaults to true, so without the extra
+    // condition below the cold-start overlay (drawn earlier/underneath in this same Box) showed simultaneously WITH the normal
+    // transport chrome layered on top of it — top bar and bottom transport visible around the pulse/title/sweep, contradicting
+    // "full-screen on black" (moment C's chrome-forcing is the opposite intent: RAISE chrome over a stall so the viewer keeps
+    // their position; moment B has no position to keep yet, so it suppresses chrome instead).
+    AnimatedVisibility(
+        visible = startPhaseNow == StartPhase.PLAYING && (chromeVisible || stallActive) && !coldActive && !(handset && locked),   // R290 (FR-R290-1)
+        enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
+        exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
+    ) {
+        // R244 (FR-R244-1) — the handset gets its own chrome (its own composable, its own file); the TV layout is untouched.
+        if (handset) PlayerHandsetChromeHost(s) else PlayerTvChromeHost(s)
+    }
+
+    // ── Skip Intro pill (R182, FR-RV-SKIP1-1) ─────────────────────────────
+    // Bottom-end, but padded up well above the transport row (design: right:64px/bottom:210px) so it never overlaps the seek
+    // bar/controls — those two never show at once in practice anyway (intro is at the episode's start, the transport padding
+    // here is what matters).
+    AnimatedVisibility(
+        visible = skipIntroPillVisible,
+        enter = fadeIn(tween(200)),
+        exit = fadeOut(tween(200)),
+        // R244 (FR-R244-2/12) — on a handset the pill sits bottom-START, above the seek bar and left of the rail, so the two
+        // can never overlap at any frame size; ≥ 46 dp tall.
+        modifier = if (handset) Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (portrait) 150.dp else 96.dp)
+                   else Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 160.dp),
+    ) {
+        SkipIntroPill(
+            colors = colors,
+            countdown = bk.skipIntroCountdownSecs,
+            totalSecs = bk.skipSecs,
+            focused = focus == PlFocus.SKIP_INTRO,
+            onTap = if (handset) ({ skipIntro() }) else null,
+            showRing = skipIntroShowsRing(bk.skipIntroMode),   // R363 (FR-R363-5)
+        )
+    }
+}
+
+@Composable
+private fun PlayerHandsetChromeHost(s: PlayerScreenState) = with(s) {
+    val castController = LocalCast.current
+    HandsetPlayerChrome(
+        colors = RaviloTheme.colors, itemTitle = itemTitle, itemKicker = itemKicker,
+        logoUrl = inputs.logoUrl, logoInk = inputs.logoInk, seriesName = inputs.seriesName,  // R303
+        positionMs = positionMs, durationMs = durationMs, bufferedMs = bufferedMs,
+        scrubbing = scrubbing, scrubPos = scrubPos, isPlaying = isPlaying,
+        railItems = handsetRailFor(hasNextEp = resolvedNextEpisodeId != null, hasSeason = episodes != null),
+        stallActive = stallActive, seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
+        showRotate = handsetControls?.systemRotationLocked == true, landscapeForced = landscapeForced,
+        onBack = inputs.onBack,
+        onRotate = { landscapeForced = !landscapeForced; handsetControls?.setLandscape(landscapeForced); wake() },
+        onTitleTap = if (episodes != null) ({ epRailOpen = true; chromeVisible = true }) else null,
+        // 2026-10-05 — with no play context a tap on a Ravilo app (a TV, the Mac) in the player's sheet did nothing at all;
+        // the film and where it is now go along (a Chromecast keeps its own hand-off).
+        castSlot = if (castController != null) ({ CastButton(playContext = dev.jellystructure.ravilo.ui.components.ScreenPlayContext(itemId, positionMs)) }) else null,
+        onPictureInPicture = if (player.pictureInPictureAvailable()) ({ wake(); player.togglePictureInPicture() }) else null,   // R376 (FR-R376-8)
+        onFullscreen = { wake(); togglePlayerFullscreen() },   // R376 (FR-R376-4b) — the chrome shows it only where PlayerFullscreen.available
+        onSkipBack = { skip(-SKIP_BACK_MS) },
+        onPlayPause = { togglePlay() },
+        onSkipFwd = { skip(SKIP_FWD_MS) },
+        onRail = { item -> handsetRail(item) },
+        onSeekStart = { ms -> beginScrubAt(ms) },
+        onSeekDrag = { ms -> scrubPos = ms },
+        onSeekEnd = { commitScrub() },
+    )
+}
+
+@Composable
+private fun PlayerTvChromeHost(s: PlayerScreenState) = with(s) {
+    PlayerChrome(
+        colors          = RaviloTheme.colors,
+        itemTitle       = itemTitle,
+        itemKicker      = itemKicker,
+        logoUrl = inputs.logoUrl, logoInk = inputs.logoInk, seriesName = inputs.seriesName,  // R303
+        positionMs      = positionMs,
+        durationMs      = durationMs,
+        bufferedMs      = bufferedMs,
+        scrubbing       = scrubbing,
+        scrubPos        = scrubPos,
+        isPlaying       = isPlaying,
+        focus           = focus,
+        hasNextEp       = resolvedNextEpisodeId != null,
+        hasSpeakers     = TvSpeakers.available,
+        hasPip          = player.pictureInPictureAvailable(),   // R376 (FR-R376-8) — absent where unsupported
+        isSeries        = episodes != null,
+        epRailOpen      = epRailOpen,
+        pickerOpen      = pickerOpen,
+        nextUpVisible   = nextUpVisible,
+        stallActive      = stallActive,
+        seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
+        onTransportBandHeight = { transportBandPx = it },  // R251 (FR-R251-4)
+        // R157 — PlayerChrome is a stateless presentational composable; it reports which logical control was clicked/hovered
+        // and the state holder does the actual work, mirroring the root's onSelect dispatch.
+        onControlClick = { clicked -> controlClicked(clicked) },
+        onControlHover = { hovered -> focus = hovered },
+        onSeekStart = { ms -> beginScrubAt(ms) },
+        onSeekDrag = { ms -> scrubPos = ms },
+        onSeekEnd = { commitScrub() },
+    )
+}
+
+/** The Audio / Subtitles / Picture picker: a bottom sheet on a handset, a popup on a TV. */
+@Composable
+private fun BoxScope.PlayerPickerLayer(s: PlayerScreenState) = with(s) {
+    val colors = RaviloTheme.colors
+    // ── Track picker popup (Audio / Subtitles) ────────────────────────────
+    // R195 bug fix: on touch (phone/web), there was no way to dismiss the picker without making a selection — no D-pad Back
+    // reaches this screen's key handler on a phone (no hardware D-pad), and nothing else called pickerBack(). A full-screen
+    // scrim behind the picker gives touch users the same "tap away to back out" a modal is expected to have; tapping it runs
+    // the exact same pickerBack() Back already uses (steps out of level 2 first, closes from level 1), so touch and D-pad
+    // still can't diverge in behaviour. No ripple — a screen-spanning tap target shouldn't show one.
+    // R244 (FR-R244-10) — on a handset the SAME picker renders inside a bottom sheet, gaining only the Subtitle size row (one
+    // component, two destinations — R245's remote opens this too).
+    if (handset) HandsetSheet(visible = pickerOpen, onDismiss = { pickerBack() }) {
+        TrackPicker(
+            colors           = colors,
+            pickerTab        = pickerTab,
+            pickerLevel      = pickerLevel,
+            audioGroups      = audioGroups,
+            subGroups        = subGroupsWithOff,
+            pickerIdx        = pickerIdx,
+            pickerVersionIdx = pickerVersionIdx,
+            selectedAudio    = shownAudioNow,
+            pictureVersions  = bk.videoVersions,
+            selectedSub      = shownSubNow,
+            onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
+            onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
+            onTapBack     = { pickerBack() },
+            onTapTab      = { tab -> pickerTapTab(tab) },
+            handset = true,
+            extraRow = if (pickerTab == 1 && pickerLevel == 0) ({
+                SubtitleSizeRow(colors, subtitleSize, str("pl.sub_size_note")) { subtitleSize = it; wake() }
+            }) else null,
+        )
+    }
+    if (!handset) AnimatedVisibility(visible = pickerOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { pickerBack() },
+                ),
+        )
+    }
+    if (!handset) AnimatedVisibility(
+        visible = pickerOpen,
+        enter = fadeIn(tween(200)),
+        exit = fadeOut(tween(200)),
+        modifier = Modifier.align(Alignment.BottomEnd),
+    ) {
+        TrackPicker(
+            colors           = colors,
+            pickerTab        = pickerTab,
+            pickerLevel      = pickerLevel,
+            audioGroups      = audioGroups,
+            subGroups        = subGroupsWithOff,
+            pickerIdx        = pickerIdx,
+            pickerVersionIdx = pickerVersionIdx,
+            selectedAudio    = shownAudioNow,
+            pictureVersions  = bk.videoVersions,
+            selectedSub      = shownSubNow,
+            // R195 — touch parity with the D-pad: a tap just moves the target index then runs the EXACT SAME
+            // pickerSelect()/pickerBack() logic Select/Back already use, so touch (phone) and D-pad (TV) can never diverge in
+            // behaviour.
+            onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
+            onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
+            onTapBack     = { pickerBack() },
+            onTapTab      = { tab -> pickerTapTab(tab) },
+        )
+    }
+}
+
+/** The credits card, the episode rail, the handset's lock, and the shutter over everything. */
+@Composable
+private fun BoxScope.PlayerCardLayer(s: PlayerScreenState) = with(s) {
+    val colors = RaviloTheme.colors
+    val portrait = LocalPortrait.current
+    // ── Next-up card ──────────────────────────────────────────────────────
+    // R90: slide-up from below + fade matches the CSS translateY(112%)→0 spec (was fade-only).
+    AnimatedVisibility(
+        visible = nextUpVisible,
+        enter = slideInVertically { it } + fadeIn(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
+        exit  = slideOutVertically { it } + fadeOut(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
+        // R244 (FR-R244-12) — a corner card in landscape, a full-width strip in portrait.
+        modifier = if (handset) Modifier.align(if (portrait) Alignment.BottomCenter else Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing)
+                   else Modifier.align(Alignment.BottomEnd),
+    ) {
+        NextUpCard(
+            colors         = colors,
+            mode           = creditsCardMode,
+            itemKicker     = itemKicker,
+            isSeries       = episodes != null,
+            nextEpLabel    = inputs.nextEpisodeLabel,
+            nextEpTitle    = inputs.nextEpisodeTitle,
+            // Bug fix: the card's thumbnail was always an empty placeholder box — `episodes` (the same grouped list
+            // `currentEpIndex` indexes into) already carries each entry's still(s), so the next episode's is one lookup away
+            // rather than needing new plumbing end-to-end.
+            nextEpStillUrls = episodes?.getOrNull(currentEpIndex + 1)?.stillUrls ?: emptyList(),
+            countdown      = countdown,
+            totalSecs      = bk.skipSecs,
+            nuFocus        = nuFocus,
+            handsetFull    = handset && portrait,
+            onPrimaryTap   = if (handset) ({ creditsPrimary() }) else null,
+            onStayTap      = if (handset) ({ stayThrough() }) else null,
+        )
+    }
+
+    // ── Episode rail (series only) ────────────────────────────────────────
+    val epList = episodes
+    // R244 (FR-R244-11) — the TV's horizontal rail is a vertical season sheet on a handset.
+    if (epList != null && handset) {
+        HandsetSheet(visible = epRailOpen, onDismiss = { epRailOpen = false; wake() }) {
+            SeasonSheet(colors, epList, currentEpIndex, onPick = { idx -> focusedEpIdx = idx; chooseEpisode() })
+        }
+    }
+    if (epList != null && !handset) {
+        AnimatedVisibility(
+            visible = epRailOpen,
+            enter = slideInVertically { it } + fadeIn(tween(300)),
+            exit = slideOutVertically { it } + fadeOut(tween(250)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            EpisodeRail(
+                colors          = colors,
+                episodes        = epList,
+                currentEpIndex  = currentEpIndex,
+                focusedEpIdx    = focusedEpIdx,
+            )
+        }
+    }
+
+    // R244 (FR-R244-8) — locked: everything but a lock glyph; tap hints, long-press unlocks; the system back still leaves
+    // (locking already calls hideChrome(), so playerBack's chrome-visible branch is false and it falls through to onBack() —
+    // R260's dev review).
+    if (handset && locked) {
+        HandsetLockOverlay(onUnlock = { locked = false; tick(); wake() })
+    }
+
+    // R295 (FR-R295-5) — last, so it covers everything: a phone shows plain black until the window has rotated into the
+    // player's orientation (or 700 ms pass), never a portrait frame first.
+    VideoShutter(!rememberWindowShapeSettled(handset))
 }
 
 /**
