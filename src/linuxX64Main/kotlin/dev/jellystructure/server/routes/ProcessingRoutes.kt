@@ -43,6 +43,7 @@ fun Route.processingRoutes(configStore: ConfigStore, runs: ProcessingRuns?, medi
                     deferred = status.deferred,
                     musicLibraries = MusicScanner.musicLibraries(cfg).isNotEmpty(),
                     audiobookLibraries = AudiobooksScanner.audiobookLibraries(cfg).isNotEmpty(),
+                    playingDevices = dev.jellystructure.tv.activePlaybackDeviceNames(),
                 ),
             ),
         )

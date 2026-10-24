@@ -110,8 +110,21 @@ class ProcessingStateTest {
         assertEquals("Every 6 hours", ProcessingSchedule.describeFind("0 */6 * * *"))
         assertEquals("Daily at 03:00", ProcessingSchedule.describeFind("0 3 * * *"))
         assertEquals("Weekly on Sunday at 04:00", ProcessingSchedule.describeFind("0 4 * * 0"))
+        assertEquals("Weekly on Wednesday at 04:30", ProcessingSchedule.describeFind("30 4 * * 3"))
         assertEquals("Custom · 15 2 1 * *", ProcessingSchedule.describeFind("15 2 1 * *"))
         assertTrue(ProcessingSchedule.describeFind("").startsWith("Not on a schedule"))
+    }
+
+    @Test
+    fun `the view names the playing devices only while the household switch holds`() {
+        val playing = ProcessingInputs(now, playingDevices = listOf("Living room"))
+        val held = ProcessingViews.build(cfg(), playing)
+        assertEquals("Living room is playing, so the heavy work is paused. It picks up by itself when playback stops.", held.holdingText)
+        val two = ProcessingViews.holdingLine(listOf("Living room", "Guest room"))
+        assertTrue(two.startsWith("Living room and Guest room are playing"), two)
+        val off = cfg().let { it.copy(scan = it.scan.copy(deferWhilePlaying = false)) }
+        assertNull(ProcessingViews.build(off, playing).holdingText, "a switch that is off holds nothing")
+        assertNull(ProcessingViews.build(cfg(), ProcessingInputs(now)).holdingText, "nobody playing holds nothing")
     }
 
     // ── GET /api/processing ─────────────────────────────────────────────────────────────────────────────────────────

@@ -393,6 +393,29 @@ is FR-5) and 303 (the Checks card lists features).
 - **`GET /api/processing`** answers every feature with `enabled`, `locked`, `canRun`, `state`, `reason`, `interval`, `lastRan`, `next`, `waiting`, their
   epoch-second twins, and its parts with `on`, `canRun` and `reason`; every sentence is built on the server.
 
+## Amendment 2026-10-24 — what slice 2 fixed where this file was silent (DEB-2195)
+
+- **Who is playing.** FR-4.2 needs the name of the playing device, and `GET /api/processing` carried only a boolean. It now also carries
+  `holdingText` — one sentence built on the server (FR-12.1), present only while *Wait while someone is watching* is on and a device is
+  playing. This is an added field; nothing was removed or retyped.
+- **Find new & changed's picker.** Four modes: *Every N hours* (hours and the minute past the hour, so a saved `30 */1 * * *` keeps its
+  :30), *Daily at*, *Weekly on* (any weekday; the server now names every weekday, not only Sunday) and *Custom* (the cron, validated live
+  by phase 166's route and holding Save while invalid). A blank cron is *Custom* with nothing in it, which the field says means *look only when
+  you scan*.
+- **Make files play directly's switch.** The row's own switch is shown, disabled, with its reason (*Each repair has its own switch inside*),
+  because the feature has no key of its own (FR-2.2); the kinds' switches, counts, *Show the list* and *Apply* are the row's body, unchanged.
+  They still act at once.
+- **When a subtitle does not fit** is `[subtitle_check] action` and keeps its own route: choosing it saves at once, not with the page's Save.
+  The Bazarr card keeps the daily download budget and the address Bazarr reaches us at, and says where the choice went. With Bazarr not
+  connected the choice is shown disabled with that reason (FR-11).
+- **What the tab edits.** `[processing]` only. The options FR-2.2 says live elsewhere (`behavior.overwrite_nfo`, `behavior.fetch_images`,
+  the music provider switches) stay on the tabs that own them; the tab shows a part's reason while one of them keeps it from running. The page
+  sends `scan.pipeline` and `scan_schedule` back exactly as the server last gave them, so a save that did not touch them does not look to the
+  server like a change to them (FR-2.5).
+- **What cannot be proved in CI.** How the tab looks at 412 px in both themes against `set-desktop`, `set-interval`, `set-off`, `set-firstrun`,
+  `set-loading`, `set-light` and `set-phone`: Playwright proves there is no horizontal overflow and that every control acts; the likeness to
+  the pictures is on the QA task.
+
 ## Code anchors (`main` at `51206b00`)
 
 - **Config:** root `scan_schedule` (`config/AppConfig.kt:34`); `ScanConfig` with `[[scan.pipeline]]`,

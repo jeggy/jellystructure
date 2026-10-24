@@ -22,7 +22,7 @@ import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 
 /**
- * Phase 314 — *Make files play directly* (Settings → Libraries): one card, three rows (stereo · surround · Dolby Vision),
+ * Phase 314 — *Make files play directly* (Settings → Processing since DEB-1664): one block, three rows (stereo · surround · Dolby Vision),
  * each with its switch, its counts, **Show the list** (the dry run's rows, nothing written) and **Apply**. The switches
  * act at once, like the job controls on Activity; Apply only queues — the jobs run one at a time on the media lane.
  */
@@ -41,17 +41,20 @@ private object FileFixApi {
     }.getOrDefault("Failed")
 }
 
+/**
+ * DEB-1664 (FR-4.5) — the controls that were a card on the Libraries tab. They are the body of *Make files play directly*'s
+ * row on Settings ▸ Processing; the row's name is the heading, so there is none here. The block keeps its own listeners
+ * ([wireFileFix]), which is why Processing moves this very element in and out of its row rather than redrawing it.
+ */
 internal fun fileFixSectionHtml(): String = """
-            <div class="card set-section" id="sect-filefix" data-tab="libraries">
-              <div class="row center" style="gap:8px;flex-wrap:wrap">
-                <h3 style="font-size:1rem;margin:0">Make files play directly</h3>
-                <span class="spacer"></span>
-                <button id="ff-plan" class="btn sm ghost">Find files</button>
+              <div id="pf-ff">
+                <div class="row center" style="gap:8px;flex-wrap:wrap">
+                  <p class="hint fill" style="margin:0">Adds what a device needs so it can play a file without converting it. The original tracks and pictures always stay. Nothing is written until a kind is switched on and you press <b>Apply</b>. A file a torrent is still seeding is never changed: its added audio goes beside it as a <span class="mono">.mka</span>.</p>
+                  <button id="ff-plan" class="btn sm ghost">Find files</button>
+                </div>
+                <div id="ff-status" class="tiny muted" style="margin:10px 0"></div>
+                <div id="ff-kinds"><span class="muted tiny">Loading…</span></div>
               </div>
-              <p class="hint" style="margin:8px 0 12px">Adds what a device needs so it can play a file without converting it. The original tracks and pictures always stay. Nothing is written until a kind is switched on and you press <b>Apply</b>. A file a torrent is still seeding is never changed: its added audio goes beside it as a <span class="mono">.mka</span>.</p>
-              <div id="ff-status" class="tiny muted" style="margin-bottom:10px"></div>
-              <div id="ff-kinds"><span class="muted tiny">Loading…</span></div>
-            </div>
 """
 
 private fun el(id: String): HTMLElement? = document.getElementById(id) as? HTMLElement

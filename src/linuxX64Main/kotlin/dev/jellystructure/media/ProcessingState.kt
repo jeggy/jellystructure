@@ -78,6 +78,8 @@ object ProcessingSchedule {
 
     fun seerrConnected(cfg: AppConfig): Boolean = cfg.seerr?.let { it.enabled && it.url.isNotBlank() } == true
 
+    private val WEEKDAYS = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+
     /** The Find schedule in words: the presets the Settings picker emits are named, anything else is *Custom* with its expression (FR-3.2). */
     fun describeFind(cron: String): String {
         val c = cron.trim()
@@ -88,7 +90,9 @@ object ProcessingSchedule {
             val at = m.groupValues[1].toIntOrNull()?.takeIf { it != 0 }?.let { " at :" + it.toString().padStart(2, '0') } ?: ""
             return (if (n == 1) "Every hour" else "Every $n hours") + at
         }
-        Regex("""(\d+) (\d+) \* \* 0""").matchEntire(c)?.let { return "Weekly on Sunday at " + time(it.groupValues[2], it.groupValues[1]) }
+        Regex("""(\d+) (\d+) \* \* ([0-6])""").matchEntire(c)?.let {
+            return "Weekly on ${WEEKDAYS[it.groupValues[3].toInt()]} at " + time(it.groupValues[2], it.groupValues[1])
+        }
         Regex("""(\d+) (\d+) \* \* \*""").matchEntire(c)?.let { return "Daily at " + time(it.groupValues[2], it.groupValues[1]) }
         return "Custom · $c"
     }
@@ -152,7 +156,12 @@ data class ProcessingFeatureView(
 )
 
 @Serializable
-data class ProcessingView(val features: List<ProcessingFeatureView>, val holdingForPlayback: Boolean = false)
+data class ProcessingView(
+    val features: List<ProcessingFeatureView>,
+    val holdingForPlayback: Boolean = false,
+    /** FR-4.2 — which device is playing while *Wait while someone is watching* holds, as one sentence; null when nothing is being held. */
+    val holdingText: String? = null,
+)
 
 /** Everything the view reads that is not the configuration — gathered by the route, so the build below is a pure function. */
 class ProcessingInputs(
@@ -167,6 +176,8 @@ class ProcessingInputs(
     val deferred: Boolean = false,
     val musicLibraries: Boolean = true,
     val audiobookLibraries: Boolean = true,
+    /** The display names of the devices playing right now (FR-4.2); the card names them while the household switch holds. */
+    val playingDevices: List<String> = emptyList(),
 )
 
 object ProcessingViews {
@@ -234,7 +245,18 @@ object ProcessingViews {
                 parts = parts,
             )
         }
-        return ProcessingView(features, holdingForPlayback = inp.deferred)
+        val holding = cfg.scan.deferWhilePlaying && inp.playingDevices.isNotEmpty()
+        return ProcessingView(features, holdingForPlayback = inp.deferred, holdingText = if (holding) holdingLine(inp.playingDevices) else null)
+    }
+
+    /** FR-4.2 — "Living room is playing, so …": the heavy work waits, and picks up by itself when playback stops. */
+    internal fun holdingLine(devices: List<String>): String {
+        val who = when (devices.size) {
+            1 -> "${devices[0]} is"
+            2 -> "${devices[0]} and ${devices[1]} are"
+            else -> devices.dropLast(1).joinToString(", ") + " and ${devices.last()} are"
+        }
+        return "$who playing, so the heavy work is paused. It picks up by itself when playback stops."
     }
 
     /** FR-1.4 — a part that depends on a switch elsewhere says so while that switch is off. */

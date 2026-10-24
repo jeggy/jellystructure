@@ -396,7 +396,7 @@ private fun buildRail(data: SegmentTrimResponse): String {
           <div><span class="kbd">[</span><span class="kbd">]</span>pick the start / end edge for <span class="kbd">,</span><span class="kbd">.</span></div>
           <div><span class="kbd">S</span>snapping on / off · hold <span class="kbd">⇧</span> while dragging to free an edge · <span class="kbd">Esc</span> cancels a drag</div></div>
           <div class="sxhint">A locked marker survives every future <b>detect_segments</b> run — that is the whole point of the lock.</div>
-          <a class="sxlink" href="#/settings?tab=libraries">Detection settings →</a></div>"""
+          <a class="sxlink" href="#/settings?tab=processing">Detection settings →</a></div>"""
 }
 
 private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {

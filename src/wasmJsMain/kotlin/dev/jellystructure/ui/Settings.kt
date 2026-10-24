@@ -70,6 +70,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
             <div style="display:flex;flex-direction:column;gap:2px;">
               ${settingsNavItemHtml("connections", "Connections")}
               ${settingsNavItemHtml("libraries", "Libraries")}
+              ${settingsNavItemHtml("processing", "Processing")}
               ${settingsNavItemHtml("metadata", "Metadata")}
               ${settingsNavItemHtml("downloads", "Download tools")}
               ${settingsNavItemHtml("notifications", "Notifications")}
@@ -359,7 +360,6 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               </div>
             </div>
 
-${fileFixSectionHtml()}
             <div class="card set-section" id="sect-scanning" data-tab="libraries">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
                 <h3 style="font-size:1rem;margin:0">Scanning</h3>
@@ -369,8 +369,8 @@ ${fileFixSectionHtml()}
                 <summary style="cursor:pointer;color:var(--ink-soft)">How scanning works</summary>
                 <div class="hint" style="margin-top:8px;line-height:1.5">
                   Three things keep your library current:<br>
-                  &bull; <b>Scan library</b> — finds new &amp; changed files from Jellyfin, adds/updates titles, and (if &ldquo;Download missing artwork during a scan&rdquo; is on) pulls any missing posters/fanart from TMDB.<br>
-                  &bull; <b>The automation (pipeline below)</b> — starts with a scan, then runs the steps you enable (pull TMDB, download artwork, write NFOs, sync Jellyfin&hellip;). Runs on the <b>schedule</b> (at the local time shown) and on demand via <b>Run pipeline now</b>.<br>
+                  &bull; <b>Scan library</b> — finds new &amp; changed files from Jellyfin, adds/updates titles, and gives each one every feature that is switched on.<br>
+                  &bull; <b>Processing</b> — the features that run by themselves, each on its own interval, set under <a href="#/settings?tab=processing">Settings ▸ Processing</a>.<br>
                   &bull; <b>Per-title actions</b> — on a movie/series page: <b>Re-pull from TMDB</b>, <b>Sync to Jellyfin</b>. Same engines, one title.<br>
                   Every run is logged and filterable on the <a href="#/activity">Activity</a> page by run.
                 </div>
@@ -395,63 +395,10 @@ ${fileFixSectionHtml()}
                 <input id="scan-episode-cap" class="input" type="number" min="0" max="100000" style="width:90px">
                 <span class="hint"><strong>0 = unlimited</strong> — probe every episode. Set a positive number to sample only that many files per series on a full scan (very large libraries). The on-demand "Re-probe episode files" button always probes everything.</span>
               </div>
-              <div class="field">
-                <label>Defer while a TV is watching</label>
-                <div style="display:flex;align-items:center;gap:12px">
-                  <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0"></span>
-                  <span class="hint" style="margin:0">Background work pauses while anyone is watching. Takes effect at once.</span>
-                </div>
-                <details style="margin-top:6px;font-size:.84rem">
-                  <summary style="cursor:pointer;color:var(--ink-soft)">What it covers</summary>
-                  <div class="hint" style="margin-top:6px;line-height:1.5">
-                    On: scheduled scans, pipeline runs and realtime ingest wait for playback to stop before the heavy steps (file probing, artwork fetch), and so do the queue jobs — whole-file verification, track-length checks, intro/credits detection and subtitle pre-warm. A running check finishes its current file, then waits.<br>
-                    Off: all of it runs through playback.<br>
-                    A manual <b>Scan library</b> click never waits. Switching either way takes effect immediately — nothing needs re-queuing. A single-user household and a many-viewer one may want opposite answers. (Phase 178/262)
-                  </div>
-                </details>
-              </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
-              <div class="row center" style="justify-content:space-between;margin-top:12px;">
-                <div>
-                  <b>Scheduled scan pipeline</b>
-                  <div class="hint" style="margin-top:2px">Compose what runs on each automated scan — always starts with <b>Scan media files</b>, then chain any steps you want.</div>
-                </div>
-                <span id="pipe-enable" class="toggle" style="cursor:pointer;margin-left:12px;flex-shrink:0"></span>
-              </div>
-              <div id="pipe-fields" style="display:none;margin-top:14px">
-                <div class="pipe-sched">
-                  <div class="field" style="margin:0"><label>Runs</label>
-                    <span class="seg" id="pipe-freq"><span data-f="daily" class="on">Daily</span><span data-f="weekly">Weekly</span><span data-f="everyN">Every N hours</span><span data-f="custom">Custom</span></span>
-                  </div>
-                  <div class="field" style="margin:0;width:104px" id="pipe-at-field"><label>At</label>
-                    <input id="pipe-at" class="input" type="time" value="03:00">
-                  </div>
-                  <div class="field" style="margin:0;display:none" id="pipe-everyn-field">
-                    <label>Every</label>
-                    <div class="row" style="gap:4px;align-items:center">
-                      <input id="pipe-everyn-hours" class="input" type="number" min="1" max="23" value="6" style="width:56px">
-                      <span class="tiny muted">h · min</span>
-                      <input id="pipe-everyn-min" class="input" type="number" min="0" max="59" value="0" style="width:52px">
-                    </div>
-                  </div>
-                  <div class="field" style="margin:0;min-width:160px;flex:1"><label>Cron <span class="muted" id="pipe-cron-label-hint">(derived)</span></label>
-                    <input id="pipe-cron" class="input mono" style="padding:5px 10px;width:100%" value="0 3 * * *" readonly>
-                  </div>
-                  <span class="badge ok" id="pipe-next" style="align-self:flex-end">next · tonight 03:00</span>
-                  <span class="split" id="pipe-run-split" style="align-self:flex-end">
-                    <button id="pipe-run" class="btn sm primary" title="Run every enabled step below now (not just a file scan)">&#9655; Run pipeline now</button>
-                    <span class="btn sm primary split-caret menu-btn"><span class="caret">▾</span></span>
-                    <div class="menu">
-                      <div class="menu-item" id="pipe-run-full"><span class="mi-ic">⟳</span><span>Run pipeline now (full)<span class="mi-sub">No freshness filter — every step sees the whole library</span></span></div>
-                    </div>
-                  </span>
-                </div>
-                <div class="tiny" id="pipe-cron-check" style="margin-top:6px"></div>
-                <div class="pipe-recipe" id="pipe-recipe" style="margin-top:12px"></div>
-                <div class="pipe-canvas" id="pipe-canvas" style="margin-top:14px"></div>
-              </div>
             </div>
 
+${processingSectionHtml()}
             <div class="card set-section" id="sect-metadata" data-tab="metadata">
               <h3 style="font-size:1rem;margin:0 0 14px">Metadata</h3>
               <div class="field" style="margin-bottom:14px">
@@ -616,14 +563,7 @@ ${fileFixSectionHtml()}
                 <div id="subcheck-block" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
                   <div class="row center"><b style="font-size:.92rem">Subtitles that fit their video</b><span class="spacer"></span><span id="subcheck-mode-badge"></span></div>
                   <div class="tiny muted" style="margin:6px 0 10px;line-height:1.6">jellystructure checks every subtitle beside a video against the video itself, and steers Bazarr until it fits: it asks Bazarr to sync one that is out of time, gives one filed under the wrong episode to the right one, and has Bazarr replace one that belongs to another video. Rather nothing than wrong: a subtitle for another video is never offered to a viewer.</div>
-                  <div class="field"><label for="subcheck-action">When a subtitle does not fit</label>
-                    <select id="subcheck-action" class="input" style="max-width:320px">
-                      <option value="fix">Fix it</option>
-                      <option value="ask">Ask me first</option>
-                      <option value="report">Only report</option>
-                    </select>
-                    <span class="hint" id="subcheck-action-hint"></span>
-                  </div>
+                  <div class="tiny muted" style="margin:0 0 12px">What to do when a subtitle does not fit is set under <a href="#/settings?tab=processing">Processing ▸ Subtitles</a>.</div>
                   <div class="field"><label for="subcheck-budget">Subtitle downloads jellystructure may cause a day</label>
                     <input id="subcheck-budget" class="input" type="number" min="0" max="1000" style="width:120px">
                     <span class="hint">Each replacement makes Bazarr download from its provider. OpenSubtitles VIP allows 1,000 a day.</span>
@@ -879,7 +819,7 @@ private val SECTION_TAB = mapOf(
     "sect-advanced" to "advanced",
 )
 // Phase 217 — the phase-162 tab is gone; its old `?tab=` value is unknown and the Phase-55 contract sends it to the default.
-private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "ai", "advanced")   // Phase 270 — "ai"
+private val SETTINGS_TABS = listOf("connections", "libraries", "processing", "metadata", "downloads", "notifications", "ai", "advanced")   // Phase 270 — "ai"
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     // Phase 55 — bubble section failures up to their owning tab.
@@ -966,11 +906,10 @@ private var notifNoMatch = false
 private var notifWriteFailed = true
 private var notifDrift = false
 private var notifCrash = true
-private var pipelineEnabled = false
-private var pipelineFreq = "daily"
-private val pipelineSteps: MutableList<PipelineStep> = mutableListOf()
-private var pipeDragFrom = -1
-private var pipeInsertAt = -1
+// DEB-1664 (FR-2.5) — the legacy pipeline and schedule are not edited here any more (Settings ▸ Processing edits `[processing]`).
+// They are sent back exactly as the server last gave them, so a save that did not touch them does not look to the server as if it had.
+private var legacyPipeline: List<PipelineStep> = emptyList()
+private var legacySchedule = ""
 private var settingsScope: CoroutineScope? = null
 
 // Phase 106 — age-rating region cascade (ordered ISO-3166-1 codes; empty = feature off).
@@ -1133,49 +1072,9 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("notif-drift-toggle", notifDrift)
     updateToggle("notif-crash-toggle", notifCrash)
 
-    // Phase 91 — pipeline
-    pipelineEnabled = config.scanSchedule.isNotBlank() || config.scan.pipeline.isNotEmpty()
-    updateToggle("pipe-enable", pipelineEnabled)
-    (document.getElementById("pipe-fields") as? HTMLElement)?.style?.display = if (pipelineEnabled) "" else "none"
-    pipelineSteps.clear()
-    if (config.scan.pipeline.isNotEmpty()) {
-        pipelineSteps.addAll(config.scan.pipeline)
-    } else {
-        pipelineSteps.addAll(listOf(
-            PipelineStep(step = "scan_files"),
-            PipelineStep(step = "sync_jellyfin"),
-            PipelineStep(step = "notify"),
-        ))
-    }
-    when {
-        config.scanSchedule.matches(Regex("0 (\\d+) \\* \\* 0")) -> {
-            pipelineFreq = "weekly"
-            val h = config.scanSchedule.split(" ")[1].toIntOrNull() ?: 3
-            setInputValue("pipe-at", "${h.toString().padStart(2, '0')}:00")
-        }
-        config.scanSchedule.matches(Regex("0 (\\d+) \\* \\* \\*")) -> {
-            pipelineFreq = "daily"
-            val h = config.scanSchedule.split(" ")[1].toIntOrNull() ?: 3
-            setInputValue("pipe-at", "${h.toString().padStart(2, '0')}:00")
-        }
-        config.scanSchedule.matches(Regex("(\\d+) \\*/(\\d+) \\* \\* \\*")) -> {
-            pipelineFreq = "everyN"
-            val parts = config.scanSchedule.split(" ")
-            setInputValue("pipe-everyn-min", (parts[0].toIntOrNull() ?: 0).toString())
-            setInputValue("pipe-everyn-hours", (parts[1].removePrefix("*/").toIntOrNull() ?: 6).toString())
-        }
-        config.scanSchedule.isNotBlank() -> {
-            // Phase 166 bug fix: a schedule this page didn't recognise used to be silently rewritten to
-            // "0 3 * * *" on the next Save (every unmatched case fell through to the daily preset). Round-
-            // trip it verbatim as Custom instead — a hand-edited config.toml schedule must never be
-            // destroyed by an unrelated visit to Settings.
-            pipelineFreq = "custom"
-            setInputValue("pipe-cron", config.scanSchedule)
-        }
-        else -> pipelineFreq = "daily"
-    }
-    renderPipelineFreq()
-    renderPipeline()
+    legacyPipeline = config.scan.pipeline
+    legacySchedule = config.scanSchedule
+    populateProcessing(config)
 
     refreshTomlPreview(config)
 }
@@ -1299,7 +1198,8 @@ private fun attachListeners(scope: CoroutineScope) {
     wireChromecast(scope)
     wireRequestLanguage(scope)
     wireAi(scope) { refreshTomlPreview(readForm()) }   // Phase 270
-    wireFileFix(scope)   // Phase 314 — Make files play directly
+    wireFileFix(scope)   // Phase 314 — Make files play directly (its controls live in Processing's last row)
+    wireProcessing(scope)   // DEB-1664 (FR-4)
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone
@@ -1360,9 +1260,6 @@ private fun attachListeners(scope: CoroutineScope) {
     }
     scope.launch { renderWebhookStatus() }
 
-    wirePipelineBuilder(scope)
-    refreshNextRun()   // 93e: show the real next scheduled run on load
-
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
             val config = readForm()
@@ -1389,13 +1286,14 @@ private fun attachListeners(scope: CoroutineScope) {
                 (document.getElementById(hintId) as? HTMLElement)?.innerHTML =
                     """<span style="color:var(--bad)">${(result.error ?: "That does not look like a web address").esc()}</span>"""
             }
-            if (result.field == "scan_schedule") {
-                pipeCronValid = false
-                (document.getElementById("pipe-cron-check") as? HTMLElement)?.innerHTML =
-                    """<span class="badge bad">${(result.error ?: "Invalid schedule").esc()}</span>"""
-                updateSaveEnabledForSchedule()
+            if (result.field == "scan_schedule") showFindScheduleError(result.error ?: "Invalid schedule")
+            if (ok) {
+                renderPathCheckInline(ConfigApi.pathCheck())
+                // The server derives the legacy pipeline and schedule from `[processing]` on every save (FR-2.4): take them
+                // as they are now, or the next save would send the old ones and look like a change to them (FR-2.5).
+                ConfigApi.get()?.config?.let { legacyPipeline = it.scan.pipeline; legacySchedule = it.scanSchedule }
+                processingSaved(scope)
             }
-            if (ok) { renderPathCheckInline(ConfigApi.pathCheck()); refreshNextRun() }   // 93e: reflect the saved schedule
             if (ok) refreshAiNav()   // DEB-1253 (FR-3): a key saved or cleared swaps AI and Suggestions in the sidebar without a reload
             // Phase 317 (FR-317-16) — the A/V sync line describes the SAVED config, so it is re-asked here
             // rather than left describing the one before the save (switching the check off, or correcting
@@ -1940,8 +1838,9 @@ private fun readForm(): AppConfig = AppConfig(
     passwordChangeUrl = getInputValue("pw-change-url").trim(),   // DEB-1854 (FR-4)
     raviloWebUrl = getInputValue("ravilo-web-url").trim(),   // DEB-2233 (FR-1)
     jellyfinInternalUrl = getInputValue("jellyfin-internal-url").trim(),
-    scanSchedule = if (pipelineEnabled) computePipeCron() else "",
-    scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
+    scanSchedule = legacySchedule,
+    scan = ScanConfig(pipeline = legacyPipeline, deferWhilePlaying = deferWhilePlaying),
+    processing = readProcessing(),   // DEB-1664 (FR-2.5) — every [processing] key round-trips
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
     ai = readAi(),   // Phase 270
 )
@@ -2244,21 +2143,15 @@ private fun wireBazarr(scope: CoroutineScope) {
 
 // ── Phase 273 — the subtitle check on the Bazarr card ─────────────────────────────────────────────
 
-private val SUBCHECK_HINTS = mapOf(
-    "fix" to "Bazarr is steered on its own. A subtitle that only the audio doubts is hidden and waits for your OK.",
-    "ask" to "Every action waits for your OK on the Dashboard. A subtitle that does not fit is still hidden from viewers.",
-    "report" to "Verdicts and advice only. Nothing is hidden and nothing is asked of Bazarr.",
-)
-
 private fun wireSubtitleCheck(scope: CoroutineScope) {
-    val sel = document.getElementById("subcheck-action") as? org.w3c.dom.HTMLSelectElement ?: return
-    sel.addEventListener("change", { (document.getElementById("subcheck-action-hint") as? HTMLElement)?.textContent = SUBCHECK_HINTS[sel.value] })
     document.getElementById("subcheck-save")?.addEventListener("click", {
         scope.launch {
             val out = document.getElementById("subcheck-save-out") as? HTMLElement
             out?.textContent = "Saving\u2026"
+            // The action is chosen under Processing ▸ Subtitles and saved through this same route: read it back rather than send a stale one.
+            val action = dev.jellystructure.api.SubtitleCheckApi.settings()?.action ?: "report"
             val saved = dev.jellystructure.api.SubtitleCheckApi.saveSettings(dev.jellystructure.api.SubtitleCheckSettings(
-                action = sel.value,
+                action = action,
                 dailyDownloadBudget = getInputValue("subcheck-budget").toIntOrNull() ?: 100,
                 bazarrReachUrl = getInputValue("subcheck-reach"),
             ))
@@ -2269,13 +2162,15 @@ private fun wireSubtitleCheck(scope: CoroutineScope) {
     scope.launch { loadSubtitleCheck(scope) }
 }
 
+/** Asks the Bazarr card for its current state again — after Processing ▸ Subtitles changed what it does about a subtitle that does not fit. */
+internal fun refreshSubtitleCheck(scope: CoroutineScope) {
+    scope.launch { loadSubtitleCheck(scope, fresh = true) }
+}
+
 private suspend fun loadSubtitleCheck(scope: CoroutineScope, fresh: Boolean = false) {
-    val sel = document.getElementById("subcheck-action") as? org.w3c.dom.HTMLSelectElement ?: return
     val settings = dev.jellystructure.api.SubtitleCheckApi.settings() ?: return
-    sel.value = settings.action
     setInputValue("subcheck-budget", settings.dailyDownloadBudget.toString())
     setInputValue("subcheck-reach", settings.bazarrReachUrl)
-    (document.getElementById("subcheck-action-hint") as? HTMLElement)?.textContent = SUBCHECK_HINTS[settings.action]
     (document.getElementById("subcheck-mode-badge") as? HTMLElement)?.innerHTML = when (settings.action) {
         "fix" -> """<span class="badge ok" style="font-size:.72rem">Fix it</span>"""
         "ask" -> """<span class="badge warn" style="font-size:.72rem">Ask me first</span>"""
@@ -2927,611 +2822,6 @@ private fun renderPathCheckInline(diags: List<LibraryPathDiag>?) {
         } else {
             """<span class="badge bad" style="font-size:.7rem" title="Local path not found — check mount">path ✗</span>"""
         }
-    }
-}
-
-// ── Phase 91 — pipeline builder ───────────────────────────────────────────────
-
-// Phase 265 — PipeBlockDef, PIPE_BLOCKS, FILE_CHECK_STEPS, PIPE_SHORT and the pre-run dialog live in
-// PipelineRunDialog.kt, shared with Library, Dashboard and the command palette.
-private data class PipeCadRow(val key: String, val nm: String, val yr: String, val cadValue: String)
-private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","verify_files","check_track_lengths","build_recommendations","build_suggestions","wait","notify")
-// Phase 261 (FR-261-5) — 2years/5years exist for every step; the file checks default to them.
-private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","2years","5years","never")
-private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","every 2 years","every 5 years","never")
-
-/** Phase 261 (FR-261-6) — a step added from the palette takes its own defaults: the file checks' cadence
- *  respects the disk (a whole-file read of the library is 200–300 GB), never scan_files' weekly/monthly. */
-private fun defaultPipelineStep(key: String): PipelineStep = when (key) {
-    "verify_files" -> PipelineStep(step = key, recheckUnchanged = true, refreshThisYear = "5years", refresh1To5y = "5years", refreshOlder = "5years")
-    "check_track_lengths" -> PipelineStep(step = key, recheckUnchanged = true, refreshThisYear = "yearly", refresh1To5y = "2years", refreshOlder = "5years")
-    else -> PipelineStep(step = key)
-}
-private val WAIT_MINS    = listOf(5, 10, 15, 30, 60)
-
-// Top-level single-expression helpers for Kotlin/WASM js() constraints
-private fun pipeElBottom(el: HTMLElement): Double = js("el.getBoundingClientRect().bottom")
-private fun pipeElLeft(el: HTMLElement):   Double = js("el.getBoundingClientRect().left")
-private fun pipeElWidth(el: HTMLElement):  Double = js("el.getBoundingClientRect().width")
-private fun pipeElTop(el: HTMLElement):    Double = js("el.getBoundingClientRect().top")
-private fun pipeElOffsetW(el: HTMLElement): Int   = js("el.offsetWidth")
-private fun pipeElOffsetH(el: HTMLElement): Int   = js("el.offsetHeight")
-private fun pipeWinW(): Double = js("window.innerWidth")
-private fun pipeWinH(): Double = js("window.innerHeight")
-
-private fun hexAlpha(hex: String, alpha: Double): String {
-    val h = hex.trimStart('#')
-    val n = h.toLong(16)
-    val r = (n shr 16) and 0xFF; val g = (n shr 8) and 0xFF; val b = n and 0xFF
-    return "rgba($r,$g,$b,$alpha)"
-}
-
-private fun renderPipelineFreq() {
-    val freqEl = document.getElementById("pipe-freq") ?: return
-    val nodes = freqEl.childNodes
-    for (i in 0 until nodes.length) {
-        val s = nodes.item(i) as? HTMLElement ?: continue
-        val f = s.getAttribute("data-f") ?: continue
-        if (f == pipelineFreq) s.classList.add("on") else s.classList.remove("on")
-    }
-    updatePipeCron()
-}
-
-/** Phase 166 — recomputes the derived cron for the three preset modes (daily/weekly/everyN) into the
- *  (now-editable) #pipe-cron input; Custom mode leaves whatever the admin typed there alone. Every call
- *  re-triggers the debounced live-validation check (FR-166-5) so the description/next-runs preview and
- *  Save's enabled state stay in sync with whatever's actually in the field. */
-private fun updatePipeCron() {
-    val atField     = document.getElementById("pipe-at-field") as? HTMLElement
-    val everyNField = document.getElementById("pipe-everyn-field") as? HTMLElement
-    val cronInput   = document.getElementById("pipe-cron") as? HTMLInputElement
-    val cronHint    = document.getElementById("pipe-cron-label-hint") as? HTMLElement
-
-    atField?.style?.display     = if (pipelineFreq == "daily" || pipelineFreq == "weekly") "" else "none"
-    everyNField?.style?.display = if (pipelineFreq == "everyN") "" else "none"
-    cronInput?.readOnly = pipelineFreq != "custom"
-    cronHint?.textContent = if (pipelineFreq == "custom") "" else "(derived)"
-
-    if (pipelineFreq != "custom") cronInput?.value = computePipeCron()
-
-    // 93e: the real next-run is computed by the backend (wall-clock) and shown by refreshNextRun();
-    // while the schedule is being edited it's not applied yet, so say so rather than guess a time.
-    document.getElementById("pipe-next")?.textContent = "next · save to apply"
-    refreshTomlPreview(readForm())
-    scheduleLiveCronCheck()
-}
-
-// Phase 166 (FR-166-5) — debounce idiom matches MediaDetail.kt's checkDirty()/metaSaveJob: cancel any
-// in-flight check and relaunch after a short pause, so a burst of keystrokes in Custom mode doesn't fire
-// one request per character.
-private var pipeCronCheckJob: kotlinx.coroutines.Job? = null
-private var pipeCronValid = true
-
-private fun scheduleLiveCronCheck() {
-    pipeCronCheckJob?.cancel()
-    val cron = (document.getElementById("pipe-cron") as? HTMLInputElement)?.value ?: ""
-    pipeCronCheckJob = settingsScope?.launch { delay(400); applyCronCheck(cron) }
-}
-
-private suspend fun applyCronCheck(cron: String) {
-    val checkEl = document.getElementById("pipe-cron-check") as? HTMLElement
-    if (cron.isBlank()) {
-        pipeCronValid = true
-        checkEl?.innerHTML = ""
-        updateSaveEnabledForSchedule()
-        return
-    }
-    val result = ConfigApi.validateSchedule(cron)
-    if (result == null) {
-        // Couldn't reach the server — don't block Save on a transient network hiccup; PUT /api/config
-        // (FR-166-4) still rejects an actually-invalid schedule at save time as the real backstop.
-        pipeCronValid = true
-        checkEl?.innerHTML = """<span class="muted tiny">Couldn't check the schedule right now — it'll still be validated on save.</span>"""
-        updateSaveEnabledForSchedule()
-        return
-    }
-    pipeCronValid = result.valid
-    checkEl?.innerHTML = if (result.valid) {
-        val preview = result.nextRuns.joinToString(" · ") { dev.jellystructure.formatStoredTs(it.toString()) }
-        """<span class="badge ok" style="margin-right:6px">✓ ${(result.description ?: "Valid").esc()}</span>""" +
-            (if (preview.isNotBlank()) """<div class="tiny muted" style="margin-top:4px">Next: $preview</div>""" else "")
-    } else {
-        """<span class="badge bad">${(result.error ?: "Invalid schedule").esc()}</span>"""
-    }
-    updateSaveEnabledForSchedule()
-}
-
-/** Phase 166 (FR-166-5) — "Save disabled while invalid". Only the schedule's own validity gates this;
- *  an unrelated Settings edit made while the cron field happens to be mid-typing is still blocked until
- *  it resolves, matching the spec's literal requirement rather than scoping the disable to just the
- *  pipeline card. */
-private fun updateSaveEnabledForSchedule() {
-    val btn = document.getElementById("save-settings") as? HTMLElement ?: return
-    if (pipelineEnabled && !pipeCronValid) btn.setAttribute("disabled", "") else btn.removeAttribute("disabled")
-}
-
-/** 93e: show the backend's actual next scheduled run (or "scheduling off") in the pipe-next badge. */
-private fun refreshNextRun() {
-    settingsScope?.launch {
-        val st = MediaApi.scanStatus()
-        val el = document.getElementById("pipe-next") ?: return@launch
-        val next = st?.nextScheduledRun
-        el.textContent = if (next != null) "next · ${dev.jellystructure.formatStoredTs(next.toString())}" else "scheduling off"
-    }
-}
-
-/** Keeps the "Run pipeline now" split button truthful — disabled + labeled while a scan/pipeline (from
- *  any trigger: this button, its "(full)" sibling, the Dashboard's Scan, or the schedule) is actually
- *  running, so clicking it never again lands on a surprise "already running" conflict. Polled every few
- *  seconds while Settings is open. */
-private suspend fun refreshPipelineRunButton() {
-    val btn = document.getElementById("pipe-run") as? HTMLElement ?: return
-    val caret = document.getElementById("pipe-run-split")?.querySelector(".menu-btn") as? HTMLElement
-    val fullItem = document.getElementById("pipe-run-full") as? HTMLElement
-    val running = MediaApi.scanStatus()?.running == true
-    if (running) {
-        btn.setAttribute("disabled", "")
-        btn.textContent = "⏳ Pipeline running…"
-        btn.title = "A scan/pipeline is already running — check Activity for progress"
-        caret?.setAttribute("disabled", "")
-        fullItem?.setAttribute("disabled", "")
-        (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open")
-    } else {
-        btn.removeAttribute("disabled")
-        btn.textContent = "▷ Run pipeline now"
-        btn.title = "Run every enabled step below now (not just a file scan)"
-        caret?.removeAttribute("disabled")
-        fullItem?.removeAttribute("disabled")
-    }
-}
-
-/** Shared by the split button's primary face and its "(full)" menu item — full=true bypasses scan_files'
- *  freshness filter (see MediaApi.runPipeline) so every downstream step sees the whole library this run. */
-private suspend fun triggerPipelineRun(full: Boolean, skipSteps: List<String> = emptyList()) {
-    val btn = document.getElementById("pipe-run") as? HTMLElement
-    btn?.setAttribute("disabled", "")
-    val result = runCatching { MediaApi.runPipeline(full, skipSteps) }.getOrDefault(PipelineRunResult.FAILED)
-    when (result) {
-        PipelineRunResult.STARTED -> showPipelineToast(
-            (if (full) "Full pipeline run started" else "Pipeline started") + skippedSuffix(skipSteps)
-        )
-        PipelineRunResult.ALREADY_RUNNING -> showPipelineToast("A scan/pipeline is already running")
-        PipelineRunResult.FAILED -> { btn?.removeAttribute("disabled"); showPipelineToast("Failed to start pipeline") }
-    }
-    // Either outcome (started, or already-running) means one is now known to be in flight — reflect
-    // that on the button immediately rather than waiting for the next poll tick.
-    if (result != PipelineRunResult.FAILED) refreshPipelineRunButton()
-}
-
-/** Phase 166 — the derived cron for daily/weekly/everyN; Custom returns whatever's typed into
- *  #pipe-cron verbatim (that input IS the source of truth in that mode, not something to recompute). */
-private fun computePipeCron(): String {
-    val atVal = (document.getElementById("pipe-at") as? HTMLInputElement)?.value ?: "03:00"
-    val h = atVal.split(":")[0].toIntOrNull() ?: 3
-    return when (pipelineFreq) {
-        "weekly" -> "0 $h * * 0"
-        "everyN" -> {
-            val hours = (document.getElementById("pipe-everyn-hours") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 23) ?: 6
-            val min = (document.getElementById("pipe-everyn-min") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(0, 59) ?: 0
-            "$min */$hours * * *"
-        }
-        "custom" -> (document.getElementById("pipe-cron") as? HTMLInputElement)?.value ?: ""
-        else -> "0 $h * * *"
-    }
-}
-
-private fun renderPipeline() {
-    val canvas = document.getElementById("pipe-canvas") as? HTMLElement ?: return
-    canvas.innerHTML = ""
-    pipelineSteps.forEachIndexed { i, step ->
-        canvas.appendChild(pipeStepEl(step, i))
-        if (i < pipelineSteps.size - 1) canvas.appendChild(pipeConnEl(i + 1))
-    }
-    val end = document.createElement("div") as HTMLElement
-    end.className = "pipe-end"
-    val addBtn = document.createElement("button") as HTMLElement
-    addBtn.className = "btn sm ghost"; addBtn.textContent = "+ Add step"; addBtn.id = "pipe-addend"
-    addBtn.addEventListener("click") { openPipelinePalette(addBtn, pipelineSteps.size) }
-    end.appendChild(addBtn); canvas.appendChild(end)
-    renderPipelineRecipe()
-    refreshTomlPreview(readForm())
-}
-
-private fun pipeConnEl(insertAt: Int): Element {
-    val c = document.createElement("div") as HTMLElement
-    c.className = "pipe-conn"
-    val ln  = document.createElement("span"); ln.className = "ln"
-    val add = document.createElement("span") as HTMLElement; add.className = "pipe-add"; add.textContent = "+"
-    add.title = "Add a step here"
-    add.addEventListener("click") { openPipelinePalette(add, insertAt) }
-    c.appendChild(ln); c.appendChild(add)
-    return c
-}
-
-private fun pipeStepEl(step: PipelineStep, idx: Int): Element {
-    val d   = PIPE_BLOCKS[step.step] ?: return document.createElement("div")
-    val el  = document.createElement("div") as HTMLElement
-    val isFirst = idx == 0
-    el.className = "pipe-step" + (if (isFirst) " trigger" else "") + (if (!step.enabled) " disabled" else "")
-    el.style.setProperty("--c",      d.color)
-    el.style.setProperty("--c-soft", hexAlpha(d.color, 0.16))
-    el.setAttribute("data-pi", idx.toString())
-    if (!isFirst) el.setAttribute("draggable", "true")
-
-    val grip = document.createElement("div"); grip.className = "pipe-grip"; grip.textContent = "⠿"
-    val ic   = document.createElement("div"); ic.className = "pipe-ic"; ic.innerHTML = d.icon
-    val body = document.createElement("div"); body.className = "pipe-body"
-    val row1 = document.createElement("div"); row1.className = "pipe-row1"
-    val title= document.createElement("span"); title.className = "pipe-title"; title.textContent = d.name
-    row1.appendChild(title)
-    if (isFirst) { val t = document.createElement("span"); t.className = "pipe-tag"; t.textContent = "start"; row1.appendChild(t) }
-    if (d.needsArr) { val n = document.createElement("span"); n.className = "pipe-need"; n.textContent = "needs *arr"; row1.appendChild(n) }
-    val sub  = document.createElement("div"); sub.className = "pipe-sub"; sub.textContent = d.subtitle
-    val opts = document.createElement("div"); opts.className = "pipe-opts"
-    when (step.step) {
-        "scan_files"                      -> opts.appendChild(pipeScanCfgEl(step, idx))
-        "pull_tmdb", "fetch_artwork"      -> opts.appendChild(pipeScopeEl(step, idx))
-        "detect_segments"                 -> opts.appendChild(pipeSegmentsCfgEl(step, idx))
-        "verify_files", "check_track_lengths" -> opts.appendChild(pipeFileCheckCfgEl(step, idx))
-        "write_nfo"                       -> opts.appendChild(pipeOverwriteEl(step, idx))
-        "notify"                          -> opts.appendChild(pipeNotifyEl(step, idx))
-        "wait"                            -> opts.appendChild(pipeWaitEl(step, idx))
-        "build_recommendations", "build_suggestions" -> opts.appendChild(pipeRebuildEveryEl(step, idx))
-    }
-    body.appendChild(row1); body.appendChild(sub)
-    if (opts.childNodes.length > 0) body.appendChild(opts)
-    val act  = document.createElement("div"); act.className = "pipe-act"
-    val stat = document.createElement("span"); stat.className = "pipe-status"
-    act.appendChild(stat)
-    if (!isFirst) {
-        val tog = document.createElement("span") as HTMLElement
-        tog.className = "mini-toggle" + (if (step.enabled) " on" else "")
-        tog.title = "Skip this step"
-        tog.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(enabled = !pipelineSteps[idx].enabled); renderPipeline() }
-        val rm = document.createElement("span") as HTMLElement; rm.className = "pipe-x"; rm.textContent = "✕"; rm.title = "Remove"
-        rm.addEventListener("click") { pipelineSteps.removeAt(idx); renderPipeline() }
-        act.appendChild(tog); act.appendChild(rm)
-    }
-    el.appendChild(grip); el.appendChild(ic); el.appendChild(body); el.appendChild(act)
-
-    if (!isFirst) {
-        el.addEventListener("dragstart") { pipeDragFrom = idx; el.classList.add("dragging") }
-        el.addEventListener("dragend")   { pipeDragFrom = -1; renderPipeline() }
-        el.addEventListener("dragover")  { e -> e.preventDefault(); el.classList.add("drop-target") }
-        el.addEventListener("dragleave") { el.classList.remove("drop-target") }
-        el.addEventListener("drop")      { e -> e.preventDefault(); movePipelineStep(pipeDragFrom, idx) }
-    }
-    return el
-}
-
-private fun movePipelineStep(from: Int, to: Int) {
-    if (from < 1 || from == to) return
-    val item = pipelineSteps.removeAt(from)
-    val dest = (if (from < to) to - 1 else to).coerceIn(1, pipelineSteps.size.coerceAtLeast(1))
-    pipelineSteps.add(dest, item)
-    renderPipeline()
-}
-
-private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element = pipeCadenceCfgEl(
-    step, idx,
-    headText = "Refresh unchanged titles on a schedule",
-    subText = "Re-sync metadata & artwork for titles whose files never change — often for new releases, rarely for old catalogue.",
-    noteHtml = "<b>How it works:</b> Jellystructure stores each title's last-checked date and re-processes only titles whose interval is due — new &amp; changed files are always processed immediately. This now governs every scan trigger, not just a scheduled/manual pipeline run — including the Dashboard's <b>Scan library</b> button (its split-button menu has a <b>Scan library (full rescan)</b> option to bypass this for one run).",
-)
-
-/** Phase 261 (FR-261-4) — the file checks' block: the same toggle and three-tier table as scan_files', with
- *  their own words. Off = new and changed files only; a file with a finding is never re-read by the cadence. */
-private fun pipeFileCheckCfgEl(step: PipelineStep, idx: Int): Element = pipeCadenceCfgEl(
-    step, idx,
-    headText = "Re-check unchanged files on a schedule",
-    subText = if (step.step == "verify_files") "A whole-file read of the library is 200–300 GB — every 5 years is a sensible default."
-        else "A tail probe reads ~15–60 MB per file.",
-    noteHtml = "<b>How it works:</b> new &amp; changed files are always checked, the moment a pipeline run sees them. " +
-        "An unchanged, clean file is checked again once its release-age interval has passed. A file with a finding stays flagged " +
-        "until it changes or you re-run it from its title page. Each file is its own job on the segments queue (Activity ▸ Jobs), " +
-        "queued behind intro &amp; credits detection and paused while a TV plays.",
-)
-
-private fun pipeCadenceCfgEl(step: PipelineStep, idx: Int, headText: String, subText: String, noteHtml: String): Element {
-    val year = 2026
-    val box  = document.createElement("div") as HTMLElement
-    box.className = "scan-cfg" + (if (step.recheckUnchanged) "" else " off")
-    val head = document.createElement("label"); head.className = "sc-head"
-    val tog  = document.createElement("span")
-    tog.className = "mini-toggle" + (if (step.recheckUnchanged) " on" else "")
-    val lbl = document.createElement("b"); lbl.textContent = headText
-    head.appendChild(tog); head.appendChild(lbl)
-    head.addEventListener("click") {
-        pipelineSteps[idx] = pipelineSteps[idx].copy(recheckUnchanged = !pipelineSteps[idx].recheckUnchanged)
-        renderPipeline()
-    }
-    val sub  = document.createElement("div"); sub.className = "sc-sub"
-    sub.textContent = subText
-    val tbl  = document.createElement("div"); tbl.className = "fresh-tbl"
-    val hd   = document.createElement("div"); hd.className = "fresh-hd"
-    val h1   = document.createElement("span"); h1.textContent = "Release age"
-    val h2   = document.createElement("span"); h2.textContent = "Refresh"
-    hd.appendChild(h1); hd.appendChild(h2); tbl.appendChild(hd)
-    val rows = listOf(
-        PipeCadRow("cadY", "Released this year",        "$year",              step.refreshThisYear),
-        PipeCadRow("cadM", "Released 1–5 years ago",    "${year-5}–${year-1}", step.refresh1To5y),
-        PipeCadRow("cadO", "Released over 5 years ago", "before ${year-5}",   step.refreshOlder),
-    )
-    for (r in rows) {
-        val age  = document.createElement("div"); age.className = "fr-age"
-        val nm   = document.createElement("span"); nm.className = "nm"; nm.textContent = r.nm
-        val yr   = document.createElement("span"); yr.className = "yr"; yr.textContent = r.yr
-        age.appendChild(nm); age.appendChild(yr)
-        val cell = document.createElement("div"); cell.className = "fr-cell"
-        val isNever = r.cadValue == "never"
-        val cad  = document.createElement("span") as HTMLElement
-        cad.className = "cad" + (if (isNever) " never" else "")
-        val ci = document.createElement("span"); ci.className = "ci"; ci.innerHTML = PIPE_WAIT_IC
-        val sel = document.createElement("select") as HTMLSelectElement
-        sel.className = "cv-select"
-        sel.title = "How often to re-check this age tier"
-        CAD_VALS.forEachIndexed { i, v ->
-            val opt = document.createElement("option") as org.w3c.dom.HTMLOptionElement
-            opt.value = v; opt.textContent = CAD_LABELS[i]
-            if (v == r.cadValue) opt.selected = true
-            sel.appendChild(opt)
-        }
-        val capturedKey = r.key
-        sel.addEventListener("change") {
-            val next = sel.value
-            pipelineSteps[idx] = when (capturedKey) {
-                "cadY" -> pipelineSteps[idx].copy(refreshThisYear = next)
-                "cadM" -> pipelineSteps[idx].copy(refresh1To5y   = next)
-                else   -> pipelineSteps[idx].copy(refreshOlder    = next)
-            }
-            renderPipeline()
-        }
-        cad.appendChild(ci); cad.appendChild(sel)
-        cell.appendChild(cad); tbl.appendChild(age); tbl.appendChild(cell)
-    }
-    val note = document.createElement("div"); note.className = "sc-state"
-    note.innerHTML = noteHtml
-    box.appendChild(head); box.appendChild(sub); box.appendChild(tbl); box.appendChild(note)
-    return box
-}
-
-private fun pipeScopeEl(step: PipelineStep, idx: Int): Element {
-    val el = document.createElement("span") as HTMLElement; el.className = "opt-seg"
-    listOf("missing" to "Missing only", "all" to "All items").forEach { (v, label) ->
-        val s = document.createElement("span"); s.textContent = label
-        if (step.scope == v) s.classList.add("on")
-        val capturedV = v
-        s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(scope = capturedV); renderPipeline() }
-        el.appendChild(s)
-    }
-    return el
-}
-
-private fun pipeOverwriteEl(step: PipelineStep, idx: Int): Element {
-    val el = document.createElement("span") as HTMLElement; el.className = "opt-tog"
-    val t  = document.createElement("span"); t.className = "mini-toggle" + (if (step.overwrite) " on" else "")
-    val lbl= document.createElement("span"); lbl.textContent = "Overwrite existing fields"
-    el.appendChild(t); el.appendChild(lbl)
-    el.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(overwrite = !pipelineSteps[idx].overwrite); renderPipeline() }
-    return el
-}
-
-// Phase 150 — detect_segments options: cross-episode fingerprinting + trust-stinger-tags toggles, plus
-// the chapter-title keyword chip list (design/app/settings.html "Intro & credits detection" card,
-// reconciled onto the pipeline-step model per the dev-review addendum — one source of truth, not a
-// parallel config).
-private fun pipeSegmentsCfgEl(step: PipelineStep, idx: Int): Element {
-    val box = document.createElement("div") as HTMLElement
-    box.setAttribute("style", "display:flex;flex-direction:column;gap:8px;")
-
-    val fpRow = document.createElement("label") as HTMLElement; fpRow.className = "opt-tog"
-    val fpTog = document.createElement("span"); fpTog.className = "mini-toggle" + (if (step.detectFingerprint) " on" else "")
-    val fpLbl = document.createElement("span"); fpLbl.textContent = "Cross-episode intro fingerprinting"
-    fpRow.appendChild(fpTog); fpRow.appendChild(fpLbl)
-    fpRow.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(detectFingerprint = !pipelineSteps[idx].detectFingerprint); renderPipeline() }
-
-    val stRow = document.createElement("label") as HTMLElement; stRow.className = "opt-tog"
-    val stTog = document.createElement("span"); stTog.className = "mini-toggle" + (if (step.trustStingerTags) " on" else "")
-    val stLbl = document.createElement("span"); stLbl.textContent = "Trust TMDB stinger tags"
-    stRow.appendChild(stTog); stRow.appendChild(stLbl)
-    stRow.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(trustStingerTags = !pipelineSteps[idx].trustStingerTags); renderPipeline() }
-
-    val kwWrap = document.createElement("div") as HTMLElement
-    val kwLbl = document.createElement("div") as HTMLElement; kwLbl.className = "tiny muted"
-    kwLbl.textContent = "Extra chapter-title keywords (credits)"
-    val kwChips = document.createElement("div") as HTMLElement
-    kwChips.setAttribute("style", "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;")
-    step.chapterKeywords.forEachIndexed { ki, kw ->
-        val chip = document.createElement("span") as HTMLElement; chip.className = "chip"
-        chip.textContent = "$kw ✕"; chip.title = "Click to remove"
-        chip.setAttribute("style", "cursor:pointer;")
-        chip.addEventListener("click") {
-            pipelineSteps[idx] = pipelineSteps[idx].copy(chapterKeywords = pipelineSteps[idx].chapterKeywords.filterIndexed { j, _ -> j != ki })
-            renderPipeline()
-        }
-        kwChips.appendChild(chip)
-    }
-    val addChip = document.createElement("span") as HTMLElement
-    addChip.className = "chip"; addChip.setAttribute("style", "border-style:dashed;cursor:pointer;")
-    addChip.textContent = "+ add"
-    addChip.addEventListener("click") {
-        val word = window.prompt("Chapter-title keyword to match (credits)")?.trim()
-        if (!word.isNullOrEmpty()) {
-            pipelineSteps[idx] = pipelineSteps[idx].copy(chapterKeywords = pipelineSteps[idx].chapterKeywords + word)
-            renderPipeline()
-        }
-    }
-    kwChips.appendChild(addChip)
-    kwWrap.appendChild(kwLbl); kwWrap.appendChild(kwChips)
-
-    box.appendChild(fpRow); box.appendChild(stRow); box.appendChild(kwWrap)
-    return box
-}
-
-private fun pipeNotifyEl(step: PipelineStep, idx: Int): Element {
-    val el = document.createElement("span") as HTMLElement; el.className = "opt-seg"
-    listOf("summary" to "Run summary", "changes" to "On changes", "errors" to "On errors").forEach { (v, label) ->
-        val s = document.createElement("span"); s.textContent = label
-        if (step.on == v) s.classList.add("on")
-        val capturedV = v
-        s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(on = capturedV); renderPipeline() }
-        el.appendChild(s)
-    }
-    return el
-}
-
-/** Phase 269 — how often `build_recommendations` really rebuilds; a run in between reports "not due". A
- *  viewer who finishes something is rebuilt within minutes regardless. */
-private fun pipeRebuildEveryEl(step: PipelineStep, idx: Int): Element {
-    val el = document.createElement("span") as HTMLElement; el.className = "opt-seg"
-    listOf("weekly" to "Every week", "daily" to "Every day").forEach { (v, label) ->
-        val s = document.createElement("span"); s.textContent = label
-        if (step.rebuildEvery == v) s.classList.add("on")
-        s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(rebuildEvery = v); renderPipeline() }
-        el.appendChild(s)
-    }
-    return el
-}
-
-private fun pipeWaitEl(step: PipelineStep, idx: Int): Element {
-    val el = document.createElement("span") as HTMLElement; el.className = "opt-step"
-    val b  = document.createElement("b"); b.textContent = "${step.minutes} min"
-    val nx = document.createElement("span"); nx.className = "nx"; nx.textContent = "▸"
-    el.appendChild(b); el.appendChild(nx)
-    el.addEventListener("click") {
-        val next = WAIT_MINS[(WAIT_MINS.indexOf(step.minutes) + 1) % WAIT_MINS.size]
-        pipelineSteps[idx] = pipelineSteps[idx].copy(minutes = next)
-        renderPipeline()
-    }
-    return el
-}
-
-private fun renderPipelineRecipe() {
-    val el = document.getElementById("pipe-recipe") as? HTMLElement ?: return
-    el.innerHTML = pipelineSteps.mapIndexed { i, st ->
-        val d = PIPE_BLOCKS[st.step] ?: return@mapIndexed ""
-        val c = d.color
-        val label = PIPE_SHORT[st.step] ?: st.step
-        val offCls = if (!st.enabled) " off" else ""
-        (if (i > 0) """<span class="arrow">→</span>""" else "") +
-            """<span class="rc$offCls" style="background:${hexAlpha(c,0.16)};color:$c">$label</span>"""
-    }.joinToString("")
-}
-
-private fun openPipelinePalette(anchor: HTMLElement, insertAt: Int) {
-    pipeInsertAt = insertAt
-    val pal  = document.getElementById("pipe-pal")  as? HTMLElement ?: return
-    val back = document.getElementById("pipe-back") as? HTMLElement ?: return
-    pal.style.visibility = "hidden"; pal.style.display = "block"; back.style.display = "block"
-    val pw = pipeElOffsetW(pal); val ph = pipeElOffsetH(pal)
-    var left = pipeElLeft(anchor) + pipeElWidth(anchor) / 2 - pw / 2
-    val winW = pipeWinW(); val winH = pipeWinH()
-    if (left < 12) left = 12.0; if (left + pw > winW - 12) left = winW - pw - 12
-    var top = pipeElBottom(anchor) + 8
-    if (top + ph > winH - 12) top = pipeElTop(anchor) - ph - 8
-    pal.style.left = "${left.toInt()}px"; pal.style.top = "${top.toInt()}px"
-    pal.style.visibility = ""
-}
-
-private fun closePipelinePalette() {
-    pipeInsertAt = -1
-    (document.getElementById("pipe-pal")  as? HTMLElement)?.style?.display = "none"
-    (document.getElementById("pipe-back") as? HTMLElement)?.style?.display = "none"
-}
-
-private fun wirePipelineBuilder(scope: CoroutineScope) {
-    document.getElementById("pipe-enable")?.addEventListener("click") {
-        pipelineEnabled = !pipelineEnabled
-        updateToggle("pipe-enable", pipelineEnabled)
-        (document.getElementById("pipe-fields") as? HTMLElement)?.style?.display = if (pipelineEnabled) "" else "none"
-        refreshTomlPreview(readForm())
-        updateSaveEnabledForSchedule() // turning the pipeline off must never leave Save stuck disabled
-    }
-    document.getElementById("pipe-freq")?.let { freqEl ->
-        val nodes = freqEl.childNodes
-        for (i in 0 until nodes.length) {
-            val s = nodes.item(i) as? HTMLElement ?: continue
-            val f = s.getAttribute("data-f") ?: continue
-            s.addEventListener("click") {
-                pipelineFreq = f
-                renderPipelineFreq()
-            }
-        }
-    }
-    document.getElementById("pipe-at")?.addEventListener("input") { updatePipeCron() }
-    // Phase 166 — Every N hours' two numeric inputs recompute the derived cron the same way "At" does.
-    document.getElementById("pipe-everyn-hours")?.addEventListener("input") { updatePipeCron() }
-    document.getElementById("pipe-everyn-min")?.addEventListener("input") { updatePipeCron() }
-    // Phase 166 (FR-166-5) — Custom mode: the cron field IS the input now (not a derived read-only
-    // display), so typing in it must re-run live validation the same way changing a preset does.
-    document.getElementById("pipe-cron")?.addEventListener("input") {
-        refreshTomlPreview(readForm())
-        scheduleLiveCronCheck()
-    }
-    // Phase 154 (FR-PIPE1-1): both faces open the pre-run dialog instead of starting immediately — each is
-    // a whole-library, multi-hour run ("full" only drops the freshness filter), so the skip choice matters
-    // equally to both. Phase 265: the dialog lists the server's plan; the saved config is fetched here only
-    // to say when the edit buffer differs from what will run.
-    fun openRunDialog(full: Boolean) = scope.launch {
-        val saved = ConfigApi.get()?.config?.scan?.pipeline ?: pipelineSteps.toList()
-        openPipelineRunDialog(
-            scope, if (full) "Run pipeline now (full)" else "Run pipeline now", full,
-            hasUnsavedEdits = saved != pipelineSteps.toList(),
-        ) { skip -> triggerPipelineRun(full, skip) }
-    }
-    document.getElementById("pipe-run")?.addEventListener("click") { openRunDialog(full = false) }
-    document.getElementById("pipe-run-full")?.addEventListener("click") { e ->
-        if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
-        (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open")
-        openRunDialog(full = true)
-    }
-    (document.getElementById("pipe-run-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
-        (caret as? HTMLElement)?.addEventListener("click") { e ->
-            e.stopPropagation()
-            if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
-            (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.toggle("open")
-        }
-    }
-    document.addEventListener("click") { (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open") }
-    scope.launch {
-        while (isActive) {
-            refreshPipelineRunButton()
-            delay(3_000)
-        }
-    }
-    val back = document.createElement("div") as HTMLElement
-    back.id = "pipe-back"; back.style.cssText = "display:none;position:fixed;inset:0;z-index:200"
-    back.addEventListener("click") { closePipelinePalette() }
-    val pal  = document.createElement("div") as HTMLElement
-    pal.id = "pipe-pal"; pal.className = "blk-pal"; pal.style.display = "none"
-    val plh = document.createElement("div"); plh.className = "pl-h"; plh.textContent = "Add a step"
-    val lst = document.createElement("div"); lst.id = "pipe-list"
-    PIPE_PALETTE.forEach { key ->
-        val d = PIPE_BLOCKS[key] ?: return@forEach
-        val item = document.createElement("div") as HTMLElement; item.className = "blk-item"
-        val ic   = document.createElement("div") as HTMLElement; ic.className = "pipe-ic"
-        ic.innerHTML = d.icon
-        ic.style.setProperty("--c",      d.color)
-        ic.style.setProperty("--c-soft", hexAlpha(d.color, 0.16))
-        ic.style.setProperty("background", hexAlpha(d.color, 0.16))
-        ic.style.setProperty("color", d.color)
-        val info = document.createElement("div")
-        val nm   = document.createElement("div"); nm.className = "nm"; nm.textContent = d.name
-        val ds   = document.createElement("div"); ds.className = "ds"; ds.textContent = d.subtitle
-        info.appendChild(nm); info.appendChild(ds)
-        item.appendChild(ic); item.appendChild(info)
-        item.addEventListener("click") {
-            if (pipeInsertAt < 0) return@addEventListener
-            pipelineSteps.add(pipeInsertAt, defaultPipelineStep(key))
-            closePipelinePalette()
-            renderPipeline()
-        }
-        lst.appendChild(item)
-    }
-    pal.appendChild(plh); pal.appendChild(lst)
-    document.body?.appendChild(back); document.body?.appendChild(pal)
-    window.addEventListener("keydown") { e ->
-        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") closePipelinePalette()
     }
 }
 
