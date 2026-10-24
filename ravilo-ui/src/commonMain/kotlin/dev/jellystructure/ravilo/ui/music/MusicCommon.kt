@@ -36,6 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -274,7 +277,21 @@ fun TrackRow(
         Spacer(Modifier.width(8.dp))
         if (t.hasLyrics) { MusicGlyph(MusicIcon.LYRICS, colors.textDim, if (desk) 13.dp else 15.dp); Spacer(Modifier.width(8.dp)) }
         Text(fmtLen(t.durationMs), color = colors.textDim, fontSize = if (desk) 12.sp else 12.5.sp, fontFamily = Sora)
-        Box(Modifier.size(if (desk) 34.dp else 40.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, if (desk) 16.dp else 18.dp, description = str("music.more")) }
+        Box(Modifier.size(if (desk) 34.dp else 40.dp).moreTap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, if (desk) 16.dp else 18.dp, description = str("music.more")) }
+    }
+}
+
+/**
+ * A ⋯ that remembers where it is (window pixels) when it is pressed, so the desktop's *Add to playlist* popover opens
+ * beside it (DEB-2254, FR-4). Only a computer draws a popover, so only a computer measures.
+ */
+@Composable
+fun Modifier.moreTap(onMore: () -> Unit): Modifier {
+    if (!isDesktopLayout) return tap(onMore)
+    val where = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    return onGloballyPositioned { where[0] = it }.tap {
+        MoreAnchor.last = where[0]?.takeIf { c -> c.isAttached }?.boundsInWindow()?.let { r -> IntRect(r.left.roundToInt(), r.top.roundToInt(), r.right.roundToInt(), r.bottom.roundToInt()) }
+        onMore()
     }
 }
 
@@ -318,7 +335,7 @@ fun androidx.compose.foundation.layout.RowScope.pillWidth(): Modifier = if (isDe
 
 data class TrackSheetRequest(val track: MusicTrackItem)
 
-/** ⋯ on a song: Play next · Add to queue · Add to playlist… (phase 2) · Go to album · Go to artist · My List. */
+/** ⋯ on a song: Play next · Add to queue · Add to playlist… · Go to album · Go to artist · My List. */
 @Composable
 fun TrackActionsSheet(
     request: TrackSheetRequest?,
@@ -347,7 +364,12 @@ fun TrackActionsSheet(
             CastBlock(t, onDismiss)
             SheetRow(str("music.play_next"), MusicIcon.NEXT) { MusicPlayback.playNext(t); MusicToasts.show(msgNext); onDismiss() }
             SheetRow(str("music.add_queue"), MusicIcon.QUEUE) { MusicPlayback.addToQueue(t); MusicToasts.show(msgQueued); onDismiss() }
-            SheetRow(str("music.add_playlist"), MusicIcon.LISTEN, dim = true, trailing = str("music.phase2")) { onDismiss() }
+            // DEB-2254 (FR-4) — live now: the picker, from every ⋯ that opens on a song.
+            SheetRow(str("music.add_playlist"), MusicIcon.PLAYLIST_ADD) {
+                val anchor = MoreAnchor.last
+                onDismiss()
+                PlaylistFlow.addTo(PlaylistAddRequest(PlaylistSource.SONG, listOf(t.id), listOfNotNull(t.title, artistLine(t).ifBlank { null }).joinToString(" — "), anchor))
+            }
             t.albumId?.let { id -> SheetRow(str("music.go_album"), MusicIcon.BROWSE) { onDismiss(); onGoAlbum(id) } }
             t.artists.firstOrNull()?.let { a -> SheetRow(str("music.go_artist"), MusicIcon.LISTEN) { onDismiss(); onGoArtist(a.id) } }
             val favs by MusicFavorites.overrides.collectAsState()

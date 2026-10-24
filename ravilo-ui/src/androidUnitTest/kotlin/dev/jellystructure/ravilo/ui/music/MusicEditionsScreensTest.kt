@@ -7,6 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -37,29 +40,16 @@ private fun Desktop(on: Boolean, content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** R373 (test 7, dev review 4) — the ▾ pick, against the real Android store. */
+/** R373 amendment 2026-10-23 (DEB-2254) — the per-album ▾ pick is retired: a stored value is ignored, and a sign-out still clears it. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class AlbumPickStoreTest {
-    @Before fun setUp() { initContext(); AlbumPickStore.clear() }
+class RetiredAlbumPickTest {
+    @Before fun setUp() { initContext(); MusicDeviceStore.put("album_pick", null) }
 
-    @Test fun the_pick_is_per_album_and_per_device() {
-        AlbumPickStore.set("kw", AlbumPick.EXTRAS)
-        assertEquals(AlbumPick.EXTRAS, AlbumPickStore.get("kw"))
-        assertEquals(AlbumPick.ALBUM, AlbumPickStore.get("sf"))
-        AlbumPickStore.set("kw", AlbumPick.ALBUM)
-        assertEquals(AlbumPick.ALBUM, AlbumPickStore.get("kw"))
-    }
-
-    @Test fun forget_listening_clears_it() {
-        AlbumPickStore.set("kw", AlbumPick.EXTRAS)
+    @Test fun forget_listening_still_clears_a_value_an_older_build_stored() {
+        MusicDeviceStore.put("album_pick", "kw")
         forgetListening()
-        assertEquals(AlbumPick.ALBUM, AlbumPickStore.get("kw"))
-    }
-
-    @Test fun a_garbled_value_reads_as_the_plain_album() {
-        MusicDeviceStore.put("album_pick", "{\"kw\": [not json")
-        assertEquals(AlbumPick.ALBUM, AlbumPickStore.get("kw"))
+        assertEquals(null, MusicDeviceStore.get("album_pick"))
     }
 }
 
@@ -71,7 +61,7 @@ class MusicAlbumEditionsTest {
     private val played = ArrayList<Pair<List<String>, Boolean>>()
     private var opened: String? = null
 
-    @Before fun setUp() { initContext(); AlbumPickStore.clear(); played.clear() }
+    @Before fun setUp() { initContext(); MusicDeviceStore.put("album_pick", null); PlaylistFlow.closePicker(); played.clear() }
 
     private fun render(d: MusicAlbumDetail, desktop: Boolean = false) {
         rule.setContent {
@@ -106,38 +96,82 @@ class MusicAlbumEditionsTest {
 
     @Test fun the_same_page_on_the_desktop() { render(KiteWeather.detail(), desktop = true); assertKiteWeather() }
 
-    @Test fun the_menu_picks_relabels_and_starts_playback() {
-        render(KiteWeather.detail())
-        rule.onAllNodesWithContentDescription("More ways to play")[0].performClick()
+    private fun openPlayMenu() {
+        rule.onNodeWithContentDescription("More ways to play").performClick()
         rule.waitForIdle()
-        rule.onNodeWithText("11 songs · the official order").assertExists()
-        rule.onNodeWithText("25 songs · extras, then the B-sides").assertExists()
-        rule.onNodeWithText("Play album + extras").performClick()
-        rule.waitForIdle()
-        assertEquals(25, played.last().first.size); assertEquals(false, played.last().second)
-        rule.onNodeWithText("Play album + extras").assertExists()   // the button relabels
-        // Shuffle follows the pick: the same 25, shuffled.
-        rule.onNodeWithText("Shuffle").performClick()
-        rule.waitForIdle()
-        assertEquals(25, played.last().first.size); assertEquals(true, played.last().second)
-        assertEquals(AlbumPick.EXTRAS, AlbumPickStore.get("kw"), "a fresh composition reads the remembered pick")
-        // Shuffle's own ▾ picks too, and starts a shuffle.
-        rule.onAllNodesWithContentDescription("More ways to play")[1].performClick()
-        rule.waitForIdle()
-        rule.onNodeWithText("Play album").performClick()
-        rule.waitForIdle()
-        assertEquals(11, played.last().first.size); assertEquals(true, played.last().second)
-        assertEquals(AlbumPick.ALBUM, AlbumPickStore.get("kw"))
     }
 
-    @Test fun an_unmatched_album_is_todays_page() {
+    @Test fun the_main_part_plays_the_official_album_whatever_an_older_build_stored() {
+        MusicDeviceStore.put("album_pick", "kw")   // the retired pick: ignored
+        render(KiteWeather.detail())
+        rule.onNodeWithTag("album-play").performClick()
+        rule.waitForIdle()
+        assertEquals((1..11).map { "kw-$it" }, played.last().first); assertEquals(false, played.last().second)
+        rule.onNodeWithText("Play album").assertExists()
+        assertTrue(rule.onAllNodesWithText("Play album + extras").fetchSemanticsNodes().isEmpty(), "the button never relabels")
+    }
+
+    @Test fun an_album_with_editions_has_four_rows_with_no_subtitles_and_no_tick() {
+        render(KiteWeather.detail())
+        openPlayMenu()
+        for (row in listOf("play", "shuffle", "play_extras", "shuffle_extras")) rule.onNodeWithTag("album-row-$row").assertExists()
+        rule.onNodeWithText("Shuffle + extras").assertExists()
+        rule.onNodeWithText("Play album + extras").assertExists()
+        assertTrue(rule.onAllNodesWithText("the official order", substring = true).fetchSemanticsNodes().isEmpty(), "no subtitles")
+        assertTrue(rule.onAllNodesWithText("then the B-sides", substring = true).fetchSemanticsNodes().isEmpty(), "no subtitles")
+    }
+
+    @Test fun each_row_starts_playback_and_nothing_is_remembered() {
+        render(KiteWeather.detail())
+        val official = (1..11).map { "kw-$it" }
+        openPlayMenu(); rule.onNodeWithTag("album-row-play_extras").performClick(); rule.waitForIdle()
+        assertEquals(25, played.last().first.size); assertEquals(false, played.last().second)
+        openPlayMenu(); rule.onNodeWithTag("album-row-shuffle_extras").performClick(); rule.waitForIdle()
+        assertEquals(25, played.last().first.size); assertEquals(true, played.last().second)
+        openPlayMenu(); rule.onNodeWithTag("album-row-shuffle").performClick(); rule.waitForIdle()
+        assertEquals(official, played.last().first); assertEquals(true, played.last().second)
+        // After an extras pick the main part still plays the official album.
+        openPlayMenu(); rule.onNodeWithTag("album-row-play_extras").performClick(); rule.waitForIdle()
+        rule.onNodeWithTag("album-play").performClick(); rule.waitForIdle()
+        assertEquals(official, played.last().first); assertEquals(false, played.last().second)
+        assertEquals(null, MusicDeviceStore.get("album_pick"), "nothing is stored")
+    }
+
+    @Test fun a_plain_album_has_the_same_button_and_two_rows() {
         render(KiteWeather.detail(officialIds = null).copy(singles = emptyList(), bsideTracks = emptyList()))
-        assertTrue(rule.onAllNodesWithContentDescription("More ways to play").fetchSemanticsNodes().isEmpty())
         assertTrue(rule.onAllNodesWithText("Extras", substring = true).fetchSemanticsNodes().isEmpty())
-        assertTrue(rule.onAllNodesWithText("Singles & B-sides").fetchSemanticsNodes().isEmpty())
-        rule.onNodeWithText("Play").performClick()
+        rule.onNodeWithText("Play album").assertExists()
+        rule.onNodeWithTag("album-play").performClick()
         rule.waitForIdle()
         assertEquals(KiteWeather.detail().tracks.map { it.id }, played.last().first)
+        openPlayMenu()
+        rule.onNodeWithTag("album-row-play").assertExists(); rule.onNodeWithTag("album-row-shuffle").assertExists()
+        assertTrue(rule.onAllNodesWithTag("album-row-play_extras").fetchSemanticsNodes().isEmpty())
+        assertTrue(rule.onAllNodesWithTag("album-row-shuffle_extras").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun the_dots_hold_add_to_playlist_for_the_official_albums_songs() {
+        render(KiteWeather.detail())
+        rule.onNodeWithTag("album-more").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Add to playlist…").assertExists()
+        rule.onNodeWithTag("album-add-to-playlist").performClick()
+        rule.waitForIdle()
+        val asked = PlaylistFlow.picker.value
+        assertNotNull(asked)
+        assertEquals(PlaylistSource.ALBUM, asked.source)
+        assertEquals((1..11).map { "kw-$it" }, asked.itemIds)
+    }
+
+    @Test fun the_dots_are_there_on_the_desktop_too() {
+        render(KiteWeather.detail(), desktop = true)
+        rule.onNodeWithTag("album-more").assertExists()
+        rule.onNodeWithTag("album-play").assertExists()
+    }
+
+    @Test fun an_album_with_no_songs_has_no_dots() {
+        render(KiteWeather.detail(officialIds = null).copy(tracks = emptyList(), singles = emptyList(), bsideTracks = emptyList()))
+        assertTrue(rule.onAllNodesWithTag("album-more").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun a_singles_page_says_single_from_and_opens_the_album() {

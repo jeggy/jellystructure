@@ -4,6 +4,12 @@ import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import dev.jellystructure.ravilo.ui.theme.accentGradient
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,17 +115,17 @@ fun MusicAlbumScreen(
             val context = MusicContext("album", a.title, a.id)
             val albumArtistIds = a.artists.map { it.id }.toSet()
             val compilation = a.type == "compilation"
-            // R373 (FR-R373-2, dev review 4) — the ▾ pick, remembered per album on this device; an unmatched album
-            // ignores it (today's page).
+            // R373 (FR-R373-2, amended 2026-10-23) — one *Play album ▾* button. The main part always plays the official
+            // album; the ▾ menu holds the shuffles and, on an album with editions, the extras. Nothing is remembered.
             val editions = hasEditions(d)
-            var pick by remember(a.id) { mutableStateOf(effectivePick(d, AlbumPickStore.get(a.id))) }
             var bsidesOpen by remember(a.id) { mutableStateOf(false) }
-            fun choose(p: AlbumPick) { pick = p; AlbumPickStore.set(a.id, p) }
-            fun playPick(shuffle: Boolean) {
-                val q = albumQueue(d, pick)
+            fun playRow(row: AlbumPlayRow) {
+                val (q, shuffle) = albumPlayFor(d, row)
                 if (q.isNotEmpty()) onPlayQueue(q, if (shuffle) q.indices.random() else 0, context, shuffle)
             }
-            fun playFrom(t: MusicTrackItem) { val (q, i) = queueForTap(d, pick, t.id); onPlayQueue(q, i, context, false) }
+            fun playFrom(t: MusicTrackItem) { val (q, i) = queueForTap(d, t.id); onPlayQueue(q, i, context, false) }
+            val playlistIds = albumPlaylistIds(d)
+            val playlistSubtitle = listOfNotNull(a.title, a.artists.joinToString(" & ") { it.name }.ifBlank { null }).joinToString(" — ")
             val official = officialTracks(d)
             val extras = extraTracks(d)
             val lang = dev.jellystructure.ravilo.ui.i18n.LocalLang.current
@@ -142,25 +148,12 @@ fun MusicAlbumScreen(
                 }
             }
             @Composable fun Buttons(desk: Boolean) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (!editions) {
-                        PillButton(str("music.play"), MusicIcon.PLAY, primary = true, if (desk) Modifier else pillWidth()) { onPlayQueue(d.tracks, 0, context, false) }
-                        PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, if (desk) Modifier else pillWidth()) { onPlayQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, true) }
-                    } else {
-                        val n1 = official.size
-                        val n2 = albumQueue(d, AlbumPick.EXTRAS).size
-                        SplitPlayButton(
-                            label = str(if (pick == AlbumPick.EXTRAS) "ed.play_extras" else "ed.play_album"), icon = MusicIcon.PLAY, primary = true,
-                            modifier = if (desk) Modifier else pillWidth(), pick = pick, albumSongs = n1, extendedSongs = n2,
-                            onMain = { playPick(false) }, onPick = { p -> choose(p); playPick(false) },
-                        )
-                        SplitPlayButton(
-                            label = str("music.shuffle"), icon = MusicIcon.SHUFFLE, primary = false,
-                            modifier = if (desk) Modifier else pillWidth(), pick = pick, albumSongs = n1, extendedSongs = n2,
-                            onMain = { playPick(true) }, onPick = { p -> choose(p); playPick(true) },
-                        )
-                    }
-                }
+                AlbumActions(
+                    rows = albumPlayRows(d), desk = desk, onPlay = ::playRow,
+                    onAddToPlaylist = if (playlistIds.isEmpty()) null else ({ anchor ->
+                        PlaylistFlow.addTo(PlaylistAddRequest(PlaylistSource.ALBUM, playlistIds, playlistSubtitle, anchor))
+                    }),
+                )
             }
             LazyColumn(contentPadding = PaddingValues(top = if (deskWide) 52.dp else 0.dp, bottom = 24.dp)) {
                 if (!deskWide) item(key = "cover") {
@@ -301,42 +294,82 @@ private fun SingleCardView(s: dev.jellystructure.shared.tv.MusicAlbumCard, width
 }
 
 /**
- * R373 (FR-R373-2 point 3) — *Play album ▾* / *Shuffle ▾*: the main part plays the current pick; ▾ opens a menu of
- * *Play album* (*{n} songs · the official order*) and *Play album + extras* (*{n} songs · extras, then the B-sides*),
- * the current one ticked. Picking from the menu remembers the pick and starts playback.
+ * R373 (FR-R373-2 point 3, amended 2026-10-23) and DEB-2254 (FR-6) — the album's one row of actions: *Play album ▾*, a
+ * split button with the ⋯ beside it.
+ * - The main part plays the official album and never relabels (the button says *Play album* on a plain album too).
+ * - The ▾ menu: *Play album* · *Shuffle*, and on an album with editions a separator, then *Play album + extras* ·
+ *   *Shuffle + extras*. The rows carry their icons only; nothing is ticked and nothing is remembered.
+ * - The ⋯ holds *Add to playlist…* ([onAddToPlaylist] gets the ⋯'s place in the window); it is absent without songs.
+ * One gradient runs across both halves, and the ▾ half is 44 dp (30 on the desktop). Both menus are popups, so they
+ * draw above the mini player and the bottom bar.
  */
 @Composable
-private fun SplitPlayButton(
-    label: String, icon: MusicIcon, primary: Boolean, modifier: Modifier, pick: AlbumPick, albumSongs: Int, extendedSongs: Int,
-    onMain: () -> Unit, onPick: (AlbumPick) -> Unit,
-) {
+private fun AlbumActions(rows: List<AlbumPlayRow>, desk: Boolean, onPlay: (AlbumPlayRow) -> Unit, onAddToPlaylist: ((IntRect?) -> Unit)?) {
     val colors = RaviloTheme.colors
-    var open by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            PillButton(label, icon, primary = primary, Modifier.weight(1f, fill = false), onClick = onMain)
-            Spacer(Modifier.width(4.dp))
-            val ink = if (primary && !dev.jellystructure.ravilo.ui.theme.isDesktopLayout) colors.onAccent else colors.text
-            Box(
-                Modifier.size(if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) 38.dp else 46.dp).clip(CircleShape)
-                    .background(if (primary) colors.accent.copy(alpha = 0.35f) else colors.surfaceVariant).tap { open = true },
-                contentAlignment = Alignment.Center,
-            ) { ChevronGlyph(GlyphDirection.DOWN, ink, 14.dp, description = str("ed.more_play")) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var rowWidth by remember { mutableStateOf(0.dp) }
+    var playOpen by remember { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
+    val height = if (desk) 38.dp else 48.dp
+    val shape = RoundedCornerShape(if (desk) 10.dp else 14.dp)
+    val ink = if (desk) colors.background else colors.onAccent
+    Row(
+        Modifier.then(if (desk) Modifier else Modifier.fillMaxWidth()).onSizeChanged { rowWidth = with(density) { it.width.toDp() } },
+        horizontalArrangement = Arrangement.spacedBy(if (desk) 10.dp else 8.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(if (desk) Modifier else Modifier.weight(1f)) {
+            Row(
+                Modifier.then(if (desk) Modifier else Modifier.fillMaxWidth()).height(height).clip(shape)
+                    .background(if (desk) Brush.linearGradient(listOf(colors.text, colors.text)) else colors.accentGradient),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier.then(if (desk) Modifier else Modifier.weight(1f)).fillMaxHeight().tap { onPlay(AlbumPlayRow.PLAY) }.padding(horizontal = if (desk) 18.dp else 10.dp).testTag("album-play"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                ) {
+                    MusicGlyph(MusicIcon.PLAY, ink, if (desk) 15.dp else 17.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(str("ed.play_album"), color = ink, fontSize = if (desk) 13.5.sp else 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Color.Black.copy(alpha = if (desk) 0.14f else 0.22f)))
+                Box(Modifier.width(if (desk) 30.dp else 44.dp).fillMaxHeight().tap { playOpen = true }.testTag("album-play-more"), contentAlignment = Alignment.Center) {
+                    ChevronGlyph(GlyphDirection.DOWN, ink, 14.dp, description = str("ed.more_play"))
+                }
+            }
+            androidx.compose.material3.DropdownMenu(
+                expanded = playOpen, onDismissRequest = { playOpen = false }, containerColor = colors.surface,
+                modifier = if (desk) Modifier.width(290.dp) else Modifier.width(rowWidth),
+            ) {
+                rows.forEachIndexed { i, row ->
+                    // The extras group is set apart by a separator (the owner's "grouped by separators").
+                    if (i == 2) Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp).height(1.dp).background(colors.fg.copy(alpha = 0.10f)))
+                    val shuffle = row == AlbumPlayRow.SHUFFLE || row == AlbumPlayRow.SHUFFLE_EXTRAS
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            Text(
+                                str(when (row) { AlbumPlayRow.PLAY -> "ed.play_album"; AlbumPlayRow.SHUFFLE -> "music.shuffle"; AlbumPlayRow.PLAY_EXTRAS -> "ed.play_extras"; AlbumPlayRow.SHUFFLE_EXTRAS -> "ed.shuffle_extras" }),
+                                color = colors.text, fontSize = if (desk) 13.5.sp else 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+                            )
+                        },
+                        leadingIcon = { MusicGlyph(if (shuffle) MusicIcon.SHUFFLE else MusicIcon.PLAY, colors.textSecondary, if (desk) 16.dp else 18.dp) },
+                        onClick = { playOpen = false; onPlay(row) },
+                        modifier = Modifier.heightIn(min = if (desk) 42.dp else 52.dp).testTag("album-row-" + row.name.lowercase()),
+                    )
+                }
+            }
         }
-        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = colors.surface) {
-            for ((p, title, sub) in listOf(
-                Triple(AlbumPick.ALBUM, str("ed.play_album"), str("ed.sub_album", mapOf("n" to albumSongs.toString()))),
-                Triple(AlbumPick.EXTRAS, str("ed.play_extras"), str("ed.sub_extras", mapOf("n" to extendedSongs.toString()))),
-            )) {
+        if (onAddToPlaylist != null) Box {
+            Box(
+                Modifier.size(width = if (desk) 38.dp else 48.dp, height = height).clip(shape).background(colors.fg.copy(alpha = 0.06f)).border(1.dp, colors.fg.copy(alpha = 0.12f), shape)
+                    .moreTap { moreOpen = true }.testTag("album-more"),
+                contentAlignment = Alignment.Center,
+            ) { MusicGlyph(MusicIcon.MORE, colors.text, if (desk) 16.dp else 20.dp, description = str("music.more")) }
+            androidx.compose.material3.DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }, containerColor = colors.surface) {
                 androidx.compose.material3.DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(title, color = colors.text, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
-                            Text(sub, color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
-                        }
-                    },
-                    leadingIcon = { Box(Modifier.width(18.dp)) { if (p == pick) MusicGlyph(MusicIcon.CHECK, colors.accentSecondary, 16.dp) } },
-                    onClick = { open = false; onPick(p) },
+                    text = { Text(str("music.add_playlist"), color = colors.text, fontSize = if (desk) 13.5.sp else 14.5.sp, fontWeight = FontWeight.Medium, fontFamily = Sora) },
+                    leadingIcon = { MusicGlyph(MusicIcon.PLAYLIST_ADD, colors.textSecondary, if (desk) 16.dp else 18.dp) },
+                    onClick = { moreOpen = false; onAddToPlaylist(MoreAnchor.last) },
+                    modifier = Modifier.heightIn(min = if (desk) 42.dp else 48.dp).testTag("album-add-to-playlist"),
                 )
             }
         }

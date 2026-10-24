@@ -34,6 +34,8 @@ enum class MusicIcon {
     HEART, HEART_FILLED, MORE, LYRICS, DRAG, CHEVRON_DOWN, FILM, SEARCH,
     // R323 — the book player.
     BACK30, FWD30, SLEEP, BOOKMARK, CHAPTERS, CHECK,
+    // DEB-2254 — making a playlist: the picker's + tile, *Add to playlist…*, *Save as playlist*, and the × of *Clear queue*.
+    PLUS, PLAYLIST_ADD, SAVE, CLOSE,
 }
 
 @Composable
@@ -143,6 +145,20 @@ private fun DrawScope.drawMusicIcon(icon: MusicIcon, tint: Color) {
         MusicIcon.SLEEP -> path { m(it(19.5f, 14.5f)); c(it(15f, 16.5f), it(8.5f, 13f), it(9f, 7f)); c(it(9.2f, 5.6f), it(9.7f, 4.5f), it(10.4f, 3.5f)); c(it(5.8f, 4.8f), it(3f, 8.8f), it(3.5f, 13.3f)); c(it(4.2f, 19.3f), it(10.3f, 22.5f), it(15.6f, 20f)); c(it(17.3f, 19.2f), it(18.6f, 17f), it(19.5f, 14.5f)); close() }
         MusicIcon.BOOKMARK -> path { m(it(6.5f, 3.5f)); l(it(17.5f, 3.5f)); l(it(17.5f, 20.5f)); l(it(12f, 16.5f)); l(it(6.5f, 20.5f)); close() }
         MusicIcon.CHECK -> path { m(it(5f, 12.5f)); l(it(10f, 17.5f)); l(it(19f, 7f)) }
+        MusicIcon.PLUS -> { line(12f, 5f, 12f, 19f); line(5f, 12f, 19f, 12f) }
+        MusicIcon.CLOSE -> { line(6f, 6f, 18f, 18f); line(18f, 6f, 6f, 18f) }
+        // Three lines and a note: the queue's rows with a song to add (the sheet's *Add to playlist…*).
+        MusicIcon.PLAYLIST_ADD -> {
+            line(4f, 6f, 16f, 6f); line(4f, 11f, 16f, 11f); line(4f, 16f, 10f, 16f)
+            circle(16.5f, 17f, 2.5f)
+            path { m(it(19f, 17f)); l(it(19f, 9f)); l(it(21.5f, 10f)) }
+        }
+        // A floppy disc: *Save as playlist*.
+        MusicIcon.SAVE -> {
+            path { m(it(5f, 3.5f)); l(it(16.5f, 3.5f)); l(it(20.5f, 7.5f)); l(it(20.5f, 20.5f)); l(it(5f, 20.5f)); close() }
+            path { m(it(8f, 3.5f)); l(it(8f, 8.5f)); l(it(15f, 8.5f)); l(it(15f, 3.5f)) }
+            rrect(8f, 13f, 8f, 7.5f, 1f)
+        }
         MusicIcon.CHAPTERS -> {
             circle(5f, 6f, 1.3f, fill = true); circle(5f, 12f, 1.3f, fill = true); circle(5f, 18f, 1.3f, fill = true)
             line(9f, 6f, 20f, 6f); line(9f, 12f, 20f, 12f); line(9f, 18f, 16f, 18f)

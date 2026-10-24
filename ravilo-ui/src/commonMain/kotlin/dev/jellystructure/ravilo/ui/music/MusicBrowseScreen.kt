@@ -39,7 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -518,14 +520,16 @@ private fun LazyListScope.genresChip(store: MusicBrowseStore, onGenre: (String) 
 
 private fun LazyListScope.playlistsChip(store: MusicBrowseStore, onOpen: (MusicPlaylist) -> Unit) {
     item(key = "playlists") {
-        LaunchedEffect(Unit) { store.playlists.load() }
+        // DEB-2254 (FR-14) — read again whenever a write has changed the lists; the page keeps no copy of its own.
+        val version by PlaylistFlow.version.collectAsState()
+        LaunchedEffect(version) { store.playlists.load() }
         val state by store.playlists.state.collectAsState()
         val colors = RaviloTheme.colors
         val pl = (state as? Load.Ready)?.value
         Column(Modifier.padding(horizontal = raviloHPad)) {
             when {
                 pl == null -> Box(Modifier.height(80.dp))
-                // FR-R321-10 (J7 lean: two states) — creating a playlist is phase 2.
+                // FR-R321-10 (J7 lean: two states).
                 pl.isEmpty() -> Column(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(14.dp)).padding(16.dp)) {
                     Text(str("music.no_playlists"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Spacer(Modifier.height(4.dp))
@@ -543,9 +547,14 @@ private fun LazyListScope.playlistsChip(store: MusicBrowseStore, onOpen: (MusicP
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(str("music.new_playlist"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
-                Text(str("music.phase2"), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+            // DEB-2254 (FR-3) — *New playlist* makes an empty playlist through the one name sheet, and opens it.
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 50.dp).clip(RoundedCornerShape(14.dp)).dashedBorder(colors.fg.copy(0.22f), 14.dp)
+                    .tap { PlaylistFlow.nameIt(PlaylistNameRequest(PlaylistSource.NOTHING, emptyList(), onCreated = onOpen)) }.testTag("playlists-new"),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
+                MusicGlyph(MusicIcon.PLUS, colors.text, 17.dp)
+                Text(str("music.new_playlist"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
             }
         }
     }

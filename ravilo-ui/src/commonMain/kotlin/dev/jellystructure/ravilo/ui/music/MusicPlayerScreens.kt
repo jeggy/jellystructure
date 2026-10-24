@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -58,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -223,7 +225,7 @@ private fun DeskPlaying(
                     Box(Modifier.size(32.dp).tap { onFavorite(t, !fav) }, contentAlignment = Alignment.Center) {
                         MusicGlyph(if (fav) MusicIcon.HEART_FILLED else MusicIcon.HEART, if (fav) colors.accentSecondary else colors.textSecondary, 20.dp, description = str("nav.my_list"))
                     }
-                    Box(Modifier.size(32.dp).tap { onTrackMore(t) }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 20.dp, description = str("music.more")) }
+                    Box(Modifier.size(32.dp).moreTap { onTrackMore(t) }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 20.dp, description = str("music.more")) }
                 }
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -432,7 +434,7 @@ private fun BottomRow(t: MusicTrackItem, lyricsOn: Boolean, onLyrics: () -> Unit
         // sheet, lit while a speaker plays. Absent, never greyed, when there is nothing to cast to.
         dev.jellystructure.ravilo.ui.components.CastButton(Modifier.size(46.dp))
         Spacer(Modifier.weight(1f))
-        Box(Modifier.size(46.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 22.dp, description = str("music.more")) }
+        Box(Modifier.size(46.dp).moreTap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 22.dp, description = str("music.more")) }
     }
 }
 
@@ -532,15 +534,22 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                 Column(Modifier.padding(horizontal = if (panel) 0.dp else hPad)) {
                     // R352 (FR-R352-5) — the line under *Up next* counts the rows under it, and their lengths. It used to
                     // add the playing song (*4 songs* over three rows). Nothing up next: no heading, no line.
-                    if (up.isEmpty()) return@Column
-                    val left = up.sumOf { it.durationMs ?: 0L }
-                    if (panel) PanelHeading(str("music.up_next")) else MusicSectionHeader(str("music.up_next"))
-                    Row(Modifier.padding(horizontal = if (panel) 18.dp else 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (up.isNotEmpty()) {
+                        val left = up.sumOf { it.durationMs ?: 0L }
+                        if (panel) PanelHeading(str("music.up_next")) else MusicSectionHeader(str("music.up_next"))
                         // One song is "1 song", not "1 songs" (the last song of a queue on a speaker, 2026-09-30).
                         val leftText = fmtTotal(left.coerceAtLeast(0L))
-                        Text(if (up.size == 1) songsCount(1) + " · " + str("ab.left", mapOf("t" to leftText)) else str("music.queue_left", mapOf("n" to up.size.toString(), "t" to leftText)), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-                        if (up.isNotEmpty()) Text(str("music.clear_queue"), color = colors.accentSecondary, fontSize = if (panel) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
-                            modifier = Modifier.tap { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }.padding(vertical = if (panel) 4.dp else 8.dp))
+                        Text(if (up.size == 1) songsCount(1) + " · " + str("ab.left", mapOf("t" to leftText)) else str("music.queue_left", mapOf("n" to up.size.toString(), "t" to leftText)), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora,
+                            modifier = Modifier.padding(horizontal = if (panel) 18.dp else 0.dp))
+                    }
+                    // DEB-2254 (FR-7) — *Save as playlist* and *Clear queue* on a line of their own under the heading: on the
+                    // heading line, *Up next* wrapped at 360 dp and the Faroese pushed *Clear queue* off the edge (round, Q5).
+                    // *Save as playlist* is there whenever a song is playing; *Clear queue* only with something up next.
+                    Row(Modifier.padding(horizontal = if (panel) 18.dp else 0.dp).padding(top = 8.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QueuePill(MusicIcon.SAVE, str("music.pl_save_queue"), "queue-save") {
+                            PlaylistFlow.nameIt(PlaylistNameRequest(PlaylistSource.QUEUE, queueToSave(cur, up).map { it.id }))
+                        }
+                        if (up.isNotEmpty()) QueuePill(MusicIcon.CLOSE, str("music.clear_queue"), "queue-clear") { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }
                     }
                 }
             }
@@ -592,6 +601,23 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
     }
 }
 
+/** DEB-2254 (FR-7) — what *Save as playlist* saves: the playing song, then *Up next*, in the order shown. */
+fun queueToSave(playing: MusicTrackItem, upNext: List<MusicTrackItem>): List<MusicTrackItem> = listOf(playing) + upNext
+
+/** `.mpl-qact` — a small pill under the queue's heading: glyph and label, 28 dp tall. */
+@Composable
+private fun QueuePill(icon: MusicIcon, label: String, tag: String, onClick: () -> Unit) {
+    val colors = RaviloTheme.colors
+    Row(
+        Modifier.height(28.dp).clip(RoundedCornerShape(14.dp)).background(colors.fg.copy(0.09f)).border(1.dp, colors.fg.copy(0.10f), RoundedCornerShape(14.dp))
+            .tap(onClick).padding(start = 9.dp, end = 11.dp).testTag(tag),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        MusicGlyph(icon, colors.text, 13.dp)
+        Text(label, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)
+    }
+}
+
 /** `.qp h5` — a heading inside the desktop's queue panel. */
 @Composable
 private fun PanelHeading(title: String) {
@@ -616,7 +642,7 @@ private fun QueuePanelRow(t: MusicTrackItem, now: Boolean, onPlay: () -> Unit, o
             }
             Text(listOf(artistLine(t), fmtLen(t.durationMs)).filter { it.isNotBlank() }.joinToString(" · "), color = colors.textDim, fontSize = 11.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Box(Modifier.size(24.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textDim, 15.dp, description = str("music.more")) }
+        Box(Modifier.size(24.dp).moreTap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textDim, 15.dp, description = str("music.more")) }
     }
 }
 

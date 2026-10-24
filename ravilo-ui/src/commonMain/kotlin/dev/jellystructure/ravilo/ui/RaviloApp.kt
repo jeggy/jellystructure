@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui
 
+import dev.jellystructure.ravilo.ui.music.asPlaylistWrites
 import dev.jellystructure.ravilo.ui.screens.TvApproveStore
 import dev.jellystructure.ravilo.ui.screens.TvClientApproveApi
 import dev.jellystructure.ravilo.ui.screens.TvLinkInbox
@@ -3500,12 +3501,18 @@ fun RaviloApp(
                 }
             }
         }
-        if (handset) {
+        // DEB-2254 — the song's ⋯ sheet, the playlist picker and name sheet, and the toast that answers them, on a computer
+        // as well: they were drawn on the phone layout only, so a song's ⋯ opened nothing on the desktop.
+        if (handset || desktop) {
             Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false)) {
                 dev.jellystructure.ravilo.ui.music.MusicToastHost(
-                    (if (barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) + (if (anyMusicBarOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp),
+                    if (desktop) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset()
+                    else (if (barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) + (if (anyMusicBarOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp),
                 )
             }
+            // DEB-2254 (FR-3, FR-4, FR-14) — one picker and one name sheet over every music page.
+            val playlistWrites = remember(apiClient) { apiClient.asPlaylistWrites() }
+            dev.jellystructure.ravilo.ui.music.PlaylistHost(playlistWrites)
             // FR-R322-11 — ⋯ on a song, over every music page.
             dev.jellystructure.ravilo.ui.music.TrackActionsSheet(
                 request = trackSheet,

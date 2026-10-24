@@ -293,3 +293,26 @@ One engineer. Each slice is blocked by the one before.
 
 QA is filed when slice 3 lands, on the phone and on one desktop. Acceptance 4 needs a second Jellyfin user who shares a
 playlist with the first.
+
+## Amendment 2026-10-24 — what slice 2 settled while building (DEB-2280)
+
+Four things the build had to decide that the spec above left open. None changes what a viewer was promised.
+
+- **FR-16 gains one key**, the picker's heading that the round drew: `music.pl_add_title`, en *Add to playlist* · da *Føj til
+  playliste* · fo *Legg í spælilista*. It is *Add to playlist…* without the ellipsis, because the heading names the
+  sheet and the row names the action that opens it.
+- **FR-4 on a computer.** The song's ⋯ sheet, the picker, the name sheet and the toast were hosted for the phone layout
+  only (`RaviloApp`, `if (handset)`), so a song's ⋯ opened nothing in a window wider than 600 dp. They are hosted for the
+  desktop layout too. The picker there is the popover the round adopted: 312 dp, under the ⋯ that opened it and above it
+  when it would run off the window, clamped 12 dp inside the window's sides. When the ⋯ is not known the popover is centred.
+- **FR-3's name sheet.** *Create* is shown and inert while the name is empty (the round's `ph-name-empty`); the field holds at
+  most 100 characters, which is FR-3's limit, so *Give it a name* appears only on a `400` the server sends (`ph-name-error`).
+  A name of spaces only counts as empty.
+- **FR-3's toast after a create that carried songs** counts what the server kept, `MusicPlaylist.track_count` of its answer,
+  not what was sent: *Added to {name}* for one song, *Added {n} songs to {name}* for an album, *Saved {n} songs as {name}*
+  for the queue.
+
+The proof is `PlaylistFlowTest` (`:ravilo-ui:desktopTest`: the picker's contents, the toasts, the popover's place) and
+`PlaylistHostTest` and `MusicAlbumEditionsTest` (`:ravilo-ui:testDebugUnitTest`: the picker and name sheet over a stand-in
+server, the album row's menus for an album with editions and a plain one).
+What no automated test can show stays with QA: the picture of the album row against `apb-a-menu`, and the popover under a real ⋯ on a Mac and on Linux.
