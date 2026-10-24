@@ -1171,6 +1171,7 @@ private fun BrowseCardGrid(
                     // step aside for a restore target and leave Down from the facet bar with nothing to reach).
                     focusRequester = if (i == 0) firstCellFR else null,
                     onSelect = { onItemSelect(card) },
+                    scrollLongTitle = isTvPlatform,   // DEB-2204 FR-6
                 )
             }
         }

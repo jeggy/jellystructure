@@ -524,6 +524,7 @@ private fun BrowseGrid(
                     // R55: the first cell is the back-to-top landing target (always: R362 review item 2).
                     focusRequester = if (i == 0) firstCellFR else null,
                     onSelect = { onItemSelect(card) },
+                    scrollLongTitle = isTvPlatform,   // DEB-2204 FR-6
                 )
             }
         }

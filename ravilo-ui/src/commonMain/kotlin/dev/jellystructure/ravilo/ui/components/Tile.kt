@@ -153,6 +153,9 @@ fun Tile(
     onFocused: () -> Unit = {},
     onBlurred: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
+    /** DEB-2204 (FR-6) — true only in the TV browse, seeded browse and search grids: a title that does not fit scrolls
+     *  once per focus arrival (see [ScrollOnceTitle]). Every other tile ends a long title in an ellipsis. */
+    scrollLongTitle: Boolean = false,
     /** DEB-2204 (FR-3) — applied to the tile's outer column; the test seam that counts this tile's recompositions. */
     modifier: Modifier = Modifier,
 ) {
@@ -333,7 +336,17 @@ fun Tile(
         // tile already states the title, so the caption underneath it would just repeat it.
         if (!open) {
             Spacer(Modifier.height(8.dp))
-            Text(
+            if (scrollLongTitle) {
+                ScrollOnceTitle(
+                    text = title,
+                    color = if (focused || desk) colors.text else colors.textSecondary,
+                    fontSize = if (desk) 13.sp else 18.sp,
+                    fontWeight = if (focused || desk) FontWeight.SemiBold else FontWeight.Medium,
+                    fontFamily = sora,
+                    width = w,
+                    focused = focused,
+                )
+            } else Text(
                 text = title,
                 color = if (focused || desk) colors.text else colors.textSecondary,
                 fontSize = if (desk) 13.sp else 18.sp,

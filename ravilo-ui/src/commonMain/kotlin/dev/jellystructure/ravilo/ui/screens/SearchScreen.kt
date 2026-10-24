@@ -476,6 +476,7 @@ fun SearchScreen(
                         focusRequester = if (i == returnIndex) returnFR else null,
                         onFocused = { focusedGridIdx = i; inGrid = true },
                         onSelect = { store.returnTarget.remember(visit, card.id, i); onItemSelect(card) },
+                        scrollLongTitle = isTvPlatform,   // DEB-2204 FR-6
                     )
                 }
             }
