@@ -34,7 +34,7 @@ ALLOWED="
   music/PlaylistPage.kt                         3   # DEB-2254 — the swipe panel's glyph and word and the confirm's *Delete*, all on the destructive fill (--pl-bad)
   qr/QrCodeImage.kt                             1   # DEB-2324 — the QR tile: white in every skin on purpose, a scanner wants the contrast (DEB-2319)
   screens/BrowserSoundHint.kt                   1
-  screens/CastRemoteScreen.kt                   2
+  screens/OneRemoteScreen.kt                    2
   screens/HomeScreen.kt                         1
   screens/LiveTvPlayerScreen.kt                 1
   screens/PlayerHandsetChrome.kt                33

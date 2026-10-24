@@ -357,10 +357,11 @@ fun OneRemoteScreen(
 private fun MoveToSheet(remote: OneRemote, onClose: () -> Unit) {
     val m = remote.model
     val view = m.view ?: return
+    val colors = RaviloTheme.colors
     val targets by PlayOnStore.targets.collectAsState()
     HandsetSheet(visible = true, onDismiss = onClose) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("remote-move-sheet")) {
-            Text(str("session.move_to"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.padding(bottom = 8.dp))
+            Text(str("session.move_to"), color = colors.fg, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.padding(bottom = 8.dp))
             moveTargets(targets.orEmpty(), view).forEach { (t, current) ->
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -368,11 +369,11 @@ private fun MoveToSheet(remote: OneRemote, onClose: () -> Unit) {
                         .testTag("remote-move-${t.id}"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    DeskIcon(placeIcon(t.icon), Color.White, 18.dp)
+                    DeskIcon(placeIcon(t.icon), colors.fg, 18.dp)
                     Spacer(Modifier.width(12.dp))
                     val thisDevice = if (dev.jellystructure.ravilo.ui.isDesktopPlatform) str("mode.label_desk") else str("mode.label")
-                    Text(if (t.here) thisDevice else t.name, color = Color.White, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-                    if (current) Text("✓", color = Color.White, fontSize = 16.sp)
+                    Text(if (t.here) thisDevice else t.name, color = colors.fg, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                    if (current) Text("✓", color = colors.fg, fontSize = 16.sp)
                 }
             }
             if (remote.extras.onPlayHere != null && !m.here) {
@@ -380,7 +381,7 @@ private fun MoveToSheet(remote: OneRemote, onClose: () -> Unit) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { onClose(); remote.extras.onPlayHere.invoke(view) }.testTag("remote-play-here"),
                     verticalAlignment = Alignment.CenterVertically,
-                ) { Text(remote.extras.playHereLabel ?: str("cast.play_here"), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
+                ) { Text(remote.extras.playHereLabel ?: str("cast.play_here"), color = colors.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
             }
             Spacer(Modifier.height(12.dp))
         }
