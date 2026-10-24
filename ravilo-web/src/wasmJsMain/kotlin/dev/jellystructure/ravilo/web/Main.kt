@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.web
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
+import kotlinx.browser.window
 import dev.jellystructure.ravilo.ui.RaviloRoot
 
 // R376 (FR-R376-1) — ComposeViewport, not the deprecated CanvasBasedWindow. The viewport draws into a canvas it
@@ -25,6 +26,11 @@ fun main() {
     // R376 (FR-R376-S1) — the page's one <video> element, listening for the first click, tap or key, so the play that
     // follows a click has Safari's sound.
     dev.jellystructure.ravilo.ui.seams.prepareWebVideo()
+    // DEB-2233 (FR-6) — the TV's QR opens `/tv?c=<code>`. The app routes on the hash, so the code is handed to the app
+    // here and the address becomes the app's own: a reload then opens the app, not a code that has since been used.
+    val location = window.location
+    dev.jellystructure.ravilo.ui.screens.tvCodeFromLocation(location.pathname, location.search)?.let { dev.jellystructure.ravilo.ui.screens.TvLinkInbox.offer(it) }
+    if (location.pathname == "/tv") window.history.replaceState(null, "", "/" + location.hash)
     val container = document.getElementById("ComposeTarget") ?: error("index.html has no #ComposeTarget")
     ComposeViewport(
         viewportContainer = container,

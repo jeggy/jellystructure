@@ -160,6 +160,9 @@ services:
       # R225 — without this the web app signs in against its OWN origin, a static file server with no
       # /api at all: a 404 on /api/tv/login (seen on production 2026-09-17).
       DEFAULT_SERVER_URL: http://app:9505
+      # DEB-2233 (FR-7) — two made-up certificate fingerprints (the Play signing key and the upload key stand-ins), so
+      # /.well-known/assetlinks.json is answered; ravilo-screen below sets none and must 404 it.
+      ANDROID_APP_CERTS: "14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5,AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 3s

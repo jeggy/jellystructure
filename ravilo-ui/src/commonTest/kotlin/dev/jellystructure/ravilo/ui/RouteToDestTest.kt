@@ -19,6 +19,7 @@ class RouteToDestTest {
         Dest.Profile(name),
         Dest.YourProfile(name),
         Dest.ChangePassword(name),
+        Dest.SignInTv(name),
         Dest.AppLanguage(name),
         Dest.LiveTvGuide(name),
         Dest.SeerrSearch(name),
@@ -30,6 +31,18 @@ class RouteToDestTest {
 
     @Test fun everyRestorablePageRoundTrips() {
         for (d in restorable) assertEquals(d, routeToDest(d.toRoute(), name), "route ${d.toRoute()}")
+    }
+
+    @Test fun aHeldTvCodeOpensSignInATvWithTheCode() {
+        assertEquals(Dest.SignInTv(name, "K7P4QX"), routeToDest("/account/tv/K7P4QX", name))
+    }
+
+    @Test fun aHeldRouteWithAnImpossibleCodeOpensNothing() {
+        for (bad in listOf("K7P4Q", "K7P4QXX", "k7p4qx", "K7P4Q0", "K7P4QI")) assertNull(routeToDest("/account/tv/$bad", name), bad)
+    }
+
+    @Test fun theCodeIsNeverWrittenIntoTheUrl() {
+        assertEquals("/account/tv", Dest.SignInTv(name, "K7P4QX").toRoute())
     }
 
     @Test fun searchAndDiscoverRoundTripOnTypeAndName() {

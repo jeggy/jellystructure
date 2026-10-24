@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui
 
+import dev.jellystructure.ravilo.ui.screens.TvApproveStore
+import dev.jellystructure.ravilo.ui.screens.TvClientApproveApi
+import dev.jellystructure.ravilo.ui.screens.TvLinkInbox
+import dev.jellystructure.ravilo.ui.screens.isValidTvCode
+import dev.jellystructure.ravilo.ui.screens.tvLinkRoute
 import dev.jellystructure.ravilo.ui.screens.moveOnReturnFocus
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
@@ -355,6 +360,8 @@ internal sealed class Dest {
     data class YourProfile(val displayName: String) : Dest()
     // R234 (FR-R234-4) — every platform, reached from Settings' Account section.
     data class ChangePassword(val displayName: String) : Dest()
+    // DEB-2233 (FR-6) — *Sign in a TV*, on the phone, Ravilo Web and the desktop. [code] came in a link (`/tv?c=` or the App Link).
+    data class SignInTv(val displayName: String, val code: String? = null) : Dest()
     // Phase R177 — a deliberate sibling to Player (see LiveTvPlayerStore's doc comment): live channels
     // have no resume position and need Jellyfin's explicit open/close handshake, so this is its own
     // destination rather than a branch of Dest.Player. Never reached from raviloNavItems (no top-nav
@@ -404,6 +411,7 @@ internal sealed class Dest {
         is Settings       -> "/settings"
         is YourProfile    -> "/account/profile"
         is ChangePassword -> "/account/password"
+        is SignInTv       -> "/account/tv"   // DEB-2233 — the code is never written into the URL
         is Profile        -> "/profile"            // R304
         is AppLanguage    -> "/account/language"   // R304
         is LiveTv         -> "/livetv/$channelId"
@@ -458,6 +466,7 @@ internal fun routeToDest(route: String, displayName: String): Dest? {
                 "account" -> when (a) {
                     "profile" -> Dest.YourProfile(displayName)
                     "password" -> Dest.ChangePassword(displayName)
+                    "tv" -> Dest.SignInTv(displayName)   // DEB-2233 (FR-6)
                     "language" -> Dest.AppLanguage(displayName)
                     else -> null
                 }
@@ -468,6 +477,9 @@ internal fun routeToDest(route: String, displayName: String): Dest? {
         }
         3 -> if (head == "discover" && (seg[1] == "movie" || seg[1] == "tv")) {
             seg[2].toIntOrNull()?.let { Dest.DiscoverItem(seg[1], it, displayName) }
+        } else if (head == "account" && seg[1] == "tv") {
+            // DEB-2233 (FR-6) — a code held across a sign-in or a profile pick ([tvLinkRoute]).
+            seg[2].takeIf(::isValidTvCode)?.let { Dest.SignInTv(displayName, it) }
         } else null
         else -> null
     }
@@ -750,7 +762,8 @@ fun RaviloApp(
         val resumeJson = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
         val playerResume = remember { dev.jellystructure.ravilo.ui.screens.PlayerResumeStore(resumeJson.value) { resumeJson.value = it } }
         // DEB-1738 (FR-1) — the URL this load opened with, read before the first composition writes any route.
-        val loadRoute = remember { initialRoute() }
+        // DEB-2233 (FR-6, FR-7) — a code the link carried wins over the hash: it is what the viewer opened the app for.
+        val loadRoute = remember { TvLinkInbox.take()?.let(::tvLinkRoute) ?: initialRoute() }
         // Determine starting screen based on cached sessions
         val initialStack: List<Dest> = remember {
             val sessions = MultiTokenStore.getAll()
@@ -1015,7 +1028,7 @@ fun RaviloApp(
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.CastRemote -> d.displayName
             is Dest.SessionRemote -> d.displayName   // R369
             is Dest.TvNowPlaying -> d.displayName   // R380
-            is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName
+            is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName; is Dest.SignInTv -> d.displayName
             is Dest.Profile -> d.displayName; is Dest.AppLanguage -> d.displayName   // R304
             is Dest.MusicListen -> d.displayName; is Dest.MusicBrowse -> d.displayName; is Dest.MusicPlaying -> d.displayName   // R321
             is Dest.MusicQueue -> d.displayName; is Dest.AlbumDetail -> d.displayName; is Dest.ArtistDetail -> d.displayName
@@ -1248,6 +1261,19 @@ fun RaviloApp(
                 } else {
                     openFromUrl(route, routeToDest(route, destDisplayName(stack.lastOrNull())))
                 }
+            }
+        }
+        // DEB-2233 (FR-6, FR-7) — a code that arrives while the app runs (the phone's App Link opens the running activity):
+        // over a signed-in viewer's page it opens *Sign in a TV*; otherwise it waits for the first Home, as a held page does.
+        val linkedCode by TvLinkInbox.code.collectAsState()
+        LaunchedEffect(linkedCode) {
+            val code = TvLinkInbox.take() ?: return@LaunchedEffect
+            val top = stack.lastOrNull()
+            val signedIn = stack.any { it is Dest.Home }
+            if (!signedIn) heldRoute = tvLinkRoute(code)
+            else if (top !is Dest.Player) {
+                val page = Dest.SignInTv(destDisplayName(top), code)
+                if (top is Dest.SignInTv) replaceTop(page) else push(page)
             }
         }
         // DEB-1738 (FR-2, FR-5) — a pasted `#/channel/<id>` over Home: pushed when the list answers, unless the viewer
@@ -2997,6 +3023,7 @@ fun RaviloApp(
                     onAppLanguage = { push(Dest.AppLanguage(dest.displayName)) },
                     onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
                     passwordRow = passwordRow,
+                    onSignInTv = { push(Dest.SignInTv(dest.displayName)) },   // DEB-2233 (FR-6)
                     onSettings = { push(Dest.Settings(dest.displayName)) },
                     // DEB-1501 (FR-1) — the Support row, after Settings, while the flag is on.
                     onSupport = if (supportLaneOpen) ({ push(Dest.SupportList(dest.displayName)) }) else null,
@@ -3183,6 +3210,19 @@ fun RaviloApp(
                 onBack = { pop() },
                 onAvatarChanged = { activeAvatarUrl = it },
             )
+
+            is Dest.SignInTv -> {
+                val store = remember { TvApproveStore(TvClientApproveApi(apiClient)) }
+                dev.jellystructure.ravilo.ui.screens.TvApproveScreen(
+                    store = store,
+                    displayName = dest.displayName,
+                    linkCode = dest.code,
+                    onBack = { pop() },
+                    // FR-6 — the active profile approves; *Not you? Switch* is offered only when there is another to switch to.
+                    // The code waits through the picker as a held page (DEB-1738 FR-4) and comes back on the new profile's Home.
+                    onSwitch = if (MultiTokenStore.getAll().size > 1) ({ code -> heldRoute = tvLinkRoute(code); resetTo(Dest.ProfilePicker) }) else null,
+                )
+            }
 
             is Dest.ChangePassword -> {
             // DEB-1854 (FR-6a) — `/account/password` opened directly for an account managed elsewhere lands on Settings;

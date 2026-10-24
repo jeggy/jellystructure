@@ -110,6 +110,25 @@ class TvApiClient(
         }
     }
 
+    // ─── Signing a TV in from this device (DEB-2233, FR-3, FR-6) — both routes take this device's own token ───────────
+
+    /** `GET /api/tv/signin/preview?code=` — the TV's name. Throws [TvApiError.Http] (404 for an unknown or expired code). */
+    suspend fun signInPreview(code: String): TvSignInPreview {
+        val r = client.get("$baseUrl/api/tv/signin/preview") { auth(); parameter("code", code) }
+        r.assertSuccess()
+        return json.decodeFromString<TvSignInPreview>(r.bodyAsText())
+    }
+
+    /** `POST /api/tv/signin/approve` — signs the TV in as this device's own viewer. 204 returns; 404 (expired), 409 (used),
+     *  503 (unavailable) and 429 throw [TvApiError.Http]. */
+    suspend fun signInApprove(code: String) {
+        val r = client.post("$baseUrl/api/tv/signin/approve") {
+            auth()
+            jsonBody(json.encodeToString(TvSignInApproveRequest.serializer(), TvSignInApproveRequest(code)))
+        }
+        r.assertSuccess()
+    }
+
     // ─── Feed ────────────────────────────────────────────────────────────────
 
     suspend fun getHome(): HomeFeed {

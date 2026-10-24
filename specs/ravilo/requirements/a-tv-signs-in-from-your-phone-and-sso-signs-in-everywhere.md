@@ -236,6 +236,45 @@ Each of these carries a dated amendment in its own file.
 - For any other server's QR, or with no app installed, the link opens Ravilo Web in the browser. That is FR-6's path,
   and it works the same.
 
+**Amendment 2026-10-24 (DEB-2325) — what FR-6's and FR-7's build settled.** None of this contradicts FR-6 or FR-7; it fixes what the text left open.
+
+- **The entry is a row on the Profile page**, *Sign in a TV*, after the password row and before Settings (round `2026-10-23-tv-signin`, surface 2). The Profile
+  page is the account page of the phone, Ravilo Web and the desktop, so there is one row, not three. A TV has no such row.
+  - Its route is `/account/tv`. **The code is never written into the URL.** A held link uses `/account/tv/<code>` internally, to wait through a sign-in.
+- **The code field takes six characters.** Case and spaces are ignored on typing and pasting, and a seventh character is dropped. *Continue* on anything that is not six
+  characters of Phase 236's alphabet (no 0, O, 1, I) sends nothing and shows the field's own line, *Type the six characters shown on the TV*, in the error colour.
+- **A link's code is looked up at once.** The field is skipped and the confirm screen opens, so *Sign in on ‹TV› as ‹name›?* is the first thing seen. A link whose
+  code cannot be one is the *expired* outcome without asking the server.
+- **Ravilo Web reads `/tv?c=<code>` once, at load.** Only the exact path `/tv` counts; the backend's own copy of the app under `/tv/` does not. The code goes to an
+  in-memory inbox, and the address becomes the app's own (`/` and the hash), so a reload opens the app and not a code that has since been used. The image's SPA
+  fallback already serves the shell at `/tv`; nothing about the static server changes for it.
+- **Signed out, or on the profile picker:** the code is held as DEB-1738 FR-4 holds a page, and opens on the first Home after the ordinary sign-in or profile pick.
+  This slice's sign-in is the password form; the single-sign-on button joins it in slice 5.
+- **Several profiles.** *Not you? Switch* is shown only when this device holds more than one profile. It goes to the picker, and the held code comes back on the
+  profile picked.
+- **Outcomes, by kind.** The wording is the round's:
+  - an unknown or expired code (404), at the lookup or at the approval, is *expired*;
+  - 409 is *already used*;
+  - any other refusal (503, 429, 403, a 5xx) is *unavailable*;
+  - no answer at all is the shipped *Couldn't reach the server — try again*.
+
+  *Expired* and *used* end on **Enter a new code**, which returns to an empty field. *Unavailable* and *could not reach* end on **Retry**, which repeats the call that
+  failed. *Done* ends on **Done** and returns to Profile. No outcome renders a response body.
+- **The phone's App Link is declared only when the build is given `-PraviloAppLinkHost=<host>`.** The property must be a bare host name; anything else fails the
+  build. With it, the phone activity declares an `autoVerify` filter for `https://<host>/tv` and **becomes `singleTask`**, so a link opened while the app runs reaches
+  that instance. Without it the manifest is unchanged. Both build types take it, so a debug build can be tried.
+  - The release workflow passes the repository **variable** `RAVILO_WEB_HOST`. It is a variable, not a secret and not in the tree, because this repository is public.
+    Unset, no link is declared.
+- **The Ravilo Web image serves `/.well-known/assetlinks.json` from two environment variables:**
+  - `ANDROID_APP_CERTS`: the SHA-256 fingerprints of the Play signing key **and** the upload key, as `keytool` prints them, separated by commas or spaces;
+  - `ANDROID_APP_PACKAGE`: defaults to `dev.jellystructure.ravilo`.
+
+  An entry that is not a fingerprint is dropped, and with none left the file answers 404, so a typo cannot publish a statement that names nothing.
+  A debug build's package is `….debug`; to verify one, run a private image with that package.
+- **What CI cannot prove, and QA must:** that Android verifies the link on a real phone (`adb shell pm get-app-links`), that a tap on the QR lands in the app and not the
+  browser, and that the confirm screen then names the right TV. CI proves the code normaliser, the confirm flow's states on a fake API, the held route, the strings in
+  three languages, the address reader, and the web image's two answers.
+
 ### Single sign-on on every client and the admin
 
 **FR-8 — Discovering it.**

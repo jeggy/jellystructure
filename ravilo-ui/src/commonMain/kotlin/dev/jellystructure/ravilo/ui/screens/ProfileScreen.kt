@@ -95,6 +95,8 @@ fun ProfileScreen(
     onChangePassword: () -> Unit,
     /** DEB-1854 (FR-6) — the account's password place; the form row until the config says otherwise. */
     passwordRow: PasswordRow = PasswordRow.Form,
+    /** DEB-2233 (FR-6) — *Sign in a TV*, after the password row; null (no row at all) where a TV cannot be signed in from. */
+    onSignInTv: (() -> Unit)? = null,
     onSettings: () -> Unit,
     /** DEB-1501 (FR-1) — opens My tickets; null (no row at all) while the support lane is closed, and on every TV. */
     onSupport: (() -> Unit)? = null,
@@ -253,6 +255,7 @@ fun ProfileScreen(
                     }
                     is PasswordRow.Hidden -> {}
                 }
+                if (onSignInTv != null) { ProfileRow(str("tvcode.row"), null, onSignInTv, modifier = Modifier.testTag(TvApproveTags.ROW)); RowDivider() }
                 // Dev review item 2 — the phone's Settings still holds skin, autoplay, tile shape and more;
                 // a row rather than a deleted screen.
                 ProfileRow(str("nav.settings"), null, onSettings, dot = dev.jellystructure.ravilo.ui.components.updateDotShows())
@@ -346,10 +349,10 @@ fun AppLanguageScreen(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false) {
+private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false, modifier: Modifier = Modifier) {
     val colors = RaviloTheme.colors
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+        modifier.fillMaxWidth().heightIn(min = 52.dp)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.phone
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,8 @@ import dev.jellystructure.ravilo.player.RaviloExtractorsFactory
 import dev.jellystructure.ravilo.player.RaviloRenderers
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.RaviloRoot
+import dev.jellystructure.ravilo.ui.screens.TvLinkInbox
+import dev.jellystructure.ravilo.ui.screens.tvCodeFromLocation
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayerEngine
 
 /**
@@ -39,8 +42,24 @@ class MainActivity : FragmentActivity() {
         RaviloPlayerEngine.renderersFactoryProvider = { ctx, prefer -> RaviloRenderers.create(ctx, prefer) }
         RaviloPlayerEngine.extractorsFactoryProvider = { RaviloExtractorsFactory() }
 
+        // DEB-2233 (FR-7) — the App Link that opened this activity; a recreation (rotation, process death) is not a new link.
+        if (savedInstanceState == null) offerTvLink(intent)
+
         setContent {
             RaviloRoot()
         }
+    }
+
+    // DEB-2233 (FR-7) — a link opened while the app runs (the manifest's singleTask, when an App Link is declared).
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        offerTvLink(intent)
+    }
+
+    /** `https://<host>/tv?c=<code>` hands its code to the app; the manifest's filter has already matched the host. */
+    private fun offerTvLink(intent: Intent?) {
+        val uri = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data ?: return
+        TvLinkInbox.offer(tvCodeFromLocation(uri.path.orEmpty(), "?" + uri.encodedQuery.orEmpty()))
     }
 }

@@ -68,6 +68,9 @@ fun main() {
     val raviloVersion = env("RAVILO_VERSION", "").ifBlank { null }
     // Phase 249 — see cspHeader()'s own doc comment. Default off; no real deployment sets this.
     val allowHttpConnect = env("CSP_ALLOW_HTTP_CONNECT", "").isNotBlank()
+    // DEB-2233 (FR-7) — what /.well-known/assetlinks.json says: the phone app's package and the SHA-256 fingerprints of the
+    // certificates it is signed with (Play's signing key and the upload key). Unset ⇒ no such file, and no App Link verifies.
+    val assetLinks = assetLinksJson(env("ANDROID_APP_PACKAGE", DEFAULT_ANDROID_PACKAGE), env("ANDROID_APP_CERTS", ""))
 
     embeddedServer(
         CIO,
@@ -98,6 +101,13 @@ fun main() {
             get("/runtime-config.js") {
                 call.response.cacheControl(CacheControl.NoCache(null))
                 call.respondText(runtimeConfigJs(defaultServerUrl, raviloVersion), ContentType.Application.JavaScript)
+            }
+            // DEB-2233 (FR-7) — generated like runtime-config.js, and ahead of the catch-all for the same reason: there is no
+            // file on disk, and the asset-shaped-path rule below would answer 404 for it anyway when it is not configured.
+            get("/.well-known/assetlinks.json") {
+                if (assetLinks == null) { call.respond(HttpStatusCode.NotFound); return@get }
+                call.response.cacheControl(CacheControl.NoCache(null))
+                call.respondText(assetLinks, ContentType.Application.Json)
             }
             get("{...}") {
                 call.serveStaticFile(dir, call.request.path())

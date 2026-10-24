@@ -141,9 +141,15 @@ jobs:
       # R273 — bundleRelease AND assembleRelease in one invocation: the same real upload keystore signs
       # both, one keystore-decode step covers both, and Gradle shares the compiled/R8-shrunk classes
       # between the two output tasks rather than building twice.
+      #
+      # DEB-2233 (FR-7) — the phone claims an App Link for https://<host>/tv, <host> being the household's Ravilo Web host. It
+      # is the repository VARIABLE RAVILO_WEB_HOST (a bare host name, not a secret), kept out of the tree because this
+      # repository is public. Unset or empty, no App Link is declared and the QR opens Ravilo Web in the browser, as it does
+      # for every other server.
       - name: Build release AAB + APK
         run: |
           ./gradlew :ravilo-android:bundleRelease :ravilo-android:assembleRelease \
+            -PraviloAppLinkHost="${{ vars.RAVILO_WEB_HOST }}" \
             -Pravilo.versionCode=${{ needs.version.outputs.versionCode }} \
             -Pravilo.versionName=${{ needs.version.outputs.versionName }} \
             -Pravilo.keystore.file="${{ runner.temp }}/upload.keystore" \

@@ -16,6 +16,14 @@ fun castDevAppId(): String {
     return if (Regex("^[0-9A-Fa-f]{8}$").matches(raw)) raw.uppercase() else ""
 }
 
+/** DEB-2233 (FR-7) — the host the phone claims an App Link for (`https://<host>/tv`): `-PraviloAppLinkHost=<host>`, else null and no
+ *  link is declared. A bare host name only: a scheme, a path or a port is a typo that would verify against nothing. */
+val appLinkHost: String? = (project.findProperty("raviloAppLinkHost") as String?)?.trim()?.takeIf { it.isNotEmpty() }?.also {
+    require(Regex("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$").matches(it)) {
+        "-PraviloAppLinkHost must be a bare host name (no scheme, path or port): '$it'"
+    }
+}
+
 android {
     namespace = "dev.jellystructure.ravilo"
     compileSdk = 36
@@ -33,6 +41,16 @@ android {
         // reads "1.18-3-g6d4499e" rather than a "1.0" that meant nothing.
         versionCode = (project.findProperty("ravilo.versionCode") as String?)?.toInt() ?: 1
         versionName = rootProject.extra["buildVersion"] as String
+        // Read by src/appLink/AndroidManifest.xml, the only file that names it.
+        appLinkHost?.let { manifestPlaceholders["raviloAppLinkHost"] = it }
+    }
+
+    // DEB-2233 (FR-7) — the App Link overlay rides on both build types, and only when there is a host to claim.
+    if (appLinkHost != null) {
+        sourceSets {
+            getByName("debug") { manifest.srcFile("src/appLink/AndroidManifest.xml") }
+            getByName("release") { manifest.srcFile("src/appLink/AndroidManifest.xml") }
+        }
     }
 
     signingConfigs {

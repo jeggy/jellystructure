@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEB-2233 (FR-7) — the phone's App Link for `https://<host>/tv`, merged over the main manifest only when the build is given
+     `-PraviloAppLinkHost=<host>` (ravilo-android/build.gradle.kts). Without the property nothing here is read: no filter is
+     declared and the phone activity keeps its launch mode. singleTask so a link opened while the app runs reaches that
+     instance through onNewIntent rather than starting a second one. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".phone.MainActivity"
+            android:launchMode="singleTask">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${raviloAppLinkHost}" android:path="/tv" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

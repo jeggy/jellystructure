@@ -41,6 +41,7 @@ ALLOWED="
   screens/PlayerScreen.kt                       74
   screens/ProfileScreen.kt                      1
   screens/SettingsScreen.kt                     4
+  screens/TvApproveScreen.kt                    2   # DEB-2325 — the label on the accent-gradient button and the initials on the gradient avatar
   screens/UpcomingScreen.kt                     8   # DEB-2183 — the stack's chips and edge line, all over the poster or a dark scrim
   theme/Colors.kt                               1
 "
