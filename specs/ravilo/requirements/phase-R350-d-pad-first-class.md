@@ -4,15 +4,14 @@
 > to get like they have first class support."* Eight findings from that session, plus the siblings found while fixing
 > them.
 
-## Status
+## Scope
 
-`✓ Built` — written 2026-10-02 (dev-authored) from the owner's TV session, before any fix; built the same day (see
-*Build notes*). Not deployed, not device-tested. Client-only (`:ravilo-ui`); no wire change, no server change. Number
-given by the coordinator. **Amended 2026-10-02** after a re-test on the Sony (FR-13 to FR-16: Search arrival without
-the keyboard, Change your password and sign-in fields that open the keyboard only on OK, Settings opening at the top);
-built the same day, see *Re-test on the TV* at the end. **Amended again 2026-10-02** after the final Mac re-test
-(FR-17: the ring after a keyboard Back; FR-18: the cast remote fits the window), built the same day, see the last
-amendment.
+Written 2026-10-02 (dev-authored) from the owner's TV session, before any fix. Client-only (`:ravilo-ui`); no wire
+change, no server change. Number given by the coordinator. **Amended 2026-10-02** after a re-test on the Sony (FR-13 to
+FR-16: Search arrival without the keyboard, Change your password and sign-in fields that open the keyboard only on OK,
+Settings opening at the top), see *Re-test on the TV*. **Amended again 2026-10-02** after the final Mac re-test (FR-17:
+the ring after a keyboard Back; FR-18: the cast remote fits the window). **Amended 2026-10-25** (DEB-2447, owner's card
+`d1cf49e8` on DEB-2204): FR-19 carries FR-11's arrow keys to the web app, see the last amendment.
 
 **Supersedes, in part:**
 - **R178 FR-RV-SEL1-1** (hiding the chrome resets the player's focus to Play) — see FR-R350-7. R178's Select guard
@@ -123,7 +122,8 @@ pill did nothing, and Up, Right and Down from an episode's *Mark watched* did no
 an unhandled arrow into Compose's 2-D focus search. Every place the app leaves a direction to that search (lazy
 rows, the toggle under a card, the pills' Down) was dead on the desktop.
 **Requirement:** on the desktop, an arrow no focused element consumed asks the same focus search (one modifier at
-the app root). Android unchanged.
+the app root). Android unchanged. *(Carried to the wide web window, and a modified arrow left out, by FR-R350-19,
+2026-10-25.)*
 
 **FR-R350-12 — The season pills never hide one behind the window's edge on a computer.** At 1280 px a series with
 seven seasons, Specials and Shuffle had Shuffle cut off at the right edge, and a mouse cannot scroll a row sideways.
@@ -405,3 +405,42 @@ Built 2026-10-02, not deployed, not device-tested. Client-only (`:ravilo-ui`); n
 the ring goes; press an arrow: it comes back. (2) Cast an episode to a device at the default 1512 × 859 window: *Audio &
 Subs · Next · Stop casting* are on screen without scrolling, also while the next-up card is up; drag the window down to
 its minimum height: still all on screen (the art card shrinks, then goes).
+
+## Amendment (2026-10-25, DEB-2447) — the arrow keys on the web app
+
+Owner's answer: card `d1cf49e8` on DEB-2204. Client-only (`:ravilo-ui`); no wire change, no new strings.
+
+**Seen** (DEB-2353, QA in a desktop browser, 2026-10-24): on the web app only Tab moves focus. The arrow keys turn the
+focus ring on (DEB-2204 FR-7) but do not move it. This predates DEB-2204.
+
+**Why.** FR-R350-11's root modifier is mounted on the desktop only (`arrowKeysMoveFocus(isDesktopPlatform)` in
+`RaviloApp`). Compose's web owner, like the desktop one, turns only Tab, Shift+Tab and Back into focus moves, so on
+the web every direction the app leaves to the focus search (lazy rows, the toggle under a card, the pills' Down) is
+dead, as it was on the Mac before FR-11.
+
+**FR-R350-19 — The arrow keys move focus on the web app wherever it draws focus.**
+- **Where.** On the web app, when the window is not a handset (R256's `isHandset`), an arrow no focused element
+  consumed asks the same focus search as on the desktop app. These are the windows where DEB-2204 FR-7 draws the ring.
+  A phone-sized web window is unchanged: it draws no ring, so an arrow there moves nothing.
+- **What keeps its arrows.** FR-11's rule holds unchanged: the root sees an arrow only after the focused element has
+  passed it up. Nothing is excluded by name, and everything that uses an arrow today keeps it:
+  - **a text field** (Search, sign-in, server setup, Change your password, the playlist picker, Support): the arrows do
+    in the field what they do in the same field on the desktop app (Left and Right move the caret);
+  - **the film player**: its root handler takes every arrow (seek, the chrome, the rail; R251, FR-R350-7);
+  - **a slider** (the volume panels, a seek bar): the arrow steps it;
+  - **any control with its own direction handler** (Search's own Right and Down, the season pills, a grid's edges).
+- **A modified arrow is not a focus move.** An arrow with Shift, Alt, Ctrl or Meta held is passed on, on the web app
+  and on the desktop app alike. Alt+Left is Back in every browser, and Shift+arrow is a text field's selection.
+- **Unchanged:** the desktop app's unmodified arrows; Android TV and the phone, where the platform runs the focus search
+  itself; the Tizen screen app and the Chromecast receiver, which do not compile `ravilo-ui` (DEB-2204 FR-8).
+
+**Verification.**
+- **Unit.** A truth table for where the modifier is on (desktop: always; web: not a handset; Android: never). A walk
+  under the root modifier: Down from a button moves focus. Left in a text field holding text keeps focus in the field.
+  An arrow a control handles itself keeps focus where it is. Alt+Down and Shift+Down move nothing.
+- **In a browser** (a QA leg on a computer, no device). On the web app in a wide Chromium window:
+  - the arrows walk Home's rows, a series page's pills down to the episode rail, and Settings;
+  - in Search, type a word: Left and Right move the caret and focus stays in the field;
+  - in the film player, Left and Right seek as before;
+  - Alt+Left does what the browser does (history Back), and no focus moves first;
+  - narrow the window to phone width: the arrows move nothing.
