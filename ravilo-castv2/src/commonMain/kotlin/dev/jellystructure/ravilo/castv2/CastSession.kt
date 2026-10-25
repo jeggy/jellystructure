@@ -68,6 +68,13 @@ class CastSession(
     private val _mediaRaw = MutableSharedFlow<CastMediaStatus>(extraBufferCapacity = 64)
     /** DEB-2312 — every `MEDIA_STATUS` as it arrives, before [media] drops an identical one (a StateFlow does). */
     val mediaArrivals: SharedFlow<CastMediaStatus> = _mediaRaw.asSharedFlow()
+    private val _mediaFrames = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    /**
+     * DEB-2456 (FR-R330-7c) — every media-channel frame that is not a `MEDIA_STATUS` with a media session (an empty
+     * `status`, `INVALID_REQUEST`, `LOAD_FAILED`, anything else), as `<type> <the frame's start>`: for the log only, so a
+     * report can say whether CAF answered at all.
+     */
+    val mediaFrames: SharedFlow<String> = _mediaFrames.asSharedFlow()
     private val _custom = MutableSharedFlow<String>(extraBufferCapacity = 64)
     /** Every payload the app sent on [CastNamespaces.RAVILO]. */
     val custom: SharedFlow<String> = _custom.asSharedFlow()
@@ -271,10 +278,13 @@ class CastSession(
                 if (joined != null && status != null && status.apps.none { it.sessionId == joined.sessionId })
                     close(if (status.apps.all { it.appId == BACKDROP_APP_ID }) "the app ended" else "replaced by another app")
             }
-            CastNamespaces.MEDIA -> if (body != null && CastParse.type(body) == "MEDIA_STATUS") {
-                val read = CastParse.mediaStatus(body)
-                read?.let { _mediaRaw.tryEmit(it) }
-                _media.value = read?.withMediaFrom(_media.value)
+            CastNamespaces.MEDIA -> if (body != null) {
+                val read = if (CastParse.type(body) == "MEDIA_STATUS") CastParse.mediaStatus(body) else null
+                if (read == null) _mediaFrames.tryEmit(castMediaFrameNote(body))
+                if (CastParse.type(body) == "MEDIA_STATUS") {
+                    read?.let { _mediaRaw.tryEmit(it) }
+                    _media.value = read?.withMediaFrom(_media.value)
+                }
             }
             CastNamespaces.RAVILO -> m.payloadUtf8?.let { _custom.tryEmit(it) }
             CastNamespaces.RAVILO_LOG -> m.payloadUtf8?.let { _notes.tryEmit(it) }
@@ -284,6 +294,9 @@ class CastSession(
         lock.withLock { pending[id] }?.complete(body)
     }
 }
+
+/** DEB-2456 (FR-R330-7c) — a media frame that carried no media session, as one short line: its type, then its start. */
+internal fun castMediaFrameNote(body: JsonObject): String = "${CastParse.type(body) ?: "?"} ${body.toString().take(160)}"
 
 /** The body of a `LOAD` ([CastSession.load]) as it goes out, but for its request id. */
 fun castLoadBody(sessionId: String, media: JsonObject, currentTimeSec: Double, autoplay: Boolean, customData: JsonObject?): JsonObject = obj(

@@ -256,6 +256,25 @@ class CastSessionTest {
     }
 
     @Test
+    fun `a media frame with no media session is passed on for the log and a status with one is not`() = runTest {
+        val device = FakeDevice()
+        val s = session(device)
+        val frames = mutableListOf<String>()
+        val job = launch { s.mediaFrames.collect { frames += it } }
+        runCurrent()
+        device.say(fromDevice(CastNamespaces.MEDIA, """{"type":"MEDIA_STATUS","requestId":0,"status":[]}""", source = "web-7"))
+        device.say(fromDevice(CastNamespaces.MEDIA, """{"type":"INVALID_REQUEST","requestId":4,"reason":"INVALID_MEDIA_SESSION_ID"}""", source = "web-7"))
+        device.say(fromDevice(CastNamespaces.MEDIA, """{"type":"LOAD_FAILED","requestId":5}""", source = "web-7"))
+        device.say(fromDevice(CastNamespaces.MEDIA, """{"type":"MEDIA_STATUS","requestId":0,"status":[{"mediaSessionId":9,"playerState":"PLAYING","currentTime":3}]}""", source = "web-7"))
+        runCurrent()
+        assertEquals(listOf("MEDIA_STATUS", "INVALID_REQUEST", "LOAD_FAILED"), frames.map { it.substringBefore(' ') })
+        assertTrue("INVALID_MEDIA_SESSION_ID" in frames[1], frames[1])
+        // The status with a session moved the media as before; the empty one before it had cleared it.
+        assertEquals("PLAYING", s.media.value?.playerState)
+        job.cancel(); s.close(); advanceUntilIdle()
+    }
+
+    @Test
     fun `asking for the media status before an app is joined sends nothing`() = runTest {
         val device = FakeDevice()
         val s = session(device)

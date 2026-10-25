@@ -152,6 +152,11 @@ private class Receiver {
     private var loadSeq = 0
     private var healedKey: String? = null
     private var loadDirect = false
+    // DEB-2456 (FR-R330-7a) — a song's place on our own channel: where the load started, the load last reported for, and when
+    // the last status of any kind went (CAF's media channel can go quiet after the receiver's own load of the next song).
+    private var loadStartMs = 0L
+    private var positionReportedKey: String? = null
+    private var lastStatusAtMs = 0L
     private var nextUpJob: Job? = null
     /** R384 (FR-R384-3) — the countdown's seconds left while it runs (said in every status too). */
     private var nextUpLeft: Int? = null
@@ -900,7 +905,7 @@ private class Receiver {
         positionMs = startAt ?: ticket.startPositionMs
         durationMs = t.durationMs ?: 0L
         paused = false
-        loadSeq++; loadDirect = ticket.directPlay; bufferingFromMs = positionMs
+        loadSeq++; loadDirect = ticket.directPlay; bufferingFromMs = positionMs; loadStartMs = positionMs
         // Dev review 4 — advertise next/previous, or the Home app hides its buttons.
         // `or` on a `dynamic` is a JS method call, not a bitwise or — the flags are combined in JS itself.
         runCatching {
@@ -1191,6 +1196,13 @@ private class Receiver {
             healedKey = songKey
             note("heal ${data.itemId} play() after the time moved ${positionMs - (bufferingFromMs ?: 0L)}ms under BUFFERING ${stateNote()}")
             runCatching { playerManager.play() }
+        }
+        // DEB-2456 (FR-R330-7a) — the song's place, on our own channel: once when this load's time is 1 s on, then every 15 s.
+        if (dev.jellystructure.shared.tv.castFirstPositionDue(music, loadStartMs, positionMs, positionReportedKey, songKey)) {
+            positionReportedKey = songKey
+            sendStatus(withQueue = false)
+        } else if (dev.jellystructure.shared.tv.castPeriodicPositionDue(music, (playerManager.getPlayerState() as String?) == "PLAYING", lastStatusAtMs, nowMs())) {
+            sendStatus(withQueue = false)
         }
         if (music) { if (el("buffering").classList.contains("on")) show("nowplaying"); paintProgress(); paintLyrics() }
         else if (el("loading").classList.contains("on")) show()
@@ -1574,7 +1586,8 @@ private class Receiver {
     }
 
     // ── receiver → phone ──
-    private fun sendStatus() {
+    /** [withQueue] false = a position report (FR-R330-7a (b), (c)): never carries the queue, and does not use up its turn. */
+    private fun sendStatus(withQueue: Boolean = true) {
         syncEvents()   // R354 — the events socket follows what is loaded
         val d = current ?: return
         val t = ticket
@@ -1593,7 +1606,7 @@ private class Receiver {
             val fp = d.tracks.hashCode()
             if (fp != queueFingerprint) { queueFingerprint = fp; queueRev++ }
         }
-        val full = music && !arriving && (fullDue || sentRev != queueRev)
+        val full = withQueue && music && !arriving && (fullDue || sentRev != queueRev)
         if (full) { sentRev = queueRev; fullDue = false }
         val msg = CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
@@ -1611,7 +1624,10 @@ private class Receiver {
             queue = d.tracks.takeIf { full }, queueIndex = (d.queueStart + d.currentIndex).takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
             lyricsOn = if (music && !isHeadless()) lyricsOn else null, headless = headless,
             queueRev = queueRev.takeIf { music && !arriving }, queueSize = (d.queueTotal ?: d.tracks.size).takeIf { music },
+            // DEB-2456 (FR-R330-7a) — music's place and play state; a film leaves both out.
+            positionMs = positionMs.takeIf { music }, playing = ((playerManager.getPlayerState() as String?) == "PLAYING").takeIf { music },
         )
+        lastStatusAtMs = nowMs()
         // R369 — the server hears the queue when it changed (a song change moves the index: that is reported too).
         if (music && !arriving && (reportedQueueRev != queueRev || lastReportedIndex != d.queueStart + d.currentIndex)) {
             lastReportedIndex = d.queueStart + d.currentIndex

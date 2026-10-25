@@ -6,6 +6,10 @@ import dev.jellystructure.ravilo.castv2.CastSession
 import dev.jellystructure.ravilo.castv2.openCastTransport
 import dev.jellystructure.ravilo.ui.DesktopApp
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
+import dev.jellystructure.ravilo.ui.seams.CastPlaceReport
+import dev.jellystructure.ravilo.ui.seams.CastPlaceSource
+import dev.jellystructure.ravilo.ui.seams.castPlaceNow
+import dev.jellystructure.ravilo.ui.seams.withPlace
 import dev.jellystructure.ravilo.ui.seams.CastMediaWatch
 import dev.jellystructure.ravilo.ui.seams.CastMediaSnapshot
 import dev.jellystructure.ravilo.ui.seams.CastRemoteStatus
@@ -82,6 +86,15 @@ internal object CastSenderDesktop : CastSender {
     /** DEB-2294 — when to ask the receiver for its media status again; new with each session. */
     private var mediaWatch = CastMediaWatch()
     private var loggedSong: String? = null
+    /** DEB-2456 (FR-R330-7b) — the receiver's last `status` that said where the song is, and when it arrived; null = none. */
+    private var receiverPlace: CastPlaceReport? = null
+    /** DEB-2456 — when CAF's last `MEDIA_STATUS` arrived (raw, before the StateFlow drops an identical one); null = none. */
+    private var cafAt: Long? = null
+    /** DEB-2456 (FR-R330-7c) — which report the bar shows now, for the log. */
+    private var shownFrom = CastPlaceSource.CAF
+    /** DEB-2456 (FR-R330-7c) — the media-channel frame types already noted for this song. */
+    private var framesSong: String? = null
+    private val framesNoted = mutableSetOf<String>()
     /** The session [stop] was asked for, until it has closed. */
     @Volatile private var stopping: CastSession? = null
 
@@ -116,7 +129,7 @@ internal object CastSenderDesktop : CastSender {
         closeQuietly()
         // Nothing the device before said describes this one — its receiver id least of all: sent along with the
         // first LOAD, it made the new device's receiver ask to enrol again on its own next load (289 FR-289-7).
-        _status.value = null; _volume.value = null; said = null
+        _status.value = null; _volume.value = null; said = null; receiverPlace = null
         _link.value = if (launch) CastLinkState.CONNECTING else CastLinkState.RECONNECTING
         _device.value = d.name
         val opened = runCatching { CastSession(openCastTransport(d.host, d.port), app, scope).also { it.start() } }
@@ -144,10 +157,11 @@ internal object CastSenderDesktop : CastSender {
 
     private fun observe(s: CastSession) {
         watch?.cancel()
-        mediaWatch = CastMediaWatch(); loggedSong = null
+        mediaWatch = CastMediaWatch(); loggedSong = null; receiverPlace = null; cafAt = null; shownFrom = CastPlaceSource.CAF
         watch = scope.launch {
             launch { s.media.collect { m -> m?.let { mediaWatch.mediaArrived(System.currentTimeMillis(), it.mediaSessionId) }; rebuild(null) } }
-            launch { s.mediaArrivals.collect { mediaWatch.rawArrived() } }
+            launch { s.mediaArrivals.collect { mediaWatch.rawArrived(); cafAt = System.currentTimeMillis() } }
+            launch { s.mediaFrames.collect { noteMediaFrame(it) } }
             launch { s.receiver.collect { r -> r?.volumeLevel?.let { _volume.value = it } } }
             launch {
                 s.custom.collect { raw ->
@@ -168,6 +182,11 @@ internal object CastSenderDesktop : CastSender {
                         println("${DesktopLog.stamp()} cast: queue revision ${msg.queueRev} not held; asking for it")
                         s.sendCustom(json.encodeToString(CastCommand.serializer(), CastCommand("get_queue")))
                     }
+                    // DEB-2456 (FR-R330-7b) — a status that says where the song is is a report; any other word of the
+                    // receiver's (a status without a place, ended, failed, busy) ends the one held. `tracks` only adds tracks.
+                    val place = msg.positionMs
+                    if (msg.type == "status" && place != null) receiverPlace = CastPlaceReport(place, msg.playing == true, System.currentTimeMillis())
+                    else if (msg.type != "tracks") receiverPlace = null
                     said = foldReceiverMessage(said, msg)
                     rebuild(msg.type)
                 }
@@ -184,7 +203,7 @@ internal object CastSenderDesktop : CastSender {
             launch {
                 while (isActive) {
                     delay(1_000)
-                    if (s.media.value?.playerState == "PLAYING") rebuild(null)
+                    if (s.media.value?.playerState == "PLAYING" || receiverPlace?.playing == true) rebuild(null)
                     selfHeal(s)
                     CastNowPlaying.update(_status.value)
                 }
@@ -199,10 +218,28 @@ internal object CastSenderDesktop : CastSender {
 
     private fun rebuild(event: String?) {
         val s = session ?: return
-        _status.value = mergeCastStatus(_status.value, said, snapshot(s.media.value), event, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        val prev = _status.value
+        val caf = snapshot(s.media.value)
+        var merged = mergeCastStatus(prev, said, caf, event, now)
+        // DEB-2456 (FR-R330-7b) — the song our channel names takes its place and play state from the newer report: the
+        // receiver's, or CAF's. A CAF status of another song (the one before, by its title) is not a report for this one.
+        val cafTitle = s.media.value?.title
+        val cafForSong = cafAt?.takeIf { cafTitle == null || said?.title == null || cafTitle == said?.title }
+        val place = castPlaceNow(receiverPlace, cafForSong, merged.durationMs, now)
+        if (place != null) merged = mergeCastStatus(prev, said, caf.withPlace(place), event, now)
+        shownFrom = if (place != null) CastPlaceSource.RAVILO else CastPlaceSource.CAF
+        _status.value = merged
         // DEB-2294 — each song change leaves a line, so an owner report of a stuck bar can be answered from ravilo.log.
         val key = songKey(_status.value)
         if (key != loggedSong) { loggedSong = key; if (key != null) logPosition(s, "song change") }
+    }
+
+    /** DEB-2456 (FR-R330-7c) — a media frame that is not a `MEDIA_STATUS` with a session: noted once per type per song. */
+    private fun noteMediaFrame(frame: String) {
+        val song = songKey(_status.value) ?: "-"
+        if (song != framesSong) { framesSong = song; framesNoted.clear() }
+        if (framesNoted.add(frame.substringBefore(' '))) println("${DesktopLog.stamp()} cast: media frame $frame")
     }
 
     private fun songKey(st: CastRemoteStatus?) = st?.takeIf { it.music && it.itemId != null }?.let { "${it.itemId}#${it.queueIndex}" }
@@ -224,7 +261,7 @@ internal object CastSenderDesktop : CastSender {
     private fun logPosition(s: CastSession, why: String) {
         val m = s.media.value
         println("${DesktopLog.stamp()} cast: position · $why · state=${m?.playerState} media=${m?.mediaSessionId} " +
-            "age=${mediaWatch.ageMs(System.currentTimeMillis())} raw=${mediaWatch.rawSinceSongChange()} shown=${_status.value?.positionMs}")
+            "age=${mediaWatch.ageMs(System.currentTimeMillis())} raw=${mediaWatch.rawSinceSongChange()} shown=${_status.value?.positionMs} from=${shownFrom.log}")
     }
 
     private fun snapshot(m: CastMediaStatus?) = CastMediaSnapshot(
@@ -265,7 +302,7 @@ internal object CastSenderDesktop : CastSender {
         _status.value = null
         _volume.value = null
         _connectedId.value = null
-        said = null; device = null
+        said = null; device = null; receiverPlace = null
         CastNowPlaying.end()
     }
 
@@ -314,7 +351,7 @@ internal object CastSenderDesktop : CastSender {
         // R359 (FR-R359-1/3) — a queue too long for one message goes as a window, the rest at once in parts.
         val plan = castLoadPlan(data, newCastQueueId(), json)
         val media = castLoadMedia(plan.load, json)
-        said = null
+        said = null; receiverPlace = null
         queueParts.reset()
         // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,

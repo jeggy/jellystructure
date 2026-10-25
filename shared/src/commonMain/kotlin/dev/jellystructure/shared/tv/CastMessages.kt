@@ -185,6 +185,14 @@ data class CastReceiverMessage(
     @SerialName("queue_parts") val queueParts: Int? = null,
     /** R359 — on a `queue_part`: where [queue] (a run of the queue of [queueSize] songs, revision [queueRev]) starts. */
     @SerialName("queue_offset") val queueOffset: Int? = null,
+    /**
+     * DEB-2456 (FR-R330-7a) — music only: the song's place in ms when this status was built. The Mac's cast bar takes the
+     * place from this when it is newer than CAF's own `MEDIA_STATUS` (which goes quiet after the receiver's own load of
+     * the next song). Null on a film and from a receiver older than this field; an older sender ignores it.
+     */
+    @SerialName("position_ms") val positionMs: Long? = null,
+    /** DEB-2456 (FR-R330-7a) — music only: true while the song plays, false while paused or buffering. Null as [positionMs]. */
+    val playing: Boolean? = null,
 )
 
 /** Phone → receiver. 286/R324 add `prev` · `play_at` · `queue_move` · `queue_remove` · `queue_add` · `queue_play_next`
