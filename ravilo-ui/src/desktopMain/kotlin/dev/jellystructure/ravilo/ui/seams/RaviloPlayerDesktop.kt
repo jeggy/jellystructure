@@ -367,11 +367,9 @@ actual fun PlayerVideoSurface(
             Image(it, contentDescription = null, contentScale = if (fill) ContentScale.Crop else ContentScale.Fit, modifier = Modifier.fillMaxSize())
         }
         val text = cueText ?: return@BoxWithConstraints
-        // The picture's height inside the box, as Android sizes captions against the video, not the window (R300).
-        val pictureHeight = frame?.let { f ->
-            if (fill) maxHeight else minOf(maxHeight, maxWidth * (f.height.toFloat() / f.width.coerceAtLeast(1)))
-        } ?: maxHeight
-        val fontSize = with(LocalDensity.current) { (pictureHeight * 0.0533f * 0.9f * player.captionScale).toSp() }
+        // The screen sizes captions, never the film's shape: a 16:9 frame fitted inside the window (R300).
+        val captionBase = captionBaseHeight(maxWidth.value, maxHeight.value).dp
+        val fontSize = with(LocalDensity.current) { (captionBase * 0.0533f * 0.9f * player.captionScale).toSp() }
         val base = TextStyle(fontSize = fontSize, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
         Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(start = 48.dp, end = 48.dp, bottom = subtitleBottomInset)) {
             Text(text, style = base.copy(color = Color(0xCC000000), drawStyle = Stroke(width = 4f, join = StrokeJoin.Round)), modifier = Modifier.fillMaxWidth())
