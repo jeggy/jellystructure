@@ -4,12 +4,13 @@
 > could be fixed** — grouped by what it is about, and saying what fixing means. And: *"We want to just fully remove
 > this dock from our application."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-29 (§Build notes; commit `7de3625c`) — written 2026-09-28 from `specs/design-brief-dashboard-one-overview-2026-09-28.md` (§A–§G) and the mockup
+Written 2026-09-28 from `specs/design-brief-dashboard-one-overview-2026-09-28.md` (§A–§G) and the mockup
 `design/app/index.html` on `design/app/dashboard-data.js` · `dashboard.js` · `dashboard.css`, with the dock removed
-from `design/app/app-shell.js`. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main` 2026-09-28. A presentation
-phase in the shape of 146/257, plus one count-endpoint change (FR-285-9).
+from `design/app/app-shell.js`; dev-reviewed against `main` `32daeee2` (§Dev review), built in `7de3625c`. A
+presentation phase in the shape of 146/257, plus one count-endpoint change (FR-285-9). The 2026-10-25 amendment
+(DEB-2497) adds how fast the page answers (FR-285-15 – FR-285-20).
 
 **Supersedes:** 146's fixed 28-row attention list and `ATTENTION_ROW_ORDER` · 257's advisor card placement · the
 *Recently processed* column · the *Quick actions* chips · the floating attention dock (117/146) everywhere.
@@ -174,3 +175,59 @@ Built from the dev review (commit `7de3625c`):
    served `app.css`; the sidebar count links to the Dashboard.
 
 Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
+
+## Amendment 2026-10-25 — the Dashboard answers from what is already known (DEB-2497)
+
+> Owner, 2026-10-25: *"jellystructure dashboard page is too slow to load."*
+
+**Measured on prod, 2026-10-25, no scan running** (626 titles): `/api/music/status`, `/api/audiobooks/status`,
+`/api/stats` and `/api/scan/status` each answer in 18–35 ms. `GET /api/dashboard` took **15.7 s** on the first
+call and **5.8–6.0 s on every repeat**; two concurrent calls each took 6.4 s. The page waits for it before the
+list paints, and on a cold app load `Shell.kt` asks for it a second time for the sidebar count.
+
+**Why.** FR-285-1's dev review made the page render one endpoint, and that endpoint
+(`DashboardService.build()`, `DashboardRoutes.kt`) recomputes the whole overview on every request, in series:
+a decode of every title, the triage breakdown (a `stat()` per title and per-episode segment queries, behind a
+cache whose key moves on every library write and every health-check revision), an uncached predicate pass per
+row to name its titles, full scans of `subtitle_check` and `file_fix`, and outbound calls to Jellyfin, Bazarr,
+Lidarr and Jellyfin item lookups for the playback repair plan — some cached for 5 minutes, none single-flight,
+and a failed Bazarr call not cached at all. A steady ~6 s on a 626-title library is the sum of those, and it
+grows with the library. Phase 203 FR-203-7 already required *cached, background-warmed, single-owner* for any
+check on the Dashboard's path; the overview as a whole never adopted it.
+
+**FR-285-15 — The request does not compute the overview.** `GET /api/dashboard` returns the most recent
+complete overview held in memory. No handler on the request path walks the library, stats a file per title,
+or calls an outside service (Jellyfin, Bazarr, Lidarr, Seerr). Target: under 100 ms server time once built, and
+the list painted within 1 s of opening the page on the LAN, on any library size.
+
+**FR-285-16 — One owner builds it, in the background.** The overview is rebuilt off the request path: at boot,
+after a library write or a scan step finishes, when a health check (MKV, file damage, track coverage, A/V sync)
+publishes a new revision, and otherwise at most every 5 minutes (the advisors' existing cache, FR-212-1). Triggers
+that land while a build runs coalesce into **one** follow-up build; a build is never run twice at once and no
+request waits on one (FR-203-4's shape). An outside service that fails is remembered as failed for the same
+interval as a success, so a down Bazarr costs one timeout per interval, not one per page open.
+
+**FR-285-17 — "Not built yet" is not "nothing needs you".** Before the first build after a boot completes, the
+response says so (`built: false`) and the page keeps its existing *Loading…* state; it never renders FR-285-5's
+*Nothing needs you* from an overview that was never computed (the Phase 203 lesson).
+
+**FR-285-18 — The page shows a fresh overview without being asked.** When a build completes, the server pushes a
+`dashboard_updated` event on `/ws`; an open Dashboard re-fetches and re-renders. A row action (Repair, Re-check,
+Remove, …) triggers a build, and the page's list after the action reflects that action — the action handler waits
+for the coalesced build, bounded at 10 s, before it answers; past the bound, the push delivers it.
+
+**FR-285-19 — Every build says how long it took, per step.** Each build logs the duration of each step and the
+total, and the response carries `computedAt` and `buildMs` (additive fields). The next slow step is found by
+reading a number, not by a household member noticing (FR-203-6's reasoning).
+
+**FR-285-20 — The page's own requests do not queue.** On open, the Dashboard's status, stats, scan-status and
+overview requests run concurrently; the scan banner does not wait behind the overview, the overview does not wait
+behind `POST /api/dashboard/seen`, and the sidebar count reads the same held overview rather than causing a
+second build.
+
+**Out of scope for this amendment:** what any row says or counts; making an individual detector cheaper (Phase
+203's out-of-scope reasoning holds); persisting the overview across a restart (FR-285-17 covers the window).
+
+**Acceptance:** on the household server, after a deploy and the first build, ten consecutive
+`GET /api/dashboard` calls each answer in under 100 ms; the page's list paints within 1 s of opening; a row
+action's result is visible on the list without a manual reload; the build log names every step's duration.
