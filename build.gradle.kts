@@ -92,19 +92,19 @@ val advisoryResolutions: List<Pair<String, String>> = listOf(
     // minimatch 3, runs on the 2.x release. Its `require('brace-expansion')` call is the same CommonJS function.
     "brace-expansion" to "^2.1.7",
     "js-yaml" to "^4.3.2",
-    "fast-uri" to "^3.1.8",
+    "fast-uri" to "^3.1.9",           // 2026-10-25: GHSA-333x-w4r6-6crp, GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h, GHSA-w74x-v6f9-j3xg
     "ws" to "^8.21.0",                // Ktor's JS client pins ws exactly
     "socket.io-parser" to "^4.2.7",
     "engine.io" to "^6.6.10",
     "compression" to "^1.8.2",
     "source-map-js" to "^1.2.2",
-    "body-parser" to "^1.20.6",
+    "body-parser" to "^1.20.9",       // 2026-10-25: GHSA-27r3-jxmh-p828
     "webpack" to "^5.104.1",          // Kotlin pins webpack / webpack-dev-server exactly
     "webpack-dev-server" to "^5.2.6",
     "qs" to "^6.16.0",                // express asks for ~6.15, which this one has to cross
     "follow-redirects" to "^1.16.1",  // 2026-10-22: GHSA-8r9p-f939-6h3c, GHSA-q3jh-wrc6-jgq8 (1.16.0 via http-proxy)
     // Major crossings — kept only while the FR-319-4 checks pass (FR-319-3).
-    "serialize-javascript" to "^7.0.5",
+    "serialize-javascript" to "^7.1.3", // 2026-10-25: GHSA-m5mm-p8h7-m29v
     "diff" to "^8.0.3",
     "uuid" to "^11.1.1",
 )
