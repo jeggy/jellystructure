@@ -235,23 +235,24 @@ test.describe.serial("Fixture suite", () => {
     }
   });
 
-  // Phase 265 (FR-265-2/4/5/8, acceptance 1) — Library's *Scan library* opens the same pre-run dialog as
-  // Settings, listing the server's plan; an unticked step is skipped for this run and the run says so. The
-  // test config has no pipeline, so the plan is the built-in default: there is no detect_segments to untick,
-  // and verify_files stands in for it.
-  test("Library's Scan library opens the pre-run dialog, and an unticked step is skipped", async () => {
+  // DEB-1664 (FR-5, FR-6; was Phase 265 FR-265-2/4/5/8) — Library's *Scan library* opens the Scan dialog drawn from the server's
+  // model; an unticked feature is skipped for this run and the run says so by its product name. scan-dialog.spec.ts covers the
+  // dialog against a faked start; this one lets the real server run it. File health stands in for the unticked feature.
+  test("Library's Scan library opens the Scan dialog, and an unticked feature is skipped", async () => {
     await page.goto("/#/library");
     await expect(page.locator('#scan-btn')).toBeEnabled({ timeout: 30_000 });
     await page.click('#scan-btn');
-    const dialog = page.locator('.modal-back.open');
-    await expect(dialog.locator('h3')).toHaveText('Scan library');
-    const plan = await (await page.request.get('/api/pipeline/plan')).json() as Array<{ step: string }>;
-    expect(plan[0].step).toBe('scan_files');
-    await expect(dialog.locator('input[data-step]')).toHaveCount(plan.length);
-    await expect(dialog.locator('input[data-step="scan_files"]')).toBeDisabled();
-    await dialog.locator('input[data-step="verify_files"]').uncheck();
-    await page.click('#prun-go');
+    const dialog = page.locator('#scan-dialog-scrim');
+    await expect(dialog.locator('h2')).toHaveText('Scan library');
+    const find = dialog.locator('.sd-two .pick', { hasText: 'Find new & changed' }).first();
+    await expect(find.locator('.tick')).toHaveClass(/\block\b/);
+    const health = dialog.locator('.sd-two .pick', { hasText: 'File health' }).first();
+    await health.locator('.tick').click();
+    await expect(health.locator('.tick')).not.toHaveClass(/\bon\b/);
+    await dialog.locator('[data-act="start"]').click();
     await expect(dialog).toHaveCount(0);
+    // the untick is remembered per part in the browser; leave nothing behind for the next test
+    await page.evaluate(() => localStorage.removeItem('js-processing-skip'));
 
     // The run's plan (Activity's chips) leaves the step out, and its descriptor names the skip.
     await expect.poll(async () => {
@@ -262,7 +263,7 @@ test.describe.serial("Fixture suite", () => {
     expect(running.stepPlan).not.toContain('verify_files');
     await expect.poll(async () =>
       JSON.stringify(await (await page.request.get('/api/activity/log?category=scan&pageSize=500')).json()),
-      { timeout: 30_000 }).toContain('skipped: verify_files');
+      { timeout: 30_000 }).toContain('skipped: File health');
 
     // Let it finish before the next test; a cast session left by an earlier spec may defer it (see
     // waitForScanComplete), so press the product's own override the way an operator would.
