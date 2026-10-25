@@ -245,11 +245,11 @@ suspend fun runPipeline(
         // whole-library /Library/Refresh, no Finished, no scan_complete, no no-match notification.
         if (target is RunTarget.SingleItem) return
         if (scanTracker.cancelRequested) {
-            broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
+            broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0, scanTracker.queuedSentences()))
             return
         }
         scanTracker.complete()
-        broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
+        broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0, scanTracker.queuedSentences()))
         // FR-3.3 — a run of whole-library features alone looked at nothing: no Scan finished, no library refresh (the music steps tell Jellyfin themselves).
         if (!discover) return
         deps.processingRuns?.record(ProcessingFeatures.FIND)
@@ -585,7 +585,7 @@ suspend fun runPipeline(
                     // never urgent enough to be worth stalling a live film for; an operator who genuinely
                     // wants it now still has "Run anyway" (FR-178-4).
                     val result = mediaJobQueue.enqueueSubtitles(item.id, item.title, dev.jellystructure.jobs.MediaJobParams(deferWhilePlaying = true))
-                    if (result.deduped) deduped++ else enqueued++
+                    if (result.deduped) deduped++ else { enqueued++; scanTracker.noteQueued(ProcessingFeatures.SUBTITLES, "title", "titles", 1) }
                 }
                 val summary = "enqueued $enqueued subtitle pre-warm job${if (enqueued == 1) "" else "s"}" +
                     (if (deduped > 0) " ($deduped already queued)" else "") +
@@ -710,7 +710,7 @@ suspend fun runPipeline(
                                 "segments_movie", item.id, item.title,
                                 segmentJobParams(), 1, "seg:movie:${item.id}",
                             )
-                            if (result.deduped) deduped++ else enqueued++
+                            if (result.deduped) deduped++ else { enqueued++; scanTracker.noteQueued(ProcessingFeatures.SEGMENTS, "film", "films", 1) }
                         }
                         dev.jellystructure.model.MediaKind.TV_SHOW -> {
                             val seasons = item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber ?: 0 }
@@ -724,7 +724,7 @@ suspend fun runPipeline(
                                     segmentJobParams(season), eps.size,
                                     "seg:season:${item.id}:$season",
                                 )
-                                if (result.deduped) deduped++ else enqueued++
+                                if (result.deduped) deduped++ else { enqueued++; scanTracker.noteQueued(ProcessingFeatures.SEGMENTS, "episode", "episodes", eps.size) }
                             }
                         }
                         dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> {}
@@ -759,6 +759,7 @@ suspend fun runPipeline(
                 val items = if (target is RunTarget.SingleItem) workingSet else store.allItems()
                 broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, items.size))
                 val pass = mediaJobQueue.enqueueDueFileChecks(step, items) { scanTracker.stepStopRequested }
+                scanTracker.noteQueued(if (step.step == FileCheckSteps.SUBTITLES) ProcessingFeatures.SUBTITLES else ProcessingFeatures.HEALTH, "file", "files", pass.queued)
                 val noun = when (step.step) {
                     FileCheckSteps.VERIFY -> "verification"
                     FileCheckSteps.SUBTITLES -> "a subtitle check"

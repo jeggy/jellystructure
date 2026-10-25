@@ -240,8 +240,7 @@ private fun abClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     if (t.closest("[data-fclear]") != null) { abFacets.clear(); abFilter = null; abLoad(scope); return }
     if (t.closest("[data-issue-rm]") != null) { abFilter = null; abLoad(scope); return }
     t.closest("[data-act]")?.let { a ->
-        if (a.getAttribute("data-act") == "scan") openPipelineRunDialog(scope, "Scan library", full = false) { skip ->
-            if (dev.jellystructure.api.MediaApi.startScan(false, skip)) muToast("Scan started — the audiobooks are read after the films") else muToast("The scan didn't start")
-        }
+        // DEB-1664 (FR-5.1) — Scan now opens the Scan dialog, on Audiobooks; the dialog says what it started.
+        if (a.getAttribute("data-act") == "scan") openScanDialog(scope, select = dev.jellystructure.api.ScanFeatureIds.AUDIOBOOKS)
     }
 }

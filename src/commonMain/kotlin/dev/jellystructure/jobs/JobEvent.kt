@@ -19,7 +19,11 @@ sealed class JobEvent {
     data class ItemScanned(val jobId: String, val item: MediaItem) : JobEvent()
 
     @Serializable @SerialName("finished")
-    data class Finished(val jobId: String, val succeeded: Int, val failed: Int) : JobEvent()
+    data class Finished(
+        val jobId: String, val succeeded: Int, val failed: Int,
+        /** DEB-1664 (FR-5.10) — what the run put on a queue, as sentences built on the server (*37 episodes queued for intro & credits*). An added field: an older reader ignores it. */
+        val queued: List<String> = emptyList(),
+    ) : JobEvent()
 
     @Serializable @SerialName("log_line")
     data class LogLine(val level: String, val category: String, val message: String, val mediaId: String? = null, val runId: String? = null, val step: String? = null) : JobEvent()

@@ -416,6 +416,40 @@ is FR-5) and 303 (the Checks card lists features).
   `set-loading`, `set-light` and `set-phone`: Playwright proves there is no horizontal overflow and that every control acts; the likeness to
   the pictures is on the QA task.
 
+## Amendment 2026-10-25 — what slice 3 fixed where this file was silent (DEB-2196)
+
+- **Routes (FR-9.1).** `GET /api/processing/scan?library=` answers the dialog: every sentence, the features with their parts and each one's
+  reason, with the *queues work* marker and the counts the *Re-check everything* note names. `POST /api/processing/scan` starts the run, body
+  `{library, skip, recheckAll}`, and answers `202 {status, jobId, library, skipped, skippedText}`; `409` while a scan is running (a scan
+  merely waiting for a TV is preempted, as `POST /api/scan` does, FR-178-2); `404` for a library that is not mapped. `skip` names part ids
+  (the step ids of the earlier amendment) or a feature id; an id that is no part, no feature, or is Find new & changed is ignored. A part that
+  could not have run anyway (off in Settings, behind a dependent switch, or not in the scoped library) is never *skipped*: the toast, the run
+  descriptor and `skipped` name only what was unticked and could have run. `recheckAll` is the run's existing `full`.
+- **One tick.** A feature with no more than one part (Intro & credits, Audiobooks, Make files play directly) has nothing to drill into: its row
+  is the one tick, the right pane says so, and a phone row carries no chevron (as drawn). Its remembered id is the part's, or `direct_play`.
+- **What *Make files play directly* does in a scan (FR-6.2).** It has no engine step, only the one-minute tick. Ticked, the run does what the
+  tick does, at once: it queues the next planned repair (one at a time, inside the 24 h read cap) and the queue holds it while a TV plays.
+  `POST /api/scan` never did this and still does not.
+- **A scoped scan (FR-5.6).** A video library runs Find new & changed, Metadata & artwork, Intro & credits, File health, Subtitles and Make files
+  play directly; Recommendations & suggestions, Music and Audiobooks are listed, disabled, as *Not in this library*, and do not run. A music
+  library runs Find new & changed and Music, a books library Find new & changed and Audiobooks, and everything else is listed the same way.
+  Music and Audiobooks still read every library of their kind, because the steps have no per-library form.
+- **The one number the dialog composes** is *n of m*, because it moves with every tick a person makes: *m* is a feature's parts, *n* those ticked
+  and tickable. Every sentence, name and reason is the server's (FR-12.1). One legend sentence serves both widths.
+- **What is remembered** is the unticked part ids, in the browser's `localStorage`, shared by every page of the admin. The earlier key held the
+  same ids (a step id is a part id), so it is read once as a fallback and what it held survives; an id that is no part now is dropped. It is
+  shown in the dialog, never applied silently.
+- **The toasts.** *Started* names the skip and says it stays until ticked again. *Finished* appears for a run **this browser started**, never
+  for an hourly one: `JobEvent.Finished` gains a defaulted `queued` list of server-built sentences (*37 episodes queued for intro & credits*),
+  counted where the run queues. *Cancelled* says how many titles were looked at and offers *Continue scan*. The history line carries the skipped
+  parts by product name, replacing the step ids it used to print.
+- **Not drawn, and why.** `dlg-desktop`'s *The measuring service is not answering* line under Sound in step: nothing in the server reads that
+  service's health, so the dialog shows only the dependent-switch reason (*The measuring service is not set up*). Activity (slice 4) is where a
+  live health line belongs.
+- **What cannot be proved in CI.** Whether the dialog matches `dlg-desktop`, `dlg-music`, `dlg-rescan`, `dlg-scoped`, `dlg-off`, `dlg-phone`,
+  `dlg-phone-parts`, `dlg-phone-partly` and `toast` in both themes. Playwright proves every door opens it, the skip is named and remembered, a
+  disabled part cannot be ticked and 412 px has no horizontal overflow; the likeness is on the QA task.
+
 ## Code anchors (`main` at `51206b00`)
 
 - **Config:** root `scan_schedule` (`config/AppConfig.kt:34`); `ScanConfig` with `[[scan.pipeline]]`,

@@ -30,6 +30,11 @@ import dev.jellystructure.media.parseSkipSteps
 import dev.jellystructure.media.pipelinePlanRows
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.media.PipelineDeps
+import dev.jellystructure.media.ProcessingViews
+import dev.jellystructure.media.ScanCounts
+import dev.jellystructure.media.ScanDialogs
+import dev.jellystructure.media.ScanRunRequest
+import dev.jellystructure.media.ScanRunStarted
 import dev.jellystructure.media.ProcessingSchedule
 import dev.jellystructure.config.ProcessingFeatures
 import dev.jellystructure.config.processingOrDerived
@@ -2073,6 +2078,32 @@ fun Route.mediaRoutes(
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
+    // DEB-1664 (FR-5, FR-6, FR-9.1) — the Scan dialog's start: Find new & changed over the chosen library, then every part the dialog left ticked,
+    // over what is due or, with `recheckAll`, over every title. The same run as POST /scan (FR-178-2's preemption included).
+    post("/processing/scan") {
+        val body = runCatching { call.receiveText() }.getOrDefault("")
+        val req = if (body.isBlank()) ScanRunRequest()
+        else runCatching { lenientJson.decodeFromString(ScanRunRequest.serializer(), body) }.getOrNull()
+            ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unreadable body"))
+        val cfg = configStore.current
+        val libraryId = req.library?.takeIf { it.isNotBlank() }
+        val scope = libraryId?.let { scanScopeOf(cfg, it) ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "no such library")) }
+        if (scanTracker.running && !scanTracker.deferred) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
+            return@post
+        }
+        // The unticks are read against the model the dialog was drawn from, so "skipped" means what could have run and was unticked.
+        val model = ScanDialogs.model(cfg, ProcessingViews.build(cfg, processingInputs(configStore, processingRuns, mediaJobQueue, scanTracker)), scope, ScanCounts())
+        val selection = ScanDialogs.selection(model, req.skip)
+        if (scanTracker.running) scanTracker.cancelRun(appScope)
+        val jobId = scanTracker.startNew()
+        launchScanRun(
+            jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, libraryId = scope?.libraryId, full = req.recheckAll,
+            skipSteps = selection.skipSteps, queueDirectPlay = selection.queueDirectPlay, skipNames = selection.skippedNames,
+        )
+        call.respond(HttpStatusCode.Accepted, ScanRunStarted("started", jobId, scope?.libraryId ?: "all", selection.skippedNames, selection.skippedText, selection.skippedNote))
+    }
+
     // Phase 265 (FR-265-5) — what a manual run would execute right now, in order: the pre-run dialog's list.
     get("/pipeline/plan") {
         call.respond(pipelinePlanRows(configStore.current))
@@ -2338,6 +2369,19 @@ internal suspend fun pushToJellyfin(
  * Returns the resolved step list — callers that report a step count in their HTTP response (e.g.
  * `POST /pipeline/run`) read it off the return value instead of recomputing it themselves.
  */
+/**
+ * DEB-1664 (FR-6.2) — *Make files play directly* has no engine step, only the one-minute tick: next planned repair, one at a time, inside the
+ * 24 h read cap. A run that has it ticked does that now; the queue still holds the row while a TV plays (FR-262-1), so nothing waits on it.
+ */
+private suspend fun queueDirectPlayNow(queue: dev.jellystructure.media.MediaJobQueue, scanTracker: ScanTracker) {
+    runCatching {
+        dev.jellystructure.filefix.FileFixService.current?.nextToQueue(queue.fileFixJobActive())?.let { row ->
+            queue.enqueueFileFix(row.media_id, "Make file play directly · ${row.label}", row.path, row.kind)
+            scanTracker.noteQueued(ProcessingFeatures.DIRECT_PLAY, "file", "files", 1)
+        }
+    }.onFailure { Logger.warn("scan: could not queue the next repair: ${it.message}", "jobs") }
+}
+
 internal fun launchScanRun(
     jobId: String,
     triggerKind: String,   // "manual" | "scheduled" | "startup"
@@ -2351,6 +2395,10 @@ internal fun launchScanRun(
     resumeSkipIds: Set<String> = emptySet(),
     // DEB-1664 (FR-3.3) — a run of these whole-library features alone (no discovery), started by the feature scheduler.
     onlyFeatures: Set<String>? = null,
+    // DEB-1664 (FR-6.2) — the Scan dialog ticked *Make files play directly*: the run queues what that feature's one-minute tick would, now.
+    queueDirectPlay: Boolean = false,
+    // DEB-1664 (FR-6.4) — the skipped parts by product name, when the caller already read them against the dialog's model; else read from [skipSteps].
+    skipNames: List<String>? = null,
 ): List<PipelineStep> {
     val cfgNow = configStore.current
     // FR-9.2 — the old `skipSteps` ids map to parts; an id that is not a part (a retired step, telling Jellyfin, junk) is ignored.
@@ -2370,7 +2418,8 @@ internal fun launchScanRun(
     val suffix = buildString {
         if (full) append(" (full)")
         if (resumeSkipIds.isNotEmpty()) append(" (resumed)")
-        if (skipParts.isNotEmpty()) append(" · skipped: ${skipParts.sorted().joinToString(", ")}")
+        val skippedNames = skipNames ?: skipParts.sorted().map { ProcessingFeatures.partName(it) ?: it }
+        if (skippedNames.isNotEmpty()) append(" · skipped: ${skippedNames.joinToString(", ")}")
         if (ignoredSkips.isNotEmpty()) append(" · ignored: ${ignoredSkips.sorted().joinToString(", ")}")
     }
     val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
@@ -2392,6 +2441,7 @@ internal fun launchScanRun(
             if (runsPipeline) (if (full) "full" else "normal") else null,
             startMsg, scanTracker,
         ) {
+            if (queueDirectPlay) queueDirectPlayNow(pipelineDeps.mediaJobQueue, scanTracker)
             runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible, byHand = triggerKind == "manual", discover = onlyFeatures == null)
         }
     }

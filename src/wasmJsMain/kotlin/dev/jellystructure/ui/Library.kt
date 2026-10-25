@@ -307,15 +307,15 @@ private fun syncFilterUiToState(scope: CoroutineScope) {
 private fun attachLibraryListeners(scope: CoroutineScope) {
     fun reload() { scope.launch { loadMore(scope, reset = true) } }
 
-    // Phase 265 (FR-265-2) — both faces open the pre-run dialog; *Start run* starts the scan with its skips.
+    // DEB-1664 (FR-5.1, FR-5.4) — both faces open the Scan dialog, the full one with *Re-check everything* on.
     document.getElementById("scan-btn")?.addEventListener("click") {
         if ((document.getElementById("scan-btn") as? HTMLButtonElement)?.disabled == true) return@addEventListener
-        openPipelineRunDialog(scope, "Scan library", full = false) { skip -> triggerScan(scope, skipSteps = skip) }
+        openScanDialog(scope) { onScanStarted(scope) }
     }
     document.getElementById("scan-full")?.addEventListener("click") { e ->
         if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
         (document.getElementById("scan-split") as? HTMLElement)?.classList?.remove("open")
-        openPipelineRunDialog(scope, "Scan library (full rescan)", full = true) { skip -> triggerScan(scope, full = true, skipSteps = skip) }
+        openScanDialog(scope, recheck = true) { onScanStarted(scope) }
     }
     (document.getElementById("scan-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
         (caret as? HTMLElement)?.addEventListener("click") { e ->
@@ -453,17 +453,10 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
 
 // -- Scan -----------------------------------------------------------------
 
-private suspend fun triggerScan(scope: CoroutineScope, full: Boolean = false, skipSteps: List<String> = emptyList()) {
+/** The dialog started a run: the Library page follows it — the grid fills as titles are found. */
+private fun onScanStarted(scope: CoroutineScope) {
     val btn = document.getElementById("scan-btn") as? HTMLButtonElement ?: return
     if (btn.disabled) return
-    val started = MediaApi.startScan(full, skipSteps)
-    if (!started) {
-        val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
-        banner.style.display = "block"
-        banner.innerHTML = """<span class="badge bad">Scan is already running or failed to start.</span>"""
-        return
-    }
-    showPipelineToast((if (full) "Full scan started" else "Scan started") + skippedSuffix(skipSteps))
     libScannedCount = 0
     libPendingScanCount = 0
     setScanRunning(true)

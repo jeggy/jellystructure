@@ -89,6 +89,26 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
     private var _type: String? = null
 
     fun setActiveStep(step: String?) { _activeStep = step }
+
+    // DEB-1664 (FR-5.10) — what this run put on a queue, counted where it queues, for the finished toast. Replaced whole, never edited
+    // in place: the steps run one after another, and a reader (the run's end) must never see a list mid-change.
+    private class QueuedNote(val feature: String, val singular: String, val plural: String, val count: Int)
+    @Volatile private var queuedNotes: List<QueuedNote> = emptyList()
+
+    fun noteQueued(featureId: String, singular: String, plural: String, count: Int) {
+        if (count > 0) queuedNotes = queuedNotes + QueuedNote(featureId, singular, plural, count)
+    }
+
+    /** One sentence per feature and kind of thing: *37 episodes queued for intro & credits*. Empty when nothing was queued. */
+    fun queuedSentences(): List<String> =
+        queuedNotes.groupBy { it.feature to it.singular }.map { (key, notes) ->
+            val n = notes.sumOf { it.count }
+            "$n ${if (n == 1) notes.first().singular else notes.first().plural} queued for ${queuedFeaturePhrase(key.first)}"
+        }
+
+    private fun queuedFeaturePhrase(id: String) =
+        if (id == dev.jellystructure.config.ProcessingFeatures.DIRECT_PLAY) "making files play directly"
+        else dev.jellystructure.config.ProcessingFeatures.feature(id)?.name?.lowercase() ?: id
     fun setStepPlan(steps: List<String>) { _stepPlan = steps }
     fun setDescriptors(trigger: String, runScope: String, type: String?) {
         _trigger = trigger; _runScope = runScope; _type = type
@@ -181,6 +201,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
 
     fun startNew(): String {
         val jobId = "scan-${epochSeconds()}"
+        queuedNotes = emptyList()
         if (persistToDb) db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
         stepStopRequested = false

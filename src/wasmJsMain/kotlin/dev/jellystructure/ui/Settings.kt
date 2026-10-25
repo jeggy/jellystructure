@@ -15,7 +15,6 @@ import dev.jellystructure.api.ChromecastStatus
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.ReceiverCheck
 import dev.jellystructure.api.MediaApi
-import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.AvSyncConfig
 import dev.jellystructure.api.FileFixConfig
@@ -819,6 +818,9 @@ private val SECTION_TAB = mapOf(
     "sect-advanced" to "advanced",
 )
 // Phase 217 — the phase-162 tab is gone; its old `?tab=` value is unknown and the Phase-55 contract sends it to the default.
+/** The steps whose TOML preview carries the release-age tiers (the preview of the derived `[[scan.pipeline]]`). */
+private val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
+
 private val SETTINGS_TABS = listOf("connections", "libraries", "processing", "metadata", "downloads", "notifications", "ai", "advanced")   // Phase 270 — "ai"
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
@@ -1712,15 +1714,11 @@ private fun renderLibraryList() {
             val btn = nodes.item(i) as? HTMLElement ?: continue
             val jellyfinId = btn.getAttribute("data-lib-id") ?: continue
             val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: continue
+            // DEB-1664 (FR-5.1, FR-5.6) — the card's Scan opens the Scan dialog scoped to this library; the dialog says what it started.
             btn.addEventListener("click") {
                 val scope = settingsScope ?: return@addEventListener
-                scope.launch {
-                    val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
-                    btn.setAttribute("disabled", "")
-                    resultEl.textContent = "Starting scan…"
-                    val ok = runCatching { MediaApi.startLibraryScan(jellyfinId) }.getOrDefault(false)
-                    resultEl.innerHTML = if (ok) """<span class="badge ok">Scan started</span>""" else """<span class="badge bad">Failed</span>"""
-                    btn.removeAttribute("disabled")
+                openScanDialog(scope, library = jellyfinId) {
+                    (document.getElementById("lib-action-result-$idx") as? HTMLElement)?.innerHTML = """<span class="badge ok">Scan started</span>"""
                 }
             }
         }

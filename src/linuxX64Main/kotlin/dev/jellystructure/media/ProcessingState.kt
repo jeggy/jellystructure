@@ -189,6 +189,9 @@ object ProcessingViews {
         ProcessingFeatures.DIRECT_PLAY to setOf(MediaJobQueue.FILE_FIX_JOB),
     )
 
+    /** A part whose own switch on Settings ▸ Processing is off. The Scan dialog links to that row when it sees this reason. */
+    const val PART_OFF = "Off in Settings."
+
     fun build(cfg: AppConfig, inp: ProcessingInputs): ProcessingView {
         val p = cfg.processingOrDerived()
         val findNext = ProcessingSchedule.nextFind(p.find.schedule, inp.nowSec)
@@ -201,7 +204,7 @@ object ProcessingViews {
                 else -> false
             }
             val parts = if (f.id == ProcessingFeatures.DIRECT_PLAY) {
-                inp.directPlay.map { (name, enabled) -> ProcessingPartView(name, name, enabled, canRun = enabled, reason = if (enabled) null else "Off in Settings.") }
+                inp.directPlay.map { (name, enabled) -> ProcessingPartView(name, name, enabled, canRun = enabled, reason = if (enabled) null else PART_OFF) }
             } else f.parts.map { part ->
                 val partOn = p.partOn(part.step)
                 val blocker = if (on) blockerOf(cfg, p, part.step) else null
@@ -210,7 +213,7 @@ object ProcessingViews {
                     canRun = on && partOn && blocker == null && !unmapped,
                     reason = when {
                         !on -> "Off in Settings."
-                        !partOn -> "Off in Settings."
+                        !partOn -> PART_OFF
                         unmapped -> unmappedReason(f.id)
                         else -> blocker
                     },

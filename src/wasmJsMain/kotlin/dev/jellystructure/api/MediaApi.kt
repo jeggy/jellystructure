@@ -280,14 +280,6 @@ data class NarrowedFacets(
 @Serializable
 private data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList(), val query: ConditionGroup? = null)
 
-/** Phase 154 — per-run pipeline step skip (see [MediaApi.runPipeline]). */
-@Serializable
-private data class PipelineRunReq(val skipSteps: List<String> = emptyList())
-
-/** Phase 265 (FR-265-5) — one row of `GET /api/pipeline/plan`. */
-@Serializable
-data class PipelinePlanStep(val step: String, val scope: String = "missing", val rebuildEvery: String? = null)
-
 @Serializable
 data class BatchCountRequest(
     val index: Int,
@@ -328,8 +320,6 @@ data class ScanStatus(
 
 @Serializable
 data class ActiveScanItem(val label: String, val startedAt: Long, val detail: String? = null)
-
-enum class PipelineRunResult { STARTED, ALREADY_RUNNING, FAILED }
 
 private fun String.encodeURL() = encodeURIComponent(this)
 
@@ -448,50 +438,7 @@ object MediaApi {
         httpClient.post("/api/media/$id/repull-jellyfin").body<MediaItem>()
     }.getOrNull()
 
-    // Returns true if the scan was successfully started, false if already running or failed.
-    suspend fun startLibraryScan(jellyfinLibraryId: String): Boolean = runCatching {
-        val response = httpClient.post("/api/scan?library=${encodeURIComponent(jellyfinLibraryId)}")
-        response.status.value == 202
-    }.getOrDefault(false)
-
-    // Phase 175: this trigger now honors the freshness/cooldown filter like every other one (previously
-    // it always processed the whole library unconditionally). full=true bypasses it for this one run —
-    // "Scan library (full rescan)" in the Dashboard's split button.
-    // Phase 265 (FR-265-4): [skipSteps] is the pre-run dialog's one-run skip, sent exactly as runPipeline
-    // sends it; the server parses both routes' bodies with one helper and ignores "scan_files".
-    suspend fun startScan(full: Boolean = false, skipSteps: List<String> = emptyList()): Boolean = runCatching {
-        val response = httpClient.post(if (full) "/api/scan?full=true" else "/api/scan") {
-            contentType(ContentType.Application.Json)
-            setBody(PipelineRunReq(skipSteps))
-        }
-        response.status == HttpStatusCode.Accepted
-    }.getOrDefault(false)
-
-    /** Phase 265 (FR-265-5) — the steps a manual run will execute, in order; null when it can't be read. */
-    suspend fun pipelinePlan(): List<PipelinePlanStep>? = runCatching {
-        val response = httpClient.get("/api/pipeline/plan")
-        if (response.status == HttpStatusCode.OK) response.body<List<PipelinePlanStep>>() else null
-    }.getOrNull()
-
-    // 93c: run the composed automation (the saved scan pipeline) on demand — all enabled steps,
-    // not just file discovery like startScan(). Conflict is distinguished from a genuine failure so the
-    // caller can show "already running" instead of a misleading "failed to start".
-    // full=true bypasses scan_files' freshness filter for this one run, so every downstream step
-    // (sync_imdb_ratings, write_nfo, …) sees the whole library instead of just whatever's due for an
-    // unrelated metadata recheck — "Run pipeline now (full)" in Settings.
-    // Phase 154: [skipSteps] excludes steps from THIS run only (the pre-run dialog's tick boxes) — the
-    // server never persists it, and "scan_files" is ignored server-side because discovery always runs.
-    suspend fun runPipeline(full: Boolean = false, skipSteps: List<String> = emptyList()): PipelineRunResult = runCatching {
-        val url = if (full) "/api/pipeline/run?full=true" else "/api/pipeline/run"
-        when (httpClient.post(url) {
-            contentType(ContentType.Application.Json)
-            setBody(PipelineRunReq(skipSteps))
-        }.status) {
-            HttpStatusCode.Accepted -> PipelineRunResult.STARTED
-            HttpStatusCode.Conflict -> PipelineRunResult.ALREADY_RUNNING
-            else -> PipelineRunResult.FAILED
-        }
-    }.getOrDefault(PipelineRunResult.FAILED)
+    // DEB-1664 (FR-9.1) — a scan is started by `ProcessingApi.startScan`; the Scan dialog is the only way in.
 
     suspend fun scanStatus(): ScanStatus? = runCatching {
         httpClient.get("/api/scan/status").body<ScanStatus>()

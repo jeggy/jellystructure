@@ -589,9 +589,8 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
                 if (MusicApi.matchNow()) { muToast("Matching against MusicBrainz — one request a second"); muPollMatch(scope) }
                 else muToast("A matching pass is already running")
             }
-            "scan" -> openPipelineRunDialog(scope, "Scan library", full = false) { skip ->
-                if (dev.jellystructure.api.MediaApi.startScan(false, skip)) muToast("Scan started — the music library is read after the films") else muToast("The scan didn't start")
-            }
+            // DEB-1664 (FR-5.1) — Scan now opens the Scan dialog, on Music; the dialog says what it started.
+            "scan" -> openScanDialog(scope, select = dev.jellystructure.api.ScanFeatureIds.MUSIC)
             "convert" -> muOpenConvert(scope, MusicConvertRequest()) { muLoad(scope) }
         }
     }

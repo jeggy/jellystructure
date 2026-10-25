@@ -56,16 +56,16 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-browse")?.addEventListener("click") {
         App.navigate("/library")
     }
-    // Phase 265 (FR-265-2) — both faces open the pre-run dialog. Resume stays dialog-free: it continues the
-    // cancelled run with that run's own plan.
+    // DEB-1664 (FR-5.1, FR-5.4) — both faces open the Scan dialog, the full one with *Re-check everything* on. Resume stays
+    // dialog-free: it continues the cancelled run with that run's own plan.
     document.getElementById("dash-scan")?.addEventListener("click") {
         if ((document.getElementById("dash-scan") as? HTMLButtonElement)?.disabled == true) return@addEventListener
-        openPipelineRunDialog(scope, "Scan library", full = false) { skip -> triggerDashboardScan(scope, resume = false, skipSteps = skip) }
+        openScanDialog(scope) { onDashScanStarted(scope) }
     }
     document.getElementById("dash-scan-full")?.addEventListener("click") { e ->
         if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
         (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.remove("open")
-        openPipelineRunDialog(scope, "Scan library (full rescan)", full = true) { skip -> triggerDashboardScan(scope, resume = false, full = true, skipSteps = skip) }
+        openScanDialog(scope, recheck = true) { onDashScanStarted(scope) }
     }
     (document.getElementById("dash-scan-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
         (caret as? HTMLElement)?.addEventListener("click") { e ->
@@ -147,20 +147,25 @@ private suspend fun loadDashboardStats() {
 // count-sorted — a stable position lets an operator build muscle memory). `missing_artwork` is the 10th
 // triage type the design mockup omitted; kept as a bad-severity cell next to `missing_still` (same class
 // of "missing visual asset" issue) per the dev-review addendum's recommendation.
-private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean, full: Boolean = false, skipSteps: List<String> = emptyList()) {
+private suspend fun resumeDashboardScan(scope: CoroutineScope) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
 
-    val started = if (resume) MediaApi.resumeScan() else MediaApi.startScan(full, skipSteps)
-    if (!started) {
+    if (!MediaApi.resumeScan()) {
         val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
         banner.innerHTML = """<span class="badge bad">Scan failed to start — check server connection.</span>"""
         return
     }
-    if (!resume) showPipelineToast((if (full) "Full scan started" else "Scan started") + skippedSuffix(skipSteps))
-    val status = MediaApi.scanStatus()
-    setDashScanRunning(status?.processedCount ?: 0)
-    connectDashScanSocket(scope, baseCount = status?.processedCount ?: 0)
+    onDashScanStarted(scope)
+}
+
+/** The run is going (the dialog started it, or a resume did): show it, and follow it over the socket. */
+private fun onDashScanStarted(scope: CoroutineScope) {
+    scope.launch {
+        val status = MediaApi.scanStatus()
+        setDashScanRunning(status?.processedCount ?: 0)
+        connectDashScanSocket(scope, baseCount = status?.processedCount ?: 0)
+    }
 }
 
 private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
@@ -299,10 +304,11 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
           <button id="new-scan-btn" class="btn sm ghost">Start new scan</button>
         </div>""".trimIndent()
     document.getElementById("resume-scan-btn")?.addEventListener("click") {
-        scope.launch { triggerDashboardScan(scope, resume = true) }
+        scope.launch { resumeDashboardScan(scope) }
     }
+    // FR-5.1 — Start new scan opens the dialog too; it used to start a scan with no choice.
     document.getElementById("new-scan-btn")?.addEventListener("click") {
-        scope.launch { triggerDashboardScan(scope, resume = false) }
+        openScanDialog(scope) { onDashScanStarted(scope) }
     }
 }
 // Phase 157 (FR-BZ1-3) — first external-service status card on the Dashboard (no prior Radarr/Sonarr/

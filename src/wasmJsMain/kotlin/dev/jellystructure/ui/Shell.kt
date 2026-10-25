@@ -232,18 +232,8 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOfNotNull(
     else null,
     PaletteCmd("Go to Metadata", "Studios, networks, genres & tags") { App.navigate("/metadata") },
     PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
-    PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {
-        // Phase 175: startScan() now honors the freshness/cooldown filter by default — this command's
-        // own label promises a FULL rescan, so it must pass full=true or it'd silently stop doing what
-        // it says the moment the cooldown is turned on.
-        // Phase 265 (FR-265-3): the same run as the buttons, so it opens the same pre-run dialog.
-        openPipelineRunDialog(MainScope(), "Start full scan", full = true) { skip ->
-            showPipelineToast(
-                if (MediaApi.startScan(full = true, skipSteps = skip)) "Full scan started" + skippedSuffix(skip)
-                else "Scan is already running or failed to start"
-            )
-        }
-    },
+    // DEB-1664 (FR-5.1, FR-5.4) — the same dialog as the buttons, opened with *Re-check everything* on: the name promises a full rescan.
+    PaletteCmd("Start full scan", "Re-scan all Jellyfin items") { openScanDialog(MainScope(), recheck = true) },
 )
 
 private fun injectCommandPalette(body: HTMLElement) {
@@ -465,6 +455,7 @@ private fun connectDockSocket() {
                     }
                 }
                 is JobEvent.Finished -> {
+                    ScanToasts.finished(event, MainScope())   // FR-5.10 — for a run this browser started
                     hideDock()
                     dockScanned = 0
                     hideCancelledBanner()

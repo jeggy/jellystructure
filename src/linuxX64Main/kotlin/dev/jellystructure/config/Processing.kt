@@ -185,6 +185,9 @@ object ProcessingFeatures {
 
     fun feature(id: String): ProcessingFeature? = ALL.firstOrNull { it.id == id }
 
+    /** The product name of a part, by its step id; null for a step that is none (telling Jellyfin, a retired step). */
+    fun partName(step: String): String? = ALL.firstNotNullOfOrNull { f -> f.parts.firstOrNull { it.step == step }?.name }
+
     /** The feature a pipeline step belongs to; `scan_files` is feature 1, `sync_jellyfin` feature 2 (it is Metadata & artwork's, without being a part). */
     fun featureOfStep(step: String): String? = when (step) {
         "scan_files" -> FIND
