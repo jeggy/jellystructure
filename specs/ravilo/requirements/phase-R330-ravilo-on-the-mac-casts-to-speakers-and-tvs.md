@@ -413,3 +413,16 @@ DEB-2294's re-ask and DEB-2312's heal, which stay as they are: harmless, and sti
 **Acceptance.** The DEB-2314 recipe: a 1000-song queue with FLAC and MP3 from the Mac to a speaker, the Mac left
 alone for ~10 min, at least 3 natural song changes. After each change the bar's place moves within ~4 s and stays
 within ~2 s of the speaker's; a pause holds; the log shows `from=ravilo` on the stuck-shaped changes.
+
+**Built as `5bf9c8d1` (DEB-2456). Calls the text above was silent on, accepted 2026-10-25:**
+
+- *Starting or paused.* A receiver report with `playing=false` means the song is starting (the equaliser shows) only
+  while its `position_ms` is under 1 s. Past that, it means paused: the play glyph shows and the place holds.
+- *For that song.* A CAF status counts for the song our channel names only when its title matches. Without that, the
+  old song's last status, arriving late, would win over the receiver's report for the new song.
+- *What drops the receiver's report.* Any receiver message that is not a `status` with a place (`ended`, `failed`,
+  `busy`, `noserver`, or a status without one) drops the held report; `tracks` does not. So do a load, a new device and
+  a close.
+- *A seek.* A seek sends no receiver status, so while CAF is silent the bar can trail a seek by up to 15 s. QA records
+  it on DEB-2459 as data, not as a failure. If it shows, the fix is a status at the first `TIME_UPDATE` after a seek.
+
