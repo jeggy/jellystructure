@@ -738,7 +738,7 @@ actual class RaviloPlayer actual constructor() {
         subtitleViewRef?.let { applySubtitleSize(it) }
     }
 
-    // R300 (FR-R300-1) — the height captions are sized against: the video box's, not the window's. The
+    // R300 (FR-R300-1) — the height captions are sized against: a 16:9 frame's fitted inside the window, not the window's. The
     // SubtitleView spans the whole window (so its inset measures from the true screen edge, see
     // PlayerVideoSurface), and Media3's fractional size is a fraction of the VIEW — in portrait on a
     // phone that view is ~2.2× taller than the picture, so captions came out ~3× too big and covered

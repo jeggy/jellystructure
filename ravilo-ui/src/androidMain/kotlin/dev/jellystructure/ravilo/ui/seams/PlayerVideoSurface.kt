@@ -100,10 +100,10 @@ actual fun PlayerVideoSurface(
                 else Modifier.wrapContentSize(unbounded = true).requiredSize(cw, cw / dar)
             }
         }
-        // R300 (FR-R300-1) — the picture's height, for caption sizing: the DAR box in fit mode, the
-        // window otherwise (fill mode and an unknown DAR both cover the window in height or width).
+        // R300 (FR-R300-1) — the height for caption sizing: that of a 16:9 frame fitted inside the
+        // window. The screen decides, not the film, so this does not change when the first frame arrives.
         val boxHeightPx = with(LocalDensity.current) {
-            captionBaseHeight(maxWidth.toPx(), maxHeight.toPx(), dar, fill).let { kotlin.math.round(it).toInt() }
+            captionBaseHeight(maxWidth.toPx(), maxHeight.toPx()).let { kotlin.math.round(it).toInt() }
         }
         LaunchedEffect(boxHeightPx) { player.setSubtitleBaseHeightPx(boxHeightPx) }
         key(surfaceGeneration) {
