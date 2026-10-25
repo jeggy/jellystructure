@@ -1,6 +1,6 @@
 # Round `auto-fetch-states` — Auto-fetch's missing states
 
-**Revision 1, 2026-10-25.** Drawn in this repository. Brief is Bárður's on DEB-2483. The adopted spec
+**Revision 2, 2026-10-25.** Drawn in this repository. Brief is Bárður's on DEB-2483. The adopted spec
 is `specs/requirements/auto-fetch-turns-a-series-page-into-a-paced-scheduled-download.md` at
 `2c3c4f65`. Round 2's design stands and is not redrawn; this round promotes nothing.
 
@@ -11,9 +11,41 @@ that page already owns, which is exactly the case where the shipped system wins 
 useful contribution was the discipline of critiquing the render instead of shipping it, which the
 lane already mandates.
 
-**88 PNGs** — 22 frames × 1440 and 412 × dark and light. Files are
+**92 PNGs** — 23 frames × 1440 and 412 × dark and light. Files are
 `auto-fetch-states-<width>-<theme>-<state>.png`; the two forked frames are
 `…-steps-mark-…` and `…-steps-rail-…`, so the pick comment can be built from the names.
+
+## Revision 2 — the two defects Bárður found
+
+Two defects, confined to 5 of the 22 frames; everything else was approved as drawn, so this was not a
+redraw. The fork frames (`steps-mark-*`, `steps-rail-*`) are untouched.
+
+1. ***Run all now* was disabled in all four stop frames**, and the header swapped its next check for
+   *nothing scheduled on varpid.example.fo*. Two of the three fetchers in those frames are on other
+   sites, and FR-7.2's *Run all now* queues every enabled fetcher into **its own** site's lane, so it
+   still has work to do: a control disabled while it could still act, with no reason shown, is FR-11
+   broken twice. **Fixed:** *Run all now* is live in all four, and the header reads
+   *next check in 2h 51m · varpid.example.fo is stopped* — the stopped site named **as an extra**, not
+   instead of the next check. The stopped row's own *Run now*, switch and *Re-investigate page* stay
+   disabled, because those genuinely cannot act.
+2. **The not-proven cause was drawn on a mapped fetcher.** `waiting-three`'s lead said *the pattern is
+   not proven* while the recipe below it read `numbering mapped` / `pattern —`. A mapped fetcher has no
+   pattern to prove. **Fixed:** `waiting-three` now carries the mapped lead it belongs to, and a new
+   frame **`waiting-notproven`** draws the second cause on **Royndin**, a `pattern` fetcher — one
+   waiting item, the not-proven lead, and a row whose *Numbering* cell shows the pattern. The row, the
+   panel and every control are identical to the mapped case, which is what confirms reading 4.
+
+**One further defect the new frame showed.** FR-9.1 only places an episode TMDB lacks from a fetcher
+whose pattern is **proven**, so a not-proven Royndin cannot have the
+`+1 · S2026E01 … not on TMDB → queued` run the other frames show. `waiting-notproven`'s history keeps
+only the runs that placed episodes TMDB has, and its library count drops from 13 to 12 with it.
+
+**One judgement to flag.** *Generic item labels only* is read here as *no invented episode name*. The
+waiting item on Royndin is `Royndin 2026 (2:3)` — the next part of the season the corpus already draws
+as `Royndin 2026 (1:3)`, derived from it rather than invented. A pattern fetcher reads its numbers out
+of the item's own **title**, so a `Nordvest · n`-style label would make the frame unreadable: there
+would be nothing for the pattern to act on. The page carries no description for it, which is said
+plainly rather than filled in. If a fully generic label is wanted anyway, it is one line.
 
 ## What is in the package
 
@@ -121,26 +153,20 @@ Two more that were numbers disagreeing with each other rather than pixels: the c
    reading before the site is poked again. If **Resume site** should sit on the Dashboard row itself,
    that is a one-line change and a question below.
 
-## Questions for Bárður
+## The five questions, answered (Bárður, 2026-10-25)
 
-1. **The four-row frame needed a fourth fetcher and the corpus has three series.** Four row states need
-   four rows. Rather than invent a name, `rows-all` draws a **second Royndin fetcher on
-   `play.example.dk`**, and the duplicate name is deliberate: the stop belongs to
-   `varpid.example.fo`, so the fetcher for the very same series on another site runs normally one row
-   below, which is §1's own argument. It does raise a spec question — is **one series with two fetchers
-   on two sites** a configuration Auto-fetch allows? FR-6.1's diff is per-`SxxEyy` in the series folder
-   whoever placed it, so it works; FR-3.4/3.5 do not say. If the answer is no, the frame needs a fourth
-   stand-in series name from you.
-2. **The brief puts Nordvest on mapped numbering; `ai.js` has it on `S{nn}E{nn}`.** I followed the
-   brief. Round 2's row reads *Mapped · 8 accepted* in this round's frames.
-3. **`ai.js` carries two real-looking TMDB ids** — `118802` for Nordvest and `77410` for Babel Fish —
-   against the brief's own rule that a new id is a placeholder from `9000002` up. This round uses
-   `9000002` and `9000003`. The shipped `ai.js` is not mine to change and I have not; worth a look from
-   whoever owns that file, because the repository is public and those two ids resolve to something.
-4. **Should the Dashboard row carry *Resume site* itself?** Drawn as *Open the item* → *Fetchers →*.
-5. **The *Accept* reason is drawn once per panel, not once per item.** Three items each repeating
-   *Accept is off until a season and an episode are there* read as noise. If a per-item reason is
-   wanted, say so.
+1. **The second Royndin fetcher on `play.example.dk` stays** — it makes §1's argument well. Whether one
+   series may have two fetchers is a spec question and his; two lanes could race to the same missing
+   `SxxEyy`. It does not change the frame.
+2. **Nordvest on mapped numbering:** following the brief was right.
+3. **The two real-looking TMDB ids in `ai.js`** (`118802`, `77410`) get swapped for placeholders in the
+   `ai.css` promotion task that follows — the next time anyone touches `design/app/`.
+4. **The Dashboard row keeps *Open the item*.** Reading the reason before poking the site again is the
+   point.
+5. **The *Accept* reason stays once per panel.**
+
+Readings 1–5 are all confirmed; (1) and (3) go into the spec so they stop being readings. Leans 1, 2
+and §5c are adopted as drawn. The marker fork goes to the owner with these pictures.
 
 ## Nothing dropped from the inputs
 
@@ -171,4 +197,5 @@ Listed in full at the foot of the directions doc so it does not have to be re-de
 `@keyframes af-spin` and the rule that uses it; add the new `af-*` rules and their `[data-theme="light"]`
 twins with a line in `check-mobile-css.sh`; move `.badge.flat` into `wf.css`; and take the ≤640 px tiers
 for `.af-tbl`, `.af-map` and `.af-kv`, the `.af-det-in > * { min-width: 0 }` fix and the `.af-open`
-wrapper along with them.
+wrapper along with them. Add one more, from the review: carry the `--ink-dim` light-theme fix into the
+four-mark **legend** as well as the step list.

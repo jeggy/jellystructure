@@ -147,6 +147,24 @@
       proposal: { se: 'S01E11', name: 'Afsnit 11', why: 'matched by title' } },
   ];
 
+  /* A waiting item on a PATTERN fetcher, which is the OTHER cause of the same state: FR-4.2's
+     not-proven pattern, where every episode TMDB lacks waits for the admin. Royndin reads its
+     numbers out of the item's own title, so the title is what the frame has to show — a generic
+     label would make a pattern fetcher's frame unreadable. This is the next part of the 2026
+     season the corpus already draws as `Royndin 2026 (1:3)`, derived from it rather than invented,
+     and the page carries no description for it, which is said plainly. */
+  const WAITING_PATTERN = [
+    { item: 'Royndin 2026 (2:3)', since: '2026-10-20', desc: null,
+      proposal: { se: 'S2026E02', name: '—', why: 'matched by published date' } },
+  ];
+
+  /* The header's next check. Round 2 drew `next check in 5h 12m` and that string stands. With
+     varpid.example.fo stopped, Royndin's Daily · 04:00 is not what comes next — Nordvest's
+     Every 6 h is, and it ran 3h ago. The header keeps a next check because the OTHER sites still
+     run, and names the stopped site as an extra rather than instead (Bárður, 2026-10-25). */
+  const NEXT_ALL = 'next check in 5h 12m';
+  const NEXT_VARPID_STOPPED = 'next check in 2h 51m · varpid.example.fo is stopped';
+
   /* The three verbatim reasons a Propose / Investigate control is shown disabled for
      (processing-runs-as-nine-features.md FR-11, quoted in the spec's FR-1.2). */
   const AI_OFF_REASONS = [
@@ -214,5 +232,6 @@
   const BUGLINE = 'The report is pre-filled with the site, the TMDB id and the five steps’ outcomes — never the page’s content.';
 
   W.AF = { pad, d, plus, SITES, STOP_CAUSES, CAUSE, ROY, royndin, proof, NORD, ACCEPTED,
-           WAITING, AI_OFF_REASONS, FETCHERS, STEPS, STEP_FAIL, STILL, BUGLINE };
+           WAITING, WAITING_PATTERN, NEXT_ALL, NEXT_VARPID_STOPPED,
+           AI_OFF_REASONS, FETCHERS, STEPS, STEP_FAIL, STILL, BUGLINE };
 })(window);

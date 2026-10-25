@@ -37,8 +37,8 @@
   function runs(f) {
     /* the run line and the row's badge are the same count, derived — not typed twice */
     const rs = f.waitN
-      ? f.runs.map((r, i) => i === 0 && r[0] === 'wait'
-          ? ['wait', f.waitN + ' new item' + (f.waitN === 1 ? '' : 's') + ' found · waiting for a number', r[2]] : r)
+      ? [['wait', f.waitN + ' new item' + (f.waitN === 1 ? '' : 's') + ' found · waiting for a number',
+          f.waitWhen || f.runs[0][2]]].concat(f.runs.filter((r) => r[0] !== 'wait'))
       : f.runs;
     return '<div class="af-h">Last runs</div><div class="af-runs">' + rs.map((r) =>
       '<div class="af-run"><span class="dot ' + (r[0] === 'bad' ? 'bad' : r[0] === 'new' ? 'on' : r[0] === 'wait' ? 'wait' : 'ok') + '"></span>' +
@@ -101,11 +101,15 @@
       return html;
     }).join('');
 
-    const next = opts.next === null ? '' : '<span class="tiny muted">' + (opts.next || 'next check in 5h 12m') + '</span>';
+    /* Run all now is never disabled by a stopped site: FR-7.2 queues every enabled fetcher into
+       its OWN site's lane, so the fetchers on the sites that still run still have work to do. A
+       control disabled while it could still act, with no reason shown, is FR-11 broken twice
+       (Bárður, 2026-10-25). The header keeps a next check for the same reason. */
+    const next = opts.next === null ? '' : '<span class="tiny muted">' + (opts.next || D.NEXT_ALL) + '</span>';
     return '<div class="card">' +
       '<div class="row center"><h3 style="margin:0;font-size:1.1rem;">Auto-fetchers</h3>' +
       '<span class="badge" style="margin-left:8px;">' + rows.length + '</span><span class="spacer"></span>' +
-      next + '<span class="btn sm ghost' + (opts.runAllOff ? ' af-dis' : '') + '">▶ Run all now</span></div>' +
+      next + '<span class="btn sm ghost">▶ Run all now</span></div>' +
       '<div class="tiny muted" style="margin:6px 0 10px;">Each one is a stored recipe and a schedule. Click a row for the recipe and its last runs. A run that finds nothing new is the normal outcome, not a failure.</div>' +
       '<table class="af-tbl"><thead><tr><th>Series</th><th class="hide-m">Numbering</th><th>Schedule</th><th>State</th><th class="hide-m">Quality</th><th></th><th></th></tr></thead>' +
       '<tbody>' + body + '</tbody></table></div>';

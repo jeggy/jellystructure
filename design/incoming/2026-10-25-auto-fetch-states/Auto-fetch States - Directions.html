@@ -38,7 +38,7 @@
 <main>
 
 <h1>Auto-fetch’s missing states</h1>
-<p class="lede">Round <span class="mono">auto-fetch-states</span>, revision 1 · 2026-10-25. Drawn in this
+<p class="lede">Round <span class="mono">auto-fetch-states</span>, revision 2 · 2026-10-25. Drawn in this
 repository. Round 2 drew the Fetchers tab and <b>its design stands</b>; this round draws only what round 2
 did not. It redraws nothing and promotes nothing.</p>
 
@@ -114,7 +114,7 @@ number everywhere else on this page (<i>the five steps’ outcomes</i> in the bu
 <table>
   <thead><tr><th>Frame</th><th>What it shows</th></tr></thead>
   <tbody>
-    <tr><td class="mono">stopped-collapsed</td><td>§1a. One status slot, no new column. <i>Site stopped</i> as a <span class="mono">badge bad</span>; the line under it names the <b>site</b>, the short reason and the time. <i>Run now</i> and the switch shown disabled.</td></tr>
+    <tr><td class="mono">stopped-collapsed</td><td>§1a. One status slot, no new column. <i>Site stopped</i> as a <span class="mono">badge bad</span>; the line under it names the <b>site</b>, the short reason and the time. That row's <i>Run now</i> and switch are shown disabled — but <b>Run all now</b> stays live and the header keeps a next check, because the other fetchers are on other sites and still have work to do (FR-7.2).</td></tr>
     <tr><td class="mono">stopped-open</td><td>§1b. The band above the recipe and the run history: full reason, time, <i>Nothing runs on varpid.example.fo until you resume it</i>, <b>Resume site</b>, and <i>Run now</i>/<i>Re-investigate page</i> disabled with their reason.</td></tr>
     <tr><td class="mono">stopped-resuming</td><td>§1c. <b>Resume site</b> disabled, reading <i>Checking the site…</i>; the band drops to the informational tint while it holds.</td></tr>
     <tr><td class="mono">stopped-refused</td><td>§1d. Back to stopped with the new time, carried in the collapsed row as well as the band. No second kind of stopped.</td></tr>
@@ -139,7 +139,7 @@ number everywhere else on this page (<i>the five steps’ outcomes</i> in the bu
   </tbody>
 </table>
 
-<p class="fn">22 frames × 1440 and 412 × dark and light = <b>88 PNGs</b>.</p>
+<p class="fn">23 frames × 1440 and 412 × dark and light = <b>92 PNGs</b>.</p>
 
 <h3>States from the house list, and what was skipped</h3>
 <ul>
@@ -257,6 +257,8 @@ be re-derived:</p>
   <li><span class="mono">.af-det-in > * { min-width: 0 }</span>: without it the read-only recipe widens the
     page at 412.</li>
   <li>The open row needs the <span class="mono">.af-open</span> wrapper around the band and the detail.</li>
+  <li>Carry the <span class="mono">--ink-dim</span> light-theme fix into the four-mark <b>legend</b> as well as
+    the step list — the legend's waiting <span class="mono">4</span> is still faint there (Bárður, 2026-10-25).</li>
   <li><span class="mono">ai.css</span>’s wrapper class must cover all of the above —
     <span class="mono">.badge.flat</span>, <span class="mono">.af-*</span> and the light twins alike.</li>
 </ul>

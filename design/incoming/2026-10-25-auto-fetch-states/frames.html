@@ -127,17 +127,17 @@
   const FRAMES = [
     /* 1 — Site stopped */
     ['stopped-collapsed', 'Site stopped · the collapsed row',
-     'Royndin on <span class="mono-id">varpid.example.fo</span>. One status slot, no new column: the badge says <i>Site stopped</i>, the line under it names the <b>site</b>, the short reason and the time — so nobody goes looking for a fault in this one recipe. <i>Run now</i> and the enable switch are shown disabled, because both would reach the site. No countdown and no <i>retrying in…</i>: a stop is never retried.',
-     () => list('royndin', 'stopped', false, '', { card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+     'Royndin on <span class="mono-id">varpid.example.fo</span>. One status slot, no new column: the badge says <i>Site stopped</i>, the line under it names the <b>site</b>, the short reason and the time — so nobody goes looking for a fault in this one recipe. <i>Run now</i> and the enable switch are shown disabled, because both would reach the site — but <b>Run all now</b> stays live and the header keeps a next check, because the other two fetchers are on other sites and still have work to do. No countdown and no <i>retrying in…</i>: a stop is never retried.',
+     () => list('royndin', 'stopped', false, '', { card: { next: D.NEXT_VARPID_STOPPED } })],
     ['stopped-open', 'Site stopped · the row open',
      'The full reason, the time, the sentence <i>Nothing runs on varpid.example.fo until you resume it</i>, and <b>Resume site</b> — on the open row, which is open decision 1’s lean. The band sits <b>above</b> the recipe and the run history because what it says is true of the site, not of the recipe below it. <i>Run now</i> and <i>Re-investigate page</i> are shown disabled with their reason beside <i>Resume site</i>.',
-     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'stopped'), { card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'stopped'), { card: { next: D.NEXT_VARPID_STOPPED } })],
     ['stopped-resuming', 'Site stopped · resuming',
      'The server is making its one listing request. <b>Resume site</b> is disabled and reads <i>Checking the site…</i> — the page is drawing what the server says is happening, not what the admin hopes will happen. The band drops to the informational tint while it holds.',
-     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'resuming'), { card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'resuming'), { card: { next: D.NEXT_VARPID_STOPPED } })],
     ['stopped-refused', 'Site stopped · refused again',
      'The one listing request was refused too, so the site is stopped again with the new time. Nothing else changed, which is the point: there is no second kind of stopped.',
-     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'refused'), { fx: { stopAt: 'today 16:42' }, card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'refused'), { fx: { stopAt: 'today 16:42' }, card: { next: D.NEXT_VARPID_STOPPED } })],
     ['stopped-reasons', 'Site stopped · the four causes, and the longest string',
      'One reason line for each of the four causes the lane stops on, and the same four in Faroese — the longest of the three languages, and therefore the real width test. The code is in mono inside plain words.',
      () => B.causesCard()],
@@ -155,9 +155,18 @@
     ['waiting-propose-off', 'Waiting for a number · Propose cannot do anything',
      'The month’s Auto-fetch limit is spent, so <b>Propose</b> is shown disabled with that reason, verbatim. The season and episode fields still work — the admin types the number themselves. A control that cannot do anything new is never hidden and never live-but-useless.',
      () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING.slice(0, 1), { proposeOff: D.AI_OFF_REASONS[2] }), { fx: { waitN: 1 } })],
-    ['waiting-three', 'Waiting for a number · three items, and the other cause',
-     'Three items, to show how the list holds more than one — and the <b>second cause</b> of the same state: a fetcher whose pattern is not proven, where every episode TMDB lacks waits for a number. The row and the panel are identical; only the lead sentence names a different cause. The third item has no description on the page at all, which is said plainly rather than filled in.',
-     () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING, { cause: 'unproven' }), { fx: { waitN: 3 } })],
+    ['waiting-three', 'Waiting for a number · three items',
+     'Three items on the same mapped fetcher, to show how the list holds more than one. The third has no description on the page at all, which is said plainly rather than filled in.',
+     () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING), { fx: { waitN: 3 } })],
+    ['waiting-notproven', 'Waiting for a number · the other cause, on a pattern fetcher',
+     'The <b>second cause</b> of the same state, and it belongs to a <b>pattern</b> fetcher, not a mapped one: Royndin’s numbering is not proven, so every episode TMDB does not have waits for a number before it is downloaded. The row, the panel and every control are identical to the mapped case — only the lead sentence names a different cause. The row’s <i>Numbering</i> cell still reads the pattern, which is what tells the two causes apart.',
+     () => list('royndin', 'waiting', true, B.waitBand(D.WAITING_PATTERN, { cause: 'unproven' }),
+       /* FR-9.1: an episode TMDB lacks is only PLACED from a fetcher whose pattern is proven, so a
+          not-proven Royndin cannot have the `+1 · S2026E01 … not on TMDB → queued` run the other
+          frames show. Its history keeps only the runs that placed episodes TMDB has, and the
+          library count drops with it. */
+       { fx: { waitN: 1, waitWhen: 'today 04:00', have: 12,
+               runs: D.FETCHERS.royndin.runs.filter((r) => r[1].indexOf('not on TMDB') < 0) } })],
 
     /* 3 — all four row states */
     ['rows-all', 'All four row states, one list',
@@ -167,7 +176,7 @@
        { f: D.FETCHERS.royndinPlay, state: 'ok' },
        { f: Object.assign({}, D.FETCHERS.nordvest, { waitN: 1 }), state: 'waiting' },
        { f: D.FETCHERS.babel, state: 'reinvestigate' },
-     ], { next: 'next check in 5h 12m' })],
+     ], { next: D.NEXT_ALL })],
 
     /* 4 — the proof line */
     ['review-proven', 'The review state · proven',
