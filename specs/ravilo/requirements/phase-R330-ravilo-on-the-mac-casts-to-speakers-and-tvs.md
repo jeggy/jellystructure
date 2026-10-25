@@ -2,10 +2,10 @@
 
 > Owner, 2026-09-29: *"I would like to be able to stream music from this app to the wifi speakers etc as well."*
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-09-29; the protocol is tested against a fake device, but nothing has talked to a real Cast device, and the Swift half has not been compiled** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §4.
-**Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Third of four** (R328 → R329 → **R330** → R331).
+Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §4, and
+dev-reviewed 2026-09-29 against `main` `4c67e49f` (§Dev review). **Third of four** (R328 → R329 → **R330** → R331).
 
 **Builds on:**
 
@@ -377,3 +377,39 @@ holds for a quarter of an hour with one Ravilo and no `closed (send failed)`.
   stays for a device that can group but finds no road to the speakers. Test: the reason chosen for each case
   (`addSpeakerBlockedReason`). **Mac re-test owed:** the remote of a speaker cast from the Mac shows the new line; with
   the Pixel's Ravilo open nearby, *Add a speaker…* is offered instead.
+
+## Amendment 2026-10-25 — the bar's place comes from the receiver's own status (DEB-2252)
+
+**Why.** After the receiver loads the next song itself (a natural song change, a direct file), CAF's media channel
+goes quiet for that song: on DEB-2310 and DEB-2314 the Mac got 0–1 `MEDIA_STATUS` after the change and none later,
+a `GET_STATUS` every 3 s (DEB-2294) and a second sender's `GET_STATUS` went unanswered, and the receiver's own notes
+said `PLAYING` throughout, so DEB-2312's press under BUFFERING never fired. The bar sat at 0:00 with the equaliser for
+the whole song, 3 of 3 changes on DEB-2314, until a press of play/pause. Our own channel kept working the whole time:
+the song's title and length, and the receiver's notes, all arrived. FR-R330-7's Now Playing is therefore fed from our
+channel too, and no longer depends on CAF answering.
+
+**FR-R330-7a — the receiver says where a song is.** On music, the receiver's `status` (`CastReceiverMessage`) carries
+two new optional fields: `position_ms` (the song's place when the status was built, in ms) and `playing` (true while
+it plays, false while paused or buffering). It sends a `status` (a) on every one it sends today, (b) once at the
+first `TIME_UPDATE` of each load whose time is at least 1 s past where the load started, and (c) every 15 s while a
+song plays. A status sent for (b) or (c) carries no queue (FR-R356-8 is unchanged). Films leave both fields null.
+This is additive: an older sender ignores them, and an older receiver sends neither.
+
+**FR-R330-7b — the Mac uses whichever report is newer.** For the song our channel names, the desktop sender takes
+the place and the play state from the newer of the receiver's last `status` with `position_ms` and CAF's last
+`MEDIA_STATUS` for that song, measured by when each arrived. The receiver's place is moved on by the time since it
+arrived while `playing` is true, as `CastMediaStatus.positionMs()` does for CAF's. The equaliser glyph (buffering)
+shows only while the newer report says the song is not yet playing. With no `position_ms` from the receiver (an older
+receiver), behaviour is as before. The Mac's media keys and the macOS Now Playing card read the same place.
+
+**FR-R330-7c — the log can tell the two channels apart.** The sender's `cast: position` line also says which
+report it showed (`from=caf|ravilo`). Every media-channel frame that is not a `MEDIA_STATUS` with a media session (an
+empty `status`, `INVALID_REQUEST`, `LOAD_FAILED`, any other type) is noted once per song as `cast: media frame <type>
+…`, so the next report says whether CAF answered at all.
+
+**Unchanged.** The phone (it uses the Cast SDK and keeps time correctly, DEB-2253), the receiver's own screen, and
+DEB-2294's re-ask and DEB-2312's heal, which stay as they are: harmless, and still logged.
+
+**Acceptance.** The DEB-2314 recipe: a 1000-song queue with FLAC and MP3 from the Mac to a speaker, the Mac left
+alone for ~10 min, at least 3 natural song changes. After each change the bar's place moves within ~4 s and stays
+within ~2 s of the speaker's; a pause holds; the log shows `from=ravilo` on the stuck-shaped changes.
