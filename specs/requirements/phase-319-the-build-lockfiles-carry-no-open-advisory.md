@@ -149,6 +149,47 @@ move the 1.x consumers onto 2.x, which is a major crossing nobody asked for.
 >   2026-10-15" header above `advisoryResolutions` still describes the rest of the list. The FR-319-4 checks apply
 >   to this commit as written, and the commit cites `restores FR-319-1`.
 
+> **Note, 2026-10-25 (DEB-2466) — six advisories on three floors, the same remedy again.** Six alerts opened on
+> `kotlin-js-store/yarn.lock` on 2026-10-24 06:56Z, each on a package that already carries a floor here, and each
+> one patch above it. Raising them is **a restore of FR-319-1 and acceptance 1, not a change to this spec**, read
+> the way the 2026-10-22 note reads it:
+>
+> | Alert | Package | Advisory | Severity | Vulnerable | Fixed in |
+> |---|---|---|---|---|---|
+> | 49 | `body-parser` | GHSA-27r3-jxmh-p828 — DoS via trailing bytes after a compressed body | high | `< 1.20.9` | 1.20.9 |
+> | 50 | `fast-uri` | GHSA-333x-w4r6-6crp — scheme injection via a first-segment colon | low | `>=3.0.0 <3.1.9` | 3.1.9 |
+> | 51 | `fast-uri` | GHSA-wjr9-j795-jxcr — host confusion via WHATWG host canonicalisation | medium | `>=3.1.3 <3.1.9` | 3.1.9 |
+> | 52 | `fast-uri` | GHSA-xhq7-xmqj-769h — path equivalence in relative-reference normalisation | low | `>=3.0.0 <3.1.9` | 3.1.9 |
+> | 53 | `fast-uri` | GHSA-w74x-v6f9-j3xg — scheme spoofing via percent-encoded scheme | medium | `>=3.0.0 <3.1.9` | 3.1.9 |
+> | 54 | `serialize-javascript` | GHSA-m5mm-p8h7-m29v — XSS via an unescaped `</script` in a function body | low | `< 7.1.3` | 7.1.3 |
+>
+> | Package | Locked 2026-10-25 | Floor was | At least | Crosses a major |
+> |---|---|---|---|---|
+> | `body-parser` | 1.20.8 | 1.20.6 | 1.20.9 | no |
+> | `fast-uri` | 3.1.8 | 3.1.8 | 3.1.9 | no |
+> | `serialize-javascript` | 7.1.2 | 7.0.5 | 7.1.3 | no (the 2026-10-15 crossing to 7.x stands; FR-319-3 still applies to it) |
+>
+> - **JS root only.** None of the three is in `kotlin-js-store/wasm/yarn.lock`; the Wasm root keeps its `ws`-only
+>   filter.
+> - **Toolchain only, measured from the lockfile's dependency edges.** `body-parser` is pulled by `express` (through
+>   webpack-dev-server) and by Kotlin's karma fork — the dev server and the test runner. `fast-uri` is pulled only by
+>   `ajv` 8, which `schema-utils` uses to validate webpack's, webpack-dev-server's and the minimizer plugin's own
+>   options at build time. `serialize-javascript` is pulled only by `mocha`. No generated package declares any of the
+>   three, and the admin and Ravilo Web production bundles in this checkout contain none of their names. The fix
+>   commit's FR-319-4 shipped-bytes grep reports `fast-uri`, `body-parser` and `serialize-javascript` beside the four
+>   markers, so that the Cast and screen bundles, which were not built for this note, are counted too. Severity for
+>   users: none.
+> - **The toolchain copy outside the repository is affected, and stays as it is.** `~/.kotlin/kotlin-npm-tooling/`
+>   holds `body-parser` 1.20.4, `fast-uri` 3.1.0 and `serialize-javascript` 6.0.2, all inside these ranges. The
+>   Kotlin Gradle plugin pins that copy, Dependabot cannot see it, and it moves with a Kotlin upgrade (*Zero alerts
+>   is not a clean toolchain*).
+> - **`braces` is no longer open.** GitHub withdrew its advisory (GHSA-vfj7-8cjw-p6xm) on 2026-10-23 and alert 42
+>   closed itself, so the `braces` exception in FR-319-2, FR-319-5 item 2 and acceptance 1 and 3 now applies to
+>   nothing. Nobody needs to dismiss it.
+> - The three resolutions keep their place in `advisoryResolutions`, and each comment dates its raised floor
+>   2026-10-25 with the advisory ids. The FR-319-4 checks apply to this commit as written, and the commit cites
+>   `restores FR-319-1`.
+
 ### FR-319-3 — A major crossing is kept only if the toolchain still works
 
 The three rows marked *yes* are kept only if every check in FR-319-4 passes with them. If one breaks
