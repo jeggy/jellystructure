@@ -254,6 +254,14 @@
    (scripts/check-css-scoping.sh's allowance requires the wrapper). */
 [data-theme="light"] .afx .af-proof .mk{color:#128a5f}
 [data-theme="light"] .afx .af-proof.unproven .mk{color:#9a6a06}
+/* `✓ confirmed series` is the same declaration as `.af-proof .mk` and sits two lines above it on the
+   review card, so it takes the same twin and only the twin — colour, not border — or the card draws
+   two green ticks that do not match (Bárður, 2026-10-25). It came in with round 2, before the twins
+   were a rule. */
+[data-theme="light"] .afx .af-conf{color:#128a5f}
+/* The ✓ on a finished investigation step, for the same reason: --ok is #2dd49a in both themes, which
+   is about 1.8:1 on the light theme's fills. */
+[data-theme="light"] .afx .af-step.done .ic{color:#128a5f}
 [data-theme="light"] .afx .af-against .off{color:#c23b2d}
 [data-theme="light"] .afx .af-band.hold .bi{color:#fff}
 [data-theme="light"] .afx .af-prop .why{color:#6240cf}

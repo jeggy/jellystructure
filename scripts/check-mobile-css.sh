@@ -447,6 +447,10 @@ check "$AICSS" "light theme: the proven chip" \
   '[data-theme="light"] .afx .af-proof .mk{color:#128a5f}'
 check "$AICSS" "light theme: the not-proven chip" \
   '[data-theme="light"] .afx .af-proof.unproven .mk{color:#9a6a06}'
+check "$AICSS" "light theme: the confirmed-series pill, which must match the proven chip beside it" \
+  '[data-theme="light"] .afx .af-conf{color:#128a5f}'
+check "$AICSS" "light theme: the tick on a finished investigation step" \
+  '[data-theme="light"] .afx .af-step.done .ic{color:#128a5f}'
 check "$AICSS" "light theme: a disagreeing row's distance" \
   '[data-theme="light"] .afx .af-against .off{color:#c23b2d}'
 check "$AICSS" "light theme: the resuming band's icon glyph stays white on the info fill" \
