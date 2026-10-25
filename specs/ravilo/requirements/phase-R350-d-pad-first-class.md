@@ -11,7 +11,8 @@ change, no server change. Number given by the coordinator. **Amended 2026-10-02*
 FR-16: Search arrival without the keyboard, Change your password and sign-in fields that open the keyboard only on OK,
 Settings opening at the top), see *Re-test on the TV*. **Amended again 2026-10-02** after the final Mac re-test (FR-17:
 the ring after a keyboard Back; FR-18: the cast remote fits the window). **Amended 2026-10-25** (DEB-2447, owner's card
-`d1cf49e8` on DEB-2204): FR-19 carries FR-11's arrow keys to the web app, see the last amendment.
+`d1cf49e8` on DEB-2204): FR-19 carries FR-11's arrow keys to the web app, see that amendment. **Amended 2026-10-25**
+(DEB-2495): FR-7's hide re-arms on any resume, not only on the TV's own play, see the last amendment.
 
 **Supersedes, in part:**
 - **R178 FR-RV-SEL1-1** (hiding the chrome resets the player's focus to Play) — see FR-R350-7. R178's Select guard
@@ -444,3 +445,43 @@ dead, as it was on the Mac before FR-11.
   - in the film player, Left and Right seek as before;
   - Alt+Left does what the browser does (history Back), and no focus moves first;
   - narrow the window to phone width: the arrows move nothing.
+
+## Amendment (2026-10-25, DEB-2495) — a play from anywhere re-arms the hide
+
+Owner, DEB-2495: *"When watching something on a tv. And then pause it and then use the android notification from my
+phone to click play from the android notification it starts playing on the tv, but now the media controls on the tv,
+never hide again while the tv is playing unless i use the remote to make them go away again."* Client-only
+(`:ravilo-ui`); no wire change, no server change, no new strings.
+
+**Seen** (the owner, the TV app): paused, the chrome up (FR-R350-7). Play on the phone's media notification: the film
+plays on the TV and the chrome stays up until a key on the TV's own remote.
+
+**Why** (read in the code, not yet seen on a device). FR-R350-7 says *"Pressing play re-arms the 3.6 s hide"*, and the
+code does exactly that. The hide timer runs once per wake (`chromeHideTimer`, keyed on `chromeRevision` in
+`PlayerScreenEffects`). Paused, it ran, found the film paused and held the chrome. The TV's own play button and OK,
+and every session command (R354 FR-R354-4, through `togglePlay`), wake it again. The cast road does not. While the
+phone casts to the TV app, its notification is R356's mirror of the cast, and its Play goes through the Cast SDK
+(`remoteMediaClient.play()`) into the TV player's Media3 session (R266, R44). That session plays the engine directly.
+The poll loop then reads the film as playing, nothing bumps the revision, and the timer never runs again.
+
+**FR-R350-7 (amended) — the hide follows the film, not the button.** In place of *"Pressing play re-arms the 3.6 s
+hide"*:
+- **Whenever the film goes from paused to playing, the hide re-arms**, whatever started it: the TV's play button or
+  OK, a session remote (R354), a cast remote or the phone's notification card (R266, R356), a media key, or the
+  system's own media controls.
+- The holds are unchanged. A scrub, the picker, the next-up card and the episode rail hold the chrome open as before,
+  and a film that is paused keeps it.
+- The rule is the film's play state, so it holds for every client that draws this player. The phone keeps R244's
+  3 000 ms and the TV its 3 600 ms.
+
+**Not changed.** A pause that reaches the TV by the cast road does not raise a chrome that is hidden. This amendment
+covers the resume only, which is the half the owner reported. The session road already raises it, because a command
+there is a press (R354 FR-R354-4).
+
+**Verification.**
+- **Unit.** The chrome is up, the film is paused and the hide has already held once. The film starts playing with no
+  wake: the chrome is hidden 3.6 s later. It is paused again with no wake: the chrome stays.
+- **On the TV** (a QA leg, not this seat). Cast a film from the phone to the TV app. Pause it with the TV's remote, and
+  the chrome stays. Press Play on the phone's notification card: the chrome hides about 4 s later. Repeat with Play
+  from the phone's mini bar and remote, and with Play from the Jellyfin dashboard (the session road): each one still
+  hides.
