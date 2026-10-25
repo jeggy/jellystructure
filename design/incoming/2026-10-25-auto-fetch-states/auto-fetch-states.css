@@ -1,0 +1,357 @@
+/* auto-fetch-states.css — round `auto-fetch-states`, 2026-10-25.
+
+   ADDITIVE to round 2's `design/app/ai.css`, which this round links rather than copies and does not
+   redraw. Everything here is new: the states FR-10.2, FR-10.1 and FR-10.5 name and round 2 did not
+   draw. Class names are `af-*` so they promote into `ai.css` as they are, under whatever wrapper
+   class that promotion adds (round 2's MANIFEST.md; a separate task).
+
+   Two deliberate canvas substitutions, both reported:
+   1. `--blur: none` inside a frame. `backdrop-filter` is production CSS (wf.css gives every .card
+      `var(--blur)`) and the canvas rule forbids it because it breaks the screenshot tool. The live
+      admin keeps its glass; these pictures show the flat fill it resolves to.
+   2. `.af-step.run .ic::after`'s `animation: af-spin .8s linear infinite` is switched off, which is
+      the whole point of §6: the promotion deletes that rule and `@keyframes af-spin` with it.
+
+   Every `--ok` / `--warn` / `--bad` / `--info` used as a TEXT colour has its `[data-theme="light"]`
+   twin at the bottom of this file, the way processing.css does it. The dark values do not have
+   enough contrast on the light theme's white fills. */
+
+/* ================================================= the canvas around the frames
+   Host backdrop is light gray, so any text directly on it is dark ink (PROCESS.md). */
+html, body.canvas {
+  margin: 0;
+  background: #e9eaef;
+  color: #12141b;
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.canvas-head { padding: 28px 28px 4px; max-width: 1100px; }
+.canvas-head h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; margin: 0 0 .35em; color: #12141b; }
+.canvas-head p { color: #262a35; margin: 0 0 .6em; font-size: .95rem; line-height: 1.55; }
+.canvas-head .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .86em; color: #12141b; }
+.cap { padding: 26px 28px 8px; max-width: 1100px; }
+.cap h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.02rem; margin: 0 0 .2em; color: #12141b; }
+.cap .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #262a35; }
+.cap p { color: #262a35; font-size: .88rem; margin: .3em 0 0; line-height: 1.5; }
+.shot { padding: 0 28px 10px; }
+body.ph .cap, body.ph .canvas-head { padding-left: 14px; padding-right: 14px; }
+body.ph .shot { padding: 0 0 10px; }
+
+/* a frame is one region of the admin page, on the page's own background */
+.frame {
+  --blur: none;                                  /* canvas substitution 1, see the header */
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Sora', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  border: 1px solid rgba(18,20,27,.18);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  padding: 20px 24px 24px;
+}
+/* the shipped aurora wash is `position: fixed` on body::before and cannot be scoped to a frame;
+   drawn here as the same two radial stops, static, no filter, no animation. */
+.frame::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(900px 600px at 12% -8%, rgba(177,92,208,.16), transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgba(0,164,220,.14), transparent 55%);
+}
+.frame > * { position: relative; z-index: 1; }
+.frame.desk { width: 1440px; }
+.frame.ph { width: 412px; padding: 14px; border-radius: 0; }
+
+/* ================================================= a control that cannot do anything new
+   Shown, disabled, with its reason — never hidden and never live-but-useless
+   (processing-runs-as-nine-features.md FR-11, carried into this spec by FR-1.2). The look is
+   processing.css's `.btn.dis`: half opacity and a dashed edge, so it does not read as a live
+   button that simply happens to be pale. */
+.af-dis { opacity: .5; border-style: dashed; pointer-events: none; }
+.toggle.af-dis { opacity: .55; }
+.af-why { font-size: .78rem; color: var(--ink-soft); line-height: 1.45; }
+.af-why b { color: var(--ink); font-weight: 600; }
+
+/* ================================================= one status slot per row (FR-10.2)
+   A row says one thing about itself. The badge carries the state, the line under it carries where
+   and when — never the state twice. No new column: this replaces the Last run cell's content. */
+.af-stat { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.af-stat .when { font-size: .72rem; color: var(--ink-soft); line-height: 1.4; max-width: 54ch; }
+.af-stat .when .mono { font-family: 'JetBrains Mono', monospace; font-size: .95em; }
+.af-tbl tr.af-stopped td { background: color-mix(in oklch, var(--bad) 6%, transparent); }
+.af-tbl tr.af-stopped:hover td { background: color-mix(in oklch, var(--bad) 10%, transparent); }
+/* A bare `.badge` is `border: 1px solid transparent` with no fill, so on its own in a status slot
+   it reads as plain bold text rather than as a badge — found by opening the picture, see REPORT.md.
+   `.badge.flat` is the settled-neutral sibling processing.css already needed for exactly this, and
+   two page stylesheets needing the same class is the argument for it belonging in wf.css. */
+.badge.flat { background: var(--fill-3); border-color: var(--line-2); color: var(--ink-soft); }
+.af-tbl td.q { white-space: nowrap; }
+.af-tbl .nm .src { white-space: nowrap; }
+
+/* ================================================= Site stopped (FR-2.5, FR-10.2)
+   A band across the top of the open row, above the recipe and the run history, because what it
+   says is true of the SITE and therefore of every fetcher on it — not of this one recipe. */
+.af-band {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 12px;
+  padding: 14px 16px; margin: 8px 0 14px;
+  border-radius: var(--radius-s); border: 1px solid color-mix(in oklch, var(--bad) 42%, var(--line-2));
+  background: var(--bad-soft);
+}
+.af-band.hold { border-color: color-mix(in oklch, var(--info) 42%, var(--line-2)); background: var(--info-soft); }
+/* Every child but the icon sits in the second column. Without this the icon's row span runs out
+   and the next child is placed in column 1, where it overflowed the frame's left edge — a defect
+   no fence can see and the first render showed at once. */
+.af-band > :not(.bi) { grid-column: 2; }
+.af-band .bi { grid-row: 1; grid-column: 1; width: 22px; height: 22px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700;
+  background: var(--bad); color: #fff; margin-top: 1px; }
+.af-band.hold .bi { background: var(--info); color: #06212e; }
+.af-band h4 { margin: 0 0 4px; font-family: 'Space Grotesk', sans-serif; font-size: 1rem; color: var(--ink); }
+.af-band .rsn { font-size: .88rem; line-height: 1.55; color: var(--ink); margin: 0 0 2px; }
+.af-band .rsn .mono { font-family: 'JetBrains Mono', monospace; font-size: .86em;
+  padding: 1px 5px; border-radius: 5px; background: var(--fill-2); border: 1px solid var(--line-2); }
+.af-band .at { font-size: .76rem; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; }
+.af-band .seal { font-size: .88rem; line-height: 1.55; color: var(--ink); margin: 9px 0 0; font-weight: 600; }
+/* `.af-acts`, not `.acts`: the band renders inside `.af-tbl tr.af-det td`, and ai.css's
+   `.af-tbl .acts { justify-content: flex-end }` pushed Resume site into the middle of the band.
+   A class collision is the cost of linking production CSS instead of copying it, and it is still
+   the right trade — the collision is real in the real page too. */
+.af-band .af-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 11px; }
+.af-band .no-timer { font-size: .78rem; color: var(--ink-soft); margin-top: 8px; line-height: 1.45; }
+
+/* the four causes in one block — the longest-string check */
+.af-causes { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0; border: 1px solid var(--line);
+  border-radius: var(--radius-s); overflow: hidden; margin-top: 10px; }
+.af-causes > div { padding: 10px 13px; border-top: 1px solid var(--line); font-size: .86rem; line-height: 1.5; }
+.af-causes > div:nth-child(1), .af-causes > div:nth-child(2) { border-top: 0; }
+.af-causes .ck { color: var(--ink-soft); font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .06em; font-weight: 600; background: var(--fill-2); }
+.af-causes .mono { font-family: 'JetBrains Mono', monospace; font-size: .86em;
+  padding: 1px 5px; border-radius: 5px; background: var(--fill-2); border: 1px solid var(--line-2); }
+.af-lang { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+  color: var(--ink-soft); margin: 16px 0 0; }
+
+/* ================================================= n items waiting for a number (FR-4.3, FR-10.2) */
+.af-wait { margin: 8px 0 14px; }
+.af-wait > .lead { font-size: .88rem; line-height: 1.55; color: var(--ink); margin: 0 0 10px; }
+.af-wait > .lead b { font-weight: 600; }
+/* A block, not a grid: the first draft made Season a 1fr column and Episode 96 px, which drew two
+   fields of the same kind at wildly different widths. The controls are one flex row instead. */
+.af-item {
+  padding: 13px 15px; border: 1px solid var(--line-2); border-radius: var(--radius-s);
+  background: var(--fill-2); margin-bottom: 9px;
+}
+.af-item:last-child { margin-bottom: 0; }
+.af-item .who { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 9px; }
+.af-item .who b { font-weight: 600; font-size: .94rem; }
+.af-item .who .since { font-size: .74rem; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; }
+.af-item .desc { font-size: .84rem; line-height: 1.55; color: var(--ink-soft);
+  padding: 8px 11px; border-radius: 8px; background: var(--fill); border: 1px solid var(--line); margin: 0; }
+.af-item .desc.none { border-style: dashed; background: transparent; font-style: italic; }
+.af-item .desc .src { display: block; font-style: normal; font-size: .72rem; color: var(--ink-soft); margin-top: 4px; }
+.af-item .ctl { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 11px; }
+.af-item .field { margin: 0; width: 104px; }
+.af-item .input { width: 100%; }
+.af-item .go { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.af-item .wide { margin-top: 9px; }
+.af-prop { margin-top: 10px; display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  font-size: .86rem; padding: 9px 11px; border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--hi) 40%, var(--line-2)); background: var(--hi-soft); }
+.af-prop .se { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink); }
+.af-prop .why { color: var(--acc-ink); font-size: .78rem; }
+.af-prop .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
+  font-weight: 700; color: var(--ink-soft); }
+
+/* ================================================= the proof line on the review state (FR-10.1) */
+.af-proof { display: inline-flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.af-proof .mk { display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); background: var(--ok-soft); }
+.af-proof.unproven .mk { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+.af-proof .says { font-size: .86rem; color: var(--ink); }
+.af-proof .means { display: block; font-size: .8rem; color: var(--ink-soft); line-height: 1.5; margin-top: 3px; }
+
+/* the disagreeing rows, under the failure's reason (FR-10.1) */
+.af-against { margin-top: 12px; }
+.af-against .h { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--ink-soft); margin-bottom: 6px; }
+.af-against table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.af-against th { text-align: left; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-soft); font-weight: 600; padding: 0 10px 6px; border-bottom: 1px solid var(--line-2); }
+.af-against td { padding: 8px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.af-against tr:last-child td { border-bottom: 0; }
+.af-against .mono { font-family: 'JetBrains Mono', monospace; font-size: .95em; }
+.af-against .off { color: var(--bad); font-weight: 600; }
+
+/* ================================================= accept ticks on a mapped review (FR-4.3) */
+.af-map th.tk, .af-map td.tk { width: 30px; padding-right: 0; }
+.af-tick { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--line-2);
+  background: var(--fill); display: inline-flex; align-items: center; justify-content: center;
+  font-size: .72rem; color: transparent; }
+.af-tick.on { border-color: var(--hi); background: var(--hi); color: #fff; }
+.af-map tr.keep td { background: var(--hi-soft); }
+.af-map .why { font-size: .76rem; color: var(--ink-soft); }
+.af-map thead .tkall { font-size: .66rem; }
+.af-mapfoot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.af-mapfoot .kept { font-size: .84rem; color: var(--ink); }
+.af-mapfoot .kept b { font-weight: 600; }
+
+/* ================================================= the still Investigating step marker (FR-10.5)
+   The shipped marker is an infinite rotation, which the screenshot fence forbids and which the
+   promotion replaces. Both options below carry running in SHAPE, FILL and LABEL, never in colour
+   alone, and neither animates at all.
+
+     waiting  outlined CIRCLE, the step number, dim
+     done     filled CIRCLE with a tick
+     failed   filled CIRCLE with a cross
+     running  option `mark` — a filled accent SQUARE with the step number, and `— now` on the label
+              option `rail` — a filled accent DISC with a ▶, a 3 px accent rail down the row, and
+                              a `now` badge after the label
+*/
+.af-steps.af-mk .af-step .ic {
+  border-radius: 50%; background: transparent; border: 1.5px solid var(--line-2); color: var(--ink-soft);
+  font-weight: 600;
+}
+.af-steps.af-mk .af-step.done .ic { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+.af-steps.af-mk .af-step.fail .ic { border-color: transparent; background: var(--bad); color: #fff; }
+.af-steps.af-mk .af-step.run .ic::after { content: none; animation: none; }   /* substitution 2 */
+.af-steps.af-mk .af-step .ic .g { font-size: .82rem; line-height: 1; }
+
+/* option `mark` — shape goes circle → square, fill goes empty → solid accent */
+.af-steps.opt-mark .af-step.run .ic {
+  border-radius: 5px; border-color: transparent; background: var(--hi); color: #fff;
+  box-shadow: 0 0 0 3px var(--hi-soft);
+}
+.af-now { color: var(--acc-ink); font-weight: 600; }
+
+/* option `rail` — the mark becomes a ▶ disc, the row gains an accent rail and the label a badge */
+.af-steps.opt-rail .af-step.run {
+  box-shadow: inset 3px 0 0 var(--hi); background: var(--hi-soft); padding-left: 16px;
+}
+.af-steps.opt-rail .af-step.run .ic {
+  border-color: transparent; background: var(--hi); color: #fff; border-radius: 50%;
+}
+.af-steps.opt-rail .af-step.run .ic .g { font-size: .66rem; margin-left: 1px; }
+.af-step .lb { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.af-step .lb .badge { font-size: .62rem; }
+
+/* all four marks side by side. A run cannot hold a failed step and a running step at the same
+   moment, so the four are shown as a legend rather than as a state that could not happen. */
+.af-legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 14px; padding-top: 13px;
+  border-top: 1px solid var(--line); }
+.af-legend .lg { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: var(--ink-soft); }
+.af-legend .ic { width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: .72rem; font-weight: 600;
+  border: 1.5px solid var(--line-2); background: transparent; color: var(--ink-dim); flex: none; }
+.af-legend .lg.done .ic { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+.af-legend .lg.fail .ic { border-color: transparent; background: var(--bad); color: #fff; }
+.af-legend .lg.run .ic { border-color: transparent; background: var(--hi); color: #fff; }
+.af-legend.opt-mark .lg.run .ic { border-radius: 5px; box-shadow: 0 0 0 3px var(--hi-soft); }
+
+/* ================================================= the fetchers list at phone width
+   Round 2's `.af-tbl` keeps five columns below 1080 px, and round 9's review found exactly this
+   shape at 412: a five-column row holds its columns and turns every label into a column one word
+   wide. Below the house 640 px tier the table becomes a card per fetcher, which is the treatment
+   `processing.css` already uses for Activity ▸ Schedule. Not a table squeezed sideways. */
+@media (max-width: 640px) {
+  .af-tbl thead { display: none; }
+  .af-tbl, .af-tbl tbody, .af-tbl tr, .af-tbl td { display: block; width: auto; }
+  .af-tbl tr.af-row {
+    border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--fill-2);
+    padding: 12px 13px; margin-bottom: 9px; position: relative;
+  }
+  .af-tbl tr.af-row.open { margin-bottom: 0; border-radius: var(--radius-s) var(--radius-s) 0 0; }
+  .af-tbl tr.af-row td { border-bottom: 0; padding: 0; }
+  .af-tbl tr.af-row td.nm { padding-right: 56px; margin-bottom: 8px; }
+  .af-tbl tr.af-row td.sched::before { content: 'Checks '; color: var(--ink-soft); font-size: .78rem; }
+  .af-tbl tr.af-row td.sched { font-size: .82rem; color: var(--ink); margin-bottom: 7px; }
+  .af-tbl tr.af-row td.st { margin-bottom: 10px; }
+  .af-tbl tr.af-row td.tg { position: absolute; top: 12px; right: 13px; }
+  .af-tbl tr.af-row td.acts-cell .acts { justify-content: flex-start; }
+  .af-tbl tr.af-det { display: block; }
+  .af-tbl tr.af-det td { padding: 0; background: transparent; }
+  /* The band and the detail share one card below the row they belong to, so neither sits outside
+     the card's own padding the way the first 412 render showed. */
+  .af-tbl tr.af-det .af-open {
+    border: 1px solid var(--line-2); border-top: 0; border-radius: 0 0 var(--radius-s) var(--radius-s);
+    background: var(--fill-2); padding: 12px 13px 14px; margin-bottom: 9px;
+  }
+  .af-tbl tr.af-det .af-det-in { padding: 0; }
+  /* the tint belongs to the row, not to each cell: per-cell it drew as stripes once the cells
+     became blocks */
+  .af-tbl tr.af-row.af-stopped { background: color-mix(in oklch, var(--bad) 7%, var(--fill-2)); }
+  .af-tbl tr.af-row.af-stopped td { background: transparent; }
+  .af-tbl tr.af-row .acts { align-items: flex-start; }
+  .af-tbl tr.af-row .acts .btn { flex: none; }
+  .af-item .field { width: calc(50% - 5px); }
+  .af-item .go { width: 100%; }
+  .af-tbl .nm .src { white-space: normal; overflow-wrap: anywhere; }
+  .af-causes { grid-template-columns: 1fr; }
+  .af-causes .ck { border-top: 1px solid var(--line); }
+  .af-causes > div:nth-child(2) { border-top: 0; }
+  .af-causes > div:nth-child(1) { border-top: 1px solid var(--line); }
+  .af-causes > div:first-child { border-top: 0; }
+  .af-against table, .af-against thead, .af-against tbody, .af-against tr, .af-against th, .af-against td { display: block; }
+  .af-against thead { display: none; }
+  .af-against tr { border-bottom: 1px solid var(--line-2); padding: 8px 0; }
+  .af-against td { padding: 1px 0; }
+  .af-against td:nth-of-type(1) { font-weight: 600; color: var(--ink); }
+  .af-against td:nth-of-type(2)::before { content: 'mapped to '; color: var(--ink-soft); font-family: 'Sora', sans-serif; }
+  .af-against td:nth-of-type(3)::before { content: 'TMDB has there · '; color: var(--ink-soft); font-family: 'Sora', sans-serif; }
+  .af-against td:nth-of-type(4)::before { content: 'apart by '; color: var(--ink-soft); font-weight: 400; }
+  .af-fail .why { overflow-wrap: anywhere; }
+  .af-legend { gap: 12px 20px; }
+
+  /* The mapping table becomes a row per mapping. Round 9 found the alternative at exactly this
+     width: a six-column row keeps its columns and turns “matched by description” into a column one
+     word wide. The tick stays on the left where the thumb is. */
+  .af-map, .af-map tbody, .af-map tr, .af-map td { display: block; width: auto; }
+  .af-map thead { display: none; }
+  .af-map tr { position: relative; padding: 10px 0 10px 30px; border-bottom: 1px solid var(--line); }
+  .af-map tr:last-child { border-bottom: 0; }
+  .af-map tr.keep { background: var(--hi-soft); border-radius: 8px; padding-right: 8px; }
+  .af-map td { padding: 1px 0; border-bottom: 0; }
+  .af-map td.tk { position: absolute; left: 0; top: 11px; width: auto; }
+  .af-map td.arr { display: none; }
+  .af-map td.item { font-weight: 600; color: var(--ink); }
+  /* the tint belongs to the row; per-cell it painted as stripes with a gap between every line */
+  .af-map tr.keep td { background: transparent; }
+  .af-map td.se, .af-map td.tmdb { display: inline-block; vertical-align: baseline; }
+  .af-map td.se::before { content: '→ '; color: var(--ink-dim); }
+  .af-map td.tmdb { margin-left: .4em; }
+  .af-map td.tmdb::before { content: '· TMDB '; color: var(--ink-soft); }
+  .af-map td.why { font-size: .74rem; }
+  .af-map td.lib { display: block; margin-top: 4px; }
+  .af-map tr.have td.item { color: var(--ink-dim); }
+  .af-mapfoot .af-why { flex-basis: 100%; }
+
+  /* the key/value block stacks: a 132 px label column against a 250 px value column is two narrow
+     columns, not a table */
+  .af-kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .af-kv .k { text-transform: uppercase; letter-spacing: .06em; font-size: .66rem;
+    font-weight: 700; padding-top: 11px; }
+  .af-kv .v { margin-bottom: 2px; }
+
+  /* the recipe pane must not widen the frame: `white-space: pre` in a 1fr grid child has no
+     min-width of its own, so it pushed Save and Last runs off the right edge */
+  .af-det-in > * { min-width: 0; }
+  .af-script { max-width: 100%; }
+}
+
+/* ================================================= light-theme twins
+   `--ok` / `--warn` / `--bad` / `--info` are not re-tinted per theme; wf.css overrides the text
+   colour at each use site instead, and so does processing.css. Every rule above that uses one as a
+   text colour needs its twin here or it fails contrast on the light theme's white fills. */
+[data-theme="light"] .af-proof .mk { color: #128a5f; }
+[data-theme="light"] .af-proof.unproven .mk { color: #9a6a06; }
+[data-theme="light"] .af-against .off { color: #c23b2d; }
+[data-theme="light"] .af-steps.af-mk .af-step.done .ic { color: #128a5f; }
+/* ai.css draws a waiting step in `--ink-dim`, which is rgba(15,17,26,.25) on the light theme —
+   under 2:1 against the card. A waiting step is still a step somebody has to read. */
+[data-theme="light"] .af-steps.af-mk .af-step:not(.done):not(.run):not(.fail) { color: #5d6378; }
+[data-theme="light"] .af-band.hold .bi { color: #fff; }
+[data-theme="light"] .af-prop .why { color: #6240cf; }
+[data-theme="light"] .af-now { color: #6240cf; }
+/* the run-history dot for a waiting run reads as the neutral it is in both themes */
+[data-theme="light"] .af-run .dot.wait { background: #5d6378; }
+.af-run .dot.wait { background: var(--ink-soft); box-shadow: none; }

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Auto-fetch’s missing states — frames</title>
+<!-- The production admin system, linked rather than copied: wf.css carries the tokens, the
+     components and the three self-hosted woff2 (its @font-face URLs resolve next to the CSS file,
+     so the fonts come from design/app/fonts/ with no copy and no network reference). ai.css is
+     round 2's own page CSS, unchanged by this round; dashboard.css is linked for the one Dashboard
+     frame. Nothing here is copied and nothing here is promoted. -->
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../app/dashboard.css">
+<link rel="stylesheet" href="../../app/ai.css">
+<link rel="stylesheet" href="auto-fetch-states.css">
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>Auto-fetch’s missing states</h1>
+  <p>Round <span class="mono-id">auto-fetch-states</span>, <b>revision 1 · 2026-10-25</b>. Round 2 drew the
+    Fetchers tab and its design stands; this round draws only what round 2 did not: a fetcher row that says
+    <i>the site has stopped us</i>, a row that says <i>this needs your number</i>, the proof the review state
+    shows, the accept ticks on a mapped review, and an <i>Investigating</i> step marker that stands still.</p>
+  <p>Every frame links <span class="mono-id">wf.css</span>, <span class="mono-id">app.css</span>,
+    <span class="mono-id">dashboard.css</span> and <span class="mono-id">ai.css</span>, so every token, button,
+    badge, toggle, table and card in the pictures is the shipped one. The new components are in
+    <span class="mono-id">auto-fetch-states.css</span> and are named <span class="mono-id">af-*</span> to be
+    promoted into <span class="mono-id">ai.css</span> as they are. Every number comes out of
+    <span class="mono-id">af-states-data.js</span>.</p>
+</div>
+<div id="frames"></div>
+
+<script src="af-states-data.js"></script>
+<script src="af-states-build.js"></script>
+<script>
+(function () {
+  const D = window.AF, B = window.AFB;
+  const Q = new URLSearchParams(location.search);
+  const w = Q.get('w') === '412' ? 'ph' : 'desk';
+  const theme = Q.get('theme') === 'light' ? 'light' : 'dark';
+  if (w === 'ph') document.body.classList.add('ph');
+
+  const F = D.FETCHERS;
+  /* A fetcher plus the state this frame puts it in. Nothing is mutated: each frame builds its own
+     row objects, so no frame can leave a flag behind for the next one. */
+  const roy = (extra) => Object.assign({}, F.royndin, extra || {});
+  const nor = (extra) => Object.assign({}, F.nordvest, extra || {});
+
+  /* the three fetchers as the list normally stands, with one row put into a state */
+  function list(which, state, open, panel, opts) {
+    const rows = [
+      { f: which === 'royndin' ? roy(opts && opts.fx) : F.royndin,
+        state: which === 'royndin' ? state : 'ok',
+        open: which === 'royndin' && open, panel: which === 'royndin' ? panel : '' },
+      { f: which === 'nordvest' ? nor(opts && opts.fx) : F.nordvest,
+        state: which === 'nordvest' ? state : 'ok',
+        open: which === 'nordvest' && open, panel: which === 'nordvest' ? panel : '' },
+      { f: F.babel, state: 'reinvestigate', open: false },
+    ];
+    return B.fetcherCard(rows, (opts && opts.card) || {});
+  }
+
+  /* review, for a `source`-numbering scenario */
+  function review(scenario, opts) {
+    opts = opts || {};
+    const rows = D.royndin(scenario);
+    const p = D.proof(rows);
+    const f = F.royndin;
+    const show = [rows[rows.length - 1], rows[11], rows[0]];   /* 2026E01, 2025E03, 2022E01 */
+    const table = '<table class="af-map"><thead><tr><th>Title on page</th><th class="arr"></th><th>Becomes</th>' +
+      '<th>TMDB has</th><th class="lib">Library</th></tr></thead><tbody>' +
+      show.map((r) => '<tr' + (r.have ? ' class="have"' : '') + '><td class="item">' + r.item + '</td><td class="arr">→</td>' +
+        '<td class="se mono">' + r.se + '</td><td class="tmdb mono">' + (r.onTmdb ? 'aired ' + r.tmdbAir : '— no such episode') + '</td>' +
+        '<td class="lib">' + (r.have ? '<span class="badge ok">have · skipped</span>'
+          : '<span class="badge warn">missing</span>' + (r.onTmdb ? '' : ' <span class="badge flat">not on TMDB</span>')) +
+        '</td></tr>').join('') +
+      '<tr><td colspan="5" class="tiny muted" style="padding:8px 10px;">' + (rows.length - show.length) +
+      ' more · <a href="#">show all ' + rows.length + ' mappings</a></td></tr></tbody></table>';
+    return '<div class="card"><div class="row center"><h3 style="margin:0;font-size:1.1rem;">New auto-fetcher</h3>' +
+      '<span class="badge info" style="margin-left:8px;">series only</span><span class="spacer"></span>' +
+      '<span class="tiny muted">found · review</span></div>' +
+      '<div class="af-review" style="margin-top:14px;"><div>' +
+      B.kvBlock(f, rows, p, { span: '2022 · 2025 · 2026' }) + table + '</div>' +
+      B.saveBox(f, opts) + '</div></div>';
+  }
+
+  /* review, for `mapped` numbering — the accept ticks */
+  function mapped(mode) {
+    const f = F.nordvest, rows = D.NORD;
+    const p = { proven: false, okN: 0, hasN: rows.length, found: rows.length, againstN: 0 };
+    return '<div class="card"><div class="row center"><h3 style="margin:0;font-size:1.1rem;">New auto-fetcher</h3>' +
+      '<span class="badge info" style="margin-left:8px;">series only</span><span class="spacer"></span>' +
+      '<span class="tiny muted">found · review · mapped numbering</span></div>' +
+      '<div class="af-review" style="margin-top:14px;"><div>' +
+      B.kvBlock(f, rows.map((r) => Object.assign({ onTmdb: true }, r)), p, { mapped: true }) +
+      B.mapTable(rows, mode) + '</div>' +
+      B.saveBox(f, mode === 'unticked'
+        ? { saveOff: 'Tick the mappings to keep. Only rows you accept are stored.' }
+        : {}) + '</div></div>';
+  }
+
+  /* the failed state: a disagreement fails the proof, so it is this state, not a review state */
+  function failed() {
+    const rows = D.royndin('disagree');
+    const p = D.proof(rows);
+    const f = F.royndin;
+    return '<div class="card"><div class="row center"><h3 style="margin:0;font-size:1.1rem;">New auto-fetcher</h3>' +
+      '<span class="badge info" style="margin-left:8px;">series only</span><span class="spacer"></span>' +
+      '<span class="tiny muted">one investigation at a time</span></div>' +
+      '<div class="af-fail"><h4>Can’t set up auto-fetch for this URL</h4>' +
+      '<p>The numbering could not be proved against TMDB, so nothing was written. Auto-fetch only sets itself up when it is sure — a half-right guess would file files under the wrong title.</p>' +
+      '<div class="why">reason: the numbering check — the pattern disagrees with TMDB on ' + p.againstN +
+      ' of the ' + p.hasN + ' episodes TMDB has · proven needs at least two agreements and none against · ' +
+      p.okN + ' agree, ' + p.againstN + ' disagree</div>' +
+      '<div class="af-against"><div class="h">The rows that disagree</div><table>' +
+      '<thead><tr><th>Item on page</th><th>Mapped to</th><th>TMDB has there</th><th>Apart by</th></tr></thead><tbody>' +
+      p.against.map((r) => '<tr><td>' + r.item + '</td><td class="mono">' + r.se + '</td>' +
+        '<td class="mono">aired ' + r.tmdbAir + ' · the page published ' + r.pub + '</td>' +
+        '<td class="off">' + Math.abs(r.gap) + ' days</td></tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="row center" style="margin-top:14px;gap:8px;flex-wrap:wrap;">' +
+      '<a class="btn sm" href="https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml" target="_blank" rel="noopener">File a bug report on GitHub ↗</a>' +
+      '<span class="tiny muted">' + D.BUGLINE + '</span></div></div></div>';
+  }
+
+  /* ------------------------------------------------------------------ the frame registry */
+  const FRAMES = [
+    /* 1 — Site stopped */
+    ['stopped-collapsed', 'Site stopped · the collapsed row',
+     'Royndin on <span class="mono-id">varpid.example.fo</span>. One status slot, no new column: the badge says <i>Site stopped</i>, the line under it names the <b>site</b>, the short reason and the time — so nobody goes looking for a fault in this one recipe. <i>Run now</i> and the enable switch are shown disabled, because both would reach the site. No countdown and no <i>retrying in…</i>: a stop is never retried.',
+     () => list('royndin', 'stopped', false, '', { card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+    ['stopped-open', 'Site stopped · the row open',
+     'The full reason, the time, the sentence <i>Nothing runs on varpid.example.fo until you resume it</i>, and <b>Resume site</b> — on the open row, which is open decision 1’s lean. The band sits <b>above</b> the recipe and the run history because what it says is true of the site, not of the recipe below it. <i>Run now</i> and <i>Re-investigate page</i> are shown disabled with their reason beside <i>Resume site</i>.',
+     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'stopped'), { card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+    ['stopped-resuming', 'Site stopped · resuming',
+     'The server is making its one listing request. <b>Resume site</b> is disabled and reads <i>Checking the site…</i> — the page is drawing what the server says is happening, not what the admin hopes will happen. The band drops to the informational tint while it holds.',
+     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'resuming'), { card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+    ['stopped-refused', 'Site stopped · refused again',
+     'The one listing request was refused too, so the site is stopped again with the new time. Nothing else changed, which is the point: there is no second kind of stopped.',
+     () => list('royndin', 'stopped', true, B.stopBand(D.FETCHERS.royndin, 'refused'), { fx: { stopAt: 'today 16:42' }, card: { next: 'nothing scheduled on varpid.example.fo', runAllOff: true } })],
+    ['stopped-reasons', 'Site stopped · the four causes, and the longest string',
+     'One reason line for each of the four causes the lane stops on, and the same four in Faroese — the longest of the three languages, and therefore the real width test. The code is in mono inside plain words.',
+     () => B.causesCard()],
+
+    /* 2 — waiting for a number */
+    ['waiting-collapsed', 'Waiting for a number · the collapsed row',
+     'Nordvest, which uses mapped numbering. The badge is <b>neutral</b>, not warn or bad: nothing is broken and nothing was lost — an item is waiting for the admin. The line under it says what did <i>not</i> happen. No button on the collapsed row, which is open decision 2’s lean: the row opens.',
+     () => list('nordvest', 'waiting', false, '', { fx: { waitN: 1 } })],
+    ['waiting-open', 'Waiting for a number · the row open',
+     'The item, the page’s own description with where it came from, an empty season and an empty episode field, <b>Propose</b>, and <b>Accept</b> shown disabled with its reason. Nothing about this item is a guess, and nothing has been downloaded.',
+     () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING.slice(0, 1)), { fx: { waitN: 1 } })],
+    ['waiting-proposed', 'Waiting for a number · the server has answered',
+     'One model call came back. The proposal is shown as the server’s own answer, the two fields are filled from it, and <b>Accept</b> is live. The admin still accepts it: a proposal is not an acceptance.',
+     () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING.slice(0, 1), { proposed: true }), { fx: { waitN: 1 } })],
+    ['waiting-propose-off', 'Waiting for a number · Propose cannot do anything',
+     'The month’s Auto-fetch limit is spent, so <b>Propose</b> is shown disabled with that reason, verbatim. The season and episode fields still work — the admin types the number themselves. A control that cannot do anything new is never hidden and never live-but-useless.',
+     () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING.slice(0, 1), { proposeOff: D.AI_OFF_REASONS[2] }), { fx: { waitN: 1 } })],
+    ['waiting-three', 'Waiting for a number · three items, and the other cause',
+     'Three items, to show how the list holds more than one — and the <b>second cause</b> of the same state: a fetcher whose pattern is not proven, where every episode TMDB lacks waits for a number. The row and the panel are identical; only the lead sentence names a different cause. The third item has no description on the page at all, which is said plainly rather than filled in.',
+     () => list('nordvest', 'waiting', true, B.waitBand(D.WAITING, { cause: 'unproven' }), { fx: { waitN: 3 } })],
+
+    /* 3 — all four row states */
+    ['rows-all', 'All four row states, one list',
+     'A normal row, <i>Site stopped</i>, <i>waiting for a number</i> and <i>Needs re-investigation</i>. The second row is a second fetcher for the same series on <span class="mono-id">play.example.dk</span>, and it is deliberate: the stop belongs to <span class="mono-id">varpid.example.fo</span>, so the fetcher for the very same series on another site runs normally one row below. One status slot per row, no new column.',
+     () => B.fetcherCard([
+       { f: D.FETCHERS.royndin, state: 'stopped' },
+       { f: D.FETCHERS.royndinPlay, state: 'ok' },
+       { f: Object.assign({}, D.FETCHERS.nordvest, { waitN: 1 }), state: 'waiting' },
+       { f: D.FETCHERS.babel, state: 'reinvestigate' },
+     ], { next: 'next check in 5h 12m' })],
+
+    /* 4 — the proof line */
+    ['review-proven', 'The review state · proven',
+     'The proof sits in the <span class="mono-id">af-kv</span> block, under <i>Pattern</i>, because it is a fact about the pattern. <i>12 of 12</i> is the twelve episodes TMDB has of the thirteen found — the thirteenth is the one that goes to <i>Not on TMDB yet</i>. The sentence under it says what an agreement is, so the count is readable rather than magic.',
+     () => review('proven')],
+    ['review-notproven', 'The review state · not proven',
+     'TMDB has one of the thirteen, so there is one agreement and proven needs two. The marker is the warn tint, not the ok tint, and it is a word (<i>not proven</i>) rather than a colour. <b>Save</b> stays live — FR-4.2 allows saving it — and the sentence says what saving it means: every episode TMDB lacks waits for the admin’s number.',
+     () => review('sparse', { saveOff: null })],
+    ['review-failed', 'A disagreement is the failed state, not a review state',
+     'The pattern disagrees with TMDB on two of the twelve it has, so the proof fails and this is the <i>Can’t set up auto-fetch for this URL</i> state. The reason names the check; the disagreeing rows are listed under it with the item, the <span class="mono-id">SxxEyy</span> it mapped to, and what TMDB has there — an air date, never an invented name. There is no <b>Save</b> in this state. The bug-report line carries FR-10.4’s correction.',
+     () => failed()],
+
+    /* 5 — accept ticks */
+    ['map-unticked', 'A mapped review · all unticked',
+     'Nordvest. Every mapping row has an accept tick and all of them start empty, because only rows the admin accepts are stored. <b>Save</b> is shown disabled with its reason. <i>Tick all</i> is a ghost button beside the count — open decision 3 on §5, drawn to the lean. The <i>why</i> column is the model’s own grounds for each row.',
+     () => mapped('unticked')],
+    ['map-partly', 'A mapped review · five of eight kept',
+     'Five rows ticked. The count is in words (<i>5 of 8 kept</i>), the kept rows carry the accent tint as well as the tick, and <b>Save</b> is live. The three unticked rows are not refusals — they simply are not stored, and they come back as items waiting for a number.',
+     () => mapped('partly')],
+
+    /* 6 — the still step marker, two options */
+    ['steps-mark-running', 'Investigating · option <b>mark</b> · step 2 running',
+     '<b>Recommended.</b> The marker carries running in shape and fill: waiting is an outlined <b>circle</b> with its number, running is a filled accent <b>square</b> with its number and a soft halo, done is a filled circle with a tick, failed a filled circle with a cross. The label adds <i>— now</i>. Nothing moves, and nothing is a one-shot transition either. It costs one thing: in a five-row list it is a quieter cue than a spinner was.',
+     () => B.stepsCard('mark', 'running')],
+    ['steps-mark-failed', 'Investigating · option <b>mark</b> · a step failed',
+     'Step 2 failed on a DRM key system and 3–5 never started. A run cannot hold a failed step and a running step at the same moment, so all four marks are shown as a legend under the list rather than as a state that could not happen.',
+     () => B.stepsCard('mark', 'failed')],
+    ['steps-rail-running', 'Investigating · option <b>rail</b> · step 2 running',
+     'The alternative. The running mark becomes a filled disc with a <b>▶</b>, the row gains a 3 px accent rail and the page’s own tint, and the label gains a <i>now</i> badge. It is unmissable at a glance and reads from across a desk; it costs a louder row and one more element on the row.',
+     () => B.stepsCard('rail', 'running')],
+    ['steps-rail-failed', 'Investigating · option <b>rail</b> · a step failed',
+     'The same failed list under option <i>rail</i>, with its legend. The failed and done marks are identical between the two options; only the running mark differs, which is the whole of the choice.',
+     () => B.stepsCard('rail', 'failed')],
+
+    /* the copy corrections */
+    ['still-copy', 'The still’s corrected copy',
+     'FR-10.3, owner Q4: the line reads <i>Three frames picked from the video</i>. It was <i>Three frames the model picked</i>, and the model does not pick them — this server does, by a fixed rule. The rest of the queue row is round 2’s, unchanged.',
+     () => B.stillCard()],
+
+    /* 7 — the Dashboard */
+    ['dash-stopped', 'The Dashboard · one row per stopped site',
+     'Drawn because <span class="mono-id">dashboard.css</span> already has the component: an <span class="mono-id">ov-band w-warning</span> section holding one <span class="mono-id">ov-row sev-warning</span> per stopped site, with the count in the <span class="mono-id">ov-n</span> slot and <i>Open the item</i> as the fix kind. Nothing was invented. Whether the row should instead carry <b>Resume site</b> itself is in the report as a question.',
+     () => B.dashCard()],
+  ];
+
+  document.getElementById('frames').innerHTML = FRAMES.map(([id, title, note, build]) => `
+  <div class="cap"><h2>${title}</h2><div class="mono-id">${id}.png</div><p>${note}</p></div>
+  <div class="shot"><div class="frame ${w}" id="${id}"${theme === 'light' ? ' data-theme="light"' : ''}>${build()}</div></div>`).join('');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto-fetch’s missing states — directions</title>
+<style>
+  :root { --ink:#12141b; --ink2:#262a35; --line:#cdd1dc; --bg:#e9eaef; --card:#fff; --acc:#6240cf; }
+  html,body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Sora',system-ui,-apple-system,sans-serif; line-height:1.55; }
+  main { max-width:900px; margin:0 auto; padding:32px 24px 80px; }
+  h1 { font-family:'Space Grotesk',system-ui,sans-serif; font-size:1.8rem; margin:0 0 .2em; }
+  h2 { font-family:'Space Grotesk',system-ui,sans-serif; font-size:1.25rem; margin:2.2em 0 .5em;
+       padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-family:'Space Grotesk',system-ui,sans-serif; font-size:1rem; margin:1.6em 0 .35em; }
+  p, li { color:var(--ink2); }
+  .lede { font-size:1.02rem; color:var(--ink2); }
+  code, .mono { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.88em; color:var(--ink); }
+  table { width:100%; border-collapse:collapse; margin:.8em 0 1.2em; background:var(--card);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:.88rem; }
+  th { text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em;
+    color:var(--ink2); font-weight:700; padding:9px 12px; border-bottom:1px solid var(--line);
+    background:#f3f4f8; }
+  td { padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--ink2); }
+  tr:last-child td { border-bottom:0; }
+  td b, th b { color:var(--ink); }
+  .rec { display:inline-block; font-size:.66rem; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; color:#fff; background:var(--acc); border-radius:999px; padding:2px 9px;
+    vertical-align:middle; margin-left:8px; }
+  .note { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--acc);
+    border-radius:0 10px 10px 0; padding:12px 16px; margin:1em 0; font-size:.92rem; }
+  ul { margin:.4em 0 1em; padding-left:1.2em; }
+  li { margin:.25em 0; }
+  .fn { font-size:.8rem; color:#4a5060; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Auto-fetch’s missing states</h1>
+<p class="lede">Round <span class="mono">auto-fetch-states</span>, revision 1 · 2026-10-25. Drawn in this
+repository. Round 2 drew the Fetchers tab and <b>its design stands</b>; this round draws only what round 2
+did not. It redraws nothing and promotes nothing.</p>
+
+<h2>What is fixed</h2>
+<ul>
+  <li><b>The frontend renders server-pushed state only</b> (constitution, Real-Time UI Contract). Every
+    state here is one the server sends. <i>Checking the site…</i> is what the server says is happening, not
+    what the admin hopes will happen.</li>
+  <li><b>A control that cannot do anything new is shown, disabled, with its reason</b> — never hidden and
+    never live-but-useless (<span class="mono">processing-runs-as-nine-features.md</span> FR-11, carried in
+    by FR-1.2). Drawn as <span class="mono">.af-dis</span>: half opacity and a dashed edge, which is
+    <span class="mono">processing.css</span>’s own look for the same thing.</li>
+  <li><b>A stop is never retried automatically</b> (FR-2.5). No countdown and no <i>retrying in…</i> appears
+    anywhere in this round.</li>
+  <li><b>Never express state by accent colour alone.</b> Every state here is a word first.</li>
+  <li><b>1440 and 412, both themes.</b> Every <span class="mono">--ok</span>/<span class="mono">--warn</span>/<span class="mono">--bad</span>/<span class="mono">--info</span>
+    used as a text colour has its <span class="mono">[data-theme="light"]</span> twin, as
+    <span class="mono">processing.css</span> does.</li>
+  <li><b>Canvas substitutions, both deliberate:</b> <span class="mono">--blur: none</span> inside every frame
+    (<span class="mono">backdrop-filter</span> is production CSS and breaks the screenshot render; the live
+    admin keeps its glass), and <span class="mono">.af-step.run .ic::after</span>’s infinite rotation switched
+    off — which is the whole point of the step-marker work below.</li>
+  <li><b>The stand-in corpus only.</b> No episode name is invented. Where a Royndin row has to show what TMDB
+    holds it shows TMDB’s <b>air date</b>, because a date is a fact we can state without inventing a title.</li>
+</ul>
+
+<h2>One direction, and one real fork</h2>
+<p>Everything in this round is drawn as a single direction except the <i>Investigating</i> step marker, where
+the brief says there is no lean. That one is drawn twice.</p>
+
+<h3>The fork: a still <i>Investigating</i> marker</h3>
+<p>The shipped marker is <span class="mono">animation: af-spin .8s linear infinite</span>, which the screenshot
+fence forbids and which the promotion replaces (FR-10.5). Both options carry <i>running</i> in <b>shape, fill
+and label</b>, never in colour alone, and neither animates at all — not even a one-shot transition.</p>
+
+<table>
+  <thead><tr><th>Mark</th><th>Both options</th></tr></thead>
+  <tbody>
+    <tr><td><b>waiting</b></td><td>an outlined <b>circle</b> with the step number, dim</td></tr>
+    <tr><td><b>done</b></td><td>a filled circle with a <b>tick</b>, in <span class="mono">--ok</span></td></tr>
+    <tr><td><b>failed</b></td><td>a filled circle with a <b>cross</b>, in <span class="mono">--bad</span></td></tr>
+  </tbody>
+</table>
+
+<table>
+  <thead><tr><th>Option</th><th>The running mark</th><th>What it gives</th><th>What it costs</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>mark</b><span class="rec">recommended</span><br><span class="mono fn">steps-mark-*.png</span></td>
+      <td>the circle becomes a filled accent <b>square</b> with the step number, on a soft halo; the label gains
+        <i>— now</i></td>
+      <td>Shape changes, so it reads in greyscale. <b>It keeps the step number</b>, so “which of the five is this?”
+        is answerable. It adds no element to the row and reuses the box that is already there.</td>
+      <td>In a five-row list it is a quieter cue than the spinner was.</td>
+    </tr>
+    <tr>
+      <td><b>rail</b><br><span class="mono fn">steps-rail-*.png</span></td>
+      <td>the mark becomes a filled accent <b>disc with a ▶</b>; the row gains a 3 px accent rail and the page’s
+        own tint; the label gains a <i>now</i> badge</td>
+      <td>Unmissable at a glance and readable from across a desk.</td>
+      <td>The ▶ <b>replaces the step number</b>, so the running step is the one row you can only place by
+        counting. It is also a louder row and one more element.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The recommendation is <b>mark</b>, and the deciding argument is the number: the five steps are referred to by
+number everywhere else on this page (<i>the five steps’ outcomes</i> in the bug-report line), and
+<i>rail</i> is the only option that takes the number away from exactly the step somebody is watching.</p>
+
+<h2>Every state the round holds</h2>
+
+<table>
+  <thead><tr><th>Frame</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">stopped-collapsed</td><td>§1a. One status slot, no new column. <i>Site stopped</i> as a <span class="mono">badge bad</span>; the line under it names the <b>site</b>, the short reason and the time. <i>Run now</i> and the switch shown disabled.</td></tr>
+    <tr><td class="mono">stopped-open</td><td>§1b. The band above the recipe and the run history: full reason, time, <i>Nothing runs on varpid.example.fo until you resume it</i>, <b>Resume site</b>, and <i>Run now</i>/<i>Re-investigate page</i> disabled with their reason.</td></tr>
+    <tr><td class="mono">stopped-resuming</td><td>§1c. <b>Resume site</b> disabled, reading <i>Checking the site…</i>; the band drops to the informational tint while it holds.</td></tr>
+    <tr><td class="mono">stopped-refused</td><td>§1d. Back to stopped with the new time, carried in the collapsed row as well as the band. No second kind of stopped.</td></tr>
+    <tr><td class="mono">stopped-reasons</td><td>§1. One reason line for each of the four causes, in English and in Faroese — the longest-string check.</td></tr>
+    <tr><td class="mono">waiting-collapsed</td><td>§2a. A <b>neutral</b> badge: nothing is broken and nothing was lost. No button on the collapsed row — the row opens.</td></tr>
+    <tr><td class="mono">waiting-open</td><td>§2b. The item, the page’s description with its source, empty season and episode fields, <b>Propose</b>, <b>Accept</b> disabled with its reason.</td></tr>
+    <tr><td class="mono">waiting-proposed</td><td>§2c. The server’s answer as its own block, the fields filled from it, <b>Accept</b> live. A proposal is not an acceptance.</td></tr>
+    <tr><td class="mono">waiting-propose-off</td><td>§2d. <b>Propose</b> disabled with FR-1.2’s third reason verbatim; the number fields still work.</td></tr>
+    <tr><td class="mono">waiting-three</td><td>§2e, and the state’s <b>second cause</b>: a pattern that is not proven. Same row, same panel, one different lead sentence. The third item has no description on the page, said plainly.</td></tr>
+    <tr><td class="mono">rows-all</td><td>§3. Four rows, four states, one status slot each, no new column.</td></tr>
+    <tr><td class="mono">review-proven</td><td>§4a. The proof in the <span class="mono">af-kv</span> block under <i>Pattern</i>, with the sentence that says what an agreement is.</td></tr>
+    <tr><td class="mono">review-notproven</td><td>§4b. One agreement; warn tint, and the word <i>not proven</i>. <b>Save</b> stays live, and the sentence says what saving it means.</td></tr>
+    <tr><td class="mono">review-failed</td><td>§4c. A disagreement is not a review state. The reason names the check; the disagreeing rows sit under it. No <b>Save</b>.</td></tr>
+    <tr><td class="mono">map-unticked</td><td>§5a. Every mapping row has a tick, all empty. <b>Save</b> disabled with its reason. <i>Tick all</i> as a ghost button.</td></tr>
+    <tr><td class="mono">map-partly</td><td>§5b. <i>5 of 8 kept</i>, kept rows tinted as well as ticked, <b>Save</b> live.</td></tr>
+    <tr><td class="mono">steps-mark-running</td><td>§6, option <i>mark</i>, step 2 running.</td></tr>
+    <tr><td class="mono">steps-mark-failed</td><td>§6, option <i>mark</i>, a step failed, with the four-mark legend.</td></tr>
+    <tr><td class="mono">steps-rail-running</td><td>§6, option <i>rail</i>, step 2 running.</td></tr>
+    <tr><td class="mono">steps-rail-failed</td><td>§6, option <i>rail</i>, a step failed, with the legend.</td></tr>
+    <tr><td class="mono">still-copy</td><td>FR-10.3’s corrected copy in its own place.</td></tr>
+    <tr><td class="mono">dash-stopped</td><td>§7. One row per stopped site, in the component <span class="mono">dashboard.css</span> already has.</td></tr>
+  </tbody>
+</table>
+
+<p class="fn">22 frames × 1440 and 412 × dark and light = <b>88 PNGs</b>.</p>
+
+<h3>States from the house list, and what was skipped</h3>
+<ul>
+  <li><b>Loading</b> — <b>skipped.</b> Round 2 owns the page’s first paint and this round adds no new surface that loads on its own.</li>
+  <li><b>Empty</b> — <b>skipped.</b> <span class="mono">.af-empty</span> is round 2’s and unchanged.</li>
+  <li><b>Error</b> — <b>drawn</b>, four times: <i>Site stopped</i>, <i>Needs re-investigation</i>, the failed proof, and a failed investigation step.</li>
+  <li><b>The longest string</b> — <b>drawn</b>, in <span class="mono">stopped-reasons</span>, in Faroese.</li>
+  <li><b>Danish and Faroese</b> — the four stop reasons are drawn in Faroese; every other new string is drafted in the table below rather than rendered.</li>
+  <li><b>10-foot focus</b> — not applicable: admin only.</li>
+  <li><b>Offline</b> — <b>skipped.</b> <span class="mono">ai.html</span>’s <span class="mono">.ai-offl</span> strip is the page’s lost-socket state and is round 2’s. It would dim <b>Resume site</b>, <b>Propose</b> and <b>Accept</b> along with everything else, which needs no new drawing.</li>
+</ul>
+
+<h2>Decided rows</h2>
+<table>
+  <thead><tr><th>Open decision</th><th>Drawn</th></tr></thead>
+  <tbody>
+    <tr><td>1 · Where <b>Resume site</b> sits</td><td><b>On the open row only</b> (the lean). The collapsed row carries the badge, the reason and the time, and its <i>Run now</i> disabled. A site-wide, irreversible-ish action is worth one click of reading first.</td></tr>
+    <tr><td>2 · Whether the collapsed waiting row needs its own button</td><td><b>Only the badge</b> (the lean). The row opens.</td></tr>
+    <tr><td>3 · The still marker’s shape</td><td><b>Both drawn and named</b> — <i>mark</i> (recommended) and <i>rail</i>. See the fork above.</td></tr>
+    <tr><td>§5c · <i>Tick all</i></td><td><b>Yes, as a ghost button</b> (the lean), beside the count in both tick states rather than as a frame of its own.</td></tr>
+  </tbody>
+</table>
+
+<h2>New strings</h2>
+<p>English is the source. Danish and Faroese are <b>drafts</b>: the shipped <span class="mono">i18n/*.json</span>
+wins wherever a string already exists, and a disagreement with this table is information, not a defect.</p>
+
+<table>
+  <thead><tr><th>English</th><th>Danish</th><th>Faroese</th></tr></thead>
+  <tbody>
+    <tr><td>Site stopped</td><td>Siden er stoppet</td><td>Heimasíðan steðgað</td></tr>
+    <tr><td>Resume site</td><td>Genoptag siden</td><td>Byrja heimasíðuna aftur</td></tr>
+    <tr><td>Checking the site…</td><td>Kontrollerer siden…</td><td>Kanni heimasíðuna…</td></tr>
+    <tr><td>Nothing runs on {host} until you resume it.</td><td>Intet kører på {host}, før du genoptager den.</td><td>Einki koyrir á {host}, til tú byrjar hana aftur.</td></tr>
+    <tr><td>Run now and Re-investigate page are off for every fetcher on {host} — both would reach the site.</td><td>Kør nu og Undersøg siden igen er slået fra for alle hentere på {host} — begge ville kontakte siden.</td><td>Koyr nú og Kanna síðuna aftur eru sløkt fyri allar heintarar á {host} — bæði fara at taka samband við heimasíðuna.</td></tr>
+    <tr><td>The server is making one listing request to {host}. Nothing else runs while it does.</td><td>Serveren sender én listeforespørgsel til {host}. Intet andet kører imens.</td><td>Ambætarin sendir eina listafyrispurning til {host}. Einki annað koyrir á meðan.</td></tr>
+    <tr><td>A stop is never retried on a timer: a site that has blocked a client and sees it come back on a schedule usually blocks it for good.</td><td>Et stop prøves aldrig igen automatisk: en side, der har blokeret en klient og ser den komme tilbage efter en plan, blokerer den som regel for altid.</td><td>Ein steðgur verður ongantíð roynd aftur sjálvvirkandi: ein heimasíða, sum hevur blokkerað ein brúkara og sær hann koma aftur eftir eini skrá, blokkerar hann vanliga fyri altíð.</td></tr>
+    <tr><td>The one listing request you asked for was refused too, so the site is stopped again.</td><td>Den ene listeforespørgsel, du bad om, blev også afvist, så siden er stoppet igen.</td><td>Hin eina listafyrispurningin, tú bað um, varð eisini noktað, so heimasíðan er steðgað aftur.</td></tr>
+    <tr><td>refused again when you resumed it</td><td>afvist igen, da du genoptog den</td><td>noktað aftur, tá tú byrjaði hana aftur</td></tr>
+    <tr><td>{n} new items waiting for a number</td><td>{n} nye emner venter på et nummer</td><td>{n} nýggj brot bíða eftir einum numri</td></tr>
+    <tr><td>nothing downloaded for them · found {when}</td><td>intet hentet til dem · fundet {when}</td><td>einki heintað til tey · funnið {when}</td></tr>
+    <tr><td>not downloaded</td><td>ikke hentet</td><td>ikki heintað</td></tr>
+    <tr><td>on the page since {date}</td><td>på siden siden {date}</td><td>á síðuni síðan {date}</td></tr>
+    <tr><td>No description for this item on the page</td><td>Ingen beskrivelse af dette emne på siden</td><td>Ongin lýsing av hesum brotinum á síðuni</td></tr>
+    <tr><td>nothing is invented; the number is yours to give</td><td>intet opfindes; nummeret er dit at give</td><td>einki verður uppdiktað; tú gevur numrið</td></tr>
+    <tr><td>from the page — the item’s description, verbatim</td><td>fra siden — emnets beskrivelse, ordret</td><td>frá síðuni — lýsingin hjá brotinum, orðrætt</td></tr>
+    <tr><td>Propose</td><td>Foreslå</td><td>Set fram</td></tr>
+    <tr><td>Proposed</td><td>Foreslået</td><td>Sett fram</td></tr>
+    <tr><td>Accept</td><td>Godkend</td><td>Góðtak</td></tr>
+    <tr><td>Accept is off until a season and an episode are there.</td><td>Godkend er slået fra, indtil der står en sæson og et afsnit.</td><td>Góðtak er sløkt, til ein sesongur og eitt brot standa har.</td></tr>
+    <tr><td>Propose is off: {reason}. The season and episode fields still work — type the number yourself and accept it.</td><td>Foreslå er slået fra: {reason}. Sæson- og afsnitsfelterne virker stadig — skriv selv nummeret og godkend det.</td><td>Set fram er sløkt: {reason}. Sesong- og brotfeltini virka framvegis — skriva sjálvur numrið og góðtak tað.</td></tr>
+    <tr><td>This fetcher uses a mapped number, so a new item on the page is never downloaded on a guess. Give it a season and an episode, or ask for a proposal, and accept it.</td><td>Denne henter bruger et tildelt nummer, så et nyt emne på siden hentes aldrig på et gæt. Giv det en sæson og et afsnit, eller bed om et forslag, og godkend det.</td><td>Hesin heintarin brúkar eitt tillutað numar, so eitt nýtt brot á síðuni verður ongantíð heintað á eini gáta. Gev tí ein sesong og eitt brot, ella bið um eitt uppskot, og góðtak tað.</td></tr>
+    <tr><td>The pattern is not proven, so every episode TMDB does not have waits for your number before it is downloaded.</td><td>Mønstret er ikke bevist, så hvert afsnit, TMDB ikke har, venter på dit nummer, før det hentes.</td><td>Mynstrið er ikki prógvað, so hvørt brot, TMDB ikki hevur, bíðar eftir tínum numri, áðrenn tað verður heintað.</td></tr>
+    <tr><td>Up to date</td><td>Opdateret</td><td>Dagført</td></tr>
+    <tr><td>Needs re-investigation</td><td>Skal undersøges igen</td><td>Má kannast aftur</td></tr>
+    <tr><td>proven</td><td>bevist</td><td>prógvað</td></tr>
+    <tr><td>not proven</td><td>ikke bevist</td><td>ikki prógvað</td></tr>
+    <tr><td>pattern agrees with TMDB on {n} of {m} episodes TMDB has</td><td>mønstret stemmer med TMDB på {n} af de {m} afsnit, TMDB har</td><td>mynstrið samsvarar við TMDB á {n} av teimum {m} brotum, TMDB hevur</td></tr>
+    <tr><td>An agreement is a TMDB air date within 7 days of the item’s published date, or a TMDB episode name equal to the item’s title. Proven needs at least two, with none against.</td><td>En overensstemmelse er en TMDB-sendedato inden for 7 dage fra emnets udgivelsesdato, eller et TMDB-afsnitsnavn, der er lig emnets titel. Bevist kræver mindst to og ingen imod.</td><td>Eitt samsvar er ein TMDB-sendingardagur innan 7 dagar frá útgávudegi brotsins, ella eitt TMDB-brotanavn, sum er eins og heitið á brotinum. Prógvað krevur í minsta lagi tvey, og einki ímóti.</td></tr>
+    <tr><td>TMDB has {n} of the {m} episodes found, so there is 1 agreement and proven needs two.</td><td>TMDB har {n} af de {m} fundne afsnit, så der er 1 overensstemmelse, og bevist kræver to.</td><td>TMDB hevur {n} av teimum {m} funnu brotunum, so er 1 samsvar, og prógvað krevur tvey.</td></tr>
+    <tr><td>You can save it as it is. Every episode TMDB does not have then waits for your number before it is downloaded — it is never placed on a guess.</td><td>Du kan gemme den, som den er. Hvert afsnit, TMDB ikke har, venter så på dit nummer, før det hentes — det placeres aldrig på et gæt.</td><td>Tú kanst goyma hana, sum hon er. Hvørt brot, TMDB ikki hevur, bíðar tá eftir tínum numri, áðrenn tað verður heintað — tað verður ongantíð sett á eina gátu.</td></tr>
+    <tr><td>The numbering could not be proved against TMDB, so nothing was written.</td><td>Nummereringen kunne ikke bevises mod TMDB, så intet blev skrevet.</td><td>Nummarskipanin kundi ikki prógvast móti TMDB, so einki varð skrivað.</td></tr>
+    <tr><td>The rows that disagree</td><td>De rækker, der ikke stemmer</td><td>Teir reglarnir, sum ikki samsvara</td></tr>
+    <tr><td>Mapped to</td><td>Tildelt</td><td>Tillutað</td></tr>
+    <tr><td>TMDB has there</td><td>TMDB har der</td><td>TMDB hevur har</td></tr>
+    <tr><td>Apart by {n} days</td><td>{n} dage fra hinanden</td><td>{n} dagar ímillum</td></tr>
+    <tr><td>Numbering</td><td>Nummerering</td><td>Nummarskipan</td></tr>
+    <tr><td>Mapped. The page’s order is not an episode number, so every item is given one by hand.</td><td>Tildelt. Sidens rækkefølge er ikke et afsnitsnummer, så hvert emne får et i hånden.</td><td>Tillutað. Raðfylgjan á síðuni er ikki eitt brotanummar, so hvørt brot fær eitt við hond.</td></tr>
+    <tr><td>Each mapping is proved by the row you tick, not by a pattern — nothing is stored that you did not accept.</td><td>Hver tildeling bevises af den række, du sætter flueben ved, ikke af et mønster — intet gemmes, som du ikke har godkendt.</td><td>Hvør tilluting verður prógvað av tí reglinum, tú krossar av, ikki av einum mynstri — einki verður goymt, sum tú ikki hevur góðtikið.</td></tr>
+    <tr><td>TMDB has</td><td>TMDB har</td><td>TMDB hevur</td></tr>
+    <tr><td>Why</td><td>Hvorfor</td><td>Hví</td></tr>
+    <tr><td>matched by title</td><td>matchet på titel</td><td>samsvarar á heiti</td></tr>
+    <tr><td>matched by description</td><td>matchet på beskrivelse</td><td>samsvarar á lýsing</td></tr>
+    <tr><td>Tick all</td><td>Sæt flueben ved alle</td><td>Kross av øll</td></tr>
+    <tr><td>Nothing ticked</td><td>Intet valgt</td><td>Einki avkrossað</td></tr>
+    <tr><td>{n} of {m} kept</td><td>{n} af {m} beholdt</td><td>{n} av {m} hildin</td></tr>
+    <tr><td>Tick the mappings to keep. Only rows you accept are stored.</td><td>Sæt flueben ved de tildelinger, du vil beholde. Kun rækker, du godkender, gemmes.</td><td>Kross av teir tillutingar, tú vilt hava. Bert reglar, tú góðtekur, verða goymdar.</td></tr>
+    <tr><td>The {n} you leave unticked are not refused — they are simply not stored, and they come back as items waiting for a number.</td><td>De {n}, du lader stå tomme, afvises ikke — de gemmes blot ikke og kommer tilbage som emner, der venter på et nummer.</td><td>Tey {n}, tú letur standa tóm, verða ikki noktað — tey verða bara ikki goymd og koma aftur sum brot, ið bíða eftir einum numri.</td></tr>
+    <tr><td>waiting / running / done / failed</td><td>venter / kører / færdig / mislykkedes</td><td>bíðar / koyrir / liðugt / miseydnað</td></tr>
+    <tr><td>now</td><td>nu</td><td>nú</td></tr>
+    <tr><td>Prove the numbering against TMDB</td><td>Bevis nummereringen mod TMDB</td><td>Prógva nummarskipanina móti TMDB</td></tr>
+    <tr><td>Write the recipe</td><td>Skriv opskriften</td><td>Skriva uppskriftina</td></tr>
+    <tr><td>Nothing has been written yet. Stop ends the investigation and discards what it found.</td><td>Der er endnu intet skrevet. Stop afslutter undersøgelsen og kasserer det fundne.</td><td>Einki er skrivað enn. Steðga endar kanningina og hendir tí, sum varð funnið.</td></tr>
+    <tr><td>{host} has stopped us</td><td>{host} har stoppet os</td><td>{host} hevur steðgað okkum</td></tr>
+    <tr><td>1 site stopped</td><td>1 side stoppet</td><td>1 heimasíða steðgað</td></tr>
+    <tr><td>{n} fetchers</td><td>{n} hentere</td><td>{n} heintarar</td></tr>
+    <tr><td>Three frames picked from the video: faces visible, no title card, no black bars. <span class="fn">(FR-10.3, replaces “Three frames the model picked…”)</span></td><td>Tre billeder valgt fra videoen: ansigter synlige, intet titelkort, ingen sorte bjælker.</td><td>Tríggjar myndir valdar úr video-inum: andlit sjónlig, einki heitakort, ongar svartar bjálkar.</td></tr>
+    <tr><td>The report is pre-filled with the site, the TMDB id and the five steps’ outcomes — never the page’s content. <span class="fn">(FR-10.4, replaces “…with the URL…”)</span></td><td>Rapporten er forudfyldt med siden, TMDB-id’et og de fem trins resultater — aldrig sidens indhold.</td><td>Frágreiðingin er fyrifylt við heimasíðuni, TMDB-id-inum og úrslitunum hjá teimum fimm stigunum — ongantíð innihaldinum á síðuni.</td></tr>
+  </tbody>
+</table>
+<p class="fn">The four <i>Site stopped</i> reason lines are drafted in all three languages inside
+<span class="mono">af-states-data.js</span>, and the Faroese set is rendered in
+<span class="mono">stopped-reasons.png</span>.</p>
+
+<h2>What the promotion of <span class="mono">ai.css</span> will have to carry</h2>
+<p>That is a separate task and this round promotes nothing, but the work is listed here so it does not have to
+be re-derived:</p>
+<ul>
+  <li>Delete <span class="mono">.af-step.run .ic::after</span> and <span class="mono">@keyframes af-spin</span>.
+    They are the only infinite animation on the page.</li>
+  <li>Add the new <span class="mono">af-*</span> rules from
+    <span class="mono">auto-fetch-states.css</span>, and the <span class="mono">[data-theme="light"]</span>
+    twins with them — the twins are hand-authored and want a line in
+    <span class="mono">check-mobile-css.sh</span>.</li>
+  <li><span class="mono">.badge.flat</span> is needed by <b>two</b> page stylesheets now
+    (<span class="mono">processing.css</span> has its own scoped copy). It belongs in
+    <span class="mono">wf.css</span>, not in a third page file.</li>
+  <li><span class="mono">.af-tbl</span> needs the ≤640 px card-per-fetcher tier, and the row cells need the
+    class names this round gives them (<span class="mono">sched</span>, <span class="mono">st</span>,
+    <span class="mono">q</span>, <span class="mono">tg</span>, <span class="mono">acts-cell</span>).</li>
+  <li><span class="mono">.af-map</span> needs the ≤640 px row-per-mapping tier and its cell classes
+    (<span class="mono">item</span>, <span class="mono">arr</span>, <span class="mono">se</span>,
+    <span class="mono">tmdb</span>, <span class="mono">why</span>, <span class="mono">lib</span>), and
+    <span class="mono">.af-kv</span> needs the ≤640 px stack.</li>
+  <li><span class="mono">.af-det-in > * { min-width: 0 }</span>: without it the read-only recipe widens the
+    page at 412.</li>
+  <li>The open row needs the <span class="mono">.af-open</span> wrapper around the band and the detail.</li>
+  <li><span class="mono">ai.css</span>’s wrapper class must cover all of the above —
+    <span class="mono">.badge.flat</span>, <span class="mono">.af-*</span> and the light twins alike.</li>
+</ul>
+
+</main>
+</body>
+</html>
