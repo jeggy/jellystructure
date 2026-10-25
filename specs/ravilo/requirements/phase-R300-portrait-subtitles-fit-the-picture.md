@@ -3,8 +3,9 @@
 ## Scope
 
 Written 2026-09-24 from a Pixel 9 observation. Amends **R244** FR-R244-10 (the S/M/L row) and R77's
-subtitle placement on the phone. Android's Media3 caption path only (`CaptionSizing.kt`,
-`PlayerVideoSurface`, `RaviloPlayer.applySubtitleSize`). Amended 2026-10-25 for the TV (DEB-2488),
+subtitle placement on the phone. Android's Media3 caption path (`CaptionSizing.kt`,
+`PlayerVideoSurface`, `RaviloPlayer.applySubtitleSize`). R329 copied the same rule into Ravilo on
+the Mac (`RaviloPlayerDesktop.kt`). Amended 2026-10-25 for the TV and for every client (DEB-2488),
 below.
 
 ## What happens today
@@ -80,14 +81,41 @@ intended.
 **Not changed by this amendment.**
 - The `0.9` under Media3's default. If captions still read small on the TV once a wide film matches
   a 16:9 episode, raising it is a separate owner decision.
-- Ravilo Web, the Tizen app and the Cast receiver. They size their cues their own way, not through
-  Media3.
+- Ravilo Web, the Tizen app, the Cast receiver and Ravilo on Linux. None of them reads the film's
+  shape, so none of them has this defect (see *Every client*, below).
 - A size control on the TV itself. The TV's player has no S · M · L row (FR-R244-10 put it on the
   phone only). The cast remote's S · M · L for a film playing in the TV app is FR-R245-8's, and a
   gap there is a restore of that FR, not part of this amendment.
+
+**Every client (added 2026-10-25, on the owner's "we have many clients and many different
+versions").** Two players size captions from the film's own picture. Both take the amended rule
+through the one `captionBaseHeight`:
+
+| Client | Who draws the caption | What it is sized from | Wide film shrinks? |
+|---|---|---|---|
+| Android TV, Google TV, phone (Media3) | `SubtitleView` | R300's picture height | **Yes, since v1.38.** This amendment fixes it. |
+| Ravilo on the Mac (`MacEngine`) | Compose, over the frame (R329) | the picture's height, copied from R300 | **Yes, since R329.** This amendment fixes it: the window's 16:9 frame, as on Android. |
+| Ravilo on Linux (`MpvPlayer`) | mpv itself | mpv's own default, by window | No |
+| Ravilo Web, phone and desktop browsers | the browser (`video::cue`) | the browser's WebVTT default | No |
+| Tizen / receiver-only TV app (`ravilo-screen`) | its own `#cues` layer | a fixed 46 px (36 / 58 for S / L) | No |
+| Cast receiver (`ravilo-cast`) | the Cast framework | `TextTrackStyle.fontScale` 1.0 (0.85 / 1.25) | No |
+
+**Versions.** Caption size is decided on the client alone. No server field, wire message or stored
+setting carries it, and the backend cannot change how an installed app draws. So:
+- An installed Android or Mac build keeps drawing wide films' captions small until it is updated.
+  The fix reaches a viewer with the first release that carries it. The TVs run the Play build, so
+  for them that is a Play release (Tróndur's to time).
+- The fix changes no wire shape. A fixed client works against any backend, and an old client is no
+  worse off against a new one.
+- The cast remote's `subsize` (FR-R245-8) is already on the Cast channel. Any phone version that
+  sends it works with a fixed TV app, and an old TV app keeps ignoring it as today.
+- Acceptance is per client, on the newest build of each. An older build is expected to fail item 3
+  and is not a regression.
 
 **Acceptance (amended).**
 3. The TV app plays a 2.40:1 film and then a 16:9 episode with subtitles on: the caption letters are
    the same height in both. Before this fix the film's were visibly smaller.
 4. Pixel 9, portrait: acceptance 1 still holds for a 16:9 episode, and a 2.40:1 film's caption is
    the same size as the episode's.
+5. Ravilo on the Mac, in a window and full screen: a 2.40:1 film and a 16:9 episode draw captions
+   of the same height.
