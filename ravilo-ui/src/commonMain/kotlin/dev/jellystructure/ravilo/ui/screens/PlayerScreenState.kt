@@ -555,7 +555,8 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         castSource.subSize = { subtitleSize }
         castSource.hasNext = { resolvedNextEpisodeId != null }
         castSource.applyPick = { tab, g, v -> applyPick(tab, g, v) }
-        castSource.setSubSize = { subtitleSize = it }
+        // R245 FR-R245-8 — the remote's S · M · L is applied here, on the TV app, not only reported back; the screen's own effect is phone-only.
+        castSource.setSubSize = { subtitleSize = it; player.setSubtitleScale(subtitleScale()) }
         castSource.next = { if (resolvedNextEpisodeId != null) advanceNext() }
     }
 
