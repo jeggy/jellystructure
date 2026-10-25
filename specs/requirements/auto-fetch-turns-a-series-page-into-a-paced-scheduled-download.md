@@ -63,8 +63,8 @@ Auto-fetch refuses.
    agent, from Anthropic's addresses. One of the two broadcaster sites the household uses today forbids Anthropic's
    agents by name in its `robots.txt`; both allow a general crawler on their programme pages, and the other asks for
    ten seconds between requests. So this server fetches, under its own name, within the `robots.txt` rules for a
-   general crawler, and hands the model what it read (FR-2, FR-5.2). Whether a site that forbids AI agents should
-   have its pages read *to* a model at all is the owner's call (Q3).
+   general crawler, and hands the model what it read (FR-2, FR-5.2). A site that forbids AI agents by name gets the
+   same treatment as any other: the owner decided so (Q3).
 5. **A scheduled fetcher is a bot, and the first site that notices will block it.** Today nothing in jellystructure
    paces a download, and phase 183's limiter only paces requests. A site gets one lane for every fetcher pointed at
    it, and a block stops the whole site, not one fetcher (FR-2).
@@ -74,27 +74,26 @@ Auto-fetch refuses.
    finds one (FR-9).
 7. **The episode stills need no model.** The drawn copy says the model picked three frames. A fixed rule can pick
    them as well (no black frame, no title card, spread across the runtime), costs nothing, and sends no picture
-   anywhere (Q4).
+   anywhere. The owner chose the fixed rule (Q4).
 
 ## Owner decisions
 
-Asked on this task as one card, 2026-10-25. Until it is answered, this file is written to the recommended option of
-each question, and the slices that depend on an answer say so.
+Asked on this task as one card (`6cad194f`) and answered by the owner on 2026-10-25 at 18:46Z. Three answers took the
+recommended option and one did not (Q3).
 
-- **Q1 — An episode TMDB does not have yet.** *Recommended:* file it into the library under the page's own numbering,
-  and queue it under *Not on TMDB yet*, as drawn, **but only when the fetcher's pattern has been proven against the
-  episodes TMDB does have** (FR-4.2). *Alternative:* hold it outside the library until TMDB has it or the admin approves
+- **Q1 — An episode TMDB does not have yet.** *Decided:* file it into the library under the page's own numbering,
+  and queue it under *Not on TMDB yet*, as drawn, **but only once the fetcher's pattern has been proven against the
+  episodes TMDB does have** (FR-4.2). Rejected: holding it outside the library until TMDB has it or the admin approves
   its number.
-- **Q2 — A source whose numbering is not its own** (a dub, a re-cut, a site that only lists in order). *Recommended:*
+- **Q2 — A source whose numbering is not its own** (a dub, a re-cut, a site that only lists in order). *Decided:*
   the model proposes a mapping to TMDB from titles and descriptions, the admin approves it at save, and every new item
-  after that **waits for the admin's approval** of the model's proposal before it is downloaded (FR-4.3). *Alternative:*
-  out of scope; Auto-fetch refuses such a source, and it stays hand work.
-- **Q3 — A site whose `robots.txt` forbids AI agents.** *Recommended:* nothing from that site is sent to the model.
-  Auto-fetch may still set it up when the site's own listing carries season and episode numbers, with the model
-  unused, and refuses it otherwise (FR-5.2). *Alternative:* our server is the fetcher, so its pages go to the model like
-  any other site's.
-- **Q4 — Episode stills.** *Recommended:* three frames picked by a fixed rule on this server; no frame leaves the house
-  (FR-9.4). *Alternative:* the model picks them, as the drawn copy says, at a per-episode cost.
+  after that **waits for the admin's approval** of the model's proposal before it is downloaded (FR-4.3). Rejected:
+  leaving it out of scope.
+- **Q3 — A site whose `robots.txt` forbids AI agents by name.** *Decided, against the recommendation:* this server is
+  the one that fetches, under its own name and within the general-crawler rules, so **what it read goes to the model
+  like any other site's** (FR-5.2). Rejected: sending such a site nothing and setting it up without the model.
+- **Q4 — Episode stills.** *Decided:* three frames picked by a fixed rule on this server; no frame leaves the house
+  (FR-9.4). Rejected: the model picking them.
 
 ## Requirements
 
@@ -124,7 +123,8 @@ one lane.
    page, listing and API request; media segments a manifest names are a player's traffic and are not checked against
    it. A path the rules forbid is never requested: an investigation that needs one stops with the reason
    (*this site's robots.txt does not allow /path*), and a saved fetcher whose listing becomes forbidden stops (FR-2.5).
-   A site that forbids AI agents by name is recorded, and decides Q3.
+   A rule that names only AI agents (Anthropic's among them) does not bind this server, which is not one of those
+   agents (Q3). The model never fetches anything itself (FR-5.1).
 3. **Pacing.**
    - Page, listing and API requests: at most one every **10 seconds**, or the site's own `Crawl-delay` when it asks for
      more. A limiter of its own, keyed by site (there is no generic per-host limiter: phase 183 paced TMDB only).
@@ -195,12 +195,12 @@ one lane.
    - every item maps to exactly one `SxxEyy`, and no two items map to the same one;
    - one manifest, chosen by the engine, resolves to a video variant `ffprobe` can read, with a duration;
    - **the pattern agrees with TMDB on every episode TMDB has**: for each mapped `SxxEyy` TMDB knows, the TMDB air
-     date is within 7 days of the item's published date, or the TMDB episode name equals the item's title. Under Q1's
-     recommendation, at least **two** such agreements, with none against, are what *proven* means. A fetcher whose
+     date is within 7 days of the item's published date, or the TMDB episode name equals the item's title. Under Q1, at
+     least **two** such agreements, with none against, are what *proven* means. A fetcher whose
      pattern is not proven can still be saved, and then every episode TMDB lacks waits for the admin (FR-4.3's flow).
 
    Anything else is the *Not a series* state with the failing check as its reason, and nothing is written.
-3. **Mapped numbering fails closed** (Q2's recommendation). For a source whose order is not an identity, the model
+3. **Mapped numbering fails closed** (Q2). For a source whose order is not an identity, the model
    proposes the item → `SxxEyy` table from the items' titles and descriptions against TMDB's episode names and
    overviews, and the review screen shows it row by row. Only rows the admin accepts are stored. A new item found on a
    later run is **not downloaded**: it is listed on the fetcher as *1 new item waiting for a number*, and the admin
@@ -220,10 +220,9 @@ one lane.
    stops as *Not a series* with *the page could not be worked out in 12 steps*.
 2. **What is sent** (FR-270-8 gains this line): *the page URL and what this server read from that site during the
    investigation, and the TMDB series' name, seasons and episode list. Nothing from the library: which episodes the
-   household has is worked out on this server, after the model has answered.* Under Q3's recommendation, a site whose
-   `robots.txt` names Anthropic's agents gets **no model call at all**: the investigation runs the `ytdlp` and `json`
-   readers the engine knows on its own, sets up a `source`-numbered fetcher when the listing itself carries season and
-   episode numbers, and otherwise refuses with *this site does not allow AI agents to read it*.
+   household has is worked out on this server, after the model has answered.* This applies to every site, including a
+   site whose `robots.txt` names Anthropic's agents: the owner decided (Q3) that what this server reads under its own
+   name, within the general-crawler rules, goes to the model as it would from any other site.
 3. **Page content is data, not instructions.** The system prompt says so; and nothing the model answers is acted on
    except through FR-4's schema and FR-4.2's proof. A page that tells the model to fetch another site, write a file or
    change the schedule can at worst produce a recipe that fails its proof.
@@ -294,7 +293,7 @@ beside the features' (FR-11).
 
 ### FR-9 — *Not on TMDB yet*
 
-1. **What lands in it.** An episode a fetcher placed for which TMDB has no such `SxxEyy`. Under Q1's recommendation,
+1. **What lands in it.** An episode a fetcher placed for which TMDB has no such `SxxEyy`. Under Q1,
    only from a fetcher whose pattern is proven (FR-4.2); from any other, the episode is not placed until the admin
    accepts its number.
 2. **What it holds**, as drawn: series and `SxxEyy`, the page's own label for it, when it was downloaded, the runtime,
@@ -304,7 +303,7 @@ beside the features' (FR-11).
    has a title and an overview, so a scan alone would never clear a row that carries page text. When TMDB returns the episode, the row clears itself and the episode is ordinary
    (FR-8.4). *Mark as submitted* is the admin's note that they have entered it on TMDB; the row stays, marked, until TMDB
    returns it. Nothing is ever sent to TMDB: TMDB takes no submissions by API, and phase 307's rule holds anyway.
-4. **Stills** (Q4's recommendation). Three frames picked on this server from the middle 80 % of the runtime: not black,
+4. **Stills** (Q4). Three frames picked on this server from the middle 80 % of the runtime: not black,
    not a near-duplicate of the frame before, and not in the first or last minute where title and credit cards sit;
    1920×1080 JPEG at the source's resolution or below, never upscaled. *Pick a different moment* takes a timestamp.
 5. **Only fetched episodes.** An episode placed by hand that TMDB lacks is not listed here: there is no page text to
@@ -441,8 +440,9 @@ processing slices.
 4. **Backend + admin: the investigation** (FR-5, FR-4.2 with the model, FR-10.1): the synchronous Messages call with
    tools in `AnthropicClient`, the *Auto-fetch* job card, and 270's amendment. This is the first slice that spends
    money.
-5. **Backend + admin: mapped numbering** (FR-4.3) — only if Q2 is answered *as recommended*.
-6. **Image + backend: the yt-dlp reader** (FR-6.3), pinned and checksummed. Under Q3's recommendation this is what
-   lets a site that forbids AI agents be set up at all.
+5. **Backend + admin: mapped numbering** (FR-4.3, decided in Q2).
+6. **Image + backend: the yt-dlp reader** (FR-6.3), pinned and checksummed. Q3 means no site depends on it, because the
+   model can work out a JSON listing on any site, so it is the last slice: it adds the sites whose pages are built
+   in the browser and that yt-dlp already understands.
 
 Each piece files its own QA row when built, with a written plan and no named seat.
