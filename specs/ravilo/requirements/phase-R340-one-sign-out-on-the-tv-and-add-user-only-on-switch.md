@@ -5,14 +5,14 @@
 > choose in that modal if we want to sign out of this specific user, or all users (including the configuration of which
 > server to use)."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-30 (§Build notes; not deployed, not device-tested) — written 2026-09-30 (design-authored) from `design/ravilo/Ravilo TV.html` (built there the same day:
+Written 2026-09-30 (design-authored) from `design/ravilo/Ravilo TV.html` (built there the same day:
 `ravilo-app.js` `renderSignoutConfirm`, `.so-*` in `ravilo.css`, `so_*` strings in `ravilo-i18n.js`).
-**Dev-reviewed 2026-09-30** (§Dev review). Number verified free (after R339). **Changes** R170 (the profile menu), R175 FR-B4 (the menu's
+**Dev-reviewed 2026-09-30** (§Dev review). **Changes** R170 (the profile menu), R175 FR-B4 (the menu's
 *Add user* row), R191 FR-R191-3 (two affordances, two confirmations) and R161/R234 (Settings' *Unpair this TV*
 section). **Applies to the TV family** (TV, the web app — R337); the phone's Profile keeps R304's one-profile sign-out
-sheet.
+sheet. **Amended 2026-10-25 by DEB-2446** (FR-R340-5, end of file): focus stays inside the Sign out dialog.
 
 ## Requirements
 
@@ -124,3 +124,34 @@ Built as the dev review says; compiled for Android, web and desktop. **Not deplo
   correction:** `signout.one_sub_last` says *…so this TV goes back to the sign-in screen* — the design's *Ravilo will ask
   who is watching next time* was not what happens: with no profile left, R191's path lands on sign-in. Danish keeps the
   shipped table's *TV* (the design wrote *tv*).
+
+## Amendment 2026-10-25 — focus stays inside the Sign out dialog (DEB-2446)
+
+> QA, DEB-2406 (`stue-tv`, `.debug` `1.58-31-g7d5d40ba`): with the Sign out dialog open, Down and then Right moved
+> focus to the app bar's search icon behind the dialog.
+
+**Why it happens.** FR-R340-3 lists the moves the dialog makes and says nothing about the others. The dialog
+(`SignOutChoiceOverlay`) is not a Compose `Dialog` window. It is a full-screen `Box` drawn in the same tree as the
+screen behind it, and `dpadFocusable` hands any direction that has no callback to Compose's spatial focus search. That
+search can pick any focusable on screen, including the app bar under the scrim. From *Only {name}*, Down reaches
+*Everyone on this TV* by its callback. Right has no callback, so the search goes to the search icon. Every direction
+without a callback leaks the same way: Up on the first row, Left or Right on either row, Down on either button, Left on
+*Cancel* and Right on the confirm button.
+
+**FR-R340-5 — Focus stays inside the Sign out dialog.** While the dialog is open, no key moves focus out of it.
+- A direction with nowhere to go inside the dialog does nothing. Focus stays on the control that has it, ring and all.
+- FR-R340-3's own moves are unchanged, and Back still cancels.
+- The same holds for the one-profile confirm (`ConfirmOverlay`, §Build notes). Settings opens it outside the TV layout,
+  and the desktop's Sign out opens it too. It is in the same file and has the same defect.
+
+This applies the constitution's "exactly one visible focus target" to the dialog. A ring on a control under the scrim
+is not a target the viewer can see.
+
+**Acceptance 5.** Open Sign out, press Down and then Right: focus is still in the dialog. From each of the dialog's
+four controls, every arrow that FR-R340-3 gives no move leaves focus on that control. The same holds for both buttons
+of the one-profile confirm.
+
+**Build note (guidance, not a requirement).** One modifier on each dialog's full-screen `Box` that cancels any focus
+exit, `focusProperties { onExit = { cancelFocusChange() } }` followed by `focusGroup()` (both are in Compose 1.9.3),
+shared by the two overlays. That is better than a no-op callback on every free edge, which the next control added
+would forget.
