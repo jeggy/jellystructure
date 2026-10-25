@@ -307,3 +307,7 @@ Gradle test-report-writer flake noted above, non-fatal, unrelated). Not yet live
 ## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
 
 `runPipeline` stays the one engine. It takes the nine features' switches instead of a configured step list (FR-1 and FR-2 there). The order lives in code as a dependency graph, `wait` is removed, and `notify` folds into Notifications ▸ *Scan finished*. §6's trigger table is unchanged in shape: every trigger still calls `runPipeline`; the list it passes is derived from the features. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).
+
+## Amendment 2026-10-25 — a resume continues the run as it was started (DEB-2470)
+
+§6's `POST /api/scan/resume` row is superseded. A resume no longer means "finish the full run" (`fullRun = true`). It replays how the cancelled run was started: the same library, the same parts, the same *Re-check everything* switch. It still skips the titles already looked at. When the server holds no record of how the run started, the resume is refused with a 409; it is never guessed as a full run. See FR-15 in [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).

@@ -370,6 +370,9 @@ step list), 213 (FR-213-1's lanes stay, labelled by feature), 261 (FR-261-4's st
 the Checks card is FR-10), 262 (FR-262-3a: the switch moves to Settings ▸ Processing), 265 (FR-265-1…8: the dialog
 is FR-5) and 303 (the Checks card lists features).
 
+Amended 2026-10-25 (DEB-2470): Phase 175 §6's `POST /api/scan/resume` row (`fullRun = true`, *"resume already means
+finish the full run"*) is superseded by FR-15 below, and 175 carries a dated amendment pointing here.
+
 ## Amendment 2026-10-24 — what slice 1 fixed where this file was silent (DEB-2194)
 
 - **The keys.** `[processing.find]` `schedule` (a cron; blank = no automatic look); `[processing.metadata]` (`enabled`, `tmdb`, `tmdb_scope`,
@@ -449,6 +452,67 @@ is FR-5) and 303 (the Checks card lists features).
 - **What cannot be proved in CI.** Whether the dialog matches `dlg-desktop`, `dlg-music`, `dlg-rescan`, `dlg-scoped`, `dlg-off`, `dlg-phone`,
   `dlg-phone-parts`, `dlg-phone-partly` and `toast` in both themes. Playwright proves every door opens it, the skip is named and remembered, a
   disabled part cannot be ticked and 412 px has no horizontal overflow; the likeness is on the QA task.
+
+## Amendment 2026-10-25 — *Continue scan* resumes the run as it was started (DEB-2470)
+
+Found by QA on prod during DEB-2429. A narrow scan (everything unticked but one File health part, *Re-check everything* off)
+was cancelled and continued. It came back as the whole pipeline with *Re-check everything* on. The cause is
+`POST /api/scan/resume` (`MediaRoutes.kt:2152`): it rebuilt the run from the titles already looked at and nothing else, with
+`full = true`, no skip and no library. That is Phase 175 §6's row, written when a scan had no per-run choice. FR-5 gave a scan
+that choice, and the slice 3 amendment above gave the cancelled toast *Continue scan*, but nothing said what continuing runs. This
+amendment says it, and changes a shipped promise: a resume no longer means the full run.
+
+### FR-15 — *Continue scan*
+
+1. **A run keeps how it was started.** When any run starts, the tracker keeps a record beside it: its trigger, its library (or
+   all), the parts it runs, the parts it skipped with their product names, the *Re-check everything* switch, and, for a feature
+   run the scheduler started alone (FR-3.3), that it runs those features with no discovery. Every trigger keeps one, not only the
+   dialog, because the Dashboard banner offers *Continue scan* for any cancelled run, an hourly one included. The record is held
+   in memory only, and is replaced when the next run starts. A restart loses it (FR-15.5). No schema change.
+2. **Continue scan runs that record again**, over the titles the cancelled run had not looked at, which is today's
+   `resumeSkipIds`. It keeps the same library, the same *Re-check everything* and the same no-discovery rule. Its parts are the
+   cancelled run's parts, less any part turned off in Settings since (FR-1.4 still holds). It never runs a part the cancelled run
+   did not have. Music and Audiobooks are taken if and only if the cancelled run took them; their interval is not judged again.
+   With Settings unchanged, the resumed run's step plan equals the cancelled run's.
+3. **It does not queue *Make files play directly* a second time.** A ticked run queued the next repair when it started (slice 3
+   amendment, FR-6.2), and the one-minute tick carries on from there.
+4. **What History and Activity say.** The resumed run keeps the cancelled run's job id, as today. Its trigger is *manual*,
+   because a person pressed the button. Its first log line is the original's shape with *(resumed)*:
+   `▶ Manual pipeline started (resumed) · skipped: …`, naming the same skipped parts by product name (FR-6.4). *(full)* appears,
+   and Activity's header says *Full pipeline · ignoring freshness*, only when the cancelled run had *Re-check everything* on. A
+   resumed run that is cancelled again can be continued again: the record is the same one, and the titles both legs looked at
+   are skipped.
+5. **No record: refused, never guessed.** The server may hold no record of how a cancelled run started. That happens when it was
+   cancelled before this change was deployed, or when the server has restarted since (a run that a restart interrupted is marked
+   cancelled at start-up, `ScanTracker.load`). Then `POST /api/scan/resume` answers `409 {error, reason}`, where `reason` is the
+   server's sentence: *This scan can't be continued: the server has restarted since it stopped, so it no longer knows which parts
+   it was running. Start a new scan.* It never falls back to a full run. The existing 409 for a status that is not cancelled
+   keeps its `error` and gains a `reason` too: *There is no stopped scan to continue.* Both bodies are strings only.
+6. **The admin shows the refusal before anyone presses.** `GET /api/scan/status` gains two defaulted fields. `canResume` is true
+   only while the status is cancelled and a record is held. `resumeReason` is FR-15.5's sentence while the status is cancelled and
+   there is no record, and null otherwise. These fields are added; nothing is removed or retyped. When `canResume` is false:
+   - the Dashboard banner shows *↻ Continue scan* disabled, with `resumeReason` as its reason (FR-11), and *Start new scan* stays
+     live and opens the dialog;
+   - the *Scan cancelled* toast shows `resumeReason` in place of the *Continue scan* link.
+
+   If a press is refused anyway (the server restarted between the read and the press), the admin shows the 409's `reason`: in the
+   banner's badge, or as the toast's problem line. It never shows *check server connection*, which today's banner says for every
+   failure. The admin composes none of these sentences (FR-12.1).
+7. **The route keeps its shape** (FR-9.2). `POST /api/scan/resume` and its `202 {status: "resumed"}` are unchanged. This changes
+   what the route runs, not how it is called.
+
+**Acceptance (adds to the list above).**
+
+9. A narrow run (one feature ticked, one of its parts unticked, *Re-check everything* off) is cancelled and continued. The
+   resumed run's step plan equals the cancelled run's, `full` is false, and its first log line says *(resumed)* and names the
+   skipped parts.
+10. A run scoped to one library continues scoped to that library. A run with *Re-check everything* on continues with `full`
+    true. A scheduler's feature run continues as those features alone, with no discovery.
+11. Continuing a run that queued a *Make files play directly* repair queues no second one.
+12. A tracker loaded from a cancelled row with no record answers the resume with 409 and FR-15.5's `reason`, and its status says
+    `canResume` false with that `resumeReason`.
+13. On prod (QA, after deploy), Turið's two-part selection from DEB-2470: Cancel, then *Continue scan*. The first Activity line
+    shows the same steps as the cancelled run's, and no *(full)*. Until this ships, nobody presses *Continue scan* on prod.
 
 ## Code anchors (`main` at `51206b00`)
 
