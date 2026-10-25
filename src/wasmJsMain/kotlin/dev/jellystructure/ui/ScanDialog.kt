@@ -363,11 +363,14 @@ internal object ScanToasts {
             val status = MediaApi.scanStatus()
             if (status?.status == "CANCELLED") {
                 val n = status.processedCount
-                val t = show("warn", "▮", """<div>Scan cancelled</div><div class="s">${if (n > 0) "$n ${if (n == 1) "item was" else "items were"} looked at. " else ""}<a href="#" data-pf-continue>Continue scan</a></div>""", 14_000)
+                val looked = if (n > 0) "$n ${if (n == 1) "item was" else "items were"} looked at. " else ""
+                // FR-15.6 — a scan the server cannot continue shows its reason in place of the link.
+                val next = if (status.canResume) """<a href="#" data-pf-continue>Continue scan</a>""" else (status.resumeReason ?: "").esc()
+                val t = show("warn", "▮", """<div>Scan cancelled</div><div class="s">$looked$next</div>""", 14_000)
                 t.querySelector("[data-pf-continue]")?.addEventListener("click") { e ->
                     e.preventDefault()
                     t.remove()
-                    scope.launch { if (!MediaApi.resumeScan()) problem("The scan didn't continue.") }
+                    scope.launch { val r = MediaApi.resumeScan(); if (!r.ok) problem(r.reason ?: "The scan didn't continue.") }
                 }
             } else if (event.queued.isEmpty()) {
                 show("info", "◴", """<div>Scan finished</div><div class="s">Nothing was queued.</div>""", 8_000)

@@ -50,7 +50,28 @@ data class ScanStatusResponse(
     // knows how to render, instead of just spinning at 0 items/0 workers indefinitely.
     val deferred: Boolean = false,
     val deferredDevices: List<String> = emptyList(),
+    // DEB-2470 (FR-15.6) — added, defaulted: whether *Continue scan* can run, and the server's sentence when a stopped scan cannot be continued.
+    val canResume: Boolean = false,
+    val resumeReason: String? = null,
 )
+
+/**
+ * DEB-2470 (FR-15.1) — how a run was started, kept beside the tracker so *Continue scan* can run it again: the library (null = all), the step ids it
+ * ran, the skipped parts by product name, the *Re-check everything* switch and, for a scheduler feature run, that it had no discovery. In memory only.
+ */
+class StartedRun(
+    val jobId: String,
+    val libraryId: String?,
+    val steps: List<String>,
+    val skippedNames: List<String>,
+    val full: Boolean,
+    val featuresOnly: Boolean,
+)
+
+/** DEB-2470 (FR-15.5) — the server's sentences for a resume it will not run. Strings only; the admin composes none of them. */
+const val RESUME_NO_RECORD =
+    "This scan can't be continued: the server has restarted since it stopped, so it no longer knows which parts it was running. Start a new scan."
+const val RESUME_NOT_CANCELLED = "There is no stopped scan to continue."
 
 @Serializable
 data class ActiveScanItem(val label: String, val startedAt: Long, val detail: String? = null)
@@ -199,9 +220,23 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         }
     }
 
+    // DEB-2470 (FR-15.1) — replaced when the next run starts, lost with the process (FR-15.5). Set by launchScanRun.
+    @Volatile var startedRun: StartedRun? = null
+        private set
+
+    fun recordStartedRun(run: StartedRun) { startedRun = run }
+
+    /** FR-15.5 — null when the stopped run can be continued; else the sentence saying why not. Never guesses a full run. */
+    fun resumeRefusal(): String? = when {
+        _status != "CANCELLED" -> RESUME_NOT_CANCELLED
+        startedRun?.jobId != _jobId -> RESUME_NO_RECORD
+        else -> null
+    }
+
     fun startNew(): String {
         val jobId = "scan-${epochSeconds()}"
         queuedNotes = emptyList()
+        startedRun = null
         if (persistToDb) db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
         stepStopRequested = false
@@ -344,6 +379,8 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         scope = _runScope,
         type = _type,
         activeItems = activeItemsSnapshot(),
+        canResume = _status == "CANCELLED" && resumeRefusal() == null,
+        resumeReason = if (_status == "CANCELLED") resumeRefusal() else null,
     )
 }
 

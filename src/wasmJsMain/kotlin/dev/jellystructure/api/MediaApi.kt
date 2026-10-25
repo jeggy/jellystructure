@@ -311,6 +311,9 @@ data class ScanStatus(
     // of showing an indefinite 0-item/0-worker "running" scan with no explanation.
     val deferred: Boolean = false,
     val deferredDevices: List<String> = emptyList(),
+    // DEB-2470 (FR-15.6) — whether *Continue scan* can run, and the server's sentence when a stopped scan cannot be continued.
+    val canResume: Boolean = false,
+    val resumeReason: String? = null,
     val trigger: String? = null,
     val scope: String? = null,
     val type: String? = null,
@@ -444,10 +447,17 @@ object MediaApi {
         httpClient.get("/api/scan/status").body<ScanStatus>()
     }.getOrNull()
 
-    suspend fun resumeScan(): Boolean = runCatching {
+    /** DEB-2470 (FR-15.6) — [reason] is the server's sentence when it refused (a 409); null when it started or could not be reached. */
+    data class ResumeResult(val ok: Boolean, val reason: String? = null)
+
+    @Serializable
+    private data class ResumeRefusal(val error: String = "", val reason: String = "")
+
+    suspend fun resumeScan(): ResumeResult = runCatching {
         val response = httpClient.post("/api/scan/resume")
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value in 200..299) ResumeResult(true)
+        else ResumeResult(false, runCatching { response.body<ResumeRefusal>().reason }.getOrNull()?.takeIf { it.isNotBlank() })
+    }.getOrDefault(ResumeResult(false))
 
     // Phase 214 (FR-214-3) — "Stopped. jellystructure won't start any more subtitle extractions.
     // Jellyfin is still finishing N it already started" — subtitlesStillRunning is that N (0 = the

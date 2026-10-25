@@ -90,7 +90,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
                 if (status.deferred) renderDashDeferredBanner(scope, status.deferredDevices, status.jobId ?: "")
                 connectDashScanSocket(scope, baseCount = status.processedCount)
             }
-            "CANCELLED" -> setDashScanCancelled(status.processedCount, scope)
+            "CANCELLED" -> setDashScanCancelled(status.processedCount, status.canResume, status.resumeReason, scope)
             else -> setDashScanIdle()
         }
         // 93e: surface the next scheduled automation run.
@@ -151,9 +151,11 @@ private suspend fun resumeDashboardScan(scope: CoroutineScope) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
 
-    if (!MediaApi.resumeScan()) {
+    val resumed = MediaApi.resumeScan()
+    if (!resumed.ok) {
         val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
-        banner.innerHTML = """<span class="badge bad">Scan failed to start — check server connection.</span>"""
+        // FR-15.6 — the server's reason when it refused; "check server connection" only when it could not be reached at all.
+        banner.innerHTML = """<span class="badge bad">${resumed.reason?.esc() ?: "Scan failed to start — check server connection."}</span>"""
         return
     }
     onDashScanStarted(scope)
@@ -292,7 +294,7 @@ private fun renderDashDeferredBanner(scope: CoroutineScope, devices: List<String
     }
 }
 
-private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
+private fun setDashScanCancelled(processedCount: Int, canResume: Boolean, resumeReason: String?, scope: CoroutineScope) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     btn.disabled = false
     btn.textContent = "▶ New scan"
@@ -302,7 +304,8 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
     banner.innerHTML = """
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span class="badge warn">Scan paused — $processedCount item${if (processedCount != 1) "s" else ""} already processed</span>
-          <button id="resume-scan-btn" class="btn sm primary">↻ Continue scan</button>
+          ${if (canResume) """<button id="resume-scan-btn" class="btn sm primary">↻ Continue scan</button>"""
+            else """<button id="resume-scan-btn" class="btn sm primary" disabled title="${(resumeReason ?: "").esc()}">↻ Continue scan</button><span class="tiny muted">${(resumeReason ?: "").esc()}</span>"""}
           <button id="new-scan-btn" class="btn sm ghost">Start new scan</button>
         </div>""".trimIndent()
     document.getElementById("resume-scan-btn")?.addEventListener("click") {

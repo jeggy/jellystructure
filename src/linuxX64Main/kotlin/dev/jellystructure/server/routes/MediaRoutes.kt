@@ -10,6 +10,7 @@ import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
@@ -43,7 +44,9 @@ import dev.jellystructure.media.RunTarget
 import dev.jellystructure.media.effectivePipeline
 import dev.jellystructure.media.runPipeline
 import dev.jellystructure.media.Scanner
+import dev.jellystructure.media.RESUME_NO_RECORD
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.media.StartedRun
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -2149,17 +2152,20 @@ fun Route.mediaRoutes(
         call.respond(mapOf("status" to "ok"))
     }
 
+    // DEB-2470 (FR-15) — continues the stopped run AS IT WAS STARTED (library, parts, Re-check switch), over the titles it had not looked at.
+    // No record of how it started (cancelled before this shipped, or a restart since) is a 409 with the server's sentence, never a guessed full run.
     post("/scan/resume") {
         val currentStatus = scanTracker.status().status
-        if (currentStatus != "CANCELLED") {
-            call.respond(HttpStatusCode.Conflict, mapOf("error" to "no cancelled scan to resume (status=$currentStatus)"))
+        val refusal = scanTracker.resumeRefusal()
+        val started = scanTracker.startedRun
+        if (refusal != null || started == null) {
+            val error = if (currentStatus != "CANCELLED") "no cancelled scan to resume (status=$currentStatus)" else "no record of how the scan was started"
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to error, "reason" to (refusal ?: RESUME_NO_RECORD)))
             return@post
         }
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
-        // fullRun=true — finishing an interrupted run means the SAME scope it started with, not a fresh
-        // freshness computation; this trigger never had a freshness filter pre-Phase-175 either.
-        launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, full = true, resumeSkipIds = skipIds)
+        launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, resume = started, resumeSkipIds = skipIds)
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }
@@ -2382,6 +2388,53 @@ private suspend fun queueDirectPlayNow(queue: dev.jellystructure.media.MediaJobQ
     }.onFailure { Logger.warn("scan: could not queue the next repair: ${it.message}", "jobs") }
 }
 
+/** DEB-2470 (FR-15) — what [launchScanRun] decided before it launched anything: the steps, the record of how the run started, and its first log line. */
+internal class ScanRunPlan(val pipeline: List<PipelineStep>, val record: StartedRun, val startMsg: String, val full: Boolean, val libraryId: String?, val featuresOnly: Boolean, val queueDirectPlay: Boolean)
+
+/**
+ * DEB-2470 (FR-15.2) — pure: the plan for one run. With [resume] the run is the stopped one again: its library, its *Re-check everything*, its
+ * no-discovery rule and its steps, less any part turned off in Settings since — never a step it did not have, and no interval judged again.
+ */
+internal fun planScanRun(
+    jobId: String,
+    triggerKind: String,
+    cfgNow: AppConfig,
+    due: () -> Set<String>,
+    libraryId: String? = null,
+    full: Boolean = false,
+    skipSteps: Set<String> = emptySet(),
+    resumeSkipIds: Set<String> = emptySet(),
+    onlyFeatures: Set<String>? = null,
+    skipNames: List<String>? = null,
+    resume: StartedRun? = null,
+    queueDirectPlay: Boolean = false,
+): ScanRunPlan {
+    // FR-9.2 — the old `skipSteps` ids map to parts; an id that is not a part (a retired step, telling Jellyfin, junk) is ignored.
+    val skipParts = ProcessingFeatures.skippableParts(skipSteps)
+    val ignoredSkips = ProcessingFeatures.ignoredSkips(skipSteps)
+    val features = effectivePipeline(cfgNow)
+    val runLibrary = if (resume != null) resume.libraryId else libraryId
+    val runFull = resume?.full ?: full
+    val featuresOnly = resume?.featuresOnly ?: (onlyFeatures != null)
+    val pipeline = when {
+        resume != null -> features.filter { it.step in resume.steps }
+        onlyFeatures != null -> ProcessingSchedule.stepsOf(features, onlyFeatures)
+        // FR-3.3 — Music and Audiobooks run when their own interval says; a run someone started takes everything it was given.
+        else -> ProcessingSchedule.stepsForRun(features, triggerKind == "manual", due())
+    }.filter { it.step !in skipParts }
+    val runsPipeline = pipeline.any { it.step != "scan_files" }
+    val kindWord = if (featuresOnly) "feature run" else if (runsPipeline) "pipeline" else "scan"
+    val skippedNames = resume?.skippedNames ?: skipNames ?: skipParts.sorted().map { ProcessingFeatures.partName(it) ?: it }
+    val suffix = buildString {
+        if (runFull) append(" (full)")
+        if (resume != null || resumeSkipIds.isNotEmpty()) append(" (resumed)")
+        if (skippedNames.isNotEmpty()) append(" · skipped: ${skippedNames.joinToString(", ")}")
+        if (ignoredSkips.isNotEmpty()) append(" · ignored: ${ignoredSkips.sorted().joinToString(", ")}")
+    }
+    val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
+    return ScanRunPlan(pipeline, StartedRun(jobId, runLibrary, pipeline.map { it.step }, skippedNames, runFull, featuresOnly), startMsg, runFull, runLibrary, featuresOnly, queueDirectPlay && resume == null)   // FR-15.3 — a repair queued when the run began is not queued twice
+}
+
 internal fun launchScanRun(
     jobId: String,
     triggerKind: String,   // "manual" | "scheduled" | "startup"
@@ -2399,30 +2452,19 @@ internal fun launchScanRun(
     queueDirectPlay: Boolean = false,
     // DEB-1664 (FR-6.4) — the skipped parts by product name, when the caller already read them against the dialog's model; else read from [skipSteps].
     skipNames: List<String>? = null,
+    // DEB-2470 (FR-15) — the stopped run to run again; it overrides the library, Re-check switch, skips and parts, and never queues a repair twice.
+    resume: StartedRun? = null,
 ): List<PipelineStep> {
     val cfgNow = configStore.current
-    // FR-9.2 — the old `skipSteps` ids map to parts; an id that is not a part (a retired step, telling Jellyfin, junk) is ignored.
-    val skipParts = ProcessingFeatures.skippableParts(skipSteps)
-    val ignoredSkips = ProcessingFeatures.ignoredSkips(skipSteps)
-    val features = effectivePipeline(cfgNow)
-    val pipeline = when {
-        onlyFeatures != null -> ProcessingSchedule.stepsOf(features, onlyFeatures)
-        else -> {
-            // FR-3.3 — Music and Audiobooks run when their own interval says; a run someone started takes everything it was given.
-            val due = ProcessingSchedule.dueFeatures(cfgNow, nowEpochSec(), { pipelineDeps.processingRuns?.all()?.get(it) }, { null })
-            ProcessingSchedule.stepsForRun(features, triggerKind == "manual", due)
-        }
-    }.filter { it.step !in skipParts }
+    val plan = planScanRun(
+        jobId, triggerKind, cfgNow,
+        due = { ProcessingSchedule.dueFeatures(cfgNow, nowEpochSec(), { pipelineDeps.processingRuns?.all()?.get(it) }, { null }) },
+        libraryId, full, skipSteps, resumeSkipIds, onlyFeatures, skipNames, resume, queueDirectPlay,
+    )
+    val pipeline = plan.pipeline
     val runsPipeline = pipeline.any { it.step != "scan_files" }
-    val kindWord = if (onlyFeatures != null) "feature run" else if (runsPipeline) "pipeline" else "scan"
-    val suffix = buildString {
-        if (full) append(" (full)")
-        if (resumeSkipIds.isNotEmpty()) append(" (resumed)")
-        val skippedNames = skipNames ?: skipParts.sorted().map { ProcessingFeatures.partName(it) ?: it }
-        if (skippedNames.isNotEmpty()) append(" · skipped: ${skippedNames.joinToString(", ")}")
-        if (ignoredSkips.isNotEmpty()) append(" · ignored: ${ignoredSkips.sorted().joinToString(", ")}")
-    }
-    val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
+    val startMsg = plan.startMsg
+    scanTracker.recordStartedRun(plan.record)
     // Phase 178 §FR-178-2 originally restricted deferral to a "scheduled" trigger only; Phase 213
     // (FR-213-6) removed that restriction after the 2026-09-15 incident, where a manual full run at
     // 17:08:50 was never eligible to defer and ran prewarm_subtitles straight through 29 minutes of live
@@ -2438,11 +2480,11 @@ internal fun launchScanRun(
     val job = appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
         runTagged(
             jobId, triggerKind, if (runsPipeline) "pipeline" else "library",
-            if (runsPipeline) (if (full) "full" else "normal") else null,
+            if (runsPipeline) (if (plan.full) "full" else "normal") else null,
             startMsg, scanTracker,
         ) {
-            if (queueDirectPlay) queueDirectPlayNow(pipelineDeps.mediaJobQueue, scanTracker)
-            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible, byHand = triggerKind == "manual", discover = onlyFeatures == null)
+            if (plan.queueDirectPlay) queueDirectPlayNow(pipelineDeps.mediaJobQueue, scanTracker)
+            runPipeline(RunTarget.Library(plan.libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = plan.full, deferEligible = deferEligible, byHand = triggerKind == "manual", discover = !plan.featuresOnly)
         }
     }
     scanTracker.attachJob(job)
