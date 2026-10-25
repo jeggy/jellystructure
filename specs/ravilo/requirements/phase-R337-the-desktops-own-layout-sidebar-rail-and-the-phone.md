@@ -641,3 +641,28 @@ remain for now, because they read book time and chapters. Folding them into the 
 - **Films:** a film's player (FR-R337-9) still hides the sidebar, the rail and the bar.
 
 There is no design round. The bar is the shipped bar, and the page loses two rows; nothing new is drawn.
+
+## Amendment 2026-10-25 — the bar's doors open Playing on top of the page (DEB-2482)
+
+Turið, 2026-10-25, on DEB-2332 (v1.59, Linux and macOS): in **music mode**, the bar's lyrics button and ⌥⌘L / Ctrl+L
+do nothing on the Playing page, and neither does Back. In films mode with music playing, the same click leaves the
+page. Since R337 shipped, the bar's doors in music mode copied the phone's mini bar (*Tap → the Playing tab*,
+FR-R322-10) and replaced the whole stack with Playing. That left nothing below it for "leaves the page as Back does"
+(the DEB-2303 amendment) to return to.
+
+**FR-R337-6 is amended.** In the desktop family (600 dp and wider), in both modes:
+- **The bar's doors open Playing on top of the page they were used from.** The doors are the artwork, the lyrics
+  button, the title and artist when the track has no album (the DEB-2236 amendment), and ⌥⌘L / Ctrl+L. Back, Esc, the
+  lyrics button and ⌥⌘L / Ctrl+L on Playing then return to that page, where it was scrolled.
+- **Playing with nothing under it goes to Listen.** That is Playing opened from the sidebar's *Playing* row, or restored
+  as the only page. The lyrics button and ⌥⌘L / Ctrl+L then open **Listen**, the music mode's first
+  page (FR-R337-3). They are never a dead click. Back and Esc on that Playing do nothing, as on every other page the
+  sidebar opens.
+- **The sidebar's rows are unchanged.** *Playing*, like *Listen* and *Albums*, replaces the page and is the sidebar's
+  selected row. A Playing opened from the bar selects *Playing* in the sidebar too.
+
+**Unchanged:**
+- **Compact** (below 600 dp) is the phone family: the mini bar and the bottom bar open the Playing tab (FR-R322-10).
+- **An audiobook's** *Playing* door on its own page (R323).
+- **One remote, slice 3** (DEB-2225, `one-remote-for-every-playback.md` FR-4) does not make this moot. It changes what
+  the Playing page draws, not how the bar opens and leaves it.
