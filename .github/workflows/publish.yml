@@ -38,11 +38,13 @@ permissions:
   contents: write
   packages: write
 
-# Phase 231 — a newer push to main supersedes the pipeline of the one before it (each run is a full CI:
-# ~40 min of e2e). A release or a manual re-publish is NEVER cancelled: its group is its own tag.
+# Phase 231 — each run is a full CI (~2 h with the e2e and both image builds). DEB-2460/DEB-2435 — a run that has started
+# always finishes: a newer push no longer cancels it. GitHub keeps at most one pending run per group and a newer push replaces
+# the pending one, so the queue is one running run plus the newest SHA waiting. (Cancelling every run on each push meant no
+# run reached `publish` while several seats pushed docs every ~15 min.) A release or a manual re-publish has its own group.
 concurrency:
   group: publish-${{ github.event_name }}-${{ github.event.release.tag_name || inputs.version || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 jobs:
   version:

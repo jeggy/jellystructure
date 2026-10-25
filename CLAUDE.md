@@ -77,8 +77,8 @@ work, run `scripts/check-deanonymization.sh` and `scripts/check-phases.sh`; if b
 `git push origin main`. A push to `main` runs the full CI and publishes images tagged with the commit
 SHA only — it never moves `latest`, cuts a release or deploys anything, so it is not a release call,
 and it is how the constitution's "CI green" becomes something you can actually read. Never
-`--force`, never `--tags`, never another branch. A newer push cancels the CI run of the one before,
-so there is no point pushing more often than once a finished task. Tags and GitHub Releases are
+`--force`, never `--tags`, never another branch. A run that has started always finishes (DEB-2460): a newer push
+waits behind it as the one pending run, so there is no point pushing more often than once a finished task. Tags and GitHub Releases are
 Tróndur's.
 
 **`main` reaches GitHub from the shared checkout only, and a rejected push is merged, not left**
