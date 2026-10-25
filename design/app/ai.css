@@ -1,104 +1,339 @@
-/* AI page — Auto-fetch. Page-local, af- prefixed. */
-.af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;gap:12px;align-items:end}
-.af-form .field{margin:0}
-.af-echo{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft);margin-top:10px;min-height:22px}
-.af-echo b{color:var(--ink)}
-.af-echo .ph{width:34px;height:22px;border-radius:4px;background:var(--fill-3);flex:none}
+/* ============================================================================
+   ai.css — the admin's AI page, Auto-fetch: the New auto-fetcher card and its
+   investigation, the review and failure states, the fetcher list and its open
+   row, and the Not on TMDB yet queue.
+
+   HAND-AUTHORED. Round 2 (2026-10-14, `design/incoming/2026-10-14-admin-ai/`)
+   drew the page; round `auto-fetch-states` revision 2
+   (`design/incoming/2026-10-25-auto-fetch-states/auto-fetch-states.css`,
+   9a315dbc) drew the states it did not. Every rule here was written by hand
+   against those two rounds; this file is NOT a copy of either and must never be
+   overwritten with one. Everything it needs beyond this file — tokens, .card,
+   .box, .btn, .badge, .chip, .seg, .toggle, .select, .input, .field, .hint,
+   .dot, .row/.fill/.spacer/.tiny/.muted, .page-sub — is the shipped system in
+   wf.css / app.css, and nothing here redefines any of it.
+
+   SCOPE: every selector sits under `.afx`, which is this file's wrapper class
+   (see scripts/check-css-scoping.sh). index.html links every page's CSS
+   unconditionally and page CSS loads last, so a bare selector here would win
+   the cascade on every page for any shared component of the same name — and
+   this file deliberately styles several (.field > .seg, .badge, .acts, .dot,
+   .page-sub). A prefix is not a scope: `af-`/`tq-` keep the names apart, the
+   wrapper is what keeps the rules in.
+
+   `.afx` goes on the one host this file styles: the AI page's Fetchers tab
+   panel, `#ai-fetchers`. Everything below — the gate, the form, the steps, the
+   review, the failure, the fetcher table and its open row, the waiting items,
+   and the Not on TMDB yet queue — renders inside it. A host added later (a
+   dialog, a toast) is rendered at body level and is nobody's descendant, so it
+   carries `.afx` itself.
+
+   NOT promoted from the rounds, on purpose:
+     - The canvas: `.frame`, `.canvas-head`, `.cap`, `.shot`, `body.canvas`,
+       `body.ph` and `--blur: none`. Those dress a round's screenshot page.
+       `backdrop-filter` IS production CSS — wf.css gives every .card
+       `var(--blur)` — and the live admin keeps its glass.
+     - `main[data-state=…] [data-st]`: the mockup's state switcher. It is not
+       product and it is unscoped by nature, so it lives in ai.html's own
+       <style> block, which is the only page that has those two attributes.
+     - `@keyframes af-spin` and `.af-step.run .ic::after`, the spinning
+       Investigating marker. An infinite animation cannot ship. The still marker
+       that replaces it is round `auto-fetch-states`'s one fork and lands when
+       the owner has picked between `mark` and `rail` (Bárður, DEB-2484).
+     - `.badge.flat`. Two page stylesheets need it now, so it went into wf.css
+       as the shared neutral badge it is, rather than into a third page file.
+   ============================================================================ */
+
+.afx .af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;gap:12px;align-items:end}
+.afx .af-form .field{margin:0}
+.afx .af-echo{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft);margin-top:10px;min-height:22px}
+.afx .af-echo b{color:var(--ink)}
+.afx .af-echo .ph{width:34px;height:22px;border-radius:4px;background:var(--fill-3);flex:none}
 /* investigation steps */
-.af-steps{display:flex;flex-direction:column;margin-top:14px;border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden}
-.af-step{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:11px;align-items:center;padding:10px 13px;border-top:1px solid var(--line);font-size:.86rem;color:var(--ink-dim)}
-.af-step:first-child{border-top:0}
-.af-step .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;background:var(--fill-2);color:var(--ink-dim)}
-.af-step .fx{font-size:.74rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;margin-top:2px;display:none}
-.af-step.run{color:var(--ink)}
-.af-step.run .ic{background:var(--hi-soft);color:var(--acc-ink)}
-.af-step.run .ic::after{content:'';width:9px;height:9px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:af-spin .8s linear infinite}
-.af-step.done{color:var(--ink-soft)}
-.af-step.done .ic{background:var(--ok-soft);color:var(--ok)}
-.af-step.done .fx,.af-step.fail .fx{display:block;color:var(--ink-soft)}
-.af-step.done .t,.af-step.fail .t,.af-step.run .t{color:var(--ink-soft)}
-.af-step.fail{color:var(--ink);background:var(--bad-soft)}
-.af-step.fail .ic{background:var(--bad);color:#fff}
-.af-step .t{font-size:.72rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
-@keyframes af-spin{to{transform:rotate(360deg)}}
+.afx .af-steps{display:flex;flex-direction:column;margin-top:14px;border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden}
+.afx .af-step{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:11px;align-items:center;padding:10px 13px;border-top:1px solid var(--line);font-size:.86rem;color:var(--ink-dim)}
+.afx .af-step:first-child{border-top:0}
+.afx .af-step .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;background:var(--fill-2);color:var(--ink-dim)}
+.afx .af-step .fx{font-size:.74rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;margin-top:2px;display:none}
+.afx .af-step.run{color:var(--ink)}
+.afx .af-step.run .ic{background:var(--hi-soft);color:var(--acc-ink)}
+.afx .af-step.done{color:var(--ink-soft)}
+.afx .af-step.done .ic{background:var(--ok-soft);color:var(--ok)}
+.afx .af-step.done .fx,.afx .af-step.fail .fx{display:block;color:var(--ink-soft)}
+.afx .af-step.done .t,.afx .af-step.fail .t,.afx .af-step.run .t{color:var(--ink-soft)}
+.afx .af-step.fail{color:var(--ink);background:var(--bad-soft)}
+.afx .af-step.fail .ic{background:var(--bad);color:#fff}
+.afx .af-step .t{font-size:.72rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
 /* review */
-.af-review{margin-top:16px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px}
-.af-kv{display:grid;grid-template-columns:132px minmax(0,1fr);gap:8px 14px;font-size:.86rem}
-.af-kv .k{color:var(--ink-soft);font-size:.78rem;padding-top:2px}
-.af-kv .v b{font-weight:600}
-.af-map{width:100%;border-collapse:collapse;margin-top:10px;font-size:.82rem}
-.af-map th{text-align:left;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 10px 7px;border-bottom:1px solid var(--line)}
-.af-map td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-.af-map tr:last-child td{border-bottom:0}
-.af-map .mono{font-family:'JetBrains Mono',monospace;font-size:.8rem}
-.af-map .arr{color:var(--ink-dim);text-align:center;width:28px}
-.af-map .have{color:var(--ink-dim)}
-.af-map .have .mono{color:var(--ink-soft)}
-.field>.seg{align-self:flex-start}
-main[data-page="ai"] .page-sub{margin-top:16px}
-.af-conf{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--ok);color:var(--ok);background:var(--ok-soft)}
+.afx .af-review{margin-top:16px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px}
+.afx .af-kv{display:grid;grid-template-columns:132px minmax(0,1fr);gap:8px 14px;font-size:.86rem}
+.afx .af-kv .k{color:var(--ink-soft);font-size:.78rem;padding-top:2px}
+.afx .af-kv .v b{font-weight:600}
+.afx .af-map{width:100%;border-collapse:collapse;margin-top:10px;font-size:.82rem}
+.afx .af-map th{text-align:left;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 10px 7px;border-bottom:1px solid var(--line)}
+.afx .af-map td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.afx .af-map tr:last-child td{border-bottom:0}
+.afx .af-map .mono{font-family:'JetBrains Mono',monospace;font-size:.8rem}
+.afx .af-map .arr{color:var(--ink-dim);text-align:center;width:28px}
+.afx .af-map .have{color:var(--ink-dim)}
+.afx .af-map .have .mono{color:var(--ink-soft)}
+.afx .field>.seg{align-self:flex-start}
+.afx .page-sub{margin-top:16px}
+.afx .af-conf{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--ok);color:var(--ok);background:var(--ok-soft)}
 /* failure */
-.af-fail{margin-top:14px;padding:16px 18px;border-radius:var(--radius-s);border:1px solid rgba(255,111,97,.4);background:var(--bad-soft)}
-.af-fail h4{margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:1rem}
-.af-fail p{margin:0;font-size:.86rem;line-height:1.55;color:var(--ink-soft)}
-.af-fail .why{margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:.76rem;color:var(--ink);padding:8px 10px;border-radius:7px;background:var(--fill-2);border:1px solid var(--line)}
+.afx .af-fail{margin-top:14px;padding:16px 18px;border-radius:var(--radius-s);border:1px solid rgba(255,111,97,.4);background:var(--bad-soft)}
+.afx .af-fail h4{margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:1rem}
+.afx .af-fail p{margin:0;font-size:.86rem;line-height:1.55;color:var(--ink-soft)}
+.afx .af-fail .why{margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:.76rem;color:var(--ink);padding:8px 10px;border-radius:7px;background:var(--fill-2);border:1px solid var(--line)}
 /* fetcher list */
-.af-tbl{width:100%;border-collapse:collapse}
-.af-tbl th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 10px 9px;border-bottom:1px solid var(--line)}
-.af-tbl td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:.86rem}
-.af-tbl tr.af-row{cursor:pointer}
-.af-tbl tr.af-row:hover td{background:var(--fill-2)}
-.af-tbl tr.af-row.open td{border-bottom-color:transparent}
-.af-tbl .nm b{font-weight:600}
-.af-tbl .nm .src{font-size:.72rem;color:var(--ink-soft);margin-top:1px;font-family:'JetBrains Mono',monospace}
-.af-tbl .pat{font-family:'JetBrains Mono',monospace;font-size:.76rem;color:var(--ink-soft)}
-.af-tbl .last{display:flex;align-items:center;gap:7px}
-.af-tbl .last .when{font-size:.72rem;color:var(--ink-soft)}
-.af-tbl .acts{display:flex;gap:4px;justify-content:flex-end}
-.af-tbl tr.af-det td{padding:0 10px 14px;background:var(--fill-2)}
-.af-det-in{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding-top:4px}
-.af-script{font-family:'JetBrains Mono',monospace;font-size:.74rem;line-height:1.6;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;overflow:auto;max-height:260px;white-space:pre}
-.af-script .c{color:var(--ink-soft)}
-.af-script .k{color:var(--acc-ink)}
-.af-runs{display:flex;flex-direction:column}
-.af-run{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:9px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:.8rem}
-.af-run:last-child{border-bottom:0}
-.af-run .when{font-size:.72rem;color:var(--ink-soft);font-family:'JetBrains Mono',monospace}
-.af-h{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;margin:10px 0 6px}
-.af-h:first-child{margin-top:0}
-.af-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
-.af-cfg .field{margin:0}
-.af-empty{padding:40px 20px;text-align:center;color:var(--ink-soft);font-size:.9rem}
-.af-empty b{display:block;color:var(--ink);font-family:'Space Grotesk',sans-serif;font-size:1.05rem;margin-bottom:4px}
-.af-gate{max-width:560px;margin:60px auto;text-align:center}
-.af-gate .ico{width:48px;height:48px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:var(--hi-soft);color:var(--acc-ink);margin-bottom:14px}
-.af-gate .ico svg{width:26px;height:26px}
-main[data-state="list"] [data-st]:not([data-st~="list"]),main[data-state="run"] [data-st]:not([data-st~="run"]),main[data-state="review"] [data-st]:not([data-st~="review"]),main[data-state="fail"] [data-st]:not([data-st~="fail"]),main[data-state="tmdb"] [data-st]:not([data-st~="tmdb"]),main[data-state="nokey"] [data-st]:not([data-st~="nokey"]){display:none!important}
+.afx .af-tbl{width:100%;border-collapse:collapse}
+.afx .af-tbl th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 10px 9px;border-bottom:1px solid var(--line)}
+.afx .af-tbl td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:.86rem}
+.afx .af-tbl tr.af-row{cursor:pointer}
+.afx .af-tbl tr.af-row:hover td{background:var(--fill-2)}
+.afx .af-tbl tr.af-row.open td{border-bottom-color:transparent}
+.afx .af-tbl .nm b{font-weight:600}
+.afx .af-tbl .nm .src{font-size:.72rem;color:var(--ink-soft);margin-top:1px;font-family:'JetBrains Mono',monospace}
+.afx .af-tbl .pat{font-family:'JetBrains Mono',monospace;font-size:.76rem;color:var(--ink-soft)}
+.afx .af-tbl .last{display:flex;align-items:center;gap:7px}
+.afx .af-tbl .last .when{font-size:.72rem;color:var(--ink-soft)}
+.afx .af-tbl .acts{display:flex;gap:4px;justify-content:flex-end}
+.afx .af-tbl tr.af-det td{padding:0 10px 14px;background:var(--fill-2)}
+.afx .af-det-in{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding-top:4px}
+.afx .af-script{font-family:'JetBrains Mono',monospace;font-size:.74rem;line-height:1.6;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;overflow:auto;max-height:260px;white-space:pre}
+.afx .af-script .c{color:var(--ink-soft)}
+.afx .af-script .k{color:var(--acc-ink)}
+.afx .af-runs{display:flex;flex-direction:column}
+.afx .af-run{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:9px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:.8rem}
+.afx .af-run:last-child{border-bottom:0}
+.afx .af-run .when{font-size:.72rem;color:var(--ink-soft);font-family:'JetBrains Mono',monospace}
+/* a run that is waiting for the admin's number is neither good nor bad: wf.css's .dot has no
+   neutral, and its glow belongs to a live state. */
+.afx .af-run .dot.wait{background:var(--ink-soft);box-shadow:none}
+.afx .af-h{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;margin:10px 0 6px}
+.afx .af-h:first-child{margin-top:0}
+.afx .af-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
+.afx .af-cfg .field{margin:0}
+.afx .af-empty{padding:40px 20px;text-align:center;color:var(--ink-soft);font-size:.9rem}
+.afx .af-empty b{display:block;color:var(--ink);font-family:'Space Grotesk',sans-serif;font-size:1.05rem;margin-bottom:4px}
+.afx .af-gate{max-width:560px;margin:60px auto;text-align:center}
+.afx .af-gate .ico{width:48px;height:48px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:var(--hi-soft);color:var(--acc-ink);margin-bottom:14px}
+.afx .af-gate .ico svg{width:26px;height:26px}
 /* not-on-TMDB queue */
-.tq-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
-.tq-row:first-child{border-top:0}
-.tq-row:hover{background:var(--fill-2)}
-.tq-row .thumb{width:64px;height:36px;border-radius:5px;background:repeating-linear-gradient(135deg,var(--fill-3) 0 6px,var(--fill-2) 6px 12px);border:1px solid var(--line)}
-.tq-row .nm b{font-weight:600}
-.tq-row .nm .sub{font-size:.74rem;color:var(--ink-soft);margin-top:1px}
-.tq-row .nm .sub .mono{font-family:'JetBrains Mono',monospace}
-.tq-row .st{display:flex;align-items:center;gap:8px}
-.tq-row.open{background:var(--fill-2);border-radius:var(--radius-s) var(--radius-s) 0 0}
-.tq-det{background:var(--fill-2);border-radius:0 0 var(--radius-s) var(--radius-s);padding:4px 14px 16px;margin-bottom:6px}
-.tq-in{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
-.tq-field{margin-bottom:12px}
-.tq-field .lab{display:flex;align-items:center;gap:8px;font-size:.72rem;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
-.tq-field .lab .btn{margin-left:auto}
-.tq-field .val{font-size:.9rem;line-height:1.55;padding:9px 12px;border:1px solid var(--line-2);border-radius:var(--radius-s);background:var(--fill);color:var(--ink)}
-.tq-field .val.mono{font-family:'JetBrains Mono',monospace;font-size:.82rem}
-.tq-field .val.none{color:var(--ink-soft);border-style:dashed;background:transparent;font-style:italic}
-.tq-field .src{font-size:.72rem;color:var(--ink-soft);margin-top:4px}
-.tq-stills{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.tq-still{aspect-ratio:16/9;border-radius:7px;border:2px solid transparent;background:repeating-linear-gradient(135deg,var(--fill-3) 0 7px,var(--fill-2) 7px 14px);position:relative;cursor:pointer;display:flex;align-items:flex-end;padding:5px}
-.tq-still span{font-family:'JetBrains Mono',monospace;font-size:.66rem;color:var(--ink-soft);background:var(--bg);padding:1px 5px;border-radius:4px}
-.tq-still.on{border-color:var(--hi);box-shadow:0 0 0 3px var(--hi-soft)}
-.tq-still.on::after{content:'✓';position:absolute;top:5px;right:6px;width:18px;height:18px;border-radius:50%;background:var(--hi);color:#fff;font-size:.68rem;display:flex;align-items:center;justify-content:center}
-.tq-big{aspect-ratio:16/9;border-radius:9px;background:repeating-linear-gradient(135deg,var(--fill-3) 0 9px,var(--fill-2) 9px 18px);border:1px solid var(--line);margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--ink-soft)}
-.tq-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)}
-@media (max-width:1080px){.tq-in{grid-template-columns:1fr}}
-@media (max-width:1080px){.af-form{grid-template-columns:1fr}.af-review,.af-det-in{grid-template-columns:1fr}.af-tbl .hide-m{display:none}}
+.afx .tq-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.afx .tq-row:first-child{border-top:0}
+.afx .tq-row:hover{background:var(--fill-2)}
+.afx .tq-row .thumb{width:64px;height:36px;border-radius:5px;background:repeating-linear-gradient(135deg,var(--fill-3) 0 6px,var(--fill-2) 6px 12px);border:1px solid var(--line)}
+.afx .tq-row .nm b{font-weight:600}
+.afx .tq-row .nm .sub{font-size:.74rem;color:var(--ink-soft);margin-top:1px}
+.afx .tq-row .nm .sub .mono{font-family:'JetBrains Mono',monospace}
+.afx .tq-row .st{display:flex;align-items:center;gap:8px}
+.afx .tq-row.open{background:var(--fill-2);border-radius:var(--radius-s) var(--radius-s) 0 0}
+.afx .tq-det{background:var(--fill-2);border-radius:0 0 var(--radius-s) var(--radius-s);padding:4px 14px 16px;margin-bottom:6px}
+.afx .tq-in{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
+.afx .tq-field{margin-bottom:12px}
+.afx .tq-field .lab{display:flex;align-items:center;gap:8px;font-size:.72rem;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
+.afx .tq-field .lab .btn{margin-left:auto}
+.afx .tq-field .val{font-size:.9rem;line-height:1.55;padding:9px 12px;border:1px solid var(--line-2);border-radius:var(--radius-s);background:var(--fill);color:var(--ink)}
+.afx .tq-field .val.mono{font-family:'JetBrains Mono',monospace;font-size:.82rem}
+.afx .tq-field .val.none{color:var(--ink-soft);border-style:dashed;background:transparent;font-style:italic}
+.afx .tq-field .src{font-size:.72rem;color:var(--ink-soft);margin-top:4px}
+.afx .tq-stills{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.afx .tq-still{aspect-ratio:16/9;border-radius:7px;border:2px solid transparent;background:repeating-linear-gradient(135deg,var(--fill-3) 0 7px,var(--fill-2) 7px 14px);position:relative;cursor:pointer;display:flex;align-items:flex-end;padding:5px}
+.afx .tq-still span{font-family:'JetBrains Mono',monospace;font-size:.66rem;color:var(--ink-soft);background:var(--bg);padding:1px 5px;border-radius:4px}
+.afx .tq-still.on{border-color:var(--hi);box-shadow:0 0 0 3px var(--hi-soft)}
+.afx .tq-still.on::after{content:'✓';position:absolute;top:5px;right:6px;width:18px;height:18px;border-radius:50%;background:var(--hi);color:#fff;font-size:.68rem;display:flex;align-items:center;justify-content:center}
+.afx .tq-big{aspect-ratio:16/9;border-radius:9px;background:repeating-linear-gradient(135deg,var(--fill-3) 0 9px,var(--fill-2) 9px 18px);border:1px solid var(--line);margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--ink-soft)}
+.afx .tq-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)}
+
+/* ================================================= a control that cannot do anything new
+   Shown, disabled, with its reason — never hidden and never live-but-useless
+   (processing-runs-as-nine-features.md FR-11, carried into this spec by FR-1.2). The look is
+   wf.css's live button at half opacity with a dashed edge, so it does not read as a live button
+   that simply happens to be pale. `.af-dis`, not processing.css's `.dis`, because the two files
+   are promoted apart and neither owns a name in the other's scope. */
+.afx .af-dis{opacity:.5;border-style:dashed;pointer-events:none}
+.afx .toggle.af-dis{opacity:.55}
+.afx .af-why{font-size:.78rem;color:var(--ink-soft);line-height:1.45}
+.afx .af-why b{color:var(--ink);font-weight:600}
+
+/* ================================================= one status slot per row (FR-10.2)
+   A row says one thing about itself. The badge carries the state, the line under it carries where
+   and when — never the state twice. No new column: this replaces the Last run cell's content. */
+.afx .af-stat{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.afx .af-stat .when{font-size:.72rem;color:var(--ink-soft);line-height:1.4;max-width:54ch}
+.afx .af-stat .when .mono{font-family:'JetBrains Mono',monospace;font-size:.95em}
+.afx .af-tbl tr.af-stopped td{background:color-mix(in oklch,var(--bad) 6%,transparent)}
+.afx .af-tbl tr.af-stopped:hover td{background:color-mix(in oklch,var(--bad) 10%,transparent)}
+.afx .af-tbl td.q{white-space:nowrap}
+.afx .af-tbl .nm .src{white-space:nowrap}
+
+/* ================================================= Site stopped (FR-2.5, FR-10.2)
+   A band across the top of the open row, above the recipe and the run history, because what it
+   says is true of the SITE and therefore of every fetcher on it — not of this one recipe. */
+.afx .af-band{display:grid;grid-template-columns:22px minmax(0,1fr);gap:0 12px;padding:14px 16px;margin:8px 0 14px;border-radius:var(--radius-s);border:1px solid color-mix(in oklch,var(--bad) 42%,var(--line-2));background:var(--bad-soft)}
+.afx .af-band.hold{border-color:color-mix(in oklch,var(--info) 42%,var(--line-2));background:var(--info-soft)}
+/* Every child but the icon sits in the second column. Without this the icon's row span runs out
+   and the next child is placed in column 1, where it overflowed the frame's left edge — a defect
+   no fence can see and the round's first render showed at once. */
+.afx .af-band > :not(.bi){grid-column:2}
+.afx .af-band .bi{grid-row:1;grid-column:1;width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;background:var(--bad);color:#fff;margin-top:1px}
+.afx .af-band.hold .bi{background:var(--info);color:#06212e}
+.afx .af-band h4{margin:0 0 4px;font-family:'Space Grotesk',sans-serif;font-size:1rem;color:var(--ink)}
+.afx .af-band .rsn{font-size:.88rem;line-height:1.55;color:var(--ink);margin:0 0 2px}
+.afx .af-band .rsn .mono{font-family:'JetBrains Mono',monospace;font-size:.86em;padding:1px 5px;border-radius:5px;background:var(--fill-2);border:1px solid var(--line-2)}
+.afx .af-band .at{font-size:.76rem;color:var(--ink-soft);font-family:'JetBrains Mono',monospace}
+.afx .af-band .seal{font-size:.88rem;line-height:1.55;color:var(--ink);margin:9px 0 0;font-weight:600}
+/* `.af-acts`, not `.acts`: the band renders inside `.af-tbl tr.af-det td`, and this file's own
+   `.af-tbl .acts { justify-content: flex-end }` pushed Resume site into the middle of the band. */
+.afx .af-band .af-acts{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px}
+.afx .af-band .no-timer{font-size:.78rem;color:var(--ink-soft);margin-top:8px;line-height:1.45}
+/* the four causes in one block */
+.afx .af-causes{display:grid;grid-template-columns:150px minmax(0,1fr);gap:0;border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden;margin-top:10px}
+.afx .af-causes > div{padding:10px 13px;border-top:1px solid var(--line);font-size:.86rem;line-height:1.5}
+.afx .af-causes > div:nth-child(1),.afx .af-causes > div:nth-child(2){border-top:0}
+.afx .af-causes .ck{color:var(--ink-soft);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600;background:var(--fill-2)}
+.afx .af-causes .mono{font-family:'JetBrains Mono',monospace;font-size:.86em;padding:1px 5px;border-radius:5px;background:var(--fill-2);border:1px solid var(--line-2)}
+
+/* ================================================= n items waiting for a number (FR-4.3, FR-10.2) */
+.afx .af-wait{margin:8px 0 14px}
+.afx .af-wait > .lead{font-size:.88rem;line-height:1.55;color:var(--ink);margin:0 0 10px}
+.afx .af-wait > .lead b{font-weight:600}
+/* A block, not a grid: the round's first draft made Season a 1fr column and Episode 96 px, which
+   drew two fields of the same kind at wildly different widths. The controls are one flex row. */
+.afx .af-item{padding:13px 15px;border:1px solid var(--line-2);border-radius:var(--radius-s);background:var(--fill-2);margin-bottom:9px}
+.afx .af-item:last-child{margin-bottom:0}
+.afx .af-item .who{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:9px}
+.afx .af-item .who b{font-weight:600;font-size:.94rem}
+.afx .af-item .who .since{font-size:.74rem;color:var(--ink-soft);font-family:'JetBrains Mono',monospace}
+.afx .af-item .desc{font-size:.84rem;line-height:1.55;color:var(--ink-soft);padding:8px 11px;border-radius:8px;background:var(--fill);border:1px solid var(--line);margin:0}
+.afx .af-item .desc.none{border-style:dashed;background:transparent;font-style:italic}
+.afx .af-item .desc .src{display:block;font-style:normal;font-size:.72rem;color:var(--ink-soft);margin-top:4px}
+.afx .af-item .ctl{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-top:11px}
+.afx .af-item .field{margin:0;width:104px}
+.afx .af-item .input{width:100%}
+.afx .af-item .go{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.afx .af-item .wide{margin-top:9px}
+.afx .af-prop{margin-top:10px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;font-size:.86rem;padding:9px 11px;border-radius:8px;border:1px solid color-mix(in oklch,var(--hi) 40%,var(--line-2));background:var(--hi-soft)}
+.afx .af-prop .se{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink)}
+.afx .af-prop .why{color:var(--acc-ink);font-size:.78rem}
+.afx .af-prop .lbl{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--ink-soft)}
+
+/* ================================================= the proof line on the review state (FR-10.1) */
+.afx .af-proof{display:inline-flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.afx .af-proof .mk{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--ok);color:var(--ok);background:var(--ok-soft)}
+.afx .af-proof.unproven .mk{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
+.afx .af-proof .says{font-size:.86rem;color:var(--ink)}
+.afx .af-proof .means{display:block;font-size:.8rem;color:var(--ink-soft);line-height:1.5;margin-top:3px}
+/* the disagreeing rows, under the failure's reason (FR-10.1) */
+.afx .af-against{margin-top:12px}
+.afx .af-against .h{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:var(--ink-soft);margin-bottom:6px}
+.afx .af-against table{width:100%;border-collapse:collapse;font-size:.82rem}
+.afx .af-against th{text-align:left;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 10px 6px;border-bottom:1px solid var(--line-2)}
+.afx .af-against td{padding:8px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+.afx .af-against tr:last-child td{border-bottom:0}
+.afx .af-against .mono{font-family:'JetBrains Mono',monospace;font-size:.95em}
+.afx .af-against .off{color:var(--bad);font-weight:600}
+
+/* ================================================= accept ticks on a mapped review (FR-4.3) */
+.afx .af-map th.tk,.afx .af-map td.tk{width:30px;padding-right:0}
+.afx .af-tick{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line-2);background:var(--fill);display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;color:transparent}
+.afx .af-tick.on{border-color:var(--hi);background:var(--hi);color:#fff}
+.afx .af-map tr.keep td{background:var(--hi-soft)}
+.afx .af-map .why{font-size:.76rem;color:var(--ink-soft)}
+.afx .af-map thead .tkall{font-size:.66rem}
+.afx .af-mapfoot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.afx .af-mapfoot .kept{font-size:.84rem;color:var(--ink)}
+.afx .af-mapfoot .kept b{font-weight:600}
+
+/* ================================================= light-theme twins
+   --ok / --warn / --bad / --info are not re-tinted per theme; wf.css overrides the text colour at
+   each use site instead, and so does processing.css. Every rule above that uses one as a TEXT
+   colour needs its twin here or it fails contrast on the light theme's white fills. The theme
+   attribute sits on <html>, ahead of the wrapper, so these lead with it and still carry `.afx`
+   (scripts/check-css-scoping.sh's allowance requires the wrapper). */
+[data-theme="light"] .afx .af-proof .mk{color:#128a5f}
+[data-theme="light"] .afx .af-proof.unproven .mk{color:#9a6a06}
+[data-theme="light"] .afx .af-against .off{color:#c23b2d}
+[data-theme="light"] .afx .af-band.hold .bi{color:#fff}
+[data-theme="light"] .afx .af-prop .why{color:#6240cf}
+[data-theme="light"] .afx .af-run .dot.wait{background:#5d6378}
+
+/* ================================================= the narrow faces */
+@media (max-width:1080px){.afx .tq-in{grid-template-columns:1fr}}
+@media (max-width:1080px){.afx .af-form{grid-template-columns:1fr}.afx .af-review,.afx .af-det-in{grid-template-columns:1fr}.afx .af-tbl .hide-m{display:none}}
+
+/* At the house breakpoint the fetchers table becomes a card per fetcher. Round 9's review found
+   the alternative at exactly this width: a five-column row holds its columns at phone width and
+   turns every label into a column one word wide. Not a table squeezed sideways. */
+@media (max-width:640px){
+  .afx .af-tbl thead{display:none}
+  .afx .af-tbl,.afx .af-tbl tbody,.afx .af-tbl tr,.afx .af-tbl td{display:block;width:auto}
+  .afx .af-tbl tr.af-row{border:1px solid var(--line-2);border-radius:var(--radius-s);background:var(--fill-2);padding:12px 13px;margin-bottom:9px;position:relative}
+  .afx .af-tbl tr.af-row.open{margin-bottom:0;border-radius:var(--radius-s) var(--radius-s) 0 0}
+  .afx .af-tbl tr.af-row td{border-bottom:0;padding:0}
+  .afx .af-tbl tr.af-row td.nm{padding-right:56px;margin-bottom:8px}
+  .afx .af-tbl tr.af-row td.sched::before{content:'Checks ';color:var(--ink-soft);font-size:.78rem}
+  .afx .af-tbl tr.af-row td.sched{font-size:.82rem;color:var(--ink);margin-bottom:7px}
+  .afx .af-tbl tr.af-row td.st{margin-bottom:10px}
+  .afx .af-tbl tr.af-row td.tg{position:absolute;top:12px;right:13px}
+  .afx .af-tbl tr.af-row td.acts-cell .acts{justify-content:flex-start}
+  .afx .af-tbl tr.af-det{display:block}
+  .afx .af-tbl tr.af-det td{padding:0;background:transparent}
+  /* The band and the detail share one card below the row they belong to, so neither sits outside
+     the card's own padding the way the round's first 412 render showed. */
+  .afx .af-tbl tr.af-det .af-open{border:1px solid var(--line-2);border-top:0;border-radius:0 0 var(--radius-s) var(--radius-s);background:var(--fill-2);padding:12px 13px 14px;margin-bottom:9px}
+  .afx .af-tbl tr.af-det .af-det-in{padding:0}
+  /* the tint belongs to the row, not to each cell: per-cell it drew as stripes once the cells
+     became blocks */
+  .afx .af-tbl tr.af-row.af-stopped{background:color-mix(in oklch,var(--bad) 7%,var(--fill-2))}
+  .afx .af-tbl tr.af-row.af-stopped td{background:transparent}
+  .afx .af-tbl tr.af-row .acts{align-items:flex-start}
+  .afx .af-tbl tr.af-row .acts .btn{flex:none}
+  .afx .af-item .field{width:calc(50% - 5px)}
+  .afx .af-item .go{width:100%}
+  .afx .af-tbl .nm .src{white-space:normal;overflow-wrap:anywhere}
+  .afx .af-causes{grid-template-columns:1fr}
+  .afx .af-causes .ck{border-top:1px solid var(--line)}
+  .afx .af-causes > div:nth-child(2){border-top:0}
+  .afx .af-causes > div:nth-child(1){border-top:1px solid var(--line)}
+  .afx .af-causes > div:first-child{border-top:0}
+  .afx .af-against table,.afx .af-against thead,.afx .af-against tbody,.afx .af-against tr,.afx .af-against th,.afx .af-against td{display:block}
+  .afx .af-against thead{display:none}
+  .afx .af-against tr{border-bottom:1px solid var(--line-2);padding:8px 0}
+  .afx .af-against td{padding:1px 0}
+  .afx .af-against td:nth-of-type(1){font-weight:600;color:var(--ink)}
+  .afx .af-against td:nth-of-type(2)::before{content:'mapped to ';color:var(--ink-soft);font-family:'Sora',sans-serif}
+  .afx .af-against td:nth-of-type(3)::before{content:'TMDB has there · ';color:var(--ink-soft);font-family:'Sora',sans-serif}
+  .afx .af-against td:nth-of-type(4)::before{content:'apart by ';color:var(--ink-soft);font-weight:400}
+  .afx .af-fail .why{overflow-wrap:anywhere}
+  /* The mapping table becomes a row per mapping — six columns at 412 turn "matched by description"
+     into a column one word wide. The tick stays on the left where the thumb is. */
+  .afx .af-map,.afx .af-map tbody,.afx .af-map tr,.afx .af-map td{display:block;width:auto}
+  .afx .af-map thead{display:none}
+  .afx .af-map tr{position:relative;padding:10px 0 10px 30px;border-bottom:1px solid var(--line)}
+  .afx .af-map tr:last-child{border-bottom:0}
+  .afx .af-map tr.keep{background:var(--hi-soft);border-radius:8px;padding-right:8px}
+  .afx .af-map td{padding:1px 0;border-bottom:0}
+  .afx .af-map td.tk{position:absolute;left:0;top:11px;width:auto}
+  .afx .af-map td.arr{display:none}
+  .afx .af-map td.item{font-weight:600;color:var(--ink)}
+  .afx .af-map tr.keep td{background:transparent}
+  .afx .af-map td.se,.afx .af-map td.tmdb{display:inline-block;vertical-align:baseline}
+  .afx .af-map td.se::before{content:'→ ';color:var(--ink-dim)}
+  .afx .af-map td.tmdb{margin-left:.4em}
+  .afx .af-map td.tmdb::before{content:'· TMDB ';color:var(--ink-soft)}
+  .afx .af-map td.why{font-size:.74rem}
+  .afx .af-map td.lib{display:block;margin-top:4px}
+  .afx .af-map tr.have td.item{color:var(--ink-dim)}
+  .afx .af-mapfoot .af-why{flex-basis:100%}
+  /* the key/value block stacks: a 132 px label column against a 250 px value column is two narrow
+     columns, not a table */
+  .afx .af-kv{grid-template-columns:minmax(0,1fr);gap:0}
+  .afx .af-kv .k{text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;font-weight:700;padding-top:11px}
+  .afx .af-kv .v{margin-bottom:2px}
+  /* the recipe pane must not widen the page: `white-space: pre` in a 1fr grid child has no
+     min-width of its own, so it pushed Save and Last runs off the right edge */
+  .afx .af-det-in > *{min-width:0}
+  .afx .af-script{max-width:100%}
+}

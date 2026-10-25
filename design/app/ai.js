@@ -56,9 +56,9 @@
   const F = [
     { id: 'royndin', name: 'Royndin', src: 'varpid.example.fo/sendingar/royndin', tmdb: 9000001, pat: 'S{year}E{partur|(n:m)}', sched: 'Daily · 04:00', last: { ok: true, text: 'no new episodes', when: '04:00 today' }, q: '1080p HLS', on: true, have: 13,
       runs: [['new', '+1 · S2026E01 (1080p, 1.9 GB) · not on TMDB → queued', 'today 04:00'], ['ok', 'no new episodes', 'yesterday 04:00'], ['new', '+1 · S2025E03 (1080p, 1.8 GB)', 'Oct 12 04:00'], ['ok', 'no new episodes', 'Oct 11 04:00']] },
-    { id: 'nordvest', name: 'Nordvest', src: 'play.example.dk/serier/nordvest', tmdb: 118802, pat: 'S{nn}E{nn}', sched: 'Every 6 h', last: { ok: true, text: '+2 episodes', when: '3h ago' }, q: '1080p DASH', on: true, have: 18,
+    { id: 'nordvest', name: 'Nordvest', src: 'play.example.dk/serier/nordvest', tmdb: 9000002, pat: 'S{nn}E{nn}', sched: 'Every 6 h', last: { ok: true, text: '+2 episodes', when: '3h ago' }, q: '1080p DASH', on: true, have: 18,
       runs: [['new', '+2 · S02E07, S02E08', '3h ago'], ['ok', 'no new episodes', '9h ago'], ['ok', 'no new episodes', '15h ago']] },
-    { id: 'babel', name: 'Babel Fish', src: 'watch.example.tv/babel-fish/episodes', tmdb: 77410, pat: 'S{nn}E{nn}', sched: 'Weekly · Mon', last: { ok: false, text: 'page changed · 0 videos found', when: 'Mon 04:00' }, q: '720p MP4', on: true, have: 22,
+    { id: 'babel', name: 'Babel Fish', src: 'watch.example.tv/babel-fish/episodes', tmdb: 9000003, pat: 'S{nn}E{nn}', sched: 'Weekly · Mon', last: { ok: false, text: 'page changed · 0 videos found', when: 'Mon 04:00' }, q: '720p MP4', on: true, have: 22,
       runs: [['bad', 'page layout changed — manifest URL not found · re-investigate?', 'Mon 04:00'], ['ok', 'no new episodes', 'Oct 6'], ['ok', 'no new episodes', 'Sep 29']] },
   ];
   const script = (f) => [
@@ -78,18 +78,18 @@
       '<tr class="af-row" data-id="' + f.id + '">' +
         '<td class="nm"><b>' + f.name + '</b><div class="src">' + f.src + '</div></td>' +
         '<td class="pat hide-m">' + f.pat + '</td>' +
-        '<td>' + f.sched + '</td>' +
-        '<td><div class="last"><span class="dot ' + (f.last.ok ? 'ok' : 'bad') + '"></span><span>' + f.last.text + '</span></div><div class="last when">' + f.last.when + '</div></td>' +
-        '<td class="hide-m tiny muted">' + f.q + '</td>' +
-        '<td><span class="toggle ' + (f.on ? 'on' : '') + '" data-tg="' + f.id + '" title="Enabled"></span></td>' +
-        '<td><div class="acts"><span class="btn sm ghost" data-run="' + f.id + '">▶ Run now</span></div></td>' +
+        '<td class="sched">' + f.sched + '</td>' +
+        '<td class="st"><div class="last"><span class="dot ' + (f.last.ok ? 'ok' : 'bad') + '"></span><span>' + f.last.text + '</span></div><div class="last when">' + f.last.when + '</div></td>' +
+        '<td class="q hide-m tiny muted">' + f.q + '</td>' +
+        '<td class="tg"><span class="toggle ' + (f.on ? 'on' : '') + '" data-tg="' + f.id + '" title="Enabled"></span></td>' +
+        '<td class="acts-cell"><div class="acts"><span class="btn sm ghost" data-run="' + f.id + '">▶ Run now</span></div></td>' +
       '</tr>' +
-      '<tr class="af-det" data-for="' + f.id + '" style="display:none"><td colspan="7"><div class="af-det-in">' +
+      '<tr class="af-det" data-for="' + f.id + '" style="display:none"><td colspan="7"><div class="af-open"><div class="af-det-in">' +
         '<div><div class="af-h">Script</div><pre class="af-script">' + script(f) + '</pre>' +
           '<div class="af-cfg"><div class="field"><label>Name</label><input class="input" value="' + f.name + '" style="width:180px"></div><div class="field"><label>Check</label><span class="select" style="width:160px"><span>' + f.sched + '</span></span></div><span class="btn sm">Save</span><span class="spacer"></span><span class="btn sm ghost" data-reinv="' + f.id + '">↻ Re-investigate page</span><span class="btn sm ghost" style="color:var(--bad)" data-del="' + f.id + '">Delete</span></div></div>' +
         '<div><div class="af-h">Last runs</div><div class="af-runs">' + f.runs.map(r => '<div class="af-run"><span class="dot ' + (r[0] === 'bad' ? 'bad' : r[0] === 'new' ? 'on' : 'ok') + '"></span><span>' + r[1] + '</span><span class="when">' + r[2] + '</span></div>').join('') + '</div>' +
           '<div class="tiny muted" style="margin-top:10px;line-height:1.55">' + f.have + ' episodes in the library from this fetcher · TMDB <a href="series.html">' + f.tmdb + '</a> · full log in <a href="activity.html">Activity</a></div></div>' +
-      '</div></td></tr>'
+      '</div></div></td></tr>'
     ).join('');
   }
   render();

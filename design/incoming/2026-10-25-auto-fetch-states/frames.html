@@ -5,9 +5,12 @@
 <title>Auto-fetch’s missing states — frames</title>
 <!-- The production admin system, linked rather than copied: wf.css carries the tokens, the
      components and the three self-hosted woff2 (its @font-face URLs resolve next to the CSS file,
-     so the fonts come from design/app/fonts/ with no copy and no network reference). ai.css is
-     round 2's own page CSS, unchanged by this round; dashboard.css is linked for the one Dashboard
-     frame. Nothing here is copied and nothing here is promoted. -->
+     so the fonts come from design/app/fonts/ with no copy and no network reference).
+     dashboard.css is linked for the one Dashboard frame.
+     Since the promotion of 2026-10-25 (DEB-2484) ai.css is this round's components too, by hand and
+     under its `.afx` wrapper — so every frame's content is wrapped in `.afx` below and these
+     pictures render from the production file. auto-fetch-states.css keeps only the canvas, the
+     frames' own labels and the still-marker fork, which waits for the owner's pick. -->
 <link rel="stylesheet" href="../../app/wf.css">
 <link rel="stylesheet" href="../../app/app.css">
 <link rel="stylesheet" href="../../app/dashboard.css">
@@ -224,7 +227,7 @@
 
   document.getElementById('frames').innerHTML = FRAMES.map(([id, title, note, build]) => `
   <div class="cap"><h2>${title}</h2><div class="mono-id">${id}.png</div><p>${note}</p></div>
-  <div class="shot"><div class="frame ${w}" id="${id}"${theme === 'light' ? ' data-theme="light"' : ''}>${build()}</div></div>`).join('');
+  <div class="shot"><div class="frame ${w}" id="${id}"${theme === 'light' ? ' data-theme="light"' : ''}><div class="afx">${build()}</div></div></div>`).join('');
 })();
 </script>
 </body>

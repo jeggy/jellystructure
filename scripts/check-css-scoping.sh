@@ -35,6 +35,16 @@ declare -A SCOPED_FILES=(
   # Processing, the Activity view, the title page's Refresh ▾ / Checks region, and the Scan dialog's
   # own scrim (a dialog renders at body level, so it is nobody's descendant).
   ["design/app/processing.css"]=".pfx"
+  # The AI page's Auto-fetch surfaces (round 2 `admin-ai` plus round `auto-fetch-states` rev 2,
+  # promoted 2026-10-25 — DEB-2484, for the spec
+  # auto-fetch-turns-a-series-page-into-a-paced-scheduled-download.md, FR-14.3). Its classes are
+  # `.af-*`/`.tq-*`, which is a prefix and not a scope: the file also styles five names the shared
+  # system owns — `.field > .seg` (wf.css's segmented control inside a field), `.acts`, `.dot`
+  # (the run-history dot), `.page-sub` (app.css's page lede) and `.badge` — and page CSS loads
+  # last, so any of those unscoped would win the cascade on every page. Two of them were bare in
+  # the mockup file and are the reason this row exists. One host: the Fetchers tab panel,
+  # `#ai-fetchers`.
+  ["design/app/ai.css"]=".afx"
 )
 
 # Selectors allowed to stay outside the scope for this file, with the reason inline in the file
@@ -48,6 +58,10 @@ declare -A ALLOWED_UNSCOPED=(
   # of the wrapper. These selectors STILL carry `.pfx`; the allowance below requires it, so it
   # cannot be used to let a bare selector through.
   ["design/app/processing.css"]="\[data-theme=\"light\"\] \.pfx"
+  # Same reason as processing.css's row above, and the same shape: the theme attribute sits on
+  # <html>, ahead of the wrapper. These selectors STILL carry `.afx`, which this allowance
+  # requires, so it cannot be used to let a bare selector through.
+  ["design/app/ai.css"]="\[data-theme=\"light\"\] \.afx"
 )
 
 fail=0

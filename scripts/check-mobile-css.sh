@@ -401,6 +401,105 @@ if printf '%s' "$PROCCODE" | grep -qE "https?:"; then
   fail=1
 fi
 
+# ---- ai.css --------------------------------------------------------------------------------------
+# The AI page's Auto-fetch surfaces. Round 2 (`admin-ai`) drew the page; round `auto-fetch-states`
+# revision 2 drew the states it did not, and the promotion of 2026-10-25 (DEB-2484, FR-14.3) turned
+# the mockup file into the production one by hand. Every rule below is hand-authored: eleven of them
+# are fixes found only by opening a render, which no fence can see for itself.
+AICSS="design/app/ai.css"
+check "$AICSS" "Auto-fetch is scoped under .afx, not under the bare .af-/.tq- prefixes" \
+  ".afx .af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;"
+check "$AICSS" "a control that cannot do anything new is shown and disabled (.af-dis)" \
+  ".afx .af-dis{opacity:.5;border-style:dashed;pointer-events:none}"
+check "$AICSS" "…and the one switch that cannot be flipped reads as disabled too (.toggle.af-dis)" \
+  ".afx .toggle.af-dis{opacity:.55}"
+check "$AICSS" "one status slot per row: the badge says the state, the line under it where and when" \
+  ".afx .af-stat{display:flex;flex-direction:column;gap:3px;align-items:flex-start}"
+check "$AICSS" "the stopped row's tint, on the row and not on the Last run cell" \
+  ".afx .af-tbl tr.af-stopped td{background:color-mix(in oklch,var(--bad) 6%,transparent)}"
+# Found by opening the first render: the icon's row span ran out and the band's next child was
+# placed in column 1, where Resume site drew half off the frame's left edge.
+check "$AICSS" "every child of the Site stopped band but its icon sits in column 2" \
+  ".afx .af-band > :not(.bi){grid-column:2}"
+check "$AICSS" "the band's actions are .af-acts, so this file's own .af-tbl .acts cannot centre them" \
+  ".afx .af-band .af-acts{display:flex;"
+check "$AICSS" "the stop is never retried, so the band carries a no-timer line instead of a countdown" \
+  ".afx .af-band .no-timer{"
+check "$AICSS" "the four stop causes in one block (.af-causes)" \
+  ".afx .af-causes{display:grid;grid-template-columns:150px minmax(0,1fr);"
+check "$AICSS" "a waiting item's two number fields are one flex row, not a 1fr column and a 96 px one" \
+  ".afx .af-item .ctl{display:flex;align-items:flex-end;"
+check "$AICSS" "the proposed number reads as a proposal, not as a stored value (.af-prop)" \
+  ".afx .af-prop{margin-top:10px;"
+check "$AICSS" "the proof chip on the review state (.af-proof .mk)" \
+  ".afx .af-proof .mk{display:inline-flex;"
+check "$AICSS" "…and what an agreement is, said in the line under it (.af-proof .means)" \
+  ".afx .af-proof .means{display:block;"
+check "$AICSS" "the disagreeing rows under a failed proof (.af-against .off)" \
+  ".afx .af-against .off{color:var(--bad);font-weight:600}"
+check "$AICSS" "accept ticks on a mapped review (.af-tick.on)" \
+  ".afx .af-tick.on{border-color:var(--hi);background:var(--hi);color:#fff}"
+check "$AICSS" "a run waiting for the admin's number is a neutral dot, not wf.css's glowing one" \
+  ".afx .af-run .dot.wait{background:var(--ink-soft);box-shadow:none}"
+# The light-theme twins. --ok/--warn/--bad/--info are not re-tinted per theme, so each of these is
+# the difference between the shipped colour and a pale mint or amber on white.
+check "$AICSS" "light theme: the proven chip" \
+  '[data-theme="light"] .afx .af-proof .mk{color:#128a5f}'
+check "$AICSS" "light theme: the not-proven chip" \
+  '[data-theme="light"] .afx .af-proof.unproven .mk{color:#9a6a06}'
+check "$AICSS" "light theme: a disagreeing row's distance" \
+  '[data-theme="light"] .afx .af-against .off{color:#c23b2d}'
+check "$AICSS" "light theme: the resuming band's icon glyph stays white on the info fill" \
+  '[data-theme="light"] .afx .af-band.hold .bi{color:#fff}'
+check "$AICSS" "light theme: the proposal's reason" \
+  '[data-theme="light"] .afx .af-prop .why{color:#6240cf}'
+check "$AICSS" "light theme: the waiting run's neutral dot" \
+  '[data-theme="light"] .afx .af-run .dot.wait{background:#5d6378}'
+# The narrow faces, at the house breakpoint. Every one of these was found by rendering at 412 px.
+check "$AICSS" "the narrow block is at the house breakpoint" "@media (max-width:640px){"
+check "$AICSS" "the fetchers table becomes a card per fetcher instead of keeping five columns" \
+  ".afx .af-tbl tr.af-row{border:1px solid var(--line-2);border-radius:var(--radius-s);background:var(--fill-2);padding:12px 13px;"
+check "$AICSS" "the band and the detail share one card, so neither sits outside its padding (.af-open)" \
+  ".afx .af-tbl tr.af-det .af-open{"
+check "$AICSS" "the stopped tint is the row's, not each cell's — per cell it drew as stripes" \
+  ".afx .af-tbl tr.af-row.af-stopped td{background:transparent}"
+check "$AICSS" "the mapping table becomes a row per mapping instead of keeping six columns" \
+  ".afx .af-map tr{position:relative;padding:10px 0 10px 30px;"
+check "$AICSS" "…and the kept-row tint there is the row's too" \
+  ".afx .af-map tr.keep td{background:transparent}"
+check "$AICSS" "the key/value block stacks rather than holding two narrow columns" \
+  ".afx .af-kv{grid-template-columns:minmax(0,1fr);gap:0}"
+check "$AICSS" "the read-only recipe cannot widen the page (white-space: pre has no own min-width)" \
+  ".afx .af-det-in > *{min-width:0}"
+# wf.css's share of the same promotion.
+check "$WF" "the settled-neutral badge, needed by two page stylesheets (.badge.flat)" \
+  ".badge.flat{ background: var(--fill-3); border-color: var(--line-2); color: var(--ink-soft); }"
+# Three things that must never come back into ai.css, each one a decision rather than a tidy-up.
+AICODE=$(perl -0777 -pe 's{/\*.*?\*/}{}gs' "$AICSS")
+if printf '%s' "$AICODE" | grep -qF "af-spin"; then
+  echo "REVERTED     the spinning Investigating marker is back in $AICSS"
+  echo "             (an infinite animation cannot ship — it breaks the screenshot render and it is"
+  echo "              motion nobody asked for; the still marker replaces it, round auto-fetch-states)"
+  fail=1
+fi
+if printf '%s' "$AICODE" | grep -qF "main[data-state="; then
+  echo "REVERTED     the mockup's state switcher is back in $AICSS"
+  echo "             (it is ai.html's own preview toggle, unscoped by nature and not product; it"
+  echo "              lives in that page's <style> block)"
+  fail=1
+fi
+if printf '%s' "$AICODE" | grep -qF -- "--blur: none"; then
+  echo "REVERTED     $AICSS carries --blur: none"
+  echo "             (that is a round's CANVAS substitution for the screenshot tool; the live admin"
+  echo "              keeps the glass wf.css gives every .card)"
+  fail=1
+fi
+if printf '%s' "$AICODE" | grep -qE "https?:"; then
+  echo "REVERTED     $AICSS carries a network reference"
+  echo "             (a served stylesheet never gains one — hosted fonts are a mockup thing only)"
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else

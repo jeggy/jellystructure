@@ -11,6 +11,10 @@
 <link rel="stylesheet" href="support.css">
 <link rel="stylesheet" href="suggestions.css">
 <style>a{color:var(--hi)}a:hover{color:var(--acc-ink)}#ai-suggestions .btn[aria-disabled="true"]{opacity:.45;pointer-events:none}
+/* The preview state switcher. It lived in ai.css until that file was promoted into production
+   (2026-10-25); it is the mockup's own `data-state` toggle and not product, and `main[data-state]`
+   is unscoped by nature, so it belongs to the only page that has those two attributes. */
+main[data-state="list"] [data-st]:not([data-st~="list"]),main[data-state="run"] [data-st]:not([data-st~="run"]),main[data-state="review"] [data-st]:not([data-st~="review"]),main[data-state="fail"] [data-st]:not([data-st~="fail"]),main[data-state="tmdb"] [data-st]:not([data-st~="tmdb"]),main[data-state="nokey"] [data-st]:not([data-st~="nokey"]){display:none!important}
 .ai-offl{display:none;align-items:flex-start;gap:10px;padding:10px 13px;border-radius:10px;background:var(--fill-3);border:1px solid var(--line-2);font-size:.8rem;line-height:1.5;margin:6px 0 14px}.ai-offl .dot{margin-top:6px;box-shadow:none}
 main.ws-lost .ai-offl{display:flex}main.ws-lost #ai-suggestions :is([data-dl],[data-no],#sg-rebuild){opacity:.45;pointer-events:none}</style>
 </head>
@@ -30,7 +34,9 @@ main.ws-lost .ai-offl{display:flex}main.ws-lost #ai-suggestions :is([data-dl],[d
   <div class="ai-offl" id="ai-offl"><span class="dot"></span><span><b>Connection to this server lost · reconnecting.</b> What you see is what it last sent. Nothing is sent until it’s back — Download, No thanks and Rebuild wait.</span></div>
   <div class="tk-tabs" id="ai-tabs"><span class="on" data-tab="support">Support <em class="tk-cnt">2</em></span><span data-tab="fetchers">Fetchers</span><span data-tab="suggestions">Suggestions</span></div>
   <div id="ai-support"></div>
-  <div id="ai-fetchers">
+  <!-- ai.css's wrapper class (scripts/check-css-scoping.sh). Every rule in that file sits under
+       `.afx`, so the Fetchers panel carries it; a host added later carries it itself. -->
+  <div id="ai-fetchers" class="afx">
   <div class="ov-fence"><span class="fl">Preview · mockup only</span>
     <span class="seg" id="af-state"><span class="on" data-s="list">Fetchers</span><span data-s="run">Investigating</span><span data-s="review">Found · review</span><span data-s="fail">Not a series</span><span data-s="tmdb">Not on TMDB yet</span><span data-s="nokey">No AI key</span></span>
     <span class="tiny muted">“No AI key” also removes the AI entry from the sidebar — the page is absent, not greyed.</span>

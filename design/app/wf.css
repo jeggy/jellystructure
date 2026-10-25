@@ -350,6 +350,13 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .badge.ok  { background: var(--ok-soft);  border-color: rgba(45,212,154,.4); color: var(--ok); }
 .badge.warn{ background: var(--warn-soft); border-color: rgba(245,181,66,.4); color: var(--warn); }
 .badge.info{ background: var(--info-soft); border-color: rgba(63,182,245,.4); color: var(--info); }
+/* The settled-neutral badge, for a state that is neither good nor a warning. A bare .badge has a
+   transparent border and no fill, so on its own in a status slot beside coloured siblings it reads
+   as plain bold text rather than as a badge — found by opening a render, not by any fence. Needed
+   by processing.css (`can't tell`) and by ai.css (`n items waiting for a number`); two page files
+   wanting the same class is what makes it the shared system's, not a third page file's.
+   processing.css keeps its own `.pfx .badge.flat`, which is this rule's equal and harmless. */
+.badge.flat{ background: var(--fill-3); border-color: var(--line-2); color: var(--ink-soft); }
 [data-theme="light"] .badge.bad  { color: #c23b2d; }
 [data-theme="light"] .badge.ok   { color: #128a5f; }
 [data-theme="light"] .badge.warn { color: #9a6a06; }
