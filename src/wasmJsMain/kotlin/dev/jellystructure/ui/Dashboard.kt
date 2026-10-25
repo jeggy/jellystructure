@@ -163,6 +163,8 @@ private suspend fun resumeDashboardScan(scope: CoroutineScope) {
 private fun onDashScanStarted(scope: CoroutineScope) {
     scope.launch {
         val status = MediaApi.scanStatus()
+        // A run that finished before this answer came back has no socket to end it: showing it as running would leave the button disabled.
+        if (status != null && status.status != "RUNNING") { setDashScanIdle(); loadDashboardStats(); return@launch }
         setDashScanRunning(status?.processedCount ?: 0)
         connectDashScanSocket(scope, baseCount = status?.processedCount ?: 0)
     }

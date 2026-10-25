@@ -104,8 +104,8 @@ test.describe.serial("Fixture suite", () => {
   test("scan detects Sintel and track order fixes default from fra to eng", async () => {
     // Trigger scan
     await page.click('button:has-text("▶ Scan library"), button:has-text("Scan library")');
-    // Phase 265 (FR-265-8) — the button opens the pre-run dialog; the run starts on *Start run*.
-    await page.click('#prun-go');
+    // DEB-1664 (FR-5) — the button opens the Scan dialog; the run starts on *Start scan*.
+    await page.click('#scan-dialog-scrim [data-act="start"]');
     await waitForScanComplete(page);
 
     // Navigate to Library
