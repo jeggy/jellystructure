@@ -133,7 +133,7 @@ and a Danish sidecar `.srt` added later.
     condition is emitted at that value.
   - It does not expire with time, because a decoder does not get faster.
   - It is **lifted** by a clean direct play in the same codec: ≥ 10 min, < 0.1 % dropped, no stop, at a higher
-    bitrate. That sets the ceiling to `null`.
+    bitrate. That sets the ceiling to `null`. A ceiling 7 days old stops holding negotiation until a play lifts it or fails again (amendment 2026-10-25, below).
 - A play the viewer stops within 3 s of a signal still records it.
 
 ### FR-4 — Leave a direct play before it runs dry (amends FR-309-8)
@@ -322,6 +322,24 @@ This applies to an HLS play, ours or Jellyfin's.
   - **What CI cannot prove** and moves to the QA ticket: the reported 4K HDR10 remux direct-playing on the stue TV for 10 min with
     no stop (Acceptance 1), a hand-over on a shaped link on that TV (Acceptance 4), and the memory class the TV really reports. The
     timing rule is tested against a throttled local server (`DirectPlayHandoverTimingTest`); the Media3 cut itself is not.
+
+- *Amendment 2026-10-25 (DEB-2205, the owner's answer on the ceiling-lift card: **Weekly retry**):*
+  - **The gap.** FR-3 sends a file above 0.9 × `decode_failed_bps` to the ladder, and lifts the ceiling only after a clean
+    direct play *above* the failed bitrate. No such file is ever offered as a direct play, so as built the ceiling could never
+    lift, and one bad evening (heat, a background app, a QA forced freeze) cost a TV its 4K direct play for good. Høgni found it
+    on DEB-2366.
+  - **The retry.** A family's learned ceiling is **not a condition** once its `decode_failed_at` is **7 days** old or more. Every
+    negotiation that reads the ceiling treats that family as having nothing learned: FR-177-2's `VideoBitrate` profile, the
+    direct-play gate and the ladder's `decodeCeiling` top. The stored entry stays as it is.
+    - A clean play under the slice-4 lift rule (≥ 10 min, no stop, < 0.1 % dropped, above the failed bitrate) **lifts** it, as
+      before.
+    - A new decode failure of that family is noted as before: the lower bitrate is kept and `decode_failed_at` becomes now. That
+      **restarts the 7 days**, and FR-4's immediate hand-over is the viewer's safety net for that one play.
+    - A play in the window that neither lifts nor fails leaves the window open for the next play.
+  - **This replaces "It never expires"** in the slice-4 amendment's *Where a decode failure is kept*. The entry still never
+    expires *from the record*. What lapses after 7 days is its hold on negotiation.
+  - **What the admin shows** is the stored entry with its date, unchanged. Nothing on the wire changes, and an installed client
+    that does not report decode health keeps the advertised rule exactly.
 
 ## Acceptance
 
