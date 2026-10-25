@@ -97,14 +97,15 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 # DEB-1490 FR-2 — the executable LAST, for $TARGETARCH, copied to an architecture-neutral path. Everything above is the
 # same for both architectures, so a two-platform build runs it once and only this step forks.
 # DEB-2400 — the arm64 release link ran out of the 4 GB Gradle heap (Kotlin/Native runs inside that JVM) on one run in
-# a few. The heap is raised for this one invocation and for arm64 only; amd64 keeps gradle.properties' -Xmx4g. The two
+# a few. DEB-2435 — the amd64 link did the same on aeb10080 once the Scan dialog slice (+1 494 lines) landed. The heap is
+# raised for this one invocation, on both architectures, and gradle.properties' -Xmx4g still serves every other task. The two
 # links never overlap (the locked gradle-shared mount serialises them), so one large heap is live at a time. The task is
 # root-qualified so the link does not also build :web-static-server, which this image never copies.
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     case "$TARGETARCH" in \
-        amd64) K=X64; D=linuxX64; J="-Xmx4g -XX:+UseParallelGC" ;; \
+        amd64) K=X64; D=linuxX64; J="-Xmx6g -XX:+UseParallelGC" ;; \
         arm64) K=Arm64; D=linuxArm64; J="-Xmx6g -XX:+UseParallelGC" ;; \
         *) echo "unsupported TARGETARCH '$TARGETARCH'" >&2; exit 1 ;; \
     esac && \
