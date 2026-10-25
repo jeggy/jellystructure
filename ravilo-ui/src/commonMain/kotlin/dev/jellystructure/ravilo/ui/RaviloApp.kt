@@ -946,8 +946,7 @@ fun RaviloApp(
         val supportLaneOpen by dev.jellystructure.ravilo.ui.support.SupportLane.enabled.collectAsState()
         LaunchedEffect(supportLaneOpen, activeUserId) {
             if (!supportLaneOpen || activeUserId == null) { dev.jellystructure.ravilo.ui.support.SupportLane.clear(); return@LaunchedEffect }
-            dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway)
-            dev.jellystructure.ravilo.ui.support.SupportLane.changes.collect { dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway) }
+            dev.jellystructure.ravilo.ui.support.SupportLane.follow { dev.jellystructure.ravilo.ui.support.SupportLane.readUnread(supportGateway) }
         }
         // DEB-1738 — the lane reads `false` until the first config answer, so a restored Support page is not an
         // "off" lane: the page waits for the answer. A flag that goes off after it is answered returns as before.

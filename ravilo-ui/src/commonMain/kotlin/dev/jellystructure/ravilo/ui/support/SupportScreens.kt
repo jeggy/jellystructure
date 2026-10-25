@@ -223,8 +223,7 @@ fun SupportListScreen(
     val lang = LocalLang.current
     // FR-3/FR-7 — read on open, again on every support_changed and after a reconnect; nothing is patched in place.
     LaunchedEffect(store) {
-        if (store.refresh() == ReadEnd.GONE) onGone()
-        SupportLane.changes.collect { if (store.refresh() == ReadEnd.GONE) onGone() }
+        SupportLane.follow { if (store.refresh() == ReadEnd.GONE) onGone() }
     }
     SupportFrame { desk ->
         Column(Modifier.fillMaxSize().testTag(SupportTags.LIST)) {
@@ -342,8 +341,7 @@ fun SupportThreadScreen(
     val number = store.number
     // FR-4/FR-7 — read on open, then on this ticket's support_changed (or a reconnect).
     if (number != null) LaunchedEffect(store) {
-        if (store.refresh() == ReadEnd.GONE) onGone()
-        SupportLane.changes.filter { it == number || it == SupportLane.ALL }.collect { if (store.refresh() == ReadEnd.GONE) onGone() }
+        SupportLane.follow({ it == number || it == SupportLane.ALL }) { if (store.refresh() == ReadEnd.GONE) onGone() }
     }
     var draft by remember(store) { mutableStateOf("") }
     val resolved = thread?.ticket?.state == SupportWire.STATE_RESOLVED

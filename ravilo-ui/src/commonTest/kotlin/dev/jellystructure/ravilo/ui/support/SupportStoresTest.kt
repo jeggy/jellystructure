@@ -5,7 +5,11 @@ import dev.jellystructure.shared.tv.SupportSendResult
 import dev.jellystructure.shared.tv.SupportThread
 import dev.jellystructure.shared.tv.SupportTicketRow
 import dev.jellystructure.shared.tv.TvApiError
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -198,5 +202,34 @@ class SupportStoresTest {
         assertEquals(2, SupportLane.unread.value)
         SupportLane.clear()
         assertEquals(0, SupportLane.unread.value)
+    }
+
+    @Test fun `a change that lands while the first read is in flight is read again`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var reads = 0
+        val gw = object : SupportGateway by Fake() {
+            override suspend fun unread(): Int { reads++; if (reads == 1) gate.await(); return reads }
+        }
+        val job = launch { SupportLane.follow { SupportLane.readUnread(gw) } }
+        runCurrent()
+        assertEquals(1, reads)
+        SupportLane.changes.emit(SupportLane.ALL)   // the first read has not answered: nobody was listening before this fix
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(2, reads)
+        job.cancel()
+    }
+
+    @Test fun `a change another ticket sent is not read again by the thread`() = runTest {
+        var reads = 0
+        val job = launch { SupportLane.follow({ it == 41L || it == SupportLane.ALL }) { reads++ } }
+        runCurrent()
+        SupportLane.changes.emit(38L)
+        runCurrent()
+        assertEquals(1, reads)
+        SupportLane.changes.emit(41L)
+        runCurrent()
+        assertEquals(2, reads)
+        job.cancel()
     }
 }

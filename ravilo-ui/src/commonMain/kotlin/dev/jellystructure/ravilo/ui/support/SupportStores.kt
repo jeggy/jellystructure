@@ -12,6 +12,8 @@ import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.onSubscription
 
 /**
  * DEB-1501 — the viewer's support lane as the screens see it. The stores below hold what the server last said and
@@ -48,6 +50,15 @@ object SupportLane {
     val changes = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 32)
 
     const val ALL = 0L
+
+    /**
+     * FR-2, FR-7 — reads, then reads again on every change [accept] lets through. The collector is on the flow *before*
+     * the first read starts: [changes] keeps nothing for a collector that is not there yet, so a push that lands while
+     * the first read is in flight would otherwise be thrown away and the screen would hold the old answer.
+     */
+    suspend fun follow(accept: (Long) -> Boolean = { true }, read: suspend () -> Unit) {
+        changes.onSubscription { read() }.filter(accept).collect { read() }
+    }
 
     /** FR-2 — reads the count again. A failed read leaves the last answer as it was; the app never counts on its own. */
     suspend fun readUnread(gateway: SupportGateway) {
