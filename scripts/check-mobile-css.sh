@@ -441,6 +441,16 @@ check "$AICSS" "accept ticks on a mapped review (.af-tick.on)" \
   ".afx .af-tick.on{border-color:var(--hi);background:var(--hi);color:#fff}"
 check "$AICSS" "a run waiting for the admin's number is a neutral dot, not wf.css's glowing one" \
   ".afx .af-run .dot.wait{background:var(--ink-soft);box-shadow:none}"
+# The still Investigating marker, option `mark` — the owner's pick on 2026-10-25 (DEB-2481). It says
+# running in shape, fill and label and keeps the step's number; nothing here animates.
+check "$AICSS" "the four step marks are outlined circles, not round 2's filled squares" \
+  ".afx .af-step .ic{width:22px;height:22px;border-radius:50%;"
+check "$AICSS" "the running step is a filled accent SQUARE with a halo, which is option \`mark\`" \
+  ".afx .af-step.run .ic{border-radius:5px;border-color:transparent;background:var(--hi);color:#fff;box-shadow:0 0 0 3px var(--hi-soft)}"
+check "$AICSS" "…and its label says so in words too (.af-now)" \
+  ".afx .af-now{color:var(--acc-ink);font-weight:600}"
+check "$AICSS" "the done and failed marks lose the outline the waiting one keeps" \
+  ".afx .af-step.done .ic{border-color:transparent;background:var(--ok-soft);color:var(--ok)}"
 # The light-theme twins. --ok/--warn/--bad/--info are not re-tinted per theme, so each of these is
 # the difference between the shipped colour and a pale mint or amber on white.
 check "$AICSS" "light theme: the proven chip" \
@@ -451,6 +461,10 @@ check "$AICSS" "light theme: the confirmed-series pill, which must match the pro
   '[data-theme="light"] .afx .af-conf{color:#128a5f}'
 check "$AICSS" "light theme: the tick on a finished investigation step" \
   '[data-theme="light"] .afx .af-step.done .ic{color:#128a5f}'
+check "$AICSS" "light theme: a waiting step is readable, not --ink-dim's 25% ink" \
+  '[data-theme="light"] .afx .af-step:not(.done):not(.run):not(.fail){color:#5d6378}'
+check "$AICSS" "light theme: the running step's own word" \
+  '[data-theme="light"] .afx .af-now{color:#6240cf}'
 check "$AICSS" "light theme: a disagreeing row's distance" \
   '[data-theme="light"] .afx .af-against .off{color:#c23b2d}'
 check "$AICSS" "light theme: the resuming band's icon glyph stays white on the info fill" \

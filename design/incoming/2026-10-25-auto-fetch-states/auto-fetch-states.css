@@ -3,9 +3,11 @@
    WHAT IS LEFT IN THIS FILE, after the promotion of 2026-10-25 (DEB-2484):
 
    1. The canvas the frames sit on. It dresses a screenshot page and is not product.
-   2. The still *Investigating* marker, both options. That is this round's one fork, and it waits
-      for the owner's pick between `mark` and `rail`; it lands in `ai.css` as its own commit after
-      the pick (Bárður, DEB-2484). The four-mark legend belongs to it.
+   2. Option `rail` of the still *Investigating* marker — the one the owner did NOT pick on
+      2026-10-25 (DEB-2481) — and the four-mark legend. Option `mark` is in `ai.css` now, so the
+      `steps-mark-*` frames render from the production file; `rail` stays here because a rejected
+      option's frames are the record of what was tried, and a legend is an explanation on a canvas
+      rather than anything the admin ever sees.
    3. `.af-lang`, the language label over the Faroese stop-reason block. A caption on a frame.
 
    EVERYTHING ELSE THIS ROUND DREW NOW LIVES IN `design/app/ai.css`, by hand, under that file's
@@ -70,43 +72,29 @@ body.ph .shot { padding: 0 0 10px; }
 .frame.desk { width: 1440px; }
 .frame.ph { width: 412px; padding: 14px; border-radius: 0; }
 
-/* ================================================= the still Investigating step marker (FR-10.5)
-   The shipped marker is an infinite rotation, which the screenshot fence forbids and which the
-   promotion replaces. Both options below carry running in SHAPE, FILL and LABEL, never in colour
-   alone, and neither animates at all.
+/* ================================================= the marker fork, after the pick
+   The owner picked option `mark` on 2026-10-25 (DEB-2481), so the four still marks — the outlined
+   waiting circle, the filled accent square with its number for running, the tick and the cross —
+   are production CSS now and come out of `ai.css`, where the `steps-mark-*` frames below get them
+   like any other shipped component. What stays here is what the round still has to draw and the
+   product does not:
 
-     waiting  outlined CIRCLE, the step number, dim
-     done     filled CIRCLE with a tick
-     failed   filled CIRCLE with a cross
-     running  option `mark` — a filled accent SQUARE with the step number, and `— now` on the label
-              option `rail` — a filled accent DISC with a ▶, a 3 px accent rail down the row, and
-                              a `now` badge after the label
-*/
-.af-steps.af-mk .af-step .ic {
-  border-radius: 50%; background: transparent; border: 1.5px solid var(--line-2); color: var(--ink-soft);
-  font-weight: 600;
-}
-.af-steps.af-mk .af-step.done .ic { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
-.af-steps.af-mk .af-step.fail .ic { border-color: transparent; background: var(--bad); color: #fff; }
-.af-steps.af-mk .af-step.run .ic::after { content: none; animation: none; }   /* substitution 2 */
-.af-steps.af-mk .af-step .ic .g { font-size: .82rem; line-height: 1; }
+     - option `rail`, the option that was NOT picked. Its frames are the record of what was tried,
+       and a reader comparing them should see what was actually drawn.
+     - the four-mark legend, which is an explanation on a canvas and never a thing the admin sees.
 
-/* option `mark` — shape goes circle → square, fill goes empty → solid accent */
-.af-steps.opt-mark .af-step.run .ic {
-  border-radius: 5px; border-color: transparent; background: var(--hi); color: #fff;
-  box-shadow: 0 0 0 3px var(--hi-soft);
-}
-.af-now { color: var(--acc-ink); font-weight: 600; }
-
-/* option `rail` — the mark becomes a ▶ disc, the row gains an accent rail and the label a badge */
+   Neither animates, here or there. */
 .af-steps.opt-rail .af-step.run {
   box-shadow: inset 3px 0 0 var(--hi); background: var(--hi-soft); padding-left: 16px;
 }
+/* `box-shadow: none` undoes the halo the shipped `mark` now puts on a running step: this rule and
+   ai.css's have the same specificity, so it only wins for what it names. Without it the picture of
+   the option that LOST would quietly gain half of the option that won. */
 .af-steps.opt-rail .af-step.run .ic {
   border-color: transparent; background: var(--hi); color: #fff; border-radius: 50%;
+  box-shadow: none;
 }
 .af-steps.opt-rail .af-step.run .ic .g { font-size: .66rem; margin-left: 1px; }
-.af-step .lb { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .af-step .lb .badge { font-size: .62rem; }
 
 /* all four marks side by side. A run cannot hold a failed step and a running step at the same
@@ -135,11 +123,8 @@ body.ph .shot { padding: 0 0 10px; }
 /* ================================================= light-theme twins, for what is still here
    `--ok` / `--warn` / `--bad` / `--info` are not re-tinted per theme; wf.css overrides the text
    colour at each use site instead. The promoted rules' twins moved to ai.css with them. */
-[data-theme="light"] .af-steps.af-mk .af-step.done .ic { color: #128a5f; }
-/* ai.css draws a waiting step in `--ink-dim`, which is rgba(15,17,26,.25) on the light theme —
-   under 2:1 against the card. A waiting step is still a step somebody has to read. */
-[data-theme="light"] .af-steps.af-mk .af-step:not(.done):not(.run):not(.fail) { color: #5d6378; }
-/* The same fix in the four-mark legend, where the waiting `4` was still faint on the light theme
-   (Bárður, 2026-10-25). The three marks that set their own colour keep it. */
+/* The step list's own twins went to ai.css with the marker, and the `.af-mk` copies of them are
+   deleted rather than left to shadow the shipped rule (Bárður, 2026-10-25). This is the legend's,
+   where the waiting `4` was still faint on the light theme. The three marks that set their own
+   colour keep it. */
 [data-theme="light"] .af-legend .lg:not(.done):not(.fail):not(.run) .ic { color: #5d6378; }
-[data-theme="light"] .af-now { color: #6240cf; }

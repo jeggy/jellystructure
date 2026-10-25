@@ -37,9 +37,10 @@
        product and it is unscoped by nature, so it lives in ai.html's own
        <style> block, which is the only page that has those two attributes.
      - `@keyframes af-spin` and `.af-step.run .ic::after`, the spinning
-       Investigating marker. An infinite animation cannot ship. The still marker
-       that replaces it is round `auto-fetch-states`'s one fork and lands when
-       the owner has picked between `mark` and `rail` (Bárður, DEB-2484).
+       Investigating marker. An infinite animation cannot ship. What replaces it
+       is the still marker above, option `mark`, which the owner picked on
+       2026-10-25 (DEB-2481); option `rail` and the four-mark legend stay in the
+       round, which is where a rejected option belongs.
      - `.badge.flat`. Two page stylesheets need it now, so it went into wf.css
        as the shared neutral badge it is, rather than into a third page file.
    ============================================================================ */
@@ -49,20 +50,31 @@
 .afx .af-echo{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft);margin-top:10px;min-height:22px}
 .afx .af-echo b{color:var(--ink)}
 .afx .af-echo .ph{width:34px;height:22px;border-radius:4px;background:var(--fill-3);flex:none}
-/* investigation steps */
+/* investigation steps
+   The four marks say waiting / running / done / failed in SHAPE, FILL and LABEL, never in colour
+   alone, and none of them moves: the owner picked option `mark` out of round `auto-fetch-states`
+   (2026-10-25, DEB-2481) against `rail`, because it is the only one that keeps the running step's
+   NUMBER, and the page refers to the five steps by number elsewhere.
+     waiting  outlined circle, the step number, dim
+     running  filled accent SQUARE, the step number, a soft halo, and `— now` on the label
+     done     filled circle with a tick
+     failed   filled circle with a cross */
 .afx .af-steps{display:flex;flex-direction:column;margin-top:14px;border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden}
 .afx .af-step{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:11px;align-items:center;padding:10px 13px;border-top:1px solid var(--line);font-size:.86rem;color:var(--ink-dim)}
 .afx .af-step:first-child{border-top:0}
-.afx .af-step .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;background:var(--fill-2);color:var(--ink-dim)}
+.afx .af-step .ic{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600;background:transparent;border:1.5px solid var(--line-2);color:var(--ink-soft)}
+.afx .af-step .ic .g{font-size:.82rem;line-height:1}
 .afx .af-step .fx{font-size:.74rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;margin-top:2px;display:none}
+.afx .af-step .lb{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .afx .af-step.run{color:var(--ink)}
-.afx .af-step.run .ic{background:var(--hi-soft);color:var(--acc-ink)}
+.afx .af-step.run .ic{border-radius:5px;border-color:transparent;background:var(--hi);color:#fff;box-shadow:0 0 0 3px var(--hi-soft)}
+.afx .af-now{color:var(--acc-ink);font-weight:600}
 .afx .af-step.done{color:var(--ink-soft)}
-.afx .af-step.done .ic{background:var(--ok-soft);color:var(--ok)}
+.afx .af-step.done .ic{border-color:transparent;background:var(--ok-soft);color:var(--ok)}
 .afx .af-step.done .fx,.afx .af-step.fail .fx{display:block;color:var(--ink-soft)}
 .afx .af-step.done .t,.afx .af-step.fail .t,.afx .af-step.run .t{color:var(--ink-soft)}
 .afx .af-step.fail{color:var(--ink);background:var(--bad-soft)}
-.afx .af-step.fail .ic{background:var(--bad);color:#fff}
+.afx .af-step.fail .ic{border-color:transparent;background:var(--bad);color:#fff}
 .afx .af-step .t{font-size:.72rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
 /* review */
 .afx .af-review{margin-top:16px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px}
@@ -262,6 +274,10 @@
 /* The ✓ on a finished investigation step, for the same reason: --ok is #2dd49a in both themes, which
    is about 1.8:1 on the light theme's fills. */
 [data-theme="light"] .afx .af-step.done .ic{color:#128a5f}
+/* A waiting step is `--ink-dim`, which is rgba(15,17,26,.25) on the light theme — under 2:1 against
+   the card. A step nobody has reached yet is still a step somebody has to read. */
+[data-theme="light"] .afx .af-step:not(.done):not(.run):not(.fail){color:#5d6378}
+[data-theme="light"] .afx .af-now{color:#6240cf}
 [data-theme="light"] .afx .af-against .off{color:#c23b2d}
 [data-theme="light"] .afx .af-band.hold .bi{color:#fff}
 [data-theme="light"] .afx .af-prop .why{color:#6240cf}
