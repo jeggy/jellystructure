@@ -314,8 +314,12 @@ beside the features' (FR-11).
 
 As drawn in round 2, with these changes:
 
-1. **The review state** shows the proof (FR-4.2): *pattern agrees with TMDB on 3 of 3 episodes TMDB has*, or the
-   disagreement row by row. For `mapped` numbering, every mapping row has an accept tick, all unticked.
+1. **The review state** shows the proof (FR-4.2): *pattern agrees with TMDB on 3 of 3 episodes TMDB has*, or, with
+   fewer than two agreements, that the pattern is *not proven* and what that means: every episode TMDB lacks will wait
+   for the admin's number. A disagreement is not a review state: it fails the proof, so it is the failed state, its
+   reason naming the check and the disagreeing rows listed under it (corrected 2026-10-25, DEB-2481: this line said
+   the review state showed the disagreement, which FR-4.2 rules out). For `mapped` numbering, every mapping row has an
+   accept tick, all unticked.
 2. **The fetchers list** gains two states per row: **Site stopped** (FR-2.5, with *Resume site*) and **n items waiting
    for a number** (FR-4.3). *Needs re-investigation* is the drawn third row.
 3. **The still copy** reads *Three frames picked from the video* instead of *the model picked* (Q4).
