@@ -654,9 +654,9 @@ FR-R322-10) and replaced the whole stack with Playing. That left nothing below i
 - **The bar's doors open Playing on top of the page they were used from.** The doors are the artwork, the lyrics
   button, the title and artist when the track has no album (the DEB-2236 amendment), and ⌥⌘L / Ctrl+L. Back, Esc, the
   lyrics button and ⌥⌘L / Ctrl+L on Playing then return to that page, where it was scrolled.
-- **Playing with nothing under it goes to Listen.** That is Playing opened from the sidebar's *Playing* row, or restored
-  as the only page. The lyrics button and ⌥⌘L / Ctrl+L then open **Listen**, the music mode's first
-  page (FR-R337-3). They are never a dead click. Back and Esc on that Playing do nothing, as on every other page the
+- **Playing with nothing under it goes to the mode's first page** (FR-R337-3): **Listen** in music mode, *Home* in
+  films mode. That is Playing opened from the sidebar's *Playing* row, or restored as the only page. The lyrics button
+  and ⌥⌘L / Ctrl+L then open that page. They are never a dead click. Back and Esc on that Playing do nothing, as on every other page the
   sidebar opens.
 - **The sidebar's rows are unchanged.** *Playing*, like *Listen* and *Albums*, replaces the page and is the sidebar's
   selected row. A Playing opened from the bar selects *Playing* in the sidebar too.
