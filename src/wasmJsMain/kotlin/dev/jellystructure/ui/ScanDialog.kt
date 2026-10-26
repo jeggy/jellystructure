@@ -326,6 +326,9 @@ private class ScanDialog(
 internal object ScanToasts {
     private var ownJobId: String? = null
 
+    /** Set by the Dashboard while it is on screen: a *Continue scan* pressed in a toast starts a run it must now follow, as the dialog's `onStarted` does for a start. */
+    var onResumed: (() -> Unit)? = null
+
     private fun stack(): HTMLElement {
         (document.getElementById("pf-toasts") as? HTMLElement)?.let { return it }
         val el = document.createElement("div") as HTMLElement
@@ -355,10 +358,24 @@ internal object ScanToasts {
 
     fun problem(message: String) { show("warn", "▮", "<div>${message.esc()}</div>", 6_000) }
 
+    /**
+     * *Continue scan*, from either door (DEB-2544, FR-15.4): the resumed run keeps the cancelled run's job id, and a person in this browser
+     * started it, so its own *Finished* must toast, a second *Scan cancelled* included. Armed before the POST, so a run that ends at once is
+     * not missed; disarmed if the server refuses.
+     */
+    suspend fun resume(jobId: String? = null): MediaApi.ResumeResult {
+        val previous = ownJobId
+        ownJobId = (jobId ?: MediaApi.scanStatus()?.jobId)?.ifBlank { null }
+        val r = MediaApi.resumeScan()
+        if (!r.ok) ownJobId = previous
+        return r
+    }
+
     /** A `finished` push: toasts when the run is the one this browser started. A cancelled run also ends with one; the server says which. */
     fun finished(event: JobEvent.Finished, scope: CoroutineScope) {
         if (ownJobId == null || event.jobId != ownJobId) return
         ownJobId = null
+        val jobId = event.jobId
         scope.launch {
             val status = MediaApi.scanStatus()
             if (status?.status == "CANCELLED") {
@@ -370,7 +387,10 @@ internal object ScanToasts {
                 t.querySelector("[data-pf-continue]")?.addEventListener("click") { e ->
                     e.preventDefault()
                     t.remove()
-                    scope.launch { val r = MediaApi.resumeScan(); if (!r.ok) problem(r.reason ?: "The scan didn't continue.") }
+                    scope.launch {
+                        val r = resume(jobId)
+                        if (r.ok) onResumed?.invoke() else problem(r.reason ?: "The scan didn't continue.")
+                    }
                 }
             } else if (event.queued.isEmpty()) {
                 show("info", "◴", """<div>Scan finished</div><div class="s">Nothing was queued.</div>""", 8_000)

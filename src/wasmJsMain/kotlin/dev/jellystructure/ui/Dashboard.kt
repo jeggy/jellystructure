@@ -76,6 +76,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.addEventListener("click") { (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.remove("open") }
     document.getElementById("stat-issues-cell")?.addEventListener("click") { (document.getElementById("ov-body") as? HTMLElement)?.scrollIntoView() }
 
+    // DEB-2544 — a *Continue scan* pressed in the Scan cancelled toast resumes the run behind this page; follow it like any run started from here.
+    ScanToasts.onResumed = { if (dashScanSocket == null && document.getElementById("dash-scan-banner") != null) onDashScanStarted(scope) }
     scope.launch {
         loadDashboardStats()
         loadOverview(scope)
@@ -151,7 +153,7 @@ private suspend fun resumeDashboardScan(scope: CoroutineScope) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
 
-    val resumed = MediaApi.resumeScan()
+    val resumed = ScanToasts.resume()
     if (!resumed.ok) {
         val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
         // FR-15.6 — the server's reason when it refused; "check server connection" only when it could not be reached at all.
