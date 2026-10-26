@@ -2283,7 +2283,7 @@ class PlaybackService(
         val take = takeOf(device)   // 309 (FR-309-1)
         // DEB-2205 (FR-4) — a ladder that takes the place of a direct play starts within what the path measured, not at the file's own proof.
         val ladderTake = ladderTakeFor(servedByOf(device.deviceId, jellyfinId) == "direct", take, measuredBps)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp), decodeFailed = decodeFailedOf(device))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = recoveryNegotiationCap(negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp), belowBandwidthBps), decodeFailed = decodeFailedOf(device))
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         // 2026-09-24 — this path serves an un-burn AND a plain audio switch (R284), and cannot tell them

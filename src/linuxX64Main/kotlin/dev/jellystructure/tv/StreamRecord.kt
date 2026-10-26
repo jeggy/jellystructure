@@ -119,6 +119,15 @@ internal fun negotiationCap(adaptive: Boolean, take: Long?, tvApp: Boolean = fal
     take ?: if (adaptive && !tvApp) NO_RECORD_DIRECT_PLAY_BPS else null
 
 /**
+ * DEB-2205 (FR-5.2, FR-5.3) — a freeze recovery's restream negotiates under the rung that froze ([belowBandwidthBps], the frozen
+ * variant's `BANDWIDTH`), whatever the device's take has grown to since: the take is read after the QoE post that precedes the
+ * restream, and a stream that carried 30 Mbps for a minute can lift it past the file's own bitrate, which would let Jellyfin
+ * answer with a direct play of the source — above the rung that froze. Null when the restream is not a recovery.
+ */
+internal fun recoveryNegotiationCap(cap: Long?, belowBandwidthBps: Long?): Long? =
+    if (belowBandwidthBps == null || belowBandwidthBps <= 1) cap else minOf(cap ?: Long.MAX_VALUE, belowBandwidthBps - 1)
+
+/**
  * 309 (FR-309-15, found live 2026-10-09 on Stue TV) — what a direct play proves the device takes: the file's whole bitrate
  * (size × 8 / length, +2 %), the figure Jellyfin weighs against `MaxStreamingBitrate`. The video bitrate plus "a little
  * audio" (×1.05 + 256 kbps) fell short of it for a remux with TrueHD — 54.5 Mbps proven for a 51.6 Mbps picture with a

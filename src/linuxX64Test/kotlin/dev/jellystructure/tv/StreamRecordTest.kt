@@ -108,6 +108,19 @@ class StreamRecordTest {
         assertNull(directPlayStreamBps(null, null, null))
     }
 
+    @Test fun `a freeze recovery negotiates under the rung that froze and never direct plays the source`() {
+        // DEB-2513 (FR-5.2/5.3): the frozen 2160p rung's BANDWIDTH was 30384k; the take had grown to 70 Mbps by the restream,
+        // so a 65 Mbps source came back as a direct play, above the rung that froze.
+        val source = 64_976_000L
+        val cap = recoveryNegotiationCap(negotiationCap(adaptive = true, take = 70_000_000, tvApp = true), belowBandwidthBps = 30_384_000)
+        assertEquals(30_383_999, cap)
+        assertTrue(source > cap!!, "Jellyfin refuses the direct play")
+        assertEquals(30_383_999, recoveryNegotiationCap(null, 30_384_000), "a TV app with no record is bounded too")
+        assertEquals(8_000_000, recoveryNegotiationCap(8_000_000, 30_384_000), "a lower take still wins")
+        assertEquals(70_000_000, recoveryNegotiationCap(70_000_000, null), "a restream that is not a recovery is untouched")
+        assertNull(recoveryNegotiationCap(null, null))
+    }
+
     @Test fun `a TV app with no record plays what its decoder takes and not a guess`() {
         // Found live 2026-10-09: a Cast Connect start on the BRAVIA with no record was capped at 8 Mbps (a 1080p
         // transcode of a 4K film it plays directly). The decode ceiling (max_video_bitrate) decides instead.
