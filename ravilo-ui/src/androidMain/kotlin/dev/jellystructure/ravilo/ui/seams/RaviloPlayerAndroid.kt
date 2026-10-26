@@ -869,7 +869,10 @@ actual class RaviloPlayer actual constructor() {
         qoeBandwidthBytes = 0
     }
 
-    actual fun qoeSnapshot(): PlayerQoeSnapshot = synchronized(qoeLock) { PlayerQoeSnapshot(
+    actual fun qoeSnapshot(): PlayerQoeSnapshot {
+        // DEB-2509 — read before taking qoeLock: from a background thread this waits on the main thread, whose listener callbacks take the lock.
+        val rendered = renderedVideoFrameCount()
+        return synchronized(qoeLock) { PlayerQoeSnapshot(
         droppedFrames = qoeDroppedFrames,
         rebufferCount = qoeCounter.rebufferCount,
         rebufferMs = qoeCounter.rebufferMs,
@@ -890,13 +893,14 @@ actual class RaviloPlayer actual constructor() {
         variantBandwidthBps = qoeVariantBps,
         variantHeight = qoeVariantHeight,
         variantCodec = qoeVariantCodec,
-        renderedFrames = (qoeRenderedBase + renderedVideoFrameCount()).coerceAtLeast(0),
+        renderedFrames = (qoeRenderedBase + rendered).coerceAtLeast(0),
         perItem = true,
         stalls = qoeCounter.stallEvents(),
         sessionRebufferCount = qoeCounter.sessionRebufferCount,
         sessionRebufferMs = qoeCounter.sessionRebufferMs,
         waits = qoeCounter.waitCounts(),
     ) }
+    }
 
     /**
      * Phase R220 (FR-R220-2) — a real frame COUNT, not a boolean, so the "playing but not rendering"
@@ -905,14 +909,21 @@ actual class RaviloPlayer actual constructor() {
      * a video decoder exists yet or if the counters are ever unavailable — never throws.
      * `ensureUpdated()` is required by [DecoderCounters]'s own contract before a cross-thread read.
      */
-    fun renderedVideoFrameCount(): Long = try {
-        engine?.videoDecoderCounters?.let { counters ->
-            counters.ensureUpdated()
-            counters.renderedOutputBufferCount.toLong()
-        } ?: 0L
-    } catch (e: Exception) {
-        0L
+    fun renderedVideoFrameCount(): Long {
+        val e = engine ?: return 0L   // a released engine's frames are already in [qoeRenderedBase] (onVideoDisabled)
+        return renderedRead.read {
+            e.videoDecoderCounters?.let { counters ->
+                counters.ensureUpdated()
+                counters.renderedOutputBufferCount.toLong()
+            } ?: 0L
+        }
     }
+
+    // DEB-2509 — ExoPlayer's counters are application-thread only; the QoE snapshot is taken on Dispatchers.Default.
+    private val renderedRead = AppThreadRead(
+        onAppThread = { engine?.let { android.os.Looper.myLooper() == it.applicationLooper } ?: true },
+        runOnAppThread = { r -> engine?.let { android.os.Handler(it.applicationLooper).post(r) } ?: false },
+    )
 
     /** Used directly by [PlayerVideoSurface]'s recovery-ladder rung 1 (detach immediately followed by
      *  re-[setVideoSurfaceView] on the same instance). */
