@@ -245,7 +245,7 @@ suspend fun runPipeline(
         // whole-library /Library/Refresh, no Finished, no scan_complete, no no-match notification.
         if (target is RunTarget.SingleItem) return
         if (scanTracker.cancelRequested) {
-            broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0, scanTracker.queuedSentences()))
+            broadcastCancelledFinished(scanTracker, jobId, items.size) { broadcaster.broadcast(it) }
             return
         }
         scanTracker.complete()

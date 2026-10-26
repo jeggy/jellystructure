@@ -2478,14 +2478,15 @@ internal fun launchScanRun(
     // OutboundHttp/ProcessGate never let this run starve an interactive request; attachJob lets
     // ScanTracker.cancelRun actually cancel this Job instead of only flipping a cooperative flag.
     val job = appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
-        runTagged(
+        // DEB-2534 — a Stop before the pool started unwinds as a CancellationException; it still ends with its Finished.
+        dev.jellystructure.media.finishOnOperatorCancel(scanTracker, jobId, { pipelineDeps.broadcaster.broadcast(it) }) { runTagged(
             jobId, triggerKind, if (runsPipeline) "pipeline" else "library",
             if (runsPipeline) (if (plan.full) "full" else "normal") else null,
             startMsg, scanTracker,
         ) {
             if (plan.queueDirectPlay) queueDirectPlayNow(pipelineDeps.mediaJobQueue, scanTracker)
             runPipeline(RunTarget.Library(plan.libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = plan.full, deferEligible = deferEligible, byHand = triggerKind == "manual", discover = !plan.featuresOnly)
-        }
+        } }
     }
     scanTracker.attachJob(job)
     return pipeline
@@ -2744,7 +2745,7 @@ internal suspend fun runScan(
                     fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
             }
         } else {
-            broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
+            dev.jellystructure.media.broadcastCancelledFinished(scanTracker, jobId, succeeded.value) { broadcaster.broadcast(it) }
         }
     }
     return allItems

@@ -198,6 +198,14 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
 
     fun attachJob(job: Job) { runJob = job }
 
+    // DEB-2534 — a cancelled run reaches its `Finished` by more than one road (the pool winding down on
+    // [cancelRequested], or the Job's own CancellationException unwinding before any pool started). Whichever
+    // gets here first sends it; the other finds it spent. Re-armed by [startNew] / [startResume].
+    private val finishedClaimed = AtomicInt(0)
+
+    /** True exactly once per run: the caller that gets it is the one to broadcast the cancelled run's `Finished`. */
+    fun claimFinished(): Boolean = finishedClaimed.compareAndSet(0, 1)
+
     val processedIdsSnapshot: Set<String>
         get() = if (persistToDb) db.scanStateQueries.getProcessedIds(_jobId).executeAsList().toSet() else emptySet()
 
@@ -240,6 +248,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         if (persistToDb) db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
         stepStopRequested = false
+        finishedClaimed.value = 0
         activeWorkers.value = 0
         _activeStep = null
         _stepPlan = emptyList()
@@ -260,6 +269,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
     fun startResume(): String {
         cancelRequested = false
         stepStopRequested = false
+        finishedClaimed.value = 0
         activeWorkers.value = 0
         _activeStep = null
         _stepPlan = emptyList()
