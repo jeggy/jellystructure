@@ -8,6 +8,7 @@ import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -62,7 +63,7 @@ class FilterTagCheck(
 
     private fun launchRun() {
         scope.launch {
-            runCatching { run() }.onFailure { if (it is CancellationException) throw it; Logger.warn("Filter tag check failed: ${it.message}", "jellyfin") }
+            runCatching { run() }.onFailure { if (it is CancellationException && !isActive) throw it; Logger.warn("Filter tag check failed: ${it.message}", "jellyfin") }
         }
     }
 
@@ -105,9 +106,9 @@ class FilterTagCheck(
         val titles = d.all
         if (titles.isEmpty()) return 0
         scope.launch {
-            runCatching { push(titles) }.onFailure { if (it is CancellationException) throw it; Logger.warn("Save to Jellyfin for filter tag '$tag' failed: ${it.message}", "jellyfin") }
+            runCatching { push(titles) }.onFailure { if (it is CancellationException && !isActive) throw it; Logger.warn("Save to Jellyfin for filter tag '$tag' failed: ${it.message}", "jellyfin") }
             delay(settleMs)
-            runCatching { run() }.onFailure { if (it is CancellationException) throw it }
+            runCatching { run() }.onFailure { if (it is CancellationException && !isActive) throw it }
         }
         return titles.size
     }
