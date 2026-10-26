@@ -1,5 +1,9 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.auth.DeviceData
+import dev.jellystructure.media.visibleTo
+import dev.jellystructure.model.MediaItem
+import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.ConditionGroup
@@ -41,4 +45,20 @@ private fun ConditionGroup.forClients(): ConditionGroup = copy(children = childr
 private fun QueryNode.forClients(): QueryNode = when (this) {
     is Condition -> forClients()
     is ConditionGroup -> forClients()
+}
+
+/**
+ * DEB-2518 (FR-5) — this device's copy of the config carries only the heroes it can see. A curated hero entry (Home's, and
+ * each channel page's) whose catalogue item [MediaItem.visibleTo] rejects for [device] is removed, with its id and its
+ * display title, meta and backdrop: the entry is what a sniffing client would read, and Home already drops the hero
+ * itself. An id that matches no catalogue item is left alone, so a device that sees everything gets today's config.
+ */
+fun RaviloConfig.withoutHeroesHiddenFrom(device: DeviceData, catalogue: List<MediaItem>): RaviloConfig {
+    val byId = HashMap<String, MediaItem>(catalogue.size * 2)
+    for (item in catalogue) { byId[item.id] = item; item.jellyfinId?.let { byId[it] = item } }
+    fun List<HeroConfig>.seen() = filter { h -> byId[h.itemId]?.visibleTo(device) != false }
+    return copy(
+        heroes = heroes.seen(),
+        channels = channels.map { c -> c.pageHero?.let { c.copy(pageHero = it.copy(items = it.items.seen())) } ?: c },
+    )
 }

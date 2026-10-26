@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.tv.forClients
+import dev.jellystructure.tv.withoutHeroesHiddenFrom
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.server.respondFileChunked
 import dev.jellystructure.server.respondFileWithHead
@@ -671,8 +672,9 @@ fun Route.tvRoutes(
     // R190 §C — the person-browse page's Seerr overflow row: requestable titles featuring this person
     // that the library doesn't already hold. Empty (not an error) when Seerr is off/unconfigured.
     get("/tv/browse/person/{tmdbId}/seerr-overflow") {
+        val device = call.attributes[DeviceKey]
         val tmdbId = call.parameters["tmdbId"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
-        call.respond(seerrDiscoverService?.getPersonOverflow(tmdbId) ?: emptyList())
+        call.respond(seerrDiscoverService?.getPersonOverflow(tmdbId, device) ?: emptyList())
     }
 
     get("/tv/search") {
@@ -925,7 +927,9 @@ fun Route.tvRoutes(
     get("/tv/config") {
         val device = call.attributes[DeviceKey]
         // Phase 269 (FR-269-2) — a Recommended row goes out as CUSTOM: installed apps decode RowKind strictly.
-        call.respond(raviloConfigService.getConfig(device.jellyfinUserId).forClients())
+        // DEB-2518 (FR-5) — a hero the device cannot see leaves its copy, display fields included.
+        val config = raviloConfigService.getConfig(device.jellyfinUserId).forClients()
+        call.respond(mediaStore?.let { config.withoutHeroesHiddenFrom(device, it.allItems()) } ?: config)
     }
 
     // R141: degrade-to-poll fallback — client polls this when the WS is down (or as a safety net).
@@ -940,7 +944,7 @@ fun Route.tvRoutes(
     // (shouldn't happen outside tests) — falls back to unavailable rather than 500ing.
     get("/tv/discover") {
         val device = call.attributes[DeviceKey]
-        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin, device.isKids, dev.jellystructure.tv.RecommendationEngine.scopeKey(device))
+        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin, device.isKids, dev.jellystructure.tv.RecommendationEngine.scopeKey(device), device)
             ?: DiscoverResponse(available = false, canRequest = false)
         call.respond(resp)
     }
@@ -949,7 +953,7 @@ fun Route.tvRoutes(
     // rail), so a strict-waiting choice made days ago is easy to find again and change.
     get("/tv/discover/requests/mine") {
         val device = call.attributes[DeviceKey]
-        call.respond(seerrDiscoverService?.getMyRequests(device.jellyfinUserId) ?: emptyList())
+        call.respond(seerrDiscoverService?.getMyRequests(device.jellyfinUserId, device) ?: emptyList())
     }
 
     // R160 — server-cached with a short TTL (UpcomingService) so opening the tab never fans out a live
@@ -976,7 +980,7 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val mediaType = call.parameters["mediaType"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val tmdbId = call.parameters["tmdbId"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val detail = seerrDiscoverService?.getEntry(mediaType, tmdbId, device.jellyfinUserId, device.isKids) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val detail = seerrDiscoverService?.getEntry(mediaType, tmdbId, device.jellyfinUserId, device.isKids, device) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respond(detail)
     }
 
@@ -1007,9 +1011,9 @@ fun Route.tvRoutes(
     // AppBar search icon / GET /tv/search). Results are request tiles, same live-status derivation as
     // the discover feed rows.
     get("/tv/search/seerr") {
-        call.attributes[DeviceKey]
+        val device = call.attributes[DeviceKey]
         val q = call.request.queryParameters["q"].orEmpty()
-        val items = seerrDiscoverService?.search(q) ?: emptyList()
+        val items = seerrDiscoverService?.search(q, device) ?: emptyList()
         call.respond(dev.jellystructure.shared.tv.SeerrSearchResults(query = q, items = items))
     }
 

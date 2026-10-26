@@ -3,9 +3,11 @@ package dev.jellystructure.seerr
 import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.RequestLanguageService
+import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.visibleTo
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.shared.tv.AcquisitionRecord
@@ -84,23 +86,25 @@ class SeerrDiscoverService(
      * [scopeKey] is the device's visibility scope (269's key), for R320's per-viewer row; null takes the viewer's list
      * in whatever scope it was built.
      */
-    suspend fun getRequestFeeds(userId: String, isAdmin: Boolean, isKids: Boolean = false, scopeKey: String? = null): DiscoverResponse {
+    suspend fun getRequestFeeds(userId: String, isAdmin: Boolean, isKids: Boolean = false, scopeKey: String? = null, device: DeviceData? = null): DiscoverResponse {
         val d = raviloConfigService.getConfig(userId).discover
         val seerr = seerr()
         if (!d.enabled || seerr == null) return DiscoverResponse(available = false, canRequest = false)
 
-        val libByTmdb = libraryByTmdbId()
+        val lib = library(device)
+        val libByTmdb = lib.visible
         // Phase 274 (FR-274-16) — Seerr's blocklist and our own dismissals leave every Request row, whatever Seerr's own
         // *hide blocklisted* setting says: that is what makes *No thanks*'s sentence true.
         val hidden = runCatching { suggestions?.hiddenTmdbIds() }.getOrNull().orEmpty()
         val rows = d.feeds.filter { it.visible }.mapNotNull { feed ->
             val results = if (feed.suggested) {
                 // R320 — this viewer's own list from the last build; no history ⇒ no row (FR-R320-3).
-                suggestions?.viewerRow(userId, scopeKey).orEmpty().filter { it.id !in libByTmdb }.ifEmpty { return@mapNotNull null }
+                suggestions?.viewerRow(userId, scopeKey).orEmpty().filter { it.id !in libByTmdb && it.id !in lib.hidden }.ifEmpty { return@mapNotNull null }
             } else seerrClient.discover(seerr.url, seerr.apiKey, feed.endpoint, feed.param).results
             val entries = results
                 .filter { it.mediaType == "movie" || it.mediaType == "tv" }
                 .filter { !(it.mediaType == "movie" && it.id in hidden) }
+                .filter { it.id !in lib.hidden }   // DEB-2518 (FR-4)
                 .map { toDiscoverEntry(it, libByTmdb) }
             DiscoverRow(feedId = feed.id, feedName = feed.name, entries = entries)
         }
@@ -124,11 +128,13 @@ class SeerrDiscoverService(
      *    actual Radarr/Sonarr queue — [acq] above never produces FAILED) has gone NOT_REQUESTED, which
      *    only happens after an explicit cancel/removal.
      *  Never drops on FAILED — that's a real problem the viewer needs to see and Retry, not a dead row. */
-    suspend fun getMyRequests(userId: String): List<DiscoverEntry> {
+    suspend fun getMyRequests(userId: String, device: DeviceData? = null): List<DiscoverEntry> {
         val store = requestIntentStore ?: return emptyList()
         val seerr = seerr() ?: return emptyList()
-        val libByTmdb = libraryByTmdbId()
+        val lib = library(device)
+        val libByTmdb = lib.visible
         return store.forUser(userId).mapNotNull { row ->
+            if (row.tmdbId in lib.hidden) return@mapNotNull null   // DEB-2518 (FR-4)
             if (row.mediaKind == MediaKind.SERIES) {
                 val d = seerrClient.tvDetails(seerr.url, seerr.apiKey, row.tmdbId) ?: return@mapNotNull null
                 val acq = acquisitionFor(row.tmdbId, MediaKind.SERIES, d.title(), d.mediaInfo, libByTmdb)
@@ -159,12 +165,13 @@ class SeerrDiscoverService(
      * matches are filtered out entirely rather than shown as AVAILABLE — the row is "more to request",
      * not a mixed library+request grid.
      */
-    suspend fun getPersonOverflow(personTmdbId: Int): List<DiscoverEntry> {
+    suspend fun getPersonOverflow(personTmdbId: Int, device: DeviceData? = null): List<DiscoverEntry> {
         val seerr = seerr() ?: return emptyList()
         val credits = seerrClient.personCombinedCredits(seerr.url, seerr.apiKey, personTmdbId) ?: return emptyList()
-        val libByTmdb = libraryByTmdbId()
+        val lib = library(device)
+        val libByTmdb = lib.visible
         return (credits.cast + credits.crew)
-            .filter { (it.mediaType == "movie" || it.mediaType == "tv") && !libByTmdb.containsKey(it.id) }
+            .filter { (it.mediaType == "movie" || it.mediaType == "tv") && !libByTmdb.containsKey(it.id) && it.id !in lib.hidden }
             .distinctBy { it.id to it.mediaType }
             // Newest release first — sorted before the cap so the 12 shown are actually the most
             // recent, not whatever the cast+crew concatenation happened to list first. Lexicographic
@@ -180,19 +187,23 @@ class SeerrDiscoverService(
         firstAirDate = firstAirDate, voteAverage = voteAverage, genreIds = genreIds, mediaInfo = null,
     )
 
-    suspend fun search(query: String): List<DiscoverEntry> {
+    suspend fun search(query: String, device: DeviceData? = null): List<DiscoverEntry> {
         val seerr = seerr() ?: return emptyList()
         if (query.isBlank()) return emptyList()
-        val libByTmdb = libraryByTmdbId()
+        val lib = library(device)
+        val libByTmdb = lib.visible
         val page = seerrClient.search(seerr.url, seerr.apiKey, query)
         return page.results
             .filter { it.mediaType == "movie" || it.mediaType == "tv" }
+            .filter { it.id !in lib.hidden }   // DEB-2518 (FR-4)
             .map { toDiscoverEntry(it, libByTmdb) }
     }
 
-    suspend fun getEntry(mediaType: String, tmdbId: Int, userId: String? = null, isKids: Boolean = false): DiscoverDetail? {
+    suspend fun getEntry(mediaType: String, tmdbId: Int, userId: String? = null, isKids: Boolean = false, device: DeviceData? = null): DiscoverDetail? {
         val seerr = seerr() ?: return null
-        val libByTmdb = libraryByTmdbId()
+        val lib = library(device)
+        if (tmdbId in lib.hidden) return null   // DEB-2518 (FR-4) — as the held title's own detail answers
+        val libByTmdb = lib.visible
         val viewerDefault = userId?.let { raviloConfigService.getBehaviourOverlay(it).requestLanguage }
         // Phase 271 — genres in the viewer's app language (Seerr answers in its own locale).
         val appLang = userId?.let { raviloConfigService.getConfig(it).uiLanguage }
@@ -334,8 +345,18 @@ class SeerrDiscoverService(
         return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, progress = progress, eta = eta, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
     }
 
-    private suspend fun libraryByTmdbId(): Map<Int, MediaItem> =
-        mediaStore.allItems().mapNotNull { item -> item.tmdbId?.let { it to item } }.toMap()
+    /** DEB-2518 (FR-4) — the titles the library holds, split by whether [device] may see them. [visible] is what reads
+     *  *Available* and carries an id; [hidden] is what the library holds but `visibleTo(device)` rejects, which no row,
+     *  search hit or detail may mention (showing it as not held would invite a request Seerr refuses as available).
+     *  No device (a caller with none to ask) sees all, as before. */
+    private class Library(val visible: Map<Int, MediaItem>, val hidden: Set<Int>)
+
+    private suspend fun library(device: DeviceData?): Library {
+        val held = mediaStore.allItems().filter { it.tmdbId != null }
+        val (seen, unseen) = if (device == null) held to emptyList() else held.partition { it.visibleTo(device) }
+        val visible = seen.associateBy { it.tmdbId!! }
+        return Library(visible, unseen.mapNotNull { it.tmdbId }.filter { it !in visible }.toSet())
+    }
 
     private fun toDiscoverEntry(r: SeerrCatalogResult, libByTmdb: Map<Int, MediaItem>): DiscoverEntry {
         val mediaKind = if (r.mediaType == "tv") MediaKind.SERIES else MediaKind.MOVIE

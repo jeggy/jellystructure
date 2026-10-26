@@ -168,6 +168,8 @@ internal sealed interface StartResult2 {
     data object Forbidden : StartResult2
     data object Unreachable : StartResult2
     data object BadRequest : StartResult2
+    /** DEB-2518 (FR-6) — an item the caller cannot see: answered 404, with nothing written. */
+    data object NotFound : StartResult2
     /** R372 — a move on an old revision. */
     data class Stale(val session: SessionRec) : StartResult2
 }
@@ -187,6 +189,13 @@ class SessionStarter(
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
+
+    /**
+     * DEB-2518 (FR-6) — whether [DeviceData] may see an item of [kind]: wired to the same `canSee` the session list uses, so
+     * a start is held to the rule the item's own routes already apply (film and episode: the catalogue's `visibleTo`, as
+     * `requireVisible` in playback; music and audiobook: the tag-aware `musicVisible`). Open until Main wires it.
+     */
+    internal var canSee: suspend (viewer: DeviceData, kind: String, itemId: String, bookId: String?) -> Boolean = { _, _, _, _ -> true }
 
     /** Main: the music queue's facts for a relay LOAD (title, artist, cover …). */
     internal var trackItem: suspend (String) -> CastTrackItem? = { null }
@@ -222,6 +231,11 @@ class SessionStarter(
         // Owner decision 4 — books never cast.
         val castTarget = req.targetId.startsWith("cast:")
         if (castTarget && kind == SessionKind.AUDIOBOOK) return StartResult2.BadRequest
+        // DEB-2518 (FR-6) — the caller must be able to see what it starts, and the place must be one it is offered. This runs
+        // before anything is written: a replaced session ends, and `describe()` puts the title and still into the row.
+        val bookIdOf = if (kind == SessionKind.AUDIOBOOK) req.items.getOrNull(req.index) ?: req.items.first() else null
+        if (req.items.any { !canSee(caller, kind, it, bookIdOf) }) return StartResult2.NotFound
+        if (targetsFor(caller) { null }.none { it.id == req.targetId }) return StartResult2.Unreachable
         // Review item 10 — replacing a busy place; across users only with 304's switch on.
         req.replace?.let { r ->
             val busy = sessions.get(r.sessionId)
@@ -233,7 +247,7 @@ class SessionStarter(
         }
         // R380 (FR-R380-12, DEB-919) — a book start's items ARE the book, so the book's own facts are asked for by its
         // id: without this every book session's queue row was `{"id": …}` alone and the book showed as nameless.
-        val bookId = if (kind == SessionKind.AUDIOBOOK) req.items.getOrNull(req.index) ?: req.items.first() else null
+        val bookId = bookIdOf
         val items = req.items.map { id -> sessions.describe(id, id.takeIf { kind == SessionKind.AUDIOBOOK })?.second ?: SessionItem(id) }
         val options = SessionOptions(shuffle = req.shuffle, repeat = req.repeat)
         // R380 (FR-R380-17, DEB-1100) — a book's place of record is the server's, so a book start whose place is absent

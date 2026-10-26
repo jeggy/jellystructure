@@ -68,6 +68,7 @@ internal fun Route.playbackSessionRoutes(
                 dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
                 dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to replace"))
                 dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "nothing to start there"))
+                dev.jellystructure.tv.StartResult2.NotFound -> call.respond(HttpStatusCode.NotFound)
                 is dev.jellystructure.tv.StartResult2.Stale -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("stale", publisher.viewFor(device, r.session)))
             }
         }
@@ -96,6 +97,7 @@ internal fun Route.playbackSessionRoutes(
                 dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
                 dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to move"))
                 dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot move there"))
+                dev.jellystructure.tv.StartResult2.NotFound -> call.respond(HttpStatusCode.NotFound)
             }
         }
         // R372 (FR-R372-2/-3) — *Move to…* and *Play here* (`target_id = here`).
@@ -110,6 +112,7 @@ internal fun Route.playbackSessionRoutes(
                 dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
                 dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to move"))
                 dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot move there"))
+                dev.jellystructure.tv.StartResult2.NotFound -> call.respond(HttpStatusCode.NotFound)
             }
         }
     }
