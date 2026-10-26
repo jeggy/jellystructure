@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.focus
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
@@ -16,6 +18,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -232,6 +235,16 @@ fun Modifier.dpadFocusable(
             Modifier.hoverable(interactionSource)
         } else Modifier
     )
+
+/** DEB-2446 (FR-R340-5) — an in-tree dialog keeps focus: a key with nowhere to go inside it does nothing, rather than reaching the screen behind. */
+@OptIn(ExperimentalFoundationApi::class)
+fun Modifier.keepsFocusInside(): Modifier = this
+    .focusProperties {
+        onExit = {
+            cancelFocusChange()
+        }
+    }
+    .focusGroup()
 
 /**
  * R260 (FR-R260-1) — the player's Back decision (picker → rail → next-up → scrub → chrome → leave, or

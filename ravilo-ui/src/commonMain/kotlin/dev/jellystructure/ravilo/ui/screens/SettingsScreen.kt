@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.focus.focusRing
+import dev.jellystructure.ravilo.ui.focus.keepsFocusInside
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import androidx.compose.foundation.layout.width
@@ -753,7 +754,7 @@ fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onC
     val confirmFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { cancelFR.requestFocus() } }
     Box(
-        modifier = Modifier.fillMaxSize().background(colors.overlay),
+        modifier = Modifier.fillMaxSize().background(colors.overlay).keepsFocusInside(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -822,7 +823,7 @@ fun SignOutChoiceOverlay(displayName: String, onCancel: () -> Unit, onOnly: () -
     LaunchedEffect(Unit) { runCatching { oneFR.requestFocus() } }
     val confirm = { if (everyone) onEveryone() else onOnly() }
     Box(
-        modifier = Modifier.fillMaxSize().background(colors.overlay),
+        modifier = Modifier.fillMaxSize().background(colors.overlay).keepsFocusInside(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
