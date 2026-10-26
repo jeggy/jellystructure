@@ -93,8 +93,8 @@ suspend fun wirePlaybackSessions(
     }
     val canSee: suspend (DeviceData, String, String, String?) -> Boolean = { viewer, kind, itemId, bookId ->
         when (kind) {
-            SessionKind.AUDIOBOOK -> bookId?.let { musicPipeline?.audiobooks?.store?.book(it) }?.let { musicVisible(it.libraryId, viewer.allowedLibraries) } == true
-            SessionKind.MUSIC -> musicPipeline?.store?.track(itemId)?.let { musicVisible(it.libraryId, viewer.allowedLibraries) } == true
+            SessionKind.AUDIOBOOK -> bookId?.let { musicPipeline?.audiobooks?.store?.book(it) }?.let { musicVisible(it.libraryId, viewer.allowedLibraries, viewer.allowedTags) } == true
+            SessionKind.MUSIC -> musicPipeline?.store?.track(itemId)?.let { musicVisible(it.libraryId, viewer.allowedLibraries, viewer.allowedTags) } == true
             else -> (mediaStore.resolveByJellyfinId(itemId)
                 ?: mediaStore.allItems().firstOrNull { s -> s.episodes.any { it.jellyfinId == itemId } })?.visibleTo(viewer) == true
         }

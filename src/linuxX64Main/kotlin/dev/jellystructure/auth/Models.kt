@@ -51,6 +51,13 @@ data class DeviceData(
     val lastPublicAddress: String? = null,
 )
 
+/**
+ * DEB-2518 (FR-8) — what a cache keyed on this device's visibility compares: the library grant and both tag lists, the
+ * same fold `HomeFeedService` and `LiveTvService` use. A changed policy is a changed hash, so an answer built before
+ * it narrowed is never served after.
+ */
+fun DeviceData.policyHash(): Int = (allowedLibraries.hashCode() * 31 + allowedTags.hashCode()) * 31 + blockedTags.hashCode()
+
 @Serializable
 data class JellyfinPolicy(
     @SerialName("IsAdministrator") val isAdministrator: Boolean,

@@ -4,6 +4,7 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.model.Audiobook
 import dev.jellystructure.model.AudiobookPart
+import dev.jellystructure.model.AudiobookRules
 import kotlinx.coroutines.runBlocking
 import platform.posix.getpid
 import kotlin.test.AfterTest
@@ -48,6 +49,24 @@ class AudiobooksTvServiceTest {
     }
 
     @AfterTest fun tearDown() { runCatching { platform.posix.remove("$base.db") } }
+
+    /** DEB-2518 (FR-2) — an allow-list matches nothing on a book, so it hides the shelf; a block-list alone hides none. */
+    @Test
+    fun an_allowed_tag_list_hides_the_shelf_and_a_blocked_one_does_not() { runBlocking {
+        val tagged = DeviceData("d", "tok", "u1", "viewer", "", isAdmin = false, allowedTags = setOf("household"), kind = "phone")
+        val blocked = DeviceData("d", "tok", "u1", "viewer", "", isAdmin = false, blockedTags = setOf("household"), kind = "phone")
+        assertTrue(svc.shelf(tagged, null).books.isEmpty())
+        assertNull(svc.detail(tagged, "F1"))
+        assertNull(svc.author(tagged, AudiobookRules.authorId("Ingrid Lykke")))
+        assertNull(svc.partId(tagged, "F1", 0))
+        assertNull(svc.progress(tagged, "F1", 0, min, paused = false))
+        assertNull(svc.addBookmark(tagged, "F1", min, null))
+        assertFalse(svc.speed(tagged, "F1", 1.5))
+        assertNull(svc.finished(tagged, "F1", true))
+        assertFalse(svc.any(tagged))
+        assertEquals(2, svc.shelf(blocked, null).books.size)
+        assertNotNull(svc.partId(blocked, "F1", 0))
+    } }
 
     @Test
     fun a_viewer_without_the_library_sees_nothing() {

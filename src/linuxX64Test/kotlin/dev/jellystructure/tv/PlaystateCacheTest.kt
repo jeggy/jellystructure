@@ -127,4 +127,19 @@ class PlaystateCacheTest {
         assertEquals(false, now.getValue("e1").played); assertEquals(227_000, now.getValue("e1").resumeMs)
         assertEquals(true, now.getValue("e2").played)
     }
+
+    private fun viewer(allowedTags: Set<String> = emptySet()) =
+        dev.jellystructure.auth.DeviceData("d", "tok", "u-policy", "viewer", "", isAdmin = false, allowedTags = allowedTags)
+
+    /** DEB-2518 (FR-8) — an entry merged under an older policy is not answerable once the policy changes. */
+    @Test
+    fun `a changed policy drops the user's merged playstate`() {
+        val entry = dev.jellystructure.shared.tv.CardPlayState(played = true)
+        PlaystateCache.dropIfPolicyChanged(viewer())
+        PlaystateCache.replaceForTest("u-policy", mapOf("jf-1" to entry))
+        PlaystateCache.dropIfPolicyChanged(viewer())
+        assertEquals(setOf("jf-1"), PlaystateCache.get("u-policy").keys, "the same policy keeps it")
+        PlaystateCache.dropIfPolicyChanged(viewer(setOf("household")))
+        assertEquals(emptyMap(), PlaystateCache.get("u-policy"))
+    }
 }

@@ -2,6 +2,7 @@ package dev.jellystructure.tv
 
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.policyHash
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
@@ -57,7 +58,20 @@ object PlaystateCache {
     // Phase 230 (FR-230-5) — what the cycle cost, for its log line.
     private var cycleIds = 0
 
+    // DEB-2518 (FR-8) — the policy ([policyHash]) each user's map was built under.
+    private var policyOf: Map<String, Int> = emptyMap()
+
     fun get(userId: String): Map<String, CardPlayState> = data[userId].orEmpty()
+
+    /** DEB-2518 (FR-8) — a user whose policy changed since their map was merged loses it: the map is merged across
+     *  cycles, so an entry for a title the policy has since hidden would otherwise stay answerable by id. The next
+     *  refresh reads the user's now-visible titles whole, as it does for a user with no map yet. */
+    internal fun dropIfPolicyChanged(device: DeviceData) {
+        val hash = device.policyHash()
+        val seen = policyOf[device.jellyfinUserId]
+        policyOf = policyOf + (device.jellyfinUserId to hash)
+        if (seen != null && seen != hash) data = data - device.jellyfinUserId
+    }
 
     /** R343 (FR-R343-11) — a state this server just wrote to Jellyfin itself, put in at once rather than waiting for a
      *  refresh that may time out. Merged over what is there; a later refresh replaces it with Jellyfin's own word. */
@@ -127,6 +141,7 @@ object PlaystateCache {
     ): Boolean {
         val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return false
+        dropIfPolicyChanged(device)
         val items = mediaStore.liveItems(device)
         // Phase 230 (FR-230-3) — no map yet ⇒ one whole, patient sweep; otherwise only what [scope] names.
         val cold = data[device.jellyfinUserId] == null

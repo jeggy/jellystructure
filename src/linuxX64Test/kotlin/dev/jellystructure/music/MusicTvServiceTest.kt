@@ -2,6 +2,7 @@ package dev.jellystructure.music
 
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.policyHash
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.model.MusicAlbum
@@ -30,7 +31,8 @@ class MusicTvServiceTest {
     private val open = device(null)
     private val onlyA = device(setOf("liba"))
     private val onlyB = device(setOf("libb"))
-    private fun device(allowed: Set<String>?) = DeviceData("d", "tok", "u1", "viewer", "", isAdmin = false, allowedLibraries = allowed, kind = "phone")
+    private fun device(allowed: Set<String>?, allowedTags: Set<String> = emptySet(), blockedTags: Set<String> = emptySet()) =
+        DeviceData("d", "tok", "u1", "viewer", "", isAdmin = false, allowedLibraries = allowed, allowedTags = allowedTags, blockedTags = blockedTags, kind = "phone")
 
     @BeforeTest fun setUp() = runBlocking {
         runCatching { platform.posix.remove("$base.db") }
@@ -59,6 +61,46 @@ class MusicTvServiceTest {
         assertFalse(svc.visible(onlyB, "t-a1")); assertTrue(svc.visible(onlyA, "t-a1"))
         assertEquals(0, svc.search(onlyB, "harbour").artistsTotal)
         assertEquals(1, svc.search(onlyA, "harbour").artistsTotal)
+    }
+
+    /** DEB-2518 (FR-2) — a viewer with an allow-list sees no music at all: empty lists and 404s on every read and write. */
+    @Test
+    fun an_allowed_tag_list_hides_all_music() = runBlocking {
+        val tagged = device(null, allowedTags = setOf("household"))
+        assertTrue(svc.home(tagged).rows.isEmpty())
+        for (what in listOf("albums", "artists", "tracks")) assertEquals(0, svc.browse(tagged, what, null, 0, null).total, what)
+        assertTrue(svc.genres(tagged).isEmpty())
+        assertEquals(0, svc.search(tagged, "harbour").artistsTotal)
+        assertEquals(0, svc.search(tagged, "song").songsTotal)
+        assertTrue(svc.search(tagged, null).artists.isEmpty())
+        assertNull(svc.album(tagged, "a1"))
+        assertNull(svc.artist(tagged, "x", null))
+        assertNull(svc.lyrics(tagged, "t-a1"))
+        assertNull(svc.copies(tagged, "t-a1"))
+        assertNull(svc.lastPlayed(tagged))
+        assertFalse(svc.visible(tagged, "t-a1")); assertFalse(svc.visible(tagged, "a1"))
+        assertTrue(svc.playlists(tagged).isEmpty())
+        assertNull(svc.playlist(tagged, "pl"))
+        assertTrue(svc.createPlaylist(tagged, "Mine", emptyList()) is PlaylistWrite.Refused)
+        assertEquals(0, svc.selection(tagged, "library", null, null, null, false)?.total)
+    }
+
+    /** DEB-2518 (FR-2) — the grant still applies first, and a block-list alone hides nothing (no row carries a tag). */
+    @Test
+    fun a_blocked_tag_list_alone_sees_music_as_before() = runBlocking {
+        val blocked = device(setOf("liba"), blockedTags = setOf("household"))
+        assertEquals(setOf("a1", "a2", "a3"), svc.browse(blocked, "albums", null, 0, null).albums.map { it.id }.toSet())
+        assertTrue(svc.visible(blocked, "t-a1")); assertFalse(svc.visible(blocked, "t-b1"))
+        assertTrue(svc.album(blocked, "a1") != null)
+    }
+
+    /** DEB-2518 (FR-8) — the per-viewer numbers cache answers only the policy it was read under. */
+    @Test
+    fun the_hash_of_the_policy_moves_with_either_list() {
+        val base = device(null)
+        assertTrue(base.policyHash() != device(null, allowedTags = setOf("t")).policyHash())
+        assertTrue(base.policyHash() != device(null, blockedTags = setOf("t")).policyHash())
+        assertEquals(base.policyHash(), device(null).policyHash())
     }
 
     @Test

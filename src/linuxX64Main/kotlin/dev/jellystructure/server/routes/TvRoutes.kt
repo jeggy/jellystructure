@@ -1110,7 +1110,7 @@ fun Route.tvRoutes(
                     // FR-275-7 — why a phone shows no music switch: the same grant rule the music routes apply.
                     music = musicLibraryIds.takeIf { it.isNotEmpty() && policy != null }?.let { ids ->
                         val allowed = if (policy!!.enableAllFolders) null else policy.enabledFolders.map { dev.jellystructure.tv.normalizeGuid(it) }.toSet()
-                        if (ids.any { dev.jellystructure.music.musicVisible(it, allowed) }) "yes" else "no_access"
+                        if (ids.any { dev.jellystructure.music.musicVisible(it, allowed, policy.allowedTags.toSet()) }) "yes" else "no_access"
                     },
                 ),
                 avatarUrl = RaviloImageUrl.avatar(uid, jfAvatarTags[uid]),

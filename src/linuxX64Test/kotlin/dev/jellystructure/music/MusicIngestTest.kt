@@ -131,10 +131,18 @@ class MusicIngestTest {
 
     @Test
     fun visibility_follows_the_library_grant() {
-        assertTrue(musicVisible("lib1", null))
-        assertTrue(musicVisible("LIB-1", setOf("lib1")))
-        assertFalse(musicVisible("lib1", setOf("lib2")))
-        assertFalse(musicVisible(null, setOf("lib1")))
+        assertTrue(musicVisible("lib1", null, emptySet()))
+        assertTrue(musicVisible("LIB-1", setOf("lib1"), emptySet()))
+        assertFalse(musicVisible("lib1", setOf("lib2"), emptySet()))
+        assertFalse(musicVisible(null, setOf("lib1"), emptySet()))
+    }
+
+    /** DEB-2518 (FR-2) — music carries no tags: an allow-list matches nothing, so it hides; a block-list is not a parameter. */
+    @Test
+    fun a_non_empty_allowed_list_hides_music_even_with_the_grant() {
+        assertFalse(musicVisible("lib1", null, setOf("household")))
+        assertFalse(musicVisible("lib1", setOf("lib1"), setOf("household")))
+        assertTrue(musicVisible("lib1", setOf("lib1"), emptySet()))
     }
 
     /** Phase 305 (dev review 2b, test 12) — `BitDepth` is Jellyfin's; the official list and *single from* are ours. */

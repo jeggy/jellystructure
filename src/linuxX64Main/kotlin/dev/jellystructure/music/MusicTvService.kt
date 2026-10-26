@@ -3,6 +3,7 @@ package dev.jellystructure.music
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinAudioUserItem
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.policyHash
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.model.MusicAlbum
 import dev.jellystructure.model.MusicArt
@@ -112,14 +113,15 @@ class MusicTvService(
     inner class View(device: DeviceData) {
         private val snap = store.snapshot()
         private val allowed = device.allowedLibraries
+        private val allowedTags = device.allowedTags
         /** Phase 292 — every song's version, over the whole library (one answer per recording, whoever looks). */
         val versions: MusicVersionIndex get() = snap.versions
         val versionTypes get() = snap.versionTypes
         /** DEB-1487 (FR-305-3a) — what an official-row fill reads about a held file. */
         val fill: MusicOfficial.Fill get() = snap.fill
-        val albums: Map<String, MusicAlbum> = snap.albums.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
-        val tracks: Map<String, MusicTrack> = snap.tracks.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
-        val artists: Map<String, MusicArtist> = snap.artists.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
+        val albums: Map<String, MusicAlbum> = snap.albums.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed, allowedTags) }
+        val tracks: Map<String, MusicTrack> = snap.tracks.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed, allowedTags) }
+        val artists: Map<String, MusicArtist> = snap.artists.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed, allowedTags) }
         val tracksByAlbum: Map<String?, List<MusicTrack>> = tracks.values.groupBy { it.albumId }
             .mapValues { (_, l) -> l.sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() })) }
         // Both are looked up once per artist in a sort or a selection, so each is one pass over the library, built on
@@ -164,11 +166,13 @@ class MusicTvService(
         fun songPlays(v: View, t: MusicTrack): Int = v.copies(t).sumOf { playCount[it.id] ?: 0 }
     }
     private val userLock = Mutex()
-    private val userCache = HashMap<String, Pair<Long, UserMusic>>()
+    /** DEB-2518 (FR-8) — keyed on the viewer *and* the policy the answer was read under ([policy] = `DeviceData.policyHash()`). */
+    private class CachedUser(val at: Long, val policy: Int, val music: UserMusic)
+    private val userCache = HashMap<String, CachedUser>()
 
     suspend fun userMusic(device: DeviceData, fresh: Boolean = false): UserMusic {
         val now = dev.jellystructure.nowEpochSec() * 1000
-        if (!fresh) userLock.withLock { userCache[device.jellyfinUserId]?.let { (at, u) -> if (now - at < USER_TTL_MS) return u } }
+        if (!fresh) userLock.withLock { userCache[device.jellyfinUserId]?.let { if (now - it.at < USER_TTL_MS && it.policy == device.policyHash()) return it.music } }
         val cfg = configStore.current
         val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return UserMusic(emptyList(), emptySet())
@@ -177,7 +181,7 @@ class MusicTvService(
         val favs = jellyfin.getAudioUserItems(base, token, device.jellyfinUserId, "IsFavorite", types = "Audio,MusicAlbum")
         val u = UserMusic(played.orEmpty(), favs.orEmpty().map { it.id }.toSet())
         // A failed read is not cached: the next request asks again.
-        if (played != null && favs != null) userLock.withLock { userCache[device.jellyfinUserId] = now to u }
+        if (played != null && favs != null) userLock.withLock { userCache[device.jellyfinUserId] = CachedUser(now, device.policyHash(), u) }
         return u
     }
 
@@ -364,7 +368,11 @@ class MusicTvService(
         return mine
     }
 
+    /** DEB-2518 (FR-2) — Jellyfin's playlists are not rows of ours, so [musicVisible] never sees them: an allow-listed viewer has no music, hence no playlist names, counts or writes. */
+    private fun noMusicForTags(device: DeviceData) = device.allowedTags.isNotEmpty()
+
     suspend fun playlists(device: DeviceData): List<MusicPlaylist> {
+        if (noMusicForTags(device)) return emptyList()
         val v = View(device)
         val cfg = configStore.current
         val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
@@ -379,6 +387,7 @@ class MusicTvService(
 
     /** R321 (FR-R321-10) — one of the viewer's playlists, in its own order; songs the viewer may not see are left out. */
     suspend fun playlist(device: DeviceData, id: String): MusicList? {
+        if (noMusicForTags(device)) return null
         val v = View(device)
         val cfg = configStore.current
         val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
@@ -398,6 +407,7 @@ class MusicTvService(
     //    Jellyfin says they own, and `forget(device)` after, so the next read is fresh. ──
 
     private suspend fun <T> asViewer(device: DeviceData, block: suspend (base: String, token: String) -> PlaylistWrite<T>): PlaylistWrite<T> {
+        if (noMusicForTags(device)) return PlaylistWrite.Refused(PlaylistRefusal.NOT_FOUND)
         val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return PlaylistWrite.Refused(PlaylistRefusal.FAILED)
         val token = jellyfin.tvTokenForClient(base, device) ?: return PlaylistWrite.Refused(PlaylistRefusal.UNAUTHORIZED)

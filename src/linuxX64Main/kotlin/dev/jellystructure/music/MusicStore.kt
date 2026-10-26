@@ -332,6 +332,10 @@ data class MusicVersionTypeOverride(val color: String?, val meaning: String?)
  * FR-275-4 — the films' visibility rule for a music row: a restricted Jellyfin user sees it only when its library
  * is in their `EnabledFolders`; an unrestricted user (`allowed == null`) sees everything. Fail-closed on a row
  * with no library.
+ *
+ * DEB-2518 (FR-2) — music and audiobook rows carry no tags, so after the library grant a **non-empty
+ * [allowedTags]** (an allow-list nothing can match) hides them; a blocked list alone has nothing to match and hides
+ * none, which is why it is not a parameter. Every caller passes the device's list: a second predicate would drift.
  */
-fun musicVisible(libraryId: String?, allowed: Set<String>?): Boolean =
-    allowed == null || (libraryId != null && normalizeGuid(libraryId) in allowed)
+fun musicVisible(libraryId: String?, allowed: Set<String>?, allowedTags: Set<String>): Boolean =
+    allowedTags.isEmpty() && (allowed == null || (libraryId != null && normalizeGuid(libraryId) in allowed))

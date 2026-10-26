@@ -41,10 +41,10 @@ class AudiobooksTvService(
     }
 
     private fun visibleBooks(device: DeviceData): List<Audiobook> =
-        store.snapshot().books.values.filter { it.missingSince == null && it.partCount > 0 && musicVisible(it.libraryId, device.allowedLibraries) }
+        store.snapshot().books.values.filter { it.missingSince == null && it.partCount > 0 && musicVisible(it.libraryId, device.allowedLibraries, device.allowedTags) }
 
     private fun visibleBook(device: DeviceData, id: String): Audiobook? =
-        store.book(id)?.takeIf { it.missingSince == null && musicVisible(it.libraryId, device.allowedLibraries) }
+        store.book(id)?.takeIf { it.missingSince == null && musicVisible(it.libraryId, device.allowedLibraries, device.allowedTags) }
 
     /** Our order, present parts only — index = the phone's part number. */
     fun parts(bookId: String): List<AudiobookPart> = store.parts(bookId).filter { it.missingSince == null }.sortedBy { it.position }
