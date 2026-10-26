@@ -35,7 +35,8 @@ never needs migrating.
 **FR-1 — One face, derived from the profile.** `ravilo-ui` has one pure function that turns a profile into its
 no-photo face, plus one composable that draws it:
 
-- **The letters:** from `displayName`, keeping only letters and digits in each whitespace-separated word.
+- **The letters:** from `displayName`, keeping only letters and digits in each whitespace-separated word. A word
+  with nothing left is dropped, so `Anna 🎬` counts as one word.
   - One word gives **one** letter: `jeggy` → `J`, `Eyð` → `E`.
   - Two or more words give the first letter of the first word and the first letter of the last word:
     `Anna Hansen` → `AH`, `Jens Peter Hansen` → `JH`.
@@ -74,7 +75,10 @@ own sizes, rings and dots: R304's white ring on the phone, R386's update dot and
 ## Verification
 
 - FR-1: a `desktopTest` unit test on the pure function. It covers the letter cases above, and fixed `userId`s mapped
-  to their ramp index: write down the expected index from the JS algorithm, not from the Kotlin under test.
+  to their ramp index: write down the expected index from the JS algorithm, not from the Kotlin under test. Run
+  through `gradientFor()`'s loop in Node on 2026-10-27, these ids give these indices: `""` → 0, `"a"` → 1,
+  `"b"` → 2, `"c"` → 3, `"d"` → 4, `"e"` → 5, `"0123456789abcdef0123456789abcdef"` → 4 (hash 2511650128, past
+  2³¹), `"4f1c2a9be7d34c0f8a6b5e2d1c3f9a7b"` → 3 (hash 3769005873, past 2³¹).
 - FR-2: the screenshot tests that already draw these surfaces. Then a QA pass on a TV (focus ring, no repaint), a
   phone (bottom bar, Profile page) and the who's-watching picker, with one profile that has a photo and two that
   have none.
