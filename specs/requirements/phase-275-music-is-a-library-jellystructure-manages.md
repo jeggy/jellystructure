@@ -4,15 +4,13 @@
 > (the two design briefs of that day). This phase is the floor everything else stands on: the music library is
 > read, stored and gated like the film libraries, without becoming a fourth `MediaKind`.
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28 (build notes at the end; not deployed — the backend was not restarted). `Planned` when
-written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A, §E1, §E3, §F),
+Written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A, §E1, §E3, §F),
 `specs/research-reports/music-library-and-player-2026-09-27.md` (§1.2, §2.1, §4.1–§4.3) and the round-1 mockups
-(`design/app/music-data.js`, `library.html?kind=music`, `settings.html#mu-libcard`, `ravilo-users.html`).
-**Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main` `f8bdaab4` on 2026-09-27: admin taken through **273**,
-and **274** is ours (pending export), so the research report's ladder (274–280 / R320–R324) moves up by one:
-this is its "274".
+(`design/app/music-data.js`, `library.html?kind=music`, `settings.html#mu-libcard`, `ravilo-users.html`). The dev
+review (2026-09-28, against `main` `728f22ea`) and the build notes are below. The research report's ladder
+(274–280 / R320–R324) sits one number lower than the phases: this is its "274".
 
 The music ladder: **275** (this) · **276** MusicBrainz · **277** covers, NFOs, lyrics · **278** the admin UI ·
 **279** `/api/tv/music/**` · Ravilo **R321** the listening mode · **R322** the player. Audiobooks: **280**,
@@ -48,6 +46,11 @@ language cascade). The *Music videos* library keeps its own card and its `MUSIC_
 **FR-275-4 — Visibility.** The same `libraryId ∈ EnabledFolders` rule as films. A viewer whose Jellyfin policy
 does not grant the music library sees no music anywhere: no switch, no bar, no row, no search hit (R321 FR-R321-2).
 Kids profiles follow the grant only.
+
+> **Amendment, 2026-10-26 (DEB-2518, FR-2 of `a-tag-filter-holds-on-every-ravilo-surface.md`).** *The same rule as
+> films* now includes the films' tag rule. Music carries no tags, so a viewer whose Jellyfin allowed-tag list is
+> non-empty sees no music, the way Jellyfin itself shows them none (measured). A blocked-tag list alone hides
+> nothing. `musicVisible` takes the device's tag lists. FR-275-7's line reads *Music: no* for such an account.
 
 **FR-275-5 — Advisor findings on the music library** (212/242's shape):
 

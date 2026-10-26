@@ -3,12 +3,13 @@
 > Owner, 2026-09-27: part 2 of the music round — audiobooks. *"The household's real state: exactly one book, 14
 > parts, no cover. Draw the shelf and the grid with one item and no apology."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **not deployed** (build notes at the end) — written 2026-09-28 from `specs/research-reports/audiobooks-library-and-player-2026-09-27.md` (§0,
-§1, §3, §4), the admin brief §M1 and §M4–§M5, and the mockups (`design/app/audiobook-data.js`,
-`library.html?kind=books`, `settings.html#ab-libcard`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). The research's "279". Builds on
-**275** (the library pattern), **152/160** (numbering fallbacks) and **149** (`FfprobeRunner -show_chapters`).
+Written 2026-09-28 from `specs/research-reports/audiobooks-library-and-player-2026-09-27.md` (§0, §1, §3, §4), the
+admin brief §M1 and §M4–§M5, and the mockups (`design/app/audiobook-data.js`, `library.html?kind=books`,
+`settings.html#ab-libcard`). The dev review (2026-09-28, against `main` `728f22ea`) and the build notes are below. The
+research's "279". Builds on **275** (the library pattern), **152/160** (numbering fallbacks) and **149**
+(`FfprobeRunner -show_chapters`).
 
 ## Decisions (research §6 — leans; not yet answered)
 
@@ -59,6 +60,11 @@ updated_at, finished_at)` and `audiobook_bookmark(user_id, book_id, position_ms,
 
 **FR-280-5 — Visibility.** The same `libraryId ∈ EnabledFolders` rule. Without the books library: no shelf, no
 Audiobooks chip or item, no search hit. Kids profiles follow the grant only.
+
+> **Amendment, 2026-10-26 (DEB-2518, FR-2 of `a-tag-filter-holds-on-every-ravilo-surface.md`).** Visibility also
+> takes the tag rule, as FR-275-4's amendment does for music. Books carry no tags, so a viewer whose Jellyfin
+> allowed-tag list is non-empty sees no audiobooks, the way Jellyfin itself shows them none (measured). A
+> blocked-tag list alone hides nothing.
 
 **FR-280-6 — The books library card** (Settings → Libraries), in the Musik card's shape:
 

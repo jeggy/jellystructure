@@ -41,6 +41,11 @@ half of the feed is admin/unrestricted-profile-only. This is the conservative de
 kids-inappropriate or library-restricted content, at the cost of restricted profiles not seeing pure
 *arr-calendar speculation for titles they may never even get access to once scanned.
 
+> **Amendment, 2026-10-26 (DEB-2518, FR-3 of `specs/requirements/a-tag-filter-holds-on-every-ravilo-surface.md`).**
+> A device whose Jellyfin allowed-tag **or** blocked-tag list is non-empty is restricted here too. The rule above
+> named only `allowedLibraries` and `isKids`. So an account filtered by tags alone saw the whole not-yet-held half,
+> although `UpcomingService`'s KDoc already promised otherwise.
+
 ### FR-RV-UP1-3 — `getDetail` matches the list filter
 A restricted device hitting `/tv/upcoming/item/{id}` for an item the list filter would have dropped gets
 the same `404` it already gets for an unknown id (`TvRoutes.kt:501`) — not a data leak via direct id
