@@ -517,6 +517,16 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
             }
             return
         }
+        // DEB-2518 (FR-7) — *Save to Jellyfin* on a filter-tag row: the NFO write and the refresh for the titles that tag differs on.
+        if (act.startsWith("filter_tag_save:")) {
+            scope.launch {
+                out("Saving…")
+                val n = dev.jellystructure.api.DashboardApi.saveFilterTag(act.removePrefix("filter_tag_save:"))
+                out(if (n != null) "Queued ✓ · $n ${if (n == 1) "title" else "titles"}" else "Couldn’t save")
+                if (n != null) loadOverview(scope)
+            }
+            return
+        }
         // FR-285-10 — the quick actions live on the rows they serve.
         scope.launch {
             when (act) {

@@ -2260,38 +2260,51 @@ fun Route.mediaRoutes(
         }
         val items = store.allItems()
         call.respond(HttpStatusCode.Accepted, BatchStartedResponse("push started", items.size))
-        appScope.launch {
-            var nfoOk = 0
-            var nfoFail = 0
-            var refreshOk = 0
-            var refreshFail = 0
-            val freshCfg = configStore.current
-            for (item in items) {
-                var current = item
-                NfoWriter.writeTracked(item, freshCfg.apiKeys.jellyfinUrl, freshCfg.metadata.ageRatingCascade)
-                    .onSuccess { result ->
-                        nfoOk++
-                        current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)
-                        store.updateOne(current)
-                        if (item.kind == MediaKind.TV_SHOW) {
-                            for ((group, result) in NfoWriter.writeEpisodeNfos(item.episodes, item.cast)) {
-                                result.onFailure { Logger.warn("batch-push: episode NFO failed for ${group.first().filename}: ${it.message}") }
-                            }
-                        }
+        appScope.launch { pushNfosAndRefresh(items, configStore, jellyfinClient, store, "batch-push") }
+    }
+}
+
+/** What [pushNfosAndRefresh] did, for the log line and the tests. */
+internal data class NfoPushCounts(val nfoOk: Int, val nfoFail: Int, val refreshOk: Int, val refreshFail: Int)
+
+/**
+ * Write the NFO for each of [items] and refresh each in Jellyfin, then one library scan. The body of
+ * `POST /media/batch/jellyfin-push`, taken out so DEB-2518 (FR-7)'s *Save to Jellyfin* can push exactly the titles
+ * a filter tag disagrees on and no others. [label] prefixes the log lines.
+ */
+internal suspend fun pushNfosAndRefresh(
+    items: List<MediaItem>, configStore: ConfigStore, jellyfinClient: JellyfinClient, store: MediaStore, label: String,
+): NfoPushCounts {
+    var nfoOk = 0
+    var nfoFail = 0
+    var refreshOk = 0
+    var refreshFail = 0
+    val freshCfg = configStore.current
+    for (item in items) {
+        var current = item
+        NfoWriter.writeTracked(item, freshCfg.apiKeys.jellyfinUrl, freshCfg.metadata.ageRatingCascade)
+            .onSuccess { result ->
+                nfoOk++
+                current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)
+                store.updateOne(current)
+                if (item.kind == MediaKind.TV_SHOW) {
+                    for ((group, result) in NfoWriter.writeEpisodeNfos(item.episodes, item.cast)) {
+                        result.onFailure { Logger.warn("$label: episode NFO failed for ${group.first().filename}: ${it.message}") }
                     }
-                    .onFailure { nfoFail++; Logger.warn("batch-push: NFO write failed for '${item.id}': ${it.message}") }
-                if (!item.jellyfinId.isNullOrBlank()) {
-                    val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-                    if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = nowEpochSec())) }
-                    else { refreshFail++; Logger.warn("batch-push: Jellyfin refresh failed for '${item.id}'") }
                 }
             }
-            // Trigger a library scan after all NFOs are written so Jellyfin reliably picks up
-            // tvshow.nfo changes — per-item FullRefresh alone is not sufficient for TV series NFOs.
-            jellyfinClient.triggerLibraryRefresh(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken)
-            Logger.info("batch-push complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail (+ library scan triggered)")
+            .onFailure { nfoFail++; Logger.warn("$label: NFO write failed for '${item.id}': ${it.message}") }
+        if (!item.jellyfinId.isNullOrBlank()) {
+            val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+            if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = nowEpochSec())) }
+            else { refreshFail++; Logger.warn("$label: Jellyfin refresh failed for '${item.id}'") }
         }
     }
+    // Trigger a library scan after all NFOs are written so Jellyfin reliably picks up
+    // tvshow.nfo changes — per-item FullRefresh alone is not sufficient for TV series NFOs.
+    jellyfinClient.triggerLibraryRefresh(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken)
+    Logger.info("$label complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail (+ library scan triggered)")
+    return NfoPushCounts(nfoOk, nfoFail, refreshOk, refreshFail)
 }
 
 /** Write NFO files, sync artwork, and do a full recursive Jellyfin refresh. */

@@ -609,6 +609,28 @@ class JellyfinClient {
     }
 
     /**
+     * DEB-2518 (FR-7) — the Jellyfin ids of every film, series and music video that carries [tag], all pages or null.
+     * `null` is a failed read, never "none carry it": the caller compares against it, and an empty answer from an
+     * unreachable server would read as every title missing the tag.
+     */
+    suspend fun getItemIdsByTag(baseUrl: String, token: String, tag: String): Set<String>? {
+        val base = baseUrl.trimEnd('/')
+        val out = HashSet<String>()
+        var start = 0
+        while (true) {
+            val page = runCatching {
+                httpGet("$base/Items?Tags=${tag.encodeURLParameter()}&Recursive=true&IncludeItemTypes=Movie,Series,MusicVideo" +
+                    "&EnableUserData=false&Limit=$JF_PAGE_SIZE&StartIndex=$start") { jellyfinAuth(token) }
+                    .bodyOrNull<JellyfinItemsResponse>("itemIdsByTag")
+            }.getOrElse { e -> if (e is CancellationException) throw e; Logger.warn("Jellyfin itemIdsByTag failed: ${e.message}"); null } ?: return null
+            page.items.mapTo(out) { it.id }
+            start += page.items.size
+            if (page.items.isEmpty() || start >= page.totalRecordCount) break
+        }
+        return out
+    }
+
+    /**
      * Phase 275 (FR-275-2) — one music library, every page of artists, albums and tracks. **All or nothing**: any
      * failed page returns null, because the caller marks what is absent as missing, and a half-fetched library
      * would mark the other half missing. Artists are the library's folder-backed ones (`/Artists?ParentId=`);

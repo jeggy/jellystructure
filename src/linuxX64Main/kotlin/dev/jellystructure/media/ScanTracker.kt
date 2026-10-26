@@ -346,6 +346,9 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         }
     }
 
+    /** DEB-2518 (FR-7) — told when a run completes; set once by Main for the tracker the admin's scans use. */
+    var onComplete: (() -> Unit)? = null
+
     fun complete() {
         _status = "COMPLETE"
         activeWorkers.value = 0
@@ -359,6 +362,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
                 started_at = _startedAt,
                 updated_at = epochSeconds(),
             )
+            onComplete?.invoke()
         }
     }
 

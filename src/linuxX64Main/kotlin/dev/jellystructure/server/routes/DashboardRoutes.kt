@@ -17,6 +17,7 @@ import dev.jellystructure.model.DashboardSinceItem
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.nowEpochSec
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -44,6 +45,8 @@ class DashboardService(
     private val lidarr: dev.jellystructure.arr.LidarrClient? = null,
     /** Phase 307 — *Waiting to publish*. */
     private val publish: dev.jellystructure.publish.PublishQueue? = null,
+    /** DEB-2518 (FR-7) — filter tags the database and Jellyfin disagree on. */
+    private val filterTags: dev.jellystructure.media.FilterTagCheck? = null,
     private val webhookSince: () -> Long?,
 ) {
     /** FR-285-2 — how one triage type reads as a row. `domain == null` ⇒ a film row and a series row from the kind split. */
@@ -217,6 +220,9 @@ class DashboardService(
                 "Tick *Supports casting to audio-only devices* on the console, then cast a song to a speaker once.", fix = "info", href = "/settings?tab=connections")
         }
 
+        // DEB-2518 (FR-7) — a filter tag held here and not in Jellyfin: viewers filtered by it see titles they can't play.
+        filterTags?.let { f -> rows += runCatching { f.rows() }.getOrDefault(emptyList()) }
+
         // DEB-2233 (FR-9) — the identity provider would return viewers somewhere that is not this server.
         dev.jellystructure.tv.SsoSetupFlag.dashboardRow(configStore)?.let { rows += it }
 
@@ -345,6 +351,9 @@ class DashboardService(
 
     private fun severityRank(s: String) = when (s) { CRITICAL -> 0; WARNING -> 1; else -> 2 }
 
+    /** DEB-2518 (FR-7) — *Save to Jellyfin*: how many titles were queued, or null when Jellyfin could not be read. */
+    suspend fun saveFilterTag(tag: String): Int? = filterTags?.save(tag)
+
     /** Phase 310/312 — the dry run behind the *Watch places to put back* row, and the owner's Apply. */
     suspend fun repairPlan() = playbackService.repairPlan()
     suspend fun applyRepair() = playbackService.applyRepair()
@@ -368,6 +377,14 @@ fun Route.dashboardRoutes(service: DashboardService, mediaHistory: MediaHistory)
         get("/playback-repair") { call.respond(service.repairPlan()) }
         /** The owner's press. */
         post("/playback-repair/apply") { call.respond(mapOf("put_back" to service.applyRepair())) }
+        /** DEB-2518 (FR-7) — the operator's press: the NFO write and the refresh for the titles that tag differs on, and only those. */
+        post("/filter-tags/{tag}/save") {
+            val tag = call.parameters["tag"].orEmpty()
+            when (val queued = service.saveFilterTag(tag)) {
+                null -> call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin could not be read"))
+                else -> call.respond(HttpStatusCode.Accepted, mapOf("queued" to queued))
+            }
+        }
         /** FR-285-8 — the page says it was seen when the admin leaves it; the next open measures from here. */
         post("/seen") {
             runCatching { call.attributes[SessionKey].jellyfinUserId }.getOrNull()?.let { mediaHistory.markDashboardVisit(it, nowEpochSec()) }

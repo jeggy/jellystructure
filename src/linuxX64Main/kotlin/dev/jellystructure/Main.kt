@@ -705,6 +705,18 @@ fun main() = runBlocking {
     // request", a start hook cannot promise that), then every five minutes; the events-socket connect
     // trigger lives in Server.kt. Skipped silently while Jellyfin is not configured yet: a fresh install
     // must not log a failed pass every five minutes.
+    // DEB-2518 (FR-7) — the filter tags the accounts name, compared hourly and after a full scan with Jellyfin's own list.
+    val filterTagCheck = dev.jellystructure.media.FilterTagCheck(
+        items = { mediaStore.allItems() },
+        jellyfinIdsWith = { tag ->
+            val keys = configStore.current.apiKeys
+            if (keys.jellyfinUrl.isBlank() || keys.jellyfinToken.isBlank()) null else jellyfinClient.getItemIdsByTag(keys.jellyfinUrl, keys.jellyfinToken, tag)
+        },
+        push = { titles -> dev.jellystructure.server.routes.pushNfosAndRefresh(titles, configStore, jellyfinClient, mediaStore, "filter-tag-save") },
+        scope = rootScope,
+        clock = { platform.posix.time(null) * 1000L },
+    )
+    scanTracker.onComplete = { filterTagCheck.afterScan() }
     val devicePolicyReconciler = dev.jellystructure.tv.DevicePolicyReconciler(
         deviceService = raviloDeviceService,
         fetchUsers = {
@@ -714,6 +726,7 @@ fun main() = runBlocking {
         },
         onPolicyChanged = { userId -> tvEventBus.notifyHomeChanged(userId) },
         onConfigChanged = { userId -> tvEventBus.notifyConfigChanged(userId) },   // DEB-1854
+        onUsersRead = filterTagCheck::noteUsers,   // DEB-2518 (FR-7)
     )
     rootScope.launch {
         runCatching { devicePolicyReconciler.reconcileAll("start") }
@@ -769,6 +782,7 @@ fun main() = runBlocking {
         tvSignInService = tvSignInService,
         singleSignOnService = singleSignOnService,
         devicePolicyReconciler = devicePolicyReconciler,
+        filterTagCheck = filterTagCheck,
         playPushResolver = playPushResolver,
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),
         musicPipeline = musicPipeline,

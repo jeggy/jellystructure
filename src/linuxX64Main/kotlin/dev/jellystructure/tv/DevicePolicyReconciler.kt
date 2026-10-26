@@ -34,6 +34,8 @@ class DevicePolicyReconciler(
     private val onPolicyChanged: (jellyfinUserId: String) -> Unit,
     /** DEB-1854 (FR-3, FR-9) — `config_changed` for one user, sent when the provider answer or the account's name moved. */
     private val onConfigChanged: (jellyfinUserId: String) -> Unit = {},
+    /** DEB-2518 (FR-7) — the successful `/Users` answer, for the filter tags the accounts name. Never called for a failed fetch. */
+    private val onUsersRead: (List<JellyfinUser>) -> Unit = {},
     private val clock: () -> Long = ::epochMs,
 ) {
     private val mutex = Mutex()
@@ -71,6 +73,7 @@ class DevicePolicyReconciler(
             Logger.warn("Policy refresh ($trigger): could not read Jellyfin's users — every device keeps its current policy", "auth")
             return null
         }
+        runCatching { onUsersRead(users) }
         val byId = users.associateBy { it.id }
         val userIds = deviceService.allDevices().map { it.jellyfinUserId }.distinct()
         val now = clock()
