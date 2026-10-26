@@ -74,12 +74,6 @@ class UpcomingService(
         )
     }
 
-    private fun visibleToDevice(itemId: String, matched: Map<String, dev.jellystructure.model.MediaItem?>, device: DeviceData): Boolean {
-        val item = matched[itemId]
-        if (item != null) return item.visibleTo(device)
-        return device.allowedLibraries == null && !device.isKids
-    }
-
     /** R167 FR-R167-2 — Discover-detail parity: a live TMDB lookup (by tmdbId, resolving tvdb→tmdb
      *  for series) for genres/runtime/cast, best-effort (never throws; empty on any miss/failure so
      *  the client still has [UpcomingDetail.item] to render).
@@ -283,6 +277,17 @@ class UpcomingService(
         if (airDateUtc == null || airDateUtc.length < 16) return null
         return airDateUtc.substring(11, 16)
     }
+}
+
+/**
+ * R188 FR-RV-UP1-2, amended by DEB-2518 FR-3 — a held item goes through [visibleTo]; a not-yet-held one has no
+ * library or tags to test, so only an unrestricted device sees it. Restricted means a library grant, kids, or a
+ * non-empty allowed or blocked tag list.
+ */
+internal fun visibleToDevice(itemId: String, matched: Map<String, dev.jellystructure.model.MediaItem?>, device: DeviceData): Boolean {
+    val item = matched[itemId]
+    if (item != null) return item.visibleTo(device)
+    return device.allowedLibraries == null && !device.isKids && device.allowedTags.isEmpty() && device.blockedTags.isEmpty()
 }
 
 /** DEB-2078 FR-1 — the opaque key every episode of one Sonarr series shares; no source name reaches the client (R160). */
