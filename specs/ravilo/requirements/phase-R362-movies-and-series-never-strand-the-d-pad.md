@@ -4,13 +4,15 @@
 > opening and starting to play something and then going back to the movies page my dpad sometimes get stuck on the
 > top navbar, so I can't continue my browsing of movies."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA, reproduced on the
-installed `1.47-34` and again on release `1.49-11-g76f351b4` (= `main` for these files). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only
-(`:ravilo-ui`, `SeededBrowseScreen.kt`). The case where the opened title has left the filtered grid is **R361**.
+Written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA, reproduced on the installed
+`1.47-34` and again on release `1.49-11-g76f351b4`. Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end).
+Client only (`:ravilo-ui`: `SeededBrowseScreen.kt`, `BrowseScreen.kt`, `focus/`). The case where the opened title has
+left the filtered grid is **R361**.
 
-**Amends:** R187 (the facet bar and popover), R350 FR-R350-9 (Up from the grid's first row).
+**Amends:** R187 (the facet bar and popover), R350 FR-R350-9 (Up from the grid's first row). **Amended** 2026-10-26 by
+DEB-2448 (FR-R362-5: the move is smooth; the owner chose it on card `fc075123`).
 
 ## What was seen
 
@@ -222,3 +224,67 @@ Built on R361's fixed retry helpers. Client only (`SeededBrowseScreen.kt`, `Brow
   short-last-row case.
 - Device only: acceptance 2 (a real play and two Backs) and 6 (how the popovers look under *Channel*, *Watched*,
   *Sort*).
+
+## Amendment 2026-10-26 — a Down or Up in the grid glides, and its row is ready before the key (DEB-2448)
+
+> Owner, card `fc075123` on DEB-2448 (2026-10-26): *"A: smooth the grid's Down/Up."*
+
+**Why.** DEB-2455 measured the Movies grid on a BRAVIA (`stue-tv`, `1.59-45-ga28cf14e`). The build was compiled
+`speed-profile` with its profile installed, which is how a Play install runs: the household's Play build reads
+`speed-profile` / `install-dm`. Right and Left across a row, with no scroll, give 0% janky frames. Down gives
+1.2–3.2% when settled (×12 at 400 ms) and 4.2–5.2% when fast (×20 at ~85 ms), with one frame of 90–250 ms per run.
+Every janky frame is a slow UI-thread frame. GPU and bitmap upload stay inside the budget, and full AOT does no
+better. So the cost is the code a Down runs, not compilation. The Movies grid loads its whole list at once (no
+paging), so no page arrives mid-run.
+
+FR-R362-5's handler (`gridColumnKeys` → `GridFocus.focusIndex`) does three things on every press that the native
+Right/Left move does not:
+1. It writes `targetKey`. That is snapshot state that every grid item reads in composition (`itemModifier`), so every
+   composed tile is invalidated twice: once when the target is set, and once when it is cleared.
+2. It waits one frame (`withFrameNanos`), so that the recomposition can attach the target's requester.
+3. When the target row is not in `visibleItemsInfo`, `bringIndexIn` moves the grid by `scrollBy` steps of a third of
+   the viewport, without animating. The incoming row is composed inside that frame. The grid's bring-into-view then
+   animates the rest. The viewer sees a jump, then a glide.
+
+**FR-R362-5 (amended) — Down and Up keep the column, and the move is smooth.** The target is unchanged: `index ± cols`;
+the last tile of a shorter last row; Up from the first row goes to `onFirstRowUp`; with no row in that direction the
+key goes to the native search; and a target that cannot be focused falls back to the native move (FR-R362-3). What
+changes is how a **key press** gets there:
+- **The scroll animates.** A press never moves the grid by a jump. The grid scrolls to the target with its own
+  bring-into-view, the same motion a native focus move gets.
+- **The row is ready before the key.** The grid keeps at least one row composed beyond each edge of the viewport, so
+  the tile a Down or Up needs already exists when the key arrives.
+- **A press recomposes only the two tiles whose focus changes.** No state that every grid item reads in composition
+  changes on a press.
+
+This holds for every grid that carries `gridColumnKeys`: the Movies / Series / seeded browse grid
+(`SeededBrowseScreen`) and My List (`BrowseScreen`'s `BrowseGrid`). A restore or a refresh landing (R361, FR-R361-3/4)
+is not a key press. It may still jump to a target that is far away.
+
+**Acceptance 8 (device, a BRAVIA, never the Streamer).** Install the `.debug` build. Cold-launch it to Home, wait about
+20 s, and send the `ProfileInstallReceiver` broadcast (`result=1`). Then run `cmd package compile -f -m speed-profile`,
+and record the `dumpsys package dexopt` status line. Run DEB-2455's three Browse → Movies journeys, three passes each
+in one process:
+- **R:** (Right ×5, Left ×5) ×3 at 250 ms.
+- **Ds:** Down ×12 at 400 ms.
+- **Df:** Down ×20 at the fastest the shell gives (~85 ms).
+
+Pass when:
+- the mean janky % of Ds and of Df is each within **1 point** of R's;
+- no Ds frame lands in a `gfxinfo` histogram bucket above **50 ms**.
+
+Df is reported as data. Its keys arrive faster than the move takes.
+
+**Acceptance 9 (CI).** In a 6-column grid of 60 stand-in cards, one Down from column 4 recomposes at most the tile
+losing focus and the tile gaining it. Use DEB-2204 FR-3's counting seam on `Tile`'s `modifier`. Acceptance 5 (column 4
+down six rows and back) still passes in `BrowseFocusTest`.
+
+**Build note (guidance, not a requirement).**
+- `LazyGridState(cacheWindow = LazyLayoutCacheWindow(ahead = …, behind = …), …)` is in Compose 1.9.3 (`commonMain`;
+  experimental). Both stores build their grid state once, because it is retained (R137): `SeededBrowseStore` and
+  `BrowseStore`. Wholphin composes two screens ahead; one row each way is the floor here.
+- With the target composed, the press can request its focus at once and let bring-into-view animate the scroll.
+- The requester can be one per item, created in the item and registered by key in a plain map, which is not snapshot
+  state. That removes both the double invalidation and the frame wait that only existed to attach `targetFR`.
+- Keep `bringIndexIn` for R361's restore. If a press ever does find its target uncomposed, use `animateScrollBy`.
+- One system trace on a TV, before and after, shows whether the 90–250 ms frame was the jump.
