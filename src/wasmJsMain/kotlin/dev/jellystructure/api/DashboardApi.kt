@@ -16,6 +16,9 @@ object DashboardApi {
         if (r.status.value in 200..299) r.body<FilterTagSaved>().queued else null
     }.getOrNull()
 
+    /** DEB-2518 (FR-12) — *Leave it* on the single-sign-on-without-a-filter row; true when the server took it. */
+    suspend fun dismissUnfilteredSso(): Boolean = runCatching { httpClient.post("/api/dashboard/sso-unfiltered/dismiss").status.value in 200..299 }.getOrDefault(false)
+
     @kotlinx.serialization.Serializable
     private data class FilterTagSaved(val queued: Int = 0)
 

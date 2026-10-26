@@ -532,6 +532,8 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
             when (act) {
                 "fetch_artwork" -> { out("Fetching…"); out(if (MediaApi.batchFetchArtwork()) "Started ✓" else "Failed") }
                 "artwork_repair" -> { out("Checking…"); out(if (MediaApi.batchArtworkRepair()) "Started ✓" else "Failed") }
+                // DEB-2518 (FR-12) — remembers the accounts the row names; nothing is written to Jellyfin.
+                "sso_unfiltered_dismiss" -> { out("Saving…"); val ok = dev.jellystructure.api.DashboardApi.dismissUnfilteredSso(); out(if (ok) "Left ✓" else "Couldn’t save"); if (ok) loadOverview(scope) }
                 "jf_push" -> { out("Writing…"); out(if (MediaApi.batchJellyfinPush()) "Started ✓" else "Failed") }
                 "jf_refresh" -> { out("Sending…"); out(if (MediaApi.jellyfinRefreshAll()) "Triggered ✓" else "Failed") }
                 // Phase 315 (FR-315-4) — read-only: the page reloads to show "Checking…", then the result.

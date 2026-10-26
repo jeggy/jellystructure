@@ -200,6 +200,8 @@ fun startServer(
     devicePolicyReconciler: dev.jellystructure.tv.DevicePolicyReconciler? = null,
     // DEB-2518 (FR-7) — the Dashboard's filter-tag rows; null only in tests that build none.
     filterTagCheck: dev.jellystructure.media.FilterTagCheck? = null,
+    // DEB-2518 (FR-12) — the Dashboard's *single-sign-on account with no tag filter* row; null only in tests that build none.
+    unfilteredSsoAccounts: dev.jellystructure.tv.UnfilteredSsoAccounts? = null,
     // R303 (FR-R303-2) — the remote play push's title/kicker/series/logo; null = kind + title only.
     playPushResolver: dev.jellystructure.tv.PlayPushResolver? = null,
     // Phase 218 — the cast service (hand-off, ceiling, reachability, status) and the receiver bundle dir.
@@ -664,7 +666,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
                 dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
-                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
+                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck, unfilteredSso = unfilteredSsoAccounts) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4
                 dev.jellystructure.filefix.FileFixService.current?.let { fileFixRoutes(it, appScope) }   // Phase 314

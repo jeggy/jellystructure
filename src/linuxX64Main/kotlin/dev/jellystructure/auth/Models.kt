@@ -84,6 +84,9 @@ data class JellyfinPolicy(
 /** DEB-1854 (FR-1) — read from `Policy.AuthenticationProviderId` of every local account on the 12.1 server, 2026-10-19. */
 const val DEFAULT_AUTHENTICATION_PROVIDER_ID = "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider"
 
+/** DEB-2518 (FR-12) — the single-sign-on plugin's provider id, as Jellyfin reports it in `Policy.AuthenticationProviderId`. */
+const val SSO_AUTHENTICATION_PROVIDER_ID = "Jellyfin.Plugin.SSO_Auth.Api.SSOController"
+
 @Serializable
 data class JellyfinUser(
     @SerialName("Id") val id: String,

@@ -717,6 +717,9 @@ fun main() = runBlocking {
         clock = { platform.posix.time(null) * 1000L },
     )
     scanTracker.onComplete = { filterTagCheck.afterScan() }
+    // DEB-2518 (FR-12) — single-sign-on accounts with no tag filter, from the same /Users read; dismissals persist beside the other small JSON stores.
+    val unfilteredSsoAccounts = dev.jellystructure.tv.UnfilteredSsoAccounts("$dataDir/sso-unfiltered.json")
+    unfilteredSsoAccounts.load()
     val devicePolicyReconciler = dev.jellystructure.tv.DevicePolicyReconciler(
         deviceService = raviloDeviceService,
         fetchUsers = {
@@ -726,7 +729,7 @@ fun main() = runBlocking {
         },
         onPolicyChanged = { userId -> tvEventBus.notifyHomeChanged(userId) },
         onConfigChanged = { userId -> tvEventBus.notifyConfigChanged(userId) },   // DEB-1854
-        onUsersRead = filterTagCheck::noteUsers,   // DEB-2518 (FR-7)
+        onUsersRead = { users -> filterTagCheck.noteUsers(users); unfilteredSsoAccounts.noteUsers(users) },   // DEB-2518 (FR-7, FR-12)
     )
     rootScope.launch {
         runCatching { devicePolicyReconciler.reconcileAll("start") }
@@ -783,6 +786,7 @@ fun main() = runBlocking {
         singleSignOnService = singleSignOnService,
         devicePolicyReconciler = devicePolicyReconciler,
         filterTagCheck = filterTagCheck,
+        unfilteredSsoAccounts = unfilteredSsoAccounts,
         playPushResolver = playPushResolver,
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),
         musicPipeline = musicPipeline,
