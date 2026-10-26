@@ -1005,8 +1005,8 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     suspend fun chromeHideTimer() {
         if (chromeRevision == 0L) return
         delay(if (handset) HANDSET_CHROME_HIDE_MS else PLAYER_CHROME_HIDE_MS)
-        // R350 (FR-R350-7) — the TV keeps its chrome while paused (and while scrubbing) too; play re-arms the hide
-        // (togglePlay wakes).
+        // R350 (FR-R350-7) — the TV keeps its chrome while paused (and while scrubbing) too; the film going from
+        // paused to playing re-arms the hide by any road (ChromeHideEffect keys on isPlaying as well as the wake).
         val hold = scrubbing || locked || !isPlaying
         if (!pickerOpen && !nextUpVisible && !epRailOpen && !hold) hideChrome()
     }

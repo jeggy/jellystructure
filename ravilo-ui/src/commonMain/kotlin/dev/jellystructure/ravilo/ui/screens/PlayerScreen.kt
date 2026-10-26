@@ -528,7 +528,8 @@ private fun PlayerScreenEffects(s: PlayerScreenState) {
     // Poll player state
     LaunchedEffect(Unit) { s.pollLoop() }
 
-    LaunchedEffect(s.chromeRevision) { s.chromeHideTimer() }
+    // R350 (FR-R350-7) — keyed on the play state as well: a resume by the cast road wakes nothing.
+    ChromeHideEffect(s.chromeRevision, s.isPlaying) { s.chromeHideTimer() }
     LaunchedEffect(s.epRailOpen, s.chromeRevision) { s.epRailHideTimer() }
 
     val rawBufferMoment = s.rawBufferMoment
