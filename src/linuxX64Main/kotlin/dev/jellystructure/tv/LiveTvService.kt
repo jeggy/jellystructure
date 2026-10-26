@@ -8,6 +8,7 @@ import dev.jellystructure.auth.JellyfinLiveTvChannel
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
+import dev.jellystructure.ops.LockedMap
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.LiveTvGuideProgram
@@ -44,6 +45,9 @@ import platform.posix.tm
 
 private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L
 
+/** DEB-2520 — how long a viewer's channel list from Jellyfin is believed; a policy change drops it sooner (the hash). */
+private const val VIEWER_CHANNELS_TTL_MS = 2 * 60 * 1000L
+
 /**
  * Phase 147 — surfaces Jellyfin's Live TV into Ravilo: reads the channel list, diffs it against
  * jellystructure's stored [LiveTvChannelOverride]s (new → hidden, gone → unavailable), serves the
@@ -61,6 +65,11 @@ class LiveTvService(
     private val logoDir = "$dataDir/artwork/livetv-logos"
     private val syncMutex = Mutex()
     private var lastLiveChannels: List<JellyfinLiveTvChannel> = emptyList()
+
+    // DEB-2520 — the channel ids Jellyfin lists for one viewer (`/LiveTv/Channels?userId=`), per user. HomeFeedService's
+    // shape: the entry also carries the hash of the device's library and tag lists, so a policy change misses it.
+    private data class ViewerChannels(val ids: Set<String>, val policyHash: Int, val fetchedAt: Long)
+    private val viewerChannels = LockedMap<String, ViewerChannels>()
 
     private var guideCache: List<LiveTvGuideProgram> = emptyList()
     private var guideCacheFetchedAt: Long = 0L
@@ -178,9 +187,34 @@ class LiveTvService(
         }
     }
 
-    /** Only the shown+available channels, for the TV-facing Home "On now" row / player channel bar
-     *  (R177 §B/D1) — those need no separate guide fetch (addendum C, embedded CurrentProgram). */
-    fun homeChannels(): List<LiveTvChannel> = lineup().filter { it.shown && !it.unavailable }
+    /** Only the shown+available channels [device]'s viewer may watch, for the TV-facing Home "On now" row / player
+     *  channel bar (R177 §B/D1) — those need no separate guide fetch (addendum C, embedded CurrentProgram). */
+    suspend fun homeChannels(device: DeviceData): List<LiveTvChannel> {
+        val visible = visibleChannelIds(device)
+        return lineup().filter { it.shown && !it.unavailable && it.channelId in visible }
+    }
+
+    /**
+     * DEB-2520 (restores R177: *restricted viewers see only permitted channels*) — the channel ids Jellyfin lists for
+     * [device]'s account, asked with the server key and `userId=` so Jellyfin's own policy (tags, folders, channels)
+     * decides. Cached per user for [VIEWER_CHANNELS_TTL_MS] and dropped when the device's lists change. Fails closed:
+     * when Jellyfin cannot be asked, the last answer under the same policy stands, and with none the viewer has no
+     * channels. A failed answer is never cached.
+     */
+    suspend fun visibleChannelIds(device: DeviceData): Set<String> {
+        val userId = device.jellyfinUserId
+        if (userId.isBlank()) return emptySet()
+        val policyHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        val now = nowMs()
+        val cached = viewerChannels[userId]?.takeIf { it.policyHash == policyHash }
+        if (cached != null && now - cached.fetchedAt < VIEWER_CHANNELS_TTL_MS) return cached.ids
+        val base = jellyfinBase(); val token = jellyfinToken()
+        val listed = if (base.isBlank() || token.isBlank()) null else jellyfinClient.getLiveTvChannelsOrNull(base, token, userId)
+        if (listed == null) return cached?.ids ?: emptySet()
+        val ids = listed.mapTo(HashSet()) { it.id }
+        viewerChannels[userId] = ViewerChannels(ids, policyHash, now)
+        return ids
+    }
 
     fun updateChannel(
         channelId: String,
@@ -250,7 +284,13 @@ class LiveTvService(
      * depends on the Jellyfin server's own EPG source retaining recently-elapsed programs; if it doesn't,
      * this floor is harmless (Jellyfin just returns nothing before its own retention edge).
      */
-    suspend fun guide(days: Int = 7, hoursBack: Int = 0): List<LiveTvGuideProgram> {
+    suspend fun guide(device: DeviceData, days: Int = 7, hoursBack: Int = 0): List<LiveTvGuideProgram> {
+        // DEB-2520 — the programme data is one shared fetch; what this viewer is handed is cut to their channels.
+        val visible = visibleChannelIds(device)
+        return sharedGuide(days, hoursBack).filter { it.channelId in visible }
+    }
+
+    private suspend fun sharedGuide(days: Int, hoursBack: Int): List<LiveTvGuideProgram> {
         val cadenceMs = store.settings().epgCadenceMinutes.coerceAtLeast(1) * 60_000L
         val now = nowMs()
         if (guideCache.isEmpty() || now - guideCacheFetchedAt > cadenceMs) {
@@ -273,8 +313,17 @@ class LiveTvService(
     // ── Tune / stop — a sibling to PlaybackService.startPlayback, not a branch of it (addendum D):
     // live channels have no resume position and require Jellyfin's explicit Open/Close handshake. ──
 
+    /**
+     * DEB-2520 — null for a channel Jellyfin does not list for this viewer (the route answers 404; the check is here
+     * too so no other caller can tune past it). The token that goes into the ticket is the device's own, from
+     * [tvTokenForClient]: a rejected one throws [JellyfinReauthRequiredException] (the 409 *re-pair* playback gives),
+     * and the server key is never the fallback — it is not a thing a device is handed (2026-08-02 review, H2).
+     */
     suspend fun tune(device: DeviceData, channelId: String, capabilities: ClientCapabilities): LiveTvStreamTicket? {
-        val base = jellyfinBase(); val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+        if (channelId !in visibleChannelIds(device)) return null
+        val base = jellyfinBase()
+        val token = jellyfinClient.tvTokenForClient(base, device)
+            ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         // R379 — a channel's AC-3 on a device without a platform decoder is converted, never copied (the track's codec
         // isn't known before tuning, so only the list narrows).

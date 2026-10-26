@@ -1735,13 +1735,21 @@ class JellyfinClient {
             .bodyOrNull<JellyfinLiveTvInfo>("getLiveTvInfo")
     }.getOrElse { Logger.warn("Jellyfin getLiveTvInfo failed: ${it.message}"); null }
 
-    suspend fun getLiveTvChannels(baseUrl: String, token: String): List<JellyfinLiveTvChannel> = runCatching {
-        val url = baseUrl.trimEnd('/') + "/LiveTv/Channels?EnableImages=true"
+    suspend fun getLiveTvChannels(baseUrl: String, token: String): List<JellyfinLiveTvChannel> =
+        getLiveTvChannelsOrNull(baseUrl, token, null).orEmpty()
+
+    /**
+     * DEB-2520 — the channels Jellyfin lists for [userId] (`?userId=`, which applies that account's tag and channel
+     * policy), or all of them when [userId] is null. `null` when Jellyfin was unreachable or did not answer, so a caller
+     * that filters by the answer can tell "the viewer has none" from "could not ask" and never caches the latter.
+     */
+    suspend fun getLiveTvChannelsOrNull(baseUrl: String, token: String, userId: String?): List<JellyfinLiveTvChannel>? = runCatching {
+        val url = baseUrl.trimEnd('/') + "/LiveTv/Channels?EnableImages=true" + (userId?.let { "&userId=${it.encodeURLParameter()}" } ?: "")
         httpGet(url) { jellyfinAuth(token) }
-            .bodyOrNull<JellyfinLiveTvChannelsResponse>("getLiveTvChannels")?.items.orEmpty()
+            .bodyOrNull<JellyfinLiveTvChannelsResponse>("getLiveTvChannels")?.items
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getLiveTvChannels failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
+        result.getOrNull()
     }
 
     /** Full-schedule guide fetch for the R177 EPG grid (addendum C — "On now"/channel bar don't need

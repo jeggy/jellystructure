@@ -95,16 +95,16 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
     // ── TV-facing (device-token gated — Phase 147 addendum E/D, consumed by R177) ──────────────────
 
     get("/tv/livetv/channels") {
-        call.attributes[DeviceKey] // gate; unused (no per-user restriction yet — spec §E defers this to Ravilo config)
-        call.respond(liveTvService.homeChannels())
+        // DEB-2520 — the channels Jellyfin lists for this viewer's account, not the whole lineup.
+        call.respond(liveTvService.homeChannels(call.attributes[DeviceKey]))
     }
 
     get("/tv/livetv/guide") {
-        call.attributes[DeviceKey]
+        val device = call.attributes[DeviceKey]
         val days = call.request.queryParameters["days"]?.toIntOrNull()?.coerceIn(1, 14) ?: 7
         // User request: guide should scroll 4h into the past as well as forward — was always "now" floor.
         val hoursBack = call.request.queryParameters["hoursBack"]?.toIntOrNull()?.coerceIn(0, 48) ?: 0
-        call.respond(liveTvService.guide(days, hoursBack))
+        call.respond(liveTvService.guide(device, days, hoursBack))
     }
 
     post("/tv/livetv/channels/{id}/tune") {
@@ -113,6 +113,8 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         val req = runCatching { call.receive<LiveTvTuneRequest>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request")); return@post
         }
+        // DEB-2520 — a channel Jellyfin does not list for this viewer does not exist for them.
+        if (id !in liveTvService.visibleChannelIds(device)) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown channel"))
         val ticket = liveTvService.tune(device, id, req.capabilities)
             ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Could not tune this channel"))
         call.respond(ticket)
