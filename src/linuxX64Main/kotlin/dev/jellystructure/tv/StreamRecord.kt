@@ -246,6 +246,10 @@ internal fun foldRecord(record: StreamRecord, hold: HoldState?, sample: RecordSa
     val v = sample.variantBps
     if (v == null || v <= 0) return rec to HoldState(null, now, sample.stalls.size)
     if (hold == null || hold.variantBps != v) return rec to HoldState(v, now, sample.stalls.size)
+    // DEB-2508 — a hold that began before the record's stall is a proof older than that stall (a hand-over writes the stall on the new
+    // play's first report, while the hold is still the previous play's on the same file): it neither proves nor clears. Hold from here.
+    val stalledAt = rec.stalledAt
+    if (stalledAt != null && hold.sinceSec < stalledAt) return rec to hold.copy(sinceSec = now)
     if (now - hold.sinceSec >= PROOF_HOLD_SEC) {
         val provenStill = rec.provenBps?.takeIf { fresh(rec.provenAt, now, RECORD_MAX_AGE_SEC) }
         if (provenStill == null || v >= provenStill) rec = rec.copy(provenBps = v, provenAt = now)

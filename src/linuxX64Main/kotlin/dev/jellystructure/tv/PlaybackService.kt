@@ -694,7 +694,9 @@ class PlaybackService(
             if (lifting && hold != null && after.decodeFailed.isNotEmpty() &&
                 cleanDirectPlay(now - hold.sinceSec, report.droppedFrames.toLong(), report.renderedFrames, report.stalls.size, report.frozenCount)) {
                 val (family, videoBps) = played
-                if (family != null && videoBps != null) after = liftDecodeFailed(after, family, videoBps)
+                // DEB-2508 — only a hold that began after the failure can lift it; the previous play's hold on this file is older evidence.
+                val failedAt = family?.let { after.decodeFailed[it]?.at }
+                if (family != null && videoBps != null && failedAt != null && hold.sinceSec >= failedAt) after = liftDecodeFailed(after, family, videoBps)
             }
             while (true) {
                 val old = holds.value

@@ -43,6 +43,22 @@ class StreamRecordTest {
         assertEquals(1_200, h4.sinceSec)
     }
 
+    @Test fun `a hold older than the stall neither proves nor clears it`() {
+        // The previous play of this file held 53 Mbps for hours; the new play's hand-over has just written the stall.
+        val stalled = StreamRecord(stalledBps = 53_000_000, stalledAt = 10_000)
+        val old = HoldState(53_000_000, 1_000, 0)
+        val (kept, h) = foldRecord(stalled, old, RecordSample(53_000_000, emptyList(), true), now = 10_000)
+        assertEquals(53_000_000, kept.stalledBps)
+        assertNull(kept.provenBps)
+        assertEquals(10_000, h!!.sinceSec)
+        // A hold begun after the stall ends it only once it has run PROOF_HOLD_SEC.
+        val (early, h2) = foldRecord(kept, h, RecordSample(53_000_000, emptyList(), true), now = 10_000 + PROOF_HOLD_SEC - 1)
+        assertEquals(53_000_000, early.stalledBps)
+        val (cleared, _) = foldRecord(early, h2, RecordSample(53_000_000, emptyList(), true), now = 10_000 + PROOF_HOLD_SEC)
+        assertNull(cleared.stalledBps)
+        assertEquals(53_000_000, cleared.provenBps)
+    }
+
     @Test fun `a counting stall lowers the record for 24 h and restarts the hold`() {
         val rec = StreamRecord(provenBps = 20_000_000, provenAt = 900)
         val hold = HoldState(24_000_000, 500, 0)
