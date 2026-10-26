@@ -201,11 +201,19 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
                 is JobEvent.Finished -> {
                     ws.close()
                     dashScanSocket = null
-                    setDashScanIdle()
                     val n = event.succeeded
-                    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-                    banner?.innerHTML = """<span class="badge ok">Scan complete — $n new item${if (n != 1) "s" else ""} processed.</span>"""
-                    scope.launch { loadDashboardStats() }
+                    // DEB-2553 (FR-15.1, FR-15.6) — a stopped run also ends with a *Finished*; the server says which it was, the way the toast reads it.
+                    scope.launch {
+                        val status = MediaApi.scanStatus()
+                        if (status?.status == "CANCELLED") {
+                            setDashScanCancelled(status.processedCount, status.canResume, status.resumeReason, scope)
+                        } else {
+                            setDashScanIdle()
+                            val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+                            banner?.innerHTML = """<span class="badge ok">Scan complete — $n new item${if (n != 1) "s" else ""} processed.</span>"""
+                        }
+                        loadDashboardStats()
+                    }
                 }
                 // Phase 178 §FR-178-2/FR-178-4 — a scheduled/event-driven run is waiting for a TV to
                 // stop playing before its heavy steps proceed. "Run anyway" is a one-run override —
