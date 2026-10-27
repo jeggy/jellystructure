@@ -193,6 +193,18 @@ one lane.
      published date and description), `json` (a URL template on the same site and JSON paths for the same fields), or
      `ytdlp` (a site yt-dlp's own extractor already understands, reading its fields; FR-6.3);
    - `media`: how an item becomes a stream — a manifest URL template or a JSON path to it, or `ytdlp`;
+     - **`item_page`** (2026-10-27, DEB-1076). The listing gives an item's link but not its media id, so the engine
+       opens the item's own page and reads one value from it. Read either by a CSS selector and attribute, or by one
+       rule from `pattern`'s grammar with a single named group `value`, checked the same way for size and
+       backtracking. Script text counts as page text.
+       - The value must match `[A-Za-z0-9._-]{1,128}`, and it fills the manifest template's `{value}`. Otherwise the
+         item is skipped with its line, and nothing is fetched for it.
+       - The page is on the same host as the listing, and the request is a page request in FR-2's lane.
+       - It is read only for an item that is not already in the library, and its value is stored with the item.
+         So a run with nothing new costs the listing request alone.
+       - KVF's case: `/sjon/sending/dv` links 12 items, but only the newest one's media id
+         (`var media = 'DOV7313'`) is on the listing. Each other id sits only on that item's own page
+         (`?sid=214396` → `DOV7302`).
    - `numbering`: `source` (the item's own season and episode numbers, read by a pattern), `mapped` (an
      explicit table, item id → `SxxEyy`, FR-4.3), or `date` (the item's published date, page-only fetchers only,
      FR-4.5);
@@ -211,7 +223,8 @@ one lane.
    live site, gets the same answer the model gave (FR-270-4, *nothing trusted blindly*):
    - the listing yields at least two items, and every item has a title and a link;
    - every item maps to exactly one `SxxEyy`, and no two items map to the same one;
-   - one manifest, chosen by the engine, resolves to a video variant `ffprobe` can read, with a duration;
+   - one manifest, chosen by the engine, resolves to a video variant `ffprobe` can read, with a duration. With `item_page`,
+     that manifest's value is read from its item's page during the proof, not taken from the listing;
    - **the pattern agrees with TMDB on every episode TMDB has**: for each mapped `SxxEyy` TMDB knows, the TMDB air
      date is within 7 days of the item's published date, or the TMDB episode name equals the item's title. Under Q1, at
      least **two** such agreements, with none against, are what *proven* means. A fetcher whose
@@ -636,6 +649,12 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
       page* on.
     - Lowering 12 to 8 on the open row previews *deletes 4 episodes at the next run* before saving, and the next run
       deletes exactly those 4.
+15. **An item's media id is on its own page** (`item_page`).
+    - The stand-in listing carries only links, and each item page carries `var media = '…'`.
+    - The proof reads one item page and plays its manifest.
+    - The first run reads one page per new item, 10 s apart, and places them.
+    - The second run reads the listing only.
+    - An item page whose value fails the character rule is skipped with its line, and no request is made for it.
 
 ## Non-goals
 
@@ -716,3 +735,5 @@ Each piece files its own QA row when built, with a written plan and no named sea
   FR-10.6's screens, drawn by the addendum round of FR-14.4.
 - **Slice 4** takes FR-15.9, the page-only investigation.
 - **Slice 5** is unchanged. `mapped` is not offered to a page-only fetcher.
+- **`item_page`** (FR-4.1, added the same day for DEB-1076) is **slice 2's**: it is part of the recipe and the `html`
+  reader, and Dagur og vika cannot be written without it.
