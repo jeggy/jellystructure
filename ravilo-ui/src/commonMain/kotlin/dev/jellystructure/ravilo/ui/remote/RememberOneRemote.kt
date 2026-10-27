@@ -20,6 +20,8 @@ import dev.jellystructure.ravilo.ui.sessions.commandFeedback
 import dev.jellystructure.ravilo.ui.sessions.remoteSessionView
 import dev.jellystructure.ravilo.ui.sessions.sessionStateLineText
 import dev.jellystructure.shared.tv.SessionCommandRequest
+import dev.jellystructure.shared.tv.SessionDetail
+import dev.jellystructure.shared.tv.SessionView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.time.Clock
@@ -71,14 +73,13 @@ fun rememberOneRemote(
     LaunchedEffect(gone) { if (gone) onGone() }
 
     if (holdsLink && cast != null) {
-        val s = castStatus ?: CastRemoteStatus()
         val unreachable = link != CastLinkState.CONNECTED
-        val model = RemoteModel(
-            sessionId = id, placeName = deviceName.orEmpty(), placeIcon = view?.target?.icon, status = s,
-            kind = if (view?.kind == "episode" || s.hasNext || s.kicker != null) "episode" else "film",
-            unreachable = unreachable, retryable = unreachable, view = view, leavesOnStop = true,
+        // The session's detail rides along with the link (DEB-2611): a song's rooms and shuffle come from it.
+        val linkDetail = view?.let { lv -> detail?.takeIf { it.session.id == lv.id } }
+        return linkRemote(
+            LinkActions(cast), castStatus ?: CastRemoteStatus(), unreachable, deviceName.orEmpty(), view, linkDetail, extras,
+            linkVolume = if (desktop && !unreachable) { m -> dev.jellystructure.ravilo.ui.screens.RemoteVolume(cast, m) } else null,
         )
-        return OneRemote(model, LinkActions(cast), extras, linkVolume = if (desktop && !unreachable) { m -> dev.jellystructure.ravilo.ui.screens.RemoteVolume(cast, m) } else null)
     }
     val v = view ?: return null
     val d = detail?.takeIf { it.session.id == v.id }
@@ -95,7 +96,7 @@ fun rememberOneRemote(
     val model = RemoteModel(
         sessionId = v.id, placeName = v.target.name, placeIcon = v.target.icon,
         status = SessionSender.status(v, d, list.serverNowMs, list.receivedAtMs, now),
-        kind = if (v.kind == "episode") "episode" else "film",
+        kind = remoteKindOf(v.kind),
         unreachable = (v.reconnecting || v.offline || cantReach) && !ended,
         retryable = (v.reconnecting || cantReach) && !ended,
         line = line, lineAlert = v.moveFailed != null || v.offline || v.reconnecting || cantReach,
@@ -103,8 +104,35 @@ fun rememberOneRemote(
         viewOnlyOwner = if (viewOnly) v.owner.name else null,
         confirmStop = !v.mine, ownerName = v.owner.name, here = v.here, view = v, ops = ops, feedback = feedback,
         canSubtitleSize = false, canNextUp = false,
+        shuffle = d?.shuffle ?: false, repeat = d?.repeat ?: "off",
     )
     return OneRemote(model, SessionActions(v.id), extras, sessionVolume = if (d != null && v.controllable && !ended && !viewOnly) { { extras.volume?.invoke(d) } } else null)
+}
+
+/**
+ * DEB-2611 (FR-1, FR-3, FR-10) — the remote over this app's own link. A song or a book keeps its kind and, with the
+ * session's [detail] in hand, gets R371's volume block (rooms, *Add a speaker…*) as the server driver does; the
+ * computer's own slider ([linkVolume]) is what a film or an episode — or a song with no detail yet — has.
+ */
+internal fun linkRemote(
+    actions: RemoteActions, status: CastRemoteStatus, unreachable: Boolean, placeName: String, view: SessionView?,
+    detail: SessionDetail?, extras: RemoteExtras, linkVolume: (@Composable (androidx.compose.ui.Modifier) -> Unit)?,
+): OneRemote {
+    val kind = remoteKindOf(view?.kind, episodeLike = status.hasNext || status.kicker != null)
+    val music = kind == "music" || kind == "audiobook"
+    // A song's artist (a book's chapter) rides on the server's row when the receiver does not say it.
+    val s = if (music && status.kicker == null) status.copy(kicker = view?.subtitle) else status
+    val model = RemoteModel(
+        sessionId = view?.id, placeName = placeName, placeIcon = view?.target?.icon, status = s, kind = kind,
+        unreachable = unreachable, retryable = unreachable, view = view, leavesOnStop = true,
+        shuffle = detail?.shuffle ?: false, repeat = detail?.repeat ?: "off",
+    )
+    val rooms = music && detail != null && extras.volume != null
+    return OneRemote(
+        model, actions, extras,
+        linkVolume = if (rooms) null else linkVolume,
+        sessionVolume = if (rooms && !unreachable) { { extras.volume?.invoke(detail!!) } } else null,
+    )
 }
 
 /** FR-5.2 — a press goes over this app's own link. */
@@ -120,6 +148,10 @@ private class LinkActions(private val cast: CastController) : RemoteActions {
     override fun nextUpCancel() = cast.command("nextup_cancel")
     override fun subtitleSize(size: Char) = cast.command("subsize", size = size.toString())
     override fun retry() = cast.command("status")
+    // A song's own controls travel the music queue's own commands over the link (R324).
+    override fun previous() = cast.musicCommand("prev")
+    override fun setShuffle(on: Boolean) = cast.musicCommand("shuffle", on = on)
+    override fun setRepeat(mode: String) = cast.musicCommand("repeat", mode = mode)
 }
 
 /** FR-5.2 — a press goes through the server; the revision rides along (R369 FR-R369-1) and a 409 redraws. */
@@ -137,4 +169,7 @@ private class SessionActions(private val id: String) : RemoteActions {
     override fun nextUpCancel() {}
     override fun subtitleSize(size: Char) {}
     override fun retry() = SessionRemote.refresh()
+    override fun previous() = send(SessionCommandRequest(op = "previous"))
+    override fun setShuffle(on: Boolean) = send(SessionCommandRequest(op = "set_shuffle", on = on))
+    override fun setRepeat(mode: String) = send(SessionCommandRequest(op = "set_repeat", mode = mode))
 }

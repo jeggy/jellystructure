@@ -41,6 +41,9 @@ internal class RecordingActions : RemoteActions {
     override fun nextUpCancel() { calls += "nextup_cancel" }
     override fun subtitleSize(size: Char) { calls += "subsize:$size" }
     override fun retry() { calls += "retry" }
+    override fun previous() { calls += "previous" }
+    override fun setShuffle(on: Boolean) { calls += "shuffle:$on" }
+    override fun setRepeat(mode: String) { calls += "repeat:$mode" }
 }
 
 internal object NoActions : RemoteActions {
@@ -170,6 +173,37 @@ class OneRemoteTest {
         rule.onNodeWithTag("remote-skip-back").performClick()
         rule.onNodeWithTag("remote-skip-fwd").performClick()
         assertEquals(listOf("pause", "seek:2880000", "seek:2920000"), rec.calls)
+    }
+
+    private fun absent(tag: String) = runCatching { rule.onNodeWithTag(tag).assertExists() }.isFailure
+
+    private val songServerOps = setOf("play", "pause", "seek", "next", "previous", "set_shuffle", "set_repeat", "set_audio", "set_subtitle", "stop")
+
+    private fun checkSong(ops: Set<String>?) {
+        // DEB-2611 (FR-1, FR-10) — the file carries two audio streams and a text stream; a song still has no tracks control.
+        val rec = RecordingActions()
+        draw(modelOf("Stue", ops = ops).copy(kind = "music"), rec)
+        for (tag in listOf("remote-shuffle", "remote-prev", "remote-play-pause", "remote-next-song", "remote-repeat", "remote-stop")) rule.onNodeWithTag(tag).assertExists()
+        assertTrue(absent("remote-tracks"), "a song has no Audio & Subs, ops=$ops")
+        assertTrue(absent("remote-skip-back"), "a song has no −10 s, ops=$ops")
+        rule.onNodeWithTag("remote-shuffle").performClick()
+        rule.onNodeWithTag("remote-repeat").performClick()
+        assertEquals(listOf("shuffle:true", "repeat:all"), rec.calls.filter { it.startsWith("shuffle") || it.startsWith("repeat") })
+    }
+
+    @Test fun `a song over the link draws shuffle previous play next repeat and Stop and no Audio and Subs`() = checkSong(null)
+
+    @Test fun `a song through the server draws the same and no Audio and Subs`() = checkSong(songServerOps)
+
+    @Test fun `a book draws minus 30 s play plus 30 s and Stop, and no Audio and Subs`() {
+        val rec = RecordingActions()
+        draw(modelOf("Stue").copy(kind = "audiobook"), rec)
+        rule.onNodeWithTag("remote-play-pause").assertExists()
+        rule.onNodeWithTag("remote-stop").assertExists()
+        rule.onNodeWithTag("remote-skip-back").performClick()
+        rule.onNodeWithTag("remote-skip-fwd").performClick()
+        assertEquals(listOf("seek:2860000", "seek:2920000"), rec.calls.filter { it.startsWith("seek") })
+        assertTrue(absent("remote-tracks") && absent("remote-shuffle") && absent("remote-prev"))
     }
 
     @Test fun `Lost contact says so with Try again and nothing else greyed away`() {

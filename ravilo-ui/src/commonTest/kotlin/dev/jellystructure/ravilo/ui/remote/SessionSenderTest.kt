@@ -72,15 +72,23 @@ class SessionSenderTest {
         assertFalse(holdsLinkTo(null, "Stue TV"))
     }
 
-    @Test fun `the row of the cast this app holds is the viewers own live film there and the newest`() {
+    @Test fun `the row of the cast this app holds is the viewers own live playback there and the newest`() {
         val rows = listOf(
             view(id = "old", createdAt = 1), view(id = "new", createdAt = 5), view(id = "theirs", mine = false, createdAt = 9),
-            view(id = "ended", state = "ended", createdAt = 8), view(id = "song", kind = "music", createdAt = 7),
+            view(id = "ended", state = "ended", createdAt = 8),
             view(id = "here", here = true, createdAt = 6), view(id = "other", place = "Kontor", createdAt = 4),
         )
         assertEquals("new", rowForLink(rows, "Stue TV")?.id)
         assertNull(rowForLink(rows, null))
         assertNull(rowForLink(rows, "Gæsteværelse"))
+        // DEB-2611 — a song cast from this app is the cast it holds; a newer song beats an older film at the same place.
+        assertEquals("song", rowForLink(rows + view(id = "song", kind = "music", createdAt = 7), "Stue TV")?.id)
+        assertEquals("book", rowForLink(rows + view(id = "book", kind = "audiobook", createdAt = 7), "Stue TV")?.id)
+    }
+
+    @Test fun `a songs artist and a books chapter are the kicker the server driver draws under the title`() {
+        assertEquals("S01E04", SessionSender.status(view(kind = "music"), null, 0, 0, 0).kicker)
+        assertEquals("S01E04", SessionSender.status(view(kind = "audiobook"), null, 0, 0, 0).kicker)
     }
 
     @Test fun `someone elses playback is view-only only while the server says this app may not control it`() {

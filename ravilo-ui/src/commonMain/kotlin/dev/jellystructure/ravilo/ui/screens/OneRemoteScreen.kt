@@ -77,11 +77,15 @@ import kotlinx.coroutines.delay
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.components.DeskIcon
+import dev.jellystructure.ravilo.ui.components.MusicGlyph
+import dev.jellystructure.ravilo.ui.components.MusicIcon
 import dev.jellystructure.ravilo.ui.components.placeIcon
 import dev.jellystructure.ravilo.ui.remote.OneRemote
 import dev.jellystructure.ravilo.ui.remote.RemoteActions
 import dev.jellystructure.ravilo.ui.remote.RemoteOnScreen
+import dev.jellystructure.ravilo.ui.remote.musicShape
 import dev.jellystructure.ravilo.ui.remote.offers
+import dev.jellystructure.ravilo.ui.remote.offersTracks
 import dev.jellystructure.ravilo.ui.remote.viewOnly
 import dev.jellystructure.ravilo.ui.sessions.CommandFeedback
 import dev.jellystructure.ravilo.ui.sessions.PlayOnStore
@@ -191,7 +195,7 @@ fun OneRemoteScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     val art = s.artUrl
-                    if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, requestedWidth = 1280)
+                    if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = if (m.musicShape) ContentScale.Fit else ContentScale.Crop, requestedWidth = 1280)
                     else Text(s.title ?: name, color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(24.dp))
                     if (s.buffering && !unreachable) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
                 }
@@ -200,8 +204,10 @@ fun OneRemoteScreen(
                 Spacer(Modifier.height(gap(16.dp)))
 
                 // ── Kicker + title + state line ──
-                s.kicker?.let { Text(it.uppercase(), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1) }
+                if (!m.musicShape) s.kicker?.let { Text(it.uppercase(), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1) }
                 Text(s.title ?: str("loading"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                // DEB-2611 — a song's artist, a book's chapter: under the title, not over it.
+                if (m.musicShape) s.kicker?.let { Text(it, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("remote-artist")) }
                 Spacer(Modifier.height(4.dp))
                 val state = remoteState(s, unreachable)
                 val stateLine = m.line ?: when (state) {
@@ -286,9 +292,10 @@ fun OneRemoteScreen(
                     Spacer(Modifier.height(gap(16.dp)))
                     val canToggle = m.offers("play") || m.offers("pause")
                     val skip = if (short) 44.dp else 54.dp
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (short) 24.dp else 30.dp),
-                        modifier = Modifier.alpha(if (!transportEnabled) 0.4f else if (m.feedback == CommandFeedback.DIM) 0.5f else 1f).testTag("remote-transport")) {
-                        if (seekOffered) RemoteSkip(label = "10 s", back = true, enabled = transportEnabled, colors = colors, size = skip) { act.seekTo((s.positionMs - 10_000L).coerceAtLeast(0L)) }
+                    // DEB-2611 — a song: shuffle · previous · ⏯ · next · repeat; a book: −30 s · ⏯ · +30 s. A film or an episode: FR-2's.
+                    val song = m.kind == "music"
+                    val book = m.kind == "audiobook"
+                    val playPause: @Composable () -> Unit = {
                         if (canToggle) Box(
                             Modifier.size(if (short) 64.dp else 80.dp).clip(CircleShape).background(colors.text)
                                 .clickable(enabled = transportEnabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { if (s.playing) act.pause() else act.play() }
@@ -298,7 +305,28 @@ fun OneRemoteScreen(
                             if (s.buffering && transportEnabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
                             else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 30)
                         }
-                        if (seekOffered) RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors, size = skip) { act.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (short || song) 16.dp else 30.dp),
+                        modifier = Modifier.alpha(if (!transportEnabled) 0.4f else if (m.feedback == CommandFeedback.DIM) 0.5f else 1f).testTag("remote-transport")) {
+                        if (song) {
+                            if (m.offers("set_shuffle")) RemoteGlyphButton(MusicIcon.SHUFFLE, if (m.shuffle) colors.accentSecondary else colors.textDim, transportEnabled, "remote-shuffle") { act.setShuffle(!m.shuffle) }
+                            if (m.offers("previous")) RemoteGlyphButton(MusicIcon.PREVIOUS, colors.text, transportEnabled, "remote-prev") { act.previous() }
+                            playPause()
+                            if (m.offers("next")) RemoteGlyphButton(MusicIcon.NEXT, colors.text, transportEnabled, "remote-next-song") { act.next() }
+                            if (m.offers("set_repeat")) RemoteGlyphButton(MusicIcon.REPEAT, if (m.repeat != "off") colors.accentSecondary else colors.textDim, transportEnabled, "remote-repeat") {
+                                act.setRepeat(when (m.repeat) { "all" -> "one"; "one" -> "off"; else -> "all" })
+                            }
+                        } else {
+                            if (seekOffered) {
+                                if (book) RemoteGlyphButton(MusicIcon.BACK30, colors.text, transportEnabled, "remote-skip-back") { act.seekTo((s.positionMs - 30_000L).coerceAtLeast(0L)) }
+                                else RemoteSkip(label = "10 s", back = true, enabled = transportEnabled, colors = colors, size = skip) { act.seekTo((s.positionMs - 10_000L).coerceAtLeast(0L)) }
+                            }
+                            playPause()
+                            if (seekOffered) {
+                                if (book) RemoteGlyphButton(MusicIcon.FWD30, colors.text, transportEnabled, "remote-skip-fwd") { act.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
+                                else RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors, size = skip) { act.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
+                            }
+                        }
                     }
                     // The volume, as each driver has it today (the volume slice replaces both with one slider).
                     if (!unreachable) {
@@ -334,10 +362,8 @@ fun OneRemoteScreen(
                         else RemotePill(str("action.close"), primary = false, modifier = Modifier.testTag("remote-close"), onClick = onBack)
                     }
                     else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        val tracksOffered = (m.offers("set_audio") || m.offers("set_subtitle")) &&
-                            (m.ops == null || s.audioTracks.size > 1 || s.subtitleTracks.isNotEmpty())
-                        if (tracksOffered) RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f).testTag("remote-tracks")) { RemoteOnScreen.trackSheetOpen.value = true }
-                        if (s.hasNext && m.offers("next")) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f).testTag("remote-next")) { act.next() }
+                        if (m.offersTracks()) RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f).testTag("remote-tracks")) { RemoteOnScreen.trackSheetOpen.value = true }
+                        if (s.hasNext && m.offers("next") && m.kind != "music") RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f).testTag("remote-next")) { act.next() }
                         if (m.offers("stop")) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.weight(1f).testTag("remote-stop")) {
                             if (m.confirmStop) confirmStop = true else doStop()
                         }
@@ -608,6 +634,17 @@ private fun RemotePill(label: String, primary: Boolean, modifier: Modifier = Mod
     ) {
         Text(label, color = if (primary) colors.background else colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+/** DEB-2611 — a song's or a book's transport glyph (shuffle, previous, next, repeat, ∓30 s), on the music glyph set. */
+@Composable
+private fun RemoteGlyphButton(icon: MusicIcon, tint: Color, enabled: Boolean, tag: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(52.dp).clip(CircleShape)
+            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .testTag(tag),
+        contentAlignment = Alignment.Center,
+    ) { MusicGlyph(icon, tint, 26.dp) }
 }
 
 @Composable

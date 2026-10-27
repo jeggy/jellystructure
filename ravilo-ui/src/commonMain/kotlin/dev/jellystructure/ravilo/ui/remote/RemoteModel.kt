@@ -19,7 +19,7 @@ data class RemoteModel(
     /** A place's icon key ([dev.jellystructure.ravilo.ui.components.placeIcon]); null = the screen glyph. */
     val placeIcon: String?,
     val status: CastRemoteStatus,
-    /** `film` · `episode` (slice 3 adds `music` · `audiobook`). */
+    /** `film` · `episode` · `music` · `audiobook` — what plays decides the shape (FR-1), never which driver is behind it. */
     val kind: String,
     /** The place cannot be reached right now (*Lost contact*, or *offline*): the controls are greyed (FR-5.4). */
     val unreachable: Boolean = false,
@@ -49,10 +49,31 @@ data class RemoteModel(
     /** A next-up countdown the place mirrors, and a subtitle size it takes — absent where the place does not say. */
     val canSubtitleSize: Boolean = true,
     val canNextUp: Boolean = true,
+    /** A song's queue state, as the server's [SessionDetail] says it (DEB-2611): drawn on shuffle and repeat. */
+    val shuffle: Boolean = false,
+    val repeat: String = "off",
 )
 
 /** FR-5.3 — a control the place cannot do is absent; the link offers everything, the server says its ops. */
 fun RemoteModel.offers(op: String): Boolean = ops == null || op in ops
+
+/** DEB-2611 (FR-1) — a song or a book: the interim music shape, with no subtitle control of any kind. */
+val RemoteModel.musicShape: Boolean get() = kind == "music" || kind == "audiobook"
+
+/**
+ * FR-3 — *Audio & Subs* is offered where the place obeys an audio or subtitle op and has something to pick. A `music` or
+ * `audiobook` never offers it, even when the file carries a text stream, on either driver (DEB-2611, FR-1).
+ */
+fun RemoteModel.offersTracks(): Boolean =
+    !musicShape && (offers("set_audio") || offers("set_subtitle")) &&
+        (ops == null || status.audioTracks.size > 1 || status.subtitleTracks.isNotEmpty())
+
+/** The remote's kind from the session's own (DEB-2611): a song or a book keeps its kind; the rest are FR-2's two shapes. */
+fun remoteKindOf(sessionKind: String?, episodeLike: Boolean = false): String = when {
+    sessionKind == "music" || sessionKind == "audiobook" -> sessionKind
+    sessionKind == "episode" || episodeLike -> "episode"
+    else -> "film"
+}
 
 /** FR-8 — someone else's playback, view-only: the transport, volume, the tracks sheet and Stop are absent. */
 val RemoteModel.viewOnly: Boolean get() = viewOnlyOwner != null
@@ -69,6 +90,10 @@ interface RemoteActions {
     fun nextUpPlay()
     fun nextUpCancel()
     fun subtitleSize(size: Char)
+    /** A song's own controls (DEB-2611): previous, shuffle on/off, repeat `off` · `all` · `one`. */
+    fun previous() {}
+    fun setShuffle(on: Boolean) {}
+    fun setRepeat(mode: String) {}
     /** *Try again* — ask the place where it is. */
     fun retry()
 }
@@ -84,7 +109,7 @@ class RemoteExtras(
     val onPlayHere: ((SessionView) -> Unit)? = null,
     /** R372's label for *Play here* on this platform (`cast.play_here` · `_mac` · `_desk`). */
     val playHereLabel: String? = null,
-    /** R371 — today's volume panel (master + rooms + *Add a speaker…*), kept behind the remote until the volume slice. */
+    /** R371 — a song's or a book's volume panel (master + rooms + *Add a speaker…*), kept behind the remote until the volume slice. */
     val volume: (@androidx.compose.runtime.Composable (SessionDetail) -> Unit)? = null,
     /** The platform's own cast sheet — what the place pill opens when the server lists no row for this playback. */
     val openCastSheet: () -> Unit = {},
@@ -119,11 +144,12 @@ object SessionSender {
         val ended = v.state == "ended"
         val audio = d?.audioTracks.orEmpty().map { it.copy(trackId = it.index.toLong()) }
         val subs = d?.subtitleTracks.orEmpty().map { it.copy(trackId = it.index.toLong()) }
-        val episode = v.kind == "episode"
+        // An episode's kicker is its S01E05; a song's is its artist and a book's its chapter (drawn under the title).
+        val kicker = v.kind == "episode" || v.kind == "music" || v.kind == "audiobook"
         return CastRemoteStatus(
             itemId = null,
             title = v.title,
-            kicker = if (episode) v.subtitle else null,
+            kicker = if (kicker) v.subtitle else null,
             artUrl = v.artwork,
             positionMs = drawnPositionMs(v, serverNowMs, receivedAtMs, nowMs) ?: 0L,
             durationMs = v.durationMs ?: 0L,
@@ -154,7 +180,7 @@ fun holdsLinkTo(v: SessionView?, linkName: String?): Boolean =
  */
 fun rowForLink(rows: List<SessionView>, linkName: String?): SessionView? =
     if (linkName == null) null
-    else rows.filter { it.mine && !it.here && it.state != "ended" && holdsLinkTo(it, linkName) && (it.kind == "film" || it.kind == "episode") }
+    else rows.filter { it.mine && !it.here && it.state != "ended" && holdsLinkTo(it, linkName) }
         .maxByOrNull { it.createdAt }
 
 /** FR-8 — the viewer may look but not press: not theirs, and the household switch is off (the server's `controllable`). */
