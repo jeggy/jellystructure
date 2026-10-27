@@ -1,9 +1,13 @@
 # Phase 258 — A device enforces the policy Jellyfin has now, not the one it signed in with
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-25 — from the dev review below, all seven items. `Planned` when written 2026-09-24
-from a production finding; **dev-reviewed 2026-09-24 against `main` `9d2636bb`**.
+Written 2026-09-24 from a production finding; dev-reviewed the same day against `main` `9d2636bb`, and built
+2026-09-25 from that review's seven items.
+
+**Amended 2026-10-27 (DEB-2672):** open question 2 is answered, and FR-258-3 no longer covers a user deleted in
+Jellyfin. `a-device-whose-jellyfin-user-is-gone-is-signed-out-and-removed.md` owns that case. See FR-258-3 and the
+question.
 
 ### Build (2026-09-25)
 
@@ -22,7 +26,7 @@ from a production finding; **dev-reviewed 2026-09-24 against `main` `9d2636bb`**
 - Tests: `RaviloDevicePolicyTest` (6) and `DevicePolicyReconcilerTest` (5) in `linuxX64Test`; the
   acceptance script is `scripts/check-device-policy-drift.py`.
 - Acceptance 1 reproduced on a copy of prod's DB before deploying: **17 rows · 4 drifted** (the two
-  household TVs and the test account's two rows, all on tags). Acceptance 2–6: see below once deployed.
+  household TVs and the test account's two rows, all on tags).
 
 Amends **Phase 142** (FR-AUTH2: the per-device library allow-list) and its tag follow-up; no Ravilo
 client change, no new payload field.
@@ -82,6 +86,10 @@ R202/R231: a rule the spec states, a copy the code keeps, and no mechanism keepi
   error (in particular a missing user is **not** "unrestricted") and never narrow it on an error
   (the row is not cleared, the device is not signed out). Deleting a user in Jellyfin is out of scope
   (see open questions).
+  *Amended 2026-10-27 (DEB-2672):* this still holds for a **single** pass. A user missing from **two complete
+  reads in a row** is signed out and removed by
+  `a-device-whose-jellyfin-user-is-gone-is-signed-out-and-removed.md` FR-1 to FR-5. A failed, empty or partial read
+  stays exactly as this FR says: it changes nothing.
 - **FR-258-4 — A rewrite is visible to the caches it invalidates, by construction.** Every feed cache
   keys on the row's values (`allowedHash` in `HomeFeedService.kt:164,179,361,792,811`, R233
   FR-R233-5's `(user, visibility scope)` rule), so a changed row misses the cache without an explicit
@@ -126,6 +134,11 @@ R202/R231: a rule the spec states, a copy the code keeps, and no mechanism keepi
 2. A user deleted in Jellyfin: `getUsers()` omits them. Today their rows keep working until the
    Jellyfin user token fails. Should the reconciler treat "absent from `/Users`" as a signal at all
    (FR-258-3 says no, deliberately), and is the answer a separate phase that signs those devices out?
+   *Answered 2026-10-27 (owner, DEB-1076; DEB-2672):* yes, and it is a separate spec. On 2026-10-27, 41 deleted QA
+   accounts held 66 rows and cost ~67 000 404s in two hours, while the refresh summaries read *0 failed*. Absence
+   from two complete reads in a row signs the user out everywhere and deletes their viewer data, and the refreshers
+   skip a user from the first absent read. See
+   `a-device-whose-jellyfin-user-is-gone-is-signed-out-and-removed.md`.
 3. Interval. 5 minutes is a guess that keeps `/Users` at ~300 calls/day; the household will not
    notice one minute versus five, an operator toggling a tag and checking the TV will. 60 s on the
    connect path is the one number that matters to them.
