@@ -64,6 +64,17 @@ channels) — all streamed through jellystructure from Jellyfin. Live TV is **ne
 1. New en/da/fo strings for the Live section, guide, and player chrome (`Strings.kt` +
    `design/ravilo/ravilo-i18n.js`).
 
+### Amendment 2026-10-27 — radio stations join the lineup (DEB-2628)
+Jellyfin radio channels (`ChannelType: "Radio"`) are part of the one lineup, marked `kind = "radio"`, and reach only a
+client that asks with `radio=1`, so an installed client never sees one. In that client:
+- **B1:** the *On now* row shows stations among the channels, each with a small radio mark.
+- **C1:** the guide lists them as rows with the same mark. A station with no guide shows one *Live radio* block.
+- **D:** tuning a station opens the live player with an audio layout in place of the picture, never a black video
+  frame. Zapping, number entry and Now/Next run over the one lineup, and cross between stations and channels.
+
+See [`radio-plays-beside-the-live-channels-and-on-music-home.md`](radio-plays-beside-the-live-channels-and-on-music-home.md)
+FR-1, FR-2 and FR-6 to FR-8.
+
 ## Reuse
 Tile/focus model, `AudioFlagStrip` `LANG_CC` for any flag needs, `RaviloButton`, the player chrome
 patterns, and the R33 live-config push (so a lineup/enable change reaches the TV without a restart).
@@ -84,4 +95,5 @@ patterns, and the R33 live-config push (so a lineup/enable change reaches the TV
 
 ## Scope
 The viewing half of Live TV. It is design-authored from `design/ravilo/Ravilo Live TV.html`, and its
-admin half is Phase 147. Amended by DEB-2627, which covers how a live stream's quality adapts (D1).
+admin half is Phase 147. Amended by DEB-2627, which covers how a live stream's quality adapts (D1), and by DEB-2628, which adds radio stations
+to the row, the guide and the player (B1, C1, D).

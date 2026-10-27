@@ -69,6 +69,12 @@ the middle.
 
 There is **no Now-playing card** (owner). An empty library shows one sentence: *Nothing filed as music yet*.
 
+**Amended 2026-10-27 (DEB-2628):** Listen also shows a **Radio** row when the server sends one (FR-279-2, asked with
+`radio=1`). The design round decides where it sits; the lean is second. A tile plays its station at once, as a live
+item: no seek, no queue, and the programme now as the title. See
+[`radio-plays-beside-the-live-channels-and-on-music-home.md`](radio-plays-beside-the-live-channels-and-on-music-home.md)
+FR-9 and FR-10.
+
 **FR-R321-6 — Browse = the library + search.** The **search field** sits at the top. Under it is a scrollable
 chip strip: **Albums · Artists · Songs · Genres · Playlists · Audiobooks** (Audiobooks is R323 and absent without
 the books library). The first chip is shown on arrival.

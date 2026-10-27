@@ -86,7 +86,17 @@ TV, which stays the source of truth for tuners and guide.
 - Live TV surfaces per the placement config (Home “On now” row and/or a Live TV collection) — **never as a
   Ravilo top-nav tab**.
 
-## Status note
-Design-authored, `Planned`, not yet dev-reviewed. Exports to
-`specs/requirements/phase-147-livetv-admin-config.md`; `scripts/check-phases.sh` will flag it for a
-`STATUS.md` row. **Next admin number after this is 148.**
+### Amendment 2026-10-27 — radio stations (DEB-2628)
+Jellyfin's radio channels (`ChannelType: "Radio"`) sit in the same lineup as the TV channels, and arrive hidden and
+badged *new* like any channel (C1). Each sync stores the channel's kind (`tv` or `radio`), so a restart never loses it.
+- **B2:** the lineup table marks a station with a small radio mark beside its name.
+- **B2:** the filters gain *Radio*.
+- **A2:** the overview's counts include stations as channels.
+
+The TV-facing endpoints send stations only to a client that asks with `radio=1`. See
+[`radio-plays-beside-the-live-channels-and-on-music-home.md`](../ravilo/requirements/radio-plays-beside-the-live-channels-and-on-music-home.md)
+FR-1 to FR-3 and FR-12.
+
+## Scope
+The admin half of Live TV. It is design-authored from `design/app/livetv.html`, and its viewing half is
+[R177](../ravilo/requirements/phase-R177-livetv-viewing.md). Amended by DEB-2628, which adds radio stations to the lineup (A2, B2).
