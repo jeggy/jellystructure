@@ -49,8 +49,11 @@ expect class RaviloPlayer() {
      * callers for on-screen chrome — reused as-is, since Media3 has no separate numeric
      * season/episode fields), and [artworkUrl] a poster/still image URL. All three are cosmetic —
      * never required for playback to work.
+     *
+     * DEB-2627 (FR-3) — [live] is set only for a live channel's ticket: the stream is played as HLS whatever its URL looks
+     * like, and it starts from no film ladder state (see [LiveLoad]). Null for every film.
      */
-    fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String? = null, artworkUrl: String? = null)
+    fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String? = null, artworkUrl: String? = null, live: LiveLoad? = null)
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)

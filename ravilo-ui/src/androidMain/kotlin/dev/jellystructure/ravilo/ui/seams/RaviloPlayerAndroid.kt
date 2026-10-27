@@ -477,8 +477,9 @@ actual class RaviloPlayer actual constructor() {
     // R46: server-derived audio metadata (Jellyfin DisplayTitle, in container audio-stream order).
     private var audioMeta: List<AudioTrack> = emptyList()
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?, live: LiveLoad?) {
         activeRaviloPlayer = this
+        if (live != null) PlayerLadderHints.beginLive()   // DEB-2627 (FR-3) — a channel starts from no film ladder state
         audioMeta = audio
         // R218 — a new stream is its own cold start (per load); the qoe* counters are per item (R381, [beginQoeItem]).
         _hasRenderedFirstFrame = false
@@ -511,6 +512,8 @@ actual class RaviloPlayer actual constructor() {
         val mediaItem = MediaItem.Builder()
             .setUri(streamUrl)
             .setMediaMetadata(mediaMetadata)
+            // DEB-2627 (FR-3) — an HLS channel says so: Media3 would read `…smil?type=m3u8` as progressive from its path.
+            .apply { if (live?.hls == true) setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8) }
             .apply { if (prefetchKey != null) setCustomCacheKey(prefetchKey) }
             .build()
         val p = exo()   // R292 — builds and binds a fresh engine after a background release

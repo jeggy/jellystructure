@@ -733,6 +733,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         positionMs = s.ticket.startPositionMs
         // 308 (FR-308-3) — an adaptive stream starts from what this device measured, never from a guess about where it is.
         player.seedBandwidthEstimate(s.ticket.measuredBandwidthBps?.takeIf { s.ticket.adaptive })
+        s.ticket.measuredBandwidthBps?.takeIf { it > 0 }?.let { dev.jellystructure.ravilo.ui.seams.LinkEstimate.bps = it }   // DEB-2627 (FR-3) — Linux's live start rung
         // 309 / 313 (FR-313-14) — on our own encoder every rung is already running: a climb waits only the stock buffer.
         dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.oursEncoder = s.ticket.encoder == "ours"
         // R381 (FR-R381-1) — the QoE counters are this item's: a new item resets them, a restream of it keeps them.

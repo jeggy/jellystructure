@@ -32,6 +32,10 @@ internal interface DesktopEngine {
      *  `preferredPeakBitRate`); 0 = no bound. An engine that cannot switch variants ignores it. */
     fun setPeakBitrate(bps: Double) {}
 
+    /** DEB-2627 (FR-3) — before [load]: the HLS rung to take (mpv's `hls-bitrate`, bits/s), or null for the top one. mpv takes one
+     *  rung at load and never switches, so the player steps it by reloading. An engine that adapts on its own ignores it. */
+    fun setHlsBitrate(bps: Long?) {}
+
     // ── Linux (FR-R335-5/6): the engine that renders subtitles and knows the container's tracks ──
     /** The surface's size in pixels, so a renderer that scales can stop at what is shown. */
     fun surfaceHint(width: Int, height: Int) {}

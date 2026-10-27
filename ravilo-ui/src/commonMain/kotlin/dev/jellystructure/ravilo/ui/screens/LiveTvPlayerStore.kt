@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.seams.LiveFallbackAction
+import dev.jellystructure.ravilo.ui.seams.LiveFallbackPolicy
 import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.platformAudioDecoders
@@ -29,6 +31,9 @@ sealed class LiveTvPlayerState {
 
 private const val HEARTBEAT_INTERVAL_MS = 20_000L
 
+/** DEB-2627 (FR-2/FR-4) — `LiveTvTuneRequest.via`: Jellyfin's own remux of the channel instead of the source. */
+const val VIA_JELLYFIN = "jellyfin"
+
 /**
  * Phase R177 — a deliberate SIBLING to [PlayerStore], not a shared/branched path: live channels have
  * no resume position and Jellyfin's Live TV requires an explicit open (tune)/close (stop) handshake
@@ -48,6 +53,10 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
 
     private var heartbeatJob: Job? = null
     private var openLiveStreamId: String? = null
+
+    /** DEB-2627 (FR-4) — this tune's fallback decision; null until a ticket arrives. A zap or any new tune builds a new one. */
+    private var fallback: LiveFallbackPolicy? = null
+    private var currentChannelId: String? = null
 
     private fun capabilities(): ClientCapabilities {
         val hdr = detectHdrSupport()
@@ -75,9 +84,12 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     }
 
     /** Tunes [channelId] — closes whatever stream was previously open first (a bare zap/number-entry
-     *  re-tune, not a user-initiated stop, so this does NOT go through [stop]'s Idle transition). */
-    fun tune(channelId: String) {
+     *  re-tune, not a user-initiated stop, so this does NOT go through [stop]'s Idle transition).
+     *  DEB-2627 (FR-4) — [via] is only ever [VIA_JELLYFIN], from [fallBackToJellyfin]: a zap or re-tune starts from the source. */
+    fun tune(channelId: String, via: String? = null) {
         heartbeatJob?.cancel()
+        fallback = null
+        currentChannelId = channelId
         _state.value = LiveTvPlayerState.Loading
         scope.launch {
             openLiveStreamId?.let { runCatching { apiClient.stopLiveTv(it) } }
@@ -89,15 +101,37 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
                 _state.value = LiveTvPlayerState.Error("channel not found", LoadErrorKind.GONE)
                 return@launch
             }
-            val ticket = runCatching { apiClient.tuneLiveTv(channelId, capabilities()) }.getOrNull()
+            val ticket = runCatching { apiClient.tuneLiveTv(channelId, capabilities(), via) }.getOrNull()
             if (ticket == null) {
                 _state.value = LiveTvPlayerState.Error("livetv.tune_failed")
                 return@launch
             }
             openLiveStreamId = ticket.liveStreamId
+            fallback = LiveFallbackPolicy(ticket.streamKind, viaJellyfin = via == VIA_JELLYFIN)
             _state.value = LiveTvPlayerState.Ready(channel, ticket)
             startHeartbeat()
         }
+    }
+
+    /** DEB-2627 (FR-4) — the player drew a frame of this tune. */
+    fun onFirstFrame() { fallback?.onFirstFrame() }
+
+    /** Whether the screen should time this tune's first frame (only the source is). */
+    val timesFirstFrame: Boolean get() = fallback?.timesFirstFrame == true
+
+    /** DEB-2627 (FR-4) — the source gave no first frame within [LiveFallbackPolicy.NO_FIRST_FRAME_MS]. */
+    fun onNoFirstFrame(): LiveFallbackAction = act(fallback?.onNoFirstFrame() ?: LiveFallbackAction.IGNORE)
+
+    /** DEB-2627 (FR-4) — the player raised a fatal error. [LiveFallbackAction.RETRY_SOURCE] is the screen's to carry out (it reloads the same ticket). */
+    fun onPlayerFatal(): LiveFallbackAction = act(fallback?.onFatal() ?: LiveFallbackAction.SHOW_ERROR)
+
+    private fun act(action: LiveFallbackAction): LiveFallbackAction {
+        when (action) {
+            LiveFallbackAction.FALL_BACK -> currentChannelId?.let { tune(it, via = VIA_JELLYFIN) }
+            LiveFallbackAction.SHOW_ERROR -> _state.value = LiveTvPlayerState.Error("livetv.tune_failed")
+            else -> Unit
+        }
+        return action
     }
 
     /** Zaps to the adjacent channel in lineup order ([direction] = +1/-1), wrapping around. */

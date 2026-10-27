@@ -38,11 +38,13 @@ actual class RaviloPlayer actual constructor() {
     /** R376 (FR-R376-2) — what the element reported since the last read, in order; a stall records where it was. */
     private fun sync() {
         events.feed(drainEvents(video), positionMs, (bufferedMs - positionMs).coerceAtLeast(0), jsQ308(video, "bps").toLong().takeIf { it > 0 })
-        boundLadder()
+        if (!liveLoaded) boundLadder()   // DEB-2627 (FR-3) — a channel's hls.js ABR is not capped by 309
     }
 
     /** 309 (FR-309-16) — the shared ladder rule over hls.js's own ABR, evaluated about once a second. */
     private val ladderCap = WebLadderCap()
+    /** DEB-2627 (FR-3) — the stream loaded now is a live channel's: hls.js ABR, no [WebLadderCap]. */
+    private var liveLoaded = false
     private var ladderAtMs = 0.0
     private fun boundLadder() {
         val now = nowMs()
@@ -71,11 +73,13 @@ actual class RaviloPlayer actual constructor() {
     private var subtitleSlots: List<SubtitleSlot> = emptyList()
     private var loadedAudio: List<AudioTrack> = emptyList()
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?, live: LiveLoad?) {
         // R376 (FR-R376-2) — the outgoing stream's events belong to it; the new one starts with no frame from now,
         // not from whenever the browser gets round to `loadstart`.
         sync()
         ladderCap.reset()
+        liveLoaded = live != null
+        if (live != null) PlayerLadderHints.beginLive()
         // R376 (FR-R376-S1) — the element shows again, its unlock bookkeeping stops, and it tries sound again (a film
         // left muted by a gesture-less start must not leave the next one silent with no pill).
         prepareForSource(video)
@@ -95,7 +99,7 @@ actual class RaviloPlayer actual constructor() {
         // R17: lazy-load hls.js for HLS streams (the R56 transcode / burn-in TranscodingUrl is an
         // .m3u8, which non-Safari browsers can't play natively). Direct-play URLs set video.src.
         // R376 (FR-R376-7) — hls.js starts at the ticket's position itself (`startPosition`).
-        attachSource(video, streamUrl, startPositionMs / 1000.0)
+        attachSource(video, streamUrl, startPositionMs / 1000.0, live?.hls == true)
         // R44: route browser/OS media keys to the <video> via the Media Session API.
         wireMediaSession(video)
         // R376 (FR-R376-4) — and name what plays, so the OS's media controls and lock screen say it (the research
@@ -503,7 +507,7 @@ private fun clearMediaMetadata(): Unit = js("""{ try { if (navigator.mediaSessio
  * position, and Managed Media Source where only that exists (an iPhone that reaches hls.js). A fatal media error is
  * recovered once; anything else fatal is queued as `hlsfatal` (FR-R376-2), which R306 turns into the error card.
  */
-private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double): Unit = js(
+private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double, hlsTicket: Boolean): Unit = js(
     """{
         video._rvWantAudio = null;
         // R376 (FR-R376-S1, live test 2026-10-09) — a play() asked for while the source was still being swapped in
@@ -514,8 +518,12 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double)
         function resume(){ if (!video._rvWantPlay || !video.paused) return; try { var p = video.play(); if (p && p.catch) p.catch(function(){}); } catch (e) {} }
         function native(){ video.src = url; if (startSec > 0) { try { video.currentTime = startSec; } catch (e) {} } resume(); }
         if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
-        if (url.indexOf('.m3u8') === -1) { native(); return; }
+        // DEB-2627 (FR-3) — a live channel's ticket the backend (or the URL's `m3u8`, query included) calls HLS is HLS whatever
+        // the URL ends in: hls.js plays it, native HLS only where hls.js is not supported (Safari), and `video.src` never
+        // carries it from a browser that cannot play HLS natively — that is a fatal error the player screen shows.
+        if (!hlsTicket && url.indexOf('.m3u8') === -1) { native(); return; }
         var nativeHls = video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl') !== '';
+        function noHls(){ if (hlsTicket && !nativeHls) { if (video._rvPush) video._rvPush('hlsfatal'); } else { native(); } }
         var safari = typeof window.WebKitPlaybackTargetAvailabilityEvent !== 'undefined';
         var mse = !!(window.MediaSource || window.ManagedMediaSource);
         if (nativeHls && (safari || !mse)) { native(); return; }
@@ -540,7 +548,10 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double)
                         startPosition: startSec > 0 ? startSec : -1,
                         preferManagedMediaSource: true
                     };
-                    if (window.__raviloAbrSeed > 0) cfg.abrEwmaDefaultEstimate = window.__raviloAbrSeed;
+                    // DEB-2627 (FR-3) — a channel starts from no film state: not the last film's measurement; and a small window
+                    // never fetches 1080p.
+                    if (hlsTicket) cfg.capLevelToPlayerSize = true;
+                    else if (window.__raviloAbrSeed > 0) cfg.abrEwmaDefaultEstimate = window.__raviloAbrSeed;
                     var hls = new Hls(cfg);
                     video._hls = hls;
                     var q = video._q308 || (video._q308 = { down: 0, up: 0, bps: 0, h: 0 });
@@ -568,8 +579,8 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double)
                     });
                     hls.once(Hls.Events.MEDIA_ATTACHED, resume);
                     hls.loadSource(url); hls.attachMedia(video);
-                } else { native(); }
-            } catch(e) { native(); }
+                } else { noHls(); }
+            } catch(e) { noHls(); }
         }
         if (window.Hls) { attach(); return; }
         if (!window.__hlsLoading) {
@@ -579,7 +590,7 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double)
             // would otherwise fail every transcoded play on the production web origin, see
             // ravilo-web/src/wasmJsMain/resources/vendor/NOTICE.md.
             s.src = 'vendor/hls.min.js';
-            s.onload = attach; s.onerror = native;
+            s.onload = attach; s.onerror = noHls;
             document.head.appendChild(s);
         } else {
             var iv = setInterval(function(){ if (window.Hls){ clearInterval(iv); attach(); } }, 100);

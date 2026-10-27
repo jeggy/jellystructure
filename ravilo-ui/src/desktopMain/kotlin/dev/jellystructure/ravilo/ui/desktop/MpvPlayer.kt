@@ -139,6 +139,11 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
         readAtNs = 0L
     }
 
+    override fun setHlsBitrate(bps: Long?) {
+        val h = handle ?: create()?.also { handle = it } ?: return
+        lib?.mpv_set_property_string(h, "hls-bitrate", bps?.toString() ?: "max")
+    }
+
     override fun play() { handle?.let { lib?.mpv_set_property_string(it, "pause", "no") }; readAtNs = 0L }
     override fun pause() { handle?.let { lib?.mpv_set_property_string(it, "pause", "yes") }; readAtNs = 0L }
 

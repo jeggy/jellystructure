@@ -41,7 +41,8 @@ internal class ClimbingTrackSelection(
         val playing = queue.lastOrNull()?.trackFormat?.bitrate?.takeIf { it > 0 }?.toLong()
         val rungs = (0 until length()).map { getFormat(it).bitrate.toLong() }.filter { it > 0 }
         val bufferedMs = bufferedDurationUs / 1000
-        allowedMaxBps = LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder,
+        // DEB-2627 (FR-3) — a live channel adapts over its source's rungs on Media3's own rule: no 309 bound.
+        allowedMaxBps = if (PlayerLadderHints.live) null else LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder,
             climbBlocked = PlayerLadderHints.climbBlocked(System.currentTimeMillis()))
         lastBufferedMs = bufferedMs
         super.updateSelectedTrack(playbackPositionUs, bufferedDurationUs, availableDurationUs, queue, mediaChunkIterators)

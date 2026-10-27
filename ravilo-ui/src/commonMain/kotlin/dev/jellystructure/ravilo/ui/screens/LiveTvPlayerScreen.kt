@@ -57,6 +57,9 @@ import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.playerBackGesture
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.LiveFallbackAction
+import dev.jellystructure.ravilo.ui.seams.LiveFallbackPolicy
+import dev.jellystructure.ravilo.ui.seams.LiveLoad
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -64,6 +67,7 @@ import dev.jellystructure.shared.tv.LiveTvChannel
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlinx.coroutines.launch
+import kotlin.time.TimeSource
 
 private val DIGIT_KEYS = mapOf(
     Key.Zero to '0', Key.One to '1', Key.Two to '2', Key.Three to '3', Key.Four to '4',
@@ -74,6 +78,7 @@ private val DIGIT_KEYS = mapOf(
 private const val CHROME_HIDE_MS = 5_000L
 private const val NUMBER_ENTRY_COMMIT_MS = 2_500L
 private const val ZAP_BANNER_MS = 3_000L
+private const val LIVE_WATCH_MS = 500L
 
 /**
  * Phase R177 §D — full-screen live playback: a LIVE indicator + auto-hiding channel bar (logo ·
@@ -129,12 +134,34 @@ fun LiveTvPlayerScreen(
         if (s is LiveTvPlayerState.Ready) {
             // R192 — feed the channel/current-program into the OS media session (TV-only; see RaviloPlayer.load doc).
             player.beginQoeItem("live:" + s.channel.channelId)   // R381 (FR-R381-1) — one channel's counts, not the session's
-            player.load(
-                s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
-                title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = resolveImageUrl(s.channel.logoUrl),
-            )
-            player.play()
+            // DEB-2627 (FR-3) — a channel is loaded as a live ticket: HLS whatever its URL ends in, and from no film ladder state.
+            val live = LiveLoad.of(s.ticket)
+            fun loadSource() {
+                player.load(
+                    s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
+                    title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = resolveImageUrl(s.channel.logoUrl),
+                    live = live,
+                )
+                player.play()
+            }
+            loadSource()
             wake()
+            // DEB-2627 (FR-4) — the source's first frame within 15 s, a fatal error before it or after one retry of the source:
+            // one re-tune through Jellyfin (the store decides; a zap or any new tune starts from the source again).
+            var sawFrame = false
+            var waitingSince = TimeSource.Monotonic.markNow()
+            while (true) {
+                delay(LIVE_WATCH_MS)
+                if (!sawFrame && player.hasRenderedFirstFrame) { sawFrame = true; store.onFirstFrame() }
+                if (player.playbackFailed) {
+                    when (store.onPlayerFatal()) {
+                        LiveFallbackAction.RETRY_SOURCE -> { loadSource(); sawFrame = false; waitingSince = TimeSource.Monotonic.markNow() }
+                        else -> return@LaunchedEffect   // fell back (the state changes) or shows the error
+                    }
+                } else if (!sawFrame && store.timesFirstFrame && waitingSince.elapsedNow().inWholeMilliseconds >= LiveFallbackPolicy.NO_FIRST_FRAME_MS) {
+                    if (store.onNoFirstFrame() != LiveFallbackAction.IGNORE) return@LaunchedEffect
+                }
+            }
         }
     }
 

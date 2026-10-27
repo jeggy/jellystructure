@@ -98,8 +98,12 @@ actual class RaviloPlayer actual constructor() {
         }
     }
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?, live: LiveLoad?) {
         this.streamUrl = streamUrl
+        // DEB-2627 (FR-3) — a channel starts from no film ladder state; on Linux a ladder channel's rung is Ravilo's to choose.
+        liveLoaded = live != null
+        if (live != null) PlayerLadderHints.beginLive()
+        rungStepper = if (live != null && DesktopEngines.isMpv && live.ladderBps.isNotEmpty()) dev.jellystructure.ravilo.ui.desktop.LiveRungStepper(live.ladderBps, live.linkEstimateBps) else null
         // FR-R329-5 — the text tracks Compose draws; a burn-in candidate (`encode`) is the common player's R282 restream.
         textTracks = subtitles.filter { it.url != null && it.deliveryMethod != "encode" && it.deliveryMethod != "hls" }
         audioMeta = audio
@@ -111,17 +115,39 @@ actual class RaviloPlayer actual constructor() {
         if (!engine.available) { noEngineFailure = true; return }
         noEngineFailure = false
         println("${DesktopLog.stamp()} [player] load ${streamUrl.substringBefore('?')} start=${startPositionMs}ms text subtitles=${textTracks.size} audio=${audio.size}")
+        if (live != null && DesktopEngines.isMpv) engine.setHlsBitrate(rungStepper?.startBitrate)   // null = mpv's `max`; a film leaves the option alone
         engine.load(streamUrl, startMs = startPositionMs)
-        // 309 (FR-309-9) — a ladder on the Mac: AVPlayer's peak starts on the server's start rung and climbs one at a time.
-        if (!DesktopEngines.isMpv) macPeak.start(streamUrl, scope)
-        PlayerLadderHints.restreamStepping = DesktopEngines.isMpv
-        PlayerLadderHints.bufferedAheadMs = -1L
+        // DEB-2627 (FR-3) — AVPlayer's own ABR over a channel: no peak bound.
+        if (live != null && !DesktopEngines.isMpv) engine.setPeakBitrate(0.0)
+        if (live == null) {
+            // 309 (FR-309-9) — a ladder on the Mac: AVPlayer's peak starts on the server's start rung and climbs one at a time.
+            if (!DesktopEngines.isMpv) macPeak.start(streamUrl, scope)
+            PlayerLadderHints.restreamStepping = DesktopEngines.isMpv
+            PlayerLadderHints.bufferedAheadMs = -1L
+        }
         // R335 (FR-R335-5) — mpv draws the ticket's sidecar files itself; the embedded ones it already has.
         if (engine.rendersSubtitles) textTracks.forEach { t -> t.url?.let { engine.addSubtitle(absolute(it), t.label, t.language) } }
         npTitle = title; npKicker = subtitle; npArtwork = artworkUrl
         MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.FILM)
         MacNowPlaying.artwork(nowPlaying, artworkUrl)
         startWatch()
+    }
+
+    /** DEB-2627 (FR-3) — Linux's live ladder: the rung playing, stepped down by a reload on the live edge when the line cannot hold it. */
+    private var rungStepper: dev.jellystructure.ravilo.ui.desktop.LiveRungStepper? = null
+    private var liveLoaded = false
+
+    private fun stepLiveRung(s: dev.jellystructure.ravilo.ui.desktop.MacPlayerState) {
+        val stepper = rungStepper ?: return
+        // Only a stall of a playing picture counts: not the start, not a pause, not a seek, not the reload's own wait.
+        val buffering = s.firstFrame && s.wantsPlay && !s.failed && !s.seeking && s.buffering
+        val rung = stepper.onSample(System.currentTimeMillis(), buffering) ?: return
+        println("${DesktopLog.stamp()} [player] DEB-2627 stall on a live ladder → reload on the live edge at ${rung / 1000}k")
+        engine.setHlsBitrate(rung)
+        engine.load(streamUrl, startMs = 0L)
+        loadedAtMs = System.currentTimeMillis()
+        firstFrameAtMs = 0L
+        stepper.reloaded()
     }
 
     /** Once a second while loaded: the Now Playing card and the display assertion follow the player (FR-R329-8/10). */
@@ -140,7 +166,8 @@ actual class RaviloPlayer actual constructor() {
                 if (playing != awake) { awake = playing; MacNative.lib?.ravilo_display_keep_awake(if (playing) 1 else 0) }
                 MacNowPlaying.update(nowPlaying, npTitle, npKicker, null, s.durationMs, s.positionMs, 1.0, playing && s.timeControl == 2, video = true)
                 // 309 (FR-309-9) — mpv's buffer ahead, for the store's stepping; the Mac's peak, every other second.
-                if (DesktopEngines.isMpv) PlayerLadderHints.bufferedAheadMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L)
+                if (liveLoaded) stepLiveRung(s)
+                else if (DesktopEngines.isMpv) PlayerLadderHints.bufferedAheadMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L)
                 else if (ticks % 2 == 0) macPeak.tick(s)
                 delay(1_000)
             }

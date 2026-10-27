@@ -1031,11 +1031,12 @@ class TvApiClient(
     }
 
     /** Tunes a channel — Jellyfin's explicit open handshake (Phase 147 addendum D); the returned
-     *  ticket's [LiveTvStreamTicket.liveStreamId] must be passed to [stopLiveTv] on exit. */
-    suspend fun tuneLiveTv(channelId: String, capabilities: ClientCapabilities): LiveTvStreamTicket {
+     *  ticket's [LiveTvStreamTicket.liveStreamId] must be passed to [stopLiveTv] on exit. DEB-2627 (FR-4) — [via] `"jellyfin"`
+     *  asks for Jellyfin's own remux instead of the source (the client's one fallback); null is the source. */
+    suspend fun tuneLiveTv(channelId: String, capabilities: ClientCapabilities, via: String? = null): LiveTvStreamTicket {
         val r = client.post("$baseUrl/api/tv/livetv/channels/$channelId/tune") {
             auth()
-            jsonBody(json.encodeToString(LiveTvTuneRequest(channelId, capabilities)))
+            jsonBody(json.encodeToString(LiveTvTuneRequest(channelId, capabilities, via)))
         }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())

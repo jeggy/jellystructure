@@ -49,8 +49,28 @@ object PlayerLadderHints {
      */
     @Volatile var directStreamBps: Long = 0L
 
+    /**
+     * DEB-2627 (FR-3) — the stream loading now is a live channel's, adapting over the source's own rungs: the 309 bound
+     * (Android's [dev.jellystructure.shared.tv.LadderRules] selection) does not apply to it.
+     */
+    @Volatile var live: Boolean = false
+
+    /** A live tune starts from no film ladder state: everything above that the last film set is put back to "nothing". */
+    fun beginLive() {
+        live = true
+        oursEncoder = false
+        adaptive = false
+        startVariantBps = null
+        bufferedAheadMs = -1L
+        restreamStepping = false
+        rearmTracks = false
+        climbBlockedUntilMs = 0L
+        directStreamBps = 0L
+    }
+
     /** The ticket a play is about to load (every Ready the store emits). */
     fun noteTicket(t: StreamTicket) {
+        live = false
         adaptive = t.adaptive
         startVariantBps = t.startVariantBps
         directStreamBps = if (t.directPlay) t.streamBps?.takeIf { it > 0 } ?: 0L else 0L
