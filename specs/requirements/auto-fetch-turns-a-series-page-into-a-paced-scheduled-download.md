@@ -31,6 +31,10 @@ modelled on its limiter, which is not changed.
 **retention** setting, *keep the newest N* with a default of 12, which makes FR-16 the one path in this file that
 deletes a file. The lines this changes elsewhere point at those FRs.
 
+**Amended 2026-10-27 (DEB-2698)**, after the first fetcher was proven against a live site: a request may be answered by
+a redirect to **another host the recipe records**, and the lane then trusts that answer and reads relative references
+in it against the **final** URL (FR-2.7).
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -165,6 +169,20 @@ one lane.
 6. **A page that changed is not a block.** A listing that answers but yields nothing the recipe can read
    (*0 videos found*) marks that one fetcher **Needs re-investigation**, as drawn on the third row of the list. It
    downloads nothing and spends nothing until the admin presses *Re-investigate page*.
+7. **A redirect to a recorded host (amended 2026-10-27, DEB-2698).** A request the lane makes may be redirected, and
+   the lane decides what the answer is worth by the host it came **from**, not the one that was asked.
+   - If the final URL's host is the host asked for, or any host in the recipe's `source.hosts` (FR-4.1) or named by its
+     templates, the answer is the lane's own: it is judged like any other (FR-2.4, FR-2.5) and its **final URL** travels
+     with it.
+   - If the final host is not recorded, the answer is discarded (status `310`, no body) and the lane carries on, as
+     before. A recorded host is the only trust there is: nothing is added to `source.hosts` by following a redirect.
+   - A relative reference inside an answer, such as the variant URIs of an HLS master playlist, is resolved against
+     the answer's **final** URL, never the requested one. Every user of that answer does this: the proof's probe
+     (FR-4.2) and the download (FR-6.3). A master served from `a.example/redirect/x.smil` that redirects to
+     `edge2.example/x.smil/playlist.m3u8` has its variants under `edge2.example/x.smil/`.
+   - A CDN that rotates between edges is recorded by all the edges seen; an edge the recipe does not record is refused
+     with the `310` above, which the proof reports and *Re-investigate page* can repair.
+   - The subtitle rendition's first chunk (FR-6.4) is read through the same final-URL base.
 
 ### FR-3 — What Auto-fetch accepts and what it refuses
 
