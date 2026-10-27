@@ -62,7 +62,11 @@
 .lt-epg { flex: 1; position: relative; overflow: hidden; margin: 0 0 0 0; }
 .lt-epg-scroll { position: absolute; inset: 0; overflow: hidden; }
 .lt-epg-canvas { position: relative; }
-.lt-epg-timebar { display: flex; height: 42px; align-items: center; padding-left: var(--lt-chcol); position: sticky; top: 0; z-index: 6;
+/* No padding-left here: the `.corner` child below is already one channel column wide, and it is what
+   holds the slot labels off the left edge. Carrying both put every slot label one whole channel
+   column (320px spacious) right of the time it marks, so the now-line fell on the previous label —
+   found in the radio round's first render of the guide (2026-10-27). */
+.lt-epg-timebar { display: flex; height: 42px; align-items: center; position: sticky; top: 0; z-index: 6;
   background: var(--bg); border-bottom: 1px solid var(--line); }
 .lt-epg-timebar .corner { width: var(--lt-chcol); flex: none; position: sticky; left: 0; z-index: 7; background: var(--bg); height: 100%;
   display: flex; align-items: center; padding-left: 64px; box-sizing: border-box; font-size: 14px; color: var(--ink-dim); letter-spacing: 1px; text-transform: uppercase; }

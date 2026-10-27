@@ -169,14 +169,15 @@
 
   /* 1c · the guide (FR-7), with the stations as rows and the one *Live radio* block.
 
-     ⚠ THE TIME HEADER IN `radio-markA-guide.png` IS ONE CHANNEL COLUMN OUT, AND THAT IS NOT THE
-     DESIGN. It is `ravilo-livetv.css`'s shipped `.lt-epg-timebar` (see the note in radio.css) and
-     DEB-2651 fixes it there. The round carried a rule scoped to its own frames; it was not
-     promoted, so this picture shows today's guide rather than a guide with a private fix in it.
+     The time header in this frame WAS one channel column out — `ravilo-livetv.css`'s
+     `.lt-epg-timebar` carried a `padding-left` on top of its own `.corner` (see the note in
+     radio.css). That was fixed in `ravilo-livetv.css` itself on 2026-10-27 (DEB-2651) and
+     `radio-markA-guide.png` was re-rendered against the fix, so the slot labels in it now mark the
+     times they sit over and the now-line falls at 20:14. The round's scoped rule was never
+     promoted and nothing here carries a private fix.
      WHAT THIS FRAME IS REFERENCE FOR is radio's part of FR-7 and nothing else: the mark in the
      channel cell's meta line, the station rows in lineup order, the one *Live radio* block across
-     the window with its label at the LEFT, and the *Radio* category chip. Do not port the slot
-     label positions from it. Re-render it once DEB-2651 lands. */
+     the window with its label at the LEFT, and the *Radio* category chip. */
   if (O.family === 'tv-guide') {
     tv('radio-markA-guide', K.guide({ focus: true }));
   }

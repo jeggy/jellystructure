@@ -151,16 +151,16 @@ html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; pa
 .rd-blocklab .pt { font-size: 17px; font-weight: 600; }
 .rd-blocklab .ps { margin-top: 0; }
 
-/* THE SHIPPED GUIDE'S TIME HEADER IS ONE CHANNEL COLUMN OUT OF STEP WITH ITS OWN CELLS, and the
-   fix is NOT here. `.lt-epg-timebar` in `ravilo-livetv.css` carries BOTH
-   `padding-left: var(--lt-chcol)` AND a `.corner` of that same width inside it, so every slot
-   label sits 320 px to the right of the time it marks while the programme cells are positioned
-   from the end of the channel column: *Evening News · 20:00–20:30* sits under the 19:30 label and
-   the now-line falls on 19:30 rather than 20:14. The round carried a rule scoped to its own
-   frames; that rule is deliberately NOT promoted, because DEB-2651 fixes `ravilo-livetv.css`
-   itself and a scoped copy here would be the second answer that keeps the first one from being
-   needed. Until DEB-2651 lands, `radio-markA-guide.png` shows the shipped offset — which is the
-   honest picture of today's guide, and nothing to do with radio. */
+/* THE GUIDE'S TIME HEADER WAS ONE CHANNEL COLUMN OUT OF STEP WITH ITS OWN CELLS, and the fix was
+   NOT here. `.lt-epg-timebar` in `ravilo-livetv.css` carried BOTH `padding-left: var(--lt-chcol)`
+   AND a `.corner` of that same width inside it, so every slot label sat 320 px to the right of the
+   time it marked while the programme cells were positioned from the end of the channel column:
+   *Evening News · 20:00–20:30* sat under the 19:30 label and the now-line fell on 19:30 rather
+   than 20:14. The round carried a rule scoped to its own frames and deliberately did not promote
+   it, because a scoped copy here would have been the second answer that keeps the first one from
+   being needed. **Fixed in `ravilo-livetv.css` itself on 2026-10-27 (DEB-2651)** — the one
+   `padding-left` is gone, nothing here replaces it, and `radio-markA-guide.png` was re-rendered
+   the same day and now lines up. */
 
 /* ---- THE TV RADIO PLAYER ---------------------------------------------------------------------
    Shared: the field, the plate, the LIVE pill.

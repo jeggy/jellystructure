@@ -1098,7 +1098,7 @@
       if (x && x.strict && (it.status === 'requested' || it.status === 'queued'))
         return `<span class="ddt-state fetch"><span class="dot"></span> ${t('req_waiting_for', { lang: x.waitLabel || x.label })} ${fl}</span>`;
       switch (it.status) {
-        case 'available':   return `<span class="ddt-state avail">✓ ${t('in_library')}</span>`;
+        case 'available':   return `<span class="ddt-state avail">${t('in_library')}</span>`; /* the ✓ is part of the shipped acq.in_library label */
         case 'downloading': return `<span class="ddt-state fetch"><span class="spin"></span> ${fetchLong(it)} ${fl}</span>`;
         case 'queued':      return `<span class="ddt-state fetch">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''} ${fl}</span>`;
         case 'requested':   return `<span class="ddt-state fetch"><span class="dot"></span> ${t('requested')} ${fl}</span>`;
