@@ -549,8 +549,8 @@ class PlaybackService(
     /** 309 (FR-309-1) — this device's record (null without the store, or with no row yet). */
     private fun recordOf(device: DeviceData): StreamRecord? = runCatching { streamRecords?.get(device.deviceId) }.getOrNull()
 
-    /** DEB-2205 (FR-3) — per codec family, the video bits/s this device's decode failed at; what a client that reports decode health is held to. */
-    private fun decodeFailedOf(device: DeviceData): Map<String, Long> = decodeFailedBps(recordOf(device))
+    /** DEB-2205 (FR-3) — per codec family, the video bits/s this device's decode failed at; what a client that reports decode health is held to (a failure 7 days old or more is not one). */
+    private fun decodeFailedOf(device: DeviceData): Map<String, Long> = decodeFailedBps(recordOf(device), nowMs() / 1000)
 
     /**
      * 309 (FR-309-1) — what [device] can take now (its proof, its newest measurement × 0.7, a recent stall's cap), in the

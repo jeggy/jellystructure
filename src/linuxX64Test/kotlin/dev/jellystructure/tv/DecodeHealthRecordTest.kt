@@ -85,10 +85,36 @@ class DecodeHealthRecordTest {
         assertEquals(r, noteDecodeFailed(r, "hevc", 0, now = 500))
     }
 
-    @Test fun `it does not expire with time`() {
+    @Test fun `the stored entry does not expire with time but negotiation stops reading it after 7 days`() {
         val r = noteDecodeFailed(StreamRecord(), "hevc", 70_000_000, now = 100)
-        assertEquals(mapOf("hevc" to 70_000_000L), decodeFailedBps(r))
-        assertEquals(null, canTake(r, now = 100 + 365L * 86_400L), "the delivery take is untouched by it")
+        val yearLater = 100 + 365L * 86_400L
+        assertEquals(mapOf("hevc" to 70_000_000L), decodeFailedBps(r), "the admin's view keeps the entry")
+        assertEquals(emptyMap(), decodeFailedBps(r, yearLater), "negotiation treats the family as having nothing learned")
+        assertEquals(70_000_000L, r.decodeFailed["hevc"]?.bps)
+        assertEquals(null, canTake(r, now = yearLater), "the delivery take is untouched by it")
+    }
+
+    @Test fun `a failure just under 7 days old is a condition and one exactly 7 days old is not`() {
+        val r = noteDecodeFailed(StreamRecord(), "hevc", 70_000_000, now = 1_000)
+        val week = DECODE_RETRY_AFTER_SEC
+        assertEquals(mapOf("hevc" to 70_000_000L), decodeFailedBps(r, 1_000 + week - 3_600))
+        assertEquals(emptyMap(), decodeFailedBps(r, 1_000 + week))
+    }
+
+    @Test fun `a new failure on day 8 restarts the clock at the lower bitrate`() {
+        val first = noteDecodeFailed(StreamRecord(), "hevc", 70_000_000, now = 0)
+        val day8 = 8 * 86_400L
+        assertEquals(emptyMap(), decodeFailedBps(first, day8))
+        val again = noteDecodeFailed(first, "hevc", 50_000_000, now = day8)
+        assertEquals(mapOf("hevc" to 50_000_000L), decodeFailedBps(again, day8))
+        assertEquals(mapOf("hevc" to 50_000_000L), decodeFailedBps(again, day8 + DECODE_RETRY_AFTER_SEC - 1))
+        assertEquals(emptyMap(), decodeFailedBps(again, day8 + DECODE_RETRY_AFTER_SEC))
+    }
+
+    @Test fun `a family past 7 days drops out while another that failed yesterday stays`() {
+        val old = noteDecodeFailed(StreamRecord(), "hevc", 70_000_000, now = 0)
+        val r = noteDecodeFailed(old, "h264", 30_000_000, now = 9 * 86_400L)
+        assertEquals(mapOf("h264" to 30_000_000L), decodeFailedBps(r, 10 * 86_400L))
     }
 
     @Test fun `a clean direct play at a higher bitrate lifts the family and nothing else`() {

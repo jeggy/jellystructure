@@ -28,8 +28,9 @@ data class StreamRecord(
 
 /**
  * DEB-2205 (FR-3) — a decode that failed: the **video** bitrate of the direct-play stream whose picture dropped frames or froze
- * with buffer in hand, and when (epoch seconds). One per codec family ([DECODE_FAMILIES]); it never expires with time, because a
- * decoder does not get faster. A file of that family above [DECODE_FAILED_HEADROOM] × [bps] goes to the ladder; a clean direct
+ * with buffer in hand, and when (epoch seconds). One per codec family ([DECODE_FAMILIES]). The stored entry is never dropped by time, but negotiation stops
+ * reading it once [at] is [DECODE_RETRY_AFTER_SEC] old ([decodeFailedBps] with `now`), so the family gets one more try; a new failure
+ * restarts that window. A file of that family above [DECODE_FAILED_HEADROOM] × [bps] goes to the ladder; a clean direct
  * play of that family at a higher bitrate lifts it ([liftDecodeFailed]).
  */
 data class DecodeFailure(val bps: Long, val at: Long)
@@ -38,6 +39,8 @@ data class DecodeFailure(val bps: Long, val at: Long)
 internal val DECODE_FAMILIES = listOf("hevc", "h264", "av1", "vp9")
 /** DEB-2205 (FR-3) — a file of the family above this share of the bitrate that failed goes to the ladder (JellyfinClient's 0.9 margin). */
 internal const val DECODE_FAILED_HEADROOM = 0.9
+/** DEB-2205 (FR-3, weekly retry) — a learned ceiling this old (seconds) is no longer a condition of negotiation; the stored entry stays. */
+internal const val DECODE_RETRY_AFTER_SEC = 7 * 86_400L
 /** DEB-2205 (FR-3) — a direct play this long, with no stop and almost no dropped frame, shows the decoder handles it. */
 internal const val DECODE_LIFT_HOLD_SEC = 600L
 /** DEB-2205 (FR-3) — …when under this share of its rendered frames were dropped (0.1 %). */
@@ -160,6 +163,13 @@ internal fun videoFamilyOf(codec: String?): String? = when (codec?.lowercase()?.
 /** DEB-2205 (FR-3) — family → the video bits/s its decode failed at, the form [dev.jellystructure.auth.deviceProfile] takes. */
 internal fun decodeFailedBps(record: StreamRecord?): Map<String, Long> =
     record?.decodeFailed?.mapValues { it.value.bps }?.filterValues { it > 0 } ?: emptyMap()
+
+/**
+ * DEB-2205 (FR-3, weekly retry) — what negotiation reads: [decodeFailedBps] without the families whose failure is
+ * [DECODE_RETRY_AFTER_SEC] old or more at [now] (epoch seconds). The admin's view keeps the date-blind form.
+ */
+internal fun decodeFailedBps(record: StreamRecord?, now: Long): Map<String, Long> =
+    record?.decodeFailed?.filterValues { now - it.at < DECODE_RETRY_AFTER_SEC }?.mapValues { it.value.bps }?.filterValues { it > 0 } ?: emptyMap()
 
 /**
  * DEB-2205 (FR-3) — [record] with a decode failure of [family] at [videoBps] noted. A device that has failed lower already keeps
