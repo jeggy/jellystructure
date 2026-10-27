@@ -7,15 +7,17 @@
 > two: **identity and actions stay in a single top row**, and **the four pages move to a bottom bar**,
 > where a thumb is. Handset only — the TV and the web app keep the row they have, clock included.
 
-## Status
+## Scope
 
-`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, **built
-2026-09-20 and verified on a real Pixel 9** (debug build). **Finished 2026-09-25**: FR-R267-9's
-scroll-to-top and Search's top row built and verified on the Pixel 9; the other two owner items were
-closed by R304 and R274 (see *Finished (2026-09-25)* below).
+Handset only. Design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, built
+2026-09-20 and verified on a real Pixel 9 (debug build). FR-R267-9's scroll-to-top and Search's top
+row followed on 2026-09-25; the other two owner items were closed by R304 and R274 (see *Finished
+(2026-09-25)* below). Superseded in part: FR-R267-5d by **R304** (Profile is a page on a phone), and
+the bar-over-the-keyboard question by **R274**. Amended 2026-10-27 (FR-R267-9, a double tap on
+Profile switches the listening mode — DEB-2686).
 
-⚠ **Two of this phase's own Status claims were false**, exactly as the dev review found, and both are
-now corrected: it needed **backend changes** (FR-R267-5c) and it needed **new strings**.
+The design text said this phase needed no backend change and no new strings. Both were wrong, as the
+dev review found: it needed **backend changes** (FR-R267-5c) and **new strings**.
 
 ### Build (2026-09-20)
 
@@ -258,6 +260,17 @@ that:
 first chip. With the merge of FR-R267-5b they leave Discover again, so the first available segment is
 **Networks** as R268 declares it — and the rule stays written as "first available" so order and re-tap
 cannot disagree.)*
+
+*(The table's Profile row is R267's first form. Since R304, Profile is a page on a phone, and a re-tap
+scrolls it to its top like the other four, FR-R304-1.)*
+
+**Amendment 2026-10-27 (DEB-2686) — one exception, a double tap on Profile.** When a second tap on
+Profile comes within the platform's double-tap timeout of the first, and the listening mode is
+offered, that second tap switches between Music and Films & series, staying on Profile as R326
+FR-R326-3's card does. It is **not** a re-tap and does not scroll. The first tap is never delayed: it
+navigates or scrolls at once, exactly as above. Everything else in this FR stands. The rule, its
+gating and its accessibility action are in
+[`double-tap-profile-switches-the-listening-mode.md`](double-tap-profile-switches-the-listening-mode.md).
 
 **FR-R267-10 — Always visible on its pages.** No hide-on-scroll: it is the one affordance that says
 where you are, and a bar that disappears while you read a row is a bar you have to go looking for.
