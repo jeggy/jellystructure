@@ -1409,6 +1409,8 @@ fun RaviloApp(
         // R342 — the Mac's running Dock icon follows what the screen shows (a no-op everywhere else).
         LaunchedEffect(inMusic) { dev.jellystructure.ravilo.ui.seams.reportListeningMode(inMusic) }
         fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
+        // DEB-2482 (FR-R337-6) — leaving Playing pops to the page under it, or goes to the mode's first page when Playing is alone.
+        fun leavePlaying() { leavePlayingTarget(stack, inMusic, destDisplayName(stack.lastOrNull()))?.let { resetTo(it) } ?: pop() }
         // R380 (FR-R380-6) — Back on the TV's Now playing only hides it: the music keeps playing and the pill
         // shows on Home. Found live on Stue TV: a cast that cold-starts the app has nothing under Now
         // playing (or a sign-in/profile screen, or the cast's finished film), so a plain pop()
@@ -1641,7 +1643,7 @@ fun RaviloApp(
                     dev.jellystructure.ravilo.ui.components.AppCommand.TOGGLE_QUEUE -> if (musicState.active) {
                         if (handset) { if (top !is Dest.MusicQueue) push(Dest.MusicQueue(destDisplayName(top))) } else queueOpen = !queueOpen
                     }
-                    dev.jellystructure.ravilo.ui.components.AppCommand.SHOW_LYRICS -> if (top is Dest.MusicPlaying) pop() else if (musicState.active) push(Dest.MusicPlaying(destDisplayName(top)))
+                    dev.jellystructure.ravilo.ui.components.AppCommand.SHOW_LYRICS -> if (top is Dest.MusicPlaying) leavePlaying() else if (musicState.active) push(Dest.MusicPlaying(destDisplayName(top)))
                     dev.jellystructure.ravilo.ui.components.AppCommand.SHORTCUTS -> shortcutsOpen = true
                     dev.jellystructure.ravilo.ui.components.AppCommand.NEXT_SONG -> if (musicState.active) dev.jellystructure.ravilo.ui.music.MusicPlayback.next()
                     dev.jellystructure.ravilo.ui.components.AppCommand.PREVIOUS_SONG -> if (musicState.active) dev.jellystructure.ravilo.ui.music.MusicPlayback.previous()
@@ -3264,13 +3266,13 @@ fun RaviloApp(
         if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
             medium = deskMedium,
             queueOpen = queueOpen,
-            onOpenPlaying = { if (inMusic) resetTo(Dest.MusicPlaying(destDisplayName(dest))) else push(Dest.MusicPlaying(destDisplayName(dest))) },
+            onOpenPlaying = { push(Dest.MusicPlaying(destDisplayName(dest))) },
             onQueue = { queueOpen = !queueOpen },
             modifier = Modifier.align(Alignment.BottomCenter),
             queueOverlay = queueOpen && !deskLarge && deskQueueShows(dest),
             onOpenAlbum = { id -> push(Dest.AlbumDetail(id, destDisplayName(dest))) },
             onPlayingPage = dest is Dest.MusicPlaying,
-            onLeavePlaying = { pop() },
+            onLeavePlaying = { leavePlaying() },
         )
         val deskSession = barSession
         if (deskSession != null && deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopSessionBar(
