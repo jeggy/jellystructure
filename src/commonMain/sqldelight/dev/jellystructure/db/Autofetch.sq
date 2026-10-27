@@ -1,0 +1,179 @@
+-- DEB-2476 (DEB-2474) — Auto-fetch. Must stay byte-for-byte in sync with 90.sqm's CREATE TABLE statements.
+CREATE TABLE autofetch_fetcher (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    page_url TEXT NOT NULL,
+    site TEXT NOT NULL,
+    tmdb_id INTEGER,
+    page_only INTEGER NOT NULL DEFAULT 0,
+    library_path TEXT NOT NULL,
+    series_path TEXT NOT NULL,
+    recipe_json TEXT NOT NULL,
+    proven INTEGER NOT NULL DEFAULT 0,
+    retention TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    state TEXT NOT NULL DEFAULT 'ok',
+    state_reason TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    last_run_at INTEGER,
+    last_list_ok_at INTEGER
+);
+CREATE INDEX autofetch_fetcher_by_site ON autofetch_fetcher(site);
+
+CREATE TABLE autofetch_site (
+    site TEXT NOT NULL PRIMARY KEY,
+    stopped_reason TEXT,
+    stopped_at INTEGER,
+    robots_text TEXT,
+    robots_fetched_at INTEGER,
+    backoff_until INTEGER,
+    backoff_level INTEGER NOT NULL DEFAULT 0,
+    rate_limited_day TEXT,
+    rate_limited_count INTEGER NOT NULL DEFAULT 0,
+    ever_ok INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE autofetch_item (
+    fetcher_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    link TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    published TEXT,
+    list_order INTEGER NOT NULL DEFAULT 0,
+    season INTEGER,
+    episode INTEGER,
+    duration INTEGER,
+    media_value TEXT,
+    state TEXT NOT NULL DEFAULT 'new',
+    failures INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT '',
+    placed_path TEXT,
+    placed_at INTEGER,
+    missing_since INTEGER,
+    last_seen_at INTEGER,
+    PRIMARY KEY (fetcher_id, item_id)
+);
+CREATE INDEX autofetch_item_by_path ON autofetch_item(placed_path);
+
+CREATE TABLE autofetch_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetcher_id TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    run_trigger TEXT NOT NULL,
+    status TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    lines_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX autofetch_run_by_fetcher ON autofetch_run(fetcher_id, started_at);
+
+CREATE TABLE autofetch_series_mark (
+    series_path TEXT NOT NULL PRIMARY KEY,
+    fetcher_id TEXT NOT NULL
+);
+
+fetcherAll:
+SELECT * FROM autofetch_fetcher ORDER BY created_at, id;
+
+fetcherById:
+SELECT * FROM autofetch_fetcher WHERE id = :id;
+
+fetcherInsert:
+INSERT INTO autofetch_fetcher(id, name, page_url, site, tmdb_id, page_only, library_path, series_path, recipe_json, proven, retention, schedule, enabled, created_at)
+VALUES (:id, :name, :page_url, :site, :tmdb_id, :page_only, :library_path, :series_path, :recipe_json, :proven, :retention, :schedule, :enabled, :created_at);
+
+fetcherUpdateSettings:
+UPDATE autofetch_fetcher SET retention = :retention, schedule = :schedule, enabled = :enabled WHERE id = :id;
+
+fetcherSetState:
+UPDATE autofetch_fetcher SET state = :state, state_reason = :state_reason WHERE id = :id;
+
+fetcherSetRan:
+UPDATE autofetch_fetcher SET last_run_at = :last_run_at WHERE id = :id;
+
+fetcherSetListOk:
+UPDATE autofetch_fetcher SET last_list_ok_at = :at WHERE id = :id;
+
+fetcherDelete:
+DELETE FROM autofetch_fetcher WHERE id = :id;
+
+siteGet:
+SELECT * FROM autofetch_site WHERE site = :site;
+
+siteAll:
+SELECT * FROM autofetch_site;
+
+sitePut:
+INSERT OR REPLACE INTO autofetch_site(site, stopped_reason, stopped_at, robots_text, robots_fetched_at, backoff_until, backoff_level, rate_limited_day, rate_limited_count, ever_ok)
+VALUES (:site, :stopped_reason, :stopped_at, :robots_text, :robots_fetched_at, :backoff_until, :backoff_level, :rate_limited_day, :rate_limited_count, :ever_ok);
+
+itemsByFetcher:
+SELECT * FROM autofetch_item WHERE fetcher_id = :fetcher_id ORDER BY list_order, item_id;
+
+itemGet:
+SELECT * FROM autofetch_item WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemByPath:
+SELECT * FROM autofetch_item WHERE placed_path = :path;
+
+itemInsertListed:
+INSERT OR IGNORE INTO autofetch_item(fetcher_id, item_id, link, title, description, published, list_order, season, episode, duration, last_seen_at)
+VALUES (:fetcher_id, :item_id, :link, :title, :description, :published, :list_order, :season, :episode, :duration, :seen);
+
+itemUpdateListed:
+UPDATE autofetch_item SET link = :link, title = :title, description = :description, published = :published, list_order = :list_order,
+    season = :season, episode = :episode, duration = :duration, last_seen_at = :seen, missing_since = NULL
+WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemSetMediaValue:
+UPDATE autofetch_item SET media_value = :media_value WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemSetState:
+UPDATE autofetch_item SET state = :state, note = :note, failures = :failures WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemSetPlaced:
+UPDATE autofetch_item SET state = 'placed', placed_path = :placed_path, placed_at = :placed_at, note = '', failures = 0 WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemRelease:
+UPDATE autofetch_item SET state = 'released', placed_path = NULL, placed_at = NULL WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemSetDeleted:
+UPDATE autofetch_item SET state = 'deleted', placed_path = NULL, placed_at = NULL, note = :note WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemMarkMissing:
+UPDATE autofetch_item SET missing_since = COALESCE(missing_since, :since) WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemsDeleteByFetcher:
+DELETE FROM autofetch_item WHERE fetcher_id = :fetcher_id;
+
+runInsert:
+INSERT INTO autofetch_run(fetcher_id, started_at, run_trigger, status) VALUES (:fetcher_id, :started_at, :run_trigger, 'running');
+
+lastInsertRowId:
+SELECT last_insert_rowid();
+
+runFinish:
+UPDATE autofetch_run SET finished_at = :finished_at, status = :status, summary = :summary, lines_json = :lines_json WHERE id = :id;
+
+runsByFetcher:
+SELECT * FROM autofetch_run WHERE fetcher_id = :fetcher_id ORDER BY started_at DESC, id DESC LIMIT :limit;
+
+runsDeleteByFetcher:
+DELETE FROM autofetch_run WHERE fetcher_id = :fetcher_id;
+
+runsAbandon:
+UPDATE autofetch_run SET status = 'abandoned', finished_at = :at WHERE status = 'running';
+
+markPut:
+INSERT OR REPLACE INTO autofetch_series_mark(series_path, fetcher_id) VALUES (:series_path, :fetcher_id);
+
+markGet:
+SELECT fetcher_id FROM autofetch_series_mark WHERE series_path = :series_path;
+
+markAll:
+SELECT * FROM autofetch_series_mark;
+
+markDeleteByFetcher:
+DELETE FROM autofetch_series_mark WHERE fetcher_id = :fetcher_id;
