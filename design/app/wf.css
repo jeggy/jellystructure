@@ -993,3 +993,45 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
   background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius-s); box-shadow: var(--shadow);
   padding: 8px 10px; font-size: .72rem; line-height: 1.4; color: var(--ink-soft); text-align: left; white-space: normal; }
 .chk-pop.open { display: block; }
+
+/* ── DEB-2628 (FR-12) — the radio mark on Live TV's channel lineup, promoted from the round
+   `radio` (DEB-2640, owner's pick 2026-10-27: option A, the corner glyph). The SAME drawing the
+   TV tile, the guide cell, Now/Next, the zap banner and Music Home carry, at a table row's scale:
+   an operator reading the lineup and a viewer reading a tile should be reading one mark, not two.
+   It sits BEFORE the station's name, inline, in the row's quiet ink, with 7 px of air after it, so
+   a station reads as a name with a mark rather than as two columns.
+
+   The glyph is `((•))` — a dot with an arc pair EITHER SIDE. It is never the Wi-Fi fan: an upward
+   fan over a dot is the signal-strength mark, and the thing beside it here is a stream that really
+   can lose signal. The round's first render drew the fan and all four frames read as Wi-Fi.
+   The 2.1 stroke at 24 units with round caps is what keeps the arcs separate at the 15 px row
+   size; a 1.6 stroke closed into a blob. The page emits the five paths and nothing else — the
+   stroke treatment is this file's, so one change moves every size.
+   Its accessible label is *Radio* (`aria-label` on the span, `role="img"`).
+   Fenced by scripts/check-mobile-css.sh. */
+.radiomark { display: inline-flex; align-items: center; vertical-align: -2px;
+  margin-right: 7px; color: var(--ink-soft); }
+.radiomark svg { display: block; width: 15px; height: 15px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; }
+.radiomark svg circle { fill: currentColor; stroke: none; }
+/* In the filter row the chip owns the ink — on the lit *Radio* chip that is white on --hi, and a
+   mark left at --ink-soft there is the one thing on the chip in a different colour. 14 px, because
+   the chip's own text is .78rem and a 15 px glyph beside it sits a hair proud.
+   THE MARGIN IS ZEROED, NOT INHERITED. `.chip` is `display: inline-flex` with its own `gap: 6px`,
+   so the 7 px that is right in a table cell lands on top of the chip's gap and draws 13 px — which
+   at 1× reads as a glyph that has come loose from its word. The chip's rhythm wins inside a chip.
+   Seen only by opening the render; no fence can see it. */
+.chip .radiomark { margin-right: 0; color: inherit; }
+.chip .radiomark svg { width: 14px; height: 14px; }
+
+/* FR-12 — a hidden row that is still badged *new* is drawn at FULL strength. `.lineup tr.off td`
+   fades a hidden row to 50 %, which is right for a channel somebody deliberately hid and wrong for
+   one that has just arrived: it made the three new stations the faintest rows on the page the
+   operator opened to find them, in both themes (the round's Q2). The fade returns once the
+   operator acts — shown, or hidden with the badge cleared. Holds for any new channel, not only a
+   station.
+   TWO classes on the <tr> deliberately: the `.lineup tr.off td` fade is page-local CSS the Live TV
+   view injects at runtime, so it always loads AFTER this file. A one-class override would lose the
+   cascade on order alone; `tr.off.new` wins on specificity wherever it is loaded from.
+   Fenced by scripts/check-mobile-css.sh. */
+.lineup tr.off.new td { opacity: 1; }

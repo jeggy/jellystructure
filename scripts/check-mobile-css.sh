@@ -203,6 +203,21 @@ check "$WF" "Chromecast card status dots (.cc-dot)" \
 check "$WF" "Skipped library card: only the governed rows dim (.lib-skip-gov)" \
   ".lib-card.skipped .lib-skip-gov { opacity: .5; }"
 
+# DEB-2628 (FR-12, promoted 2026-10-27 from round `radio`/DEB-2640) — Live TV's lineup marks a radio
+# station, and a hidden row still badged `new` is NOT faded. Four hand-authored rules, none of which
+# exists in any mockup: the Live TV view's own CSS is injected from LiveTv.kt at runtime, so these
+# cannot live there without being retyped in Kotlin, and `.radiomark` is shared with the filter chip.
+# The `tr.off.new` rule is the one most at risk: it is an override of a page-local rule, so deleting
+# it looks like removing a redundant line and silently restores the 50 % dim on brand-new stations.
+check "$WF" "radio mark: the inline wrapper (.radiomark)" \
+  ".radiomark { display: inline-flex; align-items: center; vertical-align: -2px;"
+check "$WF" "radio mark: the glyph's stroke treatment (.radiomark svg)" \
+  "fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round;"
+check "$WF" "radio mark: takes the chip's own ink and gap in the filter row (.chip .radiomark)" \
+  ".chip .radiomark { margin-right: 0; color: inherit; }"
+check "$WF" "lineup: a hidden row still badged new is drawn at full strength (FR-12)" \
+  ".lineup tr.off.new td { opacity: 1; }"
+
 # Phase 223 — the segment editor's drag engine keeps its rules in the served segments.css; a sync that
 # drops them leaves touch users with 11 px handles, no bubble and an inert zoom strip.
 check "$SEGCSS" "Phase 223 coarse-pointer hit areas" "@media (pointer:coarse){.sx .track{height:56px}"

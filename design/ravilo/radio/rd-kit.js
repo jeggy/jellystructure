@@ -1,13 +1,18 @@
 /* rd-kit.js — the builders. Every frame in frames.html is one call into this file.
 
+   THE ADOPTED MOCKUP, not the round. The owner picked on 2026-10-27 (card on DEB-2628): the mark
+   is **A, the corner glyph**, the TV radio player is **A, the Now-playing layout**, and the Radio
+   row is **D, the last row**. What is drawn here is those three and nothing else — the two
+   rejected marks, the second player, the three other row placements and the wide tile are gone
+   with the round, and git history holds them at the round's own commit (`design/incoming/`,
+   2026-10-27). So there is no `mark` parameter and no `pos` parameter: the mark is the mark, and
+   the row is last.
+
    The rule this file follows, everywhere: a station is built by the SAME function as a channel,
    with `kind === 'radio'` as the only input that differs. That is FR-6's "the one difference from
    a channel tile" made true in the source and not only in the caption — if a station tile and a
    channel tile ever diverge in anything but the mark and the no-guide line, it is a bug here and
    not a decision.
-
-   The three mark options are the three `markHTML` branches, selected per frame, so the SAME tile
-   is drawn three ways and the comparison is of the mark alone.
 */
 window.RDKit = (function (D) {
   'use strict';
@@ -26,17 +31,10 @@ window.RDKit = (function (D) {
   const nextId = p => p + '-' + (++uid);
 
   /* =============================================================================================
-     THE MARK — the whole of decision 1. Three options, one function, one accessible label.
-
-     Option A  a corner glyph. Three broadcast arcs over a dot, in a filled chip, in the tile
-               corner a channel tile leaves empty.
-     Option B  a short RADIO word beside the channel number, in the tile's meta line.
-     Option C  the word inside the LIVE badge the tile already has: `LIVE · RADIO`. One overlay
-               chip instead of two, and nothing new in the corner.
-
-     None of the three relies on colour: A is a shape, B and C are a word. All three carry the
-     accessible label *Radio* — on A as `aria-label` on the chip, on B and C as the visible word
-     itself, which is why neither of those needs one.
+     THE MARK (FR-6, owner's pick A) — a corner glyph: the broadcast arcs over a dot, in a filled
+     chip, in the one corner a channel tile leaves empty. It does not rely on colour, it is a
+     shape, so its cost does not grow with the language, and the one drawing carries to six
+     surfaces at six sizes. It carries the accessible label *Radio* as an `aria-label` on the chip.
      ============================================================================================= */
 
   /* The glyph, at a size the caller picks: ((•)) — a dot with two arcs EITHER SIDE of it.
@@ -45,7 +43,13 @@ window.RDKit = (function (D) {
      and a TV tile is the last place to borrow it, because the thing beside it is a stream that
      really can lose signal. Arcs on BOTH sides of a centred dot is the broadcast mark, it is
      symmetrical, and at three metres it is a silhouette rather than a word. */
-  const wavesSVG = (w) => '<svg viewBox="0 0 24 24" class="rd-waves" style="width:' + w + 'px;height:' + w + 'px">'
+  /* `w` is optional. WITH a width the glyph is sized inline, which is how every `rd-*` surface in
+     this file draws it. WITHOUT one it carries no size and no `rd-waves` class at all, and the
+     stroke treatment and the size come from the stylesheet — which is what the admin does, because
+     there the rules are `wf.css`'s `.radiomark svg` and the archive should be drawing the
+     production rule rather than standing in front of it. */
+  const wavesSVG = (w) => '<svg viewBox="0 0 24 24"'
+    + (w ? ' class="rd-waves" style="width:' + w + 'px;height:' + w + 'px"' : '') + '>'
     + '<circle cx="12" cy="12" r="2.3"/>'
     + '<path d="M15.7 8.3A5.2 5.2 0 0 1 15.7 15.7"/>'
     + '<path d="M18.2 5.8A8.8 8.8 0 0 1 18.2 18.2"/>'
@@ -53,20 +57,13 @@ window.RDKit = (function (D) {
     + '<path d="M5.8 5.8A8.8 8.8 0 0 0 5.8 18.2"/>'
     + '</svg>';
 
-  /* A: the corner chip. `where` is only a class — the chip's place is the stylesheet's. */
-  const markA = (size) => '<span class="rd-markA" aria-label="' + esc(t('radio')) + '" role="img">'
+  /* The mark, at a size the caller picks. The chip's PLACE is the stylesheet's, never a parameter:
+     the corner on a tile, inline in the guide cell, in Now/Next and in the zap banner. */
+  const mark = (size) => '<span class="rd-markA" aria-label="' + esc(t('radio')) + '" role="img">'
     + wavesSVG(size || 26) + '</span>';
-  /* B: the word, in the meta line, beside the number. */
-  const markB = () => '<span class="rd-markB">' + esc(t('radio')) + '</span>';
-  /* C: nothing of its own — it changes what the LIVE badge says, below. */
 
-  /* The LIVE badge, which option C extends. */
-  function liveBadge(ch, opt) {
-    const o = opt || {};
-    if (o.mark === 'C' && ch.kind === 'radio')
-      return '<span class="badge-live rd-badge-c">' + esc(t('live')) + '<i>·</i>' + esc(t('radio')) + '</span>';
-    return '<span class="badge-live">' + esc(t('live')) + '</span>';
-  }
+  /* The LIVE badge, R177's own and unchanged — the mark carries the kind, so the badge does not. */
+  const liveBadge = () => '<span class="badge-live">' + esc(t('live')) + '</span>';
 
   /* The channel logo plate — the mock's own `.lt-chlogo`: initials on the channel's gradient. */
   const logo = (ch, cls) => '<span class="lt-chlogo ' + (cls || '')
@@ -83,13 +80,12 @@ window.RDKit = (function (D) {
     const hasGuide = !!ch.now;
     let h = '<div class="lt-onnow' + focused + (radio ? ' rd-radio' : '') + '">'
       + '<div class="art"><div class="grad" style="background:' + ch.grad + '"></div><div class="scrim"></div>'
-      + liveBadge(ch, o)
-      /* Option A's chip sits in the corner the LIVE badge does not use. On a TV channel that
-         corner is empty, which is the whole of A's argument. */
-      + (radio && o.mark === 'A' ? markA(30) : '')
+      + liveBadge()
+      /* The chip sits in the corner the LIVE badge does not use. On a TV channel that corner is
+         empty, which is the whole of the mark's argument. */
+      + (radio ? mark(30) : '')
       + '<div class="biglogo">' + esc(ch.initials) + '</div></div>'
       + '<div class="meta"><div class="chrow"><span class="chnum">' + ch.num + '</span>'
-      + (radio && o.mark === 'B' ? markB() : '')
       + '<span class="chname">' + esc(ch.name) + '</span></div>';
     if (hasGuide) {
       h += '<div class="ptitle">' + esc(ch.now.title) + '</div>'
@@ -125,7 +121,7 @@ window.RDKit = (function (D) {
      focused in the brief's own vocabulary rather than by array index. */
   function onNowRow(opt) {
     const o = opt || {};
-    const cards = D.ROW.map(ch => onNowCard(ch, { mark: o.mark, focused: ch.num === o.focusNum })).join('');
+    const cards = D.ROW.map(ch => onNowCard(ch, { focused: ch.num === o.focusNum })).join('');
     /* `scrollX` is what the app's focus engine does, written as data: six 340 px tiles behind a
        232 px guide tile are 2 168 px of track in a 1 920 px row, so a frame that focuses the FIFTH
        tile has to have scrolled, and a frame that draws it unscrolled would be a picture of a
@@ -204,8 +200,8 @@ window.RDKit = (function (D) {
         + '<div class="lt-epg-chcol' + (radio ? ' rd-radio' : '') + '">'
         + '<span class="cnum">' + ch.num + '</span>'
         + logo(ch)
-        /* FR-7: "The channel cell carries the same radio mark." Option A's chip, at the cell's
-           own scale, after the name — a 54×40 logo plate has no corner to spare. */
+        /* FR-7: "The channel cell carries the same radio mark." The same chip, at the cell's own
+           scale — a 54×40 logo plate has no corner to spare. */
         /* THE MARK GOES IN THE META LINE, NOT AFTER THE NAME. The channel column is 320 px wide
            and about 128 of them are the name; the first render put the glyph after the name and
            it truncated *Harbour Radio 2* and *Assembly Radio* to *Harbour Ra…* and *Assembly R…*
@@ -213,7 +209,7 @@ window.RDKit = (function (D) {
            damaged, to carry a mark the line under them had room for. The meta line is where the
            category already is, so the glyph costs no name at all. */
         + '<div class="cn"><div class="cname"><span class="nm">' + esc(ch.name) + '</span></div>'
-        + '<div class="rd-cmeta">' + (radio && o.mark === 'A' ? markA(14) : '')
+        + '<div class="rd-cmeta">' + (radio ? mark(14) : '')
         + (radio ? esc(t('radio')) : esc(ch.catLabel)) + '</div></div>'
         + '</div><div class="lt-epg-track">' + cells + '</div></div>';
       void ri;
@@ -241,16 +237,18 @@ window.RDKit = (function (D) {
   }
 
   /* =============================================================================================
-     TV — the radio player (FR-8, decision 2).
+     TV — the radio player (FR-8, owner's pick A): the TV's own Now-playing language. The logo
+     large and centred, the station under it, the programme under that, the live bar, then Next.
+     NO bottom bar at all — which is what makes the burn-in step move everything on screen, the
+     only version of that step that protects the bright text. It carries the LIVE mark, the
+     station's name and number, the programme now with its times and live progress, and the next
+     programme (FR-8's list), and shows *Live radio* with no programme when the station has no
+     guide.
 
-     A  the TV's own Now-playing language: the logo large and centred, the station under it, the
-        programme under that, the live bar, then Next. No bottom bar at all.
-     B  today's live player chrome: the big logo where the picture would be, and the shipped
-        `.lt-chanbar` kept along the bottom.
-
-     Both carry the LIVE mark, the station's name and number, the programme now with its times and
-     live progress, and the next programme (FR-8's list), and both show *Live radio* with no
-     programme when the station has no guide.
+     The rejected direction B kept R177's bottom bar, and the three costs the pictures showed are
+     recorded in the round's REPORT.md (`design/incoming/2026-10-27-radio/REPORT.md`): the shipped
+     field at `opacity: .85` with no picture behind it, the station's name said twice, and a bottom
+     bar that cannot take part in the burn-in step.
      ============================================================================================= */
 
   /* The LIVE pill, shared. */
@@ -299,10 +297,10 @@ window.RDKit = (function (D) {
 
   /* The zap banner, R177's own, with the mark when the banner names a station — which is the one
      place the viewer learns, mid-zap, that the next press lands on radio. */
-  function zapBanner(ch, mark) {
+  function zapBanner(ch) {
     return '<div class="lt-zap">' + logo(ch)
       + '<div><div><span class="cnum">' + ch.num + '</span> <span class="cname">' + esc(ch.name) + '</span>'
-      + (ch.kind === 'radio' && mark !== false ? markA(18) : '') + '</div>'
+      + (ch.kind === 'radio' ? mark(18) : '') + '</div>'
       + '<div class="now">' + (ch.now ? esc(ch.now.title) : esc(t('live_radio'))) + '</div></div></div>';
   }
 
@@ -317,7 +315,7 @@ window.RDKit = (function (D) {
       const radio = c.kind === 'radio';
       return '<div class="lt-nn-row' + (c.num === curNum ? ' cur' : '') + (c.num === focusNum ? ' focused' : '') + '">'
         + '<span class="cnum">' + c.num + '</span>' + logo(c)
-        + '<span class="cname">' + esc(c.name) + (radio ? markA(16) : '') + '</span>'
+        + '<span class="cname">' + esc(c.name) + (radio ? mark(16) : '') + '</span>'
         + '<span class="nn-col nn-now"><span class="nn-k">' + esc(t('now').toUpperCase()) + '</span>'
         + (c.now ? esc(c.now.title) : esc(t('live_radio'))) + '</span>'
         + '<span class="nn-col nn-next"><span class="nn-k">' + esc(t('next').toUpperCase()) + '</span>'
@@ -327,8 +325,8 @@ window.RDKit = (function (D) {
       + ' · ↑↓ ' + esc(t('browse')) + ' · ↵ ' + esc(t('tune')) + '</div>' + rows + '</div>';
   }
 
-  /* Direction A — the Now-playing-style player. */
-  function playerA(ch, opt) {
+  /* The player. */
+  function player(ch, opt) {
     const o = opt || {};
     const b = D.BURN.offsets[D.BURN.step];
     let h = '<div class="lt-player on rd-pA">'
@@ -344,64 +342,18 @@ window.RDKit = (function (D) {
     return h + '</div>';
   }
 
-  /* Direction B — today's chrome, with the bottom bar. */
-  function playerB(ch, opt) {
-    const o = opt || {};
-    const b = D.BURN.offsets[D.BURN.step];
-    const guided = !!ch.now;
-    let h = '<div class="lt-player on rd-pB">'
-      + '<div class="video"><div class="bg" style="background:' + ch.grad + '"></div><div class="noise"></div>'
-      + '<div class="biglogo rd-bigB' + (o.moved ? ' moved' : '') + '"'
-      + (o.moved ? ' style="--bx:' + b.x + 'px;--by:' + b.y + 'px"' : '') + '>'
-      + '<span class="rd-plate big" style="background:' + ch.grad + '"><span class="in">' + esc(ch.initials) + '</span>'
-      + '<span class="rd-pmark">' + wavesSVG(40) + '</span></span>'
-      + '<div class="cn">' + ch.num + ' · ' + esc(ch.name) + '</div>'
-      + '<div class="rd-bkind">' + esc(t('radio')) + '</div></div></div>'
-      /* The live badge top right is R177's; it gains the word, because on B the bottom bar is the
-         only other place the viewer could learn this is radio and the bar hides after 4.5 s.
-         STOPPED drops the LIVE half, as it does on direction A — the first render of
-         `radio-playerB-stopped` carried the red LIVE badge AND the bar's LIVE flag over a card
-         that said *Stopped*, which is the same contradiction in two more places. */
-      + '<div class="lt-live-badge rd-badge-r">'
-      + (o.stopped ? '' : '<span class="d"></span>' + esc(t('live')) + '<span class="sep">·</span>')
-      + esc(t('radio')) + '</div>';
-    if (o.zapTo) h += zapBanner(o.zapTo);
-    if (o.num) h += numOSD(o.num);
-    if (o.nowNext) h += nowNext(ch.num, o.nowNextFocus == null ? ch.num : o.nowNextFocus);
-    h += '<div class="lt-chanbar"><div class="lt-chanbar-top">' + logo(ch)
-      + '<span class="cnum">' + ch.num + '</span><span class="cname">' + esc(ch.name) + '</span>'
-      + '<span class="catpill rd-catpill">' + markA(16) + esc(t('radio')) + '</span>'
-      + '<span class="hint">← → ' + esc(t('change_channel')) + ' · ↑ ' + esc(t('now_next')) + '</span></div>';
-    if (guided) {
-      h += '<div class="now-t">' + esc(ch.now.title) + '</div>'
-        + '<div class="now-times">' + fmt(ch.now.start) + '–' + fmt(ch.now.end) + ' · ' + esc(ch.now.sub) + '</div>'
-        + (ch.next ? '<div class="next-t">' + esc(t('next')) + ' <b>' + esc(ch.next.title) + '</b> · '
-          + fmt(ch.next.start) + '</div>' : '')
-        + '<div class="lt-prog"><span class="t">' + fmt(ch.now.start) + '</span>'
-        + '<div class="track"><i style="width:' + pct(ch.now).toFixed(1) + '%"></i></div>'
-        /* Stopped keeps the SLOT and changes what is in it: the programme's end time, in the same
-           mono style as the start time on the left. Dropping the flag outright let `.track`
-           (flex: 1) grow by its width, so the same 46.7 % fill drew a visibly longer red bar and
-           the stopped frame could no longer be compared with the playing one. */
-        + (o.stopped
-          ? '<span class="t">' + fmt(ch.now.end) + '</span>'
-          : '<span class="liveedge"><span class="d"></span>' + esc(t('live')) + '</span>')
-        + '</div>';
-    } else {
-      h += '<div class="now-t">' + esc(t('live_radio')) + '</div>'
-        + (o.stopped ? '' : '<div class="lt-prog rd-nobar"><span class="liveedge"><span class="d"></span>'
-          + esc(t('live')) + '</span></div>');
-    }
-    if (o.stopped) h += '<div class="rd-stopped bar">' + esc(t('stopped'))
-      + '<span>' + esc(t('tune_in_again')) + '</span></div>';
-    return h + '</div></div>';
-  }
-
   /* =============================================================================================
      ADMIN — the lineup table (FR-12). The shipped `.card`, `.chip`, `.badge`, `.toggle` and the
-     page's own `.lineup` table. The mark here is the SAME glyph as option A, at a 1 rem row's
+     page's own `.lineup` table. The mark here is the SAME glyph as the tile's, at a 1 rem row's
      scale, because an operator reading the table and a viewer reading the tile should be reading
      one mark and not two.
+
+     THE MARK'S CLASS IS `radiomark`, NOT `rd-amark`: this is the one rule of the round that is
+     promoted into `design/app/wf.css` (FR-12, 2026-10-27), so the archive draws the production
+     class and a diff between this file and the admin is a diff of markup only.
+
+     The round's *Live now* block, which sat under this table, is NOT part of the archive: the
+     owner did not adopt it. A radio listener shows in the playback sessions list (FR-5).
      ============================================================================================= */
   function adminLineup() {
     const rows = D.LINEUP.map(function (ch) {
@@ -411,12 +363,17 @@ window.RDKit = (function (D) {
          table is the state the operator MEETS: three new, hidden stations under three shown
          channels, with the toggle as the only thing that changes it. */
       const shown = !radio;
-      return '<tr' + (shown ? '' : ' class="off"') + '>'
+      /* FR-12: a hidden row that is still badged *new* is drawn at FULL strength. `off` alone
+         fades it to 50 %, which made the three stations the operator opened the page to find the
+         faintest rows on it (the round's Q2, answered 2026-10-27). The second class is what wins
+         the cascade against the page-local fade — see `.lineup tr.off.new td` in wf.css. */
+      const rowCls = shown ? '' : (radio ? ' class="off new"' : ' class="off"');
+      return '<tr' + rowCls + '>'
         + '<td><span class="ord"><button>▲</button><button>▼</button></span></td>'
         + '<td><span class="toggle' + (shown ? ' on' : '') + '"></span></td>'
         + '<td class="cnum">' + ch.num + '</td>'
-        + '<td class="cname">' + (radio ? '<span class="rd-amark" aria-label="' + esc(t('radio'))
-          + '" role="img">' + wavesSVG(15) + '</span>' : '') + esc(ch.name) + '</td>'
+        + '<td class="cname">' + (radio ? '<span class="radiomark" aria-label="' + esc(t('radio'))
+          + '" role="img">' + wavesSVG() + '</span>' : '') + esc(ch.name) + '</td>'
         + '<td><span class="chip">' + esc(radio ? t('radio') : ch.catLabel) + '</span></td>'
         + '<td>' + (ch.now ? '<span class="badge ok">' + esc(t('epg')) + '</span>'
           : '<span class="badge warn">' + esc(t('no_guide')) + '</span>') + '</td>'
@@ -427,8 +384,8 @@ window.RDKit = (function (D) {
       .map(function (f) {
         /* FR-12: the filters "gain Radio, beside all · shown · hidden · new · unavailable" —
            so Radio goes at the END of the existing five and does not reorder them. */
-        return '<span class="chip fchip' + (f === 'all' ? ' on' : '') + (f === 'radio' ? ' rd-fchip' : '') + '">'
-          + (f === 'radio' ? '<span class="rd-amark">' + wavesSVG(14) + '</span>' : '')
+        return '<span class="chip fchip' + (f === 'all' ? ' on' : '') + '">'
+          + (f === 'radio' ? '<span class="radiomark">' + wavesSVG() + '</span>' : '')
           + esc(t(f)) + '</span>';
       }).join('');
     return '<div class="card rd-admin">'
@@ -448,29 +405,19 @@ window.RDKit = (function (D) {
       + '</tr></thead><tbody>' + rows + '</tbody></table>'
       + '<div class="rd-lumore muted tiny">Showing all ' + D.LINEUP.length
       + ' channels Jellyfin currently provides · 3 of them radio.</div>'
-      /* FR-5's live row, which is what makes a listener visible at all. Drawn beside the lineup
-         because the brief asks for one admin frame and this is the other half of FR-12's sentence
-         about the admin — "a radio listener shows as a live row reading Radio". */
-      + '<div class="rd-livenow"><h4>Live now</h4>'
-      + '<div class="rd-liverow"><span class="rd-amark">' + wavesSVG(15) + '</span>'
-      + '<b>' + esc(t('radio')) + '</b>'
-      + '<span class="nm">' + esc(D.ST[0].name) + ' · ' + esc(D.ST[0].now.title) + '</span>'
-      + '<span class="mono tiny">' + esc(D.FORMAT) + '</span>'
-      + '<span class="badge info">' + esc(t('relayed')) + '</span>'
-      + '<span class="muted tiny">' + esc(D.SPEAKERS.downstairs.line) + '</span></div></div>'
       + '</div>';
   }
 
   /* =============================================================================================
-     PHONE — Music Home with the Radio row (FR-9, decision 3).
-
-     A  second, after Recently added, square logo cards the size of the album cards
-     B  first
-     C  second, WIDE cards — the logo beside the name and the programme, two to a screen
-     D  last, after the genres, square cards
+     PHONE — Music Home with the Radio row (FR-9, owner's pick D): the LAST row, after the genres,
+     with square logo tiles the size of the album cards. It pushes nothing down, and it costs
+     putting radio at the end of a long scroll — which is why every frame that draws it is
+     scrolled to the end: at 412 the row is below the fold, and a picture of the place it is not
+     would answer nothing.
 
      The album, artist and genre rows come out of the shipped corpus through the shipped classes,
-     so the Radio row is compared against the real neighbours it will have.
+     so the Radio row is drawn against the real neighbours it will have. The three rejected
+     placements and the wide tile are in the round's REPORT.md.
      ============================================================================================= */
   const M = () => window.MUSIC;
 
@@ -491,22 +438,11 @@ window.RDKit = (function (D) {
   const muRow = (title, inner, more) => '<div class="row"><h3>' + esc(title)
     + (more ? '<span class="more">' + esc(more) + ' ›</span>' : '') + '</h3>' + inner + '</div>';
 
-  /* The Radio TILE. `wide` is option C. Both carry the logo, the name, the programme (or Live
-     radio) and the mark — FR-9's four things. */
-  function stationTile(ch, wide) {
+  /* The Radio TILE: the logo, the name, the programme (or *Live radio*) and the mark — FR-9's four
+     things, in the album card's own 142 px box, so the row lines up with the album rows above it
+     tile for tile and radio reads as part of the library. */
+  function stationTile(ch) {
     const sub = ch.now ? ch.now.title : t('live_radio');
-    if (wide) {
-      /* The mark rides the LOGO PLATE here, not the card's corner. On the card's corner it
-         floated in the middle of the two text lines with nothing to belong to — the first render
-         of `radio-rowC-phone` showed it hanging over the station's name. On the plate it is the
-         same gesture as option A's square card and the TV tile: a mark on the art. */
-      return '<div class="rd-wcard">'
-        + '<div class="rd-wlogo" style="background:' + ch.grad + '"><span>' + esc(ch.initials) + '</span>'
-        + '<span class="rd-tmark" aria-label="' + esc(t('radio')) + '" role="img">' + wavesSVG(13) + '</span></div>'
-        + '<div class="tx"><div class="t">' + esc(ch.name) + '</div>'
-        + '<div class="s">' + esc(sub) + '</div></div>'
-        + '</div>';
-    }
     return '<div class="mu-acard rd-scard">'
       + '<div class="mu-cv rd-slogo" style="background:' + ch.grad + '">'
       + '<span class="wm">' + esc(ch.initials) + '</span>'
@@ -515,19 +451,17 @@ window.RDKit = (function (D) {
       + '<div class="s">' + esc(sub) + '</div></div>';
   }
 
-  function radioRow(wide) {
+  function radioRow() {
     return muRow(t('radio'),
-      wide
-        ? '<div class="rd-wtrack">' + D.ST.map(s => stationTile(s, true)).join('') + '</div>'
-        : '<div class="mu-track">' + D.ST.map(s => stationTile(s, false)).join('') + '</div>');
+      '<div class="mu-track">' + D.ST.map(stationTile).join('') + '</div>');
   }
 
-  /* Music Home. `pos` is where the Radio row goes: 1 = first, 2 = second, 'last' = after the
-     genres. `wide` picks option C's tile. */
+  /* Music Home. The Radio row is LAST — not a parameter any more: the owner picked the place on
+     2026-10-27 and a mockup that can still draw it elsewhere is a mockup of a decision that has
+     been made. `scrollToEnd` is the frame's own knob, not the design's. */
   function musicHome(opt) {
     const o = opt || {};
     const rows = [];
-    const radio = radioRow(!!o.wide);
     rows.push(muRow(t('recent_albums'), '<div class="mu-track">'
       + D.RECENT_ALBUMS.map(albumCard).join('') + '</div>'));
     rows.push(muRow(t('recent_played'), '<div class="mu-list">'
@@ -539,10 +473,16 @@ window.RDKit = (function (D) {
       rows.push(muRow(g.name.charAt(0).toUpperCase() + g.name.slice(1),
         '<div class="mu-track">' + al.map(a => albumCard(a.id)).join('') + '</div>'));
     });
-    if (o.pos === 'last') rows.push(radio);
-    else rows.splice(Math.max(0, (o.pos || 2) - 1), 0, radio);
+    rows.push(radioRow());
+    /* THE TAIL SPACER HAS TO KNOW ABOUT THE MINI BAR. 120 px clears the 74 px bottom nav, and
+       that was enough in the round, where the Radio row sat second and nothing was ever under it.
+       With the row LAST and the frame scrolled to the end, the mini bar lands exactly on the
+       tiles' two label lines: the one frame whose whole job is to show the row and the bar
+       together was the one frame that hid the row. `.mu-mini.abovenav` is an overlay, so in the
+       app the scroller's own bottom inset grows by the bar's height — 74 px more. Seen in the
+       render; nothing in the markup says it. */
     return '<div class="rd-scroll' + (o.scrollToEnd ? ' end' : '') + '">' + rows.join('')
-      + '<div style="height:120px"></div></div>';
+      + '<div style="height:' + (o.mini ? 194 : 120) + 'px"></div></div>';
   }
 
   /* The phone's bottom bar, drawn flat: four items, Listen current. Not a proposal — it is the
@@ -734,11 +674,15 @@ window.RDKit = (function (D) {
           + '<div class="t">' + esc(a.title) + '</div>'
           + '<div class="s">' + esc(M().artist(a.artistId).name) + ' · ' + a.year + '</div></div>';
       }).join('') + '</div>';
+    /* The Radio row is LAST on the Mac too. FR-9's place is Music Home's, and the Mac's Music Home
+       is the same surface at a different width — a row that is last on the phone and second in the
+       window would be two answers to one question. It was drawn second in the round, where the
+       place was still the thing being chosen. */
     return macWindow('Music',
       '<div class="rd-mbody">'
       + albumRow(t('recent_albums'), D.RECENT_ALBUMS.slice(0, 6))
-      + macRadioRow()
       + albumRow(t('recent_played'), D.RECENT_ALBUMS.slice(2, 8))
+      + macRadioRow()
       + '</div>');
   }
 
@@ -805,25 +749,11 @@ window.RDKit = (function (D) {
       + '</dl></div>';
   }
 
-  /* The three marks on one tile, side by side — the comparison frame. */
-  function markCompare() {
-    const st = D.ST[0];
-    return '<div class="rd-cmp">'
-      + [['A', 'A · corner glyph'], ['B', 'B · RADIO beside the number'], ['C', 'C · inside the LIVE badge']]
-        .map(function (m) {
-          return '<div class="rd-cmpcell"><div class="rd-cmplab">' + esc(m[1]) + '</div>'
-            + onNowCard(st, { mark: m[0], focused: false }) + '</div>';
-        }).join('')
-      + '<div class="rd-cmpcell"><div class="rd-cmplab">a TV channel, for reference</div>'
-      + onNowCard(D.TV[0], { mark: 'A', focused: false }) + '</div>'
-      + '</div>';
-  }
-
   return {
-    setLang: setLang, t: t, esc: esc, nextId: nextId, wavesSVG: wavesSVG,
-    onNowCard: onNowCard, onNowRow: onNowRow, guide: guide, markCompare: markCompare,
+    setLang: setLang, t: t, esc: esc, nextId: nextId, wavesSVG: wavesSVG, mark: mark,
+    onNowCard: onNowCard, onNowRow: onNowRow, guide: guide,
     burnDiagram: burnDiagram,
-    playerA: playerA, playerB: playerB, nowNext: nowNext,
+    player: player, nowNext: nowNext,
     adminLineup: adminLineup,
     musicHome: musicHome, bnav: bnav, nowPlaying: nowPlaying, miniBar: miniBar,
     remote: remote, macMusicHome: macMusicHome, macPlayingBar: macPlayingBar,

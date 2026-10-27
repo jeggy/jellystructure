@@ -75,9 +75,6 @@
      also what a 1920 row does with six 340 px cards and a leading guide tile. */
   const ROW = [TV[0], TV[1], TV[2], ST[0], ST[1]];
 
-  /* ---- the format line, admin ---------------------------------------------------------------- */
-  const FORMAT = 'MP3 · 192 kb/s';
-
   /* ---- the speakers (FR-11, R371's rooms) ---------------------------------------------------- */
   const SPEAKERS = {
     living: { id: 'sp-living', line: 'Living room', rooms: [{ id: 'living', name: 'Living room', vol: 38 }] },
@@ -134,7 +131,6 @@
       tune_in_again: 'Press play to tune in again',    /* NEW */
       cant_play: 'Couldn\u2019t play {x}',                /* NEW — music.fail_t, with the name */
       rooms: 'Rooms',                                  /* NEW */
-      relayed: 'relayed',                              /* NEW — admin only */
       live: 'LIVE',                                    /* livetv.live_badge */
       on_now: 'On Now',                                /* livetv.on_now */
       next: 'Next',                                    /* livetv.next */
@@ -169,7 +165,6 @@
       tune_in_again: 'Tryk p\u00e5 afspil for at stille ind igen',
       cant_play: 'Kunne ikke afspille {x}',
       rooms: 'Rum',
-      relayed: 'viderestillet',
       live: 'LIVE',
       on_now: 'Nu',
       next: 'N\u00e6ste',
@@ -204,7 +199,6 @@
       tune_in_again: 'Tr\u00fdst sp\u00e6l fyri at stilla inn aftur',
       cant_play: 'Kundi ikki sp\u00e6la {x}',
       rooms: 'R\u00fam',
-      relayed: 'v\u00ed\u00f0arisent',
       live: 'BEINLEI\u00d0IS',
       on_now: 'Beinlei\u00f0is n\u00fa',
       next: 'N\u00e6st',
@@ -243,7 +237,7 @@
   window.RD = {
     NOW: NOW, fmt: fmt, pct: pct,
     TV: TV, ST: ST, LINEUP: LINEUP, ROW: ROW,
-    FORMAT: FORMAT, SPEAKERS: SPEAKERS, VIEWER: VIEWER, BURN: BURN,
+    SPEAKERS: SPEAKERS, VIEWER: VIEWER, BURN: BURN,
     MUSIC_ROWS: MUSIC_ROWS, RECENT_ALBUMS: RECENT_ALBUMS, I18N: I18N,
     byNum: function (n) { return LINEUP.filter(function (c) { return c.num === n; })[0] || null; },
   };

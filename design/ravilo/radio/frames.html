@@ -27,11 +27,16 @@
 <meta http-equiv="Content-Security-Policy" content="default-src file: data: blob: 'unsafe-inline'; style-src file: data: 'unsafe-inline'; font-src file: data:; img-src file: data: blob:; script-src file: data: 'unsafe-inline'; connect-src 'none'">
 <title>Radio beside the live channels — frames</title>
 <!--
-  frames.html — every frame this round renders, built from rd-data.js through rd-kit.js.
+  frames.html — every frame of the ADOPTED radio design, built from rd-data.js through rd-kit.js.
+
+  This is the archive, not the round. The owner picked mark A, player A and row D on 2026-10-27
+  (card on DEB-2628) and the spec `radio-plays-beside-the-live-channels-and-on-music-home.md`
+  carries all three in its Design section; the unpicked options are gone with
+  `design/incoming/2026-10-27-radio/`, whose own commit still holds every one of them.
 
   ONE document, parameterised by ONE knob:
 
-      ?set=tv-mark | tv-mark-da | tv-mark-fo | tv-compare | tv-guide
+      ?set=tv-mark | tv-mark-da | tv-mark-fo | tv-burnin | tv-guide
          | tv-player | tv-player-noir
          | admin | admin-light
          | music | music-fo | music-noir
@@ -69,7 +74,7 @@
     if (family === 'admin') document.documentElement.dataset.theme = theme;
 
     const css = s => document.write('<link rel="stylesheet" href="' + s + '">');
-    if (family === 'tv-mark' || family === 'tv-compare' || family === 'tv-guide' || family === 'tv-player') {
+    if (family === 'tv-mark' || family === 'tv-burnin' || family === 'tv-guide' || family === 'tv-player') {
       css('../../ravilo/ravilo.css');
       css('../../ravilo/ravilo-livetv.css');
     } else if (family === 'music' || family === 'remote') {
@@ -133,84 +138,74 @@
   const SCROLL_T5 = 248;
 
   /* =============================================================================================
-     1 · THE MARK — the TV live row, three options, two states each (brief states a and b).
+     1 · THE MARK (FR-6) — the TV live row, two states: a station with a guide, and one without.
      ============================================================================================= */
   /* `O.set`, not `O.family`: the Danish and Faroese runs share the family and must NOT re-render
      the English frames. The first render of this round did, and three English-named PNGs came
      back with Faroese in them — a defect no fence can see and the file name actively hides. */
   if (O.set === 'tv-mark') {
-    ['A', 'B', 'C'].forEach(function (m) {
-      tvBand('radio-mark' + m + '-row-focus-station',
-        K.onNowRow({ mark: m, focusNum: HR.num }));
-      tvBand('radio-mark' + m + '-row-focus-noguide',
-        K.onNowRow({ mark: m, focusNum: HR2.num, scrollX: SCROLL_T5 }));
-    });
+    tvBand('radio-markA-row-focus-station', K.onNowRow({ focusNum: HR.num }));
+    tvBand('radio-markA-row-focus-noguide',
+      K.onNowRow({ focusNum: HR2.num, scrollX: SCROLL_T5 }));
   }
 
   /* The Danish and Faroese runs draw the frames where the LENGTH is the question: *Live radio* is
      *Beinleiðis útvarp* in Faroese, half again as long, and it sits in a 340 px tile beside a
-     channel number — which is also the frame that tells us whether option B's RADIO word still
-     leaves the name room at Faroese length. */
+     channel number. The mark costs no width at any length, which is the whole of why it was
+     picked — so these two frames are what proves it, and they stay in the archive. */
   if (O.set === 'tv-mark-da' || O.set === 'tv-mark-fo') {
     const sfx = '-' + O.lang;
-    tvBand('radio-markA-row-focus-station' + sfx, K.onNowRow({ mark: 'A', focusNum: HR.num }));
+    tvBand('radio-markA-row-focus-station' + sfx, K.onNowRow({ focusNum: HR.num }));
     tvBand('radio-markA-row-focus-noguide' + sfx,
-      K.onNowRow({ mark: 'A', focusNum: HR2.num, scrollX: SCROLL_T5 }));
-    tvBand('radio-markB-row-focus-noguide' + sfx,
-      K.onNowRow({ mark: 'B', focusNum: HR2.num, scrollX: SCROLL_T5 }));
-    /* C is in the variant runs too, and for the same reason as B: its cost is length. In Faroese
-       its badge reads BEINLEIÐIS · ÚTVARP, which is the whole of what is being chosen. */
-    tvBand('radio-markC-row-focus-noguide' + sfx,
-      K.onNowRow({ mark: 'C', focusNum: HR2.num, scrollX: SCROLL_T5 }));
+      K.onNowRow({ focusNum: HR2.num, scrollX: SCROLL_T5 }));
   }
 
-  /* The three marks on one tile, plus a TV channel's tile for reference. This is the frame the
-     card's "what am I choosing between?" question is actually answered by. */
-  if (O.family === 'tv-compare') {
-    frame('radio-mark-compare', 'rd-cmp-wrap', K.markCompare());
-    /* The burn-in orbit as a diagram, beside the product frame that has moved one step. A still
-       of a layout 28 px from where it was cannot show that it moved; this can. */
+  /* The burn-in orbit as a diagram (FR-8), beside the product frame that has moved one step. A
+     still of a layout 28 px from where it was cannot show that it moved; this can — so it is the
+     one drawing that carries FR-8's four positions, 7 minutes and 56 × 36 px into the port. */
+  if (O.family === 'tv-burnin') {
     frame('radio-playerA-burnin-path', 'rd-burn-wrap', K.burnDiagram());
   }
 
-  /* 1c · the guide, with the stations as rows and the one *Live radio* block. Recommended option
-     only, which is what the brief asks for: B and C carry over to the guide with no change to the
-     grid at all (B is a word in a cell that has no number column of its own, so it falls back to
-     A's inline glyph; C has no LIVE badge in a guide cell to extend). Reported. */
+  /* 1c · the guide (FR-7), with the stations as rows and the one *Live radio* block.
+
+     ⚠ THE TIME HEADER IN `radio-markA-guide.png` IS ONE CHANNEL COLUMN OUT, AND THAT IS NOT THE
+     DESIGN. It is `ravilo-livetv.css`'s shipped `.lt-epg-timebar` (see the note in radio.css) and
+     DEB-2651 fixes it there. The round carried a rule scoped to its own frames; it was not
+     promoted, so this picture shows today's guide rather than a guide with a private fix in it.
+     WHAT THIS FRAME IS REFERENCE FOR is radio's part of FR-7 and nothing else: the mark in the
+     channel cell's meta line, the station rows in lineup order, the one *Live radio* block across
+     the window with its label at the LEFT, and the *Radio* category chip. Do not port the slot
+     label positions from it. Re-render it once DEB-2651 lands. */
   if (O.family === 'tv-guide') {
-    tv('radio-markA-guide', K.guide({ mark: 'A', focus: true }));
+    tv('radio-markA-guide', K.guide({ focus: true }));
   }
 
   /* =============================================================================================
-     2 · THE TV RADIO PLAYER — two directions, four states each.
+     2 · THE TV RADIO PLAYER (FR-8) — the adopted Now-playing layout, in every state.
      ============================================================================================= */
   if (O.family === 'tv-player') {
     const sfx = O.skin === 'noir' ? '-noir' : '';
-    [['A', K.playerA], ['B', K.playerB]].forEach(function (p) {
-      const name = p[0], build = p[1];
-      if (O.skin === 'noir' && name !== 'A') return;   /* one frame proves the skin */
-      tv('radio-player' + name + '-guide' + sfx, build(HR, {}));
-      if (sfx) return;
-      tv('radio-player' + name + '-noguide' + sfx, build(HR2, {}));
-      /* (c) the zap banner. ← from station 4 goes towards channel 3 DR1, which opens the VIDEO
-         player — so the banner that is drawn is the one the viewer sees on the station they are
-         leaving, naming the channel they are arriving at. → towards station 5 is the same banner
-         with a station in it, and the mark in the banner is the only warning the next press is
-         still radio. Both are drawn: the ← one on A, the → one on B, so the pair is in the set. */
-      tv('radio-player' + name + '-zap' + sfx,
-        build(HR, { zapTo: name === 'A' ? DR1 : HR2 }));
-      /* (d) the same frame as (a), after ONE burn-in step. */
-      tv('radio-player' + name + '-burnin' + sfx, build(HR, { moved: true }));
-    });
-    if (O.skin !== 'noir') {
-      /* Three states the brief does not name and the spec does: ↑ Now/Next with the stations
-         marked (FR-8), number entry over the audio layout (FR-8 keeps R177's), and STOPPED —
-         because FR-8 says ⏯ stops the station and re-tunes at the live edge, so there is no
-         paused frame to draw and the honest state says what the next press does. */
-      tv('radio-playerA-nownext', K.playerA(HR, { nowNext: true, nowNextFocus: HR2.num }));
-      tv('radio-playerA-numentry', K.playerA(HR, { num: '5' }));
-      tv('radio-playerA-stopped', K.playerA(HR, { stopped: true }));
-      tv('radio-playerB-stopped', K.playerB(HR, { stopped: true }));
+    tv('radio-playerA-guide' + sfx, K.player(HR, {}));
+    if (O.skin !== 'noir') {   /* one frame proves the skin */
+      tv('radio-playerA-noguide', K.player(HR2, {}));
+      /* The zap banner, BOTH ways. ← from station 4 goes towards channel 3 DR1, which opens the
+         VIDEO player: the banner is the one the viewer sees on the station they are leaving,
+         naming the channel they are arriving at. → towards station 5 is the same banner with a
+         station in it, and the mark in the banner is the only warning that the next press is
+         still radio. In the round the second of these was drawn on direction B, so it is redrawn
+         here on the adopted layout rather than lost with B. */
+      tv('radio-playerA-zap', K.player(HR, { zapTo: DR1 }));
+      tv('radio-playerA-zap-station', K.player(HR, { zapTo: HR2 }));
+      /* The same frame as the first, after ONE burn-in step. */
+      tv('radio-playerA-burnin', K.player(HR, { moved: true }));
+      /* ↑ Now/Next with the stations marked (FR-8), number entry over the audio layout (FR-8
+         keeps R177's), and STOPPED — because FR-8 says ⏯ stops the station and re-tunes at the
+         live edge, so there is no paused frame to draw and the honest state says what the next
+         press does. */
+      tv('radio-playerA-nownext', K.player(HR, { nowNext: true, nowNextFocus: HR2.num }));
+      tv('radio-playerA-numentry', K.player(HR, { num: '5' }));
+      tv('radio-playerA-stopped', K.player(HR, { stopped: true }));
     }
   }
 
@@ -226,17 +221,11 @@
      ============================================================================================= */
   if (O.family === 'music') {
     const sfx = O.skin === 'noir' ? '-noir' : (O.lang !== 'en' ? '-' + O.lang : '');
+    /* The row is LAST, after the genres — drawn scrolled to the end, because at 412 that row is
+       below the fold and a frame of the place it is not would answer nothing. */
+    ph('radio-rowD-phone' + sfx, K.musicHome({ scrollToEnd: true }) + K.bnav());
     if (!sfx) {
-      /* A · second, after Recently added, square cards (the lean)
-         B · first
-         C · second, WIDE cards
-         D · last, after the genres — drawn scrolled to the end, because at 412 that row is below
-             the fold and a frame of the place it is not would answer nothing. */
-      ph('radio-rowA-phone', K.musicHome({ pos: 2 }) + K.bnav());
-      ph('radio-rowB-phone', K.musicHome({ pos: 1 }) + K.bnav());
-      ph('radio-rowC-phone', K.musicHome({ pos: 2, wide: true }) + K.bnav());
-      ph('radio-rowD-phone', K.musicHome({ pos: 'last', scrollToEnd: true }) + K.bnav());
-      /* 4 · a station playing in Music mode. */
+      /* 4 · a station playing in Music mode (FR-10). */
       ph('radio-np-phone-guide', K.nowPlaying(HR, {}));
       ph('radio-np-phone-noguide', K.nowPlaying(HR2, {}));
       ph('radio-np-phone-stopped', K.nowPlaying(HR, { paused: true }));
@@ -244,20 +233,19 @@
       ph('radio-np-phone-speaker', K.nowPlaying(HR, { on: S.downstairs.line }));
       /* (c) the mini bar over Music Home — the row in place under it, so the two components are
          judged in the one frame they share. */
-      ph('radio-np-phone-mini', K.musicHome({ pos: 2 }) + K.miniBar(HR, {}) + K.bnav());
+      ph('radio-np-phone-mini', K.musicHome({ scrollToEnd: true, mini: true }) + K.miniBar(HR, {}) + K.bnav());
     } else {
       /* The variant runs draw the frames where the skin or the length is the question. */
-      ph('radio-rowA-phone' + sfx, K.musicHome({ pos: 2 }) + K.bnav());
       ph('radio-np-phone-guide' + sfx, K.nowPlaying(HR, {}));
       ph('radio-np-phone-noguide' + sfx, K.nowPlaying(HR2, {}));
     }
   }
 
   /* =============================================================================================
-     5 · THE MAC — Music Home with the row (recommended option), and the music bar.
+     5 · THE MAC — Music Home with the row last, and the music bar.
      ============================================================================================= */
   if (O.family === 'mac') {
-    frame('radio-rowA-mac', 'rd-mframe', K.macMusicHome());
+    frame('radio-rowD-mac', 'rd-mframe', K.macMusicHome());
     frame('radio-np-mac-bar', 'rd-mframe', K.macPlayingBar(HR, S.downstairs));
   }
 
