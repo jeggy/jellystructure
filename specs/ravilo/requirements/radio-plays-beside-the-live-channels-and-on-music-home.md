@@ -153,7 +153,9 @@ same as DEB-2627 FR-5.4.
 - The *On now* row shows stations among the TV channels, in lineup order. Each station has **a small radio mark** on its
   tile, the one difference from a channel tile.
 - A station's tile shows its logo, its programme now and that programme's live progress, as a channel's does.
-- **A station with no guide** shows its name and *Live radio* in place of a programme, with no progress bar.
+- **A station with no guide** keeps its name where a channel's name is, and *Live radio* alone takes the programme's
+  place, with no progress bar. The name is never drawn a second time at the programme's weight (design round,
+  2026-10-27: the literal reading drew it twice).
 - The look of the mark and of the no-guide tile is the design round's.
 
 **FR-7 — The guide shows stations too.**
@@ -181,6 +183,8 @@ with an **audio layout** in place of the picture. It plays the ticket through th
   - **No timeshift.** Pause stops the station, and ⏯ again re-tunes it at the live edge.
 - **On a TV:**
   - the screen stays on while a station plays, as in the live player;
+  - after 5 minutes with no key press, the audio layout dims to 40 % brightness, and any key brings it back. The
+    LIVE mark dims with it. The round showed that the burn-in step alone leaves the centre of the logo where it was;
   - the audio layout **moves its content a little every few minutes**, so nothing burns into an OLED panel. The round
     draws how far and how often.
 - **Back** stops the station and returns, as from the live player. Radio does not keep playing behind the TV mode
@@ -249,6 +253,9 @@ While a station plays:
 **FR-12 — The admin lineup marks stations.**
 - Phase 147's lineup table shows the radio mark beside a station's name.
 - Its filters gain *Radio*, beside *all · shown · hidden · new · unavailable*.
+- A hidden channel that is still badged *new* is drawn at full strength, not at the hidden rows' 50 %, until the
+  operator acts on it. Otherwise the stations the operator came to switch on are the faintest rows on the page. This
+  holds for any new channel, not only a station.
 - The overview's *channels discovered* and *channels shown* count stations as channels.
 - The admin renders `kind` from server-pushed state only. The mark is a class added to `design/app/wf.css`, drawn in
   the round's admin frame.
