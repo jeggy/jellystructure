@@ -1,0 +1,503 @@
+/* radio.css — this round's own stylesheet. Loaded LAST, so it extends the shipped system and
+   never precedes it.
+
+   Three parts, kept apart on purpose:
+     1  FRAME SCAFFOLDING — the canvas the renderer points at. Never promoted.
+     2  THE NEW COMPONENTS — every `rd-*` rule that is a proposal. These are what Sjúrður ports
+        into Compose, and `.rd-amark` is the one that promotes into `design/app/wf.css` (FR-12).
+     3  THE ADMIN PAGE'S OWN TABLE RULES, reproduced. `design/app/livetv.html` keeps `.lineup` and
+        `.filterrow` in a page-local <style>, so there is nothing to link; these are a faithful
+        copy of that block and are NOT a proposal. If the mark is promoted, the table rules stay
+        where they are.
+
+   The three faces are re-declared from the repo's own woff2 at the top, because the document
+   declares a CSP that permits file: and data: only (see frames.html) and the shipped
+   `ravilo.css` opens with a Google Fonts @import that would otherwise fail the render.
+*/
+
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   1 · FRAME SCAFFOLDING
+   ================================================================================================= */
+
+/* `ravilo.css` sets html,body to height:100% / overflow:hidden for its scaling stage. The canvas
+   stacks frames and must scroll, so both are undone here — the stage itself is never used. */
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+.rd-frames { display: flex; flex-direction: column; gap: 40px; padding: 40px;
+  font-family: 'Sora', sans-serif; }
+
+/* Dark ink on the light backdrop. Never a light gray — a caption that vanishes into the page is
+   the defect round 11 found at 1×. */
+.rd-cap-lab { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600;
+  color: #12141b; }
+.rd-cap-sub { font-size: 13px; color: #262a35; }
+
+/* The TV band: the On now row at its real pixel scale, cropped to the band it occupies. The
+   player and the guide are full 1920×1080 frames; a row is not, because 500 px of empty Home
+   above it says nothing and this round does not redraw Home. */
+.rd-tvband { width: 1920px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); padding: 34px 0 44px; }
+.rd-tv { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); }
+/* A `.lt-player` is `position:absolute; inset:0`, so it needs a positioned 1920×1080 parent and
+   no stage. `.rd-tv` is that parent. */
+
+/* The phone: the 412×915 screen, no bezel. Same shape the one-remote round used. */
+.rd-ph { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+.rd-sb { height: 44px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; font-size: 13px; font-weight: 600; color: var(--ink); flex: none; }
+.rd-scroll { position: absolute; left: 0; right: 0; top: 44px; bottom: 0; overflow: hidden; }
+/* Option D puts the Radio row after the genres, which at 412 is below the fold. The frame that
+   draws it scrolls to the end, so the picture shows the row rather than the place it is not. */
+.rd-scroll.end { top: auto; bottom: 0; height: calc(915px - 44px); display: flex;
+  flex-direction: column; justify-content: flex-end; }
+/* A flex column SHRINKS its children by default, and the first render of `radio-rowD-phone` had
+   the 120 px tail spacer squeezed to nothing — which pushed the Radio row under the bottom bar
+   and drew option D worse than option D actually is. Every row keeps its own height. */
+.rd-scroll.end > * { flex: none; }
+
+/* The desktop window. */
+.rd-mframe { width: 1440px; position: relative; }
+
+/* The admin frame: the shell's own background, so a card reads against what it will sit on. */
+.rd-adminframe { width: 1440px; background: var(--bg); color: var(--ink); padding: 34px;
+  font-family: 'Sora', sans-serif; }
+
+/* The burn-in diagram. A canvas frame, on the host's light backdrop, so its ink is DARK — the
+   round 11 defect was a layer drawn in the card greys that vanished into the page at three
+   metres, and a diagram nobody can read is worse than no diagram. */
+.rd-burn { display: flex; gap: 40px; align-items: center; background: #f4f5f8; padding: 34px;
+  width: max-content; border-radius: 16px; border: 1px solid #d3d6de; }
+.rd-bscreen { position: relative; width: 480px; height: 270px; flex: none; border-radius: 6px;
+  background: #11131a; border: 1px solid #2a2e3a; }
+.rd-blab { position: absolute; left: 10px; bottom: 8px; font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: #6b7290; }
+.rd-bstack { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
+  width: 0; height: 0; }
+.rd-bo { position: absolute; left: -48px; top: -48px; width: 96px; height: 96px; }
+.rd-bo i { position: absolute; inset: 0; border-radius: 8px; border: 1px dashed #4a5069; }
+/* One digit per CORNER. The four outlines overlap by 28 px and 18 px — that overlap is the whole
+   point of the diagram — so a centred label is four digits in one place. */
+.rd-bo b { position: absolute; font-size: 13px; font-weight: 700; color: #8d95b0;
+  font-family: 'JetBrains Mono', monospace; line-height: 1; }
+.rd-bo.tl b { left: 5px; top: 5px; }
+.rd-bo.tr b { right: 5px; top: 5px; }
+.rd-bo.br b { right: 5px; bottom: 5px; }
+.rd-bo.bl b { left: 5px; bottom: 5px; }
+.rd-bo.on i { border: 2px solid #3fb6f5; border-style: solid; background: rgba(63, 182, 245, .18); }
+.rd-bo.on b { color: #e4f3fe; }
+.rd-bfacts { display: grid; grid-template-columns: auto 1fr; gap: 10px 20px; margin: 0;
+  max-width: 520px; }
+.rd-bfacts dt { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: #4a5069; align-self: start; padding-top: 2px; }
+.rd-bfacts dd { margin: 0; font-size: 14.5px; line-height: 1.5; color: #12141b; }
+
+/* The comparison strip. */
+.rd-cmp { display: flex; gap: 28px; background: var(--bg); padding: 30px 34px 36px;
+  width: max-content; color: var(--ink); }
+.rd-cmpcell { width: 340px; }
+.rd-cmplab { font-size: 15px; color: var(--ink-soft); margin-bottom: 14px; font-weight: 600; }
+
+/* =================================================================================================
+   2 · THE NEW COMPONENTS
+   ================================================================================================= */
+
+/* ---- the mark's glyph. One drawing, five sizes, every surface. -------------------------------
+   Three arcs over a dot. `stroke-linecap: round` and a 2.1 stroke at 24 units keep the arcs
+   separate at the 14 px admin size and legible at the 44 px player size; a 1.6 stroke closed up
+   into a solid blob at 14 px in the first render. */
+.rd-waves { display: block; fill: none; stroke: currentColor; stroke-width: 2.1;
+  stroke-linecap: round; flex: none; }
+.rd-waves circle { fill: currentColor; stroke: none; }
+
+/* OPTION A — the corner chip on a live tile. A filled chip, not a bare glyph: at three metres a
+   bare stroke over a gradient has no contrast guarantee, and the tile's art is a different hue
+   per station. The chip gives it its own ground. */
+.rd-markA { position: absolute; top: 13px; right: 13px; z-index: 3;
+  width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center;
+  justify-content: center; color: #fff; background: rgba(8, 10, 16, .76);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+/* In the guide's channel cell and in Now/Next there is no art and no corner, so the same glyph
+   rides the name inline — no chip, the ink colour, and 8 px of air. */
+.lt-epg-chcol .rd-markA,
+.lt-nn-row .rd-markA,
+.lt-zap .rd-markA,
+.rd-catpill .rd-markA {
+  position: static; width: auto; height: auto; border-radius: 0; background: none;
+  box-shadow: none; color: var(--ink-soft); margin-left: 8px; display: inline-flex;
+  vertical-align: -2px; }
+.lt-nn-row.focused .rd-markA { color: #0a0c13; }
+
+/* OPTION B — the word, in the tile's meta line, before the name. Uppercase and tracked, which is
+   the system's own treatment for a column head and a field label. */
+.rd-markB { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink); background: rgba(255, 255, 255, .13); border-radius: 5px;
+  padding: 3px 7px; flex: none; }
+
+/* OPTION C — the word inside the badge the tile already has. Uppercased, because the badge's
+   other word is and a badge reading `LIVE · Radio` is two registers in one chip. */
+.rd-badge-c { display: inline-flex; align-items: center; gap: 6px; text-transform: uppercase; }
+.rd-badge-c i { font-style: normal; opacity: .6; }
+
+/* `Live radio` at the programme's weight, in the ink a programme title uses but a shade softer —
+   it is not a title, it is what there is instead of one. */
+.lt-onnow .ptitle.rd-noguide-t { color: var(--ink-soft); }
+
+/* The guide: a station's row meta under its name, and the one block across the window. */
+.lt-epg-chcol .rd-cmeta { font-size: 13px; color: var(--ink-dim); margin-top: 2px;
+  display: flex; align-items: center; }
+.lt-epg-chcol .cname { display: flex; align-items: center; }
+.lt-epg-chcol .cname .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+/* In the meta line the glyph leads the word and keeps its own air. */
+.lt-epg-chcol .rd-cmeta .rd-markA { flex: none; margin: 0 7px 0 0; }
+/* `.lt-epg-cell` is `flex-direction: column`, so an `align-items: center` added here would centre
+   the label across 2 634 px of block. Row, left. */
+.rd-blockrow { flex-direction: row; align-items: center; justify-content: flex-start; }
+.rd-blocklab { display: flex; align-items: baseline; gap: 14px; }
+.rd-blocklab .pt { font-size: 17px; font-weight: 600; }
+.rd-blocklab .ps { margin-top: 0; }
+
+/* THE SHIPPED GUIDE'S TIME HEADER IS ONE CHANNEL COLUMN OUT OF STEP WITH ITS OWN CELLS.
+   `.lt-epg-timebar` in `ravilo-livetv.css` carries BOTH `padding-left: var(--lt-chcol)` AND a
+   `.corner` of that same width inside it, so every slot label sits 320 px to the right of the
+   time it marks, while the programme cells are positioned from the end of the channel column.
+   In the first render of this frame *Evening News · 20:00–20:30* sat under the 19:30 label and
+   the now-line fell on 19:30 rather than 20:14. One rule, scoped to this round's frames, and the
+   defect is reported against `ravilo-livetv.css` rather than silently carried. */
+.rd-tv .lt-epg-timebar { padding-left: 0; }
+
+/* ---- THE TV RADIO PLAYER ---------------------------------------------------------------------
+   Shared: the field, the plate, the LIVE pill.
+   The field is the station's gradient at a low alpha over the page — the live player's own
+   `.video .bg` is the channel's gradient, and keeping it keeps a station recognisable from the
+   sofa before a word is read. It is a flat approximation of the blurred art the picture would
+   be: no `filter: blur` on a canvas (PROCESS.md), and that is reported rather than hidden. */
+.rd-field { position: absolute; inset: 0; opacity: .20; }
+/* `.lt-player.on { display: block }` is TWO classes. A one-class `.rd-pA { display: flex }` loses
+   to it however late this file loads, and the first render of `radio-playerA-guide` put the logo
+   plate half off the top of the frame with 400 px of nothing under the hint line. Two classes,
+   and the audio layout is centred in the 1920×1080 stage as the frame says it is. */
+.lt-player.rd-pA { display: flex; align-items: center; justify-content: center; }
+
+/* The thing that moves. ONE element carries the whole audio layout, so the burn-in step is one
+   transform. */
+.rd-stack { position: relative; z-index: 2; display: flex; flex-direction: column;
+  align-items: center; text-align: center; transform: translate(0, 0);
+  transition: transform 600ms cubic-bezier(.22, .61, .36, 1); }
+.rd-stack.moved { transform: translate(var(--bx), var(--by)); }
+/* Under reduced motion the step is a CUT, not a glide — FR-8's own words, and the Ravilo seam
+   R-reduced-motion already owns off Android. */
+@media (prefers-reduced-motion: reduce) { .rd-stack { transition: none; } }
+
+.rd-plate { position: relative; width: 312px; height: 312px; border-radius: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 92px; color: #fff;
+  letter-spacing: -.02em; box-shadow: 0 34px 90px rgba(0, 0, 0, .62),
+    inset 0 0 0 1px rgba(255, 255, 255, .16); }
+.rd-plate .in { position: relative; z-index: 2; }
+.rd-plate .rd-pmark { position: absolute; bottom: 20px; right: 22px; color: rgba(255, 255, 255, .9); }
+.rd-plate.big { width: 230px; height: 230px; border-radius: 26px; font-size: 68px; margin: 0 auto 20px; }
+
+.rd-pname { margin-top: 38px; font-family: 'Space Grotesk', sans-serif; font-size: 40px;
+  font-weight: 600; letter-spacing: -.5px; display: flex; align-items: baseline; gap: 16px; }
+.rd-pname .num { font-family: 'JetBrains Mono', monospace; font-size: 28px; color: var(--ink-dim); }
+.rd-prow { margin-top: 16px; display: flex; align-items: center; gap: 14px; }
+.rd-pkind { font-size: 17px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-soft); font-weight: 700; }
+
+.rd-live { display: inline-flex; align-items: center; gap: 9px; font-weight: 700;
+  letter-spacing: .1em; font-size: 17px; color: #fff; background: #ff5252;
+  padding: 6px 15px; border-radius: 8px; }
+.rd-live i { width: 9px; height: 9px; border-radius: 50%; background: #fff; flex: none; }
+.rd-live.big { font-size: 13px; padding: 5px 11px; border-radius: 7px; gap: 7px; }
+.rd-live.big i { width: 7px; height: 7px; }
+.rd-live.sm { font-size: 10px; padding: 2px 7px; border-radius: 5px; gap: 5px; }
+.rd-live.sm i { width: 5px; height: 5px; }
+.rd-live.cap { font-size: 11px; padding: 4px 10px; border-radius: 6px; gap: 6px; flex: none; }
+
+.rd-pnow { margin-top: 40px; font-family: 'Space Grotesk', sans-serif; font-size: 50px;
+  font-weight: 600; letter-spacing: -1px; max-width: 1180px; }
+.rd-pnow.rd-noguide-big { color: var(--ink-soft); font-size: 40px; font-weight: 500;
+  letter-spacing: -.4px; }
+.rd-ptimes { margin-top: 12px; font-size: 22px; color: var(--ink-soft); }
+.rd-pbar { margin-top: 28px; display: flex; align-items: center; gap: 18px; width: 900px; }
+.rd-pbar .tr { flex: 1; height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .18);
+  overflow: hidden; }
+.rd-pbar .tr i { display: block; height: 100%; background: #ff5252; }
+.rd-pbar .t { font-family: 'JetBrains Mono', monospace; font-size: 17px; color: var(--ink-soft); }
+.rd-pnext { margin-top: 20px; font-size: 21px; color: var(--ink-dim); }
+.rd-pnext b { color: var(--ink-soft); font-weight: 600; }
+
+.rd-hint { position: absolute; left: 0; right: 0; bottom: 44px; text-align: center;
+  font-size: 17px; color: var(--ink-dim); z-index: 2; }
+
+/* ↑ Now/Next over an AUDIO layout needs a floor the shipped panel does not have. R177's panel
+   fades to transparent at 80 % of its own height because what is behind it is a moving picture,
+   and a fade over a picture reads as a fade. Over the audio layout the logo PLATE shows through
+   the bottom half as a grey block behind the last three rows, which at 1× looks like a rendering
+   fault — the first render of `radio-playerA-nownext` did exactly that. Opaque for the rows,
+   fading only below them. */
+.rd-pA .lt-nownext {
+  background: linear-gradient(180deg, var(--bg) 0 88%, rgba(var(--bg-rgb), .72) 96%, transparent); }
+
+/* Stopped. FR-8: pause stops the station and ⏯ re-tunes at the live edge, so there is no paused
+   frame to draw — the honest state is STOPPED, and it says what the next press does. */
+.rd-stopped { margin-top: 36px; display: inline-flex; flex-direction: column; gap: 6px;
+  padding: 16px 28px; border-radius: 14px; background: rgba(0, 0, 0, .5);
+  border: 1px solid var(--line); font-size: 24px; font-weight: 600; }
+.rd-stopped span { font-size: 17px; font-weight: 400; color: var(--ink-soft); }
+.rd-stopped.bar { margin-top: 14px; padding: 10px 18px; font-size: 19px; align-self: flex-start; }
+
+/* Direction B's own bits. */
+.rd-bigB { transform: translate(0, 0); transition: transform 600ms cubic-bezier(.22, .61, .36, 1); }
+.rd-bigB.moved { transform: translate(var(--bx), var(--by)); }
+@media (prefers-reduced-motion: reduce) { .rd-bigB { transition: none; } }
+.rd-bkind { margin-top: 10px; font-size: 16px; letter-spacing: .14em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .6); font-weight: 700; }
+/* THE SHIPPED FIELD HAS TO BE DIMMED FOR RADIO, and that is a cost of direction B rather than a
+   convenience here. `.lt-player .video .bg` is `opacity: .85` — it stands in for the picture, and
+   a picture is what fills it. With no picture, B's whole 1920×1080 becomes one saturated field at
+   full brightness: the plate drowns in it, and a static saturated full screen for three hours is
+   the worst OLED case there is, which is the very thing the burn-in step exists to answer. At .22
+   it is a dark field with the station's colour in it, which is what A does too, and the two
+   directions are then comparable rather than one of them a straw man. */
+.rd-pB .video .bg { opacity: .22; }
+.rd-badge-r { gap: 9px; text-transform: uppercase; }
+.rd-badge-r .sep { opacity: .5; }
+.rd-catpill { display: inline-flex; align-items: center; gap: 7px; }
+.lt-prog.rd-nobar { justify-content: flex-start; }
+
+/* ---- THE PHONE: the Radio row's tiles -------------------------------------------------------- */
+/* The square card. The logo plate replaces the album cover in the SAME 142 px card, so the row
+   lines up with the album row above it — which is the whole of option A. */
+.rd-slogo { display: flex; align-items: flex-end; justify-content: flex-start; position: relative; }
+.rd-slogo .wm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 26px;
+  color: #fff; text-shadow: 0 1px 10px rgba(0, 0, 0, .45); }
+.rd-slogo.big .wm { font-size: 54px; }
+.mu-cv.sm.rd-slogo .wm { font-size: 13px; }
+/* The mark on a tile: top-right, over the plate, in its own chip for the same contrast reason as
+   the TV's. 26 px at 412 is the smallest that is still a legible three arcs on a phone. */
+.rd-tmark { position: absolute; top: 7px; right: 7px; width: 26px; height: 26px;
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  color: #fff; background: rgba(8, 10, 16, .72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2); }
+.rd-tmark.big { width: 38px; height: 38px; border-radius: 11px; top: 14px; right: 14px; }
+.rd-tmark.sm { position: static; width: auto; height: auto; background: none; box-shadow: none;
+  border-radius: 0; color: inherit; display: inline-flex; vertical-align: -2px; margin-right: 5px; }
+.rd-scard .s { color: var(--ink-soft); }
+
+/* Option C's wide card: two to a 412 screen, the logo beside the text, the programme with room. */
+.rd-wtrack { display: flex; gap: 12px; overflow-x: hidden; padding: 0 18px 2px; }
+.rd-wcard { position: relative; flex: none; width: 236px; display: flex; align-items: center;
+  gap: 12px; padding: 10px; border-radius: 14px; background: var(--card);
+  border: 1px solid var(--line); }
+.rd-wcard .rd-wlogo { position: relative; width: 62px; height: 62px; border-radius: 10px;
+  flex: none; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 19px; color: #fff; }
+.rd-wcard .rd-wlogo .rd-tmark { top: 4px; right: 4px; width: 19px; height: 19px;
+  border-radius: 6px; }
+.rd-wcard .tx { min-width: 0; }
+.rd-wcard .t { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.rd-wcard .s { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- THE PHONE: a station playing ----------------------------------------------------------- */
+.rd-now { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.rd-ncov { width: 78%; }
+/* The LIVE mark that stands where the seek bar was. The bar's whole slot goes — track, thumb and
+   the two times — and one line replaces it, because a bar with no thumb still invites a drag. */
+.rd-liveslot { margin-top: 24px; display: flex; align-items: center; gap: 12px;
+  padding: 0 2px; min-height: 22px; }
+.rd-liveslot .tm { font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+/* The LIVE pill's slot, when the station is stopped: the same box, the quiet ink, the word. */
+.rd-stopped-pill { display: inline-flex; align-items: center; font-size: 13px; font-weight: 700;
+  letter-spacing: .06em; color: var(--ink-dim); background: rgba(var(--fg), .08);
+  padding: 5px 11px; border-radius: 7px; }
+/* ⏯ alone, centred. The other four are ABSENT, not greyed. */
+.mu-tp.rd-tp { justify-content: center; margin-top: 20px; }
+/* The shipped `.mu-ndev` sizes its glyph through `.rc-ic`, a 15×12 span this round does not use —
+   it inserts an SVG instead. Without a size the SVG defaulted to a 56 px box and pushed *Playing
+   on Downstairs* onto two lines, which the first render of `radio-np-phone-speaker` showed. */
+.rd-now .mu-ndev { align-items: center; }
+.rd-now .mu-ndev svg { width: 14px; height: 14px; flex: none; }
+.rd-mini .mu-cv.sm { width: 48px; height: 48px; }
+.rd-mini .d { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.rd-mwhere { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The engine's own couldn't-play state, with the station's name in it (FR-10). */
+.rd-fail { margin-top: 20px; display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border-radius: 13px; background: rgba(214, 69, 65, .14);
+  border: 1px solid rgba(214, 69, 65, .45); font-size: 13.5px; }
+.rd-fail svg { width: 20px; height: 20px; flex: none; fill: none; stroke: #e8706c;
+  stroke-width: 2; stroke-linecap: round; }
+.rd-fail span { flex: 1; min-width: 0; }
+.rd-fail button { flex: none; min-height: 34px; padding: 0 13px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: none; color: var(--ink);
+  font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; }
+
+/* The phone's bottom bar, drawn flat as the frame's floor. */
+.rd-bnav { position: absolute; left: 0; right: 0; bottom: 0; height: 74px; display: flex;
+  align-items: center; background: var(--bg-2); border-top: 1px solid var(--line); z-index: 90; }
+.rd-bnav span { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-dim); }
+.rd-bnav span.on { color: var(--ink); font-weight: 600; }
+.rd-bnav i { width: 20px; height: 20px; border-radius: 6px; background: currentColor;
+  opacity: .55; }
+.rd-bnav span.on i { opacity: 1; }
+
+/* ---- THE REMOTE (FR-11's radio shape) -------------------------------------------------------- */
+.rd-rem { position: absolute; left: 0; right: 0; top: 44px; bottom: 0; display: flex;
+  flex-direction: column; padding: 0 18px 14px; }
+.rd-rhead { display: flex; align-items: center; gap: 8px; height: 52px; flex: none; }
+.rd-ric { width: 42px; height: 42px; border-radius: 50%; border: 0; background: none;
+  color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; }
+.rd-ric svg { width: 22px; height: 22px; }
+.rd-pill { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 38px; padding: 0 12px; border-radius: 19px; border: 1px solid var(--line-2);
+  color: var(--accent-2); font-size: 13.5px; font-weight: 600; justify-content: center; }
+.rd-pill svg { width: 16px; height: 16px; flex: none; }
+.rd-pill .arr { font-style: normal; opacity: .7; }
+.rd-rctx { text-align: center; font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-dim); font-weight: 700; margin-top: 2px; }
+.rd-rart { position: relative; width: 74%; aspect-ratio: 1; margin: 16px auto 0; flex: none;
+  border-radius: 22px; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 54px; color: #fff;
+  box-shadow: 0 26px 60px rgba(0, 0, 0, .5); }
+.rd-rmeta { margin-top: 20px; }
+.rd-rmeta h3 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700;
+  letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-rmeta .sub { font-size: 14px; color: var(--ink-soft); margin-top: 3px; }
+.rd-rmeta .st { font-size: 13px; color: var(--accent-2); font-weight: 600; margin-top: 7px; }
+.rd-rtp { display: flex; justify-content: center; margin-top: 14px; }
+.rd-pp { width: 62px; height: 62px; border-radius: 50%; border: 0; background: var(--ink);
+  color: var(--bg); display: flex; align-items: center; justify-content: center; }
+.rd-pp svg { width: 26px; height: 26px; }
+.rd-vol { margin-top: 16px; }
+.rd-vsec { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-dim); font-weight: 700; margin: 10px 0 2px; }
+.rd-vrow { display: flex; align-items: center; gap: 11px; min-height: 40px; }
+.rd-vrow .nm { width: 108px; flex: none; font-size: 13.5px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.rd-vrow.master .nm { font-weight: 700; }
+.rd-vrow .tr { position: relative; flex: 1; height: 4px; border-radius: 3px;
+  background: rgba(255, 255, 255, .18); }
+.rd-vrow .tr i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+  background: var(--ink); }
+.rd-vrow .tr em { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--ink); transform: translate(-50%, -50%); }
+.rd-vrow .pc { width: 26px; flex: none; text-align: right; font-size: 12px;
+  color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.rd-addspk { margin-top: 10px; min-height: 40px; width: 100%; border-radius: 12px;
+  border: 1px dashed var(--line-2); background: none; color: var(--ink-soft);
+  font-family: 'Sora', sans-serif; font-size: 13.5px; font-weight: 600; }
+.rd-rfoot { margin-top: auto; display: flex; gap: 10px; padding-top: 14px; }
+.rd-fb { flex: 1; min-height: 46px; border-radius: 13px; border: 1px solid var(--line);
+  background: none; color: var(--ink); display: flex; align-items: center; justify-content: center;
+  gap: 8px; font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; }
+.rd-fb svg { width: 18px; height: 18px; }
+.rd-fb.stop { color: #e8706c; border-color: rgba(214, 69, 65, .45); }
+
+/* ---- THE MAC --------------------------------------------------------------------------------- */
+.rd-mac { width: 1440px; height: 900px; display: flex; border-radius: 14px; overflow: hidden;
+  background: var(--bg); color: var(--ink); box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+  font-family: 'Sora', sans-serif; }
+.rd-mside { width: 232px; flex: none; background: var(--bg-2); border-right: 1px solid var(--line);
+  padding: 16px 0; }
+.rd-lights { display: flex; gap: 8px; padding: 0 16px 22px; }
+.rd-lights i { width: 12px; height: 12px; border-radius: 50%; background: #3a3f4d; }
+.rd-lights i:first-child { background: #ff5f57; }
+.rd-lights i:nth-child(2) { background: #febc2e; }
+.rd-lights i:nth-child(3) { background: #28c840; }
+.rd-mnav { display: flex; flex-direction: column; }
+.rd-mnav span { padding: 11px 22px; font-size: 14.5px; color: var(--ink-soft); }
+.rd-mnav span.on { color: var(--ink); font-weight: 600; background: rgba(255, 255, 255, .06); }
+.rd-mmain { flex: 1; min-width: 0; position: relative; }
+.rd-mbody { position: absolute; inset: 0; overflow: hidden; padding: 26px 0 120px; }
+.rd-msec { padding: 0 30px 14px; }
+.rd-msec h2 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 600;
+  letter-spacing: -.3px; }
+.rd-mrow { display: flex; gap: 18px; padding: 0 30px 30px; }
+.rd-mcard { width: 176px; flex: none; }
+.rd-mcv, .rd-mlogo { width: 176px; height: 176px; border-radius: 12px; }
+.rd-mlogo { position: relative; display: flex; align-items: flex-end; padding: 12px;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px; color: #fff; }
+.rd-mcard .t { font-size: 14px; font-weight: 600; margin-top: 9px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.rd-mcard .s { font-size: 12.5px; color: var(--ink-dim); margin-top: 2px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.rd-mlogo .rd-tmark { top: 10px; right: 10px; }
+
+.rd-cap { position: absolute; left: 30px; right: 30px; bottom: 22px; height: 66px;
+  border-radius: 33px; background: var(--card-2); border: 1px solid var(--line);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .45); display: flex; align-items: center; gap: 14px;
+  padding: 0 22px 0 10px; }
+.rd-cap .th { width: 46px; height: 46px; border-radius: 10px; flex: none; display: flex;
+  align-items: flex-end; padding: 6px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 13px; color: #fff; }
+.rd-cpp { width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--ink);
+  color: var(--bg); display: flex; align-items: center; justify-content: center; flex: none; }
+.rd-cpp svg { width: 20px; height: 20px; }
+.rd-cap .tx { flex: 1; min-width: 0; }
+.rd-cap .tx .n { display: block; font-size: 14.5px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.rd-cap .tx .d { display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-cvb { width: 40px; height: 40px; border-radius: 50%; border: 0; background: none;
+  color: var(--ink); flex: none; display: flex; align-items: center; justify-content: center; }
+.rd-cvb svg { width: 20px; height: 20px; }
+
+/* =================================================================================================
+   3 · THE ADMIN. The mark is `rd-amark` and it is the one rule that promotes into `wf.css`
+   (FR-12: "The mark is a class added to design/app/wf.css"). Everything under
+   `.rd-admin .lineup` / `.filterrow` below is a REPRODUCTION of the page-local <style> block in
+   `design/app/livetv.html`, not a proposal — that page keeps its table rules inline, so there was
+   nothing to link, and nothing here should be promoted anywhere.
+   ================================================================================================= */
+
+/* THE ONE PROMOTABLE RULE. Inline, the ink of the row it is in, 8 px of air after it — so a
+   station's name reads as a name with a mark, not as two columns. */
+.rd-amark { display: inline-flex; align-items: center; vertical-align: -2px;
+  margin-right: 7px; color: var(--ink-soft); }
+.rd-fchip .rd-amark { margin-right: 6px; color: inherit; }
+.fchip.on .rd-amark { color: #fff; }
+
+.rd-admin .lineup { width: 100%; border-collapse: collapse; }
+.rd-admin .lineup th { text-align: left; font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--ink-soft); padding: 8px 10px;
+  border-bottom: 1px solid var(--line); font-weight: 600; }
+.rd-admin .lineup td { padding: 10px; border-bottom: 1px solid var(--line);
+  vertical-align: middle; }
+.rd-admin .lineup tr.off td { opacity: .5; }
+.rd-admin .lineup .cnum { font-family: 'JetBrains Mono', monospace; font-size: .9rem;
+  color: var(--ink); width: 54px; }
+.rd-admin .lineup .cname { font-weight: 600; font-size: .95rem; }
+.rd-admin .lineup .ord { display: inline-flex; flex-direction: column; gap: 1px; }
+.rd-admin .lineup .ord button { width: 22px; height: 16px; border: 1px solid var(--line-2);
+  background: var(--fill-2); color: var(--ink-soft); border-radius: 4px; font-size: 9px;
+  line-height: 1; cursor: pointer; }
+.rd-admin .filterrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin: 14px 0 6px; }
+.rd-admin .filterrow .fchip { cursor: pointer; }
+.rd-admin .filterrow .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+.rd-lumore { margin-top: 12px; }
+
+/* FR-5's live row, under the lineup. `.badge`, `.mono` and `.tiny` are shipped; the row's own
+   grid is the proposal. */
+.rd-livenow { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
+.rd-livenow h4 { font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--ink-soft); margin-bottom: 11px; }
+.rd-liverow { display: flex; align-items: center; gap: 12px; padding: 11px 12px;
+  border-radius: 10px; background: var(--hi-soft); font-size: .9rem; }
+.rd-liverow .nm { flex: 1; min-width: 0; }
+/* `backdrop-filter` is production CSS on every admin card (`--blur`) and breaks the screenshot
+   render, so the canvas flattens it. The live admin keeps its glass. */
+.rd-adminframe { --blur: none; }

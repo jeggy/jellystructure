@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src file: data:; img-src file: data:">
+<title>Radio beside the live channels — directions</title>
+<style>
+  @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+  @font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/sora.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+  :root { --ink: #12141b; --ink-2: #262a35; --line: #d3d6de; --page: #f4f5f8; --hi: #7b6ef0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-family: 'Sora', sans-serif;
+    font-size: 15.5px; line-height: 1.55; }
+  main { max-width: 1180px; margin: 0 auto; padding: 56px 32px 120px; }
+  h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; letter-spacing: -.012em; line-height: 1.12;
+    margin: 0; color: var(--ink); }
+  h1 { font-size: 42px; font-weight: 600; }
+  h2 { font-size: 27px; font-weight: 600; margin: 64px 0 6px; padding-top: 26px;
+    border-top: 1px solid var(--line); }
+  h3 { font-size: 19px; font-weight: 600; margin: 34px 0 8px; }
+  p { margin: 10px 0; max-width: 78ch; color: var(--ink-2); }
+  p.lede { font-size: 18px; color: var(--ink); max-width: 72ch; }
+  ul { margin: 10px 0; padding-left: 20px; max-width: 78ch; color: var(--ink-2); }
+  li { margin: 5px 0; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: .88em; }
+  .kick { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: #4a5069; margin-bottom: 10px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line);
+    color: var(--ink-2); }
+  th { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: #4a5069; }
+  td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .rec { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: #fff; background: var(--hi); border-radius: 5px;
+    padding: 3px 8px; vertical-align: 3px; margin-left: 9px; }
+  figure { margin: 18px 0 8px; }
+  figure img { display: block; width: 100%; height: auto; border-radius: 10px;
+    border: 1px solid var(--line); background: #0a0c13; }
+  figcaption { margin-top: 7px; font-size: 13px; color: #4a5069; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .note { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--hi);
+    background: #ecedf4; border-radius: 0 8px 8px 0; }
+  .note p { margin: 0; max-width: none; }
+  .open { background: #fff5e6; border-left-color: #d08a16; }
+  .open p { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+
+<div class="kick">Ravilo · TV, phone, Mac · Jellystructure admin · drawn in this repository</div>
+<h1>Radio beside the live channels, and a&nbsp;Radio row on Music Home</h1>
+<p class="lede">Three decisions, drawn: <b>the radio mark</b> that tells a station from a channel, <b>the TV
+radio player</b> that stands in for a picture there is none of, and <b>where the Radio row goes</b> on Music
+Home. Two more surfaces — a station playing in Music mode, and the remote's radio shape — are drawn as
+single answers, because the spec leaves them no second good one.</p>
+
+<h2>What is fixed</h2>
+<p>These are not the round's to choose. They come from the adopted spec and from what the live-TV surfaces
+already are.</p>
+<ul>
+  <li><b>One lineup.</b> A station is numbered, ordered, zapped through and listed exactly like a channel.
+    There is no second list anywhere — the live row, the guide, Now/Next, the zap order and the admin table
+    all read the same six-entry array, in the same order.</li>
+  <li><b>One difference on the tile.</b> A station's tile is a channel's tile plus the mark; with no guide it
+    shows <i>Live radio</i> where a programme would be, and no progress bar.</li>
+  <li><b>The TV is a D-pad.</b> Everything focusable shows focus, and a station tile focuses exactly as a
+    channel tile does — the 4 px ring and the 1.05 scale the row already uses.</li>
+  <li><b>No timeshift.</b> ⏯ stops the station; pressing it again re-tunes at the live edge. So there is no
+    <i>paused</i> state to draw — there is a <b>stopped</b> one, and it says what the next press does.</li>
+  <li><b>The admin renders server-pushed state only.</b> The mark is one class; the lineup table is the one
+    that already exists.</li>
+  <li><b>No radio on Tizen, on the Cast receiver's screen, or in Ravilo Web's music mode.</b> A speaker is
+    headless. The web gets TV mode only, which is frame sets 1 and 2 unchanged.</li>
+</ul>
+
+<h2>Decision 1 — the radio mark</h2>
+<p>Three options, on the same tile, with a TV channel's tile beside them for reference. Every one of the
+three carries the accessible label <i>Radio</i>, and none relies on colour.</p>
+
+<figure>
+  <img src="png/radio-mark-compare.png" alt="The three mark options on one tile, with a TV channel tile for reference">
+  <figcaption>A · corner glyph &nbsp;·&nbsp; B · RADIO beside the number &nbsp;·&nbsp; C · inside the LIVE badge
+  &nbsp;·&nbsp; a TV channel, for reference. <code>radio-mark-compare.png</code></figcaption>
+</figure>
+
+<h3>A — a corner glyph <span class="rec">recommended</span></h3>
+<p><b>Gives:</b> the one corner a channel tile leaves empty, filled by a shape rather than a word — so its
+cost does not grow with the language. The broadcast mark <code>((•))</code> in a dark chip, 46 px at 1920,
+which is a clear silhouette at three metres. It carries straight to the guide's channel cell, to ↑ Now/Next,
+to the zap banner, to the phone's tiles, to the Mac's cards and to the admin table, at five sizes, as one
+drawing.</p>
+<p><b>Costs:</b> a glyph has to be learnt once. It is the only option that does not also say the word on the
+tile — the word is in the guide, the player, the Radio row and the admin, so the glyph is never the only
+thing telling the viewer.</p>
+<div class="pair">
+  <figure><img src="png/radio-markA-row-focus-station.png" alt="On now row, Harbour Radio focused, option A">
+    <figcaption>(a) Harbour Radio focused. <code>radio-markA-row-focus-station.png</code></figcaption></figure>
+  <figure><img src="png/radio-markA-row-focus-noguide.png" alt="On now row, Harbour Radio 2 focused, option A">
+    <figcaption>(b) the no-guide station focused — <i>Live radio</i>, no bar.
+      <code>radio-markA-row-focus-noguide.png</code></figcaption></figure>
+</div>
+
+<h3>B — RADIO beside the channel number</h3>
+<p><b>Gives:</b> a word, read before it is learnt, in the meta line where the number already is. Nothing is
+drawn over the art at all.</p>
+<p><b>Costs:</b> it takes width from the station's name, and that cost grows with the language — in Faroese
+the chip reads <i>ÚTVARP</i> and <i>5 ÚTVARP Harbour Radio 2</i> only just fits a 340 px tile. It has nowhere
+to go in the guide's channel cell, which has no number column of its own.</p>
+<div class="pair">
+  <figure><img src="png/radio-markB-row-focus-station.png" alt="On now row, option B">
+    <figcaption><code>radio-markB-row-focus-station.png</code></figcaption></figure>
+  <figure><img src="png/radio-markB-row-focus-noguide-fo.png" alt="On now row, option B, Faroese">
+    <figcaption>Faroese, where B's width is the question.
+      <code>radio-markB-row-focus-noguide-fo.png</code></figcaption></figure>
+</div>
+
+<h3>C — the word inside the LIVE badge</h3>
+<p><b>Gives:</b> one overlay chip instead of two. The badge the tile already has reads <i>LIVE · RADIO</i>,
+and at three metres the wider badge is itself a difference you can see before you read it.</p>
+<p><b>Costs:</b> it makes a liveness chip carry a kind, and in Faroese it becomes <i>BEINLEIÐIS ·
+ÚTVARP</i> — a red slab over more than half the tile's top edge, and the loudest thing on the row. It does
+not carry to the guide at all: a guide cell has no LIVE badge to extend, so C would need A's glyph there
+anyway.</p>
+<div class="pair">
+  <figure><img src="png/radio-markC-row-focus-station.png" alt="On now row, option C">
+    <figcaption><code>radio-markC-row-focus-station.png</code></figcaption></figure>
+  <figure><img src="png/radio-markC-row-focus-noguide-fo.png" alt="On now row, option C, Faroese">
+    <figcaption>Faroese. <code>radio-markC-row-focus-noguide-fo.png</code></figcaption></figure>
+</div>
+
+<h3>Where the recommended mark goes next</h3>
+<figure>
+  <img src="png/radio-markA-guide.png" alt="The TV guide with the three stations as rows">
+  <figcaption>(c) the guide. The mark leads the category line rather than following the name — the channel
+  column is 320 px and the glyph after the name truncated <i>Harbour Radio 2</i> and <i>Assembly Radio</i>
+  while leaving the shorter name intact. A station with no guide is one block across the window reading
+  <i>Live radio</i>. <code>radio-markA-guide.png</code></figcaption>
+</figure>
+<div class="pair">
+  <figure><img src="png/radio-markA-admin-dark.png" alt="The admin lineup table, dark">
+    <figcaption>(d) dark. <code>radio-markA-admin-dark.png</code></figcaption></figure>
+  <figure><img src="png/radio-markA-admin-light.png" alt="The admin lineup table, light">
+    <figcaption>(d) light. The three stations are drawn in the state the operator <i>meets</i> — new, hidden,
+      waiting for the toggle. <code>radio-markA-admin-light.png</code></figcaption></figure>
+</div>
+
+<h2>Decision 2 — the TV radio player</h2>
+
+<h3>A — the Now-playing layout <span class="rec">recommended</span></h3>
+<p><b>Gives:</b> a screen built for having no picture. One centred block — plate, name and number, LIVE,
+the programme with its times and live progress, then Next — and nothing pinned to an edge. Because it is one
+block, the burn-in step is one movement of everything on screen, which is the only version of that step that
+actually protects the bright text.</p>
+<p><b>Costs:</b> it is a second player layout to build and to keep in step with R177's. It says the station
+once, which is right, but it drops the bottom bar's habit of being there when you press a key.</p>
+<div class="pair">
+  <figure><img src="png/radio-playerA-guide.png" alt="TV radio player A, with a guide">
+    <figcaption>(a) with a guide. <code>radio-playerA-guide.png</code></figcaption></figure>
+  <figure><img src="png/radio-playerA-noguide.png" alt="TV radio player A, no guide">
+    <figcaption>(b) no guide. <code>radio-playerA-noguide.png</code></figcaption></figure>
+</div>
+<div class="pair">
+  <figure><img src="png/radio-playerA-zap.png" alt="TV radio player A, zap banner towards DR1">
+    <figcaption>(c) ← towards <b>3 DR1</b>, which opens the video player.
+      <code>radio-playerA-zap.png</code></figcaption></figure>
+  <figure><img src="png/radio-playerA-burnin.png" alt="TV radio player A after one burn-in step">
+    <figcaption>(d) after one burn-in step. <code>radio-playerA-burnin.png</code></figcaption></figure>
+</div>
+
+<h3>B — today's chrome, with the logo where the picture would be</h3>
+<p><b>Gives:</b> nothing new to build. The bottom bar, the number OSD, ↑ Now/Next and the zap banner are
+R177's, in the places a viewer of this TV already knows.</p>
+<p><b>Costs:</b> three, and the pictures show all three. The shipped field behind the picture is
+<code>opacity: .85</code> and with no picture it turns the whole 1920×1080 into one saturated wash — it had
+to be dimmed to .22 here before the two directions could even be compared. The screen says the station's
+name twice and <i>radio</i> four times. And the bottom bar <b>cannot take part in the burn-in step</b>: it is
+pinned to the bottom edge, so the brightest, most text-dense thing on screen is the one thing that never
+moves.</p>
+<div class="pair">
+  <figure><img src="png/radio-playerB-guide.png" alt="TV radio player B, with a guide">
+    <figcaption>(a) with a guide. <code>radio-playerB-guide.png</code></figcaption></figure>
+  <figure><img src="png/radio-playerB-burnin.png" alt="TV radio player B after one burn-in step">
+    <figcaption>(d) after one step — the centre block has moved and the bar has not.
+      <code>radio-playerB-burnin.png</code></figcaption></figure>
+</div>
+
+<h3>How far it moves, and how often</h3>
+<figure>
+  <img src="png/radio-playerA-burnin-path.png" alt="The burn-in orbit: four positions, every seven minutes">
+  <figcaption><code>radio-playerA-burnin-path.png</code></figcaption>
+</figure>
+
+<h3>The states the recommended player also holds</h3>
+<div class="quad">
+  <figure><img src="png/radio-playerA-nownext.png" alt="Now/Next with the stations marked">
+    <figcaption>↑ Now/Next, stations marked.</figcaption></figure>
+  <figure><img src="png/radio-playerA-numentry.png" alt="Number entry over the audio layout">
+    <figcaption>Number entry, R177's own.</figcaption></figure>
+  <figure><img src="png/radio-playerA-stopped.png" alt="Stopped">
+    <figcaption>Stopped — no LIVE, and the next press named.</figcaption></figure>
+  <figure><img src="png/radio-playerA-guide-noir.png" alt="The player in the noir skin">
+    <figcaption>noir. See the note below.</figcaption></figure>
+</div>
+<div class="note"><p><b>The audio layout is almost skin-independent.</b> The live player is black with the
+channel's own colour on it, and the radio player keeps that, so noir and aurora differ only in the ink. That
+is consistent with R177 and it is reported rather than treated as a gap. The one element that does not move
+with the skin is the red LIVE mark, which is <code>--lt-live</code> at <code>:root</code> in
+<code>ravilo-livetv.css</code> and is already red in every skin today.</p></div>
+
+<h2>Decision 3 — where the Radio row goes, and what a tile is</h2>
+<p>Four frames, because the brief's option C held two questions at once — the position and the tile. They are
+drawn apart: A, B and D change the position with the same square tile; C changes the tile and keeps A's
+position.</p>
+<div class="quad">
+  <figure><img src="png/radio-rowA-phone.png" alt="Radio row second, square cards">
+    <figcaption><b>A</b> second, square cards. <span class="rec">rec</span></figcaption></figure>
+  <figure><img src="png/radio-rowB-phone.png" alt="Radio row first">
+    <figcaption><b>B</b> first.</figcaption></figure>
+  <figure><img src="png/radio-rowC-phone.png" alt="Radio row second, wide cards">
+    <figcaption><b>C</b> second, wide cards.</figcaption></figure>
+  <figure><img src="png/radio-rowD-phone.png" alt="Radio row last, after the genres">
+    <figcaption><b>D</b> last, after the genres.</figcaption></figure>
+</div>
+<table>
+  <thead><tr><th>Option</th><th>Gives</th><th>Costs</th></tr></thead>
+  <tbody>
+    <tr><td>A · second, square</td>
+      <td>The row lines up with the album row above it, tile for tile, so radio reads as part of the library
+        rather than beside it. Reachable without a scroll.</td>
+      <td>142 px of card for a two-line label; <i>Beinleiðis útvarp</i> is at the edge of what fits.</td></tr>
+    <tr><td>B · first</td>
+      <td>Impossible to miss.</td>
+      <td>Makes radio the first thing Music Home is about, above what the household actually owns.</td></tr>
+    <tr><td>C · second, wide</td>
+      <td>Half the vertical cost of A, and room for a long programme title on one line.</td>
+      <td>Two tiles per screen instead of three; a card shape that exists nowhere else in music mode.</td></tr>
+    <tr><td>D · last</td>
+      <td>Nothing is pushed down.</td>
+      <td>Radio is below every genre row — on a 412 px screen that is the end of a long scroll, and the
+        phone is the <i>only</i> place a phone can reach radio at all.</td></tr>
+  </tbody>
+</table>
+<figure>
+  <img src="png/radio-rowA-mac.png" alt="The Mac's Music Home with the Radio row">
+  <figcaption>The recommended option on the Mac. <code>radio-rowA-mac.png</code></figcaption>
+</figure>
+
+<h2>A station playing in Music mode — one answer</h2>
+<p>The title is the programme, the station is the line under it, its logo is the cover, the seek bar's whole
+slot is replaced by a <b>LIVE</b> mark, and the transport is ⏯ alone. The four other transport buttons are
+<b>absent, not greyed</b>: a greyed <i>Next</i> on a live stream is a control that will never work.</p>
+<div class="quad">
+  <figure><img src="png/radio-np-phone-guide.png" alt="Phone Now playing, with a guide">
+    <figcaption>(a) with a guide.</figcaption></figure>
+  <figure><img src="png/radio-np-phone-noguide.png" alt="Phone Now playing, no guide">
+    <figcaption>(b) no guide.</figcaption></figure>
+  <figure><img src="png/radio-np-phone-mini.png" alt="The phone's mini bar over Music Home">
+    <figcaption>(c) the mini bar, over the row.</figcaption></figure>
+  <figure><img src="png/radio-np-mac-bar.png" alt="The Mac's music bar with a station">
+    <figcaption>(d) the Mac's bar.</figcaption></figure>
+</div>
+<div class="pair">
+  <figure><img src="png/radio-np-phone-stopped.png" alt="Stopped">
+    <figcaption>Stopped. The LIVE pill is replaced by the word, because a stopped station is not
+      live.</figcaption></figure>
+  <figure><img src="png/radio-np-phone-failed.png" alt="Couldn’t play">
+    <figcaption>The engine's couldn't-play state, with the station's name in it — no LIVE, and ▶ beside
+      <i>Try again</i>, which are the same action.</figcaption></figure>
+</div>
+
+<h2>The remote's radio shape — one answer</h2>
+<p>The place pill, the logo, the programme and station, LIVE, ⏯ alone, then R371's volume block: the group's
+own level, its rooms, and <i>Add a speaker…</i>. No shuffle, previous, next, repeat or skip — and <b>no
+<i>Up next</i></b>, because the queue is gone while a station plays and a button that opens an empty screen
+is not a kindness.</p>
+<div class="pair">
+  <figure><img src="png/radio-remote-downstairs.png" alt="The remote, a station on the Downstairs group">
+    <figcaption>Downstairs — Living room + Kitchen, with the group's level above the two rooms.</figcaption></figure>
+  <figure><img src="png/radio-remote-livingroom.png" alt="The remote, a station on one speaker">
+    <figcaption>One speaker: one row, no <i>Rooms</i> section.</figcaption></figure>
+</div>
+
+<h2>Decided rows</h2>
+<table>
+  <thead><tr><th>Thing</th><th>Decided</th></tr></thead>
+  <tbody>
+    <tr><td>Mark glyph</td><td><code>((•))</code> — a dot with an arc pair either side. <b>Not</b> an upward
+      fan of arcs: that is the Wi-Fi mark, and on a tile next to a stream that really can lose signal it is
+      the worst possible borrowing. The first render drew it and every frame read as Wi-Fi.</td></tr>
+    <tr><td>Mark chip</td><td>On art: a filled dark chip, so contrast is guaranteed over any station's
+      gradient. Off art (guide, Now/Next, zap banner, admin): the bare glyph in the row's own ink.</td></tr>
+    <tr><td>Mark sizes</td><td>46 px TV tile · 26 px phone tile · 19 px wide card · 17 px Now/Next ·
+      15 px admin row · 14 px guide line.</td></tr>
+    <tr><td>No-guide tile</td><td><i>Live radio</i> at the programme's weight, in the softer ink, and
+      <b>no bar at all</b> — an empty track at three metres reads as a programme that has just started. The
+      station's name stays where a channel's name is and is <b>not</b> repeated at the programme's
+      weight.</td></tr>
+    <tr><td>Guide block</td><td>One cell the full window wide; its label sits at the <b>left</b> of the
+      block (in the app, stuck to the left edge of the visible window), never centred — centred puts it
+      1 637 px in, off the picture.</td></tr>
+    <tr><td>Burn-in</td><td>Four positions, one step every 7 minutes, a 28-minute loop, 56 × 36 px of travel,
+      a 600 ms glide — a <b>cut</b> under reduced motion. The whole audio layout moves as one block.</td></tr>
+    <tr><td>Stopped</td><td>Everywhere: no LIVE mark, and the next press named. There is no <i>paused</i>
+      state, because ⏯ re-tunes at the live edge rather than resuming.</td></tr>
+    <tr><td>Admin arrival state</td><td>Three stations, new and hidden, under three shown channels — the
+      state the operator actually meets, with the toggle as the only thing that changes it.</td></tr>
+    <tr><td>Admin filter order</td><td><i>Radio</i> goes at the <b>end</b> of the existing five and reorders
+      none of them.</td></tr>
+  </tbody>
+</table>
+
+<h2>New strings</h2>
+<p>Everything else in these pictures is taken from the shipped <code>i18n/*.json</code> verbatim; the key it
+came from is named beside it in <code>rd-data.js</code>. These five are new.</p>
+<table>
+  <thead><tr><th>Where</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr></thead>
+  <tbody>
+    <tr><td>Row title, filter, mark label</td><td>Radio</td><td>Radio</td><td>Útvarp</td></tr>
+    <tr><td>In place of a programme</td><td>Live radio</td><td>Live radio</td><td>Beinleiðis útvarp</td></tr>
+    <tr><td>Player, stopped</td><td>Stopped</td><td>Stoppet</td><td>Steðgað</td></tr>
+    <tr><td>Player, stopped · under it</td><td>Press play to tune in again</td>
+      <td>Tryk på afspil for at stille ind igen</td><td>Trýst spæl fyri at stilla inn aftur</td></tr>
+    <tr><td>Engine, failed to start</td><td>Couldn’t play {x}</td><td>Kunne ikke afspille {x}</td>
+      <td>Kundi ikki spæla {x}</td></tr>
+  </tbody>
+</table>
+<p>Two more are new only to this surface and may already have a home: <i>Rooms</i> / <i>Rum</i> /
+<i>Rúm</i> (the remote's section head) and <i>relayed</i> / <i>viderestillet</i> / <i>víðarisent</i> (the
+admin's live row).</p>
+
+<h2>Open questions</h2>
+<div class="note open"><p><b>Q1 — Should the audio layout dim after a while?</b> FR-8 says the screen stays
+on; it does not say at what brightness. A 28-minute orbit protects the edges, but a 312 px plate that moves
+28 px still overlaps itself almost entirely at its centre. A step down in brightness after, say, 30 minutes
+with no key press would do more than the orbit does. It is beyond the brief, so it is asked rather than
+drawn.</p></div>
+<div class="note open"><p><b>Q2 — the admin's dim.</b> <code>.lineup tr.off</code> fades a hidden row to
+50 %, which is right for a channel somebody has deliberately hidden. It means the three <i>new</i> stations —
+the rows the operator has opened the page to find — are the faintest on it, in both themes. Worth a look;
+not this round's to change.</p></div>
+<div class="note open"><p><b>Q3 — the guide's time header is one channel column out of step with its own
+cells</b>, in <code>ravilo-livetv.css</code> today. See the report; it is corrected inside this round's
+frames by one scoped rule and raised as a defect against that file.</p></div>
+<div class="note open"><p><b>Q4 — <code>ravilo-i18n.js</code> disagrees with the shipped
+<code>i18n/*.json</code></b> on at least <i>On Now</i>, <i>Recently added</i>, <i>Playing on…</i> and the
+Faroese <i>Live TV</i>. This round used the shipped file, as the house rule says. Reported, not
+fixed.</p></div>
+
+</main>
+</body>
+</html>
