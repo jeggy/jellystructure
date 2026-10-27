@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Auto-fetch · a page-only fetcher, and Keep — directions</title>
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../app/ai.css">
+<link rel="stylesheet" href="auto-fetch-retention.css">
+<style>
+  .doc { max-width: 1100px; padding: 0 28px 60px; }
+  .doc h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.22rem; color: #12141b;
+    margin: 34px 0 .35em; padding-top: 18px; border-top: 1px solid rgba(18,20,27,.14); }
+  .doc h3 { font-family: 'Space Grotesk', sans-serif; font-size: 1rem; color: #12141b; margin: 22px 0 .3em; }
+  .doc p, .doc li { color: #262a35; font-size: .92rem; line-height: 1.62; }
+  .doc code, .doc .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .86em; color: #12141b; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 10px 0 4px; }
+  .doc th { text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+    color: #3c4151; padding: 0 10px 7px; border-bottom: 1px solid rgba(18,20,27,.18); }
+  .doc td { padding: 9px 10px; border-bottom: 1px solid rgba(18,20,27,.1); vertical-align: top;
+    font-size: .86rem; color: #262a35; line-height: 1.55; }
+  .doc td.k { white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: .76rem; color: #12141b; }
+  .doc .lead { font-size: 1rem; color: #12141b; }
+  .doc .q { border-left: 3px solid #7b6ef0; padding: 2px 0 2px 14px; margin: 14px 0; }
+  .doc .q b { color: #12141b; }
+</style>
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>Auto-fetch · a page-only fetcher, and Keep</h1>
+  <p class="lead">Round <span class="mono-id">auto-fetch-retention</span>, revision 1, 2026-10-27. An
+    addendum to the Fetchers tab, drawn from the 2026-10-27 amendment to
+    <span class="mono-id">auto-fetch-turns-a-series-page-into-a-paced-scheduled-download.md</span>
+    (FR-4.5, FR-10.6, FR-15, FR-16). Round 2's page and the states round before this one both stand;
+    nothing here redraws either.</p>
+</div>
+
+<div class="doc">
+
+<h2>What is fixed</h2>
+<p>These came with the brief and the round designs inside them. None of them was a choice to make here.</p>
+<ul>
+  <li><b>The frontend renders server-pushed state only.</b> So the <i>deletes 4 episodes</i> count is the
+    server's preview (FR-12's route), and the screen never works it out. In these pictures that is one
+    retention function in <span class="mono-id">af-keep-data.js</span>, standing in for the server, so
+    the count in the preview and the deletion in the run record cannot disagree.</li>
+  <li><b>A control that cannot do anything is shown disabled, with its reason</b>
+    (<span class="mono-id">processing-runs-as-nine-features.md</span> FR-11).</li>
+  <li><b>The tick, verbatim:</b> <i>This programme is not on TMDB</i>. A blank id without it is refused:
+    <i>Auto-fetch needs a TMDB id, or tick “not on TMDB”</i> (FR-15.1).</li>
+  <li><b>Ticked, the id field is disabled and empty</b>, and its hint reads <i>The episodes keep the
+    page's own titles and descriptions, and nothing asks TMDB</i>. The <i>series only</i> badge
+    stays (FR-10.6).</li>
+  <li><b>The page-only review state:</b> <i>Dagbók · page only · not on TMDB</i>; the proof line
+    <i>12 items, each with its own date</i>; <i>Becomes</i> showing <code>S2026E300 · 2026-10-27</code>;
+    the echo carrying the page's own name and image (FR-10.6).</li>
+  <li><b>Keep:</b> <i>All episodes</i> or <i>The newest N</i> (1 to 999, 12 when first shown), with
+    <i>Also delete an episode once it leaves the page</i> shown only with <i>The newest</i>; between
+    <i>Check for new episodes</i> and <i>Run the first time</i>; hint <i>Keeps 12 of the 12 on the page.
+    Older ones are deleted from the library.</i> A page-only fetcher starts at <i>The newest 12</i> with
+    the tick on; a TMDB fetcher starts at <i>All episodes</i> (FR-16.1).</li>
+  <li><b>The open row</b> shows the same control, editable in place, and <i>Saving this deletes 4
+    episodes at the next run</i> before saving (FR-10.6).</li>
+  <li><b>The run lines</b> as FR-16.6 words them, the Activity entry as FR-11 words it, and the list
+    row's <i>Daily · 04:00 · keeps newest 12</i>.</li>
+  <li><b>No notification, no toast, no confirm dialog.</b> The preview line is the warning (FR-16.7).</li>
+</ul>
+
+<h2>One direction, and why there is only one</h2>
+<p>This is an addendum, not a pick-a-direction round. The brief fixes the words, the places and the
+  defaults; what was left to draw was the <b>shape</b> of one new control and the <b>behaviour of the
+  shipped components around it</b>. Where a shape was genuinely open, the choice is named below with
+  what it costs. Where the picture disagrees with the brief, that is a <b>finding</b> and it is in
+  <span class="mono-id">REPORT.md</span>, not quietly resolved here.</p>
+
+<h3>The Keep control: the number lives inside its option</h3>
+<p>The settings box on the review state is <b>300 px</b> wide, which is 270 px of content. A segmented
+  control plus a separate number field does not fit on one line at that width, and stacking them turns
+  one setting into two. So the number sits <b>inside</b> the option it belongs to —
+  <i>The newest</i> <code>12</code> — which is how the spec itself writes it.</p>
+<ul>
+  <li>With <i>All episodes</i> chosen, the number is still drawn, as dimmed text at the same width.
+    Nothing moves when the option is chosen, and the default is readable before it is.</li>
+  <li>It is <b>not</b> a control shown disabled with a reason (FR-11): it is the other option's own
+    value. The seg beside it is the reason, and there is no sentence a disabled-field reason could add
+    that the two words <i>All episodes</i> do not already say.</li>
+  <li><b>The cost:</b> a reader who wants to change only the number has to notice it is live only on
+    the chosen side. The alternative costs a wrapped two-line control in the box it has to live in.</li>
+</ul>
+
+<h3>The tick: the shipped tick glyph, with a sentence beside it</h3>
+<p><span class="mono-id">wf.css</span> has a <span class="mono-id">.toggle</span> for a setting that
+  acts the moment it is pressed, and nothing for one that is saved with a form.
+  <span class="mono-id">.af-tick</span> is already the shipped tick — it is what a mapping row's accept
+  tick draws — so <span class="mono-id">.af-opt</span> is only the label around it. Both of this round's
+  ticks use it, so <i>This programme is not on TMDB</i> and <i>Also delete an episode once it leaves the
+  page</i> are the same mark, which is right: both are things the admin is choosing, not switches that
+  do something as they are pressed.</p>
+
+<h3>The preview: a warn band under the control, never a dialog</h3>
+<p>FR-16.7 is explicit that the line <i>is</i> the warning. So it is warn-tinted, it carries a mark,
+  and it sits directly under the control that caused it with <b>Save</b> beside it — the change, the
+  consequence and the consent in one column, in that order.</p>
+
+<h3>A deletion is a line under the run, not a run of its own</h3>
+<p>A run's line keeps its summary — <i>+1 episode · −1 by retention</i>, which is word for word what
+  FR-11 gives the Activity entry — and each placement, deletion and guard is a line indented under it.
+  The run and its lines are one record and the rule between runs moves to the group. One set of words,
+  two places.</p>
+
+<h2>Every state this round holds</h2>
+<table>
+  <thead><tr><th>PNG</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td class="k">form-pageonly</td><td>The form with the tick on: the id field disabled and empty, its hint changed, and a two-line echo carrying the programme page's own name, image and description.</td></tr>
+    <tr><td class="k">form-refused</td><td>A blank id with no tick, after <i>Investigate</i>. The refusal is on the field that caused it, with the tick on the line below as the alternative it names.</td></tr>
+    <tr><td class="k">review-pageonly</td><td>Dagbók's review state. <i>page only · not on TMDB</i>, the date proof, <code>S2026E300 · 2026-10-27</code>, a four-column table with no TMDB column, and Keep at a page-only fetcher's defaults.</td></tr>
+    <tr><td class="k">review-tmdb-all</td><td>Royndin's review state with Keep at <i>All episodes</i>: no tick, the number dimmed, one reassuring sentence.</td></tr>
+    <tr><td class="k">review-tmdb-newest</td><td>The same card with <i>The newest 12</i> chosen, so the tick appearing can be read against the frame above it.</td></tr>
+    <tr><td class="k">open-rest</td><td>The open row with Keep editable in place and no preview, because nothing has changed.</td></tr>
+    <tr><td class="k">open-lowered</td><td>Keep lowered 12 → 8, the hint recounted, and the preview: <i>Saving this deletes 4 episodes at the next run</i>.</td></tr>
+    <tr><td class="k">open-runs</td><td>The run record on its own: a placement, a deletion, and a run that applied no retention at all with FR-16.7's guard line.</td></tr>
+    <tr><td class="k">list-rows</td><td>The four fetchers, with <i>keeps newest 12</i> under Dagbók's schedule and nowhere else.</td></tr>
+    <tr><td class="k">activity-entry</td><td>FR-11's entry — its words, in the run record's components. Activity's own History surface is not drawn here and is not this round's.</td></tr>
+    <tr><td class="k">keep-strings</td><td>The Keep control at its real 300 px width in English, Faroese and Danish.</td></tr>
+  </tbody>
+</table>
+<p>Each at <b>1440</b> and <b>412</b>, in <b>both themes</b>: 44 pictures.</p>
+
+<h2>Decided rows</h2>
+<table>
+  <thead><tr><th>Decision</th><th>What was drawn, and why</th></tr></thead>
+  <tbody>
+    <tr><td>Where the number sits</td><td>Inside its own option, dimmed on the other side. The box is 270 px of content; a separate field wraps.</td></tr>
+    <tr><td>The <i>leaves the page</i> tick on a TMDB fetcher choosing <i>The newest</i></td><td>Drawn <b>off</b>. A TMDB series' back catalogue scrolling off a page is not evidence the household is done with it. <b>Open question 2.</b></td></tr>
+    <tr><td>Whether a review state previews a deletion</td><td><b>No.</b> FR-16.2 — retention only ever removes what this fetcher placed, and a fetcher being reviewed has placed nothing. The frame says so in one line rather than leaving the fixed hint to promise a deletion that cannot happen at save. <b>Open question 1.</b></td></tr>
+    <tr><td>What says <i>page only</i> on the list row</td><td>The <i>Numbering</i> cell, reading <code>Date · S{year}E{day of year}</code>, and nothing else. No badge. <b>Open question 3.</b></td></tr>
+    <tr><td>The guard line and the deletion line in one run</td><td><b>Two runs.</b> FR-16.5 rules out a run that could not read the listing also deleting by it. <b>Finding 1.</b></td></tr>
+    <tr><td>Whether the preview names the episodes</td><td>Drawn as the count alone, as the spec words it. <b>Open question 5.</b></td></tr>
+  </tbody>
+</table>
+
+<h2>New strings</h2>
+<p>English is what the pictures draw. Faroese and Danish are <b>drafts for a speaker</b>; the shipped
+  <span class="mono-id">i18n/*.json</span> wins wherever a string already exists there, and the admin
+  surface is not in <span class="mono-id">i18n/</span> today, so none of these has a shipped twin to
+  disagree with.</p>
+<div id="strings"></div>
+
+<h2>Open questions</h2>
+<div class="q"><b>1 · Does FR-10.6's Keep hint belong on the review state as it stands?</b> Its second
+  sentence — <i>Older ones are deleted from the library</i> — is a statement about future runs, and on
+  a review state the fetcher has placed nothing, so nothing can be deleted when it is saved (FR-16.2).
+  The fixed string is drawn unaltered and a second line beneath it says so. Either that line stays, or
+  FR-10.6 gains FR-16.4's words for the review state and keeps the fixed string for the open row.</div>
+<div class="q"><b>2 · On a TMDB fetcher that chooses <i>The newest</i>, is <i>leaves the page</i> on or
+  off by default?</b> FR-16.1 fixes the default for a page-only fetcher and for a TMDB fetcher's
+  <i>All episodes</i>, but not this. Drawn off, for the reason in the decided rows.</div>
+<div class="q"><b>3 · Does a list row need to say <i>page only</i>?</b> Drawn without: the
+  <i>Numbering</i> cell carries <code>Date · S{year}E{day of year}</code>, which no TMDB fetcher can
+  show, and the open row's footer says <i>page only, no TMDB id</i> where a TMDB fetcher links its id.
+  A <span class="mono-id">badge flat</span> beside the name is the alternative and costs one more thing
+  on every row.</div>
+<div class="q"><b>4 · Activity ▸ History has no drawn entry for a fetcher.</b>
+  <span class="mono-id">activity.html</span> is the scan console. FR-11's entry needs a surface, and
+  inventing one here would be drawing a screen nobody briefed. Is that a round of its own, or does the
+  build take the words and put them in whatever History already renders?</div>
+<div class="q"><b>5 · Should the preview name the four episodes, not only count them?</b> FR-12's route
+  returns <i>what saving that retention would delete</i>, so the server could hand over the codes.
+  Drawn as the count alone because that is the sentence the spec fixes.</div>
+
+<script src="af-keep-data.js"></script>
+<script>
+(function () {
+  const rows = window.AF.STRINGS.map((s) =>
+    '<tr><td class="k">' + s[0] + '</td><td>' + s[1] + '</td><td>' + s[2] + '</td><td>' + s[3] + '</td></tr>').join('');
+  document.getElementById('strings').innerHTML =
+    '<table><thead><tr><th>key</th><th>English</th><th>Faroese — draft</th><th>Danish — draft</th></tr></thead>' +
+    '<tbody>' + rows + '</tbody></table>';
+})();
+</script>
+</div>
+</body>
+</html>

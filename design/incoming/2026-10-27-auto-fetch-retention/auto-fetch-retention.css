@@ -1,0 +1,247 @@
+/* auto-fetch-retention.css — round `auto-fetch-retention`, 2026-10-27.
+
+   TWO KINDS OF RULE LIVE HERE, and the split is deliberate:
+
+   1. **The canvas** the frames sit on. It dresses a screenshot page and is not product. It is the
+      same canvas the round before this one used, because a canvas is a canvas.
+   2. **The new `af-*` components** this round draws. They are named `af-*` and written to be
+      promoted into `design/app/ai.css` exactly as they stand, under that file's `.afx` wrapper —
+      which is why every one of them is written `.afx .af-…` here too. Nothing in this file
+      restates a rule that is already in `ai.css`: the frames link the production file and get the
+      cards, badges, buttons, segs, inputs, toggles, tables, the `af-kv` block, the `af-map`
+      table, the `af-tick` glyph, the `af-proof` line, the `af-stat` cell, the `af-dis` disabled
+      look and the `af-why` reason line from there. Two copies of a rule is the shape of bytes the
+      nineteen wipes were made of.
+
+   ONE CANVAS SUBSTITUTION, and it is reported: `--blur: none` inside a frame. `backdrop-filter`
+   IS production CSS — `wf.css` gives every `.card` a `var(--blur)` — and the canvas rule forbids
+   it because it breaks the screenshot render. The live admin keeps its glass; these pictures show
+   the flat fill it resolves to. There is no second substitution: nothing this round draws
+   animates, in either file. */
+
+/* ================================================= the canvas around the frames
+   Host backdrop is light gray, so any text directly on it is dark ink (PROCESS.md). */
+html, body.canvas {
+  margin: 0;
+  background: #e9eaef;
+  color: #12141b;
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.canvas-head { padding: 28px 28px 4px; max-width: 1100px; }
+.canvas-head h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; margin: 0 0 .35em; color: #12141b; }
+.canvas-head p { color: #262a35; margin: 0 0 .6em; font-size: .95rem; line-height: 1.55; }
+.canvas-head .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .86em; color: #12141b; }
+.cap { padding: 26px 28px 8px; max-width: 1100px; }
+.cap h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.02rem; margin: 0 0 .2em; color: #12141b; }
+.cap .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #262a35; }
+.cap p { color: #262a35; font-size: .88rem; margin: .3em 0 0; line-height: 1.5; }
+.shot { padding: 0 28px 10px; }
+body.ph .cap, body.ph .canvas-head { padding-left: 14px; padding-right: 14px; }
+body.ph .shot { padding: 0 0 10px; }
+
+/* a frame is one region of the admin page, on the page's own background */
+.frame {
+  --blur: none;                                  /* canvas substitution, see the header */
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Sora', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  border: 1px solid rgba(18,20,27,.18);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  padding: 20px 24px 24px;
+}
+/* the shipped aurora wash is `position: fixed` on body::before and cannot be scoped to a frame;
+   drawn here as the same two radial stops, static, no filter, no animation. */
+.frame::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(900px 600px at 12% -8%, rgba(177,92,208,.16), transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgba(0,164,220,.14), transparent 55%);
+}
+.frame > * { position: relative; z-index: 1; }
+.frame.desk { width: 1440px; }
+.frame.ph { width: 412px; padding: 14px; border-radius: 0; }
+
+/* the frames' own labels. `.af-lang` is the round-before-this-one's language caption, still a
+   caption on a canvas and still not something the admin ever sees. */
+.af-lang { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+  color: var(--ink-soft); margin: 0 0 7px; }
+/* the three-up for the longest-string check. CANVAS ONLY — it exists so each Keep control is
+   drawn at the width it really has (the 300 px settings box), side by side. Not for promotion. */
+.af-strings { display: grid; grid-template-columns: repeat(3, 300px); gap: 16px; }
+.af-strings-col { min-width: 0; }
+
+/* ======================================================================================
+   ============================  THE NEW COMPONENTS, FOR PROMOTION  =====================
+   ====================================================================================== */
+
+/* ----------------------------------------------------- Keep: the retention control (FR-16.1)
+
+   *All episodes*, or *The newest N*. The number lives INSIDE the option it belongs to, so the
+   control reads as the spec words it and so choosing the option does not reflow a 270 px box.
+   With *All episodes* chosen the number is still drawn — as dimmed text at the same width. It is
+   not a control that cannot act (`processing-runs-as-nine-features.md` FR-11): it is the other
+   option's own value, shown so the default is visible before it is chosen, and nothing moves when
+   it is. The tick under it shows only with *The newest*, which the spec asks for directly, and is
+   the shipped `.af-tick` glyph — the same mark as a mapping row's accept tick. */
+.afx .af-keep { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.afx .af-keep .seg { flex-wrap: wrap; }
+.afx .af-keep .seg span { padding: 6px 10px; display: inline-flex; align-items: center; gap: 7px; }
+.afx .af-num {
+  width: 46px; padding: 2px 6px; text-align: center;
+  font-family: 'JetBrains Mono', monospace; font-size: .78rem; font-weight: 600;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line-2); border-radius: 6px;
+}
+/* the unchosen option's value: same width, no box, no focus target */
+.afx .af-keep .seg span:not(.on) .af-num {
+  background: transparent; border-color: transparent; color: inherit; opacity: .6;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------- a tick with a label beside it
+   wf.css has a `.toggle` for a setting that acts at once and no tick-with-a-label for one that
+   is saved with a form. `.af-tick` is already the shipped tick; this is the label around it.
+
+   A tick's label is a sentence, not a field name. `wf.css` sets every `.field label` in small
+   uppercase bold, and the first render of this round shouted ALSO DELETE AN EPISODE ONCE IT
+   LEAVES THE PAGE in three places — a defect no fence can see and the PNG showed at once. */
+.afx .af-opt {
+  display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
+  font-size: .8rem; line-height: 1.45; color: var(--ink); margin: 2px 0 0;
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+.afx .af-opt .af-tick { flex: none; margin-top: 1px; }
+
+/* ----------------------------------------------------- the delete preview (FR-16.1, FR-16.7)
+   *No notification, no toast, no confirm dialog. The preview line is the warning.* So it is
+   warn-tinted and it sits where the change was made, under the control. Its count is the
+   server's (FR-12's preview route) and never one the screen worked out. */
+.afx .af-prev {
+  display: flex; align-items: flex-start; gap: 9px; margin-top: 9px; padding: 9px 11px;
+  border-radius: 8px; border: 1px solid rgba(245,181,66,.45); background: var(--warn-soft);
+  font-size: .82rem; line-height: 1.45; color: var(--ink);
+}
+.afx .af-prev .bi {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; margin-top: 1px;
+  background: var(--warn); color: #17191f; font-size: .7rem; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ----------------------------------------------------- a refused field (FR-15.1)
+   A blank TMDB id with the tick unticked is refused, and the refusal belongs to the field that
+   caused it rather than to a banner over the card. */
+.afx .input.af-err { border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+.afx .hint.af-err { color: var(--bad); font-weight: 600; }
+
+/* ----------------------------------------------------- the lines under a run line (FR-16.6)
+   A run that deleted something needs its own lines: one per deletion, and one per guard that
+   stopped a deletion. The run's line keeps the summary — the same words FR-11 gives the Activity
+   entry — and the border moves to the group so a run and its lines read as one record. */
+.afx .af-runx { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.afx .af-runx:last-child { border-bottom: 0; padding-bottom: 0; }
+.afx .af-runx .af-run { border-bottom: 0; }
+.afx .af-sub {
+  margin-left: 25px; padding: 3px 0 3px 11px; border-left: 2px solid var(--line-2);
+  font-size: .76rem; line-height: 1.5; color: var(--ink-soft);
+}
+.afx .af-sub .mono { font-family: 'JetBrains Mono', monospace; font-size: .95em; color: var(--ink); }
+.afx .af-sub.add { border-left-color: var(--ok); }
+.afx .af-sub.del { border-left-color: var(--bad); }
+.afx .af-sub.guard { border-left-color: var(--warn); color: var(--ink); }
+
+/* ----------------------------------------------------- the list row's retention note (FR-10.6)
+   *Daily · 04:00 · keeps newest 12*, under the schedule rather than in a column of its own: the
+   fetchers table has its one status slot and gains no sixth column for a setting. */
+.afx .af-tbl .sched .keep { font-size: .72rem; color: var(--ink-soft); margin-top: 2px; }
+
+/* ----------------------------------------------------- the page-only echo (FR-10.6, FR-15.3)
+   A TMDB echo is one line because TMDB answers in one line. A page-only echo carries the page's
+   own name, its image and its description, so it is two. */
+.afx .af-echo.page { align-items: flex-start; }
+.afx .af-echo.page .ph { margin-top: 2px; }
+.afx .af-echo.page .src {
+  display: block; font-size: .76rem; color: var(--ink-soft); margin-top: 3px; line-height: 1.5;
+}
+
+/* ----------------------------------------------------- the date in Becomes (FR-10.6, FR-4.5)
+   `S2026E300 · 2026-10-27`. The code is the identity and stays mono; the date is what makes the
+   code readable and is set in the body face so the two are not one undifferentiated string. */
+.afx .af-map .se .d {
+  font-family: 'Sora', system-ui, sans-serif; font-size: .76rem; color: var(--ink-soft);
+  margin-left: 5px;
+}
+
+/* ----------------------------------------------------- a mapping table with no accept ticks
+   FOUND IN THE 412 PICTURE, and it is a defect in the SHIPPED file, not only in this round.
+   `ai.css`'s ≤640 tier gives every `.af-map tr` a 30 px left padding to hold the accept tick in
+   the gutter. Only `mapped` numbering has those ticks: a `source`-numbered review table and a
+   page-only one have none, so today the shipped Royndin review state indents every row at 412
+   against an empty gutter. One modifier, put on the tables that have no tick column. The report
+   carries it as finding 3, for the promotion. */
+.afx .af-map.no-tick tr { padding-left: 0; }
+
+/* ----------------------------------------------------- Keep inside the open row's config row
+   `.af-cfg` lays Name, Check and the buttons out on one baseline, which works while every child
+   is one field tall. Keep is three lines taller than a field, and bottom-aligning against it
+   dropped Name and Check to the floor of the row with nothing above them. Top-aligned, the three
+   fields read as the three fields they are, and the buttons take a line of their own under them. */
+.afx .af-cfg { align-items: flex-start; }
+.afx .af-cfg .af-keepf { width: 262px; }
+.afx .af-cfg-go { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 100%; }
+
+/* ----------------------------------------------------- the tick under the TMDB id (FR-10.6)
+   The form is a three-column grid; the tick belongs under the id field, so it starts at column
+   two and runs to the end — at 220 px alone the sentence wrapped to two lines.
+
+   `align-items: end` on the shipped grid assumes every hint is the same height. The page-only
+   hint is three lines, and bottom-aligning against it lifted the TMDB id INPUT clear of the Page
+   URL input beside it: two inputs on one row, visibly out of line. Top-aligned they match, and
+   the button clears the label row by the label's own height plus the field's gap. */
+.afx .af-form { align-items: start; }
+.afx .af-form > .btn { margin-top: 23px; }
+.afx .af-form .af-opt { grid-column: 2 / -1; margin-top: -2px; }
+
+/* ================================================= the narrow faces
+   The house tiers are `ai.css`'s 1080 px and 640 px. These are this round's own additions at the
+   same two widths, and nothing here restates a shipped tier. */
+@media (max-width: 1080px) {
+  /* the form is one column below 1080, so column two no longer exists and the button's
+     label-row clearance has no label beside it to clear */
+  .afx .af-form .af-opt { grid-column: 1; margin-top: 0; }
+  .afx .af-form > .btn { margin-top: 0; }
+  /* In one column the button would sit BETWEEN the refusal and the tick the refusal offers as
+     the alternative — *or tick "not on TMDB"*, with the tick two controls further down past a
+     full-width primary button. The tick belongs with the field it is about, so it takes the
+     line under it and Investigate goes last. Source order stays as the three-column grid needs
+     it; only the stacked face reorders. */
+  .afx .af-form .af-opt { order: 1; }
+  .afx .af-form > .btn { order: 2; }
+  .af-strings { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  /* the seg takes the width it is given rather than a width it chose: at 412 the two options
+     split it in half each, which is also what makes the Faroese labels fit without wrapping
+     inside the option */
+  .afx .af-keep { width: 100%; }
+  .afx .af-keep .seg { width: 100%; }
+  .afx .af-keep .seg span { flex: 1 1 0; justify-content: center; }
+  .afx .af-cfg .af-keepf { width: 100%; }
+  /* the run's own lines keep their rule but lose the dot column's indent, which does not exist
+     once the card is this narrow */
+  .afx .af-sub { margin-left: 0; padding-left: 9px; }
+}
+
+/* ================================================= light-theme twins
+   `--ok` / `--warn` / `--bad` / `--info` are not re-tinted per theme; wf.css overrides the text
+   colour at each use site instead. So every rule above that uses one as a TEXT colour needs its
+   twin here or it fails contrast on the light theme's white fills. The theme attribute sits on
+   <html>, ahead of the wrapper, so these lead with it and still carry `.afx`.
+
+   Three rules above use a palette colour as a BORDER or a FILL and need no twin: `.af-sub`'s
+   three left rules, `.af-prev`'s border, and `.af-prev .bi`, which is a fixed dark glyph on the
+   warn fill in both themes. One uses it as text: */
+[data-theme="light"] .afx .hint.af-err { color: #c23b2d; }

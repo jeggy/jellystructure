@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Auto-fetch — page-only and Keep — frames</title>
+<!-- The production admin system, linked rather than copied. `wf.css` carries the tokens, the
+     components and the three self-hosted woff2 (its @font-face URLs resolve next to the CSS file,
+     so the fonts come from design/app/fonts/ with no copy and no network reference). `ai.css` is
+     production since 2026-10-25 (DEB-2484) and carries every `af-*` component the two rounds
+     before this one drew, under its own `.afx` wrapper — so each frame's content is wrapped in
+     `.afx` below and these pictures render from the production file. What is left in
+     auto-fetch-retention.css is the canvas and the components this round adds. -->
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../app/ai.css">
+<link rel="stylesheet" href="auto-fetch-retention.css">
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>Auto-fetch · a page-only fetcher, and Keep</h1>
+  <p>Round <span class="mono-id">auto-fetch-retention</span>, <b>revision 1 · 2026-10-27</b>. An addendum,
+    not a redraw: the Fetchers tab and the states round before this one both stand. This round adds the two
+    things the 2026-10-27 amendment needs — a fetcher saved with <b>no TMDB id on purpose</b>, and the
+    <b>Keep</b> control with the preview that says what saving it will delete.</p>
+  <p>Every frame links <span class="mono-id">wf.css</span>, <span class="mono-id">app.css</span> and
+    <span class="mono-id">ai.css</span>, so every token, button, badge, toggle, table, card, tick and
+    proof line in the pictures is the shipped one. The new components are in
+    <span class="mono-id">auto-fetch-retention.css</span>, named <span class="mono-id">af-*</span> to be
+    promoted into <span class="mono-id">ai.css</span> as they are. Every number, code, date and count
+    comes out of <span class="mono-id">af-keep-data.js</span>, which refuses to load if any of them
+    disagrees with the brief.</p>
+</div>
+<div id="frames"></div>
+
+<script src="af-keep-data.js"></script>
+<script src="af-keep-build.js"></script>
+<script>
+(function () {
+  const B = window.AFB;
+  const Q = new URLSearchParams(location.search);
+  const w = Q.get('w') === '412' ? 'ph' : 'desk';
+  const theme = Q.get('theme') === 'light' ? 'light' : 'dark';
+  if (w === 'ph') document.body.classList.add('ph');
+
+  const FRAMES = [
+    /* 1 — the form */
+    ['form-pageonly', 'The form · <i>This programme is not on TMDB</i> ticked',
+     'The tick sits under the TMDB id, which is the field it is about. Ticked, the id field is <b>disabled and empty</b> in the shipped disabled look — dimmed, dashed, no focus target — and its hint stops being about TMDB and says what happens instead. The <i>series only</i> badge and the sentence under it are untouched: a page-only fetcher still has to be a series. The echo is the one thing the page-only form really changes, because there is no TMDB to echo: it carries the <b>programme page’s own name, image and description</b>, with where the description came from, and says plainly that no TMDB id will be asked for.',
+     () => B.form('pageonly')],
+    ['form-refused', 'The form · a blank id with no tick, after <i>Investigate</i>',
+     'The refusal. Nothing was started and nothing was written. The id field carries the bad ring and its hint is replaced by the refusal, verbatim: <i>Auto-fetch needs a TMDB id, or tick “not on TMDB”</i>. It is a <b>field</b> refusal rather than a banner over the card, because exactly one field caused it and the fix is in that field — either type the id or tick the tick two lines below. <b>Investigate</b> stays live: it is not a control that cannot act, it is a control that has just been told why it did nothing.',
+     () => B.form('refused')],
+
+    /* 2 — the review state, page-only */
+    ['review-pageonly', 'The review state · page-only (Dagbók)',
+     'The four things the amendment changes, all visible at once. <i>Series</i> reads <b>Dagbók · page only · not on TMDB</b> — the TMDB id and the <i>✓ confirmed series</i> mark are gone, and <i>page only · not on TMDB</i> is a neutral <span class="mono-id">badge flat</span>, not a warning: nothing is wrong. <i>Proof</i> reads <b>12 items, each with its own date</b> and still carries the <i>✓ proven</i> mark, because all four of the page-only checks hold; the sentence under it names them and says that nothing goes to <i>Not on TMDB yet</i>. <i>Becomes</i> carries the code <b>and</b> the date. The table has <b>four columns and no TMDB column at all</b>. The settings box holds <b>Keep</b> at a page-only fetcher’s defaults: <i>The newest 12</i>, the <i>leaves the page</i> tick on.',
+     () => B.review('dagbok')],
+
+    /* 3 — the review state, TMDB */
+    ['review-tmdb-all', 'The review state · TMDB (Royndin) · Keep at <i>All episodes</i>',
+     'A TMDB fetcher starts at <i>All episodes</i>, and that is the whole of the control: the number is drawn as the other option’s dimmed value, and the <i>leaves the page</i> tick is <b>not drawn at all</b> — there is nothing for it to qualify. The hint is one sentence and it is the reassuring one. Everything else on this card is the shipped review state, unchanged.',
+     () => B.review('royndin', 'all')],
+    ['review-tmdb-newest', 'The review state · TMDB (Royndin) · <i>The newest 12</i> chosen',
+     'The same card with the other option chosen, so the two can be read side by side. The number is now a real field, the tick <b>appears</b> — off, because a TMDB series’ back catalogue leaving the page is not evidence that it should go (open question 2) — and the hint names the cost from the server’s own count: <i>Keeps 12 of the 13 on the page.</i> Thirteen, not twelve: this is Royndin’s own listing, and the number is read from the same array as the table beside it. The second hint line is this round’s own addition and the report argues for it: on a review state the fetcher has placed nothing, so retention cannot delete anything at save, whatever N says.',
+     () => B.review('royndin', 'newest')],
+
+    /* 4 — the open row */
+    ['open-rest', 'The open row · Keep at rest',
+     'The same control, editable in place in the recipe pane’s config row, with no <i>Re-investigate page</i> needed. It is two lines taller than a field, so it sits at the top of that row and <b>Save</b>, <i>Re-investigate</i> and <i>Delete</i> take a line of their own under it. At rest there is <b>no preview line</b>: nothing has changed, so there is nothing to warn about. The recipe above it carries the two new lines in the schema — <span class="mono-id">numbering date</span> and <span class="mono-id">retention newest 12 · also delete once it leaves the page</span> — and the pane’s footer says <i>page only, no TMDB id</i> where a TMDB fetcher links its id.',
+     () => B.openRow('rest')],
+    ['open-lowered', 'The open row · Keep lowered 12 → 8, before saving',
+     'The preview. The number reads 8, the hint has recounted itself to <i>Keeps 8 of the 12 on the page</i>, and the warning sits under the control that caused it: <b>Saving this deletes 4 episodes at the next run</b>. Four is the <b>server’s</b> count (the preview route), never one this screen worked out — and in these pictures it is this round’s one retention function, so the four it names are the four the run record would delete. No dialog, no toast, no confirm: this line is the warning, and <b>Save</b> next to it is the consent.',
+     () => B.openRow('lowered')],
+    ['open-runs', 'The run record, close up · a deletion and a guard',
+     'The right-hand pane of the two frames above, drawn on its own so its lines can be read — as a third open row it came out pixel-identical to <span class="mono-id">open-rest</span>, because the record is already in it. Three runs. <b>Today</b>: <i>+1 episode · −1 by retention</i>, with a line each for the placement and the deletion — <i>−1 · S2026E286 (2026-10-13) · newest 12 kept</i>. <b>Yesterday</b>: the listing could not be read in full, so FR-16.5 applied <b>no retention at all</b> and the guard line says so, verbatim. That is why these are <b>two runs and not one</b> (finding 1 in the report): a run that could not read the listing cannot also have deleted something by it. Drawn as two they explain each other — yesterday’s partial read is exactly why today’s deletion is a <i>newest 12 kept</i> one and not a <i>left the page</i> one. <b>Oct 25</b> is a normal day: one line, nothing deleted.',
+     () => B.openRow('runs')],
+
+    /* 5 — the list */
+    ['list-rows', 'The fetchers list · Dagbók’s row beside the others',
+     'Retention sits <b>under the schedule</b>: <i>Daily · 04:00</i> then <i>keeps newest 12</i>. No sixth column, and the one status slot the states round settled is untouched. Only Dagbók shows the note, because the other three are at <i>All episodes</i> — which is the contrast worth having: a row says <i>keeps newest 12</i> when and only when something will be deleted. Dagbók’s <i>Numbering</i> cell reads <span class="mono-id">Date · S{year}E{day of year}</span>, and that cell is the only thing on the row that says this fetcher is page-only (open question 3). Its state cell says what today’s run did, in the same words as the run record and the Activity entry.',
+     () => B.fetchersList()],
+
+    /* 6 — the Activity entry's words */
+    ['activity-entry', 'The Activity entry’s words (not Activity’s surface)',
+     '<span class="mono-id">activity.html</span> draws the scan console and has <b>no History entry</b> a fetcher could borrow, so this frame draws the <b>words</b> of the entry and not a screen: inventing Activity’s History surface here would be drawing something nobody briefed (open question 4). Shown in the same components the run record uses, so a reader can see that the two say the same thing — <i>Auto-fetch · Dagbók · +1 episode · −1 by retention</i> is the fetcher’s own run line with the feature and the name in front of it, and the deletion lines under it are the same lines.',
+     () => B.activityEntry()],
+
+    /* 7 — the longest string */
+    ['keep-strings', 'Keep · English, Faroese and Danish, at the real width',
+     'The width test. Each box is <b>300 px</b>, which is what the review state’s settings box really is, and the control is drawn in all three languages at that width. Faroese is the longest of the three and therefore the real case: <i>Teir nýggjastu</i> against <i>The newest</i>, and a preview sentence half again as long. At 412 the two options split the seg’s width in half each, which is what keeps the Faroese label on one line inside its option. The Faroese and Danish are <b>drafts for a speaker</b>; the report names the words they would add to <span class="mono-id">i18n/lexicon/fo.txt</span>.',
+     () => B.strings()],
+  ];
+
+  document.getElementById('frames').innerHTML = FRAMES.map(([id, title, note, build]) => `
+  <div class="cap"><h2>${title}</h2><div class="mono-id">${id}.png</div><p>${note}</p></div>
+  <div class="shot"><div class="frame ${w}" id="${id}"${theme === 'light' ? ' data-theme="light"' : ''}><div class="afx">${build()}</div></div></div>`).join('');
+})();
+</script>
+</body>
+</html>
