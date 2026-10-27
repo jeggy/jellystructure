@@ -19,7 +19,8 @@ Backend and admin. No Ravilo client calls anything this spec adds, so the wire r
 The design is round 2, quarantined at `design/incoming/2026-10-14-admin-ai/` (`02ae8b21`), re-skinned to the stand-in
 corpus under DEB-1246 (`8bc5c18f`) and carried in `design/app/ai.html`, `ai.js` and `ai.css`. It draws six states:
 *Fetchers*, *Investigating*, *Found · review*, *Not a series*, *Not on TMDB yet* and *No AI key*. Where the picture and
-this file disagree, this file wins and the picture is a defect. Three things in this file are not drawn yet (FR-14).
+this file disagree, this file wins and the picture is a defect. FR-14 lists the later rounds that draw what round 2
+did not.
 
 It amends nothing shipped. Phase 270 gains a job and an FR-270-8 line (its dated amendment is in this file's *Amends*
 section and goes into 270 at build). Phase 183 paced TMDB only (its build note); the per-site lane here is new and
@@ -389,7 +390,8 @@ As drawn in round 2, with these changes:
    five steps' outcomes. Never the page's content, as drawn, and never the full URL path: a path can carry a title.
 5. The drawn *Investigating* spinner is an infinite animation, which the screenshot fence forbids (round 2's
    `MANIFEST.md`, *Open at promotion*); the promotion replaces it (FR-14).
-6. **The page-only choice and retention** (amended 2026-10-27, DEB-2626; not drawn yet, FR-14.4):
+6. **The page-only choice and retention** (amended 2026-10-27, DEB-2626; drawn by FR-14.4's round,
+   `design/incoming/2026-10-27-auto-fetch-retention/`):
    - **The form.**
      - It gains the tick *This programme is not on TMDB* under the TMDB id (FR-15.1).
      - Ticked, the id field is disabled and empty. Its hint reads *The episodes keep the page's own titles and
@@ -407,6 +409,10 @@ As drawn in round 2, with these changes:
      - A tick under it, *Also delete an episode once it leaves the page*, shown only with *The newest*.
      - Its hint names the cost in plain words, from the server's own count: *Keeps 12 of the 12 on the page. Older
        ones are deleted from the library.*
+     - On the review state only, one line under that hint says why saving is safe (added 2026-10-27, DEB-2631):
+       *Nothing is deleted when you save: retention only ever removes episodes this fetcher has placed itself, and
+       it has placed none yet.* A fetcher being reviewed has placed nothing, so FR-16.2 leaves it nothing to delete.
+       The open row has no such line; it has the preview instead.
      - The defaults are in FR-16.1.
    - **The fetcher's open row** shows the same **Keep** control, editable in place. It names what a change will do
      before it is saved: *Saving this deletes 4 episodes at the next run*.
@@ -420,6 +426,10 @@ enabled fetcher with its next run, under the heading **Fetchers**, beside the pr
 (`processing-runs-as-nine-features.md` FR-8). A stopped site shows there as well. A run that deleted something says so
 in its entry (*Auto-fetch · Dagbók · +1 episode · −1 by retention*). Each deletion is a line under that entry
 (FR-16.6).
+
+*Added 2026-10-27 (DEB-2631):* Activity ▸ History is `processing-runs-as-nine-features.md` FR-8.4's list of past
+runs, drawn as `act-hist` in that file's processing-features round. A fetcher's run is one row there, in that
+list's own components, and opens its log the way every other row does. It needs no surface or round of its own.
 
 ### FR-12 — Routes
 
@@ -534,7 +544,9 @@ one path that does, and its rules are what make that safe.
    - **The default depends on the fetcher.** A page-only fetcher starts at *The newest 12*, with *leaves the page* on,
      so its folder is what the page lists. A TMDB fetcher starts at *All episodes*. On a TMDB fetcher, retention is
      the admin's choice, never a default. A default that deleted a series' back-catalogue would be a break every
-     viewer of that series notices.
+     viewer of that series notices. When the admin chooses *The newest* on a TMDB fetcher, *leaves the page* starts
+     **off** (added 2026-10-27, DEB-2631): a TMDB series' older episodes scrolling off its page is not evidence the
+     household is done with them.
    - Before a change is saved, the server counts what it would delete at the next run (FR-12's preview). The screen
      shows that count, and never a count of its own.
 2. **It deletes only what this fetcher placed.**
