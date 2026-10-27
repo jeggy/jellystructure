@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocus
+import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocusFor
 import dev.jellystructure.ravilo.ui.focus.keyboardMode
 import dev.jellystructure.ravilo.ui.focus.BackToTopRegistry
 import dev.jellystructure.ravilo.ui.focus.LocalBackToTop
@@ -2157,8 +2158,8 @@ fun RaviloApp(
                 .then(if (isDesktopPlatform) Modifier.background(RaviloTheme.colors.background) else Modifier)
                 // R350 (FR-R350-17) — keys turn the ring on; a pointer that really moves or presses turns it off.
                 .then(if (isDesktopPlatform || isWebPlatform) Modifier.keyboardMode(deskKeyboard) else Modifier)
-                // R350 (FR-R350-11) — an arrow no focused element consumed moves focus, as the D-pad does on a TV.
-                .arrowKeysMoveFocus(isDesktopPlatform)
+                // R350 (FR-R350-11/19) — an arrow no focused element consumed moves focus, as the D-pad does on a TV.
+                .arrowKeysMoveFocus(arrowKeysMoveFocusFor(isDesktopPlatform, isWebPlatform, handset))
                 .onKeyEvent { ev ->
                     when {
                         ev.type != KeyEventType.KeyDown -> false

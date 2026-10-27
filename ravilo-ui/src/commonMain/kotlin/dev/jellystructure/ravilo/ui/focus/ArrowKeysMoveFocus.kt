@@ -5,6 +5,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
@@ -20,7 +24,9 @@ import androidx.compose.ui.platform.LocalFocusManager
  * *Mark watched*. Mounted at the app root, this runs only when no focused element consumed the arrow, and asks the
  * same focus search the TV gets.
  *
- * [enabled] is the desktop. Not Android (the platform already does it) and not the web for now (unverified there).
+ * FR-R350-19: the web app does the same in a window that is not a handset's (see [arrowKeysMoveFocusFor]).
+ * [enabled] is that rule's answer. A modified arrow is never a focus move: Alt+Left is Back in every browser and
+ * Shift+arrow is a text field's selection, so it is passed on unconsumed.
  */
 @Composable
 fun Modifier.arrowKeysMoveFocus(enabled: Boolean): Modifier {
@@ -28,10 +34,19 @@ fun Modifier.arrowKeysMoveFocus(enabled: Boolean): Modifier {
     val focusManager = LocalFocusManager.current
     return this.onKeyEvent { ev ->
         if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+        if (ev.isShiftPressed || ev.isAltPressed || ev.isCtrlPressed || ev.isMetaPressed) return@onKeyEvent false
         val direction = arrowFocusDirection(ev.key) ?: return@onKeyEvent false
         focusManager.moveFocus(direction)
     }
 }
+
+/**
+ * R350 (FR-R350-19) — where the root asks the focus search for an arrow: the desktop app always (FR-R350-11), the
+ * web app in a window that is not a handset's (the windows that draw the ring, DEB-2204 FR-7), nowhere else —
+ * Android runs the search itself.
+ */
+fun arrowKeysMoveFocusFor(isDesktop: Boolean, isWeb: Boolean, handset: Boolean): Boolean =
+    isDesktop || (isWeb && !handset)
 
 /** The focus direction an arrow key asks for, or null for any other key. */
 internal fun arrowFocusDirection(key: Key): FocusDirection? = when (key) {
