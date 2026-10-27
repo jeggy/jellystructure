@@ -24,14 +24,15 @@ object ListingFetcher {
         var full = true
         var pages = 0
         while (url != null && pages < MAX_PAGES && seen.add(url)) {
-            val outcome = lane.page(url, expect, listing = true)
+            val outcome = lane.page(url, expect, listing = true, hosts = hosts)
             if (outcome !is LaneOutcome.Ok) {
                 if (pages == 0) return ListingRead.Blocked(outcome)
                 full = false; break
             }
             val body = outcome.reply.body
             if (pages == 0) { firstBody = body; firstUrl = url }
-            val page = if (recipe.list.kind == "json") ListingReader.readJson(recipe.list, body, url, recipe.media.manifestField) else ListingReader.readHtml(recipe.list, body, url, recipe.media.manifestField)
+            val base = outcome.reply.finalUrl ?: url // FR-2.7: relative links read against where the answer came from
+            val page = if (recipe.list.kind == "json") ListingReader.readJson(recipe.list, body, base, recipe.media.manifestField) else ListingReader.readHtml(recipe.list, body, base, recipe.media.manifestField)
             if (page == null) { // an answer that is not JSON where JSON was expected
                 if (pages == 0) return ListingRead.Blocked(LaneOutcome.Failed("the listing is not JSON"))
                 full = false; break
@@ -156,10 +157,10 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val manifestUrl = ManifestResolver.resolveWithPage(recipe, item, lane) { _, _ -> }
         return when (manifestUrl) {
             is ManifestResolver.Resolved -> {
-                val m = lane.page(manifestUrl.url, Expect.MANIFEST, player = true)
+                val m = lane.page(manifestUrl.url, Expect.MANIFEST, player = true, hosts = RecipeValidator.lanes(recipe))
                 if (m !is LaneOutcome.Ok) return Probed(null, describe(m))
                 if (Manifests.hasDrm(m.reply.body)) return Probed(null, RecipeRefusal.DRM)
-                Probed(tools.probeManifest(manifestUrl.url, m.reply.body, recipe.media.kind), null)
+                Probed(tools.probeManifest(m.reply.finalUrl ?: manifestUrl.url, m.reply.body, recipe.media.kind), null)
             }
             is ManifestResolver.Skipped -> Probed(null, manifestUrl.reason)
         }
@@ -198,7 +199,7 @@ object ManifestResolver {
             val link = item.link ?: return Skipped("the item has no link")
             val hosts = RecipeValidator.lanes(recipe)
             if (Urls.host(link) !in hosts) return Skipped("the item's page is on ${Urls.host(link)}, which the recipe does not record")
-            val page = lane.page(link, Expect.HTML)
+            val page = lane.page(link, Expect.HTML, hosts = hosts)
             if (page !is LaneOutcome.Ok) return Skipped(when (page) {
                 is LaneOutcome.Stopped -> "the site is stopped: ${page.reason}"
                 is LaneOutcome.BackOff -> "the site asked us to slow down"

@@ -26,6 +26,8 @@ class StandInSite(private val clock: FakeClock) : Transport {
     var drm = false
     var badMedia: Set<Int> = emptySet()
     var onlyOnePage = false
+    /** DEB-2698 — the master playlist is served from a redirect to this host (a CDN edge); the reply says where it ended. */
+    var masterEdge: String? = null
     /** Extra `<li>` markup appended to Dagbók's list (a second item on a date already used). */
     var extraItems = ""
     var robots = "User-agent: *\nDisallow: /private\n"
@@ -70,7 +72,7 @@ high.m3u8
                 val media = if (d in badMedia) "../etc/passwd" else "DOV73$d"
                 HttpReply(200, emptyMap(), "<html><script>var media = '$media';</script></html>")
             }
-            path.endsWith("/master.m3u8") -> HttpReply(200, emptyMap(), if (drm) master + "#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT=\"com.apple.streamingkeydelivery\",URI=\"skd://x\"\n" else master)
+            path.endsWith("/master.m3u8") -> HttpReply(200, emptyMap(), if (drm) master + "#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT=\"com.apple.streamingkeydelivery\",URI=\"skd://x\"\n" else master, masterEdge?.let { "https://$it/video/x.smil/playlist.m3u8" })
             else -> HttpReply(404, emptyMap(), "")
         }
     }
@@ -87,7 +89,9 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     /** Called with the work path just before the download "finishes" — lets a test put something at the final path. */
     var onDownload: (String) -> Unit = {}
 
-    override suspend fun probeManifest(url: String, text: String, kind: String) = ManifestFacts(true, duration)
+    val probed = ArrayList<String>()
+
+    override suspend fun probeManifest(url: String, text: String, kind: String): ManifestFacts { probed += url; return ManifestFacts(true, duration) }
 
     override suspend fun download(spec: DownloadSpec, stop: () -> Boolean): ToolResult {
         if (++active > 1) overlapping = true

@@ -46,8 +46,8 @@ object FetchIdentity {
 }
 
 /**
- * The lane's HTTP: the shared outbound client, our own User-Agent, a bounded body. A redirect to another host is never followed
- * into the lane's trust: the shared client may follow it, but its answer is discarded (FR-4.1: only hosts the recipe records).
+ * The lane's HTTP: the shared outbound client, our own User-Agent, a bounded body. The shared client follows a redirect, and the
+ * reply says where it ended ([HttpReply.finalUrl]); whether that host is trusted is the lane's call (FR-2.7), not the transport's.
  */
 object KtorTransport : Transport {
     override suspend fun get(url: String): HttpReply = OutboundHttp.withPermit {
@@ -56,12 +56,11 @@ object KtorTransport : Transport {
             header(HttpHeaders.Accept, "text/html,application/json,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.5")
             timeout { requestTimeoutMillis = 30_000; connectTimeoutMillis = 10_000; socketTimeoutMillis = 30_000 }
         }
-        if (!r.request.url.host.equals(Urls.host(url), ignoreCase = true)) return@withPermit HttpReply(310, emptyMap(), "")
         val headers = HashMap<String, String>()
         r.headers.forEach { k, v -> headers[k] = v.joinToString(",") }
         val len = r.headers[HttpHeaders.ContentLength]?.toLongOrNull()
         val body = if (len != null && len > LaneRules.MAX_BODY_BYTES) "" else r.bodyAsText().take(LaneRules.MAX_BODY_BYTES)
-        HttpReply(r.status.value, headers, body)
+        HttpReply(r.status.value, headers, body, r.request.url.toString())
     }
 }
 

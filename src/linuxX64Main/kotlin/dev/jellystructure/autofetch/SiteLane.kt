@@ -62,8 +62,11 @@ interface SiteStore {
     fun put(state: SiteState)
 }
 
-/** A reply the lane can judge. [body] is text; a binary answer is never read through the lane. */
-data class HttpReply(val status: Int, val headers: Map<String, String>, val body: String)
+/**
+ * A reply the lane can judge. [body] is text; a binary answer is never read through the lane. [finalUrl] is where the answer
+ * came from after any redirects (FR-2.7); null when the transport did not follow one, which means the requested URL.
+ */
+data class HttpReply(val status: Int, val headers: Map<String, String>, val body: String, val finalUrl: String? = null)
 
 fun interface Transport {
     suspend fun get(url: String): HttpReply
@@ -170,10 +173,10 @@ class SiteLane(
      * One page, listing or API request, in the lane. [listing] marks the recipe's listing (a `robots.txt` that newly forbids
      * it stops the site, FR-2.5); [expect] says what a good answer looks like.
      */
-    suspend fun page(url: String, expect: Expect, listing: Boolean = false, player: Boolean = false): LaneOutcome {
+    suspend fun page(url: String, expect: Expect, listing: Boolean = false, player: Boolean = false, hosts: Set<String> = emptySet()): LaneOutcome {
         preflight()?.let { return it }
         // A manifest is a player's traffic and is not checked against robots.txt (FR-2.2), though it is still paced.
-        if (player) return paced(Robots.ALLOW_ALL) { requestAndJudge(url, expect) }
+        if (player) return paced(Robots.ALLOW_ALL) { requestAndJudge(url, expect, hosts) }
         val path = Urls.path(url)
         val robots = robots(Urls.origin(url)) ?: return LaneOutcome.Failed("robots.txt could not be read, so nothing was requested")
         if (!robots.allows(path)) {
@@ -185,7 +188,7 @@ class SiteLane(
             }
             return LaneOutcome.Forbidden("this site's robots.txt does not allow $path")
         }
-        return paced(robots) { requestAndJudge(url, expect) }
+        return paced(robots) { requestAndJudge(url, expect, hosts) }
     }
 
     private fun preflight(): LaneOutcome? {
@@ -229,13 +232,24 @@ class SiteLane(
         }
     }
 
-    private suspend fun requestAndJudge(url: String, expect: Expect): LaneOutcome {
+    private suspend fun requestAndJudge(url: String, expect: Expect, hosts: Set<String>): LaneOutcome {
         val reply = try { transport.get(url) } catch (e: Throwable) {
             // Phase 310 — only the caller's own cancellation ends the request; a foreign one is a failed call like any other.
             if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e
             return LaneOutcome.Failed("the request failed: ${e.message ?: e::class.simpleName}")
         }
-        return judge(reply, expect)
+        return judge(trustRedirect(url, reply, hosts), expect)
+    }
+
+    /**
+     * FR-2.7 — an answer that came from another host is the lane's own only when the recipe records that host; otherwise it is
+     * discarded as a `310` with no body. The final URL travels on a trusted reply, so a caller resolves against it.
+     */
+    internal fun trustRedirect(requested: String, reply: HttpReply, hosts: Set<String>): HttpReply {
+        val final = reply.finalUrl ?: return reply
+        val fh = Urls.host(final) ?: return HttpReply(310, emptyMap(), "")
+        if (fh == Urls.host(requested) || fh in hosts) return reply
+        return HttpReply(310, emptyMap(), "")
     }
 
     /** FR-2.4/2.5 — what an answer means for the lane. */

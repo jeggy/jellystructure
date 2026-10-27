@@ -307,6 +307,30 @@ class AutofetchEngineTest {
 
     // ---- Acceptance 4/5: the lane ------------------------------------------------------------------------------------------
 
+    // ---- DEB-2698 (FR-2.7): a manifest behind a redirect to a recorded host --------------------------------------------
+
+    private fun withEdge(vararg hosts: String) = h.dagbokRecipe.copy(source = h.dagbokRecipe.source.copy(hosts = h.dagbokRecipe.source.hosts + hosts))
+
+    @Test
+    fun `a manifest redirected to a recorded host is proven and downloaded against its final URL`() = runBlocking<Unit> {
+        h.site.masterEdge = "w-vod-edge2.example.fo"
+        val saved = h.service.save(SaveRequest(h.dagbokUrl, null, true, withEdge("w-vod-edge1.example.fo", "w-vod-edge2.example.fo")))
+        val f = assertIs<SaveResult.Saved>(saved).fetcher
+        assertEquals("https://w-vod-edge2.example.fo/video/x.smil/playlist.m3u8", h.tools.probed.single())
+        val r = h.engine.run(f.id, RunTrigger.MANUAL)!!
+        assertEquals(12, r.placed)
+        assertTrue(h.tools.downloads.all { it.first == "https://w-vod-edge2.example.fo/video/x.smil/playlist.m3u8" }, h.tools.downloads.toString())
+    }
+
+    @Test
+    fun `a manifest redirected to a host the recipe does not record is refused as 310 and nothing is probed`() = runBlocking<Unit> {
+        h.site.masterEdge = "w-vod-edge3.example.fo"
+        val r = refused(h.service.save(SaveRequest(h.dagbokUrl, null, true, withEdge("w-vod-edge1.example.fo"))))
+        assertTrue("310" in r.reason, r.reason)
+        assertTrue(h.tools.probed.isEmpty())
+        assertTrue(h.store.fetchers().isEmpty())
+    }
+
     @Test
     fun `two downloads never overlap and are at least 60 seconds apart`() = runBlocking<Unit> {
         val f = h.saveDagbok()

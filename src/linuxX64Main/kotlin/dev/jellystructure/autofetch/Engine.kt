@@ -204,7 +204,7 @@ class AutofetchEngine(
             }
             is ManifestResolver.Resolved -> resolved.url
         }
-        val manifest = lane.page(manifestUrl, Expect.MANIFEST, player = true)
+        val manifest = lane.page(manifestUrl, Expect.MANIFEST, player = true, hosts = RecipeValidator.lanes(recipe))
         if (manifest !is LaneOutcome.Ok) return when (manifest) {
             is LaneOutcome.Stopped -> OneResult.SiteDown("Site stopped · ${manifest.reason}")
             is LaneOutcome.BackOff -> OneResult.SiteDown("waiting · ${manifest.reason}")
@@ -228,7 +228,7 @@ class AutofetchEngine(
 
         return lane.download {
             try {
-                val dl = tools.download(DownloadSpec(manifestUrl, manifest.reply.body, recipe.media.kind, work, recipe.language.audio, recipe.language.subtitle), stop)
+                val dl = tools.download(DownloadSpec(manifest.reply.finalUrl ?: manifestUrl, manifest.reply.body, recipe.media.kind, work, recipe.language.audio, recipe.language.subtitle), stop)
                 if (!dl.ok) return@download failItem(f, item, "the download failed: ${dl.message}")
                 val facts = tools.inspect(work) ?: return@download failItem(f, item, "ffprobe could not read the file")
                 if (recipe.language.audio.isNotBlank() && facts.audioLanguages.none { it.equals(recipe.language.audio, true) })

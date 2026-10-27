@@ -72,6 +72,20 @@ class SiteLaneTest {
     }
 
     @Test
+    fun `an answer from another host is the lane's only when the recipe records that host`() = runBlocking<Unit> {
+        val clock = FakeClock(); val site = Site(clock); val l = lane(site, clock)
+        val edge = "https://edge2.example.fo/x/playlist.m3u8"
+        site.listing = { HttpReply(200, emptyMap(), "#EXTM3U", finalUrl = edge) }
+        val ok = assertIs<LaneOutcome.Ok>(l.page(url, Expect.MANIFEST, player = true, hosts = setOf("varpid.example.fo", "edge2.example.fo")))
+        assertEquals(edge, ok.reply.finalUrl)
+        val refused = assertIs<LaneOutcome.Failed>(l.page(url, Expect.MANIFEST, player = true, hosts = setOf("varpid.example.fo")))
+        assertEquals(310, refused.status)
+        // the same host answering after a redirect inside the site needs no entry
+        site.listing = { HttpReply(200, emptyMap(), "#EXTM3U", finalUrl = "https://varpid.example.fo/other") }
+        assertIs<LaneOutcome.Ok>(l.page(url, Expect.MANIFEST, player = true))
+    }
+
+    @Test
     fun `a rule that names only AI agents does not bind`() = runBlocking<Unit> {
         val clock = FakeClock(); val site = Site(clock, "User-agent: ClaudeBot\nDisallow: /\n\nUser-agent: *\nDisallow: /private\n")
         assertIs<LaneOutcome.Ok>(lane(site, clock).page(url, Expect.JSON))
