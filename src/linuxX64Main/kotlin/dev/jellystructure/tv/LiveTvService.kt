@@ -8,6 +8,7 @@ import dev.jellystructure.auth.JellyfinLiveTvChannel
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
+import dev.jellystructure.ops.boundedOrNull
 import dev.jellystructure.ops.LockedMap
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
@@ -40,7 +41,6 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.buffered
 import kotlinx.io.readByteArray
 import kotlinx.io.files.Path
@@ -428,7 +428,7 @@ class LiveTvService(
     }
 
     /** The first [SOURCE_FETCH_MAX_BYTES] of [url] after at most [SOURCE_MAX_REDIRECTS] redirects, all inside [SOURCE_FETCH_TIMEOUT_MS]; null on any failure. */
-    private suspend fun fetchPlaylistHead(url: String): String? = withTimeoutOrNull(SOURCE_FETCH_TIMEOUT_MS) {
+    private suspend fun fetchPlaylistHead(url: String): String? = boundedOrNull(SOURCE_FETCH_TIMEOUT_MS, "live-tv source master fetch") {
         try {
             OutboundHttp.withPermit {
                 var current = url
