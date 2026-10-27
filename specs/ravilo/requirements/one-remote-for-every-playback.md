@@ -369,3 +369,63 @@ carries the rule (FR-R337-6 and FR-R337-7, amended the same day). For this spec'
   the bar. Its book-only controls stay on the page either way.
 - **Unchanged:** the film and episode remote on the desktop (FR-2), the phone, the narrow web, and the web at a desk
   width.
+
+## Amendment 2026-10-27 — a song keeps its speakers and never gets subtitles (DEB-1076)
+
+> Owner, 2026-10-27 (DEB-1076): *"After the merge of the two remotes. Now I can't cast music to two speakers anymore.
+> We want 1 remote, but we want it to still support nice features like streaming to multiple speakers and we also do
+> not want support for subtitles within a song etc"*
+
+**What slice 1 shipped (DEB-2223, `4b194569`, in prod since DEB-2410).** The slice was meant to cover films and
+episodes only. It retired `SessionRemoteScreen` for **every** kind, and `rememberOneRemote` draws any session that is
+not an episode as a film (`kind = if (v.kind == "episode") "episode" else "film"`, on both drivers). So:
+
+- A song or a book gets the film remote: *Audio & Subs*, −10 s · ⏯ · +30 s, and no shuffle, previous, next or repeat.
+  On this app's own link, `ops` is null, so *Audio & Subs* always shows.
+- A phone that holds the Cast link to the speaker drives the remote over the link. That path passes a volume block on
+  the desktop only (`linkVolume = if (desktop …)`), so the phone's remote has **no** volume, no rooms and no
+  *Add a speaker…* (FR-R371-2). The server-driven path still passes R371's `SessionVolumePanel`. That is why the same
+  cast reached through *Playing everywhere* on another device still shows the speakers.
+
+This breaks FR-1 (*what plays decides which variant shows*), FR-10 (*a group* has its volume row on every remote),
+acceptance 2 (*nothing lost from the session remote*) and R371 FR-R371-2.
+
+**Amended:**
+
+- **FR-1.** Slice 1's "for films and episodes" means only films and episodes take FR-2's shape. Until slice 3 lands,
+  a song or a book opens the one remote in an **interim music shape**:
+  - the place pill;
+  - art, title and artist (or book and chapter);
+  - seek;
+  - for a song: shuffle · previous · ⏯ · next · repeat, where the place offers them;
+  - for a book: −30 s · ⏯ · +30 s;
+  - the volume block below;
+  - **Stop**.
+
+  It is the same screen whichever driver is behind it. Slice 3 (DEB-2225) then grows this into FR-3's full shape.
+- **FR-3 / FR-10: the speakers come with the remote, on both drivers and on the phone.** For a song or a book, the
+  remote's volume block is R371's, unchanged:
+  - one place gives one slider;
+  - several rooms give the master *Volume* plus one slider and mute per room, and a remove (swipe left on the phone,
+    × on a computer);
+  - the last row is *Add a speaker…* (FR-R371-2), which works the same as before;
+  - the place line names the rooms (FR-R371-3).
+
+  It shows whether this app holds the Cast link or reaches the place only through the server. "The fastest path
+  carries the command" (FR-5) applies to the presses; it never decides which controls exist. A Ravilo app is still
+  never a room (FR-R371-1).
+- **New: no subtitles on a song or a book.** A `music` or `audiobook` session never shows *Audio & Subs*, the tracks
+  sheet, the S · M · L size row, or any subtitle control. This holds even when the file carries a subtitle or text
+  stream, and on either driver. Lyrics are the music's own feature (FR-R322-7, slice 3), not a subtitle track. The
+  film and episode remote is unchanged.
+
+**Acceptance (added).**
+
+- 9. On the Pixel, cast a song to Stue and open the remote from the mini bar. *Add a speaker…* adds Gæsteværelse, and
+  both play in sync, with the place line reading *Stue + Gæsteværelse*.
+- 10. The same group opened from *Playing everywhere* on the web shows the same rooms and sliders.
+- 11. Neither remote shows *Audio & Subs*.
+- 12. A film cast to Stue TV still shows *Audio & Subs*.
+
+*(Tests: a pure test that a `music` or `audiobook` `RemoteModel` offers no tracks control and gets the volume block on
+both drivers; device check on two speakers: QA.)*
