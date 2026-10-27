@@ -107,8 +107,12 @@ station in the video player, or as an empty row. So:
    - `channel_kind: String`, default `"tv"`.
 
 `GET /api/tv/livetv/radio/{relay_id}`:
-- **Auth:** it is a public route in `AuthPlugin`, beside the logo proxy, because neither `<audio>` nor the receiver's
-  media element can send a device header. The `relay_id` is the credential.
+- **Auth:** neither `<audio>` nor the receiver's media element can send a device header, so the route is listed in
+  `AuthPlugin` beside the logo proxy, with the `relay_id` as its credential.
+  - This is the constitution's *"routes fenced to a credential of their own"* (Auth, 4).
+  - The `relay_id` is drawn from the platform's secure random source, as the session token is. It is minted only for a
+    device-token-authenticated tune, compared in constant time, and never written to a log line. The access log keeps
+    only the path up to `/radio/`.
 - **Lifetime:** valid while its tune is active. A stop, the watchdog or a re-tune ends it, and then it answers 404.
 - **Upstream:** opens `Path` from the server, made absolute against the Jellyfin base when it is relative.
   - It never sends `Icy-MetaData: 1`, so no in-band metadata is mixed into the audio.
