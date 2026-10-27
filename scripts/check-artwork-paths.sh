@@ -13,6 +13,9 @@ while IFS= read -r hit; do
     */media/ArtworkDownloader.kt|*/media/ArtworkPaths.kt|*/media/LooseFilms.kt) continue ;;
     # Music: an album or an artist always has a folder of its own (its folder images are the album's/artist's).
     */dev/jellystructure/music/*) continue ;;
+    # Auto-fetch (FR-15.3): the SERIES poster, beside tvshow.nfo. Its seriesPath is always <library root>/<a chosen series
+    # folder> (autofetch/Service.kt), never a library root, and a series is not a film, so phase 316's hazard does not apply.
+    */dev/jellystructure/autofetch/Engine.kt) continue ;;
   esac
   trimmed="$(printf '%s' "$code" | sed 's/^[[:space:]]*//')"
   case "$trimmed" in '//'*|'*'*|'/*'*) continue ;; esac
