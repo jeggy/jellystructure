@@ -22,6 +22,7 @@ ALLOWED="
   components/EpisodeCard.kt                     4
   components/HeroCarousel.kt                    1
   components/MultiEpisodeCard.kt                3
+  components/ProfileFace.kt                     1   # DEB-2596 — the initials, white on the face's own gradient in every skin (FR-1)
   components/RaviloBottomNav.kt                 1
   components/ServerMessageHost.kt               1
   components/SoftwareUpdate.kt                  5   # R386 — all on the accent's own fill: the buttons' labels, the switch's knob, the ready mark
