@@ -57,7 +57,7 @@ class ContainerConvertTest {
         var stripLanguages: Boolean = false,
     ) : ConversionPorts {
         val moved = ArrayList<Pair<String, String>>()
-        override suspend fun seeding(path: String) = seeding
+        override suspend fun seeding(path: String, fresh: Boolean) = seeding
         override suspend fun jellyfinPath(item: MediaItem) = jellyfinPath
         override fun freeBytes(dir: String) = free
         override fun rename(from: String, to: String) = !refuseRename(from, to) && super.rename(from, to)
@@ -130,7 +130,7 @@ class ContainerConvertTest {
         val item = film()
         val ports = object : Ports() {
             var asked = 0
-            override suspend fun seeding(path: String): SeedingCheckResult =
+            override suspend fun seeding(path: String, fresh: Boolean): SeedingCheckResult =
                 if (++asked >= 2) SeedingCheckResult.Blocked("Some Torrent") else SeedingCheckResult.Allowed
         }
         val outcome = run(item, ports)

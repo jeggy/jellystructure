@@ -68,8 +68,13 @@ class ContainerConvertJobTest {
     }
 
     /** What production does on success, in miniature: the stored path follows the file. */
-    private inner class Ports(var jellyfinFound: Boolean = true, var radarrTaken: Boolean? = true, var seeding: SeedingCheckResult = SeedingCheckResult.Allowed) : ConversionPorts {
-        override suspend fun seeding(path: String) = seeding
+    private inner class Ports(var jellyfinFound: Boolean = true, var radarrTaken: Boolean? = true, var seedingResponses: List<SeedingCheckResult> = listOf(SeedingCheckResult.Allowed)) : ConversionPorts {
+        private var callIndex = 0
+        val freshFlags = mutableListOf<Boolean>()
+        override suspend fun seeding(path: String, fresh: Boolean): SeedingCheckResult {
+            freshFlags += fresh
+            return seedingResponses[callIndex++.coerceAtMost(seedingResponses.size - 1)]
+        }
         override suspend fun jellyfinPath(item: MediaItem): String? = null
         override fun freeBytes(dir: String): Long? = Long.MAX_VALUE
         override suspend fun moveIdentity(item: MediaItem, oldPath: String, newPath: String): ConversionIdentityResult {
@@ -91,7 +96,8 @@ class ContainerConvertJobTest {
 
     @Test fun `a verified conversion finishes the row at step three and the file's latest conversion says so`() {
         val item = film()
-        queue.containerConverter = ContainerConverter(Ports(jellyfinFound = false, radarrTaken = false))
+        val ports = Ports(jellyfinFound = false, radarrTaken = false)
+        queue.containerConverter = ContainerConverter(ports)
         queue.start()
         val job = runBlocking { queue.enqueueContainerConversion(item.id, item.title, faroese) }
         assertEquals(ContainerConversion.JOB_TYPE, job.type)
@@ -99,6 +105,7 @@ class ContainerConvertJobTest {
 
         val latest = assertNotNull(queue.latestConversion(item.id))
         assertEquals(ContainerConversion.VERIFIED, latest.state)
+        assertEquals(listOf(true, true), ports.freshFlags)
         assertEquals(job.id, latest.jobId)
         assertTrue(latest.jellyfinPending && latest.radarrNotTaken, "what FR-8 could not finish is carried to the admin")
         val stored = runBlocking { store.resolve(item.id)!! }
@@ -109,7 +116,7 @@ class ContainerConvertJobTest {
 
     @Test fun `a block found by the job is its own state and leaves the original alone`() {
         val item = film()
-        queue.containerConverter = ContainerConverter(Ports(seeding = SeedingCheckResult.Blocked("Some Torrent")))
+        queue.containerConverter = ContainerConverter(Ports(seedingResponses = listOf(SeedingCheckResult.Blocked("Some Torrent"))))
         queue.start()
         val job = runBlocking { queue.enqueueContainerConversion(item.id, item.title, faroese) }
         assertEquals("failed", waitForRow(job.id))
@@ -135,5 +142,20 @@ class ContainerConvertJobTest {
         assertEquals(MediaJobQueue.CONVERT_RESTART_ERROR, row.error)
         assertEquals(ContainerConversion.FAILED_TOOL, queue.latestConversion(item.id)?.state)
         assertNull(db.mediaJobQueries.activeConvertForMedia(item.id).executeAsOneOrNull())
+    }
+
+    @Test fun `a torrent that appears after step 1 blocks step 3 with original in place and work file removed`() {
+        val item = film()
+        val ports = Ports(seedingResponses = listOf(SeedingCheckResult.Allowed, SeedingCheckResult.Blocked("Some Torrent")))
+        queue.containerConverter = ContainerConverter(ports)
+        queue.start()
+        val job = runBlocking { queue.enqueueContainerConversion(item.id, item.title, faroese) }
+        assertEquals("failed", waitForRow(job.id))
+
+        val latest = assertNotNull(queue.latestConversion(item.id))
+        assertEquals(ContainerConversion.BLOCKED to ContainerConversion.SEEDED, latest.state to latest.reason)
+        assertEquals(listOf(true, true), ports.freshFlags)
+        assertTrue(SystemFileSystem.exists(Path(avi)), "the original AVI is still there")
+        assertFalse(SystemFileSystem.exists(Path("$folder/Film (2020).mkv")), "the work MKV was not placed")
     }
 }

@@ -69,8 +69,12 @@ class ContainerConversionRoutesTest {
     private lateinit var queue: MediaJobQueue
     private lateinit var scope: CoroutineScope
 
-    private class Ports(var seeding: SeedingCheckResult = SeedingCheckResult.Allowed) : ConversionPorts {
-        override suspend fun seeding(path: String) = seeding
+    private class Ports(var cacheResult: SeedingCheckResult = SeedingCheckResult.Allowed, var freshResult: SeedingCheckResult = SeedingCheckResult.Allowed) : ConversionPorts {
+        val freshFlags = mutableListOf<Boolean>()
+        override suspend fun seeding(path: String, fresh: Boolean): SeedingCheckResult {
+            freshFlags += fresh
+            return if (fresh) freshResult else cacheResult
+        }
         override suspend fun jellyfinPath(item: MediaItem): String? = null
         override fun freeBytes(dir: String): Long? = Long.MAX_VALUE
         override suspend fun moveIdentity(item: MediaItem, oldPath: String, newPath: String) = ConversionIdentityResult(true, null, emptyList())
@@ -186,4 +190,35 @@ class ContainerConversionRoutesTest {
     }
 
     private fun sh(cmd: String) = assertEquals(0, platform.posix.system(cmd), cmd)
+
+    @Test fun `Start asks fresh when seeding is Allowed from cache but Blocked fresh returns 409`() {
+        film("avi")
+        app {
+            val ports = Ports(cacheResult = SeedingCheckResult.Allowed, freshResult = SeedingCheckResult.Blocked("Some Torrent"))
+            queue.containerConverter = ContainerConverter(ports)
+            val r = start(faroese)
+            assertEquals(HttpStatusCode.Conflict, r.status)
+            val body = json.decodeFromString(StartConversionResponse.serializer(), r.bodyAsText())
+            assertEquals(ContainerConversion.SEEDED, body.block?.reason)
+            assertNull(body.jobId)
+            assertEquals(listOf(true), ports.freshFlags)
+            val rows = db.mediaJobQueries.listQueued().executeAsList()
+            assertEquals(0, rows.filter { it.type == ContainerConversion.JOB_TYPE }.size)
+        }
+    }
+
+    @Test fun `Preview without fresh uses cache and with fresh=true forces a read`() {
+        val item = film("avi")
+        app {
+            val ports = Ports(cacheResult = SeedingCheckResult.Allowed, freshResult = SeedingCheckResult.Blocked("Some Torrent"))
+            queue.containerConverter = ContainerConverter(ports)
+            val p1 = json.decodeFromString(ConversionPreview.serializer(), get("/api/media/${item.id}/container-conversion?track=0:a:0&language=fao").bodyAsText())
+            assertNull(p1.block, "cache says Allowed, so no block")
+            assertEquals(listOf(false), ports.freshFlags)
+            val p2 = json.decodeFromString(ConversionPreview.serializer(), get("/api/media/${item.id}/container-conversion?track=0:a:0&language=fao&fresh=true").bodyAsText())
+            assertNotNull(p2.block, "fresh says Blocked, so there is a block")
+            assertEquals(listOf(false, true), ports.freshFlags)
+            assertEquals(ContainerConversion.SEEDED, p2.block?.reason)
+        }
+    }
 }

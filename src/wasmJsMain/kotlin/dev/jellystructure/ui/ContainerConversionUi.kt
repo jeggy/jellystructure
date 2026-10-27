@@ -149,9 +149,9 @@ object ContainerConversionUi {
     private fun requested(): List<ConversionRequested> =
         preview?.latest?.requested?.takeIf { it.isNotEmpty() && !refusalSeen() } ?: refusals.map { ConversionRequested(it.key, it.value) }
 
-    private suspend fun fetch() {
+    private suspend fun fetch(fresh: Boolean = false) {
         val sess = session ?: return
-        preview = MediaApi.containerConversion(sess.mediaId, refusals.map { ConversionRequested(it.key, it.value) })
+        preview = MediaApi.containerConversion(sess.mediaId, refusals.map { ConversionRequested(it.key, it.value) }, fresh)
     }
 
     private suspend fun refreshAndRender() {
@@ -174,7 +174,7 @@ object ContainerConversionUi {
         e.preventDefault()
         val sess = session ?: return
         when (action) {
-            "review", "again", "retry" -> { view = ConvertView.PREVIEW; dismissed = false; sess.scope.launch { fetch(); render(focus = true) } }
+            "review", "again", "retry" -> { view = ConvertView.PREVIEW; dismissed = false; sess.scope.launch { if (action == "again") fetch(fresh = true) else fetch(); render(focus = true) } }
             "confirm" -> { view = ConvertView.CONFIRM; render(focus = false) }
             "close" -> { view = ConvertView.NOTICE; render(focus = false) }
             "keep" -> { view = ConvertView.NOTICE; dismissed = true; render(focus = false); onChange?.invoke() }

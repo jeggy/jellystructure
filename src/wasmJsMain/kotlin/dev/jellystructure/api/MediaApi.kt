@@ -678,9 +678,10 @@ object MediaApi {
     }.getOrDefault(TrackLangResult("request failed", null))
 
     /** DEB-2051 (FR-4) — what the conversion notice shows, computed by the server; [requested] is what the operator asked for. */
-    suspend fun containerConversion(id: String, requested: List<dev.jellystructure.media.ConversionRequested>): dev.jellystructure.media.ConversionPreview? = runCatching {
+    suspend fun containerConversion(id: String, requested: List<dev.jellystructure.media.ConversionRequested>, fresh: Boolean = false): dev.jellystructure.media.ConversionPreview? = runCatching {
         val response = httpClient.get("/api/media/$id/container-conversion") {
             requested.forEach { parameter("track", it.specifier); parameter("language", it.language) }
+            if (fresh) parameter("fresh", "true")
         }
         if (response.status.value in 200..299) response.body<dev.jellystructure.media.ConversionPreview>() else null
     }.getOrNull()

@@ -113,7 +113,7 @@ class SeedingSnapshot(
         fresh
     }
 
-    suspend fun checkPath(localFilePath: String, config: AppConfig, linkCheck: Boolean = true): SeedingCheckResult {
+    suspend fun checkPath(localFilePath: String, config: AppConfig, linkCheck: Boolean = true, fresh: Boolean = false): SeedingCheckResult {
         // Phase 315 (FR-315-1) — a name outside the library shares these bytes: refused whatever qBittorrent says
         // (unconfigured or unreachable included — unknown means no).
         val link = if (linkCheck) hardLinkVerdict(localFilePath, config) else LinkVerdict.SINGLE
@@ -122,7 +122,7 @@ class SeedingSnapshot(
             return if (link == LinkVerdict.OUTSIDE) SeedingCheckResult.Blocked("", hardLink = true) else SeedingCheckResult.Unconfigured
         }
         val remotePath = translateLocalToRemote(localFilePath, qbConfig)
-        val snap = get()
+        val snap = get(forceRefresh = fresh)
         if (!snap.reachable && snap.unreachableReason != null) {
             return if (link == LinkVerdict.OUTSIDE) SeedingCheckResult.Blocked("", hardLink = true) else SeedingCheckResult.Unreachable(snap.unreachableReason)
         }

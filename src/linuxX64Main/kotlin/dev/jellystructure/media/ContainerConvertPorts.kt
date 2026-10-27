@@ -15,8 +15,8 @@ class ContainerConvertPorts(
     private val seedingGuard: SeedingGuard,
     private val looseFilms: LooseFilmsService,
 ) : ConversionPorts {
-    override suspend fun seeding(path: String): SeedingCheckResult =
-        seedingGuard.check(path, configStore.current, inPlace = false, countRefusal = false)
+    override suspend fun seeding(path: String, fresh: Boolean): SeedingCheckResult =
+        seedingGuard.check(path, configStore.current, inPlace = false, countRefusal = false, fresh = fresh)
 
     override suspend fun jellyfinPath(item: MediaItem): String? = looseFilms.jellyfinPathOf(item)
 

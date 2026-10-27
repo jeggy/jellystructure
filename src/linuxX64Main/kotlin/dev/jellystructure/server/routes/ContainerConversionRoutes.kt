@@ -39,8 +39,9 @@ fun Route.containerConversionRoutes(store: MediaStore, mediaJobQueue: MediaJobQu
             val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
             val tracks = call.request.queryParameters.getAll("track").orEmpty()
             val languages = call.request.queryParameters.getAll("language").orEmpty()
+            val fresh = call.request.queryParameters.get("fresh") == "true"
             val requested = tracks.zip(languages).map { (t, l) -> ConversionRequested(t, l) }
-            call.respond(preview(item, requested, store, mediaJobQueue))
+            call.respond(preview(item, requested, store, mediaJobQueue, fresh))
         }
 
         // POST — FR-5 again, then one job. A job already queued or running for the title is returned, not a second one.
@@ -62,7 +63,7 @@ fun Route.containerConversionRoutes(store: MediaStore, mediaJobQueue: MediaJobQu
             mediaJobQueue.latestConversion(id)?.takeIf { it.state == ContainerConversion.QUEUED || it.state == ContainerConversion.RUNNING }?.let {
                 return@post call.respond(HttpStatusCode.Accepted, StartConversionResponse(jobId = it.jobId))
             }
-            converter.safety(item)?.let { block ->
+            converter.safety(item, fresh = true)?.let { block ->
                 mediaHistory.record(id, "container_convert", "REFUSED: ${block.message}")
                 return@post call.respond(HttpStatusCode.Conflict, StartConversionResponse(block = block, error = block.message))
             }
@@ -73,7 +74,7 @@ fun Route.containerConversionRoutes(store: MediaStore, mediaJobQueue: MediaJobQu
     }
 }
 
-private suspend fun preview(item: MediaItem, requested: List<ConversionRequested>, store: MediaStore, queue: MediaJobQueue): ConversionPreview {
+private suspend fun preview(item: MediaItem, requested: List<ConversionRequested>, store: MediaStore, queue: MediaJobQueue, fresh: Boolean = false): ConversionPreview {
     val latest = queue.latestConversion(item.id)
     val converter = queue.containerConverter
     if (!item.convertibleAvi() || converter == null) {
@@ -97,7 +98,7 @@ private suspend fun preview(item: MediaItem, requested: List<ConversionRequested
         requested = requested,
         estimateSeconds = seconds,
         tempBytes = size?.takeIf { seconds != null },
-        block = converter.safety(item),
+        block = converter.safety(item, fresh),
         latest = latest,
     )
 }

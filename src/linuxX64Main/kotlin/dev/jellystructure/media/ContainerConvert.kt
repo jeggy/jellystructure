@@ -23,7 +23,7 @@ data class ConversionIdentityResult(
 
 /** The outside effects of a conversion; production in `LooseFilmsService`, fakes in tests (FR-11). */
 interface ConversionPorts {
-    suspend fun seeding(path: String): SeedingCheckResult
+    suspend fun seeding(path: String, fresh: Boolean): SeedingCheckResult
     /** The item's current path in Jellyfin, mapped to the backend's view; null when it cannot be read. */
     suspend fun jellyfinPath(item: MediaItem): String?
     fun freeBytes(dir: String): Long?
@@ -60,9 +60,9 @@ sealed class ConvertOutcome {
 class ContainerConverter(private val ports: ConversionPorts) {
 
     /** FR-5 — the first reason this file may not be converted, or null. Asked by the preview, by Start, and again in step 3. */
-    suspend fun safety(item: MediaItem): ConversionBlock? {
+    suspend fun safety(item: MediaItem, fresh: Boolean = false): ConversionBlock? {
         val path = item.path
-        val seeding = ports.seeding(path)
+        val seeding = ports.seeding(path, fresh)
         val storedExists = ports.exists(path)
         val sourceBytes = ports.sizeOf(path)
         return ContainerConversion.firstBlock(
@@ -101,7 +101,7 @@ class ContainerConverter(private val ports: ConversionPorts) {
 
         // ── 1 — copy the streams into an MKV, in the hidden folder ──
         onStep(1)
-        safety(item)?.let { return ConvertOutcome.Blocked(it, 1) }
+        safety(item, fresh = true)?.let { return ConvertOutcome.Blocked(it, 1) }
         val streamIndexOf = item.tracks.associate { it.specifier to it.streamIndex }
         val languages = requested.map { r ->
             val index = streamIndexOf[r.specifier] ?: return ConvertOutcome.Failed(ContainerConversion.JobDetail.TOOL, 1, "Track ${r.specifier} is no longer in the file")
@@ -123,7 +123,7 @@ class ContainerConverter(private val ports: ConversionPorts) {
 
         // ── 3 — put the new file in place: asked again, then the new file in first, then the original aside ──
         onStep(3)
-        safety(item)?.let { cleanup(); return ConvertOutcome.Blocked(it, 3) }
+        safety(item, fresh = true)?.let { cleanup(); return ConvertOutcome.Blocked(it, 3) }
         if (!ports.rename(work, dest)) { cleanup(); return ConvertOutcome.Failed(ContainerConversion.JobDetail.TOOL, 3, "Couldn't put the new file in place; the original is untouched") }
         if (!ports.rename(source, kept)) {
             val undone = ports.rename(dest, work)
