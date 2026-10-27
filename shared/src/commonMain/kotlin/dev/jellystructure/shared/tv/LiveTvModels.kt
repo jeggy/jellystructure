@@ -65,6 +65,8 @@ data class LiveTvSettingsUpdate(
 data class LiveTvTuneRequest(
     @SerialName("channel_id") val channelId: String,
     val capabilities: ClientCapabilities,
+    /** DEB-2627 FR-2/FR-4 — `null` (the source as Jellyfin opened it) or `"jellyfin"` (Jellyfin's own remux). Anything else is read as `null`. */
+    val via: String? = null,
 )
 
 @Serializable
@@ -88,6 +90,14 @@ data class LiveTvGuideProgram(
     @SerialName("is_series") val isSeries: Boolean = false,
 )
 
+/** DEB-2627 FR-2 — one rung of a source's master playlist. [width]/[height] are null when the master states no `RESOLUTION`. */
+@Serializable
+data class LiveTvLadderRung(
+    @SerialName("bandwidth_bps") val bandwidthBps: Long,
+    val width: Int? = null,
+    val height: Int? = null,
+)
+
 /** Returned by a channel tune — a sibling of [StreamTicket] for the infinite/open-close Live TV
  *  lifecycle (dev-review addendum D): no resume position, no fixed duration, and a [liveStreamId]
  *  that must be passed back on stop so the tuner/provider stream is explicitly closed. */
@@ -99,6 +109,10 @@ data class LiveTvStreamTicket(
     @SerialName("live_stream_id") val liveStreamId: String,
     @SerialName("hls_url") val hlsUrl: String,
     @SerialName("expires_at") val expiresAt: Long,
+    /** DEB-2627 FR-1/FR-2 — what [hlsUrl] is: `hls_ladder` · `hls` · `other`. A plain string, never an enum: a future value must not break a decode. */
+    @SerialName("stream_kind") val streamKind: String = "other",
+    /** DEB-2627 FR-2 — the master's rungs, highest first; non-empty only for `hls_ladder`. */
+    val ladder: List<LiveTvLadderRung> = emptyList(),
 )
 
 /** Phase 148 §B1 "Live TV on Home" — placement only, shown in the Layout tab only when Live TV is

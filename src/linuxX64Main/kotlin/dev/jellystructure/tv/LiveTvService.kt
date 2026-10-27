@@ -18,8 +18,16 @@ import dev.jellystructure.shared.tv.LiveTvStreamTicket
 import dev.jellystructure.util.isoToEpochSeconds
 import dev.jellystructure.auth.jellyfinAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.readRawBytes
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import io.ktor.http.takeFrom
+import io.ktor.utils.io.readRemaining
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
@@ -29,9 +37,12 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.buffered
+import kotlinx.io.readByteArray
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.posix.CLOCK_REALTIME
@@ -44,6 +55,18 @@ import platform.posix.timespec
 import platform.posix.tm
 
 private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L
+
+/** DEB-2627 FR-1 — the backend's look at a source's master: at most 3 redirects, 3 s in all, 64 KiB, cached an hour. */
+private const val SOURCE_MAX_REDIRECTS = 3
+private const val SOURCE_FETCH_TIMEOUT_MS = 3_000L
+private const val SOURCE_FETCH_MAX_BYTES = 64 * 1024
+private const val SOURCE_CLASS_TTL_MS = 60 * 60 * 1000L
+/** A failed look is remembered for a minute only: an hour of `hls` would hide a ladder after one slow answer, and a dead source would cost every tune 3 s. */
+private const val SOURCE_CLASS_FAILED_TTL_MS = 60 * 1000L
+private const val SOURCE_CLASS_MAX_ENTRIES = 256
+
+/** DEB-2627 FR-4 — the one value of [dev.jellystructure.shared.tv.LiveTvTuneRequest.via] that means something; any other reads as the source. */
+private const val VIA_JELLYFIN = "jellyfin"
 
 /** DEB-2520 — how long a viewer's channel list from Jellyfin is believed; a policy change drops it sooner (the hash). */
 private const val VIEWER_CHANNELS_TTL_MS = 2 * 60 * 1000L
@@ -70,6 +93,11 @@ class LiveTvService(
     // shape: the entry also carries the hash of the device's library and tag lists, so a policy change misses it.
     private data class ViewerChannels(val ids: Set<String>, val policyHash: Int, val fetchedAt: Long)
     private val viewerChannels = LockedMap<String, ViewerChannels>()
+
+    // DEB-2627 FR-1 — what a source's master was last read as, per (channel id, Path). `until` is the epoch ms it stops being believed.
+    private data class SourceClass(val classification: SourceClassification, val until: Long)
+    private val sourceClasses = LockedMap<String, SourceClass>()
+    private val sourceHttp by lazy { http.config { followRedirects = false } }
 
     private var guideCache: List<LiveTvGuideProgram> = emptyList()
     private var guideCacheFetchedAt: Long = 0L
@@ -319,7 +347,7 @@ class LiveTvService(
      * [tvTokenForClient]: a rejected one throws [JellyfinReauthRequiredException] (the 409 *re-pair* playback gives),
      * and the server key is never the fallback — it is not a thing a device is handed (2026-08-02 review, H2).
      */
-    suspend fun tune(device: DeviceData, channelId: String, capabilities: ClientCapabilities): LiveTvStreamTicket? {
+    suspend fun tune(device: DeviceData, channelId: String, capabilities: ClientCapabilities, via: String? = null): LiveTvStreamTicket? {
         if (channelId !in visibleChannelIds(device)) return null
         val base = jellyfinBase()
         val token = jellyfinClient.tvTokenForClient(base, device)
@@ -339,6 +367,28 @@ class LiveTvService(
         val mediaSource = opened.mediaSource ?: return null
         val streamUrl = mediaSource.path ?: return null
         val liveStreamId = mediaSource.liveStreamId ?: opened.id ?: return null
+        if (via == VIA_JELLYFIN) {
+            // DEB-2627 FR-4 — the source failed for the client: hand back what Jellyfin remuxes, verbatim (FR-239-5: its
+            // credential spelling is Jellyfin's; the open ran under the device's own token, so that is the token in it).
+            val transcoding = mediaSource.transcodingUrl?.takeIf { it.isNotBlank() }
+            if (transcoding == null) {
+                Logger.warn("LiveTv: Jellyfin offered no TranscodingUrl for channel=$channelId — no fallback to hand over", "livetv")
+                jellyfinClient.closeLiveStream(base, token, liveStreamId, identity)
+                return null
+            }
+            lastHeartbeatMs[device.deviceId] = nowMs()
+            activeStreams[device.deviceId] = Triple(device, channelId, liveStreamId)
+            return LiveTvStreamTicket(
+                jellyfinBaseUrl = base,
+                accessToken = token,
+                channelId = channelId,
+                liveStreamId = liveStreamId,
+                hlsUrl = if (transcoding.startsWith("http")) transcoding else "$base$transcoding",
+                expiresAt = nowMs() + TICKET_TTL_MS,
+                streamKind = STREAM_KIND_HLS,
+            )
+        }
+        val sourceClass = classifySource(channelId, streamUrl)
         lastHeartbeatMs[device.deviceId] = nowMs()
         activeStreams[device.deviceId] = Triple(device, channelId, liveStreamId)
         return LiveTvStreamTicket(
@@ -348,7 +398,73 @@ class LiveTvService(
             liveStreamId = liveStreamId,
             hlsUrl = if (streamUrl.startsWith("http")) streamUrl else "$base$streamUrl",
             expiresAt = nowMs() + TICKET_TTL_MS,
+            streamKind = sourceClass.kind,
+            ladder = sourceClass.ladder,
         )
+    }
+
+    /**
+     * DEB-2627 FR-1 — what [path] (the open's `MediaSource.Path`) is. A relative path is Jellyfin's own stream: `other`,
+     * nothing fetched. An absolute one is looked at once an hour per channel; [hlsUrl][LiveTvStreamTicket.hlsUrl] stays
+     * [path] whatever this finds, because the client fetches the master itself.
+     */
+    private suspend fun classifySource(channelId: String, path: String): SourceClassification {
+        if (!path.startsWith("http://", ignoreCase = true) && !path.startsWith("https://", ignoreCase = true)) return SourceClassification(STREAM_KIND_OTHER)
+        val key = "$channelId $path"
+        val now = nowMs()
+        sourceClasses[key]?.takeIf { it.until > now }?.let { return it.classification }
+        val head = fetchPlaylistHead(path)
+        val classification = if (head == null) classifyUnfetched(path) else classifyHlsPlaylist(head) ?: SourceClassification(STREAM_KIND_OTHER)
+        sourceClasses.removeIf { _, v -> v.until <= now }
+        if (sourceClasses.size >= SOURCE_CLASS_MAX_ENTRIES) sourceClasses.clear()
+        sourceClasses[key] = SourceClass(classification, now + if (head == null) SOURCE_CLASS_FAILED_TTL_MS else SOURCE_CLASS_TTL_MS)
+        return classification
+    }
+
+    private sealed interface PlaylistStep {
+        data class Redirect(val url: String) : PlaylistStep
+        data class Body(val text: String) : PlaylistStep
+        data object Failed : PlaylistStep
+    }
+
+    /** The first [SOURCE_FETCH_MAX_BYTES] of [url] after at most [SOURCE_MAX_REDIRECTS] redirects, all inside [SOURCE_FETCH_TIMEOUT_MS]; null on any failure. */
+    private suspend fun fetchPlaylistHead(url: String): String? = withTimeoutOrNull(SOURCE_FETCH_TIMEOUT_MS) {
+        try {
+            OutboundHttp.withPermit {
+                var current = url
+                for (hop in 0..SOURCE_MAX_REDIRECTS) {
+                    val step = sourceHttp.prepareGet(current) {
+                        header(HttpHeaders.Accept, "application/vnd.apple.mpegurl, application/x-mpegURL, */*")
+                    }.execute { resp ->
+                        when {
+                            resp.status.value in 300..399 ->
+                                resp.headers[HttpHeaders.Location]
+                                    ?.let { URLBuilder(current).takeFrom(it).buildString() }
+                                    ?.takeIf { it.startsWith("http", ignoreCase = true) }
+                                    ?.let { PlaylistStep.Redirect(it) } ?: PlaylistStep.Failed
+                            resp.status.isSuccess() -> {
+                                val bytes = resp.bodyAsChannel().readRemaining(SOURCE_FETCH_MAX_BYTES.toLong()).readByteArray()
+                                val text = bytes.decodeToString()
+                                // A cut-off body ends mid-line: drop that line rather than read half an attribute.
+                                PlaylistStep.Body(if (bytes.size >= SOURCE_FETCH_MAX_BYTES) text.substringBeforeLast('\n') else text)
+                            }
+                            else -> PlaylistStep.Failed
+                        }
+                    }
+                    when (step) {
+                        is PlaylistStep.Body -> return@withPermit step.text
+                        is PlaylistStep.Redirect -> current = step.url
+                        PlaylistStep.Failed -> return@withPermit null
+                    }
+                }
+                null // redirected more than SOURCE_MAX_REDIRECTS times
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.info("LiveTv: could not read a source's master (${e.message}) — classified from its URL", "livetv")
+            null
+        }
     }
 
     suspend fun heartbeat(device: DeviceData) {

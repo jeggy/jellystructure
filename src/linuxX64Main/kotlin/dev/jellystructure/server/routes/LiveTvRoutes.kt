@@ -115,7 +115,7 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         }
         // DEB-2520 — a channel Jellyfin does not list for this viewer does not exist for them.
         if (id !in liveTvService.visibleChannelIds(device)) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown channel"))
-        val ticket = liveTvService.tune(device, id, req.capabilities)
+        val ticket = liveTvService.tune(device, id, req.capabilities, req.via)
             ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Could not tune this channel"))
         call.respond(ticket)
     }
