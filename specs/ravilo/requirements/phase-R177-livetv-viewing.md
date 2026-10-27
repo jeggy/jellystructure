@@ -47,6 +47,12 @@ channels) — all streamed through jellystructure from Jellyfin. Live TV is **ne
 1. Full-screen live playback of the channel's Jellyfin Live TV stream, with a **LIVE** indicator and a
    bottom **channel bar**: logo · number · name · category · current program · times · live progress.
    Chrome auto-hides and re-shows on any key.
+   - **Amended 2026-10-27 (DEB-2627):** "the channel's Jellyfin Live TV stream" is the URL that Jellyfin's tune
+     returns. For a source on the open internet, that is the source's own HLS master, played by the client exactly
+     as given. When that master is an adaptive ladder, every client's player adapts over it: the best rung the line
+     holds, a step down when it doesn't. When the source fails, the tune falls back to Jellyfin's own remux. See
+     [`a-live-channel-plays-its-own-quality-ladder.md`](a-live-channel-plays-its-own-quality-ladder.md).
+     Jellyfin still owns the tuner, the lineup and the guide.
 2. **Zapping:** ←/→ (or channel up/down) moves to the adjacent channel with a brief **channel banner**;
    typing **0–9** opens a number-entry OSD that tunes on complete/timeout.
 3. **Now/Next overlay:** ↑ opens a mini-guide of nearby channels (now + next per channel), D-pad browse,
@@ -76,7 +82,6 @@ patterns, and the R33 live-config push (so a lineup/enable change reaches the TV
 - Restricted/kids viewers see only permitted channels; a removed channel never breaks the guide/player.
 - en/da/fo strings present.
 
-## Status note
-Design-authored, `Planned`, not yet dev-reviewed. Exports to
-`specs/ravilo/requirements/phase-R177-livetv-viewing.md`; `scripts/check-phases.sh` will flag it for a
-`STATUS.md` row. **Next Ravilo number after this is R178.**
+## Scope
+The viewing half of Live TV. It is design-authored from `design/ravilo/Ravilo Live TV.html`, and its
+admin half is Phase 147. Amended by DEB-2627, which covers how a live stream's quality adapts (D1).
