@@ -429,3 +429,38 @@ acceptance 2 (*nothing lost from the session remote*) and R371 FR-R371-2.
 
 *(Tests: a pure test that a `music` or `audiobook` `RemoteModel` offers no tracks control and gets the volume block on
 both drivers; device check on two speakers: QA.)*
+
+## Amendment 2026-10-27 — what slice 1's review settled (DEB-2185)
+
+Slice 1 (DEB-2223, `4b194569` + `8ea4851b`) recorded five gaps against this file. Three are this file contradicting
+itself or a picture, and are settled here. Two are the build missing what the file already says; those need no
+amendment and are listed at the end.
+
+- **FR-7 / FR-9 / acceptance 7 — the phone's mini bar draws no Stop.** FR-9 and `one-remote-a-minibar-cast`,
+  `-elsewhere`, `-music` draw thumbnail, title, place, ⏯, the hairline and **+N**, and no Stop. FR-7's "the mini bar"
+  is withdrawn. The word rule is unchanged wherever a stop control is drawn: the remote's footer, the desktop capsule
+  (FR-7's last bullet, as `-mac-music` draws it), the Screens sheet's end row (R245's 2026-10-23 amendment) and
+  Android's media card. Acceptance 7 now reads: *Stop says Stop, on the remote, the desktop capsule, the Screens sheet
+  and the Android media card.*
+- **FR-8 / FR-15 — the view-only line gets its own key.** FR-8 asks for one line saying why there is nothing to
+  press, `one-remote-a-someone-else.png` draws it, and the owner took it *as drawn*. No shipped key carries it, so
+  FR-15's "one new key" becomes two:
+
+  | Key | en | da | fo |
+  |---|---|---|---|
+  | `session.view_only` | You can see what {person} is playing. Controlling each other's is off for this household. | Du kan se, hvad {person} afspiller. Styring af hinandens er slået fra i denne husstand. | Tú sært, hvat {person} spælir. At stýra hvør øðrum er sløkt í hesum húsarhaldi. |
+
+  da and fo are drafts, as `volume.kept`'s are. The line sits under the read-only progress bar, with the person
+  glyph, as drawn. *{person} is watching* / *is listening* stays under the title.
+- **FR-2 / FR-14 — an episode's kicker names its series on both drivers.** The frames draw *TIDEWATER · S01E04*.
+  This app's own link knows the series; `SessionView.subtitle` carries only `S01E04`, so the server path cannot match
+  it, and acceptance 1 (*the same screen from both doors*) fails on an episode. `SessionView` gains an optional
+  `series_name` (string; set for `episode`, absent otherwise), additive under FR-14. An older backend sends none,
+  and the kicker is then `S01E04` alone. `WireCompatTest` stays green.
+
+**Not amended; the build owes them as written:**
+- the next-up countdown (*Play in N* · *Watch credits*, and its cancel) and the S · M · L subtitle size on the server
+  path: FR-2 and FR-14 already require the optional `SessionDetail` fields and the new op;
+- Stop on the desktop capsule while the remote is closed (FR-7), and the Screens sheet's end row still reading
+  *Stop casting* (`cast.stop`): R245's 2026-10-23 amendment makes the device chip's *Stop casting* **Stop**. The music
+  cast block in today's Playing page keeps `cast.stop` until slice 3 retires it (FR-4).
