@@ -156,7 +156,9 @@ same as DEB-2627 FR-5.4.
 - **A station with no guide** keeps its name where a channel's name is, and *Live radio* alone takes the programme's
   place, with no progress bar. The name is never drawn a second time at the programme's weight (design round,
   2026-10-27: the literal reading drew it twice).
-- The look of the mark and of the no-guide tile is the design round's.
+- **The mark** (owner, 2026-10-27, option A): the broadcast glyph, a dot between a pair of arcs either side. It is
+  never the Wi-Fi fan. It sits in a dark plate in the tile's top-right corner, the one corner a channel tile leaves
+  empty. Its accessible label is *Radio*.
 
 **FR-7 — The guide shows stations too.**
 - The R177 guide lists stations as rows in lineup order. The channel cell carries the same radio mark.
@@ -198,7 +200,8 @@ with an **audio layout** in place of the picture. It plays the ticket through th
 - `GET /tv/music/home?radio=1` adds a row with `key = "radio"`, a localised title *Radio*, and the viewer's stations.
   - `MusicRow` gains `stations: List<LiveTvChannel>`, default empty.
   - The row is present only when the viewer has at least one station.
-  - Its position among the rows is the design round's; the lean is second, after *Recently added*.
+  - **It is the last row, after the genres** (owner, 2026-10-27, option D), so it pushes nothing the household owns
+    down the page.
 - Each tile shows the station's logo, its name, and the programme now (or *Live radio*), with the radio mark.
 - **Selecting a tile plays the station at once.** There is no station page.
 - The phone has no live TV, so this row is where a phone reaches radio.
@@ -218,7 +221,8 @@ While a station plays:
 - **No seek, no next, no previous, no shuffle, no repeat.**
   - The seek bar is replaced by a LIVE mark.
   - The transport is ⏯ alone: pause stops the station, and play re-tunes it at the live edge.
-  - The look is the design round's.
+  - Every button that does not apply is left out, never greyed. A station that is stopped, or that could not play,
+    shows no LIVE mark.
 - **The system media controls** show the same:
   - **Android:** Media3 with a live, unseekable item (`C.TIME_UNSET`, no seek or skip commands).
   - **Mac:** `MPNowPlayingInfoPropertyIsLiveStream`.
@@ -258,7 +262,8 @@ While a station plays:
   holds for any new channel, not only a station.
 - The overview's *channels discovered* and *channels shown* count stations as channels.
 - The admin renders `kind` from server-pushed state only. The mark is a class added to `design/app/wf.css`, drawn in
-  the round's admin frame.
+  the round's admin frame. The round's *Live now* block on this page is **not** adopted: live listeners show in the
+  playback sessions list (FR-5).
 
 **FR-13 — Strings.** New en, da and fo strings in `Strings.kt` (admin) and the `ravilo-i18n` table:
 - *Radio* (the row title, the filter and the mark's accessible label);
@@ -269,17 +274,26 @@ These sit beside R177's Live strings.
 
 ## Design
 
-There is one round, briefed to Rannvá on this task. The round decides **how** these look, and FR-6 to FR-12 decide
-what they do:
-- the **radio mark** on a live tile, on a guide row and in the admin table;
-- the **no-guide** tile and guide block;
-- the **TV radio player** (FR-8), with and without a guide, and its burn-in movement;
-- the **Radio row** on Music Home, phone and Mac, with its position;
-- **Now playing** for a station on the phone, Mac and TV;
-- the **remote's radio shape**.
+The round is `design/incoming/2026-10-27-radio/` (DEB-2640). Its `REPORT.md` and `Radio - Directions.html` are the
+reference for every look below. On 2026-10-27 the owner picked:
 
-The owner picks between the drawn options on one card, with the pictures inline. The picks are written back into this
-file as a dated note before the first client slice starts.
+| Decision | Pick |
+|---|---|
+| The radio mark | **A, the corner glyph** (FR-6). The same glyph, at its own size, goes on the guide's channel cell under the name (FR-7), the Now/Next list, the zap banner, the Music Home tiles and the admin row with its filter chip (FR-12). |
+| The TV radio player | **A, the Now-playing layout** (FR-8). It is one centred block: logo plate, number and name, LIVE with *Radio* beside it, the programme with its times and live progress, then *Next*. A key hint sits at the foot. The zap banner, number entry and Now/Next are R177's overlays, drawn over this layout. |
+| The Radio row | **D, the last row** (FR-9), with square logo tiles the size of the album cards: the logo with the mark, the station's name, and the programme now or *Live radio*. |
+
+Drawn as one answer and adopted as drawn:
+- **A station in Music mode** (FR-10): phone *Now playing*, the mini bar, and the Mac's bar.
+- **The remote's radio shape** (FR-11), with no *Up next* button. The phone's own bottom row keeps its queue button.
+
+**FR-8's burn-in step**, as drawn:
+- four positions, moving one step every 7 minutes, a 28-minute loop;
+- 56 × 36 px of travel, with a 600 ms glide, or a cut under reduced motion;
+- the whole centred block moves.
+
+Before the client slices start, Rannvá promotes the picked frames into the `design/ravilo/` archive and the admin
+mark's class into `design/app/wf.css`, through PROCESS.md's gate, and prunes the round.
 
 ## Non-goals
 

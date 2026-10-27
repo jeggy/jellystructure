@@ -28,7 +28,7 @@ An empty library returns no rows (the phone shows one sentence). Owner, 2026-09-
 Now-playing card** — the mini bar already shows it.
 
 **Amended 2026-10-27 (DEB-2628):** with `?radio=1`, the rows gain *Radio* (`key = "radio"`): the viewer's shown Live
-TV radio stations, in a new `MusicRow.stations` list (default empty). It is present only when the viewer has a station.
+TV radio stations, in a new `MusicRow.stations` list (default empty). It is the last row, after the genres, and it is present only when the viewer has a station.
 Without `radio=1`, the answer is exactly today's, because an installed client would draw an unknown row as an empty
 heading. See [`radio-plays-beside-the-live-channels-and-on-music-home.md`](../ravilo/requirements/radio-plays-beside-the-live-channels-and-on-music-home.md)
 FR-2 and FR-9.
