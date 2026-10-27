@@ -324,10 +324,8 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
             if (p.allowedTags.isNotEmpty()) add("allowed tags " + p.allowedTags.joinToString(", "))
             p.maxRating?.let { add("max rating $it") }
             // Phase 275 (FR-275-7) — so the admin can see why a phone shows no music switch.
-            when (p.music) {
-                "yes" -> add("Music: yes")
-                "no_access" -> add("Music: no library access")
-            }
+            // DEB-2518 FR-2 — tag-filtered accounts read "Music: no", not "Music: no library access".
+            musicAccessLabel(p.music, p.allowedTags)?.let { add(it) }
         }
         // Phase 258 — the line reads the LIVE policy, so it must say when it is not the policy a device
         // enforces (FR-258-6: one clause, no per-device detail), and must not claim "All libraries" when
