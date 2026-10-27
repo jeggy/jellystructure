@@ -233,7 +233,24 @@ data class TmdbTvDetails(
     val networks: List<TmdbNetwork> = emptyList(),
     @SerialName("origin_country") val originCountry: List<String> = emptyList(),   // R325
     @SerialName("created_by") val createdBy: List<TmdbCreator> = emptyList(),       // R325
+    // DEB-2476 (FR-4.2) — Auto-fetch's numbering check reads each season's episode list.
+    val seasons: List<TmdbSeasonRef> = emptyList(),
 )
+
+@Serializable
+data class TmdbSeasonRef(@SerialName("season_number") val seasonNumber: Int = 0)
+
+@Serializable
+data class TmdbSeasonEpisode(
+    val id: Int = 0,
+    val name: String = "",
+    @SerialName("episode_number") val episodeNumber: Int = 0,
+    @SerialName("season_number") val seasonNumber: Int = 0,
+    @SerialName("air_date") val airDate: String? = null,
+)
+
+@Serializable
+data class TmdbSeasonDetails(val episodes: List<TmdbSeasonEpisode> = emptyList())
 
 @Serializable
 data class TmdbCastMember(
@@ -1071,6 +1088,19 @@ class TmdbClient(
         }
         if (result.isFailure) Logger.warn("TMDB company search failed for '$query': ${result.exceptionOrNull()?.message}")
         return result.getOrElse { emptyList() }
+    }
+
+    /** DEB-2476 (FR-4.2) — one season's episodes (number, name, air date), or null when TMDB has no such season. */
+    suspend fun getSeasonDetails(seriesId: Int, season: Int): TmdbSeasonDetails? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val result = runCatching {
+            val response = httpGet("$baseUrl/tv/$seriesId/season/$season") { parameter("api_key", key) }
+            if (response.status.value == 404) return null
+            response.body<TmdbSeasonDetails>()
+        }
+        if (result.isFailure) Logger.warn("TMDB season details failed for series=$seriesId s$season: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 
     suspend fun getEpisodeDetails(seriesId: Int, season: Int, episode: Int, language: String? = null): TmdbEpisodeDetails? {

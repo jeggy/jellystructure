@@ -269,6 +269,9 @@ fun Route.configureConfigRoutes(
         // a key set, quietly took the lane away from viewers. DEB-1500 (FR-3): the lane's switch is POST /api/support/enabled
         // on the AI page's Support tab, and this line is why a Settings save in between can never flip it.
         config = config.copy(support = stored.support)
+        // DEB-2476 (FR-13) — `[autofetch]` is config-file-only: the frontend model has no `autofetch`, so without this line every
+        // Settings save wrote AutofetchConfig()'s `enabled = false` over the owner's switch and stopped every fetcher, silently.
+        config = config.copy(autofetch = stored.autofetch)
         // Phase 321 (FR-321-1/4/8) — the Support card on the AI tab carries the job's four fields; the three bounds
         // (`max_input_chars`, `requests_per_viewer_per_day`, `turns_per_ticket`) are config-file-only, so a save keeps them.
         config = config.copy(ai = config.ai.copy(support = config.ai.support.copy(

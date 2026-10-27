@@ -10,6 +10,8 @@ CREATE TABLE autofetch_fetcher (
     series_path TEXT NOT NULL,
     recipe_json TEXT NOT NULL,
     proven INTEGER NOT NULL DEFAULT 0,
+    series_description TEXT,
+    series_image TEXT,
     retention TEXT NOT NULL,
     schedule TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -81,8 +83,8 @@ fetcherById:
 SELECT * FROM autofetch_fetcher WHERE id = :id;
 
 fetcherInsert:
-INSERT INTO autofetch_fetcher(id, name, page_url, site, tmdb_id, page_only, library_path, series_path, recipe_json, proven, retention, schedule, enabled, created_at)
-VALUES (:id, :name, :page_url, :site, :tmdb_id, :page_only, :library_path, :series_path, :recipe_json, :proven, :retention, :schedule, :enabled, :created_at);
+INSERT INTO autofetch_fetcher(id, name, page_url, site, tmdb_id, page_only, library_path, series_path, recipe_json, proven, series_description, series_image, retention, schedule, enabled, created_at)
+VALUES (:id, :name, :page_url, :site, :tmdb_id, :page_only, :library_path, :series_path, :recipe_json, :proven, :series_description, :series_image, :retention, :schedule, :enabled, :created_at);
 
 fetcherUpdateSettings:
 UPDATE autofetch_fetcher SET retention = :retention, schedule = :schedule, enabled = :enabled WHERE id = :id;

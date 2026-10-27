@@ -49,6 +49,8 @@ data class AppConfig(
     @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
     // Phase 270 — the AI tab. Off by default; off means no request leaves the server.
     val ai: AiConfig = AiConfig(),
+    // DEB-2476 (DEB-2474, FR-13) — Auto-fetch. Config-file-only; a Settings save keeps it (ConfigRoutes).
+    val autofetch: AutofetchConfig = AutofetchConfig(),
     // Phase 273 — what jellystructure does about a subtitle that does not fit its video (Bazarr card).
     @SerialName("subtitle_check") val subtitleCheck: SubtitleCheckConfig = SubtitleCheckConfig(),
     // Phase 276 (FR-276-9) — the music library's provider. Keys for AcoustID/fanart.tv live in [apiKeys].
@@ -149,6 +151,16 @@ data class AudiobooksConfig(
     @SerialName("itunes_store") val itunesStore: String = "dk",
     @SerialName("audnexus_region") val audnexusRegion: String = "uk",
     @SerialName("write_tags") val writeTags: Boolean = false,
+)
+
+/**
+ * DEB-2476 (DEB-2474, FR-13) — `[autofetch]`. Off by default: off means no fetcher runs and no investigation starts. The pacing
+ * numbers of FR-2.3 are constants in code, not settings: a household that wants to fetch faster than a site allows is not a
+ * case to support. Fetchers, recipes, sites' state and the queue live in the database.
+ */
+@Serializable
+data class AutofetchConfig(
+    val enabled: Boolean = false,
 )
 
 /** Phase 277 (FR-277-8, H6's lean) — `fetch_lyrics`: LRCLIB lyrics as `.lrc` sidecars, on by default. */

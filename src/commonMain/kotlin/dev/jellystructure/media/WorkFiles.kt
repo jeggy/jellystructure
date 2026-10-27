@@ -29,6 +29,8 @@ object WorkFiles {
         AV_SHIFT("avshift_"), AV_TAGS("avtags_", "xml"),
         // DEB-2051 (FR-7) — the MKV an AVI is copied into; named after the file it will become (`<base>.mkv`).
         CONVERT("convert_"),
+        // DEB-2476 (FR-6.6) — Auto-fetch's download, named after the episode it will become (`<base>.mkv`).
+        FETCH("fetch_"),
     }
 
     /** The library file's directory. */

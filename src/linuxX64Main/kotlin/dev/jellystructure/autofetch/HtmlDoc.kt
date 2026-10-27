@@ -183,7 +183,8 @@ object Html {
 
     private val NAMED = mapOf(
         "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ",
-        "ndash" to "–", "mdash" to "—", "hellip" to "…", "laquo" to "«", "raquo" to "»",
+        "ndash" to "–", "mdash" to "—", "hellip" to "…", "laquo" to "«", "raquo" to "»", "middot" to "·", "bull" to "•",
+        "lsquo" to "‘", "rsquo" to "’", "ldquo" to "“", "rdquo" to "”", "copy" to "©", "reg" to "®", "eth" to "ð", "ETH" to "Ð",
     )
 
     /** Named (the common few), decimal and hex character references; anything else is left as written. */

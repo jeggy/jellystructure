@@ -86,4 +86,12 @@ class ScannerFilenameParsingTest {
         assertEquals(null, season)
         assertEquals(emptyList(), episodes)
     }
+
+    @Test
+    fun `a date numbered episode reads as season 2026 episode 300 and no range`() {
+        // DEB-2476 (FR-4.5, Acceptance 10) — the ISO date straight after the code, then a name that starts with E.
+        val (season, episodes) = parseSeasonEpisodes("/mnt/series/Dagbók/Season 2026/Dagbók - S2026E300 - 2026-10-27 - E3 Dagbók · 27. oktober.mkv")
+        assertEquals(2026, season)
+        assertEquals(listOf(300), episodes)
+    }
 }

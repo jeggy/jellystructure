@@ -30,6 +30,7 @@ import dev.jellystructure.server.routes.musicTvRoutes
 import dev.jellystructure.media.visibleTo
 import dev.jellystructure.server.routes.aiPageRoutes
 import dev.jellystructure.server.routes.aiRoutes
+import dev.jellystructure.server.routes.autofetchRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.bazarrRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
@@ -223,6 +224,8 @@ fun startServer(
     supportService: dev.jellystructure.support.SupportService? = null,
     // DEB-1664 (FR-9) — when each processing feature last ran.
     processingRuns: dev.jellystructure.media.ProcessingRuns? = null,
+    // DEB-2476 (DEB-2474, FR-12) — Auto-fetch's engine and routes; null in contexts that build none.
+    autofetch: dev.jellystructure.autofetch.AutofetchRuntime? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -663,6 +666,7 @@ fun startServer(
                 activityRoutes(activityLog)
                 aiRoutes(configStore)   // Phase 270
                 aiPageRoutes({ configStore.current }, { suggestionService?.available() == true })   // DEB-1253 (FR-2)
+                autofetchRoutes(configStore, autofetch)   // DEB-2476 (FR-12)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
                 dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,

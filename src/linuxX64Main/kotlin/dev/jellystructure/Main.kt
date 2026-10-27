@@ -109,6 +109,8 @@ fun main() = runBlocking {
     dev.jellystructure.ops.reportFdRestartRecoveryIfAny(crashMarkerDir, configStore)
 
     val db = createDatabase(dbFile)
+    // DEB-2476 — Auto-fetch's tables; the scan reads its page-only mark and its episodes' own words.
+    val autofetchStore = dev.jellystructure.autofetch.AutofetchStore(db)
     val sessionService = SessionService(db)
     val jellyfinClient = JellyfinClient()
     val tmdbClient = TmdbClient(configStore, tmdbBaseUrl)
@@ -137,7 +139,7 @@ fun main() = runBlocking {
     activityLog.load()
     Logger.activityLog = activityLog
     dev.jellystructure.ops.WebhookStatus.init(dataDir)   // Phase 221 (FR-221-5) — small persisted record, never config.toml
-    val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore, store = mediaStore)
+    val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore, store = mediaStore, autofetch = dev.jellystructure.autofetch.StoreScanHooks(autofetchStore))
     val artworkDownloader = ArtworkDownloader(tmdbClient, dev.jellystructure.media.Screengrabber())
     // Phase 150 (FR-SEG1-4) — on-disk Chromaprint fingerprint cache, keyed like RaviloArtworkService's
     // own per-episode still cache; never embedded in the MediaItem JSON blob (Phase 78 blob-bloat).
@@ -387,6 +389,19 @@ fun main() = runBlocking {
     val stepRuns = dev.jellystructure.media.StepRunStore(db)
     // DEB-1664 (FR-9) — when each processing feature last ran.
     val processingRuns = dev.jellystructure.media.ProcessingRuns(db)
+    // DEB-2476 (DEB-2474) — Auto-fetch: the engine, the lane per site, and the schedule tick (off unless `[autofetch] enabled`).
+    val autofetchWorld = dev.jellystructure.autofetch.ProductionWorld(
+        configStore, db, tmdbClient, arrClient, jellyfinClient, mediaStore, mediaHistory, activityLog,
+        waitForViewers = { dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive()) },
+        playbackActive = { dev.jellystructure.tv.isPlaybackActive() },
+    )
+    val autofetchTools = dev.jellystructure.autofetch.ProductionMediaTools()
+    val autofetchLanes = dev.jellystructure.autofetch.SiteLanes(autofetchStore, dev.jellystructure.autofetch.KtorTransport)
+    val autofetchEngine = dev.jellystructure.autofetch.AutofetchEngine(autofetchStore, autofetchLanes, autofetchTools, autofetchWorld)
+    @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+    val autofetchService = dev.jellystructure.autofetch.AutofetchService(autofetchStore, autofetchEngine, autofetchLanes, autofetchTools, autofetchWorld) { kotlin.uuid.Uuid.random().toString() }
+    val autofetchRuntime = dev.jellystructure.autofetch.AutofetchRuntime(autofetchStore, autofetchEngine, autofetchService, autofetchLanes, autofetchWorld, rootScope)
+    autofetchRuntime.startTick()
     dev.jellystructure.media.TrackCoverageFlags.service = trackCoverage
     // Phase 273 — does each sidecar subtitle belong to its video; its references; the one rule for what viewers see.
     val subtitleReferences = dev.jellystructure.subtitles.SubtitleReferences(db, jellyfinClient, configStore)
@@ -793,6 +808,7 @@ fun main() = runBlocking {
         sessionPublisher = sessionPublisher,
         supportService = supportService,
         processingRuns = processingRuns,
+        autofetch = autofetchRuntime,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

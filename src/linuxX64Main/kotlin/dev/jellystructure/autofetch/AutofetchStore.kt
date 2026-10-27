@@ -20,6 +20,9 @@ data class Fetcher(
     val seriesPath: String,
     val recipeJson: String,
     val proven: Boolean,
+    /** FR-15.3 — the programme's own description and image address, read from the page at save (page-only only). */
+    val seriesDescription: String?,
+    val seriesImage: String?,
     val retention: RetentionSpec,
     val schedule: String,
     val enabled: Boolean,
@@ -70,7 +73,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
     fun fetcher(id: String): Fetcher? = q.fetcherById(id).executeAsOneOrNull()?.let { map(it) }
 
     fun insert(f: Fetcher) = q.fetcherInsert(f.id, f.name, f.pageUrl, f.site, f.tmdbId?.toLong(), if (f.pageOnly) 1 else 0, f.libraryPath, f.seriesPath,
-        f.recipeJson, if (f.proven) 1 else 0, retentionJson.encodeToString(RetentionSpec.serializer(), f.retention), f.schedule, if (f.enabled) 1 else 0, f.createdAt)
+        f.recipeJson, if (f.proven) 1 else 0, f.seriesDescription, f.seriesImage, retentionJson.encodeToString(RetentionSpec.serializer(), f.retention), f.schedule, if (f.enabled) 1 else 0, f.createdAt)
 
     fun updateSettings(id: String, retention: RetentionSpec, schedule: String, enabled: Boolean) =
         q.fetcherUpdateSettings(retentionJson.encodeToString(RetentionSpec.serializer(), retention), schedule, if (enabled) 1 else 0, id)
@@ -86,7 +89,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
 
     private fun map(r: dev.jellystructure.db.Autofetch_fetcher) = Fetcher(
         id = r.id, name = r.name, pageUrl = r.page_url, site = r.site, tmdbId = r.tmdb_id?.toInt(), pageOnly = r.page_only != 0L,
-        libraryPath = r.library_path, seriesPath = r.series_path, recipeJson = r.recipe_json, proven = r.proven != 0L,
+        libraryPath = r.library_path, seriesPath = r.series_path, recipeJson = r.recipe_json, proven = r.proven != 0L, seriesDescription = r.series_description, seriesImage = r.series_image,
         retention = runCatching { json.decodeFromString(RetentionSpec.serializer(), r.retention) }.getOrDefault(RetentionSpec()),
         schedule = r.schedule, enabled = r.enabled != 0L, state = r.state, stateReason = r.state_reason, createdAt = r.created_at,
         lastRunAt = r.last_run_at, lastListOkAt = r.last_list_ok_at,

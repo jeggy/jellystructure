@@ -181,6 +181,8 @@ class Scanner(
     // ~0). Nullable + defaulted so any test construction that doesn't care about this optimization
     // doesn't need a MediaStore just to compile; a null store simply never skips (today's behavior).
     private val store: MediaStore? = null,
+    // DEB-2476 (FR-15.5, FR-8.2) — Auto-fetch's page-only mark and its episodes' own words. Null in a test that does not care.
+    private val autofetch: dev.jellystructure.autofetch.AutofetchScanHooks? = null,
 ) {
     // Phase 183 (FR-183-3) — bounds concurrent per-episode dispatch (ffprobe + TMDB) across EVERY
     // series this Scanner processes, not per-series. Without this, one worker scanning a single large
@@ -586,8 +588,12 @@ class Scanner(
 
         // Resolve TMDB series ID once upfront so it can be reused for both
         // per-episode detail fetching and the series-level metadata fetch below.
-        val seriesTmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
-            ?: tmdb.searchTv(title, searchYear)?.id
+        // DEB-2476 (FR-15.5) — a series a page-only fetcher feeds is never searched on TMDB, and never takes an id from Jellyfin's
+        // provider ids: a short programme name can match a stranger's series, and that match would overwrite the page's words.
+        val pageOnlySeries = autofetch?.isPageOnly(localPath) == true
+        val pageSeries = if (pageOnlySeries) autofetch?.seriesText(localPath) else null
+        val seriesTmdbId = if (pageOnlySeries) null else (jItem.providerIds?.tmdb?.toIntOrNull()
+            ?: tmdb.searchTv(title, searchYear)?.id)
 
         // R82: Fetch per-episode static metadata (id, season name) from Jellyfin at scan time so
         // DetailService no longer needs a live Jellyfin call just to map (season, ep) → Jellyfin id.
@@ -719,6 +725,8 @@ class Scanner(
                         val jfEp = (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null)
                             ?: jfPathMatch
 
+                        // DEB-2476 (FR-8.2, FR-15.4) — the page's own words for an episode the fetcher placed, verbatim or empty.
+                        val pageText = autofetch?.episodeText(file)
                         Episode(
                             filename = file.substringAfterLast('/'),
                             path = file,
@@ -733,15 +741,15 @@ class Scanner(
                             // genuinely returned nothing) instead of overwriting good data with null — this
                             // was a real latent data-loss bug independent of the skip itself: a transient TMDB
                             // failure/rate-limit used to blank these fields outright on the very next scan.
-                            title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
-                            overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
+                            title = if (pageOnlySeries) pageText?.title else (epDetails?.name?.takeIf { it.isNotBlank() } ?: pageText?.title ?: existingEp?.title),
+                            overview = if (pageOnlySeries) pageText?.overview else (epDetails?.overview?.takeIf { it.isNotBlank() } ?: pageText?.overview ?: existingEp?.overview),
                             stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
                             tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
                             guestStars = epGuests,
                             crew = epCrew,
                             jellyfinId = jfEp?.id,
-                            runtime = epDetails?.runtime ?: existingEp?.runtime,
-                            airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
+                            runtime = epDetails?.runtime ?: existingEp?.runtime ?: pageText?.runtimeMinutes,
+                            airDate = if (pageOnlySeries) pageText?.airDate else (epDetails?.airDate?.takeIf { it.isNotBlank() } ?: pageText?.airDate ?: existingEp?.airDate),  // R148
                             jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
                             partIndex = partIdx,
                             partCount = partCount,
@@ -826,7 +834,7 @@ class Scanner(
                 resolvedLanguage = majorityLang.takeIf { firstTracks.any { t -> t.kind == TrackKind.AUDIO } },
                 posterPath = mixDetails?.posterPath,
                 backdropPath = mixDetails?.backdropPath,
-                overview = mixDetails?.overview?.takeIf { it.isNotBlank() },
+                overview = mixDetails?.overview?.takeIf { it.isNotBlank() } ?: pageSeries?.description?.takeIf { it.isNotBlank() },
                 genres = mixDetails?.genres?.map { it.name } ?: emptyList(),
                 tmdbGenres = mixDetails?.genres?.map { it.name } ?: emptyList(),  // Phase 94: baseline (fresh scan)
                 tmdbGenreIds = mixDetails?.genres?.map { it.id } ?: emptyList(),  // Phase 271 (FR-271-1)
@@ -893,7 +901,7 @@ class Scanner(
             resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
             posterPath = details?.posterPath,
             backdropPath = details?.backdropPath,
-            overview = details?.overview?.takeIf { it.isNotBlank() },
+            overview = details?.overview?.takeIf { it.isNotBlank() } ?: pageSeries?.description?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
             tmdbGenres = details?.genres?.map { it.name } ?: emptyList(),  // Phase 94: baseline = TMDB list (fresh scan, no user edits yet)
             tmdbGenreIds = details?.genres?.map { it.id } ?: emptyList(),  // Phase 271 (FR-271-1)
@@ -1104,6 +1112,9 @@ class Scanner(
                         val (epGuests, epCrew) = if (!hasGoodCredits && seriesTmdbId != null && seasonNum != null && epNum != null) {
                             episodeFanoutGate.withPermit { fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum) }
                         } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
+                        // DEB-2476 (FR-8.2, FR-15.4) — the page's own words for an episode a fetcher placed.
+                        val pageText = autofetch?.episodeText(file)
+                        val pageOnlySync = autofetch?.isPageOnly(item.path) == true
                         Episode(
                             filename = file.substringAfterLast('/'),
                             path = file,
@@ -1114,16 +1125,16 @@ class Scanner(
                             issueCount = epIssueCount,
                             // Phase 128: honest per-episode display language — see the scanMovie comment above.
                             resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
-                            title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
-                            overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
+                            title = if (pageOnlySync) pageText?.title else (epDetails?.name?.takeIf { it.isNotBlank() } ?: pageText?.title ?: existingEp?.title),
+                            overview = if (pageOnlySync) pageText?.overview else (epDetails?.overview?.takeIf { it.isNotBlank() } ?: pageText?.overview ?: existingEp?.overview),
                             stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
                             tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
                             guestStars = epGuests,
                             crew = epCrew,
                             jellyfinId = existingEp?.jellyfinId
                                 ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
-                            runtime = epDetails?.runtime ?: existingEp?.runtime,
-                            airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
+                            runtime = epDetails?.runtime ?: existingEp?.runtime ?: pageText?.runtimeMinutes,
+                            airDate = if (pageOnlySync) pageText?.airDate else (epDetails?.airDate?.takeIf { it.isNotBlank() } ?: pageText?.airDate ?: existingEp?.airDate),  // R148
                             jellyfinCreatedAt = existingEp?.jellyfinCreatedAt
                                 ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.dateCreated?.let { isoToEpochSeconds(it) } else null),  // Phase 108
                             partIndex = partIdx,
@@ -1362,6 +1373,8 @@ class Scanner(
                 ).withSignals(signals)
             }
             MediaKind.TV_SHOW -> {
+                // DEB-2476 (FR-15.5) — a page-only series is never searched on TMDB, here or in the scan.
+                if (autofetch?.isPageOnly(item.path) == true) return null
                 val tmdbId = item.tmdbId ?: tmdb.searchTv(item.title, item.year)?.id
                 // When the user has an explicit language override, accept a title-only TMDB result
                 // (non-blank name, blank overview) rather than falling through to English. Minority-

@@ -1,6 +1,8 @@
 package dev.jellystructure.autofetch
 
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.TimeSource
@@ -168,8 +170,10 @@ class SiteLane(
      * One page, listing or API request, in the lane. [listing] marks the recipe's listing (a `robots.txt` that newly forbids
      * it stops the site, FR-2.5); [expect] says what a good answer looks like.
      */
-    suspend fun page(url: String, expect: Expect, listing: Boolean = false): LaneOutcome {
+    suspend fun page(url: String, expect: Expect, listing: Boolean = false, player: Boolean = false): LaneOutcome {
         preflight()?.let { return it }
+        // A manifest is a player's traffic and is not checked against robots.txt (FR-2.2), though it is still paced.
+        if (player) return paced(Robots.ALLOW_ALL) { requestAndJudge(url, expect) }
         val path = Urls.path(url)
         val robots = robots(Urls.origin(url)) ?: return LaneOutcome.Failed("robots.txt could not be read, so nothing was requested")
         if (!robots.allows(path)) {
@@ -226,7 +230,9 @@ class SiteLane(
     }
 
     private suspend fun requestAndJudge(url: String, expect: Expect): LaneOutcome {
-        val reply = try { transport.get(url) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) {
+        val reply = try { transport.get(url) } catch (e: Throwable) {
+            // Phase 310 — only the caller's own cancellation ends the request; a foreign one is a failed call like any other.
+            if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e
             return LaneOutcome.Failed("the request failed: ${e.message ?: e::class.simpleName}")
         }
         return judge(reply, expect)
@@ -281,6 +287,14 @@ class SiteLane(
         }
         if (looksHtml && Regex("""(?i)(just a moment|attention required|cf-chl|challenge-platform|captcha)""").containsMatchIn(body.take(4000))) return true
         return false
+    }
+
+    /** A paced request that is not a text page (the programme's image): the same stop, back-off and `robots.txt` rules, the same 10 s. Null when it may not be made. */
+    suspend fun <T> pacedRaw(url: String, block: suspend () -> T): T? {
+        if (preflight() != null) return null
+        val robots = robots(Urls.origin(url)) ?: return null
+        if (!robots.allows(Urls.path(url))) return null
+        return paced(robots, block)
     }
 
     /** FR-2.3: one download at a time per site, 60 s between two episodes. */

@@ -18,6 +18,8 @@ data class ListedItem(
     val episode: String? = null,
     val duration: String? = null,
     val image: String? = null,
+    /** The manifest URL when the recipe reads it from the listing (`media.manifest_field`). */
+    val manifest: String? = null,
     /** 0-based position in the listing, across pages. */
     val order: Int = 0,
 )
@@ -27,7 +29,7 @@ data class ListingPage(val items: List<ListedItem>, val nextUrl: String? = null)
 
 object ListingReader {
     /** Reads one page of an `html` listing. Links, images and the next-page reference are resolved against [pageUrl]. */
-    fun readHtml(list: ListSpec, body: String, pageUrl: String): ListingPage {
+    fun readHtml(list: ListSpec, body: String, pageUrl: String, manifestField: Field? = null): ListingPage {
         val doc = Html.parse(body)
         val nodes = doc.select(list.itemSelector)
         val items = nodes.mapIndexed { i, n ->
@@ -35,7 +37,8 @@ object ListingReader {
             ListedItem(
                 title = f("title"), link = f("link")?.let { Urls.resolve(pageUrl, it) }, published = f("published"),
                 description = f("description"), id = f("id"), season = f("season"), episode = f("episode"),
-                duration = f("duration"), image = f("image")?.let { Urls.resolve(pageUrl, it) }, order = i,
+                duration = f("duration"), image = f("image")?.let { Urls.resolve(pageUrl, it) },
+                manifest = manifestField?.let { htmlField(n, it) }?.let { Urls.resolve(pageUrl, it) }, order = i,
             )
         }
         val next = list.next?.let { nf -> htmlField(doc, nf)?.let { Urls.resolve(pageUrl, it) } }
@@ -43,7 +46,7 @@ object ListingReader {
     }
 
     /** Reads one page of a `json` listing, or null when the body is not JSON (the caller treats an HTML answer as a challenge, FR-2.5). */
-    fun readJson(list: ListSpec, body: String, pageUrl: String): ListingPage? {
+    fun readJson(list: ListSpec, body: String, pageUrl: String, manifestField: Field? = null): ListingPage? {
         val root = runCatching { Json.parseToJsonElement(body) }.getOrNull() ?: return null
         val selected = JsonPaths.select(root, list.itemsPath)
         // `data.items` names the array; `data.items[*]` names its elements one by one. Both read the same list.
@@ -53,7 +56,8 @@ object ListingReader {
             ListedItem(
                 title = f("title"), link = f("link")?.let { Urls.resolve(pageUrl, it) ?: it }, published = f("published"),
                 description = f("description"), id = f("id"), season = f("season"), episode = f("episode"),
-                duration = f("duration"), image = f("image")?.let { Urls.resolve(pageUrl, it) ?: it }, order = i,
+                duration = f("duration"), image = f("image")?.let { Urls.resolve(pageUrl, it) ?: it },
+                manifest = manifestField?.takeIf { it.path.isNotBlank() }?.let { JsonPaths.string(el, it.path) }?.let { Urls.resolve(pageUrl, it) ?: it }, order = i,
             )
         }
         val next = list.next?.takeIf { it.path.isNotBlank() }?.let { JsonPaths.string(root, it.path) }?.let { Urls.resolve(pageUrl, it) }

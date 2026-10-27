@@ -23,7 +23,7 @@ class AutofetchStoreTest {
 
     private fun fetcher(id: String = "f1") = Fetcher(
         id, "Royndin", "https://varpid.example.fo/sendingar/royndin", "varpid.example.fo", 9000001, false, "/lib/tv", "/lib/tv/Royndin",
-        """{"x":1}""", true, RetentionSpec("newest", 8, true), "daily@04:00", true, "ok", "", 100, null, null,
+        """{"x":1}""", true, null, null, RetentionSpec("newest", 8, true), "daily@04:00", true, "ok", "", 100, null, null,
     )
 
     @Test
