@@ -6,8 +6,11 @@
    HAND-AUTHORED. Round 2 (2026-10-14, `design/incoming/2026-10-14-admin-ai/`)
    drew the page; round `auto-fetch-states` revision 2
    (`design/incoming/2026-10-25-auto-fetch-states/auto-fetch-states.css`,
-   9a315dbc) drew the states it did not. Every rule here was written by hand
-   against those two rounds; this file is NOT a copy of either and must never be
+   9a315dbc) drew the states it did not; round `auto-fetch-retention`
+   (`design/incoming/2026-10-27-auto-fetch-retention/`, 04917614) drew the
+   page-only fetcher and the Keep (retention) control, and corrected three rules
+   this file had already shipped. Every rule here was written by hand against
+   those three rounds; this file is NOT a copy of any of them and must never be
    overwritten with one. Everything it needs beyond this file — tokens, .card,
    .box, .btn, .badge, .chip, .seg, .toggle, .select, .input, .field, .hint,
    .dot, .row/.fill/.spacer/.tiny/.muted, .page-sub — is the shipped system in
@@ -43,10 +46,22 @@
        round, which is where a rejected option belongs.
      - `.badge.flat`. Two page stylesheets need it now, so it went into wf.css
        as the shared neutral badge it is, rather than into a third page file.
+     - `.af-strings`, `.af-strings-col` and `.af-lang`, from round
+       `auto-fetch-retention`. They are that round's three-up for the
+       longest-string check and its language caption — a canvas, not product.
    ============================================================================ */
 
-.afx .af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;gap:12px;align-items:end}
+/* The three-column form, TOP-aligned. It was `align-items: end` until round
+   `auto-fetch-retention`'s first render, and bottom-alignment assumes every hint is one line: the
+   page-only hint is three, and against it the TMDB id INPUT lifted clear of the Page URL input
+   beside it — two inputs on one row, visibly out of line (that round's finding 2). Top-aligned the
+   two inputs match, and the button clears the label row by the label's own height plus the gap. */
+.afx .af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;gap:12px;align-items:start}
 .afx .af-form .field{margin:0}
+.afx .af-form > .btn{margin-top:23px}
+/* `This programme is not on TMDB` belongs under the field it is about, so it starts at column two
+   and runs to the end — in the 220 px column alone the sentence wrapped to two lines (FR-10.6). */
+.afx .af-form .af-opt{grid-column:2 / -1;margin-top:-2px}
 .afx .af-echo{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft);margin-top:10px;min-height:22px}
 .afx .af-echo b{color:var(--ink)}
 .afx .af-echo .ph{width:34px;height:22px;border-radius:4px;background:var(--fill-3);flex:none}
@@ -124,8 +139,16 @@
 .afx .af-run .dot.wait{background:var(--ink-soft);box-shadow:none}
 .afx .af-h{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;margin:10px 0 6px}
 .afx .af-h:first-child{margin-top:0}
-.afx .af-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
+/* The open row's config row, TOP-aligned for the same reason as `.af-form` (round
+   `auto-fetch-retention`, finding 4). It was `align-items: flex-end`, which works only while every
+   child is one field tall; Keep is three lines taller than a field, and bottom-aligning against it
+   dropped Name and Check to the floor of the row with nothing above them. Top-aligned the three
+   fields read as three fields, and `.af-cfg-go` takes the buttons onto a line of their own — which
+   is also what keeps them off the top edge now that nothing bottom-aligns them to the inputs. */
+.afx .af-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:8px}
 .afx .af-cfg .field{margin:0}
+.afx .af-cfg .af-keepf{width:262px}
+.afx .af-cfg-go{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 100%}
 .afx .af-empty{padding:40px 20px;text-align:center;color:var(--ink-soft);font-size:.9rem}
 .afx .af-empty b{display:block;color:var(--ink);font-family:'Space Grotesk',sans-serif;font-size:1.05rem;margin-bottom:4px}
 .afx .af-gate{max-width:560px;margin:60px auto;text-align:center}
@@ -257,6 +280,69 @@
 .afx .af-mapfoot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .afx .af-mapfoot .kept{font-size:.84rem;color:var(--ink)}
 .afx .af-mapfoot .kept b{font-weight:600}
+/* A mapping table with NO tick column. Only `mapped` numbering has accept ticks; a `source`-numbered
+   review table and a page-only one have none, and the ≤640 tier below gives every `.af-map tr` a
+   30 px left padding to hold the tick in the gutter. Without this modifier a tickless table indents
+   every row at phone width against an empty gutter — which the Royndin review state in ai.html did,
+   shipped, until round `auto-fetch-retention`'s 412 picture showed it (that round's finding 3). Put
+   on the table, not on the tier, because what is true is that this table has no tick column. */
+.afx .af-map.no-tick tr{padding-left:0}
+
+/* ================================================= Keep: the retention control (FR-16.1, FR-16.7)
+   Round `auto-fetch-retention` (2026-10-27, `design/incoming/2026-10-27-auto-fetch-retention/`),
+   hand-written in here rather than copied. *All episodes*, or *The newest N*.
+
+   The number lives INSIDE the option it belongs to, so the control reads the way the spec words it
+   and so choosing the option does not reflow a 270 px box. With *All episodes* chosen the number is
+   still drawn, dimmed, at the same width: it is not a control that cannot act
+   (processing-runs-as-nine-features.md FR-11) — it is the other option's own value, shown so the
+   default is visible before it is chosen, and nothing moves when it is. */
+.afx .af-keep{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.afx .af-keep .seg{flex-wrap:wrap}
+.afx .af-keep .seg span{padding:6px 10px;display:inline-flex;align-items:center;gap:7px}
+.afx .af-num{width:46px;padding:2px 6px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:600;color:var(--ink);background:var(--bg);border:1px solid var(--line-2);border-radius:6px}
+/* the unchosen option's value: same width, no box, no focus target */
+.afx .af-keep .seg span:not(.on) .af-num{background:transparent;border-color:transparent;color:inherit;opacity:.6;pointer-events:none}
+/* A tick with a sentence beside it, over the shipped `.af-tick` glyph. wf.css has a `.toggle` for a
+   setting that acts at once and no tick-with-a-label for one that is saved with a form.
+   `text-transform`/`letter-spacing`/`font-weight` are not tidy-up: wf.css sets every `.field label`
+   in small uppercase bold, and the round's first render shouted ALSO DELETE AN EPISODE ONCE IT
+   LEAVES THE PAGE in three places. A tick's label is a sentence, not a field name. */
+.afx .af-opt{display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:.8rem;line-height:1.45;color:var(--ink);margin:2px 0 0;text-transform:none;letter-spacing:0;font-weight:400}
+.afx .af-opt .af-tick{flex:none;margin-top:1px}
+/* The delete preview. FR-16.7: *no notification, no toast, no confirm dialog — the preview line is
+   the warning.* So it is warn-tinted and it sits where the change was made, under the control. Its
+   count is the server's (FR-12's preview route) and never one the screen worked out. */
+.afx .af-prev{display:flex;align-items:flex-start;gap:9px;margin-top:9px;padding:9px 11px;border-radius:8px;border:1px solid rgba(245,181,66,.45);background:var(--warn-soft);font-size:.82rem;line-height:1.45;color:var(--ink)}
+.afx .af-prev .bi{flex:none;width:18px;height:18px;border-radius:50%;margin-top:1px;background:var(--warn);color:#17191f;font-size:.7rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+/* A refused field (FR-15.1). A blank TMDB id with the tick unticked is refused, and the refusal
+   belongs to the field that caused it rather than to a banner over the card. */
+.afx .input.af-err{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.afx .hint.af-err{color:var(--bad);font-weight:600}
+/* A run's own lines (FR-16.6): one per deletion, one per guard that stopped a deletion. The run's
+   line keeps the summary — the same words FR-11 gives the Activity entry — and the border moves to
+   the group, so a run and its lines read as one record. */
+.afx .af-runx{border-bottom:1px solid var(--line);padding-bottom:6px}
+.afx .af-runx:last-child{border-bottom:0;padding-bottom:0}
+.afx .af-runx .af-run{border-bottom:0}
+.afx .af-sub{margin-left:25px;padding:3px 0 3px 11px;border-left:2px solid var(--line-2);font-size:.76rem;line-height:1.5;color:var(--ink-soft)}
+.afx .af-sub .mono{font-family:'JetBrains Mono',monospace;font-size:.95em;color:var(--ink)}
+.afx .af-sub.add{border-left-color:var(--ok)}
+.afx .af-sub.del{border-left-color:var(--bad)}
+.afx .af-sub.guard{border-left-color:var(--warn);color:var(--ink)}
+/* The list row's retention note (FR-10.6): *Daily · 04:00* then *keeps newest 12*, under the
+   schedule rather than in a column of its own — the fetchers table has its one status slot and
+   gains no sixth column for a setting. */
+.afx .af-tbl .sched .keep{font-size:.72rem;color:var(--ink-soft);margin-top:2px}
+/* The page-only echo (FR-10.6, FR-15.3). A TMDB echo is one line because TMDB answers in one line;
+   a page-only echo carries the page's own name, image and description, so it is two. */
+.afx .af-echo.page{align-items:flex-start}
+.afx .af-echo.page .ph{margin-top:2px}
+.afx .af-echo.page .src{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:3px;line-height:1.5}
+/* The date beside the code in *Becomes* (FR-10.6, FR-4.5): `S2026E300 · 2026-10-27`. The code is the
+   identity and stays mono; the date is what makes the code readable and is set in the body face, so
+   the two are not one undifferentiated string. */
+.afx .af-map .se .d{font-family:'Sora',system-ui,sans-serif;font-size:.76rem;color:var(--ink-soft);margin-left:5px}
 
 /* ================================================= light-theme twins
    --ok / --warn / --bad / --info are not re-tinted per theme; wf.css overrides the text colour at
@@ -282,10 +368,23 @@
 [data-theme="light"] .afx .af-band.hold .bi{color:#fff}
 [data-theme="light"] .afx .af-prop .why{color:#6240cf}
 [data-theme="light"] .afx .af-run .dot.wait{background:#5d6378}
+/* The refusal under a refused field. `.af-prev`'s border and its `.bi` glyph, and `.af-sub`'s three
+   left rules, use a palette colour as a BORDER or a FILL and need no twin; this one is text. */
+[data-theme="light"] .afx .hint.af-err{color:#c23b2d}
 
 /* ================================================= the narrow faces */
 @media (max-width:1080px){.afx .tq-in{grid-template-columns:1fr}}
 @media (max-width:1080px){.afx .af-form{grid-template-columns:1fr}.afx .af-review,.afx .af-det-in{grid-template-columns:1fr}.afx .af-tbl .hide-m{display:none}}
+/* The form is one column below 1080, so column two no longer exists and the button's label-row
+   clearance has no label beside it to clear. Stacked, the button would also sit BETWEEN the refusal
+   and the tick the refusal offers as the alternative — *or tick "not on TMDB"*, with that tick two
+   controls further down past a full-width primary button. The tick belongs with the field it is
+   about, so it takes the line under it and Investigate goes last. Source order stays as the
+   three-column grid needs it; only the stacked face reorders. */
+@media (max-width:1080px){
+  .afx .af-form .af-opt{grid-column:1;margin-top:0;order:1}
+  .afx .af-form > .btn{margin-top:0;order:2}
+}
 
 /* At the house breakpoint the fetchers table becomes a card per fetcher. Round 9's review found
    the alternative at exactly this width: a five-column row holds its columns at phone width and
@@ -360,4 +459,14 @@
      min-width of its own, so it pushed Save and Last runs off the right edge */
   .afx .af-det-in > *{min-width:0}
   .afx .af-script{max-width:100%}
+  /* Keep takes the width it is given rather than a width it chose: at 412 the two options split the
+     seg in half each, which is also what keeps the longest label — the Faroese one — on one line
+     inside its own option. */
+  .afx .af-keep{width:100%}
+  .afx .af-keep .seg{width:100%}
+  .afx .af-keep .seg span{flex:1 1 0;justify-content:center}
+  .afx .af-cfg .af-keepf{width:100%}
+  /* a run's own lines keep their rule but lose the dot column's indent, which does not exist once
+     the card is this narrow */
+  .afx .af-sub{margin-left:0;padding-left:9px}
 }

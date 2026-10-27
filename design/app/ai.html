@@ -101,7 +101,11 @@ main.ws-lost .ai-offl{display:flex}main.ws-lost #ai-suggestions :is([data-dl],[d
           <span class="k">Found</span><span class="v"><b>13 episodes</b> across 2022 · 2025 · 2026 — 10 missing from the library, 3 already there · <b>1 not on TMDB yet</b></span>
           <span class="k">Pattern</span><span class="v">Yearly seasons. The year in the title is the season; “N. partur” or “(N:M)” is the episode.</span>
         </div>
-        <table class="af-map">
+        <!-- `no-tick`: this review has `source` numbering and therefore no accept-tick column, and
+             ai.css's ≤640 tier indents every mapping row by 30 px to hold a tick in the gutter.
+             Without the modifier this table drew that empty indent at 412 (round
+             `auto-fetch-retention`, finding 3). -->
+        <table class="af-map no-tick">
           <thead><tr><th>Title on page</th><th></th><th>Becomes</th><th>Library</th></tr></thead>
           <tbody>
             <tr><td>Royndin 2026 (1:3)</td><td class="arr">→</td><td class="mono">S2026E01</td><td><span class="badge warn">missing</span> <span class="badge" title="TMDB has no S2026E01 yet — it will be queued under Not on TMDB yet after download">not on TMDB</span></td></tr>

@@ -404,8 +404,9 @@ fi
 # ---- ai.css --------------------------------------------------------------------------------------
 # The AI page's Auto-fetch surfaces. Round 2 (`admin-ai`) drew the page; round `auto-fetch-states`
 # revision 2 drew the states it did not, and the promotion of 2026-10-25 (DEB-2484, FR-14.3) turned
-# the mockup file into the production one by hand. Every rule below is hand-authored: eleven of them
-# are fixes found only by opening a render, which no fence can see for itself.
+# the mockup file into the production one by hand; round `auto-fetch-retention` added the page-only
+# fetcher and Keep on 2026-10-27 (DEB-2641). Every rule below is hand-authored, and many of them are
+# fixes found only by opening a render, which no fence can see for itself.
 AICSS="design/app/ai.css"
 check "$AICSS" "Auto-fetch is scoped under .afx, not under the bare .af-/.tq- prefixes" \
   ".afx .af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;"
@@ -489,6 +490,45 @@ check "$AICSS" "the key/value block stacks rather than holding two narrow column
   ".afx .af-kv{grid-template-columns:minmax(0,1fr);gap:0}"
 check "$AICSS" "the read-only recipe cannot widen the page (white-space: pre has no own min-width)" \
   ".afx .af-det-in > *{min-width:0}"
+# Round `auto-fetch-retention`, promoted 2026-10-27 (DEB-2641, FR-10.6 and FR-16). Three of these
+# correct rules this file had already shipped — each was found by opening a render, and the third
+# was a live defect at 412 on the Royndin review state.
+check "$AICSS" "the form TOP-aligns, so a three-line hint cannot lift the TMDB id input out of line" \
+  ".afx .af-form{display:grid;grid-template-columns:minmax(0,1fr) 220px auto;gap:12px;align-items:start}"
+check "$AICSS" "the open row's config row TOP-aligns, so Name and Check stay level beside Keep" \
+  ".afx .af-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:8px}"
+check "$AICSS" "…and the buttons take a line of their own there, since nothing bottom-aligns them now" \
+  ".afx .af-cfg-go{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 100%}"
+check "$AICSS" "a mapping table with no tick column loses the ≤640 accept-tick gutter (.af-map.no-tick)" \
+  ".afx .af-map.no-tick tr{padding-left:0}"
+check "$AICSS" "Keep's number lives inside the option it belongs to (.af-keep .seg span)" \
+  ".afx .af-keep .seg span{padding:6px 10px;display:inline-flex;align-items:center;gap:7px}"
+check "$AICSS" "…and the unchosen option's value is dimmed at the same width, not a live field" \
+  ".afx .af-keep .seg span:not(.on) .af-num{background:transparent;border-color:transparent;color:inherit;opacity:.6;pointer-events:none}"
+check "$AICSS" "a tick's label is a sentence, not wf.css's small-uppercase .field label (.af-opt)" \
+  ".afx .af-opt{display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:.8rem;line-height:1.45;color:var(--ink);margin:2px 0 0;text-transform:none;letter-spacing:0;font-weight:400}"
+check "$AICSS" "the delete preview IS the warning — no dialog, no toast (.af-prev)" \
+  ".afx .af-prev{display:flex;align-items:flex-start;gap:9px;margin-top:9px;"
+check "$AICSS" "a refused TMDB id is refused in the field, not in a banner (.input.af-err)" \
+  ".afx .input.af-err{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}"
+check "$AICSS" "a run and its deletion/guard lines are one record, so the border is the group's" \
+  ".afx .af-runx{border-bottom:1px solid var(--line);padding-bottom:6px}"
+check "$AICSS" "the per-deletion and guard lines under a run (.af-sub)" \
+  ".afx .af-sub{margin-left:25px;padding:3px 0 3px 11px;border-left:2px solid var(--line-2);"
+check "$AICSS" "the list row's retention note sits under the schedule, no sixth column" \
+  ".afx .af-tbl .sched .keep{font-size:.72rem;color:var(--ink-soft);margin-top:2px}"
+check "$AICSS" "a page-only echo is two lines, because the page answers in two (.af-echo.page)" \
+  ".afx .af-echo.page{align-items:flex-start}"
+check "$AICSS" "the date beside the code in Becomes is the body face, not the mono one" \
+  ".afx .af-map .se .d{font-family:'Sora',system-ui,sans-serif;"
+check "$AICSS" "light theme: the field refusal's text" \
+  '[data-theme="light"] .afx .hint.af-err{color:#c23b2d}'
+check "$AICSS" "stacked, the tick keeps the line under its own field and Investigate goes last" \
+  ".afx .af-form .af-opt{grid-column:1;margin-top:0;order:1}"
+check "$AICSS" "at 412 the two Keep options split the seg in half each, so the longest label fits" \
+  ".afx .af-keep .seg span{flex:1 1 0;justify-content:center}"
+check "$AICSS" "…and a run's own lines lose the dot column's indent there" \
+  ".afx .af-sub{margin-left:0;padding-left:9px}"
 # wf.css's share of the same promotion.
 check "$WF" "the settled-neutral badge, needed by two page stylesheets (.badge.flat)" \
   ".badge.flat{ background: var(--fill-3); border-color: var(--line-2); color: var(--ink-soft); }"
