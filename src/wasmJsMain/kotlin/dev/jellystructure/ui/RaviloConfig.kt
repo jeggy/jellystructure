@@ -160,9 +160,6 @@ private fun legacyToQuery(c: ChannelConfig): ConditionGroup {
  *  single filter (mirrors HomeFeedService.matchesChannel's query -> conditions -> typed-filter chain). */
 private fun ChannelConfig.editorQuery(): ConditionGroup = effectiveQuery().let { if (it.isLive()) it else legacyToQuery(this) }
 
-// The jellyfish brand mark (matches design/app/ravilo-config.html).
-private const val RAVILO_MARK = """<svg viewBox="12 20 76 76" aria-hidden="true" style="width:1.12em;height:1.12em;flex:none;filter:drop-shadow(0 0 8px rgba(123,110,240,.5))"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>"""
-
 // Phase 148 — Layout/Requests/Preferences are separate sidebar links to this same page (`?tab=`), so
 // switching between them is a real hash navigation that re-invokes this function. Once loaded once in
 // this session, later calls skip the reload — otherwise every tab click would refetch users/config and
@@ -254,12 +251,12 @@ private fun renderFull(container: Element, scope: CoroutineScope) {
 }
 
 private fun buildLoadingShell() = """
-    <div class="pagebar"><h1>Ravilo TV</h1></div>
+    ${raviloPageBar("Ravilo TV", pagebarAttrs = """ style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px"""")}
     <p class="page-sub" style="color:var(--ink-soft)">Loading…</p>
 """.trimIndent()
 
 private fun buildErrorShell(msg: String) = """
-    <div class="pagebar"><h1>Ravilo TV</h1></div>
+    ${raviloPageBar("Ravilo TV", pagebarAttrs = """ style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px"""")}
     <div class="card" style="padding:24px;color:var(--bad)">$msg</div>
 """.trimIndent()
 
@@ -298,14 +295,7 @@ private fun buildShell(): String {
       .rav-tab-section[data-rtab].tab-show { display:block; }
     </style>
     ${datalistsHtml()}
-    <div class="pagebar" style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px">
-      <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo · $tabLabel</h1>
-      <span class="badge info">app config</span>
-      <span class="spacer"></span>
-      <a href="#/ravilo-users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a>
-      <span class="badge ok" id="rav-synced">saved · synced</span>
-      <button id="rav-save" class="btn primary">Save</button>
-    </div>
+    ${raviloPageBar("Ravilo · $tabLabel", "app config", actions = """<a href="#/ravilo-users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a><span class="badge ok" id="rav-synced">saved · synced</span><button id="rav-save" class="btn primary">Save</button>""")}
     <p class="page-sub">
       Lay out the Ravilo home screen your viewers see on their TVs. Ravilo connects only to
       Jellystructure — browsing, search and this layout are served by us; media streams from Jellyfin.

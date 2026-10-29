@@ -39,13 +39,7 @@ private fun usrAvatarChip(userId: String, username: String, avatarUrl: String?):
 // Settings.kt (Phase 143) — no behavior change, only where it renders.
 fun renderRaviloUsers(container: Element, scope: CoroutineScope) {
     container.innerHTML = """
-        <div class="pagebar">
-          <h1>Users &amp; devices</h1><span class="badge info" style="margin-left:2px">Ravilo · from Jellyfin</span>
-          <span class="spacer"></span>
-          <span id="users-summary" class="tiny muted" style="margin-right:10px"></span>
-          <span id="users-version-chip" class="chip" style="font-size:.72rem;display:none;margin-right:8px" title="This server's own version, and the devices on an older release (a -g… development build is never counted)"></span>
-          <button id="users-refresh-btn" class="btn sm ghost">Refresh</button>
-        </div>
+        ${raviloPageBar("Users &amp; devices", "Ravilo · from Jellyfin", actions = """<span id="users-summary" class="tiny muted" style="margin-right:10px"></span><span id="users-version-chip" class="chip" style="font-size:.72rem;display:none;margin-right:8px" title="This server's own version, and the devices on an older release (a -g… development build is never counted)"></span><button id="users-refresh-btn" class="btn sm ghost">Refresh</button>""")}
         <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. A device's <b>version history</b> is dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
         ${playingNowHtml()}
         <div id="users-list"><span class="muted tiny">Loading…</span></div>

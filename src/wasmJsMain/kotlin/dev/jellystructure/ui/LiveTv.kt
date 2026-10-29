@@ -53,7 +53,7 @@ private fun saveGuideSchedule(scope: CoroutineScope) {
 internal fun radioMarkHtml(): String = """<span class="radiomark" aria-label="Radio" role="img"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.3"/><path d="M15.7 8.3A5.2 5.2 0 0 1 15.7 15.7"/><path d="M18.2 5.8A8.8 8.8 0 0 1 18.2 18.2"/><path d="M8.3 8.3A5.2 5.2 0 0 0 8.3 15.7"/><path d="M5.8 5.8A8.8 8.8 0 0 0 5.8 18.2"/></svg></span>"""
 
 fun renderLiveTv(container: Element, scope: CoroutineScope) {
-    container.innerHTML = """<div class="pagebar"><h1>Live TV</h1></div><p class="page-sub" style="color:var(--ink-soft)">Loading…</p>"""
+    container.innerHTML = """${raviloPageBar("Live TV", pagebarAttrs = """ style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px"""")}<p class="page-sub" style="color:var(--ink-soft)">Loading…</p>"""
     scope.launch {
         ltvOverview = LiveTvApi.sync()  // cheap (one Jellyfin GET) — always re-diff on page open, see LiveTvService.sync
         ltvChannels = LiveTvApi.channels()
@@ -95,15 +95,7 @@ private fun renderLiveTvFull(container: Element, scope: CoroutineScope) {
       .ltv-kv .k { font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft); }
       .ltv-kv .v { font-size:1.15rem;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-top:2px; }
     </style>
-    <div class="pagebar">
-      <h1>Live TV</h1>
-      <span class="spacer"></span>
-      <span class="badge ${if (ov?.reachable == true) "ok" else "bad"}" title="Live TV is served by Jellyfin; jellystructure organizes how it appears in Ravilo.">
-        ${if (ov?.reachable == true) "● connected via Jellyfin" else "● not reachable"}
-      </span>
-      <button id="ltv-refresh" class="btn sm ghost">⟲ Refresh from Jellyfin</button>
-      <span class="chip" style="gap:9px"><span class="tiny muted">Live TV in Ravilo</span><span class="toggle${if (ov?.enabled == true) " on" else ""}" id="ltv-master-toggle"></span></span>
-    </div>
+    ${raviloPageBar("Live TV", actions = """<span class="badge ${if (ov?.reachable == true) "ok" else "bad"}" title="Live TV is served by Jellyfin; jellystructure organizes how it appears in Ravilo.">${if (ov?.reachable == true) "● connected via Jellyfin" else "● not reachable"}</span><button id="ltv-refresh" class="btn sm ghost">⟲ Refresh from Jellyfin</button><span class="chip" style="gap:9px"><span class="tiny muted">Live TV in Ravilo</span><span class="toggle${if (ov?.enabled == true) " on" else ""}" id="ltv-master-toggle"></span></span>""")}
     <p class="page-sub">Ravilo watches Live TV through Jellyfin — <b>tuners and the program guide are configured in Jellyfin</b>. Here you choose <b>which channels appear in Ravilo</b>, set their number, logo &amp; order, and how often the guide refreshes. Per-user access (who sees Live TV, and which channels) lives in the <a href="#/ravilo?tab=layout">Ravilo config</a>.</p>
 
     <div class="row" style="align-items:stretch;gap:16px;margin-top:6px">
