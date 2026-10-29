@@ -73,7 +73,10 @@ or more.
     feed's order.
   - In the Missing row the feed is newest-first, so a stack sits where its most recent episode was.
 - **Filter chips:** the All / Series / Movies chips filter first and stacking runs on what is left. *Movies* shows no
-  stack.
+  stack **in the day rows**.
+- *Clarified 2026-10-29 (DEB-2078, from QA on DEB-2271):* the chips filter the **day rows only**. The *Missing* row
+  has never been filtered by them, before or after this spec, so under *Movies* it can still show an episode stack.
+  This spec does not change that. If the Missing row should follow the chips, that is new work with its own task.
 
 ### FR-3 — The card: direction A, the stacked edge
 A stack is drawn as today's `UpcomingCard`, **at today's footprint**: 220 × 124 dp art on the TV, and the existing
