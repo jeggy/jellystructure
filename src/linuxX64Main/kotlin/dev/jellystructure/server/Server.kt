@@ -729,9 +729,11 @@ fun startServer(
                         )
                     }
                     musicTvRoutes(
-                        dev.jellystructure.music.MusicTvService(mp.store, { mp.media.lyricsFile(it) }, jellyfinClient, configStore) { device ->
-                            mediaStore.allItems().filter { it.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO && it.visibleTo(device) }
-                        },
+                        dev.jellystructure.music.MusicTvService(
+                            mp.store, { mp.media.lyricsFile(it) }, jellyfinClient, configStore,
+                            videos = { device -> mediaStore.allItems().filter { it.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO && it.visibleTo(device) } },
+                            stations = { device -> liveTvService.homeChannels(device, radio = true, kind = "radio") },   // DEB-2655 (FR-9)
+                        ),
                         playbackService, jellyfinClient, configStore, mp.store, mp.media, imageProxyService, audiobooksTv,
                     )
                     audiobooksTv?.let { svc ->

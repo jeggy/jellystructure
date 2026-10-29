@@ -383,6 +383,8 @@ data class JellyfinLiveTvChannel(
     @SerialName("Name") val name: String = "",
     @SerialName("ImageTags") val imageTags: JellyfinChannelImageTags? = null,
     @SerialName("CurrentProgram") val currentProgram: JellyfinLiveTvProgram? = null,
+    /** DEB-2655 (FR-1) — `TV` or `Radio`; absent from an older Jellyfin, which reads as TV. */
+    @SerialName("ChannelType") val channelType: String? = null,
 )
 
 @Serializable

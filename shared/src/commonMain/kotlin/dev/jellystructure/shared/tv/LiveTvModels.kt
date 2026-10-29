@@ -32,6 +32,8 @@ data class LiveTvChannel(
     val unavailable: Boolean = false,
     @SerialName("current_program") val currentProgram: LiveTvProgramInfo? = null,
     @SerialName("next_program") val nextProgram: LiveTvProgramInfo? = null,
+    /** DEB-2655 (FR-1) — `tv` or `radio`. A plain string: `RaviloWireJson` decodes enums strictly, so a future kind must not break a client. */
+    val kind: String = "tv",
 )
 
 @Serializable

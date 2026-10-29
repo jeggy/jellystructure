@@ -75,6 +75,8 @@ class MusicTvService(
     /** R388 — the sample of a capped *Shuffle all*; a test seeds it. */
     private val random: kotlin.random.Random = kotlin.random.Random.Default,
     private val videos: suspend (DeviceData) -> List<dev.jellystructure.model.MediaItem> = { emptyList() },
+    /** DEB-2655 (FR-9) — the radio stations [DeviceData]'s viewer may open (shown, available, in their visible set). */
+    private val stations: suspend (DeviceData) -> List<dev.jellystructure.shared.tv.LiveTvChannel> = { emptyList() },
 ) {
     companion object {
         const val PAGE_SIZE = 60
@@ -229,9 +231,11 @@ class MusicTvService(
 
     // ── FR-279-2 ──
 
-    suspend fun home(device: DeviceData): MusicHome {
+    suspend fun home(device: DeviceData, radio: Boolean = false): MusicHome {
         val v = View(device)
-        if (v.albums.isEmpty() && v.tracks.isEmpty()) return MusicHome()
+        // DEB-2655 (FR-9) — the Radio row is last, after the genres, and only for a client that asked and a viewer with a station.
+        val radioRow = if (radio) stations(device).takeIf { it.isNotEmpty() }?.let { MusicRow("radio", "Radio", stations = it) } else null
+        if (v.albums.isEmpty() && v.tracks.isEmpty()) return MusicHome(rows = listOfNotNull(radioRow))
         val u = userMusic(device)
         val rows = mutableListOf<MusicRow>()
         recentAlbums(v).take(12).takeIf { it.isNotEmpty() }?.let { rows += MusicRow("recent", "Recently added", albums = it.map { a -> albumCard(v, a) }) }
@@ -246,6 +250,7 @@ class MusicTvService(
         byGenre.filterValues { it.size >= 3 }.entries.sortedWith(compareByDescending<Map.Entry<String, MutableList<MusicAlbum>>> { it.value.size }.thenBy { it.key })
             .take(6).forEach { (g, list) -> rows += MusicRow("genre", g, albums = list.sortedByDescending { it.addedAt ?: it.createdAt }.take(12).map { albumCard(v, it) }) }
         // R344 (FR-R344-1, dev review 2) — the household's version colours ride the app's first music fetch.
+        radioRow?.let { rows += it }
         return MusicHome(rows, versionTypes = v.versionTypes.map { MusicVersionType(it.key, it.color) })
     }
 

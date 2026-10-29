@@ -164,14 +164,15 @@ class LiveTvService(
         val merged = buildList {
             for ((id, ov) in existing) {
                 val liveCh = liveIds[id]
-                add(if (liveCh != null) ov.copy(unavailable = false) else ov.copy(unavailable = true))
+                // DEB-2655 (FR-1) — the kind is rewritten on every sync a channel is still listed in; a gone channel keeps its last.
+                add(if (liveCh != null) ov.copy(unavailable = false, kind = kindOf(liveCh)) else ov.copy(unavailable = true))
             }
             for (ch in live) {
                 if (ch.id in existing) continue
                 add(
                     LiveTvChannelOverride(
                         channelId = ch.id, shown = false, number = nextOrder + 1, order = nextOrder,
-                        category = "", unavailable = false, isNew = true,
+                        category = "", unavailable = false, isNew = true, kind = kindOf(ch),
                     ),
                 )
                 nextOrder++
@@ -241,15 +242,21 @@ class LiveTvService(
                 unavailable = ov.unavailable,
                 currentProgram = current,
                 nextProgram = null,
+                kind = ov.kind,
             )
         }
     }
 
+    private fun kindOf(ch: JellyfinLiveTvChannel): String = if (ch.channelType.equals("Radio", ignoreCase = true)) "radio" else "tv"
+
     /** Only the shown+available channels [device]'s viewer may watch, for the TV-facing Home "On now" row / player
      *  channel bar (R177 §B/D1) — those need no separate guide fetch (addendum C, embedded CurrentProgram). */
-    suspend fun homeChannels(device: DeviceData): List<LiveTvChannel> {
+    suspend fun homeChannels(device: DeviceData, radio: Boolean = false, kind: String? = null): List<LiveTvChannel> {
         val visible = visibleChannelIds(device)
-        return lineup().filter { it.shown && !it.unavailable && it.channelId in visible }
+        // DEB-2655 (FR-2) — a station is sent only to a client that asked (`radio=1`); `kind=` narrows what was asked for.
+        return lineup().filter {
+            it.shown && !it.unavailable && it.channelId in visible && (radio || it.kind != "radio") && (kind == null || it.kind == kind)
+        }
     }
 
     /**
@@ -342,10 +349,12 @@ class LiveTvService(
      * depends on the Jellyfin server's own EPG source retaining recently-elapsed programs; if it doesn't,
      * this floor is harmless (Jellyfin just returns nothing before its own retention edge).
      */
-    suspend fun guide(device: DeviceData, days: Int = 7, hoursBack: Int = 0): List<LiveTvGuideProgram> {
+    suspend fun guide(device: DeviceData, days: Int = 7, hoursBack: Int = 0, radio: Boolean = false): List<LiveTvGuideProgram> {
         // DEB-2520 — the programme data is one shared fetch; what this viewer is handed is cut to their channels.
         val visible = visibleChannelIds(device)
-        return sharedGuide(days, hoursBack).filter { it.channelId in visible }
+        // DEB-2655 (FR-2) — without `radio=1` a station's programmes are not there either.
+        val stations = if (radio) emptySet() else store.overridesByChannelId().values.filter { it.kind == "radio" }.mapTo(HashSet()) { it.channelId }
+        return sharedGuide(days, hoursBack).filter { it.channelId in visible && it.channelId !in stations }
     }
 
     private suspend fun sharedGuide(days: Int, hoursBack: Int): List<LiveTvGuideProgram> {

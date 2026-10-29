@@ -25,6 +25,9 @@ data class LiveTvChannelOverride(
     val category: String = "",           // 100% jellystructure-owned (addendum B — Jellyfin has none)
     val unavailable: Boolean = false,     // present in the store but gone from Jellyfin's live lineup
     @SerialName("is_new") val isNew: Boolean = false, // badge: appeared since the operator last acted
+    // DEB-2655 (FR-1) — `tv` or `radio`, written from Jellyfin's ChannelType on every sync and stored, so a
+    // lineup() before the next sync after a restart never presents a station as a TV channel.
+    val kind: String = "tv",
 )
 
 @Serializable

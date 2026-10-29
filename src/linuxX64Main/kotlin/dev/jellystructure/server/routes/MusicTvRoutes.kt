@@ -52,7 +52,7 @@ fun Route.musicTvRoutes(
     /** 281 — audiobook parts play through the same `/tv/music/play`. */
     audiobooks: dev.jellystructure.audiobooks.AudiobooksTvService? = null,
 ) {
-    get("/tv/music/home") { call.respond(svc.home(call.attributes[DeviceKey])) }
+    get("/tv/music/home") { call.respond(svc.home(call.attributes[DeviceKey], radio = call.request.queryParameters["radio"] == "1")) }
 
     for (what in listOf("albums", "artists", "tracks")) get("/tv/music/$what") {
         val q = call.request.queryParameters

@@ -102,7 +102,9 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
 
     get("/tv/livetv/channels") {
         // DEB-2520 — the channels Jellyfin lists for this viewer's account, not the whole lineup.
-        call.respond(liveTvService.homeChannels(call.attributes[DeviceKey]))
+        // DEB-2655 (FR-2) — stations only for a client that sends `radio=1`; `kind=radio|tv` narrows the answer.
+        val q = call.request.queryParameters
+        call.respond(liveTvService.homeChannels(call.attributes[DeviceKey], radio = q["radio"] == "1", kind = q["kind"]?.takeIf { it == "radio" || it == "tv" }))
     }
 
     get("/tv/livetv/guide") {
@@ -110,7 +112,7 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         val days = call.request.queryParameters["days"]?.toIntOrNull()?.coerceIn(1, 14) ?: 7
         // User request: guide should scroll 4h into the past as well as forward — was always "now" floor.
         val hoursBack = call.request.queryParameters["hoursBack"]?.toIntOrNull()?.coerceIn(0, 48) ?: 0
-        call.respond(liveTvService.guide(device, days, hoursBack))
+        call.respond(liveTvService.guide(device, days, hoursBack, radio = call.request.queryParameters["radio"] == "1"))
     }
 
     post("/tv/livetv/channels/{id}/tune") {

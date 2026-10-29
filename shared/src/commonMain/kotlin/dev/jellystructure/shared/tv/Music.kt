@@ -106,7 +106,7 @@ object MusicVersionDefaults {
     )
 }
 
-/** One row of the Listen tab (FR-279-2). [key] is `recent` · `played` · `artists` · `mix` · `genre`; the phone
+/** One row of the Listen tab (FR-279-2). [key] is `recent` · `played` · `artists` · `mix` · `genre` · `radio`; the phone
  *  titles the fixed rows in its own language, and a genre row by [title] (the genre's name). */
 @Serializable
 data class MusicRow(
@@ -115,6 +115,8 @@ data class MusicRow(
     val albums: List<MusicAlbumCard> = emptyList(),
     val tracks: List<MusicTrackItem> = emptyList(),
     val artists: List<MusicArtistCard> = emptyList(),
+    /** DEB-2655 (FR-9) — the `radio` row's stations; empty on every other row and from an old server. */
+    val stations: List<LiveTvChannel> = emptyList(),
 )
 
 @Serializable
