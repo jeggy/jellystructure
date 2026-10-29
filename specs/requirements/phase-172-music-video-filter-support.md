@@ -8,8 +8,6 @@
 > remaining gap — every UI/backend site that offers a Movie/Series type choice only offered two,
 > silently excluding or mislabeling a music video wherever that choice narrows or seeds a filter.
 
-**Status:** Implemented 2026-08-21.
-
 ## Problem
 
 `MediaKind` has three members (`MOVIE`, `TV_SHOW`, `MUSIC_VIDEO`), but the type-filtering layer above
@@ -73,3 +71,56 @@ fo "Tónleikamyndband") added alongside the existing `browse.type.movie`/`browse
   commonMain too) both clean.
 - No behavior change for existing Movie/Series filtering — every touched `when`/`if` gained a branch,
   none had its existing branches altered.
+
+## Amendment 2026-10-29 — a collection keeps its own Include (DEB-2847)
+
+Owner-found on prod, 2026-10-29. Above, this phase says that "a content row **or channel** can now be
+scoped to music videos only, same as Movies/Series today", and that "a row/channel saved with that scope
+actually filters correctly". For a row that is true: `RowConfig.mediaKind` stores it and
+`ConditionEvaluator.rowMatches` applies it. For a channel (a *collection* in the admin) it never was.
+`ChannelConfig` has no kind field, and that was so before this phase as well. The collection's
+*Filter* dialog draws the All / Movies / Series / Music videos switch, but its `onApply` throws the
+choice away (`RaviloConfig.kt`, `#ch-ed-filter-edit` and `#ch-workbench`, `{ query, _ -> … }`). A
+collection set to Series reopens as All and serves films too. On prod one collection served 410
+titles where series-only was meant. R36's `onSaveChannel` passed `include` through but never stored
+it either. This amendment makes the sentence above true. It is new wire, so it is written here before
+the Kotlin.
+
+**FR-172-1 — The field.** `ChannelConfig` gains `@SerialName("media_kind") val mediaKind: String? = null`.
+Its values and meaning are `RowConfig.mediaKind`'s: `"MOVIE"`, `"SERIES"`, `"MUSIC_VIDEO"`, or `null` for
+all kinds. Any other string reads as `null`. The field is additive, and no Ravilo client reads
+`ChannelConfig`, because clients get server-built rows only. An installed app ignores it, and a config
+saved before this amendment reads as `null`, which is today's behaviour.
+
+**FR-172-2 — Membership.** A collection with a `mediaKind` admits only items of that kind (`SERIES` ↔
+`MediaKind.TV_SHOW`). The check sits in **one** place that every collection-membership site calls, so
+the sites cannot drift apart (the R228 trap): `HomeFeedService`'s `MediaItem.matchesChannel` (the rail's
+non-empty verdict, the collection page's content, its Continue Watching, its Newly Added, its custom
+rows) and `BrowseService`'s per-card `channels` list. It applies before the query, and it applies on the
+legacy single-typed-filter path too. A kind excludes items; it never adds any. A collection with a kind
+and an empty query admits every item of that kind.
+
+**FR-172-3 — Rows inside a collection.** A row's own `mediaKind` and its collection's are ANDed. A
+Movies row inside a Series collection is empty and is hidden like any empty row. The row's *See all*
+seed carries `seedMediaKind = row.mediaKind ?: channel.mediaKind`, so the browse page holds the same set
+the row was built from. The two-way Movies/Series split of a collection's Newly Added row (`mediaKind ==
+null`) is unchanged. In a Series collection the Movies half is empty and drops out.
+
+**FR-172-4 — Admin.** Both collection workbench paths store the switch. *New collection — condition
+workbench* saves `mediaKind` with the query. *Filter — (collection)* opens on the stored kind
+(`initialInclude`, mapped as the row editors already map it) and writes it back on *Apply filter*. The
+collection's filter summary names the kind when it is not All, for example *Series · Studio is …*.
+The live count in the collection's dialog already counts by the switch. A row editor inside a
+collection counts with the collection's kind ANDed, in the same way it already shows the collection's
+query as a locked first block.
+
+**FR-172-5 — Not in scope.** No migration. A collection saved before this amendment stays All until
+it is saved again with a kind. The owner re-applies Series on the affected collection, and nothing
+guesses it. The switch is not hidden on the collection dialog, and the row-level *Include* does not
+change.
+
+**Proof.** A `linuxX64Test`: a `ChannelConfig` with `media_kind: "SERIES"` round-trips through the
+config JSON, and JSON without the key reads as `null`. A `SERIES` collection's content and its rail
+verdict exclude a matching film, and a `null` collection still includes it (FR-172-2). A Movies row
+inside a Series collection is empty, and its seed kind follows FR-172-3. On top of that, one admin
+save and reopen of a collection's Filter showing Series (FR-172-4) goes on the QA queue.
