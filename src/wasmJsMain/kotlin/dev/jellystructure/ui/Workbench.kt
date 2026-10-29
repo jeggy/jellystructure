@@ -462,6 +462,25 @@ private fun renderCondRow(c: WbCond, path: List<Int>): String {
                 }
             }
         }
+        "studio", "network" -> {
+            // DEB-2859: no .take(N) cap — the generic branch cut prod's studios to the 80 most
+            // common, so every single-title studio (a hand-set one included) could never be picked.
+            val noun = if (c.facet == "studio") "studios" else "networks"
+            val items = wbItemsFor(c.facet)
+            buildString {
+                if (items.isEmpty()) {
+                    append("""<span class="muted tiny">No $noun in scope</span>""")
+                } else {
+                    val chips = items.joinToString("") { t ->
+                        val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
+                        """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-path="$p" data-v="${t.value.esc()}" data-search="${t.value.lowercase().esc()}">${t.value.esc()}$cnt</span>"""
+                    }
+                    append("""<input class="input wb-vsearch" placeholder="Search $noun…" autocomplete="off">""")
+                    append("""<div class="wb-vsection"><div class="wb-vchips">$chips</div></div>""")
+                    append("""<div class="wb-vempty muted tiny" style="display:none;">No $noun match</div>""")
+                }
+            }
+        }
         "content_row" -> {
             val chips = wbRowsContext.joinToString("") { row ->
                 val on = c.rows.any { it.id == row.id }
