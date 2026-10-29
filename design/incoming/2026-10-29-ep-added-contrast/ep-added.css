@@ -1,0 +1,86 @@
+/* ep-added.css — this round's own scaffolding only.
+   Nothing here is a candidate for production: the episode row in the frames is styled entirely by
+   the three shipped stylesheets, and every rule below styles the page AROUND it (the lede, the
+   frame cards, the measurement readout). Classes are `.ea-*` so none can collide with the shipped
+   system if this file is ever read beside it.
+
+   Canvas rules (design/PROCESS.md): the page backdrop is light gray, so every string placed
+   directly on it is dark ink. No content-visibility, no backdrop-filter, no large blur, no
+   infinite animation — they break the screenshot render. */
+
+.ea-page {
+  background: #e9ebf1;
+  min-height: 100vh;
+  margin: 0;
+  padding: 28px 30px 40px;
+  font-family: 'Sora', system-ui, -apple-system, sans-serif;
+  color: #12141b;
+}
+body { margin: 0; background: #e9ebf1; }
+
+.ea-head { max-width: 920px; margin: 0 0 26px; }
+.ea-head h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; margin: 0 0 8px; color: #12141b; }
+.ea-head p { font-size: .88rem; line-height: 1.6; margin: 10px 0 0; color: #262a35; max-width: 820px; }
+.ea-id {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: .74rem; color: #262a35;
+}
+
+/* one frame per picture. The frame is what the renderer screenshots, so it carries the surface the
+   row sits on — the admin page background for its theme — and nothing of the light-gray canvas. */
+.ea-frame {
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0 0 22px;
+  box-shadow: 0 10px 30px rgba(40,44,70,.16);
+  background: var(--bg);
+  /* The canvas sets dark ink for the light-gray backdrop, and that inherits. The frame is the admin
+     page, so it takes the admin's own ink — without this the dark frame drew the episode code, the
+     title and the lang badge in near-black on near-black. Only the PNG showed it. */
+  color: var(--ink);
+  width: 1000px;
+}
+.ea-frame .ea-inner { padding: 22px 24px 24px; }
+
+.ea-ftitle {
+  font-size: .64rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 0 0 4px;
+}
+.ea-fnote { font-size: .8rem; line-height: 1.55; color: var(--ink-soft); margin: 0 0 16px; max-width: 760px; }
+.ea-fnote b { color: var(--ink); font-weight: 600; }
+
+/* the measurement readout under each row. A pass/fail word plus the number, in the frame's own
+   theme, so the picture carries its own evidence and the report does not have to be trusted. */
+.ea-measure {
+  display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline;
+  margin: 14px 0 0; padding: 12px 14px;
+  border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill-2);
+  font-size: .8rem; color: var(--ink);
+}
+.ea-measure .ea-m { display: flex; align-items: baseline; gap: 7px; }
+.ea-measure .ea-k { font-size: .62rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+.ea-measure .ea-v { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .86rem; font-weight: 600; }
+.ea-verdict { font-weight: 700; font-size: .78rem; padding: 2px 9px; border-radius: 20px; }
+.ea-verdict.pass { color: #0c6b4a; background: rgba(45,212,154,.18); }
+.ea-verdict.fail { color: #a32a1f; background: rgba(255,111,97,.18); }
+[data-theme="dark"] .ea-verdict.pass, html:not([data-theme="light"]) .ea-verdict.pass { color: #4fe0b0; }
+[data-theme="dark"] .ea-verdict.fail, html:not([data-theme="light"]) .ea-verdict.fail { color: #ff9c92; }
+
+/* the before/after pair sits side by side inside one frame so the change is one picture, not two
+   that have to be held against each other. */
+.ea-pair { display: flex; flex-direction: column; gap: 20px; }
+.ea-half { min-width: 0; }
+.ea-half > .ea-ftitle { margin-bottom: 8px; }
+
+/* `before` re-pins the defect inside the after-the-fix stylesheet: detail.css now carries the light
+   override, so the only way to picture what shipped is to put --ink-dim back on this one span. The
+   value is the literal the light theme defines, not a guess. */
+.ea-half.before .ep-added { color: rgba(15, 17, 26, .25); }
+[data-theme="light"] .ea-half.before .ep-added { color: rgba(15, 17, 26, .25); }
+html:not([data-theme="light"]) .ea-half.before .ep-added { color: rgba(221, 225, 236, .32); }
+
+/* the stand-in still: a flat gradient, never a picture of anything the household owns. */
+.ea-still {
+  width: 72px; height: 40px; flex-shrink: 0; border-radius: 3px; overflow: hidden;
+  background: linear-gradient(135deg, #4a5270, #8a6fb0);
+}

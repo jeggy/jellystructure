@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src file: data: blob: 'unsafe-inline'; style-src file: data: 'unsafe-inline'; font-src file: data:; img-src file: data: blob:; script-src file: data: 'unsafe-inline'; connect-src 'none'">
+<title>.ep-added contrast — frames</title>
+<!--
+  frames.html — the two pictures DEB-2921 is done when it has: a light and a dark render of the
+  shipped admin's episode row, each with the measured contrast ratio of the "added {date}" line.
+
+  ?theme=light | dark
+
+  This is a fix round, not a direction round, so there is nothing drawn here that is not already
+  in production. The row's markup is copied byte-for-byte from the inline styles in
+  `src/wasmJsMain/kotlin/dev/jellystructure/ui/MediaDetail.kt` (the `episodeRow` return, the
+  `.ep-toggle-row` block), and the only stylesheets loaded are the three shipped ones. So the
+  colour in the picture is the colour the admin serves, and the ratio printed beneath it is
+  measured off the rendered pixels rather than asserted.
+
+  The ratio is computed with getComputedStyle + the WCAG 2.x relative-luminance formula, compositing
+  the text's alpha over the row's own background — which is the whole point of the defect: --ink-dim
+  is an alpha, so its effective colour depends on the surface under it, and on --fill-2 in the light
+  theme it lands at 1.72:1.
+
+  The stand-in episode is "Mountain Road", S02E05, added 2026-09-14 — an invented title that names
+  nothing in the household's library. The still is a plain gradient and never a broadcaster's picture.
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const theme = q.get('theme') || 'light';
+    document.write('<link rel="stylesheet" href="../../app/wf.css">');
+    document.write('<link rel="stylesheet" href="../../app/app.css">');
+    document.write('<link rel="stylesheet" href="../../app/detail.css">');
+    document.write('<link rel="stylesheet" href="ep-added.css">');
+    window.EAOPT = { theme };
+  })();
+</script>
+</head>
+<body>
+<div class="ea-page">
+<div class="ea-head">
+  <h1>The episode row&rsquo;s &ldquo;added {date}&rdquo; line</h1>
+  <div class="ea-id">Round <b>ep-added-contrast</b> &middot; revision 1 &middot; 2026-10-29 &middot; theme <span id="ea-themename"></span></div>
+  <p>A fix, not a direction. The row below is the shipped admin&rsquo;s episode row, with its markup
+    taken from <span class="ea-id">MediaDetail.kt</span> and its styling from the shipped
+    <span class="ea-id">wf.css</span> + <span class="ea-id">app.css</span> + <span class="ea-id">detail.css</span>.
+    Each ratio is measured off the rendered element, compositing the text colour&rsquo;s alpha over
+    the row&rsquo;s own background.</p>
+</div>
+<div id="ea-frames"></div>
+</div>
+
+<script src="ep-added.js"></script>
+</body>
+</html>
