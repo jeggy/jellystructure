@@ -324,6 +324,11 @@
 .ne-ep { font-weight:600; font-size:.92rem; margin:8px 0 2px; }
 .ne-ep .num { font-size:.72rem; color:var(--ink-soft); margin-right:5px; }
 .ep-added { color:var(--ink-dim); }
+/* Light theme only: --ink-dim is rgba(15,17,26,.25) there, and this line sits on --fill-2 (#f3f5fa)
+   inside the episode toggle row, where nothing re-colours it — 1.72:1, under 3:1 even as large text
+   (DEB-2921). --ink-soft is the existing dimmer-but-legible token and reads 5.41:1 on the same card.
+   Retargeting this one class, rather than raising --ink-dim, keeps ~100 other use sites untouched. */
+[data-theme="light"] .ep-added { color:var(--ink-soft); }
 .ep-ts { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:12px; padding-top:11px; border-top:1px dashed var(--line); }
 .ep-ts .grp { display:flex; flex-direction:column; gap:2px; }
 .ep-ts .k { font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); font-weight:700; }
