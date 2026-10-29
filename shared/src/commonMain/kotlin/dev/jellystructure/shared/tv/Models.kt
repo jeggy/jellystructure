@@ -1231,6 +1231,10 @@ data class ChannelConfig(
     // that predates this phase just skips it (ignoreUnknownKeys) since the TV never evaluates
     // filters itself (server-pushed rows only).
     val query: ConditionGroup? = null,
+    // DEB-2847 (FR-172-1) — the collection's own Include: "MOVIE", "SERIES", "MUSIC_VIDEO", or null = all
+    // kinds (same values as RowConfig.mediaKind; any other string reads as null). Additive — no Ravilo
+    // client reads ChannelConfig, and a config saved before this field reads as null.
+    @SerialName("media_kind") val mediaKind: String? = null,
     val enabled: Boolean = true,
     val order: Int = 0,
     // R52 — optional per-page hero carousel (null = page has no hero).

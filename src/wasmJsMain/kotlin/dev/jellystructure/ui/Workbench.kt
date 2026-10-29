@@ -134,6 +134,7 @@ private fun opLabel(facet: String, op: String) = opsFor(facet).firstOrNull { it.
 
 private var wbRoot = WbGroup("and")
 private var wbInclude = "all"
+private var wbBaseInclude = "all"   // DEB-2847: the owning collection's own Include, ANDed onto a row editor's
 private var wbBaseRoot: WbGroup? = null   // Phase 140: the owning channel's locked query, if any
 private var wbLockedCount: Int? = null
 private var wbRowsContext = emptyList<RowConfig>()  // R87: rows the `content_row` facet can reference
@@ -203,6 +204,9 @@ fun openWorkbench(
     // (a blank RowConfig for a new row). The caller reads workbenchOrderResult() inside onApply.
     orderRow: RowConfig? = null,
     orderCollectionName: String? = null,
+    // DEB-2847 (FR-172-4): the owning collection's Include (the same strings as [initialInclude]); a row editor
+    // inside it counts with that kind ANDed onto its own.
+    baseInclude: String = "all",
 ) {
     wbScope = scope
     wbTitle = title
@@ -210,6 +214,7 @@ fun openWorkbench(
     wbRoot = initialQuery.toWbGroup()
     if (wbRoot.children.isEmpty()) wbRoot.children.add(WbGroup("or", children = mutableListOf(WbCond("studio", "is_any_of"))))
     wbInclude = initialInclude
+    wbBaseInclude = baseInclude
     wbBaseRoot = baseQuery?.toWbGroup()
     wbLockedCount = null
     wbRowsContext = rowsContext
@@ -704,6 +709,14 @@ internal suspend fun countMatching(
     query = query,
 )
 
+/** DEB-2847 — the kind the editor's count runs under: the row's own Include ANDed with the collection's.
+ *  null = the two disagree, so nothing can match. */
+private fun wbEffectiveInclude(): String? = when {
+    wbBaseInclude == "all" -> wbInclude
+    wbInclude == "all" || wbInclude == wbBaseInclude -> wbBaseInclude
+    else -> null
+}
+
 /** Walks the tree, collecting every group's path (root's top-level blocks + every nested sub-block). */
 private fun collectBlockPaths(n: WbNode, path: List<Int>, acc: MutableList<List<Int>>) {
     if (n is WbGroup) {
@@ -754,7 +767,8 @@ private fun wbRefreshPreview() {
             val all = mutableListOf<dev.jellystructure.model.MediaItem>()
             var pageNo = 1
             while (pageNo <= 40) {
-                val pg = MediaApi.list(kind = when (wbInclude) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; "musicvideos" -> MediaKind.MUSIC_VIDEO; else -> null },
+                val eff = wbEffectiveInclude() ?: break
+                val pg = MediaApi.list(kind = when (eff) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; "musicvideos" -> MediaKind.MUSIC_VIDEO; else -> null },
                     page = pageNo, pageSize = 100, viewer = wbViewer, query = fullTree) ?: break
                 all += pg.items
                 if (pg.items.isEmpty() || all.size >= pg.total) break
@@ -762,7 +776,8 @@ private fun wbRefreshPreview() {
             }
             wbOrderSetMatches(all); return@launch
         }
-        val page = countMatching(fullTree, wbInclude, viewer = wbViewer, pageSize = 18)
+        val eff = wbEffectiveInclude()
+        val page = if (eff == null) null else countMatching(fullTree, eff, viewer = wbViewer, pageSize = 18)
         val total = page?.total ?: 0
         countEl?.innerHTML = if (baseTree != null) "<b>$total title(s)</b> in channel" else "<b>$total title(s) match</b>"
         val prev = document.getElementById("wb-preview") as? HTMLElement

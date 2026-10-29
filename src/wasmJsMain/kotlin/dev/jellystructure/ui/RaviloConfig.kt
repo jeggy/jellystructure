@@ -1085,11 +1085,11 @@ private fun renderChannels(container: Element) {
     sect.querySelector("#ch-workbench")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
         openWorkbench(scope, "New collection — condition workbench", viewer = currentUserId, applyLabel = "Create collection",
-            onApply = { query, _ ->
+            onApply = { query, include ->
                 val label = query.firstValueOrNull() ?: "Collection"
                 structural(container, {
                     currentConfig = currentConfig.copy(channels = currentConfig.channels +
-                        ChannelConfig(id = genId("ch"), name = label, query = query))
+                        ChannelConfig(id = genId("ch"), name = label, query = query, mediaKind = includeToMediaKind(include)))
                 }, ::renderChannels)
             })
     }
@@ -1646,7 +1646,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     container.querySelector("#ch-rows-add")?.addEventListener("click") { _ ->
         openWorkbench(scope, "New row — ${c.name.ifBlank { "Collection" }}", viewer = currentUserId,
             applyLabel = "Add row",
-            baseQuery = chBaseQuery(),
+            baseQuery = chBaseQuery(), baseInclude = mediaKindToInclude(currentConfig.channels.getOrNull(idx)?.mediaKind),
             orderRow = RowConfig(id = "", kind = RowKind.CUSTOM), orderCollectionName = c.name.ifBlank { null },   // Phase 225
             onApply = { query, include ->
                 val label = query.firstValueOrNull() ?: "Custom row"
@@ -1671,7 +1671,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             openWorkbench(scope, "Edit row — ${(row.title ?: "Custom row").htmlEsc()}", viewer = currentUserId,
                 initialQuery = row.effectiveQuery(), initialInclude = inc,
                 applyLabel = "Update row",
-                baseQuery = chBaseQuery(),
+                baseQuery = chBaseQuery(), baseInclude = mediaKindToInclude(currentConfig.channels.getOrNull(idx)?.mediaKind),
                 orderRow = row, orderCollectionName = c.name.ifBlank { null },   // Phase 225
                 onApply = { query, inc2 ->
                     val mediaKind = when (inc2) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
@@ -1720,17 +1720,23 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     container.querySelector("#ch-ed-filter-edit")?.addEventListener("click") { _ ->
         val ch = currentConfig.channels.getOrNull(idx) ?: return@addEventListener
         openWorkbench(scope, "Filter — ${ch.name.ifBlank { "Collection" }}", viewer = currentUserId,
-            initialQuery = ch.editorQuery(),
+            initialQuery = ch.editorQuery(), initialInclude = mediaKindToInclude(ch.mediaKind),
             applyLabel = "Apply filter",
-            onApply = { query, _ ->
+            onApply = { query, include ->
                 val list = currentConfig.channels.toMutableList()
-                list[idx] = list[idx].copy(query = query)
+                list[idx] = list[idx].copy(query = query, mediaKind = includeToMediaKind(include))
                 currentConfig = currentConfig.copy(channels = list)
                 renderFilterSummary(container, idx)
             }
         )
     }
 }
+
+/** DEB-2847 — the workbench's Include switch ("all" / "movies" / "series" / "musicvideos") and a stored
+ *  `media_kind` ("MOVIE" / "SERIES" / "MUSIC_VIDEO" / null), mapped both ways for a collection. */
+private fun includeToMediaKind(include: String): String? = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
+private fun mediaKindToInclude(mediaKind: String?): String = when (mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; "MUSIC_VIDEO" -> "musicvideos"; else -> "all" }
+private fun mediaKindLabel(mediaKind: String?): String? = when (mediaKind) { "MOVIE" -> "Movies"; "SERIES" -> "Series"; "MUSIC_VIDEO" -> "Music videos"; else -> null }
 
 /** Rich hero-items editor overlay: thumbnail rows + DnD reorder + search picker for adding. */
 private fun openHeroEditorOverlay(
@@ -1915,10 +1921,13 @@ private fun renderFilterSummary(container: Element, channelIdx: Int) {
     val ch = currentConfig.channels.getOrNull(channelIdx)
     if (ch == null) { host.innerHTML = ""; return }
     val eq = ch.editorQuery()
+    val kind = mediaKindLabel(ch.mediaKind)
     host.innerHTML = if (!eq.isLive()) {
-        """<span class="tiny muted">No filter — shows all content</span>"""
+        if (kind == null) """<span class="tiny muted">No filter — shows all content</span>"""
+        else """<div style="font-size:.8rem;color:var(--ink-soft)">${kind.htmlEsc()} only</div>"""
     } else {
-        """<div style="font-size:.8rem;color:var(--ink-soft)">${groupSummary(eq.toWbGroup(), top = true).htmlEsc()}</div>"""
+        val summary = groupSummary(eq.toWbGroup(), top = true)
+        """<div style="font-size:.8rem;color:var(--ink-soft)">${(if (kind == null) summary else "$kind · $summary").htmlEsc()}</div>"""
     }
 }
 

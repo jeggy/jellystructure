@@ -150,16 +150,25 @@ object ConditionEvaluator {
         }
     }
 
+    /** The [MediaKind] a stored Include string ("MOVIE" / "SERIES" / "MUSIC_VIDEO") names; null for
+     *  null and for any other string (DEB-2847, FR-172-1 — an unknown value reads as All). */
+    fun kindOf(mediaKind: String?): MediaKind? = when (mediaKind) {
+        "MOVIE" -> MediaKind.MOVIE
+        "SERIES" -> MediaKind.TV_SHOW
+        "MUSIC_VIDEO" -> MediaKind.MUSIC_VIDEO
+        else -> null
+    }
+
+    /** DEB-2847 (FR-172-2) — the one Include check a row and a collection share: does [item] belong to
+     *  the kind [mediaKind] names? A null or unknown [mediaKind] admits every item. It only excludes. */
+    fun kindAdmits(item: MediaItem, mediaKind: String?): Boolean = kindOf(mediaKind).let { it == null || item.kind == it }
+
     /** R87: does [item] fall inside one content row's filter — its include (mediaKind) + its own
      *  query tree, reusing the precomputed [facets] for this item. [RowConfig.effectiveQuery] migrates
      *  the row's legacy `match`/`conditions` on the fly if it hasn't been migrated yet, so an embedded
      *  row from an old saved filter still evaluates correctly. */
     private fun rowMatches(item: MediaItem, facets: ItemFacets, row: RowConfig, heroIds: Set<String>): Boolean {
-        when (row.mediaKind) {
-            "MOVIE"  -> if (item.kind != MediaKind.MOVIE) return false
-            "SERIES" -> if (item.kind != MediaKind.TV_SHOW) return false
-            "MUSIC_VIDEO" -> if (item.kind != MediaKind.MUSIC_VIDEO) return false
-        }
+        if (!kindAdmits(item, row.mediaKind)) return false
         return evalGroup(item, facets, row.effectiveQuery(), heroIds)
     }
 

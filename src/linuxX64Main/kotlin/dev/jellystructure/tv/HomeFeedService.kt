@@ -704,12 +704,7 @@ class HomeFeedService(
             // Phase 271 — every label of the title's genres, in any language, so a saved term matches
             // whatever language the title's own names came in.
             RowKind.GENRE -> genreTermsOf(rowCfg).let { terms -> terms.isEmpty() || GenreCatalog.allLabelsOf(item).any { g -> terms.any { t -> g.lowercase().contains(t) } } }
-            RowKind.CUSTOM -> ConditionEvaluator.matches(item, resolvedQuery ?: rowCfg.effectiveQuery(), heroIds, ageRatingCascade) && when (rowCfg.mediaKind) {
-                "MOVIE" -> item.kind == MediaKind.MOVIE
-                "SERIES" -> item.kind == MediaKind.TV_SHOW
-                "MUSIC_VIDEO" -> item.kind == MediaKind.MUSIC_VIDEO
-                else -> true
-            }
+            RowKind.CUSTOM -> ConditionEvaluator.matches(item, resolvedQuery ?: rowCfg.effectiveQuery(), heroIds, ageRatingCascade) && ConditionEvaluator.kindAdmits(item, rowCfg.mediaKind)
             else -> false  // CONTINUE/NEWLY_ADDED: different data source / no per-item query, handled by their own callers
         }
 
@@ -782,7 +777,7 @@ class HomeFeedService(
                 val seed = withChannelSeed(channelFilter, ConditionGroup(QueryJoin.AND, children = listOf(
                     Condition(facet = "genre", op = "is_any_of", values = matchedGenreValues),
                 )))
-                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind, seedTotalCount = matched.size, sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending)
+                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind ?: channelFilter?.mediaKind, seedTotalCount = matched.size, sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending)
             }
         }
         RowKind.CUSTOM -> {
@@ -799,7 +794,7 @@ class HomeFeedService(
                 .distinctBy { it.id }
             if (cards.isEmpty()) null else Row(
                 rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards,
-                seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind, seedTotalCount = filtered.size,
+                seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind ?: channelFilter?.mediaKind, seedTotalCount = filtered.size,
                 sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending,   // FR-225-8 — the key, never the pins
             )
         }
@@ -1070,8 +1065,13 @@ class HomeFeedService(
         // effectiveQuery()) supersedes the legacy single typed filters — same fallback chain as
         // before, just query-aware so a channel doesn't silently stop filtering the moment it's
         // saved as a tree (which clears match/conditions).
+        // DEB-2847 (FR-172-2): the collection's own Include comes first, on the typed-filter path too; it
+        // only excludes, and a kind with nothing else to filter on admits every item of that kind.
+        if (!ConditionEvaluator.kindAdmits(this, ch.mediaKind)) return false
         val query = ch.effectiveQuery()
         if (query.isLive()) return ConditionEvaluator.matches(this, query, heroIds, configStore.current.metadata.ageRatingCascade)
+        val typedFilters = ch.filterNetwork != null || ch.filterStudio != null || ch.filterGenre != null || ch.filterTag != null
+        if (!typedFilters && ConditionEvaluator.kindOf(ch.mediaKind) != null) return true
         if (ch.filterNetwork != null && network.equals(ch.filterNetwork, ignoreCase = true)) return true
         if (ch.filterStudio  != null && studio.equals(ch.filterStudio,  ignoreCase = true)) return true
         ch.filterGenre?.let { g -> if (GenreCatalog.keyOf(g, kind) in GenreCatalog.keys(this)) return true }  // Phase 271

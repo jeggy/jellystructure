@@ -147,7 +147,7 @@ class BrowseService(
                 audioLanguages = item.audioLanguages(),
                 quality = item.qualityLabel(),
                 people = (item.cast + item.crew).map { it.tmdbId }.distinct().take(60),   // R325 (FR-R325-4)
-                channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
+                channels = channels.filter { ch -> ConditionEvaluator.kindAdmits(item, ch.mediaKind) && ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
                 imdbRating = item.tvImdbRating(),   // Phase 131 / R387
                 sortName = item.sortName,   // R253 (FR-R253-3)
             )
