@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI re-rank per viewer, the schedule, and a Scan dialog that says what it does — frames</title>
+<!-- The production admin system, LINKED rather than copied. `wf.css` carries the tokens, the
+     components and the three self-hosted woff2 (its @font-face URLs resolve next to the CSS file,
+     so the fonts come from design/app/fonts/ with no copy and no network reference). `app.css` is
+     the shell. `processing.css` is production since the `processing-features` round and carries the
+     whole Settings ▸ Processing row, the Scan dialog and the toast under its own `.pfx` wrapper —
+     so every frame's content is wrapped in `.pfx` where it belongs, and these pictures render from
+     the production files. What is left in this round's own stylesheet is the canvas and the
+     components this round adds. -->
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../app/processing.css">
+<link rel="stylesheet" href="ai-per-viewer-and-schedule.css">
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>AI re-rank per viewer · the schedule · a Scan dialog that says what it does</h1>
+  <p>Round <span class="mono-id">ai-per-viewer-and-schedule</span>, <b>revision 1 · 2026-10-29</b>.
+    The admin only. Four places: the <b>viewer list</b> under AI ▸ the Re-rank job, the two
+    <b>pickers and two quiet-viewer choices</b> under Settings ▸ Processing ▸ Recommendations &amp;
+    suggestions, the <b>Scan dialog</b> with that feature selected, and the <b>AI card</b> on
+    Activity.</p>
+  <p>Every frame links <span class="mono-id">wf.css</span>, <span class="mono-id">app.css</span> and
+    <span class="mono-id">processing.css</span>, so every token, card, button, badge, chip, toggle,
+    select, tick, feature row, dialog pane and toast in these pictures is the shipped one. The new
+    components are in <span class="mono-id">ai-per-viewer-and-schedule.css</span>, each named for
+    the production file it belongs in (<span class="mono-id">vw-*</span> and
+    <span class="mono-id">aiq-*</span> → <span class="mono-id">wf.css</span>;
+    <span class="mono-id">qv-*</span> and <span class="mono-id">sd-*</span> →
+    <span class="mono-id">processing.css</span>). Every number, name, price, date and sentence comes
+    out of <span class="mono-id">aiv-data.js</span>, which refuses to load if one of them disagrees
+    with the brief.</p>
+</div>
+<div id="frames"></div>
+
+<script src="aiv-data.js"></script>
+<script src="aiv-build.js"></script>
+<script>
+(function () {
+  const B = window.AIVB;
+  const Q = new URLSearchParams(location.search);
+  const ph = Q.get('w') === '412';
+  const light = Q.get('theme') === 'light';
+  if (ph) document.body.classList.add('ph');
+
+  const DESK = [
+    ['viewers', 'AI ▸ Re-rank · one switch per Jellyfin user',
+     'The brief’s nine rows inside the shipped job box, under its three status lines — the last of which is the estimate FR-3.6 rewords (<i>at most 4 runs × 5 viewers switched on</i>). A row says four things and no more: the <b>name</b>, when <b>a Ravilo device of theirs</b> was last seen, whether their <b>Recommended row</b> follows an AI order and when it was written, and the <b>switch</b>. Every row carries its default’s own reason — <i>on by default</i> as well as <i>off — test account</i> — because a reason drawn only on the off rows reads as those rows being special rather than as one of two defaults, which is the opposite of what “the default is never silent” asks for. <i>Never seen</i> and <i>No AI order yet</i> are drawn as ordinary facts in the dim ink, not as findings: a user who has never signed in is not a problem.',
+     () => B.jobBox('small')],
+    ['viewers-long', 'AI ▸ Re-rank · the same list with 48 users',
+     'The same house after QA has made its throwaway accounts. A long list stays usable by <b>folding the test accounts behind their own count</b> rather than paging: 14 rows are shown, the remaining 34 are one row that says what is inside it and that every one of them is off by the rule, and it opens in place. Above it, a filter, three tabs (<i>All 48 · People 5 · Test accounts 43</i>) and the server’s count line. The filter and the tabs are view controls; <b>every count in them is the server’s</b>. There is deliberately <b>no scrollbox</b> — a second scrollbar inside a page that already scrolls is what makes a long list worse, and the fold is what makes it shorter.',
+     () => B.jobBox('long')],
+    ['viewers-states', 'AI ▸ Re-rank · a switch pressed, and what it left behind',
+     'Two states in one picture, because they happen in the same second. <b>Elin</b> has been switched off and the row says the three things that happened at once — the waiting request removed, the AI order deleted, the list rebuilt in the standard order — where it happened, not in a toast that floats away from the row it is about. Her reason line has changed from a default to <i>switched off today</i>. <b>Gestur</b>’s switch has been pressed and the server has not answered: the row is dimmed and the control is <b>not drawn in its new position</b>, because the admin renders server-pushed state and a switch drawn optimistically is a switch that lies about what the AI will do.',
+     () => B.jobBox('said')],
+    ['viewers-off', 'AI ▸ Re-rank · AI off for the installation, and the first paint',
+     'Two frames’ worth of state folded into one. With <b>Use AI</b> off the job’s own switch and every row’s switch are <b>shown and disabled with the reason above them</b> — never hidden — and the note says the switches are kept as they are, which is the thing a person would otherwise fear. Under it, the list’s first paint: a skeleton, because nothing is drawn from a cache and a switch from last session is worse than no switch. Only the list is drawn, because at that moment the fields above it have already come back from the config call — a whole box of skeletons would be a nicer picture of something that does not happen.',
+     () => B.jobBox('aioff') + '<hr class="aiv-rule">' + B.jobBox('loading')],
+
+    ['set-recs', 'Settings ▸ Processing ▸ Recommendations &amp; suggestions, expanded',
+     'The row at the brief’s stand-in values: <i>Recommendations weekly · suggestions monthly · Ran 51 min ago · Next Tue 20:00</i>. Each part now carries <b>the same picker Find new &amp; changed has</b>, plus <i>Monthly on</i>, and under it <b>When nobody has watched anything new</b> with the chosen option’s own sentence. Recommendations is <i>Weekly on Tuesday at 20:00</i> and skips the AI; Suggestions is <i>Monthly on day 1 at 04:00</i> and skips both. The sentence is what makes <i>Skip both</i> legible — “both” is two different things in the two parts, and only the server’s wording says which.',
+     () => B.settingsRow()],
+    ['set-modes', 'Settings ▸ Processing · the picker’s five modes, and a cron the server refuses',
+     'Every mode open, side by side, which the admin never shows — it is here so the new one can be read against the four that ship. <b>Monthly on</b> takes a day from 1 to 28 and a time, and the reason for 28 sits beside the number rather than in a paragraph under the row. <b>Custom</b> keeps the cron, and the green line under it is the <b>server’s</b> description and next three fires, never one this page worked out. The last cell is the same field refused: the badge is the server’s error, and Save is held while it stands.',
+     () => B.pickerShots()],
+    ['quiet-shapes', 'The quiet-viewer choice · the shape that was kept and the one that was dropped',
+     'Both drawn at the 300 px the control really gets. <b>Kept:</b> a select and the chosen option’s sentence — the shape this page already uses for <i>When a subtitle does not fit</i>, which is the same kind of question in the same place. <b>Dropped:</b> a three-way seg. Its labels are 20, 10 and 19 characters, so at this width it wraps to three lines, and a seg that wraps reads as three controls rather than one choice of three; it also has no room for the sentence that makes <i>Skip both</i> mean anything.',
+     () => B.quietShapes()],
+
+    ['dlg-none', 'The Scan dialog · Recommendations &amp; suggestions selected, no AI asked for',
+     'Each part has <b>one line that says what this scan does to it</b>. Recommendations is ticked: <i>Rebuilds 4 viewers’ lists now — the schedule would next run Tue 20:00</i>. Suggestions is unticked, and the same slot carries <i>Not in this scan — next by schedule 1 Nov 04:00</i> in the dim ink, so the line never moves and “unticked” is never a blank. Under each part, the dependent <b>and ask AI</b> tick, <b>unticked on every open and never remembered</b>, with the price it would commit to. Under the unticked part it is shown <b>disabled with what to do about it</b> — <i>Tick Suggestions first</i> — rather than hidden, so the part does not change height as its own tick is pressed. Above <i>Start scan</i>, the one summary line: <i>AI: none</i>.',
+     () => B.dialog({ recs: 'on', sugg: 'off', recsAi: 'off', suggAi: 'off' })],
+    ['dlg-ai', 'The Scan dialog · the re-rank asked for',
+     'The only thing a person changed is the tick inside Recommendations, and three things say so: the tick’s box is accented, its sentence comes out of the muted ink into the body ink, and the summary’s last clause changes from <i>none</i> to <b>re-rank 4 viewers</b> in the accent. The accent is the round’s one piece of boldness and it is spent on the clause that costs money. It is never colour alone — both faces are labelled <i>AI:</i>, and the sentence names the price.',
+     () => B.dialog({ recs: 'on', sugg: 'off', recsAi: 'on', suggAi: 'off' })],
+    ['dlg-limit', 'The Scan dialog · both parts ticked, and the limit leaves too little for either AI',
+     'Both parts in this scan, and both <b>and ask AI</b> ticks <b>shown disabled with their reason</b> — <i>This month’s AI limit leaves too little</i> — rather than hidden, which is the rule the owner fixed for a feature and this round applies to a tick. Each still shows what it would have cost, because that is the number that explains the refusal. The summary reads <i>AI: none</i>, and it is the same words as the frame above: what the dialog could not do and what nobody asked for are the same outcome, and the dialog does not invent a third sentence for it.',
+     () => B.dialog({ recs: 'on', sugg: 'on', recsAi: 'dis', suggAi: 'dis' })],
+
+    ['act-ai', 'Activity ▸ the AI card · 37 waiting, and why',
+     'The job line as it ships, then the two things this round adds. The held-back sentence already ships — and ships with its colour set <b>inline</b>, which is a live light-theme defect this round fixes by giving it a class with a light twin (see the light picture of this frame, and the report). <b>Remove all 37 waiting</b> stands next to it, its count the server’s, with one line saying what it does <i>not</i> touch. On each row the chip <i>held by this month’s limit</i> replaces the shipped <i>waiting</i> badge rather than sitting beside it: one slot, one state — two words for the same fact is the duplication round 9 spent a correction removing.',
+     () => B.activityCard()],
+    ['toast', 'What the run says afterwards',
+     'Both faces of the started toast. The AI line is its own sentence under the skip, in the same words the summary used and the history line will use, so the three cannot drift: <i>AI: none</i> and <i>AI: re-rank 4 viewers</i>.',
+     () => B.toasts()],
+    ['longest', 'The longest strings, each at the width it really has',
+     'Four places length actually breaks. A <b>Jellyfin display name</b> is whatever somebody typed into Jellyfin and this list holds every user, so a 38-character <span class="mono-id">qa-…</span> name is the realistic case rather than a convenience. At this width it fits its column with room left — <b>412 is where it wraps</b>, and that picture is the one to magnify. The <b>longest quiet choice</b> and its longest sentence in 300 px. The <b>longest schedule</b> the server will describe back. And the <b>longest summary line</b>: everything ticked, nothing skipped, both AI steps asked for — three clauses and about 190 characters, which is why the summary is a band of its own above the foot and not a line inside it.',
+     () => B.longest(false)],
+  ];
+
+  const PHONE = [
+    ['viewers', 'AI ▸ Re-rank · the viewer list at 412 px',
+     'The four-column row stacks: the name and the switch keep one line, and the two values go under them. Kept as a grid at this width, <i>Seen 6 days ago</i> became a column one word wide. The switch stays at the right-hand end of the name’s line, which is where it is at every width — moving it to the left would make the phone a different control from the desktop.',
+     () => B.jobBox('small')],
+    ['viewers-long', 'AI ▸ Re-rank · 48 users at 412 px',
+     'The filter and the three tabs take a line each and the tabs split the width evenly, which is what keeps <i>Test accounts 43</i> on one line. The fold is the thing that makes this width work at all: 48 stacked rows at three lines each is 11 screens, and 14 plus one fold is one and a half.',
+     () => B.jobBox('long')],
+    ['set-recs', 'Settings ▸ Processing ▸ Recommendations &amp; suggestions at 412 px',
+     'Both pickers wrap inside the shipped <span class="mono-id">pf-every</span> row — the mode, then its own controls on the next line — and each quiet choice’s select takes the full width. The monthly day box keeps its 62 px: a number from 1 to 28 needs two characters, and a full-width field for two characters reads as a field for something else.',
+     () => B.settingsRow()],
+    ['dlg-parts', 'The Scan dialog · step two, the feature’s two parts, at 412 px',
+     'The drill-in. The dialog’s title is the feature name, so the pane’s own heading is hidden by the shipped <span class="mono-id">sd-one-pane</span> rule and the count survives. Both parts, both <i>what this scan does</i> lines, the dependent AI tick with the longest sentence in the round, and the summary band above <i>Start scan</i> — which is the frame that proves the summary had to be a band: in the foot at this width it would have pushed the two buttons off the bottom.',
+     () => B.dialogPhone({ recs: 'on', sugg: 'off', recsAi: 'on', suggAi: 'off' })],
+    ['act-ai', 'Activity ▸ the AI card at 412 px',
+     'The job line’s chips wrap, the held-back sentence takes the full width, and <b>Remove all 37 waiting</b> drops to its own line above the rows. The chip on each row is the longest thing on it, so it is what decides whether the row holds.',
+     () => B.activityCard()],
+    ['longest', 'The longest strings at 412 px',
+     'The same four, at the width that breaks them. The 38-character name is the one to magnify: it wraps to two lines and the switch stays where it is.',
+     () => B.longest(true)],
+  ];
+
+  const set = ph ? PHONE : DESK;
+  document.getElementById('frames').innerHTML = set.map(([id, title, note, build]) => {
+    const name = id + (ph ? '-412' : '') + (light ? '-light' : '');
+    return `
+  <div class="cap"><h2>${title}</h2><div class="mono-id">${name}.png</div><p>${note}</p></div>
+  <div class="shot"><div class="frame ${ph ? 'ph' : 'desk'}" id="${name}"${light ? ' data-theme="light"' : ''}>${build()}</div></div>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>

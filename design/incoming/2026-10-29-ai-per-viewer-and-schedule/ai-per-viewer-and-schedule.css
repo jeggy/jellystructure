@@ -1,0 +1,303 @@
+/* ai-per-viewer-and-schedule.css — round `ai-per-viewer-and-schedule`, 2026-10-29.
+ *
+ * Two kinds of rule live here and the report says which is which:
+ *
+ *   1. THE CANVAS the frames sit on — `html/body.canvas`, `.canvas-head`, `.cap`, `.shot`,
+ *      `.frame`, `--blur: none`, and this round's two side-by-side helpers. It dresses a
+ *      screenshot page, it is NOT product, and it is never promoted. It is the same canvas the
+ *      three rounds before this one used, because a canvas is a canvas.
+ *
+ *   2. THE NEW COMPONENTS, named for the production file each belongs in:
+ *        `vw-*`  the viewer list under AI ▸ Re-rank  → wf.css (the brief's instruction: Settings
+ *                has no page stylesheet of its own, so a new component for it goes in the system
+ *                file). Every name is distinctive, because wf.css is unscoped by nature.
+ *        `qv-*`  the quiet-viewer choice in Settings ▸ Processing → processing.css, under `.pfx`.
+ *        `sd-*`  the Scan dialog's new lines → processing.css, under `.pfx`. `.sd-two`, `.sd-one`,
+ *                `.sd-parts`, `.sd-lede`, `.sd-back` and the `.tick` glyph are ALREADY production
+ *                there and are not restated here — the frames link the file and get them from it.
+ *        `aiq-*` one line on Activity's AI card → wf.css, beside `.jobrow`/`.jq-*`.
+ *      The report argues the two homes rather than putting all four in wf.css, because a bare
+ *      `.sd-does` in wf.css would sit in the cascade of every page while the thing it styles only
+ *      ever exists inside `.pfx`. That is Bárður's to settle, and it is one line to move.
+ *
+ * Everything else in the pictures is the shipped system: `wf.css` (tokens, .card, .box, .btn,
+ * .badge, .chip, .seg, .toggle, .select, .input, .field, .hint, .scrollbox, .jobrow, .jq-*,
+ * .wk-dot, .row/.fill/.spacer/.tiny/.muted) and `processing.css` (the feature row, the dialog, the
+ * toast). Nothing here redefines any of it.
+ *
+ * ONE CANVAS SUBSTITUTION, reported: `--blur: none` inside a frame. `backdrop-filter` IS
+ * production CSS — wf.css gives every `.card` `var(--blur)` — and the canvas rule forbids it
+ * because it breaks the screenshot render. The live admin keeps its glass. No
+ * `content-visibility`, no large `filter: blur`, no animation of any kind, infinite or otherwise.
+ *
+ * LIGHT THEME: every rule below that uses --ok/--warn/--bad/--info as a TEXT colour carries its
+ * twin at the bottom, with wf.css's own light values (#128a5f / #9a6a06 / #c23b2d / #1f7fb8).
+ * The tokens are deliberately not re-tinted per theme; the use site is.
+ */
+
+/* ======================================================= the canvas around the frames
+   Host backdrop is light gray, so any text directly on it is dark ink (PROCESS.md). */
+html, body.canvas {
+  margin: 0;
+  background: #e9eaef;
+  color: #12141b;
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.canvas-head { padding: 28px 28px 4px; max-width: 1100px; }
+.canvas-head h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; margin: 0 0 .35em; color: #12141b; }
+.canvas-head p { color: #262a35; margin: 0 0 .6em; font-size: .95rem; line-height: 1.55; }
+.canvas-head .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .86em; color: #12141b; }
+.cap { padding: 26px 28px 8px; max-width: 1100px; }
+.cap h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.02rem; margin: 0 0 .2em; color: #12141b; }
+.cap .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #262a35; }
+.cap p { color: #262a35; font-size: .88rem; margin: .3em 0 0; line-height: 1.5; }
+.shot { padding: 0 28px 10px; }
+body.ph .cap, body.ph .canvas-head { padding-left: 14px; padding-right: 14px; }
+body.ph .shot { padding: 0 0 10px; }
+
+/* a frame is one region of the admin page, on the page's own background */
+.frame {
+  --blur: none;                                  /* canvas substitution, see the header */
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Sora', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  border: 1px solid rgba(18,20,27,.18);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  padding: 20px 24px 24px;
+}
+/* the shipped aurora wash is `position: fixed` on body::before and cannot be scoped to a frame;
+   drawn here as the same two radial stops, static, no filter, no animation. */
+.frame::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(900px 600px at 12% -8%, rgba(177,92,208,.16), transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgba(0,164,220,.14), transparent 55%);
+}
+.frame > * { position: relative; z-index: 1; }
+/* 1180, not 1440: the admin's shell is a 248 px sidebar and the rest, so a Settings card in a
+   1440 window is about this wide. A 1440 frame drew 300 px of empty page beside every picture. */
+.frame.desk { width: 1180px; }
+.frame.ph { width: 412px; padding: 14px; border-radius: 0; }
+
+/* the frames' own labels and side-by-sides. CANVAS ONLY. `.aiv-cols` draws the five picker modes
+   and the two control shapes beside each other so they can be compared in one picture; the admin
+   never shows two of either. */
+.aiv-lab { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+  color: var(--ink-soft); margin: 0 0 7px; }
+.aiv-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.aiv-cols.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.aiv-stack { display: flex; flex-direction: column; gap: 18px; }
+.aiv-rule { border: none; border-top: 1px dashed var(--line-2); margin: 18px 0; }
+
+/* ======================================================= 1. the viewer list (FR-1.1, FR-1.2)
+   → wf.css. Inside the Re-rank job's `.box` on Settings ▸ AI.
+
+   A row says four things: the name, when a Ravilo device of theirs was last seen, whether their
+   Recommended row follows an AI order, and the switch. Four columns at desktop; the two middle
+   ones fold under the name at the house narrow breakpoint, because at 412 a four-column row holds
+   its columns and turns every value into a column one word wide (round 9's finding, the same
+   shape). The switch keeps the right-hand end at both widths: it is the only control on the row
+   and the thing the eye returns to. */
+.vw-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 0; }
+.vw-bar .input { width: 220px; }
+.vw-bar .vw-count { font-size: .78rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.vw-list { display: flex; flex-direction: column; margin-top: 8px; }
+/* 92 px for the switch column, not 54: at 54 the head RE-RANK WITH AI broke to two lines over a
+   44 px control and read as two heads. The control is 44 px and right-aligned in its column. */
+.vw-head, .vw-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 150px minmax(0, 1fr) 92px;
+  gap: 14px; align-items: center; }
+.vw-head { padding: 0 2px 7px; border-bottom: 1px solid var(--line); }
+.vw-head span { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-dim); font-weight: 700; }
+/* the switch's column head is the only right-aligned one, over the control it names */
+.vw-head span:last-child { text-align: right; }
+.vw-row { padding: 9px 2px; border-top: 1px solid var(--line); }
+.vw-row:first-child { border-top: none; }
+.vw-n { font-size: .9rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+/* The default's own reason, on EVERY row. FR-1.2 asks that a default is never silent, and a
+   reason drawn only on the `off` rows would read as those rows being special rather than as one
+   of two defaults. A STORED choice says when it was made instead. */
+.vw-why { display: block; font-weight: 400; font-size: .76rem; color: var(--ink-soft); margin-top: 2px; }
+.vw-cell { font-size: .8rem; color: var(--ink-soft); min-width: 0; }
+.vw-cell b { color: var(--ink); font-weight: 600; }
+/* a row with no AI order and a row that never signed in are both ordinary, not findings */
+.vw-cell.vw-none { color: var(--ink-dim); }
+.vw-sw { display: flex; justify-content: flex-end; }
+/* the line a switch-off leaves behind: three things happened at once and the row says so, where
+   it happened, until the next push replaces it. Not a toast — the row is what changed. */
+.vw-said { grid-column: 1 / -1; font-size: .78rem; color: var(--ink-soft); line-height: 1.45;
+  margin: 7px 0 1px; padding: 8px 11px; border-radius: var(--radius-s);
+  background: var(--fill-2); border: 1px solid var(--line); border-left: 3px solid var(--ok); }
+/* saving: the switch has been pressed and the server has not answered. The admin renders
+   server-pushed state only, so the control stays in its OLD position — dimmed, not replaced. A
+   control that disappears while it waits is a row that jumps and a person who presses twice. */
+.vw-row.vw-saving .vw-n, .vw-row.vw-saving .vw-cell { opacity: .55; }
+.vw-row.vw-saving .toggle { opacity: .55; border-style: dashed; }
+.vw-row.vw-saving .vw-why { opacity: 1; color: var(--ink-soft); }
+
+/* A long list stays usable by being a long list: the 40+ `qa-…` rows are FOLDED behind their own
+   count rather than paged, because what a person came here to do is find one name. The fold is
+   one row, it says what is inside it and that every one of them is off by the rule, and it opens
+   in place. The filter and the three tabs are view controls over the server's list; every COUNT in
+   them is the server's. */
+.vw-fold { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center;
+  padding: 13px 2px; border-top: 1px solid var(--line); }
+.vw-fold .t { font-size: .86rem; font-weight: 600; }
+.vw-fold .s { font-size: .76rem; color: var(--ink-soft); margin-top: 2px; }
+/* The list is NOT a scrollbox. A `max-height` here would put a second scrollbar inside a page that
+   already scrolls, and it is the fold that makes 48 users usable — not a 350 px window onto them.
+   (It also clipped this round's own first render of the long list at row five, which is the exact
+   shape of round 9's `max-height` finding.) */
+.vw-shown { font-size: .76rem; color: var(--ink-soft); padding: 9px 2px 0; border-top: 1px solid var(--line); }
+/* loading: nothing is drawn from a cache, so the first paint is a skeleton and not last session's
+   switches — a switch drawn from a cache is a switch that lies about what the AI will do. */
+.vw-sk-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 150px minmax(0, 1fr) 54px;
+  gap: 14px; align-items: center; padding: 14px 2px; border-top: 1px solid var(--line); }
+.vw-sk { display: block; background: var(--fill-2); border-radius: 7px; height: 12px; }
+.vw-sk.w1 { width: 118px; } .vw-sk.w2 { width: 86px; } .vw-sk.w3 { width: 152px; }
+.vw-sk-sw { width: 44px; height: 25px; border-radius: 20px; background: var(--fill-2); margin-left: auto; }
+
+/* ======================================================= 2. the quiet-viewer choice (FR-2.1)
+   → processing.css, under `.pfx`.
+
+   A select and the chosen option's own sentence, which is the shape Settings ▸ Processing already
+   uses for *When a subtitle does not fit* — the same question (one of three named behaviours) in
+   the same place, so it gets the same control. A `.seg` was drawn first and lost: see the round's
+   `quiet-shapes` frame and the report. The sentence is the SERVER's, per option; it is what makes
+   *Skip both* legible without anyone having to work out what "both" is. */
+.pfx .qv { margin-top: 16px; }
+/* The label is a LABEL, not a second part name. At the part name's own weight and size it read as
+   a third switch-less part under Recommendations; it is set in the soft ink one step down, which
+   is what every other labelled control on this page does. */
+.pfx .qv .pn { font-size: .82rem; font-weight: 600; color: var(--ink-soft); }
+.pfx .qv-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pfx .qv-row .select { min-width: 210px; }
+.pfx .qv-said { font-size: .78rem; color: var(--ink-soft); line-height: 1.5; margin-top: 7px; max-width: 62ch; }
+/* the picker's own extra controls for the new mode. `.pf-every` is production and holds the row;
+   only the monthly day box and its note are new. */
+.pfx .pf-every .qv-day { width: 62px; text-align: center; }
+/* A SECOND LIVE DEFECT, and this one is only visible at 412: the schedule check puts the server's
+   whole description inside a `.badge`, and wf.css gives every badge `white-space: nowrap`. The
+   longest description the server returns is 58 characters, so at phone width the badge runs
+   straight off the right edge of the card and the sentence is cut mid-word. A badge is for a
+   status word; this is a sentence, and it wraps. */
+.pfx .qv-check .badge { white-space: normal; text-align: left; }
+
+/* A LIVE DEFECT THIS ROUND FIXES, reported: SettingsProcessing.kt draws every `type="time"` at
+   `width: 112px`. That fits `20:00`, and Chromium renders a 12-hour locale as `08:00 PM` with a
+   clock button after it — which is 134 px, so the shipped field clips its own value and its own
+   picker button. Nothing in the markup shows this; the first render did. */
+.pfx .pf-every .qv-time { width: 138px; }
+
+/* ======================================================= 3. the Scan dialog (FR-4.1 – FR-4.4)
+   → processing.css, under `.pfx`. `.sd-one`, `.tick`, `.sd-parts` and `.sd-lede` are already
+   there; these three are what this round adds.
+
+   `.sd-does` is the part's own "what this scan does" line — one sentence, in the ink of the
+   surrounding text rather than muted, because it is the answer to the question the owner asked of
+   this dialog ("make it very clear what it does and what it skips"). When the part is unticked the
+   same slot carries the *Not in this scan* sentence, dimmed, so the line never moves. */
+.pfx .sd-does { font-size: .8rem; color: var(--ink); line-height: 1.5; margin-top: 4px; }
+.pfx .sd-one.sd-untick .sd-does { color: var(--ink-dim); }
+/* the dependent tick. Indented under the part it depends on, because that is what "dependent"
+   means on a screen: it is not a sibling of Recommendations, it is inside it. */
+.pfx .sd-ai { display: grid; grid-template-columns: 19px minmax(0, 1fr); gap: 10px; align-items: start;
+  margin: 9px 0 2px; padding: 9px 11px; border-radius: var(--radius-s);
+  border: 1px solid var(--line); background: var(--fill-2); cursor: pointer; }
+.pfx .sd-ai.on { border-color: var(--hi); background: var(--hi-soft); }
+.pfx .sd-ai .t { font-size: .82rem; font-weight: 600; }
+.pfx .sd-ai .s { font-size: .76rem; color: var(--ink-soft); line-height: 1.45; margin-top: 2px; }
+.pfx .sd-ai.on .s { color: var(--ink); }
+/* shown, disabled, with its reason — never hidden and never live-but-useless
+   (processing-runs-as-nine-features.md FR-11, which this spec carries into FR-4.2). */
+.pfx .sd-ai.dis { opacity: .5; border-style: dashed; cursor: default; }
+.pfx .sd-ai .why { font-size: .76rem; color: var(--warn); margin-top: 3px; }
+/* The one summary line above Start scan. It is a BAND of its own above the foot, not a line
+   inside it: at full tick it is three clauses and about 190 characters, and in the foot it had
+   either to wrap under Cancel and Start scan or squeeze them. It is the last thing read before the
+   button, which is where it belongs. */
+.pfx .sd-sum { flex: none; padding: 13px 20px; border-top: 1px solid var(--line);
+  background: var(--fill-2); font-size: .82rem; line-height: 1.55; color: var(--ink);
+  display: flex; flex-wrap: wrap; gap: 2px 16px; }
+/* Each clause is its own box, so a label never ends a line with its list on the next one. The
+   bold labels are the separator; there is no middle dot to dangle at a wrap. */
+.pfx .sd-sum .cl { min-width: 0; }
+.pfx .sd-sum b { font-weight: 700; }
+.pfx .sd-sum .skips { color: var(--ink-soft); }
+/* `AI: none` is a fact and not a warning; `AI: re-rank 4 viewers` is the one clause that spends
+   money, so it is the one that carries the accent. Never colour alone: both are labelled `AI:`. */
+.pfx .sd-sum .ai-none { color: var(--ink-soft); }
+.pfx .sd-sum .ai-on { color: var(--acc-ink); font-weight: 600; }
+
+/* ======================================================= 4. Activity ▸ the AI card (FR-5.1)
+   → wf.css, beside `.jobrow` / `.jq-*`.
+
+   The held-back sentence already ships. It ships with `style="color: var(--warn)"` INLINE, and
+   --warn is #f5b542 in both themes — about 1.9:1 on the light theme's white card. This class is
+   the same sentence with a light twin at the bottom of this file, and the report names the live
+   defect it fixes. */
+.aiq-held { font-size: .78rem; color: var(--warn); line-height: 1.45; margin-top: 6px; }
+.aiq-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 9px; }
+/* A THIRD LIVE DEFECT, and it is only visible at 412: `.jobrow` is a flex row with no narrow tier
+   at all, so at phone width the controls keep their columns and leave the text about 40 px —
+   `queued by the schedule` became one word per line and the chip was drawn over it. This is the
+   same shape as round 9's finding 7 on the Queued-work rows, in a card that round did not touch.
+   The row wraps: the number and the text take the first line, the chip and Remove the second. */
+@media (max-width: 640px) {
+  .jobrow { flex-wrap: wrap; row-gap: 9px; }
+  .jobrow .jq-main { flex: 1 1 calc(100% - 46px); min-width: 0; }
+}
+
+/* ======================================================= the longest strings
+   CANVAS ONLY: a 300 px column so each control is drawn at a width it really has. */
+.aiv-narrow { width: 300px; min-width: 0; }
+
+/* ======================================================= light-theme twins */
+/* --ink-dim is rgba(15,17,26,.25) on the light theme — about 2:1 on a white card. Three things
+   in this round are set in it and all three are things somebody has to READ: the column heads, a
+   row's default reason, and the two "nothing here yet" values. ai.css set the same precedent for
+   its waiting step. A default that cannot be read is a default that is still silent. */
+[data-theme="light"] .vw-head span { color: #5d6378; }
+[data-theme="light"] .vw-cell.vw-none { color: #5d6378; }
+[data-theme="light"] .pfx .sd-one.sd-untick .sd-does { color: #5d6378; }
+[data-theme="light"] .pfx .sd-ai .why { color: #9a6a06; }
+[data-theme="light"] .aiq-held { color: #9a6a06; }
+/* `.vw-said`'s left rule and `.sd-ai.on`'s border are a BORDER and a FILL, and need none. */
+
+/* ======================================================= 640 px and under
+   The house narrow breakpoint (wf.css). This round proves it at 412, which is inside it. */
+@media (max-width: 640px) {
+  /* The four-column row stacks: the name and the switch keep one line, the two values go under
+     them. Kept as a grid, `Seen 6 days ago` became a column one word wide and the AI-order line
+     three. The switch stays at the right-hand end of the name's line, which is where it is at
+     every width — moving it would make the phone a different control. */
+  .vw-head { display: none; }
+  .vw-row { grid-template-columns: minmax(0, 1fr) 54px; gap: 4px 12px; padding: 13px 2px; }
+  .vw-cell { grid-column: 1 / -1; }
+  .vw-cell + .vw-cell { margin-top: -2px; }
+  .vw-sw { grid-row: 1; grid-column: 2; align-self: start; }
+  .vw-bar { gap: 9px; }
+  .vw-bar .input { width: 100%; }
+  .vw-bar .seg { width: 100%; }
+  .vw-bar .seg span { flex: 1 1 0; justify-content: center; text-align: center; }
+  /* the fold stacks: beside the button its own sentence was left about 150 px and broke into a
+     three-line column, which is the shape that makes a narrow row unreadable */
+  .vw-fold { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .vw-fold .btn { justify-self: start; }
+  .vw-sk-row { grid-template-columns: minmax(0, 1fr) 54px; }
+  .vw-sk.w3 { width: 110px; }
+
+  /* the dialog: the summary band keeps its own line, and the AI tick's sentence is the longest
+     thing in the drill-in, so it gets the full width rather than an indent of its own */
+  .pfx .sd-sum { padding: 12px 14px; }
+  .pfx .sd-ai { padding: 9px 10px; }
+  .pfx .qv-row .select { min-width: 0; width: 100%; }
+
+  /* the canvas' side-by-sides are one column at this width, or they are not a comparison */
+  .aiv-cols, .aiv-cols.three { grid-template-columns: minmax(0, 1fr); }
+  .aiv-narrow { width: 100%; }
+}

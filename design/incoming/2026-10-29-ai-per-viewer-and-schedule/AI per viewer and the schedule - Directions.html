@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI re-rank per viewer, the schedule, and a Scan dialog that says what it does — Directions</title>
+<!-- Self-contained on purpose: a directions doc is read on its own, so it carries its own small
+     stylesheet. No network reference of any kind — no hosted font, no @import, no script src. The
+     face names below are the system's (Space Grotesk / Sora / JetBrains Mono); where they are not
+     installed this file falls back and says the same thing. -->
+<style>
+  :root { --ink:#12141b; --soft:#262a35; --dim:#555b6b; --line:#d6d9e2; --hi:#6240cf; --bg:#f4f5f8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Sora',system-ui,sans-serif;
+         line-height:1.6; font-size:16px; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 36px 24px 80px; }
+  h1 { font-family:'Space Grotesk',sans-serif; font-size:1.75rem; margin:0 0 .2em; }
+  h2 { font-family:'Space Grotesk',sans-serif; font-size:1.2rem; margin:2.2em 0 .5em;
+       padding-top:.8em; border-top:1px solid var(--line); }
+  h3 { font-size:1rem; margin:1.6em 0 .3em; }
+  p, li { color:var(--soft); }
+  .lede { font-size:1.02rem; }
+  code, .mono { font-family:'JetBrains Mono',monospace; font-size:.88em; }
+  table { width:100%; border-collapse:collapse; margin:.8em 0 1.4em; font-size:.92rem; }
+  th { text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em;
+       color:var(--dim); font-weight:700; padding:0 10px 8px 0; border-bottom:1px solid var(--line); }
+  td { padding:10px 10px 10px 0; border-bottom:1px solid var(--line); vertical-align:top; color:var(--soft); }
+  td:first-child, th:first-child { padding-left:0; }
+  .k { color:var(--ink); font-weight:600; }
+  .note { background:#fff; border:1px solid var(--line); border-left:3px solid var(--hi);
+          border-radius:10px; padding:12px 16px; margin:1.2em 0; }
+  .note.q { border-left-color:#c08a12; }
+  ul { padding-left:1.2em; }
+  .files { font-family:'JetBrains Mono',monospace; font-size:.8rem; color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>AI re-rank per viewer · the schedule · a Scan dialog that says what it does</h1>
+<p class="lede">Round <span class="mono">ai-per-viewer-and-schedule</span>, revision 1, 2026-10-29.
+The admin only — no Ravilo client, no TV, no remote. Four places, drawn at desktop and 412&nbsp;px,
+in both themes: <b>38 pictures</b>.</p>
+
+<h2>What is fixed before anything is drawn</h2>
+<ul>
+  <li><b>The admin renders server-pushed state only.</b> Nothing on these screens is derived,
+    optimistic or worked out in the browser. Every sentence, count and price is the server's; the
+    dialog <i>selects</i> the sentences that match its ticks, it does not compose them.</li>
+  <li><b>The surfaces already exist and are extended, not redrawn.</b> Settings ▸ AI's job box,
+    Settings ▸ Processing's feature row, the two-pane Scan dialog and Activity's AI card all ship
+    today. Every picture in this round links the production <span class="mono">wf.css</span>,
+    <span class="mono">app.css</span> and <span class="mono">processing.css</span>, so what is in
+    them <i>is</i> the shipped system.</li>
+  <li><b>Shown, disabled, with its reason — never hidden.</b> The owner's rule for a control that
+    cannot do anything new. This round applies it to a dependent tick as well as to a switch.</li>
+  <li><b>Dark and light are both real.</b> Every frame is drawn in both.</li>
+  <li><b>English only.</b> The admin ships no translated strings; there is no Danish or Faroese
+    draft in this round and none is owed.</li>
+</ul>
+
+<h2>The direction</h2>
+<p>There is one. This is an addendum to surfaces that are already decided, so the round's job is
+consistency rather than choice — with two exceptions, both below: the <b>shape of the quiet-viewer
+control</b> (two were drawn, one kept) and <b>where the summary line sits</b> (two positions tried).</p>
+
+<h3>1 · AI ▸ Re-rank job — one switch per Jellyfin user</h3>
+<p>A list inside the Re-rank job's own box, under its three status lines. Four columns:
+<b>Jellyfin user</b>, <b>Ravilo device</b>, <b>Recommended row</b>, <b>Re-rank</b>. Every row
+carries its default's reason — <i>on by default</i> as well as <i>off — test account</i> — because
+a reason drawn only on the off rows reads as those rows being special rather than as one of two
+defaults, which is the opposite of what "the default is never silent" asks for.</p>
+<p>A long list is made usable by <b>folding the test accounts behind their own count</b>: 14 rows
+and one fold that says what is inside it, rather than a scrollbox inside a page that already
+scrolls, and rather than paging. A filter and three tabs sit above it; every count in them is the
+server's.</p>
+
+<h3>2 · Settings ▸ Processing — two pickers, two quiet-viewer choices</h3>
+<p>Each part takes the picker <i>Find new &amp; changed</i> already has, with <b>Monthly on</b>
+added: a day from 1 to 28 and a time, with the reason for 28 beside the number rather than in a
+paragraph under the row. Under each picker, <b>When nobody has watched anything new</b> as a select
+with the chosen option's own sentence beneath it.</p>
+
+<h3>3 · The Scan dialog — what runs, what is skipped, and what AI it asks</h3>
+<p>Three additions to the right pane, all server-sent:</p>
+<ul>
+  <li><b>One line per part saying what this scan does to it.</b> Ticked:
+    <i>Rebuilds 4 viewers' lists now — the schedule would next run Tue 20:00</i>. Unticked, the
+    same slot: <i>Not in this scan — next by schedule 1 Nov 04:00</i>, dimmed. The line never moves,
+    so "unticked" is never a blank.</li>
+  <li><b>A dependent <i>and ask AI</i> tick under each part</b>, unticked on every open and never
+    remembered, carrying what it would cost and what is left of the month. Shown in all three
+    cases — live, disabled because the part is not in this scan, disabled because the limit leaves
+    too little — so the part never changes height as its own tick is pressed.</li>
+  <li><b>One summary band above <i>Start scan</i></b>: <i>Runs: … · Skips: … · AI: …</i>.</li>
+</ul>
+
+<h3>4 · Activity ▸ the AI card</h3>
+<p>The held-back sentence stays where it is. <b>Remove all 37 waiting</b> goes beside it, its count
+the server's, with one line naming what it does not touch. On each waiting row the chip <i>held by
+this month's limit</i> <b>replaces</b> the shipped <i>waiting</i> badge rather than sitting beside
+it: one slot, one state.</p>
+
+<h2>What was drawn and dropped</h2>
+<table>
+  <tr><th>Drawn</th><th>Why it was not kept</th></tr>
+  <tr><td class="k">The quiet choice as a three-way seg</td>
+      <td>Its labels are 20, 10 and 19 characters. In the 300&nbsp;px the control really gets, every
+        option wraps to two or three lines and the seg reads as three controls rather than one
+        choice of three — and there is no room left for the sentence that makes <i>Skip both</i>
+        mean anything. Drawn beside the kept shape in <span class="mono">quiet-shapes</span>.</td></tr>
+  <tr><td class="k">The summary line inside the dialog's foot</td>
+      <td>At full tick it is three clauses and about 190 characters. In the foot it either wrapped
+        under <i>Cancel</i> and <i>Start scan</i> or squeezed them, and at 412 it pushed both
+        buttons off the bottom. It is a band of its own above the foot.</td></tr>
+  <tr><td class="k">The viewer list in a scrollbox with sticky heads</td>
+      <td>A second scrollbar inside a page that already scrolls, and in the round's own first
+        render it clipped the long list at row five — so the fold, which is the whole point of that
+        picture, was not in the picture. The fold replaced it.</td></tr>
+  <tr><td class="k">The AI tick hidden under an unticked part</td>
+      <td>The part changed height as its own tick was pressed, and the one line saying what asking
+        the AI would have cost disappeared with it. Shown disabled, with <i>Tick Suggestions
+        first</i>.</td></tr>
+  <tr><td class="k">The switch replaced by the word <i>Saving…</i></td>
+      <td>The control vanished while it waited, the row jumped, and a person presses twice. The
+        switch stays in its old position, dimmed; the reason line says <i>Saving…</i></td></tr>
+</table>
+
+<h2>Every state the round holds</h2>
+<table>
+  <tr><th>State</th><th>Where</th></tr>
+  <tr><td class="k">Loading</td><td><span class="mono">viewers-off</span>, lower half — the list's
+    first paint as a skeleton. Only the list: the fields above it have already come back from the
+    config call.</td></tr>
+  <tr><td class="k">Nothing to show</td><td>Not drawn, by name: a list of every Jellyfin user is
+    never empty while anyone can sign in, and a house with no users has no admin to look at it.</td></tr>
+  <tr><td class="k">A control that cannot act</td><td>Three, each shown with its reason: every
+    switch when <i>Use AI</i> is off; the AI tick under an unticked part; the AI tick when the
+    month's limit leaves too little.</td></tr>
+  <tr><td class="k">A control waiting for the server</td><td><span class="mono">viewers-states</span>,
+    Gestur's row.</td></tr>
+  <tr><td class="k">What an action left behind</td><td><span class="mono">viewers-states</span>,
+    Elin's row: the three things a switch-off does, said on the row it happened on.</td></tr>
+  <tr><td class="k">A long list</td><td><span class="mono">viewers-long</span>, 48 users.</td></tr>
+  <tr><td class="k">A refusal</td><td><span class="mono">set-modes</span>, last cell: a cron the
+    server will not take, with its own error and Save held.</td></tr>
+  <tr><td class="k">The longest strings</td><td><span class="mono">longest</span>, at both widths:
+    the longest Jellyfin name, the longest quiet choice and its sentence, the longest schedule the
+    server will describe back, and the longest summary line.</td></tr>
+  <tr><td class="k">412&nbsp;px</td><td>Six frames, both themes.</td></tr>
+  <tr><td class="k">The light theme</td><td>All nineteen frames.</td></tr>
+  <tr><td class="k">Skipped, by name</td><td><b>Danish and Faroese</b> (the admin is English only)
+    · <b>10-foot focus</b> (no TV surface) · <b>offline / lost connection</b> (already drawn for
+    Activity by the <span class="mono">processing-features</span> round, and unchanged by anything
+    here) · <b>error</b> on the viewer list (the list either arrives or the page's own failure
+    banner stands; this round adds no failure of its own).</td></tr>
+</table>
+
+<h2>The new strings</h2>
+<p>All English, all built on the server. The admin composes none of them.</p>
+<table>
+  <tr><th>Where</th><th>String</th></tr>
+  <tr><td>Viewer list, heading</td><td>Re-rank with AI</td></tr>
+  <tr><td>Viewer list, column heads</td><td>Jellyfin user · Ravilo device · Recommended row · Re-rank</td></tr>
+  <tr><td>A default</td><td>on by default · off — test account</td></tr>
+  <tr><td>A stored choice</td><td>switched off today</td></tr>
+  <tr><td>Last seen</td><td>Seen today · Seen 2 days ago · Never seen</td></tr>
+  <tr><td>The row's order</td><td>AI order · written 27 Oct · Standard order · No AI order yet</td></tr>
+  <tr><td>The count line</td><td>48 users · 5 switched on · 43 off — test account</td></tr>
+  <tr><td>The fold</td><td>34 more test accounts — Every one of them off by the test-account rule. Open it to switch one on.</td></tr>
+  <tr><td>After a switch-off</td><td>Switched off. Their waiting request was removed and their AI order deleted — their list has been rebuilt in the standard order.</td></tr>
+  <tr><td>AI off for the installation</td><td>Use AI is off — AI is off for this installation, so nothing is re-ranked. The switches are kept as they are.</td></tr>
+  <tr><td>The month's estimate</td><td>A month at this schedule: at most 4 runs × 5 viewers switched on, before any skip.</td></tr>
+  <tr><td>Quiet viewers, label</td><td>When nobody has watched anything new</td></tr>
+  <tr><td>Quiet viewers, choices</td><td>Rebuild, skip the AI · Skip both · Rebuild and re-rank</td></tr>
+  <tr><td>Quiet viewers, each sentence</td><td>six, one per choice per part — see <span class="mono">aiv-data.js</span></td></tr>
+  <tr><td>Monthly</td><td>Monthly on · day · A day from 1 to 28, so every month has it.</td></tr>
+  <tr><td>Dialog, what it does</td><td>Rebuilds 4 viewers' lists now — the schedule would next run Tue 20:00</td></tr>
+  <tr><td>Dialog, what it skips</td><td>Not in this scan — next by schedule 1 Nov 04:00</td></tr>
+  <tr><td>Dialog, the tick</td><td>and ask AI</td></tr>
+  <tr><td>Dialog, the AI lines</td><td>Re-ranks 4 viewers switched on · up to $0.26 · $0.09 of this month's $5.00 left — Asks AI to group the list · up to $0.07</td></tr>
+  <tr><td>Dialog, the two refusals</td><td>This month's AI limit leaves too little · Tick Suggestions first</td></tr>
+  <tr><td>Dialog, the summary</td><td>Runs: … · Skips: … · AI: none | re-rank 4 viewers</td></tr>
+  <tr><td>Activity</td><td>Remove all 37 waiting · held by this month's limit · A batch already out is not touched — stop that with Cancel at Anthropic.</td></tr>
+  <tr><td>The toast</td><td>Scan started · skipped Intro &amp; credits — AI: none | AI: re-rank 4 viewers</td></tr>
+</table>
+
+<h2>Three live defects the pictures found</h2>
+<p>None of them is this round's own work; all three are in code that ships today, and all three are
+fixed in the round's CSS so the engineer picks them up with everything else.</p>
+<ol>
+  <li><b>A time field clips in a 12-hour locale.</b> Every <code>type="time"</code> in
+    Settings ▸ Processing is <code>width: 112px</code>, which fits <code>20:00</code> and cuts
+    <code>08:00 PM</code> and its own picker button in half.</li>
+  <li><b>The schedule check overflows at 412.</b> The server's description goes inside a
+    <code>.badge</code>, and every badge is <code>white-space: nowrap</code>; the longest
+    description runs off the right edge of the card, cut mid-word.</li>
+  <li><b>Activity's job rows are unreadable at 412.</b> <code>.jobrow</code> has no narrow tier at
+    all, so the controls keep their columns and leave the text about 40&nbsp;px —
+    <i>queued by the schedule</i> became one word per line with the chip drawn over it.</li>
+</ol>
+
+<h2>Still open, and each one is a sentence from Bárður</h2>
+<ol>
+  <li><b>Where the new classes go.</b> The brief says <i>wf.css</i>. The viewer list and the
+    Activity line belong there; the dialog's three and the quiet choice belong in
+    <span class="mono">processing.css</span>, under its <span class="mono">.pfx</span> wrapper,
+    because that file owns both surfaces and a bare <code>.sd-does</code> in the system file would
+    sit in the cascade of every page. One line to move either way.</li>
+  <li><b><i>Remove all 37 waiting</i> has no confirmation.</b> The spec names one control and no
+    confirmation; <i>Empty queues</i>, one card away, has one. Drawn as the spec says.</li>
+  <li><b>The stand-in name <span class="mono">qa-deb1000-a1b2c3</span></b> carries a task-shaped
+    number into a drawing. It is the brief's exact stand-in and it is what a real QA username looks
+    like, so it is drawn as given.</li>
+  <li><b>The brief's summary line names five of the dialog's ten parts</b>, while the left pane
+    shows the other five ticked. Its shape and its three clauses are kept exactly; the two lists are
+    extended to name what each picture actually ticks.</li>
+  <li><b>The brief's count sentence and its own list disagree</b>: "4 people plus 5 test accounts"
+    against a list of 5 people and 4 test accounts. The named list is what is drawn.</li>
+</ol>
+
+<p class="files">Files: frames.html · aiv-data.js · aiv-build.js ·
+ai-per-viewer-and-schedule.css · png/ (38) · REPORT.md</p>
+
+</div>
+</body>
+</html>
