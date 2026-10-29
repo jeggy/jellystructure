@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src file: data: 'unsafe-inline'; style-src file: data: 'unsafe-inline'; font-src file: data:; img-src file: data:; script-src 'none'; connect-src 'none'">
+<title>Newest first — directions</title>
+<style>
+@font-face { font-family: 'Space Grotesk'; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+:root { --ink: #12141b; --ink-2: #262a35; --ink-3: #4a5063; --line: #c9ccd6; --plate: #f4f5f8; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #e9eaee; color: var(--ink); font-family: 'Sora', sans-serif;
+  font-size: 15px; line-height: 24px; }
+.wrap { max-width: 1020px; margin: 0 auto; padding: 48px 32px 110px; }
+h1 { font-family: 'Space Grotesk', sans-serif; font-size: 38px; line-height: 44px; font-weight: 700;
+  letter-spacing: -.8px; margin: 0 0 8px; }
+h2 { font-family: 'Space Grotesk', sans-serif; font-size: 25px; line-height: 32px; font-weight: 600;
+  letter-spacing: -.3px; margin: 54px 0 14px; padding-top: 22px; border-top: 1px solid var(--line); }
+h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; line-height: 26px; font-weight: 600;
+  margin: 28px 0 8px; }
+p { margin: 0 0 14px; color: var(--ink-2); }
+ul { margin: 0 0 14px; padding-left: 22px; color: var(--ink-2); }
+li { margin-bottom: 7px; }
+b { color: var(--ink); font-weight: 600; }
+code, .m { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--ink-3); }
+.sub { color: var(--ink-3); font-size: 14px; margin-bottom: 30px; }
+table { border-collapse: collapse; width: 100%; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+td { color: var(--ink-2); }
+td.k { font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap; color: var(--ink); }
+.plate { background: var(--plate); border: 1px solid var(--line); border-radius: 12px;
+  padding: 18px 20px; margin: 0 0 18px; }
+.plate h3 { margin-top: 0; }
+.rec { border-left: 4px solid #7b6ef0; }
+.lean { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: #4a3fd0; background: #e4e1fb; border-radius: 5px;
+  padding: 2px 8px; vertical-align: 2px; margin-left: 8px; }
+.open { border-left: 4px solid #c47f16; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Newest first</h1>
+<p class="sub">A series where only the latest episodes matter — TV and phone series page, the
+Continue tile, the end of an episode, and the admin switch.<br>
+Round <span class="m">newest-first</span> · revision 1 · 2026-10-29 · Rannvá</p>
+
+<p><b>This round is ideas for the owner to choose from.</b> No spec is adopted, so every rule drawn
+here is a lean, not a requirement. It draws only what a <i>newest first</i> series changes — the
+series page, Home’s Continue tile, the end of an episode and one admin setting. Nothing else on
+those screens is redesigned.</p>
+
+<h2>What is fixed</h2>
+<p>These are not up for choosing; they are the ground the directions stand on.</p>
+<ul>
+  <li><b>The admin renders server-pushed state only.</b> The switch shows what the server stored.
+    Nothing on a Ravilo screen is computed from the dates by the client — so <i>every</i> direction
+    here needs the order to arrive as a field, and none of them can be done in the client alone.</li>
+  <li><b>TV: everything reachable by D-pad, visibly focused, readable at 3 m on 1080p.</b> Tizen
+    uses the TV layout. The Chromecast receiver has no series page and is out of the round.</li>
+  <li><b>Never colour alone</b> for <i>New</i> or for the newest-first mark. Each carries a word,
+    and the drawn words are shipped <span class="m">i18n</span> strings wherever one exists.</li>
+  <li><b>The repository is public.</b> Dagbók, Anna and the invented stills are the whole corpus;
+    no real programme, broadcaster or picture appears anywhere.</li>
+  <li><b>The wire stays backwards compatible.</b> Every direction below <i>adds</i> a field; none
+    retypes or removes one an installed client reads.</li>
+</ul>
+
+<h2>The directions</h2>
+
+<div class="plate rec">
+<h3>A — the <i>Newest first</i> bundle <span class="lean">the brief’s lean</span></h3>
+<p>One series-level flag changes four things at once, and they only make sense together:</p>
+<ul>
+  <li>the rail runs <b>newest first</b>, Thursday leftmost;</li>
+  <li>each card’s main label is the <b>air date</b>, with the programme’s own heading under it;</li>
+  <li>the primary button is <b>Play newest · Thu 29 Oct</b>, or <b>Resume</b> when today’s is part
+    watched;</li>
+  <li><b>Shuffle, Start over and <i>x of 12 watched</i> are gone</b>, and the hero carries one mark
+    saying the series runs newest first.</li>
+</ul>
+<p><b>What it gives:</b> the owner’s ask, exactly and in one place — the newest is first and Play
+plays it. <b>What it costs:</b> a stored per-series setting, a page that behaves differently from
+every other series, and four removals that each need a reason a viewer would accept.</p>
+</div>
+
+<div class="plate">
+<h3>C — the viewer’s own sort control</h3>
+<p>Today’s page plus a <i>Newest first / Oldest first</i> control on the Episodes header, reachable
+by D-pad. Play still follows today’s rule.</p>
+<p><b>What it gives:</b> no admin switch, no Auto-fetch involvement, nothing series-specific, and it
+helps every series rather than one kind. It is by far the cheaper build. <b>What it costs:</b> it
+answers half the ask. The owner asked for two things — <i>“the newest episode is listed first”</i>
+and <i>“when you click play, it would play the newest”</i> — and C does the first only. It also
+keeps Shuffle on a daily programme and keeps a watched count that describes a different twelve
+episodes tomorrow. See <span class="m">newest-c-tv-c2</span>: the rail is reversed and the button
+still reads <i>Play · S2026E291</i>.</p>
+</div>
+
+<h2>How they compare</h2>
+<table>
+  <tr><th>&nbsp;</th><th>Today</th><th>A — Newest first</th><th>C — sort control</th></tr>
+  <tr><td class="k">rail order</td><td>oldest first</td><td>newest first, always</td><td>viewer’s choice</td></tr>
+  <tr><td class="k">card label</td><td><span class="m">S2026E291</span></td><td>the air date</td><td><span class="m">S2026E291</span></td></tr>
+  <tr><td class="k">Play, never started</td><td>the oldest of 12</td><td><b>the newest</b></td><td>the oldest of 12</td></tr>
+  <tr><td class="k">Play, caught up</td><td>nothing to play</td><td><b>the newest, again</b></td><td>nothing to play</td></tr>
+  <tr><td class="k">Shuffle</td><td>yes</td><td>removed</td><td>yes</td></tr>
+  <tr><td class="k">x of 12 watched</td><td>yes</td><td>removed</td><td>yes</td></tr>
+  <tr><td class="k">set by</td><td>—</td><td>an admin switch, defaulted by Auto-fetch</td><td>the viewer, per device</td></tr>
+  <tr><td class="k">scope</td><td>—</td><td>one series</td><td>every series</td></tr>
+  <tr><td class="k">answers the ask</td><td>no</td><td><b>fully</b></td><td>the listing half only</td></tr>
+</table>
+
+<h2>Every state A holds</h2>
+<table>
+  <tr><th>state</th><th>what it is</th><th>picture</th></tr>
+  <tr><td class="k">s1</td><td>never started — the button is focused, no card is marked new</td><td class="k">newest-a-tv-s1</td></tr>
+  <tr><td class="k">s2</td><td>a new episode — watched to Wed 28, today unwatched; a rail card focused</td><td class="k">newest-a-tv-s2</td></tr>
+  <tr><td class="k">s3</td><td>half-watched — 12:40 of 28:00; the button becomes Resume</td><td class="k">newest-a-tv-s3</td></tr>
+  <tr><td class="k">s4</td><td>caught up — the button still plays the newest</td><td class="k">newest-a-tv-s4</td></tr>
+  <tr><td class="k">s1 + code</td><td>the episode code as a secondary line, for decision 4</td><td class="k">newest-a-tv-s1-code</td></tr>
+  <tr><td class="k">fo / da</td><td>both drafts, and the longest string in the round</td><td class="k">newest-a-tv-s2-fo · -da</td></tr>
+  <tr><td class="k">noir</td><td>the skin that inverts the accent to amber</td><td class="k">newest-a-tv-s2-noir</td></tr>
+  <tr><td class="k">phone</td><td>s1, s2, and s1 in Faroese at 412 px</td><td class="k">newest-a-phone-*</td></tr>
+  <tr><td class="k">h1 / h2 / h3</td><td>Home’s Continue tile: new, resuming, gone</td><td class="k">newest-a-home-tv-h* · -ph-h*</td></tr>
+  <tr><td class="k">end of episode</td><td>the last frame, and the page she lands on</td><td class="k">newest-a-player-end · -land</td></tr>
+  <tr><td class="k">admin</td><td>both values, both themes</td><td class="k">newest-a-admin-*</td></tr>
+</table>
+<p><b>Drawn and not drawn.</b> Drawn: the round’s own four states, 10-foot focus on every TV frame,
+the longest string, Danish and Faroese, and a non-aurora skin. <b>Not drawn, and deliberately:</b>
+loading, empty, error and offline. None of them is reached by this round — the order is a field on
+a series page that already has all four, and a newest-first series does not load, empty, fail or go
+offline differently from any other. If a direction is adopted, those four stay the series page’s
+own and need no new picture.</p>
+
+<h2>Decided rows</h2>
+<p>Judgement calls made inside the round, each one a thing the owner could overturn without
+redrawing anything else.</p>
+<table>
+  <tr><th>row</th><th>decided</th><th>why</th></tr>
+  <tr><td class="k">the hero mark</td><td><b>drawn</b> — one pill, <i>↓ Newest first</i></td>
+      <td>A reversed list with no explanation reads as a bug in a library where every other series
+      runs forwards. It is the shipped <span class="m">.dnext</span> pill in dim ink, so it is a
+      property of the series rather than a control; the words are the shipped
+      <span class="m">browse.sort.newest</span> and the arrow is a stroked path, so nothing is
+      carried by colour.</td></tr>
+  <tr><td class="k">the state pill</td><td>carries <b>no date</b></td>
+      <td>The button under it already names the episode. On today’s page both say a six-character
+      code and the repetition is cheap; here both would say a ten-character date twice, a
+      centimetre apart. The pill owns the state word, the button owns the date.</td></tr>
+  <tr><td class="k">the NEW ribbon</td><td>only when <b>something older is watched</b></td>
+      <td>On a series nobody has started every episode is equally new, so a ribbon on the newest one
+      is decoration on an arbitrary card. “New” means “newer than where you got to”, which needs a
+      place you got to. Compare <span class="m">newest-a-tv-s1</span> and <span class="m">-s2</span>.</td></tr>
+  <tr><td class="k">the corner number</td><td><b>removed</b> from A’s stills</td>
+      <td>The shipped <span class="m">.ep-num</span> draws the episode number at 40 px. <i>302</i>
+      means nothing on a daily programme, and the day of the month would repeat the label directly
+      beneath it. The duration and the ✓ stay.</td></tr>
+  <tr><td class="k">s4’s sentence</td><td><i>Caught up</i>, <b>not</b> <i>All 12 episodes watched</i></td>
+      <td>The shipped <span class="m">detail.all_watched</span> counts a set that is different
+      tomorrow. <i>Caught up</i> is a statement about the viewer, which is the thing that stays
+      true overnight.</td></tr>
+  <tr><td class="k">C’s control</td><td><b>two pills</b>, not one that cycles</td>
+      <td>A D-pad user has to see the option they are not on. A single pill that flips is a control
+      whose other half is invisible until it is pressed.</td></tr>
+  <tr><td class="k">the admin control</td><td>the shipped <span class="m">.seg</span>, <b>no new class</b></td>
+      <td>The brief preferred an existing segmented control and one fits exactly. The only new CSS
+      is the row’s geometry and the dashed rule that marks the provenance line as the server’s.</td></tr>
+  <tr><td class="k">the provenance line</td><td>drawn on <b>both</b> values</td>
+      <td>A line that appears only when Auto-fetch set it reads as that value being special rather
+      than as one of two an operator may pick. On the hand-set value it says who set it last and
+      that the fetcher will not set it again — the thing an operator would otherwise fear.</td></tr>
+</table>
+
+<h2>New strings</h2>
+<p>Five, flat, with Danish and Faroese drafts. Everything else drawn in this round is a shipped
+<span class="m">i18n</span> key, used verbatim — including <b><span class="m">browse.sort.newest</span>
+and <span class="m">browse.sort.oldest</span></b>, which already ship in all three languages and are
+the exact words both the mark and the admin switch need.</p>
+<table>
+  <tr><th>key</th><th>en</th><th>fo (draft)</th><th>da (draft)</th><th>where</th></tr>
+  <tr><td class="k">detail.play_newest</td><td>Play newest</td><td>Spæl nýggjasta</td><td>Afspil nyeste</td>
+      <td>the primary button, followed by <i>· {date}</i></td></tr>
+  <tr><td class="k">detail.caught_up</td><td>Caught up</td><td>Dagført</td><td>Ajour</td>
+      <td>the hero in s4, after a drawn ✓</td></tr>
+  <tr><td class="k">detail.newest_first_a11y</td><td>Newest first — this series lists its newest episode first</td>
+      <td>Nýggjast fyrst — henda røðin vísir nýggjasta partin fyrst</td>
+      <td>Nyeste først — denne serie viser det nyeste afsnit først</td>
+      <td>the mark’s accessible label only; the drawn words are <span class="m">browse.sort.newest</span></td></tr>
+  <tr><td class="k">tile.new_on</td><td>New · {date}</td><td>Nýtt · {date}</td><td>Ny · {date}</td>
+      <td>the Continue tile in h1, and the ribbon’s accessible label</td></tr>
+  <tr><td class="k">—</td><td>Episode order · Set by Auto-fetch: numbered by air date</td><td>—</td><td>—</td>
+      <td>the admin, English only — the admin has no string table</td></tr>
+</table>
+
+<h2>Still open</h2>
+<div class="plate open">
+<ul>
+  <li><b>Decision 1 — how a series is marked.</b> A (an admin switch, defaulted by Auto-fetch for a
+    date-numbered series) or C (the viewer’s own sort). Pictures: 1 + 5 for A, 1C for C.</li>
+  <li><b>Decision 2 — what Play does.</b> The newest even when watched (A, as drawn), or the newest
+    unwatched. <span class="m">newest-a-tv-s4</span> is the whole of it: the alternative has nothing
+    to name in that state.</li>
+  <li><b>Decision 3 — the end of an episode.</b> Stop and go back (A), or <i>Up next</i> to the next
+    newer episode (B). Both drawn; they cannot both ship.</li>
+  <li><b>Decision 4 — labels.</b> The air date in place of the code, with or without the code as a
+    secondary line. <span class="m">newest-a-tv-s1</span> against <span class="m">-s1-code</span>.</li>
+  <li><b>C’s selected state is weaker than its focused state</b> — see the report. If C is picked
+    this needs settling before it is built.</li>
+</ul>
+</div>
+
+</div>
+</body>
+</html>

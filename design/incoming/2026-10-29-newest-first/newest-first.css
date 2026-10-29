@@ -1,0 +1,273 @@
+/* newest-first.css — round `newest-first`, 2026-10-29.
+
+   Loaded AFTER the shipped stylesheet the frame set needs — design/ravilo/ravilo.css and
+   ravilo-player.css for the TV sets, design/ravilo/mobile/ravilo-phone.css for the phone,
+   design/app/wf.css + app.css + detail.css for the admin — so every token, component, colour and
+   font in these pictures is the shipped one. Nothing here restyles a shipped component; what is
+   here is (a) the three self-hosted faces, (b) the frame scaffolding the renderer screenshots,
+   (c) the canvas-safe approximations the three canvas rules force, and (d) the handful of `nf-`
+   classes this round actually invents.
+
+   NOTHING IN HERE IS PRODUCTION CSS for the Ravilo surfaces. design/ravilo/ is reference only —
+   no Gradle task consumes it — so these rules are a specification of intent for the Compose port,
+   which is exactly why the hex, px, weight, radius and easing are written out rather than left to
+   the implementer. The one exception is noted on `.nf-order` at the bottom: that block is written
+   in the admin's own idiom because the admin CSS IS production, and the report says what would
+   move into which file if the owner adopts it.
+
+   Canvas rules held (PROCESS.md + SKILL-house.md): no content-visibility, no backdrop-filter, no
+   large filter: blur, no infinite animation. See `BACKDROP-FILTER` below — three shipped
+   components use it and they are approximated here, deliberately and visibly.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. ravilo.css and ravilo-phone.css
+   are maintained inside documents that fetch Google Fonts; this render runs with --network none,
+   so these blocks come last in the cascade and the picture is identical with or without a
+   network. No file is copied: the url points at the repo's own woff2. ---- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at. The canvas backdrop is
+   light gray, so every caption on it is DARK INK (#12141b body, #262a35 secondary).
+   ================================================================================================= */
+
+html, body { height: auto; overflow: visible; margin: 0; padding: 0; background: #e9eaee; }
+.nf-page { padding: 28px 28px 60px; }
+.nf-page * { box-sizing: border-box; }
+
+/* THE SHOT WRAPPER MUST SHRINK TO ITS FRAME. `.nf-shot` is what the renderer screenshots, and a
+   plain block fills its parent's content box — here the page's 1920 viewport MINUS the canvas
+   padding. So every TV frame came out 1864 px wide, clipped 56 px short of the 1920 it is drawn
+   at, and every phone frame came out 356 instead of 412. The frames inside were the right size
+   all along; the screenshot was not, and the only visible symptom was a caption label losing its
+   last two characters at the right edge. `max-content` makes the wrapper the frame's own width.
+   Round 9 lost two frames to the mirror image of this. */
+.nf-shot { width: max-content; background: var(--bg); }
+/* Two fixes in one rule, both for the same symptom. The frames sit at fractional y offsets (the
+   captions above them have font-metric heights), so Playwright rounds each element clip rect UP
+   and samples one pixel BELOW the frame. Every phone PNG came out with a 1 px hairline of the
+   light canvas backdrop along its bottom edge — pale gray under a dark screen, invisible in a
+   thumbnail and obvious the moment anyone magnified it, which is exactly the class of defect the
+   look-at-every-PNG pass exists for. `line-height: 0` removes the wrapper's inline strut; the
+   `background` plus a 2 px `box-shadow` in the same colour makes every row the clip can reach the
+   frame's OWN colour — the shadow paints OUTSIDE the border box, which is exactly where the
+   rounded-up row comes from, and it costs no layout. The
+   admin's light frames carry `data-theme` on this wrapper too, so `--bg` resolves per theme. */
+
+.nf-head { max-width: 1180px; margin: 0 0 30px; font-family: 'Sora', sans-serif; color: #12141b; }
+.nf-head h1 { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700;
+  letter-spacing: -.5px; line-height: 34px; margin: 0 0 12px; color: #12141b; }
+.nf-head p { font-size: 14px; line-height: 24px; margin: 0 0 10px; color: #262a35; }
+.nf-head b { color: #12141b; font-weight: 600; }
+.nf-id { font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 18px; letter-spacing: .02em; color: #3d4252; }
+
+/* A frame's caption, above the picture. Dark ink, because it sits on the backdrop.
+   EVERY line-height here is an INTEGER PIXEL, deliberately. A fractional one (1.6 on 14px = 22.4)
+   puts the frame below it at a fractional y offset, Playwright rounds the element clip rect up,
+   and the PNG gains a one-pixel row sampled from BELOW the frame — the light canvas backdrop,
+   as a pale hairline along the bottom of a dark screen. Integer metrics all the way down the
+   canvas furniture is the only fix that holds for every frame rather than most of them. */
+.nf-cap { max-width: 1180px; margin: 36px 0 12px; font-family: 'Sora', sans-serif; color: #262a35; }
+.nf-cap h2 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 600;
+  letter-spacing: -.2px; line-height: 26px; margin: 0 0 4px; color: #12141b; }
+.nf-cap .nf-fn { font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 18px;
+  letter-spacing: .03em; color: #4a5063; margin-bottom: 7px; }
+.nf-cap p { font-size: 14px; line-height: 22px; margin: 0; color: #262a35; }
+.nf-cap i { color: #12141b; font-style: italic; }
+.nf-cap b { color: #12141b; font-weight: 600; }
+
+/* The TV stage: the shipped 1920×1080, drawn at 1920 and measured at 1920 (SKILL-house.md). The
+   mockup's #viewport/#stage scaler is deliberately NOT used — the renderer screenshots the element
+   at its own size, so a transform would only cost resolution. */
+.nf-tv { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+  display: flex; flex-direction: column; }
+
+/* The phone: Pixel 9, 412×915 portrait, the shipped size. The bezel is left off — the renderer
+   crops to the screen, and the bezel is not the design. */
+.nf-ph { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+  display: flex; flex-direction: column; }
+/* Two phones side by side, with nothing between them but the backdrop, so "is this the same
+   screen?" is a question the picture answers rather than the caption. */
+.nf-pair { display: flex; gap: 32px; width: max-content; background: #e9eaee; }
+.nf-pair .nf-ph { flex: none; }
+
+/* The admin frame: the shell's content column at the width the page really gets. */
+.nf-ad { width: 1180px; padding: 26px; background: var(--bg); color: var(--ink);
+  font-family: 'Sora', sans-serif; }
+
+/* ---- The TV detail page SCROLLS in the product: the shipped 620 px hero plus the shipped
+   `.dsec` padding puts the episode rail's second label line about 20 px below 1080, so a viewer
+   on a real TV sees the rail by moving focus down and the page comes up to meet it. A PICTURE
+   cannot scroll, and this round's whole question is "what does the rail look like next to the
+   button", so every frame has to hold both at once. The hero is shortened to 560 px and the
+   section's top padding to 22 px HERE, in the round's own stylesheet, purely so one picture can
+   carry both halves of the comparison. It is a framing decision and not a design one — nothing
+   downstream should read 560 as a proposed hero height, and the report says so. ---- */
+.nf-tv .dhero { height: 560px !important; }
+.nf-tv .dsec { padding-top: 22px; }
+
+/* =================================================================================================
+   BACKDROP-FILTER — three shipped components use it and the screenshot tool cannot survive it.
+   Each is approximated with a flat fill at the same perceived density, and the report says so. The
+   live product keeps its glass; these pictures are a shade flatter than the device.
+   ================================================================================================= */
+.nf-tv .dnext, .nf-ph .dnext,
+.nf-tv .ep-still .play span, .nf-tv .tile.cont .play span, .nf-tv .tile-air,
+.nf-tv .pl-nextup, .nf-tv .hbadge, .nf-ph .hbadge, .nf-ph .dback {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+.nf-tv .dnext, .nf-ph .dnext { background: rgba(10, 12, 19, .72); }
+.nf-tv .tile-air { background: rgba(8, 12, 28, .86); }
+/* The next-up card ships at `rgba(14,17,27,.95)` OVER a 20 px blur. Without the blur that 5 % is
+   enough for the seek row's `−0:24` to read straight through the card as legible text, which the
+   live product never shows — the blur smears it to a wash. The flat approximation is taken to
+   .985, which is what the blurred original actually looks like. */
+.nf-tv .pl-nextup { background: rgba(14, 17, 27, .985); }
+
+/* =================================================================================================
+   THE ROUND'S OWN CLASSES. Six, and every one of them is here because no shipped class says it.
+   Named for the production file it would belong in if the owner adopts it, which the report
+   repeats: `nf-mark`, `nf-sortpill` and `nf-airlab` → design/ravilo/ravilo.css and its phone twin;
+   `nf-order` → design/app/detail.css.
+   ================================================================================================= */
+
+/* ---- nf-mark — the hero's "this series runs newest first" mark. -----------------------------
+   Deliberately NOT a new component: it is the shipped `.dnext` pill, which is the slot on this
+   exact hero that already says one fact about where you are in the series. All `nf-mark` adds is
+   a glyph slot and the dim ink, because this pill is a PROPERTY of the series and the pill beside
+   it is a STATE of the viewer, and a reader at three metres has to be able to tell those apart
+   without reading both. No colour carries it: the words are `browse.sort.newest` and the arrow is
+   drawn as a stroked path, so it survives a monochrome screen and a noir skin alike. */
+.nf-mark { color: var(--ink-soft); font-weight: 600; }
+.nf-mark .nf-ar { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+/* Noir's accent is amber, so nothing here is tinted at all — the mark is ink and weight only,
+   which is the same resolution R221 and R222 reached for the genre chip and the slow-start note. */
+[data-skin="noir"] .nf-mark { color: var(--ink-soft); }
+
+/* ---- nf-airlab — the air date as an episode card's MAIN label. ------------------------------
+   The shipped `.ep-t` is the episode's own title at 20px/600 and `.ep-d` is its description at
+   16px/dim. Option A swaps the first two rungs of that ladder: the date takes `.ep-t`'s weight and
+   the heading drops to `.ep-d`'s. `nf-airlab` is the date rung — tabular figures, because twelve
+   of these sit in a rail and a rail whose numbers do not line up reads as a rail that is not
+   sorted, which is the one thing this whole round is about. */
+.nf-airlab { font-variant-numeric: tabular-nums; }
+/* The secondary code line, drawn only on the `-code` variant frame. The shipped `.ep-date` is
+   already JetBrains Mono at 13px/dim on this card — this is that class, and nothing more; it is
+   named here only so the variant frame can be told from the main one in the markup. */
+.nf-code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px;
+  letter-spacing: .3px; color: var(--ink-dim); margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+/* ---- nf-sortpill — option C's sort control, on the Episodes header. ------------------------
+   The shipped `.spill` season pill, after the shipped `.spill-sep` divider, which is exactly where
+   R343 put Shuffle. Two pills and not one cycling control, because a D-pad user has to be able to
+   SEE the option they are not on; a single pill that cycles is a control whose other half is
+   invisible until it is pressed. `.cur` and `.focused` are the shipped states and are untouched. */
+.nf-sortpill { font-size: 18px; }
+.nf-sortlab { font-size: 17px; color: var(--ink-dim); font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; margin-left: 10px; margin-right: 2px; }
+
+/* ---- the phone's own fit problems, which the TV's token file solves and the phone's does not.
+   `ravilo.css` sizes `.btn svg` at 24 px; `ravilo-phone.css` has no such rule because no shipped
+   phone button carries a glyph — so an unsized SVG took its intrinsic size and filled the button.
+   And `.btn` is `flex: 1`, so the long label and the `＋` shared the row equally and the label
+   wrapped to three lines inside a 44 px button. Both are REAL findings about putting a dated
+   label on this button, not frame artefacts, and the report raises them. ---- */
+.nf-ph .btn svg { width: 17px; height: 17px; flex: none; }
+.nf-ph .dbtns .btn.play { flex: 1; min-width: 0; white-space: nowrap; font-size: 14px; gap: 8px; }
+.nf-ph .dbtns .btn.ghost { flex: none; width: 52px; }
+
+/* The NEW badge on an episode row's thumbnail. The shipped `.merng` is scoped `.mestill .merng`
+   — it belongs to the multi-episode triptych card, not to the 104×59 `.methumb` — so reusing the
+   class here got no styling at all and the word rendered at body size over the picture. This is
+   the same slot as the shipped `.mwk` tick on the opposite corner, at the same size. */
+.nf-ph .nf-phnew { position: absolute; left: 5px; top: 5px; z-index: 3;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 9px; letter-spacing: .06em;
+  color: #fff; background: var(--grad); padding: 2px 6px; border-radius: 5px; line-height: 1.3; }
+
+/* ---- nf-tilenew — the Continue tile's "a new one has arrived". ------------------------------
+   Two channels, neither of them colour, which is the constitution excerpt in the brief:
+     1. the WORD, in the shipped `.cont-badge` slot — `New · Thu 29 Oct`;
+     2. the ABSENCE OF A PROGRESS BAR, which every other tile in the row has.
+   The second is what the `-alt` frame is for: it draws the row with the bar slot kept but EMPTY
+   rather than removed, so the gap is a shape a viewer can see at a glance instead of a thing they
+   have to notice is missing. Nothing is tinted; `.cont-badge` ships dark-on-dark already. */
+.nf-tilenew { font-variant-numeric: tabular-nums; }
+.nf-barslot { position: absolute; left: 10px; right: 10px; bottom: 10px; height: 5px;
+  border-radius: 4px; background: rgba(0, 0, 0, .45); box-shadow: 0 1px 6px rgba(0, 0, 0, .5);
+  z-index: 3; }
+.nf-barslot::after { content: ''; position: absolute; inset: 0; border-radius: 4px;
+  border: 1px dashed rgba(255, 255, 255, .34); }
+
+/* ---- nf-order — the admin's Episode order setting. -----------------------------------------
+   The ONLY block in this file written in the production admin's idiom, because design/app/*.css
+   IS production and this is the one surface the round proposes landing in it. It invents NO
+   control: `.field` + `label` + `.seg` + `.hint` are all shipped `wf.css`, and the brief's
+   preference for an existing segmented control is met by using `.seg` unchanged. What `nf-order`
+   adds is the row's own geometry — the label, the control and the provenance line on one line at
+   the card head's width — and the dashed left rule that marks the line as the SERVER's statement
+   about where the value came from rather than part of the control.
+   If adopted: this block goes in design/app/detail.css, under the `.ep-*` family, and gets a line
+   in scripts/check-mobile-css.sh in the same commit. */
+.nf-order { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+.nf-order .nf-order-ctl { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+/* `align-items: flex-start` is load-bearing. `.seg` is `display: inline-flex`, but as a child of
+   a flex COLUMN it stretches to the column's width, and the two segments sat at the left end of a
+   480 px bar of empty control — which reads as a third, unlabelled option. */
+.nf-order .nf-prov { display: flex; align-items: flex-start; gap: 9px; max-width: 46ch;
+  padding-left: 11px; border-left: 2px dashed var(--line-2); font-size: .78rem; line-height: 1.55;
+  color: var(--ink-soft); }
+.nf-order .nf-prov b { color: var(--ink); font-weight: 600; }
+/* The light theme is a real theme, not a tint: the dashed rule needs more contrast against the
+   light card than it does against the dark one, which is the same correction the AI round made to
+   its held-back sentence. */
+[data-theme="light"] .nf-order .nf-prov { border-left-color: rgba(16, 18, 30, .22); }
+
+/* =================================================================================================
+   The player's end-of-episode frames need the credits to be visibly credits rather than a dark
+   rectangle. Drawn as a static roll — no animation, because an infinite animation breaks the
+   render — at the position the brief fixes.
+   ================================================================================================= */
+.nf-credits { position: absolute; inset: 0; background: #05060a; overflow: hidden; }
+/* The column sits in the UPPER two thirds, not against the floor. At `bottom: 96px` the last two
+   credit rows landed underneath the player's own title and seek row, and the frame read as a
+   layout accident rather than as an episode ending — which is the one thing these two frames have
+   to communicate clearly, because option A's whole argument is about what the chrome does NOT
+   contain. */
+.nf-credits .nf-cr-col { position: absolute; left: 50%; transform: translateX(-50%); top: 150px;
+  width: 760px; text-align: center; font-family: 'Sora', sans-serif; }
+.nf-credits .nf-cr-h { font-family: 'Space Grotesk', sans-serif; font-size: 27px; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: rgba(255, 255, 255, .80); margin-bottom: 26px; }
+.nf-credits .nf-cr-r { display: flex; justify-content: center; gap: 26px; font-size: 19px;
+  line-height: 2.1; color: rgba(255, 255, 255, .50); }
+.nf-credits .nf-cr-r span:first-child { width: 320px; text-align: right;
+  font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255, 255, 255, .33); }
+.nf-credits .nf-cr-r span:last-child { width: 320px; text-align: left; }
+/* The floor, so the chrome's bottom scrim has something to sit on and the frame does not read as
+   an empty player. Flat, because a large blur breaks the render. */
+.nf-credits::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 300px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, .92), rgba(0, 0, 0, 0)); }
+
+/* The next-up card's two buttons. `Play in 8s` and `Watch credits` do not fit side by side in the
+   402 px the shipped 760 px card leaves beside its 280 px still, so without this they wrap to two
+   lines EACH, the card grows about 60 px and its foot is clipped off the bottom of the frame. The
+   labels are the shipped `player.play_in` and `player.watch_credits`, so this is a real fit
+   question and not a frame artefact — the report raises it. */
+.nf-tv .pl-nu-btn { white-space: nowrap; }
+
+/* A frame-internal label, for the frames that are a BEFORE and an AFTER of one another. Drawn
+   inside the dark frame, so it is light ink — the dark-ink rule is for text on the BACKDROP.
+   At `right: 28px` it sat OUTSIDE the TV's own horizontal gutter, which is the safe-area rule
+   SKILL-house.md states and which overscan makes specifically bad (R205, R250): the label was cut
+   off at the frame's right edge. 64 px is the gutter every other TV surface uses. */
+.nf-stamp { position: absolute; right: 64px; top: 24px; z-index: 60; white-space: nowrap;
+  font-family: 'JetBrains Mono', monospace; font-size: 15px; letter-spacing: .1em;
+  text-transform: uppercase; color: rgba(255, 255, 255, .52); }
+.nf-ph .nf-stamp { right: 18px; top: 10px; font-size: 11px; }
