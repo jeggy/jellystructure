@@ -6,6 +6,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 
 /** Phase 236's alphabet, which FR-2 reuses: no 0, O, 1 or I. */
 private const val TV_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -19,6 +23,21 @@ fun isValidTvCode(code: String): Boolean = code.length == TV_CODE_LENGTH && code
 
 /** The code as the TV shows it, grouped 3 + 3. */
 fun groupTvCode(code: String): String = if (code.length > 3) code.substring(0, 3) + " " + code.substring(3) else code
+
+/**
+ * DEB-2233 (FR-6, DEB-2866) — the same 3 + 3 grouping, drawn by the field instead of typed into it. The field's text stays the bare
+ * code, so the caret index of a key typed after the fourth is the index of the code and not of a string one space longer.
+ */
+object TvCodeGrouping : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val code = text.text
+        val shown = if (code.length > 3) AnnotatedString(groupTvCode(code)) else text
+        return TransformedText(shown, object : OffsetMapping {
+            override fun originalToTransformed(offset: Int) = if (code.length > 3 && offset > 3) offset + 1 else offset
+            override fun transformedToOriginal(offset: Int) = (if (code.length > 3 && offset > 3) offset - 1 else offset).coerceIn(0, code.length)
+        })
+    }
+}
 
 /** DEB-2233 (FR-6) — the two calls the confirm flow makes. A seam so the state machine runs on a fake. */
 interface TvApproveApi {
@@ -113,7 +132,7 @@ class TvApproveStore(private val api: TvApproveApi) {
             TvApproveState.Confirm(code, api.preview(code))
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             TvApproveState.Failed(code, classifyApproveFailure(e), null)
         }
     }
@@ -125,7 +144,7 @@ class TvApproveStore(private val api: TvApproveApi) {
             TvApproveState.Done(tvName)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             TvApproveState.Failed(code, classifyApproveFailure(e), tvName)
         }
     }

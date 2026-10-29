@@ -119,6 +119,23 @@ class TvApproveStoreTest {
         assertEquals(TvApproveFailure.UNREACHABLE, (store.state.value as TvApproveState.Failed).kind)
     }
 
+    @Test fun `a failed fetch that is an Error and not an Exception is could not reach the server and Retry approves`() = runTest {
+        val api = FakeApi(); val store = TvApproveStore(api)
+        api.approveAnswer = { throw Error("Fail to fetch") }
+        store.start("K7P4QX"); store.confirm()
+        assertEquals(TvApproveState.Failed("K7P4QX", TvApproveFailure.UNREACHABLE, "Living room TV"), store.state.value)
+        api.approveAnswer = {}
+        store.retry()
+        assertEquals(TvApproveState.Done("Living room TV"), store.state.value)
+    }
+
+    @Test fun `a lookup that fails with an Error and not an Exception is could not reach the server`() = runTest {
+        val api = FakeApi(); val store = TvApproveStore(api)
+        api.previewAnswer = { throw Error("Fail to fetch") }
+        store.start("K7P4QX")
+        assertEquals(TvApproveState.Failed("K7P4QX", TvApproveFailure.UNREACHABLE, null), store.state.value)
+    }
+
     @Test fun `Retry after a failed approval approves again without asking for the TV`() = runTest {
         val api = FakeApi(); val store = TvApproveStore(api)
         var calls = 0

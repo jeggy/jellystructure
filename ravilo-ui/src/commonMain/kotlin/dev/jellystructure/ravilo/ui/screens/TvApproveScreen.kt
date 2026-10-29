@@ -143,8 +143,9 @@ private fun CodeField(s: TvApproveState.Entering, store: TvApproveStore, onConti
         contentAlignment = Alignment.CenterStart,
     ) {
         BasicTextField(
-            value = groupTvCode(s.code),
+            value = s.code,
             onValueChange = store::type,
+            visualTransformation = TvCodeGrouping,
             modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag(TvApproveTags.FIELD).reportTextFieldFocus(),
             textStyle = TextStyle(color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, letterSpacing = 4.sp),
             singleLine = true,
