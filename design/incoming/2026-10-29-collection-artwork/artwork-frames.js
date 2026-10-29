@@ -88,6 +88,15 @@
 
   function logoFor(item, dir) { return dir === 'a' ? item.a : item.b; }
 
+  /* The series hub was drawn twice: direction A carries the finished `Ét afsnit til`
+     lockup the owner picked, direction B keeps the mark and the empty name slot it was
+     drawn with during the hold, because B gets nothing more. Everything per-direction
+     about it — its id, its watermark, whether a slot is drawn — goes through these. */
+  function idFor(item, dir) { return dir === 'b' && item.bId ? item.bId : item.id; }
+  function onHold(item, dir) {
+    return dir === 'b' && item.bNameOnHold !== undefined ? item.bNameOnHold : item.nameOnHold;
+  }
+
   var DIRS = [
     { key: 'a', name: 'Direction A — house badge' },
     { key: 'b', name: 'Direction B — wordmark-led' }
@@ -99,16 +108,18 @@
     DIRS.forEach(function (d) {
       A.new.forEach(function (item) {
         [false, true].forEach(function (foc) {
-          var id = d.key + '-' + item.id + (foc ? '-focus' : '');
-          var f = frame(id, d.name.split(' — ')[0] + ' · ' + item.id + (foc ? ' · focused' : ''),
-            item.nameOnHold
-              ? 'Mark and gradient only — the name is on hold, so no wordmark and no watermark.'
+          var held = onHold(item, d.key);
+          var id = d.key + '-' + idFor(item, d.key) + (foc ? '-focus' : '');
+          var f = frame(id, d.name.split(' — ')[0] + ' · ' + idFor(item, d.key) + (foc ? ' · focused' : ''),
+            held
+              ? 'Direction B as it was drawn, and frozen there: the mark, the empty name slot, ' +
+                'no watermark. The name was picked after this, and only A carries it.'
               : item.brand);
           var stage = el('div', 'stage aurora');
           stage.appendChild(tile({
-            brand: item.brand, watermark: item.nameOnHold ? null : item.watermark,
+            brand: item.brand, watermark: held ? null : item.watermark,
             logo: logoFor(item, d.key), padding: item.padding, focused: foc,
-            theme: 'aurora', pending: item.nameOnHold,
+            theme: 'aurora', pending: held,
             pendingFrom: d.key === 'b' ? 0.22 : 0.30
           }));
           f.appendChild(stage);
@@ -128,9 +139,9 @@
     });
     A.new.forEach(function (item) {
       strip.appendChild(tile({
-        brand: item.brand, watermark: item.nameOnHold ? null : item.watermark,
+        brand: item.brand, watermark: onHold(item, dir) ? null : item.watermark,
         logo: logoFor(item, dir), padding: item.padding,
-        focused: focusedId === item.id, theme: theme, pending: item.nameOnHold,
+        focused: focusedId === idFor(item, dir), theme: theme, pending: onHold(item, dir),
         pendingFrom: dir === 'b' ? 0.22 : 0.30
       }));
     });
@@ -153,7 +164,7 @@
         A.new.forEach(function (item, i) {
           var index = A.existing.length + i;
           states.push({
-            id: item.id, suffix: '-focus-' + item.id,
+            id: idFor(item, d.key), suffix: '-focus-' + idFor(item, d.key),
             off: isPhone ? index : Math.max(0, index - perScreen + 1)
           });
         });
@@ -188,7 +199,7 @@
       ['upload/tidsmaskinen.svg', 'upload-tidsmaskinen', A.new[2].brand, 'A · Tidsmaskinen · the upload file'],
       ['upload/b/sagaer.svg', 'upload-b-sagaer', A.new[1].brand, 'B · Sagaer · the upload file'],
       ['upload/b/tidsmaskinen.svg', 'upload-b-tidsmaskinen', A.new[2].brand, 'B · Tidsmaskinen · the upload file'],
-      ['marks/serie-hub-a.svg', 'marks-serie-hub-a', A.new[0].brand, 'A · series hub · mark only'],
+      ['upload/et-afsnit-til.svg', 'upload-et-afsnit-til', A.new[0].brand, 'A · Ét afsnit til · the upload file'],
       ['marks/serie-hub-b.svg', 'marks-serie-hub-b', A.new[0].brand, 'B · series hub · mark only'],
       ['variants/tidsmaskinen-b-tittleclock.svg', 'variants-tidsmaskinen-b-tittleclock',
         A.new[2].brand, 'B · Tidsmaskinen · the tittle clock, drawn and dropped']
@@ -255,6 +266,35 @@
     });
   }
 
+  /* The same one-line-or-two test, for the name the owner picked. */
+  function buildHubLines() {
+    var m = A.metrics.logos;
+    var hub = A.new[0];
+    var f = frame('lines-et-afsnit-til', 'Ét afsnit til on one line and on two',
+      'Sagaer sets the family at ' + m['upload/sagaer.svg'].capHeight +
+      ' units in the 320x100 box; the accented É reaches above the cap line, so the two-line ' +
+      'setting is laid out on the accent rather than the cap.');
+    var row = el('div', 'row');
+    [['variants/et-afsnit-til-a-oneline.svg', 'One line'],
+    ['upload/et-afsnit-til.svg', 'Two lines'],
+    ['upload/sagaer.svg', 'Sagaer, for comparison']].forEach(function (pair) {
+      var col = el('div', 'col');
+      var cap = m[pair[0]] && m[pair[0]].capHeight;
+      col.appendChild(el('div', 'lbl', pair[1] + ' — cap ' + (cap != null ? cap : '—') + ' units' +
+        (cap != null ? ' (' + Math.round(cap / m['upload/sagaer.svg'].capHeight * 1000) / 10 + '%)' : '')));
+      var stage = el('div', 'stage aurora');
+      var isSag = pair[0].indexOf('sagaer') !== -1;
+      stage.appendChild(tile({
+        brand: isSag ? A.new[1].brand : hub.brand,
+        watermark: isSag ? A.new[1].watermark : hub.watermark,
+        logo: pair[0], padding: isSag ? A.new[1].padding : hub.padding, theme: 'aurora'
+      }));
+      col.appendChild(stage);
+      row.appendChild(col);
+    });
+    f.appendChild(row);
+  }
+
   /* ------------------------------------------------- the checkerboard */
   function boardFrame(id, caption, rows) {
     var f = frame(id, caption,
@@ -280,7 +320,7 @@
     boardFrame('board-a', 'Direction A · the three logos on a checkerboard', [
       ['upload/sagaer.svg', 'Sagaer'],
       ['upload/tidsmaskinen.svg', 'Tidsmaskinen'],
-      ['marks/serie-hub-a.svg', 'Series hub — mark only, name on hold']
+      ['upload/et-afsnit-til.svg', 'Ét afsnit til']
     ]);
     boardFrame('board-b', 'Direction B · the same three on a checkerboard', [
       ['upload/b/sagaer.svg', 'Sagaer'],
@@ -295,6 +335,7 @@
     'rails-phone': function () { buildRails(412); },
     compare: buildCompare,
     lines: buildLines,
+    'hub-lines': buildHubLines,
     board: buildBoard
   })[set]();
 })();

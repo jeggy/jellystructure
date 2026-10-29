@@ -22,6 +22,7 @@ from io import BytesIO
 
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 import uharfbuzz as hb
@@ -74,6 +75,22 @@ class Typesetter:
     def cap_for_width(self, text, width):
         _, adv = self.shape(text)
         return width * self.cap / adv
+
+    def ink_top(self, text):
+        """How far the ink reaches above the baseline, in cap-height multiples.
+
+        An accented capital is the reason this exists: É reaches 888 units against a
+        700 cap, so laying a line out on its cap height alone clips the accent off the
+        top of the box.
+        """
+        glyphs, _ = self.shape(text)
+        top = 0
+        for name, _gx, _gy in glyphs:
+            pen = BoundsPen(self.glyphset)
+            self.glyphset[name].draw(pen)
+            if pen.bounds:
+                top = max(top, pen.bounds[3])
+        return top / self.cap
 
     def path(self, text, cap_height, x0, baseline):
         """One `d` string for `text`, cap height `cap_height`, left edge x0, baseline y."""
@@ -471,8 +488,61 @@ def build_a_tidsmaskinen(two_line=False, gap=66.0):
 
 
 def build_a_serie_hub():
-    """Mark only — the name is on hold, so no wordmark and no upload file."""
+    """Mark only — kept as the record of the hold, before the name was picked."""
     return mark_serie_hub(10, 21, 68, 58), {"capHeight": None, "lines": 0}
+
+
+# The series hub's name, decided by the owner on 2026-10-29. Two lines, split where the
+# phrase breaks: on one line the lettering falls to 72% of Sagaer's cap height, on two it
+# holds 94%. "Ét / afsnit til" measures a hair wider still (94.5%) and is not used — it
+# orphans the article and reads as a different phrase.
+HUB_LINES = ("Ét afsnit", "til")
+
+
+def build_a_et_afsnit_til():
+    parts = mark_serie_hub(10, 21, 68, 58)
+    x0 = 90.0
+    avail = BOX_W - x0 - 14
+    widest = max(HUB_LINES, key=lambda w: ts.advance(w, 10))
+
+    # Both vertical numbers come from the lines' own ink rather than from a ratio, because
+    # this wordmark has an accent on top and ascenders underneath it. The É reaches 27%
+    # above the cap line, so the top clearance is measured from the accent; and `til`
+    # leads with ascenders, so the leading is that line's own ascent plus a gap, or the
+    # two lines crowd no matter what the cap height is.
+    accent = ts.ink_top(HUB_LINES[0])
+    ascent2 = ts.ink_top(HUB_LINES[1])
+    gap = 0.18
+    margin = 5.0
+    cap = min(
+        A_CAP,
+        ts.cap_for_width(widest, avail),
+        (BOX_H - 2 * margin) / (accent + ascent2 + gap),
+    )
+    lead = (ascent2 + gap) * cap
+    block = accent * cap + lead
+    baseline = (BOX_H - block) / 2 + accent * cap
+    for i, line in enumerate(HUB_LINES):
+        parts.append((ts.path(line, cap, x0, baseline + i * lead), {"fill": "#ffffff"}))
+    return parts, {
+        "capHeight": round(cap, 2),
+        "wordWidth": round(ts.advance(widest, cap), 1),
+        "lines": 2,
+        "leading": round(lead, 2),
+        "accentAboveCap": round(accent - 1, 4),
+        "inkTop": round(baseline - accent * cap, 2),
+        "inkBottom": round(baseline + lead, 2),
+    }
+
+
+def build_a_et_afsnit_til_oneline():
+    """Drawn for the comparison only: one line costs a quarter of the cap height."""
+    parts = mark_serie_hub(10, 21, 68, 58)
+    x0 = 90.0
+    word = " ".join(HUB_LINES)
+    cap = min(A_CAP, ts.cap_for_width(word, BOX_W - x0 - 14))
+    parts.append((ts.path(word, cap, x0, A_BASELINE), {"fill": "#ffffff"}))
+    return parts, {"capHeight": round(cap, 2), "wordWidth": round(ts.advance(word, cap), 1), "lines": 1}
 
 
 # ---- direction B: wordmark-led ---------------------------------------------
@@ -569,6 +639,9 @@ builds = {
     "variants/tidsmaskinen-b-oneline.svg": ("Tidsmaskinen", build_b_tidsmaskinen(False)),
     "variants/tidsmaskinen-b-twoline.svg": ("Tidsmaskinen", build_b_tidsmaskinen(True)),
     "variants/tidsmaskinen-b-tittleclock.svg": ("Tidsmaskinen", build_b_tittle_clock()),
+    # The series hub, named by the owner on 2026-10-29. Direction A only: B gets nothing more.
+    "upload/et-afsnit-til.svg": ("Ét afsnit til", build_a_et_afsnit_til()),
+    "variants/et-afsnit-til-a-oneline.svg": ("Ét afsnit til", build_a_et_afsnit_til_oneline()),
     # The series hub: mark and gradient only, no wordmark, and deliberately NOT under upload/.
     "marks/serie-hub-a.svg": ("Series hub mark, name pending", build_a_serie_hub()),
     "marks/serie-hub-b.svg": ("Series hub mark, name pending", build_b_serie_hub()),
@@ -625,9 +698,12 @@ data = {
                "daylight": {"page": "#FBFBFD", "ring": "#5B4EE0"}},
     "existing": [{"id": f"stand-in-{i + 1}", "brand": b} for i, b in enumerate(EXISTING)],
     "new": [
-        {"id": "serie-hub", "watermark": None, "brand": BRAND["serie-hub"],
-         "padding": PADDING["serie-hub"], "a": "marks/serie-hub-a.svg",
-         "b": "marks/serie-hub-b.svg", "nameOnHold": True},
+        # Direction A carries the finished logo and the real watermark; direction B keeps
+        # the mark it was drawn with, and its pending slot, because B gets nothing more.
+        {"id": "et-afsnit-til", "bId": "serie-hub", "watermark": "ÉT AFSNI",
+         "brand": BRAND["serie-hub"], "padding": PADDING["serie-hub"],
+         "a": "upload/et-afsnit-til.svg", "b": "marks/serie-hub-b.svg",
+         "nameOnHold": False, "bNameOnHold": True},
         {"id": "sagaer", "watermark": "SAGAER", "brand": BRAND["sagaer"],
          "padding": PADDING["sagaer"], "a": "upload/sagaer.svg", "b": "upload/b/sagaer.svg",
          "nameOnHold": False},
@@ -644,6 +720,10 @@ data = {
          "brand": BRAND["tidsmaskinen"], "watermark": "TIDSMASK", "padding": PADDING["tidsmaskinen"]},
         {"id": "tidsmaskinen-b-twoline", "file": "variants/tidsmaskinen-b-twoline.svg",
          "brand": BRAND["tidsmaskinen"], "watermark": "TIDSMASK", "padding": PADDING["tidsmaskinen"]},
+        {"id": "et-afsnit-til-a-oneline", "file": "variants/et-afsnit-til-a-oneline.svg",
+         "brand": BRAND["serie-hub"], "watermark": "ÉT AFSNI", "padding": PADDING["serie-hub"]},
+        {"id": "et-afsnit-til-a-twoline", "file": "upload/et-afsnit-til.svg",
+         "brand": BRAND["serie-hub"], "watermark": "ÉT AFSNI", "padding": PADDING["serie-hub"]},
     ],
     "metrics": metrics,
 }

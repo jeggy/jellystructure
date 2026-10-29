@@ -5,10 +5,10 @@ Two directions, three collections, drawn on the real tile. The directions doc is
 over `artwork-data.js`, which `tools/build-artwork.py` generates along with every SVG and every
 number quoted here.
 
-**The series hub's name is on hold.** Sagaer and Tidsmaskinen are complete, with upload files for
-both directions. The series hub carries its mark and its gradient only — no wordmark, no watermark,
-no `upload/` file — and its identifier is `serie-hub` everywhere. Where a frame shows its tile, the
-wordmark's place is a dashed slot drawn by the canvas; it is in no SVG and in no file.
+**Settled 2026-10-29: direction A, the series hub is *Ét afsnit til*, the colours stay as drawn.**
+The hold described below was lifted by the owner's answer, and the series hub's logo is finished in
+direction A — see "The series hub, after the name" at the end of this file. Direction B is frozen
+where it stood: its hub tile still carries the mark and the empty name slot it was drawn with.
 
 ## The recommendation
 
@@ -116,3 +116,76 @@ Danish and the series hub's is unresolved — so there is no Danish or Faroese d
    would widen that gap at the cost of moving toward the red tile.
 3. **The series hub's name**, and with it its wordmark, its upload file and its watermark — which is
    the name's first eight characters, uppercased, so the name decides it.
+
+---
+
+## The series hub, after the name — 2026-10-29
+
+The owner answered the card at 12:16Z: **direction A, the hub is *Ét afsnit til*, the colours stay
+as drawn.** That lifted the hold and left one piece, which this section covers. Direction B got
+nothing more.
+
+### Two lines, and the number that says why
+
+| Setting | Widest line | Cap height | Of *Sagaer*'s 39.25 |
+|---|---|---|---|
+| One line | `Ét afsnit til` | 28.30 | **72.1 %** |
+| **Two lines — shipped** | `Ét afsnit` | **36.46** | **92.9 %** |
+| Two lines, split `Ét` / `afsnit til` | `afsnit til` | 37.08 at best | 94.5 % |
+
+Two lines, split **`Ét afsnit` / `til`**. The third row measures a hair taller and is not used: it
+orphans the article onto its own line and reads as a different phrase. On the tile, where the logo
+is width-bound at 0.575, the shipped cap is **20.97 px against Sagaer's 23.06 px — 90.9 %**.
+
+The one-line setting is kept as `variants/et-afsnit-til-a-oneline.svg` so the other choice can be
+uploaded without another round.
+
+### What the accent changed
+
+**The É reaches 888 font units against a 700 cap — 26.9 % above the cap line.** A two-line setting
+laid out on cap height alone puts the accent outside the box, so this logo's vertical layout is
+derived from ink rather than from cap height: the top clearance is measured from the accent, and
+the leading from `til`'s own ascender plus a gap, because that line leads with ascenders and would
+otherwise crowd the line above. Both numbers come out of the font in `tools/build-artwork.py`;
+neither is a hand-tuned constant. Ink sits at y 5.0 and y 95.0 in the 320 × 100 box, clear at both
+ends. Two renders were drawn and rejected on the way: one filled the box to y 95.9 and sat
+bottom-heavy against the mark, and one at tighter leading crowded `til` into the line above.
+
+### The file
+
+| | |
+|---|---|
+| File | `upload/et-afsnit-til.svg` |
+| `aria-label` | `Ét afsnit til` |
+| `brand_color` | `linear-gradient(135deg, #2a9168 0%, #0d3b2a 100%)` — unchanged |
+| `padding_logo` | `{top:14, right:20, bottom:14, left:20}` — **unchanged** |
+| Watermark | `ÉT AFSNI` |
+| Wordmark | Space Grotesk Bold, wght 700, outlined from `space_grotesk.ttf` |
+| White on stops | 3.93 : 1 · 12.53 : 1 — unchanged, the gradient did not move |
+
+**`padding_logo` stays at 14/20/14/20.** Moving it to Sagaer's 12/18/12/18 would raise the on-tile
+cap from 20.97 px to 21.42 px — under half a pixel, invisible, and not worth changing a number
+already given to the owner.
+
+**Every `id` is prefixed `et-afsnit-til-`: vacuously, because the file has no `id` at all.**
+`grep -c 'id=' upload/et-afsnit-til.svg` → 0. Nothing in it needs a paint server, so there is
+nothing that can clash with another collection's file.
+
+The **É is the font's own `Eacute` glyph**, shaped by HarfBuzz and outlined whole — not an E with an
+accent assembled beside it.
+
+`grep -ci '<text\|<style\|<filter\|<image\|class='` over all five upload files → **0 every time**;
+extended with `href`, `<script` and `foreignObject` across `upload/`, `marks/` and `variants/` →
+**0 everywhere**. Skia's `SVGDOM` and Chromium draw it identically.
+
+### Frames
+
+Redrawn under `et-afsnit-til`: the tile alone at 1× and 3×, unfocused and focused; the full rail in
+Aurora and Daylight at 1920 and 412, unfocused and with the tile focused; the Skia render beside
+Chromium; the checkerboard; and `lines-et-afsnit-til`, the one-line-against-two picture.
+
+**The nine superseded direction-A `serie-hub` frames were deleted**, not kept. Their captions said
+the name was on hold, which is no longer true of direction A, and two contradictory pictures of the
+same tile in one directory is the defect this round already caught once. The record of the hold
+survives where it was actually used — the attachments on the task — and in git history. Direction
+B's `serie-hub` frames stay, and are still accurate: B is frozen.

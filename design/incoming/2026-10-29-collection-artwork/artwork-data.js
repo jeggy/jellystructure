@@ -170,6 +170,15 @@ window.ARTWORK = {
         "lines": 2,
         "wordWidth": 236.1
       },
+      "upload/et-afsnit-til.svg": {
+        "accentAboveCap": 0.2686,
+        "capHeight": 36.46,
+        "inkBottom": 95.0,
+        "inkTop": 5.0,
+        "leading": 43.75,
+        "lines": 2,
+        "wordWidth": 213.5
+      },
       "upload/sagaer.svg": {
         "capHeight": 39.25,
         "lines": 1,
@@ -180,6 +189,11 @@ window.ARTWORK = {
         "leading": 40.32,
         "lines": 2,
         "wordWidth": 209.9
+      },
+      "variants/et-afsnit-til-a-oneline.svg": {
+        "capHeight": 28.3,
+        "lines": 1,
+        "wordWidth": 216.0
       },
       "variants/tidsmaskinen-a-oneline.svg": {
         "capHeight": 23.99,
@@ -235,18 +249,20 @@ window.ARTWORK = {
   },
   "new": [
     {
-      "a": "marks/serie-hub-a.svg",
+      "a": "upload/et-afsnit-til.svg",
       "b": "marks/serie-hub-b.svg",
+      "bId": "serie-hub",
+      "bNameOnHold": true,
       "brand": "linear-gradient(135deg, #2a9168 0%, #0d3b2a 100%)",
-      "id": "serie-hub",
-      "nameOnHold": true,
+      "id": "et-afsnit-til",
+      "nameOnHold": false,
       "padding": {
         "bottom": 14,
         "left": 20,
         "right": 20,
         "top": 14
       },
-      "watermark": null
+      "watermark": "\u00c9T AFSNI"
     },
     {
       "a": "upload/sagaer.svg",
@@ -349,6 +365,30 @@ window.ARTWORK = {
         "top": 12
       },
       "watermark": "TIDSMASK"
+    },
+    {
+      "brand": "linear-gradient(135deg, #2a9168 0%, #0d3b2a 100%)",
+      "file": "variants/et-afsnit-til-a-oneline.svg",
+      "id": "et-afsnit-til-a-oneline",
+      "padding": {
+        "bottom": 14,
+        "left": 20,
+        "right": 20,
+        "top": 14
+      },
+      "watermark": "\u00c9T AFSNI"
+    },
+    {
+      "brand": "linear-gradient(135deg, #2a9168 0%, #0d3b2a 100%)",
+      "file": "upload/et-afsnit-til.svg",
+      "id": "et-afsnit-til-a-twoline",
+      "padding": {
+        "bottom": 14,
+        "left": 20,
+        "right": 20,
+        "top": 14
+      },
+      "watermark": "\u00c9T AFSNI"
     }
   ]
 };

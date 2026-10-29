@@ -25,6 +25,7 @@ GROUND = {
     "sagaer": 0xFFA33B74,
     "tidsmaskinen": 0xFF9A7A2A,
     "serie-hub": 0xFF2A9168,
+    "et-afsnit-til": 0xFF2A9168,
 }
 
 
@@ -66,6 +67,8 @@ FILES = [
     "variants/tidsmaskinen-b-oneline.svg",
     "variants/tidsmaskinen-b-twoline.svg",
     "variants/tidsmaskinen-b-tittleclock.svg",
+    "upload/et-afsnit-til.svg",
+    "variants/et-afsnit-til-a-oneline.svg",
     "marks/serie-hub-a.svg",
     "marks/serie-hub-b.svg",
 ]

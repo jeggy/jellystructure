@@ -146,6 +146,15 @@
       "lines": 2,
       "wordWidth": 236.1
     },
+    "upload/et-afsnit-til.svg": {
+      "accentAboveCap": 0.2686,
+      "capHeight": 36.46,
+      "inkBottom": 95.0,
+      "inkTop": 5.0,
+      "leading": 43.75,
+      "lines": 2,
+      "wordWidth": 213.5
+    },
     "upload/sagaer.svg": {
       "capHeight": 39.25,
       "lines": 1,
@@ -156,6 +165,11 @@
       "leading": 40.32,
       "lines": 2,
       "wordWidth": 209.9
+    },
+    "variants/et-afsnit-til-a-oneline.svg": {
+      "capHeight": 28.3,
+      "lines": 1,
+      "wordWidth": 216.0
     },
     "variants/tidsmaskinen-a-oneline.svg": {
       "capHeight": 23.99,
