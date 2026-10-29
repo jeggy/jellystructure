@@ -828,6 +828,11 @@ fun RaviloApp(
         // value a page was composed with, so a page reached by Back never mistakes an old re-tap for a
         // new one. Never changes on a TV (no bottom bar there).
         var reselectTick by remember { mutableIntStateOf(0) }
+        // DEB-2686 (FR-1, FR-3) — two Profile taps inside the platform's double-tap timeout, measured between the
+        // two click events on a monotonic clock. The first tap is never held back (FR-2): it runs today's branch.
+        val profileDoubleTapMs = androidx.compose.ui.platform.LocalViewConfiguration.current.doubleTapTimeoutMillis
+        val profileTapGate = remember(profileDoubleTapMs) { dev.jellystructure.ravilo.ui.components.DoubleTapGate(profileDoubleTapMs) }
+        val profileTapClock = remember { kotlin.time.TimeSource.Monotonic.markNow() }
 
         // R58: first-ever launch — initialDest called setActive() after activeUserId was already
         // initialized to null; sync the value so the WS LaunchedEffect fires and self-heals.
@@ -1372,6 +1377,17 @@ fun RaviloApp(
         // FR-R321-2 — absent, never greyed: only for a viewer with the music library, and only where it can play.
         var musicAvailable by remember { mutableStateOf<Boolean?>(null) }
         var booksAvailable by remember { mutableStateOf(false) }
+        // R326 (FR-R326-3), DEB-2686 (FR-4) — the ONE switch: the Profile page's mode card and the bar's Profile double
+        // tap both end here. It writes the mode, stays on Profile (only the bar changes) and toasts the mode now shown.
+        val toastVideoName = str("mode.video")
+        val toastMusicName = if (booksAvailable) str("mode.music_books") else str("mode.music")
+        val switchListeningMode: (Boolean) -> Unit = { on ->
+            musicMode = on
+            dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (on) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
+            dev.jellystructure.ravilo.ui.music.MusicToasts.show(if (on) toastMusicName else toastVideoName)
+        }
+        // DEB-2686 (FR-5) — offered exactly when the mode card is.
+        val modeSwitchOffered = handset && musicAvailable == true && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
         LaunchedEffect(apiClient) { dev.jellystructure.ravilo.ui.music.MusicEngine.attach(apiClient) }
         // R337 (dev review 3a) — the listening mode on a phone AND on the desktop, at every width.
         val listeningLayout = handset || desktop
@@ -3046,12 +3062,8 @@ fun RaviloApp(
                     onSignedOut = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
                     scrollToTopTick = reselectTick,
                     // R321 (FR-R321-3) — the mode card; R326 (FR-R326-3): a tap switches the mode and stays on Profile.
-                    modeCard = if (handset && musicAvailable == true && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) ({
-                        dev.jellystructure.ravilo.ui.music.ListeningModeCard(musicMode, withBooks = booksAvailable) { on ->
-                            musicMode = on
-                            dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (on) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
-                            // R326 (FR-R326-3) — switching stays on Profile: only the bar changes (the card toasts the mode).
-                        }
+                    modeCard = if (modeSwitchOffered) ({
+                        dev.jellystructure.ravilo.ui.music.ListeningModeCard(musicMode, withBooks = booksAvailable, onSwitch = switchListeningMode)
                     }) else null,
                 )
             }
@@ -3373,19 +3385,28 @@ fun RaviloApp(
                     selected = litItem,
                     // Same derivation every other AppBar call site uses (ChannelScreen, HomeScreen, …).
                     userInitials = destDisplayName(dest).take(2).uppercase(),
+                    // DEB-2686 (FR-6) — under TalkBack a double tap is "activate", so the switch is an action instead.
+                    profileModeAction = if (modeSwitchOffered) {
+                        str(if (musicMode) "mode.switch_video" else "mode.switch_music") to { switchListeningMode(!musicMode) }
+                    } else null,
                     onSelect = { item ->
                         // FR-R278-3 — "already here" is THIS DESTINATION being that page, never
                         // "this page belongs to that section": otherwise tapping Discover from a list
                         // opened out of Discover would count as a re-tap and do nothing.
                         val alreadyHere = item == pageItem
+                        // DEB-2686 (FR-3) — a tap on any other item breaks the pair.
+                        if (item != BottomNavItem.PROFILE) profileTapGate.reset()
                         when (item) {
                             // FR-R267-5d — Profile is a menu, not a page, and never takes the pill:
                             // nothing about WHICH PAGE YOU ARE ON has changed when you open it.
                             // Re-tapping while it is open closes it, as tapping the scrim does.
                             // R304 (FR-R304-1) — Profile is a PAGE on a phone (R267 FR-R267-5d superseded):
                             // it takes the pill, and a re-tap scrolls it to the top like the other four.
+                            // DEB-2686 (FR-1..FR-5) — the second of two close taps switches the listening mode and
+                            // does nothing else (no scroll); every other tap runs today's branch at once (FR-2).
                             BottomNavItem.PROFILE ->
-                                if (alreadyHere) reselectTick++
+                                if (modeSwitchOffered && profileTapGate.tap(profileTapClock.elapsedNow().inWholeMilliseconds)) switchListeningMode(!musicMode)
+                                else if (alreadyHere) reselectTick++
                                 else resetTo(Dest.Profile(destDisplayName(dest)))
                             // FR-R267-9 — a re-tap scrolls the page to its top (OnReselect in each
                             // page's branch below); it never rebuilds the page or reloads it.

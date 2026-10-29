@@ -945,6 +945,8 @@
   "music.feat": "feat. {x}",
   "mnav.audiobooks": "Audiobooks",
   "mode.music_books": "Music & audiobooks",
+  "mode.switch_music": "Switch to music",
+  "mode.switch_video": "Switch to films & series",
   "ab.continue": "Continue listening",
   "ab.continue_from": "Continue · {t}",
   "ab.start": "Start",

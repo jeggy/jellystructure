@@ -876,6 +876,8 @@
   "music.feat": "feat. {x}",
   "mnav.audiobooks": "Ljóðbøkur",
   "mode.music_books": "Tónleikur og ljóðbøkur",
+  "mode.switch_music": "Skift til tónleik",
+  "mode.switch_video": "Skift til filmar og seriur",
   "ab.continue": "Hald fram at lurta",
   "ab.continue_from": "Hald fram · {t}",
   "ab.start": "Byrja",

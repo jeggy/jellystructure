@@ -876,6 +876,8 @@
   "music.feat": "feat. {x}",
   "mnav.audiobooks": "Lydbøger",
   "mode.music_books": "Musik og lydbøger",
+  "mode.switch_music": "Skift til musik",
+  "mode.switch_video": "Skift til film og serier",
   "ab.continue": "Fortsæt med at lytte",
   "ab.continue_from": "Fortsæt · {t}",
   "ab.start": "Start",

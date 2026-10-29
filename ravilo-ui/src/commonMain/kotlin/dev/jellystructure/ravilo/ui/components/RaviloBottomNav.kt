@@ -44,6 +44,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -89,6 +92,8 @@ fun RaviloBottomNav(
     modifier: Modifier = Modifier,
     /** R321 (FR-R321-4, dev review 1) — the bar's declared item list: [VIDEO_BAR], or [MUSIC_BAR] in music mode. */
     items: List<BottomNavItem> = VIDEO_BAR,
+    /** DEB-2686 (FR-6) — TalkBack's way to switch the listening mode: the Profile cell's action label and what it does; null when the switch is not offered. */
+    profileModeAction: Pair<String, () -> Unit>? = null,
 ) {
     val colors = RaviloTheme.colors
     // The pill's horizontal position is derived from the selected item's index, so one animated value
@@ -143,6 +148,7 @@ fun RaviloBottomNav(
                         modifier = Modifier.weight(1f),
                         // R339 (FR-R339-2) — music mode's Profile keeps the pill and drops the ring round the photo.
                         profileRing = items != MUSIC_BAR,
+                        customAction = profileModeAction.takeIf { item == BottomNavItem.PROFILE },
                     )
                 }
             }
@@ -185,10 +191,15 @@ private fun BottomNavCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     profileRing: Boolean = true,
+    customAction: Pair<String, () -> Unit>? = null,
 ) {
     val colors = RaviloTheme.colors
     Column(
         modifier = modifier
+            .then(
+                if (customAction == null) Modifier
+                else Modifier.semantics { customActions = listOf(CustomAccessibilityAction(customAction.first) { customAction.second(); true }) },
+            )
             // FR-R267-5 — the whole cell is the target, so it is comfortably past the 46 dp floor
             // even though the pill inside it is 56 dp wide and 32 dp tall.
             .clickable(

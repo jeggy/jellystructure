@@ -527,9 +527,9 @@ fun MusicToastHost(bottomInset: Dp) {
 @Composable
 fun ListeningModeCard(musicMode: Boolean, withBooks: Boolean = false, onSwitch: (Boolean) -> Unit) {
     val colors = RaviloTheme.colors
-    // R326 (FR-R326-3) — a switch stays on Profile; a short toast names the mode the bar now shows.
-    val videoName = str("mode.video"); val musicName = if (withBooks) str("mode.music_books") else str("mode.music")
-    fun switch(on: Boolean) { onSwitch(on); MusicToasts.show(if (on) musicName else videoName) }
+    // R326 (FR-R326-3), DEB-2686 (FR-4) — a switch stays on Profile; the toast naming the mode the bar now shows is
+    // [onSwitch]'s, because the bar's Profile double tap ends in the same function.
+    fun switch(on: Boolean) = onSwitch(on)
     Column {
         Text(str(if (dev.jellystructure.ravilo.ui.isDesktopPlatform) "mode.label_desk" else "mode.label").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(8.dp))
