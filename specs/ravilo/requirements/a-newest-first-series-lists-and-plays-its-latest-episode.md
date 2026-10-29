@@ -303,6 +303,9 @@ The round is `design/incoming/2026-10-29-newest-first/` (DEB-2917), direction **
 The round's *Up next* frame (`newest-b-player-upnext`), its C frames and its dashed-bar tile (`h1-alt`) were declined.
 The glyph on the hero mark changes (FR-12).
 
+The PNGs stay attached to DEB-2917. The promotion (DEB-2935) moves A into the `design/ravilo/` and `design/app/`
+archive and prunes the round. After that, the round directory above is in git history only.
+
 ## Non-goals
 
 - A viewer's own sort control (direction C), or a per-viewer choice of any kind.
@@ -373,8 +376,8 @@ with a new app:
 
 ## Build order
 
-1. **Server** (FR-1–FR-7, FR-18's fields).
-2. **Admin** (FR-17), after 1.
-3. **Ravilo series page and Continue tile** (FR-8–FR-12, FR-15, FR-16), after 1.
-4. **Ravilo player and casting** (FR-13, FR-14), after 3.
-5. **QA** on a device, after 2–4 are on prod.
+1. **Server** (FR-1–FR-7, FR-18's fields): DEB-2936.
+2. **Admin** (FR-17), after 1: DEB-2937.
+3. **Ravilo series page and Continue tile** (FR-8–FR-12, FR-15, FR-16), after 1: DEB-2938.
+4. **Ravilo player and casting** (FR-13, FR-14), after 3: DEB-2939.
+5. **QA** on a device, after 1–4 are on prod: DEB-2940.
