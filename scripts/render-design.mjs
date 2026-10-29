@@ -9,7 +9,10 @@
    tests/node_modules from here. No symlink at the repo root — several sessions share the checkout.
 
    A render is all or nothing. Anything the page requests off-host, or any local file that fails to
-   load, fails the run and removes the PNGs this run wrote, so a half-loaded picture never survives. */
+   load, fails the run and removes the PNGs this run wrote, so a half-loaded picture never survives.
+   The one exception is the Google Fonts stylesheet that design/ravilo/*.css @imports (DEB-2922): it is
+   answered from design/app/fonts/ for the three families we self-host, and a family we do not host
+   still fails the run, as does fonts.gstatic.com and every other off-host request. */
 
 import { mkdirSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -18,6 +21,27 @@ import { pathToFileURL } from 'node:url';
 
 const PW = process.env.PLAYWRIGHT_PKG || resolve('tests/node_modules/playwright');
 const { chromium } = createRequire(import.meta.url)(PW);
+
+const FONT_DIR = resolve('design/app/fonts');
+const SELF_HOSTED = { 'Space Grotesk': 'space-grotesk.woff2', 'Sora': 'sora.woff2', 'JetBrains Mono': 'jetbrains-mono.woff2' };
+
+/* The stylesheet a fonts.googleapis.com/css2 URL would have returned, built from the self-hosted
+   variable-weight files in the shape design/app/wf.css uses. Returns { css } or { missing: [...] }. */
+const googleFontsSheet = (url) => {
+  const css = [];
+  const missing = [];
+  for (const spec of url.searchParams.getAll('family')) {
+    const [family, axes = ''] = spec.split(':');
+    const file = SELF_HOSTED[family];
+    if (!file) { missing.push(family); continue; }
+    const m = /^wght@(.+)$/.exec(axes);
+    if (axes && !m) { missing.push(`${family} (axes ${axes})`); continue; }
+    for (const w of m ? m[1].split(';') : ['400']) {
+      css.push(`@font-face { font-family: '${family}'; font-style: normal; font-weight: ${w.replace('..', ' ')}; font-display: swap; src: url('${pathToFileURL(resolve(FONT_DIR, file)).href}') format('woff2'); }`);
+    }
+  }
+  return missing.length ? { missing } : { css: css.join('\n') };
+};
 
 const fail = (msg) => { console.error(`render-design: ${msg}`); process.exit(1); };
 
@@ -60,9 +84,17 @@ try {
   const page = await ctx.newPage();
 
   /* Only file:, data:, blob: and about: may load. Everything else is aborted and recorded; a local
-     file that is missing shows up as a failed request and is recorded too. */
+     file that is missing shows up as a failed request and is recorded too. The one answered request
+     is the Google Fonts stylesheet for a family design/app/fonts/ holds (see the header). */
   await page.route((url) => !/^(file|data|blob|about):/.test(url.href), (route) => {
-    problems.push(`off-host request: ${route.request().url()}`);
+    const url = new URL(route.request().url());
+    if (url.origin === 'https://fonts.googleapis.com' && url.pathname === '/css2') {
+      const sheet = googleFontsSheet(url);
+      if (sheet.css) return route.fulfill({ status: 200, contentType: 'text/css', body: sheet.css });
+      problems.push(`off-host font family not self-hosted in design/app/fonts/: ${sheet.missing.join(', ')} (${url.href})`);
+      return route.abort();
+    }
+    problems.push(`off-host request: ${url.href}`);
     return route.abort();
   });
   page.on('requestfailed', (req) => {

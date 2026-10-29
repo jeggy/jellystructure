@@ -155,28 +155,20 @@ the gate below.
 
 ### Rendering
 
-**Use `scripts/render-design.sh`** once it is merged (DEB-2125, Sjúrður's) — it replaces the command
-below and the per-round `render.mjs` prototype with it. Until then, this is the command, unchanged
-across three rounds and run from the repo root:
+**The command is `scripts/render-design.sh`** (DEB-2125). It needs only Docker, runs from anywhere
+in the repository, and `scripts/render-design.sh --help` lists every flag:
 
 ```sh
-# once, to put a browser matching tests/package-lock.json in a host-side cache
-mkdir -p ~/.cache/ms-playwright
-docker run --rm -v "$PWD":/work -w /work \
-  -v ~/.cache/ms-playwright:/ms-playwright-host \
-  -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright-host \
-  --user "$(id -u):$(id -g)" \
-  mcr.microsoft.com/playwright:v1.45.0-noble \
-  sh -c 'cd /work/tests && npx playwright install chromium'
-
-# every render after that
-docker run --rm -v "$PWD":/work -w /work \
-  -v ~/.cache/ms-playwright:/ms-playwright-host \
-  -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright-host \
-  --user "$(id -u):$(id -g)" \
-  mcr.microsoft.com/playwright:v1.45.0-noble \
-  node design/incoming/<round>/render.mjs
+scripts/render-design.sh --html design/incoming/<round>/frames.html \
+  --query '?w=desktop' --viewport 1440x1000 --all .frame --prefix <round>-
 ```
+
+The first run installs a browser matching `tests/package-lock.json` into a host-side cache
+(`~/.cache/ms-playwright`) and every run after that reuses it. The render has no network, and any
+off-host request fails the run and removes the PNGs it wrote. **The one exception is the Google Fonts
+`@import` in `design/ravilo/*.css`:** the script answers it from `design/app/fonts/` (Space Grotesk,
+Sora, JetBrains Mono), so a round needs no CSP `<meta>`. A family that is not self-hosted there, and
+every other off-host request, still fail the run (DEB-2922).
 
 Four things about it that cost time to learn and have held every round since:
 

@@ -19,7 +19,10 @@
 #   --prefix P       literal text put in front of every file name, e.g. 'processing-features-'
 #
 # One line per PNG is printed, then a count. Any off-host request, or any local file that fails to load,
-# fails the run and removes the PNGs it wrote: a half-loaded picture never survives.
+# fails the run and removes the PNGs it wrote: a half-loaded picture never survives. The one exception
+# is the Google Fonts @import in design/ravilo/*.css (DEB-2922): it is answered from design/app/fonts/
+# (Space Grotesk, Sora, JetBrains Mono), so a TV round needs no CSP <meta>. A family not hosted there,
+# fonts.gstatic.com and every other off-host request still fail the run.
 #
 # Examples (the two pilot rounds):
 #   scripts/render-design.sh --html design/incoming/2026-10-22-processing-features/frames.html \
