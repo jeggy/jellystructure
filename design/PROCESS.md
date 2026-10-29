@@ -74,15 +74,41 @@ About the production surface a round can touch — verified facts, not recollect
   history on 2026-09-23 (`689677e9`). **Run `git check-ignore` before planning where a round's files
   go**, not after: two rounds of strategy once went into 157 images that were never eligible to land.
 
+## Two kinds of round, and only one of them lands here
+
+**A round for the operator's own setup is drawn and kept outside the repository, and never
+committed.** It lives in `~/jellystructure-private/design/<YYYY-MM-DD>-<slug>/` instead of
+`design/incoming/`. Rendering, the look-at-every-PNG pass and the gates are unchanged, and the
+pictures go to the task as usual — the board is private and that is where the owner reviews.
+
+The distinction is what the drawing *is*, not what it looks like:
+
+- **Product design** is anything every jellystructure instance ships: a screen, a component, a state,
+  a token, an icon that is part of the product. It lands under `design/incoming/` as below.
+- **The operator's own setup** is the configuration of one instance. Artwork for his collections,
+  logos for his channels, anything that names or depicts what his instance holds. Another instance
+  would have no use for it, and this repository is public.
+
+**The brief says which kind it is.** When it does not, ask the briefer before drawing — not after, and
+never by deciding it yourself. The guard is a detector, not a preventer: `check-deanonymization.sh`
+covers `design/incoming/` the moment a round is committed, but a collection name is not a library
+title and it will pass. Nothing mechanical will catch this one; the brief and this section are the
+whole control.
+
 ## The lane, step by step
+
+This is the lane for a **product design** round. An own-setup round follows every step but 2, 5 and 7:
+it is drawn in `~/jellystructure-private/design/<YYYY-MM-DD>-<slug>/`, nothing is staged, and nothing
+is committed.
 
 1. **The brief arrives from Bárður.** It must stand alone: the question as a choice; which surfaces
    (admin / TV / phone / desktop / web / cast); constraints as **excerpts** from
    `specs/constitution.md` rather than a pointer; the stand-in titles, people, hostnames, durations
    and counts named **exactly**; the states the round must hold; the open decisions, each with a lean
-   stated *as* a lean; and **no phase number and no task id** — numbers were retired on 2026-10-15
-   (owner, DEB-799), the task id is the identity, and a drawing never carries either. Anything missing
-   goes back to him; it is not a gap to fill by invention.
+   stated *as* a lean; **which of the two kinds of round it is** (above); and **no phase number and no
+   task id** — numbers were retired on 2026-10-15 (owner, DEB-799), the task id is the identity, and a
+   drawing never carries either. Anything missing goes back to him; it is not a gap to fill by
+   invention.
 2. **The round is drawn under `design/incoming/<YYYY-MM-DD>-<slug>/`**, as HTML and CSS, with JS only
    where a frame genuinely needs it. One directory per round, and everything downstream — the fences,
    the archive, the prune at adoption — already knows that path.
@@ -303,11 +329,21 @@ wholesale.
 6. **A hand-authored fix in a design-managed file gets a line in the fence script** that would notice
    it going missing.
 7. **The repository is public.** No library title, no real host, no address, no key — in a mockup, a
-   spec, or a commit message.
+   spec, or a commit message. **And nothing belonging to one instance's own setup**, which is wider
+   than what the fence can see: a round drawn for the operator's configuration stays in
+   `~/jellystructure-private/design/` and is never committed.
 8. **The wire stays backwards compatible.** A design round that implies a new field adds one; it never
    retypes or deletes a field an installed client reads.
 
 ## Decisions, dated
+
+**2026-10-29 (DEB-1076, DEB-2862).** A design round for the operator's own setup is not this
+repository's design. The owner: *"these are considered a part of my specific jellystructure setup and
+other jellystructure instances would not need to know about it."* A round of that kind is drawn and
+kept in `~/jellystructure-private/design/<date>-<slug>/`, and the brief says which kind it is. One
+such round had already landed on `main` and reached GitHub; its files were moved to the private tree
+and removed from the tree in DEB-2862. Whether to rewrite the history that carries it is the owner's
+call on DEB-1076, not this lane's.
 
 **2026-10-22 (DEB-1076 card `add49886`, DEB-2112, DEB-2126).** Claude Design is retired. Rannvá draws
 everything in the repo, the owner only reviews, and the pictures go on the task. The pull, the export,
