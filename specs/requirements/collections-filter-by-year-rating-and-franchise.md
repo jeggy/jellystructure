@@ -35,7 +35,7 @@ franchises, number fields for the bounds, the segmented control and stepper from
 phone and browser see rows and nothing new. No design round.
 
 **Not in this spec** (owner agreed on DEB-799 to leave them out): per-viewer watched state, 4K/HDR and running
-time filters. Setting up the collections themselves (*Sagaer*, *Tidsmaskinen*) is the owner's, in the admin.
+time filters. Setting up any particular collection with these filters is the operator's, in the admin.
 
 ## Requirements
 
@@ -143,8 +143,8 @@ first is the default order. A template with no franchise of two or more serves n
 serves none.
 
 **6.3 — The display name.** TMDB's `collectionName` with a trailing ` Collection` removed (case-insensitive,
-whole word, with any space or dash in front of it). 134 of the 135 stored names end in it, and a *Sagaer*
-collection does not need the word on every row. If nothing is left, or there is no name at all, the row is not
+whole word, with any space or dash in front of it). Nearly every TMDB collection name ends in it, and a
+franchise collection does not need the word on every row. If nothing is left, or there is no name at all, the row is not
 served. The same name labels the franchise checklist (FR-5).
 
 **6.4 — A template's sort and hand-picks do not apply.** A split row is always in release order. The editor's
@@ -212,7 +212,7 @@ for the owner to ask for.
 Three slices for one engineer, each `blocked` by the one before:
 
 1. **Year, rating and the rating sort** (FR-1 to FR-4, FR-8's first two bullets), server and editor. With this
-   slice the owner can build *Tidsmaskinen*.
+   slice an operator can build a collection by decade or by rating.
 2. **Franchise and one row per franchise** (FR-5, FR-6, FR-8's last bullet), server and editor. With this slice
-   the owner can build *Sagaer*.
+   an operator can build a collection of franchises.
 3. **Ravilo *See all*** (FR-7). The wire field, the mapping and the sort.
