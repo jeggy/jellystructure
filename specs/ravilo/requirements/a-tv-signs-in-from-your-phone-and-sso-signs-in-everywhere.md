@@ -275,6 +275,22 @@ Each of these carries a dated amendment in its own file.
   browser, and that the confirm screen then names the right TV. CI proves the code normaliser, the confirm flow's states on a fake API, the held route, the strings in
   three languages, the address reader, and the web image's two answers.
 
+**Amendment 2026-10-29 (DEB-2371, finding F4) — where the row is in a wide Ravilo Web window.** QA found the amendment above wrong about one layout. The avatar opens
+the Profile page on a phone, in a narrow browser window and in the desktop app (R304, R337). **A wide Ravilo Web window opens the profile menu instead** (R340's
+*Switch profile · Your profile · My List · Settings · Support · Sign out*), and nothing in that menu reaches the Profile page. At desktop width *Sign in a TV* could not
+be found. FR-6 is unchanged: the entry sits beside the account rows. In a wide Ravilo Web window those rows are in **Settings › Account**, where R234 (FR-R234-4) keeps
+*Change password* on every platform. So:
+
+- **A wide Ravilo Web window: Settings › Account has *Sign in a TV* directly after the password place.** That place is *Change password*, or DEB-1854's link or
+  sentence for an account managed elsewhere, or nothing when that is hidden. The row comes before *Install Ravilo*, uses the same `tvcode.row` string, and opens the
+  same `/account/tv` screen. No new copy.
+- **Only there.** A phone, a narrow browser window and the desktop app keep the one row on Profile, and their Settings does not repeat it. A TV draws nothing, as
+  before: FR-6's "a TV has no such row" still holds.
+- **Keyboard and D-pad order** in that Settings: password place → *Sign in a TV* → *Install Ravilo* → *Sign out*. Where the row is not drawn, the order is today's.
+- **A window resized across the layout switch** shows the row in the place its current layout has it.
+- **Not chosen:** a row in the profile menu (R340's list is fixed and shared with the TV), and making a wide window's avatar open the Profile page. That would
+  change navigation for every wide-window viewer, which is the owner's call if it is ever wanted.
+
 ### Single sign-on on every client and the admin
 
 **FR-8 — Discovering it.**
