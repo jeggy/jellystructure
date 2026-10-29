@@ -22,6 +22,11 @@ private var ltvChannels: List<LiveTvChannel> = emptyList()
 private var ltvFilter: String = "all"
 private var ltvSearch: String = ""
 
+/** DEB-2628 (FR-12) — the broadcast glyph, a dot between an arc pair either side. The class and the stroke treatment are
+ *  `wf.css`'s `.radiomark`; the page emits the five paths and nothing else. Its accessible label is *Radio*. Shared with
+ *  the playback sessions list (FR-5), which draws the same mark. */
+internal fun radioMarkHtml(): String = """<span class="radiomark" aria-label="Radio" role="img"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.3"/><path d="M15.7 8.3A5.2 5.2 0 0 1 15.7 15.7"/><path d="M18.2 5.8A8.8 8.8 0 0 1 18.2 18.2"/><path d="M8.3 8.3A5.2 5.2 0 0 0 8.3 15.7"/><path d="M5.8 5.8A8.8 8.8 0 0 0 5.8 18.2"/></svg></span>"""
+
 fun renderLiveTv(container: Element, scope: CoroutineScope) {
     container.innerHTML = """<div class="pagebar"><h1>Live TV</h1></div><p class="page-sub" style="color:var(--ink-soft)">Loading…</p>"""
     scope.launch {
@@ -115,6 +120,7 @@ private fun renderLiveTvFull(container: Element, scope: CoroutineScope) {
         <span class="chip fchip${if (ltvFilter == "hidden") " on" else ""}" data-f="hidden">Hidden</span>
         <span class="chip fchip${if (ltvFilter == "new") " on" else ""}" data-f="new">New</span>
         <span class="chip fchip${if (ltvFilter == "removed") " on" else ""}" data-f="removed">Unavailable</span>
+        <span class="chip fchip${if (ltvFilter == "radio") " on" else ""}" data-f="radio">${radioMarkHtml()}Radio</span>
       </div>
       <div class="tiny muted" style="margin:4px 0 12px">Drag order with ▲▼ · toggle to show a channel in Ravilo · category is a free-text label (Jellyfin doesn't provide one). Hidden channels stay in Jellyfin — they just don't appear on the TV.</div>
       <table class="lineup">
@@ -154,6 +160,7 @@ private fun filteredChannels(): List<LiveTvChannel> {
             "hidden" -> !c.shown && !c.unavailable
             "new" -> c.isNew
             "removed" -> c.unavailable
+            "radio" -> c.kind == "radio"
             else -> true
         }
     }
@@ -174,7 +181,8 @@ private fun renderLineupBody() {
     val body = document.getElementById("ltv-body") as? HTMLElement ?: return
     val list = filteredChannels()
     body.innerHTML = list.joinToString("") { c ->
-        val rowCls = if (c.unavailable) "removed" else if (!c.shown) "off" else ""
+        // FR-12 — a hidden row still badged *new* keeps full strength (`.lineup tr.off.new td`, wf.css) until the operator acts.
+        val rowCls = if (c.unavailable) "removed" else if (!c.shown) (if (c.isNew) "off new" else "off") else ""
         val toggle = if (c.unavailable) """<span class="tiny muted">—</span>"""
             else """<span class="toggle${if (c.shown) " on" else ""}" data-tg="${c.channelId}"></span>"""
         val logoUrl = c.logoUrl
@@ -183,13 +191,16 @@ private fun renderLineupBody() {
         else """<span class="tvlogo">${c.name.take(3).uppercase().esc()}</span>"""
         val guideBadge = if (c.hasGuide) """<span class="badge ok" style="font-size:.62rem">EPG</span>"""
             else """<span class="badge warn" style="font-size:.62rem">no guide</span>"""
+        val nameInput = """<input class="cname nameinput" data-name="${c.channelId}" value="${c.name.esc()}" placeholder="Channel name">"""
+        // The mark's own 7 px of air is the gap to the name, so mark and field sit in one gap-less flex pair.
+        val nameField = if (c.kind == "radio") """<span class="row center" style="flex:1;min-width:0;gap:0">${radioMarkHtml()}$nameInput</span>""" else nameInput
         val actions = if (c.unavailable) """<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-rm="${c.channelId}">Remove from layout</button>"""
             else statusCellHtml(c)
         """<tr class="$rowCls" data-id="${c.channelId}">
              <td><span class="ord"><button data-up="${c.channelId}">▲</button><button data-dn="${c.channelId}">▼</button></span></td>
              <td>$toggle</td>
              <td class="cnum">${c.number}</td>
-             <td><div class="row center" style="gap:11px">$logo<input class="cname nameinput" data-name="${c.channelId}" value="${c.name.esc()}" placeholder="Channel name"></div></td>
+             <td><div class="row center" style="gap:11px">$logo$nameField</div></td>
              <td><input class="catinput" data-cat="${c.channelId}" value="${c.category.esc()}" placeholder="Uncategorized"></td>
              <td>$guideBadge</td>
              <td>$actions</td>

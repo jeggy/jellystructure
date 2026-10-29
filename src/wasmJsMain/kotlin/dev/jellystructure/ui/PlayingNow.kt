@@ -228,11 +228,15 @@ internal fun pnEncoderWords(encoder: String?, detail: String?): String = when (e
     "jellyfin" -> "Jellyfin"
     // DEB-2627 (FR-5) — a live channel the player reads from the broadcaster itself (a live row's `encoder`).
     "source" -> "the channel's own stream"
+    // DEB-2628 (FR-5) — a station through jellystructure's audio relay.
+    "relayed" -> "relayed"
     else -> ""
 }
 
 /** 308 + 313 — the two lines under the state word, joined: who encodes, and the variant it plays. */
 internal fun pnPlayWords(r: dev.jellystructure.model.AdminSessionRow): String = listOf(
+    // DEB-2628 (FR-5) — a radio row names the station's format first (*MP3 · 192 kb/s*), then *relayed*.
+    r.format?.takeIf { r.channelKind == "radio" } ?: "",
     pnEncoderWords(r.encoder, r.encoderDetail),
     pnVariantWords(r.variantBps, r.variantHeight, r.variantStepsDown, r.variantStepsUp, r.variantStartBps),
 ).filter { it.isNotEmpty() }.joinToString(" · ")
@@ -278,10 +282,16 @@ private fun pnRow(r: AdminSessionRow, nowMs: Long, serverNowMs: Long): String {
     }
     // DEB-2627 (FR-5) — a live channel has no position and no history: the row says so and does not open.
     val live = r.kind == "live"
+    val radio = live && r.channelKind == "radio"
     val position = if (live) "Live" else "${pnClock(pos)}$progress"
+    // DEB-2628 (FR-5) — a radio row: the broadcast glyph before the station, and *Radio · programme* (or *Live radio*) under it.
+    val what = if (radio) {
+        val under = if (sub.isNullOrBlank()) "Live radio" else "Radio · $sub"
+        """<span class="ses-what">$art<span><b>${radioMarkHtml()}${title.esc()}</b><span class="tiny muted">${under.esc()}</span></span></span>"""
+    } else """<span class="ses-what">$art<span><b>${title.esc()}</b>${sub?.let { "<span class=\"tiny muted\">${it.esc()}</span>" } ?: ""}</span></span>"""
     return """<tr class="ses-r" data-ses="${r.id.esc()}"${if (live) " data-live=\"1\"" else ""}${if (r.endedAt != null) " style=\"opacity:.6\"" else ""}>
         <td style="white-space:nowrap"><b>${r.ownerName.esc()}</b></td>
-        <td><span class="ses-what">$art<span><b>${title.esc()}</b>${sub?.let { "<span class=\"tiny muted\">${it.esc()}</span>" } ?: ""}</span></span></td>
+        <td>$what</td>
         <td style="white-space:nowrap">${pnIcon(r.targetIcon)} ${r.targetName.esc()}</td>
         <td style="white-space:nowrap">${pnStateWord(r).esc()}${pnPlayWords(r).takeIf { it.isNotEmpty() }?.let { "<div class=\"tiny muted\">${it.esc()}</div>" } ?: ""}</td>
         <td><span class="ses-pr">$position</span></td>

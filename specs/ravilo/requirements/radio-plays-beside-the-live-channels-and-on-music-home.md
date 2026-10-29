@@ -272,6 +272,12 @@ While a station plays:
 
 These sit beside R177's Live strings.
 
+**Amendment 2026-10-29 (DEB-2657):** the admin has no `Strings.kt` and no string table in any language — every
+admin page draws its English text as literals in the Kotlin that renders it. So the admin half of this FR is
+*Radio* and *Live radio* as English literals in `ui/LiveTv.kt` and `ui/PlayingNow.kt`, beside the pages' other
+words; the da and fo strings are the `ravilo-i18n` table's alone. Giving the admin a translation layer is a
+separate piece of work and is not done here.
+
 ## Design
 
 The round is `design/incoming/2026-10-27-radio/` (DEB-2640). Its `REPORT.md` and `Radio - Directions.html` are the
