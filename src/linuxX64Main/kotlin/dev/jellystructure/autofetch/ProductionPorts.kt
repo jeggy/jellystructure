@@ -86,29 +86,47 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
     }
 
     override suspend fun download(spec: DownloadSpec, stop: () -> Boolean): ToolResult {
-        val cmd: String = when (spec.kind) {
+        // FR-6.4 (DEB-2872) — a subtitle is never a reason the episode does not arrive: [withSub] carries it, [withoutSub] is the same mux without it.
+        val withSub: String
+        val withoutSub: String?
+        var note = ""
+        when (spec.kind) {
             "hls" -> {
                 val master = Manifests.parseHlsMaster(spec.manifestText, spec.manifestUrl)
                 if (master != null) {
                     val best = master.best() ?: return ToolResult(false, "the master playlist has no variant")
                     val audio = master.audioFor(best)?.uri
-                    // FR-6.4 — the subtitle rendition is looked for on every episode, and embedded only when its first chunk holds cues.
-                    val sub = master.subtitleFor(best, spec.subtitleLang)?.uri?.takeIf { subtitleHasCues(it) }
-                    FetchCommands.hlsToMkv(best.url, audio, sub, spec.outPath, spec.audioLang, spec.subtitleLang)
+                    // The subtitle rendition is looked for on every episode, and embedded only when its first chunk holds cues.
+                    val advertised = master.subtitleFor(best, spec.subtitleLang)?.uri
+                    val sub = advertised?.takeIf { subtitleHasCues(it) }
+                    if (advertised != null && sub == null) note = "no subtitle: the first chunk holds no cues"
+                    withoutSub = FetchCommands.hlsToMkv(best.url, audio, null, spec.outPath, spec.audioLang, spec.subtitleLang)
+                    withSub = if (sub != null) FetchCommands.hlsToMkv(best.url, audio, sub, spec.outPath, spec.audioLang, spec.subtitleLang) else withoutSub
                 } else {
                     val streams = pickStreams(spec.manifestUrl) ?: return ToolResult(false, "ffprobe could not read the playlist")
-                    FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null)
+                    withSub = FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null)
+                    withoutSub = null
                 }
             }
             "dash" -> {
                 val streams = pickStreams(spec.manifestUrl) ?: return ToolResult(false, "ffprobe could not read the manifest")
-                FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, streams.subtitle)
+                withSub = FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, streams.subtitle)
+                withoutSub = if (streams.subtitle != null) FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null) else null
             }
             else -> return ToolResult(false, "unsupported media kind ${spec.kind}")
         }
-        val r = shell.runStoppable(cmd, spec.outPath, stop) ?: return ToolResult(false, "stopped")
-        return if (r.ok && shell.exists(spec.outPath)) ToolResult(true) else ToolResult(false, "ffmpeg exit ${r.exit}: ${r.output.lines().lastOrNull { it.isNotBlank() }.orEmpty()}")
+        val first = shell.runStoppable(withSub, spec.outPath, stop) ?: return ToolResult(false, "stopped")
+        if (first.ok && shell.exists(spec.outPath)) return ToolResult(true, note)
+        val firstWhy = lastLine(first.output)
+        if (withoutSub == null || withoutSub == withSub) return ToolResult(false, "ffmpeg exit ${first.exit}: $firstWhy")
+        // The mux broke with the subtitle input in it: run it once more without, and the file that comes out is the episode.
+        shell.remove(spec.outPath)
+        val second = shell.runStoppable(withoutSub, spec.outPath, stop) ?: return ToolResult(false, "stopped")
+        return if (second.ok && shell.exists(spec.outPath)) ToolResult(true, "no subtitle: ffmpeg could not mux it: $firstWhy")
+        else ToolResult(false, "ffmpeg exit ${second.exit}: ${lastLine(second.output)}")
     }
+
+    private fun lastLine(output: String) = output.lines().lastOrNull { it.isNotBlank() }.orEmpty()
 
     private data class Picked(val video: Int, val audio: Int?, val subtitle: Int?)
 

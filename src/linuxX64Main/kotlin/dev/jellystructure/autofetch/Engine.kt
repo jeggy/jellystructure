@@ -252,7 +252,7 @@ class AutofetchEngine(
                 world.history(finalPath, "Auto-fetch placed ${Numbering.code(se)} · $fileName")
                 val res = facts.height?.let { "${it}p" }
                 val size = facts.sizeBytes?.let { gb(it) }
-                OneResult.Placed("${Numbering.code(se)}${if (res != null || size != null) " (${listOfNotNull(res, size).joinToString(", ")})" else ""}")
+                OneResult.Placed("${Numbering.code(se)}${if (res != null || size != null) " (${listOfNotNull(res, size).joinToString(", ")})" else ""}${if (dl.message.isNotBlank()) " · ${dl.message}" else ""}")
             } finally {
                 shell.remove(work)
                 cleanEmpty(seasonDir, f.seriesPath)

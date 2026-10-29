@@ -19,6 +19,7 @@ data class DownloadSpec(
     val subtitleLang: String,
 )
 
+/** [message] is why a download failed; on a success it is the note that ends the run line (`no subtitle: …`, FR-6.4), or empty. */
 data class ToolResult(val ok: Boolean, val message: String = "")
 
 /** What `ffprobe` shows of a finished file (FR-6.5). */

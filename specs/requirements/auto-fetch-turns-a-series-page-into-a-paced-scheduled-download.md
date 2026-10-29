@@ -38,6 +38,10 @@ in it against the **final** URL (FR-2.7).
 **Amended 2026-10-29 (DEB-2814)**, after that fetcher's first run: a subtitle rendition whose segments are named
 `.webvtt` is read (FR-6.4). 11 of 12 items failed because ffmpeg's HLS demuxer refuses that extension by default.
 
+**Amended 2026-10-29 (DEB-2872, owner decision on DEB-13)**: a subtitle is never a reason an episode does not arrive.
+When the source's subtitle rendition cannot be read or muxed, the episode is placed without it (FR-6.4), and only a
+video or audio failure counts toward FR-6.5's three failures.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -337,10 +341,21 @@ one lane.
    ffmpeg's HLS demuxer refuses by default (`extension vtt mismatches allowed extensions`, then *Invalid data found*).
    The subtitle input, and only that input, is opened with `-extension_picky 0`; the video and audio inputs keep
    ffmpeg's extension check. Proven against ffmpeg 5.1.9, the image's own build.
+   **A subtitle never fails the episode (amended 2026-10-29, DEB-2872; owner on DEB-13: *"If no subtitles are available
+   (which will be a normal scenario) then it will still be downloaded, just without the subtitles"*).** When the
+   source has no subtitle rendition, the episode is placed without one, as before. So it is when the rendition is
+   advertised but its first chunk holds no cues or cannot be read, and when ffmpeg fails with the subtitle input in the
+   mux: the mux is run **once more without the subtitle input**, and the file that comes out is the episode. The run
+   line for a placed episode then ends `· no subtitle: <reason>` (`the first chunk holds no cues`, or
+   `ffmpeg could not mux it: <ffmpeg's last line>`); an episode whose source simply has no rendition has no such
+   suffix. Only if the mux without the subtitle also fails is the item failed, and that is a video or audio failure
+   (FR-6.5). Nothing retries the subtitle later.
 5. **Checked before it is placed.** `ffprobe` shows the tagged language and a duration within 10 % of the listing's,
    where the listing gives one; `mkvinfo -v` shows the first top-level `Tracks` before the first `Cluster`. A file that
    fails is deleted from the temporary directory and the run line says why; it is retried on the next run, and after
    three failures the item is marked *failed* until *Re-investigate page*.
+   The check never asks for a subtitle stream, and a missing or unusable subtitle (FR-6.4) is not a failure here:
+   only the video, the audio, the language, the duration and `Tracks` count toward the three.
 6. **Placed atomically, never over anything.** The file is written under phase 311's work folder in its destination
    season folder (`<Season folder>/.jellystructure/`, which Sonarr, Radarr and Jellyfin all skip, and which the
    leftover sweep already cleans), then renamed into `<Series>/Season NN/<Series> - SxxEyy - <episode name>.mkv`

@@ -394,6 +394,25 @@ class AutofetchEngineTest {
     }
 
     @Test
+    fun `an episode whose subtitle could not be muxed is placed and the run line says why`() = runBlocking<Unit> {
+        val f = h.saveDagbok()
+        h.tools.downloadNote = "no subtitle: ffmpeg could not mux it: Invalid data found"
+        val r = h.engine.run(f.id, RunTrigger.MANUAL)!!
+        assertEquals("ok", r.status); assertEquals(12, r.placed)
+        assertTrue(r.lines.filter { it.kind == "placed" }.all { it.text.endsWith(" · no subtitle: ffmpeg could not mux it: Invalid data found") })
+        assertTrue(h.store.items(f.id).none { it.state == "failed" || it.state == "retry" })
+    }
+
+    @Test
+    fun `a download that fails is still an item failure`() = runBlocking<Unit> {
+        val f = h.saveDagbok(RetentionSpec("all"))
+        h.tools.failDownload = true
+        repeat(3) { h.engine.run(f.id, RunTrigger.MANUAL) }
+        assertEquals(0, h.files(f).size)
+        assertTrue(h.store.items(f.id).any { it.state == "failed" })
+    }
+
+    @Test
     fun `Tracks after the first Cluster fails the check`() = runBlocking<Unit> {
         val f = h.saveDagbok()
         h.tools.first = "Cluster"

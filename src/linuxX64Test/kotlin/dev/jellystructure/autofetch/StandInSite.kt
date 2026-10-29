@@ -86,6 +86,8 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     var first = "Tracks"
     var duration = 1800.0
     var failDownload = false
+    /** What a successful download reports back, like the subtitle note of FR-6.4 (DEB-2872). */
+    var downloadNote = ""
     /** Called with the work path just before the download "finishes" — lets a test put something at the final path. */
     var onDownload: (String) -> Unit = {}
 
@@ -101,7 +103,7 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
         if (failDownload) return ToolResult(false, "boom")
         onDownload(spec.outPath)
         PosixFileFixShell.writeText(spec.outPath, "mkv:" + spec.manifestUrl)
-        return ToolResult(true)
+        return ToolResult(true, downloadNote)
     }
 
     override suspend fun inspect(path: String) = FileFacts(duration, listOf(audioLanguage), emptyList(), 1080, 1_900_000_000L)
