@@ -126,10 +126,14 @@ data class LiveTvStreamTicket(
     @SerialName("live_stream_id") val liveStreamId: String,
     @SerialName("hls_url") val hlsUrl: String,
     @SerialName("expires_at") val expiresAt: Long,
-    /** DEB-2627 FR-1/FR-2 — what [hlsUrl] is: `hls_ladder` · `hls` · `other`. A plain string, never an enum: a future value must not break a decode. */
+    /** DEB-2627 FR-1/FR-2 — what [hlsUrl] is: `hls_ladder` · `hls` · `other`; DEB-2628 FR-4 adds `audio` (a station through the radio relay). A plain string, never an enum: a future value must not break a decode. */
     @SerialName("stream_kind") val streamKind: String = "other",
     /** DEB-2627 FR-2 — the master's rungs, highest first; non-empty only for `hls_ladder`. */
     val ladder: List<LiveTvLadderRung> = emptyList(),
+    /** DEB-2656 (DEB-2628 FR-4) — the upstream's audio type (`audio/mpeg`, `audio/aac`, …), filled for `stream_kind = "audio"`; null when the backend could not read it. */
+    @SerialName("content_type") val contentType: String? = null,
+    /** DEB-2656 (DEB-2628 FR-4) — `tv` or `radio`. A plain string, like [LiveTvChannel.kind]. */
+    @SerialName("channel_kind") val channelKind: String = "tv",
 )
 
 /** Phase 148 §B1 "Live TV on Home" — placement only, shown in the Layout tab only when Live TV is

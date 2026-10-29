@@ -10,6 +10,8 @@ import dev.jellystructure.shared.tv.LiveTvSettingsUpdate
 import dev.jellystructure.shared.tv.LiveTvStopRequest
 import dev.jellystructure.shared.tv.LiveTvTuneRequest
 import dev.jellystructure.tv.LiveTvService
+import dev.jellystructure.tv.RelayOpen
+import dev.jellystructure.tv.pumpRadioRelay
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -144,6 +146,26 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         }
         liveTvService.stopTune(device, req.liveStreamId)
         call.respond(mapOf("status" to "ok"))
+    }
+
+    // ── DEB-2628 FR-4 — the radio relay. Listed in AuthPlugin's OPEN_API_PATHS beside the logo proxy: neither <audio> nor a Cast
+    // receiver's media element can send a device header, so the route's credential is its `relay_id` — 128 secure-random bits minted
+    // by a device-authenticated tune, compared in constant time, and never written to a log (Server.kt redacts the path). ──
+
+    get("/tv/livetv/radio/{relay_id}") {
+        val id = call.parameters["relay_id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        when (val open = liveTvService.relayOpen(id)) {
+            RelayOpen.NotFound -> call.respond(HttpStatusCode.NotFound, mapOf("error" to "not found"))
+            RelayOpen.Busy -> {
+                call.response.headers.append("Retry-After", "5")
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "too many listeners on this station"))
+            }
+            is RelayOpen.Granted -> try {
+                pumpRadioRelay(call, open.lease) { liveTvService.relayStillLive(open.lease) }
+            } finally {
+                liveTvService.relayRelease(open.lease)
+            }
+        }
     }
 
     // ── Public — logo proxy (AuthPlugin OPEN_API_PATHS; not sensitive, addendum E) ────────────────

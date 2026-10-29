@@ -312,7 +312,7 @@ fun startServer(
                 // concurrently-grown shared `HashMap` throws, phase 294) carries a null message, so this line
                 // read `Unhandled route exception on /api/tv/facets/summary: null` and named neither what threw
                 // nor what kind of throw it was. `simpleName` is always there.
-                Logger.error("Unhandled route exception on ${call.request.path()}: ${cause::class.simpleName}: ${cause.message}", "http")
+                Logger.error("Unhandled route exception on ${dev.jellystructure.tv.redactedPath(call.request.path())}: ${cause::class.simpleName}: ${cause.message}", "http")
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "internal server error"))
             }
             status(HttpStatusCode.NotFound) { call, status ->

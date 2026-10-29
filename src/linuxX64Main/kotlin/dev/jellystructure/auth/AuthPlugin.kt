@@ -93,6 +93,10 @@ private val OPEN_API_PATHS = listOf(
     // Phase 147 — Live TV channel logos (proxied from Jellyfin's ImageTags.Primary); same reasoning as
     // channel-logos/image above — not sensitive, and an <img>/Coil request can't carry a device token.
     "/api/tv/livetv/logo/",
+    // DEB-2628 (FR-4) — a radio station's audio relay. <audio> and a Cast receiver's media element cannot send a device header, so
+    // the path's 128-bit random `relay_id` is the credential (the constitution's "routes fenced to a credential of their own"):
+    // minted per tune for a device-authenticated device, compared in constant time, ended by the tune, and kept out of every log.
+    "/api/tv/livetv/radio/",
     // R291 (FR-R291-2) — the composed HLS master a player fetches for a transcode with several audio
     // tracks. Media3/hls.js cannot attach a device token to a playlist fetch; the path's 128-bit random
     // id is the capability, lives as long as the ticket, and what it returns carries only Jellyfin's own

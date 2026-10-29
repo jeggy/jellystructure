@@ -39,6 +39,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
@@ -50,6 +51,8 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -82,6 +85,8 @@ class LiveTvRadioTest {
         var channels = """[{"Id":"tv1","Name":"News 1","ChannelType":"TV"},{"Id":"tv2","Name":"Films"},""" +
             """{"Id":"r1","Name":"Station One","ChannelType":"Radio"},{"Id":"r2","Name":"Station Two","ChannelType":"Radio"}]"""
         var listedForViewer = listOf("tv1", "tv2", "r1", "r2")
+        /** DEB-2656 — what Jellyfin's `LiveStreams/Open` answers as `Path`; `/up/...` is made absolute against the fake broadcaster below. */
+        var openPath = "https://feed.invalid/live/master.m3u8"
     }
 
     private fun harness(body: suspend (Fake, LiveTvService) -> Unit) = runBlocking {
@@ -94,6 +99,17 @@ class LiveTvRadioTest {
                         "[" + fake.listedForViewer.joinToString(",") { """{"Id":"$it","Name":"$it"}""" } + "]"
                     call.respondText("""{"Items":$body}""", ContentType.Application.Json)
                 }
+                post("/Items/{id}/PlaybackInfo") { call.respondText("""{"PlaySessionId":"ps1","MediaSources":[{"Id":"ms1","OpenToken":"open1"}]}""", ContentType.Application.Json) }
+                post("/LiveStreams/Open") {
+                    val path = if (fake.openPath.startsWith("/up/")) "http://127.0.0.1:${call.request.local.localPort}${fake.openPath}" else fake.openPath
+                    call.respondText("""{"MediaSource":{"Id":"ms1","Path":"$path","LiveStreamId":"ls1"}}""", ContentType.Application.Json)
+                }
+                get("/up/mp3") {
+                    call.response.headers.append("icy-br", "128")
+                    call.respondText("RADIO", ContentType("audio", "mpeg"))
+                }
+                get("/up/live.m3u8") { call.respondText("#EXTM3U\n#EXT-X-VERSION:3\n", ContentType("application", "vnd.apple.mpegurl")) }
+                get("/Users/{id}") { call.respondText("{}", ContentType.Application.Json) }
                 get("/LiveTv/Programs") {
                     val ids = call.request.queryParameters["ChannelIds"].orEmpty().split(",")
                     val items = ids.filter { it != "r2" }.joinToString(",") {
@@ -173,6 +189,40 @@ class LiveTvRadioTest {
     @Test fun `the admin lineup always sees every station`() = harness { _, service ->
         service.sync()
         assertEquals(setOf("tv1", "tv2", "r1", "r2"), ids(service.lineup()).toSet())
+    }
+
+    private val caps = dev.jellystructure.shared.tv.ClientCapabilities()
+
+    @Test fun `a station tune gives stream_kind audio with its content type and a relay path`() = harness { fake, service ->
+        service.sync(); service.bulkShowNew()
+        fake.openPath = "/up/mp3"
+        val ticket = assertNotNull(service.tune(viewer, "r1", caps))
+        assertEquals("audio", ticket.streamKind)
+        assertEquals("audio/mpeg", ticket.contentType)
+        assertEquals("radio", ticket.channelKind)
+        assertTrue(Regex("/api/tv/livetv/radio/[0-9a-f]{32}").matches(ticket.hlsUrl), "a path, never an absolute URL: ${ticket.hlsUrl.take(30)}")
+    }
+
+    @Test fun `an https HLS station is handed over as-is`() = harness { fake, service ->
+        service.sync(); service.bulkShowNew()
+        fake.openPath = "https://feed.invalid/live/master.m3u8"
+        val ticket = assertNotNull(service.tune(viewer, "r1", caps))
+        assertEquals("https://feed.invalid/live/master.m3u8", ticket.hlsUrl)
+        assertEquals("hls", ticket.streamKind)
+        assertEquals("radio", ticket.channelKind)
+        assertNull(ticket.contentType)
+    }
+
+    @Test fun `an http HLS station is relayed and a TV channel keeps the plain ticket`() = harness { fake, service ->
+        service.sync(); service.bulkShowNew()
+        fake.openPath = "/up/live.m3u8"
+        val http = assertNotNull(service.tune(viewer, "r1", caps))
+        assertEquals("audio", http.streamKind, "plain http HLS is not playable everywhere, so it goes through the relay")
+        assertTrue(http.hlsUrl.startsWith("/api/tv/livetv/radio/"))
+        val tv = assertNotNull(service.tune(viewer, "tv1", caps))
+        assertEquals("tv", tv.channelKind)
+        assertNull(tv.contentType)
+        assertTrue(tv.streamKind != "audio" && tv.hlsUrl.startsWith("http"))
     }
 
     /** The real routes over the real services; the music side has one album so Music Home has rows. */

@@ -6,6 +6,8 @@ import dev.jellystructure.shared.tv.LiveTvLadderRung
 internal const val STREAM_KIND_HLS_LADDER = "hls_ladder"
 internal const val STREAM_KIND_HLS = "hls"
 internal const val STREAM_KIND_OTHER = "other"
+/** DEB-2628 FR-4 — a station played through the audio relay. Not a classification of a playlist: only a radio tune says it. */
+internal const val STREAM_KIND_AUDIO = "audio"
 
 /** What [classifyHlsPlaylist] read: [kind] is one of the `STREAM_KIND_*` values; [ladder] is non-empty only for `hls_ladder`. */
 internal data class SourceClassification(val kind: String, val ladder: List<LiveTvLadderRung> = emptyList())

@@ -64,6 +64,10 @@ data class AdminSessionRow(
     val encoder: String? = null,
     /** 313 (FR-313-13) — for ours: *4 qualities · HEVC HDR*. */
     val encoderDetail: String? = null,
+    /** DEB-2656 (DEB-2628 FR-5) — on a live row: `tv` or `radio`. Null on every other row. */
+    val channelKind: String? = null,
+    /** DEB-2656 (DEB-2628 FR-5) — on a radio row: the station's format, already worded (*MP3 · 192 kb/s*). */
+    val format: String? = null,
 )
 
 @Serializable

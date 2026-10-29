@@ -19,6 +19,7 @@ import dev.jellystructure.shared.tv.LiveTvOverview
 import dev.jellystructure.shared.tv.LiveTvProgramInfo
 import dev.jellystructure.shared.tv.LiveTvStreamTicket
 import dev.jellystructure.util.isoToEpochSeconds
+import dev.jellystructure.auth.constantTimeEquals
 import dev.jellystructure.auth.jellyfinAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -41,6 +42,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
+import kotlin.concurrent.AtomicInt
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.buffered
@@ -104,7 +106,7 @@ class LiveTvService(
     private val viewerChannels = LockedMap<String, ViewerChannels>()
 
     // DEB-2627 FR-1 — what a source's master was last read as, per (channel id, Path). `until` is the epoch ms it stops being believed.
-    private data class SourceClass(val classification: SourceClassification, val until: Long)
+    private data class SourceClass(val look: SourceLook, val until: Long)
     private val sourceClasses = LockedMap<String, SourceClass>()
     private val sourceHttp by lazy { http.config { followRedirects = false } }
 
@@ -121,12 +123,24 @@ class LiveTvService(
         val heartbeatMs: Long,
         val variantBps: Long? = null,
         val height: Int? = null,
+        /** DEB-2656 (DEB-2628 FR-5) — `tv` or `radio`, from the channel's stored kind at the time of the tune. */
+        val channelKind: String = "tv",
+        /** DEB-2656 (DEB-2628 FR-4) — the radio relay this tune minted; null for a TV channel, an as-is station or a stream re-registered after a restart. */
+        val relay: RelayState? = null,
+        /** DEB-2656 (DEB-2628 FR-5) — the admin row's *MP3 · 192 kb/s*; null when the source stated neither. */
+        val format: String? = null,
     )
 
     // Live-stream watchdog — separate from PlaybackService's VOD tracking (dev-review addendum D: a
     // live tune is a sibling flow, not a branch of startPlayback). Key = deviceId. DEB-2627 FR-5: also the admin's live
     // rows and `isPlaybackActive()`'s live half, so it is read from request threads and the deferral checks alike.
     private val activeStreams = LockedMap<String, ActiveLive>()
+
+    /** DEB-2656 — every time this service reads (a tune, a heartbeat, the watchdog, a relay closing); a test moves it instead of waiting 60 s. */
+    internal var clock: () -> Long = { nowMs() }
+
+    // DEB-2656 (FR-4) — open relay connections across the server, against RADIO_RELAY_MAX_TOTAL.
+    private val relayTotal = AtomicInt(0)
 
     /** DEB-2627 FR-5 — told when the set of live rows, or what one shows, changes (the admin's `/ws` list is re-sent). */
     var onLiveChanged: (() -> Unit)? = null
@@ -392,6 +406,8 @@ class LiveTvService(
         val token = jellyfinClient.tvTokenForClient(base, device)
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
+        val channelKind = kindOfChannel(channelId)
+        val radio = channelKind == "radio"
         // R379 — a channel's AC-3 on a device without a platform decoder is converted, never copied (the track's codec
         // isn't known before tuning, so only the list narrows).
         val liveCaps = forPlatformAudio(capabilities, null)
@@ -415,7 +431,7 @@ class LiveTvService(
                 jellyfinClient.closeLiveStream(base, token, liveStreamId, identity)
                 return null
             }
-            register(device, channelId, liveStreamId, DELIVERY_JELLYFIN)
+            register(device, channelId, liveStreamId, DELIVERY_JELLYFIN, channelKind = channelKind)
             return LiveTvStreamTicket(
                 jellyfinBaseUrl = base,
                 accessToken = token,
@@ -424,11 +440,36 @@ class LiveTvService(
                 hlsUrl = if (transcoding.startsWith("http")) transcoding else "$base$transcoding",
                 expiresAt = nowMs() + TICKET_TTL_MS,
                 streamKind = STREAM_KIND_HLS,
+                channelKind = channelKind,
             )
         }
-        val sourceClass = classifySource(channelId, streamUrl)
+        val absolute = if (streamUrl.startsWith("http", ignoreCase = true)) streamUrl else "$base$streamUrl"
+        // A station's Jellyfin-local stream is probed too (with the device's own token, to Jellyfin only): the relay needs its type.
+        val look = classifySource(channelId, if (radio) absolute else streamUrl, bearer = token.takeIf { absolute.startsWith(base, ignoreCase = true) })
+        val sourceClass = look.classification
+        // Only an audio answer is a type the relay can carry; a playlist or a page leaves it null, and the relay then answers 502.
+        val audioType = look.contentType?.takeIf { isRelayableAudio(it) }
+        if (radio && !(sourceClass.kind != STREAM_KIND_OTHER && absolute.startsWith("https://", ignoreCase = true))) {
+            // DEB-2628 FR-4 — anything but an HLS station on https plays through our relay: one credential of its own, minted per tune.
+            val relay = RelayState(
+                id = secureHexId(), upstreamUrl = absolute, jellyfinBase = base,
+                bearer = token.takeIf { absolute.startsWith(base, ignoreCase = true) }, contentType = audioType,
+            )
+            register(device, channelId, liveStreamId, DELIVERY_SOURCE, channelKind = channelKind, relay = relay, format = radioFormatLabel(audioType, look.bitrateKbps))
+            return LiveTvStreamTicket(
+                jellyfinBaseUrl = base,
+                accessToken = token,
+                channelId = channelId,
+                liveStreamId = liveStreamId,
+                hlsUrl = "$RADIO_RELAY_PATH${relay.id}",
+                expiresAt = clock() + TICKET_TTL_MS,
+                streamKind = STREAM_KIND_AUDIO,
+                contentType = audioType,
+                channelKind = channelKind,
+            )
+        }
         // A relative Path is Jellyfin's own stream; an absolute one is the broadcaster's (FR-1) — what the client then plays.
-        register(device, channelId, liveStreamId, if (streamUrl.startsWith("http")) DELIVERY_SOURCE else DELIVERY_JELLYFIN)
+        register(device, channelId, liveStreamId, if (streamUrl.startsWith("http")) DELIVERY_SOURCE else DELIVERY_JELLYFIN, channelKind = channelKind)
         return LiveTvStreamTicket(
             jellyfinBaseUrl = base,
             accessToken = token,
@@ -438,41 +479,58 @@ class LiveTvService(
             expiresAt = nowMs() + TICKET_TTL_MS,
             streamKind = sourceClass.kind,
             ladder = sourceClass.ladder,
+            channelKind = channelKind,
         )
     }
+
+    /** DEB-2628 FR-1 — the channel's stored kind (`tv` or `radio`); a channel the store does not know is a TV channel. */
+    private fun kindOfChannel(channelId: String): String = store.overridesByChannelId()[channelId]?.kind ?: "tv"
 
     /**
      * DEB-2627 FR-1 — what [path] (the open's `MediaSource.Path`) is. A relative path is Jellyfin's own stream: `other`,
      * nothing fetched. An absolute one is looked at once an hour per channel; [hlsUrl][LiveTvStreamTicket.hlsUrl] stays
      * [path] whatever this finds, because the client fetches the master itself.
      */
-    private suspend fun classifySource(channelId: String, path: String): SourceClassification {
-        if (!path.startsWith("http://", ignoreCase = true) && !path.startsWith("https://", ignoreCase = true)) return SourceClassification(STREAM_KIND_OTHER)
+    private suspend fun classifySource(channelId: String, path: String, bearer: String? = null): SourceLook {
+        if (!path.startsWith("http://", ignoreCase = true) && !path.startsWith("https://", ignoreCase = true)) return SourceLook(SourceClassification(STREAM_KIND_OTHER))
         val key = "$channelId $path"
         val now = nowMs()
-        sourceClasses[key]?.takeIf { it.until > now }?.let { return it.classification }
-        val head = fetchPlaylistHead(path)
-        val classification = if (head == null) classifyUnfetched(path) else classifyHlsPlaylist(head) ?: SourceClassification(STREAM_KIND_OTHER)
+        sourceClasses[key]?.takeIf { it.until > now }?.let { return it.look }
+        val head = fetchPlaylistHead(path, bearer)
+        val look = when {
+            head == null -> SourceLook(classifyUnfetched(path))
+            // An audio answer is never an HLS playlist, and its body is a stream: it was not read (DEB-2656), so it is `other`.
+            head.text == null -> SourceLook(SourceClassification(STREAM_KIND_OTHER), head.contentType, head.bitrateKbps)
+            else -> SourceLook(classifyHlsPlaylist(head.text) ?: SourceClassification(STREAM_KIND_OTHER), head.contentType, head.bitrateKbps)
+        }
         sourceClasses.removeIf { _, v -> v.until <= now }
         if (sourceClasses.size >= SOURCE_CLASS_MAX_ENTRIES) sourceClasses.clear()
-        sourceClasses[key] = SourceClass(classification, now + if (head == null) SOURCE_CLASS_FAILED_TTL_MS else SOURCE_CLASS_TTL_MS)
-        return classification
+        sourceClasses[key] = SourceClass(look, now + if (head == null) SOURCE_CLASS_FAILED_TTL_MS else SOURCE_CLASS_TTL_MS)
+        return look
     }
+
+    /** What [classifySource] found: the DEB-2627 classification, and (DEB-2656) the answer's `Content-Type` and `icy-br` when it gave them. */
+    private data class SourceLook(val classification: SourceClassification, val contentType: String? = null, val bitrateKbps: Int? = null)
+
+    /** A source's first answer: [text] is the playlist head, null when the answer is audio (its body is not read). */
+    private data class SourceHead(val text: String?, val contentType: String?, val bitrateKbps: Int?)
 
     private sealed interface PlaylistStep {
         data class Redirect(val url: String) : PlaylistStep
-        data class Body(val text: String) : PlaylistStep
+        data class Body(val head: SourceHead) : PlaylistStep
         data object Failed : PlaylistStep
     }
 
     /** The first [SOURCE_FETCH_MAX_BYTES] of [url] after at most [SOURCE_MAX_REDIRECTS] redirects, all inside [SOURCE_FETCH_TIMEOUT_MS]; null on any failure. */
-    private suspend fun fetchPlaylistHead(url: String): String? = boundedOrNull(SOURCE_FETCH_TIMEOUT_MS, "live-tv source master fetch") {
+    private suspend fun fetchPlaylistHead(url: String, bearer: String? = null): SourceHead? = boundedOrNull(SOURCE_FETCH_TIMEOUT_MS, "live-tv source master fetch") {
         try {
             OutboundHttp.withPermit {
                 var current = url
                 for (hop in 0..SOURCE_MAX_REDIRECTS) {
-                    val step = sourceHttp.prepareGet(current) {
+                    val at = current
+                    val step = sourceHttp.prepareGet(at) {
                         header(HttpHeaders.Accept, "application/vnd.apple.mpegurl, application/x-mpegURL, */*")
+                        if (bearer != null && at.startsWith(jellyfinBase(), ignoreCase = true)) jellyfinAuth(bearer)
                     }.execute { resp ->
                         when {
                             resp.status.value in 300..399 ->
@@ -480,17 +538,21 @@ class LiveTvService(
                                     ?.let { URLBuilder(current).takeFrom(it).buildString() }
                                     ?.takeIf { it.startsWith("http", ignoreCase = true) }
                                     ?.let { PlaylistStep.Redirect(it) } ?: PlaylistStep.Failed
+                            resp.status.isSuccess() && isRelayableAudio(resp.headers[HttpHeaders.ContentType]) ->
+                                // DEB-2656 — a station's stream never ends: its headers are the whole look, and the body stays unread.
+                                PlaylistStep.Body(SourceHead(null, resp.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim(), resp.headers["icy-br"]?.substringBefore(',')?.trim()?.toIntOrNull()))
                             resp.status.isSuccess() -> {
+                                val contentType = resp.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim()
                                 val bytes = resp.bodyAsChannel().readRemaining(SOURCE_FETCH_MAX_BYTES.toLong()).readByteArray()
                                 val text = bytes.decodeToString()
                                 // A cut-off body ends mid-line: drop that line rather than read half an attribute.
-                                PlaylistStep.Body(if (bytes.size >= SOURCE_FETCH_MAX_BYTES) text.substringBeforeLast('\n') else text)
+                                PlaylistStep.Body(SourceHead(if (bytes.size >= SOURCE_FETCH_MAX_BYTES) text.substringBeforeLast('\n') else text, contentType, null))
                             }
                             else -> PlaylistStep.Failed
                         }
                     }
                     when (step) {
-                        is PlaylistStep.Body -> return@withPermit step.text
+                        is PlaylistStep.Body -> return@withPermit step.head
                         is PlaylistStep.Redirect -> current = step.url
                         PlaylistStep.Failed -> return@withPermit null
                     }
@@ -506,9 +568,12 @@ class LiveTvService(
     }
 
     /** Puts [device]'s stream in the table (a tune replaces whatever it held) and tells the admin. */
-    private fun register(device: DeviceData, channelId: String, liveStreamId: String, delivery: String, variantBps: Long? = null, height: Int? = null) {
-        val now = nowMs()
-        activeStreams[device.deviceId] = ActiveLive(device, channelId, liveStreamId, delivery, startedMs = now, heartbeatMs = now, variantBps = variantBps, height = height)
+    private fun register(
+        device: DeviceData, channelId: String, liveStreamId: String, delivery: String, variantBps: Long? = null, height: Int? = null,
+        channelKind: String = "tv", relay: RelayState? = null, format: String? = null,
+    ) {
+        val now = clock()
+        activeStreams[device.deviceId] = ActiveLive(device, channelId, liveStreamId, delivery, startedMs = now, heartbeatMs = now, variantBps = variantBps, height = height, channelKind = channelKind, relay = relay, format = format)
         onLiveChanged?.invoke()
     }
 
@@ -525,7 +590,7 @@ class LiveTvService(
             val channelId = report?.channelId?.takeIf { it.isNotBlank() } ?: return
             val liveStreamId = report.liveStreamId?.takeIf { it.isNotBlank() } ?: return
             if (channelId !in visibleChannelIds(device)) return
-            register(device, channelId, liveStreamId, deliveryOf(report.delivery), report.variantBandwidthBps?.takeIf { it > 0 }, report.height?.takeIf { it > 0 })
+            register(device, channelId, liveStreamId, deliveryOf(report.delivery), report.variantBandwidthBps?.takeIf { it > 0 }, report.height?.takeIf { it > 0 }, channelKind = kindOfChannel(channelId))
             return
         }
         // A heartbeat that names another stream than the one held belongs to a tune that was since replaced: it keeps nothing alive.
@@ -539,7 +604,7 @@ class LiveTvService(
                     height = report.height?.takeIf { h -> h > 0 } ?: it.height,
                 )
                 changed = next.delivery != it.delivery || next.variantBps != it.variantBps || next.height != it.height
-                next.copy(heartbeatMs = nowMs())
+                next.copy(heartbeatMs = clock())
             }
         }
         if (changed) onLiveChanged?.invoke()
@@ -553,7 +618,7 @@ class LiveTvService(
      * for a film's variant. Position, duration and the timeline are empty — a channel has none.
      */
     fun adminRows(index: Map<String, String> = emptyMap()): List<AdminSessionRow> {
-        val now = nowMs()
+        val now = clock()
         val channels = lineup().associateBy { it.channelId }
         return activeStreams.snapshot().values.sortedBy { it.startedMs }.map { a ->
             val ch = channels[a.channelId]
@@ -566,7 +631,10 @@ class LiveTvService(
                 targetName = index[a.device.deviceId] ?: a.device.displayName.ifBlank { a.device.deviceId },
                 targetIcon = targetIcon(a.device.platform, a.device.kind),
                 state = "playing", createdAt = a.startedMs, updatedAt = a.heartbeatMs,
-                variantBps = a.variantBps, variantHeight = a.height, encoder = a.delivery,
+                variantBps = a.variantBps, variantHeight = a.height,
+                // DEB-2628 FR-5 — a station through our relay reads *relayed*; a speaker's own tune is its own row, named by the device.
+                encoder = if (a.relay != null) "relayed" else a.delivery,
+                channelKind = a.channelKind, format = a.format,
             )
         }
     }
@@ -587,10 +655,15 @@ class LiveTvService(
     /** Mirrors PlaybackService.stopWatchdogTick for the live-stream lifecycle — a disconnect or stale
      *  heartbeat force-closes the tuner/provider stream instead of leaking it open indefinitely. */
     suspend fun stopWatchdogTick(isDeviceConnected: suspend (String) -> Boolean) {
-        val now = nowMs()
+        val now = clock()
         val stale = buildList {
             for ((deviceId, a) in activeStreams.snapshot()) {
-                val heartbeatStale = now - a.heartbeatMs > STOP_WATCHDOG_MS
+                val relay = a.relay
+                // DEB-2628 FR-5 — a tune with a relay connection open is being listened to, whoever last spoke for it: a phone
+                // that sleeps while a speaker plays must not cut the speaker off.
+                if (relay != null && relay.open > 0) continue
+                // A relayed tune whose last connection ended closes RADIO_RELAY_IDLE_STOP_MS after that, or after its last heartbeat.
+                val heartbeatStale = if (relay != null) now - maxOf(a.heartbeatMs, relay.endedMs) > RADIO_RELAY_IDLE_STOP_MS else now - a.heartbeatMs > STOP_WATCHDOG_MS
                 if (heartbeatStale || !isDeviceConnected(deviceId)) add(a)
             }
         }
@@ -598,6 +671,61 @@ class LiveTvService(
             Logger.info("LiveTv stop watchdog: force-closing stale stream device=${a.device.deviceId}", "livetv")
             runCatching { stopTune(a.device, a.liveStreamId) }
         }
+    }
+
+    // ── Radio relay (DEB-2628 FR-4, FR-5): the credential, the limits and the lifetime. The wire is RadioRelay.kt. ──
+
+    /**
+     * Admits one connection on [relayId]: [RelayOpen.NotFound] for an id no active tune holds (stopped, re-tuned, closed by the
+     * watchdog, or never minted), [RelayOpen.Busy] over [RADIO_RELAY_MAX_PER_ID] on it or [RADIO_RELAY_MAX_TOTAL] on the server.
+     * Every active tune's id is compared, none stopping at the first match, so the time taken does not say how much of an id was right.
+     */
+    internal fun relayOpen(relayId: String): RelayOpen {
+        var match: ActiveLive? = null
+        for (a in activeStreams.snapshot().values) {
+            val r = a.relay ?: continue
+            if (constantTimeEquals(r.id, relayId)) match = a
+        }
+        val found = match ?: return RelayOpen.NotFound
+        var result: RelayOpen = RelayOpen.NotFound
+        activeStreams.update(found.device.deviceId) { cur ->
+            val r = cur?.relay
+            when {
+                cur == null || r == null || cur.liveStreamId != found.liveStreamId || !constantTimeEquals(r.id, relayId) -> cur
+                r.open >= RADIO_RELAY_MAX_PER_ID || !reserveRelaySlot() -> { result = RelayOpen.Busy; cur }
+                else -> {
+                    result = RelayOpen.Granted(RelayLease(cur.device.deviceId, cur.liveStreamId, r.id, r.upstreamUrl, r.jellyfinBase, r.bearer))
+                    cur.copy(relay = r.copy(open = r.open + 1))
+                }
+            }
+        }
+        return result
+    }
+
+    private fun reserveRelaySlot(): Boolean {
+        while (true) {
+            val n = relayTotal.value
+            if (n >= RADIO_RELAY_MAX_TOTAL) return false
+            if (relayTotal.compareAndSet(n, n + 1)) return true
+        }
+    }
+
+    /** Gives back a [relayOpen] grant, however its connection ended; the watchdog's 60 s start from here. */
+    internal fun relayRelease(lease: RelayLease) {
+        relayTotal.decrementAndGet()
+        activeStreams.update(lease.deviceId) { cur ->
+            val r = cur?.relay
+            if (cur != null && r != null && cur.liveStreamId == lease.liveStreamId && r.id == lease.relayId) cur.copy(relay = r.copy(open = (r.open - 1).coerceAtLeast(0), endedMs = clock())) else cur
+        }
+    }
+
+    /** How many connections are open on [relayId] now; 0 for an id no tune holds. */
+    internal fun relayOpenCount(relayId: String): Int = activeStreams.snapshot().values.firstOrNull { it.relay?.id == relayId }?.relay?.open ?: 0
+
+    /** Is [lease]'s tune still the one its device holds? A stop, a re-tune or the watchdog make it false, and the connection ends. */
+    internal fun relayStillLive(lease: RelayLease): Boolean {
+        val cur = activeStreams[lease.deviceId] ?: return false
+        return cur.liveStreamId == lease.liveStreamId && cur.relay?.id == lease.relayId
     }
 
     // ── Channel logo proxy (Jellyfin ImageTags.Primary — R133 doesn't cover Live TV; addendum E) ──────
@@ -648,6 +776,8 @@ class LiveTvService(
 }
 
 private const val STOP_WATCHDOG_MS = 90_000L
+/** DEB-2628 FR-5 — a relayed tune with no connection open and no heartbeat closes this long after the last of either. */
+internal const val RADIO_RELAY_IDLE_STOP_MS = 60_000L
 
 private fun isoToEpochMs(iso: String): Long? = isoToEpochSeconds(iso)?.times(1000L)
 
