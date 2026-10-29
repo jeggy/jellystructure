@@ -97,6 +97,14 @@ class ReadersAndManifestsTest {
     }
 
     @Test
+    fun `only the subtitle input is opened without the extension check`() {
+        val cmd = FetchCommands.hlsToMkv("https://m.example.fo/v.m3u8", "https://m.example.fo/a.m3u8", "https://m.example.fo/s.m3u8", "/o.mkv", "fao", "fao")
+        assertTrue("-extension_picky 0 -i 'https://m.example.fo/s.m3u8'" in cmd, cmd)
+        assertEquals(1, Regex("-extension_picky").findAll(cmd).count(), cmd)
+        assertFalse("-extension_picky" in FetchCommands.hlsToMkv("https://m.example.fo/v.m3u8", "https://m.example.fo/a.m3u8", null, "/o.mkv", "fao", ""))
+    }
+
+    @Test
     fun `the mkvinfo command looks at the first of Tracks and Cluster`() {
         assertTrue("mkvinfo -v '/a.mkv'" in FetchCommands.firstTopLevel("/a.mkv"))
         assertTrue("grep -E -m1" in FetchCommands.firstTopLevel("/a.mkv"))

@@ -77,7 +77,7 @@ object FetchCommands {
         var audioIn = 0
         if (audioUrl != null) { inputs.append(" -i ${q(audioUrl)}"); audioIn = idx++; maps.append(" -map $audioIn:a:0") } else maps.append(" -map 0:a:0?")
         var subIn = -1
-        if (subtitleUrl != null) { inputs.append(" -i ${q(subtitleUrl)}"); subIn = idx++; maps.append(" -map $subIn:s:0?") }
+        if (subtitleUrl != null) { inputs.append(" -extension_picky 0 -i ${q(subtitleUrl)}"); subIn = idx++; maps.append(" -map $subIn:s:0?") }
         val meta = StringBuilder()
         if (audioLang.isNotBlank()) meta.append(" -metadata:s:a:0 language=$audioLang")
         if (subIn >= 0 && subtitleLang.isNotBlank()) meta.append(" -metadata:s:s:0 language=$subtitleLang")

@@ -35,6 +35,9 @@ deletes a file. The lines this changes elsewhere point at those FRs.
 a redirect to **another host the recipe records**, and the lane then trusts that answer and reads relative references
 in it against the **final** URL (FR-2.7).
 
+**Amended 2026-10-29 (DEB-2814)**, after that fetcher's first run: a subtitle rendition whose segments are named
+`.webvtt` is read (FR-6.4). 11 of 12 items failed because ffmpeg's HLS demuxer refuses that extension by default.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -330,6 +333,10 @@ one lane.
 4. **Language and subtitles at the first mux.** The audio track is tagged with the recipe's language during the
    download's own mux, never afterwards. The source's subtitle rendition is looked for on every episode; when one
    exists and its first chunk holds cues, it is embedded with the same language tag, and no sidecar is left behind.
+   **Segment extension (amended 2026-10-29, DEB-2814).** A subtitle rendition's segments may be named `.webvtt`, which
+   ffmpeg's HLS demuxer refuses by default (`extension vtt mismatches allowed extensions`, then *Invalid data found*).
+   The subtitle input, and only that input, is opened with `-extension_picky 0`; the video and audio inputs keep
+   ffmpeg's extension check. Proven against ffmpeg 5.1.9, the image's own build.
 5. **Checked before it is placed.** `ffprobe` shows the tagged language and a duration within 10 % of the listing's,
    where the listing gives one; `mkvinfo -v` shows the first top-level `Tracks` before the first `Cluster`. A file that
    fails is deleted from the temporary directory and the run line says why; it is retried on the next run, and after
