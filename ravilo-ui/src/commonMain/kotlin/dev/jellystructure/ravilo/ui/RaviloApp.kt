@@ -5,7 +5,9 @@ import dev.jellystructure.ravilo.ui.music.asPlaylistChanges
 import dev.jellystructure.ravilo.ui.screens.TvApproveStore
 import dev.jellystructure.ravilo.ui.screens.TvClientApproveApi
 import dev.jellystructure.ravilo.ui.screens.TvLinkInbox
+import dev.jellystructure.ravilo.ui.screens.TvLinkAction
 import dev.jellystructure.ravilo.ui.screens.isValidTvCode
+import dev.jellystructure.ravilo.ui.screens.tvLinkAction
 import dev.jellystructure.ravilo.ui.screens.tvLinkRoute
 import dev.jellystructure.ravilo.ui.screens.moveOnReturnFocus
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -1273,12 +1275,17 @@ fun RaviloApp(
         val linkedCode by TvLinkInbox.code.collectAsState()
         LaunchedEffect(linkedCode) {
             val code = TvLinkInbox.take() ?: return@LaunchedEffect
-            val top = stack.lastOrNull()
-            val signedIn = stack.any { it is Dest.Home }
-            if (!signedIn) heldRoute = tvLinkRoute(code)
-            else if (top !is Dest.Player) {
-                val page = Dest.SignInTv(destDisplayName(top), code)
-                if (top is Dest.SignInTv) replaceTop(page) else push(page)
+            when (tvLinkAction(stack)) {
+                TvLinkAction.Hold -> heldRoute = tvLinkRoute(code)
+                TvLinkAction.Replace -> {
+                    val page = Dest.SignInTv(destDisplayName(stack.last()), code)
+                    replaceTop(page)
+                }
+                TvLinkAction.Push -> {
+                    val page = Dest.SignInTv(destDisplayName(stack.last()), code)
+                    push(page)
+                }
+                TvLinkAction.LeaveIt -> Unit
             }
         }
         // DEB-1738 (FR-2, FR-5) — a pasted `#/channel/<id>` over Home: pushed when the list answers, unless the viewer

@@ -180,3 +180,27 @@ fun tvCodeFromLocation(pathname: String, search: String): String? {
     val raw = search.removePrefix("?").split('&').firstOrNull { it.startsWith("c=") }?.removePrefix("c=") ?: return null
     return normalizeTvCode(raw.replace("%20", "").replace("+", "")).takeIf(::isValidTvCode)
 }
+
+/** DEB-2875 (FR-6, FR-7) — what to do when a TV link code arrives while the app runs. */
+internal sealed class TvLinkAction {
+    /** Hold: the stack is empty, or its top is [Dest.Login] or [Dest.ProfilePicker]. */
+    internal object Hold : TvLinkAction()
+    /** Replace: the top is [Dest.SignInTv]; push a new one over it. */
+    internal object Replace : TvLinkAction()
+    /** Push: any other viewer page (Home, Browse, Search, Discover, Profile, etc.). */
+    internal object Push : TvLinkAction()
+    /** Leave it: the top is [Dest.Player]; do nothing. */
+    internal object LeaveIt : TvLinkAction()
+}
+
+/** DEB-2875 (FR-6, FR-7) — decide what to do with an arriving TV link code given the current stack. */
+internal fun tvLinkAction(stack: List<dev.jellystructure.ravilo.ui.Dest>): TvLinkAction {
+    val top = stack.lastOrNull() ?: return TvLinkAction.Hold
+    return when (top) {
+        is dev.jellystructure.ravilo.ui.Dest.Login -> TvLinkAction.Hold
+        is dev.jellystructure.ravilo.ui.Dest.ProfilePicker -> TvLinkAction.Hold
+        is dev.jellystructure.ravilo.ui.Dest.SignInTv -> TvLinkAction.Replace
+        is dev.jellystructure.ravilo.ui.Dest.Player -> TvLinkAction.LeaveIt
+        else -> TvLinkAction.Push
+    }
+}
