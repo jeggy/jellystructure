@@ -126,12 +126,13 @@ class SuggestionService(
     fun lastBuiltAt(): Long? = db.suggestionsQueries.build().executeAsOneOrNull()?.built_at
 
     /** One build; returns the pipeline step's one-line summary. */
-    suspend fun build(reason: String = REASON_WEEKLY, by: String = AiJobs.BY_SYSTEM): String = buildLock.withLock {
+    suspend fun build(reason: String = REASON_WEEKLY, by: String = AiJobs.BY_SYSTEM, askAi: Boolean = true): String = buildLock.withLock {
         building.value = 1
-        try { buildLocked(reason, by) } finally { building.value = 0 }
+        try { buildLocked(reason, by, askAi) } finally { building.value = 0 }
     }
 
-    private suspend fun buildLocked(reason: String, by: String): String {
+    /** [askAi] false (DEB-2826, FR-4.5: a run started by hand that did not tick *and ask AI*) keeps the genre groups and asks the AI for none. */
+    private suspend fun buildLocked(reason: String, by: String, askAi: Boolean): String {
         val seerr = seerr() ?: return "not available — Seerr isn't connected"
         val rs = recommendations ?: return "not available"
         val now = nowSec()
@@ -315,7 +316,7 @@ class SuggestionService(
         }
 
         // The AI's groups: asked after the list is stored, so a late answer regroups it in place (FR-274-5).
-        val note = ai?.takeIf { it.clustersOn() }?.let { runner ->
+        val note = ai?.takeIf { askAi && it.clustersOn() }?.let { runner ->
             val input = AiRequests.ClustersInput(
                 builtAt = now,
                 genres = (MOVIE_GENRES + TV_GENRES),

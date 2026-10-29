@@ -2103,6 +2103,7 @@ fun Route.mediaRoutes(
         launchScanRun(
             jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, libraryId = scope?.libraryId, full = req.recheckAll,
             skipSteps = selection.skipSteps, queueDirectPlay = selection.queueDirectPlay, skipNames = selection.skippedNames,
+            askAi = req.ai.filter { it in AI_PARTS }.toSet(),   // DEB-2826 (FR-4.5) — an id that names no AI-capable part is ignored
         )
         call.respond(HttpStatusCode.Accepted, ScanRunStarted("started", jobId, scope?.libraryId ?: "all", selection.skippedNames, selection.skippedText, selection.skippedNote))
     }
@@ -2401,6 +2402,9 @@ private suspend fun queueDirectPlayNow(queue: dev.jellystructure.media.MediaJobQ
     }.onFailure { Logger.warn("scan: could not queue the next repair: ${it.message}", "jobs") }
 }
 
+/** DEB-2826 (FR-4.5) — the parts that have an AI step a manual run can ask for. */
+internal val AI_PARTS = setOf(dev.jellystructure.config.RecommendationsStep.STEP, dev.jellystructure.config.SuggestionsStep.STEP)
+
 /** DEB-2470 (FR-15) — what [launchScanRun] decided before it launched anything: the steps, the record of how the run started, and its first log line. */
 internal class ScanRunPlan(val pipeline: List<PipelineStep>, val record: StartedRun, val startMsg: String, val full: Boolean, val libraryId: String?, val featuresOnly: Boolean, val queueDirectPlay: Boolean)
 
@@ -2467,6 +2471,8 @@ internal fun launchScanRun(
     skipNames: List<String>? = null,
     // DEB-2470 (FR-15) — the stopped run to run again; it overrides the library, Re-check switch, skips and parts, and never queues a repair twice.
     resume: StartedRun? = null,
+    // DEB-2826 (DEB-2823, FR-4.5) — the parts whose AI step this run was asked for; empty = a manual run asks no AI.
+    askAi: Set<String> = emptySet(),
 ): List<PipelineStep> {
     val cfgNow = configStore.current
     val plan = planScanRun(
@@ -2498,7 +2504,7 @@ internal fun launchScanRun(
             startMsg, scanTracker,
         ) {
             if (plan.queueDirectPlay) queueDirectPlayNow(pipelineDeps.mediaJobQueue, scanTracker)
-            runPipeline(RunTarget.Library(plan.libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = plan.full, deferEligible = deferEligible, byHand = triggerKind == "manual", discover = !plan.featuresOnly)
+            runPipeline(RunTarget.Library(plan.libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = plan.full, deferEligible = deferEligible, byHand = triggerKind == "manual", askAi = askAi, discover = !plan.featuresOnly)
         } }
     }
     scanTracker.attachJob(job)

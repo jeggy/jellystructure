@@ -97,6 +97,11 @@ class SuggestionEngineTest {
         assertFalse(SuggestionEngine.isTestAccount("Tester"))
         assertFalse(SuggestionEngine.isTestAccount("Testa"))
         assertFalse(SuggestionEngine.isTestAccount("Ann Test"))
+        // DEB-2826 (DEB-2823, FR-1.6) — the QA seats' throwaway users are test accounts too.
+        assertTrue(SuggestionEngine.isTestAccount("qa-1029-pixel"))
+        assertTrue(SuggestionEngine.isTestAccount("QA-Bob"))
+        assertFalse(SuggestionEngine.isTestAccount("qatester"))
+        assertFalse(SuggestionEngine.isTestAccount("Aqa-x"))
     }
 
     @Test fun a_candidate_falls_in_the_first_fallback_cluster_its_genres_touch() {

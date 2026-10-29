@@ -103,6 +103,43 @@ CREATE TABLE ai_order (
     PRIMARY KEY (user_id, scope_key, rank)
 );
 
+-- DEB-2826 (DEB-2823, FR-1.5) — AI re-rank is switched per viewer. `rerank` NULL = no stored choice (the name rule decides); `last_asked_at`
+-- is when a first-build re-rank was last asked for the user (FR-1.8). `user_id` is lowercase and dash-free. Must stay byte-for-byte in sync
+-- with 91.sqm's CREATE TABLE.
+CREATE TABLE ai_viewer (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    rerank INTEGER,
+    set_by TEXT,
+    set_at INTEGER,
+    last_asked_at INTEGER
+);
+
+viewerRow:
+SELECT * FROM ai_viewer WHERE user_id = :user_id;
+
+allViewers:
+SELECT * FROM ai_viewer;
+
+-- No UPSERT in this dialect (sqlite_3_18): RerankSwitch reads the row and replaces it, in one transaction.
+putViewer:
+INSERT OR REPLACE INTO ai_viewer(user_id, rerank, set_by, set_at, last_asked_at) VALUES (:user_id, :rerank, :set_by, :set_at, :last_asked_at);
+
+deleteViewer:
+DELETE FROM ai_viewer WHERE user_id = :user_id;
+
+-- A user's id is matched lowercase and without dashes, so either form of a Jellyfin id finds the same rows.
+deleteOrderForUser:
+DELETE FROM ai_order WHERE lower(replace(user_id, '-', '')) = :key;
+
+lastOrderAt:
+SELECT MAX(ordered_at) AS at FROM ai_order WHERE lower(replace(user_id, '-', '')) = :key;
+
+deleteQueuedForViewer:
+DELETE FROM ai_queue WHERE job = :job AND lower(replace(subject, '-', '')) LIKE :key || '|%';
+
+deleteQueuedForJob:
+DELETE FROM ai_queue WHERE job = :job;
+
 insertBatch:
 INSERT INTO ai_batch(id, job, model, submitted_at, status, request_count) VALUES (:id, :job, :model, :submitted_at, :status, :request_count);
 

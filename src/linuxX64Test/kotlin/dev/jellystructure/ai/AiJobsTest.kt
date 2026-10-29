@@ -387,6 +387,61 @@ class AiJobsTest {
         assertTrue(rows[0].payload.contains("\"jf8\""))
     }
 
+    // ─── DEB-2826 (DEB-2823, FR-1.3, FR-5.2) ─────────────────────────────────
+
+    @Test
+    fun `a viewer switched off is never queued and a viewer without a stored choice follows the name rule`() = runBlocking {
+        enable(limit = 0.0)
+        val j = jobs(FakeTransport { _, _, _ -> error("nothing may be sent") })
+        j.rerankSwitch.set("u2", false, "admin", 1L)
+        val named = { id: String, name: String -> AiJobs.RerankInput(id, "s1", (1..10).map { "jf$it" }, listOf("jf1"), label = name) }
+        val queued = j.enqueueRerank(listOf(named("u1", "Ann"), named("u2", "Ben"), named("u3", "qa-throwaway"), named("u4", "Test Stream")), "weekly build", AiJobs.BY_SYSTEM)
+        assertEquals(1, queued)
+        assertEquals(listOf("Ann"), db.aiQueries.waitingFor(AiRequests.RERANK_JOB).executeAsList().map { it.label })
+        // An explicit switch-on beats the name rule.
+        j.rerankSwitch.set("u3", true, "admin", 2L)
+        assertEquals(1, j.enqueueRerank(listOf(named("u3", "qa-throwaway")), "weekly build", AiJobs.BY_SYSTEM))
+    }
+
+    @Test
+    fun `an answer for a viewer switched off while the batch was out is dropped when it is read`() = runBlocking {
+        enable()
+        var created: String? = null
+        val results = """{"custom_id":"CID","result":{"type":"succeeded","message":{"content":[{"type":"text","text":"{\"picks\":[{\"id\":\"t3\",\"reason\":\"because\"},{\"id\":\"t1\",\"reason\":\"also\"}]}"}],"stop_reason":"end_turn","usage":{"input_tokens":1000,"output_tokens":2000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}}"""
+        val t = FakeTransport { method, url, body ->
+            when {
+                method == "POST" && url.endsWith("/v1/messages/batches") -> {
+                    created = Json.parseToJsonElement(body!!).jsonObject["requests"]!!.let { (it as kotlinx.serialization.json.JsonArray)[0].jsonObject["custom_id"].toString().trim('"') }
+                    AnthropicClient.Response(200, """{"id":"msgbatch_1","processing_status":"in_progress"}""")
+                }
+                url.endsWith("/v1/messages/batches/msgbatch_1") -> AnthropicClient.Response(200, """{"id":"msgbatch_1","processing_status":"ended","results_url":"https://api.anthropic.com/v1/messages/batches/msgbatch_1/results"}""")
+                url.endsWith("/results") -> AnthropicClient.Response(200, results.replace("CID", created!!))
+                else -> AnthropicClient.Response(500, "")
+            }
+        }
+        submit(jobs(t), viewer("u1"))
+        assertEquals(1, db.aiQueries.pendingBatches().executeAsList().size)
+        val after = jobs(t)
+        after.rerankSwitch.set("u1", false, "admin", 3L)   // the batch is already out
+        val applied = ArrayList<String>()
+        after.rerankSink = AiJobs.RerankSink { u, _, _ -> applied += u }
+        after.pollPending()
+        assertTrue(applied.isEmpty(), "the answer is not applied")
+        assertEquals("dropped — re-rank is switched off for this viewer", after.batchDetail("msgbatch_1")!!.requests.single().verdict)
+    }
+
+    @Test
+    fun `remove all waiting removes every waiting row of that job and answers the count`() = runBlocking {
+        enable(limit = 0.0)
+        val j = jobs(FakeTransport { _, _, _ -> error("nothing may be sent") })
+        j.enqueueRerank(listOf(viewer("u1"), viewer("u2"), viewer("u3")), "weekly build", AiJobs.BY_SYSTEM)
+        db.aiQueries.enqueue(AiRequests.CLUSTERS_JOB, "household", "Household", "weekly build", AiJobs.BY_SYSTEM, "{}", 1L)
+        assertEquals(3, j.removeAllQueued(AiRequests.RERANK_JOB))
+        assertTrue(db.aiQueries.waitingFor(AiRequests.RERANK_JOB).executeAsList().isEmpty())
+        assertEquals(1, db.aiQueries.waitingFor(AiRequests.CLUSTERS_JOB).executeAsList().size, "another job's row stays")
+        assertEquals(0, j.removeAllQueued(AiRequests.RERANK_JOB))
+    }
+
     @Test
     fun `the monthly limit takes the oldest requests that fit and leaves the rest waiting`() = runBlocking {
         // Opus 5's worst case for one re-rank is about $0.10 (8 000 output tokens at the batch price).

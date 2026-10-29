@@ -1,0 +1,9 @@
+-- DEB-2826 (DEB-2823, FR-1.5) — AI re-rank is switched per viewer. `rerank` NULL = no stored choice (the name rule decides); `last_asked_at`
+-- is when a first-build re-rank was last asked for the user (FR-1.8). `user_id` is lowercase and dash-free. This file is the migration; Ai.sq carries the same CREATE TABLE.
+CREATE TABLE ai_viewer (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    rerank INTEGER,
+    set_by TEXT,
+    set_at INTEGER,
+    last_asked_at INTEGER
+);

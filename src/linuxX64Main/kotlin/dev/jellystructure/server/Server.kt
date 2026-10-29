@@ -664,7 +664,7 @@ fun startServer(
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline, processingRuns = processingRuns)
                 processingRoutes(configStore, processingRuns, mediaJobQueue, scanTracker, mediaStore)   // DEB-1664 (FR-9)
                 activityRoutes(activityLog)
-                aiRoutes(configStore)   // Phase 270
+                aiRoutes(configStore, jellyfinClient, deviceService)   // Phase 270; DEB-2826 (FR-1.7)
                 aiPageRoutes({ configStore.current }, { suggestionService?.available() == true })   // DEB-1253 (FR-2)
                 autofetchRoutes(configStore, autofetch)   // DEB-2476 (FR-12)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)

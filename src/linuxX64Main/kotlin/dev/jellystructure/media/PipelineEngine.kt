@@ -209,6 +209,9 @@ suspend fun runPipeline(
     // Phase 272 (FR-272-7) — a run someone started (the pre-run dialog, *Run pipeline*): the whole-library
     // recommendations step then builds whatever its cadence says. Scheduled and startup runs keep the cadence.
     byHand: Boolean = false,
+    // DEB-2826 (DEB-2823, FR-4.5) — the parts whose AI step a run started by hand asked for (`build_recommendations`, `build_suggestions`).
+    // A scheduled run ignores it: the schedule is the ask. A manual run with none asks no AI.
+    askAi: Set<String> = emptySet(),
     // DEB-1664 (FR-3.3) — false for a run of whole-library features alone (Music, Audiobooks, Recommendations & suggestions on their
     // own interval): no discovery, no freshness filter, no working set — only the whole-library steps in [pipeline].
     discover: Boolean = true,
@@ -786,7 +789,7 @@ suspend fun runPipeline(
                 val summary = when {
                     service == null -> "not available"
                     dev.jellystructure.config.RecommendationsStep.notDue(last, now, every, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, rebuilt ${step.rebuildEvery}"
-                    byHand -> runCatching { "rebuilt (started by hand): " + service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND) }
+                    byHand -> runCatching { "rebuilt (started by hand): " + service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND, askAi = step.step in askAi) }
                         .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                     else -> runCatching { "rebuilt: " + service.buildAll() }
                         .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
@@ -806,7 +809,7 @@ suspend fun runPipeline(
                 val summary = when {
                     service == null -> "not available"
                     dev.jellystructure.config.SuggestionsStep.notDue(last, now, every, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, rebuilt ${step.rebuildEvery}"
-                    else -> runCatching { "built: " + service.build(if (byHand) dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND else dev.jellystructure.suggestions.SuggestionService.REASON_WEEKLY) }
+                    else -> runCatching { "built: " + service.build(if (byHand) dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND else dev.jellystructure.suggestions.SuggestionService.REASON_WEEKLY, askAi = !byHand || step.step in askAi) }
                         .getOrElse { Logger.warn("build_suggestions failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                 }
                 Logger.info("build_suggestions: $summary", "pipeline")

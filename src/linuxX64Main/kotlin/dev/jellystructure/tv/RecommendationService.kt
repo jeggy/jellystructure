@@ -62,7 +62,8 @@ class RecommendationService(
      *  runs then, not on every finish-triggered rebuild) and after the admin's *Rebuild now* — with why and by
      *  whom, for the AI queue (Phase 272). Set by Main; null = no AI. */
     var afterBuild: (suspend (List<dev.jellystructure.ai.AiJobs.RerankInput>, String, String) -> Unit)? = null
-    private val aiAskedAt = HashMap<String, Long>()
+    /** DEB-2826 (DEB-2823, FR-1) — who the AI re-rank is switched on for, and (FR-1.8) when a first build last asked for them. */
+    val rerankSwitch = dev.jellystructure.ai.RerankSwitch(db)
 
     fun start(scope: CoroutineScope) {
         scope.launch(GateClass.BACKGROUND) {
@@ -113,27 +114,46 @@ class RecommendationService(
         // Phase 270 (FR-270-7) — a viewer's FIRST build is re-ranked too: no AI order yet for them, and not
         // asked in the last day (so an answer that failed validation is not paid for on every finish).
         val hook = afterBuild
-        if (hook != null && by != null) {
+        if (!rerankSwitch.isOn(input.userId, device.jellyfinUsername)) {
+            // DEB-2826 (FR-1.3) — switched off: the list is rebuilt, and no AI is queued by any path.
+        } else if (hook != null && by != null) {
             // Phase 272 (FR-272-6) — the admin asked: always queue a re-rank, even over an existing AI order.
             runCatching { hook(listOf(input), REASON_BY_HAND, by) }.onFailure { Logger.warn("Recommendations: AI re-rank not queued: ${it.message}", "tv") }
         } else if (hook != null && db.aiQueries.orderFor(input.userId, input.scope).executeAsList().isEmpty()) {
-            val now = nowSec()
-            val ask = staleLock.withLock { (now - (aiAskedAt[input.userId] ?: 0L) > AI_RETRY_SEC).also { if (it) aiAskedAt[input.userId] = now } }
+            // DEB-2826 (FR-1.8) — the once-a-day guard is the stored `last_asked_at`, so a restart does not buy a second ask.
+            val ask = rerankSwitch.claimAsk(input.userId, nowSec(), AI_RETRY_SEC)
             if (ask) runCatching { hook(listOf(input), REASON_FIRST, dev.jellystructure.ai.AiJobs.BY_SYSTEM) }.onFailure { Logger.warn("Recommendations: AI re-rank not queued: ${it.message}", "tv") }
         }
         return true
     }
 
     /**
+     * DEB-2826 (DEB-2823, FR-1.3) — switch [userId]'s AI re-rank. Off deletes their waiting request and their AI order, then
+     * rebuilds their list at once without AI, so their next Home is in the standard order (the AI order is copied into
+     * `recommendation` at build time, so deleting it alone would change nothing until the next build). On queues nothing.
+     */
+    suspend fun setRerank(userId: String, on: Boolean, by: String) {
+        rerankSwitch.set(userId, on, by, nowSec())
+        if (on) return
+        val k = dev.jellystructure.ai.RerankSwitch.key(userId)
+        val device = deviceService.allDevices().filter { dev.jellystructure.ai.RerankSwitch.key(it.jellyfinUserId) == k }.maxByOrNull { it.lastSeen } ?: return
+        runCatching { rebuildViewer(device) }.onFailure { Logger.warn("Recommendations: list not rebuilt after the AI was switched off: ${it.message}", "tv") }
+    }
+
+    /**
      * FR-269-8 (1) — every recently seen viewer, and every scope's starter list. Histories are fetched
      * once and used twice: the anonymous household counts for the starter lists (FR-269-10: only within
      * one scope), then each viewer's own list. Returns a one-line summary for the pipeline step.
+     *
+     * DEB-2826 (DEB-2823, FR-4.5, FR-4.6) — [askAi] false rebuilds the free lists and queues no AI at all: a run started by
+     * hand that did not tick *and ask AI*, and the loose-films repair. The scheduled build keeps the default. A viewer
+     * switched off is never queued whichever it is (FR-1.3, enforced where the queue is written).
      */
-    suspend fun buildAll(reason: String = REASON_WEEKLY): String {
+    suspend fun buildAll(reason: String = REASON_WEEKLY, askAi: Boolean = true): String {
         val inputs = ArrayList<dev.jellystructure.ai.AiJobs.RerankInput>()
         val summary = buildAllLocked(inputs)
         // Phase 270 — the weekly build is when the AI re-ranks every viewer (and tags untagged titles).
-        afterBuild?.let { hook -> runCatching { hook(inputs, reason, dev.jellystructure.ai.AiJobs.BY_SYSTEM) }.onFailure { Logger.warn("Recommendations: AI jobs not queued: ${it.message}", "tv") } }
+        if (askAi) afterBuild?.let { hook -> runCatching { hook(inputs, reason, dev.jellystructure.ai.AiJobs.BY_SYSTEM) }.onFailure { Logger.warn("Recommendations: AI jobs not queued: ${it.message}", "tv") } }
         return summary
     }
 

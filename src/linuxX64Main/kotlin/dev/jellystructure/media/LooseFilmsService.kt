@@ -381,7 +381,8 @@ class LooseFilmsService(
         override fun queueRecommendationsBuild() {
             val service = dev.jellystructure.tv.RecommendationService.current ?: return
             scope?.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
-                runCatching { service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND) }
+                // DEB-2826 (DEB-2823, FR-4.6) — the repair rebuilds the free lists only, and asks the AI for nothing.
+                runCatching { service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND, askAi = false) }
                     .onFailure { Logger.warn("Loose films repair: the recommendations build failed: ${it.message}", "media") }
             }
         }

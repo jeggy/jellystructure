@@ -67,9 +67,10 @@ data class ScanDialogView(
     val features: List<ScanFeatureView>,
 )
 
-/** `POST /api/processing/scan` (FR-9.1): [skip] is part ids or a feature id (FR-9.2's ids, mapped), [recheckAll] lifts the due rule for this run. */
+/** `POST /api/processing/scan` (FR-9.1): [skip] is part ids or a feature id (FR-9.2's ids, mapped), [recheckAll] lifts the due rule for this run.
+ *  DEB-2826 (DEB-2823, FR-4.5) — [ai] is the part ids whose AI step is asked for (default none): `build_recommendations` re-ranks every viewer switched on, `build_suggestions` asks for AI groups. */
 @Serializable
-data class ScanRunRequest(val library: String? = null, val skip: List<String> = emptyList(), val recheckAll: Boolean = false)
+data class ScanRunRequest(val library: String? = null, val skip: List<String> = emptyList(), val recheckAll: Boolean = false, val ai: List<String> = emptyList())
 
 @Serializable
 data class ScanRunStarted(

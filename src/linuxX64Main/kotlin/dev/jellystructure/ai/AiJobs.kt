@@ -109,7 +109,11 @@ class AiJobs(
     /** After a send failed, per job: not before this instant (a dead network is not hammered every minute). */
     private val retryAt = HashMap<String, Long>()
 
-    @Serializable private data class RerankCtx(val u: String, val s: String, val ids: List<String>)
+    /** DEB-2826 (FR-1.3) — [n] is the viewer's name, so a batch's answer can be judged by the test-account rule when it is read. */
+    @Serializable private data class RerankCtx(val u: String, val s: String, val ids: List<String>, val n: String = "")
+
+    /** DEB-2826 (DEB-2823, FR-1) — who the re-rank is switched on for. The one gate every queuing path passes. */
+    val rerankSwitch = RerankSwitch(db)
     @Serializable private data class ThemeCtx(val item: String, val hash: String)
     @Serializable private data class ClustersCtx(val builtAt: Long, val ids: List<Int>, val sources: List<String>)
 
@@ -226,6 +230,8 @@ class AiJobs(
         db.transaction {
             for (input in inputs) {
                 if (input.shortlist.size < 2) continue
+                // DEB-2826 (FR-1.3) — a viewer switched off is never queued, by any path.
+                if (!rerankSwitch.isOn(input.userId, input.label)) continue
                 db.aiQueries.enqueue(
                     AiRequests.RERANK_JOB, rerankSubject(input.userId, input.scope), input.label.ifBlank { input.userId },
                     reason, by, json.encodeToString(RerankInput.serializer(), input), now,
@@ -235,6 +241,15 @@ class AiJobs(
         }
         if (queued > 0) nudge()
         queued
+    }
+
+    /** DEB-2826 (FR-5.2) — *Remove all waiting* on one job: every waiting row goes, and the count is what was removed. A batch already out is not touched. */
+    suspend fun removeAllQueued(job: String): Int = lock.withLock {
+        val rows = db.aiQueries.waitingFor(job).executeAsList()
+        db.aiQueries.deleteQueuedForJob(job)
+        // FR-321-3 — tickets taken off the queue stop composing.
+        if (job == AiRequests.SUPPORT_JOB) supportLane?.settled(rows.mapNotNull { it.subject.toLongOrNull() })
+        rows.size
     }
 
     /** Titles that want themes (FR-270 job 2) and are neither tagged for this synopsis, waiting, nor out. */
@@ -310,10 +325,11 @@ class AiJobs(
             val b: Pair<JsonObject, String>? = when (job) {
                 AiRequests.RERANK_JOB -> runCatching { json.decodeFromString(RerankInput.serializer(), row.payload) }.getOrNull()?.let { input ->
                     val shortlist = input.shortlist.mapNotNull { byJf[it] }.take(AiRequests.RERANK_SHORTLIST)
-                    if (shortlist.size < 2) null else {
+                    // …and one switched off since it was queued is not sent (FR-1.3).
+                    if (shortlist.size < 2 || !rerankSwitch.isOn(input.userId, input.label)) null else {
                         val customId = opaqueId("r", input.userId + "|" + input.scope)
                         AiRequests.rerankRequest(customId, cfg.model, cfg.effort, shortlist, input.watched.mapNotNull { byJf[it] }, themes) to
-                            json.encodeToString(RerankCtx.serializer(), RerankCtx(input.userId, input.scope, shortlist.mapNotNull { it.jellyfinId }))
+                            json.encodeToString(RerankCtx.serializer(), RerankCtx(input.userId, input.scope, shortlist.mapNotNull { it.jellyfinId }, input.label))
                     }
                 }
                 AiRequests.SUPPORT_JOB -> lane?.build(row.subject, opaqueId("s", "support|${row.subject}"), cfg)?.let { it.request to it.ctx }
@@ -439,7 +455,10 @@ class AiJobs(
                     val c = runCatching { json.decodeFromString(RerankCtx.serializer(), ctx) }.getOrNull() ?: continue
                     val judged = AiRequests.judgeRerank(r, c.ids)
                     val picks = judged.value
-                    if (picks == null) {
+                    if (!rerankSwitch.isOn(c.u, c.n)) {
+                        // FR-1.3 — switched off while the batch was out: the answer was paid for and is not applied.
+                        verdict = "dropped — re-rank is switched off for this viewer"
+                    } else if (picks == null) {
                         if (r.type == "succeeded") rejected++
                         verdict = "kept the standard list — ${judged.why}"
                     } else {

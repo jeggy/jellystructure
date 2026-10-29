@@ -45,8 +45,11 @@ object SuggestionEngine {
 
     /** FR-274-2 — *test accounts excluded*. Jellyfin marks nothing that tells a test account from a person (every
      *  user in the household is hidden, none disabled), so the rule is the name: a user whose name starts with the
-     *  word *Test* (`Test Stream`, `Test Føroyskt`) is left out. Not `Tester` or `Testa`. */
-    fun isTestAccount(name: String): Boolean = Regex("^test(\\b|$)", RegexOption.IGNORE_CASE).containsMatchIn(name.trim())
+     *  word *Test* (`Test Stream`, `Test Føroyskt`) is left out. Not `Tester` or `Testa`. DEB-2826 (DEB-2823, FR-1.6)
+     *  widens it to the QA seats' throwaway users: a name that starts with `qa-` is a test account too. */
+    fun isTestAccount(name: String): Boolean = TEST_ACCOUNT.containsMatchIn(name.trim())
+
+    private val TEST_ACCOUNT = Regex("^(test(\\b|$)|qa-)", RegexOption.IGNORE_CASE)
 
     const val VERB_FINISHED = "finished"
     const val VERB_WATCHING = "watching"

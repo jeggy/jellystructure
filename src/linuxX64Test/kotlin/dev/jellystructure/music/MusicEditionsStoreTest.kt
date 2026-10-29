@@ -77,6 +77,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "DROP TABLE IF EXISTS processing_feature_run", 0)
         // …and DEB-2476's 90 creates the five autofetch tables (their indexes go with them).
         for (t in listOf("autofetch_fetcher", "autofetch_site", "autofetch_item", "autofetch_run", "autofetch_series_mark")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        // …and DEB-2826's 91 creates ai_viewer.
+        raw.execute(null, "DROP TABLE IF EXISTS ai_viewer", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 
