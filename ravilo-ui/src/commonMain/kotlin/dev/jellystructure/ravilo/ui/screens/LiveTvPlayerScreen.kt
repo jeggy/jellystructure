@@ -119,6 +119,10 @@ fun LiveTvPlayerScreen(
 
     fun wake() { chromeVisible = true; chromeRevision++ }
 
+    // DEB-2627 (FR-5) — the heartbeat reports the rung the player is on (nulls where the player cannot tell).
+    LaunchedEffect(store, player) {
+        store.rungProvider = { player.qoeSnapshot().let { it.variantBandwidthBps to it.variantHeight } }
+    }
     LaunchedEffect(channelId) { store.tune(channelId) }
     // R292 (FR-R292-9) — Live TV follows the same rule: the engine is released off screen (pressing HOME
     // stops the audio), and coming back re-tunes the channel it was on — the channel is its resume record.

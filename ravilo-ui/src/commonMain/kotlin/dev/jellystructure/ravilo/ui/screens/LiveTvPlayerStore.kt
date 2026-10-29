@@ -10,6 +10,7 @@ import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
+import dev.jellystructure.shared.tv.LiveTvHeartbeatRequest
 import dev.jellystructure.shared.tv.LiveTvStreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +35,10 @@ private const val HEARTBEAT_INTERVAL_MS = 20_000L
 /** DEB-2627 (FR-2/FR-4) — `LiveTvTuneRequest.via`: Jellyfin's own remux of the channel instead of the source. */
 const val VIA_JELLYFIN = "jellyfin"
 
+/** DEB-2627 (FR-5) — the heartbeat's `delivery`: the broadcaster's own master, or what Jellyfin serves. */
+private const val DELIVERY_SOURCE = "source"
+private const val DELIVERY_JELLYFIN = "jellyfin"
+
 /**
  * Phase R177 — a deliberate SIBLING to [PlayerStore], not a shared/branched path: live channels have
  * no resume position and Jellyfin's Live TV requires an explicit open (tune)/close (stop) handshake
@@ -57,6 +62,15 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     /** DEB-2627 (FR-4) — this tune's fallback decision; null until a ticket arrives. A zap or any new tune builds a new one. */
     private var fallback: LiveFallbackPolicy? = null
     private var currentChannelId: String? = null
+
+    /** DEB-2627 (FR-5) — the delivery of the ticket on screen (`source` or `jellyfin`), which the heartbeat reports. */
+    private var delivery: String = DELIVERY_SOURCE
+
+    /**
+     * DEB-2627 (FR-5) — the rung on screen now, read from the player when a heartbeat goes out: its `BANDWIDTH` (bits/s)
+     * and picture height. The screen sets it; a player that cannot tell answers nulls and the heartbeat carries no rung.
+     */
+    var rungProvider: () -> Pair<Long?, Int?> = { null to null }
 
     private fun capabilities(): ClientCapabilities {
         val hdr = detectHdrSupport()
@@ -108,6 +122,8 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
             }
             openLiveStreamId = ticket.liveStreamId
             fallback = LiveFallbackPolicy(ticket.streamKind, viaJellyfin = via == VIA_JELLYFIN)
+            // The ticket's own `via`: Jellyfin's remux, or a path on Jellyfin itself, is Jellyfin's; anything else is the broadcaster's.
+            delivery = if (via == VIA_JELLYFIN || ticket.hlsUrl.startsWith(ticket.jellyfinBaseUrl)) DELIVERY_JELLYFIN else DELIVERY_SOURCE
             _state.value = LiveTvPlayerState.Ready(channel, ticket)
             startHeartbeat()
         }
@@ -155,9 +171,19 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
         heartbeatJob = scope.launch {
             while (isActive) {
                 delay(HEARTBEAT_INTERVAL_MS)
-                runCatching { apiClient.liveTvHeartbeat() }
+                runCatching { apiClient.liveTvHeartbeat(heartbeatReport()) }
             }
         }
+    }
+
+    /** DEB-2627 (FR-5) — the stream, the rung and the delivery, so the backend can re-register a stream it lost to a restart. */
+    internal fun heartbeatReport(): LiveTvHeartbeatRequest? {
+        val streamId = openLiveStreamId ?: return null
+        val (bps, height) = runCatching { rungProvider() }.getOrDefault(null to null)
+        return LiveTvHeartbeatRequest(
+            channelId = currentChannelId, liveStreamId = streamId,
+            variantBandwidthBps = bps?.takeIf { it > 0 }, height = height?.takeIf { it > 0 }, delivery = delivery,
+        )
     }
 
     /** Explicit close — the player screen calls this on exit (its `DisposableEffect`'s onDispose). */

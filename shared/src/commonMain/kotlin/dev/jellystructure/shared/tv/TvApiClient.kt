@@ -1042,8 +1042,14 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    suspend fun liveTvHeartbeat() {
-        runCatching { client.post("$baseUrl/api/tv/livetv/heartbeat") { auth() } }
+    /** DEB-2627 FR-5 — [report] (the stream, the rung on screen, the delivery) rides along; null is the body-less heartbeat of old. */
+    suspend fun liveTvHeartbeat(report: LiveTvHeartbeatRequest? = null) {
+        runCatching {
+            client.post("$baseUrl/api/tv/livetv/heartbeat") {
+                auth()
+                if (report != null) jsonBody(json.encodeToString(report))
+            }
+        }
     }
 
     suspend fun stopLiveTv(liveStreamId: String) {

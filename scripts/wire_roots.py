@@ -27,7 +27,7 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     'TargetList', 'PlaybackTarget', 'SessionStartResponse', 'SessionLoadEnvelope', 'CastRelayLoadEnvelope',
     # 320 — the support lane
     'SupportTicketRow', 'SupportTicketList', 'SupportMessageView', 'SupportThread', 'SupportUnread', 'SupportChangedEnvelope']
-REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'MarkRequest',
+REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'LiveTvHeartbeatRequest', 'MarkRequest',
     'PlaybackProgressRequest', 'PlaybackQoeReport', 'PlaybackRestreamRequest', 'PlaybackStartRequest',
     'PlaybackStopRequest', 'PlayedRequest', 'RemoteCommandRequest', 'RemotePairRequest', 'RemotePlayRequest',
     'ScreenClaimRequest', 'ScreenCodeRequest', 'ScreenStatus', 'SeededBrowseRequest', 'TvLoginRequest',

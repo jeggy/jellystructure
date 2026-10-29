@@ -226,6 +226,8 @@ internal fun pnVariantWords(bps: Long?, height: Int?, down: Int, up: Int, startB
 internal fun pnEncoderWords(encoder: String?, detail: String?): String = when (encoder) {
     "ours" -> listOfNotNull("our encoder", detail).joinToString(" · ")
     "jellyfin" -> "Jellyfin"
+    // DEB-2627 (FR-5) — a live channel the player reads from the broadcaster itself (a live row's `encoder`).
+    "source" -> "the channel's own stream"
     else -> ""
 }
 
@@ -274,12 +276,15 @@ private fun pnRow(r: AdminSessionRow, nowMs: Long, serverNowMs: Long): String {
     val timeline = r.events.joinToString("") { e ->
         """<div><span class="w">${dev.jellystructure.formatStoredTs((e.at / 1000).toString()).esc()}</span>${pnEventWord(e.what, e.detail).esc()}${e.source?.let { s -> " <span class=\"muted\">· ${if (s == "admin") "from the admin" else "from ${s.esc()}"}</span>" } ?: ""}</div>"""
     }
-    return """<tr class="ses-r" data-ses="${r.id.esc()}"${if (r.endedAt != null) " style=\"opacity:.6\"" else ""}>
+    // DEB-2627 (FR-5) — a live channel has no position and no history: the row says so and does not open.
+    val live = r.kind == "live"
+    val position = if (live) "Live" else "${pnClock(pos)}$progress"
+    return """<tr class="ses-r" data-ses="${r.id.esc()}"${if (live) " data-live=\"1\"" else ""}${if (r.endedAt != null) " style=\"opacity:.6\"" else ""}>
         <td style="white-space:nowrap"><b>${r.ownerName.esc()}</b></td>
         <td><span class="ses-what">$art<span><b>${title.esc()}</b>${sub?.let { "<span class=\"tiny muted\">${it.esc()}</span>" } ?: ""}</span></span></td>
         <td style="white-space:nowrap">${pnIcon(r.targetIcon)} ${r.targetName.esc()}</td>
         <td style="white-space:nowrap">${pnStateWord(r).esc()}${pnPlayWords(r).takeIf { it.isNotEmpty() }?.let { "<div class=\"tiny muted\">${it.esc()}</div>" } ?: ""}</td>
-        <td><span class="ses-pr">${pnClock(pos)}$progress</span></td>
+        <td><span class="ses-pr">$position</span></td>
         <td class="tiny muted" style="white-space:nowrap">${pnRan(r.createdAt, nowMs)}${if (who.isNotEmpty()) " · $who" else ""}</td>
       </tr>""" + if (open) """<tr class="ses-x"><td colspan="6"><div class="grid2"><div>${pnRemote(r)}</div><div><div class="ses-h">History</div><div class="ses-tl">$timeline</div></div></div></td></tr>""" else ""
 }
@@ -313,6 +318,7 @@ private fun paintPlayingNow(scope: CoroutineScope) {
         for (i in 0 until rows.length) {
             val row = rows.item(i) as? HTMLElement ?: continue
             row.addEventListener("click", { _ ->
+                if (row.hasAttribute("data-live")) return@addEventListener
                 val id = row.getAttribute("data-ses") ?: return@addEventListener
                 if (!pnOpen.add(id)) pnOpen.remove(id) else loadDetail(scope, id)
                 paintPlayingNow(scope)

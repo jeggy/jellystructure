@@ -789,6 +789,11 @@ fun main() = runBlocking {
         }
     }
     val sessionPublisher = dev.jellystructure.tv.wirePlaybackSessions(db, rootScope, mediaStore, musicPipeline, raviloDeviceService, tvEventBus, playbackService, castService, broadcaster, configStore)
+    // DEB-2627 (FR-5) — a live viewer is a row on the admin's list and a reason for background work to wait.
+    sessionPublisher.liveRowsOf = { liveTvService.adminRows() }
+    liveTvService.onLiveChanged = { sessionPublisher.adminChanged() }
+    dev.jellystructure.tv.LiveViewing.anyActive = { liveTvService.anyLiveActive() }
+    dev.jellystructure.tv.LiveViewing.names = { liveTvService.liveDeviceNames() }
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,

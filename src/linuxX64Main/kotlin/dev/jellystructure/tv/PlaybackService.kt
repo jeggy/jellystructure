@@ -430,11 +430,21 @@ fun nowPlayingItem(deviceId: String): String? = playbackTracker.nowPlaying(devic
 /** Phase 178 §FR-178-1 — is any device actively playing right now (or within its grace window)? The one
  *  signal every deferral check (pipeline steps, the segments-lane worker, `GET /api/playback/active`)
  *  consults — see [PlaybackTracker.anyActive]'s doc. */
-fun isPlaybackActive(): Boolean = playbackTracker.anyActive()
+fun isPlaybackActive(): Boolean = playbackTracker.anyActive() || LiveViewing.anyActive()
 
 /** The display names behind [isPlaybackActive] — for naming the device in a "Paused — TV is watching"
  *  UI state (FR-178-4). */
-fun activePlaybackDeviceNames(): List<String> = playbackTracker.activeDevices()
+fun activePlaybackDeviceNames(): List<String> = (playbackTracker.activeDevices() + LiveViewing.names()).distinct()
+
+/**
+ * DEB-2627 (FR-5) — what [isPlaybackActive] asks besides the film tracker: whether a device holds a live stream open. Set
+ * once at start-up to [LiveTvService]'s own table; a live viewer defers background work as a film does, and no longer
+ * than they are watching (a stop or the watchdog removes the stream).
+ */
+internal object LiveViewing {
+    internal var anyActive: () -> Boolean = { false }
+    internal var names: () -> List<String> = { emptyList() }
+}
 
 /** Phase 236 (FR-236-9) — same live set as [activePlaybackDeviceNames], as full [DeviceData] so a
  *  [kind]-based filter (the cast ceiling, the cast status card) doesn't have to guess from a name. */

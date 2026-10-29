@@ -4,6 +4,7 @@ import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.shared.tv.LiveTvChannelUpdate
+import dev.jellystructure.shared.tv.LiveTvHeartbeatRequest
 import dev.jellystructure.shared.tv.LiveTvReorderRequest
 import dev.jellystructure.shared.tv.LiveTvSettingsUpdate
 import dev.jellystructure.shared.tv.LiveTvStopRequest
@@ -13,11 +14,16 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.serialization.json.Json
+
+/** DEB-2627 FR-5 — a heartbeat body from a newer client may carry fields this build does not know. */
+private val heartbeatJson = Json { ignoreUnknownKeys = true }
 
 /**
  * Phase 147 — Live TV configuration: admin routes under `/tv/admin/livetv/`, cookie-gated by AuthPlugin
@@ -122,7 +128,10 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
 
     post("/tv/livetv/heartbeat") {
         val device = call.attributes[DeviceKey]
-        liveTvService.heartbeat(device)
+        // DEB-2627 FR-5 — the body is optional: an installed client sends none, and a body that does not parse is no body.
+        val report = runCatching { call.receiveText() }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { heartbeatJson.decodeFromString(LiveTvHeartbeatRequest.serializer(), it) }.getOrNull() }
+        liveTvService.heartbeat(device, report)
         call.respond(mapOf("status" to "ok"))
     }
 

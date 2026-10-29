@@ -81,6 +81,7 @@ val WIRE_ROOTS: List<WireRoot> = listOf(
     WireRoot("FavoriteRequest", WireDir.REQUEST, FavoriteRequest.serializer()),
     WireRoot("LiveTvStopRequest", WireDir.REQUEST, LiveTvStopRequest.serializer()),
     WireRoot("LiveTvTuneRequest", WireDir.REQUEST, LiveTvTuneRequest.serializer()),
+    WireRoot("LiveTvHeartbeatRequest", WireDir.REQUEST, LiveTvHeartbeatRequest.serializer()),
     WireRoot("MarkRequest", WireDir.REQUEST, MarkRequest.serializer()),
     WireRoot("PlaybackProgressRequest", WireDir.REQUEST, PlaybackProgressRequest.serializer()),
     WireRoot("PlaybackQoeReport", WireDir.REQUEST, PlaybackQoeReport.serializer()),

@@ -74,6 +74,21 @@ data class LiveTvStopRequest(
     @SerialName("live_stream_id") val liveStreamId: String,
 )
 
+/**
+ * DEB-2627 FR-5 — the optional body of `POST /api/tv/livetv/heartbeat`. Every field is optional and a body-less heartbeat
+ * is still valid (an installed client sends none). [channelId] + [liveStreamId] let the backend re-register a stream it
+ * has lost (a restart); [variantBandwidthBps] / [height] are the rung on screen; [delivery] is `source` or `jellyfin`
+ * (the `via` of the ticket being played). Additive.
+ */
+@Serializable
+data class LiveTvHeartbeatRequest(
+    @SerialName("channel_id") val channelId: String? = null,
+    @SerialName("live_stream_id") val liveStreamId: String? = null,
+    @SerialName("variant_bandwidth_bps") val variantBandwidthBps: Long? = null,
+    val height: Int? = null,
+    val delivery: String? = null,
+)
+
 @Serializable
 data class LiveTvReorderRequest(
     @SerialName("channel_ids") val channelIds: List<String>,

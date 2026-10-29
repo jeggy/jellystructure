@@ -45,6 +45,9 @@ class SessionPublisher(
     /** 313 (FR-313-13) — who serves a session's play (null in tests). */
     internal var servedOf: (SessionRec) -> ServedNow? = { null }
 
+    /** DEB-2627 (FR-5) — the open live streams, as admin rows. They go into [adminList] only: [listFor] and the apps' `session_list` never read this. */
+    var liveRowsOf: () -> List<AdminSessionRow> = { emptyList() }
+
     /** 308 (FR-308-5) — only the admin's list changed (a player reported another variant). */
     fun adminChanged() {
         val send = adminBroadcast ?: return
@@ -267,7 +270,9 @@ class SessionPublisher(
                     variantStepsUp = v.stepsUp, variantStartBps = v.startBps)
             }
         }
-        return AdminSessionList(rows, now, householdControl())
+        // DEB-2627 (FR-5) — a live channel is playing now, so its row sits with the live sessions, after them.
+        val live = runCatching { liveRowsOf() }.getOrDefault(emptyList())
+        return AdminSessionList(rows.filter { it.endedAt == null } + live + rows.filter { it.endedAt != null }, now, householdControl())
     }
 }
 

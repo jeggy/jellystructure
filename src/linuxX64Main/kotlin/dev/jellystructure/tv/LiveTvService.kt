@@ -12,7 +12,9 @@ import dev.jellystructure.ops.boundedOrNull
 import dev.jellystructure.ops.LockedMap
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
+import dev.jellystructure.model.AdminSessionRow
 import dev.jellystructure.shared.tv.LiveTvGuideProgram
+import dev.jellystructure.shared.tv.LiveTvHeartbeatRequest
 import dev.jellystructure.shared.tv.LiveTvOverview
 import dev.jellystructure.shared.tv.LiveTvProgramInfo
 import dev.jellystructure.shared.tv.LiveTvStreamTicket
@@ -68,6 +70,13 @@ private const val SOURCE_CLASS_MAX_ENTRIES = 256
 /** DEB-2627 FR-4 — the one value of [dev.jellystructure.shared.tv.LiveTvTuneRequest.via] that means something; any other reads as the source. */
 private const val VIA_JELLYFIN = "jellyfin"
 
+/** DEB-2627 FR-5 — where the stream on screen comes from: the broadcaster's own master, or Jellyfin's remux. The heartbeat's `delivery`. */
+private const val DELIVERY_SOURCE = "source"
+private const val DELIVERY_JELLYFIN = "jellyfin"
+
+/** DEB-2627 FR-5 — the `kind` of an admin session row that is a live channel; never in a viewer's list. */
+internal const val SESSION_KIND_LIVE = "live"
+
 /** DEB-2520 — how long a viewer's channel list from Jellyfin is believed; a policy change drops it sooner (the hash). */
 private const val VIEWER_CHANNELS_TTL_MS = 2 * 60 * 1000L
 
@@ -102,10 +111,31 @@ class LiveTvService(
     private var guideCache: List<LiveTvGuideProgram> = emptyList()
     private var guideCacheFetchedAt: Long = 0L
 
+    /** DEB-2627 FR-5 — one device's open live stream, as reported: [delivery] is `source` or `jellyfin`, the rung is what the player last sent (null until it does). */
+    internal data class ActiveLive(
+        val device: DeviceData,
+        val channelId: String,
+        val liveStreamId: String,
+        val delivery: String,
+        val startedMs: Long,
+        val heartbeatMs: Long,
+        val variantBps: Long? = null,
+        val height: Int? = null,
+    )
+
     // Live-stream watchdog — separate from PlaybackService's VOD tracking (dev-review addendum D: a
-    // live tune is a sibling flow, not a branch of startPlayback). Key = deviceId.
-    private val activeStreams = HashMap<String, Triple<DeviceData, String, String>>() // -> (device, channelId, liveStreamId)
-    private val lastHeartbeatMs = HashMap<String, Long>()
+    // live tune is a sibling flow, not a branch of startPlayback). Key = deviceId. DEB-2627 FR-5: also the admin's live
+    // rows and `isPlaybackActive()`'s live half, so it is read from request threads and the deferral checks alike.
+    private val activeStreams = LockedMap<String, ActiveLive>()
+
+    /** DEB-2627 FR-5 — told when the set of live rows, or what one shows, changes (the admin's `/ws` list is re-sent). */
+    var onLiveChanged: (() -> Unit)? = null
+
+    /** DEB-2627 FR-5 — is any device holding a live stream open? Non-suspend, like [PlaybackTracker.anyActive]. */
+    fun anyLiveActive(): Boolean = activeStreams.size > 0
+
+    /** DEB-2627 FR-5 — the display names of the devices holding a live stream, for "Paused — TV is watching". */
+    fun liveDeviceNames(): List<String> = activeStreams.snapshot().values.map { it.device.displayName.ifBlank { it.device.deviceId } }
 
     init {
         runCatching { SystemFileSystem.createDirectories(Path(logoDir)) }
@@ -376,8 +406,7 @@ class LiveTvService(
                 jellyfinClient.closeLiveStream(base, token, liveStreamId, identity)
                 return null
             }
-            lastHeartbeatMs[device.deviceId] = nowMs()
-            activeStreams[device.deviceId] = Triple(device, channelId, liveStreamId)
+            register(device, channelId, liveStreamId, DELIVERY_JELLYFIN)
             return LiveTvStreamTicket(
                 jellyfinBaseUrl = base,
                 accessToken = token,
@@ -389,8 +418,8 @@ class LiveTvService(
             )
         }
         val sourceClass = classifySource(channelId, streamUrl)
-        lastHeartbeatMs[device.deviceId] = nowMs()
-        activeStreams[device.deviceId] = Triple(device, channelId, liveStreamId)
+        // A relative Path is Jellyfin's own stream; an absolute one is the broadcaster's (FR-1) — what the client then plays.
+        register(device, channelId, liveStreamId, if (streamUrl.startsWith("http")) DELIVERY_SOURCE else DELIVERY_JELLYFIN)
         return LiveTvStreamTicket(
             jellyfinBaseUrl = base,
             accessToken = token,
@@ -467,15 +496,82 @@ class LiveTvService(
         }
     }
 
-    suspend fun heartbeat(device: DeviceData) {
-        if (activeStreams.containsKey(device.deviceId)) lastHeartbeatMs[device.deviceId] = nowMs()
+    /** Puts [device]'s stream in the table (a tune replaces whatever it held) and tells the admin. */
+    private fun register(device: DeviceData, channelId: String, liveStreamId: String, delivery: String, variantBps: Long? = null, height: Int? = null) {
+        val now = nowMs()
+        activeStreams[device.deviceId] = ActiveLive(device, channelId, liveStreamId, delivery, startedMs = now, heartbeatMs = now, variantBps = variantBps, height = height)
+        onLiveChanged?.invoke()
+    }
+
+    /**
+     * DEB-2627 FR-5 — a heartbeat. Body-less (an installed client) it only keeps the stream alive. With [report] it also
+     * records the rung on screen and the delivery. A device the backend holds no stream for, whose [report] names a
+     * channel and a live stream (the backend restarted under a viewer), is registered again so the row survives and the
+     * watchdog does not close it — but only for a channel Jellyfin lists for that viewer, so a heartbeat can never put a
+     * stream in the table that a tune could not have opened.
+     */
+    suspend fun heartbeat(device: DeviceData, report: LiveTvHeartbeatRequest? = null) {
+        val held = activeStreams[device.deviceId]
+        if (held == null) {
+            val channelId = report?.channelId?.takeIf { it.isNotBlank() } ?: return
+            val liveStreamId = report.liveStreamId?.takeIf { it.isNotBlank() } ?: return
+            if (channelId !in visibleChannelIds(device)) return
+            register(device, channelId, liveStreamId, deliveryOf(report.delivery), report.variantBandwidthBps?.takeIf { it > 0 }, report.height?.takeIf { it > 0 })
+            return
+        }
+        // A heartbeat that names another stream than the one held belongs to a tune that was since replaced: it keeps nothing alive.
+        if (report?.liveStreamId?.isNotBlank() == true && report.liveStreamId != held.liveStreamId) return
+        var changed = false
+        activeStreams.update(device.deviceId) { cur ->
+            cur?.let {
+                val next = if (report == null) it else it.copy(
+                    delivery = report.delivery?.let(::deliveryOf) ?: it.delivery,
+                    variantBps = report.variantBandwidthBps?.takeIf { b -> b > 0 } ?: it.variantBps,
+                    height = report.height?.takeIf { h -> h > 0 } ?: it.height,
+                )
+                changed = next.delivery != it.delivery || next.variantBps != it.variantBps || next.height != it.height
+                next.copy(heartbeatMs = nowMs())
+            }
+        }
+        if (changed) onLiveChanged?.invoke()
+    }
+
+    private fun deliveryOf(raw: String?): String = if (raw == DELIVERY_JELLYFIN) DELIVERY_JELLYFIN else DELIVERY_SOURCE
+
+    /**
+     * DEB-2627 FR-5 — each open live stream as a row of the admin's playback sessions list (`kind = "live"`): the viewer,
+     * the channel and the programme on now, the device, and the delivery and rung in the fields the list already draws
+     * for a film's variant. Position, duration and the timeline are empty — a channel has none.
+     */
+    fun adminRows(index: Map<String, String> = emptyMap()): List<AdminSessionRow> {
+        val now = nowMs()
+        val channels = lineup().associateBy { it.channelId }
+        return activeStreams.snapshot().values.sortedBy { it.startedMs }.map { a ->
+            val ch = channels[a.channelId]
+            val program = ch?.currentProgram?.takeIf { it.startMs <= now && now < it.endMs }?.name
+            AdminSessionRow(
+                id = "live:${a.device.deviceId}", revision = a.heartbeatMs, ownerId = a.device.jellyfinUserId,
+                ownerName = a.device.jellyfinUsername.ifBlank { a.device.jellyfinUserId }, kind = SESSION_KIND_LIVE,
+                title = ch?.name ?: "Live channel", subtitle = program,
+                targetKind = "device", targetId = a.device.deviceId,
+                targetName = index[a.device.deviceId] ?: a.device.displayName.ifBlank { a.device.deviceId },
+                targetIcon = targetIcon(a.device.platform, a.device.kind),
+                state = "playing", createdAt = a.startedMs, updatedAt = a.heartbeatMs,
+                variantBps = a.variantBps, variantHeight = a.height, encoder = a.delivery,
+            )
+        }
     }
 
     suspend fun stopTune(device: DeviceData, liveStreamId: String) {
+        // A stop of a stream the device no longer holds (it already tuned another) leaves the new row where it is. The row
+        // goes before the token is asked for: a token that cannot be had must not keep a closed stream on the admin's list.
+        val held = activeStreams[device.deviceId]
+        if (held == null || held.liveStreamId == liveStreamId) {
+            activeStreams.remove(device.deviceId)
+            onLiveChanged?.invoke()
+        }
         val base = jellyfinBase()
         val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-        lastHeartbeatMs.remove(device.deviceId)
-        activeStreams.remove(device.deviceId)
         jellyfinClient.closeLiveStream(base, token, liveStreamId, JellyfinDeviceIdentity.forDevice(device))
     }
 
@@ -484,14 +580,14 @@ class LiveTvService(
     suspend fun stopWatchdogTick(isDeviceConnected: suspend (String) -> Boolean) {
         val now = nowMs()
         val stale = buildList {
-            for ((deviceId, value) in activeStreams.entries) {
-                val heartbeatStale = now - (lastHeartbeatMs[deviceId] ?: 0L) > STOP_WATCHDOG_MS
-                if (heartbeatStale || !isDeviceConnected(deviceId)) add(value)
+            for ((deviceId, a) in activeStreams.snapshot()) {
+                val heartbeatStale = now - a.heartbeatMs > STOP_WATCHDOG_MS
+                if (heartbeatStale || !isDeviceConnected(deviceId)) add(a)
             }
         }
-        for ((device, _, liveStreamId) in stale) {
-            Logger.info("LiveTv stop watchdog: force-closing stale stream device=${device.deviceId}", "livetv")
-            runCatching { stopTune(device, liveStreamId) }
+        for (a in stale) {
+            Logger.info("LiveTv stop watchdog: force-closing stale stream device=${a.device.deviceId}", "livetv")
+            runCatching { stopTune(a.device, a.liveStreamId) }
         }
     }
 
