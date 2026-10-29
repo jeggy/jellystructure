@@ -82,6 +82,14 @@ check "$DETAIL" "container-conversion notice (.cv-card)"          ".cv-card {"
 check "$DETAIL" "container-conversion scoped focus ring"          ".cv-card .btn:focus-visible, .cv-dlg .btn:focus-visible"
 check "$DETAIL" "container-conversion light-theme tints"          "[data-theme=\"light\"] .cv-keep"
 check "$DETAIL" "track row restacks at phone width (FR-9 narrow)" ".trk-main > :nth-child(2), .trk-main > :nth-child(3)"
+# DEB-2916 (FR-17) — the Episode order control at the top of the episodes card, promoted from the
+# design round `newest-first` by DEB-2935. Three hand-authored rules, one line each. The field's
+# un-stretched .seg and its zeroed margin are a fix, not scaffolding: without them the segmented
+# control stretches to the column and reads as a third, unlabelled option.
+check "$DETAIL" "Episode order row (.eporder)"                  ".eporder {"
+check "$DETAIL" "Episode order field does not stretch its .seg" ".eporder .field {"
+check "$DETAIL" "Episode order provenance note (.eporder-prov)" ".eporder .eporder-prov {"
+check "$DETAIL" "Episode order note, light theme"               "[data-theme=\"light\"] .eporder .eporder-prov"
 
 # ---- wf.css --------------------------------------------------------------------------------------
 # Phase 117/146 — dashboard "Needs your attention" breakdown grid.

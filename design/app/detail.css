@@ -314,6 +314,30 @@
 .eppick { display:inline-flex;gap:4px;flex-wrap:wrap; }
 .eppick button { width:38px;height:32px;border:1px solid var(--line-2);border-radius:8px;background:var(--fill-3);color:var(--ink);cursor:pointer;font-size:.8rem;font-weight:600; }
 .eppick button.on { background:var(--hi-soft);color:var(--acc-ink);border-color:var(--hi); }
+/* ---------- Episode order, at the top of the episodes card (FR-17) ----------
+   From the design round `newest-first`, direction A, adopted 2026-10-29 (spec
+   a-newest-first-series-lists-and-plays-its-latest-episode.md). It invents NO control and almost no
+   CSS: the column is wf.css's own `.field`, which already styles `label` and `.hint`, and the
+   control is wf.css's `.seg`. What is here is the row that puts the field and the note side by
+   side, and the dashed rule that marks the note as the SERVER's statement about where the value
+   came from rather than part of the control. Guarded by scripts/check-mobile-css.sh.
+   `.hint` is deliberately inside a `.field`: wf.css styles it as `.field .hint` and NOWHERE else,
+   so the same span one level out renders at body size and shouts over the control it explains. */
+.eporder { display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap; }
+/* `align-items:flex-start` is load-bearing. `.seg` is `display:inline-flex`, but as a child of a
+   flex COLUMN it stretches to the column's width, and the two segments then sit at the left end of
+   a 480 px bar of empty control — which reads as a third, unlabelled option. The field's own
+   bottom margin goes too: this row sits between two `hr.dash` rules and they own the spacing. */
+.eporder .field { align-items:flex-start; margin-bottom:0; }
+/* `align-self:stretch` is what makes the dashed rule a RULE. The note is one sentence, so a border
+   sized to its own line is a 22 px stub that reads as a stray mark beside the control rather than
+   as a division between the operator's control and the server's statement about it. Stretched, it
+   runs the height of the field and the sentence sits centred against it. */
+.eporder .eporder-prov { align-self:stretch; display:flex; align-items:center; max-width:46ch; padding-left:11px; border-left:2px dashed var(--line-2); font-size:.78rem; line-height:1.55; color:var(--ink-soft); }
+/* The light theme is a real theme, not a tint: the dashed rule needs more contrast against the
+   light card than it does against the dark one. */
+[data-theme="light"] .eporder .eporder-prov { border-left-color:rgba(16,18,30,.22); }
+
 .ep { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); overflow: hidden; transition: border-color .2s ease; }
 .ep + .ep { margin-top: 10px; }
 .ep.attn { border-color: rgba(255,111,97,.35); }

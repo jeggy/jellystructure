@@ -223,6 +223,19 @@
       <div class="card">
         <div class="row center"><h4 style="margin:0;white-space:nowrap;">Season 1</h4><span class="chip">8 episodes</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
         <hr class="dash" style="margin:12px 0;">
+        <!-- Episode order (FR-17), adopted 2026-10-29 from the design round `newest-first`. The CSS
+             is .eporder in detail.css. This stand-in series is an ordinary one, not fed by a
+             date-numbered Auto-fetch, so its `newest_first_source` is "off" and it carries NO note —
+             which is exactly what "off" looks like. The two faces the note does have, in both
+             themes, are the four admin frames in design/ravilo/newest-first/png/. -->
+        <div class="eporder">
+          <div class="field">
+            <label>Episode order</label>
+            <span class="seg"><span class="on">Oldest first</span><span>Newest first</span></span>
+            <span class="hint">How Ravilo lists this series’ episodes, and what <b>Play</b> starts.</span>
+          </div>
+        </div>
+        <hr class="dash" style="margin:12px 0;">
         <div class="seasonbar">
           <span class="muted tiny">episode-level:</span>
           <span class="chip"><span class="dot bad"></span> 2 untagged tracks</span>

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Newest first — the adopted design</title>
+<!--
+  frames.html — every frame of the ADOPTED design for a newest-first series, built from nf-data.js
+  through nf-build.js.
+
+  Round `newest-first` (2026-10-29), direction A, promoted out of design/incoming/ after the owner
+  picked A. The requirement is
+  specs/ravilo/requirements/a-newest-first-series-lists-and-plays-its-latest-episode.md; this
+  directory is the picture of it, and where the two disagree the spec wins.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=tv | tv-lang | phone | home-tv | home-ph | player | admin
+      &theme=light            (the admin only; the admin's light theme is a real theme)
+
+  The SET decides which shipped stylesheet is loaded, because the TV, the phone and the admin are
+  three different token files and loading two into one document would let one answer for the other.
+  This file's own stylesheet always comes last, so it extends the shipped system and never precedes
+  it. The admin set links detail.css because the Episode order control's CSS now LIVES there: it was
+  promoted into production with the adoption, so these two frames render the shipped rules rather
+  than a copy of them.
+
+  THE CSP <meta> THE ROUND CARRIED IS GONE. It existed because `design/ravilo/ravilo.css` opens with
+  a Google Fonts `@import` and render-design.sh failed the run on the off-host request; DEB-2922
+  (872dbcb1) made the script answer that import from design/app/fonts/, so no round needs the meta
+  any more. The three @font-face blocks at the top of newest-first.css are kept all the same: they
+  point at the repo's own woff2 and make the picture identical with or without a network.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; scripts/render-design.sh
+  drives it over the sets and screenshots one element per frame (each frame carries the id the PNG is
+  named after, and the renderer uses `--all .nf-shot`).
+-->
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const set = q.get('set') || 'tv';
+    const theme = q.get('theme') || 'dark';
+    const tvSets = ['tv', 'tv-lang', 'home-tv', 'player'];
+    if (tvSets.indexOf(set) >= 0) {
+      document.write('<link rel="stylesheet" href="../ravilo.css">');
+      /* the player's own shipped stylesheet — .pl-* lives in it, and only the set that draws a
+         player loads it, so it cannot restyle a series page by accident. */
+      if (set === 'player') document.write('<link rel="stylesheet" href="../ravilo-player.css">');
+    } else if (set === 'phone' || set === 'home-ph') {
+      document.write('<link rel="stylesheet" href="../mobile/ravilo-phone.css">');
+    } else if (set === 'admin') {
+      document.write('<link rel="stylesheet" href="../../app/wf.css">');
+      document.write('<link rel="stylesheet" href="../../app/app.css">');
+      document.write('<link rel="stylesheet" href="../../app/detail.css">');
+    }
+    document.write('<link rel="stylesheet" href="newest-first.css">');
+    window.NFOPT = { set, theme };
+  })();
+</script>
+</head>
+<body>
+<div class="nf-page">
+<div class="nf-head">
+  <h1>Newest first — a series where only the latest episodes matter</h1>
+  <div class="nf-id">Adopted design · direction <b>A</b> · 2026-10-29 · set <span id="nf-setname"></span></div>
+  <p><b>This is the adopted design, not a set of options.</b> The owner picked direction A on
+    2026-10-29 and went further than A on the end of an episode: nothing follows one at all. The
+    requirement is <span class="nf-id">specs/ravilo/requirements/a-newest-first-series-lists-and-plays-its-latest-episode.md</span>
+    and each frame below names the FRs it draws. What was declined — the viewer's own sort control,
+    an <i>Up next</i> card, the episode code as a secondary line, the dashed Continue bar and the
+    reference frame of today's page — went with the round and is in git history only.</p>
+  <p>Every frame links the <b>shipped</b> stylesheet for its surface — <span class="nf-id">ravilo.css</span>,
+    <span class="nf-id">ravilo-player.css</span>, <span class="nf-id">ravilo-phone.css</span>, or
+    <span class="nf-id">wf.css</span> + <span class="nf-id">app.css</span> + <span class="nf-id">detail.css</span>
+    — so every token, button, pill, card, badge, ribbon, seg and focus ring in these pictures is the
+    production one. The classes this design adds for the Ravilo surfaces are in
+    <span class="nf-id">newest-first.css</span> and are <b>reference</b>; the admin's
+    <span class="nf-id">.eporder</span> family is <b>production</b> and lives in
+    <span class="nf-id">design/app/detail.css</span>. Every date, code, count, duration and
+    percentage comes out of <span class="nf-id">nf-data.js</span>, which <b>refuses to load</b> if
+    one of them disagrees with the spec.</p>
+  <p>The TV frames are the shipped <b>1920×1080</b> stage, drawn at 1920 and measured at 1920. The
+    phone frames are the shipped Pixel 9 <b>412×915</b> portrait. The programme, the viewer, the
+    dates, the episode codes and the four viewer states are the spec's stand-ins exactly; the poster
+    and every still is a plain invented gradient and never a broadcaster's picture.</p>
+</div>
+<div id="nf-frames"></div>
+</div>
+
+<script src="nf-data.js"></script>
+<script src="nf-build.js"></script>
+<script>
+(function () {
+  const B = window.NFB, NF = window.NF, O = window.NFOPT;
+  const light = O.theme === 'light';
+
+  /* Each entry is [png-name-without-prefix, title, note, builder]. The PNG names are the ones the
+     spec's Design table cites and the ones QA diffs against, so they are unchanged from the round:
+     `newest-a-<surface>-<state>`. */
+  const SETS = {
+
+    /* ------------------------------------------------------- 1. the TV series page (1920×1080) */
+    'tv': [
+      ['a-tv-s1', 'Acceptance 2 · never started · the primary button focused',
+       'The rail runs <b>newest first</b> — Thu 29 Oct leftmost — and each card’s main label is its <b>air date</b>, with the programme’s own heading under it (FR-8, FR-9). The primary button reads <b>Play newest · Thu 29 Oct</b> (FR-10): on a daily programme the oldest of twelve is the least likely thing anyone wants, and today’s page would have offered it. <b>Shuffle, Start over and <i>x of 12 watched</i> are gone</b> (FR-11) — a shuffled news programme is nonsense, there is nothing to start over when tomorrow replaces the set, and a watched count that resets every night is a number that expires. In their place the hero carries <b>one mark</b>, <i>Newest first</i> (FR-12), so a viewer can tell why the list is upside down relative to every other series in the library. It is the shipped <span class="nf-id">.dnext</span> pill in dim ink; the words are the shipped string <span class="nf-id">browse.sort.newest</span>, and the glyph is a stroked sort-descending path, so nothing here is carried by colour. <b>There is no state pill and no NEW ribbon in this state</b>: on a series nobody has started every episode is equally new.',
+       () => B.tvSeries({ state: 's1', focus: 'play' })],
+      ['a-tv-s2', 'Acceptance 3 · a new episode · a rail card focused',
+       'Anna has watched to the end up to Wed 28 Oct, and today’s is unwatched. Three things say so, and <b>only one of them is a colour</b>: the hero’s second pill reads <i>New Episode</i>, the leftmost card wears the shipped <span class="nf-id">.ep-ribbon</span> carrying the shipped word <b>NEW</b>, and the eleven cards behind it each carry a ✓ (FR-12). Both marks need <b>something older watched</b> — that is the clause that matters, and it is why s1 has neither. Focus is on the newest card, which is where the D-pad lands coming down from the button, and the shipped 4 px ring plus <span class="nf-id">scale(1.05)</span> is untouched.',
+       () => B.tvSeries({ state: 's2', focus: null, focusEp: NF.newestIso })],
+      ['a-tv-s3', 'Acceptance 4 · half-watched · the primary button focused',
+       'Thu 29 Oct is 12:40 into 28:00. The primary button becomes <b>Resume · Thu 29 Oct</b> (FR-10) — the shipped <span class="nf-id">action.resume</span> word. The card keeps the shipped <span class="nf-id">.ep-prog</span> bar and loses its ribbon, because it is no longer new to her. The hero’s state pill says how much is left; the <i>Newest first</i> mark beside it has not moved, because it is a fact about the series and not about tonight. The pill owns the STATE and the button owns the DATE, so nothing is said twice.',
+       () => B.tvSeries({ state: 's3', focus: 'play' })],
+      ['a-tv-s4', 'Acceptance 5 · caught up · the primary button focused',
+       'Everything is watched. The button <b>still reads Play newest · Thu 29 Oct</b> and replays it (FR-10): the newest episode is what a viewer wants from a daily programme even when they have seen it. The hero says <i>✓ Caught up</i> and <b>not</b> the shipped <i>All 12 episodes watched</i> (FR-11, FR-16) — that sentence counts a set that is different tomorrow. Home’s Continue row has no Dagbók at all in this state (<span class="nf-id">newest-a-home-tv-h3</span>).',
+       () => B.tvSeries({ state: 's4', focus: 'play' })],
+    ],
+
+    /* --------------------------------- the three languages, which is also the longest string */
+    'tv-lang': [
+      ['a-tv-s2-fo', 'Faroese — and the longest label in the set',
+       'Every drawn string here exists in the shipped <span class="nf-id">i18n/fo.json</span> and is used verbatim: <i>Nýggjast fyrst</i>, <i>Nýggjur partur</i>, <i>Partar</i>, <i>Sesong</i>, <i>NÝTT</i>. <i>Spæl nýggjasta</i> is FR-16’s new key, drafted here. The date is composed from <span class="nf-id">date.weekday_day_month</span> with <span class="nf-id">wd.abbr.*</span> and <span class="nf-id">month.*</span> — <i>Hós 29. Okt</i> — never by the browser’s formatter, because <b>Chromium has no Faroese locale and falls back to English in silence</b>. <b>Magnify the primary button:</b> <i>Spæl nýggjasta · Hós 29. Okt</i> is the longest string in the set at 27 characters and it is what decides whether the button holds on one line.',
+       () => B.tvSeries({ state: 's2', focus: 'play', lang: 'fo' })],
+      ['a-tv-s2-da', 'Danish',
+       'The same frame in <span class="nf-id">i18n/da.json</span>’s words: <i>Nyeste først</i>, <i>Ny episode</i>, <i>Afspil nyeste</i>, <i>Episoder</i>, <i>Sæson</i>, <i>NY</i>, and <i>Tor 29. Okt</i>. Danish is the shorter of the two drafts on every string here, which is the reverse of the usual case and worth knowing: <b>Faroese is the width to build to.</b>',
+       () => B.tvSeries({ state: 's2', focus: 'play', lang: 'da' })],
+      ['a-tv-s2-noir', 'The noir skin',
+       'Noir inverts the accent to amber, which is why <b>nothing in this design is tinted</b>: the mark is ink and weight, the ribbon is the shipped <span class="nf-id">--grad</span> that already ships on every episode card, and the focus ring is the skin’s own. This is the same resolution R221 reached for the genre chip and R222 for the slow-start note. A design that only works in aurora is not done.',
+       () => B.tvSeries({ state: 's2', focus: null, focusEp: NF.newestIso, skin: 'noir' })],
+    ],
+
+    /* ------------------------------------------------------- 2. the phone series page (412×915) */
+    'phone': [
+      ['a-phone-s1', 'The phone · never started',
+       'The phone’s own series page, not a scaled TV frame: the shipped <span class="nf-id">.detail</span> / <span class="nf-id">.dhero</span> / <span class="nf-id">.dbody</span> / <span class="nf-id">.btn.play</span> and the episode list as <span class="nf-id">.merow-single</span> rows, <b>newest first</b>. The mark rides above the button as a small pill. <b>Magnify the button:</b> <i>Play newest · Thu 29 Oct</i> at 412 px is the width this layout is decided by — it fits on one line in English and the Faroese frame is the one to check before building. Two real fit findings are already fixed in this file’s CSS and they are findings about the dated label, not frame artefacts: <span class="nf-id">ravilo-phone.css</span> sizes no <span class="nf-id">.btn svg</span>, and <span class="nf-id">.btn</span> is <span class="nf-id">flex: 1</span>.',
+       () => B.phSeries({ state: 's1' })],
+      ['a-phone-s2', 'The phone · a new episode',
+       'The same two channels as the TV: the pill beside the mark, and the <b>NEW</b> word on the newest row’s thumbnail, in the same slot as the shipped <span class="nf-id">.mwk</span> tick on the opposite corner. Eleven rows carry that ✓. The list is <b>vertical</b> here, so “newest first” means “at the top”, which is the one place in the design where the reversal needs no explaining at all.',
+       () => B.phSeries({ state: 's2' })],
+      ['a-phone-s1-fo', 'The phone · Faroese',
+       'The 412 px width with the longest strings in it. <b>This is the frame to magnify.</b> <i>Spæl nýggjasta · Hós 29. Okt</i> in a button that shares its row with <i>＋</i>, and <i>Nýggjast fyrst</i> in the pill above it.',
+       () => B.phSeries({ state: 's1', lang: 'fo' })],
+    ],
+
+    /* ------------------------------------------------------------- 3. Home's Continue Watching */
+    'home-tv': [
+      ['a-home-tv-h1', 'FR-15 · the tile reads New · Thu 29 Oct',
+       'The shipped TV Home row with Dagbók among the Home mock’s own Continue tiles, so the new tile is compared against the real row rather than against invented neighbours. The tile carries <b>New · Thu 29 Oct</b> in the shipped <span class="nf-id">.cont-badge</span> slot, with the programme’s runtime as its sub-line, and <b>no progress bar</b> — there is nothing to resume. The empty bar slot is the second channel and it needs no mark of its own: the round drew it dashed and that was declined.',
+       () => B.tvHome({ h: 'h1' })],
+      ['a-home-tv-h2', 'FR-15 · the tile reads Thu 29 Oct, with a resume bar like any other',
+       'Half-watched, and <b>deliberately unremarkable</b>: the badge is the date and nothing more, and the bar is the shipped <span class="nf-id">.pbar</span> at 45 % like every neighbour. A newest-first series has no special resume behaviour, so it gets no special resume tile — the reversal is about order and about Play, and drawing it anywhere it does not apply would be inventing a difference.',
+       () => B.tvHome({ h: 'h2' })],
+      ['a-home-tv-h3', 'FR-6 · Dagbók is not in the row',
+       'Caught up, so the tile is gone and the row is the Home mock’s own six. Drawn because <b>“the tile is absent” is a state somebody has to look at</b>: the row has to close up without a gap, and the first tile has to be the one that was second. There is no empty slot and no “you are up to date” card — the series page says <i>Caught up</i> and Home says nothing, which is the right division.',
+       () => B.tvHome({ h: 'h3' })],
+    ],
+    'home-ph': [
+      ['a-home-ph-h1', 'FR-15 · the phone’s Home row',
+       'The same two facts at 412 px, in the phone’s own 196 px landscape tile. The badge sits top-left in the shipped <span class="nf-id">.pb</span> slot; <b>New · Thu 29 Oct</b> is the longest thing on the tile, so it is what decides whether the tile holds.',
+       () => B.phHome({ h: 'h1' })],
+      ['a-home-ph-h2', 'FR-15 · the phone, a resume tile like any other',
+       'The date, and the shipped bar at 45 %.',
+       () => B.phHome({ h: 'h2' })],
+      ['a-home-ph-h3', 'FR-6 · the phone, without Dagbók',
+       'The row closes up.',
+       () => B.phHome({ h: 'h3' })],
+    ],
+
+    /* ---------------------------------------------------------- 4. the TV player at the end */
+    'player': [
+      ['a-player-end', 'FR-13 · the last frame of the player — nothing follows an episode',
+       'Anna is in the credits of <b>Wed 28 Oct</b>, 24 seconds from the end, with Thu 29 Oct still unwatched. The point of this picture is <b>what is not in it</b>: no <span class="nf-id">.pl-nextup</span> card, no countdown ring, no <i>Play in 8s</i> — <b>and no credits card of any kind</b>, no <i>Skip credits</i>, no <i>Watch credits</i> and no <i>End of episode</i>. The owner went further than the round here (decision 2): an evening programme is a thing you watch one of, and a countdown that rolls you into yesterday’s news is the opposite of what the reversal is for. Nothing has been added to the player at all — the chrome is the shipped <span class="nf-id">.pl-*</span> set, unchanged, and <i>Skip intro</i> is untouched.',
+       () => B.tvPlayer({})],
+      ['a-player-land', 'FR-13 · the page she lands on',
+       'The episode ends and she is back on the series page with <b>Thu 29 Oct focused and marked unwatched</b> — the ribbon is on it, the eleven behind it carry ✓, and the hero says <i>New Episode</i>. It is <span class="nf-id">newest-a-tv-s2</span>, reached by finishing an episode rather than by opening the page, and it is drawn again here so the pair reads as one sequence. <b>Focus is on the card and not on the button</b>, which is the detail that makes this workable: one press of OK plays the newest.',
+       () => B.tvSeries({ state: 's2', focus: null, focusEp: NF.newestIso })],
+    ],
+
+    /* ------------------------------------------------------------------ 5. the admin switch */
+    'admin': [
+      ['a-admin-newest', 'FR-17 · Episode order set to Newest first, by Auto-fetch',
+       'The series page’s Seasons &amp; episodes card, with the control at its <b>top</b>. <b>No new control:</b> the shipped <span class="nf-id">.seg</span>, which is already in this card’s head for the season picker. Under it the shipped <span class="nf-id">.hint</span> says what the setting does in a viewer’s terms — <i>How Ravilo lists this series’ episodes, and what Play starts</i> — because “episode order” alone does not tell an operator that it moves the Play button. Beside it the note, in FR-17’s exact words: <b>Set by Auto-fetch: numbered by air date.</b>, behind a dashed rule that marks it as the <b>server’s statement</b> rather than part of the control. The episode list below follows the stored value, so the setting and its effect are in one picture. The admin <b>renders server-pushed state only</b>: this <span class="nf-id">.seg</span> shows what the server stored and no pending or optimistic position is drawn anywhere. The geometry is production CSS — <span class="nf-id">.eporder</span> in <span class="nf-id">design/app/detail.css</span>.',
+       () => B.adminCard({ order: 'newest', theme: O.theme })],
+      ['a-admin-oldest', 'FR-17 · Episode order set to Oldest first, by hand',
+       'The other value, and the note’s other face: <b>Set by hand. Auto-fetch will not change it.</b> — the thing an operator would otherwise fear, which is that the next run puts it back (FR-2: there is no route back to automatic). <b>The note is drawn on both values and not only on the one Auto-fetch chose</b> — a line that appears only when the fetcher set it reads as that value being special rather than as one of two an operator may pick. FR-17’s third state, <span class="nf-id">"off"</span>, carries no note at all, so it is this frame without the line.',
+       () => B.adminCard({ order: 'oldest', theme: O.theme })],
+    ],
+  };
+
+  const set = SETS[O.set];
+  if (!set) throw new Error('unknown set ' + O.set);
+  document.getElementById('nf-setname').textContent = O.set + (light ? ' · light' : '');
+
+  document.getElementById('nf-frames').innerHTML = set.map(([id, title, note, build]) => {
+    const name = 'newest-' + id + (light ? '-light' : '');
+    return '<div class="nf-cap"><h2>' + title + '</h2>'
+      + '<div class="nf-fn">' + name + '.png</div><p>' + note + '</p></div>'
+      + '<div class="nf-shot"' + (light ? ' data-theme="light"' : '') + ' id="' + name + '">' + build() + '</div>';
+  }).join('');
+})();
+</script>
+</body>
+</html>
