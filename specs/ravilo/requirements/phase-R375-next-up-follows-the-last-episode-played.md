@@ -414,3 +414,58 @@ progress, *new* when it is unwatched, no entry when it is watched — and never 
 `continue_episode_id` is the newest episode for every viewer, in the row or not (FR-5 there), and the page's primary
 button plays it (FR-10 there). FR-R375-4 still holds: the rule lives in the same one resolver (`planContinue`). Every
 other series is unchanged.
+
+### Amendment (2026-10-29, DEB-2944) — Continue Watching never offers a watched episode
+
+> Owner, 2026-10-29, on DEB-2944: *"Continue watching should only be there if an episode is not finished or hasn't
+> started. So if all episodes are marked as watched, then it shouldn't be there."*
+
+**What went wrong.** A viewer watched a series' Season 2, then marked its Season 1 watched. The newest last-played date
+was now S01E04's, so FR-R375-1 took S01E04 as the last finished episode, and FR-R375-2 offered S02E01 *whether or not it
+is watched*. A series with every episode watched sat in Continue Watching, offering an episode already seen. The rule
+can't tell a re-watch from an earlier season watched (or marked) after a later one, and on the household's own account
+four unfinished series were offering an already-watched episode too.
+
+**FR-R375-2 is replaced.** The *next episode* is the first episode after the last finished episode, in
+`nextEpisodeAfter`'s order (season, then episode, across seasons; specials never; missing catalog rows never; the rest
+of a multi-episode file never), that the viewer has **not watched**. An unwatched episode with a resume position counts
+(it shows its progress, as before). A watched episode is skipped, never offered. If no episode after the last finished
+one is unwatched, the next episode is the **first unwatched episode in that same order from the start**. If every
+counted episode is watched, there is none.
+
+**FR-R375-3's table, for a series with a last finished episode:**
+
+| Resume | Next unwatched (the new FR-R375-2) | Card |
+|---|---|---|
+| newer than the finish | — | **resume** (unchanged) |
+| older, or none | yes | **that episode**: `S03E15 · Title`, or a resume-style card with its progress if it is in progress |
+| older | none | **resume** (the older one; it is unwatched by R185, so the series is not fully watched) |
+| none | none | **no entry**: every counted episode is watched, and the series leaves Continue Watching |
+
+The no-anchor row (Jellyfin's Next Up) is unchanged. So are membership (R219 §2, with *something left to watch* meaning
+an unwatched episode) and the order (R219 §4).
+
+**A fully watched series is never in Continue Watching.** This restores R343 FR-R343-2 (*"a finished series is not in
+Continue watching"*) and withdraws the R343 amendment at the top of this file that said otherwise. A re-watch now
+starts from the series page: *Start over* clears it (R343), after which the in-order rule above follows it as it would
+a first viewing.
+
+**FR-R375-5's second bullet falls away on its own.** The server never names an episode for a finished series now, so
+the series page reads *Start over · S01E01* (R343 FR-R343-2), on installed apps too. No client change: the client's
+`rewatchEpisodeId` simply never receives an id. FR-R375-6 (the shuffle and the unfinished replay put the date back)
+stands; it still keeps the in-order position of a series that isn't finished.
+
+**Acceptance 6 is replaced:** a fully watched series, S02E03 played to the end from its card: the series is **not** in
+Continue Watching and the page reads *Start over · S01E01*. New:
+
+- 6a. Watch Season 2 of a two-season series, then mark Season 1 watched: the series leaves Continue Watching.
+- 6b. Watch S01E01–E05, S01E08 and S01E09, then finish S01E04 again: the card offers **S01E06** (the first unwatched
+  after S01E04), not S01E05.
+- 6c. Episodes after the last finished one all watched, S01E02 not: the card offers **S01E02**.
+
+**Tests** (`ContinueTargetTest`): the fully-watched test becomes *no entry, wherever the anchor sits*; add 6a, 6b
+and 6c as pure cases, and one where the next unwatched episode is in progress and carries its own progress. Every
+other R375 test stands (their next episodes are unwatched in the fixtures). Server-only: no DTO, no route, no table.
+
+A newest-first series (the DEB-2916 amendment above) keeps its own rule. It already offers nothing when its newest
+episode is watched.
