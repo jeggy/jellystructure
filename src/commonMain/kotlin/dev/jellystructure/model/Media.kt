@@ -362,6 +362,10 @@ data class MediaItem(
      *  its episodes', see [sizeBytes]) and until the file is recorded. Named apart from [sizeBytes], the
      *  title's derived size, so the two cannot be confused. */
     val fileSizeBytes: Long? = null,
+    /** DEB-2916 (FR-1) — the admin's choice for a TV series: list and play it newest first. Null (the default) is
+     *  *automatic*: newest first exactly when an Auto-fetch numbered by air date feeds the series. Carried over by a
+     *  rescan at the store's write choke points, as [lockedArtwork] is. Stored in the `media` JSON: no migration. */
+    val newestFirst: Boolean? = null,
 )
 
 /** Phase 269 (dev review item 3) — a matched film or series whose recommendation signals were never

@@ -157,6 +157,13 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
     fun mark(seriesPath: String, fetcherId: String) = q.markPut(seriesPath, fetcherId)
     fun isPageOnlySeries(seriesPath: String): Boolean = q.markGet(seriesPath.trimEnd('/')).executeAsOneOrNull() != null
     fun pageOnlySeriesPaths(): Set<String> = q.markAll().executeAsList().map { it.series_path }.toSet()
+
+    /** DEB-2916 (FR-1) — the series paths, trailing slash trimmed, fed by an Auto-fetch whose recipe numbers by air date. */
+    fun dateNumberedSeriesPaths(): Set<String> {
+        val dateFetchers = fetchers().filter { it.recipe?.numbering?.kind == "date" }.map { it.id }.toSet()
+        if (dateFetchers.isEmpty()) return emptySet()
+        return q.markAll().executeAsList().filter { it.fetcher_id in dateFetchers }.map { it.series_path.trimEnd('/') }.toSet()
+    }
 }
 
 /**

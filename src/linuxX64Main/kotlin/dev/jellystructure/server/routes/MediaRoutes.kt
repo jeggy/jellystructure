@@ -389,8 +389,10 @@ fun Route.mediaRoutes(
                     ?: return@get call.respond(HttpStatusCode.BadRequest)
                 val item = store.resolve(id)
                     ?: return@get call.respond(HttpStatusCode.NotFound)
-                call.respond(item)
+                call.respondJsonElement(mediaItemWithEpisodeOrder(store, item))  // DEB-2916 (FR-2): newest_first, newest_first_source
             }
+
+            episodeOrderRoutes(store, mediaHistory)  // DEB-2916 (FR-2) — PUT /api/media/{id}/episode-order
 
             // DELETE /api/media/{id} — permanently remove an item that's no longer in Jellyfin (the
             // Phase 95 "missing_from_source" triage's "review & remove if intended" action). Refuses

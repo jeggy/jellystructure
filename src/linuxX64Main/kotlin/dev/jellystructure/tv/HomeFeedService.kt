@@ -845,6 +845,9 @@ class HomeFeedService(
     fun continueEpisodes(device: DeviceData): Map<String, String> =
         canonicalContinueList(device).mapNotNull { e -> e.mediaItem.jellyfinId?.let { sid -> e.episodeId?.let { sid to it } } }.toMap()
 
+    /** DEB-2916 (FR-5) — per asked series Jellyfin id that is newest first, its newest episode (what Play plays). */
+    suspend fun newestEpisodes(device: DeviceData, seriesJellyfinIds: Collection<String>): Map<String, String> = mediaStore.newestEpisodeIds(seriesJellyfinIds, device)
+
     private fun canonicalContinueList(device: DeviceData): List<ContinueEntry> {
         val cached = continueListCache[device.jellyfinUserId] ?: return emptyList()
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
@@ -997,14 +1000,14 @@ class HomeFeedService(
 
         // R219 §2–§4 and R375 (FR-R375-1–3) as pure rules (tv/ContinueTarget.kt): membership, the conflict rule with
         // the next episode in order after the last finished one, and the order. The one place a next episode is chosen.
-        val plan = planContinue(libraryAll, resumeItems, nextUpItems, finishedItems, touchedItems)
+        val plan = planContinue(libraryAll, resumeItems, nextUpItems, finishedItems, touchedItems, mediaStore.newestFirstPredicate())  // DEB-2916 (FR-6)
         // R375 (FR-R375-6, dev review item 7) — each series' anchor date, for a shuffle's `anchor − 1 s`; reached only
         // on a trusted build, so it is at most one refresh stale.
         anchorDateBySeries[device.jellyfinUserId] = plan.anchorDates
         plan.picks.map { p ->
             ContinueEntry(
                 p.mediaItem,
-                p.mediaItem.toMediaCard(progressPct = p.progressPct, nextUpLabel = p.nextUpLabel, seasonNumber = p.seasonNumber, episodeNumber = p.episodeNumber, episodeNumberEnd = p.episodeNumberEnd),
+                p.mediaItem.toMediaCard(progressPct = p.progressPct, nextUpLabel = p.nextUpLabel, seasonNumber = p.seasonNumber, episodeNumber = p.episodeNumber, episodeNumberEnd = p.episodeNumberEnd, episodeAirDate = p.episodeAirDate),
                 p.lastActivityAt,
                 p.episodeId,
             )
@@ -1031,6 +1034,7 @@ class HomeFeedService(
         episodeNumber: Int? = null,
         episodeNumberEnd: Int? = null,
         badge: String? = null,
+        episodeAirDate: String? = null,
     ): MediaCard {
         val jId = jellyfinId
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
@@ -1055,6 +1059,7 @@ class HomeFeedService(
             episodeNumber = episodeNumber,
             episodeNumberEnd = episodeNumberEnd,
             badge = badge,
+            episodeAirDate = episodeAirDate,   // DEB-2916 (FR-6)
             upcomingEpisode = upcomingEpisodeCode(sonarrEnabled),
             upcomingAirUtc = upcomingAirUtc(sonarrEnabled),  // DEB-1482 (FR-2)
         )

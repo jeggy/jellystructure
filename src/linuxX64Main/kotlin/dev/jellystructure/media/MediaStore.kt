@@ -665,6 +665,45 @@ class MediaStore(
         return index[jellyfinId]
     }
 
+    private val autofetchStore by lazy { dev.jellystructure.autofetch.AutofetchStore(db) }
+
+    /** DEB-2916 (FR-1) — a date-numbered Auto-fetch feeds [item]. A failed read answers no: the mark is then *off*, never a
+     *  crash on a read path. */
+    private fun dateNumbered(item: MediaItem): Boolean =
+        runCatching { item.path.trimEnd('/') in autofetchStore.dateNumberedSeriesPaths() }.getOrDefault(false)
+
+    /** DEB-2916 (FR-1) — the one function that says whether [item] is newest first. */
+    fun isNewestFirst(item: MediaItem): Boolean =
+        item.kind == MediaKind.TV_SHOW && dev.jellystructure.tv.isNewestFirst(item, item.newestFirst == null && dateNumbered(item))
+
+    /** DEB-2916 (FR-2) — why: `auto` · `admin` · `off`. */
+    internal fun newestFirstSource(item: MediaItem): dev.jellystructure.tv.NewestFirstSource =
+        dev.jellystructure.tv.newestFirstSource(item, item.newestFirst == null && dateNumbered(item))
+
+    /**
+     * DEB-2916 (FR-1) — [isNewestFirst] for many items with one read of Auto-fetch's marks, for a build that asks it of
+     * every series (the Continue Watching list).
+     */
+    fun newestFirstPredicate(): (MediaItem) -> Boolean {
+        val dateSeries by lazy { runCatching { autofetchStore.dateNumberedSeriesPaths() }.getOrDefault(emptySet()) }
+        return { item -> item.kind == MediaKind.TV_SHOW && dev.jellystructure.tv.isNewestFirst(item, item.newestFirst == null && item.path.trimEnd('/') in dateSeries) }
+    }
+
+    /**
+     * DEB-2916 (FR-5) — per asked series Jellyfin id that is newest first, its newest episode's Jellyfin id; what Play
+     * plays for every viewer. A multi-episode file's first part shares the file's one id. With [device], only a series
+     * the device may see.
+     */
+    suspend fun newestEpisodeIds(seriesJellyfinIds: Collection<String>, device: DeviceData? = null): Map<String, String> {
+        val isNewest = newestFirstPredicate()
+        val out = LinkedHashMap<String, String>()
+        for (id in seriesJellyfinIds) {
+            val series = resolveByJellyfinId(id)?.takeIf { it.kind == MediaKind.TV_SHOW && (device == null || it.visibleTo(device)) && isNewest(it) } ?: continue
+            dev.jellystructure.tv.newestEpisode(series)?.jellyfinId?.let { out[id] = it }
+        }
+        return out
+    }
+
     /** Phase 111/R155 — resolves a Jellyfin id to what the remote-control `play_item` event needs:
      *  "movie" | "series" (both O(1) via [resolveByJellyfinId]) or "episode" (O(n) scan over series —
      *  no index exists for nested episode ids). Null if the id isn't in this library at all. */
@@ -693,7 +732,9 @@ class MediaStore(
             val title = ep.title?.takeIf { it.isNotBlank() } ?: ep.episodeNumber?.let { "Episode $it" } ?: series.title
             return PlayPush(kind = "episode", title = title, kicker = kicker, seriesName = series.title, logoItem = series,
                 segmentItemId = series.id, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
-                legacyStinger = ep.segments.stinger, next = dev.jellystructure.tv.nextEpisodeAfter(series, ep))
+                legacyStinger = ep.segments.stinger,
+                // DEB-2916 (FR-7) — nothing follows an episode of a newest-first series.
+                next = if (isNewestFirst(series)) null else dev.jellystructure.tv.nextEpisodeAfter(series, ep))
         }
         return null
     }
@@ -852,6 +893,7 @@ class MediaStore(
         // Phase 184: same idea again — an operator's chosen fetch language must survive a fresh scan
         // exactly like the artwork lock and the TMDB match lock do.
         merged = preserveMetadataLanguage(merged, old)
+        merged = preserveNewestFirst(merged, old)  // DEB-2916 (FR-1)
         // Phase 251 (FR-251-2): the Scanner reads Jellyfin's LIST shape, which on 12.1 does not carry
         // LockData/LockedFields at all — so a fresh scan item always says "nothing is locked", and
         // without this guard every scan would write that over whatever was really recorded.
@@ -909,6 +951,9 @@ class MediaStore(
         // Phase 184: false on exactly the routes that deliberately CHANGE metadataLanguage (the set/
         // reset route, and its history revert) — same contract as [respectTmdbMatchLock].
         respectMetadataLanguageLock: Boolean = true,
+        // DEB-2916 (FR-1): false on exactly the route that CHANGES newestFirst (`PUT …/episode-order`) — the same
+        // contract as [respectMetadataLanguageLock].
+        respectNewestFirst: Boolean = true,
         respectJsTags: Boolean = true,
         // Phase 251 (FR-251-2) — defaults to TRUE, i.e. carry the stored lock state forward, because
         // almost every caller here builds its item from Jellyfin's list shape, which on 12.1 cannot
@@ -931,6 +976,7 @@ class MediaStore(
         if (respectArtworkLock) merged = preserveLockedArtwork(merged, existing)
         if (respectTmdbMatchLock) merged = preserveTmdbMatchLock(merged, existing)
         if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
+        if (respectNewestFirst) merged = preserveNewestFirst(merged, existing)
         if (respectJsTags) merged = preserveJsTags(merged, existing, jsTagStore.nameSet())
         if (respectJellyfinLocks) merged = preserveJellyfinLockState(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))

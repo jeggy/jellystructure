@@ -620,7 +620,8 @@ fun Route.tvRoutes(
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "ids required")); return@get
         }
         val ids = raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        val result: Map<String, CardPlayState> = playstateAnswer(device.jellyfinUserId, detailService.getPlaystate(device, ids), ids, homeFeedService.continueEpisodes(device))
+        val result: Map<String, CardPlayState> = playstateAnswer(device.jellyfinUserId, detailService.getPlaystate(device, ids), ids, homeFeedService.continueEpisodes(device),
+            newestEpisodes = homeFeedService.newestEpisodes(device, ids))
         call.respond(result)
     }
 
@@ -1655,7 +1656,7 @@ internal fun themeFieldError(req: ViewerSettingsRequest): String? = when {
 /**
  * The `/tv/playstate` answer: the cached playstate with the series' Continue pointers laid over it. R343 (FR-R343-13) —
  * a Start over hold (the episode unwatched at its position, the series' Continue pointer on it) wins over both caches
- * until its write-back has been refreshed.
+ * until its write-back has been refreshed. DEB-2916 (FR-5) — [newestEpisodes] (a newest-first series → its newest episode) wins over both.
  */
 internal fun playstateAnswer(
     userId: String,
@@ -1663,12 +1664,15 @@ internal fun playstateAnswer(
     askedIds: List<String>,
     continueEpisodes: Map<String, String>,
     nowMs: Long = dev.jellystructure.tv.StartOverHolds.clockMs(),
+    newestEpisodes: Map<String, String> = emptyMap(),
 ): Map<String, CardPlayState> {
     val held = dev.jellystructure.tv.StartOverHolds
     return withContinueEpisodes(
         held.overlay(userId, playstate, askedIds, nowMs),
         askedIds,
-        continueEpisodes + held.continueEpisodes(userId, nowMs),
+        // DEB-2916 (FR-5) — on a newest-first series Play plays the newest, for every viewer: it outranks the Continue
+        // pointer and a stale Start-over hold alike.
+        continueEpisodes + held.continueEpisodes(userId, nowMs) + newestEpisodes,
     )
 }
 

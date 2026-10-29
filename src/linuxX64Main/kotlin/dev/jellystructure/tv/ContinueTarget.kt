@@ -17,6 +17,10 @@ import dev.jellystructure.util.isoToEpochTicks
  * is one, the next card is the next episode **in order** after it ([nextEpisodeAfter]), watched or not, instead of
  * Jellyfin's Next Up (which follows the furthest episode ever watched). Without one, R219's rule with Jellyfin's
  * Next Up stands unchanged.
+ *
+ * DEB-2916 (FR-6): a *newest first* series ([planContinue]'s `isNewestFirst`) replaces FR-R375-3: membership is R219's
+ * "genuinely started", and the card is only ever the series' newest episode — resume when it is in progress, new when
+ * it is unwatched, nothing when it is watched. An older episode never gives a card, and no next is computed in order.
  */
 
 /** One entry of the list, before it becomes a card. [episodeId] is null for a film. */
@@ -29,6 +33,8 @@ internal data class ContinuePick(
     val episodeNumber: Int?,
     val episodeNumberEnd: Int?,
     val lastActivityAt: Long,
+    /** DEB-2916 (FR-6) — the episode's air date (`yyyy-MM-dd`); set only on a newest-first series' card. */
+    val episodeAirDate: String? = null,
 )
 
 /** FR-R375-1 — a series' last finished episode: the catalog row, its Jellyfin id, and its `LastPlayedDate` as
@@ -66,12 +72,15 @@ internal fun lastFinishedEpisode(series: MediaItem, watched: List<JellyfinPlayIt
     return ContinueAnchor(ep, item.id, ticks, item.userData!!.lastPlayedDate!!)
 }
 
+private val ISO_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
+
 internal fun planContinue(
     libraryAll: List<MediaItem>,
     resumeItems: List<JellyfinPlayItem>,
     nextUpItems: List<JellyfinPlayItem>,
     finishedItems: List<JellyfinPlayItem>,
     touchedItems: List<JellyfinPlayItem>,
+    isNewestFirst: (MediaItem) -> Boolean = { false },
 ): ContinuePlan {
     val byJellyfinId = libraryAll.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
 
@@ -130,7 +139,7 @@ internal fun planContinue(
     data class Target(val anchor: ContinueAnchor, val next: ContinuePick?)
     val targets = HashMap<String, Target>()
     for ((seriesId, items) in finishedItems.filter { it.seriesId != null }.groupBy { it.seriesId!! }) {
-        val series = byJellyfinId[seriesId]?.takeIf { it.kind == MediaKind.TV_SHOW } ?: continue
+        val series = byJellyfinId[seriesId]?.takeIf { it.kind == MediaKind.TV_SHOW && !isNewestFirst(it) } ?: continue  // DEB-2916: no next in order
         val anchor = lastFinishedEpisode(series, items) ?: continue
         val next = nextEpisodeAfter(series, anchor.episode)?.let { n ->
             val span = resolvedEpisodeSpan(series, n.jellyfinId, null, null)
@@ -147,14 +156,37 @@ internal fun planContinue(
     // §2 membership: "genuinely started" (a: resume, b: finished, c: touched within the window) AND "something left
     // to watch" (resume, Jellyfin's next-up, or — R375 — a next episode in order after the last finished one).
     val startedKeys = resumeByKey.keys + lastFinishedByKey.keys + lastTouchedByKey.keys
-    val candidateKeys = startedKeys.filter { it in resumeByKey || it in nextUpByKey || targets[it]?.next != null }
+
+    // DEB-2916 (FR-6) — a newest-first series: its one card (or none) from its newest episode alone.
+    val finishedEpisodeIds = finishedItems.asSequence().filter { it.userData?.played == true }.map { it.id }.toHashSet()
+    val newestFirstPicks = HashMap<String, ContinuePick?>()
+    for (key in startedKeys) {
+        val series = byJellyfinId[key]?.takeIf { it.kind == MediaKind.TV_SHOW && isNewestFirst(it) } ?: continue
+        val newest = newestEpisode(series)
+        val id = newest?.jellyfinId
+        newestFirstPicks[key] = if (newest == null || id == null || id in finishedEpisodeIds) null else {
+            val inProgress = resumeByEpisodeId[id]
+            val span = resolvedEpisodeSpan(series, id, null, null)
+            // The viewer's last activity on the series, or the newest episode's arrival: a new episode brings the series forward.
+            val activity = maxOf(resumeByKey[key]?.pick?.lastActivityAt ?: 0L, lastFinishedByKey[key] ?: 0L, lastTouchedByKey[key] ?: 0L, newest.createdAt ?: 0L)
+            ContinuePick(
+                series, id, inProgress?.userData?.playedPercentage?.toFloat()?.div(100f),
+                newest.title?.takeIf { it.isNotBlank() },   // the title alone, no code (FR-6)
+                span.season, span.episode, span.episodeEnd, activity,
+                newest.airDate?.take(10)?.takeIf { ISO_DATE.matches(it) },
+            )
+        }
+    }
+    val candidateKeys = startedKeys.filter { it in newestFirstPicks || it in resumeByKey || it in nextUpByKey || targets[it]?.next != null }
 
     // §3 — the conflict rule: most recent activity wins.
     val picks = candidateKeys.mapNotNull { key ->
         val resume = resumeByKey[key]
         val finishedTs = lastFinishedByKey[key]
         val target = targets[key]
-        if (target != null) {
+        if (key in newestFirstPicks) {
+            newestFirstPicks[key]
+        } else if (target != null) {
             // FR-R375-3 — with an anchor, Jellyfin's Next Up is not consulted.
             when {
                 resume != null && resume.ticks >= target.anchor.ticks -> resume.pick

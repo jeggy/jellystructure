@@ -553,6 +553,9 @@ data class MediaCard(
     /** R325 (FR-R325-3) — `4K` · `HDR` · `4K HDR`, else null: the only badge a tile carries for picture quality
      *  (a 1080p or SD title has none). Resolved server-side from the file's video track; older apps ignore it. */
     @SerialName("quality_badge") val qualityBadge: String? = null,
+    /** DEB-2916 (FR-6) — the air date (`yyyy-MM-dd`) of the episode this Continue Watching card points at. Set only on a
+     *  newest-first series' card, and only when the episode has an air date; an app that predates it keeps its code badge. */
+    @SerialName("episode_air_date") val episodeAirDate: String? = null,
 )
 
 /**
@@ -982,6 +985,10 @@ data class SeriesDetail(
     /** R343 (FR-R343-5/10) — offer Shuffle: the series has 9 or more counted episodes (seasons ≥ 1 with a
      *  Jellyfin item; specials out) and this server leaves no resume point behind a shuffled play. */
     val shuffle: Boolean = false,
+    /** DEB-2916 (FR-3) — the series is *newest first*: Play plays its newest episode and `shuffle` is false. The wire
+     *  order of seasons and episodes stays ascending, Specials last; an app that knows this field reverses it. Absent
+     *  (an older server) ⇒ false, today's list. */
+    @SerialName("newest_first") val newestFirst: Boolean = false,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────
