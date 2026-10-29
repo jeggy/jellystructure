@@ -8,13 +8,11 @@
 > etc. Let's investigate if we should start gathering more metadata about our media that we can store in
 > jellystructure, so we can provide better recommended content."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-26, **not deployed** (see *Build notes* at the end). Written 2026-09-26,
-**dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*). Backend (the metadata, the engine, the job, the row) and the admin (row editor, Users &
-devices). The client half is **R318**. The optional AI layer on top is **Phase 270**; this phase stands
-on its own without it. **Numbering:** verified against `STATUS.md` the same day — admin taken through
-**268**.
+Backend (the metadata, the engine, the job, the row) and the admin (row editor, Users & devices). The client half is
+**R318**. The optional AI layer on top is **Phase 270**; this phase stands on its own without it. Dev-reviewed
+2026-09-26 against `main` `0e5e434f` (see *Dev review*).
 
 ## What there is to build on, measured on production 2026-09-26
 
@@ -450,3 +448,14 @@ stale.
 *(This amendment was deleted by the design export `5210045a` and restored from `fdbc1263` the same day.)*
 
 **Built 2026-10-05** as the dev note says: `servedFor` serves `byJf[id]` only; the `Main.kt` hook and `PlaystateCache.onNewlyPlayed` are deleted; the starter path keeps `markStale`. `RecommendationServiceTest`: *a title finished or started since the build stays in place until the next build* (and a title made invisible leaves). Not device-tested yet.
+
+## Amendment 2026-10-29 — the build runs on a schedule you pick, and a quiet viewer can be skipped (DEB-2823)
+
+FR-269-8 (1)'s cadence, *weekly by default* with *daily* as the alternative, becomes a cron per part. The picker is
+*every N hours*, *daily at*, *weekly on*, *monthly on* or *Custom*, and the step is due when the cron's first fire
+after the last build has passed. `rebuild_every` carries over at the hour, minute and weekday of the last build. A
+new setting, *When nobody has watched anything new*, can rebuild a quiet viewer without the AI (the default), skip
+them, or do both as today. The full build no longer always rebuilds every viewer. The rules and keys are in
+[`ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md`](ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md)
+FR-2 and FR-3. FR-269-8 (3) and (4) are unchanged. *Rebuild now* (FR-269-9) queues no AI for a viewer whose AI
+re-rank is switched off (FR-1 there).

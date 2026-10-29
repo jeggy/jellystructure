@@ -528,3 +528,22 @@ records what it changes here.
 - **FR-274-14's Dashboard row** keeps its `/suggestions` link; the admin redirects it to the live home.
 - **FR-274-18 is unaffected.** `.sg-dl` keeps `max-height: 100%` (DEB-1368). Round 5's copy of `suggestions.css`
   predates that fix and would revert it, so that one line is not promoted.
+
+## Amendment 2026-10-29 — `qa-` accounts are test accounts, and the build runs on a schedule you pick (DEB-2823)
+
+**FR-274-2's test-account rule is widened.** A name that starts with the word *Test* **or** starts with `qa-`,
+case-insensitive, is a test account, and its watching is never a source.
+
+**FR-274-7's weekly cadence becomes a cron.** The picker is *every N hours*, *daily at*, *weekly on*, *monthly on*
+or *Custom*, and `suggestions_every` carries over at the time of the last build. A setting, *When nobody has
+watched anything new*, decides what happens when no included viewer has played anything since the last build:
+- build without AI groups (the default);
+- skip the build;
+- build with AI groups, as today.
+
+A run started by hand asks for AI groups only when the Scan dialog's *and ask AI* tick under Suggestions is ticked.
+
+See
+[`ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md`](ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md)
+FR-1.6, FR-2, FR-3 and FR-4.
+

@@ -1,11 +1,10 @@
 # Phase 272 — AI work is a queue you can watch, with its last five conversations kept
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-27, the same afternoon it was written (commits `9b9298d9`, `3f337153`). `Planned` when written
-2026-09-27 from the owner's two asks after the first real AI run on production. Builds on **270** (the AI tab,
-the batch runner, the per-job monthly limit), **269** (the Recommended lists the re-rank orders, *Rebuild now*)
-and **213/260/261** (Activity ▸ *Jobs & workers*). Not dev-reviewed.
+Commits `9b9298d9` and `3f337153`, written from the owner's two asks after the first real AI run on production.
+Builds on **270** (the AI tab, the batch runner, the per-job monthly limit), **269** (the Recommended lists the
+re-rank orders, *Rebuild now*) and **213/260/261** (Activity ▸ *Jobs & workers*). Not dev-reviewed.
 
 ### Build (2026-09-27)
 
@@ -212,3 +211,20 @@ migration is polled and read as today and simply has no transcript.
 - No transcripts for batches read before this phase; no export.
 - No change to what either job sends, how answers are judged, or how 269 builds and uses an order.
 - The AI card does not appear in the Scan console's step list — a batch is not a pipeline step.
+
+## Amendment 2026-10-29 — a run started by hand re-ranks only when asked (DEB-2823)
+
+**FR-272-7 changes.** A run started by hand with Recommendations ticked still rebuilds every viewer's list now,
+whatever the schedule says. It **queues no re-rank** unless the Scan dialog's *and ask AI* tick under that part is
+ticked: that tick is unticked whenever the dialog opens, and is never remembered. With it ticked, the run re-ranks
+every viewer whose AI re-rank is switched on, and this stays the way to re-rank the whole household by hand. The
+dialog line *rebuilds now — the schedule rebuilds {weekly}* is replaced by that dialog's per-part lines.
+
+Two changes to the rest of this spec:
+- **FR-272-6** (*Rebuild now*) queues nothing for a viewer switched off.
+- **FR-272-9** gains *Remove all waiting* on the job line, and a *held by this month's limit* chip on each waiting
+  row the limit holds back.
+
+All of it is in
+[`ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md`](ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md)
+FR-1, FR-4 and FR-5. Why: on prod, a scan started to pick up new files bought an Opus re-rank for every viewer.

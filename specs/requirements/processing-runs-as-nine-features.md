@@ -566,3 +566,29 @@ One engineer, one piece at a time, each a task of its own, in this order. The CS
 6. **Backend + admin: a title's Refresh ▾ and the Checks card** (FR-10), rewiring the per-title buttons.
 
 Each piece files its own QA row when built, with a written plan and no named seat.
+
+## Amendment 2026-10-29 — Recommendations & suggestions: a schedule per part, the quiet-viewer rule, and the AI only when asked (DEB-2823)
+
+Four changes to this spec:
+
+- **FR-2 and the 2026-10-24 keys.** `[processing.suggestions]` gains `recommendations_schedule` and
+  `suggestions_schedule` (cron) and `recommendations_quiet` and `suggestions_quiet` (`skip_ai` | `skip_both` |
+  `rebuild`, default `skip_ai`). `*_every` carries over to a schedule once, at load, and is still written for one
+  release (FR-2.4's rule).
+- **FR-3.3.** *Recommendations & suggestions: daily or weekly* becomes each part's own picker: *every N hours*,
+  *daily at*, *weekly on*, ***monthly on*** (new) or *Custom*. A part is due when its cron's first fire after its
+  last build has passed. Missed fires run once.
+- **FR-5.** With Recommendations & suggestions selected, each part's line in the right pane says what this scan does
+  with it and when the schedule would next run it. Each part gains a dependent ***and ask AI*** tick, unticked on
+  every open and never remembered (FR-5.7 does not apply to it), with a server-built line that gives the viewers,
+  the worst case and what is left of the month. One summary line above *Start scan* lists what runs, what is
+  skipped and the AI. The server sends every sentence, and the dialog selects the ones that match its ticks. The
+  toast and the history line name the AI.
+- **FR-6.3.** Whole-library parts still run when ticked, whatever their schedule says. Recommendations and
+  Suggestions queue their AI step only with *and ask AI* ticked. `POST /api/processing/scan` gains `ai` (part ids;
+  default empty).
+
+The full rules are in
+[`ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md`](ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md)
+FR-2, FR-3 and FR-4.
+

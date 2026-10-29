@@ -275,3 +275,21 @@ this phase's promises change:
 Everything else in this phase holds for `support` as written. That covers the monthly limit as a hard
 stop, the ledger, nothing trusted blindly, and *off sends nothing*. Phase 321 adds per-viewer and
 per-ticket limits on top of the monthly one, never instead of it.
+
+## Amendment 2026-10-29 — the re-rank is switched per viewer (DEB-2823)
+
+**Job 1 (re-rank) runs only for viewers whose *Re-rank with AI* switch is on.** Every Jellyfin user has the
+switch, on the AI tab. A user whose name the test-account rule matches (*Test …* or `qa-…`) defaults to off;
+everyone else defaults to on.
+
+**FR-270-7's first-build re-rank** still applies to a viewer switched on. Its *at most once a day* guard is now
+stored (`ai_viewer.last_asked_at`), so a restart no longer resets it.
+
+**FR-270-7's monthly estimate** becomes *runs a month by the part's schedule × viewers switched on*. It is stated
+as the most a month can cost, before quiet viewers are skipped.
+
+See
+[`ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md`](ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md)
+FR-1 and FR-3.6. Why: on prod on 2026-10-29, 44 of the 48 viewers re-ranked were QA throwaway accounts, and they
+took most of the job's $5 monthly limit.
+
