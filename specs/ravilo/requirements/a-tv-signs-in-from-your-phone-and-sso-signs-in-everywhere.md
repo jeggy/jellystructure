@@ -284,12 +284,25 @@ be found. FR-6 is unchanged: the entry sits beside the account rows. In a wide R
 - **A wide Ravilo Web window: Settings › Account has *Sign in a TV* directly after the password place.** That place is *Change password*, or DEB-1854's link or
   sentence for an account managed elsewhere, or nothing when that is hidden. The row comes before *Install Ravilo*, uses the same `tvcode.row` string, and opens the
   same `/account/tv` screen. No new copy.
-- **Only there.** A phone, a narrow browser window and the desktop app keep the one row on Profile, and their Settings does not repeat it. A TV draws nothing, as
+- **Only there** (corrected below for the desktop app). A phone, a narrow browser window and the desktop app keep the one row on Profile, and their Settings does not repeat it. A TV draws nothing, as
   before: FR-6's "a TV has no such row" still holds.
 - **Keyboard and D-pad order** in that Settings: password place → *Sign in a TV* → *Install Ravilo* → *Sign out*. Where the row is not drawn, the order is today's.
 - **A window resized across the layout switch** shows the row in the place its current layout has it.
 - **Not chosen:** a row in the profile menu (R340's list is fixed and shared with the TV), and making a wide window's avatar open the Profile page. That would
   change navigation for every wide-window viewer, which is the owner's call if it is ever wanted.
+
+**Correction the same day (DEB-2371, finding F6) — the desktop app.** The "only there" bullet above is wrong about the desktop app (Mac and Linux). Its avatar does
+open Profile, but in the desktop layout (R337) that page carries no account rows. It has *Settings…*, *Support* and *Sign out*, and *Change password* lives in the
+Settings window's Account section. So at its normal window size the desktop app could not reach *Sign in a TV* either. The same rule applies: the row sits beside the
+password place, wherever the current layout keeps it.
+
+- **The desktop app in the desktop layout: the Settings window's Account section has *Sign in a TV* directly after the password place, and before *Sign out*.**
+  - On the Mac, Account is a tab: a button after *Change password* (or the managed-elsewhere link or sentence).
+  - On Linux (the GNOME preferences window), Account is a group: a row after the password row.
+  - It closes the window and opens `/account/tv` in the app's window, as *Change password* does. Same string, no new copy.
+- **The desktop app in a narrow window** uses the phone layout and keeps the row on Profile, as before.
+- **So the row is on Profile only where Profile has the account rows** (a phone, a narrow browser window, a narrow desktop window). Everywhere else it is in Settings ›
+  Account: a wide Ravilo Web window, and the desktop layout. A TV still draws nothing.
 
 ### Single sign-on on every client and the admin
 
