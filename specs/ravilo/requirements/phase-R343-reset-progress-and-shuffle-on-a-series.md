@@ -8,9 +8,9 @@
 > S01E01', start episode S01E01 and then after watching 5% it should in the background mark every episode in the series
 > as unwatched and then we will rely on jellyfin progress tracking again, just as normal."*
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-01 (design-authored) from `design/ravilo/Ravilo TV.html` and `design/ravilo/Ravilo
+Written 2026-10-01 (design-authored) from `design/ravilo/Ravilo TV.html` and `design/ravilo/Ravilo
 Mobile.html` (built there the same day: `ravilo-app.js` `seriesFinished` / `shuffleOrder` / `shuffleCtx`, the
 `data-reset` / `data-shuffle` handlers; `.rs-chip`, `.spill-sh`, `.spill-sep`, `.dnext-ck` in `ravilo.css`; `.mshuf`,
 `.mdone`, `.mreset` in the phone file). Directions canvas: `design/ravilo/Start over & Shuffle - Directions.html`
@@ -18,8 +18,7 @@ Mobile.html` (built there the same day: `ravilo-app.js` `seriesFinished` / `shuf
 owner answered the review's three questions the same day and changed the reset (§Owner decisions): **Start over** on
 the primary button is the reset, there is no separate *Reset progress* control, no in-order pointer of our own,
 shuffle carries over to a cast, and the Episodes header moves above the season pills with a focus-path test. The FRs
-below are the decided version. Number verified free on `main` (tree `f88c706e`, Ravilo tops at R342 locally;
-re-checked on `ef52889` the same evening: `main` tops at R340). **Changes** R150-2 (which season a series opens on)
+below are the decided version. **Changes** R150-2 (which season a series opens on)
 and the label and target of a finished series' primary button. **Applies to** the TV family (TV, the web app; R337)
 and the phone. **Depends on** R346 (*the episodes that count*: specials and unplayable rows left out) and R347 (an
 episode left at its credits is finished), both found in this review. Stand-in: *Lundin og vinir*, a fictional kids'
@@ -582,3 +581,10 @@ hold answers the episode unwatched and points the series at it, keeping the seri
 from the cache is answered when asked; progress moves it and a release ends it; it is per viewer and lapses after ten
 minutes. **Re-test:** a finished series → *Start over · S01E01* → play past 5 % (a minute or two) → Back: the first
 frame reads *Resume · S01E01* and the kicker *S01E01 · …*, and stays so.
+
+### Amendment (2026-10-29, DEB-2916) — a newest-first series has no Start over and no Shuffle
+
+On a series marked **newest first** ([`a-newest-first-series-lists-and-plays-its-latest-episode.md`](a-newest-first-series-lists-and-plays-its-latest-episode.md)),
+FR-R343-2's *Start over* and FR-R343-5's *Shuffle* are not offered. The server sends `shuffle: false` (FR-3 there), and
+the primary button always plays the newest episode (FR-10 there), on a finished series too. The watched counts are
+hidden (FR-11 there). Every other series is unchanged.

@@ -115,12 +115,10 @@ resolution for the Next Episode action.
 - Behaviour follows the jellystructure-configured Prompt/Auto/Off + countdown + autoplay; no in-app toggle.
 - An unscanned title behaves exactly as the current build.
 
-## Status
-Design-complete, **`Planned`**. Design lives in `design/ravilo/ravilo-player.js` + `ravilo-player.css` +
-`ravilo-app.js` (segment-aware player context); behaviour config in `design/app/ravilo-config.html`;
-exploration in `design/Skip Intro & Credits - Directions.html`. Depends on **Phase 150**.
-`scripts/check-phases.sh` will flag it for a `STATUS.md` row — **STATUS.md is code-owned; do not add the row
-from the design side.** **Next Ravilo number after this is R183.**
+## Scope
+Design lives in `design/ravilo/ravilo-player.js` + `ravilo-player.css` + `ravilo-app.js` (segment-aware player
+context); behaviour config in `design/app/ravilo-config.html`; exploration in
+`design/Skip Intro & Credits - Directions.html`. Depends on **Phase 150**.
 
 ## Source references
 - Hardcoded heuristic to replace: `PlayerScreen.kt` (`NEXTUP_AT_MS = 20_000L`, 8s countdown; 500ms poll).
@@ -183,3 +181,12 @@ from the design side.** **Next Ravilo number after this is R183.**
 Pairs with **[Phase 150](../../requirements/phase-150-intro-credits-segment-detection.md)** (also dev-reviewed
 2026-07-13 — see its own addenda; R182 depends on 150's `segments` DTO landing, and is safe to build against a
 partially-scanned library via the §D graceful fallback).
+
+### Amendment (2026-10-29, DEB-2916) — a newest-first series has no credits card
+
+On a series marked **newest first** ([`a-newest-first-series-lists-and-plays-its-latest-episode.md`](a-newest-first-series-lists-and-plays-its-latest-episode.md),
+FR-13), FR-RV-SKIP1-2 does not apply: the player shows **no credits card at all** — no *Next Episode*, no *Skip
+credits*, no *Watch credits*, no *End of episode* — and no autoplay. The episode plays to its end and the player closes
+back to the series page. *Skip Intro* (FR-RV-SKIP1-1) is unchanged. Owner, 2026-10-29: *"when nearing the end where the
+usual skip credits/autoplay would happen, we would also skip that, so there is no next episode."* Every other series is
+unchanged.

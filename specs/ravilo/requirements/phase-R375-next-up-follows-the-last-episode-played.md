@@ -5,9 +5,9 @@
 > order after the one you last played** — finishing S03E14 offers S03E15, even though S06E06 was once watched — not
 > Jellyfin's Next Up, which follows the furthest episode ever watched.
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-04 (dev-authored) from the owner's decision on
+Written 2026-10-04 (dev-authored) from the owner's decision on
 [`tv-dpad-sweep-2026-10-04.md`](../../research-reports/tv-dpad-sweep-2026-10-04.md) (§ *Open question for the owner:
 what comes next after an episode you finish*, options a/b/c). Server first (`HomeFeedService`), plus a small client
 change on the series page and one write at a shuffled stop. No new route, no new DTO field, no table, no migration,
@@ -405,3 +405,12 @@ R347's tick — `JellyfinSink` needs a live `JellyfinClient` (no `MockEngine` in
 Jellyfin 12.1 applies the date-only `UserData` write and its own stop doesn't overwrite it, and that a TV's Continue
 row follows within one refresh. A backend restart mid-play forgets `SessionPlan`, so that play moves the anchor (known
 gap, dev review item 7).
+
+### Amendment (2026-10-29, DEB-2916) — a newest-first series follows the newest, not the last played
+
+On a series marked **newest first** ([`a-newest-first-series-lists-and-plays-its-latest-episode.md`](a-newest-first-series-lists-and-plays-its-latest-episode.md)),
+FR-R375-3 and FR-R375-5 do not apply. Continue Watching offers only the series' **newest** episode — resume when it is in
+progress, *new* when it is unwatched, no entry when it is watched — and never the next episode in order (FR-6 there).
+`continue_episode_id` is the newest episode for every viewer, in the row or not (FR-5 there), and the page's primary
+button plays it (FR-10 there). FR-R375-4 still holds: the rule lives in the same one resolver (`planContinue`). Every
+other series is unchanged.
