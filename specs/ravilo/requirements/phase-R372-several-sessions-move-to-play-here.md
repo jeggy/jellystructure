@@ -472,6 +472,10 @@ with a next one is unchanged (the outgoing store already stops at its own playhe
 **FR-R372-11 — a browser tab that goes away ends its session.** Two halves, and the server half is the one that
 closes the class:
 
+> **Amended 2026-10-30 (DEB-2998).** On a computer a hidden page has not gone away: the client half's stop on
+> `visibilitychange → hidden` no longer applies there, and `pagehide` alone carries it (R376, FR-R376-4f, FR-R376-4g). A
+> phone or tablet keeps both events. The server half is unchanged.
+
 - **The server:** for a place that holds its events socket for as long as it exists — a browser tab, the Cast
   receiver, the screen app — an **abrupt** socket end with a session still open is read as *the place is gone*: the
   session goes `offline` at once and takes FR-R372-8's 10 min. A **clean** close carrying R293's `background` reason is

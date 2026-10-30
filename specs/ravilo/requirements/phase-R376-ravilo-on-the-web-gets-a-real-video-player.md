@@ -82,6 +82,9 @@ as on Android, with R218's 400 ms debounce and its strings — no new copy.
 > **Amended 2026-10-17 (DEB-1671).** The *Fullscreen* and *Orientation* bullets below are replaced for a browser tab
 > by FR-R376-4a–4e in the amendment at the end of this file: Play no longer enters full screen. *Background* and
 > *Media Session* are unchanged.
+>
+> **Amended 2026-10-30 (DEB-2998).** The *Background* bullet below is replaced on a computer by FR-R376-4f–4j in the
+> amendment at the end of this file: hiding the page no longer pauses or stops anything there. A phone or tablet keeps it.
 
 - **Fullscreen:** the player enters fullscreen on the **page element** (`document.documentElement.requestFullscreen()`,
   not the `<video>`, so the Compose chrome stays on top) when playback starts in a browser tab, and leaves it on exit.
@@ -137,7 +140,8 @@ hidden where unsupported (absent, never greyed). Uses R244's existing string set
 5. A throttled network (DevTools *Slow 4G*) shows R218's stall treatment; a seek shows its seek spinner.
 6. Fullscreen on start in a Chrome tab, exit on Back; Android rotates to landscape; the iPhone PWA plays full screen
    with the chrome on top. *(Replaced 2026-10-17 by the amendment's acceptance, DEB-1671.)*
-7. Hiding the tab pauses and reports progress; the OS media controls name the title.
+7. Hiding the tab pauses and reports progress; the OS media controls name the title. *(The first half now holds on a
+   phone or tablet only; on a computer it is replaced 2026-10-30 by the amendment's acceptance, DEB-2998.)*
 8. R216's QoE rows arrive from a browser session with frame counts.
 
 ## Tests
@@ -660,3 +664,128 @@ already full screen. Background and Media Session are as in FR-R376-4.
 - `PlayerScreen` is at R258's register limit: the control's availability and state go in the existing snapshot-state
   holder, as `hasPip` does — no new `var … by remember` locals.
 - No design round: one control in two existing slots, drawn with the components and strings already there.
+
+## Amendment 2026-10-30 — On a computer, a hidden tab keeps playing (DEB-2998)
+
+> Owner, 2026-10-30: *"When watching something in ravilo on the web. I don't want it to pause when switching tabs. I want
+> it continue playing and when coming back to the tab it should still play. No laggering/buffering should happen, just
+> because I'm switching tabs."*
+
+**What it replaces.** On a computer: FR-R376-4's *Background* bullet, the first half of acceptance item 7, and the
+`visibilitychange → hidden` half of FR-R372-11's client (R372 carries a note pointing here). *Media Session*, the
+`pagehide` stop and FR-R372-11's server half are unchanged. Client only, in `wasmJsMain` and `ravilo-web`; no wire change.
+
+**Why it buffers today.** The pause was this phase's own choice, not an owner's ask. `PlayerLifecycleEffect` (wasmJs)
+answers *hidden* with `player.pause()` and `onBackground(false)`: a resume record and `playback/stop`. It answers
+*visible* with `onForeground`: `armSession`, so a new ticket, a new start and hls.js from nothing at the record's place,
+paused. The buffering the owner sees is that fresh start. Dropping the hide path is what removes it. The desktop app
+already behaves this way: FR-R372-11 records that *"a minimised desktop keeps its film"*.
+
+### FR-R376-4f — Hiding the page on a computer changes nothing
+
+When the page goes hidden (another tab, a minimised window, a window the operating system reports as fully covered),
+the film or episode player and the Live TV player do nothing at all: no pause, no stop report, no resume record, no
+change to the events socket. Coming back does nothing either: no `onForeground`, no new ticket, no seek, no reload.
+
+A film that was playing is still playing, and a film the viewer paused is still paused. The session row goes on
+reporting as usual, and the hidden tab stays a place the session remote and the OS media controls can drive.
+
+This holds in a browser tab and in an installed app on a computer. A paused film in a hidden tab is the same case as a
+paused film in a visible one.
+
+### FR-R376-4g — Leaving still ends it
+
+`pagehide` keeps its stop, on the same `keepalive` road and through the same `away` latch (FR-R372-11), and so does the
+return from the back-forward cache. A browser that crashes, or discards a hidden paused tab to save memory, is
+FR-R372-11's server half: the socket's abrupt end takes the session `offline`, and the place is the last heartbeat's,
+at most about 10 s old while the tab was awake. A discarded tab that reloads opens the app, not the player. That cost is
+accepted.
+
+### FR-R376-4h — A phone or tablet keeps today's rule
+
+On iOS and Android (the tests already in the tree: `boot.js`'s `isIOS`, `PlayerImmersiveEffect`'s Android UA) hidden
+still pauses and takes the stop, and the return is still a paused fresh start. The PiP and AirPlay exemption stays.
+
+Decided by this seat from the owner's own rule, not asked: `visibilitychange` cannot tell a tab switch from a locked
+screen, and a phone playing on aloud in a pocket contradicts FR-R292-8a (*a screen going off means the viewer left*).
+The ask names tabs, which is a computer's situation; iOS stops a backgrounded page's video by itself anyway. Should the
+owner want a phone included too, this FR is the one condition to remove.
+
+### FR-R376-4i — The film does not wait for the tab
+
+Whatever the player does by itself while watched also happens while hidden, on time to within the throttled timers'
+second or so:
+
+- the progress heartbeat and FR-R372-10's end of play;
+- the next-up countdown and the start of the next episode, with its sound;
+- Skip Intro's and Skip Credits' automatic modes.
+
+With Autoplay next episode off, the player waits at the card as it does when watched.
+
+**Why this is its own FR.** Removing the hide path does not give this. Compose's frames come from
+`requestAnimationFrame` (`ui-wasm-js` 1.9.3 calls it and contains no `visibilitychange` handling), and a browser stops
+that callback for a hidden page. Timers go on at about 1 Hz, so `pollLoop` and `startHeartbeat`, which are `delay` loops,
+keep running. A state change that needs a recomposition should not land: `LaunchedEffect(s.nextUpVisible)` starts the
+countdown, and `replaceTop` of `Dest.Player` plus `startItem` start the next episode. The expected result is that a hidden
+tab reaches the end of an episode and sits there until the viewer returns. **This is read from the code and not yet
+measured, so measuring it is the build's first step**, in a hidden Chromium tab.
+
+**The remedy is the engineer's, inside these bounds.** The recommended shape is that while a player is up and the page is
+hidden, Compose is fed slow frames from a timer (about 1 Hz) in place of `requestAnimationFrame`, and at no other time.
+No second next-episode path outside Compose, since that is a second copy of a flow R182, R230 and R372 already own. No
+frames at full rate in a hidden page. A hidden page with no player up behaves exactly as it does today.
+
+### FR-R376-4j — Neither hiding nor returning causes buffering
+
+Across a hide and a return, on a connection that keeps up: no `waiting` event caused by either, the sound does not
+break, the position keeps advancing, no spinner shows, and the ladder (FR-309-16) takes no step down. hls.js's loop and
+the ladder rule run on the throttled timers, which is enough to keep a 60 s buffer full; the acceptance proves it. A
+hidden stretch's undecoded frames are not a stall in R216's QoE report: stalls stay counted from `waiting` alone
+(FR-R376-6).
+
+**Two limits the page does not own, measured rather than assumed:**
+
+- **The picture on return.** Chromium documents dropping the video track of a hidden MSE video with short keyframe
+  intervals, after about 10 s, and re-enabling it on return. That source dates from 2017 and today's behaviour is
+  unverified. The page cannot turn this off, so the picture may take a moment to catch up while the sound plays on.
+  Acceptance 6 measures it. **More than 1 s is a finding for the owner**, not a pass.
+- **A muted film.** Chrome's harsher throttling (timers once a minute, after 5 minutes hidden) spares a page only if it
+  has made sound recently. Acceptance 7 measures whether a muted film keeps up. If it does not, that goes to the owner
+  as a known limit with the numbers.
+
+### Non-goals
+
+Phones and tablets (FR-R376-4h). Casting, which plays elsewhere. The Android and desktop apps. Trailers. Any wire or
+server change.
+
+### Acceptance
+
+On a computer, against a transcoded film with sound, unless the item says otherwise:
+
+1. **Chrome.** Playing, switch to another tab for 30 s and back: same session, no `playback/stop` and no new
+   `playback/start` in between, sound unbroken, position about 30 s further on, no spinner, no `waiting`.
+2. **Chrome, long.** The same for 10 minutes hidden: the session stays `playing`, heartbeats keep arriving, and R216's
+   report shows no stall from it.
+3. **Paused.** Pause, hide for a minute, return: still paused at the place, same session, no new start. Play then
+   resumes with no reload.
+4. **The next episode.** An episode ends while hidden with Autoplay next episode on: the next one starts with sound,
+   with no return to the tab. With it off, the card waits. Returning afterwards shows the current state within a frame or
+   two, and the chrome is usable.
+5. **Leaving.** Closing a hidden tab, and closing a visible one, each end the session with the position, as FR-R372-11
+   requires.
+6. **The picture on return.** After 2 minutes hidden, time from the return to a moving picture in step with the sound,
+   on a film with an ordinary keyframe distance, in Chrome and Safari. Record the number. Over 1 s goes to the owner.
+7. **Muted.** A muted film hidden for 10 minutes in Chrome: does it keep up? Record stalls and the buffer ahead.
+8. **Safari on macOS.** Items 1 and 4. In particular, the next episode's start in a hidden tab keeps its sound.
+9. **Live TV.** Item 1 on a channel, in Chrome.
+10. **The remote.** Pause and play a hidden tab's film from the session remote on another device.
+11. **A phone still pauses.** Chrome on an Android phone: hide, and it pauses and stops as before. Return: paused at the
+    place.
+
+### Tests
+
+The hide/return/leave decision moves out of the `js()` handler into a small pure class in `commonMain`, in the manner of
+`PlayerLifecycleGate`, with a `commonTest`: on a computer *hidden* and *visible* answer nothing; `pagehide` answers one
+stop, and a second answers none; the return from it answers one foreground; on a phone *hidden* answers one stop, except
+in PiP or on AirPlay. `FR-R376-4i`'s frames and everything in the acceptance are browser facts, proved in the lab and by
+QA.
