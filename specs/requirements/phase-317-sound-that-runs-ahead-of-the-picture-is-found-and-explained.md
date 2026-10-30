@@ -55,6 +55,8 @@ late**. The reported broadcast's ≈ 150 ms early is past both.
   builds the others): PyTorch, SyncNet v2 + S3FD (code pinned by commit; weights fetched at build from VGG's URLs and
   checked by SHA-256, never committed — their licence is not stated), **jellyfin-ffmpeg 7** for `scale_cuda`,
   `tonemap_cuda` and dav1d. Published by `publish.yml` as a third matrix entry.
+  *(Amended 2026-10-31: the weights now come from our own pinned image, FR-317-43, and the sidecar has its own job
+  outside the matrix, FR-317-44.)*
 - Overlay `docker-compose.avsync.yml`, in the shape of `docker-compose.gpu.yml`: GPU reserved **by device id**
   (`device_ids: ['1']` on the household host; documented as "the card that does not transcode") with
   `capabilities: [gpu, compute, utility, video]` — `video` is what lets NVDEC in; without it every decode silently
@@ -2497,3 +2499,102 @@ the same way: no window repeats one from an earlier pass.
 37. A file stored `UNKNOWN` under the old plan is measured again with no button pressed. It ends with an answer, or
     with *can't tell* after at most fifteen windows. Its stored windows show the passes that ran, and ↻ is then
     blocked with FR-317-41's sentence.
+
+## Amendment (2026-10-31) — one university host cannot stop a build, and a sidecar that does not build stops only itself (FR-317-43, FR-317-44, DEB-3118)
+
+Publish failed on `df38f78b` and `118656e4` (2026-10-30) at the sidecar's weights download: `www.robots.ox.ac.uk`
+timed out from GitHub's runners and from our own server, while the `syncnet_python` git remote kept answering. Every
+`ci / *` job was green. That one failure cancelled the `jellystructure` and `ravilo-web` image jobs through the
+matrix's default `fail-fast` and skipped `mac`, `play-store`, `linux` and `tizen-tv` through `needs: publish`, so
+neither commit got a SHA-tagged image at all.
+
+This replaces two sentences of FR-317-1: *"weights fetched at build from VGG's URLs"* and *"as a third matrix entry"*.
+*"Checked by SHA-256, never committed"* stands.
+
+### What the build log says
+
+- **The download had been hidden by the cache, not avoided.** The last green run shows all six build steps `CACHED`.
+  The failed run reports `blob sha256:000d344b…: not found` on each of them, then rebuilds from nothing. That blob is
+  the 3.12 GB base-image layer, which `type=gha,mode=max` records in the cache manifest.
+- **Eviction is the likely cause; the log proves only the missing blob.** The repository's Actions cache held about
+  10 GB across 158 entries on 2026-10-31, which is GitHub's limit, and its largest entry was 892 MB, so that blob is
+  gone. A failed build exports nothing, so the cache cannot refill while the host is down.
+- **So the failure comes back.** The next eviction after any outage of that host would repeat it, on a push or on a
+  release run.
+
+### FR-317-43 — The weights come from our own released image
+
+- **The source is one pinned image.** `avsync/Dockerfile` copies `syncnet_v2.model` and `sfd_face.pth` from
+  `ghcr.io/jeggy/jellystructure-avsync:1.61@sha256:bbbc149cad4e310c88a7c1901e9bd42585f17883211bcd9f7637450f8ecb495c`
+  (a named stage and `COPY --from`). The digest decides what is copied; the tag is there for the reader.
+- **No build step connects to `www.robots.ox.ac.uk`.** Publish does not notice whether that host is up.
+- **The two SHA-256 checks stay,** with the same hashes, and run on the copied files. The hashes say what the weights
+  are; the image is only where they are fetched from. Checked 2026-10-31: both files in that image's layer
+  `4b6c9cdd…` match both hashes.
+- **The two VGG URLs stay in a Dockerfile comment,** as the weights' origin and the way to recover them.
+- **The code still comes from the pinned `git clone`.** That host is answering, and it is an ordinary build
+  dependency like `repo.jellyfin.org` and PyPI.
+- **Nothing is measured again.** The files are byte-identical, so the `model` string and `PIPELINE_VERSION` do not
+  change.
+- **A local build takes the same road.** The package is public and needs no login, so `docker build` and the compose
+  overlay's `build:` keep working.
+- **The pinned digest outlives any clean-up.** Nothing prunes this package today. Anything that ever does must keep
+  this digest. The pin moves only to an image whose files pass the same two hashes.
+
+**The licence.** The weights' licence is still not stated. This adds no new copy: no release asset, no mirror, no
+new package, and nothing committed. The same files are already inside every image of this package, and the package
+is public. FR-317-1's *"never committed"* therefore never meant *"never redistributed"*, and that was so before this
+amendment. Whether the public image should carry them at all is a separate question, which this amendment neither
+answers nor makes worse.
+
+### FR-317-44 — A sidecar that does not build stops only the sidecar
+
+- **The sidecar leaves the matrix for its own job** with `needs: [version, ci]`, so FR-231-4 still holds. **No other
+  job `needs` it.** The tags, `build-args` and `Verify the manifest platforms` behave as they do today.
+- **The job keeps its display name** exactly: `publish (jellystructure-avsync, avsync/Dockerfile, linux/amd64)`.
+  Everything that reads the job list keeps working.
+- **When it fails,** the `jellystructure` and `ravilo-web` images still finish and push, and on a release `mac`,
+  `play-store`, `linux` and `tizen-tv` still run.
+- **The run still ends `failure`.** The job carries no `continue-on-error`, because the CI watch (DEB-1212) reads a
+  run's `conclusion`. A leg that is red under a green run is a failure nobody is told about, which is what that
+  routine exists to end. This is why the sidecar gets its own job instead of a `continue-on-error` leg in the matrix.
+- **A red sidecar job is not a red CI.** The constitution's *"CI is green"* is the `ci / *` jobs, and they are
+  untouched. The commit may still be deployed; only the sidecar has no image at that SHA.
+- **What stays behind on a red sidecar:** no `:<sha>` on a push. On a release, `:latest` and `:<MAJOR.MINOR>` of the
+  sidecar stay where they were, and `gh run rerun --failed` finishes that job alone. A running sidecar is not
+  touched, and a stack without the overlay never pulls it.
+- **The deployment-order rules still bind.** A deploy whose backend needs the sidecar's new code, as FR-317-38's
+  *"never the backend alone"* did, waits for that job to go green. That is the deployer's reading of the diff under
+  `avsync/`. The workflow does not enforce it.
+- **`jellystructure` and `ravilo-web` stay one matrix with its default `fail-fast`.** They are deployed as a pair, and
+  nothing here asks to change that.
+
+### Deliberately not specified
+
+- **How the steps are shared** between the two jobs: a repeated job or a reusable workflow, whichever reads best.
+- **The sidecar's cache settings.** Once the weights are pinned, an eviction costs a few minutes of rebuild and
+  nothing else: the failing job ran 4 min 12 s, of which 136 s was the curl timeout. That its 3.12 GB base blob
+  competes with the Gradle caches for the 10 GB limit is a separate matter.
+
+### Tests
+
+The constitution asks for automated tests in CI, and both requirements have one:
+
+- **FR-317-43 is tested by the build itself.** The two `sha256sum` checks run inside the Publish job, on every cold
+  build.
+- **`scripts/check-avsync-publish.sh`,** run by `ci / checks`, fails when a non-comment line of `avsync/Dockerfile`
+  names `robots.ox.ac.uk`; when any job's `needs` in `publish.yml` names the sidecar's job; when that job carries
+  `continue-on-error`; or when its `needs` lacks `ci`.
+
+### Acceptance
+
+38. A Publish run on `main` builds the sidecar with `www.robots.ox.ac.uk` not contacted: `avsync/Dockerfile` names the
+    host only in a comment, and the job's log shows both `sha256sum` checks passing. Changing the Dockerfile
+    invalidates that build step, so the first run after the change is a real rebuild whatever the cache holds. The job
+    is green and the image is in GHCR at that SHA.
+39. `scripts/check-avsync-publish.sh` is green on `main` and goes red on each of its four cases when tried locally.
+    Publish's job list still shows the sidecar under the display name above, alongside the two matrix legs.
+40. **Not exercised end to end, and why.** Failing the sidecar's job on purpose would mean pushing a commit to `main`
+    that breaks a build, so a red sidecar beside green images is first seen at the next real failure. The guard
+    covers the structure that produces it. The QA ticket for this work carries acceptance 38 to 40 and needs no
+    device.
