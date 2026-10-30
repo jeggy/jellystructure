@@ -198,6 +198,17 @@ with an **audio layout** in place of the picture. It plays the ticket through th
 - **Fallback:** DEB-2627 FR-4 applies. A relay that has given no audio within 15 s re-tunes once with
   `via = "jellyfin"`, which hands back Jellyfin's own transcoding URL as an `hls` ticket.
 
+**Amendment 2026-10-31 (DEB-3113): the logo plate's mark is FR-6's dark-plate mark.** Found by QA on DEB-3080. The round
+drew a bare white glyph on a plate of initials, and a real logo with a white background hides it, leaving only a small arc
+at the logo's edge. This supersedes `.rd-pmark` in `design/ravilo/radio/`, which stays in the archive as drawn.
+- The radio player's plate carries the glyph **in FR-6's dark plate**, with a logo or without one. The bottom-right corner
+  and the glyph's size do not change. At 1920 wide, the dark plate is 68 px with a corner radius of 18, set 22 from the
+  right and 20 from the bottom, and the glyph is 44.
+- The dark plate covers that corner of the logo. A logo is never moved or shrunk to make room, and its brightness is
+  never measured to pick a mark.
+- **Test** (`desktopTest`, `RadioStationPlateMarkTest`): over a white logo, the dark plate reads dark and the glyph on it
+  reads white.
+
 ### Music mode (phone, Mac, Linux)
 
 **FR-9 — A Radio row on Music Home.**
