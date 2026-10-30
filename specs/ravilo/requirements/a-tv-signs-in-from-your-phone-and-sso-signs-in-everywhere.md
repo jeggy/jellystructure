@@ -514,3 +514,12 @@ This is written for any server. The household's concrete values, with host names
     administrator (DEB-2517).
   - `EnableLiveTv=true`, with `LiveTvManagementRoles` naming the same group. The plugin writes the Live TV permissions onto the account at **every** single sign-on, and its
     defaults would strip them from an adopted account (DEB-2502).
+
+**Amendment 2026-10-31 (DEB-3088) — FR-10's "one-minute window" is a prune, not a clock.** FR-10 lists *took too long* as "an unknown or expired state, including the plugin's one-minute
+window". QA measured otherwise on the live server. No code changes; the page was right throughout.
+
+- **Measured.** With no other sign-in starting, finishing at the identity provider after about 95 s and about 215 s still signed in. After about 650 s it answered *took too long*. A replayed,
+  already-used return answered the same.
+- **What holds.** A viewer has FR-9's ten minutes. The plugin only drops a state older than a minute when a **later** start reaches it (`Invalidate()`, read from its source for the investigation
+  on DEB-2233). So someone who takes more than a minute can also get *took too long* if anyone else starts a sign-in on that server meanwhile.
+- **That second path is read, not measured.** Either result is one the viewer can act on: they are signed in, or the page tells them to try again.
