@@ -92,12 +92,13 @@ fun DesktopMusicBar(
     val st by MusicPlayback.state.collectAsState()
     val t = st.current
     val b = st.book
-    if (t == null && b == null) return
-    val title = t?.title ?: b?.detail?.title.orEmpty()
+    val radio = st.radio   // DEB-2659 (FR-10) — a station: the programme and the station, LIVE in the seek line's place, ⏯ alone
+    if (t == null && b == null && radio == null) return
+    val title = radio?.title ?: t?.title ?: b?.detail?.title.orEmpty()
     // `.pb-t .s` — the artist, and where it plays when that is not this computer ("Harbour Lights · Stue").
     val castDevice = if (MusicCast.linked.collectAsState().value) MusicCast.deviceName.collectAsState().value else null
-    val sub = listOfNotNull(t?.let { artistLine(it) } ?: b?.detail?.authors?.joinToString(", ") { it.name }, castDevice).filter { it.isNotBlank() }.joinToString(" · ")
-    val image = t?.imageUrl ?: b?.detail?.coverUrl
+    val sub = listOfNotNull(radio?.subtitle(str("radio.live_radio")) ?: t?.let { artistLine(it) } ?: b?.detail?.authors?.joinToString(", ") { it.name }, castDevice).filter { it.isNotBlank() }.joinToString(" · ")
+    val image = radio?.coverUrl ?: t?.imageUrl ?: b?.detail?.coverUrl
     val live = rememberLivePosition()
     val cast = LocalCast.current
     // R360 (FR-R360-6, dev review item 7) — the bar's cast button follows the shared rule (music mode: speakers count).
@@ -148,22 +149,26 @@ fun DesktopMusicBar(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (!mac && !medium && b == null) BarButton(DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.text, str("music.shuffle")) { MusicPlayback.toggleShuffle() }
-                if (b != null) BookSkip(MusicIcon.BACK30, colors.text) { MusicPlayback.skipBy(-30_000) }
+                if (!mac && !medium && b == null && radio == null) BarButton(DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.text, str("music.shuffle")) { MusicPlayback.toggleShuffle() }
+                if (radio != null) Unit   // left out, not greyed: a station has no previous
+                else if (b != null) BookSkip(MusicIcon.BACK30, colors.text) { MusicPlayback.skipBy(-30_000) }
                 else BarButton(DeskIcon.PREVIOUS, colors.text, str("desk.key_prev")) { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.previous() }
                 val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
                 Box(Modifier.size(36.dp).clip(CircleShape).background(playBg).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
                     if (st.buffering) PlayingBars(true, playInk, 14.dp)
                     else DeskIcon(if (st.playing) DeskIcon.PAUSE else DeskIcon.PLAY, playInk, 16.dp)
                 }
-                if (b != null) BookSkip(MusicIcon.FWD30, colors.text) { MusicPlayback.skipBy(30_000) }
+                if (radio != null) Unit   // …and no next
+                else if (b != null) BookSkip(MusicIcon.FWD30, colors.text) { MusicPlayback.skipBy(30_000) }
                 else BarButton(DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, str("desk.key_next"), enabled = st.hasNext) { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() }
             }
-            SeekLine(live, st.durationMs, Modifier.weight(1f), times = !tight)
+            // FR-10 — LIVE replaces the seek line; a stopped or failed station shows none.
+            if (radio != null) Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { if (st.showsLive) RadioLiveMark() }
+            else SeekLine(live, st.durationMs, Modifier.weight(1f), times = !tight)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (!medium) BarButton(DeskIcon.LYRICS, if (onPlayingPage) colors.accentSecondary else colors.textSecondary, str("desk.show_lyrics"), on = onPlayingPage, onClick = if (onPlayingPage) onLeavePlaying else onOpenPlaying)
-                BarButton(DeskIcon.QUEUE, if (queueOpen) colors.accentSecondary else colors.textSecondary, str(if (queueOpen) "desk.close_queue" else "desk.show_queue"), on = queueOpen, onClick = onQueue)
-                if (cast != null && castShown) BarButton(DeskIcon.CAST, if (casting) colors.accentSecondary else colors.textSecondary, str("cast.sheet_music"), on = casting) { cast.openSheet(music = true) }
+                if (!medium && radio == null) BarButton(DeskIcon.LYRICS, if (onPlayingPage) colors.accentSecondary else colors.textSecondary, str("desk.show_lyrics"), on = onPlayingPage, onClick = if (onPlayingPage) onLeavePlaying else onOpenPlaying)
+                if (radio == null) BarButton(DeskIcon.QUEUE, if (queueOpen) colors.accentSecondary else colors.textSecondary, str(if (queueOpen) "desk.close_queue" else "desk.show_queue"), on = queueOpen, onClick = onQueue)
+                if (cast != null && castShown && radio == null) BarButton(DeskIcon.CAST, if (casting) colors.accentSecondary else colors.textSecondary, str("cast.sheet_music"), on = casting) { cast.openSheet(music = true) }
                 if (!medium) {
                     DeskIcon(DeskIcon.VOLUME, colors.textSecondary, 18.dp)
                     VolumeLine(Modifier.padding(start = 2.dp).width(70.dp))

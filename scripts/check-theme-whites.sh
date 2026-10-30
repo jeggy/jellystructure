@@ -32,6 +32,7 @@ ALLOWED="
   music/MusicCommon.kt                          4
   music/MusicDetailScreens.kt                   3
   music/MusicPlayerScreens.kt                   3
+  music/RadioMusic.kt                           3   # DEB-2659 — the LIVE mark's dot and word on its own red fill, and a logo-less station's initials on its gradient
   music/PlaylistPage.kt                         3   # DEB-2254 — the swipe panel's glyph and word and the confirm's *Delete*, all on the destructive fill (--pl-bad)
   components/RadioMark.kt                       2   # DEB-2658 — the radio mark's plate ring and glyph, over the plate's own fixed dark fill (design rd-markA)
   qr/QrCodeImage.kt                             1   # DEB-2324 — the QR tile: white in every skin on purpose, a scanner wants the contrast (DEB-2319)

@@ -128,6 +128,7 @@ fun MusicPlayingScreen(
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
     if (st.book != null) { BookPlayingScreen(api, books, onClose, onOpenBook, onOpenBookAuthor); return }
+    if (st.radio != null) { RadioPlayingScreen(st, onClose); return }   // DEB-2659 (FR-10) — a station: LIVE, ⏯ alone
     // R337 (FR-R337-7) — the desktop's Playing page: the cover beside the lyrics, the transport under the cover.
     if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { DeskPlaying(api, st, onOpenAlbum, onOpenArtist, onTrackMore, onFavorite); return }
     val portrait = LocalPortrait.current
@@ -519,6 +520,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
     var dragDy by remember { mutableFloatStateOf(0f) }
     Box(Modifier.fillMaxSize().background(if (panel) colors.card else colors.background)) {
         val cur = st.current
+        // DEB-2659 (FR-10) — a station has no queue: *Up next* and this screen show nothing (a station is never in `queue`, so `cur` is null).
         if (cur == null) EmptyLine(str("music.queue_empty"))
         // R337 — inside the desktop's queue panel there is no app bar to clear.
         else LazyColumn(contentPadding = PaddingValues(top = if (showAppBar) RaviloDimens.appBarHeight + 6.dp else 0.dp, bottom = 24.dp)) {
@@ -653,6 +655,7 @@ fun MusicMiniBar(onOpen: () -> Unit) {
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
     if (st.book != null) { BookMiniBar(onOpen); return }   // R323 (FR-R323-7)
+    if (st.radio != null) { RadioMiniBar(st, onOpen); return }   // DEB-2659 (FR-10)
     val t = st.current ?: return
     val live = rememberLivePosition()
     val scope = rememberCoroutineScope()

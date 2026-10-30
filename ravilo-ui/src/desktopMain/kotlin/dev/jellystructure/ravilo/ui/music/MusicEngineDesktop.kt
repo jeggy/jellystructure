@@ -13,8 +13,10 @@ import dev.jellystructure.ravilo.ui.desktop.DesktopEngines
 import dev.jellystructure.ravilo.ui.desktop.DesktopPaths
 import dev.jellystructure.ravilo.ui.raviloBaseUrl
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
+import dev.jellystructure.ravilo.ui.screens.liveSignalStarted
 import dev.jellystructure.shared.tv.AudiobookDetail
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
@@ -107,9 +109,57 @@ actual object MusicEngine {
         }
     }
 
+    // ── DEB-2659 (DEB-2628 FR-10): a radio station, a live item ──
+
+    /** The station's tune: the heartbeat, the programme turnover and the one fallback are the tuner's; the player is this engine's. */
+    private val radioTuner: RadioTuner = RadioTuner(
+        scope = scope,
+        api = { client()?.asRadioApi() },
+        capabilities = { musicCapabilities.copy(hlsOnly = true) },
+        baseUrl = { client()?.baseUrl.orEmpty() },
+        listener = object : RadioListener {
+            override fun onLoad(stream: RadioStream) {
+                endHandled = false; failed = false
+                player.load(stream.url, if (stream.hls) "" else stream.contentType.orEmpty(), 0L)
+                player.setRate(1f)
+                applyVolume(1f)
+                player.play()
+                MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.LIVE)
+                MacNowPlaying.artwork(nowPlaying, radioTuner.radio?.coverUrl?.let { absolute(it) })
+                startMonitor()
+                publish()
+            }
+            override fun onChanged(radio: RadioLive) { MacNowPlaying.artwork(nowPlaying, radio.coverUrl?.let { absolute(it) }); updateCard(); publish() }
+            override fun onFailed() { failed = true; player.release(); updateCard(); publish() }
+        },
+        closing = { work -> TeardownWork.track(scope.launch { work() }) },
+    )
+
+    /** Another kind of item takes the engine (or the bar is closed): the station's tune closes, and its player goes. */
+    private fun endRadio() {
+        if (radioTuner.radio == null) return
+        radioTuner.stop()
+        player.release()
+        MacNowPlaying.release(nowPlaying)
+        failed = false
+    }
+
+    actual fun playRadio(station: LiveTvChannel) {
+        // One listening queue at a time: the songs and the book go, their sessions are closed, and the saved queue with them.
+        loadJob?.cancel()
+        closeSong()
+        dropBook()
+        player.release()
+        q.clear(); context = null; ended = false; failed = false; parkedPositionMs = 0L
+        MusicQueueStore.clear(); BookLastStore.clear()
+        radioTuner.start(station)
+        publish()
+    }
+
     init {
         // FR-R328-9 — quitting reports the open song's stop (and a book's place) before the process ends.
         DesktopShutdown.register {
+            radioTuner.closeOpenStream()   // DEB-2659 — quitting on a station closes its tune, so the admin's live row goes
             val id = openTrackId ?: return@register
             val pos = lastPositionMs
             val c = client()
@@ -236,6 +286,20 @@ actual object MusicEngine {
             while (isActive && player.loaded) {
                 val s = player.state
                 lastPositionMs = s.positionMs
+                if (radioTuner.radio != null) {
+                    // A station draws nothing and never ends: it is heard when the player is past buffering with a position off zero.
+                    if (radioTuner.listening) {
+                        val wasLoading = radioTuner.loading
+                        if (liveSignalStarted(radio = true, renderedFirstFrame = false, isBuffering = s.buffering, positionMs = s.positionMs)) radioTuner.heard()
+                        if (s.failed) radioTuner.onPlayerError()
+                        if (wasLoading && !radioTuner.loading) publish()
+                    }
+                    val playing = radioTuner.listening && s.wantsPlay && !failed
+                    if (playing != lastPlaying || s.buffering != lastBuffering) { lastPlaying = playing; lastBuffering = s.buffering; publish() }
+                    if (n++ % 4 == 0) updateCard()
+                    delay(250)
+                    continue
+                }
                 if (openTrackId != null && s.ended && !endHandled) { endHandled = true; onSongEnded() }
                 if (s.failed && !failed && openTrackId != null) { failed = true; publish() }
                 val playing = s.wantsPlay && !s.ended && !s.failed
@@ -254,6 +318,11 @@ actual object MusicEngine {
 
     private fun updateCard() {
         val s = player.state
+        radioTuner.radio?.let { r ->
+            // A live item: no duration, no position — Control Center shows it as a live stream, without a seek bar.
+            MacNowPlaying.update(nowPlaying, r.title, r.subtitle(liveRadioLabel()), null, -1L, 0L, 1.0, radioTuner.listening && !failed, video = false)
+            return
+        }
         val b = book
         if (b != null) {
             val d = b.detail
@@ -268,6 +337,16 @@ actual object MusicEngine {
     }
 
     private fun publish() {
+        radioTuner.radio?.let { r ->
+            val s = player.state.takeIf { radioTuner.listening && player.loaded }
+            _state.value = MusicPlayerState(
+                radio = r,
+                playing = radioTuner.listening && !failed,
+                buffering = radioTuner.listening && !failed && (radioTuner.loading || s?.buffering == true),
+                failed = failed,
+            )
+            return
+        }
         val s = player.state.takeIf { openTrackId != null }
         val track = q.current
         val b = book
@@ -292,6 +371,7 @@ actual object MusicEngine {
     }
 
     private fun save() {
+        if (radioTuner.radio != null) return   // a station is not a queue: nothing to resume after a restart
         val uid = MultiTokenStore.getActive()?.userId ?: return
         book?.let { BookLastStore.save(uid, it.id); MusicQueueStore.clear(); return }
         if (q.tracks.isEmpty()) { MusicQueueStore.clear(); return }
@@ -302,6 +382,7 @@ actual object MusicEngine {
 
     actual fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean) {
         if (tracks.isEmpty()) return
+        endRadio()
         endBook()
         this.context = context
         q.set(tracks, startIndex, shuffle)
@@ -310,6 +391,7 @@ actual object MusicEngine {
 
     actual fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) {
         if (tracks.isEmpty()) return
+        endRadio()
         closeSong()
         dropBook()
         player.release()
@@ -325,6 +407,8 @@ actual object MusicEngine {
     actual fun togglePlay() { if (_state.value.playing) pause() else play() }
 
     actual fun play() {
+        // A station is not paused, it is stopped: play tunes it again at the live edge (FR-10).
+        radioTuner.radio?.let { if (!radioTuner.listening || failed) { failed = false; radioTuner.retune(); publish() }; return }
         book?.let { b ->
             if (b.finished) return
             if (openTrackId == null && !failed && loadJob?.isActive == true) { pendingPlay = true; return }
@@ -337,15 +421,20 @@ actual object MusicEngine {
         else { player.play(); publish() }
     }
 
-    actual fun pause() { player.pause(); publish(); save(); reportProgress() }
+    actual fun pause() {
+        if (radioTuner.radio != null) { radioTuner.endTune(); player.release(); updateCard(); publish(); return }   // stopped, not paused: the tune closes
+        player.pause(); publish(); save(); reportProgress()
+    }
 
     actual fun next() {
+        if (radioTuner.radio != null) return
         if (book != null) { skipBy(30_000L); return }
         val n = q.skipIndex(repeat) ?: return
         startSong(n, 0L, true)
     }
 
     actual fun previous() {
+        if (radioTuner.radio != null) return
         if (book != null) { skipBy(-30_000L); return }
         if (currentPositionMs() > 3_000L) { seekTo(0L); return }
         val p = q.previousIndex()
@@ -353,6 +442,7 @@ actual object MusicEngine {
     }
 
     actual fun seekTo(positionMs: Long) {
+        if (radioTuner.radio != null) return   // live: nothing to seek in
         if (openTrackId != null) { player.seekTo(positionMs.coerceAtLeast(0L)); endHandled = false } else parkedPositionMs = positionMs.coerceAtLeast(0L)
         if (ended && positionMs > 0) ended = false
         publish()
@@ -361,15 +451,17 @@ actual object MusicEngine {
     actual fun playAt(index: Int) { if (index in q.tracks.indices) startSong(index, 0L, true) }
 
     actual fun cycleRepeat() {
+        if (radioTuner.radio != null) return
         repeat = when (repeat) { RepeatMode.OFF -> RepeatMode.ALL; RepeatMode.ALL -> RepeatMode.ONE; RepeatMode.ONE -> RepeatMode.OFF }
         publish()
     }
 
-    actual fun toggleShuffle() { q.setShuffle(!q.shuffled); publish(); save() }
+    actual fun toggleShuffle() { if (radioTuner.radio != null) return; q.setShuffle(!q.shuffled); publish(); save() }
     actual fun move(from: Int, to: Int) { q.move(from, to); publish(); save() }
     actual fun remove(index: Int) { q.remove(index); publish(); save() }
 
     actual fun playNext(track: MusicTrackItem) {
+        endRadio()
         endBook()
         val wasEmpty = q.current == null
         q.insertNext(track)
@@ -377,12 +469,13 @@ actual object MusicEngine {
     }
 
     actual fun replaceQueue(tracks: List<MusicTrackItem>, index: Int) {
-        if (tracks.isEmpty() || book != null) return
+        if (tracks.isEmpty() || book != null || radioTuner.radio != null) return
         q.restore(tracks, index)
         publish(); save()
     }
 
     actual fun addToQueue(track: MusicTrackItem) {
+        endRadio()
         endBook()
         val wasEmpty = q.current == null
         q.append(track)
@@ -390,6 +483,7 @@ actual object MusicEngine {
     }
 
     actual fun clear() {
+        radioTuner.stop()
         loadJob?.cancel()
         closeSong()
         dropBook()
@@ -402,6 +496,8 @@ actual object MusicEngine {
     }
 
     actual fun stopForVideo() {
+        // A video took the screen: the station stops (its tune closes) and stays on the bar, so play tunes it again.
+        if (radioTuner.radio != null) { radioTuner.endTune(); player.release(); MacNowPlaying.release(nowPlaying); publish(); return }
         if (openTrackId == null) return
         val pos = currentPositionMs()
         loadJob?.cancel()
@@ -414,17 +510,19 @@ actual object MusicEngine {
     }
 
     actual fun retry() {
+        if (radioTuner.radio != null) { play(); return }
         book?.let { startPart(it.part, currentPositionMs(), true); return }
         if (q.current != null) startSong(q.index, currentPositionMs(), true)
     }
 
     actual fun skip() {
+        if (radioTuner.radio != null) { clear(); return }   // there is nothing to skip to: the failed station is closed
         if (book != null) { retry(); return }
         val n = q.skipIndex(repeat)
         if (n != null) startSong(n, 0L, true) else { failed = false; publish() }
     }
 
-    actual fun currentPositionMs(): Long = if (openTrackId != null && player.loaded) player.state.positionMs else parkedPositionMs
+    actual fun currentPositionMs(): Long = if (radioTuner.radio != null) 0L else if (openTrackId != null && player.loaded) player.state.positionMs else parkedPositionMs
 
     actual fun setEvenVolume(on: Boolean) {
         MusicPrefs.evenVolume = on
@@ -521,6 +619,7 @@ actual object MusicEngine {
 
     actual fun playBook(detail: AudiobookDetail, part: Int, positionMs: Long, play: Boolean) {
         if (detail.parts.isEmpty()) return
+        endRadio()
         if (q.current != null || book?.id != detail.id) {
             loadJob?.cancel()
             closeSong()

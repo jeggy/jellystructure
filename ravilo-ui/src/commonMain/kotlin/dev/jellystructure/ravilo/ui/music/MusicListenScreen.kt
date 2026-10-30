@@ -87,7 +87,7 @@ fun MusicListenScreen(
                 ) {
                     if (desk) item(key = "title") { DeskPageTitle(listenTitle) { if (playAllShown) PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) } }
                     if (books != null) continueListeningRow(books, onResumeBook)
-                    items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
+                    items(s.value.rows.filter(::listenRowShown), key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
                 }
                 // R345 — a failed load is not "no music": it says why (most often, the server could not be reached).
                 Load.Failed -> dev.jellystructure.ravilo.ui.components.LoadErrorState(
@@ -122,22 +122,27 @@ private fun ListenRow(
 ) {
     val title = when (row.key) {
         "recent" -> str("mhome.recent_albums"); "played" -> str("mhome.recent_played"); "artists" -> str("mhome.artists")
+        "radio" -> str("radio.label")   // DEB-2659 (FR-9) — the row's title in the viewer's language, not the server's
         else -> row.title   // R326 (FR-R326-6) — no Mix row
     }
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.padding(horizontal = raviloHPad)) {
             MusicSectionHeader(title, onSeeAll = if (row.key == "played") onSeeAllPlayed else null)
         }
-        when {
-            row.tracks.isNotEmpty() -> Column(Modifier.padding(horizontal = raviloHPad)) {
+        when (listenRowKind(row)) {
+            ListenRowKind.TRACKS -> Column(Modifier.padding(horizontal = raviloHPad)) {
                 row.tracks.forEachIndexed { i, t ->
                     TrackRow(t, showCover = true, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
                 }
             }
-            row.artists.isNotEmpty() -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            ListenRowKind.ARTISTS -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(row.artists, key = { it.id }) { r -> ArtistCardView(r, if (isDesktopLayout) 120.dp else 96.dp) { onOpenArtist(r.id) } }
             }
-            else -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // DEB-2659 (FR-9) — the last row: square logo tiles the size of the album cards; a tile plays the station at once.
+            ListenRowKind.RADIO -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(row.stations, key = { it.channelId }) { st -> RadioStationTile(st, if (isDesktopLayout) 150.dp else 140.dp) { MusicPlayback.playRadio(st) } }
+            }
+            ListenRowKind.ALBUMS -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // FR-R321-5 — square cards two and a half across.
                 items(row.albums, key = { it.id }) { a -> AlbumCardView(a, if (isDesktopLayout) 150.dp else 140.dp, onOpen = { onOpenAlbum(a.id) }) }
             }

@@ -29,6 +29,7 @@ actual object MusicEngine {
     actual fun playNext(track: MusicTrackItem) = Unit
     actual fun addToQueue(track: MusicTrackItem) = Unit
     actual fun replaceQueue(tracks: List<MusicTrackItem>, index: Int) = Unit
+    actual fun playRadio(station: dev.jellystructure.shared.tv.LiveTvChannel) = Unit   // DEB-2659 — no music mode on the web (FR-10 non-goal)
     actual fun clear() = Unit
     actual fun stopForVideo() = Unit
     actual fun retry() = Unit

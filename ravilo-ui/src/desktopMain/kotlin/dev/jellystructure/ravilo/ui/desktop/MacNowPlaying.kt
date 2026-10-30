@@ -15,7 +15,8 @@ import javax.swing.SwingUtilities
  * owner may change or clear it, so a film that stops cannot wipe the card a song has since taken.
  */
 internal object MacNowPlaying {
-    enum class Mode(val code: Int) { FILM(0), MUSIC(1), BOOK(2) }
+    /** DEB-2659 — [LIVE] is a radio station: play and pause only, no seek, no next or previous, and the card says it is a live stream. */
+    enum class Mode(val code: Int) { FILM(0), MUSIC(1), BOOK(2), LIVE(3) }
 
     /** What a media key asks, as NowPlaying.swift numbers it. */
     enum class Command { PLAY, PAUSE, TOGGLE, NEXT, PREVIOUS, SEEK_TO, SKIP_FORWARD, SKIP_BACK, STOP }

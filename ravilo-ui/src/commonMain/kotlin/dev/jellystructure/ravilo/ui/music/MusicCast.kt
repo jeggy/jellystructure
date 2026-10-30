@@ -359,6 +359,17 @@ object MusicPlayback {
         dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()   // FR-R368-8 (amended): this app's player takes the bar back
         if (casting || MusicCast.holdsDevice) MusicCast.playQueue(tracks, startIndex, context, shuffle) else MusicEngine.playQueue(tracks, startIndex, context, shuffle)
     }
+    /**
+     * DEB-2659 (DEB-2628 FR-10) — a station from the Radio row: tune it and play it on this device's engine, as a live item
+     * that replaces the queue. A speaker that is connected is let go first, as an album started elsewhere would take its queue:
+     * playing a station ON a speaker is FR-11's, and until it lands a station that played here while the bar still showed the
+     * speaker's queue would be audible and invisible at once.
+     */
+    fun playRadio(station: dev.jellystructure.shared.tv.LiveTvChannel) {
+        dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()
+        if (casting || MusicCast.holdsDevice) MusicCast.stop()
+        MusicEngine.playRadio(station)
+    }
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = MusicEngine.loadPaused(tracks, index, positionMs, context)
     /**
      * Found with the Pixel and the Mac pausing the same cast at once (2026-10-05): a press decided play-or-pause from the

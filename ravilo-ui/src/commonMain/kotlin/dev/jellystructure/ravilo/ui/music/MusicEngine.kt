@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.music
 
 import dev.jellystructure.shared.tv.AudiobookDetail
+import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.flow.StateFlow
@@ -42,10 +43,18 @@ data class MusicPlayerState(
     val ended: Boolean = false,
     /** R323 — a book instead of songs (one listening queue at a time). [positionMs]/[durationMs] are then the part's. */
     val book: BookPlayback? = null,
+    /**
+     * DEB-2659 (DEB-2628 FR-10) — a radio station instead of songs or a book: a live item with no queue, no seek and no
+     * next. [queue] is empty, [durationMs] 0 and [positionMs] 0. [playing] is the viewer's wish as for a song; a station
+     * that is paused, stopped or failed is still here, and *play* tunes it again.
+     */
+    val radio: RadioLive? = null,
 ) {
     val current: MusicTrackItem? get() = queue.getOrNull(index)
-    val active: Boolean get() = current != null || book != null
-    val hasNext: Boolean get() = index in queue.indices && (index < queue.lastIndex || repeat == RepeatMode.ALL)
+    val active: Boolean get() = current != null || book != null || radio != null
+    val hasNext: Boolean get() = radio == null && index in queue.indices && (index < queue.lastIndex || repeat == RepeatMode.ALL)
+    /** FR-10 — the LIVE mark replaces the seek bar, and shows only while the station plays: stopped or failed shows none. */
+    val showsLive: Boolean get() = radio != null && playing && !failed
     val upNext: List<MusicTrackItem> get() = if (index in queue.indices) queue.drop(index + 1) else emptyList()
 }
 
@@ -87,6 +96,12 @@ expect object MusicEngine {
      * queue edit): [tracks] is the whole queue and [index] the playing song's place in it. The song plays on.
      */
     fun replaceQueue(tracks: List<MusicTrackItem>, index: Int)
+    /**
+     * DEB-2659 (DEB-2628 FR-10) — tune [station] and play it as a live item. The queue (or the book) is replaced and its
+     * session closed; any song, album or book started after it closes the station's tune.
+     */
+    fun playRadio(station: LiveTvChannel)
+
     /** FR-R322-10 — the mini bar's swipe-down: stop, and the queue is gone. */
     fun clear()
     /** FR-R322-12 — a video took the screen: the song stops (the queue stays, paused where it was). */

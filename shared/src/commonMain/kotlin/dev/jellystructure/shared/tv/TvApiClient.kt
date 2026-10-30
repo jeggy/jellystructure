@@ -456,8 +456,9 @@ class TvApiClient(
 
     // ─── Phase 279 — music (the phone's music mode) ──────────────────────────
 
-    suspend fun getMusicHome(): MusicHome {
-        val r = client.get("$baseUrl/api/tv/music/home") { auth() }
+    /** DEB-2659 (DEB-2628 FR-2, FR-9) — [radio] asks for the Radio row (the last one) as well; the backend sends stations only to a client that does. */
+    suspend fun getMusicHome(radio: Boolean = false): MusicHome {
+        val r = client.get("$baseUrl/api/tv/music/home") { auth(); if (radio) parameter("radio", 1) }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())
     }

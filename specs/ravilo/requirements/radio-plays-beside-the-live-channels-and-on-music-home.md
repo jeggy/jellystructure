@@ -232,6 +232,15 @@ While a station plays:
 - **Errors:** a station that fails to start shows the engine's existing *couldn't play* state with the station's name.
   The fallback is the same as FR-8's.
 
+**Amendment 2026-10-30 (DEB-2659):** two facts the spec took as given, found while building FR-10.
+- **Linux has no MPRIS surface.** MPRIS is R336's and was never built: no code in `ravilo-ui` or `ravilo-desktop` publishes
+  a media player on the bus, so there is nothing for the *Linux* line of *System controls* to configure. The Linux build
+  of FR-10 is the engine, the bar and the Playing page; the MPRIS clause (`CanSeek`, `CanGoNext`, `CanGoPrevious` false)
+  is carried by R336 when it lands, and is a requirement on it. The Android and Mac lines are built here.
+- **A speaker that is connected when a Radio tile is tapped is let go first**, as a song or album started from the phone
+  would take its queue, and the station then plays on this device. Playing it *on* the speaker is FR-11's. Until FR-11
+  lands, the alternative is a station that is audible on this device while the bar still shows the speaker's queue.
+
 **FR-11 — A station plays on a speaker like a song.**
 - **What the phone or Mac sends:** a station started while a speaker is linked goes to the speaker. The sender's
   `CastLoadData` gains `radio: CastRadioItem?`, carrying `channel_id`, `name`, `logo_url` and `programme`. When it is

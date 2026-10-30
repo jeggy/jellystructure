@@ -28,7 +28,7 @@ internal object MacDockMenu {
         return when (mode) {
             Mode.MUSIC -> listOf(toggle, Item("mac.dock.next", Command.NEXT), Item("mac.dock.previous", Command.PREVIOUS))
             Mode.BOOK -> listOf(toggle, Item("mac.dock.forward_30", Command.SKIP_FORWARD, 30.0), Item("mac.dock.back_30", Command.SKIP_BACK, 30.0))
-            Mode.FILM -> listOf(toggle)
+            Mode.FILM, Mode.LIVE -> listOf(toggle)
         }
     }
 

@@ -4,7 +4,8 @@
 //
 // Commands: 1 play · 2 pause · 3 toggle · 4 next · 5 previous · 6 seek to [value] seconds · 7 skip forward [value]
 // seconds · 8 skip back [value] seconds · 9 stop.
-// Modes: 0 a film (play/pause/seek) · 1 music (+ next/previous) · 2 an audiobook (+ ±30 s instead of next/previous).
+// Modes: 0 a film (play/pause/seek) · 1 music (+ next/previous) · 2 an audiobook (+ ±30 s instead of next/previous) ·
+// 3 a live radio station (play/pause only; the card is a live stream, with no duration and no position — DEB-2659).
 
 import AppKit
 import Foundation
@@ -15,6 +16,7 @@ public typealias RaviloRemoteCallback = @convention(c) (Int32, Double) -> Void
 private var remoteCallback: RaviloRemoteCallback?
 private var commandsInstalled = false
 private var artwork: MPMediaItemArtwork?
+private var liveStream = false
 
 private func send(_ command: Int32, _ value: Double = 0) -> MPRemoteCommandHandlerStatus {
     guard let cb = remoteCallback else { return .noActionableNowPlayingItem }
@@ -58,7 +60,8 @@ public func ravilo_nowplaying_set_mode(_ mode: Int32) {
         c.previousTrackCommand.isEnabled = mode == 1
         c.skipForwardCommand.isEnabled = mode == 2
         c.skipBackwardCommand.isEnabled = mode == 2
-        c.changePlaybackPositionCommand.isEnabled = true
+        c.changePlaybackPositionCommand.isEnabled = mode != 3
+        liveStream = mode == 3
     }
 }
 
@@ -77,7 +80,11 @@ public func ravilo_nowplaying_update(_ title: UnsafePointer<CChar>, _ artist: Un
         ]
         if !a.isEmpty { info[MPMediaItemPropertyArtist] = a }
         if !al.isEmpty { info[MPMediaItemPropertyAlbumTitle] = al }
-        if durationMs >= 0 { info[MPMediaItemPropertyPlaybackDuration] = Double(durationMs) / 1000.0 }
+        if liveStream {
+            // A live item: Control Center draws LIVE in place of the scrubber.
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+            info.removeValue(forKey: MPNowPlayingInfoPropertyElapsedPlaybackTime)
+        } else if durationMs >= 0 { info[MPMediaItemPropertyPlaybackDuration] = Double(durationMs) / 1000.0 }
         if let art = artwork { info[MPMediaItemPropertyArtwork] = art }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = playing != 0 ? .playing : .paused
