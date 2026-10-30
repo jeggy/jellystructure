@@ -19,7 +19,7 @@ data class RemoteModel(
     /** A place's icon key ([dev.jellystructure.ravilo.ui.components.placeIcon]); null = the screen glyph. */
     val placeIcon: String?,
     val status: CastRemoteStatus,
-    /** `film` · `episode` · `music` · `audiobook` — what plays decides the shape (FR-1), never which driver is behind it. */
+    /** `film` · `episode` · `music` · `audiobook` · `radio` — what plays decides the shape (FR-1), never which driver is behind it. */
     val kind: String,
     /** The place cannot be reached right now (*Lost contact*, or *offline*): the controls are greyed (FR-5.4). */
     val unreachable: Boolean = false,
@@ -60,8 +60,14 @@ fun serverCanSubtitleSize(ops: Set<String>): Boolean = "set_subtitle_size" in op
 /** FR-5.3 — a control the place cannot do is absent; the link offers everything, the server says its ops. */
 fun RemoteModel.offers(op: String): Boolean = ops == null || op in ops
 
-/** DEB-2611 (FR-1) — a song or a book: the interim music shape, with no subtitle control of any kind. */
-val RemoteModel.musicShape: Boolean get() = kind == "music" || kind == "audiobook"
+/**
+ * DEB-2611 (FR-1) — a song or a book: the interim music shape, with no subtitle control of any kind. DEB-2660 (DEB-2628 FR-11):
+ * a station is drawn in it too (the station under the programme, the logo kept whole, no tracks), with its own transport.
+ */
+val RemoteModel.musicShape: Boolean get() = kind == "music" || kind == "audiobook" || kind == "radio"
+
+/** DEB-2660 (DEB-2628 FR-11) — the radio shape: ⏯ and the volume block, LIVE where the seek bar would be; no skip, shuffle, repeat or *Up next*. */
+val RemoteModel.radioShape: Boolean get() = kind == "radio"
 
 /**
  * FR-3 — *Audio & Subs* is offered where the place obeys an audio or subtitle op and has something to pick. A `music` or
@@ -72,7 +78,9 @@ fun RemoteModel.offersTracks(): Boolean =
         (ops == null || status.audioTracks.size > 1 || status.subtitleTracks.isNotEmpty())
 
 /** The remote's kind from the session's own (DEB-2611): a song or a book keeps its kind; the rest are FR-2's two shapes. */
-fun remoteKindOf(sessionKind: String?, episodeLike: Boolean = false): String = when {
+fun remoteKindOf(sessionKind: String?, episodeLike: Boolean = false, radio: Boolean = false): String = when {
+    // DEB-2660 (DEB-2628 FR-11) — a live radio item is a `radio` remote, never a `film`, whatever else the row or the report says.
+    radio || sessionKind == "radio" -> "radio"
     sessionKind == "music" || sessionKind == "audiobook" -> sessionKind
     sessionKind == "episode" || episodeLike -> "episode"
     else -> "film"

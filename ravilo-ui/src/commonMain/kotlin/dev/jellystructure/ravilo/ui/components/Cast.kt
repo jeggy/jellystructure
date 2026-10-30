@@ -200,6 +200,25 @@ class CastController(
         }
     }
 
+    /**
+     * DEB-2660 (DEB-2628 FR-11) — a station on the connected speaker or group: one LOAD with no tracks, carrying the station. The
+     * receiver tunes it itself and plays it live. The title is the programme at this moment (the station's name with none) and
+     * the kicker the station, so the sender's own card reads right before the receiver says a word.
+     */
+    fun castRadio(radio: dev.jellystructure.shared.tv.CastRadioItem, lang: String = "en", onError: (Throwable) -> Unit = {}) {
+        scope.launch {
+            val code = runCatching { api.castHandoff(linkedDeviceKey()) }.getOrElse { onError(it); return@launch }
+            val meta = dev.jellystructure.shared.tv.castRadioMeta(radio) { it?.let { u -> if (u.startsWith("http")) u else serverUrl.trimEnd('/') + u } }
+            load(CastLoadData(
+                serverUrl = serverUrl, code = code.code, itemId = radio.channelId, title = meta.title, kicker = meta.artist, artUrl = meta.imageUrl,
+                deviceName = sender.deviceName.value, receiverId = sender.status.value?.receiverId, lang = lang, radio = radio,
+            ))
+        }
+    }
+
+    /** DEB-2660 (FR-11) — connected to a speaker or a speaker group: a station may go there. A display is never sent one. */
+    val connectedToSpeaker: Boolean get() = connected && !connectedForVideo
+
     /** R324 (dev review 5) — a queue edit, a mode or the lyrics switch, sent to the receiver as one command. */
     fun musicCommand(type: String, index: Int? = null, to: Int? = null, track: CastTrackItem? = null, on: Boolean? = null, mode: String? = null) {
         sender.send(json.encodeToString(CastCommand.serializer(), CastCommand(type, index = index, to = to, track = track, on = on, mode = mode)))

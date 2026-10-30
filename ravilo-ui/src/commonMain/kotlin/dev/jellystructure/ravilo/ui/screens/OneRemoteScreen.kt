@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -84,6 +86,7 @@ import dev.jellystructure.ravilo.ui.remote.OneRemote
 import dev.jellystructure.ravilo.ui.remote.RemoteActions
 import dev.jellystructure.ravilo.ui.remote.RemoteOnScreen
 import dev.jellystructure.ravilo.ui.remote.musicShape
+import dev.jellystructure.ravilo.ui.remote.radioShape
 import dev.jellystructure.ravilo.ui.remote.offers
 import dev.jellystructure.ravilo.ui.remote.offersTracks
 import dev.jellystructure.ravilo.ui.remote.viewOnly
@@ -195,7 +198,10 @@ fun OneRemoteScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     val art = s.artUrl
-                    if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = if (m.musicShape) ContentScale.Fit else ContentScale.Crop, requestedWidth = 1280)
+                    // DEB-2660 (FR-11) — a station's logo is a square on the station's own gradient, with the radio mark, as in FR-10's Playing.
+                    if (m.radioShape) dev.jellystructure.ravilo.ui.music.StationSquare(
+                        dev.jellystructure.ravilo.ui.music.castRadioLive(s).station, Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true), corner = 16.dp)
+                    else if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = if (m.musicShape) ContentScale.Fit else ContentScale.Crop, requestedWidth = 1280)
                     else Text(s.title ?: name, color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(24.dp))
                     if (s.buffering && !unreachable) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
                 }
@@ -256,7 +262,7 @@ fun OneRemoteScreen(
 
                 // ── Next-up mirrored (the receiver owns the countdown; cancelling is SENT) ──
                 val nextUp = s.nextUpSecs
-                if (nextUp != null && !unreachable && !m.viewOnly && m.canNextUp) {
+                if (nextUp != null && !unreachable && !m.viewOnly && m.canNextUp && !m.radioShape) {   // DEB-2660 — a station has no *Up next*
                     Column(
                         Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(14.dp),
                     ) {
@@ -272,8 +278,15 @@ fun OneRemoteScreen(
                 }
 
                 // ── Seek bar + times (read-only for someone else's, and where the place takes no seek) ──
-                val seekOffered = m.offers("seek") && !m.viewOnly
+                val seekOffered = m.offers("seek") && !m.viewOnly && !m.radioShape
                 val transportEnabled = remoteTransportEnabled(s, unreachable)
+                if (m.radioShape) {
+                    // DEB-2660 (FR-11) — a station has no seek bar and no times: LIVE takes its place while it plays, and nothing does while it is stopped or failed.
+                    Row(Modifier.fillMaxWidth().heightIn(min = 28.dp).testTag("remote-live"), verticalAlignment = Alignment.CenterVertically) {
+                        if (s.playing && !s.failed && !unreachable) dev.jellystructure.ravilo.ui.music.RadioLiveMark()
+                        if (m.feedback == CommandFeedback.SPINNER) CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.dp, modifier = Modifier.padding(start = 10.dp).size(14.dp).testTag("remote-spinner"))
+                    }
+                } else {
                 RemoteSeekBar(
                     colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled && seekOffered,
                     readOnly = !seekOffered,
@@ -285,6 +298,7 @@ fun OneRemoteScreen(
                     Text(hmsLabel(if (scrubbing) scrubPos else s.positionMs), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                     if (m.feedback == CommandFeedback.SPINNER) CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.dp, modifier = Modifier.size(14.dp).testTag("remote-spinner"))
                     Text(hmsLabel(s.durationMs), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
+                }
                 }
 
                 // ── Transport (absent for someone else's; each control only where the place obeys its op) ──
@@ -308,7 +322,10 @@ fun OneRemoteScreen(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (short || song) 16.dp else 30.dp),
                         modifier = Modifier.alpha(if (!transportEnabled) 0.4f else if (m.feedback == CommandFeedback.DIM) 0.5f else 1f).testTag("remote-transport")) {
-                        if (song) {
+                        if (m.radioShape) {
+                            // DEB-2660 (FR-11) — ⏯ alone: no shuffle, previous, next, repeat or skip.
+                            playPause()
+                        } else if (song) {
                             if (m.offers("set_shuffle")) RemoteGlyphButton(MusicIcon.SHUFFLE, if (m.shuffle) colors.accentSecondary else colors.textDim, transportEnabled, "remote-shuffle") { act.setShuffle(!m.shuffle) }
                             if (m.offers("previous")) RemoteGlyphButton(MusicIcon.PREVIOUS, colors.text, transportEnabled, "remote-prev") { act.previous() }
                             playPause()
@@ -353,17 +370,19 @@ fun OneRemoteScreen(
                 when {
                     m.viewOnly -> {}
                     state == RemoteState.FAILED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        s.itemId?.let { id -> RemotePill(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
+                        // DEB-2660 (FR-11) — a station that could not play is sent to the speaker again; there is no *Play here* for it.
+                        if (m.radioShape) RemotePill(str("music.try_again"), primary = true, modifier = Modifier.testTag("remote-retry-radio")) { dev.jellystructure.ravilo.ui.music.MusicCast.retryRadio() }
+                        s.itemId?.takeIf { !m.radioShape }?.let { id -> RemotePill(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
                         if (m.offers("stop")) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.testTag("remote-stop")) { doStop() }
                     }
                     s.ended -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        s.itemId?.let { id -> RemotePill(str("action.play_again"), primary = true) { onPlayAgain(id) } }
+                        s.itemId?.takeIf { !m.radioShape }?.let { id -> RemotePill(str("action.play_again"), primary = true) { onPlayAgain(id) } }
                         if (m.leavesOnStop) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.testTag("remote-stop")) { doStop() }
                         else RemotePill(str("action.close"), primary = false, modifier = Modifier.testTag("remote-close"), onClick = onBack)
                     }
                     else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                         if (m.offersTracks()) RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f).testTag("remote-tracks")) { RemoteOnScreen.trackSheetOpen.value = true }
-                        if (s.hasNext && m.offers("next") && m.kind != "music") RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f).testTag("remote-next")) { act.next() }
+                        if (s.hasNext && m.offers("next") && m.kind != "music" && !m.radioShape) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f).testTag("remote-next")) { act.next() }
                         if (m.offers("stop")) RemotePill(str("cast.stop_room"), primary = false, modifier = Modifier.weight(1f).testTag("remote-stop")) {
                             if (m.confirmStop) confirmStop = true else doStop()
                         }

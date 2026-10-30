@@ -522,7 +522,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         queueParts.reset()
         // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
-            music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
+            music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle,
+            radio = data.radio != null)   // DEB-2660 (FR-11) — a station: the programme, the station and the logo are title, kicker and art
         // R266 (FR-R266-3) — the Ravilo TV app answers a refused LOAD with a media error, not with the web receiver's own
         // `failed` message: fold it in as one, so the remote shows R237's *couldn't play this* rather than *Paused* at 0:00
         // (found on the soveværelse TV, 2026-10-05). A load replaced or cancelled by a newer one is not a failure.

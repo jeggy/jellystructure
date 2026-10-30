@@ -89,7 +89,7 @@ internal fun RadioLiveMark(compact: Boolean = false) {
 
 /** A station's square: the logo (kept whole) on the station's own gradient, with the radio mark in the top-right corner. The caller gives it its size. */
 @Composable
-private fun StationSquare(station: LiveTvChannel, modifier: Modifier, corner: Dp, mark: Boolean = true) {
+internal fun StationSquare(station: LiveTvChannel, modifier: Modifier, corner: Dp, mark: Boolean = true) {
     val hue = ((station.name.fold(0L) { h, c -> (h * 31 + c.code) and 0xFFFFFFFFL }) % 360L).toFloat()
     BoxWithConstraints(
         modifier.clip(RoundedCornerShape(corner)).background(Brush.linearGradient(listOf(Color.hsl(hue, 0.46f, 0.36f), Color.hsl((hue + 40f) % 360f, 0.52f, 0.14f)))),

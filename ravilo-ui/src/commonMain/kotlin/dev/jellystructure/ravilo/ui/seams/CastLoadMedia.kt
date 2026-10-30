@@ -19,7 +19,13 @@ internal fun castLoadMedia(data: CastLoadData, json: Json = RaviloWireJsonWithDe
     val song = data.tracks.getOrNull(data.currentIndex)
     fun abs(url: String?) = url?.let { if (it.startsWith("http")) it else data.serverUrl.trimEnd('/') + it }
     val metadata = buildJsonObject {
-        if (song != null) {
+        if (data.radio != null) {
+            // DEB-2660 (FR-11) — a station's card: the logo · the programme (the station's name with none) · the station.
+            put("metadataType", 3)
+            put("title", data.title)
+            data.kicker?.let { put("artist", it) }
+            abs(data.artUrl ?: data.radio?.logoUrl)?.let { url -> putJsonArray("images") { add(buildJsonObject { put("url", url) }) } }
+        } else if (song != null) {
             // R324 (FR-R324-9) — a song's card: cover · title · artist; the receiver rewrites it per song.
             put("metadataType", 3)
             put("title", song.title)
@@ -35,8 +41,8 @@ internal fun castLoadMedia(data: CastLoadData, json: Json = RaviloWireJsonWithDe
     }
     return buildJsonObject {
         put("contentId", "ravilo://${data.itemId}")
-        put("streamType", "BUFFERED")
-        put("contentType", if (song != null) "audio/mpeg" else "application/x-mpegURL")
+        put("streamType", if (data.radio != null) "LIVE" else "BUFFERED")   // DEB-2660 — the receiver replaces both with the relay's
+        put("contentType", if (song != null || data.radio != null) "audio/mpeg" else "application/x-mpegURL")
         put("metadata", metadata)
         put("customData", json.encodeToJsonElement(CastLoadData.serializer(), data))
     }

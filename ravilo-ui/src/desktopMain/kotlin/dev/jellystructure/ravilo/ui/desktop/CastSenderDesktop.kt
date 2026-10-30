@@ -355,7 +355,8 @@ internal object CastSenderDesktop : CastSender {
         queueParts.reset()
         // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
-            music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
+            music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle,
+            radio = data.radio != null)   // DEB-2660 (FR-11) — a station: the programme, the station and the logo are title, kicker and art
         // FR-R359-2 — CastLoadData rides once, as the media's customData (the one the receiver reads); the request's is left out.
         val bytes = s.load(media, (data.positionMs ?: 0L) / 1000.0, autoplay = true, customData = null)
         // The parts go after the LOAD (the receiver also holds a part that overtakes it).

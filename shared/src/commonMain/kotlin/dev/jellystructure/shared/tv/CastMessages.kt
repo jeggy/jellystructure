@@ -51,6 +51,18 @@ data class CastTrackItem(
 )
 
 /**
+ * DEB-2660 (DEB-2628 FR-11) — a radio station in a LOAD: what the receiver needs to tune it itself and to say what plays.
+ * [programme] is the programme now at the moment of the load (null with no guide); the speaker's display does not turn it over.
+ */
+@Serializable
+data class CastRadioItem(
+    @SerialName("channel_id") val channelId: String,
+    val name: String,
+    @SerialName("logo_url") val logoUrl: String? = null,
+    val programme: String? = null,
+)
+
+/**
  * The LOAD request's `customData`. [code] is the single-use hand-off code; [receiverId] is the
  * receiver's own persisted device id when its storage survived since the last cast (so the same
  * `ravilo_device` row is reused), else null. [positionMs] is set only when the phone hands a live
@@ -75,6 +87,9 @@ data class CastLoadData(
     // 286 (FR-286-4) — a music LOAD: the queue, in play order; [currentIndex] is the song to start. Empty = a film
     // or an episode as before. A receiver older than this field ignores all three.
     val tracks: List<CastTrackItem> = emptyList(),
+    /** DEB-2660 (DEB-2628 FR-11) — a radio station instead of a film or songs; [tracks] is empty when it is set. A receiver
+     *  older than this field ignores it. Only ever sent to a speaker or a speaker group, never to a TV over R380's road. */
+    val radio: CastRadioItem? = null,
     /** `off` · `all` · `one` */
     val repeat: String = "off",
     val shuffle: Boolean = false,
@@ -193,6 +208,11 @@ data class CastReceiverMessage(
     @SerialName("position_ms") val positionMs: Long? = null,
     /** DEB-2456 (FR-R330-7a) — music only: true while the song plays, false while paused or buffering. Null as [positionMs]. */
     val playing: Boolean? = null,
+    /**
+     * DEB-2660 (DEB-2628 FR-11) — true while the receiver plays a radio station: [title] is the programme (the station's name with
+     * none), [kicker] the station, [artUrl] its logo, [playing] the play state, and there is no queue. Null from a receiver older than this field.
+     */
+    val radio: Boolean? = null,
 )
 
 /** Phone → receiver. 286/R324 add `prev` · `play_at` · `queue_move` · `queue_remove` · `queue_add` · `queue_play_next`

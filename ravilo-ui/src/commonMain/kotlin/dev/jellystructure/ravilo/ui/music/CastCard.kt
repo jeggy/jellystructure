@@ -25,6 +25,8 @@ data class CastCard(
     val hasNext: Boolean,
     /** The device's volume, 0.0–1.0; null when it does not say. */
     val volume: Double?,
+    /** DEB-2660 (DEB-2628 FR-11) — a station: live, unseekable, with no next and no previous. */
+    val live: Boolean = false,
 )
 
 /**
@@ -47,6 +49,11 @@ fun castCard(link: CastLinkState, st: CastRemoteStatus?, volume: Double?, music:
         )
     }
     val title = st.title ?: return null
+    if (st.radio) return CastCard(
+        key = st.itemId ?: title, title = title, subtitle = st.kicker, album = null, artUrl = st.artUrl,
+        positionMs = 0L, durationMs = 0L, playing = st.playing, buffering = st.buffering,
+        music = true, hasNext = false, volume = volume, live = true,
+    )
     return CastCard(
         key = st.itemId ?: title, title = title, subtitle = st.kicker, album = null, artUrl = st.artUrl,
         positionMs = st.positionMs, durationMs = st.durationMs, playing = st.playing, buffering = st.buffering,

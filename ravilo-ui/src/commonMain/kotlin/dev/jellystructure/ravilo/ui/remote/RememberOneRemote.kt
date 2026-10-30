@@ -78,7 +78,9 @@ fun rememberOneRemote(
         val linkDetail = view?.let { lv -> detail?.takeIf { it.session.id == lv.id } }
         return linkRemote(
             LinkActions(cast), castStatus ?: CastRemoteStatus(), unreachable, deviceName.orEmpty(), view, linkDetail, extras,
-            linkVolume = if (desktop && !unreachable) { m -> dev.jellystructure.ravilo.ui.screens.RemoteVolume(cast, m) } else null,
+            // DEB-2660 (FR-11) — a station's group level is on every platform's remote (a song's rooms come from its session).
+            linkVolume = if ((desktop || castStatus?.radio == true) && !unreachable) { m -> dev.jellystructure.ravilo.ui.screens.RemoteVolume(cast, m) } else null,
+            radioRooms = { RadioRoomsPanel(cast) },
         )
     }
     val v = view ?: return null
@@ -117,8 +119,10 @@ fun rememberOneRemote(
 internal fun linkRemote(
     actions: RemoteActions, status: CastRemoteStatus, unreachable: Boolean, placeName: String, view: SessionView?,
     detail: SessionDetail?, extras: RemoteExtras, linkVolume: (@Composable (androidx.compose.ui.Modifier) -> Unit)?,
+    /** DEB-2660 (FR-11) — a station's rooms and *Add a speaker…*, read off the link: it has no session to draw them from. */
+    radioRooms: (@Composable () -> Unit)? = null,
 ): OneRemote {
-    val kind = remoteKindOf(view?.kind, episodeLike = status.hasNext || status.kicker != null)
+    val kind = remoteKindOf(view?.kind, episodeLike = status.hasNext || status.kicker != null, radio = status.radio)
     val music = kind == "music" || kind == "audiobook"
     // A song's artist (a book's chapter) rides on the server's row when the receiver does not say it.
     val s = if (music && status.kicker == null) status.copy(kicker = view?.subtitle) else status
@@ -131,7 +135,11 @@ internal fun linkRemote(
     return OneRemote(
         model, actions, extras,
         linkVolume = if (rooms) null else linkVolume,
-        sessionVolume = if (rooms && !unreachable) { { extras.volume?.invoke(detail!!) } } else null,
+        sessionVolume = when {
+            rooms && !unreachable -> ({ extras.volume?.invoke(detail!!); Unit })
+            kind == "radio" && !unreachable -> radioRooms
+            else -> null
+        },
     )
 }
 

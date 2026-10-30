@@ -4,7 +4,10 @@ import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.seams.CastRemoteStatus
 import dev.jellystructure.shared.tv.AudiobookDetail
+import dev.jellystructure.shared.tv.CastRadioItem
 import dev.jellystructure.shared.tv.CastTrackItem
+import dev.jellystructure.shared.tv.LiveTvChannel
+import dev.jellystructure.shared.tv.LiveTvProgramInfo
 import dev.jellystructure.shared.tv.MusicArtistRef
 import dev.jellystructure.shared.tv.MusicTrackItem
 import kotlinx.coroutines.CoroutineScope
@@ -80,7 +83,7 @@ object MusicCast {
                 _status.value = st
                 _device.value = name
                 _linked.value = nowLinked
-                holdsDevice = link == CastLinkState.CONNECTED && (st == null || st.music || !st.loaded || st.ended || st.failed)
+                holdsDevice = link == CastLinkState.CONNECTED && (st == null || st.music || st.radio || !st.loaded || st.ended || st.failed)
                 if (nowLinked && st?.itemId != lastItemId) { lastItemId = st?.itemId; barHidden.value = false }
                 if (nowLinked && st != null) follow(st)
                 // FR-R324-3 — the session just connected from the music-mode sheet: hand the phone's queue over, or
@@ -237,8 +240,36 @@ object MusicCast {
     }
     private const val FOLLOW_SAVE_MS = 15_000L
 
+    /**
+     * DEB-2660 (DEB-2628 FR-11) — a station on the speaker: the radio shape of FR-10 (no queue, no seek, LIVE), built from what the
+     * receiver says. Nothing is handed back from it when the cast ends: a station replaced the queue.
+     */
+    fun playRadio(station: LiveTvChannel) {
+        val c = cast ?: return
+        handOver = null; heard = false
+        lastMusic = null; lastMusicAt = null   // the station replaces the speaker's queue; no song of it comes back
+        barHidden.value = false
+        dev.jellystructure.ravilo.ui.seams.sessionLog("DEB-2660: radio ${station.channelId} to ${c.sender.deviceName.value}")
+        c.castRadio(CastRadioItem(channelId = station.channelId, name = station.name, logoUrl = station.logoUrl, programme = station.currentProgram?.name))
+    }
+
+    /**
+     * DEB-2660 (FR-11) — *Try again* on a station the speaker could not play: the same station is sent to it again. False when the
+     * speaker's last word was not about a station. The receiver went idle when it failed, so a plain *play* would reach nothing.
+     */
+    fun retryRadio(): Boolean {
+        val c = cast ?: return false
+        val st = _status.value?.takeIf { it.radio && it.itemId != null } ?: return false
+        val live = castRadioLive(st)
+        c.castRadio(CastRadioItem(channelId = live.station.channelId, name = live.station.name, logoUrl = live.station.logoUrl, programme = live.programme?.name))
+        return true
+    }
+
     /** The receiver's snapshot as the screens' [MusicPlayerState]. */
     fun state(st: CastRemoteStatus): MusicPlayerState {
+        if (st.radio) return MusicPlayerState(
+            playing = st.playing, buffering = st.buffering, failed = st.failed, ended = st.ended, radio = castRadioLive(st),
+        )
         val queue = st.queue.map { known[it.id] ?: it.toItem() }
         return MusicPlayerState(
             queue = queue, index = st.queueIndex.coerceIn(-1, queue.lastIndex), context = context,
@@ -361,13 +392,17 @@ object MusicPlayback {
     }
     /**
      * DEB-2659 (DEB-2628 FR-10) — a station from the Radio row: tune it and play it on this device's engine, as a live item
-     * that replaces the queue. A speaker that is connected is let go first, as an album started elsewhere would take its queue:
-     * playing a station ON a speaker is FR-11's, and until it lands a station that played here while the bar still showed the
-     * speaker's queue would be audible and invisible at once.
+     * that replaces the queue. With a speaker or a speaker group linked it goes there instead (DEB-2660, FR-11: [MusicCast.playRadio]);
+     * a linked display is let go first, as an album started elsewhere would take its queue, and the station plays here.
      */
     fun playRadio(station: dev.jellystructure.shared.tv.LiveTvChannel) {
         dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()
-        if (casting || MusicCast.holdsDevice) MusicCast.stop()
+        // DEB-2660 (DEB-2628 FR-11) — a station started while a speaker (or a speaker group) is linked goes to the speaker. A display
+        // is never sent one: it is let go of, as an album started elsewhere would take its queue, and the station plays here.
+        if (casting || MusicCast.holdsDevice) {
+            if (MusicCast.controller?.connectedToSpeaker == true) { MusicCast.playRadio(station); return }
+            MusicCast.stop()
+        }
         MusicEngine.playRadio(station)
     }
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = MusicEngine.loadPaused(tracks, index, positionMs, context)
@@ -471,7 +506,21 @@ fun castHandBack(last: CastRemoteStatus?, elapsedMs: Long, endedByApp: Boolean):
  * not (not loaded, not ended, position 0) and used to overwrite the song's place.
  */
 fun castMusicLive(link: CastLinkState, st: CastRemoteStatus?): Boolean =
-    link == CastLinkState.CONNECTED && st != null && st.music && st.loaded && !st.ended && !st.failed
+    link == CastLinkState.CONNECTED && st != null && (st.music || st.radio) && st.loaded && !st.ended && !st.failed
+
+/**
+ * DEB-2660 (DEB-2628 FR-11) — the station a speaker says it plays, as FR-10's [RadioLive]: the station is the kicker, the logo the
+ * art, and the title is the programme unless it is only the station's name again (no guide).
+ */
+fun castRadioLive(st: CastRemoteStatus): RadioLive {
+    val name = st.kicker ?: st.title.orEmpty()
+    val programme = st.title?.takeIf { it.isNotBlank() && it != name }?.let { LiveTvProgramInfo(name = it, startMs = 0L, endMs = 0L) }
+    val station = LiveTvChannel(
+        channelId = st.itemId.orEmpty(), name = name, number = 0, order = 0, shown = true, logoUrl = st.artUrl,
+        category = "", hasGuide = programme != null, kind = "radio",
+    )
+    return RadioLive(station, programme)
+}
 
 /**
  * R358 — the song and place this device had when it handed the music to a device: the place to come back to when the

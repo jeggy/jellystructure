@@ -196,16 +196,21 @@ internal class CastRemotePlayer(private val actions: Actions) : SimpleBasePlayer
             .setMediaItem(MediaItem.Builder().setMediaId(c.key).setMediaMetadata(meta).build())
             .setMediaMetadata(meta)
             .setDurationUs(if (c.durationMs > 0) c.durationMs * 1000 else C.TIME_UNSET)
-            .setIsSeekable(true)
+            .setIsSeekable(!c.live)
+            .setIsDynamic(c.live)   // DEB-2660 (FR-11) — a station is live: no end, nowhere to seek
             .build()
         val playlist = if (c.hasNext) listOf(now, MediaItemData.Builder("next:${c.key}").setMediaItem(MediaItem.Builder().setMediaId("next:${c.key}").build()).build()) else listOf(now)
         val commands = Player.Commands.Builder().addAll(
             Player.COMMAND_PLAY_PAUSE, Player.COMMAND_GET_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_METADATA, Player.COMMAND_GET_TIMELINE,
-            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_DEVICE_VOLUME,
+            Player.COMMAND_GET_DEVICE_VOLUME,
             Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS, Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
         ).apply {
-            if (c.music) addAll(Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-            else addAll(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
+            if (!c.live) add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+            when {
+                c.live -> Unit   // a station: ⏯ and the volume only
+                c.music -> addAll(Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                else -> addAll(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
+            }
             if (c.hasNext) addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
         }.build()
         return State.Builder()

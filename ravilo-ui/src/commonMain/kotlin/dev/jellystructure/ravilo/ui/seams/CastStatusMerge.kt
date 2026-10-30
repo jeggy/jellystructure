@@ -62,6 +62,9 @@ fun castStatusWithQueue(prev: CastRemoteStatus?, queue: List<CastTrackItem>, rev
 
 fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: CastMediaSnapshot, event: String?, nowMs: Long): CastRemoteStatus {
     val p = prev ?: CastRemoteStatus()
+    // DEB-2660 (DEB-2628 FR-11) — a status that says `radio`: the receiver plays a station, with no queue of any kind. What the
+    // phone held of an earlier queue goes, and so does its revision, so a song after the station asks for its queue afresh.
+    val station = said?.type == "status" && said.radio == true
     // R356 (FR-R356-7) — no media status at all (the SDK has not heard from the receiver yet, or lost it): what was last
     // known stands. It read as "not playing, at 0:00" — the loading dots and 0:00 / -0:00 while the speaker played on.
     val unknown = media.playerState == null
@@ -82,14 +85,15 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
     // FLAC (the guest-room speaker, 2026-09-30: the bar read 2:17 of 0:00 and had no progress), and the last song's
     // length must not stand in for the next one's.
     // R356 (FR-R356-9) — a status may leave the queue out (unchanged since the receiver last sent it): the copy held stands.
-    val queue = said?.queue ?: p.queue
-    val queueRev = if (said?.queue != null) said.queueRev else p.queueRev
+    val queue = if (station) emptyList() else said?.queue ?: p.queue
+    val queueRev = if (station) null else if (said?.queue != null) said.queueRev else p.queueRev
     val itemId = said?.itemId ?: p.itemId
     // A gap (a newer revision this sender has not got yet): the index belongs to a queue it does not hold, so the song
     // the receiver names is looked up in the queue held, until `get_queue` answers.
     val gap = said != null && said.queue == null && said.queueRev != null && said.queueRev != p.queueRev
     val saidIndex = said?.queueIndex
     val queueIndex = when {
+        station -> -1
         saidIndex == null -> p.queueIndex
         gap && queue.getOrNull(saidIndex)?.id != itemId -> queue.indexOfFirst { it.id == itemId }.takeIf { it >= 0 } ?: p.queueIndex
         else -> saidIndex
@@ -103,7 +107,7 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         kicker = said?.kicker ?: media.subtitle ?: p.kicker,
         artUrl = said?.artUrl ?: media.imageUrl ?: p.artUrl,
         positionMs = media.positionMs?.coerceAtLeast(0) ?: p.positionMs,
-        durationMs = duration,
+        durationMs = if (station) 0L else duration,
         // 2026-10-05 — BUFFERING (after a seek, a stall) is neither: the last known stands. It read as *Paused* on
         // the phone's bar while the TV kept playing.
         playing = if (unknown || media.playerState == "BUFFERING" || (counting && idle)) p.playing else media.playerState == "PLAYING",
@@ -126,7 +130,8 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         subSize = said?.subSize?.firstOrNull() ?: p.subSize,
         receiverId = said?.receiverId ?: p.receiverId,
         // R324 (FR-R324-4/8) — the receiver's queue snapshot, rebuilt from its word (286 dev review 10).
-        music = said?.queue?.isNotEmpty() ?: p.music,
+        music = if (station) false else said?.queue?.isNotEmpty() ?: p.music,
+        radio = if (said?.type == "status") station else p.radio,
         queue = queue,
         queueIndex = queueIndex,
         repeat = said?.repeat ?: p.repeat,

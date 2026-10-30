@@ -62,6 +62,11 @@ data class CastRemoteStatus(
     val lyricsOn: Boolean? = null,
     /** R356 (FR-R356-9) — the receiver's revision of [queue]; null from a receiver that predates R356 or before any. */
     val queueRev: Int? = null,
+    /**
+     * DEB-2660 (DEB-2628 FR-11) — the receiver plays a radio station: [title] is the programme (the station's name with none),
+     * [kicker] the station and [artUrl] its logo. A station has no queue, so [music] is false, and no seek.
+     */
+    val radio: Boolean = false,
 )
 
 interface CastSender {

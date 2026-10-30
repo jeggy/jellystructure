@@ -15,6 +15,12 @@ import dev.jellystructure.shared.tv.CastDecodeProbe
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
+import dev.jellystructure.shared.tv.CAST_RADIO_COMMANDS
+import dev.jellystructure.shared.tv.CastRadioTune
+import dev.jellystructure.shared.tv.asCastRadioApi
+import dev.jellystructure.shared.tv.castRadioMayRetune
+import dev.jellystructure.shared.tv.castRadioMeta
+import dev.jellystructure.shared.tv.castRadioStatus
 import dev.jellystructure.shared.tv.CastTrackItem
 import dev.jellystructure.shared.tv.CastNext
 import dev.jellystructure.shared.tv.castNextIndex
@@ -94,6 +100,8 @@ private const val LYRICS_KEY = "ravilo.cast.lyrics"
 private const val TRANSPORT_MS = 5_000L
 /** R356 (FR-R356-14b) — after another controller's STOP, how long before the app closes (CAF tells the senders first). */
 private const val SENDER_STOP_CLOSE_MS = 400L
+/** DEB-2660 — what a film is offered again after a station narrowed the commands to pause and volume. */
+private val FILM_COMMANDS = listOf("PAUSE", "SEEK", "STREAM_VOLUME", "STREAM_MUTE", "EDIT_TRACKS")
 /** R357 (FR-R357-4) — how long the device's volume must hold still before it is reported (a dragged slider is one report). */
 private const val VOLUME_SETTLE_MS = 300L
 /** R359 (FR-R359-4) — how long the rest of a long queue may take before the songs held are taken as the queue. */
@@ -183,6 +191,15 @@ private class Receiver {
     /** Null until the first LOAD asked; true on an audio-only device (FR-286-3), where no screen is ever built. */
     private var headless: Boolean? = null
     private val music: Boolean get() = current?.tracks?.isNotEmpty() == true
+
+    // ── DEB-2660 (DEB-2628 FR-11) — a radio station on a speaker: the receiver tunes it itself and plays it as a live item ──
+    /** The station playing, or null. A station is not [music] (it has no queue) and not a film (it has no session). */
+    private val radio: dev.jellystructure.shared.tv.CastRadioItem? get() = current?.radio
+    private val radioTune = CastRadioTune(GlobalScope, { api?.asCastRadioApi() }, { audioCapabilities() }, { serverUrl })
+    /** When a finished station was tuned again (the upstream dropped a paused listener): three in a minute, then it has failed. */
+    private val radioRetunes = mutableListOf<Long>()
+    /** A station narrowed the commands this device offers (pause and volume): a film after it gets its own back. */
+    private var commandsNarrowed = false
     private var lyricsOn = localStorage.getItem(LYRICS_KEY) == "1"
     private var lyrics: TrackLyrics? = null
     private var lyricsJob: Job? = null
@@ -223,6 +240,7 @@ private class Receiver {
     private fun idle() {
         // R354 (FR-R354-7) — back at the idle view: the events socket closes (`1000 idle`), the paused heartbeat stops.
         pausedBeat?.cancel(); pausedBeat = null
+        radioTune.stopInBackground()   // DEB-2660 (FR-11) — an idle receiver holds no tune
         syncEvents()
         el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
@@ -496,7 +514,7 @@ private class Receiver {
             ReceiverRemoteAction.Play -> { playerManager.play(); if (music) showTransport() }
             ReceiverRemoteAction.Pause -> { playerManager.pause(); if (music) showTransport() }
             ReceiverRemoteAction.Stop -> if (music) musicEnded() else stopFilm()
-            is ReceiverRemoteAction.Seek -> { playerManager.seek(action.positionMs / 1000.0); if (music) showTransport() }
+            is ReceiverRemoteAction.Seek -> if (radio == null) { playerManager.seek(action.positionMs / 1000.0); if (music) showTransport() }   // a station cannot seek
             ReceiverRemoteAction.MusicNext -> { showTransport(); musicNext(byViewer = true) }
             ReceiverRemoteAction.MusicPrevious -> { showTransport(); musicPrevious() }
             ReceiverRemoteAction.EpisodeNext -> loadNext()
@@ -617,7 +635,11 @@ private class Receiver {
         introSkipped = false
         isHeadless()
         val api = apiFor(data.serverUrl)
-        if (data.tracks.isNotEmpty()) return interceptMusic(request, data, api)
+        // DEB-2660 (FR-11) — a station is tuned by this device itself; any other load closes the tune of the station it replaces.
+        if (data.radio != null) return interceptRadio(request, data, api)
+        radioTune.stopInBackground()
+        if (data.tracks.isNotEmpty()) { commandsNarrowed = false; return interceptMusic(request, data, api) }
+        if (commandsNarrowed) { commandsNarrowed = false; setCommands(FILM_COMMANDS) }
         el("loading-kicker").textContent = data.kicker ?: ""
         el("loading-title").textContent = data.title
         el("loading-label").textContent = ReceiverStrings.t("loading")
@@ -837,6 +859,99 @@ private class Receiver {
 
 
     // ── 286 — music ──
+
+    /**
+     * DEB-2660 (DEB-2628 FR-11) — a station: enrol as the casting viewer, tune it as this device (`POST /tv/livetv/channels/{id}/tune`),
+     * load the relay as a LIVE item with the ticket's type and the programme as title, the station as artist and the logo as image,
+     * and offer pause and volume only. No session opens: a station is not in `playback_session` (DEB-2627 FR-5.4).
+     */
+    private suspend fun interceptRadio(request: dynamic, data: CastLoadData, api: TvApiClient): dynamic {
+        val r = data.radio ?: return request
+        val meta = castRadioMeta(r, ::absolute)
+        current = data.copy(itemId = r.channelId, title = meta.title, kicker = meta.artist, artUrl = meta.imageUrl, tracks = emptyList(), currentIndex = -1)
+        ticket = null; sessionOpen = false; activeRendition = -1
+        lyrics = null; lyricsJob?.cancel()
+        el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
+        if (!isHeadless()) { paintRadio(); show("nowplaying", "buffering") }
+        enrol(data, api)?.let { e -> return failLoad(e) }
+        if (config == null) config = runCatching { api.getConfig() }.getOrNull()
+        ReceiverStrings.adopt(data.lang, config?.uiLanguage)
+        val stream = radioTune.start(r)
+        if (stream == null) { note("radio ${r.channelId}: no tune"); failed(); return null }
+        val messages = cast.framework.messages
+        request.media.contentId = stream.url
+        request.media.contentUrl = stream.url
+        request.media.contentType = stream.contentType
+        request.media.streamType = messages.StreamType.LIVE
+        request.media.tracks = js("[]")
+        val md = js("new cast.framework.messages.MusicTrackMediaMetadata()")
+        md.title = meta.title
+        md.artist = meta.artist
+        meta.imageUrl?.let { c -> val img = js("({})"); img.url = c; val arr = js("[]"); arr.push(img); md.images = arr }
+        request.media.metadata = md
+        // CAF echoes the media's customData to every sender; the station rides in it as the sender sent it.
+        request.media.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), current!!.copy(code = "")))
+        request.autoplay = true
+        positionMs = 0L; durationMs = 0L; paused = false
+        loadSeq++; loadDirect = true; bufferingFromMs = 0L; loadStartMs = 0L
+        setCommands(CAST_RADIO_COMMANDS); commandsNarrowed = true
+        sendStatus()
+        note("hand radio ${r.channelId} ${stream.contentType} live")
+        return request
+    }
+
+    /** The station's own Now playing: the logo, *Live radio*, the programme, the station, and LIVE where the progress bar would be. */
+    private fun paintRadio() {
+        if (isHeadless()) return
+        val d = current ?: return
+        val r = d.radio ?: return
+        val cover = el("np-cover")
+        val c = d.artUrl
+        if (c != null) { (cover as? HTMLImageElement)?.src = c; cover.classList.remove("none") } else { (cover as? HTMLImageElement)?.removeAttribute("src"); cover.classList.add("none") }
+        el("np-k").textContent = ReceiverStrings.t("radio.live_radio")
+        el("np-t").textContent = d.title
+        el("np-a").textContent = r.name
+        el("np-al").textContent = ""
+        el("np-next").textContent = ""
+        el("np-fill").style.width = "100%"
+        el("np-pos").textContent = ""
+        el("np-dur").textContent = ReceiverStrings.t("radio.live_badge")
+        el("np-ly").classList.remove("on"); document.body?.classList?.remove("ly")
+    }
+
+    /** CAF's command flags for [names] (`cast.framework.messages.Command` constants), set and kept for this device. */
+    private fun setCommands(names: List<String>) {
+        runCatching {
+            val cmds: dynamic = js("cast.framework.messages.Command")
+            var flags = 0
+            for (n in names) flags = flags or ((cmds[n] as? Number)?.toInt() ?: 0)
+            playerManager.setSupportedMediaCommands(flags, true)
+        }
+    }
+
+    /**
+     * A station finished without anyone stopping it: the upstream dropped a listener that had paused (the relay is a pipe).
+     * It is tuned again at the live edge — three times in a minute — and after that it has failed, like any item that could not play.
+     */
+    private fun radioFinished(reachedEnd: Boolean) {
+        val d = current ?: return
+        val r = d.radio ?: return
+        val now = nowMs()
+        if (reachedEnd && castRadioMayRetune(radioRetunes, now)) {
+            radioRetunes += now
+            radioRetunes.removeAll { now - it >= dev.jellystructure.shared.tv.CAST_RADIO_RETUNE_WINDOW_MS }
+            note("radio ${r.channelId} finished; tuning it again")
+            val req = js("new cast.framework.messages.LoadRequestData()")
+            req.media = js("new cast.framework.messages.MediaInformation()")
+            req.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), d.copy(code = "", positionMs = null)))
+            req.media.customData = req.customData
+            req.autoplay = true
+            playerManager.load(req)
+            return
+        }
+        radioTune.stopInBackground()
+        failed()
+    }
 
     /** FR-286-3 — a fixed audio set; `canDisplayType` means nothing on a speaker (dev review 2). */
     private fun audioCapabilities(): ClientCapabilities = ClientCapabilities(
@@ -1189,6 +1304,7 @@ private class Receiver {
         val said = ((playerManager.getDurationSec() as Double?) ?: 0.0).times(1000).toLong()
         durationMs = if (said > 0) said else track()?.durationMs ?: 0L
         val data = current ?: return
+        if (data.radio != null) { durationMs = 0L; return }   // DEB-2660 (FR-11) — a live item: no place, no progress report, no next-up
         // DEB-2312 — CAF can stay in BUFFERING after its own load of a direct song while the element plays on and the time
         // advances; no status goes out and the Mac's bar sits at 0:00. The press of play that settles it, once per load.
         val songKey = "${data.itemId}#$loadSeq"
@@ -1237,9 +1353,10 @@ private class Receiver {
         note("state $st ${stateNote()}")
         qoeState(st)
         when (st) {
-            "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
-            "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (music) { show("nowplaying"); paintTransport() } else show() }
-            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else show(); val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
+            "BUFFERING" -> if (music || radio != null) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
+            "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (radio != null) show("nowplaying") else if (music) { show("nowplaying"); paintTransport() } else show() }
+            // A paused station keeps its tune and its heartbeat (the tune's own); it has no playback session to report progress to.
+            "PAUSED" -> if (radio != null) { paused = true; show("nowplaying") } else { paused = true; if (music) { show("nowplaying"); showTransport() } else show(); val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
             "IDLE" -> {}
         }
         sendStatus()
@@ -1406,6 +1523,7 @@ private class Receiver {
         if (endedReason == "INTERRUPTED" || loading > 0) return
         // R297 (FR-R297-2) — only a real end moves on. An error used to walk the whole queue, ~2 s an episode.
         val reachedEnd = endedReason == null || endedReason == cast.framework.events.EndedReason.END_OF_STREAM
+        if (radio != null) { radioFinished(reachedEnd); return }   // DEB-2660 (FR-11)
         // R384 (FR-R384-3) — a film's end with the next episode to autoplay: the countdown runs its whole length over
         // the finished picture (started here when the last second was never seen), then the next episode. The end
         // used to cancel it and load the next one at once — with the card 1 s before the end, there was no countdown.
@@ -1440,6 +1558,8 @@ private class Receiver {
 
     private fun stopSession() {
         val d = current ?: return
+        // DEB-2660 (FR-11) — a station has a tune, not a playback session: closing it is the stop.
+        if (d.radio != null) { radioTune.stopInBackground(); return }
         val a = api ?: return
         val pos = positionMs
         sessionOpen = false
@@ -1590,6 +1710,12 @@ private class Receiver {
     private fun sendStatus(withQueue: Boolean = true) {
         syncEvents()   // R354 — the events socket follows what is loaded
         val d = current ?: return
+        // DEB-2660 (FR-11) — a station: the programme, the station, the logo and whether it plays; no queue, no tracks.
+        d.radio?.let { r ->
+            lastStatusAtMs = nowMs()
+            send(castRadioStatus(r, d.artUrl, playing = (playerManager.getPlayerState() as String?) == "PLAYING", receiverId = receiverId, headless = headless))
+            return
+        }
         val t = ticket
         val subs = subtitleTracksOf(t, trackIdBase = 100)
         val audios = audioTracksOf(t, trackIdBase = 200)   // R285 — a handle for the sender, not a CAF id
