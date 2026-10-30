@@ -62,14 +62,31 @@ shows the detail beside them as it does for other events.
 **FR-6 — Films are untouched.** No song posts to `/api/tv/playback/qoe` because of this spec, and the film player's
 reports do not change. A test holds that a `waiting` report writes no `playback_qoe` row and leaves `takeOf` unchanged.
 
+**FR-7 — A pause says what sent it (added 2026-10-30).** The owner did not pause the music on that report, yet the Mac
+reported four pauses that day. On the Mac a reported pause means a pause command reached the player, and several
+things can send one. The timeline cannot say which.
+
+- `PlaybackProgressRequest` gains an optional `pause_by: String? = null`, sent on the report that first says
+  `is_paused = true`. Absent from an older app, ignored by an older server, as in FR-3.
+- Values: `screen` (an on-screen control), `keyboard` (the space bar), `dock` (the Dock menu), `now_playing_pause`,
+  `now_playing_toggle` and `now_playing_stop` (macOS's three Now Playing commands, which are how media keys, Control
+  Center and headphones reach the app), `remote` (a session remote or the Jellyfin dashboard), `engine` (the engine's
+  own stop, such as the end of the queue). Android adds `media_session` and `audio_focus`, the latter from Media3's
+  play-when-ready change reason. Anything else omits the field.
+- `PlaybackSessions.onProgress` writes it as the detail of the `paused` event, sanitised as in FR-4, and the admin shows
+  it as it shows other details.
+- The desktop engine also prints one line to its log: `music: paused by <value> at <ms>`. The log stays on the machine.
+
 ## Acceptance
 
 1. `linuxX64Test --tests '*PlaybackSessionsTest*'`: the three transitions of FR-4, the sanitising, no revision bump,
-   and FR-6.
+   FR-6, and FR-7's detail on the `paused` event.
 2. `:ravilo-ui:desktopTest`: the decision in FR-1 and FR-2 as a pure function with a test clock. A 1.9 s wait sends
    nothing, a 2 s wait sends once, the end sends once, a pause ends it, and `phase` comes out right.
 3. On a device: with the network cut under a playing song, the session's timeline shows `waiting`, then `waited` once
    the network returns, with a wait matching the time it was cut. Mac and Android phone.
+4. On a Mac: a pause from the bar, from the space bar and from a media key each show their own `pause_by` on the
+   timeline.
 
 ## Scope
 
