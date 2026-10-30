@@ -315,6 +315,30 @@ stations to *Radio*.
 
 These sit beside R177's Live strings.
 
+**Amendment 2026-10-30 (DEB-2660):** four facts the spec took as given, found while building FR-11.
+- **The receiver's logic is tested in `:shared`.** `ravilo-cast` has no JS test runner in CI (its only Gradle task is the
+  webpack bundle), so a jsTest there would be a private local path. The decisions the receiver makes for a station sit in
+  `:shared` as plain functions and one small session class (`CastRadio.kt`: the metadata, the supported commands, the relay
+  URL and type, the tune, the 20 s heartbeat and the stop), and `Receiver.kt` is glue over them. The two receiver tests
+  of *Tests* (a `radio` load tunes, loads `LIVE` with the ticket's type and offers no seek or queue commands; a song load
+  after a station stops the tune) are `CastRadioTest` in `:shared:commonTest`, which runs on `linuxX64` and the desktop in CI.
+- **The receiver says it is playing a station.** `CastReceiverMessage` gains `radio: Boolean?` (additive; null from every
+  receiver before this). A station's `status` carries the programme as `title` (the station's name when there is none),
+  the station as `kicker`, the logo as `art_url`, `playing`, and no queue. The phone reads `radio` and nothing else to know
+  what the speaker plays; `CastRemoteStatus` gains `radio`.
+- **A station has no session, so its volume block is the phone's own.** FR-11 says R371's rooms work as for a song, but
+  they are drawn from the server's session (`SessionVolumePanel` reads a `SessionDetail`), and a station opens none
+  (DEB-2627 FR-5.4, and *Non-goals*). The radio shape's volume block therefore reads the link: the speaker's level
+  (`CastSender.volume`, `setVolume`) and, where the platform has a `GroupController` (Android 11+), its rooms, their
+  levels and *Add a speaker…*. Where it has none (Mac, Linux) the block is the level alone, as a film's is today. The
+  block is what the session-backed panel is for a song, and `GroupController` is unchanged.
+- **Pause holds the tune.** A CAF `PAUSE` on a live item cannot be turned into a re-tune (the receiver is not asked
+  again at *play*), so a paused speaker keeps its tune and its heartbeat, and the relay's per-id limit and watchdog bound
+  it. If the relay connection ends meanwhile (the upstream drops a listener that stopped reading), the receiver's
+  player finishes; the receiver then re-tunes the station at the live edge, at most three times in 60 s, and after that
+  reports `failed` like any item that could not play. This differs from the engine's pause (FR-10: a pause is a stop),
+  where the app owns the player.
+
 **Amendment 2026-10-29 (DEB-2657):** the admin has no `Strings.kt` and no string table in any language — every
 admin page draws its English text as literals in the Kotlin that renders it. So the admin half of this FR is
 *Radio* and *Live radio* as English literals in `ui/LiveTv.kt` and `ui/PlayingNow.kt`, beside the pages' other
