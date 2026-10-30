@@ -806,15 +806,21 @@ private fun OnNowRow(
     ) { chIdx, ch, fr ->
         val program = ch.currentProgram
         val nowMs = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
-        val progress = if (program != null && program.endMs > program.startMs)
+        // DEB-2658 (DEB-2628 FR-6) — a station with no guide keeps its name in the name's place and only *Live radio* takes the
+        // programme's, with no time range and no progress bar; a channel keeps R177's text.
+        val text = liveTileText(ch, str("radio.live_radio"), str("livetv.no_programs")) { c ->
+            c.currentProgram?.let { "${formatGuideTime(it.startMs)}–${formatGuideTime(it.endMs)}" }
+        }
+        val progress = if (text.showProgress && program != null)
             ((nowMs - program.startMs).toFloat() / (program.endMs - program.startMs).toFloat()).coerceIn(0f, 1f)
         else 0f
         Tile(
-            title = ch.name,
-            subtitle = program?.name ?: str("livetv.no_programs"),
+            title = text.title,
+            subtitle = text.subtitle,
             // User request ("show timestamps on the channels home screen") — the current program's
             // time range, matching the design's `.ptime` line (design/ravilo/ravilo-livetv.css).
-            caption = program?.let { "${formatGuideTime(it.startMs)}–${formatGuideTime(it.endMs)}" },
+            caption = text.caption,
+            radioMark = ch.isRadio,   // DEB-2658 (DEB-2628 FR-6) — the broadcast glyph in a dark plate, top-right
             episodeBadge = if (ch.number > 0) ch.number.toString() else null,
             posterUrl = ch.logoUrl,
             variant = TileVariant.SQUARE,

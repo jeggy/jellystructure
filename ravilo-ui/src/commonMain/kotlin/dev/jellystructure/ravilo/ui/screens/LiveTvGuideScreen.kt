@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
+import dev.jellystructure.ravilo.ui.components.RadioMarkInline
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -510,11 +511,35 @@ private fun GuideChannelRow(
             }
             Column(verticalArrangement = Arrangement.Center) {
                 Text("${channel.number}", color = colors.textSecondary, fontSize = 11.sp)
-                Text(channel.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                Text(channel.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = if (channel.isRadio) 1 else 2)
+                // DEB-2658 (DEB-2628 FR-7) — a station carries the radio mark on the category line UNDER the name, never after it: the
+                // column has about 128 px for a name, and a glyph beside it would cost the name its last letters.
+                if (channel.isRadio) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioMarkInline(colors.textSecondary, 12.dp)
+                        Spacer(Modifier.width(5.dp))
+                        Text(channel.category.ifBlank { str("radio.label") }, color = colors.textDim, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
         }
         Spacer(Modifier.width(CHANNEL_COL_SPACER_DP.dp))
-        if (programs.isEmpty()) {
+        if (programs.isEmpty() && channel.isRadio) {
+            // DEB-2658 (DEB-2628 FR-7) — a station with no guide is ONE block across the whole window reading *Live radio*; selecting it tunes the station.
+            var bFocused by rememberFocusVisual()
+            Row(
+                Modifier.fillMaxSize()
+                    .background(colors.accentDim, RoundedCornerShape(6.dp))
+                    .focusRing(bFocused, RoundedCornerShape(6.dp), colors.focusRing, 2.dp)
+                    .dpadFocusable(onFocused = { bFocused = true }, onBlurred = { bFocused = false }, onSelect = onTune)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(str("radio.live_radio"), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(str("radio.live_badge"), color = Color(0xFFE0263B), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        } else if (programs.isEmpty()) {
             Box(Modifier.fillMaxSize().background(colors.surfaceVariant), contentAlignment = Alignment.CenterStart) {
                 Text(str("livetv.no_programs"), color = colors.textDim, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
             }

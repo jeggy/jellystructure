@@ -6,6 +6,8 @@ import dev.jellystructure.shared.tv.LiveTvStreamTicket
 const val STREAM_KIND_HLS_LADDER = "hls_ladder"
 const val STREAM_KIND_HLS = "hls"
 const val STREAM_KIND_OTHER = "other"
+/** DEB-2628 FR-4 — a station played through jellystructure's audio relay: `hlsUrl` is a relay path, not an HLS URL. */
+const val STREAM_KIND_AUDIO = "audio"
 
 /**
  * DEB-2627 (FR-3) — is this live ticket an HLS stream? A backend that classified it says so with [STREAM_KIND_HLS_LADDER] or
@@ -54,12 +56,15 @@ enum class LiveFallbackAction { IGNORE, RETRY_SOURCE, FALL_BACK, SHOW_ERROR }
  * back to Jellyfin's remux, once, when the source gives no first frame within [NO_FIRST_FRAME_MS], when the player raises a fatal
  * error before the first frame, or when it raises one again after one retry of the source itself.
  *
+ * DEB-2658 (DEB-2628 FR-8) — a station's relay (`audio`) falls back the same way: no audio within 15 s, or a fatal error before
+ * it, re-tunes once through Jellyfin, which hands back its own transcoding as an HLS ticket.
+ *
  * It never falls back on a channel the backend did not classify as HLS (`other` is already Jellyfin's own stream, and an old
  * backend ignores `via`), and never from the fallback itself: a second failure is today's live error. The 15 s limit belongs
  * to the source alone — Jellyfin's remux takes about 11 s to its first segment and is not timed.
  */
 class LiveFallbackPolicy(streamKind: String, private val viaJellyfin: Boolean) {
-    private val canFallBack = !viaJellyfin && (streamKind == STREAM_KIND_HLS_LADDER || streamKind == STREAM_KIND_HLS)
+    private val canFallBack = !viaJellyfin && (streamKind == STREAM_KIND_HLS_LADDER || streamKind == STREAM_KIND_HLS || streamKind == STREAM_KIND_AUDIO)
     private var sawFirstFrame = false
     private var retried = false
 

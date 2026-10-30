@@ -139,6 +139,8 @@ fun Tile(
     upcomingAirUtc: String? = null,  // DEB-1482 (FR-3)
     /** R325 (FR-R325-3) — `4K` · `HDR` · `4K HDR`, bottom-start; null (a 1080p or SD title) draws nothing. */
     qualityBadge: String? = null,
+    /** DEB-2658 (DEB-2628 FR-6) — a radio station's tile: the broadcast glyph in a dark plate, top-end, the one corner a channel tile leaves empty. */
+    radioMark: Boolean = false,
     /** Phase R240 (FR-R240-3/7) — true for the one tile J has opened. Grows the tile's actual layout
      *  width (not a draw-only scale — the row band's reflow IS the point here, unlike the focus-scale
      *  effect below) by [dev.jellystructure.ravilo.ui.theme.RaviloMotion.ROW_OPEN_WIDTH_SCALE], and
@@ -321,6 +323,7 @@ fun Tile(
                 }
                 CornerBadgeContent(corners.topEnd, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, upcomingAirUtc, colors, sora)
             }
+            if (radioMark) RadioMarkPlate(Modifier.align(Alignment.TopEnd).padding(8.dp))
             // R325 (FR-R325-3) — the picture badge, bottom-start, clear of the two top corners and above the progress bar.
             qualityBadge?.let { q ->
                 Text(

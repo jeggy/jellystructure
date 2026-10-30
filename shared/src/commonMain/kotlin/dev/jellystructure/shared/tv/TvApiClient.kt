@@ -1013,9 +1013,13 @@ class TvApiClient(
     // ─── Live TV (Phase 147/R177) ────────────────────────────────────────────
 
     /** Shown+available channels for the Home "On now" row / EPG guide's channel list — embedded
-     *  current/next program, no separate guide fetch (jellystructure Phase 147 addendum C). */
-    suspend fun getLiveTvChannels(): List<LiveTvChannel> {
-        val r = client.get("$baseUrl/api/tv/livetv/channels") { auth() }
+     *  current/next program, no separate guide fetch (jellystructure Phase 147 addendum C).
+     *  DEB-2658 (DEB-2628 FR-2) — always asks with `radio=1`: the backend sends a station only to a client that does, and
+     *  every client with a radio player asks. [kind] (`radio` or `tv`) narrows the lineup; null is both, in lineup order. */
+    suspend fun getLiveTvChannels(kind: String? = null): List<LiveTvChannel> {
+        val r = client.get("$baseUrl/api/tv/livetv/channels") {
+            auth(); parameter("radio", 1); if (kind != null) parameter("kind", kind)
+        }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())
     }
@@ -1024,7 +1028,7 @@ class TvApiClient(
      *  in recently-elapsed programs too (user request — the guide used to only ever look forward). */
     suspend fun getLiveTvGuide(days: Int = 7, hoursBack: Int = 0): List<LiveTvGuideProgram> {
         val r = client.get("$baseUrl/api/tv/livetv/guide") {
-            auth(); parameter("days", days); parameter("hoursBack", hoursBack)
+            auth(); parameter("days", days); parameter("hoursBack", hoursBack); parameter("radio", 1)   // DEB-2658 (DEB-2628 FR-2)
         }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())

@@ -51,6 +51,14 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     private val _state = MutableStateFlow<LiveTvPlayerState>(LiveTvPlayerState.Loading)
     val state: StateFlow<LiveTvPlayerState> = _state.asStateFlow()
 
+    /**
+     * DEB-2658 (DEB-2628 FR-8) — the playing channel as the lineup last described it. [state]'s `Ready` holds the channel as it was
+     * tuned and must not change (a new `Ready` is a new load); this follows [refreshChannels], so a station's audio layout turns
+     * over to the next programme without the player reloading.
+     */
+    private val _channelNow = MutableStateFlow<LiveTvChannel?>(null)
+    val channelNow: StateFlow<LiveTvChannel?> = _channelNow.asStateFlow()
+
     // The ordered, shown+available lineup — loaded once, reused for zap (channel up/down) and
     // number-entry without a round-trip per keypress.
     private var channels: List<LiveTvChannel> = emptyList()
@@ -62,6 +70,11 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     /** DEB-2627 (FR-4) — this tune's fallback decision; null until a ticket arrives. A zap or any new tune builds a new one. */
     private var fallback: LiveFallbackPolicy? = null
     private var currentChannelId: String? = null
+
+    /** DEB-2658 (DEB-2628 FR-8) — the channel being tuned or playing, known as soon as [tune] is called: the screen picks the video
+     *  surface or the audio layout from its kind, so a zap between a station and a channel never flashes the wrong one while the ticket is out. */
+    val tuningChannel: LiveTvChannel? get() = currentChannelId?.let { id -> channels.firstOrNull { it.channelId == id } }
+    val tuningChannelId: String? get() = currentChannelId
 
     /** DEB-2627 (FR-5) — the delivery of the ticket on screen (`source` or `jellyfin`), which the heartbeat reports. */
     private var delivery: String = DELIVERY_SOURCE
@@ -97,6 +110,14 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
         return channels
     }
 
+    /** DEB-2658 (DEB-2628 FR-8) — re-reads the lineup (the programme now and next of every channel and station) without touching the tune. */
+    suspend fun refreshChannels() {
+        val fresh = runCatching { apiClient.getLiveTvChannels() }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return
+        channels = fresh
+        val playing = (_state.value as? LiveTvPlayerState.Ready)?.channel?.channelId ?: return
+        fresh.firstOrNull { it.channelId == playing }?.let { _channelNow.value = it }
+    }
+
     /** Tunes [channelId] — closes whatever stream was previously open first (a bare zap/number-entry
      *  re-tune, not a user-initiated stop, so this does NOT go through [stop]'s Idle transition).
      *  DEB-2627 (FR-4) — [via] is only ever [VIA_JELLYFIN], from [fallBackToJellyfin]: a zap or re-tune starts from the source. */
@@ -124,6 +145,7 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
             fallback = LiveFallbackPolicy(ticket.streamKind, viaJellyfin = via == VIA_JELLYFIN)
             // The ticket's own `via`: Jellyfin's remux, or a path on Jellyfin itself, is Jellyfin's; anything else is the broadcaster's.
             delivery = if (via == VIA_JELLYFIN || ticket.hlsUrl.startsWith(ticket.jellyfinBaseUrl)) DELIVERY_JELLYFIN else DELIVERY_SOURCE
+            _channelNow.value = channel
             _state.value = LiveTvPlayerState.Ready(channel, ticket)
             startHeartbeat()
         }
@@ -150,19 +172,17 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
         return action
     }
 
-    /** Zaps to the adjacent channel in lineup order ([direction] = +1/-1), wrapping around. */
+    /** Zaps to the adjacent channel in lineup order ([direction] = +1/-1), wrapping around. DEB-2658 (DEB-2628 FR-8) — the lineup is
+     *  the one list of stations and TV channels, so a zap can cross from a channel to a station and back; the screen follows the kind. */
     fun zap(direction: Int) {
         val cur = (_state.value as? LiveTvPlayerState.Ready)?.channel ?: return
-        if (channels.isEmpty()) return
-        val idx = channels.indexOfFirst { it.channelId == cur.channelId }
-        if (idx < 0) return
-        val next = ((idx + direction) % channels.size + channels.size) % channels.size
-        tune(channels[next].channelId)
+        val next = zapTarget(channels, cur.channelId, direction) ?: return
+        tune(next.channelId)
     }
 
     /** Number-entry tune-by-channel-number; returns false (no-op) if no channel has that number. */
     fun tuneByNumber(number: Int): Boolean {
-        val target = channels.firstOrNull { it.number == number } ?: return false
+        val target = channelByNumber(channels, number) ?: return false
         tune(target.channelId)
         return true
     }

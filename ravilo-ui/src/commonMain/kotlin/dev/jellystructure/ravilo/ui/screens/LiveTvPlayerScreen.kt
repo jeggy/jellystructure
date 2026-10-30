@@ -54,7 +54,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
+import dev.jellystructure.ravilo.ui.focus.MediaKey
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.components.RadioMarkInline
+import dev.jellystructure.ravilo.ui.isTvPlatform
+import dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import dev.jellystructure.ravilo.ui.focus.playerBackGesture
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.LiveFallbackAction
@@ -79,6 +84,8 @@ private const val CHROME_HIDE_MS = 5_000L
 private const val NUMBER_ENTRY_COMMIT_MS = 2_500L
 private const val ZAP_BANNER_MS = 3_000L
 private const val LIVE_WATCH_MS = 500L
+/** DEB-2658 (DEB-2628 FR-8) — the longest a station on screen goes without re-reading the lineup for its programme. */
+private const val RADIO_REFRESH_MS = 60_000L
 
 /**
  * Phase R177 §D — full-screen live playback: a LIVE indicator + auto-hiding channel bar (logo ·
@@ -95,6 +102,7 @@ fun LiveTvPlayerScreen(
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
+    val channelNow by store.channelNow.collectAsState()
     val player = remember { RaviloPlayer() }
     // R194 — same relative-URL resolution PlayerScreen uses for the OS media session's artwork.
     val serverBaseUrl = LocalServerBaseUrl.current
@@ -117,6 +125,20 @@ fun LiveTvPlayerScreen(
     var numberEntry by remember { mutableStateOf("") }
     var guideOpen by remember { mutableStateOf(false) }
 
+    // DEB-2658 (DEB-2628 FR-8) — a station opens the audio layout, a channel the picture; the kind of the channel being tuned
+    // decides, known before its ticket arrives, so a zap between the two never flashes the wrong surface.
+    val tuning = (state as? LiveTvPlayerState.Ready)?.channel ?: store.tuningChannel
+    val radio = livePlayerLayout(tuning) == LivePlayerLayout.RADIO
+    // ⏯ stops a station and ⏯ again re-tunes it at the live edge: there is no timeshift (FR-8). A stopped station shows no LIVE.
+    var radioStopped by remember { mutableStateOf(false) }
+    // FR-8 — on a TV the audio layout dims to 40 % after 5 minutes with no key press, and any key brings it back.
+    val idleClock = remember { TimeSource.Monotonic.markNow() }
+    val idle = remember { RadioIdleDim(0L) }
+    var idleRevision by remember { mutableStateOf(0) }
+    var dimmed by remember { mutableStateOf(false) }
+    val reducedMotion = remember { systemPrefersReducedMotion() }
+    val serverBase = LocalServerBaseUrl.current
+
     fun wake() { chromeVisible = true; chromeRevision++ }
 
     // DEB-2627 (FR-5) — the heartbeat reports the rung the player is on (nulls where the player cannot tell).
@@ -130,7 +152,7 @@ fun LiveTvPlayerScreen(
         player,
         wasPlaying = { !paused },
         onBackground = { store.stop() },
-        onForeground = { paused = false; store.tune(channelId) },
+        onForeground = { paused = false; store.tune(store.tuningChannelId ?: channelId) },
     )
 
     LaunchedEffect(state) {
@@ -140,9 +162,12 @@ fun LiveTvPlayerScreen(
             player.beginQoeItem("live:" + s.channel.channelId)   // R381 (FR-R381-1) — one channel's counts, not the session's
             // DEB-2627 (FR-3) — a channel is loaded as a live ticket: HLS whatever its URL ends in, and from no film ladder state.
             val live = LiveLoad.of(s.ticket)
+            val isRadio = livePlayerLayout(s.channel) == LivePlayerLayout.RADIO
+            radioStopped = false
             fun loadSource() {
                 player.load(
-                    s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
+                    // DEB-2658 (DEB-2628 FR-4) — a station's relay path is resolved against this server; every other ticket's URL is as it came.
+                    radioPlayUrl(s.ticket, serverBase), startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
                     title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = resolveImageUrl(s.channel.logoUrl),
                     live = live,
                 )
@@ -156,7 +181,8 @@ fun LiveTvPlayerScreen(
             var waitingSince = TimeSource.Monotonic.markNow()
             while (true) {
                 delay(LIVE_WATCH_MS)
-                if (!sawFrame && player.hasRenderedFirstFrame) { sawFrame = true; store.onFirstFrame() }
+                // A station draws no frame: its first signal is audio past buffering (liveSignalStarted).
+                if (!sawFrame && liveSignalStarted(isRadio, player.hasRenderedFirstFrame, player.isBuffering, player.positionMs)) { sawFrame = true; store.onFirstFrame() }
                 if (player.playbackFailed) {
                     when (store.onPlayerFatal()) {
                         LiveFallbackAction.RETRY_SOURCE -> { loadSource(); sawFrame = false; waitingSince = TimeSource.Monotonic.markNow() }
@@ -192,6 +218,23 @@ fun LiveTvPlayerScreen(
         zapBanner = null
     }
 
+    // DEB-2658 (DEB-2628 FR-8) — a station left on turns over to its next programme: the lineup is re-read when the one on screen
+    // ends (at most every minute), without touching the tune.
+    LaunchedEffect(radio, state is LiveTvPlayerState.Ready, channelNow?.currentProgram?.endMs) {
+        if (!radio || state !is LiveTvPlayerState.Ready) return@LaunchedEffect
+        val endMs = channelNow?.currentProgram?.endMs
+        val untilEnd = if (endMs != null) endMs - kotlin.time.Clock.System.now().toEpochMilliseconds() + 2_000L else RADIO_REFRESH_MS
+        delay(untilEnd.coerceIn(5_000L, RADIO_REFRESH_MS))
+        store.refreshChannels()
+    }
+    // The dim timer: any key press restarts it (the key handler below), and this sets the dim when it runs out.
+    LaunchedEffect(radio, idleRevision) {
+        if (!radio || !isTvPlatform) { dimmed = false; return@LaunchedEffect }
+        val nowMs = idleClock.elapsedNow().inWholeMilliseconds
+        delay(idle.untilDimMs(nowMs))
+        dimmed = idle.isDimmed(idleClock.elapsedNow().inWholeMilliseconds)
+    }
+
     LaunchedEffect(Unit) { runCatching { rootFR.requestFocus() } }
     DisposableEffect(Unit) {
         onDispose {
@@ -202,14 +245,14 @@ fun LiveTvPlayerScreen(
 
     fun zap(direction: Int) {
         wake()
-        val list = store.channelList
         val cur = (state as? LiveTvPlayerState.Ready)?.channel
-        if (list.isNotEmpty() && cur != null) {
-            val idx = list.indexOfFirst { it.channelId == cur.channelId }
-            if (idx >= 0) zapBanner = list[((idx + direction) % list.size + list.size) % list.size]
-        }
+        if (cur != null) zapBanner = zapTarget(store.channelList, cur.channelId, direction)
         store.zap(direction)
     }
+
+    // DEB-2658 (DEB-2628 FR-8) — a station has no pause: stopping closes the tune, and play tunes the station again at the live edge.
+    fun stopStation() { radioStopped = true; player.pause(); store.stop() }
+    fun retuneStation() { radioStopped = false; store.tune(store.tuningChannelId ?: channelId) }
 
     // R260 (FR-R260-1) — hoisted (see PlayerScreen.kt); Live TV's equivalent decision (guide → number
     // entry → leave — no chrome-hide stage) needs the same two entrances.
@@ -224,6 +267,11 @@ fun LiveTvPlayerScreen(
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black)
             .playerBackGesture(onBack = liveTvBack)
+            // DEB-2658 (DEB-2628 FR-8) — every key press, handled or not, restarts the dim timer and undoes the dim.
+            .onPreviewKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyDown) { idle.onKey(idleClock.elapsedNow().inWholeMilliseconds); dimmed = false; idleRevision++ }
+                false
+            }
             .dpadFocusable(
                 focusRequester = rootFR,
                 onLeft = { if (!guideOpen) zap(-1) },
@@ -231,6 +279,16 @@ fun LiveTvPlayerScreen(
                 onUp = { if (!guideOpen) { guideOpen = true; chromeVisible = true } },
                 onSelect = { if (!guideOpen) { if (chromeVisible) chromeVisible = false else wake() } },
                 onBack = liveTvBack,
+                // DEB-2658 (DEB-2628 FR-8) — ⏯ on a station stops it and, again, re-tunes it at the live edge.
+                onMediaKey = if (radio) { key ->
+                    val playing = !radioStopped
+                    when (key) {
+                        MediaKey.PLAY_PAUSE -> if (playing) stopStation() else retuneStation()
+                        MediaKey.PAUSE, MediaKey.STOP -> if (playing) stopStation()
+                        MediaKey.PLAY -> if (!playing) retuneStation()
+                        else -> Unit
+                    }
+                } else null,
                 // R244 — a phone tap toggles the chrome (there is no D-pad Select to do it).
                 onTap = if (handset) ({ if (!guideOpen && !locked) { if (chromeVisible) chromeVisible = false else wake() } }) else null,
             )
@@ -242,7 +300,12 @@ fun LiveTvPlayerScreen(
                 true
             },
     ) {
-        PlayerVideoSurface(player, Modifier.fillMaxSize())
+        // DEB-2658 (DEB-2628 FR-8) — a station plays through the same player seam, but there is no picture: the surface stays (the
+        // browser's <video> and the desktop's engine hang off it) at one dp, and the audio layout is drawn over the whole screen.
+        PlayerVideoSurface(player, if (radio) Modifier.size(1.dp) else Modifier.fillMaxSize())
+        if (radio) (channelNow?.takeIf { it.channelId == tuning?.channelId } ?: tuning)?.let { st ->
+            RadioNowPlaying(st, stopped = radioStopped, orbit = isTvPlatform, dimmed = dimmed, reducedMotion = reducedMotion)
+        }
 
         // R244 (FR-R244-15) — the right-edge channel swipe: up = next channel, down = previous.
         if (handset && !locked && !guideOpen) {
@@ -264,7 +327,7 @@ fun LiveTvPlayerScreen(
         }
 
         if (state is LiveTvPlayerState.Loading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().then(if (radio) Modifier.padding(bottom = 96.dp) else Modifier), contentAlignment = if (radio) Alignment.BottomCenter else Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = colors.accent)
                     Spacer(Modifier.height(12.dp))
@@ -280,7 +343,7 @@ fun LiveTvPlayerScreen(
 
         val ready = state as? LiveTvPlayerState.Ready
         // R244 (FR-R244-15) — the handset chrome; the TV's ChannelBar + LIVE badge below stay as they are.
-        AnimatedVisibility(visible = handset && chromeVisible && ready != null && !locked, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(visible = handset && chromeVisible && ready != null && !locked && !radio, enter = fadeIn(), exit = fadeOut()) {
             val ch = ready?.channel
             if (ch != null) HandsetPlayerChrome(
                 colors = colors,
@@ -309,14 +372,14 @@ fun LiveTvPlayerScreen(
             )
         }
         AnimatedVisibility(
-            visible = chromeVisible && ready != null && !handset,
+            visible = chromeVisible && ready != null && !handset && !radio,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             if (ready != null) ChannelBar(ready.channel)
         }
-        AnimatedVisibility(visible = chromeVisible && !handset, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopStart)) {
+        AnimatedVisibility(visible = chromeVisible && !handset && !radio, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopStart)) {
             Text(
                 str("livetv.live_badge"),
                 color = Color.White,
@@ -345,8 +408,11 @@ fun LiveTvPlayerScreen(
                     ChannelLogo(ch, size = 36.dp)
                     Spacer(Modifier.width(10.dp))
                     Column {
-                        Text("${ch.number} · ${ch.name}", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        ch.currentProgram?.name?.let { Text(it, color = colors.textSecondary, fontSize = 12.sp) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${ch.number} · ${ch.name}", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            if (ch.isRadio) { Spacer(Modifier.width(8.dp)); RadioMarkInline(colors.textSecondary, 18.dp) }   // DEB-2658 (FR-8) — the banner names a station with its mark
+                        }
+                        (ch.currentProgram?.name ?: if (ch.isRadio) str("radio.live_radio") else null)?.let { Text(it, color = colors.textSecondary, fontSize = 12.sp) }
                     }
                 }
             }
@@ -469,8 +535,11 @@ private fun NowNextOverlay(
                         ChannelLogo(ch, size = 40.dp)
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("${ch.number} · ${ch.name}", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(ch.currentProgram?.name ?: str("livetv.no_programs"), color = colors.textSecondary, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${ch.number} · ${ch.name}", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                if (ch.isRadio) { Spacer(Modifier.width(8.dp)); RadioMarkInline(if (focused) colors.text else colors.textSecondary, 14.dp) }   // DEB-2658 (FR-8) — Now/Next lists a station with its mark
+                            }
+                            Text(ch.currentProgram?.name ?: if (ch.isRadio) str("radio.live_radio") else str("livetv.no_programs"), color = colors.textSecondary, fontSize = 12.sp)
                             ch.nextProgram?.let { Text("${str("livetv.next")}: ${it.name}", color = colors.textDim, fontSize = 11.sp) }
                         }
                     }

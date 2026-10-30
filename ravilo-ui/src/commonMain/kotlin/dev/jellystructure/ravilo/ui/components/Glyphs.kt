@@ -218,3 +218,24 @@ fun GridGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, descrip
             line(tint, at(0.16f, f), at(0.84f, f), w)
         }
     }
+
+/**
+ * DEB-2658 (DEB-2628 FR-6) — the radio mark's glyph, the owner's pick A: a dot with two arcs either side of it, `((•))`. It is
+ * never the Wi-Fi fan (a fan of arcs rising from a dot is the signal-strength mark, and a stream is the one thing here that can
+ * lose signal). Drawn on the design's own 24-unit grid (`design/ravilo/radio/rd-kit.js` `wavesSVG`): the dot's radius is 2.3,
+ * the arcs are centred on it with radii 5.2 and 8.8, each a quarter turn either side of the horizontal.
+ */
+@Composable
+fun RadioGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =
+    GlyphCanvas(glyphSize, description, modifier) {
+        val u = size.minDimension / 24f
+        val c = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(tint, radius = 2.3f * u, center = c)
+        val stroke = Stroke(width = 2.1f * u, cap = StrokeCap.Round)
+        for (r in listOf(5.2f, 8.8f)) {
+            val box = Size(2 * r * u, 2 * r * u)
+            val topLeft = Offset(c.x - r * u, c.y - r * u)
+            drawArc(tint, startAngle = -45f, sweepAngle = 90f, useCenter = false, topLeft = topLeft, size = box, style = stroke)
+            drawArc(tint, startAngle = 135f, sweepAngle = 90f, useCenter = false, topLeft = topLeft, size = box, style = stroke)
+        }
+    }

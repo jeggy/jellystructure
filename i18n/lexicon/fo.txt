@@ -581,6 +581,7 @@ steðgar
 steðgað
 steðgaði
 stig
+stilla
 stillingar
 stongt
 stovna
@@ -750,3 +751,4 @@ ymsum
 útlendsk
 útsjónd
 útsjóndini
+útvarp
