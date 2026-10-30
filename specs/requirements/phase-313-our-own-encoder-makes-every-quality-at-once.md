@@ -101,6 +101,8 @@ From `specs/research-reports/ravilo-streaming-evidence-2026-10-08.md` and `…-a
   segment timeline as the video.
 - Switching audio stays instant (R291): the player picks another rendition in the master; nothing restarts.
 - R291's separate audio jobs remain for direct-play files that only need a rendition, and for the Jellyfin fallback.
+- *Amendment 2026-10-30 (DEB-3093):* which codec, and when a track is copied rather than encoded, is at the end of this
+  file.
 
 ### FR-313-6 — Subtitles
 
@@ -928,3 +930,53 @@ interference."*
   rungs) to the play's own QoE row and to the activity ring.
 
 See [`a-play-stops-at-most-once-at-its-start.md`](a-play-stops-at-most-once-at-its-start.md) FR-5, FR-6 and FR-8.
+
+## Amendment 2026-10-30 — the ladder keeps the film's own Dolby track (DEB-3093)
+
+FR-313-5 has always said *"AAC stereo/5.1, or AC-3/E-AC-3 where the device decodes it"*. The code has always sent AAC
+(`Encoder.kt`, `planFor`). So a play that moves between the file and our encoder also changes how its sound reaches the
+speakers: E-AC-3 goes to the device's own Dolby path, and AAC is decoded in the app. On 2026-10-30 a film on the stue TV
+moved from our encoder to the file and got audibly louder (*"the same sound, just louder"*). Nobody has measured the
+level on either road.
+
+**Owner, 2026-10-30, on DEB-3093:** keep the film's own Dolby track on every quality, knowing it takes more bandwidth
+than AAC and so leaves less room for the picture on the slowest quality.
+
+### FR-313-5a — Which codec a master's audio is in
+
+- **The family is the codec of the track the play starts on.** If that track is AC-3 or E-AC-3 and the device names that
+  codec in `platform_audio_decoders` (R379), the master's audio is in that codec. Otherwise it is AAC, exactly as today.
+  An app that does not report the field (`null`: the web, the desktop apps, a cast receiver, an app older than R379)
+  stays on AAC.
+- **One codec per master.** An `EXT-X-MEDIA` tag carries no CODECS of its own, so Media3 gives every rendition the
+  variant's audio format, and a rendition in another codec fails the switch (R291, *"Unable to bind a sample queue"*).
+- The family is fixed when the plan is made. Picking another track inside the master does not change it.
+
+### FR-313-5b — Copied, not re-encoded
+
+- A track already in the family's codec is **stream-copied** (`-c:a:N copy`, with no `-b:a:N` or `-ac:a:N`), as long as
+  its channel count is within the device's `max_audio_channels`. The bytes are the file's own, so the level and Atmos
+  stay as they are on a direct play. Checked 2026-10-30 on a real E-AC-3 Atmos track through this job's HLS flags: 20 s
+  of copied TS segments, joined, were byte-identical to the same 20 s copied straight from the file, and still read as
+  Atmos.
+- A track in any other codec (a sibling AC-3, TrueHD or DTS) is encoded to the family's codec at today's
+  `audioBitrate`. Only copied tracks carry the promise of the same level.
+- An AAC-family master is unchanged.
+
+### FR-313-5c — The bandwidth is told honestly
+
+- A copied track counts at its real bitrate: Jellyfin's `BitRate` on the media stream. When that is missing it counts as
+  768 kb/s for E-AC-3 and 640 kb/s for AC-3, the 90th percentile of the library's 5.1 tracks on 2026-10-30 (the
+  medians are 640 and 448).
+- `audioPeak` remains the largest rendition's bitrate, and that one figure feeds `BANDWIDTH`, `AVERAGE-BANDWIDTH`, the
+  start rung (`startRungFor`) and a recovery's bound (`rungsBelowBandwidth`). A Dolby play can therefore start one rung
+  lower than the same film on AAC. That is the cost the owner accepted.
+
+### Not changed
+
+- The direct play and R379's rule for a device without the decoder.
+- Jellyfin's own ladder, and R291's separate rendition jobs.
+- A film whose track is TrueHD, DTS or AAC. Its two roads are not made the same by this amendment.
+- Live channels: `planFor` is the VOD plan.
+- A stream that fails on a device still takes F2's road: restream once from Jellyfin. So a device that lists the decoder
+  but cannot read the segments gets one restream, not a dead play.
