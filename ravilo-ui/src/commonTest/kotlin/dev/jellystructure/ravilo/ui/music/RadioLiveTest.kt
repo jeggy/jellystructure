@@ -215,6 +215,69 @@ class RadioLiveTest {
     }
 
     @Test
+    fun `start past a kept programmes end drops it and re-reads the station at once`() = runTest {
+        val api = FakeApi(stations = listOf(station(program = sport)))
+        val heard = Heard(); val t = tuner(api, heard, baseMs = 1_500_000L)
+        t.start(station()); runCurrent()
+        t.endTune(); runCurrent()
+        advanceTimeBy(600_000)   // paused across the news' end (2 000 000); now = 2 100 000
+        t.start(station())
+        assertEquals("Harbour Radio", t.radio?.title, "the ended programme is not brought back")
+        runCurrent()
+        assertEquals("Sports Desk", heard.changes.last().title, "the re-read answers at once, not after 60 s")
+        assertEquals("Sports Desk", t.radio?.title)
+    }
+
+    @Test
+    fun `retune past a kept programmes end drops it and re-reads the station at once`() = runTest {
+        val api = FakeApi(stations = listOf(station(program = sport)))
+        val heard = Heard(); val t = tuner(api, heard, baseMs = 1_500_000L)
+        t.start(station()); runCurrent(); t.heard()
+        t.endTune(); runCurrent()
+        advanceTimeBy(600_000); runCurrent()
+        val before = heard.changes.size
+        t.retune()
+        assertEquals("Harbour Radio", t.radio?.title, "dropped before the tune answers")
+        runCurrent()
+        assertEquals(before + 1, heard.changes.size)
+        assertEquals("Sports Desk", heard.changes.last().title)
+    }
+
+    @Test
+    fun `a retune within the programme keeps it and does not re-read early`() = runTest {
+        val api = FakeApi(stations = listOf(station(program = sport)))
+        val heard = Heard(); val t = tuner(api, heard)
+        t.start(station()); runCurrent(); t.heard()
+        t.endTune(); runCurrent()
+        advanceTimeBy(60_000); t.retune(); runCurrent()
+        assertEquals("Evening News", t.radio?.title)
+        assertTrue(heard.changes.isEmpty())
+    }
+
+    @Test
+    fun `a dropped programme on a station with no guide still gets its one read`() = runTest {
+        val api = FakeApi(stations = listOf(station(program = sport, hasGuide = false)))
+        val heard = Heard(); val t = tuner(api, heard, baseMs = 2_100_000L)
+        t.start(station(hasGuide = false)); runCurrent()   // the snapshot's programme ended at 2 000 000
+        assertEquals("Sports Desk", t.radio?.title, "read once even though radioRefreshDelayMs is null for this station")
+        assertEquals(1, heard.changes.size)
+    }
+
+    @Test
+    fun `a gap keeps the engine re-reading and the title turns over when the gap ends`() = runTest {
+        val api = FakeApi(stations = listOf(station(program = null, hasGuide = true)))
+        val heard = Heard(); val t = tuner(api, heard, baseMs = 2_100_000L)
+        t.start(station()); runCurrent(); t.heard()   // the news ended: dropped, read at once, the gap answers with no programme
+        assertEquals("Harbour Radio", t.radio?.title)
+        val afterFirst = heard.changes.size
+        api.stations = listOf(station(program = sport))
+        advanceTimeBy(59_000); runCurrent()
+        assertEquals(afterFirst, heard.changes.size, "the gap is re-read every 60 s, not sooner")
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals("Sports Desk", heard.changes.last().title)
+    }
+
+    @Test
     fun `a station with no guide is never re-read`() = runTest {
         val api = FakeApi(); val heard = Heard(); val t = tuner(api, heard)
         t.start(station(program = null)); runCurrent()

@@ -121,15 +121,33 @@ class RadioTuner(
     private var refreshJob: Job? = null
     private var clockJob: Job? = null
 
+    /** A programme was dropped at the tune: the refresh loop's first read skips its wait, and happens even with no guide. */
+    private var readAtOnce = false
+
     /** Starts [station] — the first tune of a station, or a re-tune at the live edge (*play* after a pause). */
     fun start(station: LiveTvChannel) {
         val keep = radio?.takeIf { it.station.channelId == station.channelId }
-        radio = RadioLive(station, keep?.programme ?: station.currentProgram)
+        radio = dropEnded(RadioLive(station, keep?.programme ?: station.currentProgram))
         tune(via = null)
     }
 
     /** *Play* on a paused or failed station: re-tune it. */
-    fun retune() { radio?.let { tune(via = null) } }
+    fun retune() {
+        val r = radio ?: return
+        radio = dropEnded(r)
+        tune(via = null)
+    }
+
+    /**
+     * FR-10 — a re-tune never brings back a programme that has ended: it is dropped (the title reads the station's name until
+     * the answer comes) and the station is re-read at once, not after the gap's 60 s.
+     */
+    private fun dropEnded(r: RadioLive): RadioLive {
+        val end = r.programme?.endMs ?: return r
+        if (end > nowMs()) return r
+        readAtOnce = true
+        return RadioLive(r.station, null)
+    }
 
     private fun tune(via: String?) {
         val r = radio ?: return
@@ -194,10 +212,15 @@ class RadioTuner(
     }
 
     private fun startRefresh() {
+        var first = readAtOnce
+        readAtOnce = false
         refreshJob = scope.launch {
             while (isActive) {
-                val wait = radio?.let { radioRefreshDelayMs(it, nowMs()) } ?: return@launch
-                delay(wait)
+                if (first) first = false
+                else {
+                    val wait = radio?.let { radioRefreshDelayMs(it, nowMs()) } ?: return@launch
+                    delay(wait)
+                }
                 val id = radio?.station?.channelId ?: return@launch
                 val fresh = runCatching { api()?.stations() }.getOrNull()?.firstOrNull { it.channelId == id } ?: continue
                 if (!isActive) return@launch
