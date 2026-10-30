@@ -476,6 +476,24 @@ closes the class:
 > `visibilitychange → hidden` no longer applies there, and `pagehide` alone carries it (R376, FR-R376-4f, FR-R376-4g). A
 > phone or tablet keeps both events. The server half is unchanged.
 
+> **Amended 2026-10-30 (DEB-3036, measured on DEB-3093).** An abrupt end is no longer read at once, because a bare close
+> frame does not say whose it is. A browser tab's own 1001 and the 1001 every socket gets when Caddy reloads look the
+> same, and Caddy reloads whenever a labelled container on the host starts or stops. One reload force-stopped a film
+> on a TV that was still playing it: the socket was back 1.1 s later, but the film's encode was already gone, and 52 s
+> later the TV had to restream.
+>
+> - A socket that ended abruptly counts as gone only once it has **stayed gone for 15 s**. The longest reload gap on
+>   record is 9.9 s, and the reconnects seen after a reload took 1.1 s and 2 s. This holds on every tick, the close's
+>   own and the periodic 30 s one, so neither reaps inside the 15 s, however old the play is.
+> - The close arranges one more read at 15 s, so a place that really went is read then and not at some later tick. A new
+>   socket from the device inside the 15 s ends the matter: no `offline`, no stop to Jellyfin, no encode released.
+> - The client half is untouched, so a tab closed normally still ends its session at once through its own stop. A tab
+>   that dies without sending one reads as gone at 15 s rather than at once.
+> - A live tune takes the same 15 s. `LiveTvService.stopWatchdogTick` runs off the same close with no grace at all. The
+>   server half below left it out on purpose; it is the same fault, read from the code and not yet seen on a live tune.
+> - Unchanged: the 90 s heartbeat test, a clean `background` close, a `replaced` socket, the `cast` and `screen` kinds'
+>   exemption, and FR-R372-12's two holds, which the abrupt path still goes past once the 15 s are up.
+
 - **The server:** for a place that holds its events socket for as long as it exists — a browser tab, the Cast
   receiver, the screen app — an **abrupt** socket end with a session still open is read as *the place is gone*: the
   session goes `offline` at once and takes FR-R372-8's 10 min. A **clean** close carrying R293's `background` reason is
