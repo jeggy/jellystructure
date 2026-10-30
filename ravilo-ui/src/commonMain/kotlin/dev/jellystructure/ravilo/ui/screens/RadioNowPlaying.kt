@@ -41,9 +41,9 @@ import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.platform.LocalDensity
-import coil3.compose.AsyncImage
 import dev.jellystructure.ravilo.ui.components.RadioGlyph
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.LiveTvChannel
 import kotlinx.coroutines.delay
@@ -188,7 +188,8 @@ private fun StationPlate(channel: LiveTvChannel, size: androidx.compose.ui.unit.
     ) {
         val logo = channel.logoUrl
         if (!logo.isNullOrBlank()) {
-            AsyncImage(model = logo, contentDescription = channel.name, modifier = Modifier.fillMaxSize().padding((28 * k).dp), contentScale = ContentScale.Fit)
+            // DEB-3051 (FR-8) — the logo is a server-relative `/api/tv/image/…` path: RemoteImage resolves it against the server base, as the Home tiles do; a bare AsyncImage cannot.
+            RemoteImage(logo, channel.name, Modifier.fillMaxSize().padding((28 * k).dp), contentScale = ContentScale.Fit)
         } else {
             Text(channel.name.take(2).uppercase(), color = Color.White, fontSize = (92 * k).sp, fontWeight = FontWeight.Bold)
         }
