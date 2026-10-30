@@ -55,6 +55,8 @@ data class LiveTvChannelUpdate(
     val category: String? = null,
     @SerialName("logo_override_url") val logoOverrideUrl: String? = null,
     @SerialName("display_name") val displayName: String? = null,
+    /** DEB-3039 (DEB-2628 FR-1) — `tv` or `radio`, the operator's choice; kept across syncs. Anything else is a 400. */
+    val kind: String? = null,
 )
 
 @Serializable

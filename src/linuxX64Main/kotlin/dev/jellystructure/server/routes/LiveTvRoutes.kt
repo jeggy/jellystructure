@@ -9,6 +9,7 @@ import dev.jellystructure.shared.tv.LiveTvReorderRequest
 import dev.jellystructure.shared.tv.LiveTvSettingsUpdate
 import dev.jellystructure.shared.tv.LiveTvStopRequest
 import dev.jellystructure.shared.tv.LiveTvTuneRequest
+import dev.jellystructure.tv.CHANNEL_KINDS
 import dev.jellystructure.tv.LiveTvService
 import dev.jellystructure.tv.RelayOpen
 import dev.jellystructure.tv.pumpRadioRelay
@@ -61,7 +62,8 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         val req = runCatching { call.receive<LiveTvChannelUpdate>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request")); return@put
         }
-        val ok = liveTvService.updateChannel(id, req.shown, req.number, req.category, req.logoOverrideUrl, req.displayName)
+        if (req.kind != null && req.kind !in CHANNEL_KINDS) return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Unknown kind"))
+        val ok = liveTvService.updateChannel(id, req.shown, req.number, req.category, req.logoOverrideUrl, req.displayName, req.kind)
         if (!ok) return@put call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown channel"))
         call.respond(liveTvService.lineup())
     }

@@ -178,8 +178,12 @@ class LiveTvService(
         val merged = buildList {
             for ((id, ov) in existing) {
                 val liveCh = liveIds[id]
-                // DEB-2655 (FR-1) — the kind is rewritten on every sync a channel is still listed in; a gone channel keeps its last.
-                add(if (liveCh != null) ov.copy(unavailable = false, kind = kindOf(liveCh)) else ov.copy(unavailable = true))
+                // DEB-2655 (FR-1) — the kind follows Jellyfin on every sync a channel is still listed in, until the operator
+                // has set it (DEB-3039: Jellyfin 12.1.0 never says Radio); a gone channel keeps its last.
+                add(
+                    if (liveCh == null) ov.copy(unavailable = true)
+                    else ov.copy(unavailable = false, kind = if (ov.kindSet) ov.kind else kindOf(liveCh)),
+                )
             }
             for (ch in live) {
                 if (ch.id in existing) continue
@@ -302,8 +306,10 @@ class LiveTvService(
         category: String? = null,
         logoOverrideUrl: String? = null,
         displayName: String? = null,
+        kind: String? = null,
     ): Boolean {
         if (store.override(channelId) == null) return false
+        require(kind == null || kind in CHANNEL_KINDS) { "unknown kind" }
         store.upsertOverride(channelId) { ov ->
             ov.copy(
                 shown = shown ?: ov.shown,
@@ -313,6 +319,8 @@ class LiveTvService(
                 // "" (the admin clearing the input) is intentionally stored as-is, not skipped — see
                 // lineup()'s isNotBlank() fallback, which is what actually makes it "revert to Jellyfin".
                 displayName = displayName ?: ov.displayName,
+                kind = kind ?: ov.kind,
+                kindSet = ov.kindSet || kind != null, // DEB-3039 — the operator's choice is kept across syncs
                 isNew = false, // any explicit edit acknowledges the "new" badge
             )
         }

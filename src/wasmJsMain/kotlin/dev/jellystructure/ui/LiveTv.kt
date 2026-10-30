@@ -124,7 +124,7 @@ private fun renderLiveTvFull(container: Element, scope: CoroutineScope) {
       </div>
       <div class="tiny muted" style="margin:4px 0 12px">Drag order with ▲▼ · toggle to show a channel in Ravilo · category is a free-text label (Jellyfin doesn't provide one). Hidden channels stay in Jellyfin — they just don't appear on the TV.</div>
       <table class="lineup">
-        <thead><tr><th style="width:44px">Order</th><th style="width:64px">In&nbsp;Ravilo</th><th style="width:60px">#</th><th>Channel</th><th style="width:130px">Category</th><th style="width:90px">Guide</th><th style="width:160px">Status</th></tr></thead>
+        <thead><tr><th style="width:44px">Order</th><th style="width:64px">In&nbsp;Ravilo</th><th style="width:60px">#</th><th>Channel</th><th style="width:86px">Type</th><th style="width:130px">Category</th><th style="width:90px">Guide</th><th style="width:160px">Status</th></tr></thead>
         <tbody id="ltv-body"></tbody>
       </table>
       <div class="tiny muted" id="ltv-more" style="margin-top:12px"></div>
@@ -194,6 +194,7 @@ private fun renderLineupBody() {
         val nameInput = """<input class="cname nameinput" data-name="${c.channelId}" value="${c.name.esc()}" placeholder="Channel name">"""
         // The mark's own 7 px of air is the gap to the name, so mark and field sit in one gap-less flex pair.
         val nameField = if (c.kind == "radio") """<span class="row center" style="flex:1;min-width:0;gap:0">${radioMarkHtml()}$nameInput</span>""" else nameInput
+        val typeSelect = """<select class="catinput" data-kind="${c.channelId}"><option value="tv"${if (c.kind != "radio") " selected" else ""}>TV</option><option value="radio"${if (c.kind == "radio") " selected" else ""}>Radio</option></select>"""
         val actions = if (c.unavailable) """<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-rm="${c.channelId}">Remove from layout</button>"""
             else statusCellHtml(c)
         """<tr class="$rowCls" data-id="${c.channelId}">
@@ -201,6 +202,7 @@ private fun renderLineupBody() {
              <td>$toggle</td>
              <td class="cnum">${c.number}</td>
              <td><div class="row center" style="gap:11px">$logo$nameField</div></td>
+             <td>$typeSelect</td>
              <td><input class="catinput" data-cat="${c.channelId}" value="${c.category.esc()}" placeholder="Uncategorized"></td>
              <td>$guideBadge</td>
              <td>$actions</td>
@@ -284,6 +286,11 @@ private fun wireLiveTv(container: Element, scope: CoroutineScope) {
         target.closest("[data-dn]")?.let { el -> moveChannel(el.getAttribute("data-dn"), 1, scope); return@addEventListener }
     }
     body.addEventListener("change") { ev ->
+        (ev.target as? HTMLSelectElement)?.let { sel ->
+            val id = sel.getAttribute("data-kind") ?: return@let
+            scope.launch { ltvChannels = LiveTvApi.updateChannel(id, LiveTvChannelUpdate(kind = sel.value)); renderLineupBody() }
+            return@addEventListener
+        }
         val t = ev.target as? HTMLInputElement ?: return@addEventListener
         t.getAttribute("data-cat")?.let { id ->
             scope.launch { ltvChannels = LiveTvApi.updateChannel(id, LiveTvChannelUpdate(category = t.value)) }

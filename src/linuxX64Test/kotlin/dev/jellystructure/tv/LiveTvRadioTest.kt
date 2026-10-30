@@ -4,6 +4,8 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.DeviceIdentityRegistry
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.SessionData
+import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.closeLastDatabaseForTests
 import dev.jellystructure.db.createDatabase
@@ -28,6 +30,10 @@ import dev.jellystructure.shared.tv.LiveTvGuideProgram
 import dev.jellystructure.shared.tv.MusicHome
 import dev.jellystructure.tmdb.TmdbClient
 import io.ktor.client.request.get
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
@@ -223,6 +229,63 @@ class LiveTvRadioTest {
         assertEquals("tv", tv.channelKind)
         assertNull(tv.contentType)
         assertTrue(tv.streamKind != "audio" && tv.hlsUrl.startsWith("http"))
+    }
+
+    // DEB-3039 (FR-1 as amended) — Jellyfin 12.1.0 lists every channel as TV, so the operator sets the kind.
+    private val allTv = """[{"Id":"tv1","Name":"News 1","ChannelType":"TV"},{"Id":"r1","Name":"Station One","ChannelType":"TV"},{"Id":"r2","Name":"Station Two","ChannelType":"TV"}]"""
+
+    @Test fun `a Jellyfin that lists every channel as TV leaves all tv until the operator says otherwise`() = harness { fake, service ->
+        fake.channels = allTv
+        service.sync(); service.bulkShowNew()
+        assertEquals(setOf("tv"), service.lineup().map { it.kind }.toSet())
+        assertEquals(listOf("tv1", "r1", "r2"), ids(service.homeChannels(viewer, radio = true)))
+        assertTrue(service.updateChannel("r1", kind = "radio"))
+        assertEquals(listOf("r1"), ids(service.homeChannels(viewer, radio = true, kind = "radio")))
+        assertEquals(listOf("tv1", "r2"), ids(service.homeChannels(viewer, radio = false)), "an old client no longer sees the station")
+    }
+
+    @Test fun `an operator kind survives a sync and a Jellyfin that says otherwise and a restart`() = harness { fake, service ->
+        fake.channels = allTv
+        service.sync()
+        service.updateChannel("r1", kind = "radio")
+        service.updateChannel("tv1", kind = "tv")
+        fake.channels = """[{"Id":"tv1","ChannelType":"Radio"},{"Id":"r1","ChannelType":"TV"},{"Id":"r2","ChannelType":"Radio"}]"""
+        service.sync()
+        val kinds = service.lineup().associate { it.channelId to it.kind }
+        assertEquals(mapOf("tv1" to "tv", "r1" to "radio", "r2" to "radio"), kinds, "r2 was never set, so it still follows Jellyfin")
+        val restarted = LiveTvService(dir, LiveTvStore(storePath).also { it.load() }, JellyfinClient(), ConfigStore(cfgPath).also { it.load() })
+        assertEquals(kinds, restarted.lineup().associate { it.channelId to it.kind })
+        fake.channels = """[{"Id":"tv1"}]"""; service.sync()   // r1 leaves Jellyfin's lineup and comes back
+        fake.channels = allTv; service.sync()
+        assertEquals("radio", service.lineup().single { it.channelId == "r1" }.kind)
+    }
+
+    @Test fun `any other edit leaves the kind unset so a sync still seeds it`() = harness { fake, service ->
+        fake.channels = allTv
+        service.sync()
+        service.updateChannel("r1", shown = true)
+        fake.channels = """[{"Id":"tv1"},{"Id":"r1","ChannelType":"Radio"},{"Id":"r2"}]"""
+        service.sync()
+        assertEquals("radio", service.lineup().single { it.channelId == "r1" }.kind)
+    }
+
+    @Test fun `the admin PUT sets the kind and an unknown kind is a 400`() = harness { fake, service ->
+        fake.channels = allTv
+        service.sync()
+        testApplication {
+            application {
+                install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+                intercept(ApplicationCallPipeline.Plugins) {
+                    call.attributes.put(SessionKey, SessionData("t", "u-root", "root", "jf", Long.MAX_VALUE))
+                }
+                routing { route("/api") { liveTvRoutes(service) } }
+            }
+            suspend fun put(body: String) = client.put("/api/tv/admin/livetv/channels/r1") { contentType(ContentType.Application.Json); setBody(body) }
+            assertEquals(HttpStatusCode.OK, put("""{"kind":"radio"}""").status)
+            assertEquals("radio", service.lineup().single { it.channelId == "r1" }.kind)
+            assertEquals(HttpStatusCode.BadRequest, put("""{"kind":"podcast"}""").status)
+            assertEquals("radio", service.lineup().single { it.channelId == "r1" }.kind)
+        }
     }
 
     /** The real routes over the real services; the music side has one album so Music Home has rows. */

@@ -28,7 +28,12 @@ data class LiveTvChannelOverride(
     // DEB-2655 (FR-1) — `tv` or `radio`, written from Jellyfin's ChannelType on every sync and stored, so a
     // lineup() before the next sync after a restart never presents a station as a TV channel.
     val kind: String = "tv",
+    // DEB-3039 (FR-1) — true once the operator has chosen the kind; a sync then never rewrites it (Jellyfin 12.1.0 lists every channel as TV).
+    @SerialName("kind_set") val kindSet: Boolean = false,
 )
+
+/** DEB-3039 — the two kinds a channel can be; the admin's Type control sends one of them. */
+val CHANNEL_KINDS = setOf("tv", "radio")
 
 @Serializable
 data class LiveTvSettings(
