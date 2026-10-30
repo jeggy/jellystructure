@@ -105,6 +105,36 @@ Jellyfin 12.1.0 lists every channel as `ChannelType: "TV"`, whatever the M3U say
 
 See the radio spec's amendment of 2026-10-30 (DEB-3039).
 
+### Amendment 2026-10-30 — now/next follows the clock (DEB-3067)
+D1 has the cadence govern now/next as well as the full schedule. That cannot stand beside the radio spec's FR-10 (*"so
+the title turns over on its own"*) or R177 B1 (the tile shows the *current* program): a one-hour cadence would leave a
+finished programme on screen for up to an hour. The code is worse than D1. `lineup()` builds `current_program` from the
+snapshot `sync()` took, and `sync()` runs only at backend start, on an admin page open and on *Refresh from Jellyfin*, so
+DEB-3026 found a programme still current two hours after its end. Tróndur's decision, on DEB-3066:
+
+- **D1, as amended:** the cadence governs the full schedule grid (`GET /tv/livetv/guide`) and nothing else. The admin's
+  label, *Refresh the guide every*, already says that.
+- **A programme that has ended is never served as the current one.** A programme whose `end_ms` is at or before now is
+  `current_program: null`, whatever the snapshot holds. This binds every reader of `lineup()`: `/tv/livetv/channels`,
+  `/tv/music/home` and the admin's channel list.
+- **Now follows the clock: when the listed programme ends, we re-read it.** A read re-reads `/LiveTv/Channels` before it
+  answers when the snapshot holds an ended programme, or holds no channels at all. A channel in a gap between programmes
+  (next bullet) also triggers one when the snapshot is over 60 s old.
+  - It happens on read, with no timer: when nobody is reading, nothing is on screen and Jellyfin is not called.
+  - Concurrent readers share one re-read, and there is at most one every 5 s whatever triggered it.
+  - It replaces the snapshot and nothing else: no lineup diff, no `lastSyncedAt`, no `notifyGlobalConfigChanged`. A
+    programme ending is not a config change, and a push would make every client re-fetch on every hour. New and removed
+    channels stay `sync()`'s.
+  - If Jellyfin does not answer, the ended programme is still not served and the rest of the snapshot stands.
+- **A gap between programmes keeps the guide.** `has_guide`, and so B2's guide indicator, stays true through a gap. The
+  radio spec's amendment of 2026-10-30 (DEB-3067) defines it and what a gap reads on screen.
+- **Not changed:**
+  - The wire's shape. `current_program` is already nullable, and every client already draws its absence.
+  - `next_program`, which the server has sent as null since this phase was built. R177's *next-up* and the radio
+    player's *Next* line have never had anything to draw, and this amendment does not fill them.
+  - A tile on a page that is left open. It is as fresh as its page's last read, and no client gains a timer for it.
+
 ## Scope
 The admin half of Live TV. It is design-authored from `design/app/livetv.html`, and its viewing half is
-[R177](../ravilo/requirements/phase-R177-livetv-viewing.md). Amended by DEB-2628, which adds radio stations to the lineup (A2, B2).
+[R177](../ravilo/requirements/phase-R177-livetv-viewing.md). Amended by DEB-2628, which adds radio stations to the lineup (A2, B2), and by
+DEB-3067, which takes now/next off the cadence (D1).

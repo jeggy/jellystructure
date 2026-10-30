@@ -84,6 +84,10 @@ station in the video player, or as an empty row. So:
 - `GET /tv/livetv/channels` also accepts `kind=radio` or `kind=tv`, so Music mode can ask for stations alone.
 - The admin's own endpoints always see every channel. The admin is the same build as the backend.
 
+**Amendment 2026-10-30 (DEB-3067), Tróndur's decision:** *hide* and *kind* decide which lists a station appears in. They
+do not refuse a tune or end one already playing, and the tune's gate stays the viewer's own Jellyfin access
+(`visibleChannelIds`), so an operator tidying the lineup never cuts someone off mid-programme.
+
 **FR-3 — *Shown* works as for any channel.**
 - A station arrives hidden and badged *new* (Phase 147 C1). The operator shows it with the existing *show in Ravilo*
   toggle, and nothing else switches it on.
@@ -274,6 +278,48 @@ stations to *Radio*.
 - **A speaker that is connected when a Radio tile is tapped is let go first**, as a song or album started from the phone
   would take its queue, and the station then plays on this device. Playing it *on* the speaker is FR-11's. Until FR-11
   lands, the alternative is a station that is audible on this device while the bar still shows the speaker's queue.
+
+**Amendment 2026-10-30 (DEB-3067): the title follows the clock, and a gap between programmes keeps the guide.** Found by
+DEB-3026 (QA of DEB-2659) on prod. FR-10's re-read got the same ended programme back, because the server served a stale
+snapshot; [Phase 147](../../requirements/phase-147-livetv-admin-config.md)'s amendment of the same date fixes that for
+every channel. It also leaves a case this spec never covered: Station 1's guide has a 5-minute gap at the start of every
+hour, when Jellyfin sends no `CurrentProgram`. Today `has_guide` is `live?.currentProgram != null`, so a gap reads false,
+and the engine re-reads only while it is true (`radioRefreshDelayMs`). One gap would stop the turnover for good.
+
+- **`has_guide`, as amended (all channels):** true when Jellyfin lists a programme for the channel that is on now or
+  starts within the next 24 hours. The day's reach means a station that is off air overnight still has its guide.
+  - A channel with no `CurrentProgram` is checked with `GET /LiveTv/Programs` for that window. A channel with one needs
+    no second call.
+  - **A Jellyfin that does not answer changes nothing:** the channel keeps the `has_guide` it had. So
+    `getLiveTvPrograms`, which answers an empty list on failure today, must let the caller tell *none* from *could not
+    ask*, as `getLiveTvChannelsOrNull` does.
+  - A station whose guide has really run out reads false and stops re-reading. A later tune picks its guide up again.
+- **A gap reads as the no-programme state on every surface:**
+  - FR-10 (bar, Playing, system controls): the title is the station's name, the second line reads *Live radio*, and the
+    LIVE mark stays;
+  - FR-6 and FR-9 (tiles): *Live radio*, with no progress bar;
+  - FR-8 (radio player): the name, *Live radio* and LIVE;
+  - FR-7 (guide): the programmes either side with the gap left empty between them, never the whole-window *Live radio*
+    block, which stays for a station with no programmes in the window.
+  - A TV channel in a gap keeps R177's *No program info*.
+- **The turnover out of a gap** is the engine's existing 60 s re-read, so the next programme's title can arrive up to 60 s
+  after it starts.
+- **A re-tune never brings back a programme that has ended.** `RadioTuner.start` and `retune` keep the programme from
+  before the pause, so *play* after a long pause shows the old title for up to 60 s. A kept programme whose end has passed
+  is dropped at the tune, and the station is re-read at once.
+- **A speaker is unchanged.** FR-11's title is the programme at the moment of the load, so a station loaded during a gap
+  shows its name until it is loaded again.
+
+**Tests, as amended:**
+- `linuxX64Test`, with the service's `clock`:
+  - an ended programme in the snapshot is not served, and the read re-reads and serves the next one;
+  - a gap gives `current_program` null and `has_guide` true;
+  - a Jellyfin failure on either call serves no ended programme and leaves `has_guide` as it was;
+  - a channel with nothing listed for 24 hours has `has_guide` false and causes no re-read;
+  - concurrent reads make one Jellyfin call;
+  - a re-read does not move `lastSyncedAt` or notify, and the cadence does not delay it.
+- `RadioLiveTest`: a gap keeps the engine re-reading and the title turns over when it ends; a re-tune past a kept
+  programme's end drops it.
 
 **FR-11 — A station plays on a speaker like a song.**
 - **What the phone or Mac sends:** a station started while a speaker is linked goes to the speaker. The sender's

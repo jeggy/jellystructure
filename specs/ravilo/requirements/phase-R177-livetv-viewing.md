@@ -75,6 +75,12 @@ client that asks with `radio=1`, so an installed client never sees one. In that 
 See [`radio-plays-beside-the-live-channels-and-on-music-home.md`](radio-plays-beside-the-live-channels-and-on-music-home.md)
 FR-1, FR-2 and FR-6 to FR-8.
 
+### Amendment 2026-10-30 — a programme that has ended, and a gap (DEB-3067)
+**B1** and the player's channel bar never show a programme that has ended: the server stops serving it at its end
+([Phase 147](../../requirements/phase-147-livetv-admin-config.md), amendment of the same date). In a gap between two
+programmes a channel reads *No program info* and a station *Live radio*, and **C1**'s grid leaves the gap empty between
+the programmes either side. The channel still has its guide (radio spec, amendment of the same date).
+
 ## Reuse
 Tile/focus model, `AudioFlagStrip` `LANG_CC` for any flag needs, `RaviloButton`, the player chrome
 patterns, and the R33 live-config push (so a lineup/enable change reaches the TV without a restart).
@@ -95,5 +101,5 @@ patterns, and the R33 live-config push (so a lineup/enable change reaches the TV
 
 ## Scope
 The viewing half of Live TV. It is design-authored from `design/ravilo/Ravilo Live TV.html`, and its
-admin half is Phase 147. Amended by DEB-2627, which covers how a live stream's quality adapts (D1), and by DEB-2628, which adds radio stations
-to the row, the guide and the player (B1, C1, D).
+admin half is Phase 147. Amended by DEB-2627, which covers how a live stream's quality adapts (D1), by DEB-2628, which adds radio stations
+to the row, the guide and the player (B1, C1, D), and by DEB-3067, which covers an ended programme and a gap (B1, C1).
