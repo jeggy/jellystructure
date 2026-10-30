@@ -109,10 +109,11 @@ class ContinueTargetTest {
     }
 
     @Test fun `the series last episode finished — an older resume stays — else the series leaves the list`() {
-        val withResume = plan(resume = listOf(resume("e2x5", august, 30.0)), finished = listOf(watched("e6x16", today)), nextUp = listOf(nextUp("e2x5")))
+        val others = show.episodes.filter { (it.seasonNumber ?: 0) >= 1 && it.jellyfinId != "e2x5" && it.jellyfinId != "e6x16" }.map { watched(it.jellyfinId!!, august) }
+        val withResume = plan(resume = listOf(resume("e2x5", august, 30.0)), finished = others + watched("e6x16", today), nextUp = listOf(nextUp("e2x5")))
         assertEquals("e2x5", withResume.picks.single().episodeId)
-        val none = plan(finished = listOf(watched("e6x16", today)), nextUp = listOf(nextUp("e1x1")))
-        assertTrue(none.picks.isEmpty(), "nothing left in order: no entry, whatever Jellyfin's Next Up says")
+        val none = plan(finished = others + watched("e2x5", august) + watched("e6x16", today), nextUp = listOf(nextUp("e1x1")))
+        assertTrue(none.picks.isEmpty(), "nothing left unwatched: no entry, whatever Jellyfin's Next Up says")
     }
 
     @Test fun `a catalog row with no Jellyfin item is skipped`() {
@@ -141,13 +142,41 @@ class ContinueTargetTest {
         assertEquals(0.25f, pick.progressPct)
     }
 
-    @Test fun `a fully watched series is in the list with an anchor mid-way — and not with it at the end`() {
+    @Test fun `a fully watched series has no entry wherever the anchor sits`() {
         val all = show.episodes.filter { (it.seasonNumber ?: 0) >= 1 }.map { watched(it.jellyfinId!!, august) }
         // Every episode marked watched in one second: the tie goes to the last episode — no entry.
         assertTrue(plan(finished = all).picks.isEmpty())
-        // Then S02E03 played to the end today: S02E04.
+        // S02E03 played to the end today, the rest watched: the anchor is mid-way and still no entry (DEB-2944).
         val again = all.filter { it.id != "e2x3" } + watched("e2x3", today)
-        assertEquals("e2x4", plan(finished = again).picks.single().episodeId)
+        assertTrue(plan(finished = again).picks.isEmpty())
+    }
+
+    private val twoSeasons = series((1..2).flatMap { s -> (1..4).map { e -> ep(s, e) } })
+
+    @Test fun `acceptance 6a — season 2 watched and then season 1 marked — leaves no entry`() {
+        val s2 = (1..4).map { watched("e2x$it", august) }
+        val s1 = (1..4).map { watched("e1x$it", today) }
+        assertTrue(plan(lib = listOf(twoSeasons), finished = s2 + s1).picks.isEmpty())
+    }
+
+    @Test fun `acceptance 6b — the next after the anchor is watched — skips to the first unwatched`() {
+        val finished = listOf(watched("e1x2", today), watched("e1x3", august), watched("e1x4", august))
+        assertEquals("e2x1", plan(lib = listOf(twoSeasons), finished = finished).picks.single().episodeId)
+    }
+
+    @Test fun `acceptance 6c — all after the anchor are watched — offers the earlier unwatched one`() {
+        val finished = listOf(watched("e1x1", august), watched("e1x3", today)) + (1..4).map { watched("e2x$it", august) } + watched("e1x4", august)
+        assertEquals("e1x2", plan(lib = listOf(twoSeasons), finished = finished).picks.single().episodeId)
+    }
+
+    @Test fun `an in-progress unwatched episode after a watched next keeps its own progress`() {
+        val pick = plan(
+            lib = listOf(twoSeasons),
+            resume = listOf(resume("e1x4", august, 60.0)),
+            finished = listOf(watched("e1x2", today), watched("e1x3", august)),
+        ).picks.single()
+        assertEquals("e1x4", pick.episodeId)
+        assertEquals(0.6f, pick.progressPct)
     }
 
     @Test fun `ties in one second go to the later episode in order — fractions still order`() {

@@ -59,6 +59,19 @@ internal fun nextEpisodeAfter(series: MediaItem, ep: Episode): NextEpisode? {
     return NextEpisode(jellyfinId = next.jellyfinId!!, title = next.title?.takeIf { it.isNotBlank() }, kicker = kicker)
 }
 
+/**
+ * R375 FR-R375-2 (DEB-2944 amendment) — the first counted episode the viewer has not watched: the first one after [anchor]
+ * in [nextEpisodeAfter]'s order whose Jellyfin id is not in [watchedIds], else — when everything after it is watched — the
+ * first unwatched one from the start. Null when every counted episode is watched.
+ */
+internal fun firstUnwatchedAfter(series: MediaItem, anchor: Episode, watchedIds: Set<String>): Episode? {
+    val ordered = countedEpisodesInOrder(series)
+    val at = ordered.indexOfLast { it.jellyfinId == anchor.jellyfinId }
+    val after = if (at < 0) emptyList() else ordered.drop(at + 1)
+    return after.firstOrNull { it.jellyfinId !in watchedIds && it.jellyfinId != anchor.jellyfinId }
+        ?: ordered.firstOrNull { it.jellyfinId !in watchedIds && it.jellyfinId != anchor.jellyfinId }
+}
+
 /** The series' playable, counted episodes (R346: season 1 or later, with a Jellyfin item) in season, episode, part
  *  order — the order [nextEpisodeAfter] walks and R375's anchor breaks a tie by. */
 internal fun countedEpisodesInOrder(series: MediaItem): List<Episode> =

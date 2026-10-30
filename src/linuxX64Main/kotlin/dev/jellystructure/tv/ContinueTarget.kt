@@ -141,20 +141,23 @@ internal fun planContinue(
     for ((seriesId, items) in finishedItems.filter { it.seriesId != null }.groupBy { it.seriesId!! }) {
         val series = byJellyfinId[seriesId]?.takeIf { it.kind == MediaKind.TV_SHOW && !isNewestFirst(it) } ?: continue  // DEB-2916: no next in order
         val anchor = lastFinishedEpisode(series, items) ?: continue
-        val next = nextEpisodeAfter(series, anchor.episode)?.let { n ->
-            val span = resolvedEpisodeSpan(series, n.jellyfinId, null, null)
+        // DEB-2944 — "next" is the first episode after the anchor the viewer has not watched, else the first unwatched
+        // from the start, else none (a fully watched series leaves the row).
+        val watchedIds = items.asSequence().filter { it.userData?.played == true }.map { it.id }.toHashSet()
+        val next = firstUnwatchedAfter(series, anchor.episode, watchedIds)?.let { n ->
+            val span = resolvedEpisodeSpan(series, n.jellyfinId!!, null, null)
             // FR-R375-3 — an in-progress, unwatched next episode shows as a resume card (its progress, its badge).
-            val inProgress = resumeByEpisodeId[n.jellyfinId]
+            val inProgress = resumeByEpisodeId[n.jellyfinId!!]
             val pct = inProgress?.userData?.playedPercentage?.toFloat()?.div(100f)
             // The label from our catalog: Jellyfin's own name is only on the items its Next Up returned.
             val label = if (inProgress != null) null else listOfNotNull(span.code, n.title).joinToString(" · ").ifEmpty { null }
-            ContinuePick(series, n.jellyfinId, pct, label, span.season, span.episode, span.episodeEnd, 0L)
+            ContinuePick(series, n.jellyfinId!!, pct, label, span.season, span.episode, span.episodeEnd, 0L)
         }
         targets[seriesId] = Target(anchor, next)
     }
 
     // §2 membership: "genuinely started" (a: resume, b: finished, c: touched within the window) AND "something left
-    // to watch" (resume, Jellyfin's next-up, or — R375 — a next episode in order after the last finished one).
+    // to watch" (resume, Jellyfin's next-up, or — R375 — the first unwatched episode after the last finished one).
     val startedKeys = resumeByKey.keys + lastFinishedByKey.keys + lastTouchedByKey.keys
 
     // DEB-2916 (FR-6) — a newest-first series: its one card (or none) from its newest episode alone.
