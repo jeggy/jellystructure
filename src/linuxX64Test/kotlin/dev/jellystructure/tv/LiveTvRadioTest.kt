@@ -34,6 +34,9 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.server.response.respondBytesWriter
+import io.ktor.utils.io.writeFully
+import kotlinx.coroutines.delay
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
@@ -113,6 +116,14 @@ class LiveTvRadioTest {
                 get("/up/mp3") {
                     call.response.headers.append("icy-br", "128")
                     call.respondText("RADIO", ContentType("audio", "mpeg"))
+                }
+                get("/up/endless") {
+                    // A real station never ends: the probe must read the type off the headers and leave without the body (DEB-3051).
+                    call.response.headers.append("icy-br", "128")
+                    call.respondBytesWriter(ContentType("audio", "mpeg")) {
+                        val chunk = ByteArray(1024)
+                        try { while (true) { writeFully(chunk); flush(); delay(20) } } catch (_: Throwable) {}
+                    }
                 }
                 get("/up/live.m3u8") { call.respondText("#EXTM3U\n#EXT-X-VERSION:3\n", ContentType("application", "vnd.apple.mpegurl")) }
                 get("/Users/{id}") { call.respondText("{}", ContentType.Application.Json) }
@@ -207,6 +218,14 @@ class LiveTvRadioTest {
         assertEquals("audio/mpeg", ticket.contentType)
         assertEquals("radio", ticket.channelKind)
         assertTrue(Regex("/api/tv/livetv/radio/[0-9a-f]{32}").matches(ticket.hlsUrl), "a path, never an absolute URL: ${ticket.hlsUrl.take(30)}")
+    }
+
+    @Test fun `a station whose stream never ends still gives its content type on the ticket`() = harness { fake, service ->
+        service.sync(); service.bulkShowNew()
+        fake.openPath = "/up/endless"
+        val ticket = assertNotNull(service.tune(viewer, "r1", caps))
+        assertEquals("audio", ticket.streamKind)
+        assertEquals("audio/mpeg", ticket.contentType)
     }
 
     @Test fun `an https HLS station is handed over as-is`() = harness { fake, service ->

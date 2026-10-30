@@ -31,6 +31,7 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.takeFrom
+import io.ktor.utils.io.discard
 import io.ktor.utils.io.readRemaining
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -44,6 +45,7 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
 import kotlin.concurrent.AtomicInt
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.buffered
 import kotlinx.io.readByteArray
@@ -63,6 +65,8 @@ private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L
 /** DEB-2627 FR-1 — the backend's look at a source's master: at most 3 redirects, 3 s in all, 64 KiB, cached an hour. */
 private const val SOURCE_MAX_REDIRECTS = 3
 private const val SOURCE_FETCH_TIMEOUT_MS = 3_000L
+private const val SOURCE_AUDIO_DRAIN_MS = 1_000L
+private const val SOURCE_AUDIO_DRAIN_BYTES = 4L * 1024
 private const val SOURCE_FETCH_MAX_BYTES = 64 * 1024
 private const val SOURCE_CLASS_TTL_MS = 60 * 60 * 1000L
 /** A failed look is remembered for a minute only: an hour of `hls` would hide a ladder after one slow answer, and a dead source would cost every tune 3 s. */
@@ -620,9 +624,14 @@ class LiveTvService(
                                     ?.let { URLBuilder(current).takeFrom(it).buildString() }
                                     ?.takeIf { it.startsWith("http", ignoreCase = true) }
                                     ?.let { PlaylistStep.Redirect(it) } ?: PlaylistStep.Failed
-                            resp.status.isSuccess() && isRelayableAudio(resp.headers[HttpHeaders.ContentType]) ->
-                                // DEB-2656 — a station's stream never ends: its headers are the whole look, and the body stays unread.
-                                PlaylistStep.Body(SourceHead(null, resp.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim(), resp.headers["icy-br"]?.substringBefore(',')?.trim()?.toIntOrNull()))
+                            resp.status.isSuccess() && isRelayableAudio(resp.headers[HttpHeaders.ContentType]) -> {
+                                // DEB-2656 — a station's stream never ends: its headers are the whole look. DEB-3051 (FR-4) — leaving the
+                                // lambda with the body unread hangs the call inside a handler until the 3 s bound, and the look was then lost
+                                // (a null `content_type` on the ticket): take the look first, then drain a little, itself bounded to 1 s.
+                                val look = SourceHead(null, resp.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim(), resp.headers["icy-br"]?.substringBefore(',')?.trim()?.toIntOrNull())
+                                withTimeoutOrNull(SOURCE_AUDIO_DRAIN_MS) { runCatching { resp.bodyAsChannel().discard(SOURCE_AUDIO_DRAIN_BYTES) } }
+                                PlaylistStep.Body(look)
+                            }
                             resp.status.isSuccess() -> {
                                 val contentType = resp.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim()
                                 val bytes = resp.bodyAsChannel().readRemaining(SOURCE_FETCH_MAX_BYTES.toLong()).readByteArray()
