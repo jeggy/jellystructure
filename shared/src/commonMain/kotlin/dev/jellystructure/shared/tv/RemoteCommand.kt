@@ -37,6 +37,8 @@ sealed interface RemoteCommand {
     /** The target-neutral track index (`CastTrack.index`); -1 = subtitles off. */
     data class SelectAudio(val index: Int) : RemoteCommand
     data class SelectSubtitle(val index: Int) : RemoteCommand
+    /** DEB-2961 — the caption size: `S` · `M` · `L`. */
+    data class SetSubtitleSize(val size: String) : RemoteCommand
     data class QueueAdd(val trackId: String) : RemoteCommand
     data class QueuePlayNext(val trackId: String) : RemoteCommand
     data class QueueMove(val index: Int, val to: Int) : RemoteCommand
@@ -103,6 +105,7 @@ interface RemotePlayer {
     fun setRepeat(mode: String) {}
     fun selectAudio(index: Int) {}
     fun selectSubtitle(index: Int) {}
+    fun setSubtitleSize(size: String) {}
     fun queueAdd(trackId: String) {}
     fun queuePlayNext(trackId: String) {}
     fun queueMove(index: Int, to: Int) {}
@@ -176,6 +179,7 @@ fun RemoteCommand.applyTo(player: RemotePlayer, volume: RemoteVolume) {
         is RemoteCommand.SetRepeat -> player.setRepeat(mode)
         is RemoteCommand.SelectAudio -> player.selectAudio(index)
         is RemoteCommand.SelectSubtitle -> player.selectSubtitle(index)
+        is RemoteCommand.SetSubtitleSize -> player.setSubtitleSize(size)
         is RemoteCommand.QueueAdd -> player.queueAdd(trackId)
         is RemoteCommand.QueuePlayNext -> player.queuePlayNext(trackId)
         is RemoteCommand.QueueMove -> player.queueMove(index, to)

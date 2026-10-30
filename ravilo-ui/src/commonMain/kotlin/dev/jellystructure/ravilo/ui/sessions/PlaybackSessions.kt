@@ -105,6 +105,8 @@ fun eventsFeaturesFor(
     /** R369 (FR-R369-9, DEB-1099) — this app obeys a **book-time** `seek` on a book session (it has a music engine, so
      *  `seekBook` crosses the book's parts). The web app has none and must not declare it. */
     bookSeek: Boolean = false,
+    /** DEB-2961 (one-remote FR-14) — this app's film player resizes its captions on a `set_subtitle_size`. */
+    subtitleSize: Boolean = false,
 ): Set<String> {
     val base = when {
         isTv -> if (obeysSessionCommands) setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL) else emptySet()
@@ -114,7 +116,12 @@ fun eventsFeaturesFor(
         else -> setOf(EVENTS_FEATURE_SESSIONS)
     }
     // Additive, and only beside `session_control`: a socket that obeys no command obeys no seek either.
-    return if (bookSeek && EVENTS_FEATURE_SESSION_CONTROL in base) base + dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK else base
+    var features = base
+    if (EVENTS_FEATURE_SESSION_CONTROL in base) {
+        if (bookSeek) features = features + dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK
+        if (subtitleSize) features = features + dev.jellystructure.shared.tv.EVENTS_FEATURE_SUBTITLE_SIZE
+    }
+    return features
 }
 
 /** `S01E05` rows read *Title · S01E05*; music rows read the title (FR-R368-7). */

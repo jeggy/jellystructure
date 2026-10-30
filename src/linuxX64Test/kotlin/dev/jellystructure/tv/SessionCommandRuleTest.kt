@@ -136,6 +136,30 @@ class SessionCommandRuleTest {
         Unit
     }
 
+    // DEB-2961 (one-remote FR-5, FR-14) — the caption size is offered to a picture whose place declared it, and to no one else.
+    @Test fun `set_subtitle_size is offered only to a film or episode place that declared it`() {
+        for (kind in listOf(SessionKind.FILM, SessionKind.EPISODE)) {
+            assertTrue("set_subtitle_size" in opsFor(targetControl = true, music = false, kind = kind, subtitleSize = true), kind)
+            assertFalse("set_subtitle_size" in opsFor(targetControl = true, music = false, kind = kind, subtitleSize = false), kind)
+        }
+        assertFalse("set_subtitle_size" in opsFor(targetControl = true, music = true, kind = SessionKind.MUSIC, subtitleSize = true))
+        assertFalse("set_subtitle_size" in opsFor(targetControl = false, music = false, kind = SessionKind.FILM, subtitleSize = true))
+    }
+
+    @Test fun `a subtitle size outside S M L is invalid and one for a place that never declared the op is not offered`() = runBlocking {
+        val db = createDatabase(dbPath)
+        val devices = RaviloDeviceService(db)
+        val sessions = PlaybackSessions(db)
+        sessions.describe = { id, _ -> SessionKind.FILM to SessionItem(id, "Film") }
+        val control = SessionControl(db, sessions, devices, TvEventBus(CoroutineScope(SupervisorJob() + Dispatchers.Default)))
+        val anna = devices.loginDevice("pixel", "pixel", "u-anna", "u-anna", "jf", false, false, kind = "phone").first
+        val id = sessions.onStart(anna, "film-1", 0)
+        assertIs<CommandResult.Invalid>(control.command(id, SessionCommandRequest(op = "set_subtitle_size", size = "XL"), anna, admin = false))
+        assertIs<CommandResult.Invalid>(control.command(id, SessionCommandRequest(op = "set_subtitle_size"), anna, admin = false))
+        assertIs<CommandResult.NotOffered>(control.command(id, SessionCommandRequest(op = "set_subtitle_size", size = "L"), anna, admin = false))
+        Unit
+    }
+
     @Test fun `a config without the key reads household control off and it round-trips`() = runBlocking {
         val path = "/tmp/jellystructure-test-household-${getpid()}.toml"
         val store = ConfigStore(path)

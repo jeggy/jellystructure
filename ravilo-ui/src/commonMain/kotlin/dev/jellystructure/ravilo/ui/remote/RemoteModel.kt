@@ -54,6 +54,9 @@ data class RemoteModel(
     val repeat: String = "off",
 )
 
+/** DEB-2961 (one-remote FR-2, FR-14) — the server driver's S · M · L row exists when the place's ops list the caption size. */
+fun serverCanSubtitleSize(ops: Set<String>): Boolean = "set_subtitle_size" in ops
+
 /** FR-5.3 — a control the place cannot do is absent; the link offers everything, the server says its ops. */
 fun RemoteModel.offers(op: String): Boolean = ops == null || op in ops
 
@@ -163,6 +166,7 @@ object SessionSender {
             subtitleTracks = subs,
             selectedAudio = audio.indexOfFirst { it.index == d?.audioIndex }.coerceAtLeast(0),
             selectedSub = subs.indexOfFirst { it.index == d?.subtitleIndex },
+            subSize = d?.subSize?.firstOrNull()?.takeIf { it in "SML" } ?: 'M',   // DEB-2961 — absent = M
         )
     }
 }

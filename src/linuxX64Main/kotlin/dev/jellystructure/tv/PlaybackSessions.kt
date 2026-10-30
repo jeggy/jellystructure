@@ -102,6 +102,7 @@ internal fun parseEventFeatures(raw: String?): Set<String> =
 private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL,
     dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL,   // R371 — group_control
     dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK,       // R369 (FR-R369-9) — a book-time seek
+    dev.jellystructure.shared.tv.EVENTS_FEATURE_SUBTITLE_SIZE,   // DEB-2961 (one-remote FR-14) — set_subtitle_size
     dev.jellystructure.shared.tv.EVENTS_FEATURE_SUPPORT)         // 320 (FR-320-10) — support_changed
 
 /** R380 (owner decision 2) — a TV's name as Cast shows it (`cast_name=`), kept beside its features as `castname:<name>`. */
@@ -164,6 +165,8 @@ internal data class SessionOptions(
     @SerialName("subtitle_tracks") val subtitleTracks: List<dev.jellystructure.shared.tv.CastTrack> = emptyList(),
     @SerialName("audio_index") val audioIndex: Int? = null,
     @SerialName("subtitle_index") val subtitleIndex: Int? = null,
+    /** DEB-2961 — the caption size the target's film player reported (`S` · `M` · `L`); null = not reported. */
+    @SerialName("sub_size") val subSize: String? = null,
     /** Did the target report its queue (so `expect_index` / `queue_rev` mean something)? */
     @SerialName("queue_known") val queueKnown: Boolean = false,
     val rooms: List<SessionRoom> = emptyList(),
@@ -1010,6 +1013,7 @@ class PlaybackSessions(
                 queueRev = if (tracksOnly) cur.options.queueRev else r.queueRev, queueKnown = if (tracksOnly) cur.options.queueKnown else true,
                 shuffle = r.shuffle ?: cur.options.shuffle, repeat = r.repeat ?: cur.options.repeat,
                 audioTracks = r.audioTracks, subtitleTracks = r.subtitleTracks, audioIndex = r.audioIndex, subtitleIndex = r.subtitleIndex,
+                subSize = r.subSize?.takeIf { it in dev.jellystructure.shared.tv.SUBTITLE_SIZES } ?: cur.options.subSize,
                 rooms = r.members ?: cur.options.rooms,
             )
             if (!placeMoved && o == cur.options) return@withLock

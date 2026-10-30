@@ -121,10 +121,15 @@ internal fun bookSeekAllowed(kind: String, bookSeek: Boolean): Boolean = kind !=
 
 /** The ops a target obeys — the remote shows a control for these only (absent, never greyed). Shuffle and repeat are a
  *  queue of songs' (2026-10-05: an episode's remote showed both). */
-internal fun opsFor(targetControl: Boolean, music: Boolean = true, kind: String = SessionKind.MUSIC, bookSeek: Boolean = false): List<String> =
+internal fun opsFor(
+    targetControl: Boolean, music: Boolean = true, kind: String = SessionKind.MUSIC, bookSeek: Boolean = false,
+    subtitleSize: Boolean = false,
+): List<String> =
     (if (targetControl) SESSION_OPS_LEGACY + SESSION_OPS_CONTROL else SESSION_OPS_LEGACY)
         .filter { music || (it != "set_shuffle" && it != "set_repeat") }
         .filter { it != "seek" || bookSeekAllowed(kind, bookSeek) }   // FR-R369-9
+        // DEB-2961 (one-remote FR-5, FR-14) — only a picture has captions, and only a build that declared the op obeys it.
+        .filter { it != "set_subtitle_size" || (subtitleSize && (kind == SessionKind.FILM || kind == SessionKind.EPISODE)) }
 
 /** R371 — a music session's room ops, offered while an app can reach the speakers (the link holder or a relay). */
 internal fun roomOps(music: Boolean, reachable: Boolean): List<String> = if (music && reachable) listOf("add_room", "remove_room", "room_volume") else emptyList()
@@ -151,6 +156,8 @@ internal sealed interface CommandResult {
     data object NotOffered : CommandResult
     data object Forbidden : CommandResult
     data object NotFound : CommandResult
+    /** 400 — an op's argument is not one it takes (`set_subtitle_size` with a size other than S · M · L). */
+    data object Invalid : CommandResult
 }
 
 /**
@@ -218,7 +225,8 @@ class SessionControl(
         val minter = sessions.castMinterOf(s.targetId)
         val reach = (minter != null && holdsGroupControl(minter)) || relayAppFor(s) != null
         return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL), music = s.kind == SessionKind.MUSIC,
-            kind = s.kind, bookSeek = bookSeekTarget(s)) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
+            kind = s.kind, bookSeek = bookSeekTarget(s),
+            subtitleSize = bus.hasFeature(s.targetId, dev.jellystructure.shared.tv.EVENTS_FEATURE_SUBTITLE_SIZE)) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
     }
 
     /** FR-R369-9 — does the place this session plays at obey a book-time seek? A book never casts (R380 owner decision
@@ -274,11 +282,14 @@ class SessionControl(
     /** FR-R369-1/-2 — one command. [source] is `admin` or the caller's device id (the timeline's *from*). */
     internal suspend fun command(sessionId: String, c: SessionCommandRequest, caller: DeviceData?, admin: Boolean): CommandResult {
         val s = sessions.get(sessionId)?.takeIf { it.live } ?: return CommandResult.NotFound
+        if (c.op == "set_subtitle_size" && c.size !in dev.jellystructure.shared.tv.SUBTITLE_SIZES) return CommandResult.Invalid
         if (!mayControl(caller, admin, s)) return CommandResult.Forbidden
         if (sessionCommandVerdict(c.op, c.revision, s) == CommandVerdict.Stale) return CommandResult.Stale(s)
         // FR-R369-9 — the op was never offered on this session (the same predicate `opsOf` uses); a sender that asks
         // anyway is refused rather than obeyed in the wrong time base.
         if (c.op == "seek" && !bookSeekAllowed(s.kind, bookSeekTarget(s))) return CommandResult.NotOffered
+        // DEB-2961 — likewise a caption size for a place that never declared the op, or for a song.
+        if (c.op == "set_subtitle_size" && "set_subtitle_size" !in opsOf(s)) return CommandResult.NotOffered
         val source = if (admin) "admin" else caller?.deviceId
         if (isRoomOp(c)) return roomCommand(s, c, source)
         val targetSocket = bus.isConnected(s.targetId)

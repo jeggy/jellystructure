@@ -138,6 +138,13 @@ class PlaybackSessionsTest {
         assertEquals(setOf("sessions", "session_control"), eventsFeaturesFor(isTv = false, obeysSessionCommands = true))
     }
 
+    @Test fun `a place that resizes captions declares it beside session_control and nowhere else`() {
+        assertTrue("subtitle_size" in eventsFeaturesFor(isTv = true, obeysSessionCommands = true, subtitleSize = true))
+        assertTrue("subtitle_size" in eventsFeaturesFor(isTv = false, obeysSessionCommands = true, subtitleSize = true))
+        assertFalse("subtitle_size" in eventsFeaturesFor(isTv = false, obeysSessionCommands = true))
+        assertFalse("subtitle_size" in eventsFeaturesFor(isTv = false, subtitleSize = true))
+    }
+
     /**
      * R369 (FR-R369-9, DEB-1099) — an app with a music engine says it obeys a **book-time** seek; the web app, which has
      * none, must not, and the server then offers a book session no `seek` at all (its remote draws the read-only bar).

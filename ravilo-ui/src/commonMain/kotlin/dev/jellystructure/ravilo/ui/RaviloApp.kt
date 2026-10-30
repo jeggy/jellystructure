@@ -658,7 +658,7 @@ fun RaviloApp(
                     features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.support.SupportModel.withSupportFeature(   // DEB-1501 (FR-7)
                         dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform, obeysSessionCommands = true,
                             groupControl = dev.jellystructure.ravilo.ui.seams.platformGroupController() != null,
-                            bookSeek = dev.jellystructure.ravilo.ui.music.MusicEngine.supported),
+                            bookSeek = dev.jellystructure.ravilo.ui.music.MusicEngine.supported, subtitleSize = true),
                         mayFile = !isTvPlatform)),
                     onSupportChanged = { dev.jellystructure.ravilo.ui.support.SupportLane.changes.emit(it) },
                     onSessionList = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onList(it) },

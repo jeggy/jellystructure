@@ -60,6 +60,20 @@ class SessionSenderTest {
         assertTrue(s.hasNext)
     }
 
+    // DEB-2961 (one-remote FR-2, FR-14) — the S · M · L row follows the place's ops; the size drawn is the place's own.
+    @Test fun `the caption size row exists only where the place lists the op`() {
+        assertTrue(serverCanSubtitleSize(setOf("play", "set_subtitle_size")))
+        assertFalse(serverCanSubtitleSize(setOf("play", "set_subtitle")))
+        assertFalse(serverCanSubtitleSize(emptySet()))
+    }
+
+    @Test fun `the size the sheet shows is the places and an absent one is M`() {
+        val v = view()
+        assertEquals('L', SessionSender.status(v, detail(v).copy(subSize = "L"), 0, 0, 0).subSize)
+        assertEquals('M', SessionSender.status(v, detail(v), 0, 0, 0).subSize)
+        assertEquals('M', SessionSender.status(v, detail(v).copy(subSize = "XL"), 0, 0, 0).subSize)
+    }
+
     @Test fun `next exists only where the place obeys it`() {
         val v = view()
         assertFalse(SessionSender.status(v, detail(v, ops = listOf("play", "pause")), 0, 0, 0).hasNext)

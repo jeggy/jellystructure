@@ -63,6 +63,8 @@ internal fun RemoteVideoCommands(
             // picks a cast remote makes, through the player's own picker door. Indexes are the reported lists'.
             override fun selectAudio(index: Int) { SessionVideoTracks.source?.selectAudioAt(index) }
             override fun selectSubtitle(index: Int) { SessionVideoTracks.source?.selectSubtitleAt(index) }
+            // DEB-2961 (one-remote FR-2, FR-14) — the S · M · L the cast road already applies (`bindCastSource.setSubSize`).
+            override fun setSubtitleSize(size: String) { SessionVideoTracks.source?.setSubSize?.invoke(size.firstOrNull()?.takeIf { it in "SML" } ?: 'M') }
         }
         val detach = RemoteControl.attachVideo(remote)
         onDispose { detach() }
@@ -154,7 +156,7 @@ internal fun CastVideoSource.selectSubtitleAt(index: Int) {
  * session's own id, so the session's place moves with the play (the entry advancing is not a new session) and a
  * remote lists the queue it is actually in. A player with no hand-over reports no queue, exactly as before.
  */
-internal fun sessionTracksReport(itemId: String, l: CastVideoLists?): SessionQueueReport? {
+internal fun sessionTracksReport(itemId: String, l: CastVideoLists?, subSize: Char? = null): SessionQueueReport? {
     val place = SessionVideoTracks.place?.takeIf { it.ids.getOrNull(it.at) == itemId }
     if (l == null || (l.audio.isEmpty() && l.subtitles.isEmpty())) return place?.let {
         SessionQueueReport(sessionId = it.sessionId, itemId = itemId, queue = it.ids, queueRev = queueRevOf(it.ids), queueIndex = it.at)
@@ -163,6 +165,7 @@ internal fun sessionTracksReport(itemId: String, l: CastVideoLists?): SessionQue
         sessionId = place?.sessionId, itemId = itemId,
         queue = place?.ids ?: emptyList(), queueRev = place?.let { queueRevOf(it.ids) } ?: 0, queueIndex = place?.at ?: 0,
         audioTracks = l.audio, subtitleTracks = l.subtitles, audioIndex = l.selectedAudio, subtitleIndex = l.selectedSub,
+        subSize = subSize?.toString(),
     )
 }
 
@@ -188,7 +191,7 @@ internal object SessionVideoTracks {
         var last: SessionQueueReport? = null
         var sentAt = 0L
         while (true) {
-            val r = sessionTracksReport(itemId, source.lists())
+            val r = sessionTracksReport(itemId, source.lists(), source.subSize())
             val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
             if (r != null && (r != last || now - sentAt >= RESEND_MS)) {
                 dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportQueue(r)

@@ -51,6 +51,32 @@ class SessionWireTest {
         assertEquals(RemoteCommand.SetVolume(40), sessionRemoteCommand(SessionCommandRequest(op = "set_volume", level = 40)))
     }
 
+    // DEB-2961 (one-remote FR-2, FR-14) — the caption size is an op, mapped for an app's player and for the receiver.
+    @Test fun aSubtitleSizeReadsAsThePlayersOwnControlAndTheReceiversSubsize() {
+        assertEquals(RemoteCommand.SetSubtitleSize("L"), sessionRemoteCommand(SessionCommandRequest(op = "set_subtitle_size", size = "L")))
+        assertEquals("subsize", castCommandForSession(SessionCommandRequest(op = "set_subtitle_size", size = "S"), music = false)?.type)
+        assertEquals("S", castCommandForSession(SessionCommandRequest(op = "set_subtitle_size", size = "S"), music = false)?.size)
+        assertTrue("set_subtitle_size" in SESSION_OPS_CONTROL)
+        assertFalse("set_subtitle_size" in SESSION_OPS_LEGACY)
+    }
+
+    @Test fun aSubtitleSizeOtherThanSMLReadsAsNothing() {
+        assertNull(sessionRemoteCommand(SessionCommandRequest(op = "set_subtitle_size", size = "XL")))
+        assertNull(sessionRemoteCommand(SessionCommandRequest(op = "set_subtitle_size")))
+        assertNull(castCommandForSession(SessionCommandRequest(op = "set_subtitle_size", size = "huge"), music = false))
+    }
+
+    @Test fun theSubtitleSizeFieldsAreOptionalOnTheWire() {
+        val v = SessionView(id = "s", revision = 1, owner = SessionOwner("u", "Anna"), kind = "film", target = SessionTarget("app", "d", "TV", "tv"), state = "playing")
+        // An older server's detail has no `sub_size`; an older app's request has no `size`.
+        val old = lenient.decodeFromString(SessionDetail.serializer(), Json.encodeToString(SessionView.serializer(), v).let { """{"session":$it}""" })
+        assertNull(old.subSize)
+        assertNull(lenient.decodeFromString(SessionCommandRequest.serializer(), """{"op":"pause"}""").size)
+        val withSize = Json.encodeToString(SessionDetail.serializer(), SessionDetail(session = v, subSize = "L"))
+        assertTrue("\"sub_size\":\"L\"" in withSize)
+        assertEquals("L", lenient.decodeFromString(SessionQueueReport.serializer(), """{"item_id":"i","sub_size":"L"}""").subSize)
+    }
+
     @Test fun anUnknownOpReadsAsNothing() = assertNull(sessionRemoteCommand(SessionCommandRequest(op = "teleport")))
 
     @Test fun aRoomsVolumeIsNotThePlayersOwn() = assertNull(sessionRemoteCommand(SessionCommandRequest(op = "set_volume", level = 40, castDeviceId = "room-1")))

@@ -184,5 +184,6 @@ private suspend fun ApplicationCall.respondCommand(r: CommandResult, publisher: 
         CommandResult.NotOffered -> respond(HttpStatusCode.Conflict, SessionCommandRefusal("not_offered"))
         CommandResult.Forbidden -> respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to control"))
         CommandResult.NotFound -> respond(HttpStatusCode.NotFound, mapOf("error" to "no such playback"))
+        CommandResult.Invalid -> respond(HttpStatusCode.BadRequest, mapOf("error" to "size must be S, M or L"))
     }
 }

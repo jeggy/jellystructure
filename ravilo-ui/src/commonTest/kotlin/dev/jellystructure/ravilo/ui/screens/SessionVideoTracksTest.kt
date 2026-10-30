@@ -42,6 +42,28 @@ class SessionVideoTracksTest {
         assertNull(sessionTracksReport("film-1", null), "no lists yet: nothing to say")
     }
 
+    // DEB-2961 (one-remote FR-2, FR-14) — the player says the caption size it draws, and a set_subtitle_size reaches it.
+    @Test fun `the report carries the caption size the player draws and a size command reaches the player`() {
+        assertEquals("L", sessionTracksReport("film-1", lists, 'L')?.subSize)
+        assertNull(sessionTracksReport("film-1", lists)?.subSize, "an app that does not say leaves it absent (M)")
+        var got: String? = null
+        val player = object : dev.jellystructure.shared.tv.RemotePlayer {
+            override fun play() {}
+            override fun pause() {}
+            override fun toggle() {}
+            override fun stop() {}
+            override fun seekTo(positionMs: Long) {}
+            override fun seekBy(deltaMs: Long) {}
+            override fun next() {}
+            override fun previous() {}
+            override fun setVolume(level: Float, muted: Boolean) {}
+            override fun setSubtitleSize(size: String) { got = size }
+        }
+        sessionRemoteCommand(SessionCommandRequest(op = "set_subtitle_size", size = "L"))!!
+            .applyTo(player, dev.jellystructure.shared.tv.RemoteVolume())
+        assertEquals("L", got)
+    }
+
     /**
      * R370 (FR-R370-7, DEB-781) — a player that IS a handed-over queue's place reports the queue and where in it, so
      * the session's index follows the play instead of standing at the item the hand-over was started on.

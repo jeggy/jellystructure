@@ -60,7 +60,7 @@ fun receiverRemoteAction(cmd: RemoteCommand, s: ReceiverRemoteState, volume: Rem
         // R369 — a session's own commands reach the receiver as the sender's CastCommand (castCommandForSession),
         // one handler for both paths; never through this one.
         is RemoteCommand.Jump, is RemoteCommand.SetShuffle, is RemoteCommand.SetRepeat, is RemoteCommand.SelectAudio,
-        is RemoteCommand.SelectSubtitle, is RemoteCommand.QueueAdd, is RemoteCommand.QueuePlayNext, is RemoteCommand.QueueMove,
+        is RemoteCommand.SelectSubtitle, is RemoteCommand.SetSubtitleSize, is RemoteCommand.QueueAdd, is RemoteCommand.QueuePlayNext, is RemoteCommand.QueueMove,
         is RemoteCommand.QueueRemove -> ReceiverRemoteAction.Nothing
     }
 }

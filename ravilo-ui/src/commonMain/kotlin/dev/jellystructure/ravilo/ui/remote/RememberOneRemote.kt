@@ -103,7 +103,7 @@ fun rememberOneRemote(
         subLine = if (ended) str("session.ended", mapOf("place" to v.target.name)) else null,
         viewOnlyOwner = if (viewOnly) v.owner.name else null,
         confirmStop = !v.mine, ownerName = v.owner.name, here = v.here, view = v, ops = ops, feedback = feedback,
-        canSubtitleSize = false, canNextUp = false,
+        canSubtitleSize = serverCanSubtitleSize(ops), canNextUp = false,   // DEB-2961 (FR-2, FR-14)
         shuffle = d?.shuffle ?: false, repeat = d?.repeat ?: "off",
     )
     return OneRemote(model, SessionActions(v.id), extras, sessionVolume = if (d != null && v.controllable && !ended && !viewOnly) { { extras.volume?.invoke(d) } } else null)
@@ -164,10 +164,10 @@ private class SessionActions(private val id: String) : RemoteActions {
     override fun stop() = send(SessionCommandRequest(op = "stop"))
     override fun selectAudio(trackId: Long?) = send(SessionCommandRequest(op = "set_audio", index = trackId?.toInt()))
     override fun selectSubtitle(trackId: Long?) = send(SessionCommandRequest(op = "set_subtitle", index = trackId?.toInt() ?: -1))
-    // The server path carries neither a next-up countdown nor a subtitle size yet (FR-14): the controls are absent.
+    // The server path carries no next-up countdown (FR-14): the controls are absent. The caption size is an op (DEB-2961).
     override fun nextUpPlay() {}
     override fun nextUpCancel() {}
-    override fun subtitleSize(size: Char) {}
+    override fun subtitleSize(size: Char) = send(SessionCommandRequest(op = "set_subtitle_size", size = size.toString()))
     override fun retry() = SessionRemote.refresh()
     override fun previous() = send(SessionCommandRequest(op = "previous"))
     override fun setShuffle(on: Boolean) = send(SessionCommandRequest(op = "set_shuffle", on = on))

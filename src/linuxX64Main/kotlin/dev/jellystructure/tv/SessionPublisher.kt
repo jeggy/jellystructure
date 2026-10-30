@@ -229,7 +229,7 @@ class SessionPublisher(
             session = view, queue = window, queueOffset = from, queueSize = ids.size, queueRev = s.options.queueRev, queueIndex = at,
             shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off",
             audioTracks = s.options.audioTracks, subtitleTracks = s.options.subtitleTracks,
-            audioIndex = s.options.audioIndex, subtitleIndex = s.options.subtitleIndex,
+            audioIndex = s.options.audioIndex, subtitleIndex = s.options.subtitleIndex, subSize = s.options.subSize,
             volume = s.options.volume, muted = s.options.muted == true,
             ops = if (s.live) (control?.opsOf(s) ?: opsOf(s)) else emptyList(),
             addable = s.options.addable,

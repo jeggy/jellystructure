@@ -28,6 +28,13 @@ const val EVENTS_FEATURE_GROUP_CONTROL = "group_control"
  */
 const val EVENTS_FEATURE_BOOK_SEEK = "book_seek"
 
+/**
+ * one-remote-for-every-playback (FR-2, FR-14, DEB-2961) — a target whose film player resizes its captions on a
+ * `set_subtitle_size` declares this beside [EVENTS_FEATURE_SESSION_CONTROL]. Additive: an installed build that does not
+ * is simply not offered the op (FR-5 — absent, never greyed), and its remote shows no S · M · L row.
+ */
+const val EVENTS_FEATURE_SUBTITLE_SIZE = "subtitle_size"
+
 /** Whose playback a row is. [name] is the first name the household knows them by. */
 @Serializable
 data class SessionOwner(val id: String, val name: String)
@@ -149,7 +156,7 @@ val SESSION_OPS_LEGACY: List<String> = listOf("play", "pause", "seek", "next", "
 
 /** Ops only a `session_control` target obeys; absent from `SessionDetail.ops` otherwise (never shown broken). */
 val SESSION_OPS_CONTROL: List<String> = listOf("jump", "set_shuffle", "set_repeat", "set_audio", "set_subtitle",
-    "queue_add", "queue_play_next", "queue_move", "queue_remove")
+    "queue_add", "queue_play_next", "queue_move", "queue_remove", "set_subtitle_size")
 
 /** `POST /api/tv/playback/sessions/{id}/command` (and the admin's own route). [revision] is the session's as the app
  *  last saw it; an index-moving op or a seek on an old one is refused with 409 (dev review item 4a). */
@@ -166,6 +173,8 @@ data class SessionCommandRequest(
     val level: Int? = null,
     val muted: Boolean? = null,
     @SerialName("track_id") val trackId: String? = null,
+    /** DEB-2961 (one-remote FR-14) — `set_subtitle_size`: `S` · `M` · `L`. */
+    val size: String? = null,
     /** R371 — one room of a group (`set_volume` / `set_mute` / `remove_room`), or the speaker to add (`add_room`). */
     @SerialName("cast_device_id") val castDeviceId: String? = null,
 )
@@ -204,6 +213,7 @@ fun sessionRemoteCommand(c: SessionCommandRequest): RemoteCommand? = when (c.op)
     "set_repeat" -> c.mode?.let { RemoteCommand.SetRepeat(it) }
     "set_audio" -> c.index?.let { RemoteCommand.SelectAudio(it) }
     "set_subtitle" -> c.index?.let { RemoteCommand.SelectSubtitle(it) }
+    "set_subtitle_size" -> c.size?.takeIf { it in SUBTITLE_SIZES }?.let { RemoteCommand.SetSubtitleSize(it) }
     "set_volume" -> if (c.castDeviceId == null) c.level?.let { RemoteCommand.SetVolume(it.coerceIn(0, 100)) } else null
     "set_mute" -> if (c.castDeviceId == null) RemoteCommand.Mute(c.muted) else null
     "queue_add" -> c.trackId?.let { RemoteCommand.QueueAdd(it) }
@@ -212,6 +222,9 @@ fun sessionRemoteCommand(c: SessionCommandRequest): RemoteCommand? = when (c.op)
     "queue_remove" -> c.index?.let { RemoteCommand.QueueRemove(it) }
     else -> null
 }
+
+/** DEB-2961 — the caption sizes a `set_subtitle_size` may carry (the player's S · M · L). */
+val SUBTITLE_SIZES: Set<String> = setOf("S", "M", "L")
 
 /** Ops that move the queue's place: checked against the session's revision and, at the target, its current item. */
 val SESSION_OPS_INDEX_MOVING: Set<String> = setOf("next", "previous", "jump")
@@ -244,6 +257,7 @@ fun castCommandForSession(c: SessionCommandRequest, music: Boolean): CastCommand
     "set_repeat" -> CastCommand("repeat", mode = c.mode ?: "off")
     "set_audio" -> c.index?.let { CastCommand("audio", index = it) }
     "set_subtitle" -> CastCommand("subtitle", index = c.index ?: -1)
+    "set_subtitle_size" -> c.size?.takeIf { it in SUBTITLE_SIZES }?.let { CastCommand("subsize", size = it) }
     "queue_move" -> if (c.index != null && c.to != null) CastCommand("queue_move", index = c.index, to = c.to) else null
     "queue_remove" -> c.index?.let { CastCommand("queue_remove", index = it) }
     else -> null
@@ -287,6 +301,8 @@ data class SessionQueueReport(
     @SerialName("subtitle_tracks") val subtitleTracks: List<CastTrack> = emptyList(),
     @SerialName("audio_index") val audioIndex: Int? = null,
     @SerialName("subtitle_index") val subtitleIndex: Int? = null,
+    /** DEB-2961 — the caption size the film player draws (`S` · `M` · `L`); null = not reported (an older app). */
+    @SerialName("sub_size") val subSize: String? = null,
     /** R371 — the rooms of a Cast group, as the app holding the link sees them. */
     val members: List<SessionRoom>? = null,
 )
@@ -307,6 +323,8 @@ data class SessionDetail(
     @SerialName("subtitle_tracks") val subtitleTracks: List<CastTrack> = emptyList(),
     @SerialName("audio_index") val audioIndex: Int? = null,
     @SerialName("subtitle_index") val subtitleIndex: Int? = null,
+    /** DEB-2961 — the caption size at the place (`S` · `M` · `L`); absent = M. */
+    @SerialName("sub_size") val subSize: String? = null,
     /** 0–100; null = the place does not report its volume. */
     val volume: Int? = null,
     val muted: Boolean = false,
