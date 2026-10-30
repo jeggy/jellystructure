@@ -232,6 +232,40 @@ While a station plays:
 - **Errors:** a station that fails to start shows the engine's existing *couldn't play* state with the station's name.
   The fallback is the same as FR-8's.
 
+**Amendment 2026-10-30 (DEB-3039): Jellyfin does not say which channel is a station, so the operator does.**
+Found by DEB-3006 (QA of DEB-2658) on prod Jellyfin 12.1.0, and it makes two statements in this spec wrong:
+- *What is true today* says Jellyfin lists the `radio="true"` entries as `ChannelType: "Radio"`, "verified 2026-10-27".
+  It does not. `GET /LiveTv/Channels` answers `ChannelType: "TV"` and `MediaType: "Video"` for all eight channels,
+  stations included. `Jellyfin.LiveTv.dll` 12.1.0 reads only `tvg-logo`, `group-title`, `tvg-id`, `channel-id`,
+  `tvg-chno` and `tvg-name` from an M3U entry and has no `radio` string, so the attribute is ignored and a refresh will
+  not change it.
+- FR-1 rests on that premise: `kind` was written from `ChannelType` on every sync, so on that Jellyfin no station was
+  ever `radio`, no client saw `kind`, and a tune carried no relay.
+
+**FR-1, as amended.** The kind is **owned by the operator, per channel**, like *shown*, *number* and *order*:
+- `LiveTvChannelOverride` gains `kind_set: Boolean`, default `false`. It is stored with the override.
+- **Seeding:** a sync writes `kind` from Jellyfin's `ChannelType` (`"Radio"` gives `radio`, anything else `tv`) **only
+  while `kind_set` is `false`**. A Jellyfin that does say `Radio` therefore still seeds a station, and the operator's
+  Type control (below) shows it as such.
+- **The operator's choice is kept:** `PUT /tv/admin/livetv/channels/{id}` accepts `kind` (`"tv"` or `"radio"`; any other
+  value is a 400). Setting it stores the kind and sets `kind_set = true`. From then on no sync rewrites it, and a
+  channel that leaves and rejoins Jellyfin's lineup keeps it.
+- **Nothing is guessed** from a channel's name, logo, stream or M3U entry, and the backend needs no new mount.
+- **Prod after this ships:** the three stations are `tv` until the operator sets them to *Radio* once. That is the same
+  step as switching them on (FR-3), and the two are done together.
+- Everything that reads the kind (FR-2 to FR-12) reads the stored value and is unchanged.
+- **Wire:** `LiveTvChannelUpdate` gains `kind: String?` (additive, a request body). `LiveTvChannel.kind` is as before.
+
+**FR-12, as amended.** The lineup table gains a **Type** control per row, *TV* or *Radio*, which sends `kind`. The row
+still shows the radio mark beside a station's name, drawn from the same stored kind. It uses the admin's existing select
+styling and adds no component class.
+
+**Tests, as amended** (`LiveTvRadioTest`): a Jellyfin that lists every channel as `TV` leaves all four `tv`; an operator
+`kind` makes a channel a station and every FR-2 rule then applies; a later sync, with Jellyfin still saying `TV`, keeps
+it; a sync does not rewrite a channel whose `kind_set` is `true` even when Jellyfin says `Radio`; the kind and the flag
+survive a restart; an unknown `kind` is a 400. Acceptance 2, 3 and 5 now begin with the operator setting the three
+stations to *Radio*.
+
 **Amendment 2026-10-30 (DEB-2659):** two facts the spec took as given, found while building FR-10.
 - **Linux has no MPRIS surface.** MPRIS is R336's and was never built: no code in `ravilo-ui` or `ravilo-desktop` publishes
   a media player on the bus, so there is nothing for the *Linux* line of *System controls* to configure. The Linux build

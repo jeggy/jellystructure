@@ -97,6 +97,14 @@ The TV-facing endpoints send stations only to a client that asks with `radio=1`.
 [`radio-plays-beside-the-live-channels-and-on-music-home.md`](../ravilo/requirements/radio-plays-beside-the-live-channels-and-on-music-home.md)
 FR-1 to FR-3 and FR-12.
 
+### Amendment 2026-10-30 — the operator sets the kind (DEB-3039)
+Jellyfin 12.1.0 lists every channel as `ChannelType: "TV"`, whatever the M3U says, so the sync cannot find the stations.
+- **B2:** each lineup row has a **Type** control, *TV* or *Radio*. It is the one place a channel becomes a station.
+- A sync seeds a channel's kind from Jellyfin's `ChannelType` only until the operator has set it; after that the
+  operator's choice is kept across syncs and restarts.
+
+See the radio spec's amendment of 2026-10-30 (DEB-3039).
+
 ## Scope
 The admin half of Live TV. It is design-authored from `design/app/livetv.html`, and its viewing half is
 [R177](../ravilo/requirements/phase-R177-livetv-viewing.md). Amended by DEB-2628, which adds radio stations to the lineup (A2, B2).
