@@ -876,19 +876,24 @@ fun startServer(
                         // Phase 256 (FR-256-4) — not a new Jellyfin session on the next reconnect: the bridge is
                         // kept for the grace period. A replaced socket owns nothing — the newer one does.
                         if (!replaced) runCatching { sessionBridge.disconnectAfterGrace(device.deviceId) }
-                        // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
-                        // than waiting out the 90s heartbeat timeout.
-                        // R372 (FR-R372-11) — which of the two this close is decides whether that still holds under
-                        // FR-R372-12's socket grace: an ABRUPT end (a reset, an EOF, a ping timeout, a browser tab's
-                        // own close frame) is the place going away and is read at once; a clean close carrying R293's
-                        // `background` is the app letting its socket go off screen on purpose and is not evidence
-                        // that playback ended, so the grace stands and a minimised desktop keeps its film.
+                        // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing rather than waiting out the 90s
+                        // heartbeat timeout.
+                        // R372 (FR-R372-11, amended 2026-10-30, DEB-3036) — but not at once: a bare close frame does not say
+                        // whose it is (a browser tab's 1001 and the 1001 every socket gets when Caddy reloads look the
+                        // same), and one reload force-stopped a film a TV was still playing. A socket that ended abruptly
+                        // counts as gone only after SOCKET_GONE_MS (TvEventBus.isPresent holds the device that long on
+                        // every tick), so this close arranges ONE more read at that mark: a place that really went is read
+                        // then, and a new socket inside it ends the matter. A clean close carrying R293's `background` is
+                        // not evidence that playback ended, so it passes no abrupt device and the grace stands.
                         val abrupt = dev.jellystructure.tv.EventsCloseCause.isAbrupt(closeReason, closeError, replaced)
-                        runCatching {
-                            playbackService.stopWatchdogTick(device.deviceId.takeIf { abrupt }) { deviceId -> tvEventBus.isConnected(deviceId) }
+                        val goneDeviceId = device.deviceId
+                        tvEventBus.runLater(dev.jellystructure.tv.SOCKET_GONE_MS + 100L) {
+                            runCatching {
+                                playbackService.stopWatchdogTick(goneDeviceId.takeIf { abrupt }) { deviceId -> tvEventBus.isPresent(deviceId) }
+                            }
+                            // Phase 147 — an open live-TV stream takes the same wait.
+                            runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isPresent(deviceId) } }
                         }
-                        // Phase 147 — same immediate-close behavior for an open live-TV stream.
-                        runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                     }
                 }
             }

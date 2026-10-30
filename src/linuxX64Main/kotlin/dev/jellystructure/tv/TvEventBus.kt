@@ -4,6 +4,7 @@ import dev.jellystructure.log.Logger
 import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.websocket.Frame
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -26,7 +27,9 @@ private const val MAX_TV_EVENT_SESSIONS = 128
  * The event is a signal or a small directive only — the client re-pulls/derives state server-side
  * (constitution: the TV renders server-pushed state).
  */
-class TvEventBus(private val scope: CoroutineScope) {
+class TvEventBus(private val scope: CoroutineScope,
+                 /** Tests only: the clock [isPresent] reads. */
+                 private val clock: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() }) {
     private val mutex = Mutex()
     // userId -> (deviceId -> session). One session per device; a reconnect overwrites the old entry.
     private val sessions = mutableMapOf<String, MutableMap<String, DefaultWebSocketServerSession>>()
@@ -49,6 +52,7 @@ class TvEventBus(private val scope: CoroutineScope) {
             return@withLock false
         }
         sessions.getOrPut(userId) { mutableMapOf() }[deviceId] = session
+        absences.joined(deviceId)
         socketFeatures[session] = features   // R368 (dev review item 2) — what this socket opted into
         flaps.connected(deviceId)
         Logger.info("TV events: device $deviceId connected for user $userId (${sessions[userId]?.size} live)", "tv")
@@ -64,7 +68,7 @@ class TvEventBus(private val scope: CoroutineScope) {
     suspend fun unregister(userId: String, deviceId: String, session: DefaultWebSocketServerSession, openMs: Long = 0L): Boolean = mutex.withLock {
         var replaced = false
         sessions[userId]?.let { map ->
-            if (map[deviceId] === session) map.remove(deviceId) else if (map.containsKey(deviceId)) replaced = true
+            if (map[deviceId] === session) { map.remove(deviceId); absences.left(deviceId) } else if (map.containsKey(deviceId)) replaced = true
             if (map.isEmpty()) sessions.remove(userId)
         }
         socketFeatures.remove(session)
@@ -82,6 +86,24 @@ class TvEventBus(private val scope: CoroutineScope) {
     /** Phase 110 — is this device's `/api/tv/events` socket currently open? Used by the stop watchdog
      *  to force-stop playback the moment a TV disconnects, not just after the heartbeat timeout. */
     suspend fun isConnected(deviceId: String): Boolean = mutex.withLock { sessions.values.any { deviceId in it } }
+
+    /** Runs [block] on the bus's own scope after [delayMs] — for work a closing socket's handler cannot wait for. Never throws. */
+    fun runLater(delayMs: Long, block: suspend () -> Unit) {
+        scope.launch { delay(delayMs); runCatching { block() } }
+    }
+
+    // DEB-3036 (R372 FR-R372-11, amended 2026-10-30) — when each device's last socket left; cleared by its next register.
+    private val absences = SocketAbsences(clock)
+
+    /**
+     * R372 (FR-R372-11, amended 2026-10-30, DEB-3036) — is [deviceId] still *there*: its socket open, or gone for less than
+     * [graceMs]? A Caddy reload closes every socket with the same 1001 a browser tab sends, and the device is back 1–2 s
+     * later, so the stop watchdog asks this and not [isConnected]: an abruptly ended socket counts as gone only once it
+     * has stayed gone for the grace. A device this bus never saw leave is not held.
+     */
+    suspend fun isPresent(deviceId: String, graceMs: Long = SOCKET_GONE_MS): Boolean = mutex.withLock {
+        sessions.values.any { deviceId in it } || absences.heldFor(deviceId, graceMs)
+    }
 
     // ── R368 — playback sessions, only to sockets that asked (`features=sessions`, dev review item 2) ─────────────
 
@@ -367,4 +389,23 @@ class TvEventBus(private val scope: CoroutineScope) {
             for (s in targets) runCatching { s.send(Frame.Text(msg)) }
         }
     }
+}
+
+/**
+ * DEB-3036 (R372 FR-R372-11, amended 2026-10-30) — when each device's socket last left, so the stop watchdog can wait
+ * [SOCKET_GONE_MS] before it reads an abruptly ended socket as the place going away. Touched only under [TvEventBus]'s mutex.
+ */
+internal class SocketAbsences(private val clock: () -> Long) {
+    private val goneAtMs = HashMap<String, Long>()
+
+    fun left(deviceId: String) {
+        val now = clock()
+        goneAtMs[deviceId] = now
+        if (goneAtMs.size > 256) goneAtMs.entries.removeAll { now - it.value > 10 * 60_000L }
+    }
+
+    fun joined(deviceId: String) { goneAtMs.remove(deviceId) }
+
+    /** Has [deviceId] been gone for less than [graceMs]? False for a device never seen to leave. */
+    fun heldFor(deviceId: String, graceMs: Long): Boolean = goneAtMs[deviceId]?.let { clock() - it < graceMs } == true
 }

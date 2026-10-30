@@ -333,8 +333,13 @@ class Encoder(
         val e = entry(id) ?: return null
         val v = variantOf(e.plan, kind, index) ?: return null
         if (k < 0 || k >= encoderSegmentCount(e.plan.source.durationMs)) return null
-        return jobs.segment(id, e.plan, ffmpegPath, v, k)
+        return jobs.segment(id, e.plan, ffmpegPath, v, k)?.also { onSegmentServed?.invoke(e.jellyfinPlaySessionId) }
     }
+
+    /** DEB-3036 (trouble-never-reaches-the-viewer FR-1) — told with the play-session id each time a segment of its stream is
+     *  read; a replacement uses the first one to release the stream it replaced. Cheap when nothing waits. */
+    @kotlin.concurrent.Volatile
+    var onSegmentServed: (suspend (String) -> Unit)? = null
 
     suspend fun init(id: String, kind: String, index: Int, nearSegment: Int? = null): String? {
         val e = entry(id) ?: return null

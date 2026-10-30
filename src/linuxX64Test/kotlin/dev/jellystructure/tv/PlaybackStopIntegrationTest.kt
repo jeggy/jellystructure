@@ -178,7 +178,7 @@ class PlaybackStopIntegrationTest {
     }
 
     @Test
-    fun `a superseded start sends Jellyfin no stop — only releases the old encode`() = rig("supersede") {
+    fun `a superseded start sends Jellyfin no stop — and releases the old encode only when the viewer stops`() = rig("supersede") {
         val tv = device("phone-supersede")
         service.startPlayback(tv, "film-c", ClientCapabilities())
         service.reportProgress(tv, "film-c", 30_000L, false)
@@ -186,11 +186,64 @@ class PlaybackStopIntegrationTest {
         delay(500)
         fake.lock.withLock {
             assertTrue(fake.stops.none { it.first == "film-c" }, "no stop while the play goes on: ${fake.stops}")
-            assertTrue(fake.releases.contains("psid-1"), "the first start's encode was released: ${fake.releases}")
+            // DEB-3036 (FR-1): the replaced stream waits for the new one's first segment (or 60 s) — it is still there.
+            assertTrue(fake.releases.isEmpty(), "the replaced stream is kept behind the new one: ${fake.releases}")
         }
+        assertEquals(1, service.pendingReleaseCount())
         service.stopPlayback(tv, "film-c", 600_000L)
         waitFor("the real stop lands") { fake.lock.withLock { fake.stops.any { it.first == "film-c" } } }
+        waitFor("both streams are released by the viewer's stop") { fake.lock.withLock { fake.releases.containsAll(listOf("psid-1", "psid-2")) } }
+        assertEquals(0, service.pendingReleaseCount())
         fake.lock.withLock { assertEquals(listOf(600_000L), fake.stops.filter { it.first == "film-c" }.map { it.second }) }
+    }
+
+    @Test
+    fun `a replaced stream is released when the new one's first segment is read or after the wait — whichever is first`() = rig("supersede-timing") {
+        val tv = device("phone-supersede-timing")
+        // First segment of the new stream: the encoder's hook is what the player's first read fires.
+        service.startPlayback(tv, "film-c", ClientCapabilities())
+        service.startPlayback(tv, "film-c", ClientCapabilities())
+        delay(300)
+        assertTrue(fake.lock.withLock { fake.releases.isEmpty() })
+        service.encoder.onSegmentServed!!.invoke("psid-2")
+        waitFor("the old stream is released behind the first segment") { fake.lock.withLock { fake.releases.contains("psid-1") } }
+
+        // No segment ever read (a failed restream, a player that went elsewhere): released when the wait is up.
+        service.supersedeReleaseDelayMs = 700
+        service.startPlayback(tv, "film-c", ClientCapabilities())   // psid-3 replaces psid-2
+        delay(300)
+        assertTrue(fake.lock.withLock { !fake.releases.contains("psid-2") }, "kept inside the wait")
+        waitFor("the old stream is released when the wait is up") { fake.lock.withLock { fake.releases.contains("psid-2") } }
+        assertEquals(0, service.pendingReleaseCount())
+    }
+
+    @Test
+    fun `a watchdog reap tells Jellyfin the play stopped but leaves the stream — the viewer's later stop releases it`() = rig("reap-keeps-stream") {
+        val tv = device("phone-reap")
+        service.startPlayback(tv, "film-e", ClientCapabilities())
+        // A tab closed two seconds in (no report yet): the abrupt end past the grace is read as the place gone.
+        service.stopWatchdogTick(tv.deviceId) { false }
+        waitFor("the reap's stop lands") { fake.lock.withLock { fake.stops.any { it.first == "film-e" } } }
+        delay(500)
+        assertTrue(fake.lock.withLock { fake.releases.isEmpty() }, "the reap released nothing: ${fake.lock.withLock { fake.releases }}")
+
+        // The place was alive after all: its report brings the play back, and its own stop now frees the stream.
+        service.reportProgress(tv, "film-e", 20_000L, false)
+        service.stopPlayback(tv, "film-e", 25_000L)
+        waitFor("the viewer's stop releases the stream the reap spared") { fake.lock.withLock { fake.releases.contains("psid-1") } }
+    }
+
+    @Test
+    fun `a reap with a fresh report writes no stop`() = rig("reap-fresh-report") {
+        val tv = device("phone-fresh")
+        service.startPlayback(tv, "film-e", ClientCapabilities())
+        service.reportProgress(tv, "film-e", 10_000L, false)
+        service.stopWatchdogTick(tv.deviceId) { false }   // the socket test, abrupt override and all
+        delay(700)
+        fake.lock.withLock {
+            assertTrue(fake.stops.none { it.first == "film-e" }, "no stop for a place that reported just now: ${fake.stops}")
+            assertTrue(fake.releases.isEmpty(), "nothing released: ${fake.releases}")
+        }
     }
 
     @Test

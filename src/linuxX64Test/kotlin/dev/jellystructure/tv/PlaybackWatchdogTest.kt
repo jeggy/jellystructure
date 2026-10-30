@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -90,6 +91,7 @@ class PlaybackWatchdogTest {
         // The flap: the socket read as closed past the grace and the watchdog force-stopped the play.
         now += 95_000
         assertTrue(t.heartbeat(tv, "movie", 95_000L))
+        now += FRESH_REPORT_MS + 1_000   // DEB-3036 (FR-1): the report's own 30 s hold is over
         assertTrue(reapedWithSocketDown(t))
         t.stopped(tv, "movie", 95_000L, reaped = true)
         assertTrue(t.tracked().isEmpty())
@@ -138,6 +140,7 @@ class PlaybackWatchdogTest {
         assertFalse(reapedWithSocketDown(t))
         now += 2_000
         assertTrue(t.heartbeat(tv, "movie", 186_000L))   // reporting, so only the socket test can reap it
+        now += FRESH_REPORT_MS + 1_000   // DEB-3036 (FR-1): a report in the last 30 s holds the socket test, so let it age
         assertTrue(reapedWithSocketDown(t))
     }
 
@@ -169,6 +172,7 @@ class PlaybackWatchdogTest {
         t.stopped(web, "movie", 2_000L, reaped = true)
         now += 10_000
         assertTrue(t.heartbeat(web, "movie", 12_000L))
+        now += FRESH_REPORT_MS + 1_000   // DEB-3036 (FR-1): the report's own 30 s hold is over
         val back = t.tracked().single()
         assertFalse(t.shouldReap(back, socketOpen = false, reconnecting = false, socketEndedAbruptly = false))
         assertTrue(t.shouldReap(back, socketOpen = false, reconnecting = false, socketEndedAbruptly = true))
@@ -190,5 +194,103 @@ class PlaybackWatchdogTest {
         assertFalse(t.shouldReap(t.tracked().single(), socketOpen = false, reconnecting = true))
         now += 91_000
         assertTrue(t.shouldReap(t.tracked().single(), socketOpen = false, reconnecting = true))
+    }
+
+    /**
+     * DEB-3036 (trouble-never-reaches-the-viewer FR-1) — a device that reported progress in the last 30 s is not reaped on
+     * the socket test on any tick, the abrupt override included; a tab that never reported (two seconds into a film) still is.
+     */
+    @Test
+    fun aFreshReportHoldsTheSocketTestEvenAgainstAnAbruptEnd() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        t.started(web, "movie", 0L)
+        now += 2_000
+        // Two seconds in, no report yet: the start's own heartbeat time is not a report.
+        assertTrue(t.shouldReap(t.tracked().single(), socketOpen = false, reconnecting = false, socketEndedAbruptly = true))
+
+        now += 8_000
+        assertTrue(t.heartbeat(web, "movie", 8_000L))
+        now += 20_000   // 20 s after the report: inside the 30 s
+        val p = t.tracked().single()
+        assertTrue(t.hasFreshReport(p))
+        assertFalse(t.shouldReap(p, socketOpen = false, reconnecting = false, socketEndedAbruptly = true))
+        assertFalse(t.shouldReap(p, socketOpen = false, reconnecting = false, socketEndedAbruptly = false))
+
+        now += 11_000   // 31 s after it
+        assertFalse(t.hasFreshReport(t.tracked().single()))
+        assertTrue(t.shouldReap(t.tracked().single(), socketOpen = false, reconnecting = false, socketEndedAbruptly = true))
+    }
+
+    /** A reaped entry's play-session id comes back with the report that revives it, so the viewer's own stop can still release the stream. */
+    @Test
+    fun aReapedPlaysSessionIdSurvivesTheReportThatRevivesIt() = runBlocking {
+        val t = tracker()
+        val tv = device()
+        t.started(tv, "movie", 0L, jellyfinPlaySessionId = "psid-9")
+        now += 40_000
+        assertEquals("psid-9", t.stopped(tv, "movie", 40_000L, reaped = true))
+        now += 10_000
+        assertTrue(t.heartbeat(tv, "movie", 50_000L))
+        assertEquals("psid-9", t.tracked().single().jellyfinPlaySessionId)
+        assertEquals("psid-9", t.stopped(tv, "movie", 60_000L))
+    }
+
+    /**
+     * R372 (FR-R372-11, amended 2026-10-30, DEB-3036) — what the watchdog's `isDeviceConnected` answers ([TvEventBus.isPresent])
+     * over the three cases the amendment names, on a play an hour old whose place stopped reporting 40 s before.
+     */
+    @Test
+    fun anAbruptlyEndedSocketReadsAsGoneOnlyAfterFifteenSeconds() = runBlocking {
+        val t = tracker()
+        val tv = device()
+        val absences = SocketAbsences { now }
+        t.started(tv, "movie", 0L)
+        now += 3_600_000
+        assertTrue(t.heartbeat(tv, "movie", 3_600_000L))
+        now += 40_000   // its last report is 40 s old: only the socket test can reap it
+        var open = true
+        suspend fun reap(abrupt: Boolean) = t.tracked().single().let {
+            t.shouldReap(it, socketOpen = open || absences.heldFor(tv.deviceId, SOCKET_GONE_MS), reconnecting = false, socketEndedAbruptly = abrupt)
+        }
+
+        // Caddy reloads: the close, then the socket is back 1.1 s later. Neither the close's own read nor a periodic tick reaps.
+        open = false; absences.left(tv.deviceId)
+        assertFalse(reap(abrupt = true))
+        now += 1_100
+        open = true; absences.joined(tv.deviceId)
+        assertFalse(reap(abrupt = true))
+        assertFalse(reap(abrupt = false))
+
+        // No socket for 15 s: read as gone at 15 s, not before, on the close's read and on a periodic tick alike.
+        open = false; absences.left(tv.deviceId)
+        now += SOCKET_GONE_MS - 1
+        assertFalse(reap(abrupt = true))
+        assertFalse(reap(abrupt = false))   // a periodic tick inside the 15 s
+        now += 1
+        assertTrue(reap(abrupt = true))
+        assertTrue(reap(abrupt = false))
+    }
+
+    @Test
+    fun aTabClosedTwoSecondsIntoAFilmIsStillReadAsGoneAtFifteenSeconds() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        t.started(web, "movie", 0L)
+        now += 2_000
+        absences.left(web.deviceId)
+        now += SOCKET_GONE_MS - 1
+        assertFalse(t.shouldReap(t.tracked().single(), socketOpen = absences.heldFor(web.deviceId, SOCKET_GONE_MS), reconnecting = false, socketEndedAbruptly = true))
+        now += 1
+        assertTrue(t.shouldReap(t.tracked().single(), socketOpen = absences.heldFor(web.deviceId, SOCKET_GONE_MS), reconnecting = false, socketEndedAbruptly = true))
+        // A clean `background` close at the same moment keeps the grace: a minimised desktop keeps its film.
+        assertFalse(t.shouldReap(t.tracked().single(), socketOpen = false, reconnecting = false, socketEndedAbruptly = false))
+    }
+
+    @Test
+    fun aDeviceNeverSeenToLeaveIsNotHeld() {
+        val absences = SocketAbsences { now }
+        assertFalse(absences.heldFor("never-seen", SOCKET_GONE_MS))
     }
 }

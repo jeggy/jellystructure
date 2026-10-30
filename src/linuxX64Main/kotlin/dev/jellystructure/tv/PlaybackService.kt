@@ -128,16 +128,30 @@ internal class TrackedPlayback(
      *  report is proof the place is playing, so such an entry is judged by heartbeat alone from then on: a flapping
      *  socket must not reap a place that is still reporting. */
     val fromReport: Boolean = false,
+    /** DEB-3036 (trouble-never-reaches-the-viewer FR-1) — when the place last REPORTED progress; null for an entry no
+     *  report has reached yet ([heartbeatMs] starts at the start, which proves nothing about the place). A report in
+     *  the last [FRESH_REPORT_MS] is proof the place is playing, so the socket test never reaps it, on any tick. */
+    val reportedMs: Long? = null,
 ) {
     /** 306 (FR-306-1) — a progress report moves the position and the heartbeat time and nothing else, so every
      *  field the start recorded (and any field added later — add it here too) survives the first report. */
     fun withProgress(positionMs: Long, heartbeatMs: Long) =
-        TrackedPlayback(device, jellyfinId, positionMs, heartbeatMs, jellyfinPlaySessionId, directPlay, startedMs, fromReport)
+        TrackedPlayback(device, jellyfinId, positionMs, heartbeatMs, jellyfinPlaySessionId, directPlay, startedMs, fromReport, reportedMs = heartbeatMs)
 }
 
 private val repairJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
 private const val STOP_WATCHDOG_MS = 90_000L
+
+/** DEB-3036 (FR-1) — how long a replaced stream waits for the new stream's first segment before it is released anyway. */
+internal const val SUPERSEDE_RELEASE_MS = 60_000L
+
+/** DEB-3036 (FR-1) — a progress report this recent keeps the socket test from reaping a place, abrupt close or not. */
+internal const val FRESH_REPORT_MS = 30_000L
+
+/** R372 (FR-R372-11, amended 2026-10-30, DEB-3036) — how long an abruptly ended events socket must stay gone before the place
+ *  reads as gone: a Caddy reload's 1001 looks like a tab's, and the longest reload gap on record is 9.9 s. */
+internal const val SOCKET_GONE_MS = 15_000L
 
 /** Phase 312 (FR-312-1) — the `reason` the stop watchdog's own force-stop carries. */
 internal const val STOP_REASON_WATCHDOG = "watchdog"
@@ -188,6 +202,11 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     // minute and then re-creating an entry the next tick reaps. Pruned with the grace window in [tracked].
     private val reapedAtMs = HashMap<PlaybackKey, Long>()
 
+    // DEB-3036 (FR-1) — the play-session id of an entry the watchdog reaped, kept beside [reapedAtMs] so a report that
+    // brings the play back under tracking carries it: the stream is spared by a reap, and the viewer's own stop later
+    // still has to be able to release it.
+    private val reapedPlaySessions = HashMap<PlaybackKey, String>()
+
     // Non-suspend readers (nowPlaying, called from route handlers) can't take the mutex, so they read an
     // immutable snapshot republished on every mutation instead of iterating the live map.
     @Volatile
@@ -227,6 +246,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
             val stoppedAt = pendingStopPositions.remove(key)
             val superseded = active[key]
             reapedAtMs.remove(key)      // R372 (FR-R372-12) — an explicit new start is not a reaped play reporting back
+            reapedPlaySessions.remove(key)
             active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), jellyfinPlaySessionId, directPlay, startedMs = clock())
             lastSeen[key] = device to clock()
             publish()
@@ -264,7 +284,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
                 // R372 (FR-R372-12) — and such an entry carries fromReport: its existence is owed to a live report,
                 // so the socket test never reaps it (a flapping socket used to reap a reporting place every tick).
                 active[key] = active[key]?.withProgress(positionMs, clock())
-                    ?: TrackedPlayback(device, jellyfinId, positionMs, clock(), startedMs = clock(), fromReport = true)
+                    ?: TrackedPlayback(device, jellyfinId, positionMs, clock(), reapedPlaySessions.remove(key), startedMs = clock(), fromReport = true, reportedMs = clock())
                 lastSeen[key] = device to clock()
                 publish()
                 true
@@ -289,7 +309,10 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         return mutex.withLock {
             val existing = active.remove(key)
             stoppedUntilMs[key] = clock() + STOP_GRACE_MS
-            if (reaped) reapedAtMs[key] = clock() else reapedAtMs.remove(key)
+            if (reaped) {
+                reapedAtMs[key] = clock()
+                existing?.jellyfinPlaySessionId?.let { reapedPlaySessions[key] = it }
+            } else { reapedAtMs.remove(key); reapedPlaySessions.remove(key) }
             lastSeen[key] = device to clock()  // Phase 178 — keeps this stop visible to anyActive()'s grace window
             if (existing == null) { pendingStops[key] = clock(); positionMs?.let { pendingStopPositions[key] = it } }
             publish()
@@ -320,6 +343,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         val now = clock()
         stoppedUntilMs.entries.removeAll { it.value <= now }
         reapedAtMs.entries.removeAll { (_, at) -> now - at > STOP_GRACE_MS }   // R372 — a place that never reported back
+        reapedPlaySessions.keys.retainAll(reapedAtMs.keys)
         pendingStops.entries.removeAll { (_, requestedAt) -> now - requestedAt > PENDING_STOP_TTL_MS }
         pendingStopPositions.keys.retainAll(pendingStops.keys)
         lastSeen.entries.removeAll { (_, v) -> now - v.second > PLAYBACK_DEFER_GRACE_MS }
@@ -379,11 +403,19 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
      *  ([EventsCloseCause.isAbrupt]), which is evidence the place itself is gone rather than a guess from silence.
      *  It therefore goes past [inSocketGrace]'s two holds: a browser tab closed two seconds into a film is gone, and
      *  so is one whose entry a progress report happened to create. Nothing else overrides the grace — a clean
-     *  R293 `background` close never reaches here as abrupt, so a minimised desktop keeps its film. */
+     *  R293 `background` close never reaches here as abrupt, so a minimised desktop keeps its film.
+     *
+     *  DEB-3036 (FR-1) — except a report in the last [FRESH_REPORT_MS]: a place that spoke that recently is playing,
+     *  whatever its socket did, so the abrupt path does not override THAT hold either. (The 15 s the socket must stay
+     *  gone is the caller's — [PlaybackService.stopWatchdogTick]'s `isDeviceConnected` answers true inside it.) */
     fun shouldReap(playback: TrackedPlayback, socketOpen: Boolean, reconnecting: Boolean,
                    socketEndedAbruptly: Boolean = false): Boolean =
         shouldForceStop(isHeartbeatStale(playback), needsEventsSocket(playback.device), socketOpen, reconnecting,
-            socketGrace = !socketEndedAbruptly && inSocketGrace(playback))
+            socketGrace = hasFreshReport(playback) || (!socketEndedAbruptly && inSocketGrace(playback)))
+
+    /** DEB-3036 (FR-1) — has the place itself reported progress within [FRESH_REPORT_MS]? */
+    fun hasFreshReport(playback: TrackedPlayback): Boolean =
+        playback.reportedMs?.let { clock() - it <= FRESH_REPORT_MS } == true
 
     companion object {
         /** 218 amendment (FR-218-11), extended by Phase 236 (FR-236-8) — which devices the watchdog may
@@ -522,6 +554,9 @@ class PlaybackService(
 
     /** Phase 313 — our own encoder (every quality from one ffmpeg per play); Jellyfin's transcode is the fallback. */
     val encoder = Encoder({ configStore.current.encoder }, fetchText = ::fetchSubtitleSource).also { enc ->
+        // DEB-3036 (FR-1) — the first segment a new stream answers releases the stream it replaced.
+        // Off the segment's own response: the release talks to Jellyfin.
+        enc.onSegmentServed = { playSessionId -> if (pendingAny) { val scope = backgroundScope; if (scope != null) scope.launch { releasePending(playSessionId) } else releasePending(playSessionId) } }
         // DEB-2205 (FR-8) — when a play's job stops, its summary goes to the play's QoE row (or waits for the row).
         enc.onSummary = { deviceId, itemId, qoeKey, summary ->
             runCatching { playbackQoeStore.attachEncoderSummary(deviceId, itemId, qoeKey.ifBlank { "$deviceId-$itemId" }, summary) }
@@ -1277,7 +1312,7 @@ class PlaybackService(
         startResult.superseded?.let { old ->
             withContext(NonCancellable) {
                 // Phase 312 — the same item keeps playing here: free the old encode, send Jellyfin no stop.
-                if (old.jellyfinPlaySessionId != jellyfinPlaySessionId) releaseEncodesOnly(device, jellyfinId, old.jellyfinPlaySessionId, "supersede")
+                if (old.jellyfinPlaySessionId != jellyfinPlaySessionId) deferSupersededRelease(device, jellyfinId, old.jellyfinPlaySessionId, jellyfinPlaySessionId, "supersede")
             }
         }
 
@@ -1470,7 +1505,7 @@ class PlaybackService(
             else withJellyfinToken("$jellyfinBase/Audio/$trackId/stream?Static=true&MediaSourceId=$trackId&DeviceId=${identity.deviceId}", token)
         val startResult = playbackTracker.started(device, trackId, startMs, jellyfinPlaySessionId, directPlay = !needsTranscode)
         startResult.superseded?.let { old -> withContext(NonCancellable) {
-            if (old.jellyfinPlaySessionId != jellyfinPlaySessionId) releaseEncodesOnly(device, trackId, old.jellyfinPlaySessionId, "music-supersede")
+            if (old.jellyfinPlaySessionId != jellyfinPlaySessionId) deferSupersededRelease(device, trackId, old.jellyfinPlaySessionId, jellyfinPlaySessionId, "music-supersede")
         } }
         if (startResult.stopAlreadyArrived) withContext(NonCancellable) {
             playbackTracker.stopped(device, trackId)
@@ -1556,7 +1591,15 @@ class PlaybackService(
         val decision = resolveStop(positionMs, plan)
         // R372 (FR-R372-12) — the watchdog's own stop is marked as such: a progress report after it brings the play
         // straight back under tracking, rather than being swallowed by the post-stop grace.
-        val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId, positionMs, reaped = reason == STOP_REASON_WATCHDOG)
+        val trackedPlaySessionId = playbackTracker.stopped(device, jellyfinId, positionMs, reaped = reason == STOP_REASON_WATCHDOG)
+        // DEB-3036 (trouble-never-reaches-the-viewer FR-1) — a watchdog reap is bookkeeping: Jellyfin is told the play
+        // stopped and the session is marked, but the stream is not released. Its own 60 s idle sweep frees an unread
+        // job, and the place's next request restarts it. (Null here skips every release below.)
+        val reapedStream = reason == STOP_REASON_WATCHDOG && trackedPlaySessionId != null
+        val jellyfinPlaySessionId = if (reason == STOP_REASON_WATCHDOG) null else trackedPlaySessionId
+        if (reapedStream) Logger.info("Stop watchdog: stream kept item=$jellyfinId device=${device.deviceId} session=$trackedPlaySessionId (reaped; the idle sweep frees an unread job)", "tv")
+        // The viewer's own stop ends a replacement's wait too: what the new stream was to replace goes now.
+        if (reason != STOP_REASON_WATCHDOG) releasePendingFor(device, jellyfinId)
         // R368 (review item 6) — the session is held 15 s for the next song, part or episode.
         runCatching { sessions?.onStop(device, jellyfinId, positionMs, sessionId) }
             .onFailure { Logger.warn("Playback sessions: stop failed: ${it.message}", "tv") }
@@ -1792,6 +1835,67 @@ class PlaybackService(
             .onFailure { Logger.warn("releasing encodes failed for item=$jellyfinId ($why): ${it.message}", "tv") }
     }
 
+    // ── DEB-3036 (trouble-never-reaches-the-viewer FR-1) — a replaced stream is released behind the new one ─────────
+
+    /** What a replacement still owes: the streams it replaced, released once the new stream's first segment is read. */
+    private class PendingRelease(val device: DeviceData, val jellyfinId: String, val oldIds: MutableList<String>, val why: String, val dueMs: Long)
+
+    private val pendingMutex = Mutex()
+    private val pendingReleases = HashMap<String, PendingRelease>()   // the NEW stream's play-session id → what it replaced
+
+    /** How long a replaced stream waits for the new one's first segment before it is released anyway. */
+    internal var supersedeReleaseDelayMs = SUPERSEDE_RELEASE_MS
+
+    /**
+     * A new stream replacing an old one ([old] and [replacement] are Jellyfin play-session ids) releases the old one only
+     * when the new one's first segment is read ([Encoder.onSegmentServed]) or [supersedeReleaseDelayMs] after, whichever
+     * is first. A restream that fails therefore still leaves the old stream answering. The viewer's own stop releases both.
+     */
+    private suspend fun deferSupersededRelease(device: DeviceData, jellyfinId: String, old: String?, replacement: String?, why: String) {
+        if (old == null) { releaseEncodesOnly(device, jellyfinId, null, why); return }
+        val key = replacement ?: "none:${device.deviceId}:$jellyfinId"
+        val due = nowMs() + supersedeReleaseDelayMs
+        pendingMutex.withLock {
+            // A chain (A replaced by B, B by C before B was read) keeps A waiting for C as well.
+            val chained = pendingReleases.remove(old)
+            val p = pendingReleases[key]?.also { it.oldIds.add(old) } ?: PendingRelease(device, jellyfinId, mutableListOf(old), why, due).also { pendingReleases[key] = it }
+            chained?.oldIds?.let { p.oldIds.addAll(it) }
+            pendingAny = true
+        }
+        Logger.info("stream kept: item=$jellyfinId device=${device.deviceId} reason=$why — the replaced stream is released when the new one's first segment is read, or after ${supersedeReleaseDelayMs / 1000}s", "tv")
+        backgroundScope?.launch { delay(supersedeReleaseDelayMs); releasePending(key) }
+    }
+
+    @kotlin.concurrent.Volatile private var pendingAny = false
+
+    /** The new stream behind [replacementPlaySessionId] answered its first segment (or [supersedeReleaseDelayMs] is up). */
+    internal suspend fun releasePending(replacementPlaySessionId: String) {
+        if (!pendingAny) return
+        val p = pendingMutex.withLock { pendingReleases.remove(replacementPlaySessionId).also { pendingAny = pendingReleases.isNotEmpty() } } ?: return
+        p.oldIds.distinct().forEach { releaseEncodesOnly(p.device, p.jellyfinId, it, p.why) }
+    }
+
+    private suspend fun releasePendingFor(device: DeviceData, jellyfinId: String) {
+        if (!pendingAny) return
+        val due = pendingMutex.withLock {
+            val keys = pendingReleases.filterValues { it.device.deviceId == device.deviceId && it.jellyfinId == jellyfinId }.keys.toList()
+            keys.mapNotNull { pendingReleases.remove(it) }.also { pendingAny = pendingReleases.isNotEmpty() }
+        }
+        due.forEach { p -> p.oldIds.distinct().forEach { releaseEncodesOnly(p.device, p.jellyfinId, it, p.why) } }
+    }
+
+    /** The backstop for [releasePending]'s timer (a test with no scope, or a timer lost to a restart of nothing): the tick sweeps what is due. */
+    internal suspend fun releaseDuePending() {
+        if (!pendingAny) return
+        val now = nowMs()
+        val due = pendingMutex.withLock {
+            pendingReleases.filterValues { it.dueMs <= now }.keys.toList().mapNotNull { pendingReleases.remove(it) }.also { pendingAny = pendingReleases.isNotEmpty() }
+        }
+        due.forEach { p -> p.oldIds.distinct().forEach { releaseEncodesOnly(p.device, p.jellyfinId, it, p.why) } }
+    }
+
+    internal suspend fun pendingReleaseCount(): Int = pendingMutex.withLock { pendingReleases.size }
+
     /** Phase 312 — an abandoned start: free what it minted, and re-send the viewer's own stop (the position their stop
      *  carried, which the tracker kept) so Jellyfin's session that this start re-opened is closed at the right place. */
     private suspend fun releaseAbandoned(device: DeviceData, jellyfinId: String, jellyfinPlaySessionId: String?, stoppedAtMs: Long?, why: String) {
@@ -1848,6 +1952,7 @@ class PlaybackService(
      *  so a newer socket of the same device (a reconnect, a `replaced` slot) stops the reap. It stays the LAST
      *  parameter so the periodic caller keeps its trailing lambda. */
     suspend fun stopWatchdogTick(socketEndedAbruptlyFor: String? = null, isDeviceConnected: suspend (String) -> Boolean) {
+        releaseDuePending()   // DEB-3036 (FR-1) — a replaced stream whose 60 s are up
         // Snapshot first: isDeviceConnected suspends, and stopPlayback below takes the tracker's own
         // (non-reentrant) mutex.
         val tracked = playbackTracker.tracked()
@@ -2223,7 +2328,7 @@ class PlaybackService(
         startResult.superseded?.let { old ->
             withContext(NonCancellable) {
                 // Phase 312 — a restream replaces the stream of a play that goes on: no stop for Jellyfin.
-                if (old.jellyfinPlaySessionId != playbackInfo?.playSessionId) releaseEncodesOnly(device, jellyfinId, old.jellyfinPlaySessionId, "restream-supersede")
+                if (old.jellyfinPlaySessionId != playbackInfo?.playSessionId) deferSupersededRelease(device, jellyfinId, old.jellyfinPlaySessionId, playbackInfo?.playSessionId, "restream-supersede")
             }
         }
         if (startResult.stopAlreadyArrived) {
@@ -2306,7 +2411,7 @@ class PlaybackService(
         val startResult = playbackTracker.started(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
         startResult.superseded?.let { old ->
             withContext(NonCancellable) {
-                if (old.jellyfinPlaySessionId != playbackInfo?.playSessionId) releaseEncodesOnly(device, jellyfinId, old.jellyfinPlaySessionId, "unburn-supersede")
+                if (old.jellyfinPlaySessionId != playbackInfo?.playSessionId) deferSupersededRelease(device, jellyfinId, old.jellyfinPlaySessionId, playbackInfo?.playSessionId, "unburn-supersede")
             }
         }
         if (startResult.stopAlreadyArrived) {

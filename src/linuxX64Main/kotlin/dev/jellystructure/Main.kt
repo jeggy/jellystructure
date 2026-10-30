@@ -900,10 +900,10 @@ fun main() = runBlocking {
     rootScope.launch {
         while (shutdownRequested.value == 0) {
             delay(30_000L)
-            runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+            runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isPresent(deviceId) } }
                 .onFailure { Logger.warn("Stop watchdog tick failed: ${it.message}", "tv") }
             // Phase 147 — same watchdog shape for an open live-TV stream (its own tracking, see LiveTvService).
-            runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+            runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isPresent(deviceId) } }
                 .onFailure { Logger.warn("Live TV stop watchdog tick failed: ${it.message}", "livetv") }
             // Phase 178 §FR-178-3 — same 30s cadence is plenty for "did playback just start/stop".
             runCatching { playbackThrottleService.tick() }
