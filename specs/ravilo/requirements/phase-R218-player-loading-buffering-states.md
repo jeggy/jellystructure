@@ -130,6 +130,9 @@ is out of scope.
 
 ### FR-R218-3 — Deepen at 60 s, explain nothing
 
+> *Amendment 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-5):* a stall under 2 s draws nothing; the treatment starts at 2 s, not 400 ms. Its
+> later moments are unchanged.
+
 A wait that passes **60 seconds** is pathological (the measured worst real start was ~20 s). At that
 point:
 

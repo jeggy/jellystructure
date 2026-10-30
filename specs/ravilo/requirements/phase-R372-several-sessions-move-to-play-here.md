@@ -494,6 +494,9 @@ closes the class:
 > - Unchanged: the 90 s heartbeat test, a clean `background` close, a `replaced` socket, the `cast` and `screen` kinds'
 >   exemption, and FR-R372-12's two holds, which the abrupt path still goes past once the 15 s are up.
 
+> **Amended again 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-1).** Those 15 s decide only when the place reads as gone. A reap no
+> longer ends the stream, and a device that reported progress in the last 30 s is not reaped on the socket test at all.
+
 - **The server:** for a place that holds its events socket for as long as it exists — a browser tab, the Cast
   receiver, the screen app — an **abrupt** socket end with a session still open is read as *the place is gone*: the
   session goes `offline` at once and takes FR-R372-8's 10 min. A **clean** close carrying R293's `background` reason is

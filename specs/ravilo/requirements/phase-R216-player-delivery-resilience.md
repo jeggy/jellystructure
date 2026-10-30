@@ -76,6 +76,9 @@ New `expect fun detectLinkState(): LinkState` alongside the existing capability 
 
 ### FR-R216-3 — Harden the player against delivery dips
 
+> *Amendment 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-5):* a play resumes at 4 s buffered, not 10 s, and the stall caps one rung down
+> at once, which is now what keeps one stall from becoming a train of them.
+
 Supply an explicit `DefaultLoadControl` to `ExoPlayer.Builder` instead of inheriting the defaults:
 
 - Raise `bufferForPlaybackAfterRebufferMs` substantially (proposed **10 s**) so a recovered stall

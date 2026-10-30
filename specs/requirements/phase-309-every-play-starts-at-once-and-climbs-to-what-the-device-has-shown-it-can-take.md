@@ -52,6 +52,9 @@ And the other half of the owner's point: for a file above a device's decode ceil
 
 ### FR-309-1 — What a device can take: its own record
 
+> *Amendment 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-7):* a stall's hold is 1 h, a newer measurement lifts it, and a stall a server
+> event caused writes no `stalled_bps`.
+
 Each device (a cast receiver is its own device, as in 308) keeps one **stream record**, kept by the backend and
 updated by every play's QoE:
 
@@ -88,6 +91,9 @@ cast (it fetches the probe before its first segment). The result is reported lik
 `measured_bps`. On a metered (mobile-data) link the probe is 1 MB.
 
 ### FR-309-4 — Climb one rung at a time
+
+> *Amendment 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-7):* on our encoder the climb goes straight to the best rung the estimate clears.
+> Jellyfin's ladder keeps this rule.
 
 Every player climbs **only to the next rung up**, only when (a) its own estimate × 0.7 clears that rung, (b) it has
 **≥ 30 s buffered**, and (c) that rung is already encoding (FR-309-6). No skipping rungs on the way up — tonight's
