@@ -33,6 +33,7 @@ ALLOWED="
   music/MusicDetailScreens.kt                   3
   music/MusicPlayerScreens.kt                   3
   music/PlaylistPage.kt                         3   # DEB-2254 — the swipe panel's glyph and word and the confirm's *Delete*, all on the destructive fill (--pl-bad)
+  components/RadioMark.kt                       2   # DEB-2658 — the radio mark's plate ring and glyph, over the plate's own fixed dark fill (design rd-markA)
   qr/QrCodeImage.kt                             1   # DEB-2324 — the QR tile: white in every skin on purpose, a scanner wants the contrast (DEB-2319)
   screens/BrowserSoundHint.kt                   1
   screens/OneRemoteScreen.kt                    2
@@ -40,6 +41,7 @@ ALLOWED="
   screens/LiveTvPlayerScreen.kt                 1
   screens/PlayerHandsetChrome.kt                33
   screens/PlayerIdent.kt                        1
+  screens/RadioNowPlaying.kt                    6   # DEB-2658 — the audio layout draws its own dark gradient in every skin: plate ring and glyph, initials, the LIVE dot and badge on red, the stopped panel's ring
   screens/PlayerScreen.kt                       74
   screens/ProfileScreen.kt                      1
   screens/SettingsScreen.kt                     4
