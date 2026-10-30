@@ -87,7 +87,10 @@ class FileFixPlaybackTest {
         assertEquals("/lib/A.da.Stereo.mka", s.path(id, now = 1_500))
         assertEquals(id, s.register("/lib/A.da.Stereo.mka", expiresAt = 1_800, now = 1_100), "the same file, still valid: the same id")
         assertNotEquals(id, s.register("/lib/B.da.Stereo.mka", expiresAt = 2_000, now = 1_100))
-        assertNull(s.path(id, now = 2_001), "expired")
+        // DEB-3100 (trouble-never-reaches-the-viewer FR-2) — a read renews the ticket: a film does not outlive it.
+        assertEquals("/lib/A.da.Stereo.mka", s.path(id, now = 2_001), "the read at 1 500 renewed it by 4 h")
+        val idle = s.register("/lib/C.da.Stereo.mka", expiresAt = 2_000, now = 1_100)
+        assertNull(s.path(idle, now = 2_001), "never read: expired at its ticket")
         assertNull(s.path("unknown", now = 1_000))
     }
 

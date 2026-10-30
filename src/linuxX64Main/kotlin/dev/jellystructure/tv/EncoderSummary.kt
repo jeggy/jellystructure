@@ -23,6 +23,11 @@ data class EncoderSummary(
     @SerialName("waits_over_1s") val waitsOver1s: Int = 0,
     /** Bytes ffmpeg read per second while it ran (`/proc/<pid>/io` `rchar`), in MB/s; null when never sampled. */
     @SerialName("input_mbps") val inputMBps: Double? = null,
+    /** DEB-3100 (trouble-never-reaches-the-viewer FR-8) — what the player met: the 95th percentile and the longest of the time this server took to
+     *  answer a segment request (ms, the request to the last byte handed on), and how many requests were answered 503. */
+    @SerialName("segment_p95_ms") val segmentP95Ms: Long? = null,
+    @SerialName("segment_max_ms") val segmentMaxMs: Long? = null,
+    @SerialName("responses_503") val responses503: Int = 0,
     /** The rungs it ran, e.g. `2160p@20000k`. */
     val rungs: List<String> = emptyList(),
     /** The job was SIGSTOPped at least once (40 s ahead of the player, FR-313-1). */
@@ -31,7 +36,7 @@ data class EncoderSummary(
     /** The activity-ring line. */
     fun logLine(streamId: String, why: String): String =
         "encoder $streamId: summary ($why) segments=$segments speed=${fmt(speedMin)}/${fmt(speedMedian)}x min/median " +
-            "longest-wait=${longestWaitMs}ms waits>1s=$waitsOver1s input=${fmt(inputMBps)}MB/s rungs=${rungs.joinToString("/")} paused=$paused (DEB-2205 FR-8)"
+            "longest-wait=${longestWaitMs}ms waits>1s=$waitsOver1s response-p95=${segmentP95Ms ?: "-"}ms max=${segmentMaxMs ?: "-"}ms 503s=$responses503 input=${fmt(inputMBps)}MB/s rungs=${rungs.joinToString("/")} paused=$paused (DEB-2205 FR-8)"
 
     fun toJson(): String = JSON.encodeToString(serializer(), this)
 
@@ -44,6 +49,9 @@ data class EncoderSummary(
             speedMedian = bigger.speedMedian ?: (if (bigger === this) o.speedMedian else speedMedian),
             longestWaitMs = maxOf(longestWaitMs, o.longestWaitMs),
             waitsOver1s = waitsOver1s + o.waitsOver1s,
+            segmentP95Ms = listOfNotNull(segmentP95Ms, o.segmentP95Ms).maxOrNull(),
+            segmentMaxMs = listOfNotNull(segmentMaxMs, o.segmentMaxMs).maxOrNull(),
+            responses503 = responses503 + o.responses503,
             inputMBps = bigger.inputMBps ?: (if (bigger === this) o.inputMBps else inputMBps),
             rungs = (rungs + o.rungs).distinct(),
             paused = paused || o.paused,
@@ -71,6 +79,8 @@ internal class EncoderStats(private val rungs: List<String>) {
     private var lastSample: Pair<Long, Long>? = null   // (rchar, at ms) of the previous sample of the CURRENT job
     private var segments = 0
     private var everPaused = false
+    private val responses = ArrayList<Long>()
+    private var responses503 = 0
 
     fun speed(x: Double) { if (x > 0.0 && x.isFinite()) speeds += x }
 
@@ -95,6 +105,13 @@ internal class EncoderStats(private val rungs: List<String>) {
         if (dt in 1..MAX_GAP_MS && db >= 0) { inputBytes += db; inputMs += dt }
     }
 
+    /** DEB-3100 (FR-8) — one response to a player: its duration, and whether it was a 503. The last [MAX_RESPONSES] are kept for the percentile. */
+    fun responded(ms: Long, was503: Boolean) {
+        if (responses.size >= MAX_RESPONSES) responses.removeAt(0)
+        responses += ms
+        if (was503) responses503++
+    }
+
     fun paused() { everPaused = true }
     fun segmentsMade(n: Int) { segments += n }
 
@@ -104,6 +121,9 @@ internal class EncoderStats(private val rungs: List<String>) {
         speedMedian = median(speeds),
         longestWaitMs = longestWaitMs,
         waitsOver1s = slowWaits,
+        segmentP95Ms = percentile(responses, 0.95),
+        segmentMaxMs = responses.maxOrNull(),
+        responses503 = responses503,
         inputMBps = if (inputMs > 0) inputBytes.toDouble() / inputMs * 1000.0 / 1_000_000.0 else null,
         rungs = rungs,
         paused = everPaused,
@@ -111,7 +131,15 @@ internal class EncoderStats(private val rungs: List<String>) {
 
     companion object {
         const val MAX_GAP_MS = 3_000L
+        const val MAX_RESPONSES = 4_096
     }
+}
+
+/** The [p] quantile (0..1) by the nearest-rank method; null for no samples. */
+internal fun percentile(xs: List<Long>, p: Double): Long? {
+    if (xs.isEmpty()) return null
+    val s = xs.sorted()
+    return s[(kotlin.math.ceil(p * s.size).toInt() - 1).coerceIn(0, s.lastIndex)]
 }
 
 internal fun median(xs: List<Double>): Double? {

@@ -79,6 +79,8 @@ class MusicEditionsStoreTest {
         for (t in listOf("autofetch_fetcher", "autofetch_site", "autofetch_item", "autofetch_run", "autofetch_series_mark")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
         // …and DEB-2826's 91 creates ai_viewer.
         raw.execute(null, "DROP TABLE IF EXISTS ai_viewer", 0)
+        // …and DEB-3100's 92 creates stream_plan (its index goes with it).
+        raw.execute(null, "DROP TABLE IF EXISTS stream_plan", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

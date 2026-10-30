@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import kotlinx.serialization.Serializable
 import kotlin.math.roundToLong
 
 /**
@@ -30,6 +31,7 @@ fun encoderMuxFor(deviceKind: String, platform: String?): EncoderMux =
     if (deviceKind != "cast" && platform?.lowercase() in setOf("mac", "ios", "web")) EncoderMux.FMP4 else EncoderMux.TS
 
 /** One output rung: its picture box (the frame is fitted inside, aspect kept), its size, and its video bitrate. */
+@Serializable
 data class EncoderRung(val boxHeight: Int, val width: Int, val height: Int, val videoBps: Long)
 
 /** The picture boxes a rung's height names (16:9). */
@@ -140,6 +142,7 @@ internal fun startRungFor(rungs: List<EncoderRung>, audioPeakBps: Long, takeBps:
 }
 
 /** One audio rendition the job makes: its place among the file's own audio streams, codec and channels. */
+@Serializable
 data class EncoderAudio(val position: Int, val audioOrder: Int, val codec: String, val channels: Int, val language: String?, val label: String?, val default: Boolean)
 
 /**
@@ -147,15 +150,18 @@ data class EncoderAudio(val position: Int, val audioOrder: Int, val codec: Strin
  * subtitles from the manifest, `hls_subtitles`). [sourceUrl] is Jellyfin's own VTT conversion of that stream (embedded
  * or a sidecar), fetched once server-side and cached; it never reaches the player.
  */
+@Serializable
 data class EncoderSubtitle(val name: String, val language: String?, val forced: Boolean, val default: Boolean, val sourceUrl: String)
 
 /** The source a job reads, from our own scan (no probe). [hdr] = PQ/HLG; [dolbyVisionProfile5] has no HDR10 base. */
+@Serializable
 data class EncoderSource(
     val path: String, val durationMs: Long, val videoCodec: String, val width: Int, val height: Int,
     val videoBps: Long?, val hdr: Boolean, val hlg: Boolean = false, val dolbyVisionProfile5: Boolean = false,
 )
 
 /** Everything one job makes (fixed for its life: FR-313-1 — a running ffmpeg cannot gain an output). */
+@Serializable
 data class EncoderPlan(
     val source: EncoderSource,
     val codec: EncoderCodec,

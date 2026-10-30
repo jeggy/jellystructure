@@ -10,6 +10,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
 /**
@@ -37,9 +39,16 @@ import kotlin.time.Clock
  * own transcode under its own play session, started by Jellyfin only when the player reads it. The audio renditions,
  * when there are any, are shared by every variant (the carried track is muxed in each).
  */
-class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
+class AudioRenditions(
+    /** DEB-3100 (trouble-never-reaches-the-viewer FR-2) — where a stream's composition is kept so a restart does not end the play; null = memory only. */
+    private val plans: StreamPlanStore? = null,
+    /** Tests only: the clock (epoch ms). */
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    private val fetchPlaylist: suspend (String) -> String?,
+) {
     /** [streamIndex] is Jellyfin's number for the track (it numbers external streams first); [audioOrder] is the
      *  track's place among the FILE's own audio streams, the only number ffmpeg may be given (R382). */
+    @Serializable
     data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?, val channels: Int? = null, val audioOrder: Int = position,
         /** Phase 314b — an external track's own file (a `.mka` sidecar beside the video): made from that file's first audio. */
         val sourcePath: String? = null)
@@ -53,9 +62,12 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         // Composed once, on the first master fetch: the order and the variants never change for this stream.
         internal var composed: List<Pair<MasterVariant, String>>? = null
         internal var topMaster: String? = null
+        /** DEB-3100 — how many variants the composed master listed (kept in the store: a restart forgets [composed] but must still stop their Jellyfin sessions). */
+        internal var variantCount: Int = 0
     }
 
-    private class Entry(val jellyfinMasterUrl: String, val renditions: List<Rendition>, val expiresAt: Long, val filePath: String, val durationMs: Long, val ladder: LadderPlan? = null) {
+    private class Entry(val jellyfinMasterUrl: String, val renditions: List<Rendition>, var expiresAt: Long, val filePath: String, val durationMs: Long, val ladder: LadderPlan? = null,
+                        val playSessionId: String = "", var persistedAtMs: Long = 0) {
         // The codec the video variant's own audio is in, read from Jellyfin's master when it is first composed.
         var codec: String = "aac"
         // R291 (FR-R291-12) — the renditions are written in the video's own container.
@@ -108,10 +120,12 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         if (renditions.isEmpty() && ladder == null) return null
         val id = randomId()
         mutex.withLock {
-            val now = nowMs()
+            val now = clock()
             entries.entries.removeAll { it.value.expiresAt < now }
-            entries[id] = Entry(jellyfinMasterUrl, renditions, expiresAt, filePath, durationMs, ladder)
+            val e = Entry(jellyfinMasterUrl, renditions, expiresAt, filePath, durationMs, ladder, jellyfinPlaySessionId)
+            entries[id] = e
             streamsByPlay[jellyfinPlaySessionId] = ((streamsByPlay[jellyfinPlaySessionId] ?: emptyList()) + id).distinct()
+            persist(id, e, now)
         }
         return id
     }
@@ -119,9 +133,9 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
     /** The composed master for [id], or null when it is unknown, expired, or Jellyfin's own is unreachable. */
     suspend fun master(id: String): String? {
         val e = entry(id) ?: return null
-        e.ladder?.let { return ladderMaster(e, it) }
+        e.ladder?.let { return ladderMaster(id, e, it) }
         val jellyfin = fetchPlaylist(e.jellyfinMasterUrl) ?: return null
-        e.codec = renditionAudioCodec(jellyfin)
+        setCodec(id, e, renditionAudioCodec(jellyfin))
         return composeMaster(jellyfin, variantBaseOf(e.jellyfinMasterUrl), e.renditions)
     }
 
@@ -137,6 +151,16 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         val e = entry(id)?.takeIf { it.fmp4 } ?: return null
         val r = e.renditions.getOrNull(position)?.takeIf { it.uri != null } ?: return null
         return jobs.init("$id:$position", RenditionSource(r.sourcePath ?: e.filePath, r.audioOrder, r.channels, e.durationMs, fmp4 = true), e.codec)
+    }
+
+    /**
+     * DEB-3100 (trouble-never-reaches-the-viewer FR-3) — whether a segment (or, with null, the init) of [id]'s rendition [position] that could not
+     * be had is worth asking again: the stream and the rendition exist, so it is the job that is late, not the URL that is wrong.
+     */
+    suspend fun worthRetry(id: String, position: Int, segment: Int?): Boolean {
+        val e = entry(id) ?: return false
+        if (e.renditions.getOrNull(position)?.uri == null) return false
+        return segment == null || (segment >= 0 && segment * RENDITION_SEGMENT_MS < e.durationMs)
     }
 
     /** Whether [id]'s renditions are fMP4 (null: unknown id). */
@@ -156,7 +180,7 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
      * `BANDWIDTH` / `RESOLUTION` / `CODECS` are the ones Jellyfin itself writes for that request (fetching a master
      * starts no encode). A rung whose master cannot be had is left out; without the top there is no master.
      */
-    private suspend fun ladderMaster(e: Entry, l: LadderPlan): String? {
+    private suspend fun ladderMaster(id: String, e: Entry, l: LadderPlan): String? {
         val variants = l.composed ?: run {
             val topUrl = variantUrl(l.template, variantSession(l.jellyfinPlaySessionId, 0), l.topBps, null)
             val top = fetchPlaylist(topUrl) ?: return null
@@ -174,10 +198,12 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
             val ordered = startOrder(all.map { it.first.bandwidth }, l.budgetBps).map { all[it] }
             l.topMaster = top
             l.composed = ordered
+            l.variantCount = ordered.size
+            mutex.withLock { persist(id, e, clock()) }
             ordered
         }
         val top = l.topMaster ?: return null
-        e.codec = renditionAudioCodec(top)
+        setCodec(id, e, renditionAudioCodec(top))
         return composeLadderMaster(top, variantBaseOf(e.jellyfinMasterUrl), variants, e.renditions)
     }
 
@@ -187,24 +213,77 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
      * one — one `DELETE /Videos/ActiveEncodings` stops one job (R291's measurement).
      */
     suspend fun stopFor(jellyfinPlaySessionId: String): List<String> {
-        val ids = mutex.withLock { streamsByPlay.remove(jellyfinPlaySessionId) } ?: return emptyList()
+        val ids = mutex.withLock {
+            // A stream the process has not met since a restart is still the play's: read it back to stop what it started (DEB-3100 FR-2).
+            if (streamsByPlay[jellyfinPlaySessionId] == null) plans?.forPlay(jellyfinPlaySessionId, KIND)?.forEach { restore(it.id, clock()) }
+            streamsByPlay.remove(jellyfinPlaySessionId)
+        }
+        plans?.deleteForPlay(jellyfinPlaySessionId, KIND)
+        ids ?: return emptyList()
         ids.forEach { jobs.stopStream(it) }
         return mutex.withLock {
             ids.flatMap { id ->
                 val l = entries[id]?.ladder ?: return@flatMap emptyList()
-                val n = l.composed?.size ?: 0
+                val n = l.composed?.size ?: l.variantCount
                 (0 until n).map { variantSession(l.jellyfinPlaySessionId, it) }
             }
         }
     }
 
-    private suspend fun entry(id: String): Entry? = mutex.withLock { entries[id]?.takeIf { it.expiresAt >= nowMs() } }
+    /** The stream behind [id] (from the store when this process does not know it), its ticket renewed by this read; null when unknown or expired. */
+    private suspend fun entry(id: String): Entry? = mutex.withLock {
+        val now = clock()
+        val e = entries[id]?.let { if (it.expiresAt >= now) it else return@withLock null } ?: restore(id, now) ?: return@withLock null
+        e.expiresAt = maxOf(e.expiresAt, now + StreamPlanStore.RENEW_MS)
+        if (plans != null && now - e.persistedAtMs >= StreamPlanStore.TOUCH_EVERY_MS) { e.persistedAtMs = now; plans.touch(id, e.expiresAt, now) }
+        e
+    }
+
+    private suspend fun setCodec(id: String, e: Entry, codec: String) {
+        if (e.codec == codec) return
+        e.codec = codec
+        persist(id, e, clock())
+    }
+
+    // ── DEB-3100 (trouble-never-reaches-the-viewer FR-2) — the composition survives a restart ───────────────────
+
+    @Serializable
+    private class StoredLadder(val template: String, val playSessionId: String, val topBps: Long, val ceilingBps: Long? = null, val budgetBps: Long? = null, val variantCount: Int = 0)
+
+    @Serializable
+    private class StoredAudio(val playSessionId: String, val jellyfinMasterUrl: String, val renditions: List<Rendition>, val filePath: String, val durationMs: Long,
+                              val ladder: StoredLadder? = null, val codec: String = "aac")
+
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** Called with the lock held. */
+    private suspend fun persist(id: String, e: Entry, now: Long) {
+        val store = plans ?: return
+        e.persistedAtMs = now
+        val ladder = e.ladder?.let { StoredLadder(it.template, it.jellyfinPlaySessionId, it.topBps, it.ceilingBps, it.budgetBps, it.composed?.size ?: it.variantCount) }
+        val payload = runCatching { json.encodeToString(StoredAudio.serializer(), StoredAudio(e.playSessionId, e.jellyfinMasterUrl, e.renditions, e.filePath, e.durationMs, ladder, e.codec)) }.getOrNull() ?: return
+        store.put(id, KIND, e.playSessionId, payload, e.expiresAt, now)
+    }
+
+    /** Called with the lock held. */
+    private suspend fun restore(id: String, now: Long): Entry? {
+        val row = plans?.get(id, KIND) ?: return null
+        if (row.expiresAt < now) return null
+        val st = runCatching { json.decodeFromString(StoredAudio.serializer(), row.payload) }.getOrNull() ?: return null
+        val ladder = st.ladder?.let { LadderPlan(it.template, it.playSessionId, it.topBps, it.ceilingBps, it.budgetBps).also { l -> l.variantCount = it.variantCount } }
+        val e = Entry(st.jellyfinMasterUrl, st.renditions, row.expiresAt, st.filePath, st.durationMs, ladder, st.playSessionId).also { it.codec = st.codec }
+        entries[id] = e
+        streamsByPlay[st.playSessionId] = ((streamsByPlay[st.playSessionId] ?: emptyList()) + id).distinct()
+        Logger.info("audio renditions: stream $id restored from the store (DEB-3100 FR-2)", "tv")
+        return e
+    }
 
     // Phase 313 (dev review item 7) — the id is the capability: from the kernel's random source, not kotlin.random.
     private fun randomId(): String = secureHexId()
+
+    private companion object { const val KIND = "audio" }
 }
 
-private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
 
 /** The directory a relative URI in Jellyfin's master resolves against: `…/videos/{id}/`. */
 internal fun variantBaseOf(masterUrl: String): String = masterUrl.substringBefore('?').substringBeforeLast('/') + "/"

@@ -1,0 +1,31 @@
+-- DEB-3100 (trouble-never-reaches-the-viewer FR-2) — see 92.sqm, which this must stay byte-for-byte in sync with.
+CREATE TABLE stream_plan (
+    id TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    play_session_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    read_at INTEGER NOT NULL
+);
+CREATE INDEX stream_plan_by_play ON stream_plan(play_session_id);
+
+get:
+SELECT * FROM stream_plan WHERE id = :id;
+
+forPlay:
+SELECT * FROM stream_plan WHERE play_session_id = :play_session_id AND kind = :kind;
+
+upsert:
+INSERT OR REPLACE INTO stream_plan(id, kind, play_session_id, payload, expires_at, read_at) VALUES (?, ?, ?, ?, ?, ?);
+
+touch:
+UPDATE stream_plan SET expires_at = :expires_at, read_at = :read_at WHERE id = :id;
+
+deleteOne:
+DELETE FROM stream_plan WHERE id = :id;
+
+deleteForPlay:
+DELETE FROM stream_plan WHERE play_session_id = :play_session_id AND kind = :kind;
+
+sweep:
+DELETE FROM stream_plan WHERE read_at < :read_before;

@@ -5,6 +5,7 @@ import dev.jellystructure.tv.withoutHeroesHiddenFrom
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.server.respondFileChunked
 import dev.jellystructure.server.respondFileWithHead
+import dev.jellystructure.tv.Encoder
 import dev.jellystructure.tv.EncoderMux
 import io.ktor.server.plugins.origin
 import dev.jellystructure.auth.DeviceKey
@@ -1452,14 +1453,16 @@ fun Route.tvRoutes(
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
         val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
         val seg = call.parameters["seg"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
-        val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val bytes = playbackService.audioRenditions.segment(id, pos, seg)
+            ?: return@get call.respondEncoderMiss(if (playbackService.audioRenditions.worthRetry(id, pos, seg)) Encoder.Miss.RETRY else Encoder.Miss.UNKNOWN)
         call.respondBytes(bytes, ContentType.parse("video/mp2t"))
     }
     // R291 (FR-R291-12) — a rendition beside fMP4 video is fMP4 too: its init segment and its fragments.
     get("/tv/stream/{id}/audio/{pos}/init.mp4") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
         val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
-        val bytes = playbackService.audioRenditions.init(id, pos) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val bytes = playbackService.audioRenditions.init(id, pos)
+            ?: return@get call.respondEncoderMiss(if (playbackService.audioRenditions.isFmp4(id) == true && playbackService.audioRenditions.worthRetry(id, pos, null)) Encoder.Miss.RETRY else Encoder.Miss.UNKNOWN)
         call.respondBytes(bytes, ContentType.parse("audio/mp4"))
     }
     get("/tv/stream/{id}/audio/{pos}/{seg}.m4s") {
@@ -1467,7 +1470,8 @@ fun Route.tvRoutes(
         val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
         val seg = call.parameters["seg"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
         if (playbackService.audioRenditions.isFmp4(id) != true) return@get call.respond(HttpStatusCode.NotFound)
-        val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val bytes = playbackService.audioRenditions.segment(id, pos, seg)
+            ?: return@get call.respondEncoderMiss(if (playbackService.audioRenditions.worthRetry(id, pos, seg)) Encoder.Miss.RETRY else Encoder.Miss.UNKNOWN)
         call.respondBytes(bytes, ContentType.parse("audio/mp4"))
     }
 
@@ -1522,11 +1526,21 @@ fun Route.tvRoutes(
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
             val file = call.parameters["file"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val startedAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            val segment = if (file.endsWith(".m4s") || file.endsWith(".ts")) file.substringBefore('.').toIntOrNull() else null
             val path = when {
                 file == "init.mp4" -> playbackService.encoder.init(id, kind, i)
-                file.endsWith(".m4s") || file.endsWith(".ts") -> file.substringBefore('.').toIntOrNull()?.let { playbackService.encoder.segment(id, kind, i, it) }
+                segment != null -> playbackService.encoder.segment(id, kind, i, segment)
                 else -> null
-            } ?: return@get call.respond(if (playbackService.encoder.refusedStream(id)) HttpStatusCode.Gone else HttpStatusCode.NotFound)
+            }
+            if (path == null) {
+                // DEB-3100 (trouble-never-reaches-the-viewer FR-3) — only a stream that does not exist is a 404. A segment not ready after the
+                // wait, or a job that died after its first start, is a 503 the player asks again for: a 404 would exclude the rung for a minute.
+                val miss = if (file == "init.mp4" || segment != null) playbackService.encoder.miss(id, kind, i, segment) else Encoder.Miss.UNKNOWN
+                call.respondEncoderMiss(miss)
+                if (miss == Encoder.Miss.RETRY && segment != null) playbackService.encoder.recordResponse(id, kotlin.time.Clock.System.now().toEpochMilliseconds() - startedAtMs, true)
+                return@get
+            }
             val type = when {
                 file.endsWith(".ts") -> "video/mp2t"
                 kind == "a" -> "audio/mp4"
@@ -1542,6 +1556,8 @@ fun Route.tvRoutes(
                 file == "init.mp4" -> call.respondBytes(fixed, ContentType.parse(type))
                 else -> respondFileWithHead(call, path, ContentType.parse(type), fixed)
             }
+            // DEB-3100 (FR-8) — the time this server took to answer a segment, for the encoder summary.
+            if (segment != null) playbackService.encoder.recordResponse(id, kotlin.time.Clock.System.now().toEpochMilliseconds() - startedAtMs, false)
         }
     }
 
@@ -1642,6 +1658,15 @@ fun Route.tvRoutes(
             themeDark = req.themeDark,
         )
         call.respond(mapOf("status" to "ok"))
+    }
+}
+
+/** DEB-3100 (trouble-never-reaches-the-viewer FR-3) — what an encoder URL that has nothing to serve answers: 503 with `Retry-After: 1` while the job is, or will again be, making it. */
+internal suspend fun io.ktor.server.application.ApplicationCall.respondEncoderMiss(miss: Encoder.Miss) {
+    when (miss) {
+        Encoder.Miss.RETRY -> { response.headers.append("Retry-After", "1"); respond(HttpStatusCode.ServiceUnavailable) }
+        Encoder.Miss.GONE -> respond(HttpStatusCode.Gone)
+        Encoder.Miss.UNKNOWN, Encoder.Miss.UNMADE -> respond(HttpStatusCode.NotFound)
     }
 }
 

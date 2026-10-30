@@ -1,0 +1,13 @@
+-- DEB-3100 (DEB-3093, trouble-never-reaches-the-viewer FR-2) — a stream's plan, kept by its stream id so a restart does not end the play.
+-- `kind` is `encoder` (an EncoderPlan), `audio` (a composed master and its renditions) or `sidecar` (a local audio file); `payload` is the
+-- plan as JSON; `play_session_id` is the Jellyfin play session the stream is stopped with ('' for a sidecar). Times are epoch MILLISECONDS.
+-- `expires_at` is the ticket (renewed by every read); `read_at` is the last read, for the 24 h sweep. This file is the migration; StreamPlan.sq carries the same CREATE TABLE.
+CREATE TABLE stream_plan (
+    id TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    play_session_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    read_at INTEGER NOT NULL
+);
+CREATE INDEX stream_plan_by_play ON stream_plan(play_session_id);

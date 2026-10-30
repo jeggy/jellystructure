@@ -524,6 +524,8 @@ class PlaybackService(
     playbackOutbox: PlaybackOutbox? = null,
     // 309 (FR-309-1) — what each device has shown it can take; null in tests that never look at it.
     private val streamRecords: StreamRecordStore? = null,
+    /** DEB-3100 (trouble-never-reaches-the-viewer FR-2) — where our own streams' plans are kept, so a restart does not end a play. */
+    private val streamPlans: StreamPlanStore? = null,
 ) {
     private val writer: PlaybackWriter? = writerScope?.let { PlaybackWriter(it, JellyfinSink(), outbox = playbackOutbox) }
 
@@ -550,10 +552,10 @@ class PlaybackService(
 
     /** R291 (FR-R291-2) — the composed masters behind `/api/tv/stream/{id}/master.m3u8`, this server's own
      *  audio renditions beside them, and the jobs phase 180's teardown stops with the playback. */
-    val audioRenditions = AudioRenditions(jellyfinClient::fetchPlaylist)
+    val audioRenditions = AudioRenditions(streamPlans, fetchPlaylist = jellyfinClient::fetchPlaylist)
 
     /** Phase 313 — our own encoder (every quality from one ffmpeg per play); Jellyfin's transcode is the fallback. */
-    val encoder = Encoder({ configStore.current.encoder }, fetchText = ::fetchSubtitleSource).also { enc ->
+    val encoder = Encoder({ configStore.current.encoder }, fetchText = ::fetchSubtitleSource, plans = streamPlans).also { enc ->
         // DEB-3036 (FR-1) — the first segment a new stream answers releases the stream it replaced.
         // Off the segment's own response: the release talks to Jellyfin.
         enc.onSegmentServed = { playSessionId -> if (pendingAny) { val scope = backgroundScope; if (scope != null) scope.launch { releasePending(playSessionId) } else releasePending(playSessionId) } }
@@ -2469,7 +2471,7 @@ class PlaybackService(
             ?: itemDetail?.mediaStreams.orEmpty()
 
     /** Phase 314b — sidecar files a direct-playing client fetches (`/api/tv/stream/{id}/sidecar.mka`). */
-    val sidecars = SidecarStreams()
+    val sidecars = SidecarStreams(streamPlans)
 
     /**
      * Phase 314b (FR-314-6) — the ticket's audio list for a negotiated stream: container tracks first, then external ones

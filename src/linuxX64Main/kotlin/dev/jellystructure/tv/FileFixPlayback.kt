@@ -104,20 +104,34 @@ internal fun ticketVersions(sources: List<JellyfinMediaSourceInfo>, current: Str
  * stream path (a player can't attach a token), so the id is the capability: 128 random bits ([secureHexId]), living as
  * long as the ticket. Only paths registered from a ticket are served.
  */
-class SidecarStreams {
+class SidecarStreams(
+    /** DEB-3100 (trouble-never-reaches-the-viewer FR-2) — where a sidecar's path is kept so a restart does not end the play; null = memory only. */
+    private val plans: StreamPlanStore? = null,
+) {
+    private class Entry(val path: String, var expiresAt: Long, var persistedAtMs: Long)
     private val mutex = Mutex()
-    private val entries = mutableMapOf<String, Pair<String, Long>>()
+    private val entries = mutableMapOf<String, Entry>()
 
     suspend fun register(localPath: String, expiresAt: Long, now: Long): String = mutex.withLock {
-        entries.entries.removeAll { it.value.second < now }
-        entries.entries.firstOrNull { it.value.first == localPath && it.value.second >= expiresAt }?.let { return@withLock it.key }
+        entries.entries.removeAll { it.value.expiresAt < now }
+        entries.entries.firstOrNull { it.value.path == localPath && it.value.expiresAt >= expiresAt }?.let { return@withLock it.key }
         val id = secureHexId()
-        entries[id] = localPath to expiresAt
+        entries[id] = Entry(localPath, expiresAt, now)
+        plans?.put(id, KIND, "", localPath, expiresAt, now)
         id
     }
 
-    suspend fun path(id: String, now: Long = kotlin.time.Clock.System.now().toEpochMilliseconds()): String? =
-        mutex.withLock { entries[id]?.takeIf { it.second >= now }?.first }
+    /** The file behind [id]; every read renews the ticket (a film does not outlive it) and a restart does not lose it. */
+    suspend fun path(id: String, now: Long = kotlin.time.Clock.System.now().toEpochMilliseconds()): String? = mutex.withLock {
+        val e = entries[id]?.let { if (it.expiresAt >= now) it else return@withLock null }
+            ?: plans?.get(id, KIND)?.takeIf { it.expiresAt >= now }?.let { Entry(it.payload, it.expiresAt, 0) }?.also { entries[id] = it }
+            ?: return@withLock null
+        e.expiresAt = maxOf(e.expiresAt, now + StreamPlanStore.RENEW_MS)
+        if (plans != null && now - e.persistedAtMs >= StreamPlanStore.TOUCH_EVERY_MS) { e.persistedAtMs = now; plans.touch(id, e.expiresAt, now) }
+        e.path
+    }
+
+    private companion object { const val KIND = "sidecar" }
 }
 
 /**

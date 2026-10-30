@@ -21,6 +21,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.io.files.Path
 import platform.posix.X_OK
 import platform.posix.access
@@ -45,7 +47,15 @@ class Encoder(
     private val ffmpegOverride: (() -> Boolean)? = null,
     /** 313d — a text fetch (Jellyfin's VTT conversion of a subtitle stream, by its tokened URL); null = none. */
     private val fetchText: (suspend (String) -> String?)? = null,
+    /** DEB-3100 (trouble-never-reaches-the-viewer FR-2) — where a stream's plan is kept, so a restart does not end the play; null = memory only. */
+    private val plans: StreamPlanStore? = null,
+    /** Tests only: the clock (epoch ms) every expiry and renewal is read from. */
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    /** Tests only: the jobs' free-space reading and its floor (see [EncoderJobs]). */
+    private val freeBytes: (() -> Long)? = null,
 ) {
+    private fun nowMs(): Long = clock()
+
     /**
      * One stream behind an id. [deviceId]/[itemId] say whose play it is (309's prewarm is adopted by the play that matches
      * it); [prewarmSegment] is non-null while it is a prewarm nobody has pressed Play on yet (FR-313-1 / 309 FR-309-6).
@@ -56,7 +66,15 @@ class Encoder(
                          *  init segment starts its job there, so a resumed play never encodes from 0:00 first. */
                         var startMs: Long = 0,
                         /** DEB-2205 (FR-8) — the play's QoE row key (PlaybackService.qoePlayKey) the stream's summary is filed under. */
-                        var qoeKey: String = "")
+                        var qoeKey: String = "",
+                        /** DEB-3100 (FR-2) — a job has been handed this stream before (or it was restored from the store): the next start is a restart. */
+                        var started: Boolean = false,
+                        /** When the store last heard of a read (a write at most once a minute per stream). */
+                        var persistedAtMs: Long = 0)
+
+    /** DEB-3100 (FR-2) — what the store keeps of an [Entry] (the stream id is the row's key, the expiry its own column). */
+    @Serializable
+    private class StoredStream(val plan: EncoderPlan, val playSessionId: String, val deviceId: String = "", val itemId: String = "", val startMs: Long = 0, val qoeKey: String = "")
 
     private val mutex = Mutex()
     private val entries = mutableMapOf<String, Entry>()
@@ -67,8 +85,8 @@ class Encoder(
         // FR-313-9 — the configured work folder (a tmpfs in docker-compose.gpu.yml), else /tmp when it can't be made.
         val root = cfg.workDir.takeIf { mkdirs(it) } ?: "/tmp/js-encoder"
         mkdirs(cfg.cudaCacheDir)
-        EncoderJobs(root, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
-            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, nowMs()) },
+        EncoderJobs(root, freeBytes = freeBytes ?: { freeBytesOf(root) }, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
+            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, clock()) },
             onStopped = { id, summary ->
                 // DEB-2205 (FR-8) — a PLAY's job stopped: its summary goes to the play's QoE row. A prewarm nobody played has none.
                 val e = mutex.withLock { entries[id] }
@@ -91,10 +109,10 @@ class Encoder(
     /** FR-313-11 — the cards the container can see (none without a GPU), cached 5 s. Their order is PCI bus order. */
     suspend fun cards(): List<EncoderCard> {
         cardsOverride?.let { return it() }
-        cardsCache?.let { (at, c) -> if (nowMs() - at < 5_000) return c }
+        cardsCache?.let { (at, c) -> if (clock() - at < 5_000) return c }
         val out = withContext(Dispatchers.IO) { run("nvidia-smi --query-gpu=index,name,encoder.stats.sessionCount --format=csv,noheader 2>/dev/null") }
         val c = parseNvidiaSmi(out)
-        cardsCache = nowMs() to c
+        cardsCache = clock() to c
         return c
     }
 
@@ -129,7 +147,7 @@ class Encoder(
         val cards = if (cfg.enabled) cards() else emptyList()
         encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind, castReceivers = cfg.castReceivers)?.let { return null to it }
         source!!
-        refused.reason(path, nowMs())?.let { return null to it }
+        refused.reason(path, clock())?.let { return null to it }
         // 313d (FR-313-6) — a picked image subtitle is burned in by this job (composited once, before the split). One
         // the scan can't place among the file's subtitle streams stays Jellyfin's.
         if (burnRequested && burnSubtitleOrder == null) return null to "image subtitle not found among the file's subtitle streams (313d)"
@@ -181,10 +199,14 @@ class Encoder(
     suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = "", startMs: Long = 0, qoeKey: String = ""): String {
         val id = secureHexId()
         mutex.withLock {
-            val now = nowMs()
+            val now = clock()
             entries.entries.removeAll { it.value.expiresAt < now }
-            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceAtLeast(0), qoeKey = qoeKey)
+            val e = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceAtLeast(0), qoeKey = qoeKey)
+            entries[id] = e
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(id)
+            // A prewarm nobody has pressed Play on is memory-only; the play that adopts it stores it ([adoptPrewarm]).
+            if (!jellyfinPlaySessionId.startsWith(PREWARM_PREFIX)) persist(id, e, now)
+            if (plans != null && now - lastSweepMs > 3_600_000L) { lastSweepMs = now; plans.sweep(now) }
         }
         return id
     }
@@ -239,6 +261,7 @@ class Encoder(
             byPlay[key]?.remove(hit.key)
             if (byPlay[key]?.isEmpty() == true) byPlay.remove(key)
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(hit.key)
+            persist(hit.key, e, clock())
             hit.key
         }
         if (adopted != null) Logger.info("encoder: play adopted the prewarm for item=$itemId (309)", "tv")
@@ -276,7 +299,53 @@ class Encoder(
         a.source.path == b.source.path && a.codec == b.codec && a.mux == b.mux && a.rungs == b.rungs && a.startRung == b.startRung &&
             a.audio == b.audio && a.burnSubtitleOrder == b.burnSubtitleOrder && a.subtitles.map { it.name } == b.subtitles.map { it.name }
 
-    private fun prewarmKey(deviceId: String, itemId: String) = "prewarm:$deviceId:$itemId"
+    private fun prewarmKey(deviceId: String, itemId: String) = "$PREWARM_PREFIX$deviceId:$itemId"
+
+    // ── DEB-3100 (trouble-never-reaches-the-viewer FR-2) — a stream outlives a restart and the clock ──────────────
+
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private var lastSweepMs = 0L
+
+    /** Stores [e]'s plan under [id]. Called with the lock held. */
+    private suspend fun persist(id: String, e: Entry, now: Long) {
+        val store = plans ?: return
+        e.persistedAtMs = now
+        runCatching { StoredStream(e.plan, e.jellyfinPlaySessionId, e.deviceId, e.itemId, e.startMs, e.qoeKey) }
+            .map { json.encodeToString(StoredStream.serializer(), it) }
+            .onSuccess { store.put(id, KIND, e.jellyfinPlaySessionId, it, e.expiresAt, now) }
+    }
+
+    /** A read of a play's stream (not a prewarm): the ticket runs [StreamPlanStore.RENEW_MS] from now. Called with the lock held. */
+    private suspend fun renew(id: String, e: Entry, now: Long) {
+        if (e.prewarmSegment != null) return
+        e.expiresAt = maxOf(e.expiresAt, now + StreamPlanStore.RENEW_MS)
+        if (plans != null && now - e.persistedAtMs >= StreamPlanStore.TOUCH_EVERY_MS) { e.persistedAtMs = now; plans.touch(id, e.expiresAt, now) }
+    }
+
+    /** The stream [id] from the store when the process does not know it; null when it was never stored, has ended or its ticket ran out. Lock held. */
+    private suspend fun restore(id: String, now: Long): Entry? {
+        val row = plans?.get(id, KIND) ?: return null
+        if (row.expiresAt < now) return null
+        val st = runCatching { json.decodeFromString(StoredStream.serializer(), row.payload) }.getOrNull() ?: return null
+        val e = Entry(st.plan, st.playSessionId, row.expiresAt, st.deviceId, st.itemId, startMs = st.startMs, qoeKey = st.qoeKey, started = true)
+        entries[id] = e
+        byPlay.getOrPut(st.playSessionId) { mutableListOf() }.let { if (id !in it) it.add(id) }
+        Logger.info("encoder: stream $id restored from the store (item=${st.itemId}) — its next request restarts the job (DEB-3100 FR-2)", "tv")
+        return e
+    }
+
+    /**
+     * What a job restart for [e] is placed as: through the normal placement (FR-313-8) at this moment, on fewer rungs when only that fits
+     * ([restartPlan]). Null when the first start needs no placing (it was placed with the plan), or a job of this process still has the stream.
+     */
+    private suspend fun restartFor(id: String, e: Entry): EncoderJobs.Restart? {
+        val was = mutex.withLock { e.started.also { e.started = true } }
+        if (!was || jobs.hasStream(id)) return null
+        if (!cfg.enabled) return null
+        val cards = cards()
+        if (cards.isEmpty()) return null
+        return restartPlan(e.plan, place(cards, e.plan.codec, e.plan.rungs))
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -307,7 +376,10 @@ class Encoder(
     }
 
     /** 313 (FR-313-13) — whether the play behind [jellyfinPlaySessionId] is served by our encoder. */
-    suspend fun serves(jellyfinPlaySessionId: String): Boolean = mutex.withLock { byPlay[jellyfinPlaySessionId]?.isNotEmpty() == true }
+    suspend fun serves(jellyfinPlaySessionId: String): Boolean = mutex.withLock {
+        if (byPlay[jellyfinPlaySessionId].isNullOrEmpty()) plans?.forPlay(jellyfinPlaySessionId, KIND)?.forEach { restore(it.id, clock()) }
+        byPlay[jellyfinPlaySessionId]?.isNotEmpty() == true
+    }
 
     fun recordFallback(reason: String) {
         fallbacks.addLast(nowMs() to reason)
@@ -333,8 +405,24 @@ class Encoder(
         val e = entry(id) ?: return null
         val v = variantOf(e.plan, kind, index) ?: return null
         if (k < 0 || k >= encoderSegmentCount(e.plan.source.durationMs)) return null
-        return jobs.segment(id, e.plan, ffmpegPath, v, k)?.also { onSegmentServed?.invoke(e.jellyfinPlaySessionId) }
+        return jobs.segment(id, e.plan, ffmpegPath, v, k, restartFor(id, e))?.also { onSegmentServed?.invoke(e.jellyfinPlaySessionId) }
     }
+
+    /** What an unanswered request for [id]'s variant means (the route's status). [k] is the segment asked for, null for the init. */
+    enum class Miss { /** Not a stream of ours (or not a thing it has): 404. */ UNKNOWN, /** ffmpeg refused the plan: 410. */ GONE,
+        /** A rung a restart left out: 404 for that rung. */ UNMADE, /** The job is running or will be again: 503, Retry-After 1. */ RETRY }
+
+    suspend fun miss(id: String, kind: String, index: Int, k: Int?): Miss {
+        val e = entry(id) ?: return Miss.UNKNOWN
+        if (jobs.isRefused(id)) return Miss.GONE
+        val v = variantOf(e.plan, kind, index) ?: return Miss.UNKNOWN
+        if (k == null && e.plan.mux != EncoderMux.FMP4) return Miss.UNKNOWN
+        if (k != null && (k < 0 || k >= encoderSegmentCount(e.plan.source.durationMs))) return Miss.UNKNOWN
+        return if (jobs.makes(id, v)) Miss.RETRY else Miss.UNMADE
+    }
+
+    /** DEB-3100 (FR-8) — a segment request was answered: how long it took and whether it was a 503 (the encoder summary's figures). */
+    suspend fun recordResponse(id: String, ms: Long, was503: Boolean) = jobs.recordResponse(id, ms, was503)
 
     /** DEB-3036 (trouble-never-reaches-the-viewer FR-1) — told with the play-session id each time a segment of its stream is
      *  read; a replacement uses the first one to release the stream it replaced. Cheap when nothing waits. */
@@ -347,7 +435,7 @@ class Encoder(
         val v = variantOf(e.plan, kind, index) ?: return null
         // 313 (found live 2026-10-09) — a player reads the init before its first segment: the job starts where the play
         // starts, not at 0:00 (a resumed play on the Mac and in Safari encoded from 0 first, then again at the seek).
-        return jobs.init(id, e.plan, ffmpegPath, v, nearSegment ?: (e.startMs / ENCODER_SEGMENT_MS).toInt())
+        return jobs.init(id, e.plan, ffmpegPath, v, nearSegment ?: (e.startMs / ENCODER_SEGMENT_MS).toInt(), restartFor(id, e))
     }
 
     /**
@@ -368,6 +456,8 @@ class Encoder(
 
     /** Phase 180 / FR-313-1 — every stream (and job) registered for [jellyfinPlaySessionId]; returns how many. */
     suspend fun stopFor(jellyfinPlaySessionId: String): Int {
+        // The session is over: its plans go from the store whether or not this process has them in memory (DEB-3100 FR-2).
+        plans?.deleteForPlay(jellyfinPlaySessionId, KIND)
         val ids = mutex.withLock { byPlay.remove(jellyfinPlaySessionId) } ?: return 0
         ids.forEach { jobs.stop(it, "playback stopped") }
         mutex.withLock { ids.forEach { entries.remove(it) } }
@@ -418,7 +508,13 @@ class Encoder(
         else -> null
     }
 
-    private suspend fun entry(id: String): Entry? = mutex.withLock { entries[id]?.takeIf { it.expiresAt >= nowMs() } }
+    /** The stream behind [id] (from the store when this process does not know it), its ticket renewed by this read; null when unknown or expired. */
+    private suspend fun entry(id: String): Entry? = mutex.withLock {
+        val now = clock()
+        val e = entries[id]?.let { if (it.expiresAt >= now) it else return@withLock null } ?: restore(id, now) ?: return@withLock null
+        renew(id, e, now)
+        e
+    }
 
     private fun run(cmd: String): String = memScoped {
         val pipe = popen(cmd, "r") ?: return@memScoped ""
@@ -432,6 +528,8 @@ class Encoder(
     companion object {
         /** The head of a segment read to move its `tfdt` ([segmentHeadOnFileClock]): `moof` is first and `tfdt` is near its start. */
         const val TIMELINE_HEAD_BYTES = 2048
+        private const val KIND = "encoder"
+        private const val PREWARM_PREFIX = "prewarm:"
         /** Pinned (FR-313-11): the same build Jellyfin's own container runs (8.1.2), portable GPL, verified by SHA-256. */
         const val JELLYFIN_FFMPEG_VERSION = "8.1.2-5"
         private const val JELLYFIN_FFMPEG_BASE = "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v$JELLYFIN_FFMPEG_VERSION/jellyfin-ffmpeg_${JELLYFIN_FFMPEG_VERSION}_portable"
@@ -445,4 +543,15 @@ class Encoder(
     }
 }
 
-private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
+/**
+ * DEB-3100 (FR-2) — the plan a restarted job runs: the card [placement] chose, and the rungs that fit there. Fewer rungs than the stream
+ * has (the master still lists them all) keep the start rung's neighbours ([trimRungs]); the others answer 404 and a player moves on. Null
+ * placement (no card has even one slot) leaves the plan as it was placed: a restart that has nowhere better to go still plays.
+ */
+internal fun restartPlan(plan: EncoderPlan, placement: EncoderPlacement?): EncoderJobs.Restart? {
+    placement ?: return null
+    if (placement.rungs >= plan.rungs.size) return EncoderJobs.Restart(plan.copy(cudaDevice = placement.card))
+    val kept = trimRungs(plan.rungs, plan.startRung, placement.rungs)
+    val keptIdx = kept.map { plan.rungs.indexOf(it) }
+    return EncoderJobs.Restart(plan.copy(rungs = kept, startRung = kept.indexOf(plan.rungs[plan.startRung]).coerceAtLeast(0), cudaDevice = placement.card), plan.rungs.size, keptIdx)
+}
