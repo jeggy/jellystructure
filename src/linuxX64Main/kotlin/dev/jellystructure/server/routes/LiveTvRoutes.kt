@@ -52,7 +52,7 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
     get("/tv/admin/livetv/channels") {
         runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
-        call.respond(liveTvService.lineup())
+        call.respond(liveTvService.freshLineup())
     }
 
     put("/tv/admin/livetv/channels/{id}") {

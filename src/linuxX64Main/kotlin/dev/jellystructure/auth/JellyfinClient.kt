@@ -1783,16 +1783,26 @@ class JellyfinClient {
         channelIds: List<String>,
         minStartUtc: String,
         maxStartUtc: String,
-    ): List<JellyfinLiveTvProgram> = runCatching {
+    ): List<JellyfinLiveTvProgram> =
+        getLiveTvProgramsOrNull(baseUrl, token, channelIds, minStartUtc, maxStartUtc).orEmpty()
+
+    /** DEB-3066 — [getLiveTvPrograms] with `null` for "could not ask", so a caller can tell *none listed* from a Jellyfin that did not answer. */
+    suspend fun getLiveTvProgramsOrNull(
+        baseUrl: String,
+        token: String,
+        channelIds: List<String>,
+        minStartUtc: String,
+        maxStartUtc: String,
+    ): List<JellyfinLiveTvProgram>? = runCatching {
         if (channelIds.isEmpty()) return@runCatching emptyList()
         val url = baseUrl.trimEnd('/') +
             "/LiveTv/Programs?ChannelIds=${channelIds.joinToString(",")}" +
             "&MinStartDate=${minStartUtc.encodeURLParameter()}&MaxStartDate=${maxStartUtc.encodeURLParameter()}"
         httpGet(url) { jellyfinAuth(token) }
-            .bodyOrNull<JellyfinLiveTvProgramsResponse>("getLiveTvPrograms")?.items.orEmpty()
+            .bodyOrNull<JellyfinLiveTvProgramsResponse>("getLiveTvPrograms")?.items
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getLiveTvPrograms failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
+        result.getOrNull()
     }
 
     /**

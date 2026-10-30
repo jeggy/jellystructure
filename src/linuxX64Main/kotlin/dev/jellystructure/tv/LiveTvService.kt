@@ -100,6 +100,13 @@ class LiveTvService(
     private val syncMutex = Mutex()
     private var lastLiveChannels: List<JellyfinLiveTvChannel> = emptyList()
 
+    // DEB-3066 — now/next follows the clock. `hasGuide` per channel (a programme on now or starting within [GUIDE_REACH_MS]),
+    // when the snapshot above was read, and when a read last tried to refresh it. `nowNextMutex` makes concurrent readers share one re-read.
+    private var guideFlags: Map<String, Boolean> = emptyMap()
+    private var snapshotAt: Long = 0L
+    private var lastNowNextAttempt: Long = 0L
+    private val nowNextMutex = Mutex()
+
     // DEB-2520 — the channel ids Jellyfin lists for one viewer (`/LiveTv/Channels?userId=`), per user. HomeFeedService's
     // shape: the entry also carries the hash of the device's library and tag lists, so a policy change misses it.
     private data class ViewerChannels(val ids: Set<String>, val policyHash: Int, val fetchedAt: Long)
@@ -170,7 +177,7 @@ class LiveTvService(
         if (reachable && live.isEmpty() && jellyfinClient.getLiveTvInfo(base, token) == null) {
             return@withLock buildOverview(reachable = false)
         }
-        lastLiveChannels = live
+        applySnapshot(live, base, token)
         val liveIds = live.associateBy { it.id }
         val existing = store.overridesByChannelId()
         var nextOrder = (existing.values.maxOfOrNull { it.order } ?: -1) + 1
@@ -225,6 +232,7 @@ class LiveTvService(
     /** The merged admin lineup table — Jellyfin facts (name/logo/current program) from the last [sync]
      *  joined with the stored override, ordered per the operator's chosen order. */
     fun lineup(): List<LiveTvChannel> {
+        val now = clock()
         val liveById = lastLiveChannels.associateBy { it.id }
         return store.overridesByChannelId().values.sortedBy { it.order }.map { ov ->
             val live = liveById[ov.channelId]
@@ -242,11 +250,12 @@ class LiveTvService(
             // token to an <img>/Coil image request, and logos aren't sensitive.
             val logo = ov.logoOverrideUrl
                 ?: live?.imageTags?.primary?.let { "/api/tv/livetv/logo/${ov.channelId}" }
+            // DEB-3066 — a programme whose end has passed is never the current one, whatever the snapshot holds.
             val current = live?.currentProgram?.let { p ->
                 val start = p.startDate?.let(::isoToEpochMs) ?: return@let null
                 val end = p.endDate?.let(::isoToEpochMs) ?: start
                 LiveTvProgramInfo(p.name, start, end, p.isSeries)
-            }
+            }?.takeIf { it.endMs > now }
             LiveTvChannel(
                 channelId = ov.channelId,
                 name = name,
@@ -255,7 +264,7 @@ class LiveTvService(
                 shown = ov.shown,
                 logoUrl = logo,
                 category = ov.category,
-                hasGuide = live?.currentProgram != null,
+                hasGuide = guideFlags[ov.channelId] ?: (current != null),
                 isNew = ov.isNew,
                 unavailable = ov.unavailable,
                 currentProgram = current,
@@ -265,6 +274,71 @@ class LiveTvService(
         }
     }
 
+    /**
+     * DEB-3066 (Phase 147 D1, amended) — [lineup] after a re-read of now/next when one is due: the snapshot holds a programme
+     * that has ended or no channels at all, or a channel with a guide is in a gap and the snapshot is over [GAP_REREAD_MS] old.
+     * Happens on read, never on a timer; at most one re-read per [REREAD_MIN_GAP_MS], shared by concurrent readers; it replaces
+     * the snapshot and nothing else (no store write, no `lastSyncedAt`, no push). A Jellyfin that does not answer changes nothing.
+     */
+    suspend fun freshLineup(): List<LiveTvChannel> {
+        if (nowNextDue(clock())) refreshNowNext()
+        return lineup()
+    }
+
+    private fun nowNextDue(now: Long): Boolean {
+        val snapshot = lastLiveChannels
+        if (snapshot.isEmpty()) return true
+        for (ch in snapshot) {
+            val end = ch.currentProgram?.let { p -> p.endDate?.let(::isoToEpochMs) ?: p.startDate?.let(::isoToEpochMs) }
+            if (end != null && end <= now) return true
+            if (end == null && guideFlags[ch.id] == true && now - snapshotAt > GAP_REREAD_MS) return true
+        }
+        return false
+    }
+
+    private suspend fun refreshNowNext() = nowNextMutex.withLock {
+        val now = clock()
+        // A reader that waited on the lock finds the first one's answer here and does not ask again.
+        if (now - lastNowNextAttempt < REREAD_MIN_GAP_MS || !nowNextDue(now)) return@withLock
+        lastNowNextAttempt = now
+        val base = jellyfinBase(); val token = jellyfinToken()
+        if (base.isBlank() || token.isBlank()) return@withLock
+        val live = jellyfinClient.getLiveTvChannelsOrNull(base, token, null) ?: return@withLock
+        if (live.isEmpty() && lastLiveChannels.isNotEmpty()) return@withLock
+        applySnapshotLocked(live, base, token)
+    }
+
+    private suspend fun applySnapshot(live: List<JellyfinLiveTvChannel>, base: String, token: String) =
+        nowNextMutex.withLock { applySnapshotLocked(live, base, token) }
+
+    /**
+     * Takes [live] as the snapshot and works out `has_guide` for each channel: true with a programme on now, otherwise true
+     * when Jellyfin lists one starting within [GUIDE_REACH_MS] (a gap, or a station off air overnight). A Programs call that
+     * is not answered leaves the channel's flag as it was.
+     */
+    private suspend fun applySnapshotLocked(live: List<JellyfinLiveTvChannel>, base: String, token: String) {
+        val now = clock()
+        val flags = HashMap<String, Boolean>()
+        val bare = ArrayList<String>()
+        for (ch in live) {
+            val end = ch.currentProgram?.let { p -> p.endDate?.let(::isoToEpochMs) ?: p.startDate?.let(::isoToEpochMs) }
+            if (end != null && end > now) flags[ch.id] = true else bare += ch.id
+        }
+        if (bare.isNotEmpty()) {
+            val listed = jellyfinClient.getLiveTvProgramsOrNull(base, token, bare, utcIsoMinusHours(0), utcIsoPlusDays(1))
+            for (id in bare) {
+                flags[id] = if (listed == null) guideFlags[id] ?: false
+                else listed.any {
+                    val start = it.startDate?.let(::isoToEpochMs) ?: return@any false
+                    it.channelId == id && (it.endDate?.let(::isoToEpochMs) ?: start) > now && start < now + GUIDE_REACH_MS
+                }
+            }
+        }
+        lastLiveChannels = live
+        guideFlags = flags
+        snapshotAt = now
+    }
+
     private fun kindOf(ch: JellyfinLiveTvChannel): String = if (ch.channelType.equals("Radio", ignoreCase = true)) "radio" else "tv"
 
     /** Only the shown+available channels [device]'s viewer may watch, for the TV-facing Home "On now" row / player
@@ -272,7 +346,7 @@ class LiveTvService(
     suspend fun homeChannels(device: DeviceData, radio: Boolean = false, kind: String? = null): List<LiveTvChannel> {
         val visible = visibleChannelIds(device)
         // DEB-2655 (FR-2) — a station is sent only to a client that asked (`radio=1`); `kind=` narrows what was asked for.
-        return lineup().filter {
+        return freshLineup().filter {
             it.shown && !it.unavailable && it.channelId in visible && (radio || it.kind != "radio") && (kind == null || it.kind == kind)
         }
     }
@@ -784,6 +858,12 @@ class LiveTvService(
 }
 
 private const val STOP_WATCHDOG_MS = 90_000L
+/** DEB-3066 — how far ahead a programme still counts as the channel having a guide. */
+private const val GUIDE_REACH_MS = 24 * 3_600_000L
+/** DEB-3066 — a channel in a gap is looked at again once the snapshot is this old. */
+private const val GAP_REREAD_MS = 60_000L
+/** DEB-3066 — never more often than this, whatever triggered it. */
+private const val REREAD_MIN_GAP_MS = 5_000L
 /** DEB-2628 FR-5 — a relayed tune with no connection open and no heartbeat closes this long after the last of either. */
 internal const val RADIO_RELAY_IDLE_STOP_MS = 60_000L
 
