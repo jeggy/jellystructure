@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.fallbackIndex
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
+import dev.jellystructure.ravilo.ui.focus.scrollThenFocus
 import dev.jellystructure.ravilo.ui.focus.focusDetailPanelAvailableWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailPanelClampedWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenTargetScrollDelta
@@ -214,10 +215,9 @@ fun <T> StaticContentRow(
             val toKey = itemKey(items[to])
             targetKey = toKey
             withFrameNanos { }
-            if (listState.layoutInfo.visibleItemsInfo.none { it.key == toKey }) {
-                runCatching { listState.scrollToItem(to + lead) }
-            }
-            targetFR.requestFocusAwaiting()
+            // FR-R361-1 — the one helper: scrolls until the neighbour is FULLY on screen (a partly clipped
+            // tile at the edge is not "visible"), then awaits the focus request.
+            scrollThenFocus(listState, to + lead, targetFR) {}
             targetKey = null
             return@LaunchedEffect
         }
