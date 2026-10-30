@@ -161,10 +161,10 @@ and a Danish sidecar `.srt` added later.
 - Either form writes the file's stream bitrate as `stalled_bps` (24 h hold, FR-309-1), or `decode_failed_*` for FR-3.
   A stream handed over in the last 24 h is not re-offered as direct play.
 
-### FR-5 — A frozen ladder play recovers quickly, downward, in place first
+### FR-5 — A frozen ladder play recovers quickly, downward, in place first (amends 313 F2)
 
 > *Amendment 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-6):* a replacement the viewer did not ask for is made behind the picture: no
-> `Loading`, no shutter, the old stream playing until the new one is in hand. The same holds for FR-4's hand-over. (amends 313 F2)
+> `Loading`, no shutter, the old stream playing until the new one is in hand. The same holds for FR-4's hand-over.
 
 This applies to an HLS play, ours or Jellyfin's.
 
