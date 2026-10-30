@@ -45,7 +45,6 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
 import kotlin.concurrent.AtomicInt
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.buffered
 import kotlinx.io.readByteArray
@@ -629,7 +628,7 @@ class LiveTvService(
                                 // lambda with the body unread hangs the call inside a handler until the 3 s bound, and the look was then lost
                                 // (a null `content_type` on the ticket): take the look first, then drain a little, itself bounded to 1 s.
                                 val look = SourceHead(null, resp.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim(), resp.headers["icy-br"]?.substringBefore(',')?.trim()?.toIntOrNull())
-                                withTimeoutOrNull(SOURCE_AUDIO_DRAIN_MS) { runCatching { resp.bodyAsChannel().discard(SOURCE_AUDIO_DRAIN_BYTES) } }
+                                boundedOrNull(SOURCE_AUDIO_DRAIN_MS, "live-tv source audio drain") { runCatching { resp.bodyAsChannel().discard(SOURCE_AUDIO_DRAIN_BYTES) } }
                                 PlaylistStep.Body(look)
                             }
                             resp.status.isSuccess() -> {
