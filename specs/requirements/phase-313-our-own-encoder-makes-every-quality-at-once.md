@@ -977,6 +977,21 @@ than AAC and so leaves less room for the picture on the slowest quality.
   start rung (`startRungFor`) and a recovery's bound (`rungsBelowBandwidth`). A Dolby play can therefore start one rung
   lower than the same film on AAC. That is the cost the owner accepted.
 
+### FR-313-5d — Both routes tell the device the same format (2026-10-31, DEB-3162)
+
+QA on the stue TV (DEB-3135) read the same film as plain E-AC-3 5.1 on the file and as E-AC-3 JOC 5.1.2 on our encoder. The
+bytes are the same. Only the declaration differs: `RaviloMatroskaExtractor` always names an `A_EAC3` track `audio/eac3`, and
+the TS road reads the stream and finds Atmos. So FR-313-5b's *"the level and Atmos stay as they are on a direct play"* did
+not hold for an MKV, which nearly every E-AC-3 film in the library is, and no such film has ever declared Atmos on the file.
+
+- **A device is told what the stream is, on both routes.** An MKV's E-AC-3 track carrying JOC declares `audio/eac3-joc`, read
+  from the stream's own syncframes as the TS road does. A plain E-AC-3 track stays `audio/eac3`. The file gains Atmos; our
+  encoder is left as it is. Declaring plain on both would reach the same match by giving Atmos up.
+- A track on a device with no JOC path falls back exactly as a JOC track on our encoder already does: Media3 chooses, and
+  this adds no rule.
+- Whether a move between the routes is the same **level** can only be heard. Matching the format removes the last difference
+  we can read; the ear check stays open on DEB-3093.
+
 ### Not changed
 
 - The direct play and R379's rule for a device without the decoder.
