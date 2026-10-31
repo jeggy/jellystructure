@@ -543,3 +543,18 @@ val generateBuildInfo by tasks.registering {
 }
 if (!desktopOnly) the<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension>().sourceSets.getByName("commonMain").kotlin.srcDir(generateBuildInfo.map { buildInfoDir.get() })
 tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach { dependsOn(generateBuildInfo) }
+
+// DEB-3200 — a red JVM/Android unit test on CI used to end at `AssertionError` with no message. Every test task in every
+// module now prints the failed test's full exception (message, cause, stack) and its stdout/stderr into the CI log.
+subprojects {
+    tasks.withType<Test>().configureEach {
+        testLogging {
+            events("failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showExceptions = true
+            showCauses = true
+            showStackTraces = true
+            showStandardStreams = false
+        }
+    }
+}
