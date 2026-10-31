@@ -24,15 +24,21 @@ const val SSO_ATTEMPT_MS = 10 * 60_000L
 /** What the identity provider's return hands the client (FR-11): which attempt, and the one-time hand-off that completes it. */
 data class SsoReturn(val attemptId: String, val handoff: String)
 
-/** The two values a client keeps to finish an attempt (FR-9). The [secret] lives in memory: the activity's saved state, or `sessionStorage` on the web. */
-data class SsoAttempt(val attemptId: String, val secret: String) {
-    /** One string for a platform's saved state. Neither value contains a `|`: both are server-minted URL-safe tokens. */
-    fun encode(): String = "$attemptId|$secret"
+/**
+ * The values a client keeps to finish an attempt (FR-9). The [secret] lives in memory: the activity's saved state, or `sessionStorage` on the web.
+ * DEB-2233 (FR-6) — [heldRoute] is the page the viewer was held for when they pressed the button (the TV link's `/account/tv/<code>`, or a pasted
+ * `#/…` address, DEB-1738 FR-4). It travels with the attempt because a sign-in that leaves the page throws the in-memory hold away, and it is
+ * given back only when this attempt's own return is claimed: it can never reach a different attempt, and every end of the attempt drops it.
+ */
+data class SsoAttempt(val attemptId: String, val secret: String, val heldRoute: String? = null) {
+    /** One string for a platform's saved state. The ids and the secret contain no `|`: they are server-minted URL-safe tokens. The route, last, may. */
+    fun encode(): String = if (heldRoute == null) "$attemptId|$secret" else "$attemptId|$secret|$heldRoute"
 
     companion object {
         fun decode(raw: String?): SsoAttempt? {
-            val (id, secret) = (raw ?: return null).split('|', limit = 2).takeIf { it.size == 2 } ?: return null
-            return if (id.isNotBlank() && secret.isNotBlank()) SsoAttempt(id, secret) else null
+            val parts = (raw ?: return null).split('|', limit = 3).takeIf { it.size >= 2 } ?: return null
+            val (id, secret) = parts
+            return if (id.isNotBlank() && secret.isNotBlank()) SsoAttempt(id, secret, parts.getOrNull(2)?.takeIf { it.isNotBlank() }) else null
         }
     }
 }
@@ -163,6 +169,10 @@ class SsoSignInStore(
     private val deviceId: () -> String,
     private val deviceName: () -> String?,
     private val onPaired: (PairResult) -> Unit,
+    /** DEB-2233 (FR-6) — the page held for the viewer right now; kept with the attempt when it starts. */
+    private val heldRoute: () -> String? = { null },
+    /** DEB-2233 (FR-6) — the page the claimed attempt was started under, given back just before [onPaired] so the first Home can open it. */
+    private val onHeldRestored: (String) -> Unit = {},
     private val inbox: SsoReturnInbox = ssoReturnInbox,
     private val attemptMs: Long = SSO_ATTEMPT_MS,
 ) {
@@ -206,14 +216,15 @@ class SsoSignInStore(
                 opened = p.listen(closeTabText)
                 val s = api.start(provider, deviceId(), deviceName(), opened.returnTo)
                 listener = opened
-                attempt = s.attempt
-                opened.expect(s.attempt.attemptId)
-                p.persist(s.attempt)
-                onAttemptChanged(s.attempt)
+                val kept = s.attempt.copy(heldRoute = heldRoute())
+                attempt = kept
+                opened.expect(kept.attemptId)
+                p.persist(kept)
+                onAttemptChanged(kept)
                 _state.value = SsoState.Waiting(provider)
                 p.open(s.authorizeUrl)
                 // The attempt dies on the server at ten minutes; the screen does not outlive it.
-                val mine = s.attempt
+                val mine = kept
                 scope.launch { delay(attemptMs); if (attempt == mine) forget(SsoState.Errored(SsoErrorKind.FAILED)) }
             } catch (e: CancellationException) {
                 opened?.close()
@@ -245,6 +256,7 @@ class SsoSignInStore(
         if (attempt != mine) return
         if (paired == null) { forget(SsoState.Errored(kind)); return }
         forget(SsoState.Idle)
+        mine.heldRoute?.let(onHeldRestored)
         onPaired(paired)
     }
 

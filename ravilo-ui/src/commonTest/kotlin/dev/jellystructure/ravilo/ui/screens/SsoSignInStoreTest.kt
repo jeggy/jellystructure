@@ -55,8 +55,10 @@ class SsoSignInStoreTest {
         override fun recall(): SsoAttempt? = kept
     }
 
-    private fun TestScope.store(api: FakeApi, inbox: SsoReturnInbox, paired: MutableList<PairResult> = mutableListOf(), attemptMs: Long = SSO_ATTEMPT_MS) =
-        SsoSignInStore(api, backgroundScope, { "dev-1" }, { "Anna's phone" }, { paired += it }, inbox, attemptMs)
+    private fun TestScope.store(
+        api: FakeApi, inbox: SsoReturnInbox, paired: MutableList<PairResult> = mutableListOf(), attemptMs: Long = SSO_ATTEMPT_MS,
+        held: () -> String? = { null }, restored: MutableList<String> = mutableListOf(),
+    ) = SsoSignInStore(api, backgroundScope, { "dev-1" }, { "Anna's phone" }, { paired += it }, held, { restored += it }, inbox, attemptMs)
 
     // ─── the button set ────────────────────────────────────────────────────────
 
@@ -220,6 +222,105 @@ class SsoSignInStoreTest {
         val s = store(api, inbox); s.attach(FakePlatform(), null); runCurrent()
         assertTrue(api.claims.isEmpty())
         assertEquals(SsoState.Idle, s.state.value)
+    }
+
+    // ─── DEB-2233 (FR-6) the page held through the round trip ──────────────────
+
+    private val tvHold = "/account/tv/ABCD-EFGH"
+
+    @Test fun `a held route is kept with the attempt when it starts`() = runTest {
+        val platform = FakePlatform("web"); val seen = mutableListOf<SsoAttempt?>()
+        val s = store(FakeApi(listOf("Harbour ID")), SsoReturnInbox(), held = { tvHold }); s.attach(platform, null); runCurrent()
+        s.onAttemptChanged = { seen += it }
+        s.start("Harbour ID", "c"); runCurrent()
+        assertEquals(SsoAttempt("a1", "s3cret", tvHold), platform.kept)
+        assertEquals(listOf<SsoAttempt?>(SsoAttempt("a1", "s3cret", tvHold)), seen)
+    }
+
+    @Test fun `a held route survives a reload and comes back with the claim before the sign-in is stored`() = runTest {
+        // The first page: the viewer is held for a TV's code, taps the button, and the page is thrown away with the platform's memory kept.
+        val platform = FakePlatform("web")
+        val first = store(FakeApi(listOf("Harbour ID")), SsoReturnInbox(), held = { tvHold }); first.attach(platform, null); runCurrent()
+        first.start("Harbour ID", "c"); runCurrent()
+        // The second page: nothing is held in memory, the return is already in the inbox.
+        val inbox = SsoReturnInbox().apply { offer(SsoReturn("a1", "hand-off")) }
+        val order = mutableListOf<String>(); val restored = mutableListOf<String>(); val paired = mutableListOf<PairResult>()
+        val api = FakeApi(listOf("Harbour ID")).apply { claimAnswer = { pair } }
+        val second = SsoSignInStore(api, backgroundScope, { "dev-1" }, { null }, { paired += it; order += "paired" }, { null }, { restored += it; order += "held" }, inbox)
+        second.attach(platform, null); runCurrent()
+        assertEquals(listOf(tvHold), restored)
+        assertEquals(listOf(pair), paired)
+        assertEquals(listOf("held", "paired"), order)
+        assertNull(platform.kept)
+    }
+
+    @Test fun `a held route survives the saved state of a process death`() = runTest {
+        val inbox = SsoReturnInbox(); val restored = mutableListOf<String>()
+        val api = FakeApi(listOf("Harbour ID")).apply { claimAnswer = { pair } }
+        val saved = SsoAttempt("a1", "s3cret", tvHold).encode()
+        val s = store(api, inbox, restored = restored); s.attach(FakePlatform(), SsoAttempt.decode(saved)); runCurrent()
+        inbox.offer(SsoReturn("a1", "hand-off")); runCurrent()
+        assertEquals(listOf(tvHold), restored)
+    }
+
+    @Test fun `no held route means nothing is restored`() = runTest {
+        val inbox = SsoReturnInbox(); val restored = mutableListOf<String>()
+        val api = FakeApi(listOf("Harbour ID")).apply { claimAnswer = { pair } }
+        val s = store(api, inbox, restored = restored); s.attach(FakePlatform(), null); runCurrent()
+        s.start("Harbour ID", "c"); runCurrent()
+        inbox.offer(SsoReturn("a1", "hand-off")); runCurrent()
+        assertTrue(restored.isEmpty())
+    }
+
+    @Test fun `a cancelled attempt leaves nothing held for a later one`() = runTest {
+        val inbox = SsoReturnInbox(); val restored = mutableListOf<String>(); val platform = FakePlatform("web")
+        val api = FakeApi(listOf("Harbour ID")).apply { claimAnswer = { pair } }
+        var hold: String? = tvHold
+        val s = store(api, inbox, restored = restored, held = { hold }); s.attach(platform, null); runCurrent()
+        s.start("Harbour ID", "c"); runCurrent()
+        s.cancel()
+        assertNull(platform.kept)
+        // The viewer holds nothing now; a later attempt must not pick the old hold up.
+        hold = null
+        api.startAnswer = { SsoAttemptStart("https://idp.example.net/a", SsoAttempt("a2", "s2")) }
+        s.start("Harbour ID", "c"); runCurrent()
+        assertEquals(SsoAttempt("a2", "s2"), platform.kept)
+        inbox.offer(SsoReturn("a2", "h")); runCurrent()
+        assertTrue(restored.isEmpty())
+    }
+
+    @Test fun `a failed claim restores nothing and drops the hold`() = runTest {
+        val inbox = SsoReturnInbox(); val restored = mutableListOf<String>(); val platform = FakePlatform("web")
+        val api = FakeApi(listOf("Harbour ID")).apply { claimAnswer = { throw TvApiError.Http(401, "never shown") } }
+        val s = store(api, inbox, restored = restored, held = { tvHold }); s.attach(platform, null); runCurrent()
+        s.start("Harbour ID", "c"); runCurrent()
+        inbox.offer(SsoReturn("a1", "bad")); runCurrent()
+        assertTrue(restored.isEmpty())
+        assertNull(platform.kept)
+    }
+
+    @Test fun `a timed-out attempt restores nothing and drops the hold`() = runTest {
+        val inbox = SsoReturnInbox(); val restored = mutableListOf<String>(); val platform = FakePlatform("web")
+        val s = store(FakeApi(listOf("Harbour ID")), inbox, attemptMs = 600_000, restored = restored, held = { tvHold }); s.attach(platform, null); runCurrent()
+        s.start("Harbour ID", "c"); runCurrent()
+        advanceTimeBy(601_000); runCurrent()
+        assertNull(platform.kept)
+        inbox.offer(SsoReturn("a1", "late")); runCurrent()
+        assertTrue(restored.isEmpty())
+    }
+
+    @Test fun `a return for another attempt does not hand over this attempt's hold`() = runTest {
+        val inbox = SsoReturnInbox(); val restored = mutableListOf<String>()
+        val s = store(FakeApi(listOf("Harbour ID")), inbox, restored = restored, held = { tvHold }); s.attach(FakePlatform(), null); runCurrent()
+        s.start("Harbour ID", "c"); runCurrent()
+        inbox.offer(SsoReturn("someone-elses", "h")); runCurrent()
+        assertTrue(restored.isEmpty())
+    }
+
+    @Test fun `the saved form carries a route that contains a bar`() {
+        val a = SsoAttempt("a1", "s3cret", "/search?q=a|b")
+        assertEquals(a, SsoAttempt.decode(a.encode()))
+        assertEquals(SsoAttempt("a1", "s3cret"), SsoAttempt.decode("a1|s3cret|"))
     }
 
     @Test fun `the attempt's saved form round-trips and refuses what is not one`() {

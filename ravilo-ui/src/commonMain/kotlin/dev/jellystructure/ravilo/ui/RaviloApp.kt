@@ -2330,7 +2330,8 @@ fun RaviloApp(
             }
 
             is Dest.Login -> {
-                val store = remember { LoginStore(apiClient) }
+                // DEB-2233 (FR-6) — single sign-on leaves this page in the same tab, so the hold travels with the attempt and comes back with its claim.
+                val store = remember { LoginStore(apiClient, heldRoute = { heldRoute }, onHeldRestored = { if (heldRoute == null) heldRoute = it }) }
                 val onLoginSignedIn = {
                     signedOutNotice = false
                     val active = MultiTokenStore.getActive()

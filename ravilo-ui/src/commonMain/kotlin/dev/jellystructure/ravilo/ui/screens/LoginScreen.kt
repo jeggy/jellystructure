@@ -89,7 +89,12 @@ sealed class LoginState {
     data class Errored(val kind: LoginErrorKind) : LoginState()
 }
 
-class LoginStore(private val apiClient: TvApiClient) {
+class LoginStore(
+    private val apiClient: TvApiClient,
+    /** DEB-2233 (FR-6) — the page held through this sign-in, and where a single sign-on round trip that reloaded the page gives it back. */
+    heldRoute: () -> String? = { null },
+    onHeldRestored: (String) -> Unit = {},
+) {
     // R225 — read by LoginScreen's server indicator, so it reflects exactly what this store's client
     // is actually using rather than being threaded a second value that could drift from it.
     val baseUrl: String get() = apiClient.baseUrl
@@ -101,6 +106,7 @@ class LoginStore(private val apiClient: TvApiClient) {
     val sso = SsoSignInStore(
         api = TvSsoApi(apiClient), scope = scope, deviceId = { DeviceIdStore.get() }, deviceName = { deviceDisplayName() },
         onPaired = { r -> persistSignIn(r); _state.value = LoginState.Success(r.session.displayName) },
+        heldRoute = heldRoute, onHeldRestored = onHeldRestored,
     )
 
     fun signIn(username: String, password: String) {
