@@ -66,6 +66,9 @@ None of them publishes its current production client, so this spec takes the pri
   request for an id not in memory re-registers it from the store and restarts the job at that segment. The same holds
   for a composed master and its renditions (`AudioRenditions`) and for a sidecar. A stored plan goes when the session
   ends or after 24 h unread.
+- **A plan stored by one build is read by the next, in both directions.** A new field in a stored plan has a default that
+  means today's behaviour, and a plan an older build stored keeps playing as it was planned. A deploy that cannot read a
+  plan ends that play, which is the failure this FR exists to remove.
 - **A film does not outlive its ticket.** Every playlist, segment or init read renews `expiresAt` by 4 h. A stream ends by
   expiry only after 4 h with no reads, paused or not.
 - **A refusal means ffmpeg refused the plan.** Only a stream's first start can mark it refused (410, and the file to
