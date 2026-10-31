@@ -132,6 +132,8 @@ class Encoder(
         platform: String? = null,
         /** DEB-2205 (FR-5.2) — a freeze recovery: only rungs whose BANDWIDTH is under this (see [rungsBelowBandwidth]). */
         belowBandwidthBps: Long? = null,
+        /** DEB-3101 (FR-313-5c) — Jellyfin's `BitRate` of each audio stream, by its stream index (a [AudioTrack.index]). */
+        audioBps: Map<Int, Long> = emptyMap(),
     ): Pair<EncoderPlan?, String> {
         val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
         val range = sourceVideoRange.orEmpty()
@@ -161,11 +163,13 @@ class Encoder(
             .filter { it > 0 }.minOrNull()?.toLong()
         val carried = audio.indexOfFirst { it.index == carriedIndex }.let { if (it < 0) audio.indexOfFirst { a -> a.isDefault }.coerceAtLeast(0) else it }
         val positions = if (caps.hlsAudioRenditions) audio.indices.toList() else listOf(carried)
+        // DEB-3101 (FR-313-5a) — one codec per master: the film's own Dolby codec when this device decodes it, else AAC.
+        val family = audioFamilyFor(audio.getOrNull(carried)?.codec, caps.platformAudioDecoders)
         val encAudio = positions.filter { it in audio.indices }.map { pos ->
             val a = audio[pos]
-            EncoderAudio(pos, order[pos], "aac", minOf(a.channels ?: 2, caps.maxAudioChannels.coerceAtLeast(1), 6), a.language, a.label, pos == carried)
+            audioRenditionFor(pos, order[pos], family, a.codec, a.channels, caps.maxAudioChannels, audioBps[a.index], a.language, a.label, pos == carried)
         }
-        val audioPeak = encAudio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
+        val audioPeak = encAudio.maxOfOrNull { audioBitrate(it) } ?: 0L
         var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling)
         if (belowBandwidthBps != null) rungs = rungsBelowBandwidth(rungs, audioPeak, belowBandwidthBps)
         // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that

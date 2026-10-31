@@ -793,6 +793,8 @@ class PlaybackService(
         belowBandwidthBps: Long? = null,
         /** DEB-2205 (FR-4) — a hand-over ahead of time: our encoder's job starts at the ticket's position now, and the answer waits (bounded) for its first segment. */
         handover: Boolean = false,
+        /** DEB-3101 (FR-313-5c) — Jellyfin's `BitRate` of each audio stream by stream index, for a copied Dolby track. */
+        audioBps: Map<Int, Long> = emptyMap(),
     ): StreamTicket {
         val deviceKind = device?.kind ?: "tv"
         val measured = ticket.copy(measuredBandwidthBps = measuredBps,
@@ -813,7 +815,7 @@ class PlaybackService(
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
-                belowBandwidthBps = belowBandwidthBps)
+                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -826,7 +828,7 @@ class PlaybackService(
                     val ready = encoder.warmAndWait(id, startSegment, HANDOVER_SEGMENT_WAIT_MS)
                     Logger.info("playback: item=$jellyfinId hand-over to ours at ${ticket.startPositionMs}ms (segment $startSegment) — ${if (ready) "its first segment is made" else "its first segment is not made yet, the player waits for it"} (DEB-2205 FR-4)", "tv")
                 }
-                val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
+                val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it) } ?: 0L
                 val startStream = rungBandwidth(plan.rungs[plan.startRung], audioPeak)
                 Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +
                     "rungs=${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }} start=${plan.startRung} " +
@@ -1366,7 +1368,8 @@ class PlaybackService(
         ), negotiatedCaps, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, device = device,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = take,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
-            sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType)
+            sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
+            audioBps = audioBitratesOf(itemDetail, mediaSourceId))
     }
 
     /**
@@ -1464,7 +1467,8 @@ class PlaybackService(
         // adoptPrewarm would throw the warm encode away on every cast.
         val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, wantedAudioIndex),
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType,
-            subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform)
+            subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
+            audioBps = audioBitratesOf(itemDetail, null))
         plan ?: return none(why)
         encoder.prewarm(plan, target.deviceId, jellyfinId, (startPositionMs / ENCODER_SEGMENT_MS).toInt(), nowMs() + PREWARM_TTL_MS)
         return dev.jellystructure.shared.tv.PrewarmResult("warm")
@@ -2364,7 +2368,7 @@ class PlaybackService(
             sourceVideoBps = playbackInfo?.mediaSources?.firstOrNull()?.videoBitrate(), measuredBps = measuredBps, take = take,
             // 313d (FR-313-6) — the picked image subtitle's place among the file's own subtitle streams.
             burnSubtitleOrder = embeddedSubtitleOrder(itemDetail?.mediaStreams.orEmpty(), subtitleStreamIndex), burnRequested = true,
-            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps) }
+            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps, audioBps = audioBitratesOf(itemDetail, chosenSource)) }
     }
 
     /**
@@ -2443,7 +2447,8 @@ class PlaybackService(
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = ladderTake,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
-            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps, handover = handoverAt != null) }
+            notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps, handover = handoverAt != null,
+            audioBps = audioBitratesOf(itemDetail, chosenSource)) }
     }
 
     /**
@@ -2464,6 +2469,11 @@ class PlaybackService(
     /** The audio list before negotiation (the remembered-choice resolver): container tracks first, external last. */
     private fun buildAudioTracks(itemDetail: JellyfinItemDetail?, mediaSourceId: String? = null): List<AudioTrack> =
         ticketAudioTracks(streamsOf(itemDetail, mediaSourceId), includeExternal = true, externalUrls = emptyMap())
+
+    /** DEB-3101 (FR-313-5c) — Jellyfin's `BitRate` of each audio stream of the chosen version, by stream index (those it knows). */
+    private fun audioBitratesOf(itemDetail: JellyfinItemDetail?, mediaSourceId: String?): Map<Int, Long> =
+        streamsOf(itemDetail, mediaSourceId).filter { it.type.equals("Audio", ignoreCase = true) }
+            .mapNotNull { s -> s.bitRate?.takeIf { it > 0 }?.let { s.index to it } }.toMap()
 
     /** Phase 314c — the chosen version's own streams (its sidecar subtitles may differ), else the item's. */
     private fun streamsOf(itemDetail: JellyfinItemDetail?, mediaSourceId: String?): List<dev.jellystructure.auth.JellyfinMediaStream> =

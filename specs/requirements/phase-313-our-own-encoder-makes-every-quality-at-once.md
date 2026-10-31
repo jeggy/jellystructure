@@ -959,6 +959,11 @@ than AAC and so leaves less room for the picture on the slowest quality.
   stay as they are on a direct play. Checked 2026-10-30 on a real E-AC-3 Atmos track through this job's HLS flags: 20 s
   of copied TS segments, joined, were byte-identical to the same 20 s copied straight from the file, and still read as
   Atmos.
+- **A restarted job copies from the same frame as the video** (DEB-3101, 2026-10-31). After a seek the demuxer hands a copied
+  track over from the start of the cluster the keyframe sits in, measured 2 s before it, and nothing trims a stream that is
+  not decoded. A copied rendition therefore carries `-copypriorss 0`, so a job restarted at segment K starts its audio
+  where its video starts and every segment stays on the 2 s grid. `EncoderAlignmentTest` copies an E-AC-3 input in TS and
+  fMP4, from the first frame and from a restart, and checks the bytes against the file's own.
 - A track in any other codec (a sibling AC-3, TrueHD or DTS) is encoded to the family's codec at today's
   `audioBitrate`. Only copied tracks carry the promise of the same level.
 - An AAC-family master is unchanged.

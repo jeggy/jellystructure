@@ -143,7 +143,16 @@ internal fun startRungFor(rungs: List<EncoderRung>, audioPeakBps: Long, takeBps:
 
 /** One audio rendition the job makes: its place among the file's own audio streams, codec and channels. */
 @Serializable
-data class EncoderAudio(val position: Int, val audioOrder: Int, val codec: String, val channels: Int, val language: String?, val label: String?, val default: Boolean)
+data class EncoderAudio(
+    val position: Int, val audioOrder: Int, val codec: String, val channels: Int, val language: String?, val label: String?, val default: Boolean,
+    /**
+     * DEB-3101 (FR-313-5b) — the file's own track is stream-copied, not encoded. A plan is stored across deploys
+     * (DEB-3100), so each field added here defaults to what the plan meant before it: an encode, and AAC when [codec] says so.
+     */
+    val copy: Boolean = false,
+    /** DEB-3101 (FR-313-5c) — a copied track's real bitrate (Jellyfin's `BitRate`); null = not known, [audioBitrate] assumes. */
+    val sourceBps: Long? = null,
+)
 
 /**
  * 313d (FR-313-6) — one text subtitle offered as a WebVTT rendition in the master (only to a player that takes its
@@ -214,6 +223,45 @@ internal fun audioBitrate(codec: String, channels: Int): Long = when {
 }
 
 /**
+ * FR-313-5c — what a rendition counts as in BANDWIDTH: a copied track at its real bitrate, else (the 90th percentile of
+ * the library's 5.1 tracks, 2026-10-30) 768 kb/s for E-AC-3 and 640 kb/s for AC-3; an encoded one at [audioBitrate].
+ */
+internal fun audioBitrate(a: EncoderAudio): Long =
+    if (!a.copy) audioBitrate(a.codec, a.channels)
+    else a.sourceBps?.takeIf { it > 0 } ?: if (a.codec == "eac3") 768_000L else if (a.codec == "ac3") 640_000L else audioBitrate(a.codec, a.channels)
+
+/** The name this codec goes by in a master and in `platform_audio_decoders`: `ac3`, `eac3`, or null for any other. */
+internal fun dolbyFamilyOf(codec: String?): String? = when (codec?.lowercase()) {
+    "ac3", "ac-3", "a_ac3" -> "ac3"
+    "eac3", "e-ac-3", "ec-3", "a_eac3" -> "eac3"
+    else -> null
+}
+
+/**
+ * FR-313-5a — the codec of the master's audio: the codec of the track the play starts on when it is AC-3 or E-AC-3 and the
+ * device names it in `platform_audio_decoders`; otherwise `aac`. An app that does not report the field (null) stays on AAC.
+ */
+internal fun audioFamilyFor(carriedCodec: String?, platformAudioDecoders: List<String>?): String {
+    val family = dolbyFamilyOf(carriedCodec) ?: return "aac"
+    val reported = platformAudioDecoders?.mapNotNull { dolbyFamilyOf(it) }?.toSet() ?: return "aac"
+    return if (family in reported) family else "aac"
+}
+
+/**
+ * FR-313-5b — one rendition of a [family] master: a track already in that codec whose channels fit the device is copied,
+ * any other is encoded to the family at the device's channel count (AAC and the AC-3 encoders take at most 6).
+ */
+internal fun audioRenditionFor(
+    position: Int, audioOrder: Int, family: String, trackCodec: String?, trackChannels: Int?, maxChannels: Int, sourceBps: Long?,
+    language: String?, label: String?, default: Boolean,
+): EncoderAudio {
+    val cap = maxChannels.coerceAtLeast(1)
+    val copy = family != "aac" && dolbyFamilyOf(trackCodec) == family && trackChannels != null && trackChannels in 1..cap
+    return if (copy) EncoderAudio(position, audioOrder, family, trackChannels!!, language, label, default, copy = true, sourceBps = sourceBps)
+    else EncoderAudio(position, audioOrder, family, minOf(trackChannels ?: 2, cap, 6), language, label, default)
+}
+
+/**
  * FR-313-7 — the master: one `EXT-X-MEDIA` per audio rendition (every one has its own playlist — the video rungs carry
  * no audio), then one `EXT-X-STREAM-INF` per rung, the start rung first (309), every rung in one codec family.
  * Audio NAMEs are R291's `a{position} {label}` so a player maps a rendition back to the ticket's audio position.
@@ -224,7 +272,7 @@ internal fun encoderMaster(plan: EncoderPlan, startMs: Long = 0): String {
     // here instead of reading segment 0 before its seek, so our encoder no longer starts a job at 0:00 first. Players
     // that seek explicitly (Media3, hls.js with a start position) land on the same place.
     if (startMs > 0) out.append("#EXT-X-START:TIME-OFFSET=").append(secs(startMs)).append(",PRECISE=YES\n")
-    val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
+    val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it) } ?: 0L
     val audioCodec = plan.audio.firstOrNull { it.default }?.let { audioCodecString(it.codec) } ?: plan.audio.firstOrNull()?.let { audioCodecString(it.codec) }
     for (a in plan.audio) {
         out.append("#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"").append(q("a${a.position} ${a.label ?: a.language ?: ""}".trim())).append('"')
@@ -366,8 +414,12 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
         if (gpu != null) enc.append(" -level:v:$i ").append(levelOf(plan.codec, r.boxHeight))
     }
     for ((j, a) in plan.audio.withIndex()) {
+        // FR-313-5b — the file's own bytes. `-copypriorss 0`: after a seek the demuxer hands over audio from the start of the
+        // cluster the keyframe sits in, up to 2 s before it, and a copied stream (no decoder to trim it) would start the
+        // rendition early and cut every segment off the video's grid (measured on an E-AC-3 input, EncoderAlignmentTest).
+        if (a.copy) { enc.append(" -c:a:$j copy -copypriorss:a:$j 0"); continue }
         val encoder = when (a.codec) { "ac3" -> "ac3"; "eac3" -> "eac3"; else -> "aac" }
-        enc.append(" -c:a:$j ").append(encoder).append(" -b:a:$j ").append(audioBitrate(a.codec, a.channels)).append(" -ac:a:$j ").append(a.channels)
+        enc.append(" -c:a:$j ").append(encoder).append(" -b:a:$j ").append(audioBitrate(a)).append(" -ac:a:$j ").append(a.channels)
     }
     val varMap = (0 until n).joinToString(" ") { "v:$it" } + plan.audio.indices.joinToString("") { " a:$it" }
     val seg = if (plan.mux == EncoderMux.FMP4) "s%d.m4s" else "s%d.ts"

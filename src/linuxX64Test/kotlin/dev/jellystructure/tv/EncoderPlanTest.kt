@@ -459,4 +459,115 @@ class EncoderPlanTest {
         val rungs = encoderRungs(EncoderCodec.H264, 1920, 1080, 30_000_000, null)
         assertEquals(rungs, rungsBelowBandwidth(rungs, 192_000L, Long.MAX_VALUE))
     }
+
+    // ── DEB-3101 (FR-313-5a..5c) — the ladder keeps the film's own Dolby track ───────────────────────────────────────────────
+
+    private val dolbyTracks = listOf(
+        Track(0, "v:0", TrackKind.VIDEO, "hevc", null, null, true, false, width = 3840, height = 2160, videoRange = "HDR", videoBitrate = 50_000_000, durationMs = 7_200_000),
+        Track(1, "a:0", TrackKind.AUDIO, "eac3", "eng", null, true, false),
+        Track(2, "a:1", TrackKind.AUDIO, "ac3", "dan", null, false, false),
+        Track(3, "a:2", TrackKind.AUDIO, "truehd", "fra", null, false, false),
+        Track(4, "a:3", TrackKind.AUDIO, "eac3", "deu", null, false, false),
+    )
+    private val dolbyAudio = listOf(
+        AudioTrack(1, "eng", "English", "eac3", 6, true), AudioTrack(2, "dan", "Dansk", "ac3", 6, false),
+        AudioTrack(3, "fra", "Français", "truehd", 8, false), AudioTrack(4, "deu", "Deutsch", "eac3", 8, false),
+    )
+    private fun dolbyCaps(decoders: List<String>?, maxChannels: Int = 6) = ClientCapabilities(
+        hlsHevcCapable = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsAudioRenditions = true,
+        maxAudioChannels = maxChannels, platformAudioDecoders = decoders)
+
+    @Test fun `the family is the carried track's codec when the device decodes it — else AAC`() {
+        assertEquals("eac3", audioFamilyFor("eac3", listOf("ac3", "eac3")))
+        assertEquals("ac3", audioFamilyFor("ac3", listOf("AC3")))
+        assertEquals("eac3", audioFamilyFor("E-AC-3", listOf("ec-3")), "Jellyfin's and the device's spellings meet")
+        assertEquals("aac", audioFamilyFor("eac3", listOf("ac3")), "the device names AC-3 only")
+        assertEquals("aac", audioFamilyFor("eac3", emptyList()))
+        assertEquals("aac", audioFamilyFor("eac3", null), "an app that does not report the field (web, desktop, a cast receiver, older than R379)")
+        assertEquals("aac", audioFamilyFor("truehd", listOf("ac3", "eac3")))
+        assertEquals("aac", audioFamilyFor("aac", listOf("ac3", "eac3")))
+        assertEquals("aac", audioFamilyFor(null, listOf("ac3", "eac3")))
+    }
+
+    @Test fun `a Dolby film on a device that decodes Dolby copies the carried track and encodes its siblings to the family`() = runBlocking {
+        val (plan, why) = encoder().planFor(dolbyCaps(listOf("ac3", "eac3")), "tv", "/m/film.mkv", 7_200_000, dolbyTracks, dolbyAudio, 1,
+            takeBps = null, noRecord = true, sourceVideoRange = "HDR10", audioBps = mapOf(1 to 640_000L, 4 to 1_024_000L))
+        assertEquals("ours", why)
+        plan!!
+        assertTrue(plan.audio.all { it.codec == "eac3" }, "one codec per master: ${plan.audio}")
+        val (carried, ac3Sibling, truehd, eac3Eight) = plan.audio
+        assertTrue(carried.copy && carried.channels == 6 && carried.sourceBps == 640_000L, "the carried E-AC-3 5.1 is copied: $carried")
+        assertFalse(ac3Sibling.copy, "a sibling AC-3 is encoded to E-AC-3")
+        assertFalse(truehd.copy, "TrueHD is encoded to E-AC-3")
+        assertEquals(6, truehd.channels, "…at the device's six channels")
+        assertFalse(eac3Eight.copy, "an E-AC-3 track wider than the device takes is encoded, not copied")
+        assertEquals(6, eac3Eight.channels)
+        // FR-313-5c — BANDWIDTH counts the largest rendition: here a 640 kb/s encode (5.1) and the copy at 640 kb/s.
+        assertEquals(640_000L, plan.audio.maxOf { audioBitrate(it) })
+    }
+
+    @Test fun `a device that does not decode Dolby or does not say gets the AAC plan it always had`() = runBlocking {
+        for (decoders in listOf(null, emptyList(), listOf("ac3"))) {
+            val plan = encoder().planFor(dolbyCaps(decoders), "tv", "/m/film.mkv", 7_200_000, dolbyTracks, dolbyAudio, 1,
+                takeBps = null, noRecord = true, sourceVideoRange = "HDR10", audioBps = mapOf(1 to 640_000L)).first!!
+            assertTrue(plan.audio.all { it.codec == "aac" && !it.copy && it.sourceBps == null }, "decoders=$decoders: ${plan.audio}")
+            assertEquals(listOf(6, 6, 6, 6), plan.audio.map { it.channels })
+        }
+    }
+
+    @Test fun `the family is fixed by the track the play starts on — a TrueHD start stays AAC`() = runBlocking {
+        val plan = encoder().planFor(dolbyCaps(listOf("ac3", "eac3")), "tv", "/m/film.mkv", 7_200_000, dolbyTracks, dolbyAudio, 3,
+            takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertTrue(plan.audio.all { it.codec == "aac" && !it.copy })
+    }
+
+    @Test fun `a copied track counts at its real bitrate — else the library's p90 — and an encoded one at today's figure`() {
+        fun copied(codec: String, bps: Long?) = EncoderAudio(0, 0, codec, 6, null, null, true, copy = true, sourceBps = bps)
+        assertEquals(1_536_000L, audioBitrate(copied("eac3", 1_536_000L)))
+        assertEquals(768_000L, audioBitrate(copied("eac3", null)))
+        assertEquals(768_000L, audioBitrate(copied("eac3", 0L)), "a zero from Jellyfin is no figure")
+        assertEquals(640_000L, audioBitrate(copied("ac3", null)))
+        assertEquals(640_000L, audioBitrate(EncoderAudio(0, 0, "eac3", 6, null, null, true)), "an encoded E-AC-3 5.1")
+        assertEquals(384_000L, audioBitrate(EncoderAudio(0, 0, "aac", 6, null, null, true)), "an AAC-family master is unchanged")
+        // That one figure feeds BANDWIDTH, AVERAGE-BANDWIDTH and the start rung.
+        val p = plan(EncoderCodec.HEVC, EncoderMux.TS, start = 0).copy(audio = listOf(copied("eac3", 1_024_000L)))
+        val rung = p.rungs[0]
+        val inf = encoderMaster(p).lines().first { it.startsWith("#EXT-X-STREAM-INF:") }
+        assertContains(inf, "BANDWIDTH=${rungBandwidth(rung, 1_024_000L)},")
+        assertContains(inf, "AVERAGE-BANDWIDTH=${rung.videoBps + 1_024_000L},")
+        assertContains(inf, "CODECS=\"hvc1.2.4.L153.B0,ec-3\"")
+    }
+
+    @Test fun `a Dolby play can start one rung lower than the same film on AAC`() {
+        val rungs = encoderRungs(EncoderCodec.H264, 1920, 1080, 30_000_000, null)
+        val take = rungBandwidth(rungs[1], 384_000L)   // exactly what rung 1 costs beside AAC 5.1
+        assertEquals(1, startRungFor(rungs, 384_000L, take, false))
+        assertEquals(2, startRungFor(rungs, 768_000L, take, false), "with a 768 kb/s Dolby track the same take no longer fits rung 1")
+    }
+
+    @Test fun `a copied track is stream-copied — no bitrate and no channel count — and an encoded sibling is encoded`() {
+        val p = plan(EncoderCodec.H264, EncoderMux.TS, start = 0).copy(audio = listOf(
+            EncoderAudio(0, 0, "eac3", 6, "eng", "English", true, copy = true, sourceBps = 640_000L),
+            EncoderAudio(1, 2, "eac3", 6, "dan", "Dansk", false)))
+        for (gpu in listOf<Int?>(null, 0)) {
+            val cmd = encoderCommand(p.copy(cudaDevice = gpu), startSegment = 3, dir = "/w/x", ffmpeg = "/ff")
+            assertContains(cmd, " -c:a:0 copy -copypriorss:a:0 0")
+            assertFalse(cmd.contains("-b:a:0") || cmd.contains("-ac:a:0"), "a copy takes neither: $cmd")
+            assertContains(cmd, " -c:a:1 eac3 -b:a:1 640000 -ac:a:1 6")
+            assertContains(cmd, "-map 0:a:0 -map 0:a:2")
+        }
+    }
+
+    @Test fun `a plan stored before this change decodes with every new field at its old meaning and plays as planned`() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val now = plan(EncoderCodec.HEVC, EncoderMux.TS)
+        val stored = json.encodeToString(EncoderPlan.serializer(), now)
+        val old = stored.replace(Regex(",\"copy\":false"), "").replace(Regex(",\"sourceBps\":null"), "")
+        assertTrue(old.length < stored.length && !old.contains("copy") && !old.contains("sourceBps"), "the old shape has neither field: $old")
+        val back = json.decodeFromString(EncoderPlan.serializer(), old)
+        assertEquals(now, back)
+        assertTrue(back.audio.none { it.copy || it.sourceBps != null })
+        assertEquals(encoderMaster(now), encoderMaster(back))
+        assertContains(encoderCommand(back, 0, "/w/x", "/ff"), " -c:a:0 aac -b:a:0 384000 -ac:a:0 6")
+    }
 }

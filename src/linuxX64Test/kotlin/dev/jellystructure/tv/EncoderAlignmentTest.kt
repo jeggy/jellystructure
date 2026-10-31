@@ -105,4 +105,76 @@ class EncoderAlignmentTest {
             sh("rm -rf '$root'")
         }
     }
+
+    /** The bytes of [file]'s first audio stream, as a raw E-AC-3 elementary stream (no container, no timestamps). */
+    private fun eac3Bytes(input: String, out: String): ByteArray {
+        sh("ffmpeg -nostdin -v error -i '$input' -vn -map 0:a:0 -c:a copy -f eac3 -y '$out' 2>/dev/null")
+        return FileIo.readBytes(Path(out))
+    }
+
+    private fun indexOfRun(hay: ByteArray, needle: ByteArray): Int {
+        outer@ for (i in 0..hay.size - needle.size) {
+            if (hay[i] != needle[0]) continue
+            for (k in 1 until needle.size) if (hay[i + k] != needle[k]) continue@outer
+            return i
+        }
+        return -1
+    }
+
+    /**
+     * DEB-3101 (FR-313-5b) — an E-AC-3 input copied: the audio rendition's segments, joined, hold the file's own E-AC-3
+     * frames byte for byte, in TS and in fMP4, from the first job and from one restarted at a seek, and a copied
+     * rendition is cut on the same 2 s grid as the video.
+     */
+    @Test fun `an E-AC-3 track copied keeps the file's bytes in TS and fMP4 on the same grid and after a restarted job`() {
+        val probe = sh("command -v ffmpeg; command -v ffprobe")
+        if (probe.lines().count { it.endsWith("/ffmpeg") || it.endsWith("/ffprobe") } < 2) return
+        if (!sh("ffmpeg -hide_banner -encoders 2>/dev/null").contains(" eac3 ")) return
+        val root = "/tmp/js-encoder-eac3-${secureHexId().take(8)}"
+        sh("mkdir -p $root")
+        try {
+            val input = "$root/in.mkv"
+            sh("ffmpeg -nostdin -v error -f lavfi -i testsrc2=size=1280x720:rate=24 -f lavfi -i sine=f=440:sample_rate=48000 -t 16 " +
+                "-c:v libx264 -preset ultrafast -g 48 -pix_fmt yuv420p -ac 6 -c:a eac3 -b:a 640k -shortest -y '$input'")
+            assertEquals(0, access(input, F_OK))
+            val whole = eac3Bytes(input, "$root/in.eac3")
+            assertTrue(whole.size > 100_000, "the input has an E-AC-3 track (${whole.size} bytes)")
+            val src = EncoderSource(input, 16_000, "h264", 1280, 720, 4_000_000, hdr = false)
+            val rungs = listOf(EncoderRung(720, 1280, 720, 2_000_000), EncoderRung(480, 854, 480, 800_000))
+            val audio = EncoderAudio(0, 0, "eac3", 6, null, null, true, copy = true, sourceBps = 640_000L)
+            val plan = EncoderPlan(src, EncoderCodec.H264, EncoderMux.TS, rungs, 0, listOf(audio), cudaDevice = null)
+            for (mux in listOf(EncoderMux.TS, EncoderMux.FMP4)) {
+                val p = plan.copy(mux = mux)
+                val ext = if (mux == EncoderMux.TS) "ts" else "m4s"
+                for ((name, start) in listOf("whole" to 0, "restart" to 3)) {
+                    val dir = "$root/${mux.name}-$name"
+                    sh("mkdir -p $dir/0 $dir/1 $dir/2")
+                    sh(encoderCommand(p, start, dir, "ffmpeg") + " >/dev/null 2>$dir/log")
+                    val segs = (0..7 - start).filter { access("$dir/2/s$it.$ext", F_OK) == 0 }
+                    assertTrue(segs.size >= 7 - start, "${mux.name} $name: the audio rendition's segments (${segs.size}); " + sh("tail -5 $dir/log"))
+                    if (mux == EncoderMux.TS) {
+                        // The copied rendition's first segment starts where the video's does (a seek must not leave it a cluster early).
+                        fun minPts(f: String) = sh("ffprobe -v error -show_entries packet=pts_time -of csv=p=0 '$f' 2>/dev/null").lines().mapNotNull { it.trim().trimEnd(',').toDoubleOrNull() }.min()
+                        assertTrue(abs(minPts("$dir/2/s0.ts") - minPts("$dir/0/s0.ts")) < 0.1, "TS $name: audio starts at ${minPts("$dir/2/s0.ts")} s, video at ${minPts("$dir/0/s0.ts")} s")
+                    }
+                    val joined = "$dir/audio.joined"
+                    val init = if (mux == EncoderMux.FMP4) "$(ls $dir/2/init*.mp4) " else ""
+                    sh("cat $init" + segs.joinToString(" ") { "$dir/2/s$it.$ext" } + " > $joined")
+                    // ffprobe lists a stream once per joined segment's PMT in some builds: the first line is the stream.
+                    val shape = sh("ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,channels -of csv=p=0 '$joined' 2>&1").trim().lines().first().trim().trimEnd(',')
+                    assertEquals("eac3,6", shape, "${mux.name} $name: the rendition is still 5.1 E-AC-3")
+                    val got = eac3Bytes(joined, "$dir/audio.eac3")
+                    val at = indexOfRun(whole, got.copyOf(4096))
+                    assertTrue(at >= 0, "${mux.name} $name: the copied frames are the file's own frames")
+                    // The rendition is a contiguous run of the file's own bytes: from the start for a whole job, from 6 s on after a restart.
+                    assertTrue(at + got.size <= whole.size && (0 until got.size).all { whole[at + it] == got[it] }, "${mux.name} $name: not byte-identical")
+                    // Measured: ffmpeg's muxer leaves out the first frame (2560 bytes = 32 ms) of the track at the very start of a job.
+                    if (start == 0) assertTrue(at <= 2 * 2560, "${mux.name}: the first job starts at the file's first frames (byte $at)")
+                    else assertTrue(at in 400_000..520_000, "${mux.name}: the restarted job starts near 6 s (byte $at of ${whole.size})")
+                }
+            }
+        } finally {
+            sh("rm -rf '$root'")
+        }
+    }
 }
