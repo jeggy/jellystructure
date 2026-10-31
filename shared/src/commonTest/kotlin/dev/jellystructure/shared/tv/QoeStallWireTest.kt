@@ -37,6 +37,16 @@ class QoeStallWireTest {
         assertEquals("frozen_with_buffer", RaviloWireJson.decodeFromString(QoeStall.serializer(), json).cause)
     }
 
+    // ── DEB-3103 (DEB-3093 FR-8) — a replacement's entry names its reason; additive ──
+    @Test fun `the reason of a recovery entry round trips and an older apps entry has none`() {
+        val s = QoeStall(afterFirstFrameMs = 1, positionMs = 2, bufferedMs = 3, durationMs = 4, phase = "mid", cause = "recovery", reason = "encoder_failed")
+        val json = RaviloWireJsonWithDefaults.encodeToString(QoeStall.serializer(), s)
+        assertTrue("\"reason\":\"encoder_failed\"" in json, json)
+        assertEquals("encoder_failed", RaviloWireJson.decodeFromString(QoeStall.serializer(), json).reason)
+        assertNull(RaviloWireJson.decodeFromString(QoeStall.serializer(), """{"after_first_frame_ms":1,"position_ms":2,"buffered_ms":3,"duration_ms":4,"phase":"mid","cause":"recovery"}""").reason)
+        assertTrue("reason" !in RaviloWireJson.encodeToString(QoeStall.serializer(), s.copy(reason = null)))
+    }
+
     // ── DEB-2205 (FR-1, FR-5.2) — the frozen counters and the recovery bound are additive ──
     @Test fun `a report from an older app carries no frozen stop`() {
         val r = RaviloWireJson.decodeFromString(PlaybackQoeReport.serializer(), """{"item_id":"i","rebuffer_count":1}""")

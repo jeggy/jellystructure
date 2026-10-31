@@ -292,6 +292,9 @@ data class QoeStall(
     @SerialName("rung_bps") val rungBps: Long? = null,
     /** DEB-2205 (FR-8) — how many app-fed subtitle fetches were still pending when the stop began (FR-6). Additive. */
     @SerialName("pending_subtitle_loads") val pendingSubtitleLoads: Int? = null,
+    /** DEB-3103 (FR-8) — why the stream was replaced, on a `recovery` entry: `encoder_failed`, `encoder_stuck`, `frozen`,
+     *  `decode_failed`, `handover_now`, `handover_ahead`, `stall_to_ladder` or `step_cap`. Absent on any other entry. Additive. */
+    val reason: String? = null,
 )
 
 /** DEB-2205 (FR-1) — the [QoeStall.cause] values. Only [BUFFER_EMPTY] is a *delivery* stall: it is the one the path caused. */

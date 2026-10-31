@@ -58,7 +58,8 @@ sealed class PlayerSessionState {
     /** [retrying] — R237 (FR-R237-5): the first attempt has already failed, so this is no longer an
      *  ordinary cold start. Drives one extra line in R218's existing presentation, nothing more. */
     data class Loading(val retrying: Boolean = false) : PlayerSessionState()
-    data class Ready(val ticket: StreamTicket) : PlayerSessionState()
+    /** [replacement] — DEB-3103 (FR-6): this ticket takes the place of the stream playing now, behind the picture; the screen holds the last frame to it. */
+    data class Ready(val ticket: StreamTicket, val replacement: Boolean = false) : PlayerSessionState()
 
     /**
      * R280 (FR-R280-4) — [message] is the raw failure text and is for the log. Nothing renders it:
@@ -97,14 +98,16 @@ internal class FailureLatch {
  * move, or [reset] starts the clock again.
  */
 /** 313 — what the failure watch does with a stream that failed or does not move. */
-internal enum class StreamRecovery { RESTREAM_FROM_JELLYFIN, FAILED, NOT_STARTED }
+internal enum class StreamRecovery { RESTREAM_OURS_AGAIN, RESTREAM_FROM_JELLYFIN, FAILED, NOT_STARTED }
 
 /**
- * 313 — our encoder's stream gets one restream, and (found live 2026-10-09, evening) that restream asks for Jellyfin's
- * stream: a failure on the player's side is not one the server knows about, so asking again gave the same stream back.
- * Anything else that fails or never moves ends on R237's error.
+ * 313 — our encoder's stream gets a restream that asks for Jellyfin's stream (found live 2026-10-09, evening: a failure on the
+ * player's side is not one the server knows about, so asking again gave the same stream back). DEB-3103 (DEB-3093 FR-6): the first
+ * failure asks for our own again (the encoder restarts, FR-2), Jellyfin's is the second try. Anything else that fails or never
+ * moves ends on R237's error.
  */
-internal fun streamRecovery(ours: Boolean, restreamedAlready: Boolean, failed: Boolean): StreamRecovery = when {
+internal fun streamRecovery(ours: Boolean, askedAgainAlready: Boolean, restreamedAlready: Boolean, failed: Boolean): StreamRecovery = when {
+    ours && !askedAgainAlready -> StreamRecovery.RESTREAM_OURS_AGAIN
     ours && !restreamedAlready -> StreamRecovery.RESTREAM_FROM_JELLYFIN
     failed -> StreamRecovery.FAILED
     else -> StreamRecovery.NOT_STARTED
@@ -241,6 +244,10 @@ class PlayerStore(
     /** R343 (FR-R343-5, dev review item 9) — this entry is part of a shuffle: always from 0:00, sent as
      *  `shuffle` so the server leaves no resume point behind an unfinished shuffled play. */
     val shuffle: Boolean = false,
+    /** DEB-3103 (FR-6) — the delays between a replacement's failed calls; a test shortens them. */
+    private val replacementRetryMs: List<Long> = REPLACEMENT_RETRY_MS,
+    /** DEB-3103 (FR-6) — the player can switch streams behind the picture (Android's Media3; the other clients follow in FR-9): elsewhere a replacement keeps today's `Loading`. */
+    private val unseenReplacements: Boolean = reportsDecodeHealth(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -300,6 +307,10 @@ class PlayerStore(
     private val extraStalls = ArrayDeque<QoeStall>()
     private var itemFirstFrameWallMs = -1L
     private var pendingRecovery: PendingRecovery? = null
+    /** DEB-3103 (FR-6) — the restream in flight; a newer one (the viewer's own pick, another replacement) takes its place. */
+    private var restreamJob: Job? = null
+    /** DEB-3103 (FR-6) — the item whose failed stream from our encoder was already asked for again from our encoder. */
+    private var oursAskedAgainFor: String? = null
 
     // ── DEB-2205 (FR-3, FR-4) — a direct play's decode health and its hand-over to the ladder ──
     private val decodeMonitor = DecodeHealthMonitor()
@@ -341,7 +352,7 @@ class PlayerStore(
         failureWatchJob?.cancel()
         DetailPrewarm.playStarted(itemId)   // 309 — the detail page was left for this play: its early encode is ours now
         if (currentItemId != itemId) {
-            stuckRestreamedFor = null; lastRestreamAudio = null; notOursFor = null
+            stuckRestreamedFor = null; oursAskedAgainFor = null; lastRestreamAudio = null; notOursFor = null
             freeze = FreezeRecovery(); frozenCount = 0; frozenMs = 0L; reportedFrozen = 0
             extraStalls.clear(); itemFirstFrameWallMs = -1L; pendingRecovery = null
             decodeMonitor.reset(); handoverRule = null; handoverRuleFor = null; pendingHandover = null
@@ -503,11 +514,15 @@ class PlayerStore(
         restreamWithSub(itemId, subtitleStreamIndex, positionMs, audioStreamIndex)
     }
 
-    fun restreamWithSub(
+    internal fun restreamWithSub(
         itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null, mediaSourceId: String? = currentMediaSourceId,
         // DEB-2205 (FR-5.2) — a freeze recovery serves only the rungs under the one that froze; every later restream of the
         // item keeps that bound (a subtitle pick must not climb back to the rung that froze).
         belowBandwidthBps: Long? = freeze.lowestFrozenBps,
+        // DEB-3103 (DEB-3093 FR-6) — set for a replacement the viewer did not ask for: it runs behind the picture ([replaceBehindPicture]),
+        // the state never leaves Ready, and this is the recovery whose clock the switch starts. [oldStreamDead]: nothing is playing to keep.
+        replacement: PendingRecovery? = null,
+        oldStreamDead: Boolean = false,
     ) {
         // R376 (FR-R376-3) — an audio pick on a player that cannot switch tracks inside one file asks for HLS, where
         // every track is a rendition; the item stays on HLS for its later restreams.
@@ -515,7 +530,21 @@ class PlayerStore(
             if (audioPickNeedsHls(audioStreamIndex != null, caps.hlsOnly, switchesAudioInFile())) lastCapabilities = caps.copy(hlsOnly = true)
         }
         if (itemId == currentItemId) lastRestreamAudio = audioStreamIndex   // 313 — a recovery restream keeps it
-        scope.launch {
+        restreamJob?.cancel()
+        if (replacement != null && !unseenReplacements) {
+            // The other clients keep today's treatment (FR-9): the recovery's clock starts at the decision, the hints are set now.
+            pendingRecovery = replacement
+            PlayerLadderHints.rearmTracks = true
+            if (replacement.blocksClimb) PlayerLadderHints.climbBlockedUntilMs = replacement.startedAtMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
+        } else if (replacement != null) {
+            replacement.awaitingSwitch = true
+            pendingRecovery = replacement
+            restreamJob = scope.launch { replaceBehindPicture(itemId, subtitleStreamIndex, positionMs, audioStreamIndex, mediaSourceId, belowBandwidthBps, replacement, oldStreamDead) }
+            return
+        }
+        // A replacement this one overtakes never switched: its recovery is not waiting for anything.
+        if (pendingRecovery?.awaitingSwitch == true) pendingRecovery = null
+        restreamJob = scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
                 PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex, mediaSourceId,
@@ -528,6 +557,70 @@ class PlayerStore(
             // stream that broke after a restream was never caught: "Loading…" forever. Armed again for the new stream.
             if (_state.value is PlayerSessionState.Ready) startFailureWatch()
         }
+    }
+
+    /**
+     * DEB-3103 (DEB-3093 FR-6) — a replacement the viewer did not ask for. The state stays `Ready` (no `Loading`: no shutter, no start
+     * screen) and the old stream plays on while the new one is asked for to start where the playhead will be, fetched (its master, its
+     * first rung's first segments — [TvApiClient.warmHlsStart]) and waited for. A failed call or fetch is retried at 1, 2, 4 and 8 s
+     * for as long as the buffer holds picture; it becomes the error screen only when the buffer is empty and every retry has run.
+     * The switch is one `Ready(replacement = true)`: the screen holds the last frame to it.
+     */
+    private suspend fun replaceBehindPicture(
+        itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int?, mediaSourceId: String?, belowBandwidthBps: Long?,
+        recovery: PendingRecovery, oldStreamDead: Boolean,
+    ) {
+        fun playhead(): PlayerWatch? = watchProvider?.invoke()
+        fun positionNow(): Long = playhead()?.positionMs ?: positionProvider?.invoke() ?: positionMs
+        var failed = 0
+        var lastFailure: Throwable? = null
+        while (true) {
+            val before = playhead()
+            val askedAtPosition = before?.positionMs ?: positionMs
+            val at = replacementAtMs(askedAtPosition, before?.bufferedAheadMs ?: -1L, oldStreamDead)
+            val got = attempt {
+                val t = apiClient.restream(itemId, subtitleStreamIndex, askedAtPosition, lastCapabilities, audioStreamIndex, mediaSourceId,
+                    notOurEncoder = itemId == notOursFor, belowBandwidthBps = belowBandwidthBps, handoverAtMs = at.takeIf { it > askedAtPosition })
+                if (!t.directPlay) t.resolvedOnThisServer().hlsUrl?.let { apiClient.warmHlsStart(it, t.startVariantBps) }
+                t
+            }
+            val ticket = got.getOrNull()
+            if (ticket == null) {
+                lastFailure = got.exceptionOrNull()
+                failed++
+                val wait = replacementRetryDelayMs(failed, playhead()?.bufferedAheadMs ?: -1L, replacementRetryMs)
+                if (wait == null) break
+                println("[player] DEB-3103 FR-6: the replacement (${recovery.reason}) failed (${lastFailure?.message}) — asking again in ${wait / 1000.0} s")
+                delay(wait)
+                continue
+            }
+            // In hand: wait for the playhead to reach the place it was asked for (or for the old stream to run dry), then switch.
+            val waitStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            var stale = false
+            while (true) {
+                val w = playhead()
+                val pos = w?.positionMs ?: positionNow()
+                val dry = w != null && w.firstFrame && w.waiting && w.bufferedAheadMs in 0 until 1_000
+                val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                if (oldStreamDead || dry || ticket.directPlay || failedProvider() || handoverSwitchDue(pos, at) || now - waitStart > HANDOVER_TICKET_GIVE_UP_MS) break
+                if (handoverStale(pos, askedAtPosition, at)) { stale = true; break }
+                delay(REPLACEMENT_SWITCH_POLL_MS)
+            }
+            if (stale) { println("[player] DEB-3103 FR-6: the viewer moved while the replacement was fetched — asking again from the new place"); continue }
+            val pos = positionNow()
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            val start = if (oldStreamDead || ticket.directPlay) pos else handoverStartMs(pos, at)
+            recovery.switched(now, pos)
+            PlayerLadderHints.rearmTracks = true
+            if (recovery.blocksClimb) PlayerLadderHints.climbBlockedUntilMs = now + CLIMB_BLOCK_AFTER_RECOVERY_MS
+            _state.value = PlayerSessionState.Ready(ticket.copy(startPositionMs = start).onThisServer(), replacement = true)
+            startFailureWatch()
+            return
+        }
+        // The buffer is empty and every retry has run: now it is an error (FR-4's last bullet).
+        pendingRecovery = null
+        val f = classifyLoadFailure(lastFailure)
+        _state.value = PlayerSessionState.Error(lastFailure?.message ?: "", f.kind, f.status)
     }
 
     /**
@@ -777,12 +870,18 @@ class PlayerStore(
                 val stuckNow = !failedNow && ours && pos != null &&
                     stuck.observe(pos, isPausedProvider?.invoke() == true, nowMs)
                 if (!failedNow && !stuckNow) continue
-                when (streamRecovery(ours, stuckRestreamedFor == item, failedNow)) {
+                when (streamRecovery(ours, oursAskedAgainFor == item, stuckRestreamedFor == item, failedNow)) {
+                    StreamRecovery.RESTREAM_OURS_AGAIN -> {
+                        // DEB-3103 (DEB-3093 FR-6) — a failed encoder stream is asked for again first (FR-2 restarts the job); Jellyfin's is the second try.
+                        oursAskedAgainFor = item
+                        println("[player] DEB-3103 FR-6: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} — asking for it again at ${pos ?: 0}ms")
+                        replaceUnseen(item!!, t!!, pos ?: 0L, watch, if (failedNow) ReplacementReason.ENCODER_FAILED else ReplacementReason.ENCODER_STUCK, "ours", snapshot = qoeSnapshotProvider?.invoke(), oldStreamDead = true)
+                    }
                     StreamRecovery.RESTREAM_FROM_JELLYFIN -> {
                         stuckRestreamedFor = item
                         notOursFor = item
-                        println("[player] 313: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} — restreaming once from Jellyfin at ${pos ?: 0}ms")
-                        restreamWithSub(item!!, t!!.burnedSubtitleIndex ?: -1, pos ?: 0L, lastRestreamAudio ?: t.audioStreamIndex)
+                        println("[player] 313: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} again — restreaming once from Jellyfin at ${pos ?: 0}ms")
+                        replaceUnseen(item!!, t!!, pos ?: 0L, watch, if (failedNow) ReplacementReason.ENCODER_FAILED else ReplacementReason.ENCODER_STUCK, "Jellyfin", snapshot = qoeSnapshotProvider?.invoke(), oldStreamDead = true)
                     }
                     StreamRecovery.FAILED -> endOnError(PlayerSessionState.Error("The player failed after the stream started",
                         if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC), pos)
@@ -793,32 +892,15 @@ class PlayerStore(
         }
     }
 
-    /** The stop a recovery makes, waiting for the new stream's first movement: [frozenHeight]/[frozenBps]/[frozenCodec] are the rung that froze. */
-    private class PendingRecovery(
-        val startedAtMs: Long, val positionMs: Long, val bufferAheadMs: Long,
-        val frozenHeight: Int?, val frozenBps: Long?, val frozenCodec: String?, val target: String,
-        /** DEB-2205 (FR-4) — set for a hand-over (not a freeze): the words that replace "froze on …" in the log line. */
-        val handover: String? = null,
-    )
-
-    /** One tick of the player's state: the item's first frame (for the stops' clock) and the end of a recovery's own stop. */
+    /** One tick of the player's state: the item's first frame (for the stops' clock) and the end of a recovery's own stop ([finishRecovery]). */
     private fun noteWatch(w: PlayerWatch, nowMs: Long) {
         if (w.firstFrame && itemFirstFrameWallMs < 0) itemFirstFrameWallMs = nowMs
         val r = pendingRecovery ?: return
-        val moved = w.firstFrame && !w.waiting && w.wantsToPlay && w.positionMs > r.positionMs + 500
-        if (!moved && nowMs - r.startedAtMs <= RECOVERY_WATCH_MS) return
-        pendingRecovery = null
         val snap = qoeSnapshotProvider?.invoke()
-        val duration = nowMs - r.startedAtMs
-        // FR-5.4 — one line per recovery, naming the rung that froze and the one it landed on.
-        val landed = if (moved) "${r.target} ${rungWords(snap?.variantHeight, snap?.variantBandwidthBps)}${snap?.variantCodec?.let { " $it" } ?: ""}"
-            else "${r.target} (no picture within ${RECOVERY_WATCH_MS / 1000} s)"
-        println(r.handover?.let { handoverLine(it, r.bufferAheadMs, landed) } ?: recoveryLine(r.frozenHeight, r.frozenBps, r.frozenCodec, r.bufferAheadMs, landed))
-        if (moved && duration >= FROZEN_STOP_MS) addStop(QoeStall(
-            afterFirstFrameMs = afterFirstFrame(r.startedAtMs), positionMs = r.positionMs, bufferedMs = r.bufferAheadMs, durationMs = duration,
-            phase = phaseOf(afterFirstFrame(r.startedAtMs)), variantBps = snap?.variantBandwidthBps, cause = QoeStallCause.RECOVERY,
-            bufferAheadMs = r.bufferAheadMs, rungHeight = r.frozenHeight, rungBps = r.frozenBps,
-        ))
+        val end = finishRecovery(r, w, nowMs, snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, ::afterFirstFrame) ?: return
+        pendingRecovery = null
+        println(end.line)
+        end.stall?.let { addStop(it) }
     }
 
     private fun afterFirstFrame(atMs: Long): Long = if (itemFirstFrameWallMs >= 0) (atMs - itemFirstFrameWallMs).coerceAtLeast(0) else 0L
@@ -843,6 +925,23 @@ class PlayerStore(
     }
 
     /**
+     * DEB-3103 (DEB-3093 FR-6, FR-8) — the one road every replacement the viewer did not ask for takes: the recovery it will write (its clock
+     * starts at the switch) and a restream behind the picture. [target] is what it lands on, for the log line.
+     */
+    private fun replaceUnseen(
+        item: String, t: StreamTicket, positionMs: Long, watch: PlayerWatch?, reason: String, target: String,
+        snapshot: PlayerQoeSnapshot? = qoeSnapshotProvider?.invoke(), handover: String? = null, blocksClimb: Boolean = true,
+        oldStreamDead: Boolean = false, belowBandwidthBps: Long? = freeze.lowestFrozenBps,
+    ) {
+        val r = PendingRecovery(
+            kotlin.time.Clock.System.now().toEpochMilliseconds(), positionMs, (watch?.bufferedAheadMs ?: -1L).coerceAtLeast(0),
+            snapshot?.variantHeight, snapshot?.variantBandwidthBps, snapshot?.variantCodec, target, reason, handover, blocksClimb,
+        )
+        restreamWithSub(item, t.burnedSubtitleIndex ?: -1, positionMs, lastRestreamAudio ?: t.audioStreamIndex,
+            belowBandwidthBps = belowBandwidthBps, replacement = r, oldStreamDead = oldStreamDead)
+    }
+
+    /**
      * DEB-2205 (FR-5.2/-5.3) — a ladder play whose picture has not moved for 5 s with buffer in hand is a decode or render
      * stall, not delivery: restream once to our encoder at the rung below, in the other codec family where the device has
      * one; a second freeze goes to Jellyfin under the first; a third ends on R237's error. Never above the rung that froze,
@@ -854,16 +953,15 @@ class PlayerStore(
         val snap = qoeSnapshotProvider?.invoke()
         val action = freeze.decide(FreezeKind.FROZEN_WITH_BUFFER, snap?.variantBandwidthBps, snap?.variantCodec)
         PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
-        fun note(target: String) {
-            pendingRecovery = PendingRecovery(nowMs, pos, bufferAheadMs, snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, target)
-            postQoeNow(item)   // the server hears of the stop before the new stream starts
-            PlayerLadderHints.rearmTracks = true
-        }
+        fun recovery(target: String) = PendingRecovery(
+            nowMs, pos, bufferAheadMs, snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, target, ReplacementReason.FROZEN,
+        )
         when (action) {
             is FreezeAction.RestreamOurs -> {
                 lastCapabilities = if (action.leaveHevc) caps.copy(hlsHevc = false, hlsHevcCapable = false) else caps
-                note("ours")
-                restreamWithSub(item, t.burnedSubtitleIndex ?: -1, pos, lastRestreamAudio ?: t.audioStreamIndex, belowBandwidthBps = action.belowBandwidthBps)
+                postQoeNow(item)   // the server hears of the stop before the new stream starts
+                restreamWithSub(item, t.burnedSubtitleIndex ?: -1, pos, lastRestreamAudio ?: t.audioStreamIndex, belowBandwidthBps = action.belowBandwidthBps,
+                    replacement = recovery("ours"), oldStreamDead = true)
             }
             is FreezeAction.RestreamJellyfin -> {
                 notOursFor = item
@@ -872,8 +970,8 @@ class PlayerStore(
                     maxVideoBitrate = if (cap == null) caps.maxVideoBitrate else steppedMaxVideo(caps.maxVideoBitrate, cap.toLong()),
                     hlsHevc = if (action.leaveHevc) false else caps.hlsHevc, hlsHevcCapable = if (action.leaveHevc) false else caps.hlsHevcCapable,
                 )
-                note("Jellyfin")
-                restreamWithSub(item, t.burnedSubtitleIndex ?: -1, pos, lastRestreamAudio ?: t.audioStreamIndex)
+                postQoeNow(item)
+                restreamWithSub(item, t.burnedSubtitleIndex ?: -1, pos, lastRestreamAudio ?: t.audioStreamIndex, replacement = recovery("Jellyfin"), oldStreamDead = true)
             }
             FreezeAction.Fail -> {
                 println(recoveryLine(snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, bufferAheadMs, "error (the third freeze)"))
@@ -931,22 +1029,21 @@ class PlayerStore(
         ))
         decodeFailedToReport = (snap.variantCodec ?: "unknown") to null
         ladderSwitchedFor = item
-        PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
-        pendingRecovery = PendingRecovery(nowMs, w.positionMs, w.bufferedAheadMs.coerceAtLeast(0), snap.variantHeight, snap.variantBandwidthBps, snap.variantCodec,
-            "the ladder", handover = "decode failed (${if (signal == DecodeSignal.DROPPED_FRAMES) "dropped frames over 10 s" else "picture frozen with buffer in hand"}) on ${snap.variantCodec ?: "the direct play"}")
+        val recovery = PendingRecovery(nowMs, w.positionMs, w.bufferedAheadMs.coerceAtLeast(0), snap.variantHeight, snap.variantBandwidthBps, snap.variantCodec,
+            "the ladder", ReplacementReason.DECODE_FAILED,
+            handover = "decode failed (${if (signal == DecodeSignal.DROPPED_FRAMES) "dropped frames over 10 s" else "picture frozen with buffer in hand"}) on ${snap.variantCodec ?: "the direct play"}")
         println("[player] DEB-2205 FR-3: the direct play's decode failed (${signal.name.lowercase()}) at ${w.positionMs}ms — handing over to the ladder now")
-        restreamAfterPost(item, t, w.positionMs)
+        restreamAfterPost(item, t, w.positionMs, recovery, oldStreamDead = true)
     }
 
     /** FR-4's immediate form — under 4 s buffered: write the stream's bitrate as stalled and restream at the position now. */
     private fun handOverNow(item: String, t: StreamTicket, w: PlayerWatch, streamBps: Long, reason: String, snap: PlayerQoeSnapshot, nowMs: Long) {
         stalledBpsToReport = streamBps
         ladderSwitchedFor = item
-        PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
-        pendingRecovery = PendingRecovery(nowMs, w.positionMs, w.bufferedAheadMs.coerceAtLeast(0), snap.variantHeight, snap.variantBandwidthBps, snap.variantCodec,
-            "the ladder", handover = "direct play at ${streamBps / 1000}k ($reason)")
+        val recovery = PendingRecovery(nowMs, w.positionMs, w.bufferedAheadMs.coerceAtLeast(0), snap.variantHeight, snap.variantBandwidthBps, snap.variantCodec,
+            "the ladder", ReplacementReason.HANDOVER_NOW, handover = "direct play at ${streamBps / 1000}k ($reason)")
         println("[player] DEB-2205 FR-4: the direct play (${streamBps / 1000}k) cannot be carried — $reason, ${w.bufferedAheadMs.coerceAtLeast(0) / 1000} s buffered at ${w.positionMs}ms — handing over now")
-        restreamAfterPost(item, t, w.positionMs)
+        restreamAfterPost(item, t, w.positionMs, recovery, oldStreamDead = false)
     }
 
     /**
@@ -965,8 +1062,21 @@ class PlayerStore(
         val audio = lastRestreamAudio ?: t.audioStreamIndex
         scope.launch {
             posted?.join()
-            val got = runCatching {
-                apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs)
+            // DEB-3103 (FR-6) — a failed call is asked again at 1, 2, 4 and 8 s while the direct stream still holds picture, and the
+            // ticket is held back until the ladder's first segments are fetched.
+            var failed = 0
+            var got: Result<StreamTicket>
+            while (true) {
+                got = attempt {
+                    apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs).also { r ->
+                        if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { apiClient.warmHlsStart(it, r.startVariantBps) }
+                    }
+                }
+                if (got.isSuccess || pendingHandover !== p) break
+                failed++
+                val wait = replacementRetryDelayMs(failed, watchProvider?.invoke()?.bufferedAheadMs ?: -1L, replacementRetryMs)
+                if (wait == null || nowMsWall() - p.askedAtWallMs > HANDOVER_TICKET_GIVE_UP_MS) break
+                delay(wait)
             }
             val ticket = got.getOrNull()
             if (ticket == null || pendingHandover !== p) {
@@ -1001,22 +1111,22 @@ class PlayerStore(
         val start = if (dry) pos else handoverStartMs(pos, p.atMs)
         val snap = qoeSnapshotProvider?.invoke()
         pendingRecovery = PendingRecovery(nowMs, pos, w.bufferedAheadMs.coerceAtLeast(0), snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec,
-            if (ticket.encoder == "ours") "ours" else "Jellyfin", handover = "direct play at ${p.streamBps / 1000}k (${p.reason}, asked ${(nowMs - p.askedAtWallMs) / 1000} s earlier for ${p.atMs}ms)")
+            if (ticket.encoder == "ours") "ours" else "Jellyfin", ReplacementReason.HANDOVER_AHEAD,
+            handover = "direct play at ${p.streamBps / 1000}k (${p.reason}, asked ${(nowMs - p.askedAtWallMs) / 1000} s earlier for ${p.atMs}ms)")
         PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
         PlayerLadderHints.rearmTracks = true
-        _state.value = PlayerSessionState.Ready(ticket.copy(startPositionMs = start).onThisServer())
+        _state.value = PlayerSessionState.Ready(ticket.copy(startPositionMs = start).onThisServer(), replacement = unseenReplacements)
         startFailureWatch()
         return true
     }
 
     /** Posts the QoE (which carries the one-shot decode/stalled fields) and, once it has landed, restreams at [positionMs]. */
-    private fun restreamAfterPost(item: String, t: StreamTicket, positionMs: Long) {
-        PlayerLadderHints.rearmTracks = true
+    private fun restreamAfterPost(item: String, t: StreamTicket, positionMs: Long, recovery: PendingRecovery, oldStreamDead: Boolean) {
         val posted = postQoeNow(item)
         val audio = lastRestreamAudio ?: t.audioStreamIndex
         scope.launch {
             posted?.join()
-            restreamWithSub(item, t.burnedSubtitleIndex ?: -1, positionMs, audio)
+            restreamWithSub(item, t.burnedSubtitleIndex ?: -1, positionMs, audio, replacement = recovery, oldStreamDead = oldStreamDead)
         }
     }
 
@@ -1095,8 +1205,13 @@ class PlayerStore(
         // × 0.8) is what turns this item's next negotiation into a transcode with a ladder.
         posted?.join()
         println("309: the direct play of $itemId stalled (${StallRule.counting(stalls).size} counting) — restarting it on the ladder at $positionMs ms")
-        PlayerLadderHints.rearmTracks = true
-        restreamWithSub(itemId, -1, positionMs, null)
+        val watch = watchProvider?.invoke()
+        val snap = qoeSnapshotProvider?.invoke()
+        restreamWithSub(itemId, -1, positionMs, null, replacement = PendingRecovery(
+            kotlin.time.Clock.System.now().toEpochMilliseconds(), positionMs, (watch?.bufferedAheadMs ?: -1L).coerceAtLeast(0),
+            snap?.variantHeight, snap?.variantBandwidthBps, snap?.variantCodec, "the ladder", ReplacementReason.STALL_TO_LADDER,
+            handover = "direct play stalled (${StallRule.counting(stalls).size} counting)", blocksClimb = false,
+        ))
     }
 
     private fun maybeStepRestream(itemId: String, positionMs: Long) {
@@ -1109,10 +1224,11 @@ class PlayerStore(
         val step = stepper.evaluate(kotlin.time.Clock.System.now().toEpochMilliseconds(), ahead, RestreamStepper.videoBpsOf(t.startVariantBps)) ?: return
         lastCapabilities = caps.copy(maxVideoBitrate = steppedMaxVideo(stepBaseMaxVideo ?: 0, step.capVideoBps))
         println("309: stepping $itemId ${if (step.down) "down" else "up"} — cap ${step.capVideoBps / 1000} kb/s, ${ahead} ms buffered")
-        PlayerLadderHints.rearmTracks = true
-        restreamWithSub(itemId, t.burnedSubtitleIndex ?: -1, positionMs, t.audioStreamIndex)
+        replaceUnseen(itemId, t, positionMs, watchProvider?.invoke(), ReplacementReason.STEP_CAP, "the ladder", blocksClimb = false)
     }
 }
+
+private fun nowMsWall(): Long = kotlin.time.Clock.System.now().toEpochMilliseconds()
 
 /** DEB-2205 (FR-4) — a hand-over whose ticket has not arrived by then is dropped, and the stall path is free again. */
 internal const val HANDOVER_TICKET_GIVE_UP_MS = 30_000L

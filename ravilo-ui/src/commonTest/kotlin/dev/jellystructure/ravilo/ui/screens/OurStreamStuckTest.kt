@@ -27,13 +27,18 @@ class OurStreamStuckTest {
         assertTrue(w.observe(5_000, paused = false, nowMs = 60_000))
     }
 
-    /** Found live 2026-10-09 (evening, Mac): the player rejected our stream and the restream gave it back again. */
-    @Test fun `our stream's first failure restreams from Jellyfin, the second ends on the error`() {
-        assertEquals(StreamRecovery.RESTREAM_FROM_JELLYFIN, streamRecovery(ours = true, restreamedAlready = false, failed = true))
-        assertEquals(StreamRecovery.RESTREAM_FROM_JELLYFIN, streamRecovery(ours = true, restreamedAlready = false, failed = false))
-        assertEquals(StreamRecovery.FAILED, streamRecovery(ours = true, restreamedAlready = true, failed = true))
-        assertEquals(StreamRecovery.NOT_STARTED, streamRecovery(ours = true, restreamedAlready = true, failed = false))
-        assertEquals(StreamRecovery.FAILED, streamRecovery(ours = false, restreamedAlready = false, failed = true))
+    /**
+     * Found live 2026-10-09 (evening, Mac): the player rejected our stream and the restream gave it back again.
+     * DEB-3103 (DEB-3093 FR-6): the first failure now asks for our own again (FR-2 restarts the encoder); Jellyfin is the second try.
+     */
+    @Test fun `our stream's first failure is asked for again and the second goes to Jellyfin and the third ends on the error`() {
+        assertEquals(StreamRecovery.RESTREAM_OURS_AGAIN, streamRecovery(ours = true, askedAgainAlready = false, restreamedAlready = false, failed = true))
+        assertEquals(StreamRecovery.RESTREAM_OURS_AGAIN, streamRecovery(ours = true, askedAgainAlready = false, restreamedAlready = false, failed = false))
+        assertEquals(StreamRecovery.RESTREAM_FROM_JELLYFIN, streamRecovery(ours = true, askedAgainAlready = true, restreamedAlready = false, failed = true))
+        assertEquals(StreamRecovery.RESTREAM_FROM_JELLYFIN, streamRecovery(ours = true, askedAgainAlready = true, restreamedAlready = false, failed = false))
+        assertEquals(StreamRecovery.FAILED, streamRecovery(ours = true, askedAgainAlready = true, restreamedAlready = true, failed = true))
+        assertEquals(StreamRecovery.NOT_STARTED, streamRecovery(ours = true, askedAgainAlready = true, restreamedAlready = true, failed = false))
+        assertEquals(StreamRecovery.FAILED, streamRecovery(ours = false, askedAgainAlready = false, restreamedAlready = false, failed = true))
     }
 
     @Test fun `a burn-in keeps the audio the viewer picked inside the stream`() {

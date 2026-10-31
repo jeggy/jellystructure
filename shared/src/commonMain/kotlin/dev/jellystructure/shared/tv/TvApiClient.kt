@@ -421,6 +421,23 @@ class TvApiClient(
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
     }
 
+    /**
+     * DEB-3103 (FR-6) — fetches the master, the rung the stream starts on and that rung's first [segments] segments, and drops the
+     * bodies: when this returns, the encoder (or Jellyfin) has the start of the stream ready and the player's own reads of it are
+     * quick. Stream URLs carry their own credential (the player sends no header either). Throws on any failure, so the caller
+     * counts it as a failed attempt.
+     */
+    suspend fun warmHlsStart(masterUrl: String, startBps: Long?, segments: Int = 2) {
+        val master = client.get(masterUrl).also { it.assertSuccess() }.bodyAsText()
+        val variants = HlsWarm.variants(master, masterUrl)
+        // A media playlist given directly (no ladder): its own first segments.
+        val mediaUrl = if (variants.isEmpty()) masterUrl else (HlsWarm.startVariant(variants, startBps) ?: return).url
+        val media = if (variants.isEmpty()) master else client.get(mediaUrl).also { it.assertSuccess() }.bodyAsText()
+        val first = HlsWarm.firstSegments(media, mediaUrl, segments)
+        if (first.isEmpty()) throw IllegalStateException("the stream's playlist lists no segment")
+        for (url in first) client.get(url).also { it.assertSuccess() }.bodyAsBytes()
+    }
+
     suspend fun markPlayed(itemId: String, watched: Boolean) {
         client.post("$baseUrl/api/tv/mark") {
             auth()

@@ -628,7 +628,7 @@ private fun BoxScope.PlayerVideoLayer(s: PlayerScreenState) = with(s) {
         subtitleBottomInset = subtitleInset,   // R251 (FR-R251-4)
     )
     // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
-    VideoShutter(startPhaseNow != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
+    VideoShutter(startPhaseNow != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame && !replacementHolding))   // DEB-3103 (FR-6) — a replacement holds the last frame
     BrowserSoundHint(player)   // R376 — a browser that played muted says how to get the sound
     // R376 (owner, 2026-10-08) — Safari direct-plays; picking AirPlay restarts the item as HLS where it is.
     AirPlayHlsRestart(itemId, streamIsHls = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay != true) {

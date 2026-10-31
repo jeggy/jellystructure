@@ -120,6 +120,11 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
 
     // R218 — the same poll loop's signal for the four buffering moments (see PlBufferMoment).
     var hasRenderedFirstFrame by mutableStateOf(false)
+    /**
+     * DEB-3103 (DEB-3093 FR-6) — when a replacement stream (the viewer did not ask for it) was handed to the player, until its first
+     * frame is out. While it holds ([replacementHolding]) the last frame stays on screen: no shutter, no start screen, no cold-start moment.
+     */
+    var replacementHeldSinceMs by mutableStateOf<Long?>(null)
     var isBuffering by mutableStateOf(false)
     var isSeeking by mutableStateOf(false)
     // Phase R220 (FR-R220-5) — true for the whole time the Android actual's video-output recovery ladder is running;
@@ -233,9 +238,14 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     // always COLD even if isSeeking/isBuffering also happen to be true (there is no "last frame" yet for a seek's
     // lighter treatment to make sense against), then SEEK (a seek's own buffering must never read as an organic STALL),
     // then plain STALL.
+    /** FR-6 — a replacement's first frame is not out yet, and the hold ([REPLACEMENT_HOLD_MS]) has not run out. */
+    val replacementHolding: Boolean
+        get() = replacementHeldSinceMs?.let { !hasRenderedFirstFrame && kotlin.time.Clock.System.now().toEpochMilliseconds() - it <= REPLACEMENT_HOLD_MS } == true
+
     val rawBufferMoment: PlBufferMoment
         get() = when {
             sessionState !is PlayerSessionState.Ready -> PlBufferMoment.NONE  // moment A owns this wait
+            !hasRenderedFirstFrame && replacementHolding -> PlBufferMoment.NONE   // DEB-3103 (FR-6) — a short wait does not look like a problem
             !hasRenderedFirstFrame -> PlBufferMoment.COLD
             // R220 (FR-R220-5) — ahead of SEEK/isBuffering: a video-output recovery in progress must always read as
             // STALL, even if rung 2's own no-op seek happens to flip isSeeking true mid-ladder.
@@ -727,6 +737,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // stream's `true` for up to POLL_MS, and VideoShutter would let the decoder's reconfiguration show through (a green
         // frame with a quarter-size stale picture, soveværelse TV).
         hasRenderedFirstFrame = false
+        replacementHeldSinceMs = if (s.replacement) kotlin.time.Clock.System.now().toEpochMilliseconds() else null   // DEB-3103 (FR-6)
         bk.firstFrameAtMs = null
         bk.startRestreamPending = false   // R290 — the restream the resolver asked for is this ticket
         // R290 (FR-R290-3, dev review item 3) — the first position shown is the target, never the poll's 0.
@@ -838,6 +849,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
                 bk.firstFrameAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()   // R290
             }
             hasRenderedFirstFrame = renderedNow
+            if (renderedNow) replacementHeldSinceMs = null
             isBuffering = player.isBuffering
             isSeeking = player.isSeeking
         }
