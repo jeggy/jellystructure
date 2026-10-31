@@ -75,8 +75,11 @@ class ClimbingTrackSelectionTest {
     @Test fun `a segment that would land after the buffer minus 5 s is abandoned for the rung below and the climb waits 30 s`() {
         val chunk = LoadingChunk(top, bufferedS = 12)
         assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)), "first sight: nothing measured yet")
-        nowMs += 2_000
-        chunk.pull(1_000_000)   // 0.5 MB/s: 5 MB more takes 10 s, it lands at 12 s, past 12 − 5
+        nowMs += 1_000
+        chunk.pull(500_000)
+        assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)), "its first byte: no rate of its own yet (DEB-3172)")
+        nowMs += 1_000
+        // 0.5 MB in 1 s from its first byte is 4 Mb/s: 5.5 MB more takes 11 s, it lands at 13 s, past 12 − 5
         assertTrue(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
         assertTrue(PlayerLadderHints.climbBlocked(nowMs + 29_000))
         assertFalse(PlayerLadderHints.climbBlocked(nowMs + 31_000))
@@ -96,7 +99,7 @@ class ClimbingTrackSelectionTest {
     }
 
     @Test fun `the lowest rung has nothing to fall to`() {
-        val chunk = LoadingChunk(low, bufferedS = 6)
+        val chunk = LoadingChunk(low, bufferedS = 12)
         selection.shouldCancelChunkLoad(0, chunk, queueOf(low))
         nowMs += 20_000
         assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(low)))
@@ -105,17 +108,88 @@ class ClimbingTrackSelectionTest {
     @Test fun `a lower rung that is excluded does not count`() {
         selection.excludeTrack(selection.indexOf(mid), 15_000)
         selection.excludeTrack(selection.indexOf(low), 15_000)
-        val chunk = LoadingChunk(top, bufferedS = 6)
+        val chunk = LoadingChunk(top, bufferedS = 12)
         selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
         nowMs += 20_000
         assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
     }
 
-    @Test fun `a first picture is not held to the buffer's budget`() {
+    @Test fun `a load with nothing in hand is not judged`() {
+        // The queue holds the chunk being loaded, as in the real player (DEB-3172): it is never empty during a load.
         val chunk = LoadingChunk(top, bufferedS = 0)
-        selection.shouldCancelChunkLoad(0, chunk, emptyList())
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
         nowMs += 20_000
-        assertFalse(selection.shouldCancelChunkLoad(0, chunk, emptyList()))
+        assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test fun `after a start no load is judged until the buffer has once held the margin plus the segment`() {
+        // A 6 s segment: 5 s margin + 6 s = 11 s. 2, 4, 6 and 10 s in hand, each load 20 s old with nothing read: unjudged.
+        for (inHand in listOf(2L, 4L, 6L, 10L)) {
+            val chunk = LoadingChunk(top, bufferedS = inHand)
+            selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+            nowMs += 20_000
+            assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)), "$inHand s in hand after a start")
+        }
+        assertTrue(events.isEmpty())
+        // 11 s has been reached; the buffer has since fallen back to 3 s, and a slow load is abandoned.
+        val reached = LoadingChunk(top, bufferedS = 11)
+        selection.shouldCancelChunkLoad(0, reached, queueOf(top))
+        val thin = LoadingChunk(top, bufferedS = 3)
+        selection.shouldCancelChunkLoad(0, thin, queueOf(top))
+        nowMs += 2_000
+        thin.pull(100_000)
+        assertTrue(selection.shouldCancelChunkLoad(0, thin, queueOf(top)))
+    }
+
+    @Test fun `a seek outside the buffer is a start again`() {
+        selection.shouldCancelChunkLoad(0, LoadingChunk(top, bufferedS = 12), queueOf(top))
+        selection.onDiscontinuity()
+        val chunk = LoadingChunk(top, bufferedS = 4)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 20_000
+        assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+    }
+
+    @Test fun `a load that waited for its first byte and then reads fast is kept`() {
+        // 8 Mb/s top rung, a 6 MB segment, 12 s in hand. The encoder made it for 1.55 s; the first 300 kB then arrive.
+        val chunk = LoadingChunk(top, bufferedS = 12)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 1_550
+        chunk.pull(300_000)   // over the age that is 1.5 Mb/s and a finish half a minute away
+        assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+        nowMs += 600
+        chunk.pull(3_000_000)   // 3.3 MB in 0.6 s from the first byte
+        assertFalse(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test fun `a load whose own rate is slow is still abandoned once it has one`() {
+        val chunk = LoadingChunk(top, bufferedS = 12)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 1_550
+        chunk.pull(300_000)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 1_000
+        chunk.pull(100_000)   // 0.4 MB in 1 s from the first byte: 3.2 Mb/s, 5.6 MB more takes 14 s
+        assertTrue(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+    }
+
+    @Test fun `one abandon is one line and the cap is armed once`() {
+        val chunk = LoadingChunk(top, bufferedS = 12)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 1_000
+        chunk.pull(100_000)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 2_000
+        assertTrue(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+        val until = PlayerLadderHints.climbBlockedUntilMs
+        repeat(50) {
+            nowMs += 10
+            assertTrue(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+        }
+        assertEquals(1, events.size)
+        assertEquals(until, PlayerLadderHints.climbBlockedUntilMs, "the 30 s wait is not re-armed on each poll")
     }
 
     @Test fun `a buffer that fell for 6 s from 28 s steps down although it is above 20 s`() {

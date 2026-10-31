@@ -124,4 +124,18 @@ class LadderRulesTest {
         assertFalse(LadderRules.shouldAbandonSegment(999, 0, 6_000_000, 1_000, 2_000, lowerRungExists = true))
         assertTrue(LadderRules.shouldAbandonSegment(1_000, 500_000, 6_000_000, 8_000_000, 4_000, lowerRungExists = true))
     }
+
+    @Test fun `a wait for the first byte is not read as the link's speed`() {
+        // DEB-3172: 188 kB after a 1.55 s wait, 40 s in hand, 194 Mb/s estimate. Over the age that is 1 Mb/s (a minute away).
+        assertTrue(LadderRules.shouldAbandonSegment(1_550, 188_000, 7_660_000, 194_000_000, 40_000, lowerRungExists = true))
+        // From its own first byte it has no rate yet, so the estimate stands in.
+        assertFalse(LadderRules.shouldAbandonSegment(1_550, 188_000, 7_660_000, 194_000_000, 40_000, lowerRungExists = true, sinceFirstByteMs = 100))
+        assertFalse(LadderRules.shouldAbandonSegment(1_550, 188_000, 7_660_000, 194_000_000, 40_000, lowerRungExists = true, sinceFirstByteMs = -1))
+    }
+
+    @Test fun `a load with a rate of its own is judged on it`() {
+        // 0.5 s after the first byte, 500 kB is 8 Mb/s: 7.2 MB more takes 7.2 s, inside a 35 s budget but past 3 s.
+        assertFalse(LadderRules.shouldAbandonSegment(2_000, 500_000, 7_660_000, 194_000_000, 40_000, lowerRungExists = true, sinceFirstByteMs = 500))
+        assertTrue(LadderRules.shouldAbandonSegment(2_000, 500_000, 7_660_000, 194_000_000, 8_000, lowerRungExists = true, sinceFirstByteMs = 500))
+    }
 }

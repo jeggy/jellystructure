@@ -30,6 +30,8 @@ object LadderRules {
     const val CLIMB_WAIT_AFTER_ABANDON_MS = 30_000L
     /** DEB-3102 — a load is judged only after this long: a rate needs something measured, or the first byte of every segment on a thin buffer would be abandoned at once. */
     const val ABANDON_MIN_ELAPSED_MS = 1_000L
+    /** DEB-3172 (FR-4) — a load's own rate needs this much time since its first byte; until then the player's estimate stands in. */
+    const val OWN_RATE_MIN_MS = 500L
     /** DEB-3102 (FR-4) — the pause before the 1st, 2nd, … retry of one load; the last repeats. */
     val RETRY_DELAYS_MS = listOf(500L, 1_000L, 2_000L, 4_000L, 5_000L)
 
@@ -52,13 +54,20 @@ object LadderRules {
      * the buffered time minus 5 s, and a lower rung exists. [elapsedMs]: the load's age; [bytesLoaded] so far of
      * [expectedBytes] (segment duration × the rung's bitrate; 0 = unknown, then only the age counts); [estimateBps] the
      * player's own estimate, used until the load has a rate of its own.
+     *
+     * DEB-3172 — the rate is the bytes over [sinceFirstByteMs], the time since the load's own first byte (-1 = none yet), once that
+     * is [OWN_RATE_MIN_MS]; the age [elapsedMs] still counts toward the finish, because the buffer drains while a load waits, but the
+     * wait is not the link's speed. Omitted, it defaults to the age (the rule as it was).
      */
-    fun shouldAbandonSegment(elapsedMs: Long, bytesLoaded: Long, expectedBytes: Long, estimateBps: Long, bufferedMs: Long, lowerRungExists: Boolean): Boolean {
+    fun shouldAbandonSegment(
+        elapsedMs: Long, bytesLoaded: Long, expectedBytes: Long, estimateBps: Long, bufferedMs: Long, lowerRungExists: Boolean,
+        sinceFirstByteMs: Long = elapsedMs,
+    ): Boolean {
         if (!lowerRungExists || elapsedMs < ABANDON_MIN_ELAPSED_MS) return false
         val budgetMs = bufferedMs - ABANDON_MARGIN_MS
         val remaining = (expectedBytes - bytesLoaded).coerceAtLeast(0)
         if (remaining == 0L) return elapsedMs > budgetMs
-        val rateBps = if (bytesLoaded > 0) bytesLoaded * 8_000 / elapsedMs else estimateBps
+        val rateBps = if (bytesLoaded > 0 && sinceFirstByteMs >= OWN_RATE_MIN_MS) bytesLoaded * 8_000 / sinceFirstByteMs else estimateBps
         if (rateBps <= 0) return elapsedMs > budgetMs
         return elapsedMs + remaining * 8_000 / rateBps > budgetMs
     }

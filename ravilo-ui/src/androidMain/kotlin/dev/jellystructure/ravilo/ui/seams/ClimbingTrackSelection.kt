@@ -50,6 +50,16 @@ internal class ClimbingTrackSelection(
     // The load being judged and when it was first seen (the chunk does not say when it began).
     private var watchedLoadId = -1L
     private var watchedSinceMs = 0L
+    private var watchedFirstByteMs = -1L
+    private var abandonedLoadId = -1L
+
+    /** DEB-3172 (FR-4) — the buffer ahead of a loading segment has once reached the margin plus its length since the start or the last seek outside the buffer. */
+    private var judgeable = false
+
+    override fun onDiscontinuity() {
+        judgeable = false
+        super.onDiscontinuity()
+    }
 
     override fun updateSelectedTrack(
         playbackPositionUs: Long, bufferedDurationUs: Long, availableDurationUs: Long,
@@ -80,13 +90,22 @@ internal class ClimbingTrackSelection(
      * climb waits that long.
      */
     override fun shouldCancelChunkLoad(playbackPositionUs: Long, loadingChunk: Chunk, queue: List<MediaChunk>): Boolean {
-        // Nothing buffered yet is a start, a seek or a stall already answered by FR-5's cap: the first picture is not held to the buffer's budget.
-        if (queue.isEmpty()) return false
         val now = nowMs()
         if (loadingChunk.loadTaskId != watchedLoadId) {
             watchedLoadId = loadingChunk.loadTaskId
             watchedSinceMs = now
+            watchedFirstByteMs = -1L
         }
+        val bytes = loadingChunk.bytesLoaded()
+        if (bytes > 0 && watchedFirstByteMs < 0) watchedFirstByteMs = now   // seen on this poll: every poll sees it, judged or not
+        // The queue holds the chunk being loaded (Media3 adds it when the load starts), so it is never empty here: what is in hand is read from the clock.
+        val buffered = (loadingChunk.startTimeUs - playbackPositionUs) / 1000   // what is in hand before this segment is needed
+        if (buffered <= 0) return false
+        // After a start or a seek outside the buffer nothing is judged until the buffer has once held the margin plus this segment, or the encoder's wait is read as the link.
+        if (!judgeable && buffered >= LadderRules.ABANDON_MARGIN_MS + loadingChunk.durationUs / 1000) judgeable = true
+        if (!judgeable) return false
+        // One abandon is one line and one 30 s cap: Media3 asks again until the cancelled load is gone.
+        if (loadingChunk.loadTaskId == abandonedLoadId) return true
         val rung = loadingChunk.trackFormat.bitrate.takeIf { it > 0 }?.toLong() ?: return false
         val below = (0 until length())
             .filter { !isTrackExcluded(it, Clock.DEFAULT.elapsedRealtime()) }
@@ -94,13 +113,14 @@ internal class ClimbingTrackSelection(
             .filter { it in 1 until rung }
             .maxOrNull()
         val durationMs = loadingChunk.durationUs / 1000
-        val buffered = (loadingChunk.startTimeUs - playbackPositionUs) / 1000   // what is in hand before this segment is needed
         val cancel = LadderRules.shouldAbandonSegment(
-            elapsedMs = now - watchedSinceMs, bytesLoaded = loadingChunk.bytesLoaded(),
+            elapsedMs = now - watchedSinceMs, bytesLoaded = bytes,
             expectedBytes = rung * durationMs / 8_000, estimateBps = bandwidthMeter.bitrateEstimate,
             bufferedMs = buffered, lowerRungExists = below != null,
+            sinceFirstByteMs = if (watchedFirstByteMs < 0) -1L else now - watchedFirstByteMs,
         )
         if (!cancel || below == null) return false
+        abandonedLoadId = loadingChunk.loadTaskId
         abandonCapBps = below
         abandonCapUntilMs = now + LadderRules.CLIMB_WAIT_AFTER_ABANDON_MS
         PlayerLadderHints.climbBlockedUntilMs = maxOf(PlayerLadderHints.climbBlockedUntilMs, abandonCapUntilMs)
