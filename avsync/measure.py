@@ -957,7 +957,7 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument('path'); ap.add_argument('starts'); ap.add_argument('dur', type=float)
-    ap.add_argument('--pct', action='store_true', help='starts are % of the runtime')
+    ap.add_argument('--pct', action='store_true', help='starts are %% of the runtime')
     ap.add_argument('--audio', default='0:a:0', help='the audio stream measured against the lips')
     ap.add_argument('--others', default='', help='comma-separated specifiers to cross-correlate with it')
     a = ap.parse_args(argv)
