@@ -193,3 +193,7 @@ Each by a QA seat on a device from the board, after its slice is on prod. Nothin
 5. A hand-over from the file to the ladder, recorded at 6 fps or better: no black frame, no spinner, at most 0.5 s held.
 6. A failed segment on the playing rung (blocked for one rung): a lower rung, no stop.
 7. Over a week on prod: no `recovery` entry over 1 s and no stop that a server event caused, read from FR-8's evidence.
+8. After the release carrying FR-5, read from `stalls_json` on viewers' own TVs, because a cap cannot reach it (FR-4 steps down
+   before the buffer runs dry): a stall above the lowest rung is followed by a lower rung; stops get shorter and a stalled
+   play has no more of them; and few plays sit on the lowest rung, where there is no rung left to cap to. A count going the
+   wrong way is a finding against FR-5. The baseline and the method are the document `field-read` on DEB-3093.
