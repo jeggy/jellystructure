@@ -147,9 +147,14 @@ stall's move to the ladder.
 - *2026-10-31, DEB-3103 — how Android builds it.* A replacement is one restream the store makes behind the picture: the
   state stays `Ready` (never `Loading`), and the answer arrives as `Ready` with `replacement = true`, which the screen reads
   as "hold the last frame": no shutter, no start screen, no cold-start moment, for at most 2 s, after which R218's own
-  treatment applies. The player is not touched until the new stream's first segments have been fetched: the store asks the
+  treatment applies. *2026-10-31, DEB-3171:* those 2 s run from the moment the replacement is handed to the player, and no buffering
+  moment (cold start, seek or stall) is drawn inside them whatever the player's first-frame flag says, so there is no dim and no chrome
+  in the first 2 s; the first frame no longer ends the window early. The player is not touched until the new stream's first segments have been fetched: the store asks the
   server for the new master, the rung it starts on and its first two segments, so the encoder (or Jellyfin) has them
-  before the engine is reset. One engine only; two decoders are not started (R292). A failed call, or a failed warm-up,
+  before the engine is reset. *2026-10-31, DEB-3171:* the two segments are also kept, streamed into a small cache of their own
+  (Android, 64 MB LRU, five minutes), and the player reads that stream's segments from the cache by URL; a miss is a network read, so a
+  mismatch costs only the gain. Before this the player fetched the same bytes again after the reset, on the same slow link, which a
+  hand-over only ever happens on (a 3 Mbps first segment over a 5 Mbps cap is about a second). One engine only; two decoders are not started (R292). A failed call, or a failed warm-up,
   is retried at 1, 2, 4 and 8 s (then every 8 s) for as long as the buffer holds picture; it becomes the error screen only when
   the buffer is empty and the four have run. Our encoder's failed or stuck stream is asked for once more from our encoder
   (FR-2 restarts it), then from Jellyfin, then ends on R237's error. Every road in the first bullet uses this one path: the

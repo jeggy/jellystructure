@@ -559,6 +559,12 @@ class PlayerStore(
         }
     }
 
+    /** DEB-3171 (FR-6) — the warm-up keeps the segments where the player reads them, so the switch does not fetch them again on a slow link. */
+    private suspend fun warmReplacement(hlsUrl: String, startBps: Long?) {
+        dev.jellystructure.ravilo.ui.seams.WarmedSegments.begin(hlsUrl)
+        apiClient.warmHlsStart(hlsUrl, startBps) { url, body -> dev.jellystructure.ravilo.ui.seams.WarmedSegments.keep(url, body) }
+    }
+
     /**
      * DEB-3103 (DEB-3093 FR-6) — a replacement the viewer did not ask for. The state stays `Ready` (no `Loading`: no shutter, no start
      * screen) and the old stream plays on while the new one is asked for to start where the playhead will be, fetched (its master, its
@@ -581,7 +587,7 @@ class PlayerStore(
             val got = attempt {
                 val t = apiClient.restream(itemId, subtitleStreamIndex, askedAtPosition, lastCapabilities, audioStreamIndex, mediaSourceId,
                     notOurEncoder = itemId == notOursFor, belowBandwidthBps = belowBandwidthBps, handoverAtMs = at.takeIf { it > askedAtPosition })
-                if (!t.directPlay) t.resolvedOnThisServer().hlsUrl?.let { apiClient.warmHlsStart(it, t.startVariantBps) }
+                if (!t.directPlay) t.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, t.startVariantBps) }
                 t
             }
             val ticket = got.getOrNull()
@@ -1069,7 +1075,7 @@ class PlayerStore(
             while (true) {
                 got = attempt {
                     apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs).also { r ->
-                        if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { apiClient.warmHlsStart(it, r.startVariantBps) }
+                        if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, r.startVariantBps) }
                     }
                 }
                 if (got.isSuccess || pendingHandover !== p) break

@@ -95,4 +95,16 @@ class StreamReplacementTest {
         )
         assertEquals(all.size, all.toSet().size)
     }
+
+    // ── FR-6 (DEB-3171): no moment inside the hold ──
+    @Test fun `a replacement draws no buffering moment for its first 2 s whatever the player says`() {
+        assertTrue(replacementDrawsNothing(heldSinceMs = 10_000L, nowMs = 10_000L))
+        assertTrue(replacementDrawsNothing(10_000L, 10_400L))   // the 400 ms of a seek or cold start: nothing is drawn
+        assertTrue(replacementDrawsNothing(10_000L, 10_000L + REPLACEMENT_HOLD_MS))
+    }
+
+    @Test fun `after the hold R218 treatment applies and a stream that is not a replacement has none`() {
+        assertEquals(false, replacementDrawsNothing(10_000L, 10_000L + REPLACEMENT_HOLD_MS + 1))
+        assertEquals(false, replacementDrawsNothing(null, 10_000L))
+    }
 }

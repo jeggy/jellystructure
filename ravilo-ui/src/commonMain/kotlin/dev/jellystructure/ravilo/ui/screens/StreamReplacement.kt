@@ -18,6 +18,12 @@ internal const val REPLACEMENT_LEAD_MS = 6_000L
 internal const val REPLACEMENT_HOLD_MS = 2_000L
 
 /**
+ * FR-6 — true for [REPLACEMENT_HOLD_MS] from the moment a replacement was handed to the player ([heldSinceMs]), first frame or not:
+ * no buffering moment (cold start, seek or stall) is drawn inside it, so there is no dim and no chrome in the first 2 s (DEB-3171).
+ */
+internal fun replacementDrawsNothing(heldSinceMs: Long?, nowMs: Long): Boolean = heldSinceMs != null && nowMs - heldSinceMs <= REPLACEMENT_HOLD_MS
+
+/**
  * FR-6 — what to do after the [failedAttempts]th failed call (1 for the first): the delay before the next, or null to give up.
  * With picture in the buffer it never gives up (the viewer sees nothing). With the buffer empty it gives up once every retry has run,
  * which is when the error screen is the truth.

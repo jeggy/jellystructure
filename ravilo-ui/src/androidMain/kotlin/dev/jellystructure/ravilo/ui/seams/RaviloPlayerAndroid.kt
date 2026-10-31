@@ -549,6 +549,9 @@ actual class RaviloPlayer actual constructor() {
             val main = mediaSourceFactory(null).createMediaSource(mediaItem)
             p.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(main, *sidecarSources.toTypedArray()))
             android.util.Log.i("314", "load: ${sidecarSources.size} sidecar audio file(s) merged with the video")
+        } else if (WarmedSegments.holds(streamUrl)) {
+            // DEB-3171 — a replacement's first segments were fetched behind the picture and kept: read them from there.
+            p.setMediaSource(mediaSourceFactory(WarmedSegments.wrap(streamUrl, playbackDataSourceFactory())).createMediaSource(mediaItem))
         } else {
             p.setMediaItem(mediaItem)
         }

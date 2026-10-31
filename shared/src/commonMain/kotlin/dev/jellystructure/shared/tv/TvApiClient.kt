@@ -422,12 +422,15 @@ class TvApiClient(
     }
 
     /**
-     * DEB-3103 (FR-6) — fetches the master, the rung the stream starts on and that rung's first [segments] segments, and drops the
-     * bodies as they arrive (never held whole): when this returns, the encoder (or Jellyfin) has the start of the stream ready and the player's own reads of it are
-     * quick. Stream URLs carry their own credential (the player sends no header either). Throws on any failure, so the caller
-     * counts it as a failed attempt.
+     * DEB-3103 (FR-6) — fetches the master, the rung the stream starts on and that rung's first [segments] segments, each handed to
+     * [keep] as it arrives (never held whole): when this returns, the encoder (or Jellyfin) has the start of the stream ready and, where
+     * [keep] stores the bytes, so does the player (DEB-3171: its reads of them cost no link time). The default drops them. Stream URLs
+     * carry their own credential (the player sends no header either). Throws on any failure, so the caller counts it as a failed attempt.
      */
-    suspend fun warmHlsStart(masterUrl: String, startBps: Long?, segments: Int = 2) {
+    suspend fun warmHlsStart(
+        masterUrl: String, startBps: Long?, segments: Int = 2,
+        keep: suspend (url: String, body: io.ktor.utils.io.ByteReadChannel) -> Unit = { _, body -> HlsWarm.drain(body) },
+    ) {
         val master = client.get(masterUrl).also { it.assertSuccess() }.bodyAsText()
         val variants = HlsWarm.variants(master, masterUrl)
         // A media playlist given directly (no ladder): its own first segments.
@@ -435,8 +438,8 @@ class TvApiClient(
         val media = if (variants.isEmpty()) master else client.get(mediaUrl).also { it.assertSuccess() }.bodyAsText()
         val first = HlsWarm.firstSegments(media, mediaUrl, segments)
         if (first.isEmpty()) throw IllegalStateException("the stream's playlist lists no segment")
-        // Streamed and dropped (DEB-3169): a whole segment as one array is 9.5 MB at 2160p, more than a TV's heap has left behind a full buffer.
-        for (url in first) client.getStreaming(url) { r -> r.assertSuccess(); HlsWarm.drain(r.bodyAsChannel()) }
+        // Streamed (DEB-3169): a whole segment as one array is 9.5 MB at 2160p, more than a TV's heap has left behind a full buffer.
+        for (url in first) client.getStreaming(url) { r -> r.assertSuccess(); keep(url, r.bodyAsChannel()) }
     }
 
     suspend fun markPlayed(itemId: String, watched: Boolean) {

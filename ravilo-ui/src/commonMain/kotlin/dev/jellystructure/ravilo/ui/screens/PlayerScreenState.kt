@@ -121,8 +121,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     // R218 — the same poll loop's signal for the four buffering moments (see PlBufferMoment).
     var hasRenderedFirstFrame by mutableStateOf(false)
     /**
-     * DEB-3103 (DEB-3093 FR-6) — when a replacement stream (the viewer did not ask for it) was handed to the player, until its first
-     * frame is out. While it holds ([replacementHolding]) the last frame stays on screen: no shutter, no start screen, no cold-start moment.
+     * DEB-3103 (DEB-3093 FR-6) — when a replacement stream (the viewer did not ask for it) was handed to the player (kept until the next ticket). While it holds ([replacementHolding]) the last frame stays on screen: no shutter, no start screen, no cold-start moment.
      */
     var replacementHeldSinceMs by mutableStateOf<Long?>(null)
     var isBuffering by mutableStateOf(false)
@@ -245,7 +244,9 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     val rawBufferMoment: PlBufferMoment
         get() = when {
             sessionState !is PlayerSessionState.Ready -> PlBufferMoment.NONE  // moment A owns this wait
-            !hasRenderedFirstFrame && replacementHolding -> PlBufferMoment.NONE   // DEB-3103 (FR-6) — a short wait does not look like a problem
+            // DEB-3103 (FR-6) — a replacement's first 2 s draw no moment at all, whatever the player's first-frame flag says: the
+            // swapped engine's own seek or buffering must not read as a cold start or a seek (a dim and chrome at 0.4 s, DEB-3171).
+            replacementDrawsNothing(replacementHeldSinceMs, kotlin.time.Clock.System.now().toEpochMilliseconds()) -> PlBufferMoment.NONE
             !hasRenderedFirstFrame -> PlBufferMoment.COLD
             // R220 (FR-R220-5) — ahead of SEEK/isBuffering: a video-output recovery in progress must always read as
             // STALL, even if rung 2's own no-op seek happens to flip isSeeking true mid-ladder.
@@ -849,7 +850,6 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
                 bk.firstFrameAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()   // R290
             }
             hasRenderedFirstFrame = renderedNow
-            if (renderedNow) replacementHeldSinceMs = null
             isBuffering = player.isBuffering
             isSeeking = player.isSeeking
         }
