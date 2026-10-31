@@ -184,6 +184,12 @@ stall's move to the ladder.
   named by `trimmed_ladder`. Whether a fast link reaches the source's rung in the first 20 s is read from the `held_by` and
   `start_variant_bps` of plays after the release, not from this commit.
 
+- *2026-10-31, what "during" means:* a stall reaches the server only with the play's next QoE report, which can come minutes
+  after it. So a stall is the server's when the play's **previous report came before the fault**, however late this report
+  arrives, as well as within the 120 s. On the 10-31 swap a stall inside the restart was reported 140 s later and capped its
+  device for an hour. `playback_qoe.updated_at` is that previous report and survives a restart, so this needs no new field. A
+  real stall in the same gap is excused too, which is the cheap side: the next one writes it.
+
 ### FR-8 — Every stop and replacement leaves evidence
 
 Restores DEB-2205's FR-8 on the roads that skip it.
