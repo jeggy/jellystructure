@@ -67,6 +67,12 @@ internal const val HANDOVER_FALLING_FOR_MS = 3_000L
 internal const val HANDOVER_ESTIMATE_SHARE = 0.8
 /** FR-4 — …while under this much is buffered. */
 internal const val HANDOVER_ESTIMATE_UNDER_MS = 30_000L
+/** FR-4 (2026-10-31) — …and only when the buffer has made no net gain (under [HANDOVER_NO_GAIN_UNDER_MS]) for this long while playing. */
+internal const val HANDOVER_NO_GAIN_FOR_MS = 6_000L
+internal const val HANDOVER_NO_GAIN_UNDER_MS = 500L
+/** FR-4 (2026-10-31) — at or above this share of the target buffer a flat buffer is load control at rest, not a path that fell short. */
+internal const val HANDOVER_FULL_SHARE = 0.9
+
 /** FR-4 — under this much buffered the restream happens at once. */
 internal const val HANDOVER_IMMEDIATE_UNDER_MS = 4_000L
 /** FR-4 — H = position + buffered − this: the stream is left while there is still picture in the buffer. */
@@ -112,15 +118,20 @@ internal sealed interface HandoverDecision {
  *
  * It fires when either is true:
  *  - the buffer ahead is under 15 s and has fallen for 3 s (it was higher 3 s ago and never rose by more than a second at a time);
- *  - the player's real bandwidth estimate × 0.8 is under the file's stream bitrate while under 30 s is buffered.
+ *  - the player's real bandwidth estimate × 0.8 is under the file's stream bitrate while under 30 s is buffered, **and** the buffer
+ *    has made no net gain for 6 s of playing (a rising buffer proves the path carries the file, whatever the estimate says; a buffer
+ *    at its target is load control paused, not a shortfall). So both reasons are a shortfall the buffer confirmed.
  * Both thresholds, and the 4 s of the immediate form, scale by [scale] on a device that cannot hold 30 s at this bitrate.
  */
 internal class DirectPlayHandover(private val streamBps: Long, private val scale: Double = 1.0) {
     private class Sample(val atMs: Long, val aheadMs: Long)
     private val ahead = ArrayDeque<Sample>()
+    private val ahead6 = ArrayDeque<Sample>()
+    /** The buffer this device holds in time: the spec's 50 s where it holds 30 s or more, else the scaled reference. */
+    private val targetMs = if (scale >= 1.0) DIRECT_BUFFER_TARGET_MS else (DIRECT_BUFFER_REFERENCE_MS * scale).toLong()
     private var fired = false
 
-    fun reset() { ahead.clear(); fired = false }
+    fun reset() { ahead.clear(); ahead6.clear(); fired = false }
 
     /**
      * [playing]: first frame out, the viewer wants it playing, not seeking. [estimateBps]: the player's bandwidth estimate where it
@@ -128,18 +139,29 @@ internal class DirectPlayHandover(private val streamBps: Long, private val scale
      */
     fun observe(nowMs: Long, positionMs: Long, bufferAheadMs: Long, estimateBps: Long?, playing: Boolean): HandoverDecision? {
         if (fired || streamBps <= 0) return null
-        if (!playing || bufferAheadMs < 0) { ahead.clear(); return null }
+        if (!playing || bufferAheadMs < 0) { ahead.clear(); ahead6.clear(); return null }
         ahead.addLast(Sample(nowMs, bufferAheadMs))
         while (ahead.size > 1 && ahead[1].atMs <= nowMs - HANDOVER_FALLING_FOR_MS) ahead.removeFirst()
+        ahead6.addLast(Sample(nowMs, bufferAheadMs))
+        while (ahead6.size > 1 && ahead6[1].atMs <= nowMs - HANDOVER_NO_GAIN_FOR_MS) ahead6.removeFirst()
         val reason = when {
             fallingUnder(bufferAheadMs, nowMs) -> "falling"
-            estimateBps != null && estimateBps * HANDOVER_ESTIMATE_SHARE < streamBps && bufferAheadMs < HANDOVER_ESTIMATE_UNDER_MS * scale -> "estimate"
+            estimateBps != null && estimateBps * HANDOVER_ESTIMATE_SHARE < streamBps && bufferAheadMs < HANDOVER_ESTIMATE_UNDER_MS * scale &&
+                noGain(bufferAheadMs, nowMs) -> "estimate"
             else -> null
         } ?: return null
         fired = true
         if (bufferAheadMs < HANDOVER_IMMEDIATE_UNDER_MS * scale) return HandoverDecision.Immediate(reason)
         val margin = min(HANDOVER_MARGIN_MS.toDouble(), bufferAheadMs / 2.0).toLong()
         return HandoverDecision.Ahead(positionMs + bufferAheadMs - margin, reason)
+    }
+
+    /** Six seconds of playing behind it, the buffer not up by [HANDOVER_NO_GAIN_UNDER_MS], and not resting at its target. */
+    private fun noGain(bufferAheadMs: Long, nowMs: Long): Boolean {
+        if (bufferAheadMs >= targetMs * HANDOVER_FULL_SHARE) return false
+        val first = ahead6.first()
+        if (nowMs - first.atMs < HANDOVER_NO_GAIN_FOR_MS - 250) return false
+        return bufferAheadMs - first.aheadMs < HANDOVER_NO_GAIN_UNDER_MS
     }
 
     private fun fallingUnder(bufferAheadMs: Long, nowMs: Long): Boolean {

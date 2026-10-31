@@ -150,27 +150,56 @@ class DirectPlayHandoverTest {
         assertIs<HandoverDecision.Immediate>(d)
     }
 
-    @Test fun `the path's estimate under the file's bitrate fires it while under thirty seconds are buffered`() {
-        val r = rule()
-        // 25 s buffered and steady, but the path measures 50 Mbps for a 71 Mbps file: 50 × 0.8 = 40 < 71.
-        val d = r.observe(1_000, 10_000, 25_000, estimateBps = 50_000_000, playing = true)
+    /** Looks every 500 ms from 0 to [seconds], the buffer moving by [gainPerSecond] ms a second from [start]; the first decision, if any. */
+    private fun watch(r: DirectPlayHandover, start: Long, gainPerSecond: Long, seconds: Int, estimate: Long? = 50_000_000): Pair<Long, HandoverDecision?> {
+        var ahead = start; var t = 0L
+        repeat(seconds * 2) {
+            t += 500; ahead += gainPerSecond / 2
+            r.observe(t, 10_000 + t, ahead, estimate, playing = true)?.let { return t to it }
+        }
+        return t to null
+    }
+
+    @Test fun `the path's estimate under the file's bitrate fires it once the buffer has gained nothing for six seconds`() {
+        // 25 s buffered and flat, but the path measures 50 Mbps for a 71 Mbps file: 50 × 0.8 = 40 < 71.
+        val (at, d) = watch(rule(), start = 25_000, gainPerSecond = 0, seconds = 20)
         val ahead = assertIs<HandoverDecision.Ahead>(d)
         assertEquals("estimate", ahead.reason)
-        assertEquals(10_000 + 25_000 - 2_000, ahead.atMs)
+        assertTrue(at in 5_750..6_500, "fired at $at ms, not before six seconds of history")
+        assertEquals(10_000 + at + 25_000 - 2_000, ahead.atMs)
+    }
+
+    @Test fun `a low estimate with a rising buffer never fires at any age of the play`() {
+        // Every play is under 30 s while it fills: 1.5 s of buffer gained per second for 18 s, then slower but still rising.
+        assertNull(watch(rule(), start = 2_000, gainPerSecond = 1_500, seconds = 18).second)
+        assertNull(watch(rule(), start = 10_000, gainPerSecond = 300, seconds = 60).second, "0.3 s a second is 1.8 s over six: a rise")
+    }
+
+    @Test fun `a low estimate at the target buffer does not fire`() {
+        val held = directBufferMs(memoryClassMb = 256, streamBps = remux)
+        val scale = handoverScale(held)
+        // Load control paused at the target: flat, just under it, for a minute.
+        assertNull(watch(rule(scale), start = held - 100, gainPerSecond = 0, seconds = 60).second)
     }
 
     @Test fun `an estimate that carries the file does not fire`() {
-        assertNull(rule().observe(1_000, 10_000, 25_000, estimateBps = 100_000_000, playing = true))
-        assertNull(rule().observe(1_000, 10_000, 25_000, estimateBps = null, playing = true), "a meter that is still guessing is not read")
-        assertNull(rule().observe(1_000, 10_000, 35_000, estimateBps = 10_000_000, playing = true), "30 s or more is in hand")
+        assertNull(watch(rule(), 25_000, 0, 20, estimate = 100_000_000).second)
+        assertNull(watch(rule(), 25_000, 0, 20, estimate = null).second, "a meter that is still guessing is not read")
+        assertNull(watch(rule(), 35_000, 0, 20, estimate = 10_000_000).second, "30 s or more is in hand")
+    }
+
+    @Test fun `a falling buffer still fires without waiting for six seconds`() {
+        val (at, d) = drain(rule(), startAhead = 20_000, lossPerSecond = 1_000, estimate = 100_000_000)
+        assertEquals("falling", assertIs<HandoverDecision.Ahead>(d).reason)
+        assertTrue(at < 6_000, "fired at $at ms")
     }
 
     @Test fun `it fires once`() {
         val r = rule()
-        assertIs<HandoverDecision.Ahead>(r.observe(1_000, 0, 25_000, 50_000_000, true))
-        assertNull(r.observe(1_500, 500, 24_500, 50_000_000, true))
+        assertIs<HandoverDecision.Ahead>(watch(r, 25_000, 0, 20).second)
+        assertNull(r.observe(20_500, 20_500, 24_500, 50_000_000, true))
         r.reset()
-        assertIs<HandoverDecision.Ahead>(r.observe(2_000, 0, 25_000, 50_000_000, true))
+        assertIs<HandoverDecision.Ahead>(watch(r, 25_000, 0, 20).second)
     }
 
     @Test fun `a pause or a seek is not a falling buffer`() {
@@ -189,8 +218,8 @@ class DirectPlayHandoverTest {
         // 15 s × 0.24 = 3.6 s: a 5 s buffer is not "under fifteen" for this device, a 3 s one is.
         assertNull(drain(r, startAhead = 6_000, lossPerSecond = 1_000, seconds = 3).second)
         // The immediate form's 4 s is 1 s here.
-        assertIs<HandoverDecision.Ahead>(DirectPlayHandover(remux, scale).observe(1_000, 0, 5_000, 20_000_000, true))
-        assertIs<HandoverDecision.Immediate>(DirectPlayHandover(remux, scale).observe(1_000, 0, 900, 20_000_000, true))
+        assertIs<HandoverDecision.Ahead>(watch(DirectPlayHandover(remux, scale), start = 5_000, gainPerSecond = 0, seconds = 10, estimate = 20_000_000).second)
+        assertIs<HandoverDecision.Immediate>(watch(DirectPlayHandover(remux, scale), start = 900, gainPerSecond = 0, seconds = 10, estimate = 20_000_000).second)
         // A device that holds 30 s or more keeps the spec's numbers.
         assertEquals(DIRECT_BUFFER_TARGET_MS, directBufferMs(memoryClassMb = 512, streamBps = 5_000_000))
         assertEquals(1.0, handoverScale(DIRECT_BUFFER_TARGET_MS))

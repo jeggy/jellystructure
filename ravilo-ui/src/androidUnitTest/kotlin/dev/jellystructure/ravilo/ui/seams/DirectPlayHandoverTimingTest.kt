@@ -151,7 +151,8 @@ class DirectPlayHandoverTimingTest {
             val run = playUntilDecision(server.url, estimateOf = { now -> if (now >= 2_000) 4_000_000L else null })
             val d = assertIs<HandoverDecision.Ahead>(run.decision)
             assertEquals("estimate", d.reason)
-            assertTrue(run.firedAtMs in 2_000..3_000, "fired at ${run.firedAtMs} ms, as soon as the estimate was real")
+            // The buffer loses 0.5 s a second, so it has made no gain: six seconds of history, and not before (DEB-2205 FR-4, 2026-10-31).
+            assertTrue(run.firedAtMs in 5_750..7_000, "fired at ${run.firedAtMs} ms, once the buffer had gained nothing for 6 s")
             assertTrue(run.aheadAtFire > 20_000, "${run.aheadAtFire} ms still buffered: a quality change, not a stop")
             assertEquals(run.positionAtFire + run.aheadAtFire - HANDOVER_MARGIN_MS, d.atMs)
         }
