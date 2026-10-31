@@ -1,5 +1,8 @@
 package dev.jellystructure.shared.tv
 
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readAvailable
+
 /**
  * DEB-3103 (FR-6) — what to fetch so a replacement stream's first segments exist before the player is reset to it: the rung the
  * stream starts on out of a master, and the first [count] segments of that rung's media playlist. Pure text work; the fetching is
@@ -46,5 +49,21 @@ object HlsWarm {
         uri.startsWith("http://") || uri.startsWith("https://") -> uri
         uri.startsWith("/") -> baseUrl.substringBefore("://") + "://" + baseUrl.substringAfter("://").substringBefore("/") + uri
         else -> baseUrl.substringBefore("?").substringBeforeLast("/") + "/" + uri
+    }
+
+    /** Chunk size [drain] reads in: the only memory a warm-up segment holds, however large the segment is (DEB-3169). */
+    const val DRAIN_CHUNK = 16 * 1024
+
+    /**
+     * Reads [body] to its end and keeps none of it, returning the byte count. A 2160p segment is 8 MB or more; holding it whole
+     * took 9.5 MB from a TV heap that a full ladder buffer had left 6.5 MB of (DEB-3169). [chunk] is reused for every read.
+     */
+    suspend fun drain(body: ByteReadChannel, chunk: ByteArray = ByteArray(DRAIN_CHUNK)): Long {
+        var total = 0L
+        while (true) {
+            val n = body.readAvailable(chunk, 0, chunk.size)
+            if (n < 0) return total
+            total += n
+        }
     }
 }

@@ -5,6 +5,7 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.put
 import io.ktor.client.statement.HttpResponse
 import kotlinx.coroutines.CancellationException
@@ -34,6 +35,8 @@ import kotlinx.coroutines.launch
  */
 internal class DetachedHttp(private val client: HttpClient, private val calls: DetachedCalls = DetachedCalls()) {
     suspend fun get(urlString: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse = calls.run { client.get(urlString, block) }
+    /** A GET whose body is read inside [block] as it arrives, never buffered whole (DEB-3169): the response is closed when [block] returns. */
+    suspend fun <T> getStreaming(urlString: String, block: suspend (HttpResponse) -> T): T = calls.run { client.prepareGet(urlString).execute { block(it) } }
     suspend fun post(urlString: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse = calls.run { client.post(urlString, block) }
     suspend fun put(urlString: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse = calls.run { client.put(urlString, block) }
     suspend fun delete(urlString: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse = calls.run { client.delete(urlString, block) }
