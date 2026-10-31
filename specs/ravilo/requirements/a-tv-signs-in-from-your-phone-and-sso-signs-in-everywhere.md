@@ -503,7 +503,8 @@ This is written for any server. The household's concrete values, with host names
   stops on **the identity provider's own refusal page**, before the plugin is reached, and never sees FR-10's page on that path.
   - Acceptance 6 passes when the outsider gets no Ravilo session, no Jellyfin account is created, and the page names nothing from FR-15's list. Either refusal page satisfies it.
   - FR-10's page still stands on a server whose identity provider admits everyone and leaves the refusal to the plugin.
-  - This is a reading. It goes to the owner with QA's screenshot of the page.
+  - **Decided by the owner (DEB-2233, card `6bd21440`, 2026-10-31), having seen QA's screenshot on DEB-3088: keep the identity provider's page.** It is a plain English page under the identity
+    provider's own name, with no way back to Ravilo, and that is accepted in exchange for two checks instead of one. Removing the provider's group limit to reach FR-10's page was the option not taken.
 - **Acceptance 8 and a stopped backend.** jellystructure renders every FR-10 page, so with jellystructure itself stopped no Ravilo page can exist, and the viewer gets the proxy's
   answer. FR-10's *unavailable* means what it says: Jellyfin or the plugin cannot be reached. QA induces it with a dead `jellyfin_internal_url`, which only single sign-on reads, and
   restores the value straight after. It never stops the backend for this.
