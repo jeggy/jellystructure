@@ -121,6 +121,17 @@ stall's move to the ladder.
 - A viewer's own audio, subtitle or version pick keeps today's treatment: that wait is their action (DEB-2205, FR-1).
 - If the old stream is frozen (FR-5.2 of DEB-2205) there is nothing to keep playing: the switch shows the held frame until
   the new stream's first frame, and still draws no spinner under 2 s.
+- *2026-10-31, DEB-3103 — how Android builds it.* A replacement is one restream the store makes behind the picture: the
+  state stays `Ready` (never `Loading`), and the answer arrives as `Ready` with `replacement = true`, which the screen reads
+  as "hold the last frame": no shutter, no start screen, no cold-start moment, for at most 2 s, after which R218's own
+  treatment applies. The player is not touched until the new stream's first segments have been fetched: the store asks the
+  server for the new master, the rung it starts on and its first two segments, so the encoder (or Jellyfin) has them
+  before the engine is reset. One engine only; two decoders are not started (R292). A failed call, or a failed warm-up,
+  is retried at 1, 2, 4 and 8 s (then every 8 s) for as long as the buffer holds picture; it becomes the error screen only when
+  the buffer is empty and the four have run. Our encoder's failed or stuck stream is asked for once more from our encoder
+  (FR-2 restarts it), then from Jellyfin, then ends on R237's error. Every road in the first bullet uses this one path: the
+  encoder failure, the hand-over to the ladder (both forms), the freeze recovery, the stall's move to the ladder, and the
+  rung step of 309 (FR-309-9). A viewer's own pick still goes through `Loading`.
 
 ### FR-7 — The best picture the path can carry, soon
 
@@ -144,6 +155,12 @@ Restores DEB-2205's FR-8 on the roads that skip it.
 - `encoder_summary` gains the p95 and maximum segment response time and the number of 503s, as this server answers them
   (request to last byte). The player's own view of a slow segment is its `stalls_json` entry above.
 - A reap that spared a stream (FR-1) logs one line, so the next report can be answered from data.
+- *2026-10-31, DEB-3103 — what the replacement's entry says.* The entry is cause `recovery`, its `duration_ms` is the time from
+  the switch to the new stream's first movement, and `rung_height`/`rung_bps` are the rung it left. `reason` is the new optional
+  string on `QoeStall` (additive): `encoder_failed`, `encoder_stuck`, `frozen`, `decode_failed`, `handover_now`, `handover_ahead`,
+  `stall_to_ladder`, `step_cap`. The clock starts at the switch, not at the decision, because the old stream plays on until
+  then. FR-1's rule stays: a stop under 1 s is not a stop, so a replacement shorter than that writes its log line and no entry;
+  one that stopped the picture for a second or more is the entry. Every replacement writes the log line.
 
 ### FR-9 — The other clients
 
