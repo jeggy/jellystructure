@@ -139,6 +139,8 @@ stall's move to the ladder.
 - The player switches only once the new stream's first segments are fetched. The switch holds the last frame and shows no
   black frame, no spinner and no chrome: **at most 0.5 s of held picture, measured on the stue TV's class of device.**
 - A failed encoder stream is first asked for again (FR-2 restarts it). Jellyfin's stream is the second try, not the first.
+- *2026-10-31:* a warm-up that cannot fetch its first segment in time asks the next rung down, then the lowest, before it counts as
+  a failed try. At 1 Mbps it kept asking the rung the server chose and never finished, so the switch never came (DEB-3149).
 - A viewer's own audio, subtitle or version pick keeps today's treatment: that wait is their action (DEB-2205, FR-1).
 - If the old stream is frozen (FR-5.2 of DEB-2205) there is nothing to keep playing: the switch shows the held frame until
   the new stream's first frame, and still draws no spinner under 2 s.
@@ -155,6 +157,9 @@ stall's move to the ladder.
   rung step of 309 (FR-309-9). A viewer's own pick still goes through `Loading`.
 
 ### FR-7 — The best picture the path can carry, soon
+
+> *2026-10-31:* a fast link must also stay on the file: an estimate alone no longer moves a play off it. See the amendment under
+> FR-4 of `a-play-stops-at-most-once-at-its-start.md`.
 
 - **A stall's hold does not outlast the evidence.** The cap is 1 h (today 24 h), and a measurement newer than the stall
   whose × 0.7 clears a rung lifts the cap to that rung. A stall during a reap, a restart or a server wait (FR-1 to FR-3) is

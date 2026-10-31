@@ -138,6 +138,14 @@ and a Danish sidecar `.srt` added later.
 
 ### FR-4 — Leave a direct play before it runs dry (amends FR-309-8)
 
+> *Amendment 2026-10-31 (DEB-3093):* **an estimate alone never moves a play off the file.** The rule fires on the estimate
+> only when the buffer has also made no net gain for 6 s while playing. A buffer that is rising proves the path carries the
+> file, whatever the estimate says, and every play is under 30 s while its buffer first fills, so as written the rule could
+> fire on any play at its start. Measured on prod, 7 days to 10-31: 41 of 202 direct plays on viewers' devices moved to a
+> ladder, 40 of them on a Wi-Fi link rated 200 Mb/s or faster and only 2 after a real stop; on the stue TV, uncapped, a
+> 19.55 Mbps play moved to 720p 7.5 s after its first frame. A hand-over that the buffer did not confirm writes no
+> `stalled_bps`, because that record is what then holds the device low and bars the file on its next play.
+
 - A direct play watches its buffer in **seconds ahead**. It is sized in seconds rather than bytes:
   - Media3's `DefaultLoadControl` gets `setPrioritizeTimeOverSizeThresholds(true)`;
   - a target buffer of **≥ 30 s**, bounded by the device's memory class (`ActivityManager.getMemoryClass()` × 0.25
