@@ -222,7 +222,7 @@ class PlaybackStopIntegrationTest {
         val tv = device("phone-reap")
         service.startPlayback(tv, "film-e", ClientCapabilities())
         // A tab closed two seconds in (no report yet): the abrupt end past the grace is read as the place gone.
-        service.stopWatchdogTick(tv.deviceId) { false }
+        service.stopWatchdogTick({ Long.MAX_VALUE }) { false }   // the socket ended abruptly after the play began
         waitFor("the reap's stop lands") { fake.lock.withLock { fake.stops.any { it.first == "film-e" } } }
         delay(500)
         assertTrue(fake.lock.withLock { fake.releases.isEmpty() }, "the reap released nothing: ${fake.lock.withLock { fake.releases }}")
@@ -238,7 +238,7 @@ class PlaybackStopIntegrationTest {
         val tv = device("phone-fresh")
         service.startPlayback(tv, "film-e", ClientCapabilities())
         service.reportProgress(tv, "film-e", 10_000L, false)
-        service.stopWatchdogTick(tv.deviceId) { false }   // the socket test, abrupt override and all
+        service.stopWatchdogTick({ Long.MAX_VALUE }) { false }   // the socket test, abrupt override and all
         delay(700)
         fake.lock.withLock {
             assertTrue(fake.stops.none { it.first == "film-e" }, "no stop for a place that reported just now: ${fake.stops}")

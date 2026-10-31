@@ -64,11 +64,16 @@ class TvEventBus(private val scope: CoroutineScope,
      * by a newer socket of the same device (the `else` branch of the identity check *is* the `replaced`
      * cause: the older socket's cleanup finding a newer one in its slot). The caller logs the one close
      * line with the cause; [openMs] feeds the flap counter's median.
+     *
+     * DEB-3137 (FR-R372-11, amended 2026-10-31) — [endedAbruptly] is the caller's classification of this close
+     * ([EventsCloseCause.isAbrupt], with `replaced` false: a replaced socket records no leave at all); the leave is
+     * recorded with it so [abruptEndedAt] can give it to every later watchdog read, not only the close's own.
      */
-    suspend fun unregister(userId: String, deviceId: String, session: DefaultWebSocketServerSession, openMs: Long = 0L): Boolean = mutex.withLock {
+    suspend fun unregister(userId: String, deviceId: String, session: DefaultWebSocketServerSession, openMs: Long = 0L,
+                           endedAbruptly: Boolean = false): Boolean = mutex.withLock {
         var replaced = false
         sessions[userId]?.let { map ->
-            if (map[deviceId] === session) { map.remove(deviceId); absences.left(deviceId) } else if (map.containsKey(deviceId)) replaced = true
+            if (map[deviceId] === session) { map.remove(deviceId); absences.left(deviceId, endedAbruptly) } else if (map.containsKey(deviceId)) replaced = true
             if (map.isEmpty()) sessions.remove(userId)
         }
         socketFeatures.remove(session)
@@ -103,6 +108,15 @@ class TvEventBus(private val scope: CoroutineScope,
      */
     suspend fun isPresent(deviceId: String, graceMs: Long = SOCKET_GONE_MS): Boolean = mutex.withLock {
         sessions.values.any { deviceId in it } || absences.heldFor(deviceId, graceMs)
+    }
+
+    /**
+     * DEB-3137 (FR-R372-11, amended 2026-10-31) — when [deviceId]'s socket ended *abruptly*, for as long as it stays gone;
+     * null when it is open, left cleanly (R293 `background`), was replaced, or was never seen to leave. The stop watchdog asks
+     * this on every read and counts the end only against a play that began before it.
+     */
+    suspend fun abruptEndedAt(deviceId: String): Long? = mutex.withLock {
+        if (sessions.values.any { deviceId in it }) null else absences.abruptEndedAt(deviceId)
     }
 
     // ── R368 — playback sessions, only to sockets that asked (`features=sessions`, dev review item 2) ─────────────
@@ -393,19 +407,25 @@ class TvEventBus(private val scope: CoroutineScope,
 
 /**
  * DEB-3036 (R372 FR-R372-11, amended 2026-10-30) — when each device's socket last left, so the stop watchdog can wait
- * [SOCKET_GONE_MS] before it reads an abruptly ended socket as the place going away. Touched only under [TvEventBus]'s mutex.
+ * [SOCKET_GONE_MS] before it reads an abruptly ended socket as the place going away. DEB-3137 (amended 2026-10-31) — and
+ * whether that leave was abrupt, which the watchdog needs on every read and not only the close's own. Touched only under
+ * [TvEventBus]'s mutex.
  */
 internal class SocketAbsences(private val clock: () -> Long) {
-    private val goneAtMs = HashMap<String, Long>()
+    private class Leave(val atMs: Long, val abrupt: Boolean)
+    private val leaves = HashMap<String, Leave>()
 
-    fun left(deviceId: String) {
+    fun left(deviceId: String, abrupt: Boolean = false) {
         val now = clock()
-        goneAtMs[deviceId] = now
-        if (goneAtMs.size > 256) goneAtMs.entries.removeAll { now - it.value > 10 * 60_000L }
+        leaves[deviceId] = Leave(now, abrupt)
+        if (leaves.size > 256) leaves.entries.removeAll { now - it.value.atMs > 10 * 60_000L }
     }
 
-    fun joined(deviceId: String) { goneAtMs.remove(deviceId) }
+    fun joined(deviceId: String) { leaves.remove(deviceId) }
 
     /** Has [deviceId] been gone for less than [graceMs]? False for a device never seen to leave. */
-    fun heldFor(deviceId: String, graceMs: Long): Boolean = goneAtMs[deviceId]?.let { clock() - it < graceMs } == true
+    fun heldFor(deviceId: String, graceMs: Long): Boolean = leaves[deviceId]?.let { clock() - it.atMs < graceMs } == true
+
+    /** When [deviceId] last left, if that leave was abrupt and it has not joined since; else null. */
+    fun abruptEndedAt(deviceId: String): Long? = leaves[deviceId]?.takeIf { it.abrupt }?.atMs
 }

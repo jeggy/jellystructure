@@ -867,7 +867,9 @@ fun startServer(
                         // socket of the same device already holds the slot.
                         val openMs = dev.jellystructure.nowEpochSec() * 1000L - openedAtMs
                         val closeReason = if (closeError == null) runCatching { kotlinx.coroutines.withTimeoutOrNull(1_000L) { closeReason.await() } }.getOrNull() else null
-                        val replaced = tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this, openMs)
+                        // DEB-3137 — the leave is recorded with whether it was abrupt, so every watchdog read can ask (a replaced socket records none).
+                        val replaced = tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this, openMs,
+                            endedAbruptly = dev.jellystructure.tv.EventsCloseCause.isAbrupt(closeReason, closeError, replaced = false))
                         val cause = dev.jellystructure.tv.EventsCloseCause.classify(closeReason, closeError, replaced)
                         Logger.info("TV events: device ${device.deviceId} closed user=${device.jellyfinUserId} open=${openMs / 1000}s cause=$cause", "tv")
                         tvEventBus.unsubscribeAllDeviceStatus(this)
@@ -884,12 +886,12 @@ fun startServer(
                         // counts as gone only after SOCKET_GONE_MS (TvEventBus.isPresent holds the device that long on
                         // every tick), so this close arranges ONE more read at that mark: a place that really went is read
                         // then, and a new socket inside it ends the matter. A clean close carrying R293's `background` is
-                        // not evidence that playback ended, so it passes no abrupt device and the grace stands.
-                        val abrupt = dev.jellystructure.tv.EventsCloseCause.isAbrupt(closeReason, closeError, replaced)
-                        val goneDeviceId = device.deviceId
+                        // not evidence that playback ended, so it is not recorded as abrupt and the grace stands.
+                        // DEB-3137 (amended 2026-10-31) — the abrupt end is no longer carried by this one read: the bus
+                        // remembers it, and the periodic tick asks it too (a report in the last 30 s holds this read).
                         tvEventBus.runLater(dev.jellystructure.tv.SOCKET_GONE_MS + 100L) {
                             runCatching {
-                                playbackService.stopWatchdogTick(goneDeviceId.takeIf { abrupt }) { deviceId -> tvEventBus.isPresent(deviceId) }
+                                playbackService.stopWatchdogTick({ deviceId -> tvEventBus.abruptEndedAt(deviceId) }) { deviceId -> tvEventBus.isPresent(deviceId) }
                             }
                             // Phase 147 — an open live-TV stream takes the same wait.
                             runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isPresent(deviceId) } }

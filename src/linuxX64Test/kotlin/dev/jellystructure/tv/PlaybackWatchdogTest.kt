@@ -288,6 +288,155 @@ class PlaybackWatchdogTest {
         assertFalse(t.shouldReap(t.tracked().single(), socketOpen = false, reconnecting = false, socketEndedAbruptly = false))
     }
 
+    /**
+     * DEB-3137 (FR-R372-11, amended 2026-10-31) — one watchdog read of [d]'s only entry, judged the way
+     * [PlaybackService.stopWatchdogTick] judges it: the abrupt end comes from the absences on EVERY read and counts only
+     * against a play that began before it, then [PlaybackTracker.shouldReap] decides. [open] is a socket that is up.
+     */
+    private suspend fun read(t: PlaybackTracker, absences: SocketAbsences, d: DeviceData, open: Boolean = false): Boolean {
+        val p = t.tracked().single()
+        val abrupt = t.abruptEndCounts(p, absences.abruptEndedAt(d.deviceId))
+        return t.shouldReap(p, socketOpen = open || absences.heldFor(d.deviceId, SOCKET_GONE_MS), reconnecting = false, socketEndedAbruptly = abrupt)
+    }
+
+    @Test
+    fun theTimelineMeasuredOnDeb3115IsSparedAtTwentyThreeSecondsAndReapedAtFiftyThree() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        val start = now
+        t.started(web, "movie", 0L)
+        now = start + 1_100
+        assertTrue(t.heartbeat(web, "movie", 1_100L))
+        now = start + 3_000
+        absences.left(web.deviceId, abrupt = true)
+
+        now = start + 23_000   // gone 20 s, last report 21.9 s old: the 30 s hold
+        assertFalse(read(t, absences, web))
+        now = start + 53_000   // gone 50 s, last report 51.9 s old, play 53 s old: past the start grace
+        assertTrue(read(t, absences, web))
+    }
+
+    @Test
+    fun aTabReportingEveryTenSecondsAndClosedFortySecondsInIsReapedThirtySecondsAfterItsLastReport() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        val start = now
+        t.started(web, "movie", 0L)
+        for (s in 10..40 step 10) {
+            now = start + s * 1_000L
+            assertTrue(t.heartbeat(web, "movie", s * 1_000L))
+        }
+        now = start + 40_500
+        absences.left(web.deviceId, abrupt = true)
+
+        now = start + 55_500   // the close's own read at 15 s: the 30 s report hold keeps it
+        assertFalse(read(t, absences, web))
+        now = start + 70_000   // a tick 30 s after the last report: the hold is "within 30 s"
+        assertFalse(read(t, absences, web))
+        now = start + 70_001   // the first tick past 30 s
+        assertTrue(read(t, absences, web))
+    }
+
+    @Test
+    fun aTabClosedBeforeItsFirstReportIsReadAsGoneOnTheCloseOwnReadAtFifteenSeconds() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        val start = now
+        t.started(web, "movie", 0L)
+        now = start + 2_000
+        absences.left(web.deviceId, abrupt = true)
+        now = start + 2_000 + SOCKET_GONE_MS - 1
+        assertFalse(read(t, absences, web))
+        now += 1
+        assertTrue(read(t, absences, web))
+    }
+
+    @Test
+    fun aCleanBackgroundCloseKeepsTheGraceForNinetySeconds() = runBlocking {
+        for (reportedAt in listOf<Long?>(null, 10_000L)) {
+            val t = tracker()
+            val web = device("tab-1", kind = "web")
+            val absences = SocketAbsences { now }
+            val start = now
+            t.started(web, "movie", 0L)
+            if (reportedAt != null) { now = start + reportedAt; assertTrue(t.heartbeat(web, "movie", reportedAt)) }
+            now = start + 20_000
+            absences.left(web.deviceId, abrupt = false)   // R293's `background`: not evidence the place is gone
+            for (at in listOf(40_000L, 70_000L, 89_000L)) {
+                now = start + at
+                assertFalse(read(t, absences, web), "clean close, report at $reportedAt, read at $at ms")
+            }
+        }
+    }
+
+    @Test
+    fun aPlayStartedAfterAnAbruptEndIsNotReapedOnItInsideItsNinetySeconds() = runBlocking {
+        for (startsAfter in listOf(5_000L, 20_000L)) {   // inside the 15 s, and after them
+            val t = tracker()
+            val web = device("tab-1", kind = "web")
+            val absences = SocketAbsences { now }
+            val gone = now
+            absences.left(web.deviceId, abrupt = true)
+            now = gone + startsAfter
+            t.started(web, "movie", 0L)
+            val began = now
+            for (at in listOf(1_000L, 15_000L, 30_000L, 60_000L, 89_000L)) {
+                now = began + at
+                assertFalse(read(t, absences, web), "play begun $startsAfter ms after the end, read at $at ms")
+            }
+        }
+    }
+
+    @Test
+    fun aSocketBackInsideTheFifteenSecondsLeavesTheNextTickWithNothingToReap() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        val start = now
+        t.started(web, "movie", 0L)
+        now = start + 2_000
+        absences.left(web.deviceId, abrupt = true)
+        now = start + 3_100
+        absences.joined(web.deviceId)
+        now = start + 40_000
+        assertEquals(null, absences.abruptEndedAt(web.deviceId))
+        assertFalse(read(t, absences, web, open = true))
+        assertFalse(read(t, absences, web))   // and the end no longer counts even before the lookup says the socket is up
+    }
+
+    @Test
+    fun anEntryAReportCreatedIsReapedAfterAnAbruptCloseAndThirtySecondsOfSilence() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        val start = now
+        assertTrue(t.heartbeat(web, "movie", 5_000L))   // no start: the report creates the entry (fromReport)
+        now = start + 1_000
+        absences.left(web.deviceId, abrupt = true)
+        now = start + 29_999
+        assertFalse(read(t, absences, web))   // 30 s hold
+        now = start + 31_000
+        assertTrue(read(t, absences, web))
+    }
+
+    @Test
+    fun anEntryAReportCreatedAfterTheSocketEndedIsJudgedByHeartbeatAlone() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")
+        val absences = SocketAbsences { now }
+        val start = now
+        absences.left(web.deviceId, abrupt = true)
+        now = start + 5_000
+        assertTrue(t.heartbeat(web, "movie", 5_000L))   // the report that revives it begins a NEW entry
+        now = start + 40_000
+        assertFalse(read(t, absences, web))
+        now = start + 5_000 + 90_000L + 1
+        assertTrue(read(t, absences, web))   // the heartbeat test, 90 s after its last report
+    }
+
     @Test
     fun aDeviceNeverSeenToLeaveIsNotHeld() {
         val absences = SocketAbsences { now }

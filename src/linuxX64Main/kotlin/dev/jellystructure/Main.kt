@@ -900,7 +900,7 @@ fun main() = runBlocking {
     rootScope.launch {
         while (shutdownRequested.value == 0) {
             delay(30_000L)
-            runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isPresent(deviceId) } }
+            runCatching { playbackService.stopWatchdogTick({ deviceId -> tvEventBus.abruptEndedAt(deviceId) }) { deviceId -> tvEventBus.isPresent(deviceId) } }
                 .onFailure { Logger.warn("Stop watchdog tick failed: ${it.message}", "tv") }
             // Phase 147 — same watchdog shape for an open live-TV stream (its own tracking, see LiveTvService).
             runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isPresent(deviceId) } }
