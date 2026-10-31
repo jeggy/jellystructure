@@ -10,6 +10,15 @@
 #     jellystructure-avsync python /app/measure.py /media/some/file.mkv 20,50,80 45 --pct
 #
 # `video` in the capabilities is what lets NVDEC in; without it every decode silently falls back to the CPU.
+#
+# The weights (FR-317-43, DEB-3118): copied from our own released image, pinned by digest, so no build contacts
+# www.robots.ox.ac.uk -- that host timing out stopped Publish on 2026-10-30. Their origin, and the way to recover them
+# if this image is ever gone:
+#   https://www.robots.ox.ac.uk/~vgg/software/lipsync/data/syncnet_v2.model
+#   https://www.robots.ox.ac.uk/~vgg/software/lipsync/data/sfd_face.pth
+# The pin moves only to an image whose files pass the two sha256sum checks below; nothing may prune this digest.
+FROM ghcr.io/jeggy/jellystructure-avsync:1.61@sha256:bbbc149cad4e310c88a7c1901e9bd42585f17883211bcd9f7637450f8ecb495c AS weights
+
 FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
 
 # jellyfin-ffmpeg: the ffmpeg Jellyfin itself runs — scale_cuda and tonemap_cuda (Ubuntu's 4.4 has no tonemap_cuda,
@@ -23,14 +32,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg ca-c
     ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe
 RUN pip install --no-cache-dir python_speech_features scipy opencv-python-headless
 
-# SyncNet v2 + S3FD (code MIT, Joon Son Chung). The weights' licence is not stated, so they are fetched at build time,
-# never committed. Pinned by commit and by hash.
+# SyncNet v2 + S3FD (code MIT, Joon Son Chung). The weights' licence is not stated, so they are never committed.
+# Code pinned by commit; weights from the `weights` stage above, checked by hash -- the hashes say what the files are,
+# the image is only where they come from.
 ARG SYNCNET_COMMIT=907c0b579c2e2d83f0eae1b2ac9e720cde4e5623
 RUN git clone -q https://github.com/joonson/syncnet_python /app && git -C /app checkout -q ${SYNCNET_COMMIT} && \
-    mkdir -p /app/data /app/detectors/s3fd/weights && \
-    curl -fsSL -o /app/data/syncnet_v2.model https://www.robots.ox.ac.uk/~vgg/software/lipsync/data/syncnet_v2.model && \
-    curl -fsSL -o /app/detectors/s3fd/weights/sfd_face.pth https://www.robots.ox.ac.uk/~vgg/software/lipsync/data/sfd_face.pth && \
-    echo "961e8696f888fce4f3f3a6c3d5b3267cf5b343100b238e79b2659bff2c605442  /app/data/syncnet_v2.model" | sha256sum -c - && \
+    mkdir -p /app/data /app/detectors/s3fd/weights
+COPY --from=weights /app/data/syncnet_v2.model /app/data/syncnet_v2.model
+COPY --from=weights /app/detectors/s3fd/weights/sfd_face.pth /app/detectors/s3fd/weights/sfd_face.pth
+RUN echo "961e8696f888fce4f3f3a6c3d5b3267cf5b343100b238e79b2659bff2c605442  /app/data/syncnet_v2.model" | sha256sum -c - && \
     echo "d54a87c2b7543b64729c9a25eafd188da15fd3f6e02f0ecec76ae1b30d86c491  /app/detectors/s3fd/weights/sfd_face.pth" | sha256sum -c -
 
 COPY avsync/measure.py /app/measure.py

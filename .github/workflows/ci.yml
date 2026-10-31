@@ -51,6 +51,8 @@ jobs:
         run: ./scripts/check-docker-cache-ids.sh
       - name: The images cross-build linuxArm64 (DEB-1490)
         run: ./scripts/check-arm64-images.sh
+      - name: The A/V sync sidecar builds from pinned weights and stops only itself (DEB-3118)
+        run: ./scripts/check-avsync-publish.sh
       - name: No Jellyfin version branching
         run: ./scripts/check-jellyfin-version-use.sh
       - name: No Jellyfin token in a query string

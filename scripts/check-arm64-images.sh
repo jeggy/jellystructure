@@ -27,11 +27,15 @@ P=.github/workflows/publish.yml
 need "$P" 'docker/setup-qemu-action' 'publish.yml must set up QEMU for the arm64 runtime stage and smoke (DEB-1490 FR-3)'
 need "$P" 'Smoke the arm64 image' 'publish.yml must smoke the arm64 image after the push (DEB-1490 FR-5)'
 # The matrix entry for each image carries its platforms on the line after `dockerfile:`.
-for pair in "Dockerfile:linux/amd64,linux/arm64" "ravilo-web/Dockerfile:linux/amd64,linux/arm64" "avsync/Dockerfile:linux/amd64"; do
+for pair in "Dockerfile:linux/amd64,linux/arm64" "ravilo-web/Dockerfile:linux/amd64,linux/arm64"; do
   df=${pair%%:*}; want=${pair#*:}
   got=$(grep -A1 -E "^[[:space:]]+dockerfile: $df\$" "$P" | sed -nE 's/^[[:space:]]+platforms: ([^ #]+).*/\1/p')
   [ "$got" = "$want" ] || { echo "$P: $df is built for '${got:-nothing}', expected '$want' (DEB-1490 FR-3)"; fail=1; }
 done
+
+# DEB-3118 — the sidecar is its own job (not a matrix entry), so its platforms follow `file:` and stay amd64 only.
+got=$(grep -A1 -E "^[[:space:]]+file: avsync/Dockerfile\$" "$P" | sed -nE 's/^[[:space:]]+platforms: ([^ #]+).*/\1/p')
+[ "$got" = "linux/amd64" ] || { echo "$P: avsync/Dockerfile is built for '${got:-nothing}', expected 'linux/amd64' (DEB-1490 FR-3)"; fail=1; }
 
 for f in build.gradle.kts shared/build.gradle.kts ravilo-i18n/build.gradle.kts web-static-server/build.gradle.kts; do
   need "$f" 'linuxArm64' 'must declare the linuxArm64 target (DEB-1490 FR-1)'

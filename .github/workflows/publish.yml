@@ -81,6 +81,8 @@ jobs:
     with:
       ref: ${{ needs.version.outputs.tag }}
 
+  # The two images that are deployed as a pair. The A/V sync sidecar is NOT in this matrix (DEB-3118, FR-317-44): a matrix
+  # leg that fails cancels its siblings and skips every `needs: publish` job below, and the sidecar is optional.
   publish:
     needs: [version, ci]
     runs-on: ubuntu-latest
@@ -100,12 +102,6 @@ jobs:
             platforms: linux/amd64,linux/arm64
             smoke_port: 8080
             smoke_path: /
-          # Phase 317 (FR-317-1, dev review item 13) — the A/V sync sidecar. Context is the repo root, like
-          # the others: its Dockerfile copies `avsync/*.py`. It has no Gradle/Konan cache mounts, so
-          # scripts/check-docker-cache-ids.sh's list is unchanged.
-          - image: jellystructure-avsync
-            dockerfile: avsync/Dockerfile
-            platforms: linux/amd64   # CUDA PyTorch base: NVIDIA hosts only (DEB-1490 scope)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -219,6 +215,69 @@ jobs:
           echo "--- from inside the container"; timeout 20 docker exec smoke wget -qO- -T 5 "http://127.0.0.1:$PORT$SMOKE_PATH" || true
           echo "--- docker logs smoke"; docker logs smoke || true
           exit 1
+
+  # Phase 317 (FR-317-1, FR-317-44; DEB-3118) — the A/V sync sidecar, in its own job so that a build of it that fails stops
+  # only itself: nothing `needs` this job, so the two images above and the four client deploys below still run. The run
+  # still ends `failure` (no continue-on-error): the CI watch reads a run's conclusion. The display name is the matrix's,
+  # kept exactly. Context is the repo root, like the others: its Dockerfile copies `avsync/*.py`. No Gradle/Konan cache
+  # mounts, so scripts/check-docker-cache-ids.sh's list is unchanged. Its weights come from our own pinned image
+  # (FR-317-43), so no step contacts the weights' university host.
+  publish-avsync:
+    name: publish (jellystructure-avsync, avsync/Dockerfile, linux/amd64)
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/jellystructure-avsync"
+          VERSION="${{ needs.version.outputs.version }}"
+          if [ -n "$VERSION" ]; then
+            TAGS="$IMAGE:latest"$'\n'"$IMAGE:$VERSION"
+          else
+            TAGS="$IMAGE:${{ github.sha }}"
+          fi
+          {
+            echo "tags<<TAGEOF"
+            echo "$TAGS"
+            echo "TAGEOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "build_version=${VERSION:-${GITHUB_SHA::8}}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: avsync/Dockerfile
+          platforms: linux/amd64   # CUDA PyTorch base: NVIDIA hosts only (DEB-1490 scope)
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            BUILD_VERSION=${{ steps.tags.outputs.build_version }}
+          cache-from: type=gha,scope=jellystructure-avsync
+          cache-to: type=gha,mode=max,scope=jellystructure-avsync
+
+      - name: Verify the manifest platforms
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/jellystructure-avsync"
+          docker buildx imagetools inspect "$IMAGE@${{ steps.build.outputs.digest }}" | tee /tmp/manifest.txt
+          grep -q "Platform:[[:space:]]*linux/amd64\$" /tmp/manifest.txt || { echo "::error::$IMAGE has no linux/amd64 manifest"; exit 1; }
+          if grep -q "Platform:[[:space:]]*linux/arm64\$" /tmp/manifest.txt; then echo "::error::$IMAGE unexpectedly lists linux/arm64"; exit 1; fi
 
   # R215 — the Play Store closed testing track (`alpha` is the Publishing API's name for it), on a
   # published release only, and only after CI (231).
