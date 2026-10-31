@@ -220,6 +220,23 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
 - **Mac (AVPlayer):** FR-5's stall rule and FR-6.
 - **Linux (mpv):** timeouts and reconnect set, and FR-6 on each step.
 - **Cast receiver:** the restream recovery it has none of today, then FR-4 through Shaka's retry parameters.
+- *2026-10-31, DEB-3105 — what the Cast receiver does, and what CAF does not allow.* CAF resets its player on every `LOAD`, so the
+  receiver cannot keep the old stream playing behind a replacement (FR-6's first bullet); a stream that failed has nothing left to
+  keep, and that is the only replacement the receiver makes. What it does:
+  - **Restream recovery.** A film whose stream fails after its first picture is asked for again at the place it stopped, its master
+    and first two segments are fetched (`warmHlsStart`), and only then is it `LOAD`ed. Our encoder is asked first (FR-2 restarts the
+    job), Jellyfin's stream second, then the error screen; a stream that came from Jellyfin, a load that never reached a picture,
+    music and a station keep today's behaviour. A failed call or fetch is asked again at 1, 2, 4 and 8 s, and then ends on the error
+    (nothing is buffered, so the four are all the buffer allows). A sender's own `LOAD` cancels it.
+  - **FR-8.** A recovery that stopped the picture for a second or more writes a `recovery` entry (`encoder_failed`, the rung it left)
+    in the QoE report's `stalls`.
+  - **FR-5.** The buffering view appears after 2 s of waiting and not at once; Shaka starts and resumes at 4 s buffered
+    (`streaming.rebufferingGoal`).
+  - **FR-3 and FR-4, through Shaka's settings.** `retryParameters` on segments and manifests: five attempts at 0.5, 1, 2 and 4 s, a
+    20 s request timeout. Shaka has no cap on the delay, so the 5 s of Android's schedule is not reproduced.
+  - **Not done:** FR-4's fall to a lower rung on a failed or abandoned segment, and FR-5's cap one rung down at once on a stall.
+    FR-9 names Shaka's retry parameters as the whole of FR-4 here; the receiver registers no segment-failure hook, and `ReceiverAbr`
+    sees buffer levels only. None of this is verified on a Chromecast; the tests are the pure decisions in `CastRecoveryTest`.
 
 ## What this does not do yet
 

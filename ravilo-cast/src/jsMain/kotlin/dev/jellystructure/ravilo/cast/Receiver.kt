@@ -12,6 +12,14 @@ import dev.jellystructure.shared.tv.CastChannelMusic
 import dev.jellystructure.shared.tv.CastChannelStep
 import dev.jellystructure.shared.tv.castChannelStep
 import dev.jellystructure.shared.tv.CastDecodeProbe
+import dev.jellystructure.shared.tv.CastRecovery
+import dev.jellystructure.shared.tv.CastRecoveryStep
+import dev.jellystructure.shared.tv.castDrawsBuffering
+import dev.jellystructure.shared.tv.castRecoveryRetryMs
+import dev.jellystructure.shared.tv.castRecoveryStep
+import dev.jellystructure.shared.tv.castShouldRecover
+import dev.jellystructure.shared.tv.QoeStall
+import dev.jellystructure.shared.tv.QoeStallCause
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
@@ -67,6 +75,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -146,6 +155,21 @@ private class Receiver {
     // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
     // very next LOAD the receiver issues to itself. (burn-in index or -1, audio index, then-show text position)
     private var pendingRestream: Triple<Int, Int?, Int>? = null
+    // DEB-3105 (DEB-3093 FR-9, FR-6) — a stream that failed mid-play is asked for again before the error screen: the ticket the
+    // receiver already fetched and warmed (consumed by the LOAD it issues to itself), the item our encoder / Jellyfin were asked
+    // for, the job doing it, and the recovery entry waiting for the new stream's first picture (FR-8).
+    private var recoveredTicket: StreamTicket? = null
+    private var oursAskedAgainFor: String? = null
+    private var jellyfinAskedFor: String? = null
+    private var recoverJob: Job? = null
+    private var recoveryFrom = -1L
+    private var recoveryReason = ""
+    private var recoveryRung: Pair<Int?, Long?> = null to null
+    private val qoeStalls = mutableListOf<QoeStall>()
+    private var bufferingDrawJob: Job? = null
+    private var notOursFor: String? = null
+    private var recoveryAfterFirstFrameMs = 0L
+    private var recoveryKeptFirstFrame: Long? = null
     // R291 (FR-R291-4) — the audio rendition made active in place on this stream, as a position in the ticket's
     // audio list; -1 until one is (and after every load), when the stream's own carried track is what plays.
     // An in-place switch leaves the ticket's `audio_stream_index` on the muxed track, so this is the only record.
@@ -305,7 +329,11 @@ private class Receiver {
             // reports it here with the player still IDLE. Say so once; a mid-play error is followed by
             // MEDIA_FINISHED(ERROR), which onFinished turns into the same message.
             // 289 — not while a LOAD is being prepared: whatever failed then is the item before, and `current` is the new one.
-            if (loading == 0 && (playerManager.getPlayerState() as String) == "IDLE" && current != null) { stopSession(); failed() }
+            // DEB-3105 (FR-9) — a stream that had played is asked for again first ([recover]); the rest end as before.
+            if (loading == 0 && (playerManager.getPlayerState() as String) == "IDLE" && current != null) {
+                if (castShouldRecover(music, radio != null, false, qoePlayed, true) && recover()) return@addEventListener
+                stopSession(); failed()
+            }
         }
         // Owner, 2026-10-05: no overlay of our own on a seek or a pause — the framework's player shows its own (title,
         // progress, time), and the two were drawn on top of each other. The music screen keeps its transport.
@@ -626,7 +654,7 @@ private class Receiver {
         // own MEDIA_FINISHED for it arrives after `current` is the new item. The receiver's own loads (next song,
         // next episode, a restream) carry no code and have dealt with the item before themselves.
         note("load ${data.itemId} own=${data.code.isEmpty()} tracks=${data.tracks.size} state=${playerManager.getPlayerState()} before=${current?.itemId} open=$sessionOpen")
-        if (data.code.isNotEmpty()) replaced(data.itemId)
+        if (data.code.isNotEmpty()) { recoverJob?.cancel(); recoveredTicket = null; recoveryFrom = -1L; replaced(data.itemId) }
         // R384 (FR-R384-3) — a countdown belongs to the item it was for: a new load (a sender's, the next episode, a
         // restream) ends it, so one that runs on past a film's end cannot load "the next episode" over what came after.
         endNextUp()
@@ -655,8 +683,9 @@ private class Receiver {
         // R285 (FR-R285-4) — a reload we asked for ourselves is a restream of the running session, not
         // a new negotiation. If it fails, keep what is playing: returning null cancels this LOAD only.
         val restream = pendingRestream.also { pendingRestream = null }
+        val recovered = recoveredTicket.also { recoveredTicket = null }   // DEB-3105 — asked for and warmed by recover() already
         val t = if (restream != null) {
-            runCatching { api.restream(data.itemId, restream.first, data.positionMs ?: positionMs, capabilities(), restream.second) }.getOrNull() ?: return null
+            recovered ?: runCatching { api.restream(data.itemId, restream.first, data.positionMs ?: positionMs, capabilities(), restream.second) }.getOrNull() ?: return null
         } else if (data.episodesShuffled || data.startOver) {
             // R343 (FR-R343-8) — a shuffled entry (every start of the list) and a Start over (the sender's first
             // load only) say so on the start, from 0:00 or the handed-over position. A plain load is unchanged.
@@ -1353,10 +1382,11 @@ private class Receiver {
         note("state $st ${stateNote()}")
         qoeState(st)
         when (st) {
-            "BUFFERING" -> if (music || radio != null) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
-            "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (radio != null) show("nowplaying") else if (music) { show("nowplaying"); paintTransport() } else show() }
+            // DEB-3105 (FR-5) — a film's stall draws nothing for its first 2 s (a start or a switch has its own loading view).
+            "BUFFERING" -> if (music || radio != null) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) drawBufferingLater()
+            "PLAYING" -> { bufferingDrawJob?.cancel(); paused = false; pausedBeat?.cancel(); pausedBeat = null; if (radio != null) show("nowplaying") else if (music) { show("nowplaying"); paintTransport() } else show() }
             // A paused station keeps its tune and its heartbeat (the tune's own); it has no playback session to report progress to.
-            "PAUSED" -> if (radio != null) { paused = true; show("nowplaying") } else { paused = true; if (music) { show("nowplaying"); showTransport() } else show(); val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
+            "PAUSED" -> if (radio != null) { bufferingDrawJob?.cancel(); paused = true; show("nowplaying") } else { bufferingDrawJob?.cancel(); paused = true; if (music) { show("nowplaying"); showTransport() } else show(); val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
             "IDLE" -> {}
         }
         sendStatus()
@@ -1372,6 +1402,7 @@ private class Receiver {
         if (qoeItem != itemId) {
             if (qoeItem != null) postQoe()
             qoeRebuffers = 0; qoeRebufferMs = 0L; qoeDown = 0; qoeUp = 0
+            qoeStalls.clear(); recoveryFrom = -1L
         }
         qoeItem = itemId; qoeDirect = t.directPlay; qoePlayed = false; qoeSeeking = false; qoeRebufferFrom = -1L; qoeVariantBps = null
         // 309a0 — this item's start time (load → first frame) and the segment fetches the estimate rests on.
@@ -1391,12 +1422,101 @@ private class Receiver {
                 // runs dry (ReceiverAbr; Shaka's own manager if this framework build won't take the factory).
                 ReceiverAbr.oursEncoder = t.encoder == "ours"
                 runCatching { sc.abrFactory = ReceiverAbr.factory { line: String -> note(line) } }
+                // DEB-3105 (DEB-3093 FR-9) — FR-3, FR-4 and FR-5 through Shaka's own settings: a request gives up at the player's 20 s,
+                // a failed segment or manifest is tried five times at 0.5, 1, 2 and 4 s, and a play (re)starts at 4 s buffered.
+                val retry: dynamic = js("({})")
+                retry.maxAttempts = CastRecovery.RETRY_ATTEMPTS; retry.baseDelay = CastRecovery.RETRY_BASE_DELAY_MS
+                retry.backoffFactor = CastRecovery.RETRY_BACKOFF; retry.fuzzFactor = CastRecovery.RETRY_FUZZ; retry.timeout = CastRecovery.REQUEST_TIMEOUT_SEC
+                sc.streaming.retryParameters = retry
+                sc.streaming.rebufferingGoal = CastRecovery.RESUME_BUFFER_SEC
+                sc.manifest = js("({})")
+                sc.manifest.retryParameters = retry
                 cfg.shakaConfig = sc
             }
             // 309 (FR-309-13) — count segment fetches: an estimate resting on fewer than 3 is Shaka's own guess.
             cfg.segmentRequestHandler = { _: dynamic -> qoeSegments++ }
             playerManager.setPlaybackConfig(cfg)
         }.onFailure { note("no initialBandwidth on this framework: ${it.message}") }
+    }
+
+    /** DEB-3105 (FR-5) — the buffering view, drawn only if the wait is still going after [CastRecovery.DRAW_AFTER_MS]. */
+    private fun drawBufferingLater() {
+        bufferingDrawJob?.cancel()
+        bufferingDrawJob = GlobalScope.launch {
+            delay(CastRecovery.DRAW_AFTER_MS)
+            if ((playerManager.getPlayerState() as String) == "BUFFERING" && !el("loading").classList.contains("on")) show("buffering")
+        }
+    }
+
+    /**
+     * DEB-3105 (DEB-3093 FR-9, FR-6) — the stream failed after its first picture: ask the server for it again at the place it stopped,
+     * fetch the start of the new one, and only then LOAD it. Our encoder is asked first (FR-2 restarts its job), Jellyfin's stream second;
+     * a failed call or fetch is asked again at 1, 2, 4 and 8 s. CAF resets its player on a LOAD, so unlike Android this cannot keep the
+     * old stream playing behind the picture: the failed stream has nothing left to keep, and the view shows nothing for the first 2 s
+     * (FR-5). True = a recovery is under way (or was started by the event that came first), so the caller does not end the cast.
+     */
+    private fun recover(): Boolean {
+        if (recoverJob?.isActive == true) return true
+        val d = current ?: return false
+        val t = ticket ?: return false
+        val a = api ?: return false
+        val ours = t.encoder == "ours" && !t.directPlay
+        val step = castRecoveryStep(ours, oursAskedAgainFor == d.itemId, jellyfinAskedFor == d.itemId)
+        if (step == CastRecoveryStep.GIVE_UP) return false
+        if (step == CastRecoveryStep.JELLYFIN) { jellyfinAskedFor = d.itemId; notOursFor = d.itemId } else oursAskedAgainFor = d.itemId
+        val at = positionMs
+        val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
+        recoveryFrom = nowMs(); recoveryReason = "encoder_failed"
+        recoveryRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to qoeVariantBps
+        recoveryKeptFirstFrame = qoeFirstFrameMs
+        recoveryAfterFirstFrameMs = (recoveryFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
+        note("DEB-3105 FR-9: the stream failed at ${at}ms — asking ${if (step == CastRecoveryStep.JELLYFIN) "Jellyfin" else "our encoder"} for it again")
+        val sub = t.burnedSubtitleIndex ?: -1
+        val audio = t.audioStreamIndex
+        val then = activeTextPosition()
+        recoverJob = GlobalScope.launch {
+            val draw = launch { delay(CastRecovery.DRAW_AFTER_MS); show("buffering") }
+            var misses = 0
+            while (true) {
+                val got = try {
+                    val nt = a.restream(d.itemId, sub, at, capabilities(), audio, notOurEncoder = d.itemId == notOursFor)
+                    if (!nt.directPlay) absolute(nt.hlsUrl)?.let { a.warmHlsStart(it, nt.startVariantBps) }
+                    nt
+                } catch (e: CancellationException) { throw e } catch (e: Throwable) { note("DEB-3105 FR-9: the replacement failed (${e.message})"); null }
+                if (got != null) {
+                    recoveredTicket = got
+                    pendingRestream = Triple(sub, audio, then)
+                    val req = js("new cast.framework.messages.LoadRequestData()")
+                    req.media = js("new cast.framework.messages.MediaInformation()")
+                    req.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), d.copy(positionMs = at, code = "")))
+                    req.media.customData = req.customData
+                    req.autoplay = !paused
+                    playerManager.load(req)
+                    return@launch
+                }
+                misses++
+                val wait = castRecoveryRetryMs(misses)
+                if (wait == null) { draw.cancel(); recoveryFrom = -1L; stopSession(); failed(); return@launch }
+                delay(wait)
+            }
+        }
+        return true
+    }
+
+    /** DEB-3105 (FR-8) — the recovered stream is moving: one `recovery` entry when the picture stopped for a second or more. */
+    private fun finishRecovery() {
+        if (recoveryFrom < 0 || recoverJob?.isActive == true) return
+        val duration = (nowMs() - recoveryFrom).coerceAtLeast(0)
+        recoveryFrom = -1L
+        qoeFirstFrameMs = recoveryKeptFirstFrame   // the recovery's own load is not this item's first frame
+        note("DEB-3105 FR-9: recovered ($recoveryReason) after $duration ms")
+        if (duration < 1_000L) return
+        qoeStalls += QoeStall(
+            afterFirstFrameMs = recoveryAfterFirstFrameMs, positionMs = positionMs, bufferedMs = 0, durationMs = duration,
+            phase = if (recoveryAfterFirstFrameMs < 10_000L) "start" else "mid", variantBps = qoeVariantBps, cause = QoeStallCause.RECOVERY,
+            bufferAheadMs = 0, rungHeight = recoveryRung.first, rungBps = recoveryRung.second, reason = recoveryReason,
+        )
+        postQoe()
     }
 
     /** 308 (FR-308-5) — a stall after the first frame, not one a seek asked for, counts as a rebuffer. */
@@ -1408,6 +1528,7 @@ private class Receiver {
                 if (qoeRebufferFrom >= 0) { qoeRebuffers++; qoeRebufferMs += (nowMs() - qoeRebufferFrom).coerceAtLeast(0); qoeRebufferFrom = -1L }
                 if (!qoePlayed && qoeFirstFrameMs == null && qoeLoadAt > 0) qoeFirstFrameMs = (nowMs() - qoeLoadAt).coerceAtLeast(0)   // 309a0
                 qoePlayed = true; qoeSeeking = false
+                finishRecovery()
             }
             else -> if (st == "PAUSED") qoeRebufferFrom = -1L
         }
@@ -1443,6 +1564,7 @@ private class Receiver {
             variantSwitchesUp = qoeUp,
             variantBandwidthBps = qoeVariantBps ?: num(stats?.streamBandwidth)?.toLong(),
             variantHeight = num(stats?.height)?.toInt(),
+            stalls = qoeStalls.toList(),   // DEB-3105 (FR-8) — a recovery that stopped the picture for a second or more
         )
         GlobalScope.launch { runCatching { a.postPlaybackQoe(report) } }
     }
@@ -1534,6 +1656,9 @@ private class Receiver {
             note("finished under the countdown (${nextUpLeft ?: config?.skipSecs ?: 6} s left)")
             return
         }
+        // DEB-3105 (DEB-3093 FR-9, FR-6) — a film's stream that failed after its first picture is asked for again, our encoder
+        // first and Jellyfin second, before the cast ends on the error screen.
+        if (castShouldRecover(music, radio != null, reachedEnd, qoePlayed, true) && recover()) return
         endNextUp()
         stopSession()
         // 286 (FR-286-4) — a song's end: the next by repeat's rule; the queue's end is the idle view.
