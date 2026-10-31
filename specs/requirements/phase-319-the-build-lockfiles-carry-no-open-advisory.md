@@ -190,6 +190,51 @@ move the 1.x consumers onto 2.x, which is a major crossing nobody asked for.
 >   2026-10-25 with the advisory ids. The FR-319-4 checks apply to this commit as written, and the commit cites
 >   `restores FR-319-1`.
 
+> **Note, 2026-10-31 (DEB-3226) — three advisories: a plain floor, a floor on a path, and one that stays open.**
+> Alerts 55, 56 and 57 opened on `kotlin-js-store/yarn.lock` at 14:55Z. Raising what can be raised is **a restore of
+> FR-319-1 and acceptance 1, not a change to this spec**. What cannot be raised is the case FR-319-3 already provides
+> for, recorded in the note under it.
+>
+> | Alert | Package | Advisory | Severity | Vulnerable | Fixed in |
+> |---|---|---|---|---|---|
+> | 55 | `follow-redirects` | GHSA-mrwp-f3q8-3g9p — custom credentials can follow a redirect | high | `>=1.16.0 <=1.16.1` | 1.16.2 |
+> | 56 | `glob` | GHSA-3g3m-2fjr-6pw4 — an `AbortSignal` does not stop the traversal | medium | `>=9.0.0 <=14.0.1` | 14.0.2 |
+> | 57 | `minimatch` | GHSA-g3hv-75wg-m249 — denial of service by globparts amplification | medium | `<11.0.1` | 11.0.1 |
+>
+> | Package | Locked 2026-10-31 | Resolution | Crosses a major |
+> |---|---|---|---|
+> | `follow-redirects` | 1.16.1 | `"follow-redirects" to "^1.16.2"`, raised from `^1.16.1` | no |
+> | `glob`, mocha's copy only | 10.5.0 | `"**/mocha/glob" to "^14.0.2"`, new | **yes**, so FR-319-3 applies |
+> | `minimatch` | 3.1.5 and 9.0.9 | none, it stays (FR-319-3) | it would |
+>
+> - **JS root only.** None of the three is in `kotlin-js-store/wasm/yarn.lock`; the Wasm root keeps its `ws`-only filter.
+> - **`glob` must not be a by-name resolution.** Only mocha's 10.5.0 is inside alert 56's range. The 7.2.3 that karma,
+>   karma-webpack and rimraf use is below it and stays. By name, all of them move to 14, where `require('glob')` is no
+>   longer callable (rimraf 3 calls it) and a sync `Glob` no longer fills the `found` that karma's file list reads.
+> - **Yarn v1 does honour a path with no version in it.** The 2026-10-15 note above measured
+>   `minimatch@<range>/brace-expansion`, a path with a version in it, which writes an entry and remaps nothing. In a
+>   scratch copy of the generated root on yarn 1.22.17, `**/mocha/glob` put mocha on 14.0.3 and left the other three
+>   on 7.2.3. That was not run through Gradle, so the fix commit's first check is that `kotlinUpgradeYarnLock` writes
+>   the same result.
+> - **Mocha works on `glob` 14, measured.** In that copy `mocha 't/*.spec.js'` found and passed a spec on Node 22.0.0
+>   and 25.0.0, and `glob.hasMagic` and `glob.sync` behaved as they do on 10.5.0, a brace pattern included.
+> - **The `minimatch` 11 that `glob` 14 pulls in is inert.** `glob` 14 declares `minimatch` `^11.0.2`, and that one's
+>   `brace-expansion` `^5.0.12` is taken to 2.x by this spec's by-name floor. `minimatch` 11 on `brace-expansion` 2
+>   throws on a brace pattern (`brace_expansion_1.expand is not a function`), but nothing runs that code: `glob` 14
+>   publishes a bundle holding its own copy and requires neither package, and nothing else in the tree asks for 11.
+>   The `brace-expansion` floor stays as it is.
+> - **Toolchain only, measured.** `follow-redirects` is pulled only by `http-proxy` (Kotlin's karma fork and
+>   webpack-dev-server). `glob` is pulled by mocha, karma, karma-webpack and rimraf (itself karma's), `minimatch` by
+>   mocha, karma, karma-webpack and `glob`. No generated package declares any of the three. The admin, Ravilo Web, Cast and screen
+>   production bundles in this checkout contain none of `follow-redirects`, `minimatch`, `GLOBSTAR` or `PathScurry`.
+>   CI runs no JS or Wasm test task, so CI never starts karma or mocha. Severity for users: none.
+> - **The toolchain copy outside the repository stays as it is.** `~/.kotlin/kotlin-npm-tooling/` holds
+>   `follow-redirects` 1.15.11, below alert 55's range, and `glob` 10.5.0 and `minimatch` 3.1.5 and 9.0.9, inside
+>   the other two (*Zero alerts is not a clean toolchain*).
+> - **After the fix, the open-alert list holds alert 57 alone** until the owner dismisses it, which is what acceptance
+>   3 allows. The comments date both changed lines 2026-10-31 with the advisory ids, and the commit cites
+>   `restores FR-319-1`.
+
 ### FR-319-3 — A major crossing is kept only if the toolchain still works
 
 The three rows marked *yes* are kept only if every check in FR-319-4 passes with them. If one breaks
@@ -200,6 +245,25 @@ dismiss the alert; that is the owner's (§FR-319-5).
 > **Note, 2026-10-15 (DEB-1219).** All three major crossings were kept: `serialize-javascript` 7.1.2, `diff` 8.0.4,
 > `uuid` 11.1.1, with the four production distributions building (FR-319-4). Nothing is recorded here as left open
 > but `braces`.
+
+> **Note, 2026-10-31 (DEB-3226) — `minimatch` stays, and its alert stays open.** Alert 57 is patched only from 11.0.1,
+> and nothing is added for it.
+> - **The failure, measured in the scratch copy of the generated root.** With `minimatch` raised by name to `^11.0.1`,
+>   karma's own call throws `TypeError: … is not a function`. Kotlin's karma fork calls `require('minimatch')` as a
+>   function in `file-list.js`, `preprocessor.js` and `watcher.js`, and in 11 the module is an object. The same
+>   resolution also breaks every brace pattern, for the reason in the FR-319-2 note.
+> - **A path does not save it.** The alert closes only when no copy in the lockfile is below 11.0.1. Karma's `^3.0.4`
+>   and `glob` 7's `^3.1.1` have to stay on 3.x, so moving mocha and karma-webpack off 9.x would change the tree and
+>   close nothing.
+> - **What stays open.** The attack needs a hostile glob pattern, and these patterns come from our own karma
+>   configuration, on a build host or a developer's machine. It moves with a Kotlin upgrade, because the plugin pins
+>   the fork (`github:Kotlin/karma#6.4.5`). Dismissing it is the owner's (FR-319-5 item 2).
+> - **FR-319-4 as written would not have caught this.** Nothing in it reaches karma or mocha (the 2026-10-15 note
+>   there), so the by-name version passes all of it. On this fix, then, the commit message also reports, from the
+>   regenerated `build/js/node_modules`: karma's `require('minimatch')` and rimraf's `require('glob')` still give a
+>   function, and mocha resolves `glob` 14 and passes a spec found by a glob pattern. If the `glob` crossing fails
+>   that or the first check in the FR-319-2 note, its resolution is dropped and a dated note here records it, as
+>   this requirement says, and alert 56 stays open beside 57.
 
 ### FR-319-4 — The toolchain still builds and tests, and no npm package newly ships
 
