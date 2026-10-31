@@ -49,12 +49,14 @@ import androidx.media3.common.ParserException;
 import androidx.media3.common.util.Log;
 import androidx.media3.common.util.LongArray;
 import androidx.media3.common.util.NullableType;
+import androidx.media3.common.util.ParsableBitArray;
 import androidx.media3.common.util.ParsableByteArray;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import androidx.media3.container.DolbyVisionConfig;
 import androidx.media3.container.NalUnitUtil;
 import androidx.media3.extractor.AacUtil;
+import androidx.media3.extractor.Ac3Util;
 import androidx.media3.extractor.AvcConfig;
 import androidx.media3.extractor.ChunkIndex;
 import androidx.media3.extractor.Extractor;
@@ -168,6 +170,8 @@ public class RaviloMatroskaExtractor implements Extractor {
   private static final String CODEC_ID_MP3 = "A_MPEG/L3";
   private static final String CODEC_ID_AC3 = "A_AC3";
   private static final String CODEC_ID_E_AC3 = "A_EAC3";
+  /** RAVILO DEB-3162 — enough of a syncframe's header to reach its additional-BSI flag. */
+  private static final int EAC3_PROBE_BYTES = 64;
   private static final String CODEC_ID_TRUEHD = "A_TRUEHD";
   private static final String CODEC_ID_DTS = "A_DTS";
   private static final String CODEC_ID_DTS_EXPRESS = "A_DTS/EXPRESS";
@@ -1706,6 +1710,15 @@ public class RaviloMatroskaExtractor implements Extractor {
     }
     size += sampleStrippedBytes.limit();
 
+    // RAVILO DEB-3162 (FR-313-5d) — name an E-AC-3 track by what its first syncframe says.
+    if (CODEC_ID_E_AC3.equals(track.codecId)
+        && !track.eac3Probed
+        && !track.hasContentEncryption
+        && sampleBytesRead == 0
+        && sampleStrippedBytes.limit() == 0) {
+      declareEac3Format(input, track, size);
+    }
+
     if (CODEC_ID_H264.equals(track.codecId) || CODEC_ID_H265.equals(track.codecId)) {
       // TODO: Deduplicate with Mp4Extractor.
 
@@ -1767,6 +1780,34 @@ public class RaviloMatroskaExtractor implements Extractor {
     }
 
     return finishWriteSampleData();
+  }
+
+  /**
+   * RAVILO DEB-3162 (FR-313-5d) — {@link Track#initializeOutput} can only say {@code audio/eac3}: the
+   * Matroska header does not say whether the stream carries JOC (Atmos). The TS road reads the first
+   * syncframe and declares {@code audio/eac3-joc}; this does the same for the first sample, before it
+   * is written. The queue has not committed a sample yet, so the player sees the first format it reads
+   * as its initial one — no reset. A syncframe that does not parse leaves the format as it was.
+   */
+  private void declareEac3Format(ExtractorInput input, Track track, int size) throws IOException {
+    int peekSize = min(size, EAC3_PROBE_BYTES);
+    byte[] header = new byte[peekSize];
+    input.peekFully(header, 0, peekSize);
+    track.eac3Probed = true;
+    Ac3Util.SyncFrameInfo info;
+    try {
+      info = Ac3Util.parseAc3SyncframeInfo(new ParsableBitArray(header));
+    } catch (RuntimeException e) {
+      return;
+    }
+    Format declared = track.format;
+    if (declared != null
+        && info.mimeType != null
+        && MimeTypes.AUDIO_E_AC3_JOC.equals(info.mimeType)
+        && !info.mimeType.equals(declared.sampleMimeType)) {
+      track.format = declared.buildUpon().setSampleMimeType(info.mimeType).build();
+      checkNotNull(track.output).format(track.format);
+    }
   }
 
   /**
@@ -2200,6 +2241,9 @@ public class RaviloMatroskaExtractor implements Extractor {
     // Set when the output is initialized. nalUnitLengthFieldLength is only set for H264/H265.
     public @MonotonicNonNull TrackOutput output;
     public int nalUnitLengthFieldLength;
+    // RAVILO DEB-3162 — the format last given to output, and whether the first E-AC-3 sample has been read.
+    public @Nullable Format format;
+    public boolean eac3Probed;
 
     /** Initializes the track with an output. */
     @RequiresNonNull("codecId")
@@ -2515,6 +2559,7 @@ public class RaviloMatroskaExtractor implements Extractor {
               .build();
 
       this.output = output.track(number, type);
+      this.format = format;
       this.output.format(format);
     }
 
