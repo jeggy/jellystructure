@@ -138,9 +138,11 @@ stall's move to the ladder.
 
 Restores DEB-2205's FR-8 on the roads that skip it.
 
-- Every replacement on any road writes one `stalls_json` entry with cause `recovery`, its duration and the rung it left,
-  and every restream names its reason in the QoE report.
-- `encoder_summary` gains the p95 and maximum segment response time and the number of 503s, as the player sees them.
+- Every replacement on any road writes one `stalls_json` entry with cause `recovery`, its duration and the rung it left.
+  `recovery` is already a cause, so that entry needs no new field. Its reason is a new optional field on the entry, which
+  is additive on the wire.
+- `encoder_summary` gains the p95 and maximum segment response time and the number of 503s, as this server answers them
+  (request to last byte). The player's own view of a slow segment is its `stalls_json` entry above.
 - A reap that spared a stream (FR-1) logs one line, so the next report can be answered from data.
 
 ### FR-9 — The other clients
