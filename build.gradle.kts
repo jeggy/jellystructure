@@ -102,11 +102,12 @@ val advisoryResolutions: List<Pair<String, String>> = listOf(
     "webpack" to "^5.104.1",          // Kotlin pins webpack / webpack-dev-server exactly
     "webpack-dev-server" to "^5.2.6",
     "qs" to "^6.16.0",                // express asks for ~6.15, which this one has to cross
-    "follow-redirects" to "^1.16.1",  // 2026-10-22: GHSA-8r9p-f939-6h3c, GHSA-q3jh-wrc6-jgq8 (1.16.0 via http-proxy)
+    "follow-redirects" to "^1.16.2",  // 2026-10-22: GHSA-8r9p-f939-6h3c, GHSA-q3jh-wrc6-jgq8 (1.16.0 via http-proxy); 2026-10-31: GHSA-mrwp-f3q8-3g9p
     // Major crossings — kept only while the FR-319-4 checks pass (FR-319-3).
     "serialize-javascript" to "^7.1.3", // 2026-10-25: GHSA-m5mm-p8h7-m29v
     "diff" to "^8.0.3",
     "uuid" to "^11.1.1",
+    "**/mocha/glob" to "^14.0.2",       // 2026-10-31: GHSA-3g3m-2fjr-6pw4; mocha's copy only, karma, karma-webpack and rimraf need glob 7
 )
 
 if (!desktopOnly) {
