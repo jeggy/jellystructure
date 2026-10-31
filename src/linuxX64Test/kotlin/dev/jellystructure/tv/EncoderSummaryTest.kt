@@ -72,4 +72,16 @@ class EncoderSummaryTest {
         val line = a.logLine("abc", "playback stopped")
         assertTrue("segments=100" in line && "longest-wait=800ms" in line && "waits>1s=0" in line && "paused=true" in line, line)
     }
+
+    @Test
+    fun `held_by is written into the summary and survives the round trip and a merge`() {
+        val a = EncoderStats(listOf("2160p@20000k", "480p@1500k"), "stall_cap").summary()
+        assertEquals("stall_cap", a.heldBy)
+        assertEquals("stall_cap", EncoderSummary.fromJson(a.toJson())!!.heldBy)
+        assertTrue("\"held_by\":\"stall_cap\"" in a.toJson())
+        assertEquals("stall_cap,trimmed_ladder", (a + EncoderStats(listOf("480p@1500k"), "trimmed_ladder,stall_cap").summary()).heldBy)
+        assertNull(EncoderStats(emptyList()).summary().heldBy)
+        // A summary an older build filed has no field: it reads as nothing held it.
+        assertNull(EncoderSummary.fromJson("{\"segments\":3}")!!.heldBy)
+    }
 }

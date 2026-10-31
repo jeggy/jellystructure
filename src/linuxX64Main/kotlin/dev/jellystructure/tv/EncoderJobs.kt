@@ -155,7 +155,7 @@ class EncoderJobs(
         for (attempt in 1..2) {
             val job = mutex.withLock {
                 val s = streams.getOrPut(streamId) {
-                    Stream(null, EncoderStats(plan.rungs.map { "${it.height}p@${it.videoBps / 1000}k" }), started = restart != null, restart = restart)
+                    Stream(null, EncoderStats(plan.rungs.map { "${it.height}p@${it.videoBps / 1000}k" }, plan.heldBy), started = restart != null, restart = restart)
                 }
                 stats = s.stats
                 // Already made by a job of this stream (the current one or a retired one): served without an encode.

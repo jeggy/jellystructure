@@ -85,7 +85,7 @@ private data class OverviewDevice(
     @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
     @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
     // 309 (FR-309-11) — what this device has shown it can take (bits/s of stream; null = nothing yet) and its
-    // last counting stall within 24 h (the variant it stalled on, and when, epoch seconds).
+    // last counting stall within 1 h (DEB-3104) (the variant it stalled on, and when, epoch seconds).
     @SerialName("stream_holds_bps") val streamHoldsBps: Long? = null,
     @SerialName("stream_stalled_bps") val streamStalledBps: Long? = null,
     @SerialName("stream_stalled_at") val streamStalledAt: Long? = null,

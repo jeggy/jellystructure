@@ -18,10 +18,10 @@ class WebLadderCapTest {
         assertNull(c.evaluate(emptyList(), 0, 40_000, oursEncoder = true))
     }
 
-    @Test fun `a climb is one level — and waits for the buffer`() {
+    @Test fun `a climb waits for the buffer — one level on Jellyfin's ladder, straight to the top on ours`() {
         val c = WebLadderCap()
         assertEquals(WebLadderCap.Decision(1, false), c.evaluate(levels, 1, 5_000, oursEncoder = true))    // holds the rung playing
-        assertEquals(WebLadderCap.Decision(2, false), c.evaluate(levels, 1, 10_000, oursEncoder = true))   // one up on our encoder
+        assertEquals(WebLadderCap.Decision(3, false), c.evaluate(levels, 1, 10_000, oursEncoder = true))   // straight to the best on our encoder (DEB-3104, FR-7)
         assertEquals(WebLadderCap.Decision(1, false), c.evaluate(levels, 1, 29_000, oursEncoder = false))  // Jellyfin's jobs want 30 s
         assertEquals(WebLadderCap.Decision(2, false), c.evaluate(levels, 1, 30_000, oursEncoder = false))
         assertEquals(WebLadderCap.Decision(3, false), c.evaluate(levels, 3, 60_000, oursEncoder = false))   // the top
@@ -46,7 +46,7 @@ class WebLadderCapTest {
     @Test fun `levels of equal bandwidth map to the highest index`() {
         val c = WebLadderCap()
         val d = c.evaluate(listOf(2_400_000L, 6_000_000L, 6_000_000L, 12_000_000L), 0, 40_000, oursEncoder = true)!!
-        assertEquals(2, d.capLevel)
+        assertEquals(3, d.capLevel)
     }
 
     @Test fun `a seek forgets the last sample — an emptied buffer after it is not a fall`() {

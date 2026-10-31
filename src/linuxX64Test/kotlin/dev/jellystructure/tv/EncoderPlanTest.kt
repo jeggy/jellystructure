@@ -570,4 +570,15 @@ class EncoderPlanTest {
         assertEquals(encoderMaster(now), encoderMaster(back))
         assertContains(encoderCommand(back, 0, "/w/x", "/ff"), " -c:a:0 aac -b:a:0 384000 -ac:a:0 6")
     }
+
+    @Test fun `a play below its top rung says why`() {
+        // Starts on the top with nothing trimmed: nothing holds it.
+        assertNull(heldByReasons(4, 4, 0, 0, adaptive = true, noRecord = false, stallCapped = false))
+        assertEquals("stall_cap", heldByReasons(4, 4, 2, 2, adaptive = true, noRecord = false, stallCapped = true))
+        assertEquals("no_record", heldByReasons(4, 4, 2, 2, adaptive = true, noRecord = true, stallCapped = false))
+        assertEquals("cannot_climb", heldByReasons(4, 1, 0, 0, adaptive = false, noRecord = false, stallCapped = false))
+        assertEquals("stall_cap,trimmed_ladder", heldByReasons(4, 2, 3, 0, adaptive = true, noRecord = false, stallCapped = true))
+        // A cap on a start that is already the top rung holds nothing.
+        assertNull(heldByReasons(4, 4, 0, 0, adaptive = true, noRecord = false, stallCapped = true))
+    }
 }

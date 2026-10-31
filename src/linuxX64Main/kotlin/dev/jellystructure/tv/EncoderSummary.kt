@@ -30,13 +30,15 @@ data class EncoderSummary(
     @SerialName("responses_503") val responses503: Int = 0,
     /** The rungs it ran, e.g. `2160p@20000k`. */
     val rungs: List<String> = emptyList(),
+    /** DEB-3104 (FR-7) — why the play started below its top rung or could not climb to it (`stall_cap`, `no_record`, `cannot_climb`, `trimmed_ladder`, comma-separated); null = nothing held it. */
+    @SerialName("held_by") val heldBy: String? = null,
     /** The job was SIGSTOPped at least once (40 s ahead of the player, FR-313-1). */
     val paused: Boolean = false,
 ) {
     /** The activity-ring line. */
     fun logLine(streamId: String, why: String): String =
         "encoder $streamId: summary ($why) segments=$segments speed=${fmt(speedMin)}/${fmt(speedMedian)}x min/median " +
-            "longest-wait=${longestWaitMs}ms waits>1s=$waitsOver1s response-p95=${segmentP95Ms ?: "-"}ms max=${segmentMaxMs ?: "-"}ms 503s=$responses503 input=${fmt(inputMBps)}MB/s rungs=${rungs.joinToString("/")} paused=$paused (DEB-2205 FR-8)"
+            "longest-wait=${longestWaitMs}ms waits>1s=$waitsOver1s response-p95=${segmentP95Ms ?: "-"}ms max=${segmentMaxMs ?: "-"}ms 503s=$responses503 input=${fmt(inputMBps)}MB/s rungs=${rungs.joinToString("/")} held_by=${heldBy ?: "-"} paused=$paused (DEB-2205 FR-8)"
 
     fun toJson(): String = JSON.encodeToString(serializer(), this)
 
@@ -54,6 +56,7 @@ data class EncoderSummary(
             responses503 = responses503 + o.responses503,
             inputMBps = bigger.inputMBps ?: (if (bigger === this) o.inputMBps else inputMBps),
             rungs = (rungs + o.rungs).distinct(),
+            heldBy = listOfNotNull(heldBy, o.heldBy).flatMap { it.split(',') }.distinct().joinToString(",").ifEmpty { null },
             paused = paused || o.paused,
         )
     }
@@ -70,7 +73,7 @@ data class EncoderSummary(
  * The counters [EncoderSummary] is made from, filled while a stream's jobs run. Not thread-safe by itself: [EncoderJobs]
  * touches it under its own lock or from the one coroutine that reads a job's progress, and reads it once, at the stop.
  */
-internal class EncoderStats(private val rungs: List<String>) {
+internal class EncoderStats(private val rungs: List<String>, private val heldBy: String? = null) {
     private val speeds = ArrayList<Double>()
     private var longestWaitMs = 0L
     private var slowWaits = 0
@@ -126,6 +129,7 @@ internal class EncoderStats(private val rungs: List<String>) {
         responses503 = responses503,
         inputMBps = if (inputMs > 0) inputBytes.toDouble() / inputMs * 1000.0 / 1_000_000.0 else null,
         rungs = rungs,
+        heldBy = heldBy,
         paused = everPaused,
     )
 

@@ -59,7 +59,7 @@ class StreamRecordTest {
         assertEquals(53_000_000, cleared.provenBps)
     }
 
-    @Test fun `a counting stall lowers the record for 24 h and restarts the hold`() {
+    @Test fun `a counting stall lowers the record for 1 h and restarts the hold`() {
         val rec = StreamRecord(provenBps = 20_000_000, provenAt = 900)
         val hold = HoldState(24_000_000, 500, 0)
         val (after, h) = foldRecord(rec, hold, RecordSample(24_000_000, listOf(stall(60_000, 3_000, 24_000_000)), true), now = 1_000)
@@ -68,7 +68,7 @@ class StreamRecordTest {
         assertEquals(1, h!!.stallsSeen)
         assertEquals(1_000, h.sinceSec)
         assertEquals(19_200_000, canTake(after, 1_000))            // min(proven 20, stalled 24 × 0.8)
-        assertEquals(20_000_000, canTake(after, 1_000 + STALL_HOLD_SEC + 1))   // the stall is forgotten after 24 h
+        assertEquals(20_000_000, canTake(after, 1_000 + STALL_HOLD_SEC + 1))   // the stall is forgotten after 1 h
         // The same stall posted again is not new.
         val (again, _) = foldRecord(after, h, RecordSample(24_000_000, listOf(stall(60_000, 3_000, 24_000_000)), true), now = 1_050)
         assertEquals(after, again)
@@ -181,5 +181,49 @@ class EmbeddedSubtitleOrderTest {
         assertEquals(1, embeddedSubtitleOrder(streams, 4))
         assertNull(embeddedSubtitleOrder(streams, 3))   // a sidecar is not in the file
         assertNull(embeddedSubtitleOrder(streams, 9))
+    }
+
+    // ── DEB-3104 (FR-7) — the best picture the path can carry, soon ──
+
+    @Test fun `a stall holds a device for 1 h and not a second longer`() {
+        val rec = StreamRecord(provenBps = 40_000_000, provenAt = 900, stalledBps = 30_000_000, stalledAt = 1_000)
+        assertEquals(24_000_000, canTake(rec, 1_000 + 3_600))        // 30 × 0.8 under the proof
+        assertEquals(40_000_000, canTake(rec, 1_000 + 3_601))        // gone
+        assertEquals(3_600L, STALL_HOLD_SEC)
+    }
+
+    @Test fun `a measurement newer than the stall lifts the cap to what its 0_7 allows`() {
+        val rec = StreamRecord(provenBps = 12_000_000, provenAt = 100, measuredBps = 173_000_000, measuredAt = 2_000, stalledBps = 30_000_000, stalledAt = 1_000)
+        // measured 173 × 0.7 = 121.1 Mb/s, newer than the stall: the cap (24) is lifted to it, bounded by the base (the same 121.1).
+        assertEquals(121_100_000, canTake(rec, 2_100))
+        assertEquals(false, heldByStallCap(rec, 2_100))
+        // A measurement older than the stall changes nothing: the cap holds under what that measurement allowed.
+        val older = rec.copy(measuredAt = 900)
+        assertEquals(24_000_000, canTake(older, 1_100))
+        assertTrue(heldByStallCap(older, 1_100))
+        // A newer measurement that does not clear the cap leaves the cap where it is.
+        val low = rec.copy(measuredBps = 20_000_000)
+        assertEquals(24_000_000, canTake(low.copy(provenBps = 40_000_000), 2_100))
+        // The play's own QoE measurement counts the same way (a newer one lifts the cap).
+        assertEquals(70_000_000, canTake(StreamRecord(provenBps = 12_000_000, provenAt = 100, stalledBps = 30_000_000, stalledAt = 1_000), 2_100, 100_000_000, 2_000))
+    }
+
+    @Test fun `a stall right after the server restarted a stream or answered 503 writes nothing`() {
+        val hold = HoldState(24_000_000, 500, 0)
+        val sample = { fault: Long? -> RecordSample(24_000_000, listOf(QoeStall(60_000, 60_000, 0, 3_000, "mid", variantBps = 24_000_000)), true, fault) }
+        val (caused, h) = foldRecord(StreamRecord(), hold, sample(950), now = 1_000)
+        assertNull(caused.stalledBps); assertNull(caused.stalledAt)
+        assertEquals(1, h!!.stallsSeen)   // the hold still restarts: nothing proves a stream across it
+        assertEquals(24_000_000, foldRecord(StreamRecord(), hold, sample(null), now = 1_000).first.stalledBps)
+        // A fault long before the stall is not its cause.
+        assertEquals(24_000_000, foldRecord(StreamRecord(), hold, sample(1_000 - SERVER_FAULT_WINDOW_SEC - 1), now = 1_000).first.stalledBps)
+    }
+
+    @Test fun `server faults are kept per device and a start counts for all`() {
+        val faults = ServerFaults(bootSec = 500)
+        assertEquals(500, faults.lastFor("tv"))
+        faults.note("tv", 900)
+        assertEquals(900, faults.lastFor("tv"))
+        assertEquals(500, faults.lastFor("phone"))
     }
 }

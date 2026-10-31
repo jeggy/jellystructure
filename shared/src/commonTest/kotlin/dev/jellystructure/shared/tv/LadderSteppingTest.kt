@@ -42,10 +42,24 @@ class LadderSteppingTest {
         assertEquals(6_256_000L, nextPeakBps(rungs, 6_256_000L, 15_000, 14_000, oursEncoder = false))
         // 30 s buffered: one rung up, never two.
         assertEquals(12_256_000L, nextPeakBps(rungs, 6_256_000L, 31_000, 30_000, oursEncoder = false))
-        // On our own encoder the stock 10 s is enough.
-        assertEquals(12_256_000L, nextPeakBps(rungs, 6_256_000L, 11_000, 10_000, oursEncoder = true))
+        // On our own encoder the stock 10 s is enough, and the climb goes straight to the best rung (DEB-3104, FR-7).
+        assertEquals(18_256_000L, nextPeakBps(rungs, 6_256_000L, 11_000, 10_000, oursEncoder = true))
+        assertEquals(6_256_000L, nextPeakBps(rungs, 6_256_000L, 9_000, 8_000, oursEncoder = true))
         // Under 20 s and falling: below the playing rung.
         assertEquals(6_256_000L, nextPeakBps(rungs, 12_256_000L, 12_000, 18_000, oursEncoder = true))
+    }
+
+    @Test fun `on our encoder the climb is direct and on Jellyfins ladder one rung at a time`() {
+        val rungs = listOf(2_506_000L, 6_256_000L, 12_256_000L, 18_256_000L)
+        // 10 s buffered on the lowest rung: ours goes to the top, Jellyfin's holds (it wants 30 s) and then takes one.
+        assertEquals(18_256_000L, LadderRules.allowedMaxBps(rungs, 2_506_000L, 10_000, 9_800, oursEncoder = true))
+        assertEquals(2_506_000L, LadderRules.allowedMaxBps(rungs, 2_506_000L, 10_000, 9_800, oursEncoder = false))
+        assertEquals(6_256_000L, LadderRules.allowedMaxBps(rungs, 2_506_000L, 30_000, 29_800, oursEncoder = false))
+        // Under 10 s ours holds the rung it is on; a blocked climb (a freeze recovery, an abandon) holds on both.
+        assertEquals(2_506_000L, LadderRules.allowedMaxBps(rungs, 2_506_000L, 9_000, 8_800, oursEncoder = true))
+        assertEquals(2_506_000L, LadderRules.allowedMaxBps(rungs, 2_506_000L, 40_000, 39_800, oursEncoder = true, climbBlocked = true))
+        // A buffer falling under 20 s still steps down from the top of a direct climb.
+        assertEquals(12_256_000L, LadderRules.allowedMaxBps(rungs, 18_256_000L, 15_000, 18_000, oursEncoder = true))
     }
 
     @Test fun `mpv steps down once the buffer falls under 20 s not again within 30 s`() {

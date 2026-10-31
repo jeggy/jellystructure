@@ -5,8 +5,9 @@ package dev.jellystructure.shared.tv
  * track selection and the Cast receiver's Shaka restriction cannot disagree.
  *
  * - **Climb one rung at a time** (FR-309-4): never past the next rung up, and only with enough buffered — 30 s on
- *   Jellyfin's per-rung jobs (a new rung is a cold encode), the players' stock 10 s on our own encoder (every rung is
- *   already running in the one process; owner, 2026-10-08).
+ *   Jellyfin's per-rung jobs (a new rung is a cold encode). On our own encoder (every rung is already running in the one
+ *   process; owner, 2026-10-08) the climb needs the players' stock 10 s and goes straight to the best rung the estimate
+ *   clears (DEB-3104, FR-7).
  * - **Step down before the buffer runs dry** (FR-309-5): as soon as the buffer ahead is under 20 s and falling, below
  *   the rung playing now (again at every evaluation while it keeps falling: as many rungs as needed).
  *
@@ -80,6 +81,9 @@ object LadderRules {
         // DEB-2205 (FR-5.3) — for 2 minutes after a freeze recovery nothing climbs, whatever is buffered.
         if (climbBlocked) return maxOf(currentBps, sorted.first())
         if (bufferedMs < climbBufferMs(oursEncoder)) return maxOf(currentBps, sorted.first())
+        // DEB-3104 (FR-7) — on our encoder every rung already exists and a step down is instant, so the climb goes straight to the best
+        // rung the player's own estimate clears: the bound is the top. Jellyfin's ladder keeps FR-309-4, where a rung is a cold start.
+        if (oursEncoder) return maxOf(currentBps, sorted.last())
         return sorted.firstOrNull { it > currentBps } ?: maxOf(currentBps, sorted.last())
     }
 }

@@ -134,6 +134,8 @@ class Encoder(
         belowBandwidthBps: Long? = null,
         /** DEB-3101 (FR-313-5c) — Jellyfin's `BitRate` of each audio stream, by its stream index (a [AudioTrack.index]). */
         audioBps: Map<Int, Long> = emptyMap(),
+        /** DEB-3104 (FR-7) — the stall's cap is what holds this device's start under what its measurements allow. */
+        stallCapped: Boolean = false,
     ): Pair<EncoderPlan?, String> {
         val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
         val range = sourceVideoRange.orEmpty()
@@ -175,6 +177,8 @@ class Encoder(
         // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that
         // climbs) the 720p 4 Mbps rung, else (a player that can't climb) the top.
         var start = startRungFor(rungs, audioPeak, takeBps, noRecord && caps.hlsAdaptive)
+        val plannedRungs = rungs.size
+        val plannedStart = start
         // Dev review item 8 / owner Q1 — a player that does not adapt (Ravilo 1.50) gets one quality: the start rung.
         if (!caps.hlsAdaptive) { rungs = listOf(rungs[start]); start = 0 }
         var placement = place(cards, codec, rungs)
@@ -185,10 +189,15 @@ class Encoder(
             start = kept.indexOf(rungs[start]).coerceAtLeast(0)
             rungs = kept
         }
+        val heldBy = heldByReasons(
+            plannedRungs = plannedRungs, keptRungs = rungs.size, plannedStart = plannedStart, keptStart = start, adaptive = caps.hlsAdaptive,
+            noRecord = noRecord, stallCapped = stallCapped,
+        )
         val plan = EncoderPlan(
             source = source, codec = codec, mux = encoderMuxFor(deviceKind, platform),
             rungs = rungs, startRung = start, audio = encAudio, cudaDevice = placement.card,
             burnSubtitleOrder = burnSubtitleOrder, subtitles = if (caps.hlsSubtitles) subtitles else emptyList(),
+            heldBy = heldBy,
         )
         return plan to "ours"
     }
@@ -345,6 +354,8 @@ class Encoder(
     private suspend fun restartFor(id: String, e: Entry): EncoderJobs.Restart? {
         val was = mutex.withLock { e.started.also { e.started = true } }
         if (!was || jobs.hasStream(id)) return null
+        // DEB-3104 (FR-7) — the stream is asked for again after a restart or after its jobs went: a stall around it is this server's.
+        if (e.deviceId.isNotEmpty()) onServerFault?.invoke(e.deviceId)
         if (!cfg.enabled) return null
         val cards = cards()
         if (cards.isEmpty()) return null
@@ -426,7 +437,15 @@ class Encoder(
     }
 
     /** DEB-3100 (FR-8) — a segment request was answered: how long it took and whether it was a 503 (the encoder summary's figures). */
-    suspend fun recordResponse(id: String, ms: Long, was503: Boolean) = jobs.recordResponse(id, ms, was503)
+    suspend fun recordResponse(id: String, ms: Long, was503: Boolean) {
+        jobs.recordResponse(id, ms, was503)
+        // DEB-3104 (FR-7) — a segment this server did not have ready after its wait: the viewer's stall that follows is not the path's fault.
+        if (was503) mutex.withLock { entries[id]?.deviceId }?.takeIf { it.isNotEmpty() }?.let { onServerFault?.invoke(it) }
+    }
+
+    /** DEB-3104 (FR-7) — told with the device id each time this server restarted a stream or answered a segment with 503 (see [ServerFaults]). */
+    @kotlin.concurrent.Volatile
+    var onServerFault: ((String) -> Unit)? = null
 
     /** DEB-3036 (trouble-never-reaches-the-viewer FR-1) — told with the play-session id each time a segment of its stream is
      *  read; a replacement uses the first one to release the stream it replaced. Cheap when nothing waits. */

@@ -558,6 +558,7 @@ class PlaybackService(
     val encoder = Encoder({ configStore.current.encoder }, fetchText = ::fetchSubtitleSource, plans = streamPlans).also { enc ->
         // DEB-3036 (FR-1) — the first segment a new stream answers releases the stream it replaced.
         // Off the segment's own response: the release talks to Jellyfin.
+        enc.onServerFault = { deviceId -> serverFaults.note(deviceId, nowMs() / 1000) }
         enc.onSegmentServed = { playSessionId -> if (pendingAny) { val scope = backgroundScope; if (scope != null) scope.launch { releasePending(playSessionId) } else releasePending(playSessionId) } }
         // DEB-2205 (FR-8) — when a play's job stops, its summary goes to the play's QoE row (or waits for the row).
         enc.onSummary = { deviceId, itemId, qoeKey, summary ->
@@ -677,13 +678,23 @@ class PlaybackService(
         return videoFamilyOf(video.codec) to video.videoBitrate?.toLong()?.takeIf { it > 0 }
     }
 
+    /** DEB-3104 (FR-7) — the stalls this server itself caused (see [ServerFaults]); a backend start counts for every device. */
+    private val serverFaults = ServerFaults(nowMs() / 1000)
+
+    /** DEB-3104 (FR-7) — the stall's cap is what holds [device]'s start under what its measurements allow (an encoder summary's `held_by`). */
+    private fun stallCappedOf(device: DeviceData?): Boolean {
+        device ?: return false
+        val q = qoeMeasurementOf(device.deviceId)
+        return heldByStallCap(recordOf(device), nowMs() / 1000, q?.first, q?.second)
+    }
+
     /** DEB-2205 — the record is read, changed and written whole: one writer at a time, or a hand-over's facts could be overwritten by a fold that read the row first. */
     private val recordMutex = Mutex()
 
     /**
      * DEB-2205 (FR-3, FR-4) — the writes a hand-over's restream depends on, made **before** the route answers the QoE post (the client
      * waits for that answer, then restreams, and the restream's negotiation must see them):
-     *  - `stalled_bps` — a direct play left because its path could not carry it: the file's stream bitrate is the stalled one (24 h
+     *  - `stalled_bps` — a direct play left because its path could not carry it: the file's stream bitrate is the stalled one (1 h
      *    hold, FR-309-1), written beside the stall that would otherwise have said so. Idempotent: a repeat never restarts the hold.
      *  - `decode_failed_*` — a direct play whose picture dropped frames or froze with buffer in hand: this codec family does not decode
      *    this bitrate. The family is the client's (else the file's own), the bitrate the client's when it knows it (else the file's video bitrate).
@@ -713,7 +724,7 @@ class PlaybackService(
 
     private suspend fun logRecordChange(device: DeviceData, before: StreamRecord, after: StreamRecord) {
         if (after.stalledAt != before.stalledAt && after.stalledBps != null)
-            Logger.info("record: device=${device.deviceId} stalled on ${after.stalledBps / 1000}k — holds ×0.8 for 24 h (309)", "tv")
+            Logger.info("record: device=${device.deviceId} stalled on ${after.stalledBps / 1000}k — holds ×0.8 for 1 h (309, DEB-3104)", "tv")
         if (after.provenBps != before.provenBps && after.provenBps != null)
             Logger.info("record: device=${device.deviceId} proved ${after.provenBps / 1000}k (309)", "tv")
         for ((family, f) in after.decodeFailed)
@@ -735,7 +746,7 @@ class PlaybackService(
         val now = nowMs() / 1000
         recordMutex.withLock {
             val before = store.get(device.deviceId) ?: StreamRecord()
-            val (folded, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true), now)
+            val (folded, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true, serverFaults.lastFor(device.deviceId)), now)
             var after = folded
             // A clean direct play of a family at a bitrate above the one its decode failed at lifts that ceiling.
             if (lifting && hold != null && after.decodeFailed.isNotEmpty() &&
@@ -815,7 +826,7 @@ class PlaybackService(
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
-                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps)
+                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device))
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -1468,7 +1479,7 @@ class PlaybackService(
         val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, wantedAudioIndex),
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
-            audioBps = audioBitratesOf(itemDetail, null))
+            audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target))
         plan ?: return none(why)
         encoder.prewarm(plan, target.deviceId, jellyfinId, (startPositionMs / ENCODER_SEGMENT_MS).toInt(), nowMs() + PREWARM_TTL_MS)
         return dev.jellystructure.shared.tv.PrewarmResult("warm")

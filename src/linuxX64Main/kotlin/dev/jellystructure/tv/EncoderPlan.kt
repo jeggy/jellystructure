@@ -111,6 +111,25 @@ internal fun trimRungs(rungs: List<EncoderRung>, start: Int, keep: Int): List<En
     return order.take(keep.coerceAtLeast(1)).sorted().map { rungs[it] }
 }
 
+/**
+ * DEB-3104 (FR-7) — what keeps a play below the source's rung, for the encoder summary's `held_by`:
+ * `stall_cap` (a recent stall's cap holds the start under what the device has measured), `no_record` (a device with no record starts
+ * on 720p), `cannot_climb` (a player that does not adapt gets one rung), `trimmed_ladder` (no free slot: fewer rungs than planned, so
+ * the top rung or the one above the start is not there to climb to). Null when none applies.
+ */
+internal fun heldByReasons(
+    plannedRungs: Int, keptRungs: Int, plannedStart: Int, keptStart: Int, adaptive: Boolean, noRecord: Boolean, stallCapped: Boolean,
+): String? {
+    val why = buildList {
+        if (!adaptive && plannedRungs > 1) add("cannot_climb")
+        if (adaptive && stallCapped && plannedStart > 0) add("stall_cap")
+        if (adaptive && noRecord && plannedStart > 0) add("no_record")
+        // Trimmed: fewer rungs than planned. Harmless only when the top rung survived and the start rung is the top.
+        if (adaptive && keptRungs < plannedRungs && (plannedStart > 0 || keptStart > 0)) add("trimmed_ladder")
+    }
+    return why.takeIf { it.isNotEmpty() }?.joinToString(",")
+}
+
 /** The rung a play starts on: the best one inside the bitrate budget (308/309's measured × 0.7), else the top. */
 internal fun startRung(rungs: List<EncoderRung>, budgetBps: Long?): Int {
     if (budgetBps == null || budgetBps <= 0) return 0
@@ -184,6 +203,11 @@ data class EncoderPlan(
     val cudaDevice: Int? = 0,
     /** 313d (FR-313-6) — text subtitles as WebVTT renditions (not part of the job: served from Jellyfin's VTT). */
     val subtitles: List<EncoderSubtitle> = emptyList(),
+    /**
+     * DEB-3104 (FR-7) — why this play starts below its top rung or cannot climb to it ([heldByReasons]), comma-separated; null = nothing
+     * holds it. A plan is stored across deploys (DEB-3100), so the default is what an older plan meant: no reason recorded.
+     */
+    val heldBy: String? = null,
 ) {
     /** HDR kept (HEVC rungs from an HDR source) vs tone-mapped once to SDR. */
     val keepsHdr: Boolean get() = codec == EncoderCodec.HEVC && source.hdr

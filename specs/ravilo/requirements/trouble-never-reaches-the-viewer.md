@@ -144,6 +144,19 @@ stall's move to the ladder.
 - **A play that sits below the source on a fast link says why.** The 8 plays above are found out while building this: a
   trimmed ladder, a player that cannot climb or a cap each write a `held_by` reason into the encoder summary, and any that
   is a bug is fixed in this FR.
+- *2026-10-31, DEB-3104 — what was built and what the 8 plays showed.* The hold is `STALL_HOLD_SEC` = 1 h. A measurement (the probe's or
+  the QoE rows') newer than the stall lifts the cap to what its own × 0.7 allows, so the start rung is the best one that clears.
+  A stall that follows within 120 s of this server's start, of a restarted stream of that device, or of a 503 it answered writes
+  no `stalled_bps` (the hold still restarts). On the client, `LadderRules.allowedMaxBps` on our encoder bounds the climb at the top
+  rung once 10 s are buffered, and Media3's (hls.js's, AVPlayer's) own × 0.7 rule chooses within it; Jellyfin's ladder keeps one rung
+  and 30 s. `held_by` is a comma-separated string on the encoder summary: `stall_cap` (the cap holds the
+  start under what the device has measured), `no_record` (720p start), `cannot_climb` (a player that does not adapt gets one rung),
+  `trimmed_ladder` (no free slot, fewer rungs than planned). Read from prod's last 7 days (114 plays on our encoder): the plays that
+  ended on 480p or 720p with an estimate over 100 Mb/s started on the 480p rung (`start_variant_bps` 2.4 Mb/s) and climbed one rung per
+  10 s of buffer or not at all — the cap and the one-rung climb, both removed here. `trimRungs` was not found to be the cause of
+  one; its order (the start, the rung below, the one above) is kept so a trimmed ladder can still step down, and a trimmed play is
+  named by `trimmed_ladder`. Whether a fast link reaches the source's rung in the first 20 s is read from the `held_by` and
+  `start_variant_bps` of plays after the release, not from this commit.
 
 ### FR-8 — Every stop and replacement leaves evidence
 

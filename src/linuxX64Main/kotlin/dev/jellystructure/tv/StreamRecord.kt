@@ -50,8 +50,10 @@ internal const val DECODE_LIFT_MAX_DROPPED = 0.001
 internal const val PROOF_HOLD_SEC = 120L
 /** A proof or a measurement older than this is forgotten (FR-309-1/-2: "a record older than 30 days" is none). */
 internal const val RECORD_MAX_AGE_SEC = 30L * 86_400L
-/** A stall lowers what the device can take for this long (FR-309-1). */
-internal const val STALL_HOLD_SEC = 24L * 3_600L
+/** A stall lowers what the device can take for this long (FR-309-1 said 24 h; DEB-3104, FR-7: 1 h — a hold does not outlast the evidence). */
+internal const val STALL_HOLD_SEC = 3_600L
+/** DEB-3104 (FR-7) — a stall inside this long after a server-caused fault (a restart, a restarted stream, a 503) is not the path's fault. */
+internal const val SERVER_FAULT_WINDOW_SEC = 120L
 /** FR-309-1 — after a stall, at most this share of the stream it stalled on. */
 internal const val STALL_HEADROOM = 0.8
 /** Owner (Q8, 2026-10-08): a stall counts when it lasts at least this long… (the shared [dev.jellystructure.shared.tv.StallRule]) */
@@ -72,7 +74,7 @@ internal fun fresh(at: Long?, now: Long, maxAge: Long): Boolean = at != null && 
 
 /**
  * FR-309-1 — what the device can take now: its proof or its measurement × 0.7, whichever is higher, under a recent
- * stall's cap (× 0.8 for 24 h). Null when the device has neither proved nor measured anything and has not stalled.
+ * stall's cap (× 0.8 for 1 h, DEB-3104; a measurement newer than the stall lifts it, see [stallCapOf]). Null when the device has neither proved nor measured anything and has not stalled.
  *
  * Deviation, recorded in the spec: the spec says "proven_bps **or** measured × 0.7"; taking the higher of the two keeps
  * a device that proved only its 720p start (its first plays climb from there) from being held at 720p forever once it
@@ -83,13 +85,36 @@ internal fun fresh(at: Long?, now: Long, maxAge: Long): Boolean = at != null && 
 internal fun canTake(record: StreamRecord?, now: Long, qoeMeasuredBps: Long? = null, qoeMeasuredAt: Long? = null): Long? {
     val proven = record?.provenBps?.takeIf { it > 0 && fresh(record.provenAt, now, RECORD_MAX_AGE_SEC) }
     val measured = newestMeasurement(record, now, qoeMeasuredBps, qoeMeasuredAt)?.first
-    val stallCap = record?.stalledBps?.takeIf { it > 0 && fresh(record.stalledAt, now, STALL_HOLD_SEC) }
-        ?.let { (it * STALL_HEADROOM).roundToLong() }
+    val stallCap = stallCapOf(record, now, qoeMeasuredBps, qoeMeasuredAt)
     val base = listOfNotNull(proven, measured?.let { (it * THROUGHPUT_HEADROOM).roundToLong() }).maxOrNull()
     return when {
         base != null && stallCap != null -> minOf(base, stallCap)
         else -> base ?: stallCap
     }
+}
+
+/**
+ * DEB-3104 (FR-7) — the cap a recent stall puts on the device: its stalled stream × 0.8 for [STALL_HOLD_SEC] (1 h), and none once a
+ * measurement newer than the stall says more. A newer measurement lifts the cap to what its own × 0.7 allows (the best rung that
+ * clears is then the start's choice), so a stall never holds a device below what it has measured since. Null: no cap.
+ */
+internal fun stallCapOf(record: StreamRecord?, now: Long, qoeMeasuredBps: Long? = null, qoeMeasuredAt: Long? = null): Long? {
+    val stalledAt = record?.stalledAt ?: return null
+    val cap = record.stalledBps?.takeIf { it > 0 && fresh(stalledAt, now, STALL_HOLD_SEC) }?.let { (it * STALL_HEADROOM).roundToLong() } ?: return null
+    val newer = newestMeasurement(record, now, qoeMeasuredBps, qoeMeasuredAt)?.takeIf { it.second > stalledAt }?.let { (it.first * THROUGHPUT_HEADROOM).roundToLong() }
+    return if (newer != null) maxOf(cap, newer) else cap
+}
+
+/**
+ * DEB-3104 (FR-7) — true when the stall's cap is what holds [canTake] under what the device's proof and measurements would allow
+ * (the `stall_cap` of an encoder summary's `held_by`).
+ */
+internal fun heldByStallCap(record: StreamRecord?, now: Long, qoeMeasuredBps: Long? = null, qoeMeasuredAt: Long? = null): Boolean {
+    val cap = stallCapOf(record, now, qoeMeasuredBps, qoeMeasuredAt) ?: return false
+    val proven = record?.provenBps?.takeIf { it > 0 && fresh(record.provenAt, now, RECORD_MAX_AGE_SEC) }
+    val measured = newestMeasurement(record, now, qoeMeasuredBps, qoeMeasuredAt)?.first?.let { (it * THROUGHPUT_HEADROOM).roundToLong() }
+    val base = listOfNotNull(proven, measured).maxOrNull() ?: return false
+    return cap < base
 }
 
 /** FR-309-13 — the newer of the probe's measurement and the QoE rows' (each ≤ 30 days): value and when. */
@@ -224,7 +249,11 @@ internal fun parseDecodeFailed(bps: String?, codec: String?, at: String?): Map<S
 internal val DeviceData.isTvApp: Boolean get() = platform == "tv" && kind != "cast"
 
 /** One QoE post as the record reads it. [variantBps]: the stream it is on (BANDWIDTH, or a direct play's file bitrate). */
-internal data class RecordSample(val variantBps: Long?, val stalls: List<QoeStall>, val perItem: Boolean)
+internal data class RecordSample(
+    val variantBps: Long?, val stalls: List<QoeStall>, val perItem: Boolean,
+    /** DEB-3104 (FR-7) — when (epoch seconds) this server last restarted, restarted a stream or answered a 503 for this device; null = never. */
+    val serverFaultAt: Long? = null,
+)
 
 /** Per (device, item, play) between two posts: the stream held since when, and the stalls already seen. */
 internal data class HoldState(val variantBps: Long?, val sinceSec: Long, val stallsSeen: Int)
@@ -246,7 +275,9 @@ internal fun foldRecord(record: StreamRecord, hold: HoldState?, sample: RecordSa
     if (newStalls.isNotEmpty()) {
         val counting = countingStalls(sample.stalls)
         val newCounting = counting.filter { it in newStalls }
-        if (newCounting.isNotEmpty()) {
+        // DEB-3104 (FR-7) — a stall during a restart, a stream restart or a server wait is not the path's fault: it writes no `stalled_bps`.
+        val serverCaused = sample.serverFaultAt?.let { now - it in 0..SERVER_FAULT_WINDOW_SEC } ?: false
+        if (newCounting.isNotEmpty() && !serverCaused) {
             val on = newCounting.last().variantBps?.takeIf { it > 0 } ?: sample.variantBps
             if (on != null && on > 0) rec = rec.copy(stalledBps = on, stalledAt = now)
         }
@@ -286,3 +317,21 @@ class StreamRecordStore(private val db: JellystructureDb) {
 
 private fun Device_stream_record.toRecord() = StreamRecord(proven_bps, proven_at, measured_bps, measured_at, stalled_bps, stalled_at,
     parseDecodeFailed(decode_failed_bps, decode_failed_codec, decode_failed_at))
+
+/**
+ * DEB-3104 (FR-7) — when this server last did something a viewer would feel as a stall that is not the path's: it started (every stream
+ * on our encoder restarts), restarted one device's stream, or answered its segment with 503. [lastFor] is the newest of those for a
+ * device; the QoE fold gives a stall that follows within [SERVER_FAULT_WINDOW_SEC] no `stalled_bps`.
+ */
+internal class ServerFaults(private val bootSec: Long) {
+    private val byDevice = kotlin.concurrent.AtomicReference<Map<String, Long>>(emptyMap())
+
+    fun note(deviceId: String, nowSec: Long) {
+        while (true) {
+            val old = byDevice.value
+            if (byDevice.compareAndSet(old, old + (deviceId to nowSec))) return
+        }
+    }
+
+    fun lastFor(deviceId: String): Long = maxOf(bootSec, byDevice.value[deviceId] ?: 0L)
+}

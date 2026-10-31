@@ -21,9 +21,9 @@ class LadderRulesTest {
         assertEquals(24_000_000, LadderRules.allowedMaxBps(rungs, 24_000_000, 60_000, 50_000, oursEncoder = false))   // the top
     }
 
-    @Test fun `on our encoder a climb waits for the stock 10 s`() {
+    @Test fun `on our encoder a climb waits for the stock 10 s and then goes straight to the top`() {
         assertEquals(6_000_000, LadderRules.allowedMaxBps(rungs, 6_000_000, 9_999, 5_000, oursEncoder = true))
-        assertEquals(12_000_000, LadderRules.allowedMaxBps(rungs, 6_000_000, 10_000, 5_000, oursEncoder = true))
+        assertEquals(24_000_000, LadderRules.allowedMaxBps(rungs, 6_000_000, 10_000, 5_000, oursEncoder = true))   // DEB-3104 (FR-7)
     }
 
     @Test fun `under 20 s and falling steps down — again each time it keeps falling`() {
