@@ -497,6 +497,42 @@ closes the class:
 > **Amended again 2026-10-30 (DEB-3093, trouble-never-reaches-the-viewer.md FR-1).** Those 15 s decide only when the place reads as gone. A reap no
 > longer ends the stream, and a device that reported progress in the last 30 s is not reaped on the socket test at all.
 
+> **Amended 2026-10-31 (DEB-3137, measured on DEB-3115).** FR-R372-12's two holds do not stand once a play's own socket
+> has ended abruptly, on any tick. "Goes past" above already says so; the build does not do it. It carries the abrupt end
+> only on the close's own read, and that read is held by any report in the 30 s before it, which a client reporting every
+> 10 s always has. So a tab closed 10 to 90 s into a film loses the override and reads as gone up to about 110 s after the
+> close, where the same tab closed later in the film takes at most 60 s. An entry a report created has the same fault:
+> only its 90 s of silence ends it.
+>
+> - **An abrupt end stays true for as long as the socket stays gone.** The periodic tick and the close's own read both
+>   ask it. A new socket clears it.
+> - **It counts only if the socket ended after the entry began.** The start grace is for a socket that is not up yet, and
+>   a socket that ended before a play started says nothing about that play. A play started on a device whose socket
+>   dropped earlier keeps its 90 s, on the close's own read too. A report that revives a reaped play begins a new entry,
+>   so the old end cannot reap it again, and FR-R372-12's flapping case stands.
+> - **When a place reads as gone:** at the first read with the socket gone 15 s and no report under 30 s old. A play with
+>   no report yet reads as gone on the close's own read, at 15 s. A real client's first report comes 10 s in, so a tab
+>   closed under 10 s into a film is this case. A place that was reporting reads as gone at a periodic tick, 20 to 60 s
+>   after the close. This replaces "at 15 s" above for that place. The close's read is not re-armed: a tab closed
+>   normally has already sent its own stop, and this only moves a row in *Playing now*.
+> - **What it costs:** a play under 90 s old that loses its socket and every report for 30 s reads `offline` sooner than
+>   it did. It keeps its stream (DEB-3093 FR-1), and its next report brings it back online.
+> - Unchanged: the 15 s, the 30 s report hold, the 90 s heartbeat test, a clean `background` close (the grace stands, so a
+>   minimised desktop keeps its film), a `replaced` socket, the `cast` and `screen` kinds, a session reconnecting after a
+>   restart, and a live tune, which has no grace to go past.
+>
+> Proof in `PlaybackWatchdogTest`, with each tick judged the way `stopWatchdogTick` judges it:
+>
+> - The DEB-3115 timeline: start, a report at 1.1 s, an abrupt close at 3 s. Spared at 23 s, reaped at 53 s.
+> - Reports every 10 s, an abrupt close 40 s in: reaped at the first tick 30 s after the last report.
+> - No report, an abrupt close at 2 s: reaped on the close's own read at 15 s, as today.
+> - A clean `background` close at the same moments: not reaped before 90 s.
+> - An abrupt close, then a play started before the socket is back, both inside the 15 s and after them: not reaped on
+>   the socket test inside 90 s of its start, on the close's read or a tick.
+> - A socket back inside the 15 s, then a tick: not reaped.
+> - An entry a report created, then an abrupt close and 30 s of silence: reaped. The same entry when the socket ended
+>   before the report: judged by heartbeat alone.
+
 - **The server:** for a place that holds its events socket for as long as it exists — a browser tab, the Cast
   receiver, the screen app — an **abrupt** socket end with a session still open is read as *the place is gone*: the
   session goes `offline` at once and takes FR-R372-8's 10 min. A **clean** close carrying R293's `background` reason is
@@ -511,6 +547,9 @@ closes the class:
 
 **FR-R372-12 — the watchdog does not force-stop a play that is alive.** Two cases found in the same prod window, both
 of which stop a viewer's film under them:
+
+> **Amended 2026-10-31 (DEB-3137).** The 90 s below is for a socket that is not up yet. A socket that ended abruptly
+> after the play began goes past it, and past the second case's hold, on every tick (FR-R372-11's amendment of this date).
 
 - **A just-started session has no socket grace.** The heartbeat test waits 90 s; the socket test does not, so a play
   started in the second before its socket is up is force-stopped on the next tick — one prod row was reaped **1.2 s**
