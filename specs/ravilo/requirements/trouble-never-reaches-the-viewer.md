@@ -99,6 +99,27 @@ Android, for HLS. A custom `LoadErrorHandlingPolicy` and the existing `ClimbingT
   measured), and never while nothing is buffered (the first picture, a seek, and a stall that FR-5's cap already answers are not
   held to the buffer's budget). Its rate is the load's own bytes over its age, the player's estimate until bytes arrive. After an
   abandon the rung below is the ceiling for 30 s. "Every retry has run" with an empty buffer is the five scheduled retries.
+- *2026-10-31, DEB-3172 — a start does not drop a rung because of how long our own encoder takes.* The note above stays, with two
+  changes.
+  - **The carve-out does not stop at the first segment.** After a start, or a seek that lands outside the buffer, no load is judged
+    until the buffer ahead of the loading segment has once reached the 5 s margin plus that segment's own length: 7 s on our
+    encoder's 2 s segments. Below that a segment made and fetched at real time cannot pass, so the rule would be judging the wait
+    and not the link. With 2 s segments the second and third loads have a budget under zero and the fourth has 1 s, and any of them
+    still loading at 1 s old would be abandoned however fast the link is. A replacement (FR-6) is a start. A stall does not reset
+    this: a thin buffer after that point is what the rule is for, and the trade-off above is to lower the quality before stopping
+    the picture. Only a load with nothing in hand stays unjudged, as the note above says.
+  - **A load's rate is the link's.** It is the load's bytes over the time since its own first byte, and the player's estimate until
+    it has 0.5 s of them. This replaces "the load's own bytes over its age" above. The age still counts toward the projected finish,
+    because the buffer drains during a wait, but the wait is not the link's speed. Measured from the age, a 30.64 Mb/s segment that
+    waited 1.55 s for the encoder and has read its first 188 kB comes out at 1 Mb/s and a finish a minute away, which abandons it
+    even with 40 s in hand.
+  - **What answers a slow link until then:** the start rung, the player's estimate × 0.7 on every new segment, the failed-load rule
+    above and FR-5's cap. A link that collapses in those seconds can cost a wait or a stall where the rule would have stepped down.
+    No released build has the abandon rule at all, so this is no worse than today, and it is the accepted price.
+  - **Why this is not a corner case,** read from prod on 2026-10-31 (the last 7.7 days, 138 plays on our encoder of 10 segments or
+    more): all 34 plays with a 2160p top rung had a segment request wait over 1 s for its file, and 13 of them had two or more, as
+    did 9 of the other 104. ffmpeg's slowest reported speed in a play has a median of about 1.2×, where a 2 s segment takes about
+    1.7 s to exist.
 
 ### FR-5 — A short wait does not look like a problem
 
@@ -210,3 +231,7 @@ Each by a QA seat on a device from the board, after its slice is on prod. Nothin
    before the buffer runs dry): a stall above the lowest rung is followed by a lower rung; stops get shorter and a stalled
    play has no more of them; and few plays sit on the lowest rung, where there is no rung left to cap to. A count going the
    wrong way is a finding against FR-5. The baseline and the method are the document `field-read` on DEB-3093.
+9. On a fast link and a 2160p ladder on our encoder, a cold start and a seek outside the buffer each ask for the top rung and start
+   on it, with no abandon line in the log. A UniFi cap dropped under the playing rung with a buffer in hand still abandons the slow
+   segment for a lower rung, and writes one line per abandon. A cold start with a cap already under the start rung reaches a picture
+   and falls to a rung the cap can carry.
