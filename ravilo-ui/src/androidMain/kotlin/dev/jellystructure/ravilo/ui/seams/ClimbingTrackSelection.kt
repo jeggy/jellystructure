@@ -4,11 +4,13 @@ import androidx.media3.common.Format
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.util.Clock
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.source.chunk.Chunk
 import androidx.media3.exoplayer.source.chunk.MediaChunk
 import androidx.media3.exoplayer.source.chunk.MediaChunkIterator
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
 import androidx.media3.exoplayer.upstream.BandwidthMeter
 import com.google.common.collect.ImmutableList
+import dev.jellystructure.shared.tv.BufferTrend
 import dev.jellystructure.shared.tv.LadderRules
 
 /**
@@ -17,13 +19,20 @@ import dev.jellystructure.shared.tv.LadderRules
  * step down as soon as the buffer is under 20 s and falling, whatever the estimate says. Within the bound, Media3's own
  * rule (its estimate × 0.7) chooses.
  *
+ * DEB-3102 (FR-4): a step-down also fires when the buffer has fallen for 6 s and is under 30 s ([BufferTrend]); a segment
+ * that would land later than the buffer minus 5 s is abandoned ([shouldCancelChunkLoad]) for the rung below, and the climb
+ * then waits 30 s; a rung whose load failed is excluded by [LadderLoadErrorPolicy] and Media3's own exclusion keeps it out.
+ *
  * Built at the stock minimum for a quality increase (10 s) so the bound, not the constructor, sets the 30 s; decreases
  * are allowed while up to 45 s is buffered (308) and everything buffered is kept on a switch up (50 s).
  */
 @UnstableApi
 internal class ClimbingTrackSelection(
-    group: TrackGroup, tracks: IntArray, type: Int, bandwidthMeter: BandwidthMeter,
+    group: TrackGroup, tracks: IntArray, type: Int, private val bandwidthMeter: BandwidthMeter,
     checkpoints: List<AdaptiveTrackSelection.AdaptationCheckpoint>,
+    private val buffer: LadderBuffer,
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val onLadderEvent: (String) -> Unit = {},
 ) : AdaptiveTrackSelection(
     group, tracks, type, bandwidthMeter,
     MIN_INCREASE_MS, MAX_DECREASE_MS, RETAIN_AFTER_DISCARD_MS,
@@ -33,6 +42,14 @@ internal class ClimbingTrackSelection(
 ) {
     @Volatile private var allowedMaxBps: Long? = null
     private var lastBufferedMs: Long? = null
+    private val trend = BufferTrend()
+
+    /** DEB-3102 (FR-4) — after an abandon, nothing above this until [abandonCapUntilMs]. */
+    @Volatile private var abandonCapBps: Long = Long.MAX_VALUE
+    @Volatile private var abandonCapUntilMs: Long = 0L
+    // The load being judged and when it was first seen (the chunk does not say when it began).
+    private var watchedLoadId = -1L
+    private var watchedSinceMs = 0L
 
     override fun updateSelectedTrack(
         playbackPositionUs: Long, bufferedDurationUs: Long, availableDurationUs: Long,
@@ -41,9 +58,11 @@ internal class ClimbingTrackSelection(
         val playing = queue.lastOrNull()?.trackFormat?.bitrate?.takeIf { it > 0 }?.toLong()
         val rungs = (0 until length()).map { getFormat(it).bitrate.toLong() }.filter { it > 0 }
         val bufferedMs = bufferedDurationUs / 1000
+        buffer.note(bufferedMs)
+        val fallen = trend.observe(nowMs(), bufferedMs)
         // DEB-2627 (FR-3) — a live channel adapts over its source's rungs on Media3's own rule: no 309 bound.
         allowedMaxBps = if (PlayerLadderHints.live) null else LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder,
-            climbBlocked = PlayerLadderHints.climbBlocked(System.currentTimeMillis()))
+            climbBlocked = PlayerLadderHints.climbBlocked(nowMs()), fallenForWindow = fallen)
         lastBufferedMs = bufferedMs
         super.updateSelectedTrack(playbackPositionUs, bufferedDurationUs, availableDurationUs, queue, mediaChunkIterators)
     }
@@ -51,15 +70,53 @@ internal class ClimbingTrackSelection(
     override fun canSelectFormat(format: Format, trackBitrate: Int, effectiveBitrate: Long): Boolean {
         val max = allowedMaxBps
         if (max != null && format.bitrate > 0 && format.bitrate > max) return false
+        if (format.bitrate > abandonCapBps && nowMs() < abandonCapUntilMs) return false
         return super.canSelectFormat(format, trackBitrate, effectiveBitrate)
     }
 
+    /**
+     * DEB-3102 (FR-4) — a slow segment is abandoned: its projected finish ([LadderRules.shouldAbandonSegment]) is later than the
+     * buffered time minus 5 s and a lower rung that is not excluded exists. The rung below is then the ceiling for 30 s, and the
+     * climb waits that long.
+     */
+    override fun shouldCancelChunkLoad(playbackPositionUs: Long, loadingChunk: Chunk, queue: List<MediaChunk>): Boolean {
+        // Nothing buffered yet is a start, a seek or a stall already answered by FR-5's cap: the first picture is not held to the buffer's budget.
+        if (queue.isEmpty()) return false
+        val now = nowMs()
+        if (loadingChunk.loadTaskId != watchedLoadId) {
+            watchedLoadId = loadingChunk.loadTaskId
+            watchedSinceMs = now
+        }
+        val rung = loadingChunk.trackFormat.bitrate.takeIf { it > 0 }?.toLong() ?: return false
+        val below = (0 until length())
+            .filter { !isTrackExcluded(it, Clock.DEFAULT.elapsedRealtime()) }
+            .map { getFormat(it).bitrate.toLong() }
+            .filter { it in 1 until rung }
+            .maxOrNull()
+        val durationMs = loadingChunk.durationUs / 1000
+        val buffered = (loadingChunk.startTimeUs - playbackPositionUs) / 1000   // what is in hand before this segment is needed
+        val cancel = LadderRules.shouldAbandonSegment(
+            elapsedMs = now - watchedSinceMs, bytesLoaded = loadingChunk.bytesLoaded(),
+            expectedBytes = rung * durationMs / 8_000, estimateBps = bandwidthMeter.bitrateEstimate,
+            bufferedMs = buffered, lowerRungExists = below != null,
+        )
+        if (!cancel || below == null) return false
+        abandonCapBps = below
+        abandonCapUntilMs = now + LadderRules.CLIMB_WAIT_AFTER_ABANDON_MS
+        PlayerLadderHints.climbBlockedUntilMs = maxOf(PlayerLadderHints.climbBlockedUntilMs, abandonCapUntilMs)
+        onLadderEvent("abandoned a ${rung / 1000}k segment after ${now - watchedSinceMs} ms with ${buffered / 1000} s in hand → ${below / 1000}k")
+        return true
+    }
+
     @UnstableApi
-    class Factory : AdaptiveTrackSelection.Factory(MIN_INCREASE_MS.toInt(), MAX_DECREASE_MS.toInt(), RETAIN_AFTER_DISCARD_MS.toInt(), BANDWIDTH_FRACTION) {
+    class Factory(
+        private val buffer: LadderBuffer,
+        private val onLadderEvent: (String) -> Unit = {},
+    ) : AdaptiveTrackSelection.Factory(MIN_INCREASE_MS.toInt(), MAX_DECREASE_MS.toInt(), RETAIN_AFTER_DISCARD_MS.toInt(), BANDWIDTH_FRACTION) {
         override fun createAdaptiveTrackSelection(
             group: TrackGroup, tracks: IntArray, type: Int, bandwidthMeter: BandwidthMeter,
             adaptationCheckpoints: ImmutableList<AdaptiveTrackSelection.AdaptationCheckpoint>,
-        ): AdaptiveTrackSelection = ClimbingTrackSelection(group, tracks, type, bandwidthMeter, adaptationCheckpoints)
+        ): AdaptiveTrackSelection = ClimbingTrackSelection(group, tracks, type, bandwidthMeter, adaptationCheckpoints, buffer, onLadderEvent = onLadderEvent)
     }
 
     companion object {

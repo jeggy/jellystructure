@@ -59,6 +59,9 @@ actual class RaviloPlayer actual constructor() {
     // decoders once a platform decoder has failed, for the rest of this player's life (the player screen).
     @Volatile private var preferExtensions = false
 
+    /** DEB-3102 (FR-4) — the buffer ahead as the playback thread last saw it, for the load-error policy on the loader's thread. */
+    private val ladderBuffer = LadderBuffer()
+
     private fun exo(): ExoPlayer = engine ?: buildEngine().also { built ->
         engine = built
         bindEngine(built)
@@ -97,7 +100,7 @@ actual class RaviloPlayer actual constructor() {
         // 309 (FR-309-4/-5) — bounded by LadderRules: one rung up at a time (after 30 s buffered, the stock 10 s on our
         // own encoder), and down as soon as the buffer is under 20 s and falling.
         builder.setTrackSelector(
-            androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx, ClimbingTrackSelection.Factory())
+            androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx, ClimbingTrackSelection.Factory(ladderBuffer) { android.util.Log.i("DEB-3102", "ladder: $it (DEB-3102 FR-4)") })
         )
         // DEB-2205 (FR-4) — a direct play's buffer is sized in seconds (time over size), bounded by the memory class; every other
         // stream keeps the byte bound it always had. See [TimeFirstLoadControl].
@@ -118,13 +121,20 @@ actual class RaviloPlayer actual constructor() {
      *  (Media3's default), else R381's prefetch cache in front of it. */
     private fun mediaSourceFactory(dataSourceFactory: androidx.media3.datasource.DataSource.Factory?): androidx.media3.exoplayer.source.DefaultMediaSourceFactory {
         val extractors = RaviloPlayerEngine.extractorsFactoryProvider?.invoke()
-        return when {
-            dataSourceFactory != null && extractors != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory, extractors)
-            dataSourceFactory != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
-            extractors != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx, extractors)
-            else -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
-        }
+        val upstream = dataSourceFactory ?: playbackDataSourceFactory()
+        val factory = if (extractors != null) androidx.media3.exoplayer.source.DefaultMediaSourceFactory(upstream, extractors)
+        else androidx.media3.exoplayer.source.DefaultMediaSourceFactory(upstream)
+        // DEB-3102 (FR-4) — a failed load falls to the next rung down, and is retried on the ladder's own schedule.
+        return factory.setLoadErrorHandlingPolicy(LadderLoadErrorPolicy(ladderBuffer))
     }
+
+    /** DEB-3102 (FR-3) — the network, with a read timeout (20 s) longer than the server's 15 s wait for a segment; Media3's stock is 8 s. */
+    private fun playbackDataSourceFactory() = androidx.media3.datasource.DefaultDataSource.Factory(
+        ctx,
+        androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(PLAYER_CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(PLAYER_READ_TIMEOUT_MS),
+    )
 
     /**
      * R292 (FR-R292-10) — EVERYTHING bound to an engine, bound here and nowhere else, so a rebuilt engine
@@ -518,17 +528,18 @@ actual class RaviloPlayer actual constructor() {
             .build()
         val p = exo()   // R292 — builds and binds a fresh engine after a background release
         clearRecoveryState(p)   // DEB-2205 — a new stream starts uncapped, and a QA freeze does not follow it
+        ladderBuffer.reset()    // DEB-3102 — the last stream's buffer says nothing of this one
         // Phase 314b (FR-314-6) — a `.mka` sidecar beside the video, merged in: its audio follows the container's own
         // tracks, which is the order the ticket lists them in (so the ordinal mapping below still holds).
         val sidecars = audio.mapNotNull { it.externalUrl?.takeIf { _ -> it.external } }
         val sidecarSources = sidecars.map { url ->
-            androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(androidx.media3.datasource.DefaultDataSource.Factory(ctx))
+            androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(playbackDataSourceFactory())
                 .createMediaSource(MediaItem.fromUri(url))
         }
         if (prefetchKey != null) {
             val cached = androidx.media3.datasource.cache.CacheDataSource.Factory()
                 .setCache(NextPrefetch.cache)
-                .setUpstreamDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(ctx))
+                .setUpstreamDataSourceFactory(playbackDataSourceFactory())
                 .setCacheWriteDataSinkFactory(null)   // read only: playback never writes this cache
                 .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
             val main = mediaSourceFactory(cached).createMediaSource(mediaItem)
@@ -943,8 +954,13 @@ actual class RaviloPlayer actual constructor() {
 }
 
 /** R216 (FR-R216-3) — raised from DefaultLoadControl's stock 5s so a recovered stall resumes with a
- *  real cushion instead of re-stalling seconds later; see this file's `setBufferDurationsMs` call site. */
-private const val QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 10_000
+ *  real cushion instead of re-stalling seconds later; see this file's `setBufferDurationsMs` call site.
+ *  DEB-3102 (FR-5) — 4 s: the in-place cap one rung down at the stall's start is what keeps one stall from becoming a train. */
+private const val QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 4_000
+
+/** DEB-3102 (FR-3) — the player's connect and read timeouts; the read outlasts the server's 15 s wait for a segment. */
+private const val PLAYER_CONNECT_TIMEOUT_MS = 8_000
+private const val PLAYER_READ_TIMEOUT_MS = 20_000
 
 /** DEB-2205 (FR-6) — how often the app-fed subtitle is matched to the playhead; a cue shows within one tick of its time. */
 private const val CUE_POLL_MS = 150L

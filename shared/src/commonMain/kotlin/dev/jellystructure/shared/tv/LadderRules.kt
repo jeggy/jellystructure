@@ -19,7 +19,48 @@ object LadderRules {
     /** Less than this between two evaluations is not "falling" (a segment boundary's jitter). */
     const val FALLING_MARGIN_MS = 500L
 
+    /** DEB-3102 (FR-4) — a step-down also fires when the buffer has fallen for this long and is under [FALLING_BUFFER_CEILING_MS]. */
+    const val FALLING_WINDOW_MS = 6_000L
+    const val FALLING_BUFFER_CEILING_MS = 30_000L
+    /** DEB-3102 (FR-4) — a failed rung is left alone this long; a slow segment is abandoned when it would land later than the buffer minus this. */
+    const val EXCLUDE_FAILED_RUNG_MS = 15_000L
+    const val ABANDON_MARGIN_MS = 5_000L
+    /** DEB-3102 (FR-4) — after an abandon the climb waits this long. */
+    const val CLIMB_WAIT_AFTER_ABANDON_MS = 30_000L
+    /** DEB-3102 — a load is judged only after this long: a rate needs something measured, or the first byte of every segment on a thin buffer would be abandoned at once. */
+    const val ABANDON_MIN_ELAPSED_MS = 1_000L
+    /** DEB-3102 (FR-4) — the pause before the 1st, 2nd, … retry of one load; the last repeats. */
+    val RETRY_DELAYS_MS = listOf(500L, 1_000L, 2_000L, 4_000L, 5_000L)
+
     fun climbBufferMs(oursEncoder: Boolean): Long = if (oursEncoder) CLIMB_BUFFER_OURS_MS else CLIMB_BUFFER_MS
+
+    /** DEB-3102 (FR-4) — the wait before retry number [errorCount] (1 = after the first failure). */
+    fun retryDelayMs(errorCount: Int): Long = RETRY_DELAYS_MS[(errorCount - 1).coerceIn(0, RETRY_DELAYS_MS.size - 1)]
+
+    /**
+     * DEB-3102 (FR-4) — how many failures of one load are retried: for as long as the buffer holds picture, however many; once
+     * it is empty, the scheduled retries and then the error (which the restream, FR-6, may still answer).
+     */
+    fun retryLimit(bufferedMs: Long): Int = if (bufferedMs > 0) Int.MAX_VALUE else RETRY_DELAYS_MS.size
+
+    /** DEB-3102 (FR-4) — the buffer is under [FALLING_BUFFER_CEILING_MS] and has been falling for [FALLING_WINDOW_MS] ([BufferTrend]). */
+    fun fallenStepDown(bufferedMs: Long, fallenForWindow: Boolean): Boolean = fallenForWindow && bufferedMs < FALLING_BUFFER_CEILING_MS
+
+    /**
+     * DEB-3102 (FR-4) — whether the segment loading now should be dropped for a lower rung: its projected finish is later than
+     * the buffered time minus 5 s, and a lower rung exists. [elapsedMs]: the load's age; [bytesLoaded] so far of
+     * [expectedBytes] (segment duration × the rung's bitrate; 0 = unknown, then only the age counts); [estimateBps] the
+     * player's own estimate, used until the load has a rate of its own.
+     */
+    fun shouldAbandonSegment(elapsedMs: Long, bytesLoaded: Long, expectedBytes: Long, estimateBps: Long, bufferedMs: Long, lowerRungExists: Boolean): Boolean {
+        if (!lowerRungExists || elapsedMs < ABANDON_MIN_ELAPSED_MS) return false
+        val budgetMs = bufferedMs - ABANDON_MARGIN_MS
+        val remaining = (expectedBytes - bytesLoaded).coerceAtLeast(0)
+        if (remaining == 0L) return elapsedMs > budgetMs
+        val rateBps = if (bytesLoaded > 0) bytesLoaded * 8_000 / elapsedMs else estimateBps
+        if (rateBps <= 0) return elapsedMs > budgetMs
+        return elapsedMs + remaining * 8_000 / rateBps > budgetMs
+    }
 
     /** FR-309-5 — the buffer is under 20 s and lower than at the last evaluation. */
     fun mustStepDown(bufferedMs: Long, lastBufferedMs: Long?): Boolean =
@@ -29,14 +70,41 @@ object LadderRules {
      * The highest variant bandwidth the player may choose now, or null for no bound (nothing playing yet: the start is
      * the server's, FR-309-2). [rungsBps]: the variants' bandwidths, any order; [currentBps]: the one playing.
      */
-    fun allowedMaxBps(rungsBps: List<Long>, currentBps: Long?, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean, climbBlocked: Boolean = false): Long? {
+    fun allowedMaxBps(
+        rungsBps: List<Long>, currentBps: Long?, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean, climbBlocked: Boolean = false,
+        fallenForWindow: Boolean = false,
+    ): Long? {
         if (currentBps == null || rungsBps.isEmpty()) return null
         val sorted = rungsBps.distinct().sorted()
-        if (mustStepDown(bufferedMs, lastBufferedMs)) return sorted.lastOrNull { it < currentBps } ?: sorted.first()
+        if (mustStepDown(bufferedMs, lastBufferedMs) || fallenStepDown(bufferedMs, fallenForWindow)) return sorted.lastOrNull { it < currentBps } ?: sorted.first()
         // DEB-2205 (FR-5.3) — for 2 minutes after a freeze recovery nothing climbs, whatever is buffered.
         if (climbBlocked) return maxOf(currentBps, sorted.first())
         if (bufferedMs < climbBufferMs(oursEncoder)) return maxOf(currentBps, sorted.first())
         return sorted.firstOrNull { it > currentBps } ?: maxOf(currentBps, sorted.last())
+    }
+}
+
+/**
+ * DEB-3102 (FR-4) — has the buffer fallen over the last [LadderRules.FALLING_WINDOW_MS]? Fed every evaluation with the clock
+ * and the buffer ahead; true when the buffer 6 s ago was higher than now by more than [LadderRules.FALLING_MARGIN_MS]. Compared
+ * with the same moment one window back, so a sawtooth that refills every segment never reads as falling, and a buffer that holds
+ * level does not either. One per play; [reset] on a new load.
+ */
+class BufferTrend {
+    private val samples = ArrayDeque<Pair<Long, Long>>()
+
+    fun observe(nowMs: Long, bufferedMs: Long): Boolean {
+        if (samples.isEmpty() || nowMs - samples.last().first >= MIN_SAMPLE_GAP_MS) samples.addLast(nowMs to bufferedMs)
+        // Keep only the newest sample that is a full window old, and everything after it.
+        while (samples.size >= 2 && samples[1].first <= nowMs - LadderRules.FALLING_WINDOW_MS) samples.removeFirst()
+        val oldest = samples.first()
+        return oldest.first <= nowMs - LadderRules.FALLING_WINDOW_MS && oldest.second - bufferedMs > LadderRules.FALLING_MARGIN_MS
+    }
+
+    fun reset() = samples.clear()
+
+    private companion object {
+        const val MIN_SAMPLE_GAP_MS = 100L
     }
 }
 

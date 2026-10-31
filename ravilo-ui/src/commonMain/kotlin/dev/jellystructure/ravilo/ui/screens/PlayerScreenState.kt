@@ -1031,7 +1031,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         if (raw == PlBufferMoment.NONE) {
             displayedBufferMoment = PlBufferMoment.NONE
         } else {
-            delay(BUFFER_MOMENT_DEBOUNCE_MS)
+            delay(bufferMomentDebounceMs(raw))   // DEB-3102 (FR-5) — a stall waits 2 s, the cold start and a seek 400 ms
             displayedBufferMoment = raw
         }
     }

@@ -31,8 +31,8 @@ internal const val FROZEN_RECOVER_MS = 5_000L
 internal const val FROZEN_BUFFER_IN_HAND_MS = 3_000L
 /** FR-5.3 — nothing climbs again for this long after a recovery. */
 internal const val CLIMB_BLOCK_AFTER_RECOVERY_MS = 120_000L
-/** FR-5.1 — buffer-empty for this long caps the adaptive selection one rung down, in place. */
-internal const val IN_PLACE_CAP_AFTER_MS = 3_000L
+/** FR-5.1 — buffer-empty for this long caps the adaptive selection one rung down, in place. DEB-3102 (FR-5): at once (was 3 s). */
+internal const val IN_PLACE_CAP_AFTER_MS = 0L
 
 /** FR-5.4 — how long a recovery's own stop is watched for the new stream's first movement before it is written off. */
 internal const val RECOVERY_WATCH_MS = 60_000L
@@ -122,7 +122,7 @@ internal sealed interface FreezeAction {
  *
  * | stop                        | 1st                       | 2nd                          | 3rd   |
  * |-----------------------------|---------------------------|------------------------------|-------|
- * | buffer empty (after 3 s)    | cap one rung down, in place | cap one rung down, in place | same  |
+ * | buffer empty (at once)      | cap one rung down, in place | cap one rung down, in place | same  |
  * | position stuck, buffer ≥ 3 s | ours, rung below, other codec | Jellyfin, under the 1st    | error |
  *
  * Nothing goes above the rung that froze: every bound only ever lowers ([lowestFrozenBps]).

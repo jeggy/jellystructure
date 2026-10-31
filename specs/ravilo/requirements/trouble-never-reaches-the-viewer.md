@@ -95,6 +95,10 @@ Android, for HLS. A custom `LoadErrorHandlingPolicy` and the existing `ClimbingT
 - **The rate is chosen from the buffer once one exists:** today's estimate rule and the step-down under 20 s stay, and a
   step-down also fires when the buffer has fallen for 6 s and is under 30 s.
 - A failure becomes an error only when the buffer is empty, every retry has run, and a restream (FR-6) has failed too.
+- *2026-10-31, DEB-3102 — how the abandon rule reads in code.* A load is judged only once it is 1 s old (a rate needs something
+  measured), and never while nothing is buffered (the first picture, a seek, and a stall that FR-5's cap already answers are not
+  held to the buffer's budget). Its rate is the load's own bytes over its age, the player's estimate until bytes arrive. After an
+  abandon the rung below is the ceiling for 30 s. "Every retry has run" with an empty buffer is the five scheduled retries.
 
 ### FR-5 — A short wait does not look like a problem
 

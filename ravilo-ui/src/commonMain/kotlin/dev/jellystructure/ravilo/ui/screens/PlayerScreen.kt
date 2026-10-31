@@ -182,6 +182,12 @@ internal const val ADVANCE_TIMEOUT_MS = 5_000L
 // phase's own Open question #1 — tune against R216's rebuffer telemetry once data accumulates, not
 // guessed at again.
 internal const val BUFFER_MOMENT_DEBOUNCE_MS = 400L
+// DEB-3102 (FR-5) — a STALL (the buffer ran dry mid-play) draws nothing for its first 2 s: a short wait is not a problem the
+// viewer needs told about, and the cap one rung down is already on it. The cold start and a seek keep the 400 ms above.
+internal const val STALL_MOMENT_DEBOUNCE_MS = 2_000L
+
+/** DEB-3102 (FR-5) — how long [raw] must have lasted before it is drawn. */
+internal fun bufferMomentDebounceMs(raw: PlBufferMoment): Long = if (raw == PlBufferMoment.STALL) STALL_MOMENT_DEBOUNCE_MS else BUFFER_MOMENT_DEBOUNCE_MS
 // R218 (FR-R218-3) — "a wait that passes 60 seconds is pathological... at that point Moment C dims
 // further and raises the centre spinner." Stall only — cold start and seek don't deepen.
 internal const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
