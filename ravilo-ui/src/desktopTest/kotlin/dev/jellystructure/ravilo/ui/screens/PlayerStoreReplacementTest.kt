@@ -126,6 +126,8 @@ class PlayerStoreReplacementTest {
         val readyBefore = states.count { it is PlayerSessionState.Ready }
         player.failed.set(true)
         waitFor("the replacement after three failed calls") { states.count { it is PlayerSessionState.Ready } > readyBefore }
+        // The new engine is not failed: a flag left set would read as a second failure on a slow runner (DEB-3104, CI of 881aaa53).
+        player.failed.set(false)
         assertEquals(4, rig.restreams.size, "three failures and the call that worked")
         assertTrue(states.none { it is PlayerSessionState.Error || it is PlayerSessionState.Loading && states.indexOf(it) > 0 }, "$states")
         store.close()
