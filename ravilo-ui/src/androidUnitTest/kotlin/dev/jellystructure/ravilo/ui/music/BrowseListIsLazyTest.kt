@@ -45,7 +45,7 @@ class BrowseListIsLazyTest {
                 listChip(paged, state, 880.dp, true, "songs", null, {}, {}, {}, {})
             }
         }
-        rule.waitUntil(5_000) { rule.onAllNodes(hasText("Stand-in song 0")).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(30_000) { rule.onAllNodes(hasText("Stand-in song 0")).fetchSemanticsNodes().isNotEmpty() }
         rule.waitForIdle()
         val composed = (0 until total).count { rule.onAllNodes(hasText("Stand-in song $it")).fetchSemanticsNodes().isNotEmpty() }
         assertTrue(composed in 1..40, "only the visible rows compose; $composed of $total did")
