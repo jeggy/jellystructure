@@ -3,6 +3,8 @@ package dev.jellystructure.autofetch
 import dev.jellystructure.filefix.FileFixShell
 import dev.jellystructure.filefix.PosixFileFixShell
 import dev.jellystructure.log.Logger
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 
 /**
  * DEB-2477 (DEB-2474, FR-8, FR-9) — *Not on TMDB yet*. A fetched episode TMDB has no such `SxxEyy` for is filed here, carrying
@@ -31,7 +33,8 @@ class NotOnTmdbQueue(
         // The marker is field by field: a field the page left empty has no page text for a blank TMDB field to protect.
         store.fileQueue(f.id, item.itemId, season, episode, world.nowSec(), !item.title.isNullOrBlank(), !item.description.isNullOrBlank(), emptyList())
         val row = store.queueRow(f.id, item.itemId) ?: return false
-        try { cutStills(row, path, durationSec) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) {
+        try { cutStills(row, path, durationSec) } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e
             Logger.warn("auto-fetch: stills for ${item.itemId} failed: ${e.message}", "autofetch")
         }
         return true
