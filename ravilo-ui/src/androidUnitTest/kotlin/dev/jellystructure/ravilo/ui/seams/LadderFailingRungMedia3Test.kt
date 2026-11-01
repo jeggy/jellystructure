@@ -21,6 +21,9 @@ import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.TrackGroupArray
 import androidx.media3.exoplayer.source.chunk.Chunk
+import androidx.media3.exoplayer.source.chunk.ChunkHolder
+import androidx.media3.exoplayer.source.chunk.MediaChunk
+import androidx.media3.exoplayer.LoadingInfo
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection
 import androidx.media3.exoplayer.upstream.BandwidthMeter
@@ -43,6 +46,10 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.util.Random
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -56,6 +63,13 @@ import kotlin.test.assertTrue
  * The chunk source is Media3's [FakeChunkSource], which answers a load error with "no" by itself; here it excludes the failed
  * rung the way `HlsChunkSource.maybeExcludeTrack` does, on the policy's fallback selection. The rest — the loader, the retry
  * and the track selection — is the player's own.
+ *
+ * **The clock is the rig's, and it waits for the loads.** Media3's loads run on a real thread, so an auto-advancing [FakeClock]
+ * jumps the playhead on at CPU speed while a load is still queued behind a slow runner, and the player then counts a stop the
+ * ladder never made (DEB-3283: two red runs in about ten, one on a release). The clock here does not advance by itself: a
+ * [Pacer] steps it 10 ms at a time, and only while no chunk is being loaded and the playback thread has nothing queued. What
+ * a load costs in real time then cannot show up as playing time; a stop that is the ladder's own — a retry timer, a rung
+ * that never answers — is still fake time passing, and still counts.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -66,7 +80,7 @@ class LadderFailingRungMedia3Test {
     private val low = rung(1_500_000)
     private val audio = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_AAC).build()
 
-    private val clock = FakeClock(/* isAutoAdvancing = */ true)
+    private val clock = FakeClock(/* isAutoAdvancing = */ false)
     private val counter = QoeCounter()
     private val lock = Any()
     private val buffer = LadderBuffer { clock.elapsedRealtime() }
@@ -74,6 +88,11 @@ class LadderFailingRungMedia3Test {
     private val formatsLoaded = mutableListOf<Int>()
     private val loadErrors = mutableListOf<String>()
     private lateinit var player: ExoPlayer
+    private var pacer: Pacer? = null
+    private val chunkSources = CopyOnWriteArrayList<RigChunkSource>()
+
+    /** Real milliseconds every load takes before its first byte; the test that sets it proves the rig does not depend on it. */
+    @Volatile private var loadLatencyMs = 0L
 
     /** Every load of the first rung from this chunk on fails; -1 = none do. */
     @Volatile private var failTopFromChunk = -1
@@ -94,6 +113,7 @@ class LadderFailingRungMedia3Test {
         private var opened = false
 
         override fun open(dataSpec: DataSpec): Long {
+            if (loadLatencyMs > 0) Thread.sleep(loadLatencyMs)
             if (dataSpec.length == TOP_SEGMENT_BYTES) {
                 if (topBase < 0) topBase = dataSpec.position
                 val segment = (dataSpec.position - topBase) / TOP_SEGMENT_BYTES
@@ -113,7 +133,23 @@ class LadderFailingRungMedia3Test {
     private inner class RigChunkSource(
         private val selection: ExoTrackSelection, dataSource: DataSource, dataSet: FakeAdaptiveDataSet,
     ) : FakeChunkSource(selection, dataSource, dataSet) {
+        /** A chunk has been handed to the loader (playback thread) and its end has not been told back yet (playback thread): the [Pacer] holds the clock. */
+        @Volatile var loading = false
+
+        init { chunkSources += this }
+
+        override fun getNextChunk(loadingInfo: LoadingInfo, loadPositionUs: Long, queue: List<MediaChunk>, out: ChunkHolder) {
+            super.getNextChunk(loadingInfo, loadPositionUs, queue, out)
+            loading = out.chunk != null
+        }
+
+        override fun onChunkLoadCompleted(chunk: Chunk) {
+            super.onChunkLoadCompleted(chunk)
+            loading = false
+        }
+
         override fun onChunkLoadError(chunk: Chunk, cancelable: Boolean, info: LoadErrorHandlingPolicy.LoadErrorInfo, policy: LoadErrorHandlingPolicy): Boolean {
+            loading = false   // what follows is a retry timer or the next chunk: both need the clock to move
             loadErrors += info.exception.message.orEmpty()
             if (!cancelable) return false
             val now = Clock.DEFAULT.elapsedRealtime()
@@ -134,6 +170,43 @@ class LadderFailingRungMedia3Test {
         }
     }
 
+    /**
+     * Steps [clock] 10 ms at a time while nothing is being loaded. Before each step the playback thread is asked to run what it
+     * has queued, so a chunk the player is about to ask for is seen as loading rather than as a gap to run the clock through.
+     * A load that never ends is not waited on for ever: [MAX_HOLD_MS] of real time and the clock moves on.
+     */
+    private inner class Pacer : Runnable {
+        @Volatile var running = true
+        // Through the clock's own handler: it queues its messages itself, one at a time, and a plain post would run ahead of them.
+        private val playbackHandler = clock.createHandler(player.playbackLooper, /* callback = */ null)
+        private val thread = thread(name = "ladder-rig-pacer", isDaemon = true) { run() }
+
+        override fun run() {
+            var heldSince = -1L
+            while (running) {
+                if (chunkSources.any { it.loading }) {
+                    val now = System.nanoTime() / 1_000_000
+                    if (heldSince < 0) heldSince = now
+                    if (now - heldSince < MAX_HOLD_MS) { Thread.sleep(1); continue }
+                }
+                heldSince = -1L
+                // A few round trips: what the player does after a load ends (ask for the next, drop a refused chunk) is a short chain of messages.
+                var settled = true
+                repeat(SETTLE_ROUND_TRIPS) {
+                    val drained = CountDownLatch(1)
+                    if (!playbackHandler.post { drained.countDown() }) return
+                    if (!drained.await(1, TimeUnit.SECONDS) || chunkSources.any { it.loading }) settled = false
+                }
+                if (settled) clock.advanceTime(STEP_MS)
+            }
+        }
+
+        fun stop() {
+            running = false
+            thread.join(2_000)
+        }
+    }
+
     @Before
     fun setUp() {
         PlayerLadderHints.climbBlockedUntilMs = 0L
@@ -145,7 +218,7 @@ class LadderFailingRungMedia3Test {
             arrayOf<Renderer>(FakeVideoRenderer(wrapped, videoListener), FakeAudioRenderer(wrapped, audioListener))
         }
         player = ExoPlayer.Builder(ctx, renderers).setClock(clock).setBandwidthMeter(meter)
-            .setTrackSelector(DefaultTrackSelector(ctx, ClimbingTrackSelection.Factory(buffer)))
+            .setTrackSelector(DefaultTrackSelector(ctx, ClimbingTrackSelection.Factory(buffer, nowMs = { clock.elapsedRealtime() })))
             .build()
         player.setVideoSurface(android.view.Surface(android.graphics.SurfaceTexture(0)))
         player.addAnalyticsListener(QoeCounterFeed(counter, lock, positionOf = { player.currentPosition }))
@@ -157,20 +230,28 @@ class LadderFailingRungMedia3Test {
     }
 
     @After
-    fun tearDown() = player.release()
+    fun tearDown() {
+        pacer?.stop()
+        player.release()
+    }
 
-    private fun source(): FakeAdaptiveMediaSource {
+    private fun source(vararg rungs: Format): FakeAdaptiveMediaSource {
         val window = FakeTimeline.TimelineWindowDefinition.Builder().setSeekable(true).setDurationUs(60_000_000L).build()
-        return FakeAdaptiveMediaSource(FakeTimeline(window), TrackGroupArray(TrackGroup(top, mid, low)), RigFactory())
+        return FakeAdaptiveMediaSource(FakeTimeline(window), TrackGroupArray(TrackGroup(*rungs)), RigFactory())
+    }
+
+    private fun prepareAndPlay(source: FakeAdaptiveMediaSource) {
+        synchronized(lock) { counter.beginItem("film"); counter.load(clock.elapsedRealtime()) }
+        player.setMediaSource(source)
+        pacer = Pacer()
+        player.prepare()
+        player.playWhenReady = true
+        // The refused segments can come before the first frame: they are load errors the helper would call non-fatal failures, and they are the point of the test.
+        TestPlayerRunHelper.run(player).ignoringNonFatalErrors().untilFirstFrameIsRendered()
     }
 
     private fun playToTheEnd() {
-        synchronized(lock) { counter.beginItem("film"); counter.load(clock.elapsedRealtime()) }
-        player.setMediaSource(source())
-        player.prepare()
-        player.playWhenReady = true
-        TestPlayerRunHelper.runUntilRenderedFirstFrame(player)
-        // The refused segments are load errors the helper would call non-fatal failures: they are the point of the test.
+        prepareAndPlay(source(top, mid, low))
         TestPlayerRunHelper.run(player).ignoringNonFatalErrors().untilState(Player.STATE_ENDED)
     }
 
@@ -180,9 +261,31 @@ class LadderFailingRungMedia3Test {
         playToTheEnd()
         assertNull(player.playerError)
         assertTrue(loadErrors.isNotEmpty(), "the top rung's segments were refused")
-        assertEquals(0, counter.rebufferCount, "a lower picture, not a stop")
+        assertEquals(0, counter.rebufferCount, "a lower picture, not a stop: ${counter.stallEvents()} formats=$formatsLoaded")
         assertTrue(formatsLoaded.first() == 8_000_000, "it began on the top rung: $formatsLoaded")
         assertTrue(formatsLoaded.drop(1).any { it < 8_000_000 }, "and carried on below it: $formatsLoaded")
+    }
+
+    @Test
+    fun `a blocked top rung plays on with no stall when every load is slow in real time`() {
+        // The runner's speed is not part of the film: 150 ms of real time per load, 15 loads, and the clock waits for each.
+        loadLatencyMs = 150
+        failTopFromChunk = 3
+        playToTheEnd()
+        assertNull(player.playerError)
+        assertTrue(loadErrors.isNotEmpty(), "the top rung's segments were refused")
+        assertEquals(0, counter.rebufferCount, "a lower picture, not a stop: ${counter.stallEvents()} formats=$formatsLoaded")
+        assertTrue(formatsLoaded.first() == 8_000_000, "it began on the top rung: $formatsLoaded")
+        assertTrue(formatsLoaded.drop(1).any { it < 8_000_000 }, "and carried on below it: $formatsLoaded")
+    }
+
+    @Test
+    fun `a ladder with no rung to fall to still ends in an error and the rig sees it`() {
+        // The guard on the rig: take the rungs below away and the same refusals are a real stop, which must not read as a pass.
+        failTopFromChunk = 3
+        prepareAndPlay(source(top))
+        TestPlayerRunHelper.runUntilError(player)
+        assertTrue(loadErrors.size > 1, "the refused segment was retried before the play gave up: $loadErrors")
     }
 
     @Test
@@ -190,11 +293,14 @@ class LadderFailingRungMedia3Test {
         playToTheEnd()
         assertNull(player.playerError)
         assertTrue(loadErrors.isEmpty())
-        assertEquals(0, counter.rebufferCount)
+        assertEquals(0, counter.rebufferCount, "${counter.stallEvents()}")
         assertTrue(formatsLoaded.all { it == 8_000_000 }, "$formatsLoaded")
     }
 
     private companion object {
         const val TOP_SEGMENT_BYTES = 4_000_000L
+        const val STEP_MS = 10L
+        const val SETTLE_ROUND_TRIPS = 4
+        const val MAX_HOLD_MS = 5_000L
     }
 }

@@ -131,12 +131,13 @@ internal class ClimbingTrackSelection(
     @UnstableApi
     class Factory(
         private val buffer: LadderBuffer,
+        private val nowMs: () -> Long = System::currentTimeMillis,
         private val onLadderEvent: (String) -> Unit = {},
     ) : AdaptiveTrackSelection.Factory(MIN_INCREASE_MS.toInt(), MAX_DECREASE_MS.toInt(), RETAIN_AFTER_DISCARD_MS.toInt(), BANDWIDTH_FRACTION) {
         override fun createAdaptiveTrackSelection(
             group: TrackGroup, tracks: IntArray, type: Int, bandwidthMeter: BandwidthMeter,
             adaptationCheckpoints: ImmutableList<AdaptiveTrackSelection.AdaptationCheckpoint>,
-        ): AdaptiveTrackSelection = ClimbingTrackSelection(group, tracks, type, bandwidthMeter, adaptationCheckpoints, buffer, onLadderEvent = onLadderEvent)
+        ): AdaptiveTrackSelection = ClimbingTrackSelection(group, tracks, type, bandwidthMeter, adaptationCheckpoints, buffer, nowMs, onLadderEvent)
     }
 
     companion object {
