@@ -197,10 +197,12 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
         return false
     }
 
+    /** FR-9.4 — the admin's own moment gets the same not-black rule as the automatic ones; it is cut aside so a refused frame leaves the slot's old picture. */
     override suspend fun frameAt(path: String, atSec: Int, out: String): Boolean {
-        val r = shell.run(FetchCommands.frame(path, atSec, out))
-        if (r.ok && shell.exists(out)) return true
-        shell.remove(out)
+        val aside = out.removeSuffix(".jpg") + ".new.jpg"
+        if (!cut(path, atSec, aside)) return false
+        if (shell.run("mv -f ${q(aside)} ${q(out)}").ok) return true
+        shell.remove(aside)
         return false
     }
 
