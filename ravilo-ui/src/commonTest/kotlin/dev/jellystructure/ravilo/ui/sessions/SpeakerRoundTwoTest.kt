@@ -180,6 +180,17 @@ class SpeakerRoundTwoTest {
         assertFalse(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = true, castDeviceId = "c-guest", sessionLive = true), "this app's own Stop ends a station for good")
     }
 
+    @Test fun `removing a station's second room reports the leader alone and a drop 5 s later is rejoined (DEB-3254)`() = runTest {
+        // QA of DEB-3053: ✕ on the second room moved the link to RECONNECTING and 5 s later the cast was given up. The ✕ now runs
+        // the room op (FR-11), so the drop lands inside the rejoin window and the station has no server session to ask.
+        val stue = SessionRoom("c-stue", "Lounge")
+        val g = FakeGroup(mutableListOf(stue, guest), joins = true)
+        val reports = mutableListOf<SessionMembersReport>()
+        applyRoomOp(g, SessionCommandRequest(op = "remove_room", castDeviceId = "c-guest"), "channel-1", { "Guest room" }, { reports += it }, wait = {})
+        assertEquals(listOf("c-stue"), reports.single().members.map { it.castDeviceId })
+        assertTrue(rejoinAfterDrop(msSinceRoomOp = 5_000, stoppedHere = false, castDeviceId = "c-stue", sessionLive = true))
+    }
+
     @Test fun `the hand-off names the Cast device the link is on`() {
         val routes = listOf(
             CastRoute("r-group", "Guest room", selected = true, select = {}, kind = "group", deviceKey = "g"),
