@@ -1,0 +1,4 @@
+-- DEB-3319 (DEB-2474, FR-9.2) — the queue row keeps the runtime ffprobe read from the placed file when it was filed. The listing's own duration
+-- (autofetch_item.duration) is rewritten from the page on every refresh and many pages give none, so it cannot hold it. Null on a row filed before
+-- this column existed; the view then falls back to the listing's duration. This file is the migration; Autofetch.sq carries the same column.
+ALTER TABLE autofetch_queue ADD COLUMN runtime_sec INTEGER;

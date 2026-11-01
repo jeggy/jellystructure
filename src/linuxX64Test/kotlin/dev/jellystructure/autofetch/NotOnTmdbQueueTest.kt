@@ -49,6 +49,17 @@ class NotOnTmdbQueueTest {
     }
 
     @Test
+    fun `the row shows the runtime ffprobe read when the listing gave no duration`() = runBlocking<Unit> {
+        val f = provenRoyndin()
+        h.tools.duration = 600.0
+        h.engine.run(f.id, RunTrigger.MANUAL)
+        assertNull(h.store.item(f.id, third(f).itemId)!!.duration, "this listing has no duration (legal for a recipe)")
+        assertEquals(600, third(f).runtimeSec)
+        val runtime = AutofetchRuntime(h.store, h.engine, h.service, h.lanes, h.world, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default))
+        assertEquals(600, runtime.queueViews().single().runtimeSec, "FR-9.2: the row holds the runtime")
+    }
+
+    @Test
     fun `a TMDB that cannot be reached files the episode rather than guess it is there`() = runBlocking<Unit> {
         val f = provenRoyndin()
         h.world.tmdbEps = null

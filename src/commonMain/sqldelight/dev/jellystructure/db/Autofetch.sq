@@ -76,7 +76,7 @@ CREATE TABLE autofetch_series_mark (
     fetcher_id TEXT NOT NULL
 );
 
--- DEB-2477 (DEB-2474, FR-8.4, FR-9) — must stay byte-for-byte in sync with 93.sqm's CREATE TABLE.
+-- DEB-2477 (DEB-2474, FR-8.4, FR-9) — 93.sqm's CREATE TABLE plus 94.sqm's runtime_sec (DEB-3319).
 CREATE TABLE autofetch_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fetcher_id TEXT NOT NULL,
@@ -91,6 +91,7 @@ CREATE TABLE autofetch_queue (
     title_from_page INTEGER NOT NULL DEFAULT 0,
     overview_from_page INTEGER NOT NULL DEFAULT 0,
     stills_json TEXT NOT NULL DEFAULT '[]',
+    runtime_sec INTEGER,
     UNIQUE (fetcher_id, item_id)
 );
 
@@ -211,8 +212,8 @@ queueByFetcher:
 SELECT * FROM autofetch_queue WHERE fetcher_id = :fetcher_id;
 
 queueInsert:
-INSERT OR IGNORE INTO autofetch_queue(fetcher_id, item_id, season, episode, filed_at, last_check_at, title_from_page, overview_from_page, stills_json)
-VALUES (:fetcher_id, :item_id, :season, :episode, :filed_at, :filed_at, :title_from_page, :overview_from_page, :stills_json);
+INSERT OR IGNORE INTO autofetch_queue(fetcher_id, item_id, season, episode, filed_at, last_check_at, title_from_page, overview_from_page, stills_json, runtime_sec)
+VALUES (:fetcher_id, :item_id, :season, :episode, :filed_at, :filed_at, :title_from_page, :overview_from_page, :stills_json, :runtime_sec);
 
 queueSetSubmitted:
 UPDATE autofetch_queue SET state = 'submitted', submitted_at = :at WHERE id = :id AND state != 'cleared';

@@ -78,6 +78,8 @@ data class QueueRow(
     val titleFromPage: Boolean,
     val overviewFromPage: Boolean,
     val stills: List<Int>,
+    /** DEB-3319 (FR-9.2) — the runtime ffprobe read from the placed file when the row was filed; null on a row filed before it was kept. */
+    val runtimeSec: Int? = null,
 ) {
     val markerOn: Boolean get() = titleFromPage || overviewFromPage
     /** Checked daily while TMDB lacks the episode, or has it but still leaves a field blank that the page fills. */
@@ -187,8 +189,8 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
     fun queueRow(fetcherId: String, itemId: String): QueueRow? = q.queueGet(fetcherId, itemId).executeAsOneOrNull()?.let { map(it) }
     fun queueOf(fetcherId: String): List<QueueRow> = q.queueByFetcher(fetcherId).executeAsList().map { map(it) }
 
-    fun fileQueue(fetcherId: String, itemId: String, season: Int, episode: Int, at: Long, titleFromPage: Boolean, overviewFromPage: Boolean, stills: List<Int>) =
-        q.queueInsert(fetcherId, itemId, season.toLong(), episode.toLong(), at, if (titleFromPage) 1 else 0, if (overviewFromPage) 1 else 0, stillsJson(stills))
+    fun fileQueue(fetcherId: String, itemId: String, season: Int, episode: Int, at: Long, titleFromPage: Boolean, overviewFromPage: Boolean, stills: List<Int>, runtimeSec: Int? = null) =
+        q.queueInsert(fetcherId, itemId, season.toLong(), episode.toLong(), at, if (titleFromPage) 1 else 0, if (overviewFromPage) 1 else 0, stillsJson(stills), runtimeSec?.toLong())
 
     fun queueSubmitted(id: Long, at: Long) = q.queueSetSubmitted(at, id)
     fun queueCleared(id: Long, at: Long) = q.queueSetCleared(at, id)
@@ -203,6 +205,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
         r.id, r.fetcher_id, r.item_id, r.season.toInt(), r.episode.toInt(), r.state, r.filed_at, r.submitted_at, r.cleared_at, r.last_check_at,
         r.title_from_page != 0L, r.overview_from_page != 0L,
         runCatching { json.decodeFromString(ListSerializer(Int.serializer()), r.stills_json) }.getOrDefault(emptyList()),
+        r.runtime_sec?.toInt(),
     )
 
     // ---- the page-only mark (FR-15.5) --------------------------------------------------------------------------------

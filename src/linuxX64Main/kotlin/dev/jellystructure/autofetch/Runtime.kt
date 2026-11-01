@@ -103,7 +103,7 @@ class AutofetchRuntime(
         QueueEntryView(
             id = r.id, fetcherId = f.id, series = f.name, tmdbId = f.tmdbId, season = r.season, episode = r.episode,
             code = Numbering.code(SeasonEpisode(r.season, r.episode)), pageLabel = item.title?.takeIf { it.isNotBlank() } ?: item.link,
-            state = r.state, filedAt = r.filedAt, submittedAt = r.submittedAt, runtimeSec = item.duration,
+            state = r.state, filedAt = r.filedAt, submittedAt = r.submittedAt, runtimeSec = r.runtimeSec ?: item.duration,
             title = item.title?.takeIf { it.isNotBlank() }, overview = item.description?.takeIf { it.isNotBlank() },
             airDate = Numbering.isoDate(item.published) ?: item.published, stills = r.stills,
         )

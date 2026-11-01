@@ -5,6 +5,7 @@ import dev.jellystructure.filefix.PosixFileFixShell
 import dev.jellystructure.log.Logger
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
+import kotlin.math.roundToInt
 
 /**
  * DEB-2477 (DEB-2474, FR-8, FR-9) — *Not on TMDB yet*. A fetched episode TMDB has no such `SxxEyy` for is filed here, carrying
@@ -22,7 +23,7 @@ class NotOnTmdbQueue(
     private val shell: FileFixShell = PosixFileFixShell,
 ) {
     /**
-     * FR-9.1 — files [item], just placed at [path], when its fetcher is one the queue is for. Returns true when a row was filed.
+     * FR-9.1 — files [item], just placed at [path] and probed at [durationSec] (kept on the row for FR-9.2, since the listing may give none), when its fetcher is one the queue is for. Returns true when a row was filed.
      * Only a TMDB fetcher whose pattern is proven (Q1): a page-only fetcher never files (FR-15.6), and an unproven one does not place an
      * episode TMDB lacks at all (FR-4.3).
      */
@@ -31,7 +32,7 @@ class NotOnTmdbQueue(
         val season = item.season ?: return false
         val episode = item.episode ?: return false
         // The marker is field by field: a field the page left empty has no page text for a blank TMDB field to protect.
-        store.fileQueue(f.id, item.itemId, season, episode, world.nowSec(), !item.title.isNullOrBlank(), !item.description.isNullOrBlank(), emptyList())
+        store.fileQueue(f.id, item.itemId, season, episode, world.nowSec(), !item.title.isNullOrBlank(), !item.description.isNullOrBlank(), emptyList(), durationSec.roundToInt())
         val row = store.queueRow(f.id, item.itemId) ?: return false
         try { cutStills(row, path, durationSec) } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e
