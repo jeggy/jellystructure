@@ -245,7 +245,7 @@ private fun groupEntryPoint(group: List<Episode>, overlay: Map<String, CardPlayS
         ?: group.firstOrNull { ep -> overlay[ep.id]?.played != true }
         ?: group.first()
 
-private fun buildEpisodeContext(
+internal fun buildEpisodeContext(
     detail: SeriesDetail,
     seasonIdx: Int,
     episodes: List<Episode>,
@@ -259,9 +259,10 @@ private fun buildEpisodeContext(
     val groupIdx = groups.indexOfFirst { g -> g.any { it.id == epId } }.coerceAtLeast(0)
     val group = groups.getOrElse(groupIdx) { groups.firstOrNull() ?: episodes.take(1) }
     val ep = group.firstOrNull { it.id == epId } ?: group.firstOrNull() ?: episodes.first()
-    val nextGroup = groups.getOrNull(groupIdx + 1)
-    val nextEp = nextGroup?.let { groupEntryPoint(it, overlay) }
     val nf = detail.newestFirst   // DEB-2938 (FR-9) — the player's title line names a dated episode by its date
+    // DEB-2939 (FR-13) — nothing follows an episode of a newest-first series, even one not yet seen.
+    val nextGroup = if (nf) null else groups.getOrNull(groupIdx + 1)
+    val nextEp = nextGroup?.let { groupEntryPoint(it, overlay) }
     return EpisodePlayContext(
         episodeId    = epId,
         episodeTitle = episodeDisplayTitle(ep, episodes, lang),
@@ -300,6 +301,7 @@ private fun buildEpisodeContext(
         segments = ep.segments,  // Phase 150 — the CURRENTLY PLAYING episode's own segments
         seriesPosterUrl = detail.card.posterUrl,  // R194
         logoUrl = detail.logoUrl, logoInk = detail.logoInk, seriesName = detail.card.title,  // R303 (FR-R303-2)
+        nothingFollows = nf,
     )
 }
 

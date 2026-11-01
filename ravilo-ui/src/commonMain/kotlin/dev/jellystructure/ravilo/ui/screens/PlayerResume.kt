@@ -45,6 +45,8 @@ data class ResumeRecord(
     val startOver: Boolean = false,
     /** R343 (dev review item 14) — the session was a shuffled entry; the rest of the plan is not saved. */
     val shuffle: Boolean = false,
+    /** DEB-2939 (FR-13) — the session was a newest-first episode: a restore must not grow a credits card. */
+    val nothingFollows: Boolean = false,
 )
 
 /** Open question 2 (owner, 2026-09-24): under 30 minutes away ⇒ playing; longer ⇒ paused at the position. */

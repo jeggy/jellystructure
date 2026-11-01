@@ -67,9 +67,35 @@ internal data class PlayerScreenInputs(
     val serverBaseUrl: String,
     val handset: Boolean,
     val lang: String,
+    /** DEB-2939 (FR-13) — a newest-first series' episode: no next episode and no credits card. */
+    val nothingFollows: Boolean,
     val haptics: HapticFeedback,
     val castLink: CastLinkState,
 )
+
+/**
+ * R230 (FR-R230-1) and DEB-2939 (FR-13) — whether the credits card may rise before the file ends (at the credits marker, or
+ * R384's last second). Skip Credits: Off means no mid-playback interruption, and a newest-first episode has no credits card
+ * at all: nothing follows it, so there is nothing to skip to, count down to or watch instead.
+ */
+internal fun creditsCardEarly(skipCredits: dev.jellystructure.shared.tv.SkipMode, nothingFollows: Boolean): Boolean =
+    skipCredits != dev.jellystructure.shared.tv.SkipMode.OFF && !nothingFollows
+
+/**
+ * R230 (FR-R230-2) and DEB-2939 (FR-13) — at the real end of the file, does the credits card rise (`true`) or does the player
+ * close silently (`false`)? With Skip Credits: Off only a next episode that autoplays gets the card. A newest-first episode
+ * (`nothingFollows`) never does, whatever the setting: it plays to its end and the player closes to the series page.
+ */
+internal fun endOfFileShowsCard(
+    skipCredits: dev.jellystructure.shared.tv.SkipMode,
+    nothingFollows: Boolean,
+    hasNextEpisode: Boolean,
+    autoplayNext: Boolean,
+): Boolean = when {
+    nothingFollows -> false
+    skipCredits == dev.jellystructure.shared.tv.SkipMode.OFF -> hasNextEpisode && autoplayNext
+    else -> true
+}
 
 internal class PlayerScreenState(initial: PlayerScreenInputs) {
     var inputs by mutableStateOf(initial)
@@ -918,7 +944,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // file (below) becomes the only trigger point in that mode.
         if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
             !nextUpVisible && !nextUpDismissed && !player.isEnded &&
-            bk.skipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
+            creditsCardEarly(bk.skipCreditsMode, inputs.nothingFollows)) {
             nextUpVisible = true
             nuFocus = nextUpStartsOn(bk.viewerSeek)   // R363 (FR-R363-6)
         }
@@ -951,14 +977,10 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // Autoplay off — exits silently via the same fallback skipCredits() already uses, with no card ever shown.
         if (playerLoadedForCurrentItem && player.isEnded && !advanceAlreadyRequested &&
             !nextUpVisible && !nextUpDismissed) {
-            if (bk.skipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF) {
-                if (resolvedNextEpisodeId != null && bk.autoplayNextEnabled) {
-                    nextUpVisible = true; nuFocus = NuFocus.PLAY
-                } else {
-                    skipCredits()
-                }
-            } else {
+            if (endOfFileShowsCard(bk.skipCreditsMode, inputs.nothingFollows, resolvedNextEpisodeId != null, bk.autoplayNextEnabled)) {
                 nextUpVisible = true; nuFocus = NuFocus.PLAY
+            } else {
+                skipCredits()
             }
         }
 
@@ -1152,6 +1174,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             nextEpId = inputs.nextEpisodeId, nextEpLabel = inputs.nextEpisodeLabel, nextEpTitle = inputs.nextEpisodeTitle,
             displayName = inputs.resume.record?.displayName ?: "",
             startOver = store.startOver, shuffle = store.shuffle,   // R343
+            nothingFollows = inputs.nothingFollows,   // DEB-2939
         ))
         store.stopSession(enginePos, if (positionIsFresh) durationMs else 0L)
     }

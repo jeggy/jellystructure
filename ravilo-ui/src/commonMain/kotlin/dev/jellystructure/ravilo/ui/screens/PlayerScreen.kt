@@ -454,6 +454,7 @@ fun PlayerScreen(
         // R244 — the handset chrome's gate: LocalHandset (smallest side < 600 dp, orientation-stable).
         handset = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform,   // R337 dev review 9 — R329's chrome at every desktop width
         lang = LocalLang.current,
+        nothingFollows = LocalNothingFollows.current,   // DEB-2939 (FR-13)
         haptics = LocalHapticFeedback.current,
         // R245 (FR-R245-4) — pressing cast INSIDE the player: the instant the session connects, the app hands the current
         // position over, stops local playback and swaps straight to the remote.

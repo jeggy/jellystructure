@@ -71,6 +71,9 @@ data class EpisodePlayContext(
     /** R343 (FR-R343-2/4) — this play is a finished series' *Start over*: from 0:00, and the server clears
      *  the series once 5 % of it has played. Only the first episode carries it; auto-advance never does. */
     val startOver: Boolean = false,
+    /** DEB-2939 (FR-13) — nothing follows this episode: a newest-first series has no next episode, so the player shows no
+     *  *Up next*, no credits card and no autoplay, and a rail pick leads nowhere either. */
+    val nothingFollows: Boolean = false,
 )
 
 /**
@@ -79,3 +82,10 @@ data class EpisodePlayContext(
  * not a `PlayerScreen` parameter — that composable sits at ART's register ceiling, see PlayerBookkeeping).
  */
 val LocalShuffledNextUp = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * DEB-2939 (FR-13) — the play in front of the viewer is a newest-first series' episode: nothing follows it, so there is
+ * no credits card of any kind and the player closes when the episode ends. A CompositionLocal for the same reason as
+ * [LocalShuffledNextUp]: `PlayerScreen` takes no new parameter.
+ */
+val LocalNothingFollows = androidx.compose.runtime.staticCompositionLocalOf { false }

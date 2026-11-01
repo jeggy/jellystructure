@@ -697,6 +697,20 @@ fun castEpisodes(entries: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisod
         )
     } ?: emptyList()
 
+/**
+ * DEB-2939 (FR-14) — what the app sends the receiver as the queue of a series episode: the player's whole season rail and
+ * the place in it, except that an episode with nothing after it (a newest-first series) goes alone — the receiver then has
+ * nothing to advance to. The receiver is unchanged.
+ */
+fun castQueueFor(
+    entries: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisodeEntry>?,
+    currentIndex: Int,
+    nothingFollows: Boolean,
+): Pair<List<CastEpisode>, Int> {
+    val all = castEpisodes(entries)
+    return if (nothingFollows) all.getOrNull(currentIndex)?.let { listOf(it) to 0 } ?: (all to currentIndex) else all to currentIndex
+}
+
 /** The connected Chromecast's name, or null when nothing is connected — for "Play on {device}" (FR-R245-4). */
 @Composable
 fun castConnectedDeviceName(): String? {

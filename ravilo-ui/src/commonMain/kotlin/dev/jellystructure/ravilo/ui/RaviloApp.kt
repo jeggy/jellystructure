@@ -86,7 +86,7 @@ import dev.jellystructure.ravilo.ui.screens.castMiniBarVisible
 import dev.jellystructure.ravilo.ui.components.LocalCast
 import dev.jellystructure.ravilo.ui.components.LocalCastHandoff
 import dev.jellystructure.ravilo.ui.components.castArtFor
-import dev.jellystructure.ravilo.ui.components.castEpisodes
+import dev.jellystructure.ravilo.ui.components.castQueueFor
 import dev.jellystructure.ravilo.ui.seams.EventsCatchUp
 import dev.jellystructure.ravilo.ui.seams.EventsSocketLog
 import dev.jellystructure.ravilo.ui.seams.ReconnectBackoff
@@ -351,6 +351,9 @@ internal sealed class Dest {
          *  FR-R343-8). A deliberate sibling of [shuffled], which means something else on this screen: *this entry
          *  was started from 0:00 and leaves no resume point*. A push carries the card's fact without the start's. */
         val shuffledNextUp: Boolean = false,
+        /** DEB-2939 (FR-13) — nothing follows this episode (a newest-first series): no next, no credits card, and a
+         *  rail pick plays on to nothing either; a cast of it sends this episode alone (FR-14). */
+        val nothingFollows: Boolean = false,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -800,6 +803,7 @@ fun RaviloApp(
                     // R343 (dev review items 7 and 14) — the session restarts as it was: Start over still clears
                     // at 5 %, a shuffled entry still leaves no resume point. The plan itself is not saved.
                     startOver = record.startOver, shuffled = record.shuffle,
+                    nothingFollows = record.nothingFollows,   // DEB-2939
                 ))
             } else {
                 playerResume.clear()   // a record with nowhere to go (signed out, too old) is dropped, not kept
@@ -2092,12 +2096,13 @@ fun RaviloApp(
             // R343 (FR-R343-8, dev review item 14) — a shuffled player hands over the REST of its plan (this entry
             // first), not the season rail; Start over rides along while this session carries it.
             val rest = d.shufflePlan?.drop(d.shuffleAt)
+            val queue = castQueueFor(d.episodes, d.currentEpIndex, d.nothingFollows)   // DEB-2939 (FR-14)
             castActive.cast(
                 itemId = d.itemId, title = d.title, kicker = d.kicker,
                 artUrl = resolveCastArt(apiClient.baseUrl, castArtFor(null, d.episodes?.getOrNull(d.currentEpIndex)?.stillUrls?.firstOrNull { it != null })),
                 positionMs = pos,
-                episodes = if (rest != null) castShuffle(rest) else castEpisodes(d.episodes),
-                currentIndex = if (rest != null) 0 else d.currentEpIndex, lang = lang,
+                episodes = if (rest != null) castShuffle(rest) else queue.first,
+                currentIndex = if (rest != null) 0 else queue.second, lang = lang,
                 episodesShuffled = rest != null, startOver = d.startOver,
             )
             replaceTop(Dest.Remote(d.displayName))
@@ -2808,12 +2813,15 @@ fun RaviloApp(
                     onBack = { pop() },
                     onPlay = { ctx -> playOrAsk("episode", ctx.episodeId, ctx.episodeTitle) {
                         if (castActive?.connectedForVideo == true) {
-                            // R245 (FR-R245-4/14) — the receiver gets the whole season so it can advance by itself.
+                            // R245 (FR-R245-4/14) — the receiver gets the whole season so it can advance by itself;
+                            // DEB-2939 (FR-14) — an episode with nothing after it (newest first) goes alone.
+                            val queue = castQueueFor(ctx.episodes, ctx.currentEpIndex, ctx.nothingFollows)
                             castActive.cast(
                                 itemId = ctx.episodeId, title = ctx.episodeTitle, kicker = ctx.kicker,
                                 artUrl = resolveCastArt(apiClient.baseUrl, ctx.episodes.getOrNull(ctx.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),
                                 // R343 (FR-R343-8) — Start over rides the cast: from 0:00, and the clear happens on the TV's play.
-                                positionMs = if (ctx.startOver) 0L else null, episodes = castEpisodes(ctx.episodes), currentIndex = ctx.currentEpIndex, lang = lang,
+                                positionMs = if (ctx.startOver) 0L else null, lang = lang,
+                                episodes = queue.first, currentIndex = queue.second,
                                 startOver = ctx.startOver,
                             )
                             push(Dest.Remote(dest.displayName))
@@ -2874,7 +2882,8 @@ fun RaviloApp(
                     onDispose { dev.jellystructure.ravilo.ui.screens.SessionVideoTracks.place = null }
                 }
                 // R343 (FR-R343-5) — the next-up card says *UP NEXT · SHUFFLED* while a shuffle has a next entry.
-                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp)) {
+                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp),
+                    dev.jellystructure.ravilo.ui.screens.LocalNothingFollows provides dest.nothingFollows) {
                 PlayerScreen(
                     itemId           = dest.itemId,
                     itemTitle        = dest.title,
@@ -2946,7 +2955,8 @@ fun RaviloApp(
                         val eps = dest.episodes
                         val newIdx = eps?.indexOfFirst { it.id == nextId } ?: -1
                         val newEp = if (newIdx >= 0) eps?.get(newIdx) else null
-                        val nextEp = if (newIdx >= 0) eps?.getOrNull(newIdx + 1) else null
+                        // DEB-2939 (FR-13) — a pick in a newest-first series' rail plays that episode and nothing after it.
+                        val nextEp = if (newIdx >= 0 && !dest.nothingFollows) eps?.getOrNull(newIdx + 1) else null
                         if (nextId != dest.itemId) replaceTop(Dest.Player(
                             itemId         = nextId,
                             title          = newEp?.title ?: dest.nextEpTitle ?: dest.title,
@@ -2967,6 +2977,7 @@ fun RaviloApp(
                             posterUrl        = dest.posterUrl,  // R194 — same series poster fallback for the whole binge
                             // R303 — same series, same logo and name for the whole binge.
                             logoUrl = dest.logoUrl, logoInk = dest.logoInk, seriesName = dest.seriesName,
+                            nothingFollows = dest.nothingFollows,
                         ))
                     },
                 )
@@ -3677,6 +3688,7 @@ private fun playerDestFor(
     posterUrl     = ctx.seriesPosterUrl,  // R194
     startOver     = ctx.startOver,   // R343
     shufflePlan   = plan, shuffleAt = at, shuffled = plan != null,   // R343
+    nothingFollows = ctx.nothingFollows,   // DEB-2939
 )
 
 /** R343 (FR-R343-8) — a shuffle as the Chromecast's episode list, in play order: each entry its own id, title,
