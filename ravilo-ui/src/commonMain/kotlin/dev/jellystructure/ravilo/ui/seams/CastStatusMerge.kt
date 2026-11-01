@@ -69,6 +69,14 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
     // known stands. It read as "not playing, at 0:00" — the loading dots and 0:00 / -0:00 while the speaker played on.
     val unknown = media.playerState == null
     val idle = media.playerState == null || media.playerState == "IDLE"
+    // DEB-3265 (DEB-2628 FR-11 amendment 2026-11-01) — a station follows the receiver's word while the SDK has none, or is
+    // loading or buffering: `playing = true` wins and shows no spinner; anything else leaves what was last known. A station's
+    // load starts as playing with the spinner, so "Paused" is only ever the SDK's own PAUSED.
+    val soft = station && (media.playerState == null || media.playerState == "LOADING" || media.playerState == "BUFFERING")
+    val saidPlaying = soft && said?.playing == true
+    val heldStation = prev?.radio == true
+    val stationPlaying = if (saidPlaying) true else if (heldStation) p.playing else true
+    val stationBuffering = if (saidPlaying) false else if (media.playerState == null) (if (heldStation) p.buffering else true) else true
     // R384 (FR-R384-3) — the receiver's countdown runs on over a finished film: while its last word is a countdown (a
     // `nextup`, or a status that carries the seconds), the finished media is not the end of the cast — the card, the
     // mini bar and the remote stay until the next episode loads or the receiver says *ended*.
@@ -110,8 +118,8 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         durationMs = if (station) 0L else duration,
         // 2026-10-05 — BUFFERING (after a seek, a stall) is neither: the last known stands. It read as *Paused* on
         // the phone's bar while the TV kept playing.
-        playing = if (unknown || media.playerState == "BUFFERING" || (counting && idle)) p.playing else media.playerState == "PLAYING",
-        buffering = if (unknown) p.buffering else media.playerState == "BUFFERING" || media.playerState == "LOADING",
+        playing = if (soft) stationPlaying else if (unknown || media.playerState == "BUFFERING" || (counting && idle)) p.playing else media.playerState == "PLAYING",
+        buffering = if (soft) stationBuffering else if (unknown) p.buffering else media.playerState == "BUFFERING" || media.playerState == "LOADING",
         loaded = (if (unknown) p.loaded else !idle) || said?.type == "status" || counting,
         ended = ended,
         // R299 — set by the receiver's own word, cleared by the next load's status.

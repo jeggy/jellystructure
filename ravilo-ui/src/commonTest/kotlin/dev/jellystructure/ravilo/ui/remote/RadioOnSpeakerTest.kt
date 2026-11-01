@@ -39,6 +39,50 @@ class RadioOnSpeakerTest {
     private fun merged(prev: CastRemoteStatus?, said: CastReceiverMessage) =
         mergeCastStatus(prev, said, CastMediaSnapshot(playerState = "PLAYING"), "status", nowMs = 0L)
 
+    // ── DEB-3265: the remote follows the receiver's word for a station ──
+
+    private val starting = CastRemoteStatus(itemId = "ch-7", title = "Morning Show", loaded = true, playing = true, buffering = true, radio = true)
+    private fun station(prev: CastRemoteStatus?, said: CastReceiverMessage?, sdk: String?) =
+        mergeCastStatus(prev, said, CastMediaSnapshot(playerState = sdk), "status", nowMs = 0L)
+
+    @Test fun `a station whose sdk is silent but whose receiver says playing reads playing with no spinner`() {
+        for (sdk in listOf(null, "LOADING", "BUFFERING")) {
+            val s = station(starting, stationSaid(), sdk)
+            assertTrue(s.playing, "sdk=$sdk"); assertFalse(s.buffering, "sdk=$sdk")
+        }
+    }
+
+    @Test fun `a station that has not been heard from reads playing with the spinner and never paused`() {
+        val silent = station(starting, null, null)
+        assertTrue(silent.playing); assertTrue(silent.buffering)
+        val loading = station(starting, stationSaid().copy(playing = false), "LOADING")
+        assertTrue(loading.playing, "LOADING no longer forces paused for a station"); assertTrue(loading.buffering)
+        val buffering = station(starting, stationSaid().copy(playing = false), "BUFFERING")
+        assertTrue(buffering.playing); assertTrue(buffering.buffering)
+    }
+
+    @Test fun `a station reads paused only after the sdk says paused`() {
+        val paused = station(starting, stationSaid().copy(playing = false), "PAUSED")
+        assertFalse(paused.playing); assertFalse(paused.buffering)
+        val resuming = station(paused, stationSaid().copy(playing = false), "BUFFERING")
+        assertFalse(resuming.playing, "last known stands"); assertTrue(resuming.buffering)
+        assertTrue(station(paused, stationSaid(), "BUFFERING").playing, "the receiver's playing wins over buffering")
+        assertTrue(station(paused, stationSaid(), "PLAYING").playing)
+        assertFalse(station(starting, stationSaid(), "PAUSED").playing, "the sdk's PAUSED decides")
+    }
+
+    @Test fun `a sender that attaches to a station with nothing held reads playing`() {
+        val s = station(null, stationSaid().copy(playing = false), "BUFFERING")
+        assertTrue(s.playing); assertTrue(s.buffering)
+    }
+
+    @Test fun `a song with the same word is unchanged`() {
+        val songSaid = CastReceiverMessage(type = "status", itemId = "t1", title = "Song One", playing = true, queue = songQueue, queueRev = 3, queueIndex = 0)
+        val s = station(song.copy(playing = false), songSaid, "BUFFERING")
+        assertFalse(s.playing); assertTrue(s.buffering)
+        assertFalse(station(song, songSaid, "LOADING").playing)
+    }
+
     // ── the remote's kind ──
 
     @Test fun `a live radio item is a radio remote and never a film`() {

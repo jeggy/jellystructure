@@ -187,6 +187,8 @@ internal object CastSenderDesktop : CastSender {
                     val place = msg.positionMs
                     if (msg.type == "status" && place != null) receiverPlace = CastPlaceReport(place, msg.playing == true, System.currentTimeMillis())
                     else if (msg.type != "tracks") receiverPlace = null
+                    // DEB-3265 — a station's status leaves one line: the receiver's word and CAF's player state, on one clock.
+                    if (msg.type == "status" && msg.radio == true) println("${DesktopLog.stamp()} cast: station status playing=${msg.playing} sdk=${s.media.value?.playerState}")
                     said = foldReceiverMessage(said, msg)
                     rebuild(msg.type)
                 }
@@ -355,6 +357,7 @@ internal object CastSenderDesktop : CastSender {
         queueParts.reset()
         // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
+            playing = data.radio != null,   // DEB-3265 — a station's start reads Playing with the spinner, never Paused
             music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle,
             radio = data.radio != null)   // DEB-2660 (FR-11) — a station: the programme, the station and the logo are title, kicker and art
         // FR-R359-2 — CastLoadData rides once, as the media's customData (the one the receiver reads); the request's is left out.

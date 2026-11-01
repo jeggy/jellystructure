@@ -234,6 +234,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
                 android.util.Log.i("RaviloCast", "R356: queue revision ${msg.queueRev} not held (have ${_status.value?.queueRev}); asking for it")
                 sendRaw(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand("get_queue")))
             }
+            // DEB-3265 — a station's status leaves one line: the receiver's word and the SDK's player state, on one clock.
+            if (msg.type == "status" && msg.radio == true) android.util.Log.i("RaviloCast", "DEB-3265: station status playing=${msg.playing} sdk=${mediaSnapshot().playerState}")
             receiverSaid = foldReceiverMessage(receiverSaid, msg)   // R330 — the rule both senders share
             rebuildStatus(msg.type)
         }
@@ -522,6 +524,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         queueParts.reset()
         // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
+            playing = data.radio != null,   // DEB-3265 — a station's start reads Playing with the spinner, never Paused
             music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle,
             radio = data.radio != null)   // DEB-2660 (FR-11) — a station: the programme, the station and the logo are title, kicker and art
         // R266 (FR-R266-3) — the Ravilo TV app answers a refused LOAD with a media error, not with the web receiver's own
