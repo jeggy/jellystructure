@@ -705,6 +705,22 @@
     "text": "Shuffle",
     "note": "R343 — the Shuffle pill/chip on a series page, and the player's kicker 'Shuffle · S02E07'. Same word as music.shuffle."
   },
+  "detail.play_newest": {
+    "text": "Play newest",
+    "note": "DEB-2938 — the primary button on a newest-first series, followed by ' · Thu 29 Oct' (the newest episode's air date, as the card writes it)."
+  },
+  "detail.caught_up": {
+    "text": "Caught up",
+    "note": "DEB-2938 — the state pill beside the Newest first mark when the newest episode is watched; drawn after a ✓."
+  },
+  "detail.newest_first_a11y": {
+    "text": "Newest first — this series lists its newest episode first",
+    "note": "DEB-2938 — read aloud for the Newest first pill on a series page; never drawn."
+  },
+  "tile.new_on": {
+    "text": "New · {date}",
+    "note": "DEB-2938 — the Continue Watching badge on a newest-first series with an episode you have not started. {date} is the episode's air date, already formatted (date.weekday_day_month)."
+  },
   "imdb.a11y": {
     "text": "IMDb {rating} out of 10, {votes} votes",
     "note": "R279 — read aloud by a screen reader for the IMDb chip; never drawn. {votes} is already abbreviated, e.g. 1.2M."

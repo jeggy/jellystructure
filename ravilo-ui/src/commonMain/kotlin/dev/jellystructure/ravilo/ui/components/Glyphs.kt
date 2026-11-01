@@ -75,6 +75,24 @@ fun ShuffleGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, desc
         line(tint, at(0.86f, 0.70f), at(0.74f, 0.59f), w); line(tint, at(0.86f, 0.70f), at(0.74f, 0.81f), w)
     }
 
+/**
+ * DEB-2938 (FR-12) — sort descending: three bars of decreasing length and an arrow beside them, with no line under
+ * the arrow. The round's arrow onto a baseline read as *download*. The *Newest first* pill's mark.
+ */
+@Composable
+fun SortDescendingGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =
+    GlyphCanvas(glyphSize, description, modifier) {
+        val w = px(2.3f / 24f)
+        fun x(v: Float) = size.width * v / 24f
+        fun y(v: Float) = size.height * v / 24f
+        line(tint, Offset(x(3f), y(6f)), Offset(x(13f), y(6f)), w)
+        line(tint, Offset(x(3f), y(12f)), Offset(x(10f), y(12f)), w)
+        line(tint, Offset(x(3f), y(18f)), Offset(x(7f), y(18f)), w)
+        line(tint, Offset(x(18f), y(5f)), Offset(x(18f), y(18f)), w)
+        val head = Path().apply { moveTo(x(15f), y(14f)); lineTo(x(18f), y(18f)); lineTo(x(21f), y(14f)) }
+        drawPath(head, tint, style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+
 /** ✕ */
 @Composable
 fun CloseGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =

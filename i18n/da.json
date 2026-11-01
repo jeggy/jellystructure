@@ -636,6 +636,22 @@
   "detail.all_watched": {"text": "Alle {n} afsnit set", "note": "R343 — draft Danish."},
   "detail.start_over": "Start forfra",
   "detail.shuffle": "Bland",
+  "detail.play_newest": {
+    "text": "Afspil nyeste",
+    "note": "Draft Danish — review before release."
+  },
+  "detail.caught_up": {
+    "text": "Ajour",
+    "note": "Draft Danish — review before release."
+  },
+  "detail.newest_first_a11y": {
+    "text": "Nyeste først — denne serie viser det nyeste afsnit først",
+    "note": "Draft Danish — review before release."
+  },
+  "tile.new_on": {
+    "text": "Ny · {date}",
+    "note": "Draft Danish — review before release."
+  },
   "imdb.a11y": {
     "text": "IMDb {rating} ud af 10, {votes} stemmer",
     "note": "Draft Danish — review before release."

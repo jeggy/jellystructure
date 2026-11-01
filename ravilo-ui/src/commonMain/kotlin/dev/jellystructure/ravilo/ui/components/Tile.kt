@@ -130,6 +130,9 @@ fun Tile(
     /** R113: small season/episode indicator (e.g. "S1:E3") overlaid on the image for TV shows in
      *  Continue Watching. Null = no badge. */
     episodeBadge: String? = null,
+    /** DEB-2938 (FR-15) — words added to the tile's accessible label after the title (the Continue badge of a
+     *  newest-first series, *New · Thu 29 Oct*), so what a screen reader says matches the badge. Never drawn. */
+    a11yDetail: String? = null,
     /** R171 — overrides [episodeBadge]'s background; defaults to the existing neutral black pill.
      *  Lets Request tiles color-code by acquisition status (available/failed/in-progress) while every
      *  other caller is unaffected. */
@@ -248,7 +251,7 @@ fun Tile(
                 }
                 RemoteImage(
                     url = posterUrl,
-                    contentDescription = title,
+                    contentDescription = if (a11yDetail != null) "$title, $a11yDetail" else title,
                     modifier = Modifier.matchParentSize(),
                     contentScale = contentScale,
                     placeholderColor = posterPlaceholder,

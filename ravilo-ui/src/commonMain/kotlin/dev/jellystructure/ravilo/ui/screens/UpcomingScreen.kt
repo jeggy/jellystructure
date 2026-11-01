@@ -588,13 +588,14 @@ private fun todayUtc(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.
  * every translation.
  */
 @Composable
-internal fun weekdayAbbrev(d: DayOfWeek): String = str(
-    when (d) {
-        DayOfWeek.MONDAY -> "wd.abbr.mon"; DayOfWeek.TUESDAY -> "wd.abbr.tue"; DayOfWeek.WEDNESDAY -> "wd.abbr.wed"
-        DayOfWeek.THURSDAY -> "wd.abbr.thu"; DayOfWeek.FRIDAY -> "wd.abbr.fri"; DayOfWeek.SATURDAY -> "wd.abbr.sat"
-        else -> "wd.abbr.sun"
-    },
-)
+internal fun weekdayAbbrev(d: DayOfWeek): String = str(weekdayKey(d))
+
+// DEB-2938 — the key alone, so the newest-first air date (NewestFirst.kt) spells a weekday the same way.
+internal fun weekdayKey(d: DayOfWeek): String = when (d) {
+    DayOfWeek.MONDAY -> "wd.abbr.mon"; DayOfWeek.TUESDAY -> "wd.abbr.tue"; DayOfWeek.WEDNESDAY -> "wd.abbr.wed"
+    DayOfWeek.THURSDAY -> "wd.abbr.thu"; DayOfWeek.FRIDAY -> "wd.abbr.fri"; DayOfWeek.SATURDAY -> "wd.abbr.sat"
+    else -> "wd.abbr.sun"
+}
 
 /** R279 — see [weekdayAbbrev]; `month.*` is shared with the episode card's air date. */
 @Composable

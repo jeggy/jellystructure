@@ -64,6 +64,9 @@ internal fun rewatchEpisodeId(detail: SeriesDetail, overlay: Map<String, CardPla
  * counted episode; any episode at all.
  */
 internal fun primaryEpisodeId(detail: SeriesDetail, overlay: Map<String, CardPlayState>): String? {
+    // DEB-2938 (FR-10) — a newest-first series always plays its newest episode, from this list and not from the
+    // server's pointer (which an older server does not set that way); a series with only specials falls through.
+    if (detail.newestFirst) newestEpisode(detail.seasons)?.let { return it.id }
     val all = detail.seasons.flatMap { it.episodes }
     val counted = countedEpisodes(detail.seasons)
     if (seriesFinished(counted, overlay)) return rewatchEpisodeId(detail, overlay) ?: counted.first().id
@@ -89,11 +92,13 @@ internal fun railOpeningIndex(
     overlay: Map<String, CardPlayState>,
     primaryId: String?,
     anchorId: String? = null,
+    newestFirst: Boolean = false,
 ): Int {
     fun slotOf(id: String?) = id?.let { target -> groups.indexOfFirst { g -> g.any { it.id == target } } }?.takeIf { it >= 0 }
+    // DEB-2938 (FR-8) — a newest-first rail starts at its newest, the first slot, never at "the first unwatched".
     return slotOf(anchorId)
         ?: slotOf(primaryId)
-        ?: slotOf(groups.flatten().firstOrNull { ep -> overlay[ep.id]?.played != true }?.id)
+        ?: (if (newestFirst) null else slotOf(groups.flatten().firstOrNull { ep -> overlay[ep.id]?.played != true }?.id))
         ?: 0
 }
 

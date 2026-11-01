@@ -55,6 +55,11 @@ fun EpisodeCard(
     /** R350 (FR-R350-10) — the season's number, so the card names its episode `S01E05` like every viewer screen
      *  (R346 FR-R346-5). Null keeps the bare `E5`. */
     seasonNumber: Int? = null,
+    /** DEB-2938 (FR-9) — a newest-first series' air date, already formatted: the card's main label in place of the
+     *  code, with the title as the second line, and no episode-number overlay. Null keeps the code. */
+    airLabel: String? = null,
+    /** DEB-2938 (FR-12) — the *NEW* ribbon of a newest-first series' newest episode, in the *UP NEXT* ribbon's place. */
+    newRibbon: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -118,8 +123,8 @@ fun EpisodeCard(
                 )
             }
 
-            // Episode number overlay (top-start)
-            Text(
+            // Episode number overlay (top-start) — a dated card has the date for its name instead (DEB-2938).
+            if (airLabel == null) Text(
                 text = "${episode.episodeNumber}",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 30.sp,
@@ -168,6 +173,8 @@ fun EpisodeCard(
                 }
             }
 
+            if (newRibbon) NewEpisodeRibbon(Modifier.align(Alignment.BottomStart))
+
             // Watched circle (bottom-end)
             if (isWatched) {
                 Box(
@@ -204,7 +211,7 @@ fun EpisodeCard(
         // Text area
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
-                text = "${cardEpisodeCode(seasonNumber, episode.episodeNumber)} · ${episode.title}",
+                text = if (airLabel != null) airLabel else "${cardEpisodeCode(seasonNumber, episode.episodeNumber)} · ${episode.title}",
                 color = if (focused) colors.text else colors.textSecondary,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -212,8 +219,20 @@ fun EpisodeCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // DEB-2938 (FR-9) — a dated card: the air date was the main label, so the title is the second line.
+            if (airLabel != null) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = episode.title,
+                    color = colors.textDim,
+                    fontSize = 13.sp,
+                    fontFamily = sora,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             // R148: episode air date (scanned from TMDB) under the title — nothing when absent.
-            episode.airDate?.let { formatAirDate(it) }?.let { aired ->
+            else episode.airDate?.let { formatAirDate(it) }?.let { aired ->
                 Spacer(Modifier.height(3.dp))
                 Text(
                     text = aired,
@@ -238,6 +257,16 @@ fun EpisodeCard(
             // device carries. The server sends `playback_note` null; an older server's note is not drawn either.
         }
     }
+    }
+}
+
+/** DEB-2938 (FR-12) — *NEW*, on the newest episode's card of a newest-first series that has an older one watched. */
+@Composable
+internal fun NewEpisodeRibbon(modifier: Modifier = Modifier) {
+    val colors = RaviloTheme.colors
+    val gradient = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
+    Box(modifier = modifier.padding(start = 8.dp, bottom = 8.dp).background(gradient, RoundedCornerShape(6.dp)).padding(horizontal = 9.dp, vertical = 3.dp)) {
+        Text(str("tile.badge_new"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 0.5.sp)
     }
 }
 

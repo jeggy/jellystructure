@@ -63,6 +63,8 @@ fun MultiEpisodeCard(
     playstateOverlay: Map<String, CardPlayState> = emptyMap(),
     /** R350 (FR-R350-10) — see [EpisodeCard]'s `seasonNumber`. */
     seasonNumber: Int? = null,
+    /** DEB-2938 (FR-12) — see [EpisodeCard]'s `newRibbon`. */
+    newRibbon: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -149,6 +151,8 @@ fun MultiEpisodeCard(
                     Text(str("player.up_next"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
                 }
             }
+
+            if (newRibbon) NewEpisodeRibbon(Modifier.align(Alignment.BottomStart))
 
             if (allWatched) {
                 Box(

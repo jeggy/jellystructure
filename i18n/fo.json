@@ -636,6 +636,22 @@
   "detail.all_watched": {"text": "Allir {n} partar sæddir", "note": "R343 — draft Faroese; `partar` as in R288's lexicon (the spec's draft had `partarnir`)."},
   "detail.start_over": "Byrja av nýggjum",
   "detail.shuffle": "Blanda",
+  "detail.play_newest": {
+    "text": "Spæl nýggjasta",
+    "note": "Draft Faroese — review before release."
+  },
+  "detail.caught_up": {
+    "text": "Dagført",
+    "note": "Draft Faroese — review before release."
+  },
+  "detail.newest_first_a11y": {
+    "text": "Nýggjast fyrst — henda røðin vísir nýggjasta partin fyrst",
+    "note": "Draft Faroese — review before release."
+  },
+  "tile.new_on": {
+    "text": "Nýtt · {date}",
+    "note": "Draft Faroese — review before release."
+  },
   "imdb.a11y": {
     "text": "IMDb {rating} av 10, {votes} atkvøður",
     "note": "Draft Faroese — review before release."

@@ -62,6 +62,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,6 +78,7 @@ import dev.jellystructure.ravilo.ui.components.CertBadge
 import dev.jellystructure.ravilo.ui.components.DetailErrorState
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
+import dev.jellystructure.ravilo.ui.components.SortDescendingGlyph
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.GenreChipRow
 import dev.jellystructure.ravilo.ui.components.ImdbChip
@@ -147,7 +150,7 @@ fun SeriesDetailScreen(
             is SeriesDetailState.Loading -> DetailLoadingShell()
             is SeriesDetailState.Error -> DetailErrorState(kind = s.kind, onRetry = { store.retry() }, onBack = onBack)
             is SeriesDetailState.Loaded -> SeriesDetailLoaded(
-                detail = s.detail,
+                wireDetail = s.detail,
                 overlay = overlay,
                 onBack = onBack,
                 onPlay = onPlay,
@@ -194,6 +197,15 @@ private fun episodeGroupRange(ep: Episode, episodes: List<Episode>): Pair<Int, I
 /** R346 (FR-R346-5) — the player's kicker and the page's codes are one spelling: `S01E05`, a multi-episode
  *  file `S01E01–E03` (was `S1 · E5` here and `S1E5` beside it). */
 private fun episodeKicker(sNum: Int, ep: Episode, episodes: List<Episode>): String = seasonEpisodeCode(sNum, ep, episodes)
+
+/**
+ * DEB-2938 (FR-9) — what names an episode where a viewer would see its code (the player's title line, the button, the
+ * resume kicker): on a newest-first series its air date (*Thu 29 Oct*), else — no date, a multi-episode file's range,
+ * or any other series — [seasonEpisodeCode].
+ */
+private fun episodeLabel(newestFirst: Boolean, sNum: Int, ep: Episode, episodes: List<Episode>, lang: String): String =
+    if (episodeGroupRange(ep, episodes) != null) seasonEpisodeCode(sNum, ep, episodes)
+    else episodeName(newestFirst, ep, lang) { seasonEpisodeCode(sNum, ep, episodes) }
 
 /** R309 (FR-R309-4/5) / R346 (FR-R346-5): `S01E01–E03` for a multi-episode file, `S01E04` for a lone
  *  episode — the primary button and the hero's resume line, from the same [episodeGroupRange] the kicker uses. */
@@ -249,12 +261,13 @@ private fun buildEpisodeContext(
     val ep = group.firstOrNull { it.id == epId } ?: group.firstOrNull() ?: episodes.first()
     val nextGroup = groups.getOrNull(groupIdx + 1)
     val nextEp = nextGroup?.let { groupEntryPoint(it, overlay) }
+    val nf = detail.newestFirst   // DEB-2938 (FR-9) — the player's title line names a dated episode by its date
     return EpisodePlayContext(
         episodeId    = epId,
         episodeTitle = episodeDisplayTitle(ep, episodes, lang),
-        kicker       = episodeKicker(sNum, ep, episodes),
+        kicker       = episodeLabel(nf, sNum, ep, episodes, lang),
         nextEpId     = nextEp?.id,
-        nextEpLabel  = nextEp?.let { episodeKicker(sNum, it, episodes) },
+        nextEpLabel  = nextEp?.let { episodeLabel(nf, sNum, it, episodes, lang) },
         nextEpTitle  = nextEp?.let { episodeDisplayTitle(it, episodes, lang) },
         episodes     = groups.map { g ->
             val rep = groupEntryPoint(g, overlay)
@@ -266,7 +279,7 @@ private fun buildEpisodeContext(
                 id            = rep.id,
                 numberLabel   = if (g.size > 1) null else rep.episodeNumber.toString(),
                 title         = episodeDisplayTitle(rep, episodes, lang),
-                kicker        = episodeKicker(sNum, rep, episodes),
+                kicker        = episodeLabel(nf, sNum, rep, episodes, lang),
                 durationLabel = if (totalRuntime > 0) "${totalRuntime}m" else "",
                 progressPct   = ps?.playedPct ?: rep.playback?.pct ?: 0f,
                 watched       = groupWatched,
@@ -320,7 +333,8 @@ internal fun buildShufflePlan(
 /** R343 (FR-R343-9) — internal (not private) so the focus-path test can render it with a fixed detail and overlay. */
 @Composable
 internal fun SeriesDetailLoaded(
-    detail: SeriesDetail,
+    // DEB-2938 (FR-8) — as the server sent it; the page draws [detail] below, which a newest-first series reverses.
+    wireDetail: SeriesDetail,
     overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
@@ -339,6 +353,9 @@ internal fun SeriesDetailLoaded(
 ) {
     val colors = RaviloTheme.colors
     val lang = LocalLang.current  // R309 (FR-R309-5): the player's title for a multi-episode file
+    val detail = remember(wireDetail) { wireDetail.forDisplay() }
+    val nf = detail.newestFirst   // DEB-2938 — a newest-first series (FR-8..FR-12)
+    val newest = remember(detail) { if (nf) newestEpisode(detail.seasons) else null }
     val spaceGrotesk = SpaceGrotesk
     val sora = Sora
     // R109: LazyColumn so below-hero rails (season picker, episodes, cast, related) compose only when
@@ -403,10 +420,10 @@ internal fun SeriesDetailLoaded(
     // R375 (FR-R375-5) — a finished series being re-watched: the server names the next episode in order, and the
     // page resumes it (Resume, the kicker, no `start_over`); *Start over* only when it names nothing. The *All {n}
     // episodes watched* line, Reset progress and Shuffle keep plain `finished`.
-    val startOverMode = remember(finished, overlay) { finished && rewatchEpisodeId(detail, overlay) == null }
+    val startOverMode = remember(finished, overlay) { !nf && finished && rewatchEpisodeId(detail, overlay) == null }
     // R343 (FR-R343-10) — Start over and Shuffle only when this server says it can do them.
     val canStartOver = detail.startOver
-    val canShuffle = detail.shuffle
+    val canShuffle = detail.shuffle && !nf   // DEB-2938 (FR-11) — a newest-first series has no Shuffle
     val compact = LocalCompact.current
     // FR-R343-5 / dev review item 8 — a pill row for 2+ seasons; on the TV family also for one season with
     // Shuffle (one Season 1 pill, then Shuffle). The phone's Shuffle is a chip in the Episodes header instead.
@@ -436,15 +453,17 @@ internal fun SeriesDetailLoaded(
     // toggle) used to scroll the rail away from the focused card. `requestScrollToItem` applies on the rail's next
     // measure, so it is safe whether or not the rail's lazy item is composed right now.
     val railGroups = remember(episodes) { episodeGroups(episodes) }
+    // DEB-2938 (FR-12) — the *NEW* ribbon rides on the newest episode's card, under *New Episode*'s condition.
+    val newRibbon = nf && newestState(detail, overlay) == NewestState.NEW_EPISODE
     LaunchedEffect(selectedSeasonIdx, overlayLoaded, railGroups) {
         if (!overlayLoaded) return@LaunchedEffect
-        epRowState.requestScrollToItem(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId))
+        epRowState.requestScrollToItem(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId, nf))
     }
     // R365 (FR-R365-3) — Down from the open season's pill lands on the card the rail opened on (`railOpeningIndex`:
     // the primary episode when this season holds it, else the first unwatched, else the start), through a requester
     // on that card; never the card that merely sits under the pill.
     val entryCardFR = remember { FocusRequester() }
-    val entryCardId = railGroups.getOrNull(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId))?.first()?.id
+    val entryCardId = railGroups.getOrNull(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId, nf))?.first()?.id
     val focusEntryCard: () -> Unit = {
         requestFocusRetryingOrMoveNative(scope, if (entryCardId != null && entryCardId == returnCardId) returnCardFR else entryCardFR,
             focusManager, androidx.compose.ui.focus.FocusDirection.Down)
@@ -617,17 +636,20 @@ internal fun SeriesDetailLoaded(
                         // R343 (FR-R343-2) — on a finished series the accent line below says it once (*All
                         // {n} episodes watched*), so this line is hidden; its space stays reserved (no shift).
                         val progressAlpha by animateFloatAsState(
-                            targetValue = if (overlayLoaded && counted.isNotEmpty() && !finished) 1f else 0f,
+                            targetValue = if (overlayLoaded && counted.isNotEmpty() && !finished && !nf) 1f else 0f,
                             label = "watchedCountAlpha",
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            // R346 (FR-R346-4) — counted episodes only (no specials, no unplayable rows).
-                            text = str("detail.episodes_watched", mapOf("watched" to watchedCount.toString(), "total" to counted.size.toString())),
-                            color = colors.textDim,
-                            fontSize = 13.sp,
-                            modifier = Modifier.alpha(progressAlpha),
-                        )
+                        // DEB-2938 (FR-11) — a newest-first series shows no watched count at all (no line, no space).
+                        if (!nf) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                // R346 (FR-R346-4) — counted episodes only (no specials, no unplayable rows).
+                                text = str("detail.episodes_watched", mapOf("watched" to watchedCount.toString(), "total" to counted.size.toString())),
+                                color = colors.textDim,
+                                fontSize = 13.sp,
+                                modifier = Modifier.alpha(progressAlpha),
+                            )
+                        }
                         detail.synopsis?.let {
                             Spacer(Modifier.height(10.dp))
                             DetailSynopsis(   // R135: focusable; SELECT expands the full text inline
@@ -641,8 +663,10 @@ internal fun SeriesDetailLoaded(
                         }
                         // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
                         // R306 (FR-R306-5) — the same episode the Resume button plays when Continue Watching names one.
+                        // DEB-2938 (FR-9/10) — on a newest-first series, only the newest, and only while it is in progress.
                         val resumeEpEntry = if (overlayLoaded && !startOverMode) (
-                            overlay[detail.card.id]?.continueEpisodeId?.let { cid -> allEps.firstOrNull { it.id == cid } }
+                            if (nf) newest?.takeIf { newestInProgress(it, overlay) }
+                            else overlay[detail.card.id]?.continueEpisodeId?.let { cid -> allEps.firstOrNull { it.id == cid } }
                                 ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
                         ) else null
                         val resumeKicker = resumeEpEntry?.let { ep ->
@@ -652,15 +676,15 @@ internal fun SeriesDetailLoaded(
                             when {
                                 season == null -> ep.title
                                 episodeGroupRange(ep, season.episodes) != null -> seasonEpisodeCode(season.index, ep, season.episodes)
-                                else -> "${seasonEpisodeCode(season.index, ep, season.episodes)} · ${ep.title}"
+                                else -> "${episodeLabel(nf, season.index, ep, season.episodes, lang)} · ${ep.title}"
                             }
                         }
                         val kickerAlpha by animateFloatAsState(
-                            targetValue = if (resumeKicker != null || finished) 1f else 0f,
+                            targetValue = if (resumeKicker != null || (finished && !nf)) 1f else 0f,
                             label = "resumeKickerAlpha",
                         )
                         Spacer(Modifier.height(8.dp))
-                        if (finished) {
+                        if (finished && !nf) {
                             // R343 (FR-R343-2) — ✓ All {n} episodes watched, in place of the up-next line.
                             FinishedHint(counted.size, Modifier.alpha(kickerAlpha))
                         } else Text(
@@ -670,6 +694,11 @@ internal fun SeriesDetailLoaded(
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.alpha(kickerAlpha),
                         )
+                        // DEB-2938 (FR-12) — the series' mark and the viewer's state, under the synopsis.
+                        if (nf) {
+                            Spacer(Modifier.height(10.dp))
+                            NewestFirstPills(newestState(detail, overlay))
+                        }
                         // R149: next-airing line — in the hero, beside the resume/up-next kicker above the
                         // fold (design's .dnext-row), not below the season picker. No source attribution.
                         detail.nextAiring?.let { na ->
@@ -777,7 +806,7 @@ internal fun SeriesDetailLoaded(
                         val resumeShort = resumeEpId?.let { rid ->
                             val season = detail.seasons.firstOrNull { s -> s.episodes.any { it.id == rid } }
                             val ep = season?.episodes?.firstOrNull { it.id == rid }
-                            if (season != null && ep != null) seasonEpisodeCode(season.index, ep, season.episodes) else null
+                            if (season != null && ep != null) episodeLabel(nf, season.index, ep, season.episodes, lang) else null   // DEB-2938 (FR-9)
                         }
                         // R346 — Resume once the viewer has begun the series (or the target is in progress);
                         // else Play. Both name the episode by its code (was the literal "Play · E1").
@@ -790,6 +819,9 @@ internal fun SeriesDetailLoaded(
                         val playLabel = when {
                             // R351 (FR-R351-8) — connected, it still names the episode it will play (R346).
                             castDevice != null -> str("cast.play_on", mapOf("device" to castDevice)) + (resumeShort?.let { " · $it" } ?: "")
+                            // DEB-2938 (FR-10) — Resume · Thu 29 Oct while the newest is in progress, else Play newest · Thu 29 Oct
+                            // (a watched newest plays again from the start); never a count of anything.
+                            nf -> newestButtonLabel(resumeShort, targetInProgress, lang)
                             startOverNow && resumeShort != null -> "${str("detail.start_over")} · $resumeShort"
                             hasResume && resumeShort != null -> "${str("action.resume")} · $resumeShort"
                             resumeShort != null -> "${str("action.play")} · $resumeShort"
@@ -854,7 +886,7 @@ internal fun SeriesDetailLoaded(
             // Shuffle chip at its right. Nothing focusable on the TV.
             val episodesHeader: @Composable () -> Unit = {
                 EpisodesHeader(
-                    watchedLabel = if (overlayLoaded) "$seasonWatched / ${episodes.size} ${str("action.watched").lowercase()}" else null,
+                    watchedLabel = if (overlayLoaded && !nf) "$seasonWatched / ${episodes.size} ${str("action.watched").lowercase()}" else null,
                     shuffleLabel = if (canShuffle && compact) str("detail.shuffle") else null,
                     onShuffle = startShuffle,
                     shuffleFocusRequester = shuffleFR,
@@ -881,8 +913,8 @@ internal fun SeriesDetailLoaded(
                         // done here makes a manual pick permanently win, no matter when it happens.
                         onSelect = { selectedSeasonIdx = it; autoSeasonDone = true },
                         firstFocusRequester = seasonFirstFR,   // R138
-                        watchedSeasons = watchedSeasons,
-                        watchedCounts = watchedCounts,
+                        watchedSeasons = if (nf) emptySet() else watchedSeasons,   // DEB-2938 (FR-11) — no watched counts
+                        watchedCounts = if (nf) emptyMap() else watchedCounts,
                         shuffleLabel = if (pillShuffle) str("detail.shuffle") else null,
                         onShuffle = if (pillShuffle) startShuffle else null,
                         shuffleFocusRequester = shuffleFR,
@@ -954,7 +986,8 @@ internal fun SeriesDetailLoaded(
                                         MultiEpisodeCard(
                                             episodes = group,
                                             focusRequester = if (group.first().id == returnCardId) returnCardFR else if (group.first().id == entryCardId) entryCardFR else null,   // R350 / R365
-                                            isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
+                                            isResumeGroup = overlayLoaded && !nf && group.any { it.id == resumeEpId },
+                                            newRibbon = newRibbon && group.any { it.id == newest?.id },   // DEB-2938 (FR-12)
                                             playstateOverlay = overlay,
                                             seasonNumber = currentSeason?.index,   // R350 (FR-R350-10)
                                             onSelect = { playCard(group.first().id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay, lang)) },
@@ -972,7 +1005,9 @@ internal fun SeriesDetailLoaded(
                                             episode = ep,
                                             focusRequester = if (ep.id == returnCardId) returnCardFR else if (ep.id == entryCardId) entryCardFR else null,   // R350 (FR-R350-2) / R365
                                             // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
-                                            isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
+                                            isResumeEpisode = overlayLoaded && !nf && ep.id == resumeEpId,   // DEB-2938 (FR-11) — no UP NEXT on a newest-first series
+                                            airLabel = if (nf) airDateLabel(ep.airDate) else null,   // DEB-2938 (FR-9)
+                                            newRibbon = newRibbon && ep.id == newest?.id,   // DEB-2938 (FR-12)
                                             playstateOverride = overlay[ep.id],
                                             seasonNumber = currentSeason?.index,   // R350 (FR-R350-10) — S01E05 on the card
                                             onSelect = { playCard(ep.id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay, lang)) },
@@ -1118,6 +1153,44 @@ private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuff
                 Spacer(Modifier.width(7.dp))
                 Text(shuffleLabel, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
             }
+        }
+    }
+}
+
+/**
+ * DEB-2938 (FR-12) — the hero's two pills on a newest-first series. The first is a property of the series, *Newest
+ * first* with a sort-descending glyph (a screen reader says `detail.newest_first_a11y`); the second is the viewer's
+ * state, *New Episode* or *Caught up* (✓), and is absent otherwise. Neither takes focus.
+ */
+@Composable
+private fun NewestFirstPills(state: NewestState) {
+    val colors = RaviloTheme.colors
+    val shape = RoundedCornerShape(24.dp)
+    val a11y = str("detail.newest_first_a11y")
+    @Composable
+    fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit) = Row(
+        modifier = modifier.clip(shape).background(Color.Black.copy(alpha = 0.4f)).border(1.dp, colors.textDim.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) { content() }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Pill(Modifier.semantics { contentDescription = a11y }) {
+            SortDescendingGlyph(colors.textSecondary, 16.dp)
+            Spacer(Modifier.width(7.dp))
+            Text(str("browse.sort.newest"), color = colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+        when (state) {
+            NewestState.NEW_EPISODE -> Pill {
+                Box(modifier = Modifier.size(7.dp).background(colors.accent, CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Text(str("up.new_episode"), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            NewestState.CAUGHT_UP -> Pill {
+                CheckGlyph(colors.badgeWatched, 14.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(str("detail.caught_up"), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            NewestState.NONE -> {}
         }
     }
 }
