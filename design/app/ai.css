@@ -386,6 +386,16 @@
   .afx .af-form > .btn{margin-top:0;order:2}
 }
 
+/* The queue row's three columns are 64 px, the name and the badges-and-button cell, and at phone
+   width the last takes most of the card, leaving the name a sliver one word wide (DEB-3318). The
+   badges and the TMDB button drop to a line of their own under the thumbnail and the name, which
+   is the stacked-card language the fetchers table uses a few rules below. */
+@media (max-width:640px){
+  .afx .tq-row{grid-template-columns:64px minmax(0,1fr);align-items:start;row-gap:8px}
+  .afx .tq-row .nm{overflow-wrap:anywhere}
+  .afx .tq-row .st{grid-column:1 / -1;flex-wrap:wrap}
+}
+
 /* At the house breakpoint the fetchers table becomes a card per fetcher. Round 9's review found
    the alternative at exactly this width: a five-column row holds its columns at phone width and
    turns every label into a column one word wide. Not a table squeezed sideways. */
