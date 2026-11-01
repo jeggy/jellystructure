@@ -14,9 +14,9 @@ import org.w3c.dom.HTMLElement
 
 /**
  * DEB-1253 (FR-2..FR-7) — the admin's AI page: its own header, a tab strip (`.tk-tabs`) in the server's order, and one
- * panel per tab. Support (DEB-1500, `SupportTab.kt`) and Suggestions are built; Fetchers adds a tab here later. Styles:
+ * panel per tab. Support (DEB-1500, `SupportTab.kt`), Fetchers (DEB-2477, `FetchersTab.kt`) and Suggestions are built. Styles:
  * `design/app/app.css` (`.tk-tabs`, `.tk-cnt`, `.ai-offl`), `design/app/support.css` (`.tksup`, the Support panel's host) and
- * `design/app/suggestions.css` (`.sg-tb`).
+ * `design/app/suggestions.css` (`.sg-tb`) and `design/app/ai.css` (Fetchers; every rule is scoped under `.afx`, which its panel carries).
  */
 private val AI_TAB_LABELS = mapOf("support" to "Support", "fetchers" to "Fetchers", "suggestions" to "Suggestions")
 
@@ -58,6 +58,7 @@ fun renderAiPage(container: Element, scope: CoroutineScope, query: Map<String, S
 /** Called on every route that is not the AI page, and before it is drawn again: the strip, the probe and the listener go. */
 fun leaveAiPage() {
     leaveSupportTab()
+    leaveFetchersTab()
     aiProbe?.cancel(); aiProbe = null
     aiLost = false
     ServerLink.onNoResponse = null
@@ -78,7 +79,7 @@ private fun mountAiPage(container: Element, scope: CoroutineScope, tabs: List<St
         </div>
         <div class="ai-offl" id="ai-offl" role="status"><span class="dot"></span><span><b>Connection to this server lost · reconnecting.</b> What you see is what it last sent. Nothing is sent until it’s back.</span></div>
         <div class="tk-tabs" id="ai-tabs">${tabs.joinToString("") { """<span data-tab="$it">${AI_TAB_LABELS[it] ?: it}${if (it == "support") """<b class="tk-cnt" id="ai-tab-count" style="display:none"></b>""" else ""}</span>""" }}</div>
-        ${tabs.joinToString("") { """<div id="ai-${it}" data-ai-panel="$it"${if (it == "support") " class=\"tksup\"" else ""} style="display:none"></div>""" }}
+        ${tabs.joinToString("") { """<div id="ai-${it}" data-ai-panel="$it"${if (it == "support") " class=\"tksup\"" else if (it == "fetchers") " class=\"afx\"" else ""} style="display:none"></div>""" }}
         </div>
     """.trimIndent()
     document.getElementById("ai-tabs")?.addEventListener("click", { ev ->
@@ -102,6 +103,7 @@ private fun showAiTab(scope: CoroutineScope, tab: String) {
     when (tab) {
         "support" -> renderSupportTab(panel, scope, Router.currentQuery())
         "suggestions" -> renderSuggestions(panel, scope, Router.currentQuery(), inTab = true)
+        "fetchers" -> renderFetchersTab(panel, scope)
     }
 }
 

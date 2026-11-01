@@ -548,7 +548,7 @@ private suspend fun loadRuns(container: Element) {
                 else -> "${r.events} events"
             }
             // Phase 135 (FR-135-4) — badge scope/type alongside trigger in the run picker too.
-            val scopeLabel = if (r.scope == "pipeline") "pipeline" else "scan"
+            val scopeLabel = when (r.scope) { "pipeline" -> "pipeline"; "autofetch" -> "auto-fetch"; else -> "scan" }   // DEB-2477 (FR-11): a fetcher's run is an entry beside the scans'
             val typeSuffix = if (r.type == "full") " (full)" else ""
             sb.append("""<option value="${r.runId.escapeHtml()}">${r.trigger.escapeHtml()} · $scopeLabel$typeSuffix · $whenStr · $status</option>""")
         }
