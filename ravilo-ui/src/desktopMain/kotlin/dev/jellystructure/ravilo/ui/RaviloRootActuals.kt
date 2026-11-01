@@ -9,6 +9,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.serviceLoaderEnabled
 import coil3.svg.SvgDecoder
+import dev.jellystructure.ravilo.ui.desktop.DeadConnectionGuard
 import dev.jellystructure.ravilo.ui.desktop.DesktopPaths
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import dev.jellystructure.ravilo.ui.desktop.PrefsFile
@@ -33,7 +34,7 @@ import java.util.concurrent.TimeUnit
  * saying `mac` (FR-R328-6) — or `linux` for the development build, which is honest and changes nothing on the wire.
  */
 internal object DesktopApp {
-    val okHttp: OkHttpClient by lazy { OkHttpClient() }
+    val okHttp: OkHttpClient by lazy { OkHttpClient.Builder().addNetworkInterceptor(DeadConnectionGuard).build() }   // DEB-3336
 
     val platform: String = if (DesktopPaths.isMac) "mac" else "linux"
 
