@@ -414,6 +414,21 @@ object MediaApi {
         httpClient.get("/api/media/$id").body<MediaItem>()
     }.getOrNull()
 
+    // DEB-2916 (FR-2, FR-17) — a series' episode order: the effective value and where it came from. The GET is
+    // the item's own, which carries the two fields for a series; the PUT stores the admin's choice and answers
+    // with the same two.
+    suspend fun episodeOrder(id: String): dev.jellystructure.ui.EpisodeOrderState? = runCatching {
+        httpClient.get("/api/media/$id").body<dev.jellystructure.ui.EpisodeOrderState>()
+    }.getOrNull()
+
+    suspend fun setEpisodeOrder(id: String, newestFirst: Boolean): dev.jellystructure.ui.EpisodeOrderState? = runCatching {
+        val response = httpClient.put("/api/media/$id/episode-order") {
+            setBody("""{"newest_first":$newestFirst}""")
+            contentType(ContentType.Application.Json)
+        }
+        if (response.status == HttpStatusCode.OK) response.body<dev.jellystructure.ui.EpisodeOrderState>() else null
+    }.getOrNull()
+
     @Serializable
     data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
 

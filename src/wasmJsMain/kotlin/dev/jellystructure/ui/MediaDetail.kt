@@ -584,7 +584,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val resolverTraceHtml = buildMetadataLanguageCard(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
     val ageRatingBadgeHtml = buildAgeRatingBadge(item, ageRatingCascade)
-    val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
+    val episodesTabHtml = if (isTvShow) episodeOrderShellHtml() + buildEpisodesTab(item) else ""  // DEB-2916 (FR-17)
 
     // Phase 144: cover-art-muxed-as-video banner + one-click repair. Movie → drop its cover video
     // stream; series → drop it from every affected episode file. Each drop is a queued ffmpeg remux.
@@ -1176,6 +1176,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
     scope.launch { loadDrift(item.id, scope) }
+    if (isTvShow) scope.launch { loadEpisodeOrder(item.id, scope) }   // DEB-2916 (FR-17)
     scope.launch { loadMkvHealth(item, scope) }
     scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadTrackCoverage(item) }   // Phase 255
@@ -1445,6 +1446,28 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         val result = MediaApi.checkNfoWritable(item.id)
         if (result != null && !result.writable) {
             showNfoPermBanner(result.error ?: "write permission check failed", result.path)
+        }
+    }
+}
+
+// DEB-2916 (FR-17) — the Episode order control. Reads FR-2's two fields, paints them, and on a click sends the PUT
+// and paints the answer. Nothing is held here between paints: a failed save repaints from a fresh read.
+private suspend fun loadEpisodeOrder(mediaId: String, scope: CoroutineScope) {
+    paintEpisodeOrder(mediaId, MediaApi.episodeOrder(mediaId), scope)
+}
+
+private fun paintEpisodeOrder(mediaId: String, order: EpisodeOrderState?, scope: CoroutineScope) {
+    val mount = document.getElementById(EPISODE_ORDER_MOUNT_ID) ?: return
+    mount.innerHTML = episodeOrderHtml(order)
+    val options = mount.querySelectorAll("#ep-order-seg span[data-order]")
+    for (i in 0 until options.length) {
+        val option = options.item(i) as? HTMLElement ?: continue
+        option.addEventListener("click") {
+            val newestFirst = option.getAttribute("data-order") == "newest"
+            scope.launch {
+                val saved = MediaApi.setEpisodeOrder(mediaId, newestFirst)
+                paintEpisodeOrder(mediaId, saved ?: MediaApi.episodeOrder(mediaId), scope)
+            }
         }
     }
 }
