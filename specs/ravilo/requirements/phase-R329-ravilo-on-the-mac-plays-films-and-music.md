@@ -2,12 +2,12 @@
 
 > Owner, 2026-09-29: a Ravilo app for the Mac, its `.dmg` on every release (R331).
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-09-29; a film played on a real Mac the same day (a 4K HDR film as the server's 1080p SDR, text subtitles, seeking) — music, the media keys and the spike's 4K numbers are still owed** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3.
-**Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Second of four** (R328 → **R329** → R330 → R331). **Builds on** R328's native
-library, the receiver's `hls_only` negotiation (the Chromecast path, `2b19966f`), R218 (waiting states), R180/R195
-(the picker), R282/R285 (burn-in by restream), R322/R323 (the music and book engine), phase 180 (the stop).
+Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3; **dev-reviewed
+2026-09-29** against `main` `4c67e49f` (§Dev review). **Second of four** (R328 → **R329** → R330 → R331). **Builds on**
+R328's native library, the receiver's `hls_only` negotiation (the Chromecast path, `2b19966f`), R218 (waiting states),
+R180/R195 (the picker), R282/R285 (burn-in by restream), R322/R323 (the music and book engine), phase 180 (the stop).
 
 ## Decisions (leans)
 
@@ -381,3 +381,71 @@ this pass adds is the way to read them *off the player* on a Mac, which is why t
 **Still owed, and only a Mac can give it:** acceptance 1 at 4K (now readable with `player`), 3's DTS leg, 4's PGS,
 5 (music, the media keys, Control Center — the keys need real input, which ssh has no Accessibility permission for),
 and the two re-tests the evening fixes left. All on the Mac-set QA task (DEB-701), not re-filed here.
+
+## Amendment 2026-11-01 — what a Mac viewer gets from a 4K film (DEB-3338)
+
+**A 4K film reaches the Mac as our encoder's ladder, up to the 2160p rung. It is not copied, and it is not held at
+1080p.** Found on DEB-701 (the owner's XDR MacBook, app 1.62): a 3840×2160 HDR10 HEVC film played 346 s with 0 dropped
+frames at a presentation size of 1920×1080.
+
+**What that play really was** (from the backend log and Jellyfin's own ffmpeg log):
+
+- The app reports no decoder ceiling (dev review 10), so the backend declares 1920×1080 on the `h264` profile. The Mac's
+  transcoding profile lists `hevc,h264`, so Jellyfin applies that size to the whole stream: `MaxWidth=1920&MaxHeight=1080`,
+  on an HEVC source.
+- `TranscodeReasons` named only audio and the container, so `reencodesVideo` read a copy (`reencodes=false`). That skipped
+  our encoder and the ladder alike.
+- Jellyfin did re-encode: `h264_nvenc`, `scale_cuda=w=1920:h=1080`, `tonemap_cuda` to Rec. 709, at
+  `-b:v 46971205`. So the Mac got **1080p H.264 SDR at the 4K source's 47 Mbps**, about four times our own 1080p H.264
+  rung's 12 Mbps. The ~84.7 Mbps in the URL is the budget, not what was encoded.
+- The Mac did claim HDR: the URL lists `HDR10` in `hevc-rangetype`, which only `supportsHdr10` adds. The claim is also
+  what opened this road. Without it the same film carries `VideoRangeTypeNotSupported`, which reads as a re-encode and
+  goes to our encoder, as it did on the morning of 2026-10-09. `3aa3e867` (DEB-2212) changed nothing here: the Mac
+  reports no decode health, so it keeps the old rule.
+
+The defect that routes this play is in `reencodesVideo`, and FR-313-18 fixes it. It reaches past the Mac, so it lives
+in 313's file.
+
+**FR-R329-12 — The road for a film above 1080p.** The app still reports no decoder ceiling, and dev review 10 stands.
+
+- **HDR film, screen eligible for HDR:** our encoder's HEVC HDR ladder, top rung 2160p at up to 20 Mbps, lower rungs under it.
+- **SDR film above 1080p, any screen:** our encoder's HEVC ladder, the same rungs.
+- **HDR film, screen not eligible** (an SDR monitor): our encoder's H.264 SDR ladder, top rung 1080p (FR-313-3, the
+  family's largest box). A 4K SDR monitor therefore gets 1080p for an HDR film. This amendment accepts that.
+- **A film at or under 1080p:** unchanged, its picture copied.
+- **AVPlayer refuses our stream:** the existing restream from Jellyfin, which is today's picture. A viewer is never worse
+  off than now, apart from the failed first attempt.
+
+Why not copy the 4K file: a copy has one quality, and the Mac cannot hand over to a lower one (DEB-2205 FR-2, FR-4: it
+reports no decode health). A MacBook is often on Wi-Fi. The owner's rule (DEB-3093, 2026-10-30) is that quality goes down
+before the picture ever stops. A copy is worth reopening only once the Mac can hand over.
+
+No client change is needed, so an installed 1.62 gets this from the backend deploy. FR-R329-3's *no backend change* stays
+true of what the Mac declares.
+
+**FR-R329-13 — FR-R329-1's *4K playable*, in numbers.** Five minutes full screen on the built-in screen, with the `player`
+read-out showing the 2160p rung (`size=` at the film's own width, 3840 for a 16:9 film): under 1 % dropped frames, no
+stalls, no visible stutter. Memory is not part of this bar. It is measured after DEB-3336 and read against R383's film
+row, which is the owner's number.
+
+**If it misses,** the Mac caps its own choice at 1080p with AVPlayer's `preferredMaximumResolution` (a client change; the
+HEVC HDR 1080p rung, 8 Mbps), the result is recorded here, and the owner hears it in one line. The server does not change.
+
+**FR-R329-14 — What HDR means on this picture path.** The picture on screen is SDR on every screen. The frame path is
+8-bit BGRA, and `Player.swift` asks AVFoundation to map the picture to Rec. 709. The HDR claim decides who does the mapping
+(AVFoundation rather than the server) and which stream arrives. It does not put HDR on the XDR screen.
+
+- **Check, owed since 2026-10-09:** on the built-in screen, an HDR film's picture is not washed out and not dark. The frames
+  are SDR, so a screenshot shows what the viewer sees.
+- **If it fails:** the default becomes `-Dravilo.hdr=false`, so the server tone-maps again and an HDR film tops out at 1080p
+  H.264. The 4K leg then stands only for SDR films.
+- **Real HDR on the XDR screen** needs a different frame path (an `AVPlayerLayer`, or a 10-bit one) and stays a phase of its
+  own, as item 13 of the build notes says. It is not part of this amendment.
+
+**Acceptance, amended.** Acceptance 1's 4K bar is FR-R329-13. Acceptance 2 splits:
+
+- A 1080p H.264 film: direct video with copied streams, as written.
+- A 4K HEVC HDR film: the backend log reads `encoder=ours HEVC HDR` with a 2160p top rung, the quality line reads encoder
+  `ours`, and FR-R329-14's picture check passes. It is no longer *direct video*.
+
+All of it is owed to a Mac on DEB-701, after FR-313-18 is on prod.

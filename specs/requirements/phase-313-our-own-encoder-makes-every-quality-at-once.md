@@ -1000,3 +1000,39 @@ not hold for an MKV, which nearly every E-AC-3 film in the library is, and no su
 - Live channels: `planFor` is the VOD plan.
 - A stream that fails on a device still takes F2's road: restream once from Jellyfin. So a device that lists the decoder
   but cannot read the segments gets one restream, not a dead play.
+
+## Amendment 2026-11-01 — a size cap in Jellyfin's URL is a re-encode (DEB-3338)
+
+Measured on the Mac (R329's amendment of the same date has the whole play). A 3840×2160 HDR10 HEVC film, with
+`TranscodeReasons=AudioCodecNotSupported,DirectPlayError` and `MaxWidth=1920&MaxHeight=1080` in the URL: `reencodesVideo`
+said copy, and Jellyfin ran `h264_nvenc` at 1920×1080 and the source's 47 Mbps. No `encoder: fallback` line was written,
+because the play never asked for our encoder. FR-313-10 says our encoder serves where the answer is *transcode*. The answer
+here was a transcode that we misread.
+
+### FR-313-18 — a source larger than the URL's size cap is re-encoded, whatever `TranscodeReasons` says
+
+- **The rule.** `reencodesVideo` is also true when the source's width is above the URL's `MaxWidth`, or its height above
+  `MaxHeight`. An unknown source size, or a URL with no cap, reads as it does today.
+- **Where it applies.** All three callers follow it: the road to our encoder, Jellyfin's own ladder, and the prewarm
+  (`the picture is copied` no longer holds for such a play).
+- **Rungs.**
+  - A device that declared no picture ceiling (`max_h264_width` and `max_h264_height` 0: the Mac, the web, older builds)
+    gets its family's own rungs (FR-313-3). Its cap was the backend's fallback, not something it said about itself.
+  - A device that declared a ceiling, and reaches our encoder only because of this rule, gets no rung above that ceiling.
+    The Cast receiver probes HEVC at 1080p (`canDisplayType` with its default 1920×1080), so its H.264 ceiling is the only
+    size it has answered for.
+  - A play that reaches our encoder today, for any other reason, keeps exactly the rungs it gets today.
+- **Fallback.** FR-313-12 holds. With no slot, such a play goes to Jellyfin with the ladder (308) rather than one stream at
+  the source's bitrate.
+
+**Who this reaches.** The Mac on every film above 1080p whose range it claims; the web only on an H.264 source above 1080p
+(an HEVC source already reaches our encoder there); a Cast receiver or an R379 Android device whose declared H.264 ceiling is
+below an HEVC source. Android and TV plays with a declared 4K ceiling, and every direct play, are unchanged.
+
+**Not changed.** The `h264` profile's size condition stays: every H.264 decoder in the fleet relies on it (R183), and a
+receiver's HEVC claim has not been probed at 4K. The Mac still reports no ceiling.
+
+**Tests.** `VideoLadderTest`: the measured URL with a 3840×2160 source is a re-encode; the same URL with a 1920×1080 source
+and with an unknown size are not; a URL with no cap is not. `EncoderPlanTest`: a device with no declared ceiling keeps the
+2160p top rung; one that declared 1920×1080 and reached the plan by this rule tops out at 1080p; one that reached the plan by
+`VideoRangeTypeNotSupported` keeps today's rungs.
