@@ -211,6 +211,20 @@ Restores DEB-2205's FR-8 on the roads that skip it.
   `stall_to_ladder`, `step_cap`. The clock starts at the switch, not at the decision, because the old stream plays on until
   then. FR-1's rule stays: a stop under 1 s is not a stop, so a replacement shorter than that writes its log line and no entry;
   one that stopped the picture for a second or more is the entry. Every replacement writes the log line.
+- *2026-11-01, DEB-3332 — every rung change says why, in the log.* Android, and the log only: no field, no `stalls_json` entry, nothing
+  on the wire. Until now only an abandon wrote a line, so a fall could be told from a dim link only by reading a decoder's crop, and
+  not at all from a report. Two lines, because a rung is picked a buffer's length before it is seen:
+  - **When the player picks another rung,** one line from `ClimbingTrackSelection`: the rung it left, the rung it picked, the reason,
+    the seconds buffered and the estimate. The reason is `failed_rung` (the rung it left is excluded, FR-4), `abandon` (the 30 s
+    ceiling after an abandon), `buffer_low` (under 20 s and falling, FR-309-5), `buffer_falling` (fallen for 6 s and under 30 s, FR-4),
+    `estimate` for any other fall and `climb` for any rise. Checked in that order, first match wins. A pick that changes nothing writes
+    nothing.
+  - **When a rung reaches the picture,** one line from the player's format-change callback: the rung and the one before it. A play's
+    first rung writes this line too, which nothing wrote before.
+  - The tag and the prefix are the abandon line's (`adb logcat -s DEB-3102`, `ladder:`), and every build writes them, because QA tests
+    the release build, where `DebugLoadLogger` is not bound. The abandon line stays as it is, so one abandon writes it and then the
+    `abandon` pick. FR-5's in-place cap replaces the selection, so it writes no pick line: its own `recovery:` line and the picture line
+    say it.
 
 ### FR-9 — The other clients
 
@@ -265,6 +279,19 @@ Each by a QA seat on a device from the board, after its slice is on prod. Nothin
    play has no more of them; and few plays sit on the lowest rung, where there is no rung left to cap to. A count going the
    wrong way is a finding against FR-5. The baseline and the method are the document `field-read` on DEB-3093.
 9. On a fast link and a 2160p ladder on our encoder, a cold start and a seek outside the buffer each ask for the top rung and start
-   on it, with no abandon line in the log. A UniFi cap dropped under the playing rung with a buffer in hand still abandons the slow
-   segment for a lower rung, and writes one line per abandon. A cold start with a cap already under the start rung reaches a picture
-   and falls to a rung the cap can carry.
+   on it, with no abandon line in the log. A UniFi cap of 0.5 Mbps dropped while the 2160p rung plays abandons the slow segment for a
+   lower rung, and writes one line per abandon. A cold start with a cap already under the start rung reaches a picture and falls to a
+   rung the cap can carry.
+   - *2026-11-01, DEB-3332 — why the cap is that low.* This case first read "a cap under the playing rung with a buffer in hand". On the
+     Stue TV (DEB-3212) caps of 10 and 3 Mbps with 51 to 98 s buffered abandoned nothing and fell by the ordinary step-down with no
+     stall. That is FR-4 working and it is what acceptance 4 asks for, so it is not a failure here. A load is abandoned when its
+     projected finish passes the buffer minus 5 s, and on a 20 Mbps rung a 2 s segment projects 13 s at 3 Mbps, against about 90 s.
+     A segment already in flight does not change that sum, and a thin buffer cannot be arranged: a cap takes a minute or two to go on,
+     and under a live cap the player never climbs back to a rung the cap cannot carry. So the case moves the cap, not the buffer. At
+     0.5 Mbps the same segment projects 80 s, and the buffer draining meets that within 13 s of the load's start even from 98 s, while
+     a 2 s segment of real film at 4 Mbps or more is still loading. It sits under the lowest rung, so the seat asks for the cap's removal
+     as soon as the line is written, and a stall after that line, while the cap is still on, is no finding.
+
+     The seat reports the seconds buffered from FR-8's rung lines and the rate it measured. No abandon line, on a link measured at about
+     0.5 Mbps with under 85 s buffered at the first load after the cap is live, is a finding against FR-4. Anything else is a void run,
+     and it runs again.
