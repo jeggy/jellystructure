@@ -396,6 +396,37 @@ These sit beside R177's Live strings.
   reports `failed` like any item that could not play. This differs from the engine's pause (FR-10: a pause is a stop),
   where the app owns the player.
 
+**Amendment 2026-11-01 (DEB-3265): the remote follows the receiver's word for a station, and says *Paused* only for a
+station that was paused.** Found by QA on DEB-3053 (fixed on DEB-3255): the ⏯ spun for 25-30 s after a start, and the
+remote twice read *Paused on {speaker}* with the spinner for 50+ s while the admin's live row stayed `playing`.
+`mergeCastStatus` takes `playing` and `buffering` from the Cast SDK's media status alone. A load starts at
+`playing = false, buffering = true`, and `RemoteState` has no state between *Playing* and *Paused*, so a start the SDK
+has not reported yet reads *Paused*. The receiver's `status` says `playing` on every CAF `PLAYING`, `PAUSE` and
+`BUFFERING` event, and the sender ignores it.
+- **For a station, the merge is this table.** `said` is the receiver's last `status`.
+
+  | The SDK's media status | `said` | The remote reads | Spinner |
+  |---|---|---|---|
+  | `PLAYING`, `PAUSED`, `IDLE` | any | as today: the SDK decides | as today |
+  | none, `LOADING`, `BUFFERING` | `playing = true` | *Playing* | no |
+  | none, `LOADING`, `BUFFERING` | `playing = false`, or none yet | what was last known (R356 FR-R356-7) | `LOADING`, `BUFFERING`: yes. None: what was last known |
+
+- **A station's start reads *Playing on {speaker}* with the spinner, never *Paused*.** Both senders start a station's load
+  at `playing = true, buffering = true`, and a sender that attaches with nothing held reads the same. *Paused on {speaker}*
+  is said only after the SDK has said `PAUSED`; through a rejoin that stands as last known. Today `LOADING` forces
+  `playing = false` whatever was known; for a station it no longer does. `status` with `playing = false` does not decide
+  anything, because the receiver sends the same word for paused and for buffering.
+- **A receiver that is really buffering shows the spinner for as long as it buffers.** The spinner is not hidden to look
+  faster. A station whose receiver takes more than 5 s to reach `PLAYING` is a separate finding against the start, which
+  this amendment does not fix.
+- **Each station `status` a sender takes leaves one log line** with its `playing` and the SDK's player state: the `RaviloCast`
+  logcat tag on Android, `ravilo.log` on the Mac. Only the Mac listens on the receiver's log channel, so a phone run has no
+  `state PLAYING` line to read. This line gives QA the receiver's word and the SDK's on one clock, which tells an SDK that
+  lags from a receiver that buffers.
+- **What stays as it is.** Songs and films, including R330's newer-report rule. The receiver and the wire: `status` already
+  carries `playing`, so this is a sender change and needs no backend image. A resume has no bound here: the SDK's `PAUSED`
+  decides until the SDK moves, and DEB-3053 passed its 6 s.
+
 **Amendment 2026-10-29 (DEB-2657):** the admin has no `Strings.kt` and no string table in any language — every
 admin page draws its English text as literals in the Kotlin that renders it. So the admin half of this FR is
 *Radio* and *Live radio* as English literals in `ui/LiveTv.kt` and `ui/PlayingNow.kt`, beside the pages' other
@@ -455,7 +486,11 @@ mark's class into `design/app/wf.css`, through PROCESS.md's gate, and prunes the
    - from the phone, a station plays on one speaker and on a two-speaker group;
    - the remote shows the radio shape;
    - the speaker keeps playing with the phone locked for 10 minutes;
-   - stopping it closes the tune: the admin row goes, and the relay answers 404.
+   - stopping it closes the tune: the admin row goes, and the relay answers 404;
+   - *(amended 2026-11-01, DEB-3265)* after a tap on a station, the remote shows *Playing on {speaker}* and a pause glyph
+     within 5 s of the sender's first log line with `playing = true`, and reads *Paused on {speaker}* at no point before a
+     pause, including after a group change. QA records the tap and that line's time. The tap to that line over 5 s is
+     filed as its own finding against the start, and it does not fail this bound.
 5. **The relay:**
    - a radio tune on a client hands back `stream_kind = "audio"` with a relay path;
    - the Mac and Chrome play Stations 2 and 3, whose sources are plain `http`;
@@ -489,7 +524,11 @@ mark's class into `design/app/wf.css`, through PROCESS.md's gate, and prunes the
     title turns over at a programme's end;
   - `remoteKindOf` gives `radio` for a live radio item;
   - zapping in one lineup opens the radio player for a station and the video player for a channel;
-  - `ListenRow` draws a `radio` row from `stations`.
+  - `ListenRow` draws a `radio` row from `stations`;
+  - *(amended 2026-11-01, DEB-3265)* `mergeCastStatus` for a station, each row of the amendment's table: `said.playing = true`
+    wins over no media status, `LOADING` and `BUFFERING`, with no spinner; `said.playing = false` leaves the last known
+    and the spinner; `PLAYING`, `PAUSED` and `IDLE` still decide; a load's start reads playing with the spinner; the same
+    message and media for a song or a film give today's result.
 - **Receiver:** `ravilo-cast` unit tests (jsTest):
   - a `radio` load tunes, loads `StreamType.LIVE` with the ticket's type, and offers no seek or queue commands;
   - a song load after a station stops the station's tune.

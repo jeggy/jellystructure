@@ -356,3 +356,11 @@ FR-R356-3 / FR-R356-14(a): the media card's custom action reads **Stop** (`cast.
 The owner decided on 2026-10-23 (DEB-2185) that the word is *Stop* everywhere. What the button does is unchanged: it
 ends the cast with the receiver stopped, and the song comes back to the phone paused. See
 `one-remote-for-every-playback.md` FR-7.
+
+## Amendment 2026-11-01 — a station follows the receiver's word (DEB-3265)
+
+FR-R356-7: for a **station** only, a `status` from the receiver that says `playing = true` wins over the last known state
+while the SDK has no media status, or says `LOADING` or `BUFFERING`. A `status` with `playing = false` changes nothing, and
+last known stands. The table is in
+[`radio-plays-beside-the-live-channels-and-on-music-home.md`](radio-plays-beside-the-live-channels-and-on-music-home.md),
+FR-11's amendment of the same date. Songs and films are unchanged.
