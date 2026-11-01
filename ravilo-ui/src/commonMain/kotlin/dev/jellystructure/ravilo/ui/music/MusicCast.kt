@@ -250,7 +250,22 @@ object MusicCast {
         lastMusic = null; lastMusicAt = null   // the station replaces the speaker's queue; no song of it comes back
         barHidden.value = false
         dev.jellystructure.ravilo.ui.seams.sessionLog("DEB-2660: radio ${station.channelId} to ${c.sender.deviceName.value}")
-        c.castRadio(CastRadioItem(channelId = station.channelId, name = station.name, logoUrl = station.logoUrl, programme = station.currentProgram?.name))
+        val item = CastRadioItem(channelId = station.channelId, name = station.name, logoUrl = station.logoUrl, programme = station.currentProgram?.name)
+        lastRadio = item
+        c.castRadio(item)
+    }
+
+    /** DEB-3253 — the station last sent to a speaker, kept for a rejoin after the link dropped (the sender's status is null by then). */
+    @kotlin.concurrent.Volatile private var lastRadio: CastRadioItem? = null
+
+    /** DEB-3253 — a rejoin found the speaker idle: the last station is sent to it again. False when there is none or no link. */
+    fun retuneLastRadio(): Boolean {
+        val c = cast ?: return false
+        val item = lastRadio ?: return false
+        if (c.sender.link.value != CastLinkState.CONNECTED) return false
+        dev.jellystructure.ravilo.ui.seams.sessionLog("DEB-3253: radio ${item.channelId} to ${c.sender.deviceName.value} again after the rejoin")
+        c.castRadio(item)
+        return true
     }
 
     /**

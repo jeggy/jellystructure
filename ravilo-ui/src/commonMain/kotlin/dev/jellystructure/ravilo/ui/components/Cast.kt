@@ -418,6 +418,8 @@ class CastController(
     @kotlin.concurrent.Volatile var lastLinkedKey: String? = null
     /** The session's place (its group's leader) as the server named it with the last room op. */
     @kotlin.concurrent.Volatile var lastPlaceCastDeviceId: String? = null
+    /** DEB-3253 (DEB-2628 FR-11) — the last room op was made on a station, which has no server session for the rejoin to look up. */
+    @kotlin.concurrent.Volatile var lastRoomOpOnRadio: Boolean = false
 
     /**
      * R371 (found on the Pixel 9 Pro, 10:25:37) — select [castDeviceId] again after the session dropped under a room op:

@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,11 +34,15 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.components.DeskIcon
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.music.MusicCast
 import dev.jellystructure.ravilo.ui.seams.platformGroupController
+import dev.jellystructure.ravilo.ui.sessions.applyRoomOp
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
+import dev.jellystructure.shared.tv.SessionCommandRequest
 import dev.jellystructure.shared.tv.SessionRoom
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * DEB-2660 (DEB-2628 FR-11) — a station's rooms in the remote's radio shape (`radio-remote-downstairs`): each room's level and
@@ -57,6 +62,24 @@ internal fun RadioRoomsPanel(cast: CastController) {
     var open by remember { mutableStateOf(false) }
     // The controller has no flow: the rooms are read again every 2 s while the remote is up, and at once after a press.
     var tick by remember { mutableStateOf(0) }
+    // DEB-3253 (FR-11: rooms work as for a song) — a press runs the song road's room op: the rejoin cooldown, the wait for the room to
+    // show among the members, and the stamp a dropped session is rejoined by. One op at a time: a second add tapped while the first
+    // group change was settling ended the cast.
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    fun roomOp(op: String, room: String) {
+        if (busy) return
+        busy = true
+        cast.lastRoomOpAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        cast.lastRoomOpOnRadio = true
+        (members.firstOrNull()?.castDeviceId ?: cast.connectedDeviceKey())?.let { cast.lastPlaceCastDeviceId = it }
+        scope.launch {
+            try {
+                applyRoomOp(g, SessionCommandRequest(op = op, castDeviceId = room), MusicCast.status.value?.itemId,
+                    nameOf = { id -> addable.firstOrNull { it.castDeviceId == id }?.name ?: id }, report = {})
+            } finally { busy = false; tick++ }
+        }
+    }
     LaunchedEffect(g, open, tick) {
         while (true) {
             members = g.members()
@@ -77,7 +100,7 @@ internal fun RadioRoomsPanel(cast: CastController) {
                 )
                 if (i > 0) {
                     val removeLabel = str("volume.remove_room", mapOf("place" to room.name))
-                    Box(Modifier.size(40.dp).clip(CircleShape).clickable { g.remove(room.castDeviceId); tick++ }
+                    Box(Modifier.size(40.dp).clip(CircleShape).clickable { roomOp("remove_room", room.castDeviceId) }
                         .semantics { contentDescription = removeLabel }.testTag("radio-room-remove-${room.castDeviceId}"), contentAlignment = Alignment.Center) {
                         DeskIcon(DeskIcon.CLOSE, colors.textDim, 16.dp)
                     }
@@ -89,7 +112,7 @@ internal fun RadioRoomsPanel(cast: CastController) {
             Text(str("group.add_speaker"), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
         }
         if (open) addable.filter { a -> members.none { it.castDeviceId == a.castDeviceId } }.forEach { a ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(start = 28.dp).clickable { g.add(a.castDeviceId); tick++ }.testTag("radio-add-${a.castDeviceId}"), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(start = 28.dp).clickable { roomOp("add_room", a.castDeviceId) }.testTag("radio-add-${a.castDeviceId}"), verticalAlignment = Alignment.CenterVertically) {
                 Text(a.name, color = colors.text, fontSize = 14.sp, fontFamily = Sora)
             }
         }

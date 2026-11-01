@@ -169,6 +169,17 @@ class SpeakerRoundTwoTest {
         assertFalse(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = false, castDeviceId = "c-stue", sessionLive = false), "the server says it ended")
     }
 
+    @Test fun `a station's room op runs the song road and a drop after it is rejoined with no server session (DEB-3253)`() = runTest {
+        // FR-11: rooms work as for a song. A station has no session row, so its id is a channel's and the op needs nothing from the server.
+        val g = FakeGroup(mutableListOf(guest), joins = true)
+        val reports = mutableListOf<SessionMembersReport>()
+        applyRoomOp(g, SessionCommandRequest(op = "add_room", castDeviceId = "c-stue"), "channel-1", { "Lounge" }, { reports += it }, wait = {})
+        assertEquals(listOf("c-guest", "c-stue"), reports.single().members.map { it.castDeviceId })
+        // The server has no session for the station: the rejoin is told it is live by the station's own room op.
+        assertTrue(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = false, castDeviceId = "c-guest", sessionLive = true))
+        assertFalse(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = true, castDeviceId = "c-guest", sessionLive = true), "this app's own Stop ends a station for good")
+    }
+
     @Test fun `the hand-off names the Cast device the link is on`() {
         val routes = listOf(
             CastRoute("r-group", "Guest room", selected = true, select = {}, kind = "group", deviceKey = "g"),

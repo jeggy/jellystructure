@@ -1719,6 +1719,7 @@ fun RaviloApp(
                     val room = c.castDeviceId
                     dev.jellystructure.ravilo.ui.seams.sessionLog("R371: ${c.op} $room for ${env.sessionId} (from ${env.source}; link ${castController.sender.link.value}, on ${castController.connectedDeviceKey()}, place ${env.placeCastDeviceId})")
                     castController.lastRoomOpAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                    castController.lastRoomOpOnRadio = false
                     env.placeCastDeviceId?.let { castController.lastPlaceCastDeviceId = it }
                     if (g == null || room == null) { dev.jellystructure.ravilo.ui.seams.sessionLog("R371: no routing controller for ${c.op}"); return@collect }
                     val effectScope = this@LaunchedEffect
@@ -1881,9 +1882,11 @@ fun RaviloApp(
                     // group), else the device the link was last on.
                     val key = castController.lastPlaceCastDeviceId ?: castController.lastLinkedKey
                     val since = castController.lastRoomOpAtMs?.let { kotlin.time.Clock.System.now().toEpochMilliseconds() - it }
-                    val live = dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions.any { s ->
+                    // A station has no server session: its room op says it was playing (DEB-3253).
+                    val live = castController.lastRoomOpOnRadio || dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions.any { s ->
                         s.state != "ended" && (s.target.castDeviceId == key || s.rooms.any { it.castDeviceId == key })
                     }
+                    val onRadio = castController.lastRoomOpOnRadio
                     if (dev.jellystructure.ravilo.ui.sessions.rejoinAfterDrop(since, castController.stoppedHere, key, live)) rejoinJob = launch {
                         castController.lastRoomOpAtMs = null
                         dev.jellystructure.ravilo.ui.seams.sessionLog("R371: the session dropped ${since} ms after a room op; looking for $key to rejoin")
@@ -1897,10 +1900,12 @@ fun RaviloApp(
                         // shrank before receivers carried their state across): if nothing plays there after the join, the
                         // music this device took back goes there again from its place — a move, not a loss.
                         val playing = kotlinx.coroutines.withTimeoutOrNull(4_000) {
-                            castController.sender.status.first { it?.music == true && it.loaded && !it.ended }
+                            castController.sender.status.first { (it?.music == true || it?.radio == true) && it.loaded && !it.ended }
                         }
                         if (playing == null) {
-                            val sent = dev.jellystructure.ravilo.ui.music.MusicCast.resumeOnDevice()
+                            // DEB-3253 — a station that did not come back is tuned on the speaker again; a song goes from its place.
+                            val sent = if (onRadio) dev.jellystructure.ravilo.ui.music.MusicCast.retuneLastRadio()
+                                else dev.jellystructure.ravilo.ui.music.MusicCast.resumeOnDevice()
                             dev.jellystructure.ravilo.ui.seams.sessionLog("R371: rejoined $key with nothing playing; ${if (sent) "sending the music again from its place" else "nothing to send"}")
                         } else dev.jellystructure.ravilo.ui.seams.sessionLog("R371: rejoined $key; it plays on")
                     }
