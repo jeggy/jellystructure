@@ -48,25 +48,25 @@ class AiPageRoutesTest {
     @Test fun aKeyWithoutSeerrHasTheSupportTabAlone() {
         val (status, body) = answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = false)
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals("""{"tabs":["support"]}""", body)
+        assertEquals("""{"tabs":["support","fetchers"]}""", body)
     }
 
     @Test fun aKeyWithSeerrNamesSupportThenSuggestions() {
         val (status, body) = answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = true)
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals("""{"tabs":["support","suggestions"]}""", body)
+        assertEquals("""{"tabs":["support","fetchers","suggestions"]}""", body)
     }
 
     @Test fun supportIsThereWithTheLaneClosedAndWithItOpen() {
         for (open in listOf(false, true)) {
             val cfg = AppConfig(ai = AiConfig(apiKey = "sk-test"), support = SupportConfig(enabled = open))
-            assertEquals("""{"tabs":["support"]}""", answer(cfg, seerr = false).second, "enabled = $open")
+            assertEquals("""{"tabs":["support","fetchers"]}""", answer(cfg, seerr = false).second, "enabled = $open")
         }
     }
 
     @Test fun switchingAiOffWithAKeyStillAnswers200() {
         val (status, body) = answer(AppConfig(ai = AiConfig(enabled = false, apiKey = "sk-test")), seerr = true)
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals("""{"tabs":["support","suggestions"]}""", body)
+        assertEquals("""{"tabs":["support","fetchers","suggestions"]}""", body)
     }
 }

@@ -6,6 +6,7 @@ import dev.jellystructure.cron.parseCron
 import dev.jellystructure.db.JellystructureDb
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /** DEB-2476 (DEB-2474) — a saved fetcher. [retention] and [recipe] are the stored JSON, decoded on read. */
@@ -54,7 +55,34 @@ data class FetchItem(
     val placedPath: String?,
     val placedAt: Long?,
     val missingSince: Long?,
+    /** When the listing last held this item (epoch seconds): the items with the newest value are what the page lists now. */
+    val lastSeenAt: Long? = null,
 )
+
+/**
+ * DEB-2477 (FR-8.4, FR-9) — an episode filed under *Not on TMDB yet*. [titleFromPage] and [overviewFromPage] are the per-episode
+ * marker of FR-8.4, field by field; [stills] are the moments, in seconds, the three stills were cut at (FR-9.4).
+ */
+data class QueueRow(
+    val id: Long,
+    val fetcherId: String,
+    val itemId: String,
+    val season: Int,
+    val episode: Int,
+    /** `queued` · `submitted` (the admin's note, FR-9.3) · `cleared` (TMDB returned the episode; the marker may live on). */
+    val state: String,
+    val filedAt: Long,
+    val submittedAt: Long?,
+    val clearedAt: Long?,
+    val lastCheckAt: Long?,
+    val titleFromPage: Boolean,
+    val overviewFromPage: Boolean,
+    val stills: List<Int>,
+) {
+    val markerOn: Boolean get() = titleFromPage || overviewFromPage
+    /** Checked daily while TMDB lacks the episode, or has it but still leaves a field blank that the page fills. */
+    val needsCheck: Boolean get() = state != "cleared" || markerOn
+}
 
 @Serializable
 data class RunLine(val kind: String, val text: String)
@@ -84,7 +112,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
 
     /** FR-6.8 — deletes the fetcher, its recipe, its items, its run records and its mark; never a file. */
     fun delete(id: String) {
-        q.itemsDeleteByFetcher(id); q.runsDeleteByFetcher(id); q.markDeleteByFetcher(id); q.fetcherDelete(id)
+        q.queueDeleteByFetcher(id); q.itemsDeleteByFetcher(id); q.runsDeleteByFetcher(id); q.markDeleteByFetcher(id); q.fetcherDelete(id)
     }
 
     private fun map(r: dev.jellystructure.db.Autofetch_fetcher) = Fetcher(
@@ -128,7 +156,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
 
     private fun map(r: dev.jellystructure.db.Autofetch_item) = FetchItem(
         r.fetcher_id, r.item_id, r.link, r.title, r.description, r.published, r.list_order.toInt(), r.season?.toInt(), r.episode?.toInt(),
-        r.duration?.toInt(), r.media_value, r.state, r.failures.toInt(), r.note, r.placed_path, r.placed_at, r.missing_since,
+        r.duration?.toInt(), r.media_value, r.state, r.failures.toInt(), r.note, r.placed_path, r.placed_at, r.missing_since, r.last_seen_at,
     )
 
     // ---- runs --------------------------------------------------------------------------------------------------------
@@ -151,6 +179,31 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
 
     /** A process that stopped mid-run leaves a `running` record; the next start closes them. */
     fun abandonRunning(at: Long) = q.runsAbandon(at)
+
+    // ---- Not on TMDB yet (FR-8.4, FR-9) --------------------------------------------------------------------------------
+
+    fun queue(): List<QueueRow> = q.queueAll().executeAsList().map { map(it) }
+    fun queueRow(id: Long): QueueRow? = q.queueById(id).executeAsOneOrNull()?.let { map(it) }
+    fun queueRow(fetcherId: String, itemId: String): QueueRow? = q.queueGet(fetcherId, itemId).executeAsOneOrNull()?.let { map(it) }
+    fun queueOf(fetcherId: String): List<QueueRow> = q.queueByFetcher(fetcherId).executeAsList().map { map(it) }
+
+    fun fileQueue(fetcherId: String, itemId: String, season: Int, episode: Int, at: Long, titleFromPage: Boolean, overviewFromPage: Boolean, stills: List<Int>) =
+        q.queueInsert(fetcherId, itemId, season.toLong(), episode.toLong(), at, if (titleFromPage) 1 else 0, if (overviewFromPage) 1 else 0, stillsJson(stills))
+
+    fun queueSubmitted(id: Long, at: Long) = q.queueSetSubmitted(at, id)
+    fun queueCleared(id: Long, at: Long) = q.queueSetCleared(at, id)
+    fun queueChecked(id: Long, at: Long) = q.queueSetChecked(at, id)
+    fun queueMarkers(id: Long, title: Boolean, overview: Boolean) = q.queueSetMarkers(if (title) 1 else 0, if (overview) 1 else 0, id)
+    fun queueStills(id: Long, stills: List<Int>) = q.queueSetStills(stillsJson(stills), id)
+    fun dropQueue(fetcherId: String, itemId: String) = q.queueDelete(fetcherId, itemId)
+
+    private fun stillsJson(stills: List<Int>) = json.encodeToString(ListSerializer(Int.serializer()), stills)
+
+    private fun map(r: dev.jellystructure.db.Autofetch_queue) = QueueRow(
+        r.id, r.fetcher_id, r.item_id, r.season.toInt(), r.episode.toInt(), r.state, r.filed_at, r.submitted_at, r.cleared_at, r.last_check_at,
+        r.title_from_page != 0L, r.overview_from_page != 0L,
+        runCatching { json.decodeFromString(ListSerializer(Int.serializer()), r.stills_json) }.getOrDefault(emptyList()),
+    )
 
     // ---- the page-only mark (FR-15.5) --------------------------------------------------------------------------------
 

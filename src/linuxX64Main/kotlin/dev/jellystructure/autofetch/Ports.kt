@@ -41,7 +41,14 @@ interface MediaTools {
     suspend fun firstTopLevel(path: String): String?
     /** FR-9.4/15.7 — one frame picked by the fixed rule, written as a JPEG at [out]. */
     suspend fun thumbnail(path: String, durationSec: Double, out: String): Boolean
+    /** FR-9.4 — one frame at [atSec], 1920 px wide or narrower and never upscaled, written as a JPEG at [out]; false when it could not be cut. */
+    suspend fun frameAt(path: String, atSec: Int, out: String): Boolean
+    /** FR-9.4 — up to [outFiles].size frames picked by the fixed rule, written to those files in order; the moments (seconds) of the ones that were. */
+    suspend fun stills(path: String, durationSec: Double, outFiles: List<String>): List<Int>
 }
+
+/** What TMDB and the library say of one episode after an explicit re-sync of its season (FR-9.3). */
+data class EpisodeAfterSync(val tmdbHasEpisode: Boolean, val title: String?, val overview: String?)
 
 enum class TmdbKind { SERIES, FILM, UNKNOWN, UNREACHABLE }
 
@@ -72,4 +79,18 @@ interface AutofetchWorld {
     suspend fun fetchImage(url: String, dest: String, lane: SiteLane): Boolean
     /** FR-2.5 — one notification through the owner's existing webhook. */
     suspend fun notifySiteStopped(site: String, reason: String)
+
+    /**
+     * FR-9.3 — asks TMDB explicitly about one season of [seriesPath], by [tmdbId], and writes what it returns into the episodes of that
+     * season (a field TMDB leaves blank keeps its text). The answer is per episode path; null when the series is not in the library yet
+     * or TMDB could not be reached, and then nothing was changed.
+     */
+    suspend fun resyncSeason(seriesPath: String, tmdbId: Int, season: Int, episodePaths: List<String>): Map<String, EpisodeAfterSync>?
+
+    /** FR-9.4 — where the stills of the queue live: the application's own data directory, never the library (FR-8.3). */
+    fun stillsDir(): String
+
+    /** FR-11 — a run is one entry on Activity ▸ History; its lines are logged under [runId] between these two. */
+    suspend fun activityStart(runId: String, trigger: String) {}
+    suspend fun activityEnd(runId: String) {}
 }

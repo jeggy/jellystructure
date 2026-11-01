@@ -42,6 +42,14 @@ in it against the **final** URL (FR-2.7).
 When the source's subtitle rendition cannot be read or muxed, the episode is placed without it (FR-6.4), and only a
 video or audio failure counts toward FR-6.5's three failures.
 
+**Amended 2026-11-01 (DEB-2477)**, as *Not on TMDB yet* and the Fetchers tab were built:
+- FR-9.1: an episode is also filed when TMDB cannot be reached as it is placed.
+- FR-9.3: when a row is first checked, and that a cleared row is checked while FR-8.4's marker is still on.
+- FR-8.1: the scan takes the page's words for a TMDB fetcher's episode only for a queued one, and only the fields the marker names.
+- FR-9.4 and FR-12: *Pick a different moment* has a route, and the retention preview answers three counts.
+- FR-11: a run is an entry on Activity's run list.
+- *Build order*: the form's tick and the review state belong to slice 4.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -381,6 +389,9 @@ beside the features' (FR-11).
 
 1. **An episode TMDB has is an ordinary episode.** *Metadata & artwork* writes its NFO, artwork and Jellyfin data as for
    any other, in the language phase 184 chooses. The page's text is not used.
+   *Amended 2026-11-01 (DEB-2477):* for a TMDB fetcher the scan therefore reads the page's words only for an episode that is, or
+   was, in the queue, and only for the fields FR-8.4's marker names. An episode placed because TMDB already had it never takes the
+   page's text, even where TMDB leaves a field blank. A page-only fetcher's episodes always take it (FR-15.4).
 2. **An episode TMDB does not have** takes its title and overview from the page **verbatim, or empty**: the item's own
    heading and description, never joined, shortened, rewritten or translated. When the page has none, the field is
    empty and the queue says so plainly, as drawn (*source incomplete*). Its air date is the item's published date.
@@ -399,6 +410,9 @@ beside the features' (FR-11).
 1. **What lands in it.** An episode a fetcher placed for which TMDB has no such `SxxEyy`. Under Q1,
    only from a fetcher whose pattern is proven (FR-4.2); from any other, the episode is not placed until the admin
    accepts its number. A page-only fetcher's episodes never land here (FR-15.6).
+   *Amended 2026-11-01 (DEB-2477):* when TMDB cannot be reached as the episode is placed, it is filed anyway. That is not a claim
+   that TMDB lacks it: a row is only ever what the last look found, and the daily check (FR-9.3) clears any that TMDB turns out
+   to have. Guessing it is there would leave a page-only-style episode with no queue row and no page words behind it.
 2. **What it holds**, as drawn: series and `SxxEyy`, the page's own label for it, when it was downloaded, the runtime,
    the page's episode name and overview with where each came from, the air date, and three stills.
 3. **How it clears.** Every queued episode's season is re-checked on TMDB **daily**, whatever the release-age interval
@@ -406,6 +420,11 @@ beside the features' (FR-11).
    has a title and an overview, so a scan alone would never clear a row that carries page text. When TMDB returns the episode, the row clears itself and the episode is ordinary
    (FR-8.4). *Mark as submitted* is the admin's note that they have entered it on TMDB; the row stays, marked, until TMDB
    returns it. Nothing is ever sent to TMDB: TMDB takes no submissions by API, and phase 307's rule holds anyway.
+   *Amended 2026-11-01 (DEB-2477):* a row filed at placement counts as looked at, so its first daily check is a day later. A row
+   that TMDB has returned is *cleared* and leaves the list, but it is checked every day for as long as FR-8.4's marker holds a
+   field, because a freshly added TMDB episode often has a number and no name yet, and the scan will not ask TMDB about an
+   episode that already has a title and an overview. When the check finds the episode, each marked field whose text is no longer
+   the page's own words is TMDB's, and its marker goes. A row whose file was moved or deleted by hand is not asked about.
 4. **Stills** (Q4). Three frames picked on this server from the middle 80 % of the runtime: not black,
    not a near-duplicate of the frame before, and not in the first or last minute where title and credit cards sit;
    1920×1080 JPEG at the source's resolution or below, never upscaled. *Pick a different moment* takes a timestamp.
@@ -471,6 +490,9 @@ in its entry (*Auto-fetch · Dagbók · +1 episode · −1 by retention*). Each 
 runs, drawn as `act-hist` in that file's processing-features round. A fetcher's run is one row there, in that
 list's own components, and opens its log the way every other row does. It needs no surface or round of its own.
 
+*Added 2026-11-01 (DEB-2477):* a run is recorded as an entry on Activity's run list (scope `auto-fetch`), with its lines logged
+under it: what was placed, queued, deleted by retention and refused, in the words of the fetcher's own run record.
+
 ### FR-12 — Routes
 
 All admin-only, behind the admin's existing auth, not on the Ravilo wire:
@@ -486,6 +508,11 @@ All admin-only, behind the admin's existing auth, not on the Ravilo wire:
 - `POST /api/autofetch/sites/{site}/resume`;
 - `POST /api/autofetch/{id}/items/{itemId}/number` `{season, episode}` and `…/propose`;
 - `GET /api/autofetch/queue/{episodeId}/still/{n}`, `POST /api/autofetch/queue/{episodeId}/submitted`.
+- *Added 2026-11-01 (DEB-2477):* `POST /api/autofetch/queue/{episodeId}/still/{n}` `{at}` cuts still `n` again at `at` seconds
+  (FR-9.4's *Pick a different moment*), and answers `422` when no frame can be cut there.
+  `GET /api/autofetch` also carries the queue (not the cleared rows) and, on each site, how many fetchers it stops. The retention
+  preview answers `{deletes, keeps, onPage}`: what the next run would delete, how many of the listing's items it keeps, and how
+  many the page lists. The screen words those counts and adds none of its own (FR-16.1).
 
 The admin renders server-pushed state only.
 
@@ -784,7 +811,10 @@ Each piece files its own QA row when built, with a written plan and no named sea
   - FR-4.5's numbering;
   - all of FR-16.
 - **Slice 3** takes FR-15.6: page-only episodes never reach the queue, and nothing re-checks them. It also takes
-  FR-10.6's screens, drawn by the addendum round of FR-14.4.
+  FR-10.6's screens, drawn by the addendum round of FR-14.4 *(amended 2026-11-01, DEB-2477: the open row's **Keep** with the
+  server's preview, the deletion lines on the run record and the list row's retention note. The form's tick, the page-only review
+  state and the review state's **Keep** are the screens of the investigation, which does not exist until slice 4, so they are
+  built there with it)*.
 - **Slice 4** takes FR-15.9, the page-only investigation.
 - **Slice 5** is unchanged. `mapped` is not offered to a page-only fetcher.
 - **`item_page`** (FR-4.1, added the same day for DEB-1076) is **slice 2's**: it is part of the recipe and the `html`

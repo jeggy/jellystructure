@@ -7,14 +7,18 @@ import dev.jellystructure.autofetch.SaveRequest
 import dev.jellystructure.autofetch.SaveResult
 import dev.jellystructure.autofetch.SiteView
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.io.FileIo
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import kotlinx.io.files.Path
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -24,7 +28,10 @@ private data class SettingsPatch(val retention: RetentionSpec? = null, val sched
 private data class PreviewRequest(val retention: RetentionSpec)
 
 @Serializable
-private data class PreviewAnswer(val deletes: Int)
+private data class PreviewAnswer(val deletes: Int, val keeps: Int, val onPage: Int)
+
+@Serializable
+private data class MomentRequest(val at: Int)
 
 @Serializable
 private data class SaveAnswer(val fetcher: dev.jellystructure.autofetch.FetcherView, val proven: Boolean, val agreements: Int, val tmdbChecked: Int, val items: Int)
@@ -34,8 +41,9 @@ private data class RefusedAnswer(val error: String, val notASeries: Boolean = fa
 
 /**
  * DEB-2476 (DEB-2474, FR-12) — Auto-fetch's routes, admin-only, behind the admin's existing auth and not on the Ravilo wire.
- * This slice carries the list, save, settings, delete, run, run-all, the retention preview and *Resume site*; the
- * investigation, the numbering of waiting items and the queue belong to the slices that build them.
+ * The list (with the queue and the sites' state), save, settings, delete, run, run-all, the retention preview, *Resume site* and *Not on
+ * TMDB yet* (DEB-2477: its stills, *Mark as submitted* and *Pick a different moment*); the investigation and the numbering of waiting
+ * items belong to the slices that build them.
  */
 fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) {
     get("/autofetch") {
@@ -43,7 +51,8 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         call.respond(AutofetchOverview(
             enabled = configStore.current.autofetch.enabled,
             fetchers = rt.store.fetchers().map { rt.view(it) },
-            sites = rt.store.sites().map { SiteView(it.site, it.stopped, it.stoppedReason, it.stoppedAt, it.backoffUntil) },
+            sites = rt.store.sites().map { st -> SiteView(st.site, st.stopped, st.stoppedReason, st.stoppedAt, st.backoffUntil, rt.store.fetchers().count { it.site == st.site }) },
+            queue = rt.queueViews(),
         ))
     }
 
@@ -88,12 +97,45 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         val rt = runtime ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
         val req = runCatching { call.receive<PreviewRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a valid retention"))
         val n = rt.service.preview(call.parameters["id"].orEmpty(), req.retention) ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "no such fetcher"))
-        call.respond(PreviewAnswer(n))
+        call.respond(PreviewAnswer(n.deletes, n.keeps, n.onPage))
     }
 
     post("/autofetch/sites/{site}/resume") {
         val rt = runtime ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
         val problem = rt.service.resume(call.parameters["site"].orEmpty())
         if (problem == null) call.respond(HttpStatusCode.OK, mapOf("resumed" to true)) else call.respond(HttpStatusCode.Conflict, mapOf("error" to problem))
+    }
+
+    // FR-9.4 — a still: a JPEG cut on this server, kept in the application's data directory and served to the admin only.
+    get("/autofetch/queue/{id}/still/{n}") {
+        val rt = runtime ?: return@get call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
+        val id = call.parameters["id"]?.toLongOrNull()
+        val n = call.parameters["n"]?.toIntOrNull()
+        if (id == null || n == null || rt.store.queueRow(id) == null) return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "no such still"))
+        val bytes = runCatching { FileIo.readBytes(Path(rt.service.stillPath(id, n))) }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "that still was not cut"))
+        // A frame cut again at another moment keeps its address, so the browser must not hold the old one.
+        call.response.headers.append("Cache-Control", "no-store")
+        call.respondBytes(bytes, ContentType.Image.JPEG)
+    }
+
+    // FR-9.4 — *Pick a different moment*: one slot is cut again at the timestamp the admin gives.
+    post("/autofetch/queue/{id}/still/{n}") {
+        val rt = runtime ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
+        val id = call.parameters["id"]?.toLongOrNull()
+        val n = call.parameters["n"]?.toIntOrNull()
+        val req = runCatching { call.receive<MomentRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a valid moment"))
+        if (id == null || n == null || rt.store.queueRow(id) == null) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "no such still"))
+        if (rt.engine.queue.cutAgain(id, n, req.at)) call.respond(HttpStatusCode.OK, mapOf("at" to req.at))
+        else call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "no frame could be cut there"))
+    }
+
+    // FR-9.3 — *Mark as submitted* is a note that the admin entered it on TMDB. Nothing is sent anywhere.
+    post("/autofetch/queue/{id}/submitted") {
+        val rt = runtime ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
+        val id = call.parameters["id"]?.toLongOrNull()
+        if (id == null || rt.store.queueRow(id) == null) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "no such episode"))
+        if (rt.engine.queue.markSubmitted(id)) call.respond(HttpStatusCode.OK, mapOf("submitted" to true))
+        else call.respond(HttpStatusCode.Conflict, mapOf("error" to "TMDB already has that episode"))
     }
 }

@@ -1,0 +1,21 @@
+-- DEB-2477 (DEB-2474, FR-8.4, FR-9) — Auto-fetch's *Not on TMDB yet* queue. One row per placed episode TMDB had no such SxxEyy for when it was filed
+-- (FR-9.1). `title_from_page` / `overview_from_page` are FR-8.4's per-episode marker, field by field: the metadata re-pull keeps the page's text for a
+-- field TMDB leaves blank, and the marker goes when TMDB has text of its own. `state` is queued | submitted | cleared (TMDB returned the episode);
+-- a cleared row keeps being checked only while a marker is still on. `stills_json` holds the three moments (seconds) the stills were cut at (FR-9.4);
+-- the JPEGs live in the application's data directory, never in the library. This file is the migration; Autofetch.sq carries the same CREATE TABLE.
+CREATE TABLE autofetch_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetcher_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    season INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'queued',
+    filed_at INTEGER NOT NULL,
+    submitted_at INTEGER,
+    cleared_at INTEGER,
+    last_check_at INTEGER,
+    title_from_page INTEGER NOT NULL DEFAULT 0,
+    overview_from_page INTEGER NOT NULL DEFAULT 0,
+    stills_json TEXT NOT NULL DEFAULT '[]',
+    UNIQUE (fetcher_id, item_id)
+);

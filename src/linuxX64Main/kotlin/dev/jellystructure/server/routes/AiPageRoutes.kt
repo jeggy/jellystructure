@@ -17,12 +17,14 @@ data class AiPageDto(val tabs: List<String>)
  * or a spent limit leave the page where it is. **Support is there whenever the key is**, whether `[support] enabled` is
  * true or false: the lane's switch lives inside the tab, and a closed lane still has tickets an admin can read. With a key
  * set the page therefore exists without Seerr; Suggestions (Seerr connected, FR-274-1) is the only tab that waits for it.
- * Fetchers is not built.
+ * **Fetchers is there whenever the key is** (DEB-2477, auto-fetch FR-1.1): a switched-off AI, a revoked key or a spent limit does not
+ * remove it and does not stop a saved fetcher (FR-1.2), and `[autofetch] enabled` is a state the tab shows, not a reason to hide it.
  */
 fun aiPageTabs(config: AppConfig, suggestionsAvailable: Boolean): List<String> {
     if (config.ai.apiKey.isBlank()) return emptyList()
     return buildList {
         add("support")
+        add("fetchers")
         if (suggestionsAvailable) add("suggestions")
     }
 }

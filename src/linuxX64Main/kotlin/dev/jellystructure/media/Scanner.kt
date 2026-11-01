@@ -1392,9 +1392,12 @@ class Scanner(
                     val e = ep.episodeNumber
                     if (s != null && e != null) {
                         val epDetails = tmdb.getEpisodeDetailsLocalized(details.id, s, e, langPriority)
+                        // DEB-2477 (FR-8.4) — TMDB wins where it has text; a field it leaves blank keeps the page's words when the marker says
+                        // they are the page's (a freshly added TMDB episode often has a number and no name yet).
+                        val marker = autofetch?.pageMarker(ep.path)
                         if (epDetails != null) ep.copy(
-                            title = epDetails.name.takeIf { it.isNotBlank() },
-                            overview = epDetails.overview.takeIf { it.isNotBlank() },
+                            title = epDetails.name.takeIf { it.isNotBlank() } ?: ep.title.takeIf { marker?.title == true },
+                            overview = epDetails.overview.takeIf { it.isNotBlank() } ?: ep.overview.takeIf { marker?.overview == true },
                             stillPath = epDetails.stillPath,
                             tmdbEpisodeId = epDetails.id,
                             // Phase 128: the series' resolved language is applied per-episode here, but

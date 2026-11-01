@@ -177,16 +177,52 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
 
     /** FR-9.4's rule for the one frame a page-only episode gets: the middle 80 % of the runtime, away from the first and last minute, not black. */
     override suspend fun thumbnail(path: String, durationSec: Double, out: String): Boolean {
-        val lo = if (durationSec > 150) 60.0 else durationSec * 0.1
-        val hi = if (durationSec > 150) durationSec - 60.0 else durationSec * 0.9
+        val (lo, hi) = stillWindow(durationSec)
         for (f in listOf(0.5, 0.35, 0.65, 0.25, 0.75)) {
-            val at = (durationSec * f).coerceIn(lo, hi).toInt()
-            val r = shell.run(FetchCommands.frame(path, at, out))
-            val yavg = Regex("""lavfi\.signalstats\.YAVG=([0-9.]+)""").find(r.output)?.groupValues?.get(1)?.toDoubleOrNull()
-            if (r.ok && shell.exists(out) && (yavg == null || yavg >= 24.0)) return true
+            if (cut(path, (durationSec * f).coerceIn(lo, hi).toInt(), out)) return true
         }
+        return false
+    }
+
+    /** The middle 80 % of the runtime, and outside the first and last minute where a title card and the credits sit (FR-9.4). */
+    private fun stillWindow(durationSec: Double): Pair<Double, Double> =
+        if (durationSec > 150) maxOf(60.0, durationSec * 0.1) to minOf(durationSec - 60.0, durationSec * 0.9) else durationSec * 0.1 to durationSec * 0.9
+
+    /** One frame, kept only when it is not (near) black; a rejected frame is removed. */
+    private suspend fun cut(path: String, atSec: Int, out: String): Boolean {
+        val r = shell.run(FetchCommands.frame(path, atSec, out))
+        val yavg = Regex("""lavfi\.signalstats\.YAVG=([0-9.]+)""").find(r.output)?.groupValues?.get(1)?.toDoubleOrNull()
+        if (r.ok && shell.exists(out) && (yavg == null || yavg >= 24.0)) return true
         shell.remove(out)
         return false
+    }
+
+    override suspend fun frameAt(path: String, atSec: Int, out: String): Boolean {
+        val r = shell.run(FetchCommands.frame(path, atSec, out))
+        if (r.ok && shell.exists(out)) return true
+        shell.remove(out)
+        return false
+    }
+
+    /**
+     * FR-9.4 — three frames, one in each quarter of the window, spread so that no two sit within an eighth of it of each other (a near
+     * duplicate is a frame of the same moment), and none black. A candidate that fails is nudged along the window; fewer than asked is an answer.
+     */
+    override suspend fun stills(path: String, durationSec: Double, outFiles: List<String>): List<Int> {
+        val (lo, hi) = stillWindow(durationSec)
+        val span = hi - lo
+        if (span <= 0 || outFiles.isEmpty()) return emptyList()
+        val gap = span / 8
+        val picked = ArrayList<Int>()
+        for ((i, out) in outFiles.withIndex()) {
+            val base = lo + span * (i + 1.0) / (outFiles.size + 1)
+            for (nudge in listOf(0.0, 0.05, -0.05, 0.1, -0.1, 0.15, -0.15)) {
+                val at = (base + span * nudge).coerceIn(lo, hi).toInt()
+                if (picked.any { kotlin.math.abs(it - at) < gap }) continue
+                if (cut(path, at, out)) { picked += at; break }
+            }
+        }
+        return picked
     }
 }
 
@@ -202,6 +238,9 @@ class ProductionWorld(
     private val activityLog: ActivityLog,
     private val waitForViewers: () -> Boolean,
     private val playbackActive: () -> Boolean,
+    private val scanner: dev.jellystructure.media.Scanner,
+    private val dataDir: String,
+    private val scanRunning: () -> Boolean,
 ) : AutofetchWorld {
     override fun enabled() = configStore.current.autofetch.enabled
     override fun libraries(): List<LibraryMapping> = configStore.current.libraries
@@ -258,6 +297,35 @@ class ProductionWorld(
 
     override suspend fun activity(level: String, message: String, runId: String?) {
         runCatching { activityLog.log(level, "autofetch", message, null, runId, null) }
+    }
+
+    override suspend fun activityStart(runId: String, trigger: String) {
+        runCatching { activityLog.startRun(runId, trigger, runScope = "autofetch") }
+    }
+
+    override suspend fun activityEnd(runId: String) {
+        runCatching { activityLog.finishRun(runId) }
+    }
+
+    override fun stillsDir(): String = "$dataDir/autofetch/stills"
+
+    /**
+     * FR-9.3 — an explicit season re-sync against TMDB. The scan will not do it: it skips TMDB for an episode that already has a title and
+     * an overview, and a queued episode has both, from the page. The sync keeps a field TMDB leaves blank (FR-8.4). The NFO is the next
+     * scan's `write_nfo`; no Jellyfin refresh is triggered here (FR-6.7's rule, kept).
+     */
+    override suspend fun resyncSeason(seriesPath: String, tmdbId: Int, season: Int, episodePaths: List<String>): Map<String, EpisodeAfterSync>? {
+        // A scan owns the episode rows while it runs; the check simply waits for the next day's turn rather than race it.
+        if (scanRunning()) return null
+        val wanted = episodePaths.toSet()
+        val series = mediaStore.allItems().firstOrNull { it.kind == dev.jellystructure.model.MediaKind.TV_SHOW && it.episodes.any { e -> e.path in wanted } } ?: return null
+        // The fetcher's id is the one the household declared; the sync asks about that series, and the item keeps whatever id it had.
+        val (synced, _) = runCatching { scanner.syncSeason(series.copy(tmdbId = tmdbId), season, probeFiles = false) }.getOrNull() ?: return null
+        mediaStore.updateOne(synced.copy(tmdbId = series.tmdbId ?: tmdbId))
+        return episodePaths.associateWith { p ->
+            val ep = synced.episodes.firstOrNull { it.path == p }
+            EpisodeAfterSync(ep?.tmdbEpisodeId != null, ep?.title, ep?.overview)
+        }
     }
 
     override suspend fun forgetEpisode(path: String) {

@@ -394,6 +394,7 @@ fun main() = runBlocking {
         configStore, db, tmdbClient, arrClient, jellyfinClient, mediaStore, mediaHistory, activityLog,
         waitForViewers = { dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive()) },
         playbackActive = { dev.jellystructure.tv.isPlaybackActive() },
+        scanner = scanner, dataDir = dataDir, scanRunning = { scanTracker.running },
     )
     val autofetchTools = dev.jellystructure.autofetch.ProductionMediaTools()
     val autofetchLanes = dev.jellystructure.autofetch.SiteLanes(autofetchStore, dev.jellystructure.autofetch.KtorTransport)

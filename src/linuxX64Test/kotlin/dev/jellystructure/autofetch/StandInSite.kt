@@ -109,6 +109,11 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     override suspend fun inspect(path: String) = FileFacts(duration, listOf(audioLanguage), emptyList(), 1080, 1_900_000_000L)
     override suspend fun firstTopLevel(path: String) = first
     override suspend fun thumbnail(path: String, durationSec: Double, out: String): Boolean = PosixFileFixShell.writeText(out, "jpg")
+    /** The moments the fixed rule would pick, so a test can see them stored; [blackAt] is a moment every cut there refuses (FR-9.4). */
+    var blackAt: Int? = null
+    override suspend fun frameAt(path: String, atSec: Int, out: String): Boolean = atSec != blackAt && PosixFileFixShell.writeText(out, "jpg@$atSec")
+    override suspend fun stills(path: String, durationSec: Double, outFiles: List<String>): List<Int> =
+        outFiles.mapIndexedNotNull { i, f -> val at = (durationSec * (i + 1) / (outFiles.size + 1)).toInt(); if (frameAt(path, at, f)) at else null }
 }
 
 class FakeWorld(private val clock: FakeClock, val lib: String) : AutofetchWorld {
@@ -126,6 +131,12 @@ class FakeWorld(private val clock: FakeClock, val lib: String) : AutofetchWorld 
     val forgotten = ArrayList<String>()
     val stops = ArrayList<Pair<String, String>>()
     val images = ArrayList<String>()
+    /** FR-9.3 — what an explicit re-sync of a season finds: per episode path. Null = the library has not got the series / TMDB unreachable. */
+    var resync: (List<String>) -> Map<String, EpisodeAfterSync>? = { null }
+    val resyncs = ArrayList<Triple<String, Int, Int>>()
+    val runsStarted = ArrayList<String>()
+    val runsEnded = ArrayList<String>()
+    val activityRuns = ArrayList<Pair<String?, String>>()
 
     override fun enabled() = on
     override fun libraries() = listOf(LibraryMapping(jellyfinId = "tv", name = "TV", collectionType = "tvshows", localPath = lib))
@@ -138,7 +149,13 @@ class FakeWorld(private val clock: FakeClock, val lib: String) : AutofetchWorld 
     override suspend fun sonarrReason(tmdbId: Int?, seriesPath: String) = sonarr
     override suspend fun announce(path: String, updateType: String) { announced += path to updateType }
     override suspend fun history(path: String, text: String) { histories += text }
-    override suspend fun activity(level: String, message: String, runId: String?) { activities += message }
+    override suspend fun activity(level: String, message: String, runId: String?) { activities += message; activityRuns += runId to message }
+    override suspend fun activityStart(runId: String, trigger: String) { runsStarted += runId }
+    override suspend fun activityEnd(runId: String) { runsEnded += runId }
+    override suspend fun resyncSeason(seriesPath: String, tmdbId: Int, season: Int, episodePaths: List<String>): Map<String, EpisodeAfterSync>? {
+        resyncs += Triple(seriesPath, tmdbId, season); return resync(episodePaths)
+    }
+    override fun stillsDir() = "${lib.substringBeforeLast('/')}/stills"
     override suspend fun forgetEpisode(path: String) { forgotten += path }
     override suspend fun fetchImage(url: String, dest: String, lane: SiteLane): Boolean { images += url; return PosixFileFixShell.writeText(dest, "img") }
     override suspend fun notifySiteStopped(site: String, reason: String) { stops += site to reason }

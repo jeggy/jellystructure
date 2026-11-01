@@ -49,6 +49,8 @@ class DashboardService(
     private val filterTags: dev.jellystructure.media.FilterTagCheck? = null,
     /** DEB-2518 (FR-12) — single-sign-on accounts that have no tag filter. */
     private val unfilteredSso: dev.jellystructure.tv.UnfilteredSsoAccounts? = null,
+    /** DEB-2477 (DEB-2474, FR-2.5) — a site Auto-fetch has been stopped by: one row per stopped site. */
+    private val autofetch: dev.jellystructure.autofetch.AutofetchRuntime? = null,
     private val webhookSince: () -> Long?,
 ) {
     /** FR-285-2 — how one triage type reads as a row. `domain == null` ⇒ a film row and a series row from the kind split. */
@@ -228,6 +230,9 @@ class DashboardService(
         // DEB-2518 (FR-12) — a single-sign-on account with no tag filter sees the whole library.
         unfilteredSso?.row()?.let { rows += it }
 
+        // DEB-2477 (FR-2.5) — a site that has stopped Auto-fetch stays stopped until the admin resumes it, so it is a row until then.
+        autofetch?.let { rt -> rows += runCatching { rt.dashboardRows() }.getOrDefault(emptyList()) }
+
         // DEB-2233 (FR-9) — the identity provider would return viewers somewhere that is not this server.
         dev.jellystructure.tv.SsoSetupFlag.dashboardRow(configStore)?.let { rows += it }
 
@@ -371,7 +376,7 @@ class DashboardService(
         const val WARNING = "warning"
         const val INFO = "info"
         // Phase 307 (OQ2) — *Public databases* is its own chip: a different kind of decision from a fix.
-        val DOMAINS = listOf("films" to "Films", "series" to "Series", "music" to "Music", "books" to "Audiobooks", "subs" to "Subtitles", "jf" to "Jellyfin", "host" to "This server", "svc" to "Services", "public" to "Public databases")
+        val DOMAINS = listOf("films" to "Films", "series" to "Series", "music" to "Music", "books" to "Audiobooks", "subs" to "Subtitles", "jf" to "Jellyfin", "host" to "This server", "svc" to "Services", "autofetch" to "Auto-fetch", "public" to "Public databases")
     }
 }
 

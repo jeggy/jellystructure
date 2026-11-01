@@ -16,6 +16,9 @@ import kotlinx.coroutines.isActive
  */
 enum class RunTrigger(val id: String) { MANUAL("manual"), SCHEDULE("schedule"), ALL("run-all") }
 
+/** FR-12 — what saving a retention would do at the next run. */
+data class RetentionPreview(val deletes: Int, val keeps: Int, val onPage: Int)
+
 data class RunResult(val status: String, val summary: String, val lines: List<RunLine>, val placed: Int = 0, val deleted: Int = 0)
 
 class AutofetchEngine(
@@ -25,6 +28,9 @@ class AutofetchEngine(
     private val world: AutofetchWorld,
     private val shell: FileFixShell = PosixFileFixShell,
 ) {
+    /** *Not on TMDB yet* (FR-9): filed from a run, cleared by the daily check. */
+    val queue = NotOnTmdbQueue(store, tools, world, shell)
+
     // Cancellation-safe: a plain lock, so the release in `finally` can never be skipped by a cancelled coroutine.
     private val running = dev.jellystructure.ops.LockedMap<String, Boolean>()
 
@@ -40,10 +46,13 @@ class AutofetchEngine(
         if (!acquired) return null
         val now = world.nowSec()
         val runId = store.startRun(id, trigger.id, now)
+        val activityRun = "autofetch-$runId"
+        world.activityStart(activityRun, trigger.id)
         val lines = ArrayList<RunLine>()
         val result = try { runInner(f, trigger, lines, stop) } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) {
                 store.finishRun(runId, world.nowSec(), "cancelled", "stopped", lines)
+                world.activityEnd(activityRun)
                 throw e
             }
             lines += RunLine("error", e.message ?: e::class.simpleName.orEmpty())
@@ -53,7 +62,10 @@ class AutofetchEngine(
         }
         store.finishRun(runId, world.nowSec(), result.status, result.summary, result.lines)
         if (result.status != "deferred") store.setRan(id, world.nowSec())
-        world.activity(if (result.status == "failed") "warn" else "info", "Auto-fetch · ${f.name} · ${result.summary}", "autofetch-$runId")
+        // FR-11 — one entry on Activity ▸ History, with the run's lines under it (a deletion is one of them, FR-16.6).
+        world.activity(if (result.status == "failed") "warn" else "info", "Auto-fetch · ${f.name} · ${result.summary}", activityRun)
+        for (l in result.lines) world.activity(if (l.kind == "failed" || l.kind == "stopped") "warn" else "info", l.text, activityRun)
+        world.activityEnd(activityRun)
         return result
     }
 
@@ -98,6 +110,14 @@ class AutofetchEngine(
         val candidates = RetentionPlanner.downloadable(rows, f.retention)
         val tmdbEpisodes: Set<Pair<Int, Int>>? = if (!f.pageOnly && !f.proven && f.tmdbId != null) world.tmdbEpisodes(f.tmdbId)?.map { it.season to it.episode }?.toSet() ?: emptySet() else null
 
+        // FR-9.1 — for a proven fetcher TMDB is asked once, after the first episode is placed, which of them it lacks.
+        var onTmdb: Set<Pair<Int, Int>>? = tmdbEpisodes
+        var onTmdbAsked = tmdbEpisodes != null
+        suspend fun tmdbHas(se: SeasonEpisode): Boolean? {
+            if (!onTmdbAsked) { onTmdbAsked = true; onTmdb = f.tmdbId?.let { world.tmdbEpisodes(it) }?.map { it.season to it.episode }?.toSet() }
+            return onTmdb?.let { (se.season to se.episode) in it }
+        }
+
         val takenThisRun = HashSet<SeasonEpisode>()
         val placedLines = ArrayList<String>()
         var placed = 0
@@ -125,7 +145,11 @@ class AutofetchEngine(
             attempted++
             when (val r = fetchOne(f, recipe, lane, listedItem, item, se, stop)) {
                 is OneResult.Placed -> {
-                    placed++; takenThisRun += se; placedLines += r.text; lines += RunLine("placed", r.text)
+                    placed++; takenThisRun += se
+                    // TMDB unreachable is not evidence the episode is there: it is filed, and the daily check clears it if TMDB has it.
+                    val queued = !f.pageOnly && f.proven && tmdbHas(se) != true && queue.file(f, item, r.path, r.durationSec)
+                    val text = r.text + if (queued) " · not on TMDB → queued" else ""
+                    placedLines += text; lines += RunLine("placed", text)
                 }
                 is OneResult.Skipped -> lines += RunLine("skipped", "${label(item)}: ${r.reason}")
                 is OneResult.Failed -> lines += RunLine("failed", "${label(item)}: ${r.reason}")
@@ -184,7 +208,7 @@ class AutofetchEngine(
     }
 
     private sealed class OneResult {
-        data class Placed(val text: String) : OneResult()
+        data class Placed(val text: String, val path: String, val durationSec: Double) : OneResult()
         data class Skipped(val reason: String) : OneResult()
         data class Failed(val reason: String) : OneResult()
         data class SiteDown(val reason: String) : OneResult()
@@ -252,7 +276,7 @@ class AutofetchEngine(
                 world.history(finalPath, "Auto-fetch placed ${Numbering.code(se)} · $fileName")
                 val res = facts.height?.let { "${it}p" }
                 val size = facts.sizeBytes?.let { gb(it) }
-                OneResult.Placed("${Numbering.code(se)}${if (res != null || size != null) " (${listOfNotNull(res, size).joinToString(", ")})" else ""}${if (dl.message.isNotBlank()) " · ${dl.message}" else ""}")
+                OneResult.Placed(path = finalPath, durationSec = facts.durationSec, text = "${Numbering.code(se)}${if (res != null || size != null) " (${listOfNotNull(res, size).joinToString(", ")})" else ""}${if (dl.message.isNotBlank()) " · ${dl.message}" else ""}")
             } finally {
                 shell.remove(work)
                 cleanEmpty(seasonDir, f.seriesPath)
@@ -315,7 +339,7 @@ class AutofetchEngine(
         world.announce(path, "Deleted")
         world.history(path, "Auto-fetch deleted $code$tail")
         lines += RunLine("deleted", "−1 · $code$tail")
-        world.activity("info", "Auto-fetch · ${f.name} · −1 · $code$tail")
+        queue.forget(f.id, d.row.itemId)
         return true
     }
 
@@ -327,14 +351,21 @@ class AutofetchEngine(
 
     private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
 
-    /** What a change to a fetcher's retention would delete at its next run, counted by the server (FR-12). */
-    fun previewRetention(f: Fetcher, retention: RetentionSpec): Int {
-        val rows = store.items(f.id).map {
+    /**
+     * What a change to a fetcher's retention would do at its next run, counted by the server (FR-12): how many episodes it would delete, how
+     * many of the listing's items it keeps, and how many the page lists. The screen words these and never counts for itself (FR-16.1).
+     */
+    fun previewRetention(f: Fetcher, retention: RetentionSpec): RetentionPreview {
+        val items = store.items(f.id)
+        val rows = items.map {
             val path = it.placedPath
             RetentionRow(it.itemId, it.published, it.order, path, path != null && shell.exists(path), it.missingSince, true)
         }
         // The preview counts what the newest-N rule alone would remove: *leaves the page* needs a listing read the preview does not make.
-        return RetentionPlanner.deletions(rows, retention.copy(leavesPage = false), ListingEvidence(true, rows.size), world.nowSec()).deletes.size
+        val deletes = RetentionPlanner.deletions(rows, retention.copy(leavesPage = false), ListingEvidence(true, rows.size), world.nowSec()).deletes.size
+        val lastRead = items.maxOfOrNull { it.lastSeenAt ?: 0L } ?: 0L
+        val onPage = items.count { (it.lastSeenAt ?: 0L) == lastRead && it.state != "deleted" }
+        return RetentionPreview(deletes, if (retention.keepsAll) onPage else minOf(retention.keep, onPage), onPage)
     }
 
     companion object {

@@ -76,6 +76,24 @@ CREATE TABLE autofetch_series_mark (
     fetcher_id TEXT NOT NULL
 );
 
+-- DEB-2477 (DEB-2474, FR-8.4, FR-9) — must stay byte-for-byte in sync with 93.sqm's CREATE TABLE.
+CREATE TABLE autofetch_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetcher_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    season INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'queued',
+    filed_at INTEGER NOT NULL,
+    submitted_at INTEGER,
+    cleared_at INTEGER,
+    last_check_at INTEGER,
+    title_from_page INTEGER NOT NULL DEFAULT 0,
+    overview_from_page INTEGER NOT NULL DEFAULT 0,
+    stills_json TEXT NOT NULL DEFAULT '[]',
+    UNIQUE (fetcher_id, item_id)
+);
+
 fetcherAll:
 SELECT * FROM autofetch_fetcher ORDER BY created_at, id;
 
@@ -179,3 +197,40 @@ SELECT * FROM autofetch_series_mark;
 
 markDeleteByFetcher:
 DELETE FROM autofetch_series_mark WHERE fetcher_id = :fetcher_id;
+
+queueAll:
+SELECT * FROM autofetch_queue ORDER BY filed_at DESC, id DESC;
+
+queueById:
+SELECT * FROM autofetch_queue WHERE id = :id;
+
+queueGet:
+SELECT * FROM autofetch_queue WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+queueByFetcher:
+SELECT * FROM autofetch_queue WHERE fetcher_id = :fetcher_id;
+
+queueInsert:
+INSERT OR IGNORE INTO autofetch_queue(fetcher_id, item_id, season, episode, filed_at, last_check_at, title_from_page, overview_from_page, stills_json)
+VALUES (:fetcher_id, :item_id, :season, :episode, :filed_at, :filed_at, :title_from_page, :overview_from_page, :stills_json);
+
+queueSetSubmitted:
+UPDATE autofetch_queue SET state = 'submitted', submitted_at = :at WHERE id = :id AND state != 'cleared';
+
+queueSetCleared:
+UPDATE autofetch_queue SET state = 'cleared', cleared_at = COALESCE(cleared_at, :at) WHERE id = :id;
+
+queueSetChecked:
+UPDATE autofetch_queue SET last_check_at = :at WHERE id = :id;
+
+queueSetMarkers:
+UPDATE autofetch_queue SET title_from_page = :title_from_page, overview_from_page = :overview_from_page WHERE id = :id;
+
+queueSetStills:
+UPDATE autofetch_queue SET stills_json = :stills_json WHERE id = :id;
+
+queueDelete:
+DELETE FROM autofetch_queue WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+queueDeleteByFetcher:
+DELETE FROM autofetch_queue WHERE fetcher_id = :fetcher_id;

@@ -244,9 +244,9 @@ class AutofetchEngineTest {
     @Test
     fun `a TMDB fetcher starts at all episodes and lowering 12 to 8 previews 4 then deletes exactly those 4`() = runBlocking<Unit> {
         val f = placed12()
-        assertEquals(4, h.service.preview(f.id, RetentionSpec("newest", 8, false)))
-        assertEquals(0, h.service.preview(f.id, RetentionSpec("newest", 12, false)))
-        assertEquals(0, h.service.preview(f.id, RetentionSpec("all")))
+        assertEquals(RetentionPreview(deletes = 4, keeps = 8, onPage = 12), h.service.preview(f.id, RetentionSpec("newest", 8, false)))
+        assertEquals(0, h.service.preview(f.id, RetentionSpec("newest", 12, false))!!.deletes)
+        assertEquals(RetentionPreview(deletes = 0, keeps = 12, onPage = 12), h.service.preview(f.id, RetentionSpec("all")))
         assertNull(h.service.update(f.id, RetentionSpec("newest", 8, false), null, null))
         val r = h.engine.run(f.id, RunTrigger.MANUAL)!!
         assertEquals(4, r.deleted)

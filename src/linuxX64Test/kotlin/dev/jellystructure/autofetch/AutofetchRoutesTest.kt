@@ -63,7 +63,7 @@ class AutofetchRoutesTest {
 
         h.engine.run(id, RunTrigger.MANUAL)
         val preview = client.post("/api/autofetch/$id/retention/preview") { contentType(ContentType.Application.Json); setBody("""{"retention":{"mode":"newest","keep":8,"leaves_page":false}}""") }
-        assertEquals("""{"deletes":4}""", preview.bodyAsText())
+        assertEquals("""{"deletes":4,"keeps":8,"onPage":12}""", preview.bodyAsText())
 
         val patched = client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"retention":{"mode":"newest","keep":8,"leaves_page":false},"schedule":"every6h"}""") }
         assertEquals(HttpStatusCode.OK, patched.status)
@@ -74,6 +74,47 @@ class AutofetchRoutesTest {
         assertEquals(HttpStatusCode.NoContent, client.delete("/api/autofetch/$id").status)
         assertEquals(HttpStatusCode.NotFound, client.delete("/api/autofetch/$id").status)
         assertTrue(h.onDisk("${h.lib}/Dagbók/Season 2026"), "delete never removes a file")
+    }
+
+    @Test
+    fun `the queue is listed with the page's words and its stills are served to the admin and can be cut again`() = app {
+        h.world.tmdbEps = listOf(TmdbEpisodeFact(2026, 1, "Útfall", "2026-01-10"), TmdbEpisodeFact(2026, 2, "Onnur", "2026-02-12"))
+        val saved = h.service.save(SaveRequest("https://varpid.example.fo/sendingar/royndin", 9000001, false, h.royndinRecipe)) as SaveResult.Saved
+        h.engine.run(saved.fetcher.id, RunTrigger.MANUAL)
+        val row = h.store.queueOf(saved.fetcher.id).single()
+
+        val list = client.get("/api/autofetch").bodyAsText()
+        assertTrue("\"queue\":[{\"id\":${row.id}" in list && "\"code\":\"S2026E03\"" in list && "\"series\":\"Royndin\"" in list, list)
+        assertTrue("\"title\":\"Royndin 2026 · 3. partur\"" in list, "the page's own heading, verbatim")
+        assertFalse("\"overview\":\"" in list, "the page has no description, so none is sent: $list")
+        assertTrue("\"queued\":1" in list, "the fetcher's row carries its queue count")
+
+        val still = client.get("/api/autofetch/queue/${row.id}/still/0")
+        assertEquals(HttpStatusCode.OK, still.status); assertEquals("image/jpeg", still.contentType()?.toString())
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/autofetch/queue/${row.id}/still/7").status)
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/autofetch/queue/99999/still/0").status)
+
+        val cut = client.post("/api/autofetch/queue/${row.id}/still/2") { contentType(ContentType.Application.Json); setBody("{\"at\":600}") }
+        assertEquals(HttpStatusCode.OK, cut.status); assertEquals(600, h.store.queueRow(row.id)!!.stills[2])
+        h.tools.blackAt = 5
+        assertEquals(HttpStatusCode.UnprocessableEntity, client.post("/api/autofetch/queue/${row.id}/still/2") { contentType(ContentType.Application.Json); setBody("{\"at\":5}") }.status)
+
+        assertEquals(HttpStatusCode.OK, client.post("/api/autofetch/queue/${row.id}/submitted").status)
+        assertTrue("\"state\":\"submitted\"" in client.get("/api/autofetch").bodyAsText())
+        assertEquals(HttpStatusCode.NotFound, client.post("/api/autofetch/queue/99999/submitted").status)
+        // Once TMDB returns the episode the row is history: it leaves the list.
+        h.store.queueCleared(row.id, h.world.nowSec())
+        assertFalse("\"queue\":[{" in client.get("/api/autofetch").bodyAsText())
+        assertEquals(HttpStatusCode.Conflict, client.post("/api/autofetch/queue/${row.id}/submitted").status)
+    }
+
+    @Test
+    fun `a stopped site is listed with how many fetchers it stops`() = app {
+        h.saveDagbok()
+        h.site.listingStatus = 403
+        h.engine.run(h.store.fetchers().single().id, RunTrigger.MANUAL)
+        val list = client.get("/api/autofetch").bodyAsText()
+        assertTrue("\"sites\":[{\"site\":\"varpid.example.fo\",\"stopped\":true" in list && "\"fetchers\":1" in list, list)
     }
 
     @Test

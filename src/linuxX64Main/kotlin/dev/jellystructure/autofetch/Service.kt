@@ -113,8 +113,9 @@ class AutofetchService(
     }
 
     /** `DELETE /api/autofetch/{id}` — the fetcher, its recipe and its history; never a file (FR-6.8). */
-    fun delete(id: String): Boolean {
+    suspend fun delete(id: String): Boolean {
         if (store.fetcher(id) == null) return false
+        engine.queue.forgetFetcher(id)
         store.delete(id)
         return true
     }
@@ -129,5 +130,8 @@ class AutofetchService(
         return if (read is ListingRead.Blocked && lane.state().stopped) "the site refused again: ${lane.state().stoppedReason}" else null
     }
 
-    fun preview(id: String, retention: RetentionSpec): Int? = store.fetcher(id)?.let { engine.previewRetention(it, retention) }
+    /** Where a queued episode's still [n] is kept (FR-9.4). */
+    fun stillPath(rowId: Long, n: Int): String = engine.queue.stillFile(rowId, n)
+
+    fun preview(id: String, retention: RetentionSpec): RetentionPreview? = store.fetcher(id)?.let { engine.previewRetention(it, retention) }
 }

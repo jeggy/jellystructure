@@ -670,7 +670,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
                 dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
-                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck, unfilteredSso = unfilteredSsoAccounts) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
+                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck, unfilteredSso = unfilteredSsoAccounts, autofetch = autofetch) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4
                 dev.jellystructure.filefix.FileFixService.current?.let { fileFixRoutes(it, appScope) }   // Phase 314
