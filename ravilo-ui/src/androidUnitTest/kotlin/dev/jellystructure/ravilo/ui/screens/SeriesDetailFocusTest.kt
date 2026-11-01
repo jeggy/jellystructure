@@ -103,7 +103,7 @@ class SeriesDetailFocusTest {
         rule.setContent {
             Platform(desktop) {
                 SeriesDetailLoaded(
-                    detail = detail, overlay = shown, onBack = {}, onPlay = {}, onMarkEpisode = { _, _ -> },
+                    wireDetail = detail, overlay = shown, onBack = {}, onPlay = {}, onMarkEpisode = { _, _ -> },
                     onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
                     displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
                 )
@@ -205,7 +205,7 @@ class SeriesDetailFocusTest {
         var played: EpisodePlayContext? = null
         rule.setContent {
             SeriesDetailLoaded(
-                detail = d, overlay = overlay, onBack = {}, onPlay = { played = it }, onMarkEpisode = { _, _ -> },
+                wireDetail = d, overlay = overlay, onBack = {}, onPlay = { played = it }, onMarkEpisode = { _, _ -> },
                 onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
                 displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
             )
@@ -271,7 +271,7 @@ class SeriesDetailFocusTest {
         var shown by mutableStateOf(true)
         rule.setContent {
             Platform(desktop) { if (shown) SeriesDetailLoaded(
-                detail = detail, overlay = overlay, onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
+                wireDetail = detail, overlay = overlay, onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
                 onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
                 displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
                 onShuffle = { shown = false }, returnTarget = target,
@@ -469,7 +469,7 @@ class SeriesDetailFocusTest {
                     androidx.compose.ui.Modifier.fillMaxSize().keyboardMode(mode).arrowKeysMoveFocus(true),
                 ) {
                     if (shown) SeriesDetailLoaded(
-                        detail = d, overlay = watched(d, upToSeason = 0), onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
+                        wireDetail = d, overlay = watched(d, upToSeason = 0), onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
                         onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
                         displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
                         onShuffle = { shown = false }, returnTarget = SeriesReturnTarget(),
