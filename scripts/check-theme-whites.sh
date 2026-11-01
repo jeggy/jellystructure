@@ -19,7 +19,7 @@ ALLOWED="
   components/CertBadge.kt                       4
   components/ChannelCard.kt                     2
   components/DesktopNav.kt                      4
-  components/EpisodeCard.kt                     4
+  components/EpisodeCard.kt                     5   # DEB-2938 — the NEW ribbon (FR-12), white on the accent gradient it draws itself
   components/HeroCarousel.kt                    1
   components/MultiEpisodeCard.kt                3
   components/ProfileFace.kt                     1   # DEB-2596 — the initials, white on the face's own gradient in every skin (FR-1)
