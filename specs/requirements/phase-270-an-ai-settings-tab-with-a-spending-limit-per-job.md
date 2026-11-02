@@ -293,3 +293,35 @@ See
 FR-1 and FR-3.6. Why: on prod on 2026-10-29, 44 of the 48 viewers re-ranked were QA throwaway accounts, and they
 took most of the job's $5 monthly limit.
 
+
+## Amendment 2026-11-02 — an `autofetch` job, the first that is not a batch (DEB-2478, DEB-2474 FR-5)
+
+[`auto-fetch-turns-a-series-page-into-a-paced-scheduled-download.md`](auto-fetch-turns-a-series-page-into-a-paced-scheduled-download.md)
+FR-5 adds a fifth job, `autofetch`, which writes a *recipe* for a series page once per fetcher (at setup, and on
+*Re-investigate page*). A scheduled run makes no model call. It is the first job on this rail that nobody can
+wait a day for: the admin watches the investigation live, so it uses the synchronous Messages API, not Message Batches.
+
+- **FR-270-1:** the tab gains an **Auto-fetch** card with the same controls as the others: switch, model, effort,
+  monthly limit, spent this month, last run. `[ai.autofetch]` in `config.toml` carries the same four fields as every
+  job (`enabled`, `model`, `effort`, `monthly_limit_usd`), off by default.
+- **Price.** A synchronous turn is billed at the **full** rate. The batch discount of FR-270-2 does not apply to
+  this job: `AiPricing` prices its turns without it, and its estimate on the card says so.
+- **FR-270-6 runs per turn for this job.** There is no batch to size, so the check runs before **each** turn of the
+  conversation. The worst case of what remains is *the turns left × the largest input a turn can carry + `max_tokens`*,
+  priced at the full rate. If *spent this month + that worst case* would pass the limit, the turn is not sent and the
+  investigation ends as *limit reached*, before it would pass it. Every turn's `usage` is written to the ledger as it
+  comes back, so the next turn's check uses actuals. A limit below one investigation's worst case stops it before the
+  first turn: no request reaches Anthropic.
+- **FR-270-4 holds.** The model's recipe is a proposal. It is stored only after the engine has run it against the live
+  site and got the same answer (`auto-fetch-…` FR-4.2).
+- **FR-270-8:** the *what leaves the house* paragraph gains a line for `autofetch`: *the page URL and what this server
+  read from that site during the investigation, and the TMDB series' name, seasons and episode list. Nothing from the
+  library.* For a page-only fetcher (FR-15) it reads *the page URL and what this server read from that site during the
+  investigation. Nothing from TMDB, and nothing from the library.* This server does the reading, under its own
+  name and within a general crawler's `robots.txt` rules; the model never fetches anything itself, and a site whose
+  `robots.txt` names Anthropic's agents is treated like any other (owner, 2026-10-25, Q3).
+- **FR-270-7:** the starting assumption for the card is ~8 turns of ~15k input and ~1.5k output each, about $0.90 an
+  investigation on Opus 5 and $0.36 on Sonnet 5, at full price. The month's estimate counts one investigation per
+  saved fetcher plus one in four re-investigations; with no fetchers it shows the cost of one.
+- **Off means off** and **a restart loses nothing** need no new rule here: an investigation is not resumable. A restart
+  ends it, writes nothing, and costs what its ledger rows already say.
