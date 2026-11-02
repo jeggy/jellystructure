@@ -13,7 +13,8 @@ sealed class ListingRead {
 
 object ListingFetcher {
     /** Reads the recipe's listing through [lane]: the first page, then `next` pages up to [MAX_PAGES], on the same hosts only. */
-    suspend fun read(recipe: Recipe, lane: SiteLane): ListingRead {
+    suspend fun read(recipe: Recipe, lane: SiteLane, tools: MediaTools? = null): ListingRead {
+        if (recipe.list.kind == "ytdlp") return readYtDlp(recipe, lane, tools)
         val hosts = RecipeValidator.lanes(recipe)
         var url: String? = if (recipe.list.kind == "json") recipe.list.url else recipe.source.url
         val expect = if (recipe.list.kind == "json") Expect.JSON else Expect.HTML
@@ -47,6 +48,26 @@ object ListingFetcher {
     }
 }
 
+/**
+ * DEB-2480 (FR-6.3, FR-4.1) — a `ytdlp` listing: yt-dlp's flat playlist of the source page, one paced request in the lane, read as JSON.
+ * The source page is also read through the lane when the recipe has a `series` block, because that block's selectors read the page itself.
+ */
+private suspend fun readYtDlp(recipe: Recipe, lane: SiteLane, tools: MediaTools?): ListingRead {
+    if (tools == null) return ListingRead.Blocked(LaneOutcome.Failed(YtDlpTexts.NOT_INSTALLED))
+    val url = recipe.source.url
+    val out = when (val g = lane.pacedProgram(url, listing = true) { tools.ytdlpListing(url) }) {
+        is Gated.Refused -> return ListingRead.Blocked(g.outcome)
+        is Gated.Through -> g.value
+    }
+    if (!out.ok) return ListingRead.Blocked(lane.programFailure(out.message, out.status))
+    lane.programSucceeded()
+    val json = out.body.substring(out.body.indexOf('{').coerceAtLeast(0))
+    val page = ListingReader.readJson(YtDlpListing.asJsonList(recipe.list), json, url, recipe.media.manifestField)
+        ?: return ListingRead.Blocked(LaneOutcome.Failed("yt-dlp's listing is not JSON"))
+    val body = if (recipe.series == null) "" else (lane.page(url, Expect.HTML, hosts = RecipeValidator.lanes(recipe)) as? LaneOutcome.Ok)?.reply?.body.orEmpty()
+    return ListingRead.Read(page.items.mapIndexed { i, it -> it.copy(order = i) }, page.items.size < YtDlpCommands.PLAYLIST_END, body, url)
+}
+
 data class SeriesFacts(val name: String?, val description: String?, val image: String?)
 
 data class ProofResult(
@@ -75,7 +96,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
 
     /** [mapping] is the model's proposed table when the recipe's numbering is `mapped` (FR-4.3); nothing else reads it. */
     suspend fun prove(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, mapping: List<MapRow> = emptyList()): ProofResult {
-        val read = ListingFetcher.read(recipe, lane)
+        val read = ListingFetcher.read(recipe, lane, tools)
         if (read is ListingRead.Blocked) return fail(describe(read.outcome)).copy(blocked = read.outcome)
         read as ListingRead.Read
         val items = read.items
@@ -211,7 +232,22 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
 
     class Probed(val facts: ManifestFacts?, val failure: String?)
 
+    /** FR-6.3 — an item yt-dlp is to download: its link is on a recorded host and robots.txt allows it, and yt-dlp's own metadata shows a video format, not all DRM. */
+    private suspend fun probeYtDlp(recipe: Recipe, item: ListedItem, lane: SiteLane): Probed {
+        val link = item.link ?: return Probed(null, "the item has no link")
+        if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return Probed(null, "the item's link is on ${Urls.host(link)}, which the recipe does not record")
+        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpInfo(link) }) {
+            is Gated.Refused -> return Probed(null, describe(g.outcome))
+            is Gated.Through -> g.value
+        }
+        if (!out.ok) return Probed(null, if (out.drm) RecipeRefusal.DRM else describe(lane.programFailure(out.message, out.status)))
+        lane.programSucceeded()
+        if (YtDlpInfo.allDrm(out.body)) return Probed(null, RecipeRefusal.DRM)
+        return YtDlpInfo.facts(out.body)?.let { Probed(it, null) } ?: Probed(null, "yt-dlp's answer for the item could not be read")
+    }
+
     private suspend fun probeOne(recipe: Recipe, item: ListedItem, lane: SiteLane): Probed? {
+        if (recipe.media.kind == "ytdlp") return probeYtDlp(recipe, item, lane)
         val manifestUrl = ManifestResolver.resolveWithPage(recipe, item, lane) { _, _ -> }
         return when (manifestUrl) {
             is ManifestResolver.Resolved -> {

@@ -80,7 +80,7 @@ class AutofetchEngine(
         lane.state().let { if (it.stopped) return RunResult("stopped", "Site stopped · ${it.stoppedReason}", lines) }
         val stoppedBefore = lane.state().stopped
 
-        val read = ListingFetcher.read(recipe, lane)
+        val read = ListingFetcher.read(recipe, lane, tools)
         if (read is ListingRead.Blocked) return blockedResult(f, lane, read.outcome, stoppedBefore, lines)
         read as ListingRead.Read
         val now = world.nowSec()
@@ -227,31 +227,44 @@ class AutofetchEngine(
         data class SiteDown(val reason: String) : OneResult()
     }
 
+    /** What a download is handed: a manifest read through the lane (FR-6.3), or the item's own link for yt-dlp (FR-6.3, 2026-11-02). */
+    private sealed class Source {
+        class Manifest(val url: String, val reply: HttpReply) : Source()
+        class YtDlp(val link: String) : Source()
+    }
+
     private suspend fun fetchOne(f: Fetcher, recipe: Recipe, lane: SiteLane, listed: ListedItem, item: FetchItem, se: SeasonEpisode, stop: () -> Boolean): OneResult {
-        // The media id on the item's own page: read once, stored (FR-4.1).
-        val resolved = ManifestResolver.resolveWithPage(recipe, listed, lane, item.mediaValue) { v, _ -> store.setMediaValue(f.id, item.itemId, v) }
-        val manifestUrl = when (resolved) {
-            is ManifestResolver.Skipped -> {
-                if (lane.state().stopped) return OneResult.SiteDown("Site stopped · ${lane.state().stoppedReason}")
-                if (resolved.reason.startsWith("the item's page gives no media id") || resolved.reason.startsWith("the item id fails")) {
-                    store.setItemState(f.id, item.itemId, "skipped", resolved.reason, item.failures)
-                    return OneResult.Skipped(resolved.reason)
-                }
-                return OneResult.Failed(resolved.reason)
+        val source: Source = if (recipe.media.kind == "ytdlp") {
+            // yt-dlp opens the item's own link, so it is held to what a page request in the lane is: a recorded host, and robots.txt (DEB-2480).
+            val link = listed.link
+            if (link == null || Urls.host(link) !in RecipeValidator.lanes(recipe)) {
+                val why = "the item's link is not an http address on a host the recipe records"
+                store.setItemState(f.id, item.itemId, "skipped", why, item.failures)
+                return OneResult.Skipped(why)
             }
-            is ManifestResolver.Resolved -> resolved.url
-        }
-        val manifest = lane.page(manifestUrl, Expect.MANIFEST, player = true, hosts = RecipeValidator.lanes(recipe))
-        if (manifest !is LaneOutcome.Ok) return when (manifest) {
-            is LaneOutcome.Stopped -> OneResult.SiteDown("Site stopped · ${manifest.reason}")
-            is LaneOutcome.BackOff -> OneResult.SiteDown("waiting · ${manifest.reason}")
-            is LaneOutcome.Forbidden -> OneResult.Failed(manifest.reason)
-            is LaneOutcome.Failed -> OneResult.Failed(manifest.reason)
-            is LaneOutcome.Ok -> OneResult.Failed("")
-        }
-        if (Manifests.hasDrm(manifest.reply.body)) {
-            store.setItemState(f.id, item.itemId, "refused", RecipeRefusal.DRM, item.failures)
-            return OneResult.Skipped(RecipeRefusal.DRM)
+            lane.admit(link)?.let { return refusal(it) }
+            Source.YtDlp(link)
+        } else {
+            // The media id on the item's own page: read once, stored (FR-4.1).
+            val resolved = ManifestResolver.resolveWithPage(recipe, listed, lane, item.mediaValue) { v, _ -> store.setMediaValue(f.id, item.itemId, v) }
+            val manifestUrl = when (resolved) {
+                is ManifestResolver.Skipped -> {
+                    if (lane.state().stopped) return OneResult.SiteDown("Site stopped · ${lane.state().stoppedReason}")
+                    if (resolved.reason.startsWith("the item's page gives no media id") || resolved.reason.startsWith("the item id fails")) {
+                        store.setItemState(f.id, item.itemId, "skipped", resolved.reason, item.failures)
+                        return OneResult.Skipped(resolved.reason)
+                    }
+                    return OneResult.Failed(resolved.reason)
+                }
+                is ManifestResolver.Resolved -> resolved.url
+            }
+            val manifest = lane.page(manifestUrl, Expect.MANIFEST, player = true, hosts = RecipeValidator.lanes(recipe))
+            if (manifest !is LaneOutcome.Ok) return refusal(manifest)
+            if (Manifests.hasDrm(manifest.reply.body)) {
+                store.setItemState(f.id, item.itemId, "refused", RecipeRefusal.DRM, item.failures)
+                return OneResult.Skipped(RecipeRefusal.DRM)
+            }
+            Source.Manifest(manifestUrl, manifest.reply)
         }
 
         val isoDate = if (recipe.numbering.kind == "date") Numbering.isoDate(item.published) else null
@@ -265,7 +278,22 @@ class AutofetchEngine(
 
         return lane.download {
             try {
-                val dl = tools.download(DownloadSpec(manifest.reply.finalUrl ?: manifestUrl, manifest.reply.body, recipe.media.kind, work, recipe.language.audio, recipe.language.subtitle), stop)
+                val dl = when (source) {
+                    is Source.Manifest -> tools.download(DownloadSpec(source.reply.finalUrl ?: source.url, source.reply.body, recipe.media.kind, work, recipe.language.audio, recipe.language.subtitle), stop)
+                    is Source.YtDlp -> tools.ytdlpDownload(YtDlpDownload(source.link, work, recipe.language.audio, recipe.language.subtitle, FetchIdentity.userAgent()), stop)
+                }
+                if (source is Source.YtDlp) {
+                    // What yt-dlp's own last error says is an answer from the site: a 429 slows the lane, a 403 on a site that worked stops it (FR-2.4, FR-2.5).
+                    if (dl.ok) lane.programSucceeded()
+                    else {
+                        if (dl.drm) {
+                            store.setItemState(f.id, item.itemId, "refused", RecipeRefusal.DRM, item.failures)
+                            return@download OneResult.Skipped(RecipeRefusal.DRM)
+                        }
+                        val o = lane.programFailure(dl.message, dl.status)
+                        if (o is LaneOutcome.Stopped || o is LaneOutcome.BackOff) return@download refusal(o)
+                    }
+                }
                 if (!dl.ok) return@download failItem(f, item, "the download failed: ${dl.message}")
                 val facts = tools.inspect(work) ?: return@download failItem(f, item, "ffprobe could not read the file")
                 if (recipe.language.audio.isNotBlank() && facts.audioLanguages.none { it.equals(recipe.language.audio, true) })
@@ -295,6 +323,14 @@ class AutofetchEngine(
                 cleanEmpty(seasonDir, f.seriesPath)
             }
         }
+    }
+
+    private fun refusal(o: LaneOutcome): OneResult = when (o) {
+        is LaneOutcome.Stopped -> OneResult.SiteDown("Site stopped · ${o.reason}")
+        is LaneOutcome.BackOff -> OneResult.SiteDown("waiting · ${o.reason}")
+        is LaneOutcome.Forbidden -> OneResult.Failed(o.reason)
+        is LaneOutcome.Failed -> OneResult.Failed(o.reason)
+        is LaneOutcome.Ok -> OneResult.Failed("")
     }
 
     private fun failItem(f: Fetcher, item: FetchItem, why: String): OneResult {

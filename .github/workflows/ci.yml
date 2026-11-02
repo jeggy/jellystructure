@@ -29,6 +29,8 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - name: Spec numbering consistency
         run: ./scripts/check-phases.sh
+      - name: yt-dlp is pinned, checksummed and backend-only (DEB-2480)
+        run: ./scripts/check-ytdlp-pin.sh
       - name: In-place media writers ask the seeding guard (315)
         run: ./scripts/check-inplace-guard.sh
       - name: Work files never beside a library file (phase 311)

@@ -131,6 +131,7 @@ object Numbering {
     /** A published date as the page prints it, read as a calendar date `yyyy-MM-dd`; null when it is not one. No time zone is applied. */
     fun isoDate(raw: String?): String? {
         val s = raw?.trim() ?: return null
+        Regex("""^(\d{4})(\d{2})(\d{2})$""").find(s)?.let { return build(it.groupValues[1], it.groupValues[2], it.groupValues[3]) } // yt-dlp's `upload_date`
         Regex("""^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$""").find(s)?.let { return build(it.groupValues[1], it.groupValues[2], it.groupValues[3]) }
         Regex("""^(\d{1,2})[./](\d{1,2})[./](\d{4})$""").find(s)?.let { return build(it.groupValues[3], it.groupValues[2], it.groupValues[1]) }
         Regex("""^(\d{1,2})\.?\s+([\p{L}]+)\.?,?\s+(\d{4})$""").find(s)?.let { m ->

@@ -75,6 +75,12 @@ fun interface Transport {
 /** What a page request is expected to answer: a challenge page is an HTML answer where something else was expected. */
 enum class Expect { HTML, JSON, MANIFEST, ANY }
 
+/** [SiteLane.pacedProgram]'s answer: the lane refused, or the program ran and this is what it gave. */
+sealed class Gated<out T> {
+    data class Refused(val outcome: LaneOutcome) : Gated<Nothing>()
+    data class Through<T>(val value: T) : Gated<T>()
+}
+
 sealed class LaneOutcome {
     data class Ok(val reply: HttpReply) : LaneOutcome()
     /** The site is stopped (FR-2.5): nothing was requested. */
@@ -177,18 +183,52 @@ class SiteLane(
         preflight()?.let { return it }
         // A manifest is a player's traffic and is not checked against robots.txt (FR-2.2), though it is still paced.
         if (player) return paced(Robots.ALLOW_ALL) { requestAndJudge(url, expect, hosts) }
+        val robots = robotsFor(url, listing).let { it.refusal?.let { r -> return r }; it.robots!! }
+        return paced(robots) { requestAndJudge(url, expect, hosts) }
+    }
+
+    private class RobotsCheck(val robots: Robots? = null, val refusal: LaneOutcome? = null)
+
+    /** `robots.txt` for [url]'s site and whether it allows [url]'s path to a general crawler (FR-2.2); [listing] is the recipe's listing (FR-2.5). */
+    private suspend fun robotsFor(url: String, listing: Boolean): RobotsCheck {
         val path = Urls.path(url)
-        val robots = robots(Urls.origin(url)) ?: return LaneOutcome.Failed("robots.txt could not be read, so nothing was requested")
+        val robots = robots(Urls.origin(url)) ?: return RobotsCheck(refusal = LaneOutcome.Failed("robots.txt could not be read, so nothing was requested"))
         if (!robots.allows(path)) {
             val s = store.get(site)
             if (listing && s.everOk) {
                 val reason = "robots.txt now forbids the listing ($path)"
                 stop(reason)
-                return LaneOutcome.Stopped(reason)
+                return RobotsCheck(refusal = LaneOutcome.Stopped(reason))
             }
-            return LaneOutcome.Forbidden("this site's robots.txt does not allow $path")
+            return RobotsCheck(refusal = LaneOutcome.Forbidden("this site's robots.txt does not allow $path"))
         }
-        return paced(robots) { requestAndJudge(url, expect, hosts) }
+        return RobotsCheck(robots)
+    }
+
+    /**
+     * DEB-2480 (FR-6.3) — may a program that makes its own requests (yt-dlp) open [url]? The same answer [page] would give before it asked: the site
+     * is stopped, backed off, or `robots.txt` forbids the path. Null when it may. Nothing is paced and nothing is requested.
+     */
+    suspend fun admit(url: String, listing: Boolean = false): LaneOutcome? {
+        preflight()?.let { return it }
+        return robotsFor(url, listing).refusal
+    }
+
+    /** What a finished program run means for the lane: the HTTP status it named is judged as an answer would be (FR-2.4, FR-2.5); no status is no news. */
+    fun judgeProgram(status: Int?): LaneOutcome? = if (status == null) null else judge(HttpReply(status, emptyMap(), ""), Expect.ANY)
+
+    /** The outcome of a program run that failed with [message]: the lane's own verdict when the status it named slows or stops the site, else a plain failure. */
+    fun programFailure(message: String, status: Int?): LaneOutcome = judgeProgram(status).let { if (it == null || it is LaneOutcome.Failed) LaneOutcome.Failed(message, status) else it }
+
+    /** A program's successful run counts as an answer the site gave: the site worked, the back-off level resets. */
+    fun programSucceeded() { judge(HttpReply(200, emptyMap(), ""), Expect.ANY) }
+
+    /** [admit], then [block] in the page gate: one paced page-sized request by a program, like [page]. [Gated.Refused] when it was not admitted. */
+    suspend fun <T> pacedProgram(url: String, listing: Boolean, block: suspend () -> T): Gated<T> {
+        preflight()?.let { return Gated.Refused(it) }
+        val check = robotsFor(url, listing)
+        check.refusal?.let { return Gated.Refused(it) }
+        return Gated.Through(paced(check.robots!!, block))
     }
 
     private fun preflight(): LaneOutcome? {

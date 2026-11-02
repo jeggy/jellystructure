@@ -37,7 +37,7 @@ class AutofetchService(
     private val store: AutofetchStore,
     private val engine: AutofetchEngine,
     private val lanes: SiteLanes,
-    tools: MediaTools,
+    private val tools: MediaTools,
     private val world: AutofetchWorld,
     private val newId: () -> String,
 ) {
@@ -201,7 +201,7 @@ class AutofetchService(
         if (!lane.state().stopped) return "that site is not stopped"
         lane.resume()
         val probe = store.fetchers().firstOrNull { it.site == site }?.recipe ?: return null
-        val read = ListingFetcher.read(probe.copy(list = probe.list.copy(next = null)), lane)
+        val read = ListingFetcher.read(probe.copy(list = probe.list.copy(next = null)), lane, tools)
         return if (read is ListingRead.Blocked && lane.state().stopped) "the site refused again: ${lane.state().stoppedReason}" else null
     }
 

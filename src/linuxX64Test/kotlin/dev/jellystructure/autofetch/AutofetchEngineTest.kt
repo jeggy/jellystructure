@@ -292,12 +292,6 @@ class AutofetchEngineTest {
     }
 
     @Test
-    fun `a ytdlp recipe is refused with the sentence`() = runBlocking<Unit> {
-        val r = refused(h.service.save(SaveRequest(h.dagbokUrl, null, true, h.dagbokRecipe.copy(list = h.dagbokRecipe.list.copy(kind = "ytdlp")))))
-        assertEquals(RecipeRefusal.YTDLP, r.reason)
-    }
-
-    @Test
     fun `an auto-fetch that is switched off saves nothing and runs nothing`() = runBlocking<Unit> {
         val f = h.saveDagbok()
         h.world.on = false

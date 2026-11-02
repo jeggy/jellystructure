@@ -66,6 +66,11 @@ object KtorTransport : Transport {
 
 class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) : MediaTools {
     private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
+    private val ytdlp = ProductionYtDlp(shell)
+
+    override suspend fun ytdlpListing(url: String): YtDlpOutput = ytdlp.listing(url, FetchIdentity.userAgent())
+    override suspend fun ytdlpInfo(url: String): YtDlpOutput = ytdlp.info(url, FetchIdentity.userAgent())
+    override suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult = ytdlp.download(d, stop)
     private val json = Json { ignoreUnknownKeys = true }
 
     private suspend fun ffprobeStreams(url: String): JsonObject? {

@@ -26,12 +26,50 @@ class RecipeTest {
         assertEquals(base, back)
     }
 
+    // ---- DEB-2480 (FR-4.1, FR-6.3) — the ytdlp kinds are accepted and checked, no longer refused ----
+
+    private val ytdlp = base.copy(
+        list = ListSpec(kind = "ytdlp", fields = mapOf("title" to Field(path = "title"))),
+        media = MediaSpec(kind = "ytdlp"),
+        numbering = NumberingSpec("date"),
+    )
+
     @Test
-    fun `a ytdlp recipe is refused with the FR-6-3 sentence`() {
-        val r = base.copy(list = base.list.copy(kind = "ytdlp"))
-        assertTrue(RecipeRefusal.YTDLP in RecipeValidator.validate(r, false))
-        val m = base.copy(media = base.media.copy(kind = "ytdlp"))
-        assertTrue(RecipeRefusal.YTDLP in RecipeValidator.validate(m, false))
+    fun `a ytdlp list and a ytdlp media kind are valid and the old sentence is gone`() {
+        val pageOnly = ytdlp.copy(series = SeriesSpec(name = Field("h1")))
+        assertEquals(emptyList(), RecipeValidator.validate(pageOnly, pageOnly = true))
+        assertEquals(emptyList(), RecipeValidator.validate(ytdlp.copy(numbering = NumberingSpec("source"), pattern = base.pattern), false))
+    }
+
+    @Test
+    fun `a ytdlp list reads yt-dlp's own names for the fields the recipe leaves out`() {
+        val f = YtDlpListing.fieldsOf(ytdlp.list)
+        assertEquals("url", f["link"]?.path); assertEquals("upload_date", f["published"]?.path); assertEquals("id", f["id"]?.path)
+        assertEquals("title", f["title"]?.path)
+        val own = YtDlpListing.fieldsOf(ytdlp.list.copy(fields = mapOf("link" to Field(path = "webpage_url"))))
+        assertEquals("webpage_url", own["link"]?.path, "a recipe's own path wins")
+        val json = YtDlpListing.asJsonList(ytdlp.list)
+        assertEquals("json", json.kind); assertEquals("entries", json.itemsPath)
+    }
+
+    @Test
+    fun `a ytdlp list takes no url and a field with no path is refused`() {
+        assertTrue(RecipeValidator.validate(ytdlp.copy(list = ytdlp.list.copy(url = "https://varpid.example.fo/x")), false).any { "takes no URL" in it })
+        assertTrue(RecipeValidator.validate(ytdlp.copy(list = ytdlp.list.copy(fields = mapOf("title" to Field()))), false).any { "title field needs a path" in it })
+    }
+
+    @Test
+    fun `a ytdlp media kind has no manifest and no item_page`() {
+        assertTrue(RecipeValidator.validate(ytdlp.copy(media = MediaSpec(kind = "ytdlp", manifest = "https://media.example.fo/{id}/master.m3u8")), false).any { "takes the item's link" in it })
+        assertTrue(RecipeValidator.validate(ytdlp.copy(media = MediaSpec(kind = "ytdlp", itemPage = ItemPageSpec(selector = "a"))), false).any { "takes the item's link" in it })
+    }
+
+    @Test
+    fun `a ytdlp list may feed an hls manifest and an html list may feed ytdlp media`() {
+        val listOnly = base.copy(list = ytdlp.list, numbering = NumberingSpec("source"))
+        assertEquals(emptyList(), RecipeValidator.validate(listOnly, false))
+        val mediaOnly = base.copy(media = MediaSpec(kind = "ytdlp"))
+        assertEquals(emptyList(), RecipeValidator.validate(mediaOnly, false))
     }
 
     @Test

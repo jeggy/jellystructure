@@ -19,8 +19,11 @@ data class DownloadSpec(
     val subtitleLang: String,
 )
 
-/** [message] is why a download failed; on a success it is the note that ends the run line (`no subtitle: …`, FR-6.4), or empty. */
-data class ToolResult(val ok: Boolean, val message: String = "")
+/**
+ * [message] is why a download failed; on a success it is the note that ends the run line (`no subtitle: …`, FR-6.4), or empty.
+ * [drm] says the source protects the video (FR-3.3); [status] is the HTTP status yt-dlp named, which the lane judges (FR-2.4).
+ */
+data class ToolResult(val ok: Boolean, val message: String = "", val drm: Boolean = false, val status: Int? = null)
 
 /** What `ffprobe` shows of a finished file (FR-6.5). */
 data class FileFacts(
@@ -37,6 +40,12 @@ interface MediaTools {
     /** FR-6.3/6.4 — highest variant and best audio into one MKV, audio tagged at the mux, subtitles embedded when the source has them. */
     suspend fun download(spec: DownloadSpec, stop: () -> Boolean): ToolResult
     suspend fun inspect(path: String): FileFacts?
+    /** FR-6.3 — yt-dlp's flat playlist of [url] as JSON. Unavailable until a binding says otherwise, so a fake that does not read a `ytdlp` recipe never has to. */
+    suspend fun ytdlpListing(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
+    /** FR-6.3 — yt-dlp's metadata for one item at [url], for the proof's probe (FR-4.2). */
+    suspend fun ytdlpInfo(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
+    /** FR-6.3 — one item downloaded by yt-dlp straight into [YtDlpDownload.outPath], language-tagged at its own mux. */
+    suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult = ToolResult(false, YtDlpTexts.NOT_INSTALLED)
     /** FR-6.5 — the first top-level element after the segment header, `Tracks` or `Cluster`; null when unreadable. */
     suspend fun firstTopLevel(path: String): String?
     /** FR-9.4/15.7 — one frame picked by the fixed rule, written as a JPEG at [out]. */

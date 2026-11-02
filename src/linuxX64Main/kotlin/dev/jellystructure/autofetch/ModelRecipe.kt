@@ -137,7 +137,7 @@ object ModelRecipe {
         "reason" to str("one plain sentence: why this is, or is not, a series Auto-fetch can fetch"),
         "recipe" to obj(mapOf(
             "list" to obj(mapOf(
-                "kind" to enumOf("html", "json"),
+                "kind" to enumOf("html", "json", "ytdlp"),
                 "item_selector" to str("html: CSS selector matching each episode on the page"),
                 "url" to str("json: the listing's URL on the page's own site"),
                 "items_path" to str("json: path to the array of episodes"),
@@ -148,7 +148,7 @@ object ModelRecipe {
                 "next" to FIELD,
             ), listOf("kind")),
             "media" to obj(mapOf(
-                "kind" to enumOf("hls", "dash"),
+                "kind" to enumOf("hls", "dash", "ytdlp"),
                 "manifest" to str("manifest URL template with {id} (the listing's id field) and/or {value} (item_page's value), on a recorded host"),
                 "manifest_field" to FIELD,
                 "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `value`"))),

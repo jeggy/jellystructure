@@ -95,6 +95,38 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
 
     val probed = ArrayList<String>()
 
+    // ---- DEB-2480 — yt-dlp, as the fake binds it ----
+    /** The entries yt-dlp's flat playlist gives: (id, url, title, upload_date). Newest first. */
+    var ytdlpEntries: List<List<String>> = (16..27).toList().reversed().map { d -> listOf("N$d", "https://varpid.example.fo/sendingar/dagbok/$d", "Dagbók · $d. oktober", "202610$d") }
+    var ytdlpListingOut: YtDlpOutput? = null
+    var ytdlpInfoOut: YtDlpOutput? = null
+    var ytdlpFail: ToolResult? = null
+    val ytdlpListings = ArrayList<String>()
+    val ytdlpInfos = ArrayList<String>()
+    val ytdlpDownloads = ArrayList<YtDlpDownload>()
+
+    override suspend fun ytdlpListing(url: String): YtDlpOutput {
+        ytdlpListings += url
+        return ytdlpListingOut ?: YtDlpOutput(true, body = """{"_type":"playlist","entries":[""" + ytdlpEntries.joinToString(",") { e ->
+            """{"id":"${e[0]}","url":"${e[1]}","title":"${e[2]}","upload_date":"${e[3]}"}"""
+        } + "]}")
+    }
+
+    override suspend fun ytdlpInfo(url: String): YtDlpOutput {
+        ytdlpInfos += url
+        return ytdlpInfoOut ?: YtDlpOutput(true, body = """{"id":"x","duration":$duration,"formats":[{"vcodec":"none","acodec":"mp4a"},{"vcodec":"avc1","acodec":"none"}]}""")
+    }
+
+    override suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult {
+        ytdlpDownloads += d
+        downloads += d.link to clock.ms
+        clock.ms += 5_000
+        ytdlpFail?.let { return it }
+        onDownload(d.outPath)
+        PosixFileFixShell.writeText(d.outPath, "mkv:" + d.link)
+        return ToolResult(true, downloadNote)
+    }
+
     override suspend fun probeManifest(url: String, text: String, kind: String): ManifestFacts { probed += url; return ManifestFacts(true, duration) }
 
     override suspend fun download(spec: DownloadSpec, stop: () -> Boolean): ToolResult {

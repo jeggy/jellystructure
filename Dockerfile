@@ -129,7 +129,7 @@ ARG TARGETARCH
 # /config/encoder on first start when [encoder] is on. The build is not shipped in this public image (it contains
 # libfdk_aac); it is downloaded and checked against its pinned SHA-256 on the operator's own machine.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget ca-certificates libsqlite3-0 libchromaprint-tools python3-mutagen xz-utils && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget ca-certificates libsqlite3-0 libchromaprint-tools python3 python3-mutagen xz-utils && \
     rm -rf /var/lib/apt/lists/*
 
 # dovi_tool -- Phase 314 kind C: converts a Dolby Vision profile 7 picture's RPU to profile 8.1 (the TVs decode 4/5/8,
@@ -148,6 +148,18 @@ RUN case "$TARGETARCH" in \
     echo "${SHA}  /tmp/dovi.tgz" | sha256sum -c - && \
     tar -xzf /tmp/dovi.tgz -C /usr/local/bin ./dovi_tool && chmod 755 /usr/local/bin/dovi_tool && rm /tmp/dovi.tgz && \
     /usr/local/bin/dovi_tool --version
+
+# yt-dlp -- DEB-2480 (DEB-2474, FR-6.3): the Auto-fetch reader for a site whose pages are built in the browser and that yt-dlp's own
+# extractor understands. The release's Python zipapp (one file for amd64 and arm64; python3 is here already, for mutagen above),
+# pinned to ONE release and checked against the SHA-256 that release publishes in its SHA2-256SUMS -- the build fails on a mismatch.
+# Bump both ARGs together, from the release's own SHA2-256SUMS (scripts/check-ytdlp-pin.sh holds the shape). Backend image only: no Ravilo
+# image carries it.
+ARG YTDLP_VERSION=2026.10.26
+ARG YTDLP_SHA256=e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
+RUN wget -q -O /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp" && \
+    echo "${YTDLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - && \
+    chmod 755 /usr/local/bin/yt-dlp && \
+    PYTHONDONTWRITEBYTECODE=1 /usr/local/bin/yt-dlp --version
 
 RUN adduser --system --uid 1000 jellystructure
 

@@ -41,7 +41,7 @@ data class Field(val selector: String = "", val attr: String = "text", val path:
 
 @Serializable
 data class ListSpec(
-    /** `html` · `json` · `ytdlp` (refused until the last slice, FR-6.3). */
+    /** `html` · `json` · `ytdlp` (yt-dlp's flat playlist of the source page, FR-4.1, FR-6.3). */
     val kind: String = "html",
     /** `html`: a CSS selector for each item. */
     @SerialName("item_selector") val itemSelector: String = "",
@@ -58,7 +58,7 @@ const val MAX_PAGES = 10
 
 @Serializable
 data class MediaSpec(
-    /** `hls` · `dash` · `ytdlp`. */
+    /** `hls` · `dash` · `ytdlp` (the item's own link, handed to yt-dlp, FR-6.3). */
     val kind: String = "hls",
     /** A manifest URL template with `{id}` (the listing's `id` field) and `{value}` (the item page's value). */
     val manifest: String = "",
@@ -125,7 +125,6 @@ object RecipeCodec {
 
 /** The refusals a saved recipe can carry. Every string here is shown to the admin as written. */
 object RecipeRefusal {
-    const val YTDLP = "this site needs a reader that is not installed yet"
     const val MAPPED_PAGE_ONLY = "mapped numbering is offered to a TMDB fetcher only; a page-only fetcher has nothing to map to"
     const val DRM = "this site protects its videos; Auto-fetch does not get past that"
     const val NO_TMDB_ID = "Auto-fetch needs a TMDB id, or tick \"not on TMDB\""
@@ -144,8 +143,8 @@ object RecipeValidator {
         val hosts = (recipe.source.hosts + listOfNotNull(pageHost)).map { it.lowercase() }.toSet()
         // DEB-2478 — a recipe the model wrote may name only public hosts (an investigation's page URL is the admin's own choice and exempt).
         recipe.source.hosts.firstOrNull { !Urls.publicName(it) }?.let { errors += "the recipe records $it, which is not a public host name" }
-        if (recipe.list.kind == "ytdlp" || recipe.media.kind == "ytdlp") errors += RecipeRefusal.YTDLP
-        else {
+        run {
+            val fields = YtDlpListing.fieldsOf(recipe.list)
             when (recipe.list.kind) {
                 "html" -> {
                     if (recipe.list.itemSelector.isBlank()) errors += "the html list needs an item selector"
@@ -156,23 +155,30 @@ object RecipeValidator {
                     else errors += templateErrors("list.url", recipe.list.url, hosts, allowed = emptySet())
                     if (recipe.list.itemsPath.isBlank()) errors += "the json list needs the path to its items"
                 }
+                // FR-4.1 — yt-dlp reads the source page itself; the items are its `entries` unless the recipe says otherwise.
+                "ytdlp" -> if (recipe.list.url.isNotBlank()) errors += "a ytdlp list reads the source page; it takes no URL"
                 else -> errors += "unknown list kind '${recipe.list.kind}'"
             }
             for ((k, f) in recipe.list.fields) {
                 if (k !in FIELDS) errors += "unknown listing field '$k'"
                 else if (recipe.list.kind == "html" && f.selector.isNotBlank() && Selector.parse(f.selector) == null) errors += "the $k selector is not a supported selector"
-                else if (recipe.list.kind == "json" && f.path.isBlank() && k != "image") errors += "the $k field needs a path"
+                else if ((recipe.list.kind == "json" || recipe.list.kind == "ytdlp") && f.path.isBlank() && k != "image") errors += "the $k field needs a path"
             }
-            if (recipe.list.fields["link"] == null) errors += "the listing needs a link field"
-            if (recipe.media.kind !in setOf("hls", "dash")) errors += "unknown media kind '${recipe.media.kind}'"
-            if (recipe.media.manifest.isBlank() && recipe.media.manifestField == null) errors += "the recipe says nothing about where an item's manifest is"
-            if (recipe.media.manifest.isNotBlank()) errors += templateErrors("media.manifest", recipe.media.manifest, hosts, setOf("id", "value"))
-            if (recipe.media.manifest.contains("{value}") && recipe.media.itemPage == null) errors += "the manifest uses {value} but the recipe has no item_page"
-            if (recipe.media.manifest.contains("{id}") && recipe.list.fields["id"] == null) errors += "the manifest uses {id} but the listing has no id field"
-            recipe.media.itemPage?.let { ip ->
-                if (ip.pattern.isBlank() == ip.selector.isBlank()) errors += "item_page needs either a selector or a pattern, not both"
-                if (ip.selector.isNotBlank() && Selector.parse(ip.selector) == null) errors += "the item_page selector is not a supported selector"
-                if (ip.pattern.isNotBlank()) PatternSafety.check(ip.pattern, required = setOf("value"))?.let { errors += "item_page pattern: $it" }
+            if (fields["link"] == null) errors += "the listing needs a link field"
+            if (recipe.media.kind !in setOf("hls", "dash", "ytdlp")) errors += "unknown media kind '${recipe.media.kind}'"
+            if (recipe.media.kind == "ytdlp") {
+                if (recipe.media.manifest.isNotBlank() || recipe.media.manifestField != null || recipe.media.itemPage != null)
+                    errors += "a ytdlp media kind takes the item's link; it has no manifest and no item_page"
+            } else {
+                if (recipe.media.manifest.isBlank() && recipe.media.manifestField == null) errors += "the recipe says nothing about where an item's manifest is"
+                if (recipe.media.manifest.isNotBlank()) errors += templateErrors("media.manifest", recipe.media.manifest, hosts, setOf("id", "value"))
+                if (recipe.media.manifest.contains("{value}") && recipe.media.itemPage == null) errors += "the manifest uses {value} but the recipe has no item_page"
+                if (recipe.media.manifest.contains("{id}") && fields["id"] == null) errors += "the manifest uses {id} but the listing has no id field"
+                recipe.media.itemPage?.let { ip ->
+                    if (ip.pattern.isBlank() == ip.selector.isBlank()) errors += "item_page needs either a selector or a pattern, not both"
+                    if (ip.selector.isNotBlank() && Selector.parse(ip.selector) == null) errors += "the item_page selector is not a supported selector"
+                    if (ip.pattern.isNotBlank()) PatternSafety.check(ip.pattern, required = setOf("value"))?.let { errors += "item_page pattern: $it" }
+                }
             }
         }
         when (recipe.numbering.kind) {
@@ -185,7 +191,7 @@ object RecipeValidator {
             }
             "date" -> {
                 if (!pageOnly) errors += "date numbering is offered only to a page-only fetcher"
-                if (recipe.list.fields["published"] == null) errors += "date numbering needs the listing's published field"
+                if (YtDlpListing.fieldsOf(recipe.list)["published"] == null) errors += "date numbering needs the listing's published field"
             }
             // FR-4.3 — the table is not in the recipe: an item's number is the one the admin approved, held on the item.
             "mapped" -> if (pageOnly) errors += RecipeRefusal.MAPPED_PAGE_ONLY
