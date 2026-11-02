@@ -70,6 +70,10 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-4.1 and FR-15.8: a flat playlist gives no date. On a YouTube channel, a PeerTube channel, Dailymotion and an Internet Archive item, every `--flat-playlist` entry read `upload_date: null`. FR-4.2's TMDB check, FR-4.5's identity, FR-16.3's order and the air date in FR-8.2 and FR-15.4 all read the published date, so a page-only `date` fetcher could not be saved at all. Now an item with no date in its entry is dated from its own yt-dlp answer: once, when it is new, and stored on its row. The proof dates three items. A run dates at most 20.
 - FR-4.1 and *Non-goals*: a recipe cannot rewrite a link, and the Internet Archive is outside the `ytdlp` reader. Its playlist lists `archive.org/download/<id>/<file>` links, which yt-dlp has no extractor for (it reads `/details/`). The proof's refusal of them, *no extractor*, is right.
 
+**Amended 2026-11-02 (DEB-3434)**, after QA's check 7 on DEB-3390 (finding D). A recipe with `subtitle: "eng"` on a YouTube channel placed every episode without its manual English track, and said nothing. The engine asked yt-dlp for `--sub-langs 'eng.*'`. YouTube names that track `en`, so yt-dlp selected nothing and printed `There are no subtitles for the requested languages`. That is not a failure, so FR-6.4's retry never ran and no suffix was written.
+- FR-6.3: the recipe still names a 639-2 code, but yt-dlp is now asked for that language under its 639-1 code as well as its 639-2 code, each with an optional region (`en(-.+)?,eng(-.+)?`).
+- FR-6.3: when the source has subtitles but none in the recipe's language, the run line now says so. A source with no subtitles at all stays silent, as FR-6.4 already says.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -451,9 +455,32 @@ one lane.
    - **Language at the first mux.** The audio tag is given to yt-dlp's own ffmpeg step, `--postprocessor-args` for
      `Merger` and for `VideoRemuxer`: `-metadata:s:a:0 language=<audio>`. Never after (FR-6.4). The language and the
      duration are then checked by FR-6.5 like any other file.
-   - **Subtitles.** `--write-subs --embed-subs`, `--sub-langs <subtitle>.*` (all of them when the recipe names none).
+   - **Subtitles.** `--write-subs --embed-subs`, and `--sub-langs` naming the recipe's subtitle language (`all,-live_chat`
+     when the recipe names none). Only the source's own subtitles are asked for, never its automatic captions.
      A subtitle never fails the episode (FR-6.4): when yt-dlp fails and its last output mentions a subtitle, it is run
      once more without them, and the run line ends `· no subtitle: yt-dlp could not embed it: <its last line>`.
+     **The language under every code a site uses (amended 2026-11-02, DEB-3434).** The recipe names its subtitle
+     language as an ISO 639-2 code, like the audio one (FR-4.1, unchanged). Sites name their tracks by ISO 639-1 code
+     instead: YouTube, PeerTube and Dailymotion call English `en`, or `en-GB`. So `--sub-langs` lists the language under
+     each form it has, each followed by `(-.+)?` for a region:
+     - the recipe's own code;
+     - its other 639-2 form, where the bibliographic and terminological codes differ (`ger` and `deu`);
+     - its 639-1 form.
+
+     The forms come from `LanguageResolver`'s tables. For `eng` that is `en(-.+)?,eng(-.+)?`, and for `fao` it is
+     `fo(-.+)?,fao(-.+)?`. A language with no 639-1 form in those tables is asked for by its 639-2 forms only.
+     The region suffix is deliberately not `.*`. yt-dlp matches each entry against the whole code, ignoring case, so
+     `fo.*` would also take `fon`, a different language. This was checked against the pinned 2026.10.26 build: `eng.*`
+     selects nothing from `en`/`en-GB`, and `fo.*` selects `fon`. Every track that matches is embedded. yt-dlp tags each
+     with its own 639-2 form (`en` is embedded as `language=eng`). FR-6.5 does not check that tag.
+     **A language the source does not have (amended 2026-11-02, DEB-3434).** The download also writes the source's
+     subtitle list to a file in its `.part` folder (`--print-to-file "before_dl:%(subtitles)j" …`). Unlike `--print`,
+     this keeps the download's own output and does not make it a simulation. When nothing was embedded:
+     - the source lists no subtitles, or the file cannot be read: no suffix, as FR-6.4 says for a source with no
+       rendition;
+     - the source lists subtitles, but none in the recipe's language: the episode is placed and the run line ends
+       `· no subtitle: none in <subtitle>; the source has <codes>`. The codes are the source's own, sorted, at most
+       five, then `+<n> more`. Like every subtitle outcome, it is not a failure (FR-6.5) and is not retried.
    - **Work files.** yt-dlp writes only under the work folder (FR-6.6): the output is `<work file>` and its
      intermediate files go to a folder `<work file>.part` beside it, removed when the item ends, whatever the outcome.
    - **What it can never be told.** The command line is built from the item's link, the work path and the two language
@@ -868,6 +895,16 @@ Added 2026-11-02 (DEB-3405), against a stubbed yt-dlp whose flat entries carry n
       next run, and it never counts as a failure.
     - When every item answer lacks a date, the proof fails with *yt-dlp gives these items no date*, and nothing is
       written.
+
+Added 2026-11-02 (DEB-3434):
+
+17. **A `ytdlp` subtitle under a site's own code.**
+    - Unit: the `--sub-langs` value for `eng` is `en(-.+)?,eng(-.+)?`, for `ger` it carries `de`, `ger` and `deu`, and
+      for a recipe with no subtitle it is `all,-live_chat`.
+    - Unit: a stubbed download whose subtitle list holds `de` and `fr`, for a recipe asking `eng`, is placed with
+      `· no subtitle: none in eng; the source has de, fr`. With an empty list, or none written, the line has no suffix.
+    - Live, DEB-3390 check 7 on the NASA channel with `subtitle: "eng"`: `ffprobe` on a placed episode shows a subtitle
+      stream tagged `eng`, and its run line has no `no subtitle:` suffix.
 
 ## Non-goals
 
