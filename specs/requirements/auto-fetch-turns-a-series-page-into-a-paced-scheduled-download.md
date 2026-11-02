@@ -61,6 +61,11 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-4.3: where the approved table lives, what the model's proposal must satisfy before the admin sees it, what *waiting for a number* is, and what the two routes do.
 - FR-10.1, FR-10.2, FR-12: the accept tick carries item ids; the list row's count; the shape of the two routes.
 
+**Amended 2026-11-02 (DEB-2480)**, as the yt-dlp reader was built (FR-6.3, slice 6):
+- FR-6.3: yt-dlp is in the image, pinned to one release and checked against its published SHA-256 at the image build; the refusal sentence *this site needs a reader that is not installed yet* is gone. What a `ytdlp` recipe reads, how yt-dlp is held to FR-2's lane, and what it may never reach.
+- FR-4.1: the `ytdlp` list and media kinds are defined: which yt-dlp fields a listing reads by default, and that a media `ytdlp` takes an item's link.
+- FR-5.1: the model may answer `ytdlp` for a list or a media kind; the proof (FR-4.2) runs it through the same reader, so a site yt-dlp has no extractor for is told back to the model and never stored.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -237,7 +242,15 @@ one lane.
    - `list`: how to read the episode list — one of `html` (a CSS selector for each item, and attributes for title, link,
      published date and description), `json` (a URL template on the same site and JSON paths for the same fields), or
      `ytdlp` (a site yt-dlp's own extractor already understands, reading its fields; FR-6.3);
+     - **`ytdlp` list (2026-11-02, DEB-2480).** The listing is yt-dlp's flat playlist of `source.url` (`--flat-playlist`,
+       at most 100 entries), read as JSON like a `json` list: `items_path` defaults to `entries`, and each field is a
+       `path` into an entry. A field the recipe leaves out defaults to yt-dlp's own name for it: `title`, `link` ←
+       `url`, `id`, `published` ← `upload_date` (`20261102` reads as `2026-11-02`), `description`, `duration`,
+       `season` ← `season_number`, `episode` ← `episode_number`, `image` ← `thumbnail`. `next` is not used: yt-dlp
+       pages its own playlist. A listing of 100 entries is not read in full (FR-16.5).
    - `media`: how an item becomes a stream — a manifest URL template or a JSON path to it, or `ytdlp`;
+     - **`ytdlp` media (2026-11-02, DEB-2480).** The item's own link, which must be on a host the recipe records, is
+       handed to yt-dlp (FR-6.3). There is no manifest, no `manifest` template and no `item_page`.
      - **`item_page`** (2026-10-27, DEB-1076). The listing gives an item's link but not its media id, so the engine
        opens the item's own page and reads one value from it. Read either by a CSS selector and attribute, or by one
        rule from `pattern`'s grammar with a single named group `value`, checked the same way for size and
@@ -345,6 +358,10 @@ one lane.
    series' seasons and episode names, numbers and air dates. `fetch` refuses a URL whose host is not the page's site.
    The conversation ends with the recipe, constrained by `output_config.format`. At most **12 turns**; past that it
    stops as *Not a series* with *the page could not be worked out in 12 steps*.
+   **`ytdlp` (2026-11-02, DEB-2480).** The recipe's schema also offers `ytdlp` for `list.kind` and `media.kind`, and the
+   system prompt tells the model to choose it only for a site whose page is built in the browser and that yt-dlp has an
+   extractor for. The model has no tool that runs yt-dlp: the proof (FR-4.2) does, through FR-6.3's reader, and a site
+   yt-dlp cannot read ends as the proof's failing check, told back to the model like any other.
 2. **What is sent** (FR-270-8 gains this line): *the page URL and what this server read from that site during the
    investigation, and the TMDB series' name, seasons and episode list. Nothing from the library: which episodes the
    household has is worked out on this server, after the model has answered.* This applies to every site, including a
@@ -373,10 +390,37 @@ one lane.
    queues every enabled fetcher into its site's lane. A paused fetcher keeps its recipe and history. A run waits while
    someone is watching, like every background job (FR-262-1); *Run now* does not wait.
 3. **The download.** The highest video variant and the best audio, written to MKV. An HLS or DASH manifest is read
-   with the image's own `ffmpeg`, the way the hand scripts do it. `ytdlp` recipes need yt-dlp, which **is not in the
-   image today**. It is a new dependency, pinned to one release and checked against its published checksum when the
-   image is built, and it arrives in its own slice (*Build order*, slice 6). Until then a `ytdlp` recipe is refused with
-   *this site needs a reader that is not installed yet*.
+   with the image's own `ffmpeg`, the way the hand scripts do it.
+   **yt-dlp (amended 2026-11-02, DEB-2480).** A `ytdlp` recipe reads its listing and downloads its items with yt-dlp,
+   which is in the runtime image of the backend (never in a Ravilo image): release 2026.10.26, the `yt-dlp` Python
+   zipapp, downloaded at the image build and checked against the SHA-256 that release publishes in `SHA2-256SUMS`. The
+   build fails when it does not match, and runs `yt-dlp --version` once. The sentence *this site needs a reader that is
+   not installed yet* is gone. A server without the binary (a development machine) answers *yt-dlp is not installed on
+   this server* where it would have run it, and nothing else changes.
+   - **Held to the lane (FR-2).** yt-dlp is a program making its own requests, so the engine holds it to what the lane
+     promises. The listing is one paced page request against `source.url` (checked against `robots.txt` for a general
+     crawler, stopped and backed off like any other). An item's link is checked against `robots.txt` before yt-dlp
+     opens it. The download runs inside the lane's download slot (one at a time, 60 s between two episodes). yt-dlp is
+     started with this server's own User-Agent (FR-2.1), `--sleep-requests 10`, `--ignore-config` and no cache, and
+     with its `generic` extractor off (`--use-extractors default,-generic`): only a site yt-dlp has an extractor for is
+     read, and a page cannot send it to whatever its markup names. What yt-dlp's last error says is judged like an
+     answer: `HTTP Error 429` backs the lane off (FR-2.4), `HTTP Error 401`/`403` on a site that worked before stops it
+     (FR-2.5).
+   - **No DRM (FR-3.3).** yt-dlp saying *DRM protected*, or an item whose every format is marked DRM, refuses the item
+     as FR-3.3 does: *this site protects its videos; Auto-fetch does not get past that*.
+   - **Quality.** `-f "bv*+ba/b"`: the best video and the best audio, merged into MKV (`--merge-output-format mkv`); a
+     source that serves one combined file is remuxed to MKV (`--remux-video mkv`).
+   - **Language at the first mux.** The audio tag is given to yt-dlp's own ffmpeg step, `--postprocessor-args` for
+     `Merger` and for `VideoRemuxer`: `-metadata:s:a:0 language=<audio>`. Never after (FR-6.4). The language and the
+     duration are then checked by FR-6.5 like any other file.
+   - **Subtitles.** `--write-subs --embed-subs`, `--sub-langs <subtitle>.*` (all of them when the recipe names none).
+     A subtitle never fails the episode (FR-6.4): when yt-dlp fails and its last output mentions a subtitle, it is run
+     once more without them, and the run line ends `· no subtitle: yt-dlp could not embed it: <its last line>`.
+   - **Work files.** yt-dlp writes only under the work folder (FR-6.6): the output is `<work file>` and its
+     intermediate files go to a folder `<work file>.part` beside it, removed when the item ends, whatever the outcome.
+   - **What it can never be told.** The command line is built from the item's link, the work path and the two language
+     codes, each shell-quoted; a link that is not `http(s)` on a recorded host is skipped with its line and nothing is
+     started.
 4. **Language and subtitles at the first mux.** The audio track is tagged with the recipe's language during the
    download's own mux, never afterwards. The source's subtitle rendition is looked for on every episode; when one
    exists and its first chunk holds cues, it is embedded with the same language tag, and no sidecar is left behind.
@@ -801,7 +845,7 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
 | Outbound concurrency gate | `BE/OutboundHttp.kt:52`; run on `GateClass.BACKGROUND` (`BE/ops/GateClass.kt`) |
 | A schedule | No generic scheduler. The processing loop is `BE/Main.kt:800-846`, cron in `BE/cron/CronEvaluator.kt`. A fetcher tick is its own loop beside it |
 | Work files, atomic placement | `WorkFiles` (`src/commonMain/kotlin/dev/jellystructure/media/WorkFiles.kt:38-82`), `WorkFileSweep.kt`, `scripts/check-workfiles.sh`; a rename that refuses to overwrite: `ContainerConvert.rename`, `BE/media/ContainerConvert.kt:34` |
-| ffmpeg, ffprobe, mkvtoolnix | in the runtime image (`Dockerfile:131-133`); runners `BE/media/FfmpegRunner.kt`, `FfprobeRunner.kt`, under `BE/ops/ProcessGate.kt`. **yt-dlp is not in the image** |
+| ffmpeg, ffprobe, mkvtoolnix | in the runtime image (`Dockerfile:131-133`); runners `BE/media/FfmpegRunner.kt`, `FfprobeRunner.kt`, under `BE/ops/ProcessGate.kt`. yt-dlp (DEB-2480): `Dockerfile`, runtime stage; `BE/autofetch/YtDlp.kt` |
 | Announce a new file to Jellyfin | `JellyfinClient.notifyLibraryMediaUpdated(path, "Created")`, `BE/auth/JellyfinClient.kt:915` |
 | Episode with no TMDB match | no state today: `tmdbEpisodeId` stays null (`src/commonMain/kotlin/dev/jellystructure/model/Media.kt:172`); the scan skips TMDB for an episode with a title and an overview (`BE/media/Scanner.kt:696-703`); the re-pull overwrites both from TMDB, blank included (`Scanner.kt:1376-1393`, `syncSeason` `:1246-1253`) — FR-8.4's marker goes here |
 | Episode NFO | `NfoWriter.writeEpisode`, `BE/nfo/NfoWriter.kt:82,154-201` |
