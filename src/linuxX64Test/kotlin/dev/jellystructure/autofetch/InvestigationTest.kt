@@ -287,6 +287,14 @@ class InvestigationTest {
     }
 
     @Test
+    fun `a model call refused on the first turn marks the step that was running as the failed one`() {
+        ai.script += { throw AnthropicClient.ApiException(400, "Schemas contains too many optional parameters (74)") }
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertEquals("Anthropic answered 400", out.view.reason)
+        assertEquals(listOf("fail", "pending", "pending", "pending", "pending"), out.view.steps.map { it.state })
+    }
+
+    @Test
     fun `a model that is refused its key says so`() {
         ai.script += { throw AnthropicClient.ApiException(401, "no") }
         val (out, _) = run(h.dagbokUrl, null, true)

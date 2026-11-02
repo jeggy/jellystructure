@@ -208,7 +208,7 @@ class Investigator(
                     401, 403 -> "The key was refused — Settings ▸ AI"
                     null -> "Anthropic could not be reached: ${e.message ?: "no answer"}"
                     else -> "Anthropic answered $status"
-                })
+                }, runningStep(r))
             }
             r.spent += AiPricing.fullCostMicroUsd(settings.model, reply.usage)
             ai.record(settings.model, reply.usage)
@@ -261,8 +261,8 @@ class Investigator(
                     }
                 }
                 "max_tokens" -> return fail("the model's answer was cut off before it finished", STEP_SCRIPT)
-                "refusal" -> return fail("the model declined to work on this page")
-                else -> return fail("the model stopped with '${reply.stopReason}'")
+                "refusal" -> return fail("the model declined to work on this page", runningStep(r))
+                else -> return fail("the model stopped with '${reply.stopReason}'", runningStep(r))
             }
         }
     }
@@ -365,6 +365,9 @@ class Investigator(
         val ms = r.marks[key]?.elapsedNow()?.inWholeMilliseconds
         r.steps[i] = r.steps[i].copy(state = "done", text = text, ms = ms)
     }
+
+    /** The step that is lit as running, so a failure that is not the proof's (the model call, a refusal) marks that one and not none. */
+    private fun runningStep(r: Run): String? = r.steps.firstOrNull { it.state == "run" }?.key
 
     private fun failAt(r: Run, key: String) {
         val k = r.steps.indexOfFirst { it.key == key }

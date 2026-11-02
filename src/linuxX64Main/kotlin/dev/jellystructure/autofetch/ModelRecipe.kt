@@ -87,7 +87,14 @@ object ModelRecipe {
 
     fun parse(text: String): MAnswer? = runCatching { json.decodeFromString(MAnswer.serializer(), text.trim()) }.getOrNull()
 
-    private fun f(m: MField?): Field? = m?.let { Field(selector = it.selector, attr = it.attr.ifBlank { "text" }, path = it.path) }
+    /**
+     * The schema makes every property required (the API caps a request's optional parameters at 24), so an unused field arrives as
+     * three blank strings: that is absent, not a field that reads the item's own text.
+     */
+    private fun f(m: MField?): Field? = m?.takeUnless { it.selector.isBlank() && it.attr.isBlank() && it.path.isBlank() }
+        ?.let { Field(selector = it.selector, attr = it.attr.ifBlank { "text" }, path = it.path) }
+
+    private fun itemPage(m: ItemPageSpec?): ItemPageSpec? = m?.takeUnless { it.selector.isBlank() && it.pattern.isBlank() }?.let { it.copy(attr = it.attr.ifBlank { "text" }) }
 
     /**
      * The engine's recipe for [m]. The page URL is the admin's own, and the hosts are the model's plus the page's: [RecipeValidator]
@@ -104,7 +111,7 @@ object ModelRecipe {
         return Recipe(
             source = RecipeSource(url = pageUrl, hosts = (listOfNotNull(host) + m.hosts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }).distinct()),
             list = ListSpec(kind = m.list.kind, itemSelector = m.list.itemSelector, url = m.list.url, itemsPath = m.list.itemsPath, fields = fields, next = f(m.list.next)),
-            media = MediaSpec(kind = m.media.kind, manifest = m.media.manifest, manifestField = f(m.media.manifestField), itemPage = m.media.itemPage),
+            media = MediaSpec(kind = m.media.kind, manifest = m.media.manifest, manifestField = f(m.media.manifestField), itemPage = itemPage(m.media.itemPage)),
             numbering = NumberingSpec(m.numbering),
             series = m.series?.let { SeriesSpec(name = f(it.name) ?: Field(), description = f(it.description), image = f(it.image)) },
             pattern = m.pattern,
@@ -125,11 +132,16 @@ object ModelRecipe {
     }
     private fun enumOf(vararg v: String) = buildJsonObject { put("type", "string"); put("enum", buildJsonArray { v.forEach { add(JsonPrimitive(it)) } }) }
 
+    /**
+     * The API refuses a request whose schemas hold more than 24 optional parameters, or more than 16 union-typed ones (found on DEB-3373: this
+     * schema had 74). `anyOf [T, null]` counts as a union, so neither optional nor nullable is the way out: a property is required, and a blank
+     * string is how the model says "none". [parse] and [toRecipe] already read blank as absent. [SchemaBudgetTest] holds the schema to both limits.
+     */
     private val FIELD = obj(mapOf(
         "selector" to str("CSS selector, relative to the item (html); blank = the item itself"),
         "attr" to str("`text`, or an attribute name such as `href`"),
         "path" to str("JSON path (json lists), such as `title` or `a.b[0].c`"),
-    ))
+    ), listOf("selector", "attr", "path"))
 
     /** The `output_config.format.schema` of an investigation's final answer. */
     val SCHEMA: JsonObject = obj(mapOf(
@@ -144,25 +156,25 @@ object ModelRecipe {
                 "fields" to obj(mapOf(
                     "title" to FIELD, "link" to FIELD, "published" to FIELD, "description" to FIELD, "id" to FIELD,
                     "season" to FIELD, "episode" to FIELD, "duration" to FIELD, "image" to FIELD,
-                )),
+                ), listOf("title", "link", "published", "description", "id", "season", "episode", "duration", "image")),
                 "next" to FIELD,
-            ), listOf("kind")),
+            ), listOf("kind", "item_selector", "url", "items_path", "fields")),
             "media" to obj(mapOf(
                 "kind" to enumOf("hls", "dash", "ytdlp"),
                 "manifest" to str("manifest URL template with {id} (the listing's id field) and/or {value} (item_page's value), on a recorded host"),
                 "manifest_field" to FIELD,
-                "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `value`"))),
-            ), listOf("kind")),
+                "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `value`")), listOf("selector", "attr", "pattern")),
+            ), listOf("kind", "manifest")),
             "numbering" to enumOf("source", "date", "mapped"),
             "pattern" to buildJsonObject {
                 put("type", "array")
                 put("items", obj(mapOf("on" to enumOf("title", "link", "description", "published"), "regex" to str("named groups `season` and/or `episode`")), listOf("on", "regex")))
             },
-            "series" to obj(mapOf("name" to FIELD, "description" to FIELD, "image" to FIELD), listOf("name")),
+            "series" to obj(mapOf("name" to FIELD, "description" to FIELD, "image" to FIELD), listOf("name", "description", "image")),
             "hosts" to buildJsonObject { put("type", "array"); put("items", str()) },
             "audio_language" to str("ISO 639-2 of the spoken language, such as `fao`"),
             "subtitle_language" to str("ISO 639-2 of the subtitle track to look for, or blank"),
-        ), listOf("list", "media", "numbering")),
+        ), listOf("list", "media", "numbering", "pattern", "hosts", "audio_language", "subtitle_language")),
         "examples" to buildJsonObject {
             put("type", "array")
             put("items", obj(mapOf("title" to str(), "season" to int(), "episode" to int(), "date" to str("yyyy-MM-dd, for date numbering")), listOf("title")))
