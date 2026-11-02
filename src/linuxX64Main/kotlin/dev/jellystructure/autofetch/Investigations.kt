@@ -24,6 +24,8 @@ data class InvestigationSave(
     val schedule: String? = null,
     val retention: RetentionSpec? = null,
     val runFirst: Boolean = true,
+    /** `mapped` numbering (FR-4.3): the ids of the review's rows the admin ticked. Only those are given a number. */
+    val accept: List<String> = emptyList(),
 )
 
 sealed class StartResult {
@@ -140,10 +142,10 @@ class Investigations(
         val v = current.value
         val h = held
         if (v == null || v.id != id || v.state != "review" || h == null) return InvestigationSaveResult.Refused(404, "there is no investigation waiting to be saved")
-        val result: SaveResult = if (v.fetcherId != null) service.replaceRecipe(v.fetcherId, h.recipe)
+        val result: SaveResult = if (v.fetcherId != null) service.replaceRecipe(v.fetcherId, h.recipe, h.mapping, c.accept)
         else service.save(SaveRequest(
             url = v.url, tmdbId = v.tmdbId, pageOnly = v.pageOnly, recipe = h.recipe, libraryPath = c.libraryPath ?: h.libraryPath.ifBlank { null },
-            name = c.name?.takeIf { it.isNotBlank() } ?: h.name, schedule = c.schedule, retention = c.retention,
+            name = c.name?.takeIf { it.isNotBlank() } ?: h.name, schedule = c.schedule, retention = c.retention, mapping = h.mapping, accept = c.accept,
         ))
         return when (result) {
             is SaveResult.Saved -> {

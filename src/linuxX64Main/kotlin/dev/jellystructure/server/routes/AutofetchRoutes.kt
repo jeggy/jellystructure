@@ -6,6 +6,8 @@ import dev.jellystructure.autofetch.InvestigateGate
 import dev.jellystructure.autofetch.InvestigateRequest
 import dev.jellystructure.autofetch.InvestigationSave
 import dev.jellystructure.autofetch.InvestigationSaveResult
+import dev.jellystructure.autofetch.NumberResult
+import dev.jellystructure.autofetch.ProposeResult
 import dev.jellystructure.autofetch.StartResult
 import dev.jellystructure.autofetch.RetentionSpec
 import dev.jellystructure.autofetch.SaveRequest
@@ -39,6 +41,13 @@ private data class PreviewAnswer(val deletes: Int, val keeps: Int, val onPage: I
 private data class MomentRequest(val at: Int)
 
 @Serializable
+private data class NumberRequest(val season: Int, val episode: Int)
+
+/** `…/propose`: [proposed] false is the model's *no episode fits*, with its reason and nothing kept. */
+@Serializable
+private data class ProposeAnswer(val proposed: Boolean, val reason: String = "", val season: Int? = null, val episode: Int? = null)
+
+@Serializable
 private data class SaveAnswer(val fetcher: dev.jellystructure.autofetch.FetcherView, val proven: Boolean, val agreements: Int, val tmdbChecked: Int, val items: Int)
 
 @Serializable
@@ -47,8 +56,8 @@ private data class RefusedAnswer(val error: String, val notASeries: Boolean = fa
 /**
  * DEB-2476 (DEB-2474, FR-12) — Auto-fetch's routes, admin-only, behind the admin's existing auth and not on the Ravilo wire.
  * The list (with the queue and the sites' state), save, settings, delete, run, run-all, the retention preview, *Resume site* and *Not on
- * TMDB yet* (DEB-2477: its stills, *Mark as submitted* and *Pick a different moment*); the investigation and the numbering of waiting
- * items belong to the slices that build them.
+ * TMDB yet* (DEB-2477: its stills, *Mark as submitted* and *Pick a different moment*); the investigation (DEB-2478), and the number and the
+ * proposal of an item that waits for one (DEB-2479: an item id is the page's own and may hold slashes, so the admin sends it percent-encoded).
  */
 fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) {
     get("/autofetch") {
@@ -155,6 +164,25 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         val req = runCatching { call.receive<PreviewRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a valid retention"))
         val n = rt.service.preview(call.parameters["id"].orEmpty(), req.retention) ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "no such fetcher"))
         call.respond(PreviewAnswer(n.deletes, n.keeps, n.onPage))
+    }
+
+    // FR-4.3 — an item that waits for a number: the admin's number (typed, or a proposal accepted), and the model's proposal.
+    post("/autofetch/{id}/items/{itemId}/number") {
+        val rt = runtime ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
+        val req = runCatching { call.receive<NumberRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "a season and an episode are needed"))
+        when (val r = rt.service.approveNumber(call.parameters["id"].orEmpty(), call.parameters["itemId"].orEmpty(), req.season, req.episode)) {
+            is NumberResult.Approved -> call.respond(HttpStatusCode.OK, mapOf("season" to req.season, "episode" to req.episode))
+            is NumberResult.Refused -> call.respond(HttpStatusCode.fromValue(r.status), mapOf("error" to r.reason))
+        }
+    }
+
+    post("/autofetch/{id}/items/{itemId}/propose") {
+        val proposer = runtime?.proposer ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Propose is not running"))
+        when (val r = proposer.propose(call.parameters["id"].orEmpty(), call.parameters["itemId"].orEmpty())) {
+            is ProposeResult.Proposed -> call.respond(HttpStatusCode.OK, ProposeAnswer(true, r.item.proposedNote, r.item.proposedSeason, r.item.proposedEpisode))
+            is ProposeResult.NoMatch -> call.respond(HttpStatusCode.OK, ProposeAnswer(false, r.reason))
+            is ProposeResult.Refused -> call.respond(HttpStatusCode.fromValue(r.status), mapOf("error" to r.reason))
+        }
     }
 
     post("/autofetch/sites/{site}/resume") {

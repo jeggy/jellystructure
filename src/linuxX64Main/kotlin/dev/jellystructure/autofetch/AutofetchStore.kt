@@ -57,7 +57,17 @@ data class FetchItem(
     val missingSince: Long?,
     /** When the listing last held this item (epoch seconds): the items with the newest value are what the page lists now. */
     val lastSeenAt: Long? = null,
-)
+    /** DEB-2479 (FR-4.3) — the number the admin approved; the only number a `mapped` recipe downloads under. */
+    val approvedSeason: Int? = null,
+    val approvedEpisode: Int? = null,
+    /** The model's answer to *Propose*, kept until the admin accepts or replaces it. Nothing is downloaded for it. */
+    val proposedSeason: Int? = null,
+    val proposedEpisode: Int? = null,
+    val proposedNote: String = "",
+) {
+    val approved: SeasonEpisode? get() = if (approvedSeason != null && approvedEpisode != null) SeasonEpisode(approvedSeason, approvedEpisode) else null
+    val proposed: SeasonEpisode? get() = if (proposedSeason != null && proposedEpisode != null) SeasonEpisode(proposedSeason, proposedEpisode) else null
+}
 
 /**
  * DEB-2477 (FR-8.4, FR-9) — an episode filed under *Not on TMDB yet*. [titleFromPage] and [overviewFromPage] are the per-episode
@@ -159,9 +169,16 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
     fun setDeleted(fetcherId: String, itemId: String, note: String) = q.itemSetDeleted(note, fetcherId, itemId)
     fun markMissing(fetcherId: String, itemId: String, since: Long) = q.itemMarkMissing(since, fetcherId, itemId)
 
+    /** DEB-2479 (FR-4.3) — the admin's number for an item; the proposal it answers goes, and a waiting item is waiting no longer. */
+    fun setApproved(fetcherId: String, itemId: String, se: SeasonEpisode) = q.itemSetApproved(se.season.toLong(), se.episode.toLong(), fetcherId, itemId)
+    fun setProposal(fetcherId: String, itemId: String, se: SeasonEpisode, note: String) = q.itemSetProposal(se.season.toLong(), se.episode.toLong(), note, fetcherId, itemId)
+    /** A recipe that no longer maps numbers by hand drops the approvals of the items it has not placed (a placed item keeps its number). */
+    fun clearApprovedUnplaced(fetcherId: String) = q.itemClearApprovedUnplaced(fetcherId)
+
     private fun map(r: dev.jellystructure.db.Autofetch_item) = FetchItem(
         r.fetcher_id, r.item_id, r.link, r.title, r.description, r.published, r.list_order.toInt(), r.season?.toInt(), r.episode?.toInt(),
         r.duration?.toInt(), r.media_value, r.state, r.failures.toInt(), r.note, r.placed_path, r.placed_at, r.missing_since, r.last_seen_at,
+        r.approved_season?.toInt(), r.approved_episode?.toInt(), r.proposed_season?.toInt(), r.proposed_episode?.toInt(), r.proposed_note,
     )
 
     // ---- runs --------------------------------------------------------------------------------------------------------

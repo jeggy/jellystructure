@@ -21,11 +21,13 @@ data class AfReviewDraft(
     val preview: AfPreview? = null,
     val saving: Boolean = false,
     val showAll: Boolean = false,
+    /** FR-4.3 — a `mapped` review: the ids of the rows the admin has ticked. All start unticked. */
+    val accept: Set<String> = emptySet(),
 )
 
 private fun seconds(ms: Long?): String = if (ms == null) "" else "${ms / 1000}.${(ms % 1000) / 100}s"
 
-private fun urlEncode(s: String): String = buildString {
+internal fun afUrlEncode(s: String): String = buildString {
     for (b in s.encodeToByteArray()) {
         val c = b.toInt() and 0xff
         if (c in 0x30..0x39 || c in 0x41..0x5a || c in 0x61..0x7a || c == '-'.code || c == '_'.code || c == '.'.code) append(c.toChar())
@@ -37,7 +39,7 @@ private fun urlEncode(s: String): String = buildString {
 internal fun afBugReportUrl(inv: AfInvestigation): String {
     val steps = inv.steps.joinToString(" · ") { "${it.key}: ${it.state}" }
     val body = "Host: ${inv.host}\nTMDB id: ${inv.tmdbId ?: "page only"}\nSteps: $steps\nReason: ${inv.reason.orEmpty()}"
-    return "https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml&title=${urlEncode("Auto-fetch: could not set up ${inv.host}")}&body=${urlEncode(body)}"
+    return "https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml&title=${afUrlEncode("Auto-fetch: could not set up ${inv.host}")}&body=${afUrlEncode(body)}"
 }
 
 /** The form (FR-10.6): the page URL, the TMDB id, the page-only tick (FR-15.1), and *Investigate* — or *Stop* while one runs. */
@@ -77,11 +79,35 @@ private fun failedHtml(inv: AfInvestigation): String {
 }
 
 private fun proofHtml(r: AfReview): String {
+    // FR-4.3 — a mapped proposal is not proved by the engine; the admin's tick on each row is what approves it.
+    if (r.numbering == "mapped") return """<span class="af-proof"><span class="says">${afEsc(r.proof)}</span></span>"""
     val means = if (r.pageOnly) "" else if (r.proven)
         """<span class="means">An agreement is a TMDB air date within 7 days of the item's published date, or a TMDB episode name equal to the item's title. Proven needs at least two, with none against.</span>"""
     else """<span class="means">You can save it as it is. Every episode TMDB does not have then waits for your number before it is downloaded — it is never placed on a guess.</span>"""
     val mk = if (r.pageOnly) "✓ checked" else if (r.proven) "✓ proven" else "not proven"
     return """<span class="af-proof${if (!r.pageOnly && !r.proven) " unproven" else ""}"><span class="mk">$mk</span><span class="says">${afEsc(r.proof)}$means</span></span>"""
+}
+
+private fun mappedRows(r: AfReview, d: AfReviewDraft): String {
+    val shown = if (d.showAll) r.rows else r.rows.take(3)
+    val body = shown.joinToString("") { row ->
+        val proposed = row.code.isNotEmpty()
+        val on = proposed && row.itemId in d.accept
+        val lib = if (!proposed) """<span class="badge flat">waiting for a number</span>""" else if (row.have) """<span class="badge ok">have · skipped</span>""" else """<span class="badge warn">missing</span>"""
+        """<tr${if (on) " class=\"keep\"" else ""}><td class="tk">${if (proposed) """<span class="af-tick${if (on) " on" else ""}" data-rv-tick="${afEsc(row.itemId)}">✓</span>""" else ""}</td>
+          <td class="item">${afEsc(row.title)}</td><td class="arr">→</td><td class="se mono">${afEsc(row.code.ifEmpty { "—" })}</td>
+          <td class="tmdb">${afEsc(row.tmdbName.orEmpty())}</td><td class="why">${afEsc(row.why ?: if (proposed) "" else "the model left it out — you give it a number later")}</td><td class="lib">$lib</td></tr>"""
+    }
+    val proposedCount = r.rows.count { it.code.isNotEmpty() }
+    val kept = r.rows.count { it.code.isNotEmpty() && it.itemId in d.accept }
+    val more = r.rows.size - shown.size
+    val foot = if (more > 0) """<tr><td colspan="7" class="tiny muted" style="padding:8px 10px;">$more more · <a href="#" data-rv-showall>show all ${r.rows.size} items</a></td></tr>"""
+    else if (d.showAll && r.rows.size > 3) """<tr><td colspan="7" class="tiny muted" style="padding:8px 10px;"><a href="#" data-rv-showall>show fewer</a></td></tr>""" else ""
+    val waits = r.rows.size - kept
+    val mapFoot = """<div class="af-mapfoot"><span class="kept">${if (kept == 0) "Nothing ticked" else "<b>$kept of ${r.rows.size} kept</b>"}</span>
+      <span class="btn sm ghost${if (proposedCount == 0) " af-dis" else ""}" data-rv-tickall>${if (kept == proposedCount && proposedCount > 0) "Untick all" else "Tick all"}</span><span class="spacer"></span>
+      <span class="af-why">The $waits you leave unticked are not refused — they are simply not stored, and they come back as items waiting for a number.</span></div>"""
+    return """<table class="af-map"><thead><tr><th class="tk"></th><th>Item on page</th><th class="arr"></th><th>Becomes</th><th>TMDB has</th><th>Why</th><th class="lib">Library</th></tr></thead><tbody>$body$foot</tbody></table>$mapFoot"""
 }
 
 private fun mapRows(r: AfReview, all: Boolean): String {
@@ -115,9 +141,9 @@ private fun reviewHtml(inv: AfInvestigation, r: AfReview, d: AfReviewDraft): Str
         <span class="k">Series</span><span class="v">$series</span>
         <span class="k">Source</span><span class="v mono" style="font-size:.8rem;">${afEsc(r.source)}</span>
         <span class="k">Found</span><span class="v">$found</span>
-        <span class="k">Pattern</span><span class="v">${afEsc(r.pattern)}</span>
+        <span class="k">${if (r.numbering == "mapped") "Numbering" else "Pattern"}</span><span class="v">${if (r.numbering == "mapped") "Mapped. The page's order is not an episode number, so each item is given one by the model's proposal and your tick." else afEsc(r.pattern)}</span>
         <span class="k">Proof</span><span class="v">${proofHtml(r)}</span>
-      </div>${mapRows(r, d.showAll)}</div>
+      </div>${if (r.numbering == "mapped") mappedRows(r, d) else mapRows(r, d.showAll)}</div>
       <div class="box flat" style="padding:14px 15px;align-self:start;">$settings
         <div class="row center" style="gap:8px;margin-top:4px;"><span class="btn primary${if (d.saving) " af-dis" else ""}" data-rv-save>${if (d.saving) "Saving…" else if (replacing) "Save the new recipe" else "Save auto-fetcher"}</span><span class="btn sm ghost" data-rv-discard>Discard</span></div></div></div>"""
 }

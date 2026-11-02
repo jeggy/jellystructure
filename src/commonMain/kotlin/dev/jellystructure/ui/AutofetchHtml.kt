@@ -121,10 +121,42 @@ internal fun afStatusCell(f: AfFetcher, c: AfClock): String {
         f.state == "refused" -> cell("Refused", "bad", afEsc(f.stateReason))
         f.running -> cell("Running", "info", "downloading now")
         !f.enabled -> cell("Paused", "flat", "the recipe and history are kept")
+        // FR-10.2 — what a viewer of the page has to act on: items the fetcher will not download until they have a number.
+        f.waiting.isNotEmpty() -> cell(afWaitingBadge(f.waiting.size), "warn", "not downloaded until ${if (f.waiting.size == 1) "it has" else "they have"} a number you approved")
         last?.status == "failed" -> cell("Last run failed", "warn", afEsc("${last.summary.removePrefix("failed · ")}${at?.let { " · $it" }.orEmpty()}"))
         last == null -> cell("Not run yet", "flat", f.nextRunAt?.let { "first check in ${c.until(it)}" } ?: "waiting for its schedule")
         else -> cell("Up to date", "ok", afEsc("${last.summary}${at?.let { " · $it" }.orEmpty()}"))
     }
+}
+
+/** *3 items waiting for a number* (FR-4.3, FR-10.2). */
+internal fun afWaitingBadge(n: Int): String = "$n item${if (n == 1) "" else "s"} waiting for a number"
+
+/**
+ * FR-4.3 — the band in the open row: every item the page lists that is not downloaded, the page's own words about it, the model's proposal if the
+ * admin asked for one, and the two ways to give it a number — type it, or accept the proposal. Both send `…/number`; *Propose* is one model call.
+ */
+internal fun afWaitingBand(f: AfFetcher, gate: AfGate): String {
+    if (f.waiting.isEmpty()) return ""
+    val lead = if (f.numbering == "mapped") "This fetcher uses a <b>mapped</b> number, so a new item on the page is never downloaded on a guess. Give it a season and an episode, or ask for a proposal, and accept it."
+    else "The pattern is <b>not proven</b>, so every episode TMDB does not have waits for your number before it is downloaded."
+    val proposeOn = gate.allowed && f.tmdbId != null
+    val items = f.waiting.withIndex().joinToString("") { (i, w) ->
+        val p = w.proposal
+        val desc = if (w.description != null) """<p class="desc">${afEsc(w.description)}<span class="src">from the page — the item's description, verbatim</span></p>"""
+        else """<p class="desc none">No description for this item on the page<span class="src">nothing is invented; the number is yours to give</span></p>"""
+        val prop = p?.let { """<div class="af-prop"><span class="lbl">Proposed</span><span class="se">${afEsc(it.code)}</span>${if (it.note.isNotBlank()) """<span class="why">${afEsc(it.note)}</span>""" else ""}</div>""" }.orEmpty()
+        val accept = """<span class="btn primary sm${if (p == null) " af-dis" else ""}" data-wait-accept>Accept</span>"""
+        val propose = """<span class="btn sm${if (proposeOn) "" else " af-dis"}" data-wait-propose>✦ Propose</span>"""
+        val hint = if (i > 0) "" else if (!proposeOn) """<div class="wide af-why"><b>Propose</b> is off: ${afEsc(gate.reason ?: "this fetcher has no TMDB series")}. The season and episode fields still work — type the number yourself and accept it.</div>"""
+        else if (p == null) """<div class="wide af-why"><b>Accept</b> is off until a season and an episode are there.</div>""" else ""
+        """<div class="af-item" data-wait="${afEsc(w.itemId)}"><div class="who"><b>${afEsc(w.title ?: w.link)}</b>${w.published?.let { """<span class="since">published ${afEsc(it)}</span>""" }.orEmpty()}<span class="badge flat">not downloaded</span></div>
+          $desc$prop
+          <div class="ctl"><div class="field"><label>Season</label><input class="input mono" data-wait-s value="${p?.season ?: ""}" placeholder="—" inputmode="numeric"></div>
+          <div class="field"><label>Episode</label><input class="input mono" data-wait-e value="${p?.episode ?: ""}" placeholder="—" inputmode="numeric"></div>
+          <div class="go">$propose$accept</div></div>$hint</div>"""
+    }
+    return """<div class="af-wait"><p class="lead">$lead</p>$items</div>"""
 }
 
 private fun runSubs(lines: List<AfRunLine>): String = lines.mapNotNull { l ->
@@ -187,6 +219,7 @@ internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, 
     val reinv = """<span class="btn sm ghost${if (gate.allowed && !f.siteStopped) "" else " af-dis"}" data-af-reinv>Re-investigate page</span>"""
     val reinvWhy = if (!gate.allowed && gate.reason != null) """<div class="af-why" style="margin-top:6px">${afEsc(gate.reason)}</div>""" else ""
     return """<tr class="af-det"><td colspan="7"><div class="af-open" data-fid="${afEsc(f.id)}">${if (f.siteStopped) afStopBand(f, c, resuming) else ""}
+      ${afWaitingBand(f, gate)}
       <div class="af-det-in"><div><div class="af-h">Recipe</div><pre class="af-script">${afRecipe(f)}</pre>
         <div class="af-cfg">${scheduleControl(d.schedule)}${afKeepControl(d.retention, d.preview)}
           <div class="af-cfg-go"><span class="btn sm${if (dirty && !d.saving) "" else " af-dis"}" data-af-save>${if (d.saving) "Saving…" else "Save"}</span>$reinv<span class="spacer"></span>

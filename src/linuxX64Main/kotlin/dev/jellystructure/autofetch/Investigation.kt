@@ -54,7 +54,11 @@ data class InvestigationSettings(val model: String, val effort: String, val limi
 data class StepView(val key: String, val label: String, val state: String = "pending", val text: String = "", val ms: Long? = null)
 
 @Serializable
-data class ReviewRow(val title: String, val code: String, val date: String? = null, val have: Boolean = false, val notOnTmdb: Boolean = false)
+data class ReviewRow(
+    val title: String, val code: String, val date: String? = null, val have: Boolean = false, val notOnTmdb: Boolean = false,
+    /** FR-4.3 — a `mapped` review: the item's id (what a tick sends), the TMDB episode the model gave it, and why. [code] is blank for an item the model left out. */
+    val itemId: String = "", val tmdbName: String? = null, val why: String? = null,
+)
 
 @Serializable
 data class LibraryChoice(val path: String, val name: String)
@@ -111,7 +115,7 @@ data class InvestigationView(
 data class InvestigateGate(val allowed: Boolean, val reason: String? = null)
 
 /** A finished investigation that passed its proof: what *Save* turns into a fetcher. */
-class Held(val recipe: Recipe, val proof: ProofResult, val name: String, val libraryPath: String)
+class Held(val recipe: Recipe, val proof: ProofResult, val name: String, val libraryPath: String, val mapping: List<MapRow> = emptyList())
 
 class Outcome(val view: InvestigationView, val held: Held?)
 
@@ -141,6 +145,8 @@ class Investigator(
             STEP_PAGE to "Read the page", STEP_VIDEOS to "Find how the videos are served", STEP_SERIES to "Confirm this is a series",
             STEP_PATTERN to "Map episode titles to seasons and episodes", STEP_SCRIPT to "Write the recipe",
         )
+        /** FR-4.3 — an episode's overview as `tmdb_series` shows it to the model, for the `mapped` titles-and-descriptions comparison. */
+        const val TMDB_OVERVIEW_CHARS = 280
         const val NOT_IN_12 = "the page could not be worked out in 12 steps"
     }
 
@@ -240,7 +246,7 @@ class Investigator(
                         continue
                     }
                     startStep(r, STEP_SERIES); pub()
-                    when (val proved = prove(r, settings, mr, answer.examples)) {
+                    when (val proved = prove(r, settings, mr, answer.examples, answer.mapping)) {
                         is Proved.Ok -> {
                             ai.noteRun("found · ${proved.held.name} · ${proved.held.proof.items.size} episodes · ${AiPricing.usd(r.spent)}")
                             return Outcome(view("review", review = proved.review), proved.held)
@@ -271,11 +277,11 @@ class Investigator(
         class End(val reason: String, val step: String?, val notASeries: Boolean = false) : Proved()
     }
 
-    private suspend fun prove(r: Run, settings: InvestigationSettings, mr: MRecipe, examples: List<Example>): Proved {
+    private suspend fun prove(r: Run, settings: InvestigationSettings, mr: MRecipe, examples: List<Example>, mapping: List<MapRow>): Proved {
         val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).let { it.copy(retention = if (r.pageOnly) RetentionSpec("newest", 12, true) else RetentionSpec("all")) }
         RecipeValidator.validate(recipe, r.pageOnly).firstOrNull()?.let { return Proved.Retry(it, STEP_SCRIPT) }
         val lane = lanes.forSite(r.site)
-        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane)
+        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping)
         if (!pr.ok) {
             pr.blocked?.let { return Proved.End(pr.failure ?: "the site refused the recipe's request", STEP_PAGE) }
             val why = pr.failure ?: "the recipe failed its proof"
@@ -303,12 +309,23 @@ class Investigator(
         val tmdbName = r.tmdbName ?: r.tmdbId?.let { world.tmdbSeriesName(it) }.also { r.tmdbName = it }
         val name = Numbering.cleanName(pr.series?.name ?: tmdbName ?: "").ifBlank { Urls.host(r.url).orEmpty() }
         val have = if (lib != null) existing(lib.path.trimEnd('/') + "/" + name) else emptySet()
-        val rows = pr.numbered.map { (item, se) ->
-            ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), Numbering.code(se), Numbering.isoDate(item.published), have = se in have)
-        }
         val tmdb = if (r.tmdbId != null) world.tmdbEpisodes(r.tmdbId) else null
         val tmdbHas = tmdb?.map { it.season to it.episode }?.toSet().orEmpty()
-        val withTmdb = if (r.pageOnly) rows else pr.numbered.zip(rows).map { (n, row) -> row.copy(notOnTmdb = !row.have && n.second.season to n.second.episode !in tmdbHas) }
+        val withTmdb = if (pr.mapped) {
+            // FR-4.3 — every listed item is a row: the ones the model placed carry its proposal and the TMDB episode, the others wait for a number.
+            val placed = pr.numbered.associate { (item, se) -> itemKeyOf(item) to se }
+            val names = tmdb.orEmpty().associate { (it.season to it.episode) to it.name }
+            pr.items.map { item ->
+                val key = itemKeyOf(item); val se = placed[key]
+                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), se?.let { Numbering.code(it) }.orEmpty(), Numbering.isoDate(item.published),
+                    have = se != null && se in have, itemId = key, tmdbName = se?.let { names[it.season to it.episode] }, why = pr.whys[key]?.takeIf { it.isNotBlank() })
+            }
+        } else {
+            val rows = pr.numbered.map { (item, se) ->
+                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), Numbering.code(se), Numbering.isoDate(item.published), have = se in have)
+            }
+            if (r.pageOnly) rows else pr.numbered.zip(rows).map { (n, row) -> row.copy(notOnTmdb = !row.have && n.second.season to n.second.episode !in tmdbHas) }
+        }
         for (i in 0 until STEP_LABELS.size) setDone(r, STEP_LABELS[i].first, r.steps[i].text.ifBlank { stepText(r, STEP_LABELS[i].first, pr, recipe) })
         val review = ReviewView(
             name = name, tmdbId = r.tmdbId, pageOnly = r.pageOnly,
@@ -318,17 +335,18 @@ class Investigator(
             proof = proofLine(r, pr), proven = pr.proven, rows = withTmdb,
             libraries = libs, libraryPath = lib?.path.orEmpty(), retention = recipe.retention, schedule = "daily@04:00", replaces = r.fetcherId,
         )
-        return Proved.Ok(Held(recipe, pr, name, lib?.path.orEmpty()), review)
+        return Proved.Ok(Held(recipe, pr, name, lib?.path.orEmpty(), mapping), review)
     }
 
     private fun proofStep(why: String): String = when {
         why.contains("listing yields") || why.contains("has no link") || why.contains("has no title") || why.contains("neither a title nor a date") || why.contains("gives the programme no name") -> STEP_SERIES
-        why.contains("maps to no season") || why.contains("both map to") || why.contains("share the date") || why.contains("disagrees with TMDB") || why.contains("TMDB could not be reached") -> STEP_PATTERN
+        why.contains("maps to no season") || why.contains("both map to") || why.contains("share the date") || why.contains("disagrees with TMDB") || why.contains("TMDB could not be reached") || why.contains("which TMDB does not have") || why.contains("proposal maps no item") -> STEP_PATTERN
         why.contains("manifest") || why.contains("probe") -> STEP_VIDEOS
         else -> STEP_SCRIPT
     }
 
     private fun proofLine(r: Run, pr: ProofResult): String = when {
+        pr.mapped -> "mapped by the model's proposal, not by a pattern — ${pr.numbered.size} of ${pr.items.size} items have a proposed number. Nothing is stored that you do not tick; every other item waits for your number."
         r.pageOnly -> "${pr.items.size} items, each with its own ${if (pr.numbered.firstOrNull()?.first?.published != null && r.pageOnly) "date" else "number"}"
         pr.proven -> "pattern agrees with TMDB on ${pr.agreements} of ${pr.tmdbChecked} episodes TMDB has"
         else -> "pattern not proven — TMDB has ${pr.tmdbChecked} of these episodes, and at least two must agree. Every episode TMDB lacks will wait for your number."
@@ -457,7 +475,11 @@ class Investigator(
             append("Series: ${name ?: "(no name)"} · TMDB $id\n")
             episodes.groupBy { it.season }.entries.sortedBy { it.key }.forEach { (s, eps) ->
                 append("Season $s (${eps.size} episodes)\n")
-                eps.sortedBy { it.episode }.forEach { append("  E${it.episode} · ${it.name} · ${it.airDate ?: "no air date"}\n") }
+                eps.sortedBy { it.episode }.forEach { e ->
+                    append("  E${e.episode} · ${e.name} · ${e.airDate ?: "no air date"}")
+                    e.overview?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it.replace('\n', ' ').take(TMDB_OVERVIEW_CHARS)) }
+                    append('\n')
+                }
             }
         }.take(ANSWER_CHARS)
         r.tmdbText = text
@@ -519,7 +541,7 @@ How to work:
 2. Find how an episode becomes a video manifest: a URL in the listing, a URL template with {id} (the listing's `id` field) and/or {value} (a value read from the episode's own page, `item_page`), then probe one manifest. HLS and DASH only. If the manifest is protected by DRM, say so in `reason` and answer not_a_series.
 3. Decide whether this is a SERIES: several episodes that recur under one title, with season and episode numbering of some kind. A single film, a one-off clip or a page with one video is not_a_series. A recurring annual broadcast is a series with the YEAR as the season.
 4. Number the episodes. `numbering: source`: the season and episode come from the item through `pattern` rules (regexes with the named groups `season` and/or `episode`, applied to `title`, `link`, `description` or `published`; the first rule that yields a season and the first that yields an episode win) or from the listing's own `season` and `episode` fields. ${if (pageOnly) "`numbering: date` numbers a daily or weekly programme by each item's published date; the listing then needs a `published` field." else "TMDB numbers its own episodes: use tmdb_series to check your pattern against episodes TMDB has (an air date within 7 days, or the same name)."}
-5. Answer with the recipe and `examples`: two to four episodes you read, with the season and episode (or the date) your recipe gives each, so the engine can check it read the same thing.
+${if (pageOnly) "" else "5. If the page's order or numbering is not TMDB's (a dub, a re-cut, or a site that lists episodes only in order), answer `numbering: mapped` and give `mapping`: for every item you can place, its link exactly as the page gives it, its title as listed, the TMDB season and episode it is (compare the item's title and description with tmdb_series' names and overviews), and `why` in one short phrase. Leave out an item you cannot place with confidence; a wrong guess files an episode under the wrong title for good. The admin approves each row, and a mapped recipe has no `pattern`.\n"}${if (pageOnly) "5" else "6"}. Answer with the recipe and `examples`: two to four episodes you read, with the season and episode (or the date) your recipe gives each, so the engine can check it read the same thing.
 
 Recipe vocabulary:
 - list.kind `html`: `item_selector` matches each episode; each field is a {selector, attr} read relative to the item (blank selector = the item itself; attr `text` or an attribute such as `href`). Selectors: tag, #id, .class, [attr], [attr=v], [attr^=v], [attr${'$'}=v], [attr*=v], :first-child, :last-child, :nth-child(n), descendant and child (>) combinators, comma lists. Nothing else.

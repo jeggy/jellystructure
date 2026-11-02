@@ -45,8 +45,10 @@ class RecipeTest {
     }
 
     @Test
-    fun `mapped numbering is refused until its slice and date numbering is page only`() {
-        assertTrue(RecipeRefusal.MAPPED in RecipeValidator.validate(base.copy(numbering = NumberingSpec("mapped")), false))
+    fun `mapped numbering is a TMDB fetchers and date numbering is page only`() {
+        val mapped = base.copy(numbering = NumberingSpec("mapped"), pattern = emptyList())
+        assertEquals(emptyList(), RecipeValidator.validate(mapped, false), "a mapped recipe carries no pattern and no table")
+        assertTrue(RecipeRefusal.MAPPED_PAGE_ONLY in RecipeValidator.validate(mapped.copy(series = SeriesSpec(name = Field("h1"))), true))
         val date = base.copy(numbering = NumberingSpec("date"))
         assertTrue(RecipeValidator.validate(date, pageOnly = false).any { "page-only" in it })
         val pageOnly = date.copy(series = SeriesSpec(name = Field("h1")))

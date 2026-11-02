@@ -64,6 +64,13 @@ data class MRecipe(
 @Serializable
 data class Example(val title: String = "", val season: Int? = null, val episode: Int? = null, val date: String? = null)
 
+/**
+ * FR-4.3 — one row of the model's proposed table for `mapped` numbering: the item (its link as the page gives it, and its title as listed), the
+ * TMDB episode the model gives it, and why. The engine resolves the row to a listing item; nothing in it is stored until the admin accepts it.
+ */
+@Serializable
+data class MapRow(val link: String = "", val title: String = "", val season: Int = 0, val episode: Int = 0, val why: String = "")
+
 @Serializable
 data class MAnswer(
     /** `series` · `not_a_series`. */
@@ -71,6 +78,8 @@ data class MAnswer(
     val reason: String = "",
     val recipe: MRecipe? = null,
     val examples: List<Example> = emptyList(),
+    /** `mapped` numbering only (FR-4.3). */
+    val mapping: List<MapRow> = emptyList(),
 )
 
 object ModelRecipe {
@@ -144,7 +153,7 @@ object ModelRecipe {
                 "manifest_field" to FIELD,
                 "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `value`"))),
             ), listOf("kind")),
-            "numbering" to enumOf("source", "date"),
+            "numbering" to enumOf("source", "date", "mapped"),
             "pattern" to buildJsonObject {
                 put("type", "array")
                 put("items", obj(mapOf("on" to enumOf("title", "link", "description", "published"), "regex" to str("named groups `season` and/or `episode`")), listOf("on", "regex")))
@@ -157,6 +166,13 @@ object ModelRecipe {
         "examples" to buildJsonObject {
             put("type", "array")
             put("items", obj(mapOf("title" to str(), "season" to int(), "episode" to int(), "date" to str("yyyy-MM-dd, for date numbering")), listOf("title")))
+        },
+        "mapping" to buildJsonObject {
+            put("type", "array")
+            put("items", obj(mapOf(
+                "link" to str("the item's link exactly as the page gives it"), "title" to str("the item's title as listed"),
+                "season" to int(), "episode" to int(), "why" to str("one short phrase: what in the title or description matches TMDB's episode"),
+            ), listOf("link", "title", "season", "episode", "why")))
         },
     ), listOf("verdict", "reason"))
 }

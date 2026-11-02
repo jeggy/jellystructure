@@ -4,6 +4,7 @@ import dev.jellystructure.ui.AfInvestigation
 import dev.jellystructure.ui.AfOverview
 import dev.jellystructure.ui.AfPreview
 import dev.jellystructure.ui.AfRetention
+import dev.jellystructure.ui.afUrlEncode
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -30,7 +31,13 @@ private data class MomentBody(val at: Int)
 private data class InvestigateBody(val url: String = "", val tmdbId: Int? = null, val pageOnly: Boolean = false, val fetcherId: String? = null)
 
 @Serializable
-private data class SaveInvestigationBody(val name: String? = null, val libraryPath: String? = null, val schedule: String? = null, val retention: AfRetention? = null, val runFirst: Boolean = true)
+private data class SaveInvestigationBody(
+    val name: String? = null, val libraryPath: String? = null, val schedule: String? = null, val retention: AfRetention? = null, val runFirst: Boolean = true,
+    val accept: List<String> = emptyList(),
+)
+
+@Serializable
+private data class NumberBody(val season: Int, val episode: Int)
 
 /** DEB-2477 (DEB-2474, FR-12) — the Fetchers tab's calls. Every write answers with what the server says, and the tab draws that. */
 object AutofetchApi {
@@ -75,9 +82,30 @@ object AutofetchApi {
     suspend fun stopInvestigation(id: String): Outcome = outcome { httpClient.post("/api/autofetch/investigate/$id/stop") }
     suspend fun discardInvestigation(id: String): Outcome = outcome { httpClient.delete("/api/autofetch/investigate/$id") }
 
-    suspend fun saveInvestigation(id: String, name: String?, libraryPath: String?, schedule: String?, retention: AfRetention?, runFirst: Boolean): Outcome = outcome {
-        httpClient.post("/api/autofetch/investigate/$id/save") { contentType(ContentType.Application.Json); setBody(SaveInvestigationBody(name, libraryPath, schedule, retention, runFirst)) }
+    suspend fun saveInvestigation(id: String, name: String?, libraryPath: String?, schedule: String?, retention: AfRetention?, runFirst: Boolean, accept: List<String> = emptyList()): Outcome = outcome {
+        httpClient.post("/api/autofetch/investigate/$id/save") { contentType(ContentType.Application.Json); setBody(SaveInvestigationBody(name, libraryPath, schedule, retention, runFirst, accept)) }
     }
+
+    // ---- DEB-2479 (FR-4.3, FR-12) — an item that waits for a number. An item id is the page's own and may hold slashes: it goes percent-encoded.
+
+    suspend fun giveNumber(fetcherId: String, itemId: String, season: Int, episode: Int): Outcome = outcome {
+        httpClient.post("/api/autofetch/$fetcherId/items/${afUrlEncode(itemId)}/number") { contentType(ContentType.Application.Json); setBody(NumberBody(season, episode)) }
+    }
+
+    /** One model call. A `200` is the model's answer (a proposal, or *no episode fits*); the server's next overview carries the proposal. */
+    suspend fun propose(fetcherId: String, itemId: String): Outcome {
+        val r = try { httpClient.post("/api/autofetch/$fetcherId/items/${afUrlEncode(itemId)}/propose") } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) { return Outcome(false, "The server did not answer.") }
+        val text = runCatching { r.bodyAsText() }.getOrDefault("")
+        if (r.status.value in 200..299) {
+            if ("\"proposed\":false" !in text) return Outcome(true)
+            val why = jsonString(text, "reason")
+            return Outcome(false, "The model found no episode that fits this item${if (why.isNullOrBlank()) "" else ": $why"}. Nothing was kept.")
+        }
+        return Outcome(false, jsonString(text, "error") ?: "The server refused (${r.status.value}).")
+    }
+
+    private fun jsonString(text: String, key: String): String? =
+        Regex("\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(text)?.groupValues?.get(1)?.replace("\\\"", "\"")
 
     /** The review's Keep: what the newest-N rule would keep of the episodes found, counted by the server (FR-16.1). */
     suspend fun previewReview(id: String, retention: AfRetention): AfPreview? = runCatching {
@@ -89,7 +117,6 @@ object AutofetchApi {
         val r = try { call() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) { return Outcome(false, "The server did not answer.") }
         if (r.status.value in 200..299) return Outcome(true)
         val text = runCatching { r.bodyAsText() }.getOrDefault("")
-        val msg = Regex(""""error"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(text)?.groupValues?.get(1)?.replace("\\\"", "\"")
-        return Outcome(false, msg ?: "The server refused (${r.status.value}).")
+        return Outcome(false, jsonString(text, "error") ?: "The server refused (${r.status.value}).")
     }
 }

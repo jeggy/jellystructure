@@ -96,7 +96,8 @@ class AutofetchEngine(
         for (it in read.items) {
             val itemId = it.id?.takeIf { v -> v.isNotBlank() } ?: it.link ?: continue
             if (itemId in listed) continue
-            val se = proofHelper.numberOf(recipe, it)
+            // FR-4.3 — the admin's approved number outranks whatever the recipe works out, and `mapped` works out none.
+            val se = store.item(f.id, itemId)?.approved ?: proofHelper.numberOf(recipe, it)
             listed[itemId] = it to se
             store.upsertListed(f.id, itemId, it, se, Numbering.isoDate(it.published), now)
         }
@@ -127,12 +128,19 @@ class AutofetchEngine(
         for (row in candidates) {
             val item = store.item(f.id, row.itemId) ?: continue
             val (listedItem, se0) = listed[row.itemId] ?: continue
-            val se = se0 ?: run { lines += RunLine("skipped", "${label(item)}: no season and episode"); null } ?: continue
             if (item.state == "failed") continue
             if (item.state == "refused") continue
-            if (tmdbEpisodes != null && (se.season to se.episode) !in tmdbEpisodes) {
+            val se = se0 ?: run {
+                // FR-4.3 — a `mapped` item with no approved number is never downloaded on a guess: it waits for the admin.
+                if (recipe.numbering.kind == "mapped") { waiting(f, item, "no number approved yet"); lines += RunLine("waiting", "${label(item)}: waiting for a number") }
+                else lines += RunLine("skipped", "${label(item)}: no season and episode")
+                null
+            } ?: continue
+            if (tmdbEpisodes != null && item.approved == null && (se.season to se.episode) !in tmdbEpisodes) {
+                waiting(f, item, "${Numbering.code(se)} is not on TMDB and the pattern is not proven")
                 lines += RunLine("waiting", "${Numbering.code(se)}: waiting for the admin's number, the pattern is not proven against TMDB"); continue
             }
+            if (item.state == "waiting") store.setItemState(f.id, item.itemId, "new", "", item.failures)   // it has a number now (approved, or the pattern is proven)
             if (se in takenThisRun || se in folderCodes) {
                 lines += RunLine("skipped", if (recipe.numbering.kind == "date") "${label(item)}: shares ${Numbering.isoDate(item.published) ?: Numbering.code(se)} with an episode already placed"
                 else "${label(item)}: ${Numbering.code(se)} already has a file")
@@ -181,6 +189,11 @@ class AutofetchEngine(
     }
 
     private fun label(item: FetchItem) = item.title ?: item.link
+
+    /** The item is waiting for the admin's number (FR-4.3): the fetcher's row counts it, and the next run looks at it again. */
+    private fun waiting(f: Fetcher, item: FetchItem, why: String) {
+        if (item.state != "waiting" || item.note != why) store.setItemState(f.id, item.itemId, "waiting", why, item.failures)
+    }
 
     private suspend fun blockedResult(f: Fetcher, lane: SiteLane, o: LaneOutcome, stoppedBefore: Boolean, lines: MutableList<RunLine>): RunResult = when (o) {
         is LaneOutcome.Stopped -> {

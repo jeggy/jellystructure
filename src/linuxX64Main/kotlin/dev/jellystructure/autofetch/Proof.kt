@@ -63,11 +63,18 @@ data class ProofResult(
     val series: SeriesFacts? = null,
     val probe: ManifestFacts? = null,
     val blocked: LaneOutcome? = null,
+    /** FR-4.3 — a `mapped` proposal: [numbered] holds only the rows that resolved to an item, and [whys] the model's reason for each, by item id. */
+    val mapped: Boolean = false,
+    val whys: Map<String, String> = emptyMap(),
 )
+
+/** The id an item is kept under: its `id` field, else its link (the same key the store and a run use). */
+fun itemKeyOf(it: ListedItem): String = it.id?.takeIf { v -> v.isNotBlank() } ?: it.link.orEmpty()
 
 class RecipeProof(private val tools: MediaTools, private val world: AutofetchWorld) {
 
-    suspend fun prove(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane): ProofResult {
+    /** [mapping] is the model's proposed table when the recipe's numbering is `mapped` (FR-4.3); nothing else reads it. */
+    suspend fun prove(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, mapping: List<MapRow> = emptyList()): ProofResult {
         val read = ListingFetcher.read(recipe, lane)
         if (read is ListingRead.Blocked) return fail(describe(read.outcome)).copy(blocked = read.outcome)
         read as ListingRead.Read
@@ -78,6 +85,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             if (pageOnly) { if (it.title.isNullOrBlank() && Numbering.isoDate(it.published) == null) return fail("an item has neither a title nor a date", items) }
             else if (it.title.isNullOrBlank()) return fail("an item has no title", items)
         }
+        if (recipe.numbering.kind == "mapped") return proveMapped(recipe, pageOnly, tmdbId, lane, items, mapping)
         val numbered = ArrayList<Pair<ListedItem, SeasonEpisode>>()
         for (it in items) {
             val se = numberOf(recipe, it) ?: return fail("'${it.title ?: it.link}' maps to no season and episode", items)
@@ -113,6 +121,56 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
                 items, numbered, agree, checked, against, false, null, facts)
         }
         return ProofResult(true, items = items, numbered = numbered, agreements = agree, tmdbChecked = checked, proven = agree >= 2, probe = facts)
+    }
+
+    /**
+     * FR-4.3 — the model's proposed table, held against the listing and TMDB. Every row it names must resolve to an item and to an episode
+     * TMDB has, and no two items may share one. It is never *proven*: the admin's tick on each row is what approves it, so nothing here
+     * decides a number. A listing item the proposal leaves out is simply an item waiting for a number.
+     */
+    private suspend fun proveMapped(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, items: List<ListedItem>, mapping: List<MapRow>): ProofResult {
+        if (pageOnly || tmdbId == null) return fail(RecipeRefusal.MAPPED_PAGE_ONLY, items)
+        val tmdb = world.tmdbEpisodes(tmdbId) ?: return fail("TMDB could not be reached to check the numbering", items)
+        val has = tmdb.map { it.season to it.episode }.toSet()
+        val resolved = resolveMapping(recipe.source.url, items, mapping)
+        for ((item, row) in resolved) {
+            if ((row.season to row.episode) !in has) return fail("'${item.title ?: item.link}' is mapped to ${Numbering.code(SeasonEpisode(row.season, row.episode))}, which TMDB does not have", items)
+        }
+        val numbered = resolved.map { (item, row) -> item to SeasonEpisode(row.season, row.episode) }
+        numbered.groupBy { it.second }.entries.firstOrNull { it.value.size > 1 }?.let { (se, group) ->
+            return fail("${group.size} items both map to ${Numbering.code(se)}; every item needs a number of its own", items, numbered)
+        }
+        if (numbered.isEmpty()) return fail("the proposal maps no item of the listing to an episode TMDB has", items)
+        val probe = probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
+        probe.failure?.let { return fail(it, items, numbered) }
+        val facts = probe.facts!!
+        if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
+        return ProofResult(true, items = items, numbered = numbered, proven = false, probe = facts, mapped = true, whys = resolved.associate { (item, row) -> itemKeyOf(item) to row.why })
+    }
+
+    /**
+     * Each proposed row to the listing item it names: by link (read against the page, as the engine reads links), then by the item's `id`,
+     * then by an exact title that only one item has. An item takes the first row that names it; a row that names no item is dropped.
+     */
+    internal fun resolveMapping(pageUrl: String, items: List<ListedItem>, mapping: List<MapRow>): List<Pair<ListedItem, MapRow>> {
+        val out = ArrayList<Pair<ListedItem, MapRow>>()
+        val used = HashSet<String>()
+        for (row in mapping) {
+            if (row.season < 0 || row.episode < 0) continue
+            val link = row.link.trim()
+            var hit: ListedItem? = null
+            if (link.isNotEmpty()) {
+                val abs = Urls.resolve(pageUrl, link) ?: link
+                hit = items.firstOrNull { it.link == abs } ?: items.firstOrNull { it.id == link }
+            }
+            if (hit == null) {
+                val t = row.title.trim().lowercase()
+                if (t.isNotEmpty()) items.filter { it.title?.trim()?.lowercase() == t }.singleOrNull()?.let { hit = it }
+            }
+            val item = hit ?: continue
+            if (used.add(itemKeyOf(item))) out += item to row
+        }
+        return out
     }
 
     private fun fail(why: String, items: List<ListedItem> = emptyList(), numbered: List<Pair<ListedItem, SeasonEpisode>> = emptyList()) =

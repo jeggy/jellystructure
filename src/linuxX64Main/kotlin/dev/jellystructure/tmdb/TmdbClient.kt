@@ -247,6 +247,8 @@ data class TmdbSeasonEpisode(
     @SerialName("episode_number") val episodeNumber: Int = 0,
     @SerialName("season_number") val seasonNumber: Int = 0,
     @SerialName("air_date") val airDate: String? = null,
+    /** DEB-2479 — TMDB's season endpoint answers each episode's overview; mapped numbering shows it to the model. */
+    val overview: String = "",
 )
 
 @Serializable

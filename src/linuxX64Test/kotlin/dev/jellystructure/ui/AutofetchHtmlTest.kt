@@ -201,4 +201,65 @@ class AutofetchHtmlTest {
         assertTrue("""href="/api/autofetch/queue/7/still/1" download="S2026E03-still.jpg"""" in html)
         assertTrue("""data-tq-cut="1"""" in html)
     }
+    // ---- DEB-2479 (FR-4.3, FR-10.2): items waiting for a number ---------------------------------------------------------------
+
+    private fun waiting(vararg w: AfWaiting, numbering: String = "mapped") = fetcher().copy(numbering = numbering, waiting = w.toList())
+
+    private val w1 = AfWaiting("R4", "Royndin 2026 · 4. partur", "https://varpid.example.fo/sendingar/royndin/4", "2026-04-10", "Lýsing 4", "no number approved yet")
+
+    @Test
+    fun `a fetcher with items waiting says so in its state cell and not Up to date`() {
+        val one = afStatusCell(waiting(w1), clock)
+        assertTrue("1 item waiting for a number" in one && "badge warn" in one && "Up to date" !in one, one)
+        assertTrue("not downloaded until it has a number you approved" in one)
+        assertTrue("3 items waiting for a number" in afStatusCell(waiting(w1, w1.copy(itemId = "R5"), w1.copy(itemId = "R6")), clock))
+        assertTrue("Site stopped" in afStatusCell(waiting(w1).copy(siteStopped = true, siteStoppedReason = "403"), clock), "a stopped site comes first")
+        assertTrue("Paused" in afStatusCell(waiting(w1).copy(enabled = false), clock))
+    }
+
+    @Test
+    fun `the open row lists each waiting item with the pages words Season Episode Propose and Accept off until a number is there`() {
+        val f = waiting(w1, w1.copy(itemId = "R5", title = null, description = null, published = null, link = "https://varpid.example.fo/sendingar/royndin/5"))
+        val h = afOpenRow(f, AfDraft(f.schedule, f.retention), clock, false, AfGate(true))
+        assertTrue("This fetcher uses a <b>mapped</b> number" in h)
+        assertTrue("""data-wait="R4"""" in h && "Royndin 2026 · 4. partur" in h && "published 2026-04-10" in h && "Lýsing 4" in h && "from the page — the item's description, verbatim" in h)
+        assertTrue("No description for this item on the page" in h && "https://varpid.example.fo/sendingar/royndin/5" in h, "a missing title shows the link and a missing description is said")
+        assertTrue("data-wait-s" in h && "data-wait-e" in h && "data-wait-propose" in h)
+        assertTrue("""primary sm af-dis" data-wait-accept""" in h && "<b>Accept</b> is off until a season and an episode are there." in h)
+        assertFalse("af-dis\" data-wait-propose" in h)
+    }
+
+    @Test
+    fun `a proposal fills the fields and turns Accept on`() {
+        val p = w1.copy(proposal = AfProposal(1, 4, "S01E04", "title and description both name the fourth"))
+        val h = afWaitingBand(waiting(p), AfGate(true))
+        assertTrue("""class="se">S01E04""" in h && "title and description both name the fourth" in h)
+        assertTrue("""data-wait-s value="1"""" in h && """data-wait-e value="4"""" in h)
+        assertTrue("""btn primary sm" data-wait-accept""" in h && "af-dis\" data-wait-accept" !in h)
+    }
+
+    @Test
+    fun `Propose is off with the reason when the model cannot be asked and the fields still work`() {
+        val h = afWaitingBand(waiting(w1), AfGate(false, "This month's Auto-fetch limit is spent ($4.00 of $4.00)"))
+        assertTrue("""af-dis" data-wait-propose""" in h)
+        assertTrue("<b>Propose</b> is off: This month&#39;s".replace("&#39;", "'") in h || "<b>Propose</b> is off: This month" in h)
+        assertTrue("type the number yourself and accept it" in h)
+        val unproven = afWaitingBand(waiting(w1, numbering = "source"), AfGate(true))
+        assertTrue("The pattern is <b>not proven</b>" in unproven)
+        assertEquals("", afWaitingBand(fetcher(), AfGate(true)))
+    }
+
+    @Test
+    fun `the panel draws the waiting band only in the open row`() {
+        val f = waiting(w1)
+        val closed = panel(overview(f))
+        assertTrue("1 item waiting for a number" in closed && "data-wait=" !in closed)
+        assertTrue("data-wait=" in panel(overview(f), openF = f.id))
+    }
+
+    @Test
+    fun `an item id with slashes is percent encoded for the route`() {
+        assertEquals("https%3A%2F%2Fvarpid.example.fo%2Fsendingar%2Froyndin%2F9", afUrlEncode("https://varpid.example.fo/sendingar/royndin/9"))
+        assertEquals("R4", afUrlEncode("R4"))
+    }
 }

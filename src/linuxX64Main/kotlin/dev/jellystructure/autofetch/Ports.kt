@@ -52,7 +52,7 @@ data class EpisodeAfterSync(val tmdbHasEpisode: Boolean, val title: String?, val
 
 enum class TmdbKind { SERIES, FILM, UNKNOWN, UNREACHABLE }
 
-data class TmdbEpisodeFact(val season: Int, val episode: Int, val name: String, val airDate: String?)
+data class TmdbEpisodeFact(val season: Int, val episode: Int, val name: String, val airDate: String?, val overview: String? = null)
 
 interface AutofetchWorld {
     /** `[autofetch] enabled` (FR-13). */

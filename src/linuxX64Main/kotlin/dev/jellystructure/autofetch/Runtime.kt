@@ -22,6 +22,9 @@ class AutofetchRuntime(
     /** DEB-2478 — the investigation, once the AI rail is wired (a server without it has none, and the tab says so). */
     var investigations: Investigations? = null
 
+    /** DEB-2479 — *Propose* for an item waiting for a number (FR-4.3), on the same AI rail. */
+    var proposer: Proposer? = null
+
     /** A press on *Run now*: it does not wait for viewers (FR-6.2). Returns false when that fetcher is already running. */
     fun runNow(id: String): Boolean {
         if (store.fetcher(id) == null || engine.isRunning(id)) return false
@@ -81,7 +84,22 @@ class AutofetchRuntime(
             pattern = recipe?.let { RecipeView.patternText(it) }.orEmpty(),
             quality = recipe?.let { RecipeView.qualityText(it) }.orEmpty(),
             queued = store.queueOf(f.id).count { it.state != "cleared" },
+            waiting = waitingItems(items),
         )
+    }
+
+    /** FR-4.3 — the items on the page now that are not downloaded because they have no number the admin approved, newest first. */
+    private fun waitingItems(items: List<FetchItem>): List<WaitingItemView> {
+        val lastRead = items.maxOfOrNull { it.lastSeenAt ?: 0L } ?: return emptyList()
+        return items.filter { it.state == "waiting" && it.placedPath == null && (it.lastSeenAt ?: 0L) == lastRead }
+            .sortedWith(compareByDescending<FetchItem> { it.published ?: "" }.thenBy { it.order })
+            .map { i ->
+                WaitingItemView(
+                    itemId = i.itemId, title = i.title?.takeIf { it.isNotBlank() }, link = i.link, published = i.published?.takeIf { it.isNotBlank() },
+                    description = i.description?.takeIf { it.isNotBlank() }, why = i.note,
+                    proposal = i.proposed?.let { ProposalView(it.season, it.episode, Numbering.code(it), i.proposedNote) },
+                )
+            }
     }
 
     /**
@@ -128,7 +146,20 @@ data class FetcherView(
     val runs: List<RunView> = emptyList(), val recipe: List<RecipeLineView> = emptyList(), val pattern: String = "", val quality: String = "",
     /** Episodes of this fetcher waiting under *Not on TMDB yet*. */
     val queued: Int = 0,
+    /** DEB-2479 (FR-4.3, FR-10.2) — items waiting for a number the admin approves; the row says *n items waiting for a number*. */
+    val waiting: List<WaitingItemView> = emptyList(),
 )
+
+/** An item the page lists that is not downloaded until the admin gives it a number: the page's own words, verbatim, and the model's proposal if asked for. */
+@Serializable
+data class WaitingItemView(
+    val itemId: String, val title: String?, val link: String, val published: String?, val description: String?, val why: String = "",
+    val proposal: ProposalView? = null,
+)
+
+/** The model's answer to *Propose*, kept on the item (FR-4.3). The admin accepts it by sending its numbers to `…/number`. */
+@Serializable
+data class ProposalView(val season: Int, val episode: Int, val code: String, val note: String)
 
 /** One line of the read-only recipe: the key, its text, and an optional trailing comment. */
 @Serializable

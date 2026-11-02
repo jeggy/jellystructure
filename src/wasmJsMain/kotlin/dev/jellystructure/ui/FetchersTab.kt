@@ -207,12 +207,21 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             }
             t.closest("[data-af-leaves]")?.let { afReview = d.copy(retention = d.retention.copy(leavesPage = !d.retention.leavesPage), preview = null); repaintReview(scope); return@addEventListener }
             t.closest("[data-rv-first]")?.let { b -> afReview = d.copy(runFirst = b.getAttribute("data-rv-first") == "now"); paint(); return@addEventListener }
+            // FR-4.3 — a mapped review's accept ticks: all start unticked, and only the ticked rows are sent.
+            t.closest("[data-rv-tick]")?.let { b ->
+                val id = b.getAttribute("data-rv-tick") ?: return@let
+                afReview = d.copy(accept = if (id in d.accept) d.accept - id else d.accept + id); paint(); return@addEventListener
+            }
+            t.closest("[data-rv-tickall]")?.let {
+                val all = afOverview?.investigation?.review?.rows.orEmpty().filter { it.code.isNotEmpty() }.map { it.itemId }.toSet()
+                afReview = d.copy(accept = if (all.isNotEmpty() && d.accept.containsAll(all)) emptySet() else all); paint(); return@addEventListener
+            }
             t.closest("[data-rv-discard]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(d.investigation).also { afReview = null } }; return@addEventListener }
             t.closest("[data-rv-save]")?.let {
                 val replacing = afOverview?.investigation?.review?.replaces != null
                 afReview = d.copy(saving = true); paint()
                 act(scope, gen) {
-                    AutofetchApi.saveInvestigation(d.investigation, d.name.takeIf { !replacing }, d.libraryPath.takeIf { !replacing && it.isNotBlank() }, d.schedule.takeIf { !replacing }, d.retention.takeIf { !replacing }, d.runFirst)
+                    AutofetchApi.saveInvestigation(d.investigation, d.name.takeIf { !replacing }, d.libraryPath.takeIf { !replacing && it.isNotBlank() }, d.schedule.takeIf { !replacing }, d.retention.takeIf { !replacing }, d.runFirst, d.accept.toList())
                         .also { if (!it.ok) afReview = afReview?.copy(saving = false) }
                 }
                 return@addEventListener
@@ -256,6 +265,21 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             if (!confirmDelete(f.name)) return@addEventListener
             act(scope, gen) { AutofetchApi.delete(f.id).also { afOpenFetcher = null; afDrafts.remove(f.id) } }
             return@addEventListener
+        }
+        // ---- DEB-2479 (FR-4.3): an item that waits for a number — the admin's number, or the model's proposal accepted
+        t.closest("[data-wait-propose]")?.let { b ->
+            val f = fetcherOf(b) ?: return@let
+            val itemId = b.closest("[data-wait]")?.getAttribute("data-wait") ?: return@let
+            act(scope, gen) { AutofetchApi.propose(f.id, itemId) }; return@addEventListener
+        }
+        t.closest("[data-wait-accept]")?.let { b ->
+            val f = fetcherOf(b) ?: return@let
+            val card = b.closest("[data-wait]") ?: return@let
+            val itemId = card.getAttribute("data-wait") ?: return@let
+            val season = (card.querySelector("[data-wait-s]") as? HTMLInputElement)?.value?.trim()?.toIntOrNull()
+            val episode = (card.querySelector("[data-wait-e]") as? HTMLInputElement)?.value?.trim()?.toIntOrNull()
+            if (season == null || episode == null) { afNote = "Type a season and an episode, as numbers."; paint(); return@addEventListener }
+            act(scope, gen) { AutofetchApi.giveNumber(f.id, itemId, season, episode) }; return@addEventListener
         }
         // ---- the list
         t.closest("[data-af-toggle]")?.let { b ->
@@ -304,6 +328,13 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             t.hasAttribute("data-af-url") -> afForm = afForm.copy(url = t.value)
             t.hasAttribute("data-af-tmdb") -> afForm = afForm.copy(tmdb = t.value)
             t.hasAttribute("data-rv-name") -> afReview = afReview?.copy(name = t.value)
+            t.hasAttribute("data-wait-s") || t.hasAttribute("data-wait-e") -> {
+                // Accept is on once both fields are numbers; only that button's class changes, so the caret stays where it is.
+                val card = t.closest("[data-wait]") ?: return@addEventListener
+                val ok = (card.querySelector("[data-wait-s]") as? HTMLInputElement)?.value?.trim()?.toIntOrNull() != null &&
+                    (card.querySelector("[data-wait-e]") as? HTMLInputElement)?.value?.trim()?.toIntOrNull() != null
+                card.querySelector("[data-wait-accept]")?.classList?.let { if (ok) it.remove("af-dis") else it.add("af-dis") }
+            }
         }
     })
 

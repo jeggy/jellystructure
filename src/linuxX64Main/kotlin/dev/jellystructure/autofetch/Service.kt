@@ -17,7 +17,15 @@ data class SaveRequest(
     val name: String? = null,
     val schedule: String? = null,
     val retention: RetentionSpec? = null,
+    /** `mapped` numbering (FR-4.3): the proposed table, and the ids of the items whose row the admin accepted. Only those get a number. */
+    val mapping: List<MapRow> = emptyList(),
+    val accept: List<String> = emptyList(),
 )
+
+sealed class NumberResult {
+    data class Approved(val item: FetchItem) : NumberResult()
+    data class Refused(val status: Int, val reason: String) : NumberResult()
+}
 
 sealed class SaveResult {
     data class Saved(val fetcher: Fetcher, val proof: ProofResult) : SaveResult()
@@ -71,7 +79,7 @@ class AutofetchService(
 
         // The proof (FR-4.2 / FR-15.8). Whatever it finds is the failed state with its reason; nothing is written.
         val lane = lanes.forSite(site)
-        val pr = proof.prove(recipe, req.pageOnly, req.tmdbId, lane)
+        val pr = proof.prove(recipe, req.pageOnly, req.tmdbId, lane, req.mapping)
         if (!pr.ok) {
             val blocked = pr.blocked
             return SaveResult.Refused(if (blocked != null) 502 else 422, pr.failure ?: "the recipe failed its proof", notASeries = blocked == null, proof = pr)
@@ -92,11 +100,7 @@ class AutofetchService(
         )
         store.insert(f)
         if (req.pageOnly) store.mark(seriesPath, f.id)
-        val now = world.nowSec()
-        for ((item, se) in pr.numbered) {
-            val itemId = item.id?.takeIf { it.isNotBlank() } ?: item.link ?: continue
-            store.upsertListed(f.id, itemId, item, se, Numbering.isoDate(item.published), now)
-        }
+        storeListed(f.id, recipe, pr, req.accept.toSet())
         return SaveResult.Saved(f, pr)
     }
 
@@ -105,20 +109,70 @@ class AutofetchService(
      * (shape, then the proof against the live site). The fetcher's retention, schedule and files stay as they were, and it runs again
      * from the next check. The old recipe ran until this moment.
      */
-    suspend fun replaceRecipe(id: String, recipe0: Recipe): SaveResult {
+    suspend fun replaceRecipe(id: String, recipe0: Recipe, mapping: List<MapRow> = emptyList(), accept: List<String> = emptyList()): SaveResult {
         val f = store.fetcher(id) ?: return SaveResult.Refused(404, "no such fetcher")
         val recipe = recipe0.copy(source = recipe0.source.copy(url = f.pageUrl, hosts = (recipe0.source.hosts + listOfNotNull(Urls.host(f.pageUrl))).distinct()), retention = f.retention)
         RecipeValidator.validate(recipe, f.pageOnly).firstOrNull()?.let { return SaveResult.Refused(422, it) }
-        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site))
+        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site), mapping)
         if (!pr.ok) return SaveResult.Refused(if (pr.blocked != null) 502 else 422, pr.failure ?: "the recipe failed its proof", notASeries = pr.blocked == null, proof = pr)
+        // A recipe that no longer maps by hand drops the numbers the admin approved for items it has not placed; a placed one keeps its own.
+        if (f.recipe?.numbering?.kind == "mapped" && recipe.numbering.kind != "mapped") store.clearApprovedUnplaced(id)
         store.setRecipe(id, RecipeCodec.encode(recipe), pr.proven, pr.series?.description ?: f.seriesDescription, pr.series?.image ?: f.seriesImage)
         store.setState(id, "ok", "")
-        val now = world.nowSec()
-        for ((item, se) in pr.numbered) {
-            val itemId = item.id?.takeIf { it.isNotBlank() } ?: item.link ?: continue
-            store.upsertListed(id, itemId, item, se, Numbering.isoDate(item.published), now)
-        }
+        storeListed(id, recipe, pr, accept.toSet())
         return SaveResult.Saved(store.fetcher(id)!!, pr)
+    }
+
+    /**
+     * What a save writes of the listing it proved. With `mapped` numbering only the rows the admin ticked get a number (FR-4.3); every other
+     * item is stored with none and waits for one. Otherwise every item takes the number its recipe gave it.
+     */
+    private fun storeListed(fetcherId: String, recipe: Recipe, pr: ProofResult, accepted: Set<String>) {
+        val now = world.nowSec()
+        if (recipe.numbering.kind != "mapped") {
+            for ((item, se) in pr.numbered) {
+                val itemId = itemKeyOf(item)
+                if (itemId.isEmpty()) continue
+                store.upsertListed(fetcherId, itemId, item, se, Numbering.isoDate(item.published), now)
+            }
+            return
+        }
+        val proposed = pr.numbered.associate { (item, se) -> itemKeyOf(item) to se }
+        for (item in pr.items) {
+            val itemId = itemKeyOf(item)
+            if (itemId.isEmpty()) continue
+            val tick = proposed[itemId]?.takeIf { itemId in accepted }
+            val prior = store.item(fetcherId, itemId)?.approved
+            store.upsertListed(fetcherId, itemId, item, tick ?: prior, Numbering.isoDate(item.published), now)
+            if (tick != null) store.setApproved(fetcherId, itemId, tick)
+            else if (prior == null) store.setItemState(fetcherId, itemId, "waiting", "no number approved yet", 0)
+        }
+    }
+
+    /**
+     * `POST /api/autofetch/{id}/items/{itemId}/number` (FR-4.3, FR-12) — the admin's number for an item that waits for one: typed, or a proposal
+     * accepted. It writes nothing but the database; the next run downloads the item. The number may not be another item's, and may not be a file
+     * the series folder already holds.
+     */
+    suspend fun approveNumber(fetcherId: String, itemId: String, season: Int, episode: Int): NumberResult {
+        val f = store.fetcher(fetcherId) ?: return NumberResult.Refused(404, "no such fetcher")
+        val item = store.item(fetcherId, itemId) ?: return NumberResult.Refused(404, "no such item")
+        if (season !in 0..9999 || episode !in 0..9999) return NumberResult.Refused(422, "a season and an episode are numbers from 0 to 9999")
+        if (item.placedPath != null) return NumberResult.Refused(409, "that item is already in the library")
+        val se = SeasonEpisode(season, episode)
+        takenReason(f, item.itemId, se)?.let { return NumberResult.Refused(409, it) }
+        store.setApproved(fetcherId, itemId, se)
+        return NumberResult.Approved(store.item(fetcherId, itemId)!!)
+    }
+
+    /** Why [se] is not free for [itemId] of [f]: another of its items has it, or the series folder holds a file under it. Null when it is free. */
+    internal suspend fun takenReason(f: Fetcher, itemId: String, se: SeasonEpisode): String? {
+        val other = store.items(f.id).firstOrNull { o ->
+            o.itemId != itemId && o.state !in setOf("deleted", "released") && (o.approved ?: if (o.season != null && o.episode != null) SeasonEpisode(o.season, o.episode) else null) == se
+        }
+        if (other != null) return "${Numbering.code(se)} is already the number of '${other.title?.takeIf { it.isNotBlank() } ?: other.link}'"
+        if (se in engine.existingCodes(f.seriesPath)) return "${Numbering.code(se)} already has a file in the series folder"
+        return null
     }
 
     /** `PATCH /api/autofetch/{id}` — retention, schedule and the paused switch; none of them needs *Re-investigate page* (FR-16.1). */

@@ -55,6 +55,12 @@ CREATE TABLE autofetch_item (
     placed_at INTEGER,
     missing_since INTEGER,
     last_seen_at INTEGER,
+    -- DEB-2479 (FR-4.3) — 95.sqm's columns.
+    approved_season INTEGER,
+    approved_episode INTEGER,
+    proposed_season INTEGER,
+    proposed_episode INTEGER,
+    proposed_note TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (fetcher_id, item_id)
 );
 CREATE INDEX autofetch_item_by_path ON autofetch_item(placed_path);
@@ -165,6 +171,18 @@ UPDATE autofetch_item SET state = 'released', placed_path = NULL, placed_at = NU
 
 itemSetDeleted:
 UPDATE autofetch_item SET state = 'deleted', placed_path = NULL, placed_at = NULL, note = :note WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemSetApproved:
+UPDATE autofetch_item SET approved_season = :season, approved_episode = :episode, season = :season, episode = :episode,
+    proposed_season = NULL, proposed_episode = NULL, proposed_note = '',
+    state = CASE WHEN state = 'waiting' THEN 'new' ELSE state END, note = CASE WHEN state = 'waiting' THEN '' ELSE note END
+WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemSetProposal:
+UPDATE autofetch_item SET proposed_season = :season, proposed_episode = :episode, proposed_note = :note WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+itemClearApprovedUnplaced:
+UPDATE autofetch_item SET approved_season = NULL, approved_episode = NULL WHERE fetcher_id = :fetcher_id AND placed_path IS NULL;
 
 itemMarkMissing:
 UPDATE autofetch_item SET missing_since = COALESCE(missing_since, :since) WHERE fetcher_id = :fetcher_id AND item_id = :item_id;

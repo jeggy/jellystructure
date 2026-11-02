@@ -158,4 +158,47 @@ class AutofetchInvestigationHtmlTest {
         val off = afPanelHtml(AfOverview(false), null, null, emptyMap(), emptySet(), emptyMap(), 50, clock)
         assertFalse("New auto-fetcher" in off)
     }
+    // ---- DEB-2479 (FR-4.3): a mapped review ------------------------------------------------------------------------------------
+
+    private fun mappedReview() = review().copy(
+        numbering = "mapped", pattern = "Mapped", proven = false,
+        proof = "mapped by the model's proposal, not by a pattern — 2 of 3 items have a proposed number. Nothing is stored that you do not tick; every other item waits for your number.",
+        found = 3, missing = 3, have = 0, notOnTmdb = 0,
+        rows = listOf(
+            AfReviewRow("Royndin 2026 · 1. partur", "S01E01", itemId = "R1", tmdbName = "Fyrsti", why = "part 1 is TMDB's 1"),
+            AfReviewRow("Royndin 2026 · 2. partur", "S01E02", itemId = "R2", tmdbName = "Annar", why = "part 2 is TMDB's 2"),
+            AfReviewRow("Royndin 2026 · 3. partur", "", itemId = "R3"),
+        ),
+    )
+
+    @Test
+    fun `a mapped review has an accept tick per proposed row all unticked and a row the model left out waits`() {
+        val r = mappedReview()
+        val h = card(inv("review", "done", "done", "done", "done", "done", review = r), d = draft(r).copy(showAll = true))
+        assertEquals(2, Regex("""data-rv-tick=""").findAll(h).count(), "a row with no proposal has no tick")
+        assertFalse("af-tick on" in h, "all unticked")
+        assertTrue("Nothing ticked" in h && "data-rv-tickall" in h && "Tick all" in h)
+        assertTrue("waiting for a number" in h && "Fyrsti" in h && "part 1 is TMDB&#39;s 1".replace("&#39;", "'") in h)
+        assertFalse("no-tick" in h, "the tick column is drawn")
+        assertTrue("""class="af-proof"><span class="says">mapped by the model's proposal""" in h && "not proven" !in h, "a proposal is approved by the tick, not proven")
+        assertTrue("Mapped." in h && ">Numbering<" in h)
+        assertTrue("The 3 you leave unticked are not refused" in h)
+    }
+
+    @Test
+    fun `ticking a row marks it and counts the kept ones`() {
+        val r = mappedReview()
+        val h = card(inv("review", "done", "done", "done", "done", "done", review = r), d = draft(r).copy(showAll = true, accept = setOf("R2")))
+        assertEquals(1, Regex("""af-tick on""").findAll(h).count())
+        assertTrue("""<tr class="keep">""" in h && "<b>1 of 3 kept</b>" in h)
+        assertTrue("The 2 you leave unticked" in h)
+        val all = card(inv("review", "done", "done", "done", "done", "done", review = r), d = draft(r).copy(showAll = true, accept = setOf("R1", "R2")))
+        assertTrue("Untick all" in all)
+    }
+
+    @Test
+    fun `a source review keeps its tickless table`() {
+        val h = card(inv("review", "done", "done", "done", "done", "done", review = review()))
+        assertTrue("no-tick" in h && "data-rv-tick" !in h)
+    }
 }

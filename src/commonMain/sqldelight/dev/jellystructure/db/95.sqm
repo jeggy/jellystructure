@@ -1,0 +1,8 @@
+-- DEB-2479 (DEB-2474, FR-4.3) — mapped numbering. An item's *approved* number is the admin's (a ticked row of a mapped review, a number typed or a
+-- proposal accepted), and it is the only number a `mapped` recipe downloads under. The *proposed* number is the model's answer to Propose, kept
+-- beside the item until the admin accepts or replaces it; nothing is downloaded for it. This file is the migration; Autofetch.sq carries the same columns.
+ALTER TABLE autofetch_item ADD COLUMN approved_season INTEGER;
+ALTER TABLE autofetch_item ADD COLUMN approved_episode INTEGER;
+ALTER TABLE autofetch_item ADD COLUMN proposed_season INTEGER;
+ALTER TABLE autofetch_item ADD COLUMN proposed_episode INTEGER;
+ALTER TABLE autofetch_item ADD COLUMN proposed_note TEXT NOT NULL DEFAULT '';

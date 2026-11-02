@@ -415,6 +415,7 @@ fun main() = runBlocking {
             existing = { autofetchEngine.existingCodes(it) },
             today = { dev.jellystructure.util.epochTicksToIso(autofetchWorld.nowSec() * 10_000_000L).take(10) },
         )
+        autofetchRuntime.proposer = dev.jellystructure.autofetch.Proposer(ai, autofetchStore, autofetchWorld, autofetchService)
         autofetchRuntime.investigations = dev.jellystructure.autofetch.Investigations(ai, investigator, autofetchService, autofetchStore, autofetchWorld, rootScope) { kotlin.uuid.Uuid.random().toString() }
     }
     autofetchRuntime.startTick()

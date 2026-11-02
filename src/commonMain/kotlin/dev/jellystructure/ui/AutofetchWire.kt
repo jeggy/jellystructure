@@ -63,7 +63,24 @@ data class AfFetcher(
     val pattern: String = "",
     val quality: String = "",
     val queued: Int = 0,
+    /** FR-4.3, FR-10.2 — the items waiting for a number the admin approves. */
+    val waiting: List<AfWaiting> = emptyList(),
 )
+
+/** An item the page lists that is not downloaded until it has a number: the page's own words, and the model's proposal when asked for. */
+@Serializable
+data class AfWaiting(
+    val itemId: String = "",
+    val title: String? = null,
+    val link: String = "",
+    val published: String? = null,
+    val description: String? = null,
+    val why: String = "",
+    val proposal: AfProposal? = null,
+)
+
+@Serializable
+data class AfProposal(val season: Int = 0, val episode: Int = 0, val code: String = "", val note: String = "")
 
 @Serializable
 data class AfSite(
@@ -106,7 +123,11 @@ data class AfGate(val allowed: Boolean = false, val reason: String? = null)
 data class AfStep(val key: String = "", val label: String = "", val state: String = "pending", val text: String = "", val ms: Long? = null)
 
 @Serializable
-data class AfReviewRow(val title: String = "", val code: String = "", val date: String? = null, val have: Boolean = false, val notOnTmdb: Boolean = false)
+data class AfReviewRow(
+    val title: String = "", val code: String = "", val date: String? = null, val have: Boolean = false, val notOnTmdb: Boolean = false,
+    /** FR-4.3 — a `mapped` review's row: the id a tick sends, the TMDB episode's name and the model's reason. [code] is blank for an item the model left out. */
+    val itemId: String = "", val tmdbName: String? = null, val why: String? = null,
+)
 
 @Serializable
 data class AfLibrary(val path: String = "", val name: String = "")

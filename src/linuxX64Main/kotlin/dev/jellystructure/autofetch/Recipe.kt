@@ -81,7 +81,7 @@ data class ItemPageSpec(
 
 @Serializable
 data class NumberingSpec(
-    /** `source` · `date` (page-only only, FR-4.5) · `mapped` (a later slice). */
+    /** `source` · `date` (page-only only, FR-4.5) · `mapped` (a TMDB fetcher only, FR-4.3: the table is the items' approved numbers, not part of the recipe). */
     val kind: String = "source",
 )
 
@@ -126,7 +126,7 @@ object RecipeCodec {
 /** The refusals a saved recipe can carry. Every string here is shown to the admin as written. */
 object RecipeRefusal {
     const val YTDLP = "this site needs a reader that is not installed yet"
-    const val MAPPED = "mapped numbering arrives in a later release; this recipe cannot be saved yet"
+    const val MAPPED_PAGE_ONLY = "mapped numbering is offered to a TMDB fetcher only; a page-only fetcher has nothing to map to"
     const val DRM = "this site protects its videos; Auto-fetch does not get past that"
     const val NO_TMDB_ID = "Auto-fetch needs a TMDB id, or tick \"not on TMDB\""
 }
@@ -187,7 +187,8 @@ object RecipeValidator {
                 if (!pageOnly) errors += "date numbering is offered only to a page-only fetcher"
                 if (recipe.list.fields["published"] == null) errors += "date numbering needs the listing's published field"
             }
-            "mapped" -> errors += RecipeRefusal.MAPPED
+            // FR-4.3 — the table is not in the recipe: an item's number is the one the admin approved, held on the item.
+            "mapped" -> if (pageOnly) errors += RecipeRefusal.MAPPED_PAGE_ONLY
             else -> errors += "unknown numbering '${recipe.numbering.kind}'"
         }
         if (pageOnly) {

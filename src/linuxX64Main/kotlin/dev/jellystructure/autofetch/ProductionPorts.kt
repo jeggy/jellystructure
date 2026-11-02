@@ -273,7 +273,7 @@ class ProductionWorld(
         val out = ArrayList<TmdbEpisodeFact>()
         for (s in d.seasons) {
             val season = tmdb.getSeasonDetails(id, s.seasonNumber) ?: continue
-            season.episodes.forEach { out += TmdbEpisodeFact(it.seasonNumber.takeIf { n -> n != 0 || s.seasonNumber == 0 } ?: s.seasonNumber, it.episodeNumber, it.name, it.airDate) }
+            season.episodes.forEach { out += TmdbEpisodeFact(it.seasonNumber.takeIf { n -> n != 0 || s.seasonNumber == 0 } ?: s.seasonNumber, it.episodeNumber, it.name, it.airDate, it.overview.takeIf { o -> o.isNotBlank() }) }
         }
         return out
     }
