@@ -16,10 +16,10 @@ Read off the server the same day (times CET):
   acknowledged, within seconds.
 - **≈13:42:30** the song stops at 2:40.4, 2.7 s before its end, and nothing moves on. The app keeps reporting progress
   every 10 s with the same position and `paused = false`: the session got no `paused` event and was never reaped
-  `offline` (that takes 90 s without a heartbeat).
+  `offline` (that takes 90 s without a heartbeat). The bar showed R218's three-dot pulse (owner, DEB-3400's card).
 - **13:44:37** the owner presses *Next* and the next song plays.
-- **13:47:04** a second stop is a `paused` event sent by the Mac: the owner, or macOS pausing because the headphones
-  moved to another device. It is not this bug.
+- **13:47:04** a second stop is a `paused` event sent by the Mac. The owner had Bluetooth headphones on (DEB-3400's
+  card), so this is macOS pausing because they moved to another device. It is not this bug.
 
 Ruled out: the server (no Jellyfin or Caddy error in the window, nothing in flight on the stream's connection), the
 home uplink (DEB-3022's probe clean from 13:38 to 13:46), the file (it decodes cleanly to its full length) and the path
@@ -37,8 +37,10 @@ between them (the heartbeats kept arriving).
 - The same engine drives mpv on Linux (R335), so the gap is the desktop's, not only the Mac's. Android's ExoPlayer
   retries a broken load by itself and has shown nothing like this. This spec does not touch it.
 
-Why AVPlayer froze is not known. The whole file had been delivered, so the cause lies on the Mac: the audio output, or
-AVPlayer itself near the end of a FLAC. The requirements below do not depend on the cause. FR-6 records it next time.
+Why AVPlayer froze is not known. The whole file had been delivered, so the cause lies on the Mac. The pulse narrows it:
+on the Mac the bar pulses when AVPlayer reports it is *waiting to play* (`timeControlStatus`), so AVPlayer was waiting
+for data it already had, near the end of a FLAC. It was not playing into a dead audio output. The requirements below do
+not depend on the cause. FR-6 records AVPlayer's reason for waiting next time.
 
 ## Requirements
 
@@ -60,14 +62,10 @@ frozen position (what `retry()` does today). No sheet and no toast. The bar show
 freeze point gets one restart.
 
 **FR-4 — When the restart does not help.** The restart has failed when the song freezes again before it has played
-30 s past the point where it first froze. *Open: the owner's choice on DEB-3400's card. Until he answers, the lean
-stands.*
+30 s past the point where it first froze. Then the engine skips to the next song, exactly as FR-2 does (owner,
+2026-11-02, DEB-3400's card: *skip*, not R322's sheet). The frozen song stays in the queue. Music keeps going.
 
-- **Lean:** the engine skips to the next song, exactly as FR-2 does. The frozen song stays in the queue. Music keeps
-  going.
-- **Alternative:** R322's failure sheet (*Try again · Skip*).
-
-A book part always gets the sheet, because skipping a part loses some of the book.
+A book part always gets R322's sheet (*Try again · Skip*), because skipping a part loses some of the book.
 
 **FR-5 — A network failure gets the same one restart.** When the player fails a song with a network error, FR-3's
 restart runs before R322's sheet. On the Mac a network error is an error in `NSURLErrorDomain`. On Linux it is mpv's
@@ -95,7 +93,7 @@ requires: never retry what cannot succeed. The native library reports the error'
 ## Acceptance
 
 Unit tests carry FR-1 to FR-5: a pure watch over (tick time, position, wants-play, seeking, ended, failed) samples, and
-the engine's response to each verdict. On the Mac (QA), and on Linux for items 2 to 4:
+the engine's response to each verdict. On the Mac (QA), and on Linux for items 2 and 3:
 
 1. A whole album plays through on the office or home network. No freeze lines in `ravilo.log`, and every song advances
    on its own.
@@ -103,6 +101,10 @@ the engine's response to each verdict. On the Mac (QA), and on Linux for items 2
 3. Sleep the Mac in the middle of a song for 1 min, then wake it. It logs no restart.
 4. Start a song while the server is blocked on the Mac (a `pf` rule), and lift the block after 15 s. The song starts
    without a click, and the log shows one *restarted* outcome.
+
+On Linux, item 3 suspends the Ravilo process for 1 min (`kill -STOP`, then `kill -CONT`) instead of sleeping the
+machine. Item 4 is the Mac's only: the Linux test desktop is a container on the server's own network, so a block there
+would cut the server off from everyone. On Linux, FR-5's rule is proved by the unit tests alone.
 
 ## Dev notes
 
