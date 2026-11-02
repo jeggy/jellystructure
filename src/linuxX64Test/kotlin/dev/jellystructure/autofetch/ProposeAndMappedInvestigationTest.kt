@@ -139,7 +139,7 @@ class ProposeAndMappedInvestigationTest {
     )
 
     private fun mappedAnswer(vararg rows: String) =
-        """{"verdict":"series","reason":"A dub that lists in order.","recipe":{"list":{"kind":"html","item_selector":"li.ep","fields":{"title":{"selector":"a"},"link":{"selector":"a","attr":"href"},"published":{"selector":"time","attr":"datetime"},"id":{"selector":"","attr":"data-id"}}},"media":{"kind":"hls","manifest":"https://media.example.fo/{id}/master.m3u8"},"numbering":"mapped","hosts":["media.example.fo"],"audio_language":"fao"},"examples":[],"mapping":[${rows.joinToString(",")}]}"""
+        """{"verdict":"series","reason":"A dub that lists in order.","recipe":{"list":{"kind":"html","item_selector":"li.ep","fields":{"title":"a","link":"a@href","published":"time@datetime","id":"@data-id"}},"media":{"kind":"hls","manifest":"https://media.example.fo/{id}/master.m3u8"},"numbering":"mapped","hosts":["media.example.fo"],"audio_language":"fao"},"examples":[],"mapping":[${rows.joinToString(",")}]}"""
 
     private fun mrow(n: Int, season: Int = 1, episode: Int = n) =
         """{"link":"/sendingar/royndin/$n","title":"Royndin 2026 · $n. partur","season":$season,"episode":$episode,"why":"part $n is TMDB's $episode"}"""

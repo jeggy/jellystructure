@@ -18,13 +18,15 @@ import kotlinx.serialization.json.put
  * the model writes is executed or trusted: the result goes through [RecipeValidator] and the proof ([RecipeProof]) before it is shown,
  * and the model's own [Example]s are compared with what the engine reads.
  */
-@Serializable
-data class MField(val selector: String = "", val attr: String = "", val path: String = "")
-
+/**
+ * One listing field as the model writes it: a single string, [ModelRecipe.field] reads it (`selector@attr` for html, `json:path` for json,
+ * blank for none). One string and not a three-key object because the API compiles every schema to a grammar and refuses one that is too
+ * large: the 13 three-key objects this answer once held were over it (DEB-3399).
+ */
 @Serializable
 data class MFields(
-    val title: MField? = null, val link: MField? = null, val published: MField? = null, val description: MField? = null, val id: MField? = null,
-    val season: MField? = null, val episode: MField? = null, val duration: MField? = null, val image: MField? = null,
+    val title: String = "", val link: String = "", val published: String = "", val description: String = "", val id: String = "",
+    val season: String = "", val episode: String = "", val duration: String = "", val image: String = "",
 )
 
 @Serializable
@@ -34,19 +36,19 @@ data class MList(
     val url: String = "",
     @SerialName("items_path") val itemsPath: String = "",
     val fields: MFields = MFields(),
-    val next: MField? = null,
+    val next: String = "",
 )
 
 @Serializable
 data class MMedia(
     val kind: String = "hls",
     val manifest: String = "",
-    @SerialName("manifest_field") val manifestField: MField? = null,
+    @SerialName("manifest_field") val manifestField: String = "",
     @SerialName("item_page") val itemPage: ItemPageSpec? = null,
 )
 
 @Serializable
-data class MSeries(val name: MField = MField(), val description: MField? = null, val image: MField? = null)
+data class MSeries(val name: String = "", val description: String = "", val image: String = "")
 
 @Serializable
 data class MRecipe(
@@ -87,12 +89,21 @@ object ModelRecipe {
 
     fun parse(text: String): MAnswer? = runCatching { json.decodeFromString(MAnswer.serializer(), text.trim()) }.getOrNull()
 
+    private val ATTR = Regex("""[A-Za-z_:][A-Za-z0-9_:.-]*""")
+
     /**
-     * The schema makes every property required (the API caps a request's optional parameters at 24), so an unused field arrives as
-     * three blank strings: that is absent, not a field that reads the item's own text.
+     * One field string, read. `json:a.b[0].c` is a JSON path; anything else is html, `selector@attr`, the attribute being what follows the
+     * last `@` when that looks like an attribute name (so `a[href*="@"]` stays a selector) and `text` when there is none. `@href` is the
+     * item's own attribute. Blank is absent: the schema makes every property required, so an unused field arrives as an empty string.
      */
-    private fun f(m: MField?): Field? = m?.takeUnless { it.selector.isBlank() && it.attr.isBlank() && it.path.isBlank() }
-        ?.let { Field(selector = it.selector, attr = it.attr.ifBlank { "text" }, path = it.path) }
+    fun field(text: String?): Field? {
+        val t = text?.trim().orEmpty()
+        if (t.isEmpty()) return null
+        if (t.startsWith("json:")) return t.removePrefix("json:").trim().takeIf { it.isNotEmpty() }?.let { Field(path = it) }
+        val at = t.lastIndexOf('@')
+        val attr = if (at >= 0) t.substring(at + 1).trim() else ""
+        return if (at >= 0 && ATTR.matches(attr)) Field(selector = t.substring(0, at).trim(), attr = attr) else Field(selector = t, attr = "text")
+    }
 
     private fun itemPage(m: ItemPageSpec?): ItemPageSpec? = m?.takeUnless { it.selector.isBlank() && it.pattern.isBlank() }?.let { it.copy(attr = it.attr.ifBlank { "text" }) }
 
@@ -102,7 +113,7 @@ object ModelRecipe {
      */
     fun toRecipe(m: MRecipe, pageUrl: String, model: String, today: String): Recipe {
         val fields = LinkedHashMap<String, Field>()
-        fun add(k: String, v: MField?) { f(v)?.let { fields[k] = it } }
+        fun add(k: String, v: String) { field(v)?.let { fields[k] = it } }
         with(m.list.fields) {
             add("title", title); add("link", link); add("published", published); add("description", description); add("id", id)
             add("season", season); add("episode", episode); add("duration", duration); add("image", image)
@@ -110,10 +121,10 @@ object ModelRecipe {
         val host = Urls.host(pageUrl)
         return Recipe(
             source = RecipeSource(url = pageUrl, hosts = (listOfNotNull(host) + m.hosts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }).distinct()),
-            list = ListSpec(kind = m.list.kind, itemSelector = m.list.itemSelector, url = m.list.url, itemsPath = m.list.itemsPath, fields = fields, next = f(m.list.next)),
-            media = MediaSpec(kind = m.media.kind, manifest = m.media.manifest, manifestField = f(m.media.manifestField), itemPage = itemPage(m.media.itemPage)),
+            list = ListSpec(kind = m.list.kind, itemSelector = m.list.itemSelector, url = m.list.url, itemsPath = m.list.itemsPath, fields = fields, next = field(m.list.next)),
+            media = MediaSpec(kind = m.media.kind, manifest = m.media.manifest, manifestField = field(m.media.manifestField), itemPage = itemPage(m.media.itemPage)),
             numbering = NumberingSpec(m.numbering),
-            series = m.series?.let { SeriesSpec(name = f(it.name) ?: Field(), description = f(it.description), image = f(it.image)) },
+            series = m.series?.let { SeriesSpec(name = field(it.name) ?: Field(), description = field(it.description), image = field(it.image)) },
             pattern = m.pattern,
             language = LanguageSpec(audio = m.audioLanguage.trim().lowercase(), subtitle = m.subtitleLanguage.trim().lowercase()),
             writtenBy = model, writtenAt = today,
@@ -135,13 +146,11 @@ object ModelRecipe {
     /**
      * The API refuses a request whose schemas hold more than 24 optional parameters, or more than 16 union-typed ones (found on DEB-3373: this
      * schema had 74). `anyOf [T, null]` counts as a union, so neither optional nor nullable is the way out: a property is required, and a blank
-     * string is how the model says "none". [parse] and [toRecipe] already read blank as absent. [SchemaBudgetTest] holds the schema to both limits.
+     * string is how the model says "none". [parse] and [toRecipe] already read blank as absent. It also refuses a schema whose compiled grammar
+     * is too large, which 13 three-key objects were (DEB-3399): a field is one string. [SchemaBudgetTest] holds the first two limits; only the
+     * API can say the third, so the build's request body is sent to it with `max_tokens` 16 when this schema changes.
      */
-    private val FIELD = obj(mapOf(
-        "selector" to str("CSS selector, relative to the item (html); blank = the item itself"),
-        "attr" to str("`text`, or an attribute name such as `href`"),
-        "path" to str("JSON path (json lists), such as `title` or `a.b[0].c`"),
-    ), listOf("selector", "attr", "path"))
+    private val FIELD = str("`selector@attr`: html, a CSS selector relative to the item and `text` or an attribute such as `href`; blank selector = the item itself (`@data-id`). `json:path`: a json list, such as `json:title` or `json:a.b[0].c`. Blank = none")
 
     /** The `output_config.format.schema` of an investigation's final answer. */
     val SCHEMA: JsonObject = obj(mapOf(

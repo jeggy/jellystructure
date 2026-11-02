@@ -42,12 +42,12 @@ class ModelRecipeSchemaTest {
 
     @Test
     fun `an answer that fills every required property and leaves the unused ones blank reads as a recipe without them`() {
-        val blank = """{"selector":"","attr":"","path":""}"""
+        val blank = "\"\""
         val text = """{"verdict":"series","reason":"x","recipe":{"list":{"kind":"html","item_selector":"li.ep","url":"","items_path":"",
-            "fields":{"title":{"selector":"a","attr":"","path":""},"link":{"selector":"a","attr":"href","path":""},"published":$blank,"description":$blank,
+            "fields":{"title":"a","link":"a@href","published":$blank,"description":$blank,
             "id":$blank,"season":$blank,"episode":$blank,"duration":$blank,"image":$blank}},
             "media":{"kind":"hls","manifest":"https://media.example.fo/{value}/master.m3u8","item_page":{"selector":"","attr":"","pattern":"id=(?<value>[a-z0-9]+)"}},
-            "numbering":"source","pattern":[],"series":{"name":{"selector":"h1","attr":"","path":""},"description":$blank,"image":$blank},
+            "numbering":"source","pattern":[],"series":{"name":"h1","description":$blank,"image":$blank},
             "hosts":["media.example.fo"],"audio_language":"fao","subtitle_language":""}}"""
         val answer = assertNotNull(ModelRecipe.parse(text))
         val recipe = ModelRecipe.toRecipe(assertNotNull(answer.recipe), "https://site.example.fo/x", "m", "2026-11-02")
@@ -57,5 +57,26 @@ class ModelRecipeSchemaTest {
         assertEquals("text", recipe.media.itemPage?.attr)
         assertEquals("h1", recipe.series?.name?.selector)
         assertNull(recipe.series?.description); assertNull(recipe.series?.image)
+    }
+
+    @Test
+    fun `a listing field is one string and the schema holds no three-key field object`() {
+        val fields = ModelRecipe.SCHEMA["properties"]!!.jsonObject["recipe"]!!.jsonObject["properties"]!!.jsonObject["list"]!!.jsonObject["properties"]!!.jsonObject["fields"]!!.jsonObject["properties"]!!.jsonObject
+        assertTrue(fields.values.all { it.jsonObject["type"]!!.jsonPrimitive.content == "string" })
+        assertTrue(!ModelRecipe.SCHEMA.toString().contains("\"path\":{"), "a field is not an object with a path key")
+    }
+
+    @Test
+    fun `a field string reads as selector at attribute or json path and blank is none`() {
+        assertEquals(Field(selector = "a", attr = "text"), ModelRecipe.field("a"))
+        assertEquals(Field(selector = "a", attr = "href"), ModelRecipe.field("a@href"))
+        assertEquals(Field(selector = "", attr = "data-id"), ModelRecipe.field("@data-id"))
+        assertEquals(Field(selector = "li > time", attr = "datetime"), ModelRecipe.field(" li > time@datetime "))
+        assertEquals(Field(selector = "a[href*=\"@\"]", attr = "text"), ModelRecipe.field("a[href*=\"@\"]"))
+        assertEquals(Field(path = "a.b[0].c"), ModelRecipe.field("json:a.b[0].c"))
+        assertNull(ModelRecipe.field(""))
+        assertNull(ModelRecipe.field("  "))
+        assertNull(ModelRecipe.field("json:"))
+        assertNull(ModelRecipe.field(null))
     }
 }
