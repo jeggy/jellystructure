@@ -56,8 +56,47 @@ class YtDlpTest {
     @Test
     fun `subtitles are written and embedded and limited to the recipe's language and or all of them`() {
         val c = YtDlpCommands.download(dl, withSubs = true)
-        assertTrue("--write-subs --embed-subs --sub-langs 'fao.*'" in c, c)
+        assertTrue("--write-subs --embed-subs --sub-langs 'fo(-.+)?,fao(-.+)?'" in c, c)
         assertTrue("--sub-langs 'all,-live_chat'" in YtDlpCommands.download(dl.copy(subtitleLang = ""), true))
+        assertFalse("--print-to-file" in YtDlpCommands.download(dl.copy(subtitleLang = ""), true))
+    }
+
+    // DEB-3434, FR-6.3 — the language under every code a site uses, never `.*`.
+    @Test
+    fun `a subtitle language is asked for under its 639-1 and both 639-2 codes each with an optional region`() {
+        assertEquals("en(-.+)?,eng(-.+)?", YtDlpSubtitles.subLangs("eng"))
+        assertEquals("de(-.+)?,ger(-.+)?,deu(-.+)?", YtDlpSubtitles.subLangs("ger"))
+        assertEquals("de(-.+)?,deu(-.+)?", YtDlpSubtitles.subLangs("deu"))
+        assertEquals("fo(-.+)?,fao(-.+)?", YtDlpSubtitles.subLangs("fao"))
+        assertEquals("xyz(-.+)?", YtDlpSubtitles.subLangs("xyz"))
+        assertTrue("--sub-langs 'en(-.+)?,eng(-.+)?'" in YtDlpCommands.download(dl.copy(subtitleLang = "eng"), true))
+    }
+
+    @Test
+    fun `a track matches the language by its code or by its code and a region and never by a longer code`() {
+        assertTrue(YtDlpSubtitles.matches("eng", "en")); assertTrue(YtDlpSubtitles.matches("eng", "en-GB")); assertTrue(YtDlpSubtitles.matches("eng", "EN"))
+        assertTrue(YtDlpSubtitles.matches("eng", "eng"))
+        assertTrue(YtDlpSubtitles.matches("fao", "fo")); assertFalse(YtDlpSubtitles.matches("fao", "fon"))
+        assertFalse(YtDlpSubtitles.matches("eng", "de"))
+    }
+
+    @Test
+    fun `the subtitle list is written into the part folder with a literal percent doubled`() {
+        val c = YtDlpCommands.download(dl.copy(outPath = "/w/fetch_100% of it.mkv"), true)
+        assertTrue("--print-to-file 'before_dl:%(subtitles)j' '/w/fetch_100%% of it.mkv.part/subtitles.json'" in c, c)
+        assertFalse("--print-to-file" in YtDlpCommands.download(dl, withSubs = false))
+    }
+
+    @Test
+    fun `a source with subtitles but none in the language gets a note with the sorted codes and at most five`() {
+        assertEquals("no subtitle: none in eng; the source has de, fr", YtDlpSubtitles.absentNote("eng", """{"fr":[{"ext":"vtt"}],"de":[]}"""))
+        assertEquals("no subtitle: none in eng; the source has a, b, c, d, e, +2 more",
+            YtDlpSubtitles.absentNote("eng", """{"g":[],"f":[],"e":[],"d":[],"c":[],"b":[],"a":[]}"""))
+        assertEquals("", YtDlpSubtitles.absentNote("eng", """{"en-GB":[],"de":[]}"""))
+        assertEquals("", YtDlpSubtitles.absentNote("eng", "{}"))
+        assertEquals("", YtDlpSubtitles.absentNote("eng", ""))
+        assertEquals("", YtDlpSubtitles.absentNote("eng", "not json"))
+        assertEquals("", YtDlpSubtitles.absentNote("eng", """{"live_chat":[]}"""))
     }
 
     @Test
@@ -151,6 +190,37 @@ class YtDlpTest {
         assertTrue(r.ok); assertEquals("", r.message)
         assertEquals(1, shell.commands.count { "--embed-subs" in it })
         assertTrue(cleaned(shell))
+    }
+
+    @Test
+    fun `a download whose subtitle list holds other languages is placed with the note and not run again`() = runBlocking<Unit> {
+        val shell = FakeShell { if (it.startsWith("cat ")) ShellResult(0, """{"de":[],"fr":[]}""") else ShellResult(0, "") }
+        val r = ProductionYtDlp(shell).download(dl.copy(subtitleLang = "eng")) { false }
+        assertTrue(r.ok); assertEquals("no subtitle: none in eng; the source has de, fr", r.message)
+        assertEquals(1, shell.commands.count { it.startsWith("nice") })
+        assertTrue(shell.commands.any { it == "cat '${YtDlpSubtitles.listPath(dl.outPath)}' 2>/dev/null" })
+        assertTrue(cleaned(shell))
+    }
+
+    @Test
+    fun `a download with an empty or unreadable subtitle list or the language present says nothing`() = runBlocking<Unit> {
+        for (answer in listOf(ShellResult(0, "{}"), ShellResult(1, "cat: no such file"), ShellResult(0, """{"en":[]}"""))) {
+            val shell = FakeShell { if (it.startsWith("cat ")) answer else ShellResult(0, "") }
+            val r = ProductionYtDlp(shell).download(dl.copy(subtitleLang = "eng")) { false }
+            assertTrue(r.ok); assertEquals("", r.message)
+        }
+        val none = FakeShell { ShellResult(0, "") }
+        assertEquals("", ProductionYtDlp(none).download(dl.copy(subtitleLang = "")) { false }.message)
+        assertEquals(0, none.commands.count { it.startsWith("cat ") })
+    }
+
+    @Test
+    fun `only the last output line decides whether a failure blames a subtitle`() {
+        val info = "[info] x: Downloading subtitles: en\nThere are no subtitles for the requested languages\n"
+        assertFalse(YtDlpErrors.blamesSubtitle(info + "ERROR: [x] a: Video unavailable"))
+        assertTrue(YtDlpErrors.blamesSubtitle(info + "ERROR: Postprocessing: Conversion failed"))
+        assertTrue(YtDlpErrors.blamesSubtitle("ERROR: unable to download subtitle\n[info] cleaning up"))
+        assertFalse(YtDlpErrors.blamesSubtitle(""))
     }
 
     @Test

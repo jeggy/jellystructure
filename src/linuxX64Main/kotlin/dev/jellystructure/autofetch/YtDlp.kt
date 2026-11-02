@@ -2,6 +2,7 @@ package dev.jellystructure.autofetch
 
 import dev.jellystructure.filefix.FileFixShell
 import dev.jellystructure.filefix.ShellResult
+import dev.jellystructure.resolver.LanguageResolver
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -68,8 +69,54 @@ object YtDlpErrors {
         return YtDlpOutput(false, message = message, status = status, drm = drm)
     }
 
-    /** Whether a failure's output blames a subtitle, which is the one reason to run the download again without them (FR-6.4). */
-    fun blamesSubtitle(output: String): Boolean = SUBTITLE.containsMatchIn(output)
+    /**
+     * Whether a failure's last output blames a subtitle, which is the one reason to run the download again without them (FR-6.3, FR-6.4).
+     * Only the line [classify] would show is read: yt-dlp's `[info] Downloading subtitles: en` and `There are no subtitles for the requested
+     * languages` come earlier in the same output and must not make an unrelated failure run twice.
+     */
+    fun blamesSubtitle(output: String): Boolean {
+        val lines = output.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val last = lines.lastOrNull { it.startsWith("ERROR:") } ?: lines.lastOrNull() ?: return false
+        return SUBTITLE.containsMatchIn(last)
+    }
+}
+
+/** The recipe's subtitle language under the codes a site names its tracks by, and what a source's own subtitle list says of it (FR-6.3, DEB-3434). */
+object YtDlpSubtitles {
+    /** The ISO 639-1 form first, then the recipe's own 639-2 code, then its other 639-2 form: `eng` → `en`, `eng`; `ger` → `de`, `ger`, `deu`. */
+    fun forms(lang: String): List<String> {
+        val two = LanguageResolver.normalize(lang)
+        if (two.length != 2) return listOf(lang)
+        return listOfNotNull(two, lang, LanguageResolver.toIso6392(two)).distinct()
+    }
+
+    /** `--sub-langs` for [lang]: each form with an optional region, never `.*` (yt-dlp full-matches, and `fo.*` takes `fon`). */
+    fun subLangs(lang: String): String = forms(lang).joinToString(",") { "$it(-.+)?" }
+
+    /** Whether a source's track [code] is the language [lang]: one of its forms, with or without a region, ignoring case. */
+    fun matches(lang: String, code: String): Boolean {
+        val c = code.lowercase()
+        return forms(lang).any { c == it || c.startsWith("$it-") }
+    }
+
+    /** The track codes in the `%(subtitles)j` file: its keys, without the `live_chat` pseudo track. Empty when it cannot be read. */
+    fun codes(json: String): List<String> =
+        ((runCatching { Json.parseToJsonElement(json.trim()) }.getOrNull()) as? JsonObject)?.keys?.filter { it != "live_chat" }.orEmpty()
+
+    /**
+     * The run-line note for a download that was asked for [lang]: set only when the source lists subtitles and none is in that language.
+     * A source that lists none, or a file that could not be read, says nothing (FR-6.4).
+     */
+    fun absentNote(lang: String, listJson: String): String {
+        val codes = codes(listJson)
+        if (codes.isEmpty() || codes.any { matches(lang, it) }) return ""
+        val sorted = codes.sorted()
+        val shown = sorted.take(5).joinToString(", ") + if (sorted.size > 5) ", +${sorted.size - 5} more" else ""
+        return "no subtitle: none in $lang; the source has $shown"
+    }
+
+    /** Where `--print-to-file` writes the source's subtitle list: in the `.part` folder, removed with it. */
+    fun listPath(outPath: String): String = "${YtDlpCommands.tempDir(outPath)}/subtitles.json"
 }
 
 /** The command lines (FR-6.3). Pure, so a test sees what runs. */
@@ -115,8 +162,11 @@ object YtDlpCommands {
             " --postprocessor-args ${q("Merger+ffmpeg_o:$args")} --postprocessor-args ${q("VideoRemuxer+ffmpeg_o:$args")}"
         } else ""
         val subs = if (withSubs) {
-            val langs = if (d.subtitleLang.isBlank()) "all,-live_chat" else "${d.subtitleLang}.*"
-            " --write-subs --embed-subs --sub-langs ${q(langs)}"
+            val langs = if (d.subtitleLang.isBlank()) "all,-live_chat" else YtDlpSubtitles.subLangs(d.subtitleLang)
+            // The source's own subtitle list, kept beside the download (not --print, which would make it a simulation): it says why a language is absent.
+            val list = if (d.subtitleLang.isBlank()) "" else
+                " --print-to-file ${q("before_dl:%(subtitles)j")} ${q(YtDlpSubtitles.listPath(d.outPath).replace("%", "%%"))}"
+            " --write-subs --embed-subs --sub-langs ${q(langs)}$list"
         } else ""
         val tmp = tempDir(d.outPath)
         return "${base(d.userAgent)} --no-playlist --no-part --no-mtime --no-progress -f ${q("bv*+ba/b")} --merge-output-format mkv --remux-video mkv" +
@@ -223,7 +273,7 @@ class ProductionYtDlp(private val shell: FileFixShell) {
         val subs = shell.runStoppable(YtDlpCommands.download(d, withSubs = true), d.outPath, stop)
         try {
             val first = subs ?: return ToolResult(false, "stopped")
-            if (first.ok && shell.exists(d.outPath)) return ToolResult(true)
+            if (first.ok && shell.exists(d.outPath)) return ToolResult(true, absentNote(d))
             val why = YtDlpErrors.classify(first.exit, first.output)
             // A subtitle never fails the episode (FR-6.4): when the output blames one, the same download is run once more without them.
             if (why.drm || why.status != null || why.message == YtDlpTexts.NOT_INSTALLED || !YtDlpErrors.blamesSubtitle(first.output))
@@ -237,6 +287,13 @@ class ProductionYtDlp(private val shell: FileFixShell) {
         } finally {
             shell.run("rm -rf ${q(YtDlpCommands.tempDir(d.outPath))}")
         }
+    }
+
+    /** FR-6.3 — the note for a requested language the source does not have; empty when there is none, or the list cannot be read. */
+    private suspend fun absentNote(d: YtDlpDownload): String {
+        if (d.subtitleLang.isBlank()) return ""
+        val r = shell.run("cat ${q(YtDlpSubtitles.listPath(d.outPath))} 2>/dev/null")
+        return if (r.ok) YtDlpSubtitles.absentNote(d.subtitleLang, r.output) else ""
     }
 
     private fun lastLine(output: String) = output.lines().map { it.trim() }.lastOrNull { it.isNotEmpty() }.orEmpty().removePrefix("ERROR:").trim()
