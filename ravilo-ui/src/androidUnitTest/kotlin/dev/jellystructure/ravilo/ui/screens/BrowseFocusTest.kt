@@ -180,6 +180,8 @@ class BrowseFocusTest {
                 served = next
                 store.load()
                 awaitStore()
+                // The store's state is set off the main thread; wait for the new list to compose so the bound below is counted from it.
+                rule.waitUntil(5_000) { rule.onAllNodes(hasText(titles, substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             }
         }
         // The bound (R200: 30 frames) counted from the last list change; never an open-ended wait for focus.
