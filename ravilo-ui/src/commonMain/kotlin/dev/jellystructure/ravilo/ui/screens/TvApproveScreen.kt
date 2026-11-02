@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 /** DEB-2233 (FR-6) — test tags for *Sign in a TV*. */
 object TvApproveTags {
     const val ROW = "profile-sign-in-tv"
+    const val SETTINGS_ROW = "settings-sign-in-tv"   // DEB-2233 (FR-6) — the same row in a wide web window's Settings
     const val FIELD = "tvcode-field"
     const val CONTINUE = "tvcode-continue"
     const val CONFIRM_TITLE = "tvcode-confirm-title"

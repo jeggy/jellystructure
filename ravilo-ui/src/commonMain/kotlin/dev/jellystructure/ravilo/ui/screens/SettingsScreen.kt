@@ -7,6 +7,7 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import dev.jellystructure.shared.tv.RaviloThemes
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -216,6 +217,9 @@ fun SettingsScreen(
     onSignedOutEveryone: () -> Unit = {},
     // R234 (FR-R234-4) — every platform (TV included); opens the dedicated Change password screen.
     onChangePassword: () -> Unit = {},
+    // DEB-2233 (FR-6, amendment 2026-10-29) — *Sign in a TV* directly after the password place. Non-null only in a wide
+    // Ravilo Web window, where Profile is not the page the avatar opens; null draws nothing and leaves the chain as it was.
+    onSignInTv: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -308,6 +312,7 @@ fun SettingsScreen(
                     onSkinChange = onSkinChange,
                     onThemeChange = onThemeChange,
                     onChangePassword = onChangePassword,
+                    onSignInTv = onSignInTv,
                     onInstallRavilo = { showInstallCard = true },
                     // Desktop layout draws no Back here (the toolbar has it), so the first section has nothing above it.
                     topFR = if (deskLayout) null else backFR,
@@ -378,6 +383,9 @@ fun DesktopSettingsPanel(
     onChangePassword: () -> Unit,
     onSignOut: () -> Unit,
     onClose: () -> Unit,
+    // DEB-2233 (FR-6, amendment 2026-10-29, finding F6) — the desktop app's Profile has no account rows, so this window
+    // carries *Sign in a TV* after the password place; null draws nothing.
+    onSignInTv: (() -> Unit)? = null,
 ) {
     // The window is a desktop surface whatever the app's own window is doing (it may be as narrow as a phone).
     androidx.compose.runtime.CompositionLocalProvider(
@@ -485,6 +493,7 @@ fun DesktopSettingsPanel(
                     PasswordRow.Form -> dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), onClick = onChangePassword)
                     else -> {}
                 }
+                if (onSignInTv != null) dev.jellystructure.ravilo.ui.components.DeskButton(str("tvcode.row"), onClick = onSignInTv)
                 dev.jellystructure.ravilo.ui.components.DeskButton(str("profile.sign_out"), onClick = onSignOut)
             }
             if (pwRow is PasswordRow.Link) {
@@ -522,7 +531,7 @@ fun DesktopSettingsPanel(
                         1 -> playback(s.config, first = true)
                         2 -> account(first = true)
                         else -> dev.jellystructure.ravilo.ui.components.AboutSection(desk = true)
-                    } else GnomePreferences(s.config, store, displayName, onSkinChange, onThemeChange, onChangePassword, onSignOut)
+                    } else GnomePreferences(s.config, store, displayName, onSkinChange, onThemeChange, onChangePassword, onSignOut, onSignInTv)
                 }
             }
         }
@@ -544,6 +553,7 @@ private fun GnomePreferences(
     onThemeChange: (RaviloConfig) -> Unit,
     onChangePassword: () -> Unit,
     onSignOut: () -> Unit,
+    onSignInTv: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
@@ -611,6 +621,7 @@ private fun GnomePreferences(
             PasswordRow.Hidden -> {}
             PasswordRow.Form -> AdwRow(str("account.pw_change"), onClick = onChangePassword) { AdwChevron() }
         }
+        if (onSignInTv != null) AdwRow(str("tvcode.row"), onClick = onSignInTv) { AdwChevron() }
         AdwRow(str("profile.sign_out"), onClick = onSignOut) { AdwChevron() }
     }
     // R386 (FR-R386-6) — About: the version and the server. No update block on Linux (Flathub updates the Flatpak): nothing
@@ -962,6 +973,8 @@ private fun SettingsContent(
     onSkinChange: (Skin) -> Unit,
     onThemeChange: (RaviloConfig) -> Unit = {},
     onChangePassword: () -> Unit = {},
+    // DEB-2233 (FR-6) — null: no row, and the chain below is the one it was.
+    onSignInTv: (() -> Unit)? = null,
     // R263 (FR-R263-8) — "re-surfaced only from Settings → Install Ravilo"; absent entirely off the
     // web (isWebPlatform), never a greyed/inert row.
     onInstallRavilo: () -> Unit = {},
@@ -989,13 +1002,19 @@ private fun SettingsContent(
     val autoplayFR = remember { FocusRequester() }
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
+    val signInTvFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
     // DEB-1854 (FR-6, FR-7) — the account's password place, from the config; the chain below closes over a row not drawn.
     val pwRow = config.passwordRow()
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    val belowAutoplayFR = if (pwRow.focusable) changePwFR else if (isWebPlatform) installFR else signOutFR
-    val aboveInstallFR = if (pwRow.focusable) changePwFR else autoplayFR
-    val aboveSignOutFR = if (isWebPlatform) installFR else if (pwRow.focusable) changePwFR else autoplayFR
+    // DEB-2233 (FR-6) — *Sign in a TV* sits after the password place and before Install: password → Sign in a TV → Install → Sign out.
+    val hasSignInTv = onSignInTv != null
+    val aboveSignInTvFR = if (pwRow.focusable) changePwFR else autoplayFR
+    val belowSignInTvFR = if (isWebPlatform) installFR else signOutFR
+    val belowPasswordFR = if (hasSignInTv) signInTvFR else if (isWebPlatform) installFR else signOutFR
+    val belowAutoplayFR = if (pwRow.focusable) changePwFR else belowPasswordFR
+    val aboveInstallFR = if (hasSignInTv) signInTvFR else if (pwRow.focusable) changePwFR else autoplayFR
+    val aboveSignOutFR = if (isWebPlatform) installFR else if (hasSignInTv) signInTvFR else if (pwRow.focusable) changePwFR else autoplayFR
 
     // R338 — the theme settings, when the server has them (FR-R338-5); an older server keeps the three skins below.
     val themeEntryFR = if (themesFirst) firstFR else remember { FocusRequester() }
@@ -1167,7 +1186,7 @@ private fun SettingsContent(
                     onFocused = { changePwFocused = true },
                     onBlurred = { changePwFocused = false },
                     onUp = { autoplayFR.requestFocus() },
-                    onDown = { (if (isWebPlatform) installFR else signOutFR).requestFocus() },
+                    onDown = { belowPasswordFR.requestFocus() },
                     // FR-6a — the page is opened and nothing is awaited; no screen of ours opens.
                     onSelect = { if (pwRow is PasswordRow.Link) uriHandler.openUri(pwRow.url) else onChangePassword() },
                 )
@@ -1187,6 +1206,28 @@ private fun SettingsContent(
         PasswordElsewhereLine()
     }
     if (pwRow !is PasswordRow.Hidden) Spacer(Modifier.height(16.dp))
+    if (onSignInTv != null) {
+        var signInTvFocused by rememberFocusVisual()
+        Box(
+            modifier = Modifier
+                .testTag(TvApproveTags.SETTINGS_ROW)
+                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                .focusRing(signInTvFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
+                .dpadFocusable(
+                    focusRequester = signInTvFR,
+                    onFocused = { signInTvFocused = true },
+                    onBlurred = { signInTvFocused = false },
+                    onUp = { aboveSignInTvFR.requestFocus() },
+                    onDown = { belowSignInTvFR.requestFocus() },
+                    onSelect = onSignInTv,
+                )
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(str("tvcode.row"), color = colors.text, fontSize = 14.sp)
+        }
+        Spacer(Modifier.height(16.dp))
+    }
     if (isWebPlatform) {
         var installFocused by rememberFocusVisual()
         Box(

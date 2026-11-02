@@ -3255,6 +3255,8 @@ fun RaviloApp(
                     // the server is forgotten too, so the TV starts again at server setup.
                     onSignedOutEveryone = onSignedOutEveryone,
                     onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
+                    // DEB-2233 (FR-6, 2026-10-29) — only a wide web window: its avatar opens the menu, not Profile. A TV never gets it.
+                    onSignInTv = if (isWebPlatform && !handset) { { push(Dest.SignInTv(dest.displayName)) } } else null,
                 )
             }
 
@@ -3368,6 +3370,7 @@ fun RaviloApp(
                     onChangePassword = { deskSettingsOpen = false; push(Dest.ChangePassword(settingsName)) },
                     onSignOut = { deskSettingsOpen = false; deskSignOutAsk = true },
                     onClose = { deskSettingsOpen = false },
+                    onSignInTv = { deskSettingsOpen = false; push(Dest.SignInTv(settingsName)) },   // DEB-2233 (FR-6, F6)
                 )
             }
         }
