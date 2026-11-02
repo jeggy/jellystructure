@@ -86,8 +86,12 @@ object YtDlpCommands {
     fun listing(url: String, userAgent: String): String =
         "${base(userAgent)} --flat-playlist --playlist-end $PLAYLIST_END -J ${q(url)}"
 
-    /** One item's metadata, no download. */
-    fun info(url: String, userAgent: String): String = "${base(userAgent)} --no-playlist -J ${q(url)}"
+    /**
+     * One item's metadata, no download: only what the proof reads (FR-5.1) — the duration and top-level codec on one line, each format's codec
+     * and DRM flag as an array on the next. `-J` of one YouTube video is 11 MB, past the shell's capture cap (DEB-3404).
+     */
+    fun info(url: String, userAgent: String): String =
+        "${base(userAgent)} --no-playlist --skip-download --print ${q("%(.{duration,vcodec})j")} --print ${q("%(formats.:.{vcodec,has_drm})j")} ${q(url)}"
 
     /** The folder yt-dlp keeps its intermediate files in: beside the work file, so it is on the same filesystem and under the work folder. */
     fun tempDir(outPath: String): String = "$outPath.part"
@@ -112,12 +116,19 @@ object YtDlpCommands {
     }
 }
 
-/** What `-J` of one item says (FR-4.2's probe): a video format, a duration, and whether every format is DRM. */
+/** What [YtDlpCommands.info] says of one item (FR-4.2's probe): a video format, a duration, and whether every format is DRM. */
 object YtDlpInfo {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** The JSON document inside [body] (yt-dlp may print a line before it), or null. */
+    /**
+     * The item's facts as one object: the line starting `{` (yt-dlp may print lines before it), its `formats` taken from the line starting `[`
+     * when it has none of its own. A whole `-J` document is still read.
+     */
     fun parse(body: String): JsonObject? {
+        val lines = body.lines().map { it.trim() }
+        val obj = lines.firstOrNull { it.startsWith("{") }?.let { l -> runCatching { json.parseToJsonElement(l) as? JsonObject }.getOrNull() }
+        val arr = lines.firstOrNull { it.startsWith("[") }?.let { l -> runCatching { json.parseToJsonElement(l) as? JsonArray }.getOrNull() }
+        if (obj != null) return if (arr != null && "formats" !in obj) JsonObject(obj + ("formats" to arr)) else obj
         val start = body.indexOf('{')
         if (start < 0) return null
         return runCatching { json.parseToJsonElement(body.substring(start)) as? JsonObject }.getOrNull()

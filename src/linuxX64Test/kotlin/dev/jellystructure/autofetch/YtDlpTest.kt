@@ -33,7 +33,8 @@ class YtDlpTest {
         val l = YtDlpCommands.listing("https://varpid.example.fo/x", ua)
         assertTrue("--flat-playlist --playlist-end 100 -J 'https://varpid.example.fo/x'" in l, l)
         val i = YtDlpCommands.info("https://varpid.example.fo/x", ua)
-        assertTrue("--no-playlist -J 'https://varpid.example.fo/x'" in i, i); assertFalse("--flat-playlist" in i)
+        assertTrue("--no-playlist --skip-download --print " in i && i.endsWith("'https://varpid.example.fo/x'"), i)
+        assertFalse("--flat-playlist" in i); assertFalse(" -J " in i, "the whole document is 11 MB for one video (DEB-3404)")
     }
 
     @Test
@@ -101,6 +102,17 @@ class YtDlpTest {
         assertNull(YtDlpInfo.facts("not json"))
         assertTrue(assertNotNull(YtDlpInfo.facts("""WARNING: x
 {"duration": 5, "formats":[{"vcodec":"vp9"}]}""")).hasVideo, "a line before the document is tolerated")
+    }
+
+    @Test
+    fun `the two printed lines read as one answer and an answer past the capture cap still does`() {
+        val two = "WARNING: x\n" + """{"duration": 19, "vcodec": "av01"}""" + "\n" + """[{"vcodec":"none","has_drm":false},{"vcodec":"vp9","has_drm":false}]"""
+        val f = assertNotNull(YtDlpInfo.facts(two)); assertTrue(f.hasVideo); assertEquals(19.0, f.durationSec)
+        assertFalse(YtDlpInfo.allDrm(two))
+        assertTrue(YtDlpInfo.allDrm("""{"duration":1}""" + "\n" + """[{"has_drm":true}]"""))
+        val big = """{"duration": 19}""" + "\n" + "[" + List(150_000) { """{"vcodec":"vp9","has_drm":false}""" }.joinToString(",") + "]"
+        assertTrue(big.length > 4_000_000)
+        assertTrue(assertNotNull(YtDlpInfo.facts(big)).hasVideo)
     }
 
     @Test
