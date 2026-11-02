@@ -31,13 +31,16 @@ private val AI_JOBS = listOf(
     // Phase 274 (FR-274-5, Q7)
     AiJobUi("clusters", "Suggestion clusters",
         "Once per suggestions build (weekly, with Seerr connected): the model groups the films the household doesn't have into three to eight kinds it actually watches, named for this house. It sees genre and keyword ids only — no viewer, no title, no synopsis — and each group's share of the 20 shown is counted by the server, never by the model. If anything goes wrong, the list keeps the six genre groups and the page says so."),
+    // DEB-2478 (DEB-2474, FR-5.4) — the one job that is not a batch.
+    AiJobUi("autofetch", "Auto-fetch",
+        "When you set up a fetcher on AI ▸ Fetchers, or press Re-investigate page, the model works out how that page serves its videos and writes the fetcher's recipe. Once per fetcher: a scheduled run makes no model call. This server reads the page, under its own name and within a general crawler's robots.txt rules, and what it read goes to the model; the model never fetches anything. Watched live, so it is not a batch and is billed at the full price. Each turn is checked against the monthly limit before it is sent."),
     // Phase 321 (FR-321-1, FR-321-11)
     AiJobUi("support", "Support",
         "When a viewer files a support ticket, AI Agent reads the thread and answers a plain how-to question itself, in the viewer's language. Anything else — a fault, an account problem, a request, or anything it is not sure of — it forwards to an admin with an English summary, and tells the viewer it has. It never resolves, deletes or unflags a ticket. It sees the text of the ticket's thread and the viewer's language: never their name, id or device, though a viewer may type anything into a ticket, including names. And, while re-rank is on, up to 30 titles from the viewer's own Recommended row, with the same details re-rank sends. Never their watch history."),
 )
 
 private var aiEnabled = false
-private val aiJobEnabled = mutableMapOf("rerank" to false, "themes" to false, "clusters" to false, "support" to false)
+private val aiJobEnabled = mutableMapOf("rerank" to false, "themes" to false, "clusters" to false, "support" to false, "autofetch" to false)
 private var aiLoaded: AiConfig = AiConfig()
 private var aiStatus: AiStatus? = null
 
@@ -65,7 +68,7 @@ internal fun aiSectionHtml(): String = """
               ${AI_JOBS.joinToString("") { aiJobCardHtml(it) }}
               <details style="margin-top:6px;font-size:.82rem;color:var(--ink-soft)">
                 <summary style="cursor:pointer;user-select:none">What is sent to Anthropic</summary>
-                <p style="margin:8px 0 0;line-height:1.55"><b>Re-rank:</b> the titles, years, genres, keywords and a shortened synopsis of each viewer's 100 candidates, and the titles and genres they watched recently. <b>Theme tags:</b> a title's name, year, genres, keywords and synopsis. <b>Support:</b> the text of a ticket's thread as the viewer and the replies wrote it, and the viewer's language — a viewer may type anything into a ticket, including names — and, while re-rank is on, up to 30 titles from the viewer's own Recommended row, with the same details re-rank sends. Never a name, a user id, a device name, an IP address or anything from Jellyfin's user records: a viewer is not named in a request. A kids profile's history is sent under the same rules as anyone's.</p>
+                <p style="margin:8px 0 0;line-height:1.55"><b>Re-rank:</b> the titles, years, genres, keywords and a shortened synopsis of each viewer's 100 candidates, and the titles and genres they watched recently. <b>Theme tags:</b> a title's name, year, genres, keywords and synopsis. <b>Auto-fetch:</b> the page URL and what this server read from that site during the investigation, and the TMDB series' name, seasons and episode list (for a page-only fetcher: nothing from TMDB). Nothing from the library. <b>Support:</b> the text of a ticket's thread as the viewer and the replies wrote it, and the viewer's language — a viewer may type anything into a ticket, including names — and, while re-rank is on, up to 30 titles from the viewer's own Recommended row, with the same details re-rank sends. Never a name, a user id, a device name, an IP address or anything from Jellyfin's user records: a viewer is not named in a request. A kids profile's history is sent under the same rules as anyone's.</p>
               </details>
               <p class="hint" id="ai-prices" style="margin:10px 0 0"></p>
             </div>
@@ -112,7 +115,7 @@ internal fun populateAi(c: AiConfig) {
     toggle("ai-enabled-toggle", aiEnabled)
     select("ai-provider")?.value = c.provider
     input("ai-key")?.value = ""
-    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support)) {
+    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support, "autofetch" to c.autofetch)) {
         aiJobEnabled[key] = job.enabled
         toggle("ai-$key-toggle", job.enabled)
         select("ai-$key-effort")?.value = job.effort
@@ -139,6 +142,7 @@ internal fun readAi(): AiConfig {
         themes = job("themes", aiLoaded.themes),
         clusters = job("clusters", aiLoaded.clusters),
         support = job("support", aiLoaded.support),
+        autofetch = job("autofetch", aiLoaded.autofetch),
     )
 }
 
@@ -146,7 +150,7 @@ internal fun wireAi(scope: CoroutineScope, onChange: () -> Unit) {
     document.getElementById("ai-enabled-toggle")?.addEventListener("click") {
         aiEnabled = !aiEnabled; toggle("ai-enabled-toggle", aiEnabled); onChange()
     }
-    for (key in listOf("rerank", "themes", "clusters", "support")) {
+    for (key in listOf("rerank", "themes", "clusters", "support", "autofetch")) {
         document.getElementById("ai-$key-toggle")?.addEventListener("click") {
             aiJobEnabled[key] = !(aiJobEnabled[key] ?: false); toggle("ai-$key-toggle", aiJobEnabled[key] ?: false); onChange()
         }
@@ -170,8 +174,8 @@ private fun renderAiStatus() {
     val s = aiStatus
     (document.getElementById("ai-key-hint") as? HTMLElement)?.textContent = s?.keyHint?.let { "saved: $it" } ?: ""
     (document.getElementById("ai-prices") as? HTMLElement)?.textContent =
-        if (s == null) "" else "Prices as of ${s.pricesAsOf}, at batch rates (half the standard price): every job runs in the background through the Message Batches API."
-    for (key in listOf("rerank", "themes", "clusters", "support")) {
+        if (s == null) "" else "Prices as of ${s.pricesAsOf}. Every job but Auto-fetch runs in the background through the Message Batches API, at batch rates (half the standard price). Auto-fetch is watched live, so it is billed at the full price."
+    for (key in listOf("rerank", "themes", "clusters", "support", "autofetch")) {
         val sel = select("ai-$key-model") ?: continue
         if (s != null && sel.options.length == 0) {
             val want = sel.getAttribute("data-want") ?: s.models.firstOrNull()?.id
@@ -185,7 +189,7 @@ private fun renderAiStatus() {
 
 private fun renderAiJob(key: String) {
     val s = aiStatus ?: return
-    val job: AiJobStatus = when (key) { "rerank" -> s.rerank; "clusters" -> s.clusters; "support" -> s.support; else -> s.themes }
+    val job: AiJobStatus = when (key) { "rerank" -> s.rerank; "clusters" -> s.clusters; "support" -> s.support; "autofetch" -> s.autofetch; else -> s.themes }
     val modelId = select("ai-$key-model")?.value ?: return
     val model: AiModel? = s.models.firstOrNull { it.id == modelId }
     // FR-270-3 — effort only for a model that takes it (Haiku 4.5 rejects the parameter).
@@ -218,7 +222,7 @@ internal fun aiTomlPreview(c: AiConfig): String = buildString {
     appendLine("enabled = ${c.enabled}")
     appendLine("provider = \"${c.provider}\"")
     appendLine("api_key = \"${if (c.apiKey.isBlank()) "" else "••••"}\"")
-    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support)) {
+    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support, "autofetch" to c.autofetch)) {
         appendLine()
         appendLine("[ai.$name]")
         appendLine("enabled = ${j.enabled}")

@@ -323,6 +323,8 @@ data class AiConfig(
     val clusters: AiJobConfig = AiJobConfig(effort = "low"),
     /** Phase 321 — carried on every save. The backend keeps `max_input_chars` and the two per-day/per-ticket bounds. */
     val support: AiJobConfig = AiJobConfig(effort = "medium"),
+    /** DEB-2478 — carried on every save, so Settings never resets it. */
+    val autofetch: AiJobConfig = AiJobConfig(effort = "medium"),
 )
 
 @Serializable
@@ -360,6 +362,7 @@ data class AiStatus(
     val themes: AiJobStatus = AiJobStatus(),
     val clusters: AiJobStatus = AiJobStatus(),  // Phase 274
     val support: AiJobStatus = AiJobStatus(),   // Phase 321
+    val autofetch: AiJobStatus = AiJobStatus(), // DEB-2478
 )
 
 @Serializable

@@ -97,12 +97,72 @@ data class AfQueueEntry(
     val stills: List<Int> = emptyList(),
 )
 
+/** DEB-2478 (FR-1.2) — whether *Investigate* is on, and the reason it is shown disabled with. */
+@Serializable
+data class AfGate(val allowed: Boolean = false, val reason: String? = null)
+
+/** One of the investigation's five steps. [state] is `pending` · `run` · `done` · `fail`; [text] is what this server saw, never the model's words. */
+@Serializable
+data class AfStep(val key: String = "", val label: String = "", val state: String = "pending", val text: String = "", val ms: Long? = null)
+
+@Serializable
+data class AfReviewRow(val title: String = "", val code: String = "", val date: String? = null, val have: Boolean = false, val notOnTmdb: Boolean = false)
+
+@Serializable
+data class AfLibrary(val path: String = "", val name: String = "")
+
+/** FR-10.1 — the review state: what the engine proved, in the server's counts and words. */
+@Serializable
+data class AfReview(
+    val name: String = "",
+    val tmdbId: Int? = null,
+    val pageOnly: Boolean = false,
+    val source: String = "",
+    val found: Int = 0,
+    val missing: Int = 0,
+    val have: Int = 0,
+    val notOnTmdb: Int = 0,
+    val pattern: String = "",
+    val numbering: String = "",
+    val proof: String = "",
+    val proven: Boolean = false,
+    val rows: List<AfReviewRow> = emptyList(),
+    val libraries: List<AfLibrary> = emptyList(),
+    val libraryPath: String = "",
+    val retention: AfRetention = AfRetention(),
+    val schedule: String = "daily@04:00",
+    val replaces: String? = null,
+)
+
+/** `running` · `review` · `failed` · `stopped`. */
+@Serializable
+data class AfInvestigation(
+    val id: String = "",
+    val state: String = "running",
+    val url: String = "",
+    val host: String = "",
+    val tmdbId: Int? = null,
+    val pageOnly: Boolean = false,
+    val fetcherId: String? = null,
+    val steps: List<AfStep> = emptyList(),
+    val reason: String? = null,
+    val notASeries: Boolean = false,
+    val limitReached: Boolean = false,
+    val turns: Int = 0,
+    val requests: Int = 0,
+    val spentMicroUsd: Long = 0,
+    val startedAt: Long = 0,
+    val review: AfReview? = null,
+)
+
 @Serializable
 data class AfOverview(
     val enabled: Boolean = false,
     val fetchers: List<AfFetcher> = emptyList(),
     val sites: List<AfSite> = emptyList(),
     val queue: List<AfQueueEntry> = emptyList(),
+    val investigate: AfGate = AfGate(),
+    val investigation: AfInvestigation? = null,
 )
 
 /** `POST …/retention/preview`: what saving that retention would do at the next run, counted by the server (FR-12, FR-16.1). */

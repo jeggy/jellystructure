@@ -1,5 +1,6 @@
 package dev.jellystructure.api
 
+import dev.jellystructure.ui.AfInvestigation
 import dev.jellystructure.ui.AfOverview
 import dev.jellystructure.ui.AfPreview
 import dev.jellystructure.ui.AfRetention
@@ -24,6 +25,12 @@ private data class PreviewBody(val retention: AfRetention)
 
 @Serializable
 private data class MomentBody(val at: Int)
+
+@Serializable
+private data class InvestigateBody(val url: String = "", val tmdbId: Int? = null, val pageOnly: Boolean = false, val fetcherId: String? = null)
+
+@Serializable
+private data class SaveInvestigationBody(val name: String? = null, val libraryPath: String? = null, val schedule: String? = null, val retention: AfRetention? = null, val runFirst: Boolean = true)
 
 /** DEB-2477 (DEB-2474, FR-12) — the Fetchers tab's calls. Every write answers with what the server says, and the tab draws that. */
 object AutofetchApi {
@@ -51,6 +58,30 @@ object AutofetchApi {
     /** What saving [retention] would delete at the next run, counted by the server (FR-16.1). Null when it did not answer. */
     suspend fun preview(id: String, retention: AfRetention): AfPreview? = runCatching {
         httpClient.post("/api/autofetch/$id/retention/preview") { contentType(ContentType.Application.Json); setBody(PreviewBody(retention)) }
+            .takeIf { it.status == HttpStatusCode.OK }?.body<AfPreview>()
+    }.getOrNull()
+
+    // ---- DEB-2478 (FR-5, FR-12) — the investigation
+
+    /** The investigation the server holds, or null when there is none. Asked every second or so while one runs. */
+    suspend fun investigation(): AfInvestigation? = runCatching {
+        httpClient.get("/api/autofetch/investigation").takeIf { it.status == HttpStatusCode.Accepted || it.status == HttpStatusCode.OK }?.body<AfInvestigation>()
+    }.getOrNull()
+
+    suspend fun investigate(url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String? = null): Outcome = outcome {
+        httpClient.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(InvestigateBody(url, tmdbId, pageOnly, fetcherId)) }
+    }
+
+    suspend fun stopInvestigation(id: String): Outcome = outcome { httpClient.post("/api/autofetch/investigate/$id/stop") }
+    suspend fun discardInvestigation(id: String): Outcome = outcome { httpClient.delete("/api/autofetch/investigate/$id") }
+
+    suspend fun saveInvestigation(id: String, name: String?, libraryPath: String?, schedule: String?, retention: AfRetention?, runFirst: Boolean): Outcome = outcome {
+        httpClient.post("/api/autofetch/investigate/$id/save") { contentType(ContentType.Application.Json); setBody(SaveInvestigationBody(name, libraryPath, schedule, retention, runFirst)) }
+    }
+
+    /** The review's Keep: what the newest-N rule would keep of the episodes found, counted by the server (FR-16.1). */
+    suspend fun previewReview(id: String, retention: AfRetention): AfPreview? = runCatching {
+        httpClient.post("/api/autofetch/investigate/$id/retention/preview") { contentType(ContentType.Application.Json); setBody(PreviewBody(retention)) }
             .takeIf { it.status == HttpStatusCode.OK }?.body<AfPreview>()
     }.getOrNull()
 
