@@ -19,6 +19,8 @@ class PlayOnListTest {
                   here: Boolean = false, castId: String? = null, kind: String = if (castId != null) "cast" else "app") =
         PlaybackTarget(id = id, kind = kind, name = name, icon = icon, capabilities = caps, busy = busy, reachable = reachable, here = here, castDeviceId = castId)
     private fun route(id: String, name: String, kind: String = "display") = CastRoute(id = id, name = name, selected = false, select = {}, kind = kind)
+    private fun busyRoute(id: String, name: String, app: String?, kind: String = "speaker", selected: Boolean = false) =
+        CastRoute(id = id, name = name, selected = selected, select = {}, kind = kind, busyWith = app)
     private fun s(mine: Boolean = true, controllable: Boolean = mine, kind: String = "music") =
         SessionView("s1", 1, SessionOwner("u", if (mine) "Anna" else "Ben"), mine = mine, kind = kind, title = "Paper Harbour",
             target = SessionTarget("cast", "d", "Office", "speaker"), state = "playing", controllable = controllable)
@@ -106,6 +108,56 @@ class PlayOnListTest {
 
     @Test fun `a free place just starts a second session`() =
         assertEquals(BusyChoice.Start, busyChoice(PlayOnRow("a", "Kitchen", "speaker"), false))
+
+    @Test fun `a place busy outside Ravilo keeps the take-over question`() {
+        val row = mergeTargets(null, listOf(busyRoute("r1", "Stue", "Spotify"))).single()
+        assertEquals(BusyChoice.AskTakeOver, busyChoice(row, holdsCastLink = false, music = true))
+        // asked every time, never remembered
+        assertEquals(BusyChoice.AskTakeOver, busyChoice(row, holdsCastLink = false, music = true))
+    }
+
+    @Test fun `a place busy outside Ravilo is listed under playing now and not free`() {
+        val rows = mergeTargets(listOf(t("pixel", "Pixel", "phone", here = true), t("cast:a", "Stue", "speaker", speakerCaps, castId = "a"), t("cast:b", "Kitchen", "speaker", speakerCaps, castId = "b")),
+            listOf(busyRoute("a", "Stue", "Default Media Receiver"), busyRoute("b", "Kitchen", null)))
+        for (kind in listOf("music", "film")) {
+            val tiers = playOnTiers(mergeTargets(listOf(t("cast:a", "Stue", "tv", video, castId = "a")), listOf(busyRoute("a", "Stue", "Spotify", "display"))), kind)
+            assertEquals(listOf("Stue"), tiers.playingNow.map { it.name })
+            assertTrue(tiers.free.isEmpty())
+        }
+        val tiers = playOnTiers(rows, "music")
+        assertEquals(listOf("Stue"), tiers.playingNow.map { it.name })
+        assertEquals("Default Media Receiver", tiers.playingNow.single().foreignApp)
+        assertEquals(listOf("Kitchen"), tiers.free.map { it.name })
+    }
+
+    @Test fun `busyWith Ravilo stays not busy`() {
+        val row = mergeTargets(null, listOf(busyRoute("r1", "Stue", "ravilo"))).single()
+        assertNull(row.foreignApp)
+        assertEquals(BusyChoice.Start, busyChoice(row, holdsCastLink = false, music = true))
+        assertEquals(listOf("Stue"), playOnTiers(listOf(row), "music").free.map { it.name })
+    }
+
+    @Test fun `a held link does not ask`() {
+        val row = mergeTargets(null, listOf(busyRoute("r1", "Stue", "Spotify", selected = true))).single()
+        assertEquals(BusyChoice.Start, busyChoice(row, holdsCastLink = true, music = true))
+    }
+
+    @Test fun `a film tap on a place busy outside Ravilo starts`() {
+        val row = mergeTargets(null, listOf(busyRoute("r1", "Den TV", "YouTube", "display"))).single()
+        assertEquals(BusyChoice.Start, busyChoice(row, holdsCastLink = false, music = false))
+    }
+
+    @Test fun `a Ravilo session on the row wins over busyWith`() {
+        val row = PlayOnRow("cast:a", "Office", "speaker", route = busyRoute("a", "Office", "Spotify"), busy = s())
+        assertNull(row.foreignApp)
+        assertEquals(BusyChoice.AskReplace, busyChoice(row, holdsCastLink = false, music = true))
+    }
+
+    @Test fun `a server Cast place with no local route has no app name and stays free`() {
+        val row = mergeTargets(listOf(t("cast:a", "Stue", "speaker", speakerCaps, castId = "a")), emptyList()).single()
+        assertNull(row.foreignApp)
+        assertEquals(BusyChoice.Start, busyChoice(row, holdsCastLink = false, music = true))
+    }
 
     @Test fun `the same kind playing for you elsewhere is found`() {
         val other = s().copy(here = false)

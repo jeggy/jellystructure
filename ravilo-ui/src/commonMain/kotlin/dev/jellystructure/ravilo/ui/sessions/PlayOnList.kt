@@ -18,7 +18,15 @@ data class PlayOnRow(
     val busy: SessionView? = null,
     val reachable: Boolean = true,
     val here: Boolean = false,
-)
+) {
+    /**
+     * FR-R370-4, FR-R324-2 — the app another sender left running on this Cast place, as the route reports it (*Busy · Spotify*);
+     * null when a Ravilo session is on the row (that session wins), when the app is Ravilo itself (joined, never asked), and
+     * for a place this app has no local route for (no app name to show).
+     */
+    val foreignApp: String?
+        get() = route?.busyWith?.takeIf { it.isNotBlank() && !it.equals("Ravilo", ignoreCase = true) && (busy == null || busy.state == "ended") }
+}
 
 /** FR-R370-2 — the four tiers, in this order. */
 data class PlayOnTiers(
@@ -88,8 +96,8 @@ fun playOnTiers(rows: List<PlayOnRow>, kind: String): PlayOnTiers {
     val usable = rows.filter { plays(it) }
     val here = usable.firstOrNull { it.here }
     val rest = usable.filter { !it.here }
-    val playing = rest.filter { it.reachable && it.busy != null && it.busy.state != "ended" }
-    val free = rest.filter { it.reachable && (it.busy == null || it.busy.state == "ended") }
+    val playing = rest.filter { it.reachable && ((it.busy != null && it.busy.state != "ended") || it.foreignApp != null) }
+    val free = rest.filter { it.reachable && (it.busy == null || it.busy.state == "ended") && it.foreignApp == null }
         .sortedWith(compareBy<PlayOnRow> { it.icon == "speaker" }.thenBy { it.name.lowercase() })
     val unreachable = rest.filter { !it.reachable }.sortedBy { it.name.lowercase() }
     return PlayOnTiers(here, playing, free, unreachable)
@@ -103,6 +111,8 @@ sealed interface BusyChoice {
     data object AskReplace : BusyChoice
     /** Someone else's, and 304's switch lets this viewer stop it: *Stop {person}'s {title} and play here?* */
     data object AskReplacePerson : BusyChoice
+    /** Another sender's app on a Cast place, in music: R324's *Stop {app} and play here?* (FR-R324-2, FR-R330-4). */
+    data object AskTakeOver : BusyChoice
     /** Someone else's without the switch: not offered. */
     data object NotOffered : BusyChoice
     /** Not reachable: a tap does nothing. */
@@ -113,9 +123,12 @@ sealed interface BusyChoice {
  * FR-R370-4, owner decision 2 — the busy place always asks, never offers *Add*, never remembered; no question while this
  * app holds that session's Cast link (as today, R324); someone else's only with the switch ([SessionView.controllable]).
  */
-fun busyChoice(row: PlayOnRow, holdsCastLink: Boolean): BusyChoice {
+fun busyChoice(row: PlayOnRow, holdsCastLink: Boolean, music: Boolean = false): BusyChoice {
     if (!row.reachable) return BusyChoice.Nothing
-    val busy = row.busy?.takeIf { it.state != "ended" } ?: return BusyChoice.Start
+    // Another sender's app (no Ravilo session on the row): R324's question in music only — a film goes to a screen the viewer
+    // is looking at, and an idle TV's status is not read on every device (as `tapRoute` has always gated it).
+    val busy = row.busy?.takeIf { it.state != "ended" }
+        ?: return if (music && row.foreignApp != null && !holdsCastLink) BusyChoice.AskTakeOver else BusyChoice.Start
     if (holdsCastLink) return BusyChoice.Start
     return when {
         busy.mine -> BusyChoice.AskReplace

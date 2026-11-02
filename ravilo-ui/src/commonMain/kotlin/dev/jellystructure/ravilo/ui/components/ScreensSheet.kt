@@ -327,9 +327,10 @@ fun ScreensSheet(
             return
         }
         val holds = row.route?.let { connectedTo(it) } == true
-        when (dev.jellystructure.ravilo.ui.sessions.busyChoice(row, holds)) {
+        when (dev.jellystructure.ravilo.ui.sessions.busyChoice(row, holds, music)) {
             dev.jellystructure.ravilo.ui.sessions.BusyChoice.Start -> startOn(row, null)
             dev.jellystructure.ravilo.ui.sessions.BusyChoice.AskReplace, dev.jellystructure.ravilo.ui.sessions.BusyChoice.AskReplacePerson -> asking = row
+            dev.jellystructure.ravilo.ui.sessions.BusyChoice.AskTakeOver -> takeOver = row.route
             else -> Unit
         }
     }
@@ -493,7 +494,9 @@ private fun PlayOnTiersSection(
         SectionLabel(str("target.playing_now"))
         tiers.playingNow.forEach { r ->
             val b = r.busy
-            row(r, b?.let { if (it.mine) (it.title ?: "") else str(if (it.kind == "music" || it.kind == "audiobook") "session.person_listening" else "session.person_watching", mapOf("person" to it.owner.name)) })
+            val app = r.foreignApp
+            row(r, if (b != null && b.state != "ended") (if (b.mine) (b.title ?: "") else str(if (b.kind == "music" || b.kind == "audiobook") "session.person_listening" else "session.person_watching", mapOf("person" to b.owner.name)))
+                else app?.let { str("cast.busy_with", mapOf("app" to it)) })
         }
     }
     if (tiers.free.isNotEmpty()) {
