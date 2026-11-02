@@ -57,6 +57,10 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-1.2: a refused key is shown in the failed state (*The key was refused — Settings ▸ AI*); the button is not disabled for it, because only a call can find that out.
 - FR-4.1: a recipe the model wrote may record only public host names. An IP address, `localhost`, a name with no dot and the usual internal suffixes are refused.
 
+**Amended 2026-11-02 (DEB-2479)**, as mapped numbering was built (FR-4.3):
+- FR-4.3: where the approved table lives, what the model's proposal must satisfy before the admin sees it, what *waiting for a number* is, and what the two routes do.
+- FR-10.1, FR-10.2, FR-12: the accept tick carries item ids; the list row's count; the shape of the two routes.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -278,6 +282,30 @@ one lane.
    overviews, and the review screen shows it row by row. Only rows the admin accepts are stored. A new item found on a
    later run is **not downloaded**: it is listed on the fetcher as *1 new item waiting for a number*, and the admin
    either types the number, or presses *Propose* (one model call, under the limit), and accepts it.
+   **Built 2026-11-02 (DEB-2479).**
+   - **Where the table lives.** A `mapped` recipe is `numbering: {kind: "mapped"}` and carries no table. Each item's *approved* number is a
+     column of its own row (`approved_season`, `approved_episode`), so the recipe never holds a row the admin did not accept. `mapped` is offered
+     to a TMDB fetcher only; a page-only fetcher refuses it.
+   - **The proposal.** The model's answer carries `mapping`: rows of the item's link, its title as listed, and the season and episode it gives it.
+     The engine resolves each row to a listing item (the link first, then the id, then an exact title), and the proof refuses the proposal
+     when a row names an episode TMDB does not have, when two items share one, or when no row resolves. The model is told why, at most twice,
+     inside the 12 turns. A row that resolves to no item is dropped. The tool `tmdb_series` now also answers each episode's overview.
+     A `mapped` proposal is never *proven* (FR-4.2's agreement is for patterns): the admin's tick is what approves it.
+   - **The review** lists every listed item. A row with a proposal has an accept tick, all unticked; a row the model left out reads *waiting for
+     a number*. *Save* sends the item ids that are ticked, and only those get an approved number. Saving with none ticked is allowed: every
+     item then waits.
+   - **Waiting for a number.** A run does not download an item that has no number: for `mapped`, one with no approved number; for a `source`
+     fetcher that is not proven, one whose number TMDB lacks (FR-4.2) and that the admin has not approved. The run line reads
+     `<title>: waiting for a number`, and the fetcher's row reads *n items waiting for a number*. The same flow serves both.
+   - **`POST /api/autofetch/{id}/items/{itemId}/number` `{season, episode}`** approves the number the admin typed, or the proposal they accepted.
+     It answers `422` for a number below 0 or over 9999, `409` when another item of the fetcher already has that number or the series folder
+     already holds a file under it, `404` for an unknown fetcher or item, and `200` with the item otherwise. It writes nothing outside the
+     database; the next run downloads the item.
+   - **`POST /api/autofetch/{id}/items/{itemId}/propose`** is one model call on the *Auto-fetch* job at the full price, the limit checked before
+     it is sent (FR-5.4), asked about that one item against TMDB's episode names and overviews and the numbers already taken. Its answer is
+     kept on the item as a *proposal* (`proposed_season`, `proposed_episode`, `proposed_note`) and shown beside the item; nothing is downloaded
+     until the admin accepts it through `…/number`. A proposal naming an episode TMDB lacks, or a number another item has, is refused (`422`)
+     and kept as nothing. AI off, no key or the limit spent is `409` with the reason, and no request reaches Anthropic.
 4. **Stored, versioned, readable.** The recipe is stored with the fetcher, with its schema version, the model and the
    date it was written. The fetcher's open row shows it read-only, as drawn. *Re-investigate page* writes a new recipe
    beside the old one and the admin saves or discards it; the old one runs until then. Retention is the one part of
