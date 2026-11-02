@@ -66,6 +66,10 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-4.1: the `ytdlp` list and media kinds are defined: which yt-dlp fields a listing reads by default, and that a media `ytdlp` takes an item's link.
 - FR-5.1: the model may answer `ytdlp` for a list or a media kind; the proof (FR-4.2) runs it through the same reader, so a site yt-dlp has no extractor for is told back to the model and never stored.
 
+**Amended 2026-11-02 (DEB-3405)**, after QA ran the yt-dlp reader against live sites (DEB-3390). Two of its findings changed what this file promises:
+- FR-4.1 and FR-15.8: a flat playlist gives no date. On a YouTube channel, a PeerTube channel, Dailymotion and an Internet Archive item, every `--flat-playlist` entry read `upload_date: null`. FR-4.2's TMDB check, FR-4.5's identity, FR-16.3's order and the air date in FR-8.2 and FR-15.4 all read the published date, so a page-only `date` fetcher could not be saved at all. Now an item with no date in its entry is dated from its own yt-dlp answer: once, when it is new, and stored on its row. The proof dates three items. A run dates at most 20.
+- FR-4.1 and *Non-goals*: a recipe cannot rewrite a link, and the Internet Archive is outside the `ytdlp` reader. Its playlist lists `archive.org/download/<id>/<file>` links, which yt-dlp has no extractor for (it reads `/details/`). The proof's refusal of them, *no extractor*, is right.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -248,6 +252,40 @@ one lane.
        `url`, `id`, `published` ← `upload_date` (`20261102` reads as `2026-11-02`), `description`, `duration`,
        `season` ← `season_number`, `episode` ← `episode_number`, `image` ← `thumbnail`. `next` is not used: yt-dlp
        pages its own playlist. A listing of 100 entries is not read in full (FR-16.5).
+     - **An item with no date (amended 2026-11-02, DEB-3405).** A flat entry usually carries no date: on all four
+       sites QA tried, `upload_date` was null. So `published`'s default is the first of `upload_date`,
+       `release_date` and `timestamp` (its UTC date) that the entry has. An item that has none of them is
+       **dated from its own yt-dlp answer**. That is one read of the item's link, the same read FR-4.2's probe makes.
+       It asks yt-dlp for those three fields only and never for the whole answer, which runs to megabytes on
+       YouTube (DEB-3404). The read takes the same three fields in the same order.
+       - It is one paced request in the lane. The link is checked against the recorded hosts and `robots.txt` first,
+         exactly as for a download (FR-6.3).
+       - The date is stored on the item's row, like `item_page`'s value, and is never read again. An item whose own
+         answer has no date either is stored as *no date*, and is not read again until *Re-investigate page*. So a
+         run with nothing new still costs the listing alone (FR-2.3).
+       - **In the proof** (FR-4.2, FR-15.8), the first three undated items in listing order are dated, and no
+         others. The probe's read of an item dates that item too, so the proof makes at most four requests: the
+         listing and three item reads. That fits inside what the investigation leaves the proof (FR-2.3, FR-5.1).
+         An item the proof did not date is not held against *every item maps to exactly one identity*. It gets its
+         number on the run that dates it. Under `date` numbering the proof needs at least two dated items with two
+         different dates. Otherwise it fails with *yt-dlp gives these items no date, so they cannot be numbered by
+         date*, and that reason is told back to the model like any other.
+       - **In a run**, the new undated items are dated in listing order, at most **20** per run. The rest wait for
+         the next run, and the run line ends `· n items not dated yet, on the next runs`. An item that has no
+         number until it is dated is not downloaded until then. FR-16.3's order counts only dated items, with the
+         listing order breaking ties as before.
+       - **An item yt-dlp gives no date.** Under `date` numbering it is skipped with `<title>: yt-dlp gives it no
+         date`. That is not a failure, and it does not count toward FR-6.5's three. Under `source` or `mapped`
+         numbering it is placed as before, with no air date.
+       - The date is the calendar date yt-dlp gives, with no time-zone shift. This is FR-4.5's *the way the page
+         prints it* for a site that is read through yt-dlp.
+       - Rejected: yt-dlp's `approximate_date` extractor argument. It is YouTube-only, and it gives dates like
+         *3 weeks ago*, which cannot be an identity. Also rejected: no longer promising date numbering through
+         yt-dlp. Five FRs read the published date, and the cost is one read per new item, made once.
+     - **No link rewriting (2026-11-02, DEB-3405).** An item's link is handed to yt-dlp exactly as the listing gives
+       it. A recipe has no step that rewrites a link, because a rewritten link is a URL the model wrote, and FR-6.3
+       only lets yt-dlp be told a link the site listed. A listing whose links yt-dlp has no extractor for is refused at
+       the proof with *no extractor*. Such a listing is the Internet Archive's `/download/` file links (*Non-goals*).
    - `media`: how an item becomes a stream — a manifest URL template or a JSON path to it, or `ytdlp`;
      - **`ytdlp` media (2026-11-02, DEB-2480).** The item's own link, which must be on a host the recipe records, is
        handed to yt-dlp (FR-6.3). There is no manifest, no `manifest` template and no `item_page`.
@@ -665,7 +703,9 @@ no TMDB id, on purpose. Everything in this file holds for it except what this FR
    episode's.
 8. **The proof (FR-4.2) without TMDB.** All of these must hold:
    - the listing yields at least two items, each with a link and with either a title or a published date;
-   - every item maps to exactly one identity, and no two items to the same one;
+   - every item maps to exactly one identity, and no two items to the same one. For a `ytdlp` listing whose entries
+     carry no date, this holds for the items the proof dated (FR-4.1's *An item with no date*, amended 2026-11-02,
+     DEB-3405);
    - one manifest probes;
    - the `series` block yields a non-empty name.
 
@@ -814,6 +854,21 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
     - The second run reads the listing only.
     - An item page whose value fails the character rule is skipped with its line, and no request is made for it.
 
+Added 2026-11-02 (DEB-3405), against a stubbed yt-dlp whose flat entries carry no `upload_date`, `release_date` or
+`timestamp`, and whose item answers do:
+
+16. **A `ytdlp` listing with no dates.**
+    - A page-only `date` fetcher over 5 entries is saved. Its proof makes four yt-dlp calls: the listing and three
+      item reads. Each item read asks for the date fields only.
+    - The first run dates the other two entries and places all five.
+    - The second run calls yt-dlp for the listing only.
+    - A listing of 25 new entries is dated 20 in its first run, and the run line ends
+      `· 5 items not dated yet, on the next runs`.
+    - An entry whose item answer has no date is skipped with `yt-dlp gives it no date`. It is not read again on the
+      next run, and it never counts as a failure.
+    - When every item answer lacks a date, the proof fails with *yt-dlp gives these items no date*, and nothing is
+      written.
+
 ## Non-goals
 
 - Films and one-off clips (FR-3.1), and anything behind a login or DRM (FR-3.3).
@@ -825,6 +880,11 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
   (FR-16.2).
 - Deleting anything a fetcher did not place, and any retention outside Auto-fetch.
 - Showing the air date in place of `SxxEyy` on a Ravilo client (FR-4.5).
+- **The Internet Archive through the `ytdlp` reader, and any rewriting of a link** (2026-11-02, DEB-3405). An Internet
+  Archive item lists `archive.org/download/<id>/<file>` links. They are plain files, and yt-dlp has no extractor for
+  them. The generic extractor stays off (FR-6.3), and a recipe cannot rewrite a link (FR-4.1). No site the household
+  wants is there: it came up only as a public-domain source for QA. A plain-file media kind, an `.mp4` link that ffmpeg
+  reads directly, is not in this file. A site that needs one gets its own amendment.
 
 ## Amends
 
