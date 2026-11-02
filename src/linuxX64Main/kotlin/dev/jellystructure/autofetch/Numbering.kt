@@ -141,6 +141,20 @@ object Numbering {
         return null
     }
 
+    /** The UTC calendar date of [epochSec] as `yyyy-MM-dd` (a yt-dlp `timestamp`), no time-zone shift. */
+    fun dateOfEpoch(epochSec: Long): String? {
+        val z = epochSec.floorDiv(86_400L) + 719_468L
+        val era = z.floorDiv(146_097L)
+        val doe = z - era * 146_097L
+        val yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val d = (doy - (153 * mp + 2) / 5 + 1).toInt()
+        val m = (if (mp < 10) mp + 3 else mp - 9).toInt()
+        val y = (yoe + era * 400 + if (m <= 2) 1 else 0).toInt()
+        return build(y.toString(), m.toString(), d.toString())
+    }
+
     private fun build(y: String, m: String, d: String): String? {
         val year = y.toIntOrNull() ?: return null; val month = m.toIntOrNull() ?: return null; val day = d.toIntOrNull() ?: return null
         if (year !in 1900..2200 || month !in 1..12 || day !in 1..daysIn(year, month)) return null

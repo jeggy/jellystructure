@@ -64,6 +64,9 @@ data class FetchItem(
     val proposedSeason: Int? = null,
     val proposedEpisode: Int? = null,
     val proposedNote: String = "",
+    /** DEB-3407 (FR-4.1) — the date the item's own yt-dlp answer gave, once; [ownDateRead] says it was asked for, so a null [ownDate] is *no date*. */
+    val ownDate: String? = null,
+    val ownDateRead: Boolean = false,
 ) {
     val approved: SeasonEpisode? get() = if (approvedSeason != null && approvedEpisode != null) SeasonEpisode(approvedSeason, approvedEpisode) else null
     val proposed: SeasonEpisode? get() = if (proposedSeason != null && proposedEpisode != null) SeasonEpisode(proposedSeason, proposedEpisode) else null
@@ -162,6 +165,10 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
         q.itemUpdateListed(it.link.orEmpty(), it.title, it.description, published, it.order.toLong(), se?.season?.toLong(), se?.episode?.toLong(), dur, now, fetcherId, itemId)
     }
 
+    /** The date the item's own yt-dlp answer gave, or null for *no date*; either way it is not asked for again. */
+    fun setOwnDate(fetcherId: String, itemId: String, date: String?) = q.itemSetOwnDate(date, fetcherId, itemId)
+    /** *Re-investigate page*: every *no date* answer may be asked for again. */
+    fun clearOwnDates(fetcherId: String) = q.itemClearOwnDates(fetcherId)
     fun setMediaValue(fetcherId: String, itemId: String, v: String) = q.itemSetMediaValue(v, fetcherId, itemId)
     fun setItemState(fetcherId: String, itemId: String, state: String, note: String, failures: Int) = q.itemSetState(state, note, failures.toLong(), fetcherId, itemId)
     fun setPlaced(fetcherId: String, itemId: String, path: String, at: Long) = q.itemSetPlaced(path, at, fetcherId, itemId)
@@ -179,6 +186,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
         r.fetcher_id, r.item_id, r.link, r.title, r.description, r.published, r.list_order.toInt(), r.season?.toInt(), r.episode?.toInt(),
         r.duration?.toInt(), r.media_value, r.state, r.failures.toInt(), r.note, r.placed_path, r.placed_at, r.missing_since, r.last_seen_at,
         r.approved_season?.toInt(), r.approved_episode?.toInt(), r.proposed_season?.toInt(), r.proposed_episode?.toInt(), r.proposed_note,
+        r.own_date, r.own_date_read != 0L,
     )
 
     // ---- runs --------------------------------------------------------------------------------------------------------

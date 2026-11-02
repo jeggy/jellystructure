@@ -70,6 +70,7 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
 
     override suspend fun ytdlpListing(url: String): YtDlpOutput = ytdlp.listing(url, FetchIdentity.userAgent())
     override suspend fun ytdlpInfo(url: String): YtDlpOutput = ytdlp.info(url, FetchIdentity.userAgent())
+    override suspend fun ytdlpDate(url: String): YtDlpOutput = ytdlp.date(url, FetchIdentity.userAgent())
     override suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult = ytdlp.download(d, stop)
     private val json = Json { ignoreUnknownKeys = true }
 

@@ -1,0 +1,5 @@
+-- DEB-3407 (DEB-2474, FR-4.1) — an item a yt-dlp flat entry gives no date for is dated from its own yt-dlp answer, once. own_date is the
+-- calendar date that answer gave (NULL when it gave none), own_date_read says the answer was asked for, so a *no date* answer is not asked again
+-- until Re-investigate page. This file is the migration; Autofetch.sq carries the same columns.
+ALTER TABLE autofetch_item ADD COLUMN own_date TEXT;
+ALTER TABLE autofetch_item ADD COLUMN own_date_read INTEGER NOT NULL DEFAULT 0;

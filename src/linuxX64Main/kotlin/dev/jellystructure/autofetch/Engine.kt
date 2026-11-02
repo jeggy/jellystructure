@@ -90,16 +90,44 @@ class AutofetchEngine(
         }
         store.setListOk(f.id, now)
 
+        // ---- items a flat yt-dlp entry gives no date are dated from their own answer: once, stored, at most 20 a run (FR-4.1, DEB-3407) -----
+        val dateReads = HashMap<String, String?>()
+        var undatedLeft = 0
+        val items: List<ListedItem> = if (recipe.list.kind != "ytdlp") read.items else {
+            var asked = 0
+            var halted = false
+            val out = read.items.map { it ->
+                if (!ItemDates.undated(it)) return@map it
+                val itemId = it.id?.takeIf { v -> v.isNotBlank() } ?: it.link ?: return@map it
+                if (itemId in dateReads) return@map dateReads[itemId]?.let { d -> it.copy(published = d) } ?: it
+                val prior = store.item(f.id, itemId)
+                if (prior?.ownDateRead == true) return@map prior.ownDate?.let { d -> it.copy(published = d) } ?: it
+                if (halted || asked >= ItemDates.PER_RUN || stop()) { undatedLeft++; return@map it }
+                when (val r = ItemDates.read(recipe, it, lane, tools)) {
+                    is DateRead.NotAsked -> it
+                    is DateRead.Unread -> {
+                        // A refusal by the lane is no request; a yt-dlp failure is one, and is asked again on the next run.
+                        if (r.outcome !is LaneOutcome.Forbidden) { if (r.outcome is LaneOutcome.Failed) asked++ else halted = true; undatedLeft++ }
+                        it
+                    }
+                    is DateRead.Answered -> { asked++; dateReads[itemId] = r.date; if (r.date != null) it.copy(published = r.date) else it }
+                }
+            }
+            if (lane.state().stopped && !stoppedBefore) world.notifySiteStopped(f.site, lane.state().stoppedReason.orEmpty())
+            out
+        }
+
         // ---- the listing, numbered and stored ------------------------------------------------------------------------
         val proofHelper = RecipeProof(tools, world)
         val listed = LinkedHashMap<String, Pair<ListedItem, SeasonEpisode?>>()
-        for (it in read.items) {
+        for (it in items) {
             val itemId = it.id?.takeIf { v -> v.isNotBlank() } ?: it.link ?: continue
             if (itemId in listed) continue
             // FR-4.3 — the admin's approved number outranks whatever the recipe works out, and `mapped` works out none.
             val se = store.item(f.id, itemId)?.approved ?: proofHelper.numberOf(recipe, it)
             listed[itemId] = it to se
             store.upsertListed(f.id, itemId, it, se, Numbering.isoDate(it.published), now)
+            if (itemId in dateReads) store.setOwnDate(f.id, itemId, dateReads[itemId])
         }
         val stored = store.items(f.id)
         // Missing marks: only a full read is evidence (FR-16.5).
@@ -131,6 +159,11 @@ class AutofetchEngine(
             if (item.state == "failed") continue
             if (item.state == "refused") continue
             val se = se0 ?: run {
+                // FR-4.1 — under `date` numbering an undated item has no number: one yt-dlp answered with no date is skipped, one not asked yet waits quietly.
+                if (recipe.list.kind == "ytdlp" && recipe.numbering.kind == "date" && ItemDates.undated(listedItem)) {
+                    if (item.ownDateRead) lines += RunLine("skipped", "${label(item)}: yt-dlp gives it no date")
+                    return@run null
+                }
                 // FR-4.3 — a `mapped` item with no approved number is never downloaded on a guess: it waits for the admin.
                 if (recipe.numbering.kind == "mapped") { waiting(f, item, "no number approved yet"); lines += RunLine("waiting", "${label(item)}: waiting for a number") }
                 else lines += RunLine("skipped", "${label(item)}: no season and episode")
@@ -183,6 +216,7 @@ class AutofetchEngine(
             if (placed == 0) append("no new episodes") else append("+$placed · ").append(placedLines.joinToString(" · "))
             if (deleted > 0) append(" · −$deleted by retention")
             if (cutShort) append(" · stopped early")
+            if (undatedLeft > 0) append(" · $undatedLeft items not dated yet, on the next runs")
         }
         val status = if (cutShort && placed == 0) "stopped" else "ok"
         return RunResult(status, summary, lines, placed, deleted)

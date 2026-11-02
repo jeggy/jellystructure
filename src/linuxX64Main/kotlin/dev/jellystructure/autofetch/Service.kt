@@ -119,6 +119,7 @@ class AutofetchService(
         if (f.recipe?.numbering?.kind == "mapped" && recipe.numbering.kind != "mapped") store.clearApprovedUnplaced(id)
         store.setRecipe(id, RecipeCodec.encode(recipe), pr.proven, pr.series?.description ?: f.seriesDescription, pr.series?.image ?: f.seriesImage)
         store.setState(id, "ok", "")
+        store.clearOwnDates(id)
         storeListed(id, recipe, pr, accept.toSet())
         return SaveResult.Saved(store.fetcher(id)!!, pr)
     }
@@ -135,6 +136,7 @@ class AutofetchService(
                 if (itemId.isEmpty()) continue
                 store.upsertListed(fetcherId, itemId, item, se, Numbering.isoDate(item.published), now)
             }
+            storeDated(fetcherId, pr, now)
             return
         }
         val proposed = pr.numbered.associate { (item, se) -> itemKeyOf(item) to se }
@@ -146,6 +148,18 @@ class AutofetchService(
             store.upsertListed(fetcherId, itemId, item, tick ?: prior, Numbering.isoDate(item.published), now)
             if (tick != null) store.setApproved(fetcherId, itemId, tick)
             else if (prior == null) store.setItemState(fetcherId, itemId, "waiting", "no number approved yet", 0)
+        }
+        storeDated(fetcherId, pr, now)
+    }
+
+    /** DEB-3407 (FR-4.1) — what the proof learned of an item's own date is kept on its row, so the first run does not ask again; *no date* is kept too. */
+    private fun storeDated(fetcherId: String, pr: ProofResult, now: Long) {
+        val byId = pr.items.associateBy { itemKeyOf(it) }
+        for ((itemId, date) in pr.dated) {
+            val item = byId[itemId] ?: continue
+            if (itemId.isEmpty()) continue
+            if (store.item(fetcherId, itemId) == null) store.upsertListed(fetcherId, itemId, item, null, Numbering.isoDate(item.published), now)
+            store.setOwnDate(fetcherId, itemId, date)
         }
     }
 

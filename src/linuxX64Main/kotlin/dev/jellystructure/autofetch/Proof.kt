@@ -62,10 +62,45 @@ private suspend fun readYtDlp(recipe: Recipe, lane: SiteLane, tools: MediaTools?
     if (!out.ok) return ListingRead.Blocked(lane.programFailure(out.message, out.status))
     lane.programSucceeded()
     val json = out.body.substring(out.body.indexOf('{').coerceAtLeast(0))
-    val page = ListingReader.readJson(YtDlpListing.asJsonList(recipe.list), json, url, recipe.media.manifestField)
+    val page0 = ListingReader.readJson(YtDlpListing.asJsonList(recipe.list), json, url, recipe.media.manifestField)
         ?: return ListingRead.Blocked(LaneOutcome.Failed("yt-dlp's listing is not JSON"))
+    val page = page0.copy(items = YtDlpListing.fillDates(recipe.list, json, page0.items))
     val body = if (recipe.series == null) "" else (lane.page(url, Expect.HTML, hosts = RecipeValidator.lanes(recipe)) as? LaneOutcome.Ok)?.reply?.body.orEmpty()
     return ListingRead.Read(page.items.mapIndexed { i, it -> it.copy(order = i) }, page.items.size < YtDlpCommands.PLAYLIST_END, body, url)
+}
+
+/**
+ * DEB-3407 (DEB-2474, FR-4.1) — an item a yt-dlp flat entry gives no date for is dated from its own answer: one paced lane request, the link
+ * checked against the recorded hosts and `robots.txt` first, as for a download, asking for the date fields only.
+ */
+sealed class DateRead {
+    /** yt-dlp answered; [date] is `yyyy-MM-dd`, or null for *no date* (which is an answer too). */
+    data class Answered(val date: String?) : DateRead()
+    /** The lane refused (stopped, backed off, robots.txt) or yt-dlp failed: nothing was learned, and nothing is stored. */
+    data class Unread(val outcome: LaneOutcome) : DateRead()
+    /** The item cannot be read at all: no link, or a host the recipe does not record. Not asked for. */
+    object NotAsked : DateRead()
+}
+
+object ItemDates {
+    /** At most this many new undated items are dated in one run (FR-4.1). */
+    const val PER_RUN = 20
+    /** …and this many in the proof. */
+    const val IN_PROOF = 3
+
+    fun undated(item: ListedItem): Boolean = Numbering.isoDate(item.published) == null
+
+    suspend fun read(recipe: Recipe, item: ListedItem, lane: SiteLane, tools: MediaTools): DateRead {
+        val link = item.link?.takeIf { it.isNotBlank() } ?: return DateRead.NotAsked
+        if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return DateRead.NotAsked
+        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpDate(link) }) {
+            is Gated.Refused -> return DateRead.Unread(g.outcome)
+            is Gated.Through -> g.value
+        }
+        if (!out.ok) return DateRead.Unread(lane.programFailure(out.message, out.status))
+        lane.programSucceeded()
+        return DateRead.Answered(YtDlpDate.parse(out.body))
+    }
 }
 
 data class SeriesFacts(val name: String?, val description: String?, val image: String?)
@@ -87,6 +122,8 @@ data class ProofResult(
     /** FR-4.3 — a `mapped` proposal: [numbered] holds only the rows that resolved to an item, and [whys] the model's reason for each, by item id. */
     val mapped: Boolean = false,
     val whys: Map<String, String> = emptyMap(),
+    /** DEB-3407 (FR-4.1) — the items the proof dated from their own yt-dlp answer, by item id: the date, or null for *no date*. A save stores these. */
+    val dated: Map<String, String?> = emptyMap(),
 )
 
 /** The id an item is kept under: its `id` field, else its link (the same key the store and a run use). */
@@ -99,19 +136,50 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val read = ListingFetcher.read(recipe, lane, tools)
         if (read is ListingRead.Blocked) return fail(describe(read.outcome)).copy(blocked = read.outcome)
         read as ListingRead.Read
-        val items = read.items
-        if (items.size < 2) return fail("the listing yields ${items.size} item${if (items.size == 1) "" else "s"}; a series needs at least two", items)
-        for (it in items) {
-            if (it.link.isNullOrBlank()) return fail("an item has no link", items)
-            if (pageOnly) { if (it.title.isNullOrBlank() && Numbering.isoDate(it.published) == null) return fail("an item has neither a title nor a date", items) }
-            else if (it.title.isNullOrBlank()) return fail("an item has no title", items)
+        val listed = read.items
+        if (listed.size < 2) return fail("the listing yields ${listed.size} item${if (listed.size == 1) "" else "s"}; a series needs at least two", listed)
+        for (it in listed) {
+            if (it.link.isNullOrBlank()) return fail("an item has no link", listed)
+            if (pageOnly) { if (it.title.isNullOrBlank() && Numbering.isoDate(it.published) == null) return fail("an item has neither a title nor a date", listed) }
+            else if (it.title.isNullOrBlank()) return fail("an item has no title", listed)
         }
-        if (recipe.numbering.kind == "mapped") return proveMapped(recipe, pageOnly, tmdbId, lane, items, mapping)
+        // FR-4.1 — the first three items a yt-dlp flat entry gives no date are dated from their own answer, and no others. When the media is
+        // yt-dlp's too, the probe's read of the first of them dates it (the probe prints the same three fields), so the proof makes four requests.
+        val dated = LinkedHashMap<String, String?>()
+        var items = listed
+        var early: Probed? = null
+        if (recipe.list.kind == "ytdlp") {
+            val toDate = listed.filter { ItemDates.undated(it) }.take(ItemDates.IN_PROOF).toMutableList()
+            val probeFirst = if (recipe.media.kind == "ytdlp" && recipe.numbering.kind != "mapped") toDate.firstOrNull() else null
+            if (probeFirst != null) {
+                val p = probeYtDlp(recipe, probeFirst, lane)
+                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked) }
+                early = p
+                if (p.dateRead) dated[itemKeyOf(probeFirst)] = p.date
+                toDate.remove(probeFirst)
+            }
+            val readNow = HashMap<String, String?>(dated)
+            for (it in toDate) {
+                when (val r = ItemDates.read(recipe, it, lane, tools)) {
+                    is DateRead.NotAsked -> {}
+                    is DateRead.Unread -> if (r.outcome !is LaneOutcome.Failed)
+                        return fail(describe(r.outcome), listed).copy(blocked = r.outcome.takeIf { o -> o is LaneOutcome.Stopped || o is LaneOutcome.BackOff })
+                    is DateRead.Answered -> { dated[itemKeyOf(it)] = r.date; readNow[itemKeyOf(it)] = r.date }
+                }
+            }
+            items = listed.map { it -> if (ItemDates.undated(it)) readNow[itemKeyOf(it)]?.let { d -> it.copy(published = d) } ?: it else it }
+        }
+        if (recipe.numbering.kind == "mapped") return proveMapped(recipe, pageOnly, tmdbId, lane, items, mapping).let { if (it.ok) it.copy(dated = dated) else it }
         val numbered = ArrayList<Pair<ListedItem, SeasonEpisode>>()
+        // An item with no date is not held against *every item maps to exactly one identity*: it gets its number on the run that dates it.
+        val byDate = recipe.list.kind == "ytdlp" && recipe.numbering.kind == "date"
         for (it in items) {
+            if (byDate && ItemDates.undated(it)) continue
             val se = numberOf(recipe, it) ?: return fail("'${it.title ?: it.link}' maps to no season and episode", items)
             numbered += it to se
         }
+        if (byDate && numbered.map { Numbering.isoDate(it.first.published) }.distinct().size < 2)
+            return fail("yt-dlp gives these items no date, so they cannot be numbered by date", items, numbered)
         numbered.groupBy { it.second }.entries.firstOrNull { it.value.size > 1 }?.let { (se, group) ->
             val what = if (recipe.numbering.kind == "date") "share the date ${Numbering.isoDate(group[0].first.published)}" else "both map to ${Numbering.code(se)}"
             return fail("${group.size} items $what; every item needs a number of its own", items, numbered)
@@ -119,13 +187,13 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val series = if (pageOnly) readSeries(recipe, read) else null
         if (pageOnly && series?.name.isNullOrBlank()) return fail("the page gives the programme no name", items, numbered)
 
-        val probe = probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
+        val probe = early ?: probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
         probe.failure?.let { return fail(it, items, numbered) }
         val facts = probe.facts!!
         if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
 
         if (pageOnly || tmdbId == null) {
-            return ProofResult(true, items = items, numbered = numbered, series = series, probe = facts)
+            return ProofResult(true, items = items, numbered = numbered, series = series, probe = facts, dated = dated)
         }
         val tmdb = world.tmdbEpisodes(tmdbId) ?: return fail("TMDB could not be reached to check the numbering", items, numbered)
         val byKey = tmdb.associateBy { it.season to it.episode }
@@ -141,7 +209,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             return ProofResult(false, "the pattern disagrees with TMDB on ${against.size} of $checked episode${if (checked == 1) "" else "s"} TMDB has",
                 items, numbered, agree, checked, against, false, null, facts)
         }
-        return ProofResult(true, items = items, numbered = numbered, agreements = agree, tmdbChecked = checked, proven = agree >= 2, probe = facts)
+        return ProofResult(true, items = items, numbered = numbered, agreements = agree, tmdbChecked = checked, proven = agree >= 2, probe = facts, dated = dated)
     }
 
     /**
@@ -230,20 +298,30 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         return era * 146097 + doe - 719468
     }
 
-    class Probed(val facts: ManifestFacts?, val failure: String?)
+    class Probed(
+        val facts: ManifestFacts?, val failure: String?,
+        /** DEB-3407 — the item's own date as the probe's yt-dlp answer gave it, when that answer was read ([dateRead]); null is *no date*. */
+        val date: String? = null, val dateRead: Boolean = false,
+        /** The lane's refusal that failed this probe, when it was one that stops the run. */
+        val blocked: LaneOutcome? = null,
+    )
 
     /** FR-6.3 — an item yt-dlp is to download: its link is on a recorded host and robots.txt allows it, and yt-dlp's own metadata shows a video format, not all DRM. */
     private suspend fun probeYtDlp(recipe: Recipe, item: ListedItem, lane: SiteLane): Probed {
         val link = item.link ?: return Probed(null, "the item has no link")
         if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return Probed(null, "the item's link is on ${Urls.host(link)}, which the recipe does not record")
         val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpInfo(link) }) {
-            is Gated.Refused -> return Probed(null, describe(g.outcome))
+            is Gated.Refused -> return Probed(null, describe(g.outcome), blocked = g.outcome.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff })
             is Gated.Through -> g.value
         }
-        if (!out.ok) return Probed(null, if (out.drm) RecipeRefusal.DRM else describe(lane.programFailure(out.message, out.status)))
+        if (!out.ok) {
+            if (out.drm) return Probed(null, RecipeRefusal.DRM)
+            val o = lane.programFailure(out.message, out.status)
+            return Probed(null, describe(o), blocked = o.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff })
+        }
         lane.programSucceeded()
         if (YtDlpInfo.allDrm(out.body)) return Probed(null, RecipeRefusal.DRM)
-        return YtDlpInfo.facts(out.body)?.let { Probed(it, null) } ?: Probed(null, "yt-dlp's answer for the item could not be read")
+        return YtDlpInfo.facts(out.body)?.let { Probed(it, null, YtDlpDate.parse(out.body), dateRead = true) } ?: Probed(null, "yt-dlp's answer for the item could not be read")
     }
 
     private suspend fun probeOne(recipe: Recipe, item: ListedItem, lane: SiteLane): Probed? {

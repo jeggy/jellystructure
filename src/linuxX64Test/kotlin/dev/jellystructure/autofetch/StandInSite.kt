@@ -108,13 +108,24 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     override suspend fun ytdlpListing(url: String): YtDlpOutput {
         ytdlpListings += url
         return ytdlpListingOut ?: YtDlpOutput(true, body = """{"_type":"playlist","entries":[""" + ytdlpEntries.joinToString(",") { e ->
-            """{"id":"${e[0]}","url":"${e[1]}","title":"${e[2]}","upload_date":"${e[3]}"}"""
+            """{"id":"${e[0]}","url":"${e[1]}","title":"${e[2]}","upload_date":${if (e[3].isBlank()) "null" else "\"${e[3]}\""}}"""
         } + "]}")
+    }
+
+    /** DEB-3407 — an item's own date answer, by link: a `--print` line of the three fields; the default is none of them. */
+    var ytdlpDateOf: (String) -> String? = { null }
+    val ytdlpDateReads = ArrayList<String>()
+
+    override suspend fun ytdlpDate(url: String): YtDlpOutput {
+        ytdlpDateReads += url
+        val d = ytdlpDateOf(url)
+        return YtDlpOutput(true, body = if (d == null) "{}" else """{"upload_date":"$d"}""")
     }
 
     override suspend fun ytdlpInfo(url: String): YtDlpOutput {
         ytdlpInfos += url
-        return ytdlpInfoOut ?: YtDlpOutput(true, body = """{"id":"x","duration":$duration,"formats":[{"vcodec":"none","acodec":"mp4a"},{"vcodec":"avc1","acodec":"none"}]}""")
+        return ytdlpInfoOut ?: YtDlpOutput(true, body = """{"id":"x","duration":$duration,"formats":[{"vcodec":"none","acodec":"mp4a"},{"vcodec":"avc1","acodec":"none"}]}""" +
+            (ytdlpDateOf(url)?.let { "\n" + """{"upload_date":"$it"}""" } ?: ""))
     }
 
     override suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult {

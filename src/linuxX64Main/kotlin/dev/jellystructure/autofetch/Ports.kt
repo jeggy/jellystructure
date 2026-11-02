@@ -44,6 +44,8 @@ interface MediaTools {
     suspend fun ytdlpListing(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
     /** FR-6.3 — yt-dlp's metadata for one item at [url], for the proof's probe (FR-4.2). */
     suspend fun ytdlpInfo(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
+    /** DEB-3407 (FR-4.1) — one item's own date fields at [url], and nothing else; [YtDlpDate.parse] reads them. */
+    suspend fun ytdlpDate(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
     /** FR-6.3 — one item downloaded by yt-dlp straight into [YtDlpDownload.outPath], language-tagged at its own mux. */
     suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult = ToolResult(false, YtDlpTexts.NOT_INSTALLED)
     /** FR-6.5 — the first top-level element after the segment header, `Tracks` or `Cluster`; null when unreadable. */

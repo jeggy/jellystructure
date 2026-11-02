@@ -88,10 +88,18 @@ object YtDlpCommands {
 
     /**
      * One item's metadata, no download: only what the proof reads (FR-5.1) — the duration and top-level codec on one line, each format's codec
-     * and DRM flag as an array on the next. `-J` of one YouTube video is 11 MB, past the shell's capture cap (DEB-3404).
+     * and DRM flag as an array on the next, and the item's date fields on a third (FR-4.1, DEB-3407: the probe dates its own item). `-J` of one YouTube video is 11 MB, past the shell's capture cap (DEB-3404).
      */
     fun info(url: String, userAgent: String): String =
-        "${base(userAgent)} --no-playlist --skip-download --print ${q("%(.{duration,vcodec})j")} --print ${q("%(formats.:.{vcodec,has_drm})j")} ${q(url)}"
+        "${base(userAgent)} --no-playlist --skip-download --print ${q("%(.{duration,vcodec})j")} --print ${q("%(formats.:.{vcodec,has_drm})j")} " +
+            "--print ${q("%(.{upload_date,release_date,timestamp})j")} ${q(url)}"
+
+    /**
+     * One item's own date, no download (DEB-3407, FR-4.1): the three fields a listing's `published` defaults to, on one line, and nothing else.
+     * Never `-J`: the answer for one YouTube video is 11 MB (DEB-3404).
+     */
+    fun date(url: String, userAgent: String): String =
+        "${base(userAgent)} --no-playlist --skip-download --print ${q("%(.{upload_date,release_date,timestamp})j")} ${q(url)}"
 
     /** The folder yt-dlp keeps its intermediate files in: beside the work file, so it is on the same filesystem and under the work folder. */
     fun tempDir(outPath: String): String = "$outPath.part"
@@ -149,6 +157,28 @@ object YtDlpInfo {
     }
 }
 
+/** DEB-3407 (FR-4.1) — the date in a yt-dlp answer: the first of `upload_date`, `release_date` and `timestamp` (its UTC date) that it has. */
+object YtDlpDate {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /** The calendar date as yt-dlp gives it, with no time-zone shift, as `yyyy-MM-dd`; null when the answer has none of the three. */
+    fun of(obj: JsonObject): String? = firstDate { k -> (obj[k] as? JsonPrimitive)?.contentOrNull }
+
+    /** The date in [body]'s `{…}` lines (`--print` of [YtDlpCommands.date]); null when there is none. */
+    fun parse(body: String): String? {
+        val objs = body.lines().map { it.trim() }.filter { it.startsWith("{") }
+            .mapNotNull { l -> runCatching { json.parseToJsonElement(l) as? JsonObject }.getOrNull() }
+        return firstDate { k -> objs.firstNotNullOfOrNull { o -> (o[k] as? JsonPrimitive)?.contentOrNull } }
+    }
+
+    /** [get] gives a field's text; the three fields are tried in order and the first that reads as a date wins. */
+    fun firstDate(get: (String) -> String?): String? {
+        Numbering.isoDate(get("upload_date"))?.let { return it }
+        Numbering.isoDate(get("release_date"))?.let { return it }
+        return get("timestamp")?.trim()?.toDoubleOrNull()?.let { Numbering.dateOfEpoch(it.toLong()) }
+    }
+}
+
 /** The fields a `ytdlp` listing reads when the recipe leaves one out (FR-4.1). */
 object YtDlpListing {
     val DEFAULT_FIELDS: Map<String, Field> = mapOf(
@@ -161,6 +191,21 @@ object YtDlpListing {
     fun asJsonList(list: ListSpec): ListSpec =
         list.copy(kind = "json", itemsPath = list.itemsPath.ifBlank { "entries" }, fields = DEFAULT_FIELDS + list.fields, next = null)
 
+    /**
+     * A flat entry's `published` is the first of `upload_date`, `release_date` and `timestamp` it has (FR-4.1, DEB-3407). [list] reads the first;
+     * this fills the others in for an item that read none, unless the recipe names its own `published` path. [json] is the listing document.
+     */
+    fun fillDates(list: ListSpec, json: String, items: List<ListedItem>): List<ListedItem> {
+        if ("published" in list.fields || items.none { Numbering.isoDate(it.published) == null }) return items
+        val root = runCatching { Json.parseToJsonElement(json) }.getOrNull() ?: return items
+        val selected = JsonPaths.select(root, list.itemsPath.ifBlank { "entries" })
+        val arr: List<kotlinx.serialization.json.JsonElement> = (selected.singleOrNull() as? JsonArray)?.toList() ?: selected
+        return items.mapIndexed { i, it ->
+            if (Numbering.isoDate(it.published) != null) it
+            else (arr.getOrNull(i) as? JsonObject)?.let { o -> YtDlpDate.of(o) }?.let { d -> it.copy(published = d) } ?: it
+        }
+    }
+
     /** The fields a recipe effectively has: a `ytdlp` list's are completed with the defaults. */
     fun fieldsOf(list: ListSpec): Map<String, Field> = if (list.kind == "ytdlp") DEFAULT_FIELDS + list.fields else list.fields
 }
@@ -169,6 +214,7 @@ object YtDlpListing {
 class ProductionYtDlp(private val shell: FileFixShell) {
     suspend fun listing(url: String, userAgent: String): YtDlpOutput = json(shell.run(YtDlpCommands.listing(url, userAgent)))
     suspend fun info(url: String, userAgent: String): YtDlpOutput = json(shell.run(YtDlpCommands.info(url, userAgent)))
+    suspend fun date(url: String, userAgent: String): YtDlpOutput = json(shell.run(YtDlpCommands.date(url, userAgent)))
 
     private fun json(r: ShellResult): YtDlpOutput =
         if (r.ok) YtDlpOutput(true, body = r.output) else YtDlpErrors.classify(r.exit, r.output)
