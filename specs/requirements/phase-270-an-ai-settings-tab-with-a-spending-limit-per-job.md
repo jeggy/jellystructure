@@ -311,7 +311,8 @@ wait a day for: the admin watches the investigation live, so it uses the synchro
   priced at the full rate. If *spent this month + that worst case* would pass the limit, the turn is not sent and the
   investigation ends as *limit reached*, before it would pass it. Every turn's `usage` is written to the ledger as it
   comes back, so the next turn's check uses actuals. A limit below one investigation's worst case stops it before the
-  first turn: no request reaches Anthropic.
+  first turn: no request reaches Anthropic. The worst case is the turns left × (this request's input + one more 60 kB
+  answer + `max_tokens`), all at the full rate.
 - **FR-270-4 holds.** The model's recipe is a proposal. It is stored only after the engine has run it against the live
   site and got the same answer (`auto-fetch-…` FR-4.2).
 - **FR-270-8:** the *what leaves the house* paragraph gains a line for `autofetch`: *the page URL and what this server
@@ -321,7 +322,7 @@ wait a day for: the admin watches the investigation live, so it uses the synchro
   name and within a general crawler's `robots.txt` rules; the model never fetches anything itself, and a site whose
   `robots.txt` names Anthropic's agents is treated like any other (owner, 2026-10-25, Q3).
 - **FR-270-7:** the starting assumption for the card is ~8 turns of ~15k input and ~1.5k output each, about $0.90 an
-  investigation on Opus 5 and $0.36 on Sonnet 5, at full price. The month's estimate counts one investigation per
-  saved fetcher plus one in four re-investigations; with no fetchers it shows the cost of one.
+  investigation on Opus 5 and $0.36 on Sonnet 5, at full price. The card shows the cost of one investigation, from the
+  job's own ledger once it has run.
 - **Off means off** and **a restart loses nothing** need no new rule here: an investigation is not resumable. A restart
   ends it, writes nothing, and costs what its ledger rows already say.

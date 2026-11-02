@@ -200,7 +200,7 @@ class AutofetchEngine(
     }
 
     /** SxxEyy of every video already in the series folder, whoever put it there (FR-6.1). */
-    private suspend fun existingCodes(seriesPath: String): Set<SeasonEpisode> {
+    internal suspend fun existingCodes(seriesPath: String): Set<SeasonEpisode> {
         if (!shell.exists(seriesPath)) return emptySet()
         val out = shell.run("find ${q(seriesPath)} -type f 2>/dev/null").output
         return out.lines().map { it.trim() }.filter { it.isNotEmpty() && "/.jellystructure/" !in it && it.substringAfterLast('.').lowercase() in VIDEO_EXT }

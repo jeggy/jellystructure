@@ -30,6 +30,8 @@ class StandInSite(private val clock: FakeClock) : Transport {
     var masterEdge: String? = null
     /** Extra `<li>` markup appended to Dagbók's list (a second item on a date already used). */
     var extraItems = ""
+    /** DEB-2478 — markup after Dagbók's list (a player config that names the media host, which `probe` may then reach). */
+    var listingExtra = ""
     var robots = "User-agent: *\nDisallow: /private\n"
     /** Royndin: year-seasons with a title like `Royndin 2026 · 1. partur`. */
     var royndinParts: List<Int> = listOf(1, 2, 3)
@@ -45,7 +47,7 @@ class StandInSite(private val clock: FakeClock) : Transport {
         val items = shown.joinToString("\n") { d ->
             """<li class="ep"><a href="/sendingar/dagbok/$d">Dagbók · $d. oktober</a><time datetime="2026-10-$d">$d.10.2026</time><p>Lýsing $d</p></li>"""
         }
-        return """<html><body><h1>Dagbók</h1><p class="about">Dagligur tátturin.</p><img class="poster" src="/img/dagbok.jpg"><ul>$items$extraItems</ul></body></html>"""
+        return """<html><body><h1>Dagbók</h1><p class="about">Dagligur tátturin.</p><img class="poster" src="/img/dagbok.jpg"><ul>$items$extraItems</ul>$listingExtra</body></html>"""
     }
 
     fun royndinListing(): String = royndinParts.joinToString("\n", "<html><body><h1>Royndin</h1><ul>", "</ul></body></html>") { n ->

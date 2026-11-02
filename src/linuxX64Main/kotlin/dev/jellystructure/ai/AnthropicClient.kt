@@ -70,6 +70,30 @@ class AnthropicClient(private val transport: Transport = KtorTransport()) {
 
     class ApiException(val status: Int, message: String) : Exception(message)
 
+    /**
+     * DEB-2478 (DEB-2474, FR-5.1) — one answer of the synchronous Messages API. [content] is the answer's blocks (`text` and `tool_use`),
+     * [usage] what the turn billed, from the API's own `usage`.
+     */
+    data class Message(val stopReason: String?, val content: List<JsonObject>, val usage: AiPricing.Usage)
+
+    /**
+     * DEB-2478 (DEB-2474, FR-5.1) — `POST /v1/messages` with [requestJson], the body of one turn: the first call the AI jobs make that is
+     * answered at once instead of through a batch. A 429 or 5xx backs off like every other call here; any other non-2xx answer is an
+     * [ApiException], and the caller says what became of the investigation.
+     */
+    suspend fun message(apiKey: String, requestJson: String): Message {
+        val r = withBackoff { transport.post("$BASE/v1/messages", apiKey, requestJson) }
+        if (r.status !in 200..299) throw ApiException(r.status, "Anthropic answered ${r.status}: ${r.body.take(200)}")
+        val o = json.parseToJsonElement(r.body).jsonObject
+        val u = o["usage"] as? JsonObject
+        fun n(k: String) = u?.get(k)?.jsonPrimitive?.longOrNull ?: 0L
+        return Message(
+            stopReason = o["stop_reason"]?.jsonPrimitive?.contentOrNull,
+            content = (o["content"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty(),
+            usage = AiPricing.Usage(input = n("input_tokens"), output = n("output_tokens"), cacheWrite = n("cache_creation_input_tokens"), cacheRead = n("cache_read_input_tokens")),
+        )
+    }
+
     private fun parseBatch(r: Response): Batch {
         if (r.status !in 200..299) throw ApiException(r.status, "Anthropic answered ${r.status}: ${r.body.take(200)}")
         val o = json.parseToJsonElement(r.body).jsonObject

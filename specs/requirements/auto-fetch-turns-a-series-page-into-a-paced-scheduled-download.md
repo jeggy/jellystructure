@@ -50,6 +50,13 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-11: a run is an entry on Activity's run list.
 - *Build order*: the form's tick and the review state belong to slice 4.
 
+**Amended 2026-11-02 (DEB-2478)**, as the investigation was built (FR-5):
+- FR-5.1: `fetch` keeps an inline script's first 1.5 kB, because an item page's media id (`var media = '…'`) lives there; external scripts, styles, SVG and comments go. `probe` may reach a media host the page itself names, never an address or an internal name. The reads are capped at 20, leaving the proof the rest of FR-2.3's 25. Three of the five steps follow what this server saw, not what the model says.
+- FR-5.1 and FR-4.2: the model's answer carries **examples**, two to four episodes it read and the number its recipe gives each. The engine compares them with what it read. A recipe the engine cannot stand behind is told back to the model at most twice, inside the 12 turns.
+- FR-5.4: the worst case before each turn is *the turns left × (this request's input + one more 60 kB answer) + `max_tokens` each*, at the full rate.
+- FR-1.2: a refused key is shown in the failed state (*The key was refused — Settings ▸ AI*); the button is not disabled for it, because only a call can find that out.
+- FR-4.1: a recipe the model wrote may record only public host names. An IP address, `localhost`, a name with no dot and the usual internal suffixes are refused.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an

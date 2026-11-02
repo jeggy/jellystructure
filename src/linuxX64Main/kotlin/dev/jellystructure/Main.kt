@@ -402,6 +402,21 @@ fun main() = runBlocking {
     @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
     val autofetchService = dev.jellystructure.autofetch.AutofetchService(autofetchStore, autofetchEngine, autofetchLanes, autofetchTools, autofetchWorld) { kotlin.uuid.Uuid.random().toString() }
     val autofetchRuntime = dev.jellystructure.autofetch.AutofetchRuntime(autofetchStore, autofetchEngine, autofetchService, autofetchLanes, autofetchWorld, rootScope)
+    // DEB-2478 (DEB-2474, FR-5) — the investigation: one conversation with the model per fetcher, on the synchronous Messages API.
+    @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+    run {
+        val ai = dev.jellystructure.autofetch.AiJobsInvestigationAi(configStore, { aiJobs })
+        val investigator = dev.jellystructure.autofetch.Investigator(
+            ai, autofetchLanes, autofetchTools, autofetchWorld, dev.jellystructure.autofetch.RecipeProof(autofetchTools, autofetchWorld),
+            libraries = {
+                autofetchWorld.libraries().filter { !it.skip && it.collectionType.equals("tvshows", true) && it.localPath.isNotBlank() }
+                    .map { dev.jellystructure.autofetch.LibraryChoice(it.localPath.trimEnd('/'), it.name) }
+            },
+            existing = { autofetchEngine.existingCodes(it) },
+            today = { dev.jellystructure.util.epochTicksToIso(autofetchWorld.nowSec() * 10_000_000L).take(10) },
+        )
+        autofetchRuntime.investigations = dev.jellystructure.autofetch.Investigations(ai, investigator, autofetchService, autofetchStore, autofetchWorld, rootScope) { kotlin.uuid.Uuid.random().toString() }
+    }
     autofetchRuntime.startTick()
     dev.jellystructure.media.TrackCoverageFlags.service = trackCoverage
     // Phase 273 — does each sidecar subtitle belong to its video; its references; the one rule for what viewers see.

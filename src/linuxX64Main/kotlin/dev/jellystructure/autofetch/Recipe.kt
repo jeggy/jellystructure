@@ -142,6 +142,8 @@ object RecipeValidator {
         val pageHost = Urls.host(recipe.source.url)
         if (pageHost == null) errors += "the page URL is not an http or https address"
         val hosts = (recipe.source.hosts + listOfNotNull(pageHost)).map { it.lowercase() }.toSet()
+        // DEB-2478 — a recipe the model wrote may name only public hosts (an investigation's page URL is the admin's own choice and exempt).
+        recipe.source.hosts.firstOrNull { !Urls.publicName(it) }?.let { errors += "the recipe records $it, which is not a public host name" }
         if (recipe.list.kind == "ytdlp" || recipe.media.kind == "ytdlp") errors += RecipeRefusal.YTDLP
         else {
             when (recipe.list.kind) {
@@ -237,6 +239,20 @@ object Urls {
         if (authority.contains('@')) return null // a userinfo part hides the real host from a reader of the URL
         val h = authority.substringBefore(':').lowercase()
         return h.takeIf { it.isNotEmpty() && Regex("^[a-z0-9.-]+$").matches(it) && !it.startsWith(".") }
+    }
+
+    private val INTERNAL_SUFFIXES = listOf(".local", ".lan", ".internal", ".home.arpa", ".localdomain", ".localhost", ".intranet", ".corp", ".home")
+
+    /**
+     * DEB-2478 (FR-5.3) — a host a model-written recipe may record: a public-looking name. An IP literal, `localhost`, a name with no
+     * dot and the usual internal suffixes are refused, so a page that talks the model into naming one still cannot point this server at
+     * the household's own network. (A name that merely resolves to a private address is the admin's own choice of URL.)
+     */
+    fun publicName(host: String): Boolean {
+        val h = host.lowercase().trimEnd('.')
+        if (h.isEmpty() || !h.contains('.')) return false
+        if (h.all { it.isDigit() || it == '.' }) return false
+        return INTERNAL_SUFFIXES.none { h.endsWith(it) }
     }
 
     /** The lane key for a page URL: its host without a leading `www.`. */

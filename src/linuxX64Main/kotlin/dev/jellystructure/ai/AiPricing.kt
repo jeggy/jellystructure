@@ -33,10 +33,18 @@ object AiPricing {
     data class Usage(val input: Long, val output: Long, val cacheWrite: Long = 0, val cacheRead: Long = 0)
 
     /** A batch request's cost from the API's own `usage`, in micro-dollars, rounded up. */
-    fun costMicroUsd(modelId: String, u: Usage): Long {
+    fun costMicroUsd(modelId: String, u: Usage): Long = costAtMicroUsd(modelId, u, BATCH)
+
+    /**
+     * DEB-2478 (phase 270's amendment of 2026-11-02) — a synchronous Messages turn, which the batch discount does not reach:
+     * the standard rate, cache multipliers as for a batch.
+     */
+    fun fullCostMicroUsd(modelId: String, u: Usage): Long = costAtMicroUsd(modelId, u, 1.0)
+
+    private fun costAtMicroUsd(modelId: String, u: Usage, rate: Double): Long {
         val m = model(modelId)
-        val dollarsPerTokenIn = m.inputPerMTok / 1_000_000.0 * BATCH
-        val dollarsPerTokenOut = m.outputPerMTok / 1_000_000.0 * BATCH
+        val dollarsPerTokenIn = m.inputPerMTok / 1_000_000.0 * rate
+        val dollarsPerTokenOut = m.outputPerMTok / 1_000_000.0 * rate
         val usd = u.input * dollarsPerTokenIn +
             u.cacheWrite * dollarsPerTokenIn * CACHE_WRITE +
             u.cacheRead * dollarsPerTokenIn * CACHE_READ +
@@ -54,6 +62,13 @@ object AiPricing {
         val inputTokens = (inputChars + 2) / 3
         return costMicroUsd(modelId, Usage(input = 0, output = requests.toLong() * maxTokens, cacheWrite = inputTokens))
     }
+
+    /**
+     * DEB-2478 — the worst case of [turns] more synchronous turns, each carrying up to [inputTokens] of input (billed as fresh input,
+     * which errs high against a cache read) and spending its whole [maxTokens] on output, at the full rate.
+     */
+    fun worstCaseTurnsMicroUsd(modelId: String, turns: Int, inputTokens: Long, maxTokens: Int): Long =
+        fullCostMicroUsd(modelId, Usage(input = turns.toLong() * inputTokens, output = turns.toLong() * maxTokens))
 
     /** FR-270-6 — true when this batch could take the month past the job's limit: the batch is not sent. */
     fun wouldPassLimit(spentMicroUsd: Long, worstCaseMicroUsd: Long, limitUsd: Double): Boolean =

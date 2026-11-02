@@ -558,4 +558,56 @@ class AiJobsTest {
         assertFalse(dev.jellystructure.config.RecommendationsStep.notDue(null, now, week, byHand = false))
         assertFalse(dev.jellystructure.config.RecommendationsStep.notDue(now - week, now, week, byHand = false))
     }
+
+    // ─── DEB-2478 — the autofetch job: synchronous, at the full price ────────────────────────────────────
+
+    @Test
+    fun `a synchronous turn is priced at the full rate and an investigation lands near the card's estimate`() {
+        assertEquals(5_000_000, AiPricing.fullCostMicroUsd("claude-opus-5", AiPricing.Usage(input = 1_000_000, output = 0)))
+        assertEquals(25_000_000, AiPricing.fullCostMicroUsd("claude-opus-5", AiPricing.Usage(input = 0, output = 1_000_000)))
+        // ~8 turns of ~15k in and ~1.5k out: about $0.90 on Opus 5 and $0.36 on Sonnet 5 (FR-5.4).
+        val turn = AiPricing.Usage(input = 15_000, output = 1_500)
+        assertEquals(900_000, 8 * AiPricing.fullCostMicroUsd("claude-opus-5", turn))
+        assertEquals(360_000, 8 * AiPricing.fullCostMicroUsd("claude-sonnet-5", turn))
+        // The worst case of the turns that are left is full price, with the whole max_tokens spent on output.
+        assertEquals(AiPricing.fullCostMicroUsd("claude-opus-5", AiPricing.Usage(input = 3 * 20_000L, output = 3 * 8_000L)), AiPricing.worstCaseTurnsMicroUsd("claude-opus-5", 3, 20_000, 8_000))
+    }
+
+    @Test
+    fun `the autofetch job is off until its card is switched on and its turns reach the ledger and the card`() = runBlocking {
+        val j = jobs(FakeTransport { _, _, _ -> error("the ledger needs no request") })
+        assertNull(j.autofetchSettings(), "off by default")
+        configStore.update(configStore.current.copy(ai = AiConfig(enabled = true, apiKey = "sk-ant-test-0000abcd",
+            autofetch = AiJobConfig(enabled = true, model = "claude-sonnet-5", effort = "low", monthlyLimitUsd = 2.0))))
+        val s = j.autofetchSettings()!!
+        assertEquals("claude-sonnet-5", s.model); assertEquals(2.0, s.monthlyLimitUsd)
+
+        j.recordAutofetchTurn("claude-sonnet-5", AiPricing.Usage(input = 15_000, output = 1_500))
+        j.recordAutofetchTurn("claude-sonnet-5", AiPricing.Usage(input = 20_000, output = 800))
+        assertEquals(AiPricing.fullCostMicroUsd("claude-sonnet-5", AiPricing.Usage(15_000, 1_500)) + AiPricing.fullCostMicroUsd("claude-sonnet-5", AiPricing.Usage(20_000, 800)), j.spentThisMonth(AiRequests.AUTOFETCH_JOB))
+        assertEquals(0L, j.spentThisMonth(AiRequests.RERANK_JOB), "another job's ledger is untouched")
+
+        j.noteAutofetchRun("found · Royndin · 3 episodes · \$0.07")
+        val st = j.status(viewers = 1).autofetch
+        assertEquals("found · Royndin · 3 episodes · \$0.07", st.lastRun)
+        assertEquals(j.spentThisMonth(AiRequests.AUTOFETCH_JOB), st.spentThisMonthMicroUsd)
+        assertTrue("full price" in st.estimateBasis, st.estimateBasis)
+        assertEquals(AiJobs.AUTOFETCH_OFF_REASON, st.inactiveReason, "[autofetch] is off in this config")
+        assertFalse(st.pending)
+    }
+
+    @Test
+    fun `a synchronous message is one post and its usage and tool blocks are read from the answer`() = runBlocking {
+        val t = FakeTransport { _, _, _ ->
+            AnthropicClient.Response(200, """{"id":"msg_1","stop_reason":"tool_use","content":[{"type":"text","text":"Reading."},{"type":"tool_use","id":"tu1","name":"fetch","input":{"url":"https://varpid.example.fo/"}}],"usage":{"input_tokens":1200,"output_tokens":90,"cache_creation_input_tokens":10,"cache_read_input_tokens":20}}""")
+        }
+        val m = AnthropicClient(t).message("sk-ant-test", """{"model":"claude-opus-5"}""")
+        assertEquals(listOf("POST https://api.anthropic.com/v1/messages"), t.calls)
+        assertEquals("tool_use", m.stopReason)
+        assertEquals(2, m.content.size)
+        assertEquals(AiPricing.Usage(1200, 90, 10, 20), m.usage)
+        val refused = AnthropicClient(FakeTransport { _, _, _ -> AnthropicClient.Response(401, "{}") })
+        val e = runCatching { refused.message("bad", "{}") }.exceptionOrNull() as AnthropicClient.ApiException
+        assertEquals(401, e.status)
+    }
 }

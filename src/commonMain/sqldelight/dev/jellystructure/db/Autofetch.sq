@@ -111,6 +111,9 @@ UPDATE autofetch_fetcher SET retention = :retention, schedule = :schedule, enabl
 fetcherSetState:
 UPDATE autofetch_fetcher SET state = :state, state_reason = :state_reason WHERE id = :id;
 
+fetcherSetRecipe:
+UPDATE autofetch_fetcher SET recipe_json = :recipe_json, proven = :proven, series_description = :series_description, series_image = :series_image WHERE id = :id;
+
 fetcherSetRan:
 UPDATE autofetch_fetcher SET last_run_at = :last_run_at WHERE id = :id;
 

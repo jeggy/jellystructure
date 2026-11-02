@@ -26,6 +26,8 @@ import kotlinx.serialization.json.putJsonObject
 object AiRequests {
     const val RERANK_JOB = "rerank"
     const val THEMES_JOB = "themes"
+    /** DEB-2478 (DEB-2474, FR-5) — the investigation: synchronous Messages, not a batch. */
+    const val AUTOFETCH_JOB = "autofetch"
     const val RERANK_KEEP = 50
     const val RERANK_SHORTLIST = 100
     /** Dev review item 7 — the output ceilings the worst-case estimate uses. */

@@ -182,6 +182,7 @@ class AiJobs(
             AiRequests.RERANK_JOB -> it.rerank
             AiRequests.CLUSTERS_JOB -> it.clusters
             AiRequests.SUPPORT_JOB -> it.support.job()
+            AiRequests.AUTOFETCH_JOB -> it.autofetch
             else -> it.themes
         }
     }
@@ -591,6 +592,23 @@ class AiJobs(
 
     private fun run(job: String, line: String) = db.aiQueries.putRun(job, clock(), line)
 
+    // ─── DEB-2478 — the autofetch job, which is not a batch ───────────────────
+
+    /** The investigation's settings while the job can run (AI on, a key, the job on), else null — *off means off* (FR-270-1). */
+    fun autofetchSettings(): AiJobConfig? = configStore.current.ai.autofetch.takeIf { on(it) }
+
+    fun autofetchKey(): String = configStore.current.ai.apiKey
+
+    /** FR-5.4 — one turn's `usage`, written to the ledger at the full rate as soon as the answer is back, so the next turn's check uses actuals. */
+    suspend fun recordAutofetchTurn(model: String, usage: AiPricing.Usage): Long = lock.withLock {
+        val cost = AiPricing.fullCostMicroUsd(model, usage)
+        addUsage(AiRequests.AUTOFETCH_JOB, monthKey(clock()), model, 1, usage.input, usage.output, usage.cacheWrite, usage.cacheRead, cost)
+        cost
+    }
+
+    /** The card's *Last run* line for the investigation. */
+    fun noteAutofetchRun(line: String) = run(AiRequests.AUTOFETCH_JOB, line)
+
     fun spentThisMonth(job: String): Long = db.aiQueries.spentInMonth(job, monthKey(clock())).executeAsOne()
 
     /** Stored theme tags per title (jellyfin id), for 269's similarity. Failed titles have none. */
@@ -728,6 +746,8 @@ class AiJobs(
         val clusters: JobStatus,
         /** Phase 321. */
         val support: JobStatus,
+        /** DEB-2478. */
+        val autofetch: JobStatus,
     )
 
     suspend fun status(viewers: Int): Status {
@@ -753,6 +773,8 @@ class AiJobs(
         // DEB-1667 (FR-7) — with re-rank on, every support turn also carries the suggestion block.
         val supportAssumed = if (configStore.current.ai.rerankActive()) SUPPORT_ASSUMED.copy(input = SUPPORT_ASSUMED.input + SUPPORT_SUGGESTIONS_INPUT) else SUPPORT_ASSUMED
         val (supportEst, supportBasis) = estimate(AiRequests.SUPPORT_JOB, supportAssumed, SUPPORT_ASKS_PER_MONTH)
+        // DEB-2478 (FR-5.4) — an investigation is about 8 turns of ~15k in and ~1.5k out, at the full rate; the ledger counts turns.
+        val (autofetchEst, autofetchBasis) = estimate(AiRequests.AUTOFETCH_JOB, AUTOFETCH_TURN_ASSUMED, AUTOFETCH_TURNS_ASSUMED.toDouble(), full = true)
         return Status(
             keyHint = key.takeIf { it.length >= 8 }?.let { "…" + it.takeLast(4) },
             pricesAsOf = AiPricing.AS_OF,
@@ -763,27 +785,33 @@ class AiJobs(
             support = job(AiRequests.SUPPORT_JOB, supportEst, "one request per ticket message, about ${SUPPORT_ASKS_PER_MONTH.toInt()} a month · $supportBasis",
                 // DEB-1500 (FR-5) — the owner switched the job on in Settings and nothing happened: the lane was closed.
                 inactiveReason = if (configStore.current.support.enabled) null else SUPPORT_CLOSED_REASON),
+            autofetch = job(AiRequests.AUTOFETCH_JOB, autofetchEst, "one investigation (about $AUTOFETCH_TURNS_ASSUMED turns) when a fetcher is set up or re-investigated, at the full price, not the batch price · $autofetchBasis",
+                inactiveReason = if (configStore.current.autofetch.enabled) null else AUTOFETCH_OFF_REASON),
         )
     }
 
     /** FR-270-7 — cost per request from this job's own ledger once it has run on a model, else the documented
      *  starting assumption; times [requests]. Returns the per-model estimate and what it was based on. */
-    private fun estimate(job: String, assumed: AiPricing.Usage, requests: Double): Pair<Map<String, Long>, String> {
+    private fun estimate(job: String, assumed: AiPricing.Usage, requests: Double, full: Boolean = false): Pair<Map<String, Long>, String> {
         val rows = db.aiQueries.usageForJob(job).executeAsList()
         var measured = false
         val perModel = AiPricing.MODELS.associate { m ->
             val own = rows.filter { it.model == m.id && it.requests > 0 }
             val perRequest = if (own.isNotEmpty()) { measured = true; own.sumOf { it.cost_micro_usd }.toDouble() / own.sumOf { it.requests } }
-                else AiPricing.costMicroUsd(m.id, assumed).toDouble()
+                else (if (full) AiPricing.fullCostMicroUsd(m.id, assumed) else AiPricing.costMicroUsd(m.id, assumed)).toDouble()
             m.id to (perRequest * requests).toLong()
         }
         return perModel to (if (measured) "from this job's own runs" else "from a starting assumption until it has run")
     }
 
     companion object {
+        const val AUTOFETCH_OFF_REASON = "Auto-fetch is switched off ([autofetch] enabled in config.toml), so nothing can be investigated."
+        /** DEB-2478 (FR-5.4) — the starting assumption: ~8 turns of ~15k input and ~1.5k output each. */
+        const val AUTOFETCH_TURNS_ASSUMED = 8
+        private val AUTOFETCH_TURN_ASSUMED = AiPricing.Usage(input = 15_000, output = 1_500)
         const val SUPPORT_CLOSED_REASON = "Support is closed to viewers, so there is nothing to answer. Open it on AI › Support."
 
-        private fun nounOf(job: String) = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; AiRequests.SUPPORT_JOB -> "ticket"; else -> "title" }
+        private fun nounOf(job: String) = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; AiRequests.SUPPORT_JOB -> "ticket"; AiRequests.AUTOFETCH_JOB -> "investigation"; else -> "title" }
 
         /** The process's one instance, for the routes. Set by Main. */
         var current: AiJobs? = null

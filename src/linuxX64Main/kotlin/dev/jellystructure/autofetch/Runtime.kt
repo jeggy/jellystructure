@@ -19,6 +19,9 @@ class AutofetchRuntime(
     private val world: AutofetchWorld,
     private val scope: CoroutineScope,
 ) {
+    /** DEB-2478 — the investigation, once the AI rail is wired (a server without it has none, and the tab says so). */
+    var investigations: Investigations? = null
+
     /** A press on *Run now*: it does not wait for viewers (FR-6.2). Returns false when that fetcher is already running. */
     fun runNow(id: String): Boolean {
         if (store.fetcher(id) == null || engine.isRunning(id)) return false
@@ -145,7 +148,12 @@ data class QueueEntryView(
 data class SiteView(val site: String, val stopped: Boolean, val reason: String?, val stoppedAt: Long?, val backoffUntil: Long?, val fetchers: Int = 0)
 
 @Serializable
-data class AutofetchOverview(val enabled: Boolean, val fetchers: List<FetcherView>, val sites: List<SiteView>, val queue: List<QueueEntryView> = emptyList())
+data class AutofetchOverview(
+    val enabled: Boolean, val fetchers: List<FetcherView>, val sites: List<SiteView>, val queue: List<QueueEntryView> = emptyList(),
+    /** DEB-2478 (FR-1.2) — whether *Investigate* is on and, if not, why; and the investigation the server holds, if one. */
+    val investigate: InvestigateGate = InvestigateGate(false, "The investigation is not running"),
+    val investigation: InvestigationView? = null,
+)
 
 /** The recipe in the words of the open row (FR-4.4): data, never executed. */
 object RecipeView {

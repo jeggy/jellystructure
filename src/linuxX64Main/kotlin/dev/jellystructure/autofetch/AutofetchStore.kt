@@ -109,6 +109,9 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
         q.fetcherUpdateSettings(retentionJson.encodeToString(RetentionSpec.serializer(), retention), schedule, if (enabled) 1 else 0, id)
 
     fun setState(id: String, state: String, reason: String) = q.fetcherSetState(state, reason, id)
+    /** DEB-2478 — *Re-investigate page* saved: the fetcher's recipe, and what it says of the series, replaced. */
+    fun setRecipe(id: String, recipeJson: String, proven: Boolean, seriesDescription: String?, seriesImage: String?) =
+        q.fetcherSetRecipe(recipeJson, if (proven) 1 else 0, seriesDescription, seriesImage, id)
     fun setRan(id: String, at: Long) = q.fetcherSetRan(at, id)
     fun setListOk(id: String, at: Long) = q.fetcherSetListOk(at, id)
 

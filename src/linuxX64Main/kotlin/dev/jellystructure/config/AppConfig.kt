@@ -222,6 +222,8 @@ data class AiConfig(
     val clusters: AiJobConfig = AiJobConfig(effort = "low"),
     /** Phase 321 (FR-321-1) — `AI Agent` answers a support ticket. Off by default, like every job. */
     val support: AiSupportConfig = AiSupportConfig(),
+    /** DEB-2478 (DEB-2474, FR-5.4) — `[ai.autofetch]`: the investigation that writes a fetcher's recipe. Off by default, like every job. */
+    val autofetch: AiJobConfig = AiJobConfig(effort = "medium"),
 ) {
     /** Phase 321 (FR-321-1) — the job is active when AI is on, there is a key, the job is on, and phase 320's lane is on. */
     fun supportActive(lane: SupportConfig): Boolean = enabled && apiKey.isNotBlank() && support.enabled && lane.enabled

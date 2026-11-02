@@ -150,4 +150,76 @@ class AutofetchRoutesTest {
         h.lanes.forSite("varpid.example.fo").stop("blocked")
         assertTrue(rt.due(h.clock.nowSec() + 30 * 3600L).isEmpty(), "a stopped site runs nothing")
     }
+
+    // ---- DEB-2478 (FR-5, FR-12) — the investigation's routes ----------------------------------------------------------------------
+
+    private val ai = FakeAi()
+
+    private fun investigating(block: suspend io.ktor.server.testing.ApplicationTestBuilder.() -> Unit) = testApplication {
+        val cfg = ConfigStore("${h.dir}/config.toml").also { it.load() }
+        runBlocking { cfg.update(cfg.current.copy(autofetch = dev.jellystructure.config.AutofetchConfig(enabled = true))) }
+        val scope = CoroutineScope(Dispatchers.Default)
+        val runtime = AutofetchRuntime(h.store, h.engine, h.service, h.lanes, h.world, scope)
+        val investigator = Investigator(ai, h.lanes, h.tools, h.world, RecipeProof(h.tools, h.world), { listOf(LibraryChoice(h.lib, "TV")) }, { h.engine.existingCodes(it) }, { "2026-11-02" })
+        var ids = 0
+        runtime.investigations = Investigations(ai, investigator, h.service, h.store, h.world, scope) { "inv${++ids}" }
+        application {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
+            routing { route("/api") { autofetchRoutes(cfg, runtime) } }
+        }
+        block()
+    }
+
+    private fun invBody(url: String, tmdb: String, pageOnly: Boolean) = """{"url":"$url","tmdbId":$tmdb,"pageOnly":$pageOnly}"""
+
+    @Test
+    fun `the list says whether Investigate is on and why not`() = investigating {
+        val on = client.get("/api/autofetch").bodyAsText()
+        assertTrue("\"investigate\":{\"allowed\":true" in on, on)
+        ai.on = false
+        val off = client.get("/api/autofetch").bodyAsText()
+        assertTrue("\"allowed\":false,\"reason\":\"AI is switched off in Settings ▸ AI\"" in off, off)
+        assertEquals(HttpStatusCode.NoContent, client.get("/api/autofetch/investigation").status)
+    }
+
+    @Test
+    fun `investigate refuses a blank id without the tick a film and a switched-off AI with their reasons`() = investigating {
+        val blank = client.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(invBody(h.dagbokUrl, "null", false)) }
+        assertEquals(HttpStatusCode.BadRequest, blank.status); assertTrue("tick" in blank.bodyAsText())
+        h.world.kind = TmdbKind.FILM
+        val film = client.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(invBody("https://varpid.example.fo/sendingar/royndin", "9000001", false)) }
+        assertEquals(HttpStatusCode.UnprocessableEntity, film.status); assertTrue("this id is a film — Auto-fetch needs a series" in film.bodyAsText())
+        ai.on = false
+        val off = client.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(invBody(h.dagbokUrl, "null", true)) }
+        assertEquals(HttpStatusCode.Conflict, off.status); assertTrue("AI is switched off" in off.bodyAsText())
+        assertTrue(ai.sent.isEmpty(), "no request reached Anthropic")
+        assertEquals(HttpStatusCode.NotFound, client.post("/api/autofetch/investigate/nope/stop").status)
+        assertEquals(HttpStatusCode.NotFound, client.delete("/api/autofetch/investigate/nope").status)
+    }
+
+    @Test
+    fun `an investigation is started watched reviewed and saved through the routes`() = investigating {
+        h.site.listingExtra = """<link rel="preload" href="https://media.example.fo/">"""
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok/27"}""")
+        ai.tool("probe", """{"url":"https://media.example.fo/DOV7327/master.m3u8"}""")
+        ai.answer("""{"verdict":"series","reason":"x","recipe":{"list":{"kind":"html","item_selector":"li.ep","fields":{"title":{"selector":"a"},"link":{"selector":"a","attr":"href"},"published":{"selector":"time","attr":"datetime"},"description":{"selector":"p"}}},"media":{"kind":"hls","manifest":"https://media.example.fo/{value}/master.m3u8","item_page":{"pattern":"var media = '(?<value>[A-Za-z0-9._-]+)'"}},"numbering":"date","series":{"name":{"selector":"h1"},"description":{"selector":"p.about"},"image":{"selector":"img.poster","attr":"src"}},"hosts":["media.example.fo"],"audio_language":"fao"},"examples":[{"title":"Dagbók · 27. oktober","date":"2026-10-27"}]}""")
+        val started = client.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(invBody(h.dagbokUrl, "null", true)) }
+        assertEquals(HttpStatusCode.Accepted, started.status)
+        assertTrue("\"state\":\"running\"" in started.bodyAsText() && "\"pageOnly\":true" in started.bodyAsText())
+        var body = ""
+        repeat(1000) { if ("\"state\":\"review\"" !in body) { kotlinx.coroutines.delay(10); body = client.get("/api/autofetch/investigation").bodyAsText() } }
+        assertTrue("\"state\":\"review\"" in body && "\"name\":\"Dagbók\"" in body && "\"found\":12" in body, body)
+        assertTrue("\"investigation\":{" in client.get("/api/autofetch").bodyAsText(), "the list carries it too")
+        val id = Regex(""""id":"(inv\d+)"""").find(body)!!.groupValues[1]
+
+        val preview = client.post("/api/autofetch/investigate/$id/retention/preview") { contentType(ContentType.Application.Json); setBody("""{"retention":{"mode":"newest","keep":8,"leaves_page":true}}""") }
+        assertEquals("""{"deletes":0,"keeps":8,"onPage":12}""", preview.bodyAsText())
+
+        val saved = client.post("/api/autofetch/investigate/$id/save") { contentType(ContentType.Application.Json); setBody("""{"name":"Dagbók","schedule":"daily@04:00","runFirst":false}""") }
+        assertEquals(HttpStatusCode.Created, saved.status, saved.bodyAsText())
+        assertEquals(1, h.store.fetchers().size)
+        assertEquals(HttpStatusCode.NoContent, client.get("/api/autofetch/investigation").status, "a saved investigation is gone")
+        assertEquals(HttpStatusCode.NotFound, client.post("/api/autofetch/investigate/$id/save") { contentType(ContentType.Application.Json); setBody("{}") }.status)
+    }
 }

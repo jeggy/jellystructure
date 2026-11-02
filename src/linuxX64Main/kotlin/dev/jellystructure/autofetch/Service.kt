@@ -100,6 +100,27 @@ class AutofetchService(
         return SaveResult.Saved(f, pr)
     }
 
+    /**
+     * DEB-2478 (FR-4.4) — *Re-investigate page* saved: the new recipe takes the old one's place, after the same checks as a first save
+     * (shape, then the proof against the live site). The fetcher's retention, schedule and files stay as they were, and it runs again
+     * from the next check. The old recipe ran until this moment.
+     */
+    suspend fun replaceRecipe(id: String, recipe0: Recipe): SaveResult {
+        val f = store.fetcher(id) ?: return SaveResult.Refused(404, "no such fetcher")
+        val recipe = recipe0.copy(source = recipe0.source.copy(url = f.pageUrl, hosts = (recipe0.source.hosts + listOfNotNull(Urls.host(f.pageUrl))).distinct()), retention = f.retention)
+        RecipeValidator.validate(recipe, f.pageOnly).firstOrNull()?.let { return SaveResult.Refused(422, it) }
+        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site))
+        if (!pr.ok) return SaveResult.Refused(if (pr.blocked != null) 502 else 422, pr.failure ?: "the recipe failed its proof", notASeries = pr.blocked == null, proof = pr)
+        store.setRecipe(id, RecipeCodec.encode(recipe), pr.proven, pr.series?.description ?: f.seriesDescription, pr.series?.image ?: f.seriesImage)
+        store.setState(id, "ok", "")
+        val now = world.nowSec()
+        for ((item, se) in pr.numbered) {
+            val itemId = item.id?.takeIf { it.isNotBlank() } ?: item.link ?: continue
+            store.upsertListed(id, itemId, item, se, Numbering.isoDate(item.published), now)
+        }
+        return SaveResult.Saved(store.fetcher(id)!!, pr)
+    }
+
     /** `PATCH /api/autofetch/{id}` — retention, schedule and the paused switch; none of them needs *Re-investigate page* (FR-16.1). */
     fun update(id: String, retention: RetentionSpec?, schedule: String?, enabled: Boolean?): String? {
         val f = store.fetcher(id) ?: return "no such fetcher"
