@@ -20,6 +20,8 @@ internal interface DesktopEngine {
     fun selectAudio(index: Int)
     val state: MacPlayerState
     fun error(): String?
+    /** DEB-3400 (FR-5) — the failed item failed on the network: a Mac `NSURLErrorDomain` error, mpv's load failure. False for anything else. */
+    fun networkFailure(): Boolean = false
     fun debug(): String
     fun audioOptions(): String?
     /** The newest frame as a Skia image, or null when there is none new. Must be called on Compose's thread. */
@@ -77,6 +79,7 @@ internal class MacEngine(private val p: MacPlayer) : DesktopEngine {
     override fun selectAudio(index: Int) = p.selectAudio(index)
     override val state: MacPlayerState get() = p.state
     override fun error(): String? = p.error()
+    override fun networkFailure(): Boolean = p.networkFailure()
     override fun debug(): String = p.debug()
     override fun audioOptions(): String? = p.audioOptions()
     override fun takeFrame(): Image? = p.takeFrame()

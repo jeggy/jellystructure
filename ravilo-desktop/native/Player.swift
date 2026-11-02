@@ -29,6 +29,9 @@ final class RaviloPlayerBox: NSObject {
     // Guarded by `lock` — written by AVFoundation's notification and completion threads, read by Kotlin.
     var ready = false
     var failedReason: String?
+    /// DEB-3400 (FR-5) — the failure's NSError domain and code, beside its text.
+    var failedDomain: String?
+    var failedCode: Int64 = 0
     var ended = false
     var firstFrame = false
     var seeking = false
@@ -48,6 +51,25 @@ final class RaviloPlayerBox: NSObject {
         player.allowsExternalPlayback = false
     }
 
+    /// Records why the item failed. A network failure usually reaches us wrapped (`AVFoundationErrorDomain` -11800 around
+    /// `NSURLErrorDomain` -1001), so the first `NSURLErrorDomain` error in the chain is the one reported; else the outer error.
+    func fail(_ error: Error?, _ fallback: String) {
+        let outer = error as NSError?
+        var found: NSError? = outer
+        var cur = outer
+        var depth = 0
+        while let e = cur, depth < 8 {
+            if e.domain == NSURLErrorDomain { found = e; break }
+            cur = e.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        locked {
+            failedReason = error?.localizedDescription ?? fallback
+            failedDomain = found?.domain
+            failedCode = Int64(found?.code ?? 0)
+        }
+    }
+
     @discardableResult
     func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
 
@@ -60,7 +82,7 @@ final class RaviloPlayerBox: NSObject {
         locked {
             if let out = output, let it = item { it.remove(out) }
             output = nil
-            ready = false; failedReason = nil; ended = false; firstFrame = false; seeking = false; stalls = 0
+            ready = false; failedReason = nil; failedDomain = nil; failedCode = 0; ended = false; firstFrame = false; seeking = false; stalls = 0
         }
         player.replaceCurrentItem(with: nil)
         item = nil
@@ -170,7 +192,7 @@ public func ravilo_player_load(_ h: Int64, _ url: UnsafePointer<CChar>, _ mime: 
         case .readyToPlay:
             b.locked { b.ready = true }
         case .failed:
-            b.locked { b.failedReason = item.error?.localizedDescription ?? "failed" }
+            b.fail(item.error, "failed")
         default: break
         }
     }
@@ -183,7 +205,7 @@ public func ravilo_player_load(_ h: Int64, _ url: UnsafePointer<CChar>, _ mime: 
     })
     b.observers.append(center.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: it, queue: nil) { [weak b] note in
         let err = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-        b?.locked { b?.failedReason = err?.localizedDescription ?? "failed to play to the end" }
+        b?.fail(err, "failed to play to the end")
     })
     b.item = it
     b.player.replaceCurrentItem(with: it)
@@ -314,6 +336,20 @@ public func ravilo_player_error(_ h: Int64) -> UnsafeMutablePointer<CChar>? {
     return cString(b.locked { b.failedReason })
 }
 
+/// DEB-3400 (FR-5) — the failure's NSError domain (`NSURLErrorDomain` for a network one), or null. Free with `ravilo_free`.
+@_cdecl("ravilo_player_error_domain")
+public func ravilo_player_error_domain(_ h: Int64) -> UnsafeMutablePointer<CChar>? {
+    guard let b = box(h) else { return nil }
+    return cString(b.locked { b.failedDomain })
+}
+
+/// DEB-3400 (FR-5) — the failure's NSError code (`-1001` timed out, `-1009` offline, …); 0 when there is none.
+@_cdecl("ravilo_player_error_code")
+public func ravilo_player_error_code(_ h: Int64) -> Int64 {
+    guard let b = box(h) else { return 0 }
+    return b.locked { b.failedCode }
+}
+
 /// The audible group's options as `displayName\textendedLanguageTag` lines (for the build notes' rendition check).
 @_cdecl("ravilo_player_audio_options")
 public func ravilo_player_audio_options(_ h: Int64) -> UnsafeMutablePointer<CChar>? {
@@ -355,6 +391,7 @@ public func ravilo_player_debug(_ h: Int64) -> UnsafeMutablePointer<CChar>? {
     parts.append("loaded=[\(ranges.joined(separator: ","))]")
     if let e = it.error as NSError? { parts.append("error=\(e.domain)/\(e.code) \(e.localizedDescription)") }
     if let r = flags.3 { parts.append("failedReason=\(r)") }
+    if let d = b.locked({ b.failedDomain }) { parts.append("failedError=\(d)/\(b.locked { b.failedCode })") }
     if let ev = it.errorLog()?.events.last {
         parts.append("errorLog=\(ev.errorStatusCode) \(ev.errorDomain) \(ev.errorComment ?? "") \(path(ev.uri))")
     }

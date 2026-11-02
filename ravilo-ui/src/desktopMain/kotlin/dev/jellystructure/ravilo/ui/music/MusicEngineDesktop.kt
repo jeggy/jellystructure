@@ -5,7 +5,9 @@ import dev.jellystructure.ravilo.ui.RemoteTarget
 import dev.jellystructure.ravilo.ui.TeardownWork
 import dev.jellystructure.ravilo.ui.TokenStore
 import dev.jellystructure.ravilo.ui.createTvApiClient
+import dev.jellystructure.ravilo.ui.desktop.DesktopLog
 import dev.jellystructure.ravilo.ui.desktop.DesktopShutdown
+import dev.jellystructure.ravilo.ui.desktop.MacPlayerState
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import dev.jellystructure.ravilo.ui.desktop.MacNowPlaying
 import dev.jellystructure.ravilo.ui.desktop.DesktopEngine
@@ -18,6 +20,7 @@ import dev.jellystructure.shared.tv.AudiobookDetail
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.MusicTrackItem
+import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +67,8 @@ actual object MusicEngine {
     /** The song (or part) whose Jellyfin session is open, and so the one progress and stop are reported for. */
     private var openTrackId: String? = null
     private var parkedPositionMs = 0L
+    /** Whether the open song (or part) direct-plays; the freeze trace carries it. */
+    private var partOrSongDirect = false
     private var failed = false
     private var ended = false
     private var loadJob: Job? = null
@@ -71,6 +76,11 @@ actual object MusicEngine {
     private var watchJob: Job? = null
     /** The end of the item that is loaded has been acted on (AVPlayer reports "ended" until the next load). */
     private var endHandled = false
+    /** DEB-3400 — a song that stops moving: the watch finds it, the recovery decides (one restart, then the next song). */
+    private val freezeWatch = FreezeWatch()
+    private val recovery = FreezeRecovery()
+    /** DEB-3400 (FR-3) — a restart of ours is starting the song again: it keeps the recovery's memory and the QoE trace. */
+    private var restarting = false
     /** Read by the quit (off Compose's thread), so the monitor keeps it current. */
     @Volatile private var lastPositionMs = 0L
 
@@ -201,7 +211,12 @@ actual object MusicEngine {
         tickJob?.cancel()
         val c = client()
         val b = book
+        // DEB-3400 (FR-6) — a song that froze reports it as it closes (not on our own restart: the song goes on, and so does its trace).
+        val trace = if (restarting) null else recovery.takeTrace()
+        val decoder = player.decoderName
+        val direct = partOrSongDirect
         TeardownWork.track(scope.launch {
+            if (trace != null) runCatching { c?.postPlaybackQoe(PlaybackQoeReport(itemId = id, audioDecoder = decoder, directPlay = direct, frozenCount = trace.first, frozenMs = trace.second)) }
             if (b != null) runCatching { c?.audiobookProgress(b.id, b.part, pos, true) }
             runCatching { c?.stopPlayback(id, pos) }
         })
@@ -210,6 +225,8 @@ actual object MusicEngine {
     private fun startSong(i: Int, startMs: Long = 0L, play: Boolean = true) {
         val track = q.tracks.getOrNull(i) ?: return
         closeSong()
+        if (!restarting) recovery.newSong()
+        freezeWatch.reset()
         dropBook()
         q.index = i
         failed = false; ended = false
@@ -223,6 +240,7 @@ actual object MusicEngine {
             if (!isActive) return@launch
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = track.id
+            partOrSongDirect = ticket.directPlay
             MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.MUSIC)
             MacNowPlaying.artwork(nowPlaying, artworkUrl(track.imageUrl))
             loadTicket(ticket, startMs, play, rate = 1f, volume = musicVolumeScale(track, context, q.shuffled, MusicPrefs.evenVolume))
@@ -301,7 +319,10 @@ actual object MusicEngine {
                     continue
                 }
                 if (openTrackId != null && s.ended && !endHandled) { endHandled = true; onSongEnded() }
-                if (s.failed && !failed && openTrackId != null) { failed = true; publish() }
+                if (s.failed && !failed && openTrackId != null) onPlayerFailed(s)
+                if (openTrackId != null && !failed && loadJob?.isActive != true) {
+                    freezeWatch.feed(FreezeWatch.Sample(System.currentTimeMillis(), s.positionMs, s.wantsPlay, s.seeking, s.ended, s.failed))?.let { onFrozen(s, it) }
+                } else freezeWatch.reset()
                 val playing = s.wantsPlay && !s.ended && !s.failed
                 if (playing != lastPlaying || s.buffering != lastBuffering) {
                     val paused = lastPlaying == true && !playing
@@ -314,6 +335,47 @@ actual object MusicEngine {
                 delay(250)
             }
         }
+    }
+
+    /** DEB-3400 (FR-5) — a network failure gets one silent restart before R322's sheet; any other failure goes to the sheet (R237). */
+    private fun onPlayerFailed(s: MacPlayerState) {
+        val network = player.networkFailure()
+        val verdict = recovery.onFailure(s.positionMs, network)
+        if (verdict == FreezeVerdict.RESTART) {
+            DesktopLog.note("music: failed on the network at ${s.positionMs} ms (${player.error()}) — restarted ${player.debug()}")
+            restartAt(s.positionMs)
+            return
+        }
+        if (network) DesktopLog.note("music: failed on the network again at ${s.positionMs} ms (${player.error()}) — sheet")
+        failed = true; publish()
+    }
+
+    /** DEB-3400 (FR-6) — a freeze found: one line with what the player says, one with what the engine does about it. */
+    private fun onFrozen(s: MacPlayerState, stillMs: Long) {
+        val b = book
+        val duration = s.durationMs.takeIf { it > 0 } ?: b?.detail?.parts?.getOrNull(b.part)?.durationMs ?: q.current?.durationMs ?: 0L
+        val verdict = recovery.onFreeze(s.positionMs, duration, stillMs, book = b != null)
+        DesktopLog.note("music: frozen at ${s.positionMs} ms of $duration ms for $stillMs ms — ${player.debug()}")
+        DesktopLog.note("music: freeze at ${s.positionMs} ms: ${verdict.label}")
+        when (verdict) {
+            FreezeVerdict.ENDED -> { endHandled = true; onSongEnded() }
+            FreezeVerdict.RESTART -> restartAt(s.positionMs)
+            FreezeVerdict.SKIP -> {
+                // FR-4's lean: the next song as a *Next* press finds it (a repeat-one does not hold it); the frozen one stays in the queue.
+                val n = q.skipIndex(repeat)
+                if (n != null) startSong(n, 0L, true) else { endHandled = true; onSongEnded() }
+            }
+            FreezeVerdict.SHEET -> { failed = true; publish() }
+        }
+    }
+
+    /** DEB-3400 (FR-3) — the song (or part) is loaded afresh at [positionMs], with R218's pulse and no sheet: what [retry] does, minus the click. */
+    private fun restartAt(positionMs: Long) {
+        restarting = true
+        try {
+            val b = book
+            if (b != null) startPart(b.part, positionMs, true) else startSong(q.index, positionMs, true)
+        } finally { restarting = false }
     }
 
     private fun updateCard() {
@@ -443,6 +505,7 @@ actual object MusicEngine {
 
     actual fun seekTo(positionMs: Long) {
         if (radioTuner.radio != null) return   // live: nothing to seek in
+        recovery.moved(); freezeWatch.reset()
         if (openTrackId != null) { player.seekTo(positionMs.coerceAtLeast(0L)); endHandled = false } else parkedPositionMs = positionMs.coerceAtLeast(0L)
         if (ended && positionMs > 0) ended = false
         publish()
@@ -551,6 +614,8 @@ actual object MusicEngine {
         val d = b.detail
         if (part !in d.parts.indices) return
         closeSong()
+        if (!restarting) recovery.newSong()
+        freezeWatch.reset()
         val early = prefetched?.takeIf { it.first == part && startMs == 0L }?.second
         prefetched = null; prefetching = false
         book = b.copy(part = part, finished = false)
@@ -564,6 +629,7 @@ actual object MusicEngine {
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = d.parts[part].id
             partDirect = ticket.directPlay
+            partOrSongDirect = ticket.directPlay
             lastChapter = -1
             MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.BOOK)
             MacNowPlaying.artwork(nowPlaying, artworkUrl(d.coverUrl))
@@ -642,6 +708,7 @@ actual object MusicEngine {
         val (part, off) = BookMath.locate(b.detail, bookMs)
         if (b.finished) { book = b.copy(finished = false) }
         if (part == b.part && openTrackId != null) {
+            recovery.moved(); freezeWatch.reset()
             player.seekTo(off); endHandled = false; publish(); reportProgress()
         } else startPart(part, off, _state.value.playing || openTrackId == null && !b.finished)
     }

@@ -32,6 +32,9 @@ object DesktopLog {
         }
     }
 
+    /** DEB-3400 (FR-6) — one stamped line in the log (and on stdout, which the log tees). */
+    fun note(text: String) = println("${stamp()} $text")
+
     fun stamp(): String = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"))
 
     private class Tee(private val a: OutputStream, private val b: OutputStream) : OutputStream() {

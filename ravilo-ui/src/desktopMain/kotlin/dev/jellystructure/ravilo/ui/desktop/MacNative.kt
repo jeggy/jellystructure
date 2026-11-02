@@ -46,6 +46,9 @@ object MacNative {
         fun ravilo_player_tick(h: Long)
         fun ravilo_player_state(h: Long, out: LongArray, count: Int)
         fun ravilo_player_error(h: Long): Pointer?
+        /** DEB-3400 (FR-5) — the failure's `NSError` domain (the first `NSURLErrorDomain` one in its chain, else the outer one) and code. Added without an ABI bump: a library without them throws, and MacPlayer catches. */
+        fun ravilo_player_error_domain(h: Long): Pointer?
+        fun ravilo_player_error_code(h: Long): Long
         fun ravilo_player_audio_options(h: Long): Pointer?
         fun ravilo_player_debug(h: Long): Pointer?
         fun ravilo_player_copy_frame(h: Long, dst: Pointer?, capacity: Long, dims: IntArray): Int

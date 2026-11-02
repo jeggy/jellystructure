@@ -55,6 +55,9 @@ internal object Mpv {
     const val END_FILE_ERROR = 4
     const val END_FILE_REDIRECT = 5
 
+    /** `mpv_error`: MPV_ERROR_LOADING_FAILED — the file or stream could not be opened or read. */
+    const val ERROR_LOADING_FAILED = -13
+
     // ── render.h ──
     const val RENDER_PARAM_INVALID = 0
     const val RENDER_PARAM_API_TYPE = 1

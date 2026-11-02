@@ -40,6 +40,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     // ── what the event loop learned ──
     @Volatile private var item = 0            // 0 loading · 1 ready · 2 failed (R329's meaning)
     @Volatile private var lastError: String? = null
+    @Volatile private var lastErrorCode = 0
     @Volatile private var firstFrame = false
     @Volatile private var lastWarning: String? = null
 
@@ -116,11 +117,11 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
             val ev = Mpv.Event(l.mpv_wait_event(h, 0.25))
             when (ev.id) {
                 Mpv.EVENT_SHUTDOWN -> return
-                Mpv.EVENT_START_FILE -> { item = 0; firstFrame = false; lastError = null }
+                Mpv.EVENT_START_FILE -> { item = 0; firstFrame = false; lastError = null; lastErrorCode = 0 }
                 Mpv.EVENT_FILE_LOADED -> { item = 1; if (audioOnly) firstFrame = true }
                 Mpv.EVENT_PLAYBACK_RESTART -> if (windowId != 0L) firstFrame = true   // path (b): mpv drew it itself
                 Mpv.EVENT_END_FILE -> when (ev.endFileReason) {
-                    Mpv.END_FILE_ERROR -> { lastError = l.mpv_error_string(ev.endFileError); item = 2 }
+                    Mpv.END_FILE_ERROR -> { lastError = l.mpv_error_string(ev.endFileError); lastErrorCode = ev.endFileError; item = 2 }
                     Mpv.END_FILE_EOF -> Unit   // keep-open: `eof-reached` says it
                     else -> Unit
                 }
@@ -132,7 +133,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     override fun load(url: String, mime: String, startMs: Long) {
         val l = lib ?: return
         val h = handle ?: create()?.also { handle = it } ?: return
-        item = 0; firstFrame = false; lastError = null; stalls = 0; wasStalled = false
+        item = 0; firstFrame = false; lastError = null; lastErrorCode = 0; stalls = 0; wasStalled = false
         l.mpv_set_property_string(h, "start", if (startMs > 0) "%.3f".format(java.util.Locale.ROOT, startMs / 1000.0) else "none")
         l.mpv_set_property_string(h, "pause", "no")
         l.mpv_command(h, StringArray(arrayOf("loadfile", url, "replace")))
@@ -250,6 +251,9 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
         }
 
     override fun error(): String? = lastError
+
+    /** DEB-3400 (FR-5) — mpv could not open or read the stream (`MPV_ERROR_LOADING_FAILED`: a refused or dropped connection, a timeout); an unknown format, an output failure and the rest are not the network. */
+    override fun networkFailure(): Boolean = item == 2 && lastErrorCode == Mpv.ERROR_LOADING_FAILED
 
     override fun debug(): String {
         val l = lib ?: return "mpv: ${Mpv.loadError}"

@@ -79,6 +79,18 @@ internal class MacPlayer(private val audioOnly: Boolean) {
 
     fun error(): String? = lib?.takeIf { handle != 0L }?.let { MacNative.take(it.ravilo_player_error(handle)) }
 
+    /**
+     * DEB-3400 (FR-5) — the failed item's error domain and code (`NSURLErrorDomain`, -1001), or null when it has none. A library
+     * from before the export has no such symbol: the failure is then not a network one, and goes to the sheet as before.
+     */
+    fun errorInfo(): Pair<String, Long>? = runCatching {
+        val l = lib?.takeIf { handle != 0L } ?: return@runCatching null
+        val domain = MacNative.take(l.ravilo_player_error_domain(handle)) ?: return@runCatching null
+        domain to l.ravilo_player_error_code(handle)
+    }.getOrNull()
+
+    fun networkFailure(): Boolean = errorInfo()?.first == NETWORK_ERROR_DOMAIN
+
     /** One line of AVFoundation's own view of the item, for the log (no URL query strings, so no tokens). */
     fun debug(): String = lib?.takeIf { handle != 0L }?.let { MacNative.take(it.ravilo_player_debug(handle)) } ?: "no player"
 
@@ -120,6 +132,8 @@ internal class MacPlayer(private val audioOnly: Boolean) {
 
     companion object {
         const val STATE_FIELDS = 16
+        /** Foundation's URL loading errors: no connection, timed out, connection lost, DNS failure and the like. */
+        const val NETWORK_ERROR_DOMAIN = "NSURLErrorDomain"
         private const val STATE_TTL_NS = 15_000_000L
         private const val TICK_MS = 50L
         private const val FRAME_BUFFERS = 3
