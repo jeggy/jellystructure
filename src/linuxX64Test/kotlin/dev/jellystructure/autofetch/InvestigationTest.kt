@@ -167,7 +167,7 @@ class InvestigationTest {
 
     @Test
     fun `probe refuses an address an internal name and a host nothing read has named`() {
-        ai.tool("probe", """{"url":"http://10.10.10.10:8096/master.m3u8"}""")
+        ai.tool("probe", """{"url":"http://192.0.2.10:8096/master.m3u8"}""")
         ai.tool("probe", """{"url":"https://jellyfin.lan/master.m3u8"}""")
         ai.tool("probe", """{"url":"https://media.example.fo/DOV7327/master.m3u8"}""")
         ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
@@ -236,7 +236,7 @@ class InvestigationTest {
 
     @Test
     fun `a recipe that names an address as a host is refused by its shape`() {
-        ai.answer(dagbokAnswer.replace("\"media.example.fo\"", "\"10.10.10.10\""))
+        ai.answer(dagbokAnswer.replace("\"media.example.fo\"", "\"192.0.2.10\""))
         ai.answer("""{"verdict":"not_a_series","reason":"giving up"}""")
         val (out, _) = run(h.dagbokUrl, null, true)
         assertTrue("not a public host name" in Json.parseToJsonElement(ai.sent[1]).toString(), "the model is told why")
