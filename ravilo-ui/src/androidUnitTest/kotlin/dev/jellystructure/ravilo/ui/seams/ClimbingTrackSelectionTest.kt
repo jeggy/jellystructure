@@ -202,4 +202,54 @@ class ClimbingTrackSelectionTest {
         }
         assertEquals(4_000_000, chosen)
     }
+
+    private fun evaluate(bufferedS: Long, playing: Format = top) =
+        selection.updateSelectedTrack(0, bufferedS * 1_000_000, 40_000_000, queueOf(playing), Array(3) { MediaChunkIterator.EMPTY })
+
+    @Test fun `DEB-3333 a rung change writes one pick line with its reason and evaluations with no change write none`() {
+        evaluate(40)   // the first evaluation settles the constructor's guess: no rung was left
+        assertTrue(events.isEmpty())
+        repeat(5) { nowMs += 1_000; evaluate(40) }
+        assertTrue(events.isEmpty(), "no change, no line: $events")
+        // 40 s to 15 s in one second: under 20 s and falling, before the 6 s window could say so
+        nowMs += 1_000
+        evaluate(15)
+        assertEquals(1, events.size, "$events")
+        assertTrue(events[0].startsWith("picked "), events[0])
+        assertTrue(": buffer_low, 15.0 s buffered, estimate " in events[0], events[0])
+        // the buffer has by now fallen for 6 s from 40 s, so the next rung down is buffer_falling
+        nowMs += 100
+        evaluate(15, playing = mid)
+        assertEquals(2, events.size, "$events")
+        assertTrue(": buffer_falling, 15.0 s buffered" in events[1], events[1])
+        // the lowest rung has nothing to fall to: further evaluations write nothing
+        repeat(3) { nowMs += 100; evaluate(15, playing = low) }
+        assertEquals(2, events.size, "$events")
+    }
+
+    @Test fun `DEB-3333 an abandon writes its own line and then the abandon pick`() {
+        evaluate(12)
+        val chunk = LoadingChunk(top, bufferedS = 12)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 1_000
+        chunk.pull(100_000)
+        selection.shouldCancelChunkLoad(0, chunk, queueOf(top))
+        nowMs += 2_000
+        assertTrue(selection.shouldCancelChunkLoad(0, chunk, queueOf(top)))
+        assertTrue(events.single().startsWith("abandoned "), events.toString())
+        evaluate(12)
+        assertEquals(2, events.size, "$events")
+        assertTrue(": abandon, 12.0 s buffered" in events[1], events[1])
+    }
+
+    @Test fun `DEB-3333 a climb is a climb`() {
+        evaluate(40)
+        nowMs += 1_000
+        evaluate(15)
+        events.clear()
+        nowMs += 1_000
+        evaluate(40, playing = mid)
+        assertEquals(1, events.size, "$events")
+        assertTrue(": climb, 40.0 s buffered" in events[0], events[0])
+    }
 }

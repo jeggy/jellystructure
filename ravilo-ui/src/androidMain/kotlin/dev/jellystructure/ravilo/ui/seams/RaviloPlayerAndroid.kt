@@ -363,6 +363,10 @@ actual class RaviloPlayer actual constructor() {
             qoeVariantCodec = videoFamilyOfMime(f.codecs?.let { androidx.media3.common.MimeTypes.getVideoMediaMimeType(it) } ?: f.sampleMimeType)
             val bps = (f.peakBitrate.takeIf { it > 0 } ?: f.bitrate.takeIf { it > 0 })?.toLong() ?: return
             val was = qoeVariantBps
+            // DEB-3333 (DEB-3093 FR-8) — a rung reaches the picture: the first of a play (nothing before it) and every change.
+            if (was == null || bps != was) {
+                android.util.Log.i("DEB-3102", "ladder: on screen ${rungWords(f.height.takeIf { it > 0 }, bps)}, after ${if (was == null) "nothing" else rungWords(qoeVariantHeight, was)} (DEB-3093 FR-8)")
+            }
             if (was != null && bps != was) {
                 if (bps < was) qoeVariantDown++ else qoeVariantUp++
                 synchronized(qoeLock) { qoeCounter.variantSwitched(eventTime.realtimeMs) }   // R381 — a wait just after it is the switch

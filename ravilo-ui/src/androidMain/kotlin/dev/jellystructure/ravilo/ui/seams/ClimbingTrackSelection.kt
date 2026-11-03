@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
 import androidx.media3.exoplayer.upstream.BandwidthMeter
 import com.google.common.collect.ImmutableList
 import dev.jellystructure.shared.tv.BufferTrend
+import dev.jellystructure.ravilo.ui.screens.rungWords
 import dev.jellystructure.shared.tv.LadderRules
 
 /**
@@ -44,6 +45,7 @@ internal class ClimbingTrackSelection(
 ) {
     @Volatile private var allowedMaxBps: Long? = null
     private var lastBufferedMs: Long? = null
+    private var picking = false
     private val trend = BufferTrend()
 
     /** DEB-3102 (FR-4) — after an abandon, nothing above this until [abandonCapUntilMs]. */
@@ -72,11 +74,26 @@ internal class ClimbingTrackSelection(
         val bufferedMs = bufferedDurationUs / 1000
         buffer.note(bufferedMs)
         val fallen = trend.observe(nowMs(), bufferedMs)
+        val mustStepDown = LadderRules.mustStepDown(bufferedMs, lastBufferedMs)
         // DEB-2627 (FR-3) — a live channel adapts over its source's rungs on Media3's own rule: no 309 bound.
         allowedMaxBps = if (PlayerLadderHints.live) null else LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder,
             climbBlocked = PlayerLadderHints.climbBlocked(nowMs()), fallenForWindow = fallen, startCapBps = startCapBps)
         lastBufferedMs = bufferedMs
+        val left = selectedFormat
+        val leftIndex = selectedIndex
         super.updateSelectedTrack(playbackPositionUs, bufferedDurationUs, availableDurationUs, queue, mediaChunkIterators)
+        val picked = selectedFormat
+        // DEB-3333 (DEB-3093 FR-8) — one line for a pick that changes the rung. The first evaluation only settles the constructor's guess, which was never a rung left.
+        if (picked.bitrate != left.bitrate && picking) {
+            val now = nowMs()
+            val reason = LadderRules.pickReason(
+                left.bitrate.toLong(), picked.bitrate.toLong(), leftRungFailed = isTrackExcluded(leftIndex, Clock.DEFAULT.elapsedRealtime()),
+                abandonCeilingBps = abandonCapBps.takeIf { now < abandonCapUntilMs }, mustStepDown = mustStepDown, fallenForWindow = fallen, bufferedMs = bufferedMs,
+            )
+            onLadderEvent("picked ${rungWords(left.height.takeIf { it > 0 }, left.bitrate.toLong())} → ${rungWords(picked.height.takeIf { it > 0 }, picked.bitrate.toLong())}" +
+                ": $reason, ${bufferedMs / 1000}.${bufferedMs % 1000 / 100} s buffered, estimate ${bandwidthMeter.bitrateEstimate / 1000}k")
+        }
+        picking = true
     }
 
     override fun canSelectFormat(format: Format, trackBitrate: Int, effectiveBitrate: Long): Boolean {

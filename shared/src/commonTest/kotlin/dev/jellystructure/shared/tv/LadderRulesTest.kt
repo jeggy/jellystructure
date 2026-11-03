@@ -148,4 +148,33 @@ class LadderRulesTest {
         // Once a rung plays the cap is not consulted: the climb rule alone.
         assertEquals(8_000_000L, LadderRules.allowedMaxBps(rungs, 4_000_000L, 50_000, 49_000, oursEncoder = true, startCapBps = 1_500_000L))
     }
+
+    private fun reason(from: Long = 8_000_000, to: Long = 4_000_000, failed: Boolean = false, ceiling: Long? = null, low: Boolean = false, fallen: Boolean = false, bufferedMs: Long = 40_000) =
+        LadderRules.pickReason(from, to, failed, ceiling, low, fallen, bufferedMs)
+
+    @Test
+    fun `DEB-3333 - each reason a pick can have`() {
+        assertEquals("failed_rung", reason(failed = true))
+        assertEquals("abandon", reason(ceiling = 4_000_000))
+        assertEquals("buffer_low", reason(low = true, bufferedMs = 15_000))
+        assertEquals("buffer_falling", reason(fallen = true, bufferedMs = 25_000))
+        assertEquals("estimate", reason())
+        assertEquals("climb", reason(from = 4_000_000, to = 8_000_000))
+    }
+
+    @Test
+    fun `DEB-3333 - the first match wins in the order the spec gives`() {
+        assertEquals("failed_rung", reason(failed = true, ceiling = 4_000_000, low = true, fallen = true, bufferedMs = 15_000))
+        assertEquals("abandon", reason(ceiling = 4_000_000, low = true, fallen = true, bufferedMs = 15_000))
+        assertEquals("buffer_low", reason(low = true, fallen = true, bufferedMs = 15_000))
+        // A fall from a rung at or under the ceiling is not the abandon's, and a fall that has the buffer over 30 s is not buffer_falling.
+        assertEquals("estimate", reason(from = 4_000_000, to = 1_500_000, ceiling = 4_000_000))
+        assertEquals("estimate", reason(fallen = true, bufferedMs = 35_000))
+    }
+
+    @Test
+    fun `DEB-3333 - a rise is a climb whatever the buffer says and only a failed rung beats it`() {
+        assertEquals("climb", reason(from = 4_000_000, to = 8_000_000, ceiling = 1_500_000, low = true, fallen = true, bufferedMs = 15_000))
+        assertEquals("failed_rung", reason(from = 4_000_000, to = 8_000_000, failed = true))
+    }
 }

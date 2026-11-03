@@ -77,6 +77,23 @@ object LadderRules {
         bufferedMs < STEP_DOWN_BUFFER_MS && lastBufferedMs != null && bufferedMs < lastBufferedMs - FALLING_MARGIN_MS
 
     /**
+     * DEB-3333 (DEB-3093 FR-8) — why the player picked [toBps] after [fromBps], the first match of: `failed_rung` ([leftRungFailed]:
+     * the rung it left is excluded, FR-4), `abandon` (a fall from above [abandonCeilingBps], the 30 s ceiling after an abandon; null = none in
+     * force), `buffer_low` ([mustStepDown], FR-309-5), `buffer_falling` ([fallenStepDown], FR-4), `estimate` for any other fall and `climb`
+     * for any rise. The three buffer reasons name a fall, so a rise that meets them is a climb.
+     */
+    fun pickReason(
+        fromBps: Long, toBps: Long, leftRungFailed: Boolean, abandonCeilingBps: Long?, mustStepDown: Boolean, fallenForWindow: Boolean, bufferedMs: Long,
+    ): String = when {
+        leftRungFailed -> "failed_rung"
+        toBps >= fromBps -> "climb"
+        abandonCeilingBps != null && fromBps > abandonCeilingBps -> "abandon"
+        mustStepDown -> "buffer_low"
+        fallenStepDown(bufferedMs, fallenForWindow) -> "buffer_falling"
+        else -> "estimate"
+    }
+
+    /**
      * The highest variant bandwidth the player may choose now, or null for no bound (nothing playing yet: the start is
      * the server's, FR-309-2, unless [startCapBps] names the rung a replacement was warmed on). [rungsBps]: the variants' bandwidths, any order; [currentBps]: the one playing.
      */
