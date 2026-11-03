@@ -117,6 +117,67 @@ if (!raviloSupportsWasmGC()) {
         }, 0);
     }, true);
 
+    // R376 (FR-R376-4i, amendment 2026-10-30, DEB-2998) — a hidden tab keeps its film, so whatever the player does by
+    // itself has to go on too. Compose's frames come from requestAnimationFrame, which a browser does not run for a
+    // hidden page: the next-up countdown and the start of the next episode need a recomposition and would wait for the
+    // viewer's return. While a player is up and the page is hidden — and at no other time — the frames come from a ~1 Hz
+    // timer instead, which a hidden page does keep (throttled to about a second). Everything else, a hidden page with no
+    // player up included, is requestAnimationFrame exactly as before. No second next-episode path: Compose still makes
+    // the frames, this only feeds the clock. PlayerLifecycleEffect announces a player with raviloHiddenFrames.player(±1).
+    (function() {
+        var nativeRaf = window.requestAnimationFrame.bind(window);
+        var nativeCancel = window.cancelAnimationFrame.bind(window);
+        var TICK_MS = 1000;
+        var playersUp = 0, nextId = 1, timer = 0;
+        var inflight = new Map();   // id -> {cb, nativeId}: asked of the browser while it would have run them
+        var held = new Map();       // id -> cb: asked while hidden with a player up; the timer runs these
+        function feeding() { return playersUp > 0 && document.visibilityState === 'hidden'; }
+        function toNative(id, cb) {
+            var rec = {cb: cb, nativeId: 0};
+            rec.nativeId = nativeRaf(function(ts) { inflight.delete(id); cb(ts); });
+            inflight.set(id, rec);
+        }
+        function tick() {
+            if (!feeding()) { sync(); return; }
+            var batch = Array.from(held);
+            held.clear();
+            var now = performance.now();
+            batch.forEach(function(e) {
+                try { e[1](now); } catch (err) { (window.reportError || function(x) { setTimeout(function() { throw x; }); })(err); }
+            });
+        }
+        // Called on every change of the page's visibility or of the number of players up: moves the callbacks the
+        // browser would never run into the timer's hands, or hands them back when the browser runs frames again.
+        function sync() {
+            if (feeding()) {
+                inflight.forEach(function(rec, id) { nativeCancel(rec.nativeId); held.set(id, rec.cb); });
+                inflight.clear();
+                if (!timer) timer = setInterval(tick, TICK_MS);
+            } else {
+                if (timer) { clearInterval(timer); timer = 0; }
+                held.forEach(function(cb, id) { toNative(id, cb); });
+                held.clear();
+            }
+        }
+        window.requestAnimationFrame = function(cb) {
+            var id = nextId++;
+            if (feeding()) { held.set(id, cb); if (!timer) timer = setInterval(tick, TICK_MS); }
+            else toNative(id, cb);
+            return id;
+        };
+        window.cancelAnimationFrame = function(id) {
+            if (held.delete(id)) return;
+            var rec = inflight.get(id);
+            if (rec) { inflight.delete(id); nativeCancel(rec.nativeId); return; }
+            nativeCancel(id);
+        };
+        document.addEventListener('visibilitychange', sync);
+        window.raviloHiddenFrames = {
+            player: function(delta) { playersUp = Math.max(0, playersUp + delta); sync(); },
+            state: function() { return {players: playersUp, feeding: feeding(), held: held.size, inflight: inflight.size}; }
+        };
+    })();
+
     // The gamepad poller feeds Compose's key handling by re-firing what it receives as a synthetic KeyboardEvent on
     // the canvas (the viewport listens on the canvas itself, so an event on the shadow host would never reach it).
     function raviloFireCanvasKey(key) {

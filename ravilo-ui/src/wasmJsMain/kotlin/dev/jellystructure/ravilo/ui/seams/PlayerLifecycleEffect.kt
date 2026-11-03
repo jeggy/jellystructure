@@ -8,16 +8,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 
 /**
- * R376 (FR-R376-4) — the background, as a browser has one. When the page goes hidden (another tab, the phone's home
- * screen, a locked screen) the player pauses and takes the same stop/progress path Android's `ON_STOP` takes
- * ([onBackground] — the resume record, the stop report with the position). It goes as NOT playing, so the return
- * ([onForeground] — a fresh start at the record's position) does not auto-resume. Not while the picture is in
- * picture-in-picture or on AirPlay: the viewer is still watching then.
+ * R376 (FR-R376-4f–4h, amendment 2026-10-30, DEB-2998) — the background, as a browser has one. **On a computer a hidden
+ * page changes nothing**: another tab, a minimised window and a covered window leave the film playing, paused or
+ * buffering exactly as it was, and coming back does nothing either (no stop, no [onForeground], no new ticket). On a
+ * phone or tablet the old rule stands: hidden pauses the player and takes the same stop/progress path Android's
+ * `ON_STOP` takes ([onBackground] — the resume record, the stop report with the position), as NOT playing, so the
+ * return ([onForeground] — a fresh start at the record's position) does not auto-resume; not while the picture is in
+ * picture-in-picture or on AirPlay. [WebPageLifecycleGate] decides; this file only feeds it the DOM's events.
  *
- * R372 (FR-R372-11, amendment 2026-10-12) — and `pagehide`, which is the only one of the two a closing tab is
- * guaranteed to fire. Both go through [UnloadStop.whileUnloading], so the stop leaves on a `keepalive` fetch the
- * browser finishes after the page is gone instead of a Ktor request it aborts with the page. One stop either way: the
- * first event latches `away`, and `PlayerStore.stopSession` clears its item before anything else can post.
+ * Leaving still ends it on both (FR-R376-4g): `pagehide` stops, and the return from the back-forward cache starts
+ * again. It is the only event a closing tab is guaranteed to fire (R372, FR-R372-11). Every stop goes through
+ * [UnloadStop.whileUnloading], so it leaves on a `keepalive` fetch the browser finishes after the page is gone instead of
+ * a Ktor request it aborts with the page. One stop either way: the gate's `away` latch, and `PlayerStore.stopSession`
+ * clears its item before anything else can post.
+ *
+ * Live TV uses this same effect, so it follows. It also announces the player to `boot.js` ([jsPlayerUp]), which is what
+ * keeps a hidden page's frames coming (FR-R376-4i).
  */
 @Composable
 actual fun PlayerLifecycleEffect(
@@ -31,20 +37,31 @@ actual fun PlayerLifecycleEffect(
     DisposableEffect(player) {
         // FR-R372-11 — installed, never removed: a stop posted during this effect's own dispose still needs it.
         UnloadStop.transport = ::keepalivePost
-        var away = false
-        val handle = jsWatchVisibility(player.video) { hidden ->
-            if (hidden && !away) {
-                away = true
-                player.pause()
-                UnloadStop.whileUnloading { background(false) }
-            } else if (!hidden && away) {
-                away = false
-                foreground(false)
+        val gate = WebPageLifecycleGate(phone = jsIsPhone())
+        val handle = jsWatchVisibility(player.video) { code, exempt ->
+            when (gate.on(WebPageLifecycleGate.Signal.entries[code], exempt)) {
+                WebPageLifecycleGate.Action.Stop -> {
+                    player.pause()
+                    UnloadStop.whileUnloading { background(false) }
+                }
+                WebPageLifecycleGate.Action.Foreground -> foreground(false)
+                WebPageLifecycleGate.Action.None -> Unit
             }
         }
-        onDispose { jsUnwatchVisibility(handle) }
+        jsPlayerUp(1)
+        onDispose {
+            jsPlayerUp(-1)
+            jsUnwatchVisibility(handle)
+        }
     }
 }
+
+/**
+ * FR-R376-4i — tells `boot.js` a player is up (+1) or gone (-1), so that while the page is hidden *and* a player is up
+ * Compose's frames come from a ~1 Hz timer instead of `requestAnimationFrame`, which a hidden page does not run
+ * (the next-up countdown and the next episode need a recomposition). Absent in a bundle served without `boot.js`.
+ */
+private fun jsPlayerUp(delta: Int): Unit = js("{ var h = window.raviloHiddenFrames; if (h) h.player(delta); }")
 
 /**
  * FR-R372-11 — the page-surviving post: `fetch(…, { keepalive: true })`, with the device token in `Authorization`
@@ -72,17 +89,29 @@ private fun jsKeepalivePost(url: String, headers: JsAny, body: String): Boolean 
     })()"""
 )
 
-private fun jsWatchVisibility(video: org.w3c.dom.HTMLVideoElement, onChange: (Boolean) -> Unit): JsAny = js(
+/** FR-R376-4h — a phone or tablet, by the two tests already in the tree: `boot.js`'s `isIOS` and [PlayerImmersiveEffect]'s Android UA. */
+private fun jsIsPhone(): Boolean = js(
+    """(function(){
+        var ua = navigator.userAgent || '';
+        var ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+        return ios || /Android/i.test(ua);
+    })()"""
+)
+
+/** Codes are [WebPageLifecycleGate.Signal] ordinals: 0 HIDDEN, 1 VISIBLE, 2 PAGE_HIDE, 3 PAGE_SHOW. */
+private fun jsWatchVisibility(video: org.w3c.dom.HTMLVideoElement, onSignal: (Int, Boolean) -> Unit): JsAny = js(
     """(function(){
         var vis = function () {
             var hidden = document.visibilityState === 'hidden';
-            if (hidden && (document.pictureInPictureElement === video || video.webkitCurrentPlaybackTargetIsWireless)) return;
-            onChange(hidden);
+            var exempt = hidden && (document.pictureInPictureElement === video || !!video.webkitCurrentPlaybackTargetIsWireless);
+            onSignal(hidden ? 0 : 1, exempt);
         };
-        var gone = function () { onChange(true); };
+        var gone = function () { onSignal(2, false); };
+        var back = function (e) { if (e.persisted) onSignal(3, false); };
         document.addEventListener('visibilitychange', vis);
         window.addEventListener('pagehide', gone);
-        return { vis: vis, gone: gone };
+        window.addEventListener('pageshow', back);
+        return { vis: vis, gone: gone, back: back };
     })()"""
 )
 
@@ -90,5 +119,6 @@ private fun jsUnwatchVisibility(handle: JsAny): Unit = js(
     """(function(){
         document.removeEventListener('visibilitychange', handle.vis);
         window.removeEventListener('pagehide', handle.gone);
+        window.removeEventListener('pageshow', handle.back);
     })()"""
 )

@@ -30,7 +30,7 @@ object UnloadStop {
     var unloading: Boolean = false
         private set
 
-    /** Runs [block] with [unloading] set — the browser's `pagehide` / `visibilitychange → hidden` handler. */
+    /** Runs [block] with [unloading] set — the browser's `pagehide` handler, and on a phone `visibilitychange → hidden`. */
     fun <T> whileUnloading(block: () -> T): T {
         unloading = true
         return try { block() } finally { unloading = false }
