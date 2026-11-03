@@ -33,6 +33,8 @@ jobs:
         run: ./scripts/check-ytdlp-pin.sh
       - name: In-place media writers ask the seeding guard (315)
         run: ./scripts/check-inplace-guard.sh
+      - name: The in-place guard script still fails what it should (315 FR-315-6)
+        run: ./scripts/test-inplace-guard.sh
       - name: Work files never beside a library file (phase 311)
         run: ./scripts/check-workfiles.sh
       - name: A film's artwork never lands in a library root (phase 316)

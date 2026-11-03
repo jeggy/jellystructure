@@ -9,6 +9,7 @@
 #      the others only print a plan or check the binary);
 #   3. a file passes `inPlace = false` (a writer that renames a new file in) without being one of the known
 #      rename-based writers — so a new in-place writer can't opt out of the hard-link check by accident.
+#      The two route files are held to exactly the four remux call sites (FR-315-6): see 3b.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 src=src/linuxX64Main/kotlin
@@ -30,12 +31,24 @@ while IFS= read -r f; do
 done < <(grep -rlE "mkvpropedit '" "$src" --include=*.kt || true)
 
 # 3 — only rename-based writers may skip the hard-link check.
-allowed_rename='/media/MediaJobQueue\.kt$|/music/MusicTagWriter\.kt$|/music/MusicConvert\.kt$|/audiobooks/AudiobooksMediaService\.kt$|/torrent/SeedingGuard\.kt$|/media/ContainerConvertPorts\.kt$'
+allowed_rename='/server/routes/RemuxGuard\.kt$|/media/MediaJobQueue\.kt$|/music/MusicTagWriter\.kt$|/music/MusicConvert\.kt$|/audiobooks/AudiobooksMediaService\.kt$|/torrent/SeedingGuard\.kt$|/media/ContainerConvertPorts\.kt$'
 while IFS= read -r f; do
   if ! [[ "$f" =~ $allowed_rename ]]; then
     echo "HARD-LINK CHECK SKIPPED  $f  (passes inPlace = false but is not a known rename-based writer)"; fail=1
   fi
 done < <(grep -rlE 'inPlace = false' "$src" --include=*.kt || true)
+
+# 3b — FR-315-6: the four remux routes (delete + reorder, film and episode) ask the rewrite question at enqueue through
+# the one helper in RemuxGuard.kt, two call sites in each route file; nothing in them passes `inPlace = false` itself, so
+# an in-place writer there cannot opt out of the hard-link check.
+for name in TrackRoutes.kt MediaRoutes.kt; do
+  f="$src/dev/jellystructure/server/routes/$name"
+  got=$(grep -cE 'refuseRemuxIfSeeded\(' "$f" || true)
+  raw=$(grep -cE 'inPlace = false' "$f" || true)
+  if [[ "$got" -ne 2 || "$raw" -ne 0 ]]; then
+    echo "HARD-LINK CHECK SKIPPED  $f  (expected exactly 2 refuseRemuxIfSeeded calls and no inPlace = false, found $got / $raw)"; fail=1
+  fi
+done
 
 if [[ $fail -ne 0 ]]; then
   echo "See specs/requirements/phase-315-a-hard-linked-file-counts-as-seeded.md"

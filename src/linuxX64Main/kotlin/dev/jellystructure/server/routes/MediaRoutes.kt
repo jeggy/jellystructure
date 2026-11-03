@@ -1366,11 +1366,7 @@ fun Route.mediaRoutes(
 
                     // Fail-fast guard at enqueue time (Phase 109 FR A.3) — the job re-checks at start too,
                     // since the seeding state can change while it waits in the queue.
-                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
-                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
-                        else -> Unit
-                    }
+                    if (call.refuseRemuxIfSeeded(seedingGuard, ep.path, configStore.current)) return@post  // 315 FR-315-6
 
                     val epCode = if (ep.seasonNumber != null && ep.episodeNumber != null)
                         "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
@@ -1395,11 +1391,7 @@ fun Route.mediaRoutes(
                     ep.tracks.firstOrNull { it.specifier == specifier }
                         ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
-                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@delete }
-                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@delete }
-                        else -> Unit
-                    }
+                    if (call.refuseRemuxIfSeeded(seedingGuard, ep.path, configStore.current)) return@delete  // 315 FR-315-6
 
                     val epCode = if (ep.seasonNumber != null && ep.episodeNumber != null)
                         "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"

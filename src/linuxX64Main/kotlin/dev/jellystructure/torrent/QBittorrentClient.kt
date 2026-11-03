@@ -31,7 +31,7 @@ data class QBTorrent(
     @SerialName("seeding_time") val seedingTime: Int = 0,
 )
 
-class QBittorrentClient {
+open class QBittorrentClient {
     // Phase 134 (FR-OPS2 §F): dropped this class's own private HttpClient(Curl) (a second, ungoverned
     // idle keep-alive pool outside the documented Phase-129 budget) for the shared OutboundHttp.client —
     // safe because the SID cookie is managed manually via a header, not cookie-jar plugin state that
@@ -45,7 +45,7 @@ class QBittorrentClient {
         OutboundHttp.withPermit { http.post(url, block) }
 
     // Returns SID cookie value, or "" when auth is disabled (qBittorrent returns 204 No Content).
-    suspend fun login(config: QBittorrentConfig): String {
+    open suspend fun login(config: QBittorrentConfig): String {
         if (config.noAuth) return ""
         val url = config.url.trimEnd('/') + "/api/v2/auth/login"
         val response = httpPost(url) {
@@ -70,7 +70,7 @@ class QBittorrentClient {
         return sid
     }
 
-    suspend fun getTorrents(config: QBittorrentConfig, sid: String): List<QBTorrent> {
+    open suspend fun getTorrents(config: QBittorrentConfig, sid: String): List<QBTorrent> {
         val url = config.url.trimEnd('/') + "/api/v2/torrents/info?filter=all"
         val response = httpGet(url) {
             if (sid.isNotBlank()) header("Cookie", "SID=$sid")

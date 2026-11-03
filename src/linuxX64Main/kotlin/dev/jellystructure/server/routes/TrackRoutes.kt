@@ -10,6 +10,10 @@ import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
+import dev.jellystructure.media.TriageDetection
+import dev.jellystructure.torrent.coverRepairCost
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.resolver.primaryAudioLanguage
 import dev.jellystructure.media.ProbeDiagnosis
@@ -123,6 +127,22 @@ fun Route.trackRoutes(
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
 ) {
     route("/media/{id}") {
+        // GET /api/media/{id}/cover-repair-cost — 315 FR-315-7: how many of the files the cover-art repair button
+        // rewrites have a name outside the library, and their summed size. Additive; the card renders it as is.
+        get("/cover-repair-cost") {
+            val id = call.parameters["id"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val files: List<Pair<String, Long?>> =
+                if (item.kind == MediaKind.TV_SHOW)
+                    item.episodes.filter { TriageDetection.coverVideoSpecifier(it.tracks) != null }.map { it.path to it.fileSizeBytes }
+                else if (TriageDetection.coverVideoSpecifier(item.tracks) != null) listOf(item.path to item.fileSizeBytes)
+                else emptyList()
+            val cfg = configStore.current
+            call.respond(coverRepairCost(files, { seedingGuard.linkVerdict(it, cfg) }, { SystemFileSystem.metadataOrNull(Path(it))?.size }))
+        }
+
         // GET /api/media/{id}/tracks/plan?specifier=a:0 — dry-run: returns command without executing
         get("/tracks/plan") {
             val id = call.parameters["id"]
@@ -418,11 +438,7 @@ fun Route.trackRoutes(
                 ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
             if (deleteTarget.external) return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot edit an external subtitle track"))
 
-            when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@delete }
-                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@delete }
-                else -> Unit
-            }
+            if (call.refuseRemuxIfSeeded(seedingGuard, item.path, configStore.current)) return@delete  // 315 FR-315-6
 
             val job = mediaJobQueue.enqueue("remove", id, item.title, dev.jellystructure.jobs.MediaJobParams(specifier = specifier))
             call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
@@ -455,11 +471,7 @@ fun Route.trackRoutes(
 
             // Fail-fast guard at enqueue time (Phase 109 FR A.3) — the job re-checks at start too,
             // since the seeding state can change while it waits in the queue.
-            when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
-                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
-                else -> Unit
-            }
+            if (call.refuseRemuxIfSeeded(seedingGuard, item.path, configStore.current)) return@post  // 315 FR-315-6
 
             val job = mediaJobQueue.enqueue(
                 "reorder", id, item.title,

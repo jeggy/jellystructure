@@ -30,4 +30,7 @@ class SeedingGuard(private val snapshot: SeedingSnapshot) {
     // [countRefusal] — a refused edit is counted for the Dashboard (FR-315-3); a preview that only asks passes false.
     suspend fun check(localFilePath: String, config: AppConfig, inPlace: Boolean = true, countRefusal: Boolean = inPlace): SeedingCheckResult =
         snapshot.checkPath(localFilePath, config, linkCheck = inPlace).also { if (countRefusal && it is SeedingCheckResult.Blocked) SeedingRefusals.record(localFilePath) }
+
+    /** 315 FR-315-7 — [LinkVerdict] of a file, for the repair card's cost line. */
+    suspend fun linkVerdict(localFilePath: String, config: AppConfig): LinkVerdict = snapshot.hardLinkVerdict(localFilePath, config)
 }

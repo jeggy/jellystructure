@@ -903,22 +903,36 @@ object MediaApi {
         response.body<JobIdResp>().jobId
     }.getOrNull()
 
-    /** Phase 144: drop a track from a movie file via the queued ffmpeg-remux "remove" job — returns the
-     *  job id, or null on failure. Used by "Fix cover track" to drop a cover-image-muxed-as-video stream. */
-    suspend fun removeTrack(id: String, specifier: String): String? = runCatching {
-        val response = httpClient.delete("/api/media/$id/tracks/${specifier.encodeURL()}")
-        if (response.status.value !in 200..299) return@runCatching null
-        @Serializable data class JobIdResp(val jobId: String)
-        response.body<JobIdResp>().jobId
-    }.getOrNull()
+    /** 315 FR-315-8 — what a queue request answered: the job id, or the server's own `error` text (409, 503...). */
+    data class QueueResult(val jobId: String?, val error: String?)
+
+    @Serializable private data class QueueErrorBody(val error: String? = null)
+    @Serializable private data class QueueJobBody(val jobId: String)
+
+    private suspend fun queueResult(response: io.ktor.client.statement.HttpResponse): QueueResult {
+        if (response.status.value in 200..299) return QueueResult(response.body<QueueJobBody>().jobId, null)
+        val text = runCatching { response.body<QueueErrorBody>().error }.getOrNull()
+        return QueueResult(null, text?.takeIf { it.isNotBlank() } ?: "the server answered ${response.status.value}")
+    }
+
+    /** Phase 144: drop a track from a movie file via the queued ffmpeg-remux "remove" job. Used by "Fix cover track"
+     *  to drop a cover-image-muxed-as-video stream. A refusal carries the server's reason (315 FR-315-8). */
+    suspend fun removeTrack(id: String, specifier: String): QueueResult = runCatching {
+        queueResult(httpClient.delete("/api/media/$id/tracks/${specifier.encodeURL()}"))
+    }.getOrElse { QueueResult(null, "no answer from the server") }
 
     /** Phase 144: episode variant of [removeTrack] (a series' cover track lives on the episode file). */
-    suspend fun removeEpisodeTrack(id: String, epFilename: String, specifier: String): String? = runCatching {
-        val encoded = epFilename.encodeURL()
-        val response = httpClient.delete("/api/media/$id/episodes/$encoded/tracks/${specifier.encodeURL()}")
-        if (response.status.value !in 200..299) return@runCatching null
-        @Serializable data class JobIdResp(val jobId: String)
-        response.body<JobIdResp>().jobId
+    suspend fun removeEpisodeTrack(id: String, epFilename: String, specifier: String): QueueResult = runCatching {
+        queueResult(httpClient.delete("/api/media/$id/episodes/${epFilename.encodeURL()}/tracks/${specifier.encodeURL()}"))
+    }.getOrElse { QueueResult(null, "no answer from the server") }
+
+    /** 315 FR-315-7 — files the cover repair rewrites that share their bytes with a name outside the library. */
+    @Serializable
+    data class CoverRepairCost(val sharedFiles: Int = 0, val sharedBytes: Long = 0L, val sharedGb: Double = 0.0)
+
+    suspend fun coverRepairCost(id: String): CoverRepairCost? = runCatching {
+        val response = httpClient.get("/api/media/$id/cover-repair-cost")
+        if (response.status.value !in 200..299) null else response.body<CoverRepairCost>()
     }.getOrNull()
 
     @Serializable

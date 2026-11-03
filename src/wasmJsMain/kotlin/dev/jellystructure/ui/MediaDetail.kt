@@ -606,6 +606,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 stream). Repair drops just the cover stream via a fast <code>ffmpeg -c copy</code> remux —
                 no re-encode, audio and subtitles untouched.
               </div>
+              <div id="cover-cost" class="tiny" style="margin-top:8px;line-height:1.6;display:none;"></div>
               <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
                 <button id="cover-fix-btn" class="btn sm warn">$btnLabel</button>
               </div>
@@ -993,6 +994,20 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
+    // 315 FR-315-7 — the repair writes a new file, so a file that also lives under a name outside the library costs
+    // disk while that torrent seeds. The server counts and sums; this only prints (nothing when N is 0).
+    if (hasCoverIssue) scope.launch {
+        val cost = MediaApi.coverRepairCost(item.id) ?: return@launch
+        if (cost.sharedFiles <= 0) return@launch
+        val el = document.getElementById("cover-cost") as? HTMLElement ?: return@launch
+        val gb = cost.sharedGb.toString()
+        el.textContent = if (cost.sharedFiles == 1)
+            "This file shares its data with a seeding torrent. Repairing it leaves the torrent's copy untouched and uses ≈ $gb GB more while it seeds."
+        else
+            "${cost.sharedFiles} of these files share their data with a seeding torrent. Repairing them leaves the torrent's copy untouched and uses ≈ $gb GB more while it seeds."
+        el.style.display = "block"
+    }
+
     // Phase 144: "Fix cover track" — drop the cover-image-muxed-as-video stream via queued ffmpeg
     // remux(es). Movie = one job; series = one job per affected episode file.
     document.getElementById("cover-fix-btn")?.addEventListener("click") {
@@ -1000,16 +1015,22 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         btn?.setAttribute("disabled", "true")
         scope.launch {
             if (movieCoverSpec != null) {
-                val job = MediaApi.removeTrack(item.id, movieCoverSpec)
-                if (job != null) showDetailMsg("Fixing cover track — remux queued. Track & progress in Activity ▸ Jobs.", true)
-                else { showDetailMsg("Couldn't queue the repair — is the file seeding?", false); btn?.removeAttribute("disabled") }
+                val r = MediaApi.removeTrack(item.id, movieCoverSpec)
+                if (r.jobId != null) showDetailMsg("Fixing cover track — remux queued. Track & progress in Activity ▸ Jobs.", true)
+                else { showDetailMsg("Couldn't queue the repair — ${r.error}", false); btn?.removeAttribute("disabled") }
             } else {
                 var queued = 0
+                val reasons = LinkedHashSet<String>()  // 315 FR-315-8 — each distinct refusal reason once
+                var refused = 0
                 for ((epFilename, spec) in coverEpisodes) {
-                    if (MediaApi.removeEpisodeTrack(item.id, epFilename, spec) != null) queued++
+                    val r = MediaApi.removeEpisodeTrack(item.id, epFilename, spec)
+                    if (r.jobId != null) queued++ else { refused++; r.error?.let { reasons += it } }
                 }
-                if (queued > 0) showDetailMsg("Fixing cover track on $queued episode${if (queued != 1) "s" else ""} — remuxes queued. Progress in Activity ▸ Jobs.", true)
-                else { showDetailMsg("Couldn't queue the repairs — are the files seeding?", false); btn?.removeAttribute("disabled") }
+                val why = reasons.joinToString(" ") { it.trimEnd('.') + "." }
+                if (queued > 0) {
+                    val tail = if (refused > 0) " $refused refused: $why" else " Progress in Activity ▸ Jobs."
+                    showDetailMsg("Fixing cover track on $queued episode${if (queued != 1) "s" else ""} — remuxes queued.$tail", refused == 0)
+                } else { showDetailMsg("Couldn't queue the repairs — $why", false); btn?.removeAttribute("disabled") }
             }
         }
     }
