@@ -158,8 +158,13 @@ fun volumeReportOf(level: Double?, muted: Boolean?): VolumeReport? =
     level?.takeIf { !it.isNaN() }?.let { VolumeReport((it * 100).roundToInt().coerceIn(0, 100), muted ?: false) }
 
 /** R357 (FR-R357-1) — the progress body: with [volume] its two fields, without it exactly the pre-R357 request. */
-fun progressRequest(itemId: String, positionMs: Long, isPaused: Boolean, volume: VolumeReport?): PlaybackProgressRequest =
-    PlaybackProgressRequest(itemId, positionMs, isPaused, volume?.percent?.coerceIn(0, 100), volume?.muted)
+fun progressRequest(
+    itemId: String, positionMs: Long, isPaused: Boolean, volume: VolumeReport?,
+    /** DEB-3034 (FR-3, FR-7) — a song's wait and what sent a pause; all three absent exactly as before. */
+    waiting: Boolean? = null, waitDetail: String? = null, pauseBy: String? = null,
+): PlaybackProgressRequest =
+    PlaybackProgressRequest(itemId, positionMs, isPaused, volume?.percent?.coerceIn(0, 100), volume?.muted,
+        waiting = waiting, waitDetail = waitDetail, pauseBy = pauseBy)
 
 /** Drives [player] with this command; volume commands go through [volume] first. */
 fun RemoteCommand.applyTo(player: RemotePlayer, volume: RemoteVolume) {

@@ -15,9 +15,9 @@ actual object MusicEngine {
     actual fun attach(api: TvApiClient) = Unit
     actual fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean) = Unit
     actual fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = Unit
-    actual fun togglePlay() = Unit
+    actual fun togglePlay(by: String?) = Unit
     actual fun play() = Unit
-    actual fun pause() = Unit
+    actual fun pause(by: String?) = Unit
     actual fun next() = Unit
     actual fun previous() = Unit
     actual fun seekTo(positionMs: Long) = Unit

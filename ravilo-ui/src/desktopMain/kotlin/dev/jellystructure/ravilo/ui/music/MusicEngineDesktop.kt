@@ -33,6 +33,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/** DEB-3034 (FR-2) — `reasonForWaitingToPlay` as the Mac library's debug line prints it (`player=waiting(<reason>)`); null when the player is not waiting or the line has none. */
+internal fun whyOf(debug: String): String? =
+    Regex("player=waiting\\(([^)]*)\\)").find(debug)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() && it != "?" }
+
 /**
  * R329 (FR-R329-9) — the Mac's music engine: R322/R323's engine on an audio-only AVPlayer ([MacPlayer]). The queue
  * is [MusicQueue], a book is [BookPlayback] with [BookMath]; every screen reaches this through `MusicPlayback` (R324)
@@ -84,6 +88,14 @@ actual object MusicEngine {
     /** Read by the quit (off Compose's thread), so the monitor keeps it current. */
     @Volatile private var lastPositionMs = 0L
 
+    // ── DEB-3034 (a-song-that-waits-says-so.md) ──
+    /** FR-1/FR-2 — when this song's player counts as waiting, and what the report says. Songs only; a book's heartbeat is its own. */
+    private val songWait = SongWaitTracker()
+    /** FR-7 — what sent the pause the player is in ([PauseSource] value), or null when unknown; cleared by play and by a load. */
+    private var pauseBy: String? = null
+    /** FR-7 — the log has its line for the pause the player is in. */
+    private var pauseLogged = false
+
     // ── R323: a book in place of songs ──
     private var book: BookPlayback? = null
     private var partDirect = false
@@ -105,8 +117,8 @@ actual object MusicEngine {
     private val nowPlaying = MacNowPlaying.Target { command, seconds ->
         when (command) {
             MacNowPlaying.Command.PLAY -> play()
-            MacNowPlaying.Command.PAUSE, MacNowPlaying.Command.STOP -> pause()
-            MacNowPlaying.Command.TOGGLE -> togglePlay()
+            MacNowPlaying.Command.PAUSE, MacNowPlaying.Command.STOP -> pause(MacNowPlaying.pauseSource(command))
+            MacNowPlaying.Command.TOGGLE -> togglePlay(MacNowPlaying.pauseSource(command))
             MacNowPlaying.Command.NEXT -> next()
             MacNowPlaying.Command.PREVIOUS -> previous()
             MacNowPlaying.Command.SEEK_TO -> {
@@ -198,6 +210,7 @@ actual object MusicEngine {
         applyVolume(volume)
         // A load that is not to play says so: mpv starts whatever it loads (AVPlayer waits for play), so a book restored
         // at launch — loaded paused where the viewer left it — read itself aloud on Linux (Fedora, 2026-09-30).
+        pauseBy = null; pauseLogged = !play   // a load parked on purpose is not a pause to explain
         if (play) player.play() else player.pause()
         startMonitor()
     }
@@ -225,7 +238,7 @@ actual object MusicEngine {
     private fun startSong(i: Int, startMs: Long = 0L, play: Boolean = true) {
         val track = q.tracks.getOrNull(i) ?: return
         closeSong()
-        if (!restarting) recovery.newSong()
+        if (!restarting) { recovery.newSong(); songWait.newSong() }
         freezeWatch.reset()
         dropBook()
         q.index = i
@@ -255,6 +268,7 @@ actual object MusicEngine {
         if (next != null) { startSong(next, 0L, true); return }
         // FR-R322-5 — queue end: stay on the last song, paused at 0:00. Nothing restarts on its own.
         closeSong(atMs = player.state.durationMs.takeIf { it > 0 })
+        notePause(PauseSource.ENGINE)
         player.pause(); player.seekTo(0)
         ended = true; parkedPositionMs = 0L
         publish(); save()
@@ -278,7 +292,8 @@ actual object MusicEngine {
         }
     }
 
-    private fun reportProgress() {
+    /** [waitEnded] — DEB-3034 (FR-1): this report is the one that says the song's wait is over. */
+    private fun reportProgress(waitEnded: Boolean = false) {
         val id = openTrackId ?: return
         val s = player.state
         val pos = s.positionMs
@@ -287,8 +302,20 @@ actual object MusicEngine {
         val vol = RemoteControl.musicVolumeReport()   // R357 (FR-R357-3) — the bar's level and R354's mute
         val b = book
         if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused, vol) } }; return }
-        scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol) } }
+        // DEB-3034 — a wait is reported while it lasts (FR-1) with its detail (FR-2); a pause ends it. A pause is reported with what sent it (FR-7).
+        val waiting = songWait.waiting && !paused
+        val detail = if (waiting) songWait.detail(waitSample(s, withWhy = true)) else null
+        val flag: Boolean? = if (waiting) true else if (waitEnded) false else null
+        val by = if (paused) pauseBy else null
+        scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol, flag, detail, by) } }
     }
+
+    /** DEB-3034 (FR-2) — what the player says now; the Mac adds why AVPlayer is holding (`reasonForWaitingToPlay`, from the debug line). */
+    private fun waitSample(s: MacPlayerState, withWhy: Boolean = false) = SongWaitSample(
+        nowMs = System.currentTimeMillis(), wantsPlay = s.wantsPlay, buffering = s.buffering, positionMs = s.positionMs,
+        bufferedMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L), observedBps = s.observedBitrate.takeIf { it > 0 },
+        why = if (withWhy && !DesktopEngines.isMpv) whyOf(player.debug()) else null,
+    )
 
     /**
      * Four times a second while something is loaded: the end, a failure and a change of playing/buffering become
@@ -324,10 +351,20 @@ actual object MusicEngine {
                     freezeWatch.feed(FreezeWatch.Sample(System.currentTimeMillis(), s.positionMs, s.wantsPlay, s.seeking, s.ended, s.failed))?.let { onFrozen(s, it) }
                 } else freezeWatch.reset()
                 val playing = s.wantsPlay && !s.ended && !s.failed
+                // DEB-3034 (FR-1) — a song only: a book's heartbeat is the book's, a station's is the tuner's.
+                if (book == null && openTrackId != null && !failed && loadJob?.isActive != true) {
+                    when (songWait.feed(waitSample(s))) {
+                        SongWaitEdge.STARTED -> reportProgress()
+                        SongWaitEdge.ENDED -> reportProgress(waitEnded = true)
+                        SongWaitEdge.NONE -> Unit
+                    }
+                }
                 if (playing != lastPlaying || s.buffering != lastBuffering) {
                     val paused = lastPlaying == true && !playing
                     lastPlaying = playing; lastBuffering = s.buffering
                     publish()
+                    // DEB-3034 (FR-7) — the player stopped wanting to play and no command of ours asked it to: the log says so.
+                    if (paused && !pauseLogged && !s.ended && !s.failed) notePause(null)
                     if (paused) reportProgress()
                 }
                 book?.let { b -> watchBook(b, s.positionMs, s.durationMs) }
@@ -466,7 +503,7 @@ actual object MusicEngine {
         publish(); save()
     }
 
-    actual fun togglePlay() { if (_state.value.playing) pause() else play() }
+    actual fun togglePlay(by: String?) { if (_state.value.playing) pause(by) else play() }
 
     actual fun play() {
         // A station is not paused, it is stopped: play tunes it again at the live edge (FR-10).
@@ -480,12 +517,20 @@ actual object MusicEngine {
         }
         if (q.current == null) return
         if (openTrackId == null || failed) startSong(q.index, if (ended) 0L else currentPositionMs(), true)
-        else { player.play(); publish() }
+        else { pauseBy = null; pauseLogged = false; player.play(); publish() }
     }
 
-    actual fun pause() {
+    actual fun pause(by: String?) {
         if (radioTuner.radio != null) { radioTuner.endTune(); player.release(); updateCard(); publish(); return }   // stopped, not paused: the tune closes
+        if (player.state.wantsPlay) notePause(by)
         player.pause(); publish(); save(); reportProgress()
+    }
+
+    /** DEB-3034 (FR-7) — a pause is starting: remember what sent it for the next reports, and say so in the log (`unknown` when nothing told us). */
+    private fun notePause(by: String?) {
+        pauseBy = PauseSource.wire(by)
+        pauseLogged = true
+        DesktopLog.note("music: paused by ${pauseBy ?: "unknown"} at ${player.state.positionMs} ms")
     }
 
     actual fun next() {
@@ -505,7 +550,7 @@ actual object MusicEngine {
 
     actual fun seekTo(positionMs: Long) {
         if (radioTuner.radio != null) return   // live: nothing to seek in
-        recovery.moved(); freezeWatch.reset()
+        recovery.moved(); freezeWatch.reset(); songWait.seeked(System.currentTimeMillis())
         if (openTrackId != null) { player.seekTo(positionMs.coerceAtLeast(0L)); endHandled = false } else parkedPositionMs = positionMs.coerceAtLeast(0L)
         if (ended && positionMs > 0) ended = false
         publish()
@@ -645,6 +690,7 @@ actual object MusicEngine {
         if (next in b.detail.parts.indices) { startPart(next, 0L, true); return }
         val end = b.detail.parts.getOrNull(b.part)?.durationMs ?: player.state.durationMs
         closeSong(atMs = end)
+        notePause(PauseSource.ENGINE)
         player.pause()
         book = b.copy(finished = true, sleep = null)
         parkedPositionMs = end
@@ -677,6 +723,7 @@ actual object MusicEngine {
             else -> Long.MAX_VALUE
         }
         if (leftMs <= 0) {
+            notePause(PauseSource.ENGINE)
             player.pause(); applyVolume(1f)
             book = book?.copy(sleep = null)
             publish(); reportProgress()

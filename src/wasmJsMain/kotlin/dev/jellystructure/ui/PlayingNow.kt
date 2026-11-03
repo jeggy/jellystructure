@@ -253,10 +253,14 @@ internal fun pnCountWords(live: List<AdminSessionRow>): String {
 
 private fun pnEventWord(what: String, detail: String?): String = when (what) {
     "started" -> "Started"
-    "paused" -> "Paused"
+    // DEB-3034 (FR-7) — a pause names what sent it (`keyboard`, `now_playing_toggle`, …), as `ended` names its reason.
+    "paused" -> "Paused" + (detail?.let { " · " + it.replace('_', ' ') } ?: "")
     "resumed" -> "Resumed"
     "reconnected" -> "Reconnected after restart"
     "back_online" -> "Back online"
+    // DEB-3034 (FR-5) — a song's wait for data: its phase and figures, then how long it lasted (or `abandoned`).
+    "waiting" -> "Waiting for data" + (detail?.let { " · $it" } ?: "")
+    "waited" -> "Waited" + (detail?.let { " · $it" } ?: "")
     "offline" -> "${detail ?: "The place"} went offline"
     "moved" -> "Moved to ${detail ?: "another place"}"
     "room_added" -> "${detail ?: "A room"} added"

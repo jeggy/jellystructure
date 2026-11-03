@@ -88,7 +88,7 @@ internal object MacDockMenu {
     }
 
     /** FR-4 — to whoever owns the card now, by the path the media keys take. */
-    private fun send(item: Item) = MacNowPlaying.dispatch(item.command, item.seconds)
+    private fun send(item: Item) = MacNowPlaying.dispatch(item.command, item.seconds, dock = true)
 
     /** FR-8 — the items as they are now (what is installed on a Mac), one `n. label` per item, or `none`. */
     fun describe(): String {

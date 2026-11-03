@@ -248,6 +248,12 @@ internal data class SessionRec(
      * `playing` or `paused` has plainly reported.
      */
     val everReported: Boolean = false,
+    /**
+     * DEB-3034 (FR-4) — when the player's current wait for data was first reported (the clock of the `waited` event's
+     * `<ms> ms`), or null when it is not waiting. Memory only: no column, no `revision`, no [SessionChange], so no
+     * remote or receiver sees a wait; a restart during one writes a second `waiting` at the next report.
+     */
+    val waitingSince: Long? = null,
 ) {
     val live: Boolean get() = endedAt == null
     // The item that plays, by id: a queue report moves [queueIndex] into the app's whole queue while [queue] may hold only the
@@ -591,6 +597,16 @@ class PlaybackSessions(
             .onFailure { println("[WARN] Playback sessions: timeline write failed: ${it.message}") }
     }
 
+    /**
+     * DEB-3034 (FR-4) — the wait on [this] ends because the song was stopped or replaced (or the session ended) while
+     * still waiting: one `waited` event with `<ms> ms abandoned`. Returns the row with the wait cleared; must hold [mutex].
+     */
+    private fun SessionRec.abandonWait(source: String?): SessionRec {
+        val since = waitingSince ?: return this
+        event(id, "waited", source, "${(now() - since).coerceAtLeast(0)} ms abandoned")
+        return copy(waitingSince = null)
+    }
+
     /** 304 — the timeline of one session, oldest first. */
     fun timeline(sessionId: String): List<Triple<Long, String, Pair<String?, String?>>> =
         db.playbackSessionQueries.eventsFor(sessionId).executeAsList().map { Triple(it.at, it.what, it.source to it.detail) }
@@ -704,7 +720,7 @@ class PlaybackSessions(
                     // device the move named, under the name it was picked by, and the old group's rooms stay behind (the app
                     // holding the link reports the new place's rooms).
                     val cast = device.kind == "cast"
-                    val next = cur.copy(
+                    val next = cur.abandonWait(device.deviceId).copy(
                         targetId = device.deviceId, targetKind = if (cast) "cast" else "app",
                         targetName = if (m.castDeviceId != null && m.targetName != m.castDeviceId) m.targetName else placeNameOf(device),
                         castDeviceId = if (cast) receiverCastDevice[device.deviceId] ?: m.castDeviceId ?: cur.castDeviceId else null,
@@ -735,7 +751,7 @@ class PlaybackSessions(
                     // A progress report can name the new song first (a skip on the receiver): its item may not be in the
                     // queue yet, and the row then had no title (the Mac, 2026-10-05).
                     val queue = if (sameItem && cur.queue.any { it.id == itemId && it.title != null }) cur.queue else listOf(item)
-                    val next = cur.copy(
+                    val next = cur.abandonWait(device.deviceId).copy(
                         kind = kind, itemId = itemId, bookId = book ?: cur.bookId, queue = queue, queueIndex = if (cur.options.queueKnown) cur.queueIndex else 0,
                         loadDeadline = null,
                         positionMs = positionMs, positionAt = t, state = SessionState.STARTING,
@@ -813,7 +829,9 @@ class PlaybackSessions(
     suspend fun onProgress(device: DeviceData, itemId: String, positionMs: Long, paused: Boolean, sessionId: String? = null,
                            volumePercent: Int? = null, muted: Boolean? = null,
                            /** R368 (FR-R368-12) — the book this report is for, carried from the audiobook route. */
-                           bookId: String? = null) {
+                           bookId: String? = null,
+                           /** DEB-3034 (FR-3/4, FR-7) — a song's wait ([waiting], with [waitDetail]) and what sent a pause. */
+                           waiting: Boolean? = null, waitDetail: String? = null, pauseBy: String? = null) {
         var created = false
         var change: SessionChange? = null
         // FR-R368-12 — a part id names its book even when the caller did not.
@@ -852,8 +870,23 @@ class PlaybackSessions(
             val state = if (paused) SessionState.PAUSED else SessionState.PLAYING
             val volumeChanged = volumePercent != null && (volumePercent != cur.options.volume || muted != cur.options.muted)
             val queue = if (cur.itemId != itemId && cur.queue.none { it.id == itemId }) listOf(newItem ?: SessionItem(itemId)) else cur.queue
+            // DEB-3034 (FR-4) — another song than the one that waited: that wait was abandoned. Then the change of the
+            // waiting state itself; a pause ends a wait, whatever the report says.
+            val base = if (cur.itemId != itemId) cur.abandonWait(device.deviceId) else cur
+            val nowWaiting = waiting == true && !paused
+            val waitingSince = when {
+                nowWaiting && base.waitingSince == null -> {
+                    event(cur.id, "waiting", device.deviceId, sanitizeTimelineDetail(waitDetail))
+                    t
+                }
+                !nowWaiting && base.waitingSince != null -> {
+                    event(cur.id, "waited", device.deviceId, "${(t - base.waitingSince).coerceAtLeast(0)} ms")
+                    null
+                }
+                else -> base.waitingSince
+            }
             val next = cur.copy(
-                itemId = itemId, bookId = book ?: cur.bookId, queue = queue,
+                itemId = itemId, bookId = book ?: cur.bookId, queue = queue, waitingSince = waitingSince,
                 // FR-R372-13 — the row has reported for itself now, so a later reap may not read it as a failed load.
                 everReported = true,
                 positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
@@ -869,7 +902,10 @@ class PlaybackSessions(
             if (cur.reconnecting) event(next.id, "reconnected", device.deviceId)
             if (cur.offline) event(next.id, "back_online", device.deviceId)
             val wasPaused = cur.state == SessionState.PAUSED
-            if (cur.state != SessionState.STARTING && wasPaused != paused) event(next.id, if (paused) "paused" else "resumed", device.deviceId)
+            if (cur.state != SessionState.STARTING && wasPaused != paused) {
+                // DEB-3034 (FR-7) — a pause carries what sent it, as the detail.
+                event(next.id, if (paused) "paused" else "resumed", device.deviceId, if (paused) sanitizeTimelineDetail(pauseBy) else null)
+            }
             if (changed) change = SessionChange.State(next.id)
             else if (volumeChanged) change = SessionChange.Detail(next.id)   // R371 — a level is not a revision
         }
@@ -877,7 +913,7 @@ class PlaybackSessions(
             // FR-R368-12 — a report that legitimately creates a session creates the one its item deserves: a book's
             // part makes an `audiobook` in the audio lane with the book's words and its `book_id`, never a bare film.
             onStart(device, itemId, positionMs, bookId = book, kindHint = null)
-            onProgress(device, itemId, positionMs, paused, bookId = book)
+            onProgress(device, itemId, positionMs, paused, bookId = book, waiting = waiting, waitDetail = waitDetail, pauseBy = pauseBy)
             return
         }
         change?.let { notify(it) }
@@ -910,7 +946,7 @@ class PlaybackSessions(
         mutex.withLock {
             val cur = findLocked(device, itemId, sessionId) ?: return@withLock
             val t = now()
-            val next = cur.copy(positionMs = positionMs, positionAt = t, stopHoldUntil = t + SESSION_STOP_HOLD_MS)
+            val next = cur.abandonWait(device.deviceId).copy(positionMs = positionMs, positionAt = t, stopHoldUntil = t + SESSION_STOP_HOLD_MS)
             sessions[next.id] = next
             next.persist()
         }
@@ -956,7 +992,7 @@ class PlaybackSessions(
 
     /** Ends [id] (must hold [mutex]). Returns the ended row, or null when it was not live. */
     private fun endLocked(id: String, reason: String, by: DeviceData? = null, byName: String? = null): SessionRec? {
-        val cur = sessions[id]?.takeIf { it.live } ?: return null
+        val cur = sessions[id]?.takeIf { it.live }?.abandonWait(by?.deviceId) ?: return null
         val t = now()
         val ended = cur.copy(
             state = SessionState.ENDED, endReason = reason, endedAt = t, updatedAt = t, revision = cur.revision + 1,
@@ -1160,5 +1196,13 @@ internal fun roomsDiff(before: List<SessionRoom>, after: List<SessionRoom>): Roo
 )
 
 /** The first name a household knows someone by (FR-R368-6) — a Jellyfin user name's first word. */
+/**
+ * DEB-3034 (FR-4, FR-7) — a device-supplied timeline detail (a wait's `wait_detail`, a pause's `pause_by`) reduced to
+ * `[A-Za-z0-9=._:() -]` (anything else becomes `_`) and 120 characters, as [sanitizeEventsPrev] does for its header.
+ * Null for an absent or blank value.
+ */
+internal fun sanitizeTimelineDetail(raw: String?): String? =
+    raw?.trim()?.take(120)?.replace(Regex("[^A-Za-z0-9=._:() -]"), "_")?.takeIf { it.isNotEmpty() }
+
 internal fun firstName(username: String): String = username.trim().split(' ', '.', '_').firstOrNull { it.isNotBlank() }
     ?.replaceFirstChar { it.uppercase() } ?: username

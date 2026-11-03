@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui
 import dev.jellystructure.ravilo.ui.music.MusicCast
 import dev.jellystructure.ravilo.ui.music.MusicEngine
 import dev.jellystructure.ravilo.ui.music.MusicPlayback
+import dev.jellystructure.ravilo.ui.music.PauseSource
 import dev.jellystructure.ravilo.ui.music.MusicVolume
 import dev.jellystructure.shared.tv.RemoteCommand
 import dev.jellystructure.shared.tv.RemotePlayer
@@ -113,8 +114,8 @@ private val RemoteCommand.movesVolume: Boolean
  */
 object MusicRemotePlayer : RemotePlayer {
     override fun play() = MusicPlayback.play()
-    override fun pause() = MusicPlayback.pause()
-    override fun toggle() = MusicPlayback.togglePlay()
+    override fun pause() = MusicPlayback.pause(PauseSource.REMOTE)   // DEB-3034 (FR-7) — a session remote or the dashboard
+    override fun toggle() = MusicPlayback.togglePlay(PauseSource.REMOTE)
     /** The song stops and the queue stays, paused where it was (FR-R322-12): the mini bar stays and Play resumes. */
     override fun stop() { if (MusicCast.linked.value) MusicCast.stop() else MusicEngine.stopForVideo() }
     /**

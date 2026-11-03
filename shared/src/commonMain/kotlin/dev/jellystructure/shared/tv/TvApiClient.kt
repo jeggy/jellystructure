@@ -335,10 +335,12 @@ class TvApiClient(
 
     /** [volume] — R357 (FR-R357-3/-5): the player's own level and mute, or null when it cannot know them (then
      *  the body is exactly the pre-R357 one). */
-    suspend fun reportProgress(itemId: String, positionMs: Long, isPaused: Boolean = false, volume: VolumeReport? = null) {
+    suspend fun reportProgress(itemId: String, positionMs: Long, isPaused: Boolean = false, volume: VolumeReport? = null,
+                               /** DEB-3034 (FR-3, FR-7) — the music engines' wait and pause source; null for everything else. */
+                               waiting: Boolean? = null, waitDetail: String? = null, pauseBy: String? = null) {
         client.post("$baseUrl/api/tv/playback/progress") {
             auth()
-            jsonBody(json.encodeToString(progressRequest(itemId, positionMs, isPaused, volume)))
+            jsonBody(json.encodeToString(progressRequest(itemId, positionMs, isPaused, volume, waiting, waitDetail, pauseBy)))
         }.assertSuccess()
     }
 

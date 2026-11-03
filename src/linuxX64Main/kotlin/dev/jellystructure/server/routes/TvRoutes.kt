@@ -831,7 +831,8 @@ fun Route.tvRoutes(
     post("/tv/playback/progress") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackProgressRequest>()
-        playbackService.reportProgress(device, req.itemId, req.positionMs, req.isPaused, req.volumePercent, req.muted, req.sessionId)   // R357 / R368
+        playbackService.reportProgress(device, req.itemId, req.positionMs, req.isPaused, req.volumePercent, req.muted, req.sessionId,   // R357 / R368
+            waiting = req.waiting, waitDetail = req.waitDetail, pauseBy = req.pauseBy)   // DEB-3034 (FR-3, FR-7)
         call.respond(mapOf("status" to "ok"))
     }
 

@@ -76,9 +76,10 @@ expect object MusicEngine {
     /** FR-R322-3 — load a queue paused at [positionMs] without starting it (the Playing tab with nothing playing). */
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?)
 
-    fun togglePlay()
+    /** DEB-3034 (FR-7) — [by] is what sent the pause (a [PauseSource] value); null omits it from the report. */
+    fun togglePlay(by: String? = null)
     fun play()
-    fun pause()
+    fun pause(by: String? = null)
     /** Skips to the next song (repeat-one does not hold a skip). */
     fun next()
     /** FR-R322-4 — within the first 3 s: the previous song; after that: the start of this one. */

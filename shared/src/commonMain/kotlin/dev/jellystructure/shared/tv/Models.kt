@@ -1633,6 +1633,17 @@ data class PlaybackProgressRequest(
     /** R368 (FR-R368-3, dev review item 8) — the server's playback session this report belongs to ([StreamTicket.sessionId]).
      *  Absent (an older app) or unknown ⇒ matched by (device, item) as before. An older server ignores it. */
     @SerialName("session_id") val sessionId: String? = null,
+    /** DEB-3034 (FR-3) — a song's player has had no data to play for 2 s or more, and is still waiting. Songs on the local
+     *  engine only. Absent (an older app) is "not waiting"; an older server ignores it (its ContentNegotiation decodes
+     *  with unknown keys ignored). Written to the session's timeline, never to `playback_qoe` (FR-6). */
+    val waiting: Boolean? = null,
+    /** DEB-3034 (FR-2) — `phase=<start|seek|mid> pos=<ms> buffered=<ms> observed=<bps>` (+ `why=…` on the Mac), at most
+     *  120 characters, sent with [waiting] = true. */
+    @SerialName("wait_detail") val waitDetail: String? = null,
+    /** DEB-3034 (FR-7) — what sent a pause (`screen`, `keyboard`, `dock`, `now_playing_pause`, `now_playing_toggle`,
+     *  `now_playing_stop`, `remote`, `engine`, Android's `media_session` and `audio_focus`), on the report that first
+     *  says [isPaused]. Anything else omits it. The detail of the session timeline's `paused` event. */
+    @SerialName("pause_by") val pauseBy: String? = null,
 )
 
 @Serializable

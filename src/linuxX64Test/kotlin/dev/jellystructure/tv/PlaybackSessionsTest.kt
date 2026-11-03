@@ -396,6 +396,144 @@ class PlaybackSessionsTest {
         assertEquals(listOf("started", "paused"), s.timeline(id).map { it.second })
     }
 
+    // ── DEB-3034 (a-song-that-waits-says-so): FR-4, FR-6, FR-7 ──
+
+    @Test fun `a wait writes waiting then waited with its length once each and bumps no revision`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 1_000, paused = false)
+        pushes.clear()
+        val rev = s.get(id)!!.revision
+        now += 2_000
+        s.onProgress(mac, "song-1", 1_000, paused = false, waiting = true, waitDetail = "phase=mid pos=1000 buffered=0 observed=96000")
+        // Every later report during the wait says waiting too: no second event. (Each stays under the 3 s drift that the
+        // existing seek rule reads as a change, which is not the wait's doing.)
+        now += 2_800
+        s.onProgress(mac, "song-1", 1_000, paused = false, waiting = true, waitDetail = "phase=mid pos=1000 buffered=0 observed=96000")
+        now += 2_800
+        s.onProgress(mac, "song-1", 1_000, paused = false, waiting = true, waitDetail = "phase=mid pos=1000 buffered=0 observed=96000")
+        now += 2_400
+        s.onProgress(mac, "song-1", 1_000, paused = false, waiting = false)
+        s.onProgress(mac, "song-1", 2_000, paused = false, waiting = false)
+        val ev = s.timeline(id).filter { it.second == "waiting" || it.second == "waited" }
+        assertEquals(listOf("waiting", "waited"), ev.map { it.second })
+        assertEquals("mac", ev[0].third.first)
+        assertEquals("phase=mid pos=1000 buffered=0 observed=96000", ev[0].third.second)
+        assertEquals("8000 ms", ev[1].third.second)
+        assertEquals(rev, s.get(id)!!.revision, "a wait is not a revision")
+        assertTrue(pushes.isEmpty(), "no remote or receiver sees a wait: $pushes")
+        assertNull(s.get(id)!!.waitingSince)
+    }
+
+    @Test fun `a stop while waiting writes waited abandoned and so does the next song`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 0, paused = false)
+        now += 2_000
+        s.onProgress(mac, "song-1", 0, paused = false, waiting = true, waitDetail = "phase=start pos=0 buffered=0")
+        now += 4_000
+        s.onStop(mac, "song-1", 0)
+        assertEquals("4000 ms abandoned", s.timeline(id).last { it.second == "waited" }.third.second)
+        // The next song joins the same row; a wait that never ended before a report names another song is closed too.
+        s.onStart(mac, "song-2", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-2", 0, paused = false)
+        now += 2_000
+        s.onProgress(mac, "song-2", 0, paused = false, waiting = true, waitDetail = "phase=start pos=0 buffered=0")
+        now += 1_500
+        s.onProgress(mac, "song-3", 0, paused = false, sessionId = id)
+        val ev = s.timeline(id).filter { it.second == "waiting" || it.second == "waited" }.map { it.second to it.third.second }
+        assertEquals(listOf(
+            "waiting" to "phase=start pos=0 buffered=0", "waited" to "4000 ms abandoned",
+            "waiting" to "phase=start pos=0 buffered=0", "waited" to "1500 ms abandoned",
+        ), ev)
+        assertNull(s.get(id)!!.waitingSince)
+    }
+
+    @Test fun `a wait still open when the session ends is closed as abandoned`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 0, paused = false)
+        now += 2_000
+        s.onProgress(mac, "song-1", 0, paused = false, waiting = true, waitDetail = "phase=mid pos=0 buffered=0")
+        now += 7_000
+        assertTrue(s.end(id, "stopped"))
+        val tl = s.timeline(id).map { it.second }
+        assertEquals(listOf("started", "waiting", "waited", "ended"), tl)
+        assertEquals("7000 ms abandoned", s.timeline(id).first { it.second == "waited" }.third.second)
+    }
+
+    @Test fun `a pause ends a wait even when the report still says waiting`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 0, paused = false)
+        now += 2_000
+        s.onProgress(mac, "song-1", 0, paused = false, waiting = true, waitDetail = "phase=mid pos=0 buffered=0")
+        now += 1_000
+        s.onProgress(mac, "song-1", 0, paused = true, waiting = true, pauseBy = "keyboard")
+        assertEquals(listOf("waiting", "waited"), s.timeline(id).map { it.second }.filter { it.startsWith("wait") })
+        assertEquals("1000 ms", s.timeline(id).first { it.second == "waited" }.third.second)
+        assertNull(s.get(id)!!.waitingSince)
+    }
+
+    @Test fun `a wait detail is reduced to the safe alphabet and 120 characters`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 0, paused = false)
+        now += 2_000
+        s.onProgress(mac, "song-1", 0, paused = false, waiting = true,
+            waitDetail = "phase=mid why=<script>alert(1)</script>?token=abc/def;" + "x".repeat(200))
+        val d = s.timeline(id).first { it.second == "waiting" }.third.second!!
+        assertEquals(120, d.length)
+        assertTrue(d.all { it.isLetterOrDigit() && it.code < 128 || it in "=._:() -" }, d)
+        assertFalse("<" in d || "/" in d || ";" in d || "?" in d)
+        assertNull(sanitizeTimelineDetail("   "))
+        assertNull(sanitizeTimelineDetail(null))
+    }
+
+    @Test fun `a report that says nothing about waiting changes nothing as an older app`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        repeat(5) { now += 10_000; s.onProgress(mac, "song-1", it * 10_000L, paused = false) }
+        assertEquals(listOf("started"), s.timeline(id).map { it.second })
+    }
+
+    @Test fun `waiting reports write no playback_qoe row FR-6`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 0, paused = false)
+        now += 2_000
+        s.onProgress(mac, "song-1", 0, paused = false, waiting = true, waitDetail = "phase=start pos=0 buffered=0")
+        now += 2_000
+        s.onProgress(mac, "song-1", 0, paused = false, waiting = false)
+        val qoe = PlaybackQoeStore(db)
+        // `recentForDevice(…, 20)` is the whole input of the film ladder's measurement (`qoeMeasurementOf` → `takeOf`).
+        assertTrue(qoe.recentForDevice("mac", 20).isEmpty())
+        assertTrue(qoe.recent(50).isEmpty())
+    }
+
+    @Test fun `a pause carries what sent it as the detail of the paused event sanitised`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        val id = s.onStart(mac, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(mac, "song-1", 0, paused = false)
+        s.onProgress(mac, "song-1", 5_000, paused = true, pauseBy = "now_playing_toggle")
+        s.onProgress(mac, "song-1", 5_000, paused = true, pauseBy = "screen")   // a repeat report is not another pause
+        s.onProgress(mac, "song-1", 5_000, paused = false)
+        s.onProgress(mac, "song-1", 9_000, paused = true, pauseBy = "k/e;y")
+        s.onProgress(mac, "song-1", 9_000, paused = false)
+        s.onProgress(mac, "song-1", 9_000, paused = true)   // an older app: no source
+        val paused = s.timeline(id).filter { it.second == "paused" }.map { it.third.second }
+        assertEquals(listOf("now_playing_toggle", "k_e_y", null), paused)
+        assertNull(s.timeline(id).first { it.second == "resumed" }.third.second)
+    }
+
     @Test fun `a watchdog reap leaves the session paused and offline`() = runBlocking {
         val s = service()
         val phone = device("pixel")

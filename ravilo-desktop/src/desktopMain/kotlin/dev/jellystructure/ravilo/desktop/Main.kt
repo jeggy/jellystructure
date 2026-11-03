@@ -232,6 +232,7 @@ private fun playerWindowKeys(ev: KeyEvent): Boolean {
  */
 private fun desktopKeys(ev: KeyEvent, quit: () -> Unit): Boolean {
     if (ev.type != KeyEventType.KeyDown) return false
+    if (ev.key == Key.Spacebar) dev.jellystructure.ravilo.ui.music.PauseSource.noteSpaceBar()   // DEB-3034 (FR-7) — a click right after is the key's
     val mac = dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac
     val cmd = if (mac) ev.isMetaPressed else ev.isCtrlPressed
     fun send(c: AppCommand): Boolean { AppCommands.send(c); return true }

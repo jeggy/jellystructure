@@ -40,6 +40,8 @@ that wait also says `waiting = true`. When the position moves again it sends one
 - `start` means this song has made no sound yet, `seek` means the wait began within 1 s of a seek, `mid` is the rest.
 - `observed` is left out where the player has no figure.
 - The Mac adds `why=<reasonForWaitingToPlay>`.
+- *Clarified 2026-11-03 (DEB-3034).* Android leaves `observed` out: ExoPlayer keeps no per-player figure, and Media3's
+  app-wide estimate is a seed until it has measured. Linux (mpv) leaves out `why`.
 
 **FR-3 — The wire.** `PlaybackProgressRequest` gains two optional fields, `waiting: Boolean? = null` and
 `wait_detail: String? = null`. An older app omits them and behaves as today. An older server ignores them, because its
@@ -55,6 +57,11 @@ The server reduces `wait_detail` to `[A-Za-z0-9=._:() -]` and 120 characters bef
 does for its header. The waiting state lives in memory on the session: no column, no migration, no `revision` bump and
 no `SessionChange`, so no remote or receiver sees a wait. A backend restart during a wait writes a second `waiting`
 when the next report arrives. That is acceptable.
+
+*Clarified 2026-11-03 (DEB-3034).* `<ms>` runs from the first report that said `waiting`, which the client sends 2 s
+into the wait, so it reads 2 s short of the wait itself. A heartbeat whose position has not moved for more than 3 s
+still counts as a seek under `isSessionChange`, as it always has; that bump is the position's doing, not the wait's, and
+a `waiting` flag alone never causes one.
 
 **FR-5 — The admin reads it.** `PlayingNow.kt`'s timeline names the two events *Waiting for data* and *Waited*, and
 shows the detail beside them as it does for other events.

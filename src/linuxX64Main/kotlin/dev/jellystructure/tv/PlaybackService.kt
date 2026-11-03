@@ -1562,7 +1562,9 @@ class PlaybackService(
                                sessionId: String? = null,
                                /** R368 (FR-R368-12) — the book, when [jellyfinId] is one of its parts: the session is
                                 *  then found by the book whatever part it is on, never minted beside it. */
-                               bookId: String? = null) {
+                               bookId: String? = null,
+                               /** DEB-3034 (FR-3, FR-7) — a song's wait and what sent a pause: the session's timeline only. */
+                               waiting: Boolean? = null, waitDetail: String? = null, pauseBy: String? = null) {
         // No requireVisible() here deliberately — this is a heartbeat for a session startPlayback
         // already gated; failing a heartbeat because a policy/library edit drifted mid-playback would
         // only strand a phantom "Now Playing" in Jellyfin, the exact bug class the watchdog above
@@ -1573,7 +1575,7 @@ class PlaybackService(
             return
         }
         // R368 (FR-R368-3) — the session stores the position; only a change is pushed (review item 9).
-        runCatching { sessions?.onProgress(device, jellyfinId, positionMs, isPaused, sessionId, volumePercent?.coerceIn(0, 100), muted, bookId) }
+        runCatching { sessions?.onProgress(device, jellyfinId, positionMs, isPaused, sessionId, volumePercent?.coerceIn(0, 100), muted, bookId, waiting, waitDetail, pauseBy) }
             .onFailure { Logger.warn("Playback sessions: progress failed: ${it.message}", "tv") }
         // R343 (FR-R343-4) — a Start over past 5 %: clear the series in the background (never awaited here).
         maybeStartOverClear(device, jellyfinId, positionMs)

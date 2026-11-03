@@ -89,6 +89,13 @@ actual object MusicEngine {
     private var loadJob: Job? = null
     private var tickJob: Job? = null
 
+    // ── DEB-3034 (a-song-that-waits-says-so.md) ──
+    /** FR-1/FR-2 — when this song's player counts as waiting, and what the report says. Songs only. */
+    private val songWait = SongWaitTracker()
+    private var waitJob: Job? = null
+    /** FR-7 — what sent the pause the player is in ([PauseSource] value), or null when unknown; cleared by play. */
+    private var pauseBy: String? = null
+
     // ── R323: a book in place of songs ──
     private var book: BookPlayback? = null
     /** The part playing came as a direct stream, so the next one may be fetched early (dev review 3): an early
@@ -298,8 +305,9 @@ actual object MusicEngine {
         override fun seekToPrevious() = MusicEngine.previous()
         override fun seekToPreviousMediaItem() = MusicEngine.previous()
         override fun play() = MusicEngine.play()
-        override fun setPlayWhenReady(playWhenReady: Boolean) { if (playWhenReady) MusicEngine.play() else MusicEngine.pause() }
-        override fun pause() = MusicEngine.pause()
+        // DEB-3034 (FR-7) — the session's controllers (a notification button, a headset, Android Auto) arrive here.
+        override fun setPlayWhenReady(playWhenReady: Boolean) { if (playWhenReady) MusicEngine.play() else MusicEngine.pause(PauseSource.MEDIA_SESSION) }
+        override fun pause() = MusicEngine.pause(PauseSource.MEDIA_SESSION)
     }
 
     /** Dev review 7 / open question 2 → the queue: after a reboot the system's *play* resumes the saved queue.
@@ -363,6 +371,10 @@ actual object MusicEngine {
             // R323 — the part queued early took over, without a gap: it is now the one playing.
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) onPartTransition()
         }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // DEB-3034 (FR-7) — Media3 pauses by itself when another app takes audio focus; no command of ours is behind it.
+            if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) pauseBy = PauseSource.AUDIO_FOCUS
+        }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             // A station draws nothing: it is heard when the player is playing (past buffering, audio out).
             if (radioTuner.radio != null) { if (isPlaying && radioTuner.listening) radioTuner.heard(); publish(); return }
@@ -425,7 +437,7 @@ actual object MusicEngine {
         val id = openTrackId ?: return
         val pos = atMs ?: (exo?.currentPosition ?: 0L)
         openTrackId = null
-        tickJob?.cancel()
+        tickJob?.cancel(); waitJob?.cancel()
         val c = client()
         val b = book
         // FR-R372-11's music companion — on [exitScope], with the video stop's bounded retry: see its own doc, and
@@ -445,6 +457,7 @@ actual object MusicEngine {
         val track = q.tracks.getOrNull(i) ?: return
         closeSong()
         dropBook()
+        songWait.newSong()
         q.index = i
         failed = false; ended = false
         parkedPositionMs = startMs
@@ -479,6 +492,7 @@ actual object MusicEngine {
         if (next != null) { startSong(next, 0L, true); return }
         // FR-R322-5 — queue end: stay on the last song, paused at 0:00. Nothing restarts on its own.
         closeSong(atMs = exo?.duration?.takeIf { it > 0 })
+        pauseBy = PauseSource.ENGINE
         exo?.pause(); exo?.seekTo(0)
         ended = true; parkedPositionMs = 0L
         publish(); save()
@@ -495,9 +509,33 @@ actual object MusicEngine {
                 save()
             }
         }
+        // DEB-3034 (FR-1) — ExoPlayer has no polling loop of ours: the wait is read four times a second.
+        waitJob?.cancel()
+        waitJob = scope.launch {
+            while (true) {
+                delay(250)
+                watchWait()
+            }
+        }
     }
 
-    private fun reportProgress() {
+    private fun watchWait() {
+        val p = exo ?: return
+        if (book != null || radioTuner.radio != null || openTrackId == null || failed) return
+        // No `observed`: ExoPlayer keeps no per-player figure, and Media3's app-wide estimate is a seed until it has measured (FR-2: left out).
+        val sample = SongWaitSample(
+            nowMs = System.currentTimeMillis(), wantsPlay = p.playWhenReady, buffering = p.playbackState == Player.STATE_BUFFERING,
+            positionMs = p.currentPosition, bufferedMs = (p.bufferedPosition - p.currentPosition).coerceAtLeast(0L),
+        )
+        when (songWait.feed(sample)) {
+            SongWaitEdge.STARTED -> reportProgress()
+            SongWaitEdge.ENDED -> reportProgress(waitEnded = true)
+            SongWaitEdge.NONE -> Unit
+        }
+    }
+
+    /** [waitEnded] — DEB-3034 (FR-1): this report is the one that says the song's wait is over. */
+    private fun reportProgress(waitEnded: Boolean = false) {
         val id = openTrackId ?: return
         val p = exo ?: return
         val pos = p.currentPosition
@@ -509,7 +547,12 @@ actual object MusicEngine {
         // R323 (280's dev review 1) — a book's heartbeat is the book's; the server mirrors it to the part's session.
         val b = book
         if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused, vol) } }; return }
-        scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol) } }
+        // DEB-3034 — a wait is reported while it lasts (FR-1) with its detail (FR-2); a pause ends it. A pause is reported with what sent it (FR-7).
+        val waiting = songWait.waiting && !paused
+        val detail = if (waiting) songWait.detail(SongWaitSample(System.currentTimeMillis(), true, true, pos, (p.bufferedPosition - pos).coerceAtLeast(0L))) else null
+        val flag: Boolean? = if (waiting) true else if (waitEnded) false else null
+        val by = if (paused) pauseBy else null
+        scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol, flag, detail, by) } }
     }
 
     /** R357 (FR-R357-4) — from the first song on, a volume command reports at once, not at the next 10 s tick. */
@@ -586,7 +629,7 @@ actual object MusicEngine {
         publish(); save()
     }
 
-    actual fun togglePlay() { if (_state.value.playing) pause() else play() }
+    actual fun togglePlay(by: String?) { if (_state.value.playing) pause(by) else play() }
 
     actual fun play() {
         // A station is not paused, it is stopped: play tunes it again at the live edge (FR-10).
@@ -599,11 +642,12 @@ actual object MusicEngine {
         }
         if (q.current == null) return
         if (openTrackId == null || failed) startSong(q.index, if (ended) 0L else currentPositionMs(), true)
-        else { ensureService(); exo?.play() }
+        else { pauseBy = null; ensureService(); exo?.play() }
     }
 
-    actual fun pause() {
+    actual fun pause(by: String?) {
         if (radioTuner.radio != null) { radioTuner.endTune(); exo?.stop(); publish(); return }   // stopped, not paused: the tune closes
+        pauseBy = PauseSource.wire(by)   // DEB-3034 (FR-7) — before the pause, so the report it causes carries it
         exo?.pause(); publish(); save()
     }
 
@@ -624,6 +668,7 @@ actual object MusicEngine {
 
     actual fun seekTo(positionMs: Long) {
         if (radioTuner.radio != null) return   // live: nothing to seek in
+        songWait.seeked(System.currentTimeMillis())
         if (openTrackId != null) exo?.seekTo(positionMs.coerceAtLeast(0L)) else parkedPositionMs = positionMs.coerceAtLeast(0L)
         if (ended && positionMs > 0) ended = false
         publish()

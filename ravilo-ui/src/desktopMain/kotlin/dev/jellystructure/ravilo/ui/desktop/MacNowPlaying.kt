@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.desktop
 
 import dev.jellystructure.ravilo.ui.DesktopApp
+import dev.jellystructure.ravilo.ui.music.PauseSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +15,14 @@ import javax.swing.SwingUtilities
  * music engine's song or book, or (R330 FR-R330-7) a speaker being cast to. A new owner takes the card; only the
  * owner may change or clear it, so a film that stops cannot wipe the card a song has since taken.
  */
+/** DEB-3034 (FR-7) — see [MacNowPlaying.pauseSource]. */
+internal fun pauseSourceOf(command: MacNowPlaying.Command, viaDock: Boolean): String = when {
+    viaDock -> PauseSource.DOCK
+    command == MacNowPlaying.Command.PAUSE -> PauseSource.NOW_PLAYING_PAUSE
+    command == MacNowPlaying.Command.STOP -> PauseSource.NOW_PLAYING_STOP
+    else -> PauseSource.NOW_PLAYING_TOGGLE
+}
+
 internal object MacNowPlaying {
     /** DEB-2659 — [LIVE] is a radio station: play and pause only, no seek, no next or previous, and the card says it is a live stream. */
     enum class Mode(val code: Int) { FILM(0), MUSIC(1), BOOK(2), LIVE(3) }
@@ -39,9 +48,22 @@ internal object MacNowPlaying {
     }
 
     /** A media key or a Dock-menu click (DEB-2249 FR-4): to whoever owns the card when it runs, on the Swing thread. */
-    fun dispatch(command: Command, seconds: Double) {
-        SwingUtilities.invokeLater { currentOwner()?.onCommand(command, seconds) }
+    fun dispatch(command: Command, seconds: Double, dock: Boolean = false) {
+        SwingUtilities.invokeLater {
+            viaDock = dock
+            try { currentOwner()?.onCommand(command, seconds) } finally { viaDock = false }
+        }
     }
+
+    /** True while [dispatch] hands a Dock-menu click to the owner (on the Swing thread, so the owner can ask who sent it). */
+    private var viaDock = false
+
+    /**
+     * DEB-3034 (FR-7) — what to report as the source of a pause that [command] asks for, from inside [Target.onCommand]:
+     * `dock` for the Dock menu, else the Now Playing command's own name (media keys, Control Center and headphones all
+     * arrive as these three).
+     */
+    fun pauseSource(command: Command): String = pauseSourceOf(command, viaDock)
 
     @Synchronized
     private fun currentOwner(): Target? = owner
