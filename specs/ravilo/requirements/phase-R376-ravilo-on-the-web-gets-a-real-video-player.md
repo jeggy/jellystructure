@@ -789,3 +789,44 @@ The hide/return/leave decision moves out of the `js()` handler into a small pure
 stop, and a second answers none; the return from it answers one foreground; on a phone *hidden* answers one stop, except
 in PiP or on AirPlay. `FR-R376-4i`'s frames and everything in the acceptance are browser facts, proved in the lab and by
 QA.
+
+### Build notes — 2026-11-03 (DEB-3000)
+
+**Shape.** `WebPageLifecycleGate` (`ravilo-ui` `commonMain`, with `WebPageLifecycleGateTest`) decides what a hide, a return
+and a leave mean; `PlayerLifecycleEffect` (wasmJs) feeds it `visibilitychange`, `pagehide` and `pageshow` (persisted) and does
+what it answers. On a computer *hidden* and *visible* answer nothing; `pagehide` answers one stop, and the return from the
+back-forward cache (`pageshow` with `persisted`, or the `visibilitychange` that comes with it) one foreground. A phone is
+`boot.js`'s `isIOS` or `PlayerImmersiveEffect`'s Android UA, and keeps today's rule with the PiP and AirPlay exemption.
+
+**FR-4i measured, not only read.** Lab: a throwaway Jellyfin with a three-episode synthetic series of 40 s episodes (an
+unplayable container, so the film goes through Jellyfin's remux and hls.js; a second pass was direct play), Chromium 149,
+the backend at `66656fff`, the bundle of this change. Headless Chromium never reports a page hidden, so the lab stood in
+for the browser's half: `requestAnimationFrame` callbacks stop running, `visibilityState` reads `hidden`, and
+`visibilitychange` fires. Timers were not throttled by it; a real hidden Chrome tab throttles them to about 1 Hz, which is
+QA's to prove. With the hide path gone and **no** frames remedy: the heartbeat (`progress` every 10 s) and the next-up
+prefetch (`prepare`) went on, the episode played to its end (40.1 s) and then sat there, with no `qoe`, no `stop`, no next
+`start`, for the 61 s until the tab came back. That confirms the reading above. With the remedy below, the next episode's
+`stop` and `start` came 7.4 s after the end, hidden (visible: 5.5 s, so about 2 s slower), and the episode after it again
+49 s later; Autoplay off left the *Up next* card up, pixel-identical to the visible one, with no start for 50 s.
+
+**Remedy.** `boot.js` wraps `requestAnimationFrame`/`cancelAnimationFrame`. While `raviloHiddenFrames.player()` says a player
+is up (`PlayerLifecycleEffect` adds one, film and Live TV alike, and removes it on dispose) **and** the page is hidden, the
+callbacks Compose asks for, and any already with the browser when the page hides, are run by a 1 s `setInterval`, one
+batch a tick. At every other time, a hidden page with no player up included, it is the browser's `requestAnimationFrame`
+untouched. There is no second next-episode path: Compose still makes the frames. The gamepad poller in `boot.js` is a
+`requestAnimationFrame` loop and goes through the same wrapper; it keeps one poll a frame when visible and one a second
+while hidden with a player up. `tests/e2e/ravilo-web-hidden-frames.spec.ts` proves the wrapper in CI with the native clock
+replaced by one that never fires, which is what a hidden page has.
+
+**Lab results, acceptance of this amendment** (Chromium on the lab above, the hide emulated as stated):
+
+| # | Result |
+|---|---|
+| 1 | Hidden 30 s: the film at +30.0 s, no `pause`, no `stop`, no new `start`, no `waiting` after the start-up ones, playing 1.3 s after the return. Same on direct play. |
+| 3 | Paused at 6.9 s, hidden 60 s: still paused at 6.9 s after the return, same session, `progress` kept reporting 6 920 ms, Space then played with no reload. |
+| 4 | Autoplay on: the chain ran on while hidden (two next episodes in 120 s). Autoplay off: the card waits; both cases above. |
+| 5 | Closing a visible tab and closing a hidden one each ended the session on the server with the position (6 907 ms and 10 902 ms). |
+| FR-4h | An Android UA: hidden paused at 6.9 s and posted `stop` (6 934 ms); the return posted a new `start`, paused at 6.9 s. |
+
+**Not proved here, still QA's:** a real hidden tab's timer throttling, acceptance 2 (10 minutes), 6 (the picture on return),
+7 (a muted film), 8 (Safari), 9 (Live TV), 10 (the remote) and 11 on a phone.
