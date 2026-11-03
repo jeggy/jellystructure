@@ -154,6 +154,10 @@ import org.jetbrains.compose.resources.painterResource
 internal const val PLAYER_CHROME_HIDE_MS = 3_600L
 /** R77's screen-relative subtitle floor; R251 (FR-R251-4) adds the transport band's height to it while the chrome is up. */
 private val SUBTITLE_FLOOR_INSET = 28.dp
+
+/** R251 (FR-R251-4) / DEB-3506 — the caption's bottom inset: the 28 dp floor, plus the transport band's measured height while the chrome is up. */
+internal fun subtitleInsetFor(chromeUp: Boolean, transportBand: Dp): Dp =
+    if (chromeUp) SUBTITLE_FLOOR_INSET + transportBand else SUBTITLE_FLOOR_INSET
 internal const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
 internal const val EPRAIL_HIDE_MS = 30_000L // R208: auto-close the episode rail after inactivity
 // R182 — replaces the old hardcoded COUNTDOWN_SECS = 8: the "Skip button countdown" viewer setting
@@ -611,12 +615,14 @@ private fun BoxScope.PlayerVideoLayer(s: PlayerScreenState) = with(s) {
     // than inventing a second one. FR-R220-5 — feeds rawBufferMoment so a rung running past R218's debounce shows STALL.
     // R251 (FR-R251-4) — subtitles rise above the transport band while the TV chrome is up: R77's screen-relative 28 dp floor
     // plus the band's measured height, on the chrome's own fade timing; back to the floor when hidden. Same visibility test as
-    // the chrome's AnimatedVisibility. The handset chrome (R244) is not lifted here — R244 owns the phone player.
-    val chromeUpForSubs = !handset && (chromeVisible || displayedBufferMoment == PlBufferMoment.STALL) &&
-        displayedBufferMoment != PlBufferMoment.COLD
+    // the chrome's AnimatedVisibility. DEB-3506 (R300 FR-R300-2, R251 FR-R251-4) — the handset chrome is lifted for too: its bottom
+    // band (rail row + seek bar in portrait, seek bar in landscape) reports its height through the same transportBandPx, and the
+    // visibility test is the handset chrome's own (it also hides under the lock, R290 FR-R290-1).
+    val chromeUpForSubs = (chromeVisible || displayedBufferMoment == PlBufferMoment.STALL) &&
+        displayedBufferMoment != PlBufferMoment.COLD && !(handset && locked)
     val transportBandDp = with(LocalDensity.current) { transportBandPx.toDp() }
     val subtitleInset by animateDpAsState(
-        targetValue = if (chromeUpForSubs) SUBTITLE_FLOOR_INSET + transportBandDp else SUBTITLE_FLOOR_INSET,
+        targetValue = subtitleInsetFor(chromeUpForSubs, transportBandDp),
         animationSpec = tween(if (chromeUpForSubs) RaviloMotion.CHROME_FADE_IN_MS else RaviloMotion.CHROME_FADE_OUT_MS),
         label = "subtitleInset",
     )
@@ -841,6 +847,7 @@ private fun PlayerHandsetChromeHost(s: PlayerScreenState) = with(s) {
         railItems = handsetRailFor(hasNextEp = resolvedNextEpisodeId != null, hasSeason = episodes != null),
         stallActive = stallActive, seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
         showRotate = handsetControls?.systemRotationLocked == true, landscapeForced = landscapeForced,
+        onBottomBandHeight = { transportBandPx = it },   // DEB-3506 (R251 FR-R251-4)
         onBack = inputs.onBack,
         onRotate = { landscapeForced = !landscapeForced; handsetControls?.setLandscape(landscapeForced); wake() },
         onTitleTap = if (episodes != null) ({ epRailOpen = true; chromeVisible = true }) else null,

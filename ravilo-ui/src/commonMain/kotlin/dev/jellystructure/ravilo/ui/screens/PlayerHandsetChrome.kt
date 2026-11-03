@@ -166,6 +166,8 @@ internal fun HandsetPlayerChrome(
     showSeek: Boolean = true,
     showSkips: Boolean = true,
     liveLine: String? = null,
+    /** DEB-3506 (R251 FR-R251-4) — the bottom band's height from the screen's foot (band + gesture-bar inset), so captions can rise above it. */
+    onBottomBandHeight: (Int) -> Unit = {},
     onBack: () -> Unit,
     onRotate: () -> Unit,
     /** Set when a season exists: tapping the kicker + title opens the season sheet (FR-R244-11). */
@@ -185,6 +187,7 @@ internal fun HandsetPlayerChrome(
     onSeekEnd: () -> Unit,
 ) {
     val portrait = LocalPortrait.current
+    val bottomInsetPx = WindowInsets.safeDrawing.getBottom(LocalDensity.current)
     val topScrim = remember { Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.62f), Color.Transparent)) }
     val botScrim = remember { Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))) }
 
@@ -289,7 +292,9 @@ internal fun HandsetPlayerChrome(
 
             // ── Bottom: (portrait rail row) · seek bar + times, or the live line ──
             Column(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .onSizeChanged { onBottomBandHeight(it.height + bottomInsetPx) }   // DEB-3506 (R251 FR-R251-4)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 if (portrait) {
                     Row(
