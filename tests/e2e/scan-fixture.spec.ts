@@ -254,16 +254,25 @@ test.describe.serial("Fixture suite", () => {
     // the untick is remembered per part in the browser; leave nothing behind for the next test
     await page.evaluate(() => localStorage.removeItem('js-processing-skip'));
 
-    // The run's plan (Activity's chips) leaves the step out, and its descriptor names the skip.
+    // The run's descriptor names the skip, and its plan (the "Pipeline starting:" line, which Activity's chips are drawn from)
+    // leaves the step out. Both are read from the run's own log lines: on a fixture library every item is inside the
+    // freshness window, so the run is over in a few milliseconds and /api/scan/status is idle before a poll can catch it.
+    let runId = '';
     await expect.poll(async () => {
-      const st = await (await page.request.get('/api/scan/status')).json();
-      return st.running ? (st.stepPlan as string[]).join(',') : 'idle';
-    }, { timeout: 15_000 }).not.toBe('idle');
-    const running = await (await page.request.get('/api/scan/status')).json();
-    expect(running.stepPlan).not.toContain('verify_files');
-    await expect.poll(async () =>
-      JSON.stringify(await (await page.request.get('/api/activity/log?category=scan&pageSize=500')).json()),
-      { timeout: 30_000 }).toContain('skipped: File health');
+      const log = await (await page.request.get('/api/activity/log?category=scan&pageSize=500')).json();
+      const start = (log.entries as Array<{ message: string; runId?: string }>)
+        .filter(e => e.message.includes('skipped: File health')).pop();
+      runId = start?.runId ?? '';
+      return runId;
+    }, { timeout: 30_000 }).not.toBe('');
+    let plan = '';
+    await expect.poll(async () => {
+      const log = await (await page.request.get(`/api/activity/log?run=${encodeURIComponent(runId)}&pageSize=500`)).json();
+      plan = (log.entries as Array<{ message: string }>).find(e => e.message.startsWith('Pipeline starting:'))?.message ?? '';
+      return plan;
+    }, { timeout: 30_000 }).not.toBe('');
+    expect(plan).toContain('scan_files');
+    expect(plan).not.toContain('verify_files');
 
     // Let it finish before the next test; a cast session left by an earlier spec may defer it (see
     // waitForScanComplete), so press the product's own override the way an operator would.
