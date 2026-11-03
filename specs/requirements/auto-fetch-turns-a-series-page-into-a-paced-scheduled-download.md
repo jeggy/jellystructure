@@ -74,6 +74,14 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-6.3: the recipe still names a 639-2 code, but yt-dlp is now asked for that language under its 639-1 code as well as its 639-2 code, each with an optional region (`en(-.+)?,eng(-.+)?`).
 - FR-6.3: when the source has subtitles but none in the recipe's language, the run line now says so. A source with no subtitles at all stays silent, as FR-6.4 already says.
 
+**Amended 2026-11-03 (DEB-3459)**, after QA's check 16 on DEB-3373. A real model ran three times on one TMDB fixture, whose items are titled as TMDB names them and carry no number. Only one run reached the review. One run ended on *maps to no season and episode*, because the model kept a `source` pattern instead of `mapped`. The other ended on *the pattern is not a valid regular expression* in an `item_page` regex. Neither failure could be read afterwards.
+- FR-4.1: a named group is written `(?<name>…)`. Python's spelling `(?P<name>…)` is read as that and stored as that. A pattern that does not compile is refused with the engine's own error message, not a bare sentence.
+- FR-5.1: the prompt and the schema name the group syntax. The prompt says that items with no number of their own are `mapped` on a TMDB fetcher and `date` on a page-only one. The reason told back for *maps to no season and episode* says the same.
+- FR-5.6 (new): every answer of the model's that the engine refuses is written to the server log with the engine's reason.
+
+**Amended 2026-11-03 (DEB-3460)**, after QA on DEB-3373. The open row's recipe header was drawn as `# recipe v1 · <name> · … · written by the model, read-only here`, without a date. The date was stored but never shown, so after *Re-investigate page* and saving, an admin could not tell from the screen whether the recipe had been replaced. The `v1` does not help: it is the schema version, and every recipe has it.
+- FR-4.4: the header names the day the recipe was written, after the model: `· written by claude-sonnet-5 on 2026-11-03 ·`. A recipe written by hand has neither. The `v1` stays the schema version and is not a revision count.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -315,6 +323,16 @@ one lane.
      *"N. partur" or "(N:M)" → episode*; *S{nn}E{nn}*; *a field of the listing → season / episode*). A rule is a regular
      expression with named groups `season` and `episode`, checked by the engine for size and against catastrophic
      backtracking before it is stored;
+     - **The group syntax (2026-11-03, DEB-3459).** This rule covers `pattern` and `item_page.pattern`. A named
+       group is written `(?<season>…)`, the syntax of the engine's own regular expressions (Kotlin/Native).
+       - Python's `(?P<season>…)` names the same group in another spelling. Before any check, the engine rewrites each
+         `(?P<` to `(?<`, and stores and shows the recipe in that form. Python's back-reference `(?P=name)` is not
+         rewritten. It does not compile, so it is refused like any other pattern that does not compile.
+       - A pattern that does not compile is refused as `the pattern is not a valid regular expression: <the engine's
+         message>`, at most 160 characters of it. The reason goes back to the model as FR-5.1's correction, so the
+         model learns what is wrong.
+       - Rejected: refusing `(?P<…>` with a hint. That costs a turn (about $0.05 on Sonnet 5) for a spelling the
+         engine can read with no doubt about what was meant.
    - `language`: the spoken language (ISO 639-2) and the subtitle language to look for;
    - `quality`: the highest variant, always.
 
@@ -362,7 +380,9 @@ one lane.
      until the admin accepts it through `…/number`. A proposal naming an episode TMDB lacks, or a number another item has, is refused (`422`)
      and kept as nothing. AI off, no key or the limit spent is `409` with the reason, and no request reaches Anthropic.
 4. **Stored, versioned, readable.** The recipe is stored with the fetcher, with its schema version, the model and the
-   date it was written. The fetcher's open row shows it read-only, as drawn. *Re-investigate page* writes a new recipe
+   date it was written. The fetcher's open row shows it read-only, as drawn. Its header names the model and that date
+   (`written by claude-sonnet-5 on 2026-11-03`; amended 2026-11-03, DEB-3460), so a saved re-investigation shows as a new
+   date. The header's `v1` is the schema version. *Re-investigate page* writes a new recipe
    beside the old one and the admin saves or discards it; the old one runs until then. Retention is the one part of
    a saved recipe the admin edits in place (FR-16.1).
 5. **Numbered by air date** (amended 2026-10-27, DEB-2626). This applies to a page-only fetcher of a programme whose
@@ -404,6 +424,18 @@ one lane.
    system prompt tells the model to choose it only for a site whose page is built in the browser and that yt-dlp has an
    extractor for. The model has no tool that runs yt-dlp: the proof (FR-4.2) does, through FR-6.3's reader, and a site
    yt-dlp cannot read ends as the proof's failing check, told back to the model like any other.
+   **Items with no number, and the group syntax (2026-11-03, DEB-3459).** The QA fixture had four items titled exactly
+   as TMDB names them, each dated on TMDB's air date. On it, one of three real-model runs reached the review.
+   - **No number in the item.** `source` numbering needs a season or an episode number in the item itself. The
+     system prompt's numbering step now says what to do when the items carry none, only a title (TMDB's own title
+     included) or a date. On a TMDB fetcher that is `numbering: mapped` with `mapping`, and on a page-only fetcher it is
+     `numbering: date`. The proof refuses a recipe with *'<title>' maps to no season and episode*. That reason, when it
+     goes back to the model, now ends with the same advice for the kind of fetcher: *if the items carry no number of
+     their own, answer `numbering: mapped` with `mapping`* (TMDB) or *… answer `numbering: date`* (page-only).
+   - **The group syntax.** The prompt's *Regexes* line, and the schema's descriptions of `pattern[].regex` and
+     `item_page.pattern`, say that a named group is written `(?<value>…)`, not `(?P<value>…)` (FR-4.1).
+   - Rejected: a new numbering that matches an item's title to a TMDB episode name with no model and no tick. That is
+     `mapped` without the admin's approval, and FR-4.3 (Q2) is that a mapping fails closed.
 2. **What is sent** (FR-270-8 gains this line): *the page URL and what this server read from that site during the
    investigation, and the TMDB series' name, seasons and episode list. Nothing from the library: which episodes the
    household has is worked out on this server, after the model has answered.* This applies to every site, including a
@@ -420,6 +452,17 @@ one lane.
    it would pass it. Every turn's `usage` goes to the `ai_usage` ledger. The starting estimate on the card: ~8 turns of
    ~15k input and ~1.5k output each, ≈ $0.90 an investigation on Opus 5, ≈ $0.36 on Sonnet 5.
 5. **One investigation at a time**, server-wide, as drawn. *Stop* ends it, discards what it found, and writes nothing.
+6. **A refused answer can be read afterwards** (2026-11-03, DEB-3459). The engine refuses an answer that is not in
+   the recipe's form, that says `series` and gives no recipe, that fails the validator or the proof (its examples
+   included), or that was cut off at `max_tokens`. Each time, the engine writes one `info` line to the server log under `autofetch`. The line has the investigation's
+   id, the turn, the engine's reason, and the model's answer text as it came back, cut at 8 kB.
+   - A `not_a_series` answer is logged the same way, with the model's own reason.
+   - An investigation that reaches the review logs nothing extra, because its recipe is what it stores.
+   - The log stays on this server. Nothing in it is sent anywhere, and FR-5.2's *What is sent* does not change.
+   - It is not an `ai_transcript` row. That table holds phase 272's batch conversations (FR-272-13), keyed by batch,
+     and the AI page reads it as a list of batches. An investigation is not a batch.
+   - Rejected for now: showing the refused answers in the failed state. That is a new admin surface and needs a
+     design round. This file asks for one when a household admin, not QA, needs to read them.
 
 ### FR-6 — A run
 
@@ -905,6 +948,21 @@ Added 2026-11-02 (DEB-3434):
       `· no subtitle: none in eng; the source has de, fr`. With an empty list, or none written, the line has no suffix.
     - Live, DEB-3390 check 7 on the NASA channel with `subtitle: "eng"`: `ffprobe` on a placed episode shows a subtitle
       stream tagged `eng`, and its run line has no `no subtitle:` suffix.
+
+Added 2026-11-03 (DEB-3459):
+
+18. **An investigation on items with no number.**
+    - Unit: the validator accepts the `item_page` pattern `var media = '(?P<value>[A-Z0-9]+)'`, and the stored recipe reads
+      `(?<value>[A-Z0-9]+)`. `(?P=value)` is refused. A pattern that does not compile is refused with
+      `the pattern is not a valid regular expression: ` followed by the engine's message.
+    - Unit, with a scripted model: on a TMDB fetcher, a `source` recipe whose rules number no item is told back with
+      the `numbering: mapped` advice. On a page-only fetcher the advice is `numbering: date`.
+    - Unit: the system prompt's numbering step names `mapped` (TMDB) or `date` (page-only) for items with no number.
+      The prompt's *Regexes* line and both schema descriptions carry `(?<value>…)`.
+    - Unit: each kind of refusal, and a `not_a_series` answer, writes its `autofetch` log line with the reason
+      and the answer. An answer over 8 kB is cut.
+    - Live, DEB-3373 check 16 again, three runs on the same fixture and settings: each run reaches the review with
+      `mapped` numbering and 4 of 4 items proposed. A run that fails is filed with its log line.
 
 ## Non-goals
 
