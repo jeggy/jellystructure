@@ -189,7 +189,7 @@ data class AutofetchOverview(
 /** The recipe in the words of the open row (FR-4.4): data, never executed. */
 object RecipeView {
     fun lines(f: Fetcher, r: Recipe): List<RecipeLineView> = buildList {
-        add(RecipeLineView("#", "recipe v${r.version} · ${f.name} · ${if (f.pageOnly) "page only, no TMDB id" else "tmdb ${f.tmdbId}"}${if (r.writtenBy.isNotBlank()) " · written by ${r.writtenBy}" else ""} · read-only here"))
+        add(RecipeLineView("#", "recipe v${r.version} · ${f.name} · ${if (f.pageOnly) "page only, no TMDB id" else "tmdb ${f.tmdbId}"}${if (r.writtenBy.isNotBlank()) " · written by ${r.writtenBy}${if (r.writtenAt.isNotBlank()) " on ${r.writtenAt}" else ""}" else ""} · read-only here"))
         add(RecipeLineView("source", r.source.url, "hosts fixed at save; nothing else may be named"))
         add(RecipeLineView("list", when (r.list.kind) {
             "json" -> "GET ${r.list.url} → ${r.list.fields.keys.joinToString(", ")}"

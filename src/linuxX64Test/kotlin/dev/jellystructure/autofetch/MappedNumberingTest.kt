@@ -202,4 +202,14 @@ class MappedNumberingTest {
         assertTrue(lines.any { it.key == "numbering" && it.text == "mapped" && "only the rows you accepted" in it.comment })
         assertNotNull(f.recipe)
     }
+
+    @Test
+    fun `the recipe header names the day the recipe was written after the model and a hand-written recipe has neither`() {
+        tmdb(1, 2, 3)
+        val f = save(accept = listOf("R1"))
+        val written = f.recipe!!.copy(writtenBy = "claude-sonnet-5", writtenAt = "2026-11-03")
+        assertTrue(" · written by claude-sonnet-5 on 2026-11-03 · read-only here" in RecipeView.lines(f, written).first().text)
+        val byHand = RecipeView.lines(f, f.recipe!!.copy(writtenBy = "", writtenAt = "")).first().text
+        assertFalse("written by" in byHand || " on " in byHand, byHand)
+    }
 }

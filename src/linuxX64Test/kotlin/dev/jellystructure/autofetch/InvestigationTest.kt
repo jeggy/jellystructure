@@ -192,6 +192,15 @@ class InvestigationTest {
     }
 
     @Test
+    fun `a limit stop marks the step that was running as the failed one and leaves none running`() {
+        ai.limit = 1_000_000L
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertTrue(out.view.limitReached)
+        assertTrue(ai.sent.isEmpty(), "no request reaches Anthropic")
+        assertEquals(listOf("fail", "pending", "pending", "pending", "pending"), out.view.steps.map { it.state })
+    }
+
+    @Test
     fun `the limit is checked again before each turn against what the ledger has spent`() {
         // Room for the first turn; between the turns the month's spend (another job's, say) takes the rest.
         ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")

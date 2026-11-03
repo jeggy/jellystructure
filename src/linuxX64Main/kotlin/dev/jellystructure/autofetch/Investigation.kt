@@ -200,7 +200,7 @@ class Investigator(
             val spentMonth = ai.spentMicroUsd()
             if (spentMonth + worst > settings.limitMicroUsd) {
                 r.turns--
-                return fail("limit reached — the rest of this investigation could cost up to ${AiPricing.usd(worst)}, and ${AiPricing.usd(spentMonth)} of this month's ${AiPricing.usd(settings.limitMicroUsd)} is spent", limit = true)
+                return fail("limit reached — the rest of this investigation could cost up to ${AiPricing.usd(worst)}, and ${AiPricing.usd(spentMonth)} of this month's ${AiPricing.usd(settings.limitMicroUsd)} is spent", runningStep(r), limit = true)
             }
             val reply = try { ai.send(request) } catch (e: Throwable) {
                 if (e is CancellationException && !currentCoroutineContext().isActive) throw e
