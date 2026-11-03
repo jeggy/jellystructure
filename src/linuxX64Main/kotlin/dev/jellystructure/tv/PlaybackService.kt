@@ -799,6 +799,9 @@ class PlaybackService(
         measuredBps: Long? = null,
         sourceVideoCodec: String? = null,
         sourceVideoRange: String? = null,
+        /** DEB-3338 (FR-313-18) — the source's picture size, for a source larger than the URL's size cap. */
+        sourceWidth: Int? = null,
+        sourceHeight: Int? = null,
         /** Phase 313 — the device (`cast` gets MPEG-TS segments until fMP4 is verified on the receiver). */
         device: DeviceData? = null,
         /** 309 (FR-309-1) — what the device can take (null: no record). */
@@ -823,8 +826,13 @@ class PlaybackService(
         val master = ticket.hlsUrl ?: return measured
         // Phase 313 (FR-313-10/-12) — our own encoder serves the transcode when it can: one job, every rung, no
         // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
-        if (reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
+        val reencodes = reencodesVideo(master, sourceVideoCodec, sourceVideoRange, sourceWidth, sourceHeight)
+        if (reencodes) {
             val file = localFileOf(jellyfinId)
+            // DEB-3338 (FR-313-18) — a play that reaches us only because the source is larger than the URL's size cap, on a device
+            // that declared a picture ceiling, gets no rung above it; a device that declared none gets its family's rungs.
+            val boxLimit = sizeCapRungBox(master, sourceVideoCodec, sourceVideoRange, sourceWidth, sourceHeight,
+                capabilities.maxH264Width, capabilities.maxH264Height)
             // R291 (FR-R291-13) — a cast receiver is offered renditions on our own master (video-only variants) and
             // never on Jellyfin's; see withReceiverRenditions. Every other device keeps what it declared.
             val ourCaps = withReceiverRenditions(deviceKind, capabilities)
@@ -834,7 +842,7 @@ class PlaybackService(
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
-                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device))
+                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -873,14 +881,14 @@ class PlaybackService(
         // 309 (FR-309-2) — Jellyfin's own ladder starts where the record says too: what the device can take, else the
         // 4 Mbps rung (never the top first).
         val startBudget = take ?: NO_RECORD_START_STREAM_BPS
-        val ladder = if (capabilities.hlsAdaptive && reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
+        val ladder = if (capabilities.hlsAdaptive && reencodes) {
             topVideoBps(queryParam(master, "VideoBitrate")?.toLongOrNull(), sourceVideoBps, ceiling)
                 ?.let { AudioRenditions.LadderPlan(master, jellyfinPlaySessionId, it, ceiling, startBudget) }
         } else null
         // 308 — when a transcode gets no ladder, say why (found 2026-10-06: a Chromecast's cast streamed at the
         // source's 80.9 Mbps with no ladder and nothing in the log to tell which condition said no).
         if (ladder == null) Logger.info("playback: item=$jellyfinId no ladder: adaptive=${capabilities.hlsAdaptive} " +
-            "reencodes=${reencodesVideo(master, sourceVideoCodec, sourceVideoRange)} reasons=${queryParam(master, "TranscodeReasons")} codec=${queryParam(master, "VideoCodec")}/$sourceVideoCodec range=$sourceVideoRange " +
+            "reencodes=$reencodes reasons=${queryParam(master, "TranscodeReasons")} codec=${queryParam(master, "VideoCodec")}/$sourceVideoCodec range=$sourceVideoRange " +
             "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling " +
             "url=${master.substringAfter('?').split('&').filterNot { it.substringBefore('=').lowercase() in LOG_REDACTED_QUERY_KEYS }.joinToString("&")} (308)", "tv")
         // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
@@ -1388,6 +1396,8 @@ class PlaybackService(
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = take,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
+            sourceWidth = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.width,
+            sourceHeight = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.height,
             audioBps = audioBitratesOf(itemDetail, mediaSourceId))
     }
 
@@ -1477,7 +1487,7 @@ class PlaybackService(
         if (source.supportsDirectPlay || source.transcodingUrl == null) return dev.jellystructure.shared.tv.PrewarmResult("direct")
         val master = source.transcodingUrl
         val video = source.mediaStreams.firstOrNull { it.type.equals("Video", ignoreCase = true) }
-        if (!reencodesVideo(master, video?.codec, video?.videoRangeType)) return none("the picture is copied (no encode to warm)")
+        if (!reencodesVideo(master, video?.codec, video?.videoRangeType, video?.width, video?.height)) return none("the picture is copied (no encode to warm)")
         val file = localFileOf(jellyfinId) ?: return none("file not on this server's disk")
         val subs = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false, hlsSubtitles = caps.hlsOnly && caps.hlsSubtitles)
         val ticketLike = StreamTicket(jellyfinBaseUrl = jellyfinBase, accessToken = "", itemId = jellyfinId, container = "mkv", directPlay = false,
@@ -1487,7 +1497,8 @@ class PlaybackService(
         val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, wantedAudioIndex),
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
-            audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target))
+            audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target),
+            boxLimit = sizeCapRungBox(master, video?.codec, video?.videoRangeType, video?.width, video?.height, caps.maxH264Width, caps.maxH264Height))
         plan ?: return none(why)
         encoder.prewarm(plan, target.deviceId, jellyfinId, (startPositionMs / ENCODER_SEGMENT_MS).toInt(), nowMs() + PREWARM_TTL_MS)
         return dev.jellystructure.shared.tv.PrewarmResult("warm")
@@ -2470,6 +2481,8 @@ class PlaybackService(
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = ladderTake,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
+            sourceWidth = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.width,
+            sourceHeight = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.height,
             notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps, handover = handoverAt != null,
             audioBps = audioBitratesOf(itemDetail, chosenSource)) }
     }

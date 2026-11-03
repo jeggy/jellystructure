@@ -80,9 +80,11 @@ const val ENCODER_MAX_RUNGS = 4
  */
 internal fun encoderRungs(
     codec: EncoderCodec, srcW: Int, srcH: Int, srcBps: Long?, ceilingBps: Long?, maxRungs: Int = ENCODER_MAX_RUNGS,
+    /** DEB-3338 (FR-313-18) — a box the device's declared ceiling holds the top rung under (null: the family's largest). */
+    boxLimit: Int? = null,
 ): List<EncoderRung> {
     // The largest box the family allows that the source fills in at least one dimension (3840×1600 fills 2160p's width).
-    val topBox = listOf(2160, 1440, 1080, 720, 480).firstOrNull { it <= maxBoxHeight(codec) && (srcW >= boxWidth(it) || srcH >= it) } ?: 480
+    val topBox = listOf(2160, 1440, 1080, 720, 480).firstOrNull { it <= maxBoxHeight(codec) && it <= (boxLimit ?: Int.MAX_VALUE) && (srcW >= boxWidth(it) || srcH >= it) } ?: 480
     val caps = listOfNotNull(topCapBps(codec, topBox), srcBps?.takeIf { it > 0 }, ceilingBps?.takeIf { it > 0 }?.let { (it * 0.9).roundToLong() })
     val topBps = caps.min()
     val (tw, th) = fitInBox(srcW, srcH, topBox)

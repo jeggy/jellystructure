@@ -151,6 +151,32 @@ class VideoLadderTest {
         assertFalse(reencodesVideo(dv7, "hevc", null))
     }
 
+    /** DEB-3338 (FR-313-18) — the measured Mac URL: audio and container reasons only, the h264 size cap in the URL, an HEVC source. */
+    @Test
+    fun `a source larger than the URL's size cap is a re-encode whatever the reasons say`() {
+        val macUrl = "x?TranscodeReasons=AudioCodecNotSupported%2CDirectPlayError&VideoCodec=hevc,h264&MaxWidth=1920&MaxHeight=1080" +
+            "&hevc-rangetype=SDR,HDR10&h264-rangetype=SDR"
+        assertFalse(reencodesVideo(macUrl, "hevc", "HDR10"), "no size known: reads as it did")
+        assertTrue(reencodesVideo(macUrl, "hevc", "HDR10", 3840, 2160))
+        assertTrue(reencodesVideo(macUrl, "hevc", "HDR10", 3840, 1600), "wider only")
+        assertTrue(reencodesVideo(macUrl, "hevc", "HDR10", 1920, 1200), "taller only")
+        assertFalse(reencodesVideo(macUrl, "hevc", "HDR10", 1920, 1080), "at the cap is not above it")
+        assertFalse(reencodesVideo(macUrl, "hevc", "HDR10", null, null))
+        val noCap = "x?TranscodeReasons=AudioCodecNotSupported%2CDirectPlayError&VideoCodec=hevc,h264"
+        assertFalse(reencodesVideo(noCap, "hevc", "HDR10", 3840, 2160), "a URL with no cap")
+    }
+
+    @Test
+    fun `only a play that reaches us by the size cap alone is held to the declared ceiling`() {
+        val macUrl = "x?TranscodeReasons=AudioCodecNotSupported&VideoCodec=hevc,h264&MaxWidth=1920&MaxHeight=1080"
+        assertEquals(1080, sizeCapRungBox(macUrl, "hevc", null, 3840, 2160, 1920, 1080))
+        assertEquals(720, sizeCapRungBox(macUrl, "hevc", null, 3840, 2160, 1280, 720))
+        assertNull(sizeCapRungBox(macUrl, "hevc", null, 3840, 2160, 0, 0), "no declared ceiling: the family's own rungs")
+        assertNull(sizeCapRungBox(macUrl, "hevc", null, 1920, 1080, 1920, 1080), "not above the cap")
+        assertNull(sizeCapRungBox(macUrl.replace("AudioCodecNotSupported", "AudioCodecNotSupported%2CVideoRangeTypeNotSupported"), "hevc", null, 3840, 2160, 1920, 1080),
+            "a video reason already reaches our encoder: today's rungs")
+    }
+
     @Test
     fun `teardown names every variant's play session`() = runBlocking {
         val s = service()

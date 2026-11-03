@@ -303,6 +303,9 @@ data class JellyfinMediaStream(
     // 308 — a video stream's range (SDR, HDR10, DOVIWithEL …): Jellyfin re-encodes a picture whose range the target
     // codec's `{codec}-rangetype` list lacks, without saying so in TranscodeReasons.
     @SerialName("VideoRangeType") val videoRangeType: String? = null,
+    // DEB-3338 (FR-313-18) — a video stream's picture size: a source larger than the URL's MaxWidth/MaxHeight is re-encoded.
+    @SerialName("Width") val width: Int? = null,
+    @SerialName("Height") val height: Int? = null,
     @SerialName("IsForced") val isForced: Boolean = false,
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,

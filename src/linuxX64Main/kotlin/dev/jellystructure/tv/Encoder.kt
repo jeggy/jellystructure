@@ -136,6 +136,8 @@ class Encoder(
         audioBps: Map<Int, Long> = emptyMap(),
         /** DEB-3104 (FR-7) — the stall's cap is what holds this device's start under what its measurements allow. */
         stallCapped: Boolean = false,
+        /** DEB-3338 (FR-313-18) — the tallest box the top rung may use: set when the play reaches us only by the size-cap rule. */
+        boxLimit: Int? = null,
     ): Pair<EncoderPlan?, String> {
         val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
         val range = sourceVideoRange.orEmpty()
@@ -172,7 +174,7 @@ class Encoder(
             audioRenditionFor(pos, order[pos], family, a.codec, a.channels, caps.maxAudioChannels, audioBps[a.index], a.language, a.label, pos == carried)
         }
         val audioPeak = encAudio.maxOfOrNull { audioBitrate(it) } ?: 0L
-        var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling)
+        var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling, boxLimit = boxLimit)
         if (belowBandwidthBps != null) rungs = rungsBelowBandwidth(rungs, audioPeak, belowBandwidthBps)
         // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that
         // climbs) the 720p 4 Mbps rung, else (a player that can't climb) the top.

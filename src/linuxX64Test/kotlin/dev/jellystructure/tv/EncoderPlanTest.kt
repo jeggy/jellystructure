@@ -302,6 +302,20 @@ class EncoderPlanTest {
         assertEquals(EncoderMux.TS, encoderMuxFor("cast", "web"))
     }
 
+    /** DEB-3338 (FR-313-18) — the 2160p source: a device that declared no ceiling keeps the top rung; one that did is held to it. */
+    @Test fun `a size-cap play tops out at the declared ceiling and a device with none keeps 2160p`() = runBlocking {
+        val mac = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        val none = encoder().planFor(mac, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals(2160, none.rungs[0].boxHeight)
+        val declared = mac.copy(maxH264Width = 1920, maxH264Height = 1080)
+        val held = encoder().planFor(declared, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", boxLimit = 1080).first!!
+        assertEquals(1080, held.rungs[0].boxHeight)
+        assertTrue(held.rungs.all { it.boxHeight <= 1080 })
+        // The same declared device on a play that reached us for another reason (no limit passed) keeps today's rungs.
+        val other = encoder().planFor(declared, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals(2160, other.rungs[0].boxHeight)
+    }
+
     @Test fun `an installed 1_50 app gets one quality — the receiver gets TS — and an unplaced burn-in stays Jellyfin's`() = runBlocking {
         val old = ClientCapabilities(videoCodecs = listOf("h264"), hlsAdaptive = false)
         val (one, _) = encoder().planFor(old, "phone", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = 10_000_000, noRecord = false, sourceVideoRange = "HDR10")

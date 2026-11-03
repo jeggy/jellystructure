@@ -68,7 +68,11 @@ private val VIDEO_REASONS = setOf(
 )
 
 /** 308 (FR-308-1) — does this Jellyfin transcode URL re-encode the picture (so a ladder of encodes is possible)? */
-internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null, sourceRangeType: String? = null): Boolean {
+internal fun reencodesVideo(
+    transcodingUrl: String, sourceCodec: String? = null, sourceRangeType: String? = null,
+    sourceWidth: Int? = null, sourceHeight: Int? = null,
+): Boolean {
+    if (exceedsSizeCap(transcodingUrl, sourceWidth, sourceHeight)) return true
     val reasons = queryParam(transcodingUrl, "TranscodeReasons")?.replace("%2C", ",", ignoreCase = true)?.split(',')?.map { it.trim() }.orEmpty()
     if (reasons.any { it in VIDEO_REASONS }) return true
     if (queryParam(transcodingUrl, "SubtitleMethod").equals("Encode", ignoreCase = true)) return true
@@ -84,6 +88,32 @@ internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null,
     val ranges = src?.let { queryParam(transcodingUrl, "$it-rangetype") }?.replace("%2C", ",", ignoreCase = true)
         ?.split(',')?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }.orEmpty()
     return sourceRangeType != null && ranges.isNotEmpty() && sourceRangeType.lowercase() !in ranges
+}
+
+/**
+ * DEB-3338 (FR-313-18) — is the source larger than the URL's own size cap? Found on a Mac (2026-11-01): a 3840×2160 HEVC
+ * film under `MaxWidth=1920&MaxHeight=1080` with only audio and container reasons, which Jellyfin re-encodes (`h264_nvenc`,
+ * `scale_cuda=w=1920:h=1080`) while `TranscodeReasons` reads as a copy. An unknown source size, or no cap, is false.
+ */
+internal fun exceedsSizeCap(transcodingUrl: String, sourceWidth: Int?, sourceHeight: Int?): Boolean {
+    val maxW = queryParam(transcodingUrl, "MaxWidth")?.toIntOrNull()?.takeIf { it > 0 }
+    val maxH = queryParam(transcodingUrl, "MaxHeight")?.toIntOrNull()?.takeIf { it > 0 }
+    return (maxW != null && sourceWidth != null && sourceWidth > maxW) || (maxH != null && sourceHeight != null && sourceHeight > maxH)
+}
+
+/**
+ * DEB-3338 (FR-313-18) — the tallest rung box a play may get when it reaches our encoder **only** through the size-cap
+ * rule and the device declared a picture ceiling (`max_h264_width/height`): that ceiling is the only size it answered
+ * for. Null for a device that declared none (its family's own rungs) and for a play that re-encodes for any other reason.
+ */
+internal fun sizeCapRungBox(
+    transcodingUrl: String, sourceCodec: String?, sourceRangeType: String?, sourceWidth: Int?, sourceHeight: Int?,
+    declaredWidth: Int, declaredHeight: Int,
+): Int? {
+    if (declaredWidth <= 0 || declaredHeight <= 0) return null
+    if (!exceedsSizeCap(transcodingUrl, sourceWidth, sourceHeight)) return null
+    if (reencodesVideo(transcodingUrl, sourceCodec, sourceRangeType)) return null
+    return listOf(2160, 1440, 1080, 720).firstOrNull { it <= declaredHeight && boxWidth(it) <= declaredWidth } ?: 480
 }
 
 /**
