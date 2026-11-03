@@ -79,4 +79,28 @@ class ModelRecipeSchemaTest {
         assertNull(ModelRecipe.field("json:"))
         assertNull(ModelRecipe.field(null))
     }
+
+    @Test
+    fun `Pythons group syntax in a regex is stored as the engines own - DEB-3459`() {
+        val text = """{"verdict":"series","reason":"x","recipe":{"list":{"kind":"html","item_selector":"li.ep","url":"","items_path":"",
+            "fields":{"title":"a","link":"a@href","published":"","description":"","id":"","season":"","episode":"","duration":"","image":""}},
+            "media":{"kind":"hls","manifest":"https://media.example.fo/{value}/master.m3u8","item_page":{"selector":"","attr":"","pattern":"var media = '(?P<value>[A-Z0-9]+)'"}},
+            "numbering":"source","pattern":[{"on":"title","regex":"(?P<season>\\d{4})"},{"on":"title","regex":"(?P=season)"}],"series":{"name":"","description":"","image":""},
+            "hosts":["media.example.fo"],"audio_language":"fao","subtitle_language":""}}"""
+        val recipe = ModelRecipe.toRecipe(assertNotNull(ModelRecipe.parse(text)?.recipe), "https://site.example.fo/x", "m", "2026-11-03")
+        assertEquals("var media = '(?<value>[A-Z0-9]+)'", recipe.media.itemPage?.pattern)
+        assertEquals("(?<season>\\d{4})", recipe.pattern[0].regex)
+        assertEquals("(?P=season)", recipe.pattern[1].regex, "a back-reference is not rewritten")
+        assertNull(PatternSafety.check(recipe.media.itemPage!!.pattern, setOf("value")))
+        assertNotNull(PatternSafety.check(recipe.pattern[1].regex, emptySet(), setOf("season", "episode")))
+    }
+
+    @Test
+    fun `both schema descriptions name the engines group syntax and not Pythons - DEB-3459`() {
+        val recipe = ModelRecipe.SCHEMA["properties"]!!.jsonObject["recipe"]!!.jsonObject["properties"]!!.jsonObject
+        val itemPage = recipe["media"]!!.jsonObject["properties"]!!.jsonObject["item_page"]!!.jsonObject["properties"]!!.jsonObject["pattern"]!!.jsonObject["description"]!!.jsonPrimitive.content
+        val rule = recipe["pattern"]!!.jsonObject["items"]!!.jsonObject["properties"]!!.jsonObject["regex"]!!.jsonObject["description"]!!.jsonPrimitive.content
+        assertTrue("(?<value>" in itemPage && "(?<season>" in rule, "$itemPage | $rule")
+        assertTrue(itemPage.contains("not Python's `(?P<value>") && rule.contains("not Python's `(?P<season>"), "$itemPage | $rule")
+    }
 }

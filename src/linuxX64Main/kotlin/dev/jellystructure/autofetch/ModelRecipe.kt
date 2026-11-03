@@ -105,7 +105,10 @@ object ModelRecipe {
         return if (at >= 0 && ATTR.matches(attr)) Field(selector = t.substring(0, at).trim(), attr = attr) else Field(selector = t, attr = "text")
     }
 
-    private fun itemPage(m: ItemPageSpec?): ItemPageSpec? = m?.takeUnless { it.selector.isBlank() && it.pattern.isBlank() }?.let { it.copy(attr = it.attr.ifBlank { "text" }) }
+    private fun itemPage(m: ItemPageSpec?): ItemPageSpec? = m?.takeUnless { it.selector.isBlank() && it.pattern.isBlank() }?.let { it.copy(attr = it.attr.ifBlank { "text" }, pattern = groupSyntax(it.pattern)) }
+
+    /** FR-4.1 (DEB-3459): Python's `(?P<name>…)` names the same group as `(?<name>…)`; `(?P=name)` is not rewritten, so it fails to compile. */
+    fun groupSyntax(regex: String): String = regex.replace("(?P<", "(?<")
 
     /**
      * The engine's recipe for [m]. The page URL is the admin's own, and the hosts are the model's plus the page's: [RecipeValidator]
@@ -125,7 +128,7 @@ object ModelRecipe {
             media = MediaSpec(kind = m.media.kind, manifest = m.media.manifest, manifestField = field(m.media.manifestField), itemPage = itemPage(m.media.itemPage)),
             numbering = NumberingSpec(m.numbering),
             series = m.series?.let { SeriesSpec(name = field(it.name) ?: Field(), description = field(it.description), image = field(it.image)) },
-            pattern = m.pattern,
+            pattern = m.pattern.map { it.copy(regex = groupSyntax(it.regex)) },
             language = LanguageSpec(audio = m.audioLanguage.trim().lowercase(), subtitle = m.subtitleLanguage.trim().lowercase()),
             writtenBy = model, writtenAt = today,
         )
@@ -172,12 +175,12 @@ object ModelRecipe {
                 "kind" to enumOf("hls", "dash", "ytdlp"),
                 "manifest" to str("manifest URL template with {id} (the listing's id field) and/or {value} (item_page's value), on a recorded host"),
                 "manifest_field" to FIELD,
-                "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `value`")), listOf("selector", "attr", "pattern")),
+                "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `(?<value>…)`, not Python's `(?P<value>…)`")), listOf("selector", "attr", "pattern")),
             ), listOf("kind", "manifest")),
             "numbering" to enumOf("source", "date", "mapped"),
             "pattern" to buildJsonObject {
                 put("type", "array")
-                put("items", obj(mapOf("on" to enumOf("title", "link", "description", "published"), "regex" to str("named groups `season` and/or `episode`")), listOf("on", "regex")))
+                put("items", obj(mapOf("on" to enumOf("title", "link", "description", "published"), "regex" to str("named groups `(?<season>…)` and/or `(?<episode>…)`, not Python's `(?P<season>…)`")), listOf("on", "regex")))
             },
             "series" to obj(mapOf("name" to FIELD, "description" to FIELD, "image" to FIELD), listOf("name", "description", "image")),
             "hosts" to buildJsonObject { put("type", "array"); put("items", str()) },

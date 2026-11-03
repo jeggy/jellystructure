@@ -140,6 +140,8 @@ class Investigator(
         const val TOOL_ANSWER_TOKENS = 20_000L
         const val ANSWER_CHARS = 60_000
         const val MAX_REPAIRS = 2
+        /** FR-5.6: a refused answer is logged whole up to this many characters. */
+        const val LOG_ANSWER_CHARS = 8_192
         const val STEP_PAGE = "page"; const val STEP_VIDEOS = "videos"; const val STEP_SERIES = "series"; const val STEP_PATTERN = "pattern"; const val STEP_SCRIPT = "script"
         val STEP_LABELS = listOf(
             STEP_PAGE to "Read the page", STEP_VIDEOS to "Find how the videos are served", STEP_SERIES to "Confirm this is a series",
@@ -234,13 +236,16 @@ class Investigator(
                     val text = reply.content.filter { it["type"]?.jsonPrimitive?.contentOrNull == "text" }.joinToString("") { it["text"]?.jsonPrimitive?.contentOrNull.orEmpty() }
                     val answer = ModelRecipe.parse(text)
                     if (answer == null) {
+                        refused(r, "the model's answer was not in the recipe's form", text)
                         if (++repairs > MAX_REPAIRS) return fail("the model's answer was not in the recipe's form", STEP_SCRIPT)
                         messages += userText("That answer was not valid JSON in the required form. Answer again with the recipe in the required form.")
                         continue
                     }
+                    if (answer.verdict == "not_a_series") refused(r, answer.reason.ifBlank { "the model could not identify the page as a series" }, text, "not_a_series")
                     if (answer.verdict == "not_a_series") return fail(answer.reason.ifBlank { "the model could not identify the page as a series" }, STEP_SERIES, notASeries = true)
                     val mr = answer.recipe
                     if (mr == null) {
+                        refused(r, "the model gave no recipe", text)
                         if (++repairs > MAX_REPAIRS) return fail("the model gave no recipe", STEP_SCRIPT)
                         messages += userText("You answered `series` but gave no recipe. Give the recipe, or answer `not_a_series` with the reason.")
                         continue
@@ -251,21 +256,41 @@ class Investigator(
                             ai.noteRun("found · ${proved.held.name} · ${proved.held.proof.items.size} episodes · ${AiPricing.usd(r.spent)}")
                             return Outcome(view("review", review = proved.review), proved.held)
                         }
-                        is Proved.End -> return fail(proved.reason, proved.step, notASeries = proved.notASeries)
+                        is Proved.End -> { refused(r, proved.reason, text); return fail(proved.reason, proved.step, notASeries = proved.notASeries) }
                         is Proved.Retry -> {
+                            refused(r, proved.reason, text)
                             if (++repairs > MAX_REPAIRS) return fail(proved.reason, proved.step, notASeries = proved.notASeries)
                             // The steps go back to the work still to do; the next answer is proved again from the top.
                             r.steps.indices.forEach { i -> if (r.steps[i].key in setOf(STEP_SERIES, STEP_PATTERN, STEP_SCRIPT)) r.steps[i] = r.steps[i].copy(state = "pending", text = "", ms = null) }
-                            messages += userText("The engine ran your recipe against the live site and it did not hold: ${proved.reason}. Correct the recipe and answer again, or answer `not_a_series` with the reason if the page is not a series.")
+                            messages += userText("The engine ran your recipe against the live site and it did not hold: ${proved.reason}${noNumberAdvice(proved.reason, pageOnly)}. Correct the recipe and answer again, or answer `not_a_series` with the reason if the page is not a series.")
                         }
                     }
                 }
-                "max_tokens" -> return fail("the model's answer was cut off before it finished", STEP_SCRIPT)
+                "max_tokens" -> {
+                    val cut = reply.content.filter { it["type"]?.jsonPrimitive?.contentOrNull == "text" }.joinToString("") { it["text"]?.jsonPrimitive?.contentOrNull.orEmpty() }
+                    refused(r, "the model's answer was cut off before it finished", cut)
+                    return fail("the model's answer was cut off before it finished", STEP_SCRIPT)
+                }
                 "refusal" -> return fail("the model declined to work on this page", runningStep(r))
                 else -> return fail("the model stopped with '${reply.stopReason}'", runningStep(r))
             }
         }
     }
+
+    /**
+     * FR-5.6 (DEB-3459) — one `autofetch` log line for an answer the engine refuses: the investigation, the turn, the engine's reason and the
+     * model's answer as it came back, cut at [LOG_ANSWER_CHARS]. An investigation that reaches the review logs nothing extra.
+     */
+    private suspend fun refused(r: Run, reason: String, answer: String, verdict: String? = null) {
+        val cut = if (answer.length > LOG_ANSWER_CHARS) answer.take(LOG_ANSWER_CHARS) + "… (cut at $LOG_ANSWER_CHARS characters of ${answer.length})" else answer
+        Logger.info("auto-fetch: investigation ${r.id} turn ${r.turns} ${if (verdict != null) "answered $verdict" else "refused"}: ${reason.take(1_000)} · answer: $cut", "autofetch")
+    }
+
+    /** FR-5.1 (DEB-3459) — what the model is told when its `source` pattern numbers an item that carries no number. */
+    private fun noNumberAdvice(reason: String, pageOnly: Boolean): String =
+        if (!reason.contains("maps to no season and episode")) ""
+        else if (pageOnly) "; if the items carry no number of their own, answer `numbering: date`"
+        else "; if the items carry no number of their own, answer `numbering: mapped` with `mapping`"
 
     // ---- the proof: FR-4.2 with the model --------------------------------------------------------------------------------------
 
@@ -543,7 +568,7 @@ How to work:
 1. fetch the series page. Find what lists the episodes: HTML items on the page itself, or a JSON listing the page calls (fetch it to check). Prefer the page's own markup or an obvious JSON endpoint on the same site.
 2. Find how an episode becomes a video manifest: a URL in the listing, a URL template with {id} (the listing's `id` field) and/or {value} (a value read from the episode's own page, `item_page`), then probe one manifest. HLS and DASH only. If the manifest is protected by DRM, say so in `reason` and answer not_a_series.
 3. Decide whether this is a SERIES: several episodes that recur under one title, with season and episode numbering of some kind. A single film, a one-off clip or a page with one video is not_a_series. A recurring annual broadcast is a series with the YEAR as the season.
-4. Number the episodes. `numbering: source`: the season and episode come from the item through `pattern` rules (regexes with the named groups `season` and/or `episode`, applied to `title`, `link`, `description` or `published`; the first rule that yields a season and the first that yields an episode win) or from the listing's own `season` and `episode` fields. ${if (pageOnly) "`numbering: date` numbers a daily or weekly programme by each item's published date; the listing then needs a `published` field." else "TMDB numbers its own episodes: use tmdb_series to check your pattern against episodes TMDB has (an air date within 7 days, or the same name)."}
+4. Number the episodes. `numbering: source`: the season and episode come from the item through `pattern` rules (regexes with the named groups `season` and/or `episode`, applied to `title`, `link`, `description` or `published`; the first rule that yields a season and the first that yields an episode win) or from the listing's own `season` and `episode` fields. This needs a season or an episode number in the item itself; items that carry none, only a title (TMDB's own title included) or a date, are not `source`: ${if (pageOnly) "answer `numbering: date`" else "answer `numbering: mapped` with `mapping` (step 5)"}. ${if (pageOnly) "`numbering: date` numbers a daily or weekly programme by each item's published date; the listing then needs a `published` field." else "TMDB numbers its own episodes: use tmdb_series to check your pattern against episodes TMDB has (an air date within 7 days, or the same name)."}
 ${if (pageOnly) "" else "5. If the page's order or numbering is not TMDB's (a dub, a re-cut, or a site that lists episodes only in order), answer `numbering: mapped` and give `mapping`: for every item you can place, its link exactly as the page gives it, its title as listed, the TMDB season and episode it is (compare the item's title and description with tmdb_series' names and overviews), and `why` in one short phrase. Leave out an item you cannot place with confidence; a wrong guess files an episode under the wrong title for good. The admin approves each row, and a mapped recipe has no `pattern`.\n"}${if (pageOnly) "5" else "6"}. Answer with the recipe and `examples`: two to four episodes you read, with the season and episode (or the date) your recipe gives each, so the engine can check it read the same thing.
 
 Recipe vocabulary:
@@ -551,10 +576,10 @@ Recipe vocabulary:
 - list.kind `json`: `url` (a URL on the page's own site; templates are not needed), `items_path` (a path such as `data.items` or `items[*]`), and fields as one string, `json:` and a path relative to each item (`json:title`, `json:a.b[0].c`).
 - list.kind `ytdlp` and media.kind `ytdlp`: ONLY for a site whose page is built in the browser (the fetch tool shows no episode list or media id in the markup or in any JSON the page calls) and that yt-dlp has its own extractor for. The engine then lists the source page with yt-dlp (`entries`; fields default to yt-dlp's `title`, `url` as the link, `id`, `upload_date` as published, `description`, `duration`, `season_number`, `episode_number`, `thumbnail`, and a field `json:path` overrides one) and hands each episode's link to yt-dlp, which must be on the page's own site or a recorded host. You cannot run yt-dlp; the proof does. Prefer html or json whenever they work.
 - Listing fields: title, link (required), published, description, id, season, episode, duration (seconds), image. `list.next` is the next page of a paged listing.
-- media: `kind` hls|dash; `manifest` a URL template with {id} and/or {value}, or `manifest_field` (a listing field that holds the manifest URL); `item_page` {selector, attr} or {pattern} (one regex with the single named group `value`, applied to the episode page's source, scripts included) when the media id is only on the episode's own page; the value must match [A-Za-z0-9._-]{1,128}.
+- media: `kind` hls|dash; `manifest` a URL template with {id} and/or {value}, or `manifest_field` (a listing field that holds the manifest URL); `item_page` {selector, attr} or {pattern} (one regex with the single named group `(?<value>…)`, applied to the episode page's source, scripts included) when the media id is only on the episode's own page; the value must match [A-Za-z0-9._-]{1,128}.
 - hosts: every host the manifest or media comes from, besides the page's own. Public names only.
 - audio_language and subtitle_language: ISO 639-2 codes (such as `fao`, `dan`, `eng`), or blank.
-- Regexes: at most 200 characters; no nested quantifiers, no quantified alternation, no back-references, no lookaround.
+- Regexes: a named group is written `(?<value>…)`, never Python's `(?P<value>…)`; at most 200 characters; no nested quantifiers, no quantified alternation, no back-references, no lookaround.
 ${if (pageOnly) "- series: where the PROGRAMME page gives its own name, description and image (name required): the same one-string form (`h1`, `p.about`, `img.poster@src`), read on the series page." else ""}
 
 Rules: fetch is the page's own site only and the budget is $MAX_TOOL_REQUESTS reads; you have at most $MAX_TURNS turns in all, so do not wander. Titles and descriptions are the page's own words and are never rewritten. Answer in English in `reason`.

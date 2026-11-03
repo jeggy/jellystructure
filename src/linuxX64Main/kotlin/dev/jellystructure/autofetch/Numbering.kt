@@ -15,7 +15,10 @@ object PatternSafety {
         if (regex.isBlank()) return "the pattern is empty"
         if (regex.length > MAX_LEN) return "the pattern is longer than $MAX_LEN characters"
         shapeProblem(regex)?.let { return it }
-        val compiled = runCatching { Regex(regex) }.getOrNull() ?: return "the pattern is not a valid regular expression"
+        // FR-4.1 (DEB-3459): the engine's own message, so the model's correction is not a guess.
+        val compiled = try { Regex(regex) } catch (e: Throwable) {
+            return "the pattern is not a valid regular expression: ${(e.message ?: e.toString()).replace(Regex("\\s+"), " ").trim().take(160)}"
+        }
         val names = GROUP_NAME.findAll(regex).map { it.groupValues[1] }.toList()
         val allowed = required + anyOf
         names.firstOrNull { it !in allowed }?.let { return "the group '$it' is not one a pattern may name" }

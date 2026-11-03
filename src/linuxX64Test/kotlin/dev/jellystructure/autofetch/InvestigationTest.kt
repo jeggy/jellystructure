@@ -2,6 +2,9 @@ package dev.jellystructure.autofetch
 
 import dev.jellystructure.ai.AiPricing
 import dev.jellystructure.ai.AnthropicClient
+import dev.jellystructure.log.Logger
+import dev.jellystructure.media.ActivityLog
+import dev.jellystructure.jobs.WsBroadcaster
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -232,6 +235,83 @@ class InvestigationTest {
         assertEquals(3, ai.sent.size)
         val told = Json.parseToJsonElement(ai.sent[2]).jsonObject["messages"]!!.jsonArray.last().jsonObject["content"]!!.jsonPrimitive.content
         assertTrue("the engine reads" in told && "2026-10-27" in told, told)
+    }
+
+    private fun systemOf(i: Int) = Json.parseToJsonElement(ai.sent[i]).jsonObject["system"]!!.let { it as? JsonArray ?: JsonArray(listOf(it)) }.joinToString("\n") { e -> e.jsonObject["text"]?.jsonPrimitive?.content ?: e.toString() }
+
+    private fun toldBack(i: Int) = Json.parseToJsonElement(ai.sent[i]).jsonObject["messages"]!!.jsonArray.last().jsonObject["content"]!!.jsonPrimitive.content
+
+    @Test
+    fun `the prompt sends items with no number to mapped on a tmdb fetcher and to date on a page-only one - DEB-3459`() {
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run("https://varpid.example.fo/sendingar/royndin", 9000001, false)
+        val tmdb = systemOf(0)
+        assertTrue("items that carry none" in tmdb && "answer `numbering: mapped` with `mapping`" in tmdb, tmdb)
+        assertTrue("never Python's `(?P<value>…)`" in tmdb && "(?<value>…)" in tmdb, tmdb)
+        val pageOnlyAi = FakeAi(); val saved = ai.sent.size
+        pageOnlyAi.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        runBlocking { Investigator(pageOnlyAi, h.lanes, h.tools, h.world, RecipeProof(h.tools, h.world), { emptyList() }, { emptySet() }, { "2026-11-03" }).run("inv2", h.dagbokUrl, null, true, null) {} }
+        val prompt = Json.parseToJsonElement(pageOnlyAi.sent[0]).jsonObject["system"]!!.toString()
+        assertTrue("answer `numbering: date`" in prompt && "numbering: mapped` with `mapping` (step 5)" !in prompt, prompt)
+        assertEquals(1, saved)
+    }
+
+    @Test
+    fun `a source recipe that numbers no item is told to answer mapped on a tmdb fetcher - DEB-3459`() {
+        h.world.tmdbEps = listOf(TmdbEpisodeFact(2026, 1, "Fyrsti", "2026-01-12"), TmdbEpisodeFact(2026, 2, "Annar", "2026-02-12"))
+        ai.answer(royndinAnswer.replace("""{"on":"title","regex":"(?<episode>\\d+)\\. partur"}""", """{"on":"title","regex":"(?<episode>\\d+)\\. nonexistent"}"""))
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run("https://varpid.example.fo/sendingar/royndin", 9000001, false)
+        val told = toldBack(1)
+        assertTrue("maps to no season and episode; if the items carry no number of their own, answer `numbering: mapped` with `mapping`" in told, told)
+    }
+
+    @Test
+    fun `a source recipe that numbers no item is told to answer date on a page-only fetcher - DEB-3459`() {
+        ai.answer(dagbokAnswer.replace("\"numbering\":\"date\"", "\"numbering\":\"source\",\"pattern\":[{\"on\":\"title\",\"regex\":\"(?<episode>\\\\d+)x\"}]"))
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.dagbokUrl, null, true)
+        val told = toldBack(1)
+        assertTrue("maps to no season and episode; if the items carry no number of their own, answer `numbering: date`" in told && "mapped" !in told, told)
+    }
+
+    private fun <T> withActivityLog(body: suspend (ActivityLog) -> T): T = runBlocking {
+        val dir = "/tmp/jellystructure-test-inv-log-${platform.posix.getpid()}"
+        platform.posix.system("rm -rf '$dir'; mkdir -p '$dir'")
+        val activity = ActivityLog("$dir/activity.json", WsBroadcaster(), CoroutineScope(Dispatchers.Default))
+        Logger.activityLog = activity
+        try { body(activity) } finally { Logger.activityLog = null; platform.posix.system("rm -rf '$dir'") }
+    }
+
+    @Test
+    fun `each refused answer and a not_a_series verdict writes one autofetch line with the reason and the answer - DEB-3459`() = withActivityLog { activity ->
+        ai.answer("this is not json")
+        ai.answer("""{"verdict":"series","reason":"a series"}""")
+        ai.answer("""{"verdict":"not_a_series","reason":"the model's own words"}""")
+        investigator().run("inv9", h.dagbokUrl, null, true, null) {}
+        val lines = activity.list(1, 100, "autofetch", null).entries.map { it.message }
+        assertEquals(3, lines.size, lines.toString())
+        assertTrue(lines.all { "investigation inv9" in it })
+        assertTrue(lines.any { "turn 1 refused: the model's answer was not in the recipe's form · answer: this is not json" in it }, lines.toString())
+        assertTrue(lines.any { "turn 2 refused: the model gave no recipe" in it && """"verdict":"series"""" in it }, lines.toString())
+        assertTrue(lines.any { "turn 3 answered not_a_series: the model's own words" in it }, lines.toString())
+    }
+
+    @Test
+    fun `a run that reaches the review logs only its refusals and a long answer is cut at 8 kB - DEB-3459`() = withActivityLog { activity ->
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")
+        ai.answer(dagbokAnswer.replace("\"date\":\"2026-10-27\"", "\"date\":\"2026-10-26\""))
+        ai.answer(dagbokAnswer)
+        val out = investigator().run("inv8", h.dagbokUrl, null, true, null) {}
+        assertEquals("review", out.view.state, out.view.reason)
+        val first = activity.list(1, 100, "autofetch", null).entries.single().message
+        assertTrue("turn 2 refused: on 'Dagbók" in first && "the engine reads" in first && "2026-10-26" in first, first)
+
+        val long = "x".repeat(20_000)
+        ai.answer("""{"verdict":"not_a_series","reason":"$long"}""")
+        investigator().run("inv7", h.dagbokUrl, null, true, null) {}
+        val line = activity.list(1, 100, "autofetch", null).entries.first { "inv7" in it.message }.message
+        assertTrue(line.length < 10_000 && "cut at 8192 characters" in line, line.length.toString())
     }
 
     @Test

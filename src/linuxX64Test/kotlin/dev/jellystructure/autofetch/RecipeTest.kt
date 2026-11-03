@@ -114,6 +114,15 @@ class RecipeTest {
     }
 
     @Test
+    fun `a pattern that does not compile is refused with the engines own message - DEB-3459`() {
+        for (bad in listOf("""var media = '(?P=value)'""", "(?<value>[z-a])")) {
+            val why = assertNotNull(PatternSafety.check(bad, setOf("value")), bad)
+            assertTrue(why.startsWith("the pattern is not a valid regular expression: ") && why.length > "the pattern is not a valid regular expression: ".length, why)
+            assertTrue(why.length <= "the pattern is not a valid regular expression: ".length + 160, why)
+        }
+    }
+
+    @Test
     fun `a pattern may name only the groups its use allows`() {
         assertNotNull(PatternSafety.check("(?<other>x)", emptySet(), setOf("season", "episode")))
         assertNotNull(PatternSafety.check("(?<season>x)", setOf("value")))
