@@ -92,3 +92,11 @@ This is the same class of "the scan sees a real file problem but doesn't surface
   ⇒ flagged; single video ⇒ not; attached-picture/attachment ⇒ not).
 - `SeedingGuard` blocks the repair while the file is seeding, same as other track edits.
 - Verified via `compileKotlinLinuxX64` + `linuxX64Test` + admin `compileKotlinWasmJs`.
+
+## Amendment 2026-11-03 — the repair runs on a hard-linked seeded file (DEB-3493)
+
+The last acceptance line above (*"`SeedingGuard` blocks the repair while the file is seeding"*) no longer holds for a
+file that shares its bytes with a torrent through a hard link. Owner, DEB-3493, 2026-11-03: such a file is repaired
+as a new library file, and the torrent's copy is left untouched. The repair is still refused when the library path is
+itself a torrent's content path. The card shows the extra disk the repair uses before it runs, and a refusal shows the
+server's reason. The requirements are 315's FR-315-6 to FR-315-8 (amendment of the same date).

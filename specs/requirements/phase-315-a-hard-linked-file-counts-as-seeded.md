@@ -3,11 +3,11 @@
 > Found by 314's dev review (2026-10-08) and measured the same day; the owner had just decided that *a seeded file is
 > never modified* (314). Owner, 2026-10-08: *"let's start implementing all our phases/specs"*.
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-08 on a worktree branch (not merged, not deployed) — written 2026-10-08 (dev-authored), dev-reviewed
-2026-10-08 (below). Backend only (`torrent/SeedingSnapshot`, `SeedingGuard`, every in-place file edit), plus one Dashboard
-action button.
+Written 2026-10-08 (dev-authored), dev-reviewed 2026-10-08 (below). Backend (`torrent/SeedingSnapshot`, `SeedingGuard`,
+every in-place file edit), plus one Dashboard action button. The 2026-11-03 amendment (DEB-3493) adds the admin's
+repair card and the four remux routes.
 
 ## What happens today
 
@@ -134,3 +134,83 @@ file jellystructure edited (its History). List only; the owner decides.
   window (2 000 rows, ≈ 3 days) holds in-place edits for 2 titles, and neither file shares its bytes with a torrent now.
   Edits older than that can't be seen.
 
+
+## Amendment 2026-11-03 — a repair that writes a new file runs on a hard-linked seeded file (DEB-3493)
+
+Owner, DEB-3493, 2026-11-03: of *"Repair a new copy, leave the seed alone"* and *"Leave the files as they are"*, the owner
+chose the first. That turns open question 2's lean (*allowed, but shown with the space cost*) into an owner decision, and
+it narrows 314's principle 2 for repairs (314's amendment of the same date).
+
+### What was found (read-only, 2026-11-03)
+
+- On a series whose cover-as-video episodes (144) are each hard-linked to a cross-seed copy (link count 2, the other
+  name under `cross-seed-links/<tracker>/…`), the admin's *Fix all* refused every file with *"Couldn't queue the
+  repairs — are the files seeding?"*.
+- Four routes enqueue a rename-based remux: `DELETE /api/media/{id}/tracks/{specifier}` and
+  `POST /api/media/{id}/tracks/reorder` (`TrackRoutes.kt`), plus their episode twins under
+  `/api/media/{id}/episodes/{epFilename}/…` (`MediaRoutes.kt`). At enqueue time (109 FR A.3's fail-fast) each one calls
+  `seedingGuard.check(path, config)` with the default `inPlace = true`. The job they enqueue re-checks with
+  `inPlace = false` (`MediaJobQueue.guard`, this phase's build notes). The fail-fast therefore refuses what the job
+  would allow, so no remux the admin offers on a hard-linked file ever starts.
+- The admin drops the 409's `error` body and guesses a cause (the cover-fix handler in `MediaDetail.kt`). That
+  contradicts FR-315-3.
+- The detail page's *Seeded* chip matches a torrent to an item by file name (`SeedingSnapshot.coversItem` →
+  `filenameMatch`), not by inode. It keeps counting the torrent after a repair splits the link.
+
+### FR-315-6 — A rewrite asks the rewrite question at enqueue too
+
+Each of the four routes above asks `SeedingGuard` the same question as the job it enqueues: `inPlace = false`.
+
+- **Allowed:** a file whose other names all lie outside the library (cross-seed or perma-seed link dirs, a download
+  folder). The remux writes a new library file. The other names keep the original bytes, so the torrent is untouched.
+- **Still Blocked:** a library path that *is* a torrent's content path (the path check is unchanged).
+- **Unchanged:** every in-place writer still asks with `inPlace = true`. That covers the `mkvpropedit` routes and
+  `POST …/tracks/bulk-reorder`, which sets a default flag in place before its remux.
+
+`scripts/check-inplace-guard.sh` accepts `inPlace = false` in `TrackRoutes.kt` and `MediaRoutes.kt` only at these four
+call sites, and still fails on an in-place write that skips the guard.
+
+### FR-315-7 — The repair card says what it costs before it runs
+
+144's repair card (*Cover art muxed as video*, on the film or series page) says how much more disk the repair uses
+when any of its files share their bytes with a name outside the library:
+
+> *N of these files share their data with a seeding torrent. Repairing them leaves the torrent's copy untouched and
+> uses ≈ X GB more while it seeds.*
+
+For a film or a single file: *This file shares its data with a seeding torrent. Repairing it leaves the torrent's copy
+untouched and uses ≈ X GB more while it seeds.* N is the number of files the button repairs that have a name outside
+the library. X is the sum of their sizes, one decimal. Files with one name, or with extra names only inside the
+library, cost nothing and are not counted. When N is 0 there is no line.
+
+The server computes N and X; the admin renders them and derives nothing. The wire change is additive only: a new
+read, or new optional fields on an existing response. Nothing an existing client reads is retyped or removed. The
+Tracks tab's own *Remove* and reorder are not given the line (out of scope).
+
+### FR-315-8 — A refused repair says why (FR-315-3, restored)
+
+When the server refuses a queue request (409 or 503), the card shows the server's `error` text, never a guess. For
+*Fix all*, when some files queue and some are refused: *Fixing cover track on 5 episodes — remuxes queued. 3 refused:
+<reason>.* When the refused files give different reasons, each reason is shown once.
+
+### Acceptance (added)
+
+1. On a series whose cover-as-video episodes are each hard-linked to a cross-seed copy, *Fix all* queues one remux per
+   episode. When they finish, the item has left `cover_as_video` and each library file has link count 1. Each
+   cross-seed copy has the same inode, size and mtime as before, and its torrent is still seeding with no recheck
+   error.
+2. Before the press, the card shows N and the GB total, and they equal the count and the summed size of the shared
+   files.
+3. A cover repair on a library file that is itself a torrent's content path is still refused, and the card shows the
+   guard's sentence.
+4. A default-flag edit on a hard-linked file is still refused (FR-315-1 unchanged).
+
+### Tests (added)
+
+1. For each of the four routes: a file with link count 2 whose other name is outside the library answers 202 and
+   enqueues. A path-matched file answers 409 with the guard's message. (A shared helper may be tested once, plus a
+   test that each route calls it.)
+2. The cost: two shared files of known size and one single-link file give N = 2 and X = their summed size; library-only
+   extra names give N = 0.
+3. `check-inplace-guard.sh` passes with the four call sites and still fails on an `MkvpropeditRunner.set…` call in a
+   file that never asks the guard.

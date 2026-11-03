@@ -2117,3 +2117,18 @@ against the draft and before it reached this file.
 - **Acceptance 18 is untouched and still open on one read.** It is case 1, which this does not move, and the
   Kotlin lands after that read so the target does not move under it.
 - **Not a deploy.** It lands on `main`, and prod is the owner's timing.
+
+## Amendment 2026-11-03 — principle 2 is about a seeded file's bytes; a repair may write a new library file (DEB-3493)
+
+Owner, DEB-3493, 2026-11-03: a seeded, hard-linked file that needs a **repair** (144's cover stream, a removed or
+reordered track) is repaired as a new library file. The torrent's other name keeps the original bytes and keeps
+seeding, and the repair costs disk space while it seeds (315's FR-315-6 to FR-315-8).
+
+The 2026-10-08 decision was put to the owner as harm to the torrent: a failed piece check, re-downloaded pieces, a bad
+seed. A rename-based write causes none of that, so principle 2 now reads: **a seeded file's bytes are never
+changed.** This phase's own kinds are not changed by this amendment. Kinds A/B on a seeded file still go to a sidecar
+and kind C still waits (FR-314-6). Whether an *added* track may also go into a new copy is a separate question for the
+owner.
+
+This corrects *What happens today*: since 315's build, `MediaJobQueue.guard` asks with `inPlace = false`. It no longer
+refuses a remux of a hard-linked file; it refuses only a library path that is a torrent's own content path.
