@@ -140,7 +140,7 @@ class LadderRulesTest {
     }
 
     @Test
-    fun `DEB-3330 - nothing playing on a warmed replacement is bounded by the rung it was warmed on, and only until a rung plays`() {
+    fun `DEB-3330 - nothing playing on a warmed replacement is bounded by the rung it was warmed on and only until a rung plays`() {
         val rungs = listOf(1_500_000L, 4_000_000L, 8_000_000L)
         assertEquals(4_000_000L, LadderRules.allowedMaxBps(rungs, null, 0, null, oursEncoder = true, startCapBps = 4_000_000L))
         assertNull(LadderRules.allowedMaxBps(rungs, null, 0, null, oursEncoder = true))

@@ -33,7 +33,7 @@ class HlsWarmTest {
         assertNull(HlsWarm.startVariant(emptyList(), 1L))
     }
 
-    @Test fun `a warm-up asks the start rung, then the next one down, then the lowest`() {
+    @Test fun `a warm-up asks the start rung then the next one down then the lowest`() {
         val four = HlsWarm.variants(
             "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=11455000\na/i.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\nb/i.m3u8\n" +
                 "#EXT-X-STREAM-INF:BANDWIDTH=4000000\nc/i.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1500000\nd/i.m3u8\n", masterUrl)
