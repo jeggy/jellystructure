@@ -35,6 +35,9 @@ class PlayerStoreReplacementTest {
         val qoe = CopyOnWriteArrayList<String>()
         val failNextRestreams = AtomicInteger(0)
         val tickets = AtomicInteger(0)
+        /** DEB-3330 — rungs (`v0`, `v1`, `v2`) whose segments answer 503, as a rung that cannot be fetched in time does. */
+        val failingRungs = CopyOnWriteArrayList<String>()
+        val segmentHits = CopyOnWriteArrayList<String>()
     }
 
     private fun HttpExchange.reply(code: Int, body: String, type: String = "application/json") {
@@ -60,9 +63,14 @@ class PlayerStoreReplacementTest {
                     else ex.reply(200, ticketJson.replace("master.m3u8", "master.m3u8?s=${rig.tickets.incrementAndGet()}"))
                 }
                 path == "/api/tv/playback/qoe" -> { rig.qoe += body; ex.reply(200, "{}") }
-                path.endsWith("master.m3u8") -> ex.reply(200, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\nv0/index.m3u8\n", "application/vnd.apple.mpegurl")
+                path.endsWith("master.m3u8") -> ex.reply(200,
+                    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\nv0/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4000000\nv1/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1500000\nv2/index.m3u8\n",
+                    "application/vnd.apple.mpegurl")
                 path.endsWith("index.m3u8") -> ex.reply(200, "#EXTM3U\n#EXTINF:4.0,\nseg0.ts\n#EXTINF:4.0,\nseg1.ts\n", "application/vnd.apple.mpegurl")
-                path.endsWith(".ts") -> ex.reply(200, "x", "video/mp2t")
+                path.endsWith(".ts") -> {
+                    rig.segmentHits += path
+                    if (rig.failingRungs.any { path.contains("/$it/") }) ex.reply(503, "{}") else ex.reply(200, "x", "video/mp2t")
+                }
                 else -> ex.reply(200, "{}")
             }
         }
@@ -114,6 +122,41 @@ class PlayerStoreReplacementTest {
         assertTrue(after.none { it is PlayerSessionState.Loading }, "states after the first Ready: $after")
         val last = states.last() as PlayerSessionState.Ready
         assertTrue(last.replacement, "the replacement says so, so the screen holds the last frame")
+        store.close()
+    }
+
+    @Test
+    fun `a warm-up whose start rung cannot be fetched asks the next rung down in the same attempt and no failed try is counted`() = withRig { rig ->
+        val player = Player()
+        val states = CopyOnWriteArrayList<PlayerSessionState>()
+        val store = start(rig, player, states)
+        rig.failingRungs += "v0"
+        val readyBefore = states.count { it is PlayerSessionState.Ready }
+        player.failed.set(true)
+        waitFor("the replacement") { states.count { it is PlayerSessionState.Ready } > readyBefore }
+        player.failed.set(false)
+        val landed = states.last { it is PlayerSessionState.Ready } as PlayerSessionState.Ready
+        assertTrue(landed.replacement)
+        assertEquals(4_000_000L, landed.ticket.startVariantBps, "the replacement starts on the rung that was warmed")
+        assertEquals(4_000_000L, dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.warmedStartBps)
+        assertEquals(1, rig.restreams.size, "one restream call: the lower rung was asked inside the attempt, not by another attempt")
+        assertTrue(rig.segmentHits.any { it.contains("/v1/") }, "the next rung's segments were fetched: ${rig.segmentHits}")
+        assertTrue(rig.segmentHits.none { it.contains("/v2/") }, "the lowest rung is asked only after the next one fails: ${rig.segmentHits}")
+        store.close()
+    }
+
+    @Test
+    fun `a replacement whose start rung is fetched is left on that rung`() = withRig { rig ->
+        val player = Player()
+        val states = CopyOnWriteArrayList<PlayerSessionState>()
+        val store = start(rig, player, states)
+        val readyBefore = states.count { it is PlayerSessionState.Ready }
+        player.failed.set(true)
+        waitFor("the replacement") { states.count { it is PlayerSessionState.Ready } > readyBefore }
+        player.failed.set(false)
+        val landed = states.last { it is PlayerSessionState.Ready } as PlayerSessionState.Ready
+        assertEquals(8_000_000L, landed.ticket.startVariantBps)
+        assertEquals(null, dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.warmedStartBps)
         store.close()
     }
 

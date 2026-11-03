@@ -78,13 +78,15 @@ object LadderRules {
 
     /**
      * The highest variant bandwidth the player may choose now, or null for no bound (nothing playing yet: the start is
-     * the server's, FR-309-2). [rungsBps]: the variants' bandwidths, any order; [currentBps]: the one playing.
+     * the server's, FR-309-2, unless [startCapBps] names the rung a replacement was warmed on). [rungsBps]: the variants' bandwidths, any order; [currentBps]: the one playing.
      */
     fun allowedMaxBps(
         rungsBps: List<Long>, currentBps: Long?, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean, climbBlocked: Boolean = false,
-        fallenForWindow: Boolean = false,
+        fallenForWindow: Boolean = false, startCapBps: Long? = null,
     ): Long? {
-        if (currentBps == null || rungsBps.isEmpty()) return null
+        if (rungsBps.isEmpty()) return null
+        // DEB-3330 (FR-6) — nothing playing yet on a replacement whose warm-up landed on a lower rung: that rung is the ceiling for the first pick.
+        if (currentBps == null) return startCapBps
         val sorted = rungsBps.distinct().sorted()
         if (mustStepDown(bufferedMs, lastBufferedMs) || fallenStepDown(bufferedMs, fallenForWindow)) return sorted.lastOrNull { it < currentBps } ?: sorted.first()
         // DEB-2205 (FR-5.3) — for 2 minutes after a freeze recovery nothing climbs, whatever is buffered.

@@ -138,4 +138,14 @@ class LadderRulesTest {
         assertFalse(LadderRules.shouldAbandonSegment(2_000, 500_000, 7_660_000, 194_000_000, 40_000, lowerRungExists = true, sinceFirstByteMs = 500))
         assertTrue(LadderRules.shouldAbandonSegment(2_000, 500_000, 7_660_000, 194_000_000, 8_000, lowerRungExists = true, sinceFirstByteMs = 500))
     }
+
+    @Test
+    fun `DEB-3330 - nothing playing on a warmed replacement is bounded by the rung it was warmed on, and only until a rung plays`() {
+        val rungs = listOf(1_500_000L, 4_000_000L, 8_000_000L)
+        assertEquals(4_000_000L, LadderRules.allowedMaxBps(rungs, null, 0, null, oursEncoder = true, startCapBps = 4_000_000L))
+        assertNull(LadderRules.allowedMaxBps(rungs, null, 0, null, oursEncoder = true))
+        assertNull(LadderRules.allowedMaxBps(emptyList(), null, 0, null, oursEncoder = true, startCapBps = 4_000_000L))
+        // Once a rung plays the cap is not consulted: the climb rule alone.
+        assertEquals(8_000_000L, LadderRules.allowedMaxBps(rungs, 4_000_000L, 50_000, 49_000, oursEncoder = true, startCapBps = 1_500_000L))
+    }
 }

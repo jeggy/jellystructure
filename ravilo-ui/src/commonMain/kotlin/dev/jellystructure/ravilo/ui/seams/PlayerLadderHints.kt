@@ -19,6 +19,13 @@ object PlayerLadderHints {
     /** 309 (FR-309-2) — the rung the server started this play on (its `BANDWIDTH`), or null when it named none. */
     @Volatile var startVariantBps: Long? = null
 
+    /**
+     * DEB-3330 (DEB-3093 FR-6) — a replacement whose warm-up had to ask a lower rung than the server's start rung landed on this one
+     * (its `BANDWIDTH`); the first pick of the new stream is bounded by it, so the player reads what was kept and not the rung that just
+     * timed out. Null for every other ticket ([noteTicket] clears it); read when a track selection is built.
+     */
+    @Volatile var warmedStartBps: Long? = null
+
     /** 309 (FR-309-9) — the desktop player's buffer ahead of the playhead (ms), refreshed about once a second; -1 = not
      *  known. Read by [dev.jellystructure.ravilo.ui.screens.PlayerStore]'s restream stepping. */
     @Volatile var bufferedAheadMs: Long = -1L
@@ -61,6 +68,7 @@ object PlayerLadderHints {
         oursEncoder = false
         adaptive = false
         startVariantBps = null
+        warmedStartBps = null
         bufferedAheadMs = -1L
         restreamStepping = false
         rearmTracks = false
@@ -73,6 +81,7 @@ object PlayerLadderHints {
         live = false
         adaptive = t.adaptive
         startVariantBps = t.startVariantBps
+        warmedStartBps = null
         directStreamBps = if (t.directPlay) t.streamBps?.takeIf { it > 0 } ?: 0L else 0L
     }
 }

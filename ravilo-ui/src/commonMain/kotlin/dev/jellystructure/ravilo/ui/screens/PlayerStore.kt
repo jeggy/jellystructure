@@ -325,6 +325,8 @@ class PlayerStore(
 
     private class PendingHandover(val atMs: Long, val askedAtPositionMs: Long, val askedAtWallMs: Long, val streamBps: Long, val bufferAheadMs: Long, val reason: String) {
         @kotlin.concurrent.Volatile var ticket: StreamTicket? = null
+        /** DEB-3330 (FR-6) — the rung the ticket's warm-up landed on when that was lower than the server's start rung. */
+        @kotlin.concurrent.Volatile var warmedLower: Long? = null
     }
 
     fun startSession(
@@ -560,10 +562,18 @@ class PlayerStore(
     }
 
     /** DEB-3171 (FR-6) — the warm-up keeps the segments where the player reads them, so the switch does not fetch them again on a slow link. */
-    private suspend fun warmReplacement(hlsUrl: String, startBps: Long?) {
+    private suspend fun warmReplacement(hlsUrl: String, startBps: Long?): Long? {
         dev.jellystructure.ravilo.ui.seams.WarmedSegments.begin(hlsUrl)
-        apiClient.warmHlsStart(hlsUrl, startBps) { url, body -> dev.jellystructure.ravilo.ui.seams.WarmedSegments.keep(url, body) }
+        return apiClient.warmHlsStart(hlsUrl, startBps) { url, body -> dev.jellystructure.ravilo.ui.seams.WarmedSegments.keep(url, body) }
     }
+
+    /**
+     * DEB-3330 (FR-6) — the rung a ticket's warm-up landed on ([warmedBps]) when it is lower than the server's start rung, else null; the
+     * replacement then starts on it ([startedOn]), so the player reads what was kept (see [PlayerLadderHints.warmedStartBps]).
+     */
+    private fun StreamTicket.warmedBelowStart(warmedBps: Long?): Long? = warmedBps?.takeIf { s -> startVariantBps?.let { s < it } == true }
+
+    private fun StreamTicket.startedOn(lowerBps: Long?): StreamTicket = if (lowerBps != null) copy(startVariantBps = lowerBps) else this
 
     /**
      * DEB-3103 (DEB-3093 FR-6) — a replacement the viewer did not ask for. The state stays `Ready` (no `Loading`: no shutter, no start
@@ -584,11 +594,13 @@ class PlayerStore(
             val before = playhead()
             val askedAtPosition = before?.positionMs ?: positionMs
             val at = replacementAtMs(askedAtPosition, before?.bufferedAheadMs ?: -1L, oldStreamDead)
+            var warmedLower: Long? = null
             val got = attempt {
                 val t = apiClient.restream(itemId, subtitleStreamIndex, askedAtPosition, lastCapabilities, audioStreamIndex, mediaSourceId,
                     notOurEncoder = itemId == notOursFor, belowBandwidthBps = belowBandwidthBps, handoverAtMs = at.takeIf { it > askedAtPosition })
-                if (!t.directPlay) t.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, t.startVariantBps) }
-                t
+                val landed = if (t.directPlay) null else t.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, t.startVariantBps) }
+                warmedLower = t.warmedBelowStart(landed)
+                t.startedOn(warmedLower)
             }
             val ticket = got.getOrNull()
             if (ticket == null) {
@@ -619,7 +631,10 @@ class PlayerStore(
             recovery.switched(now, pos)
             PlayerLadderHints.rearmTracks = true
             if (recovery.blocksClimb) PlayerLadderHints.climbBlockedUntilMs = now + CLIMB_BLOCK_AFTER_RECOVERY_MS
-            _state.value = PlayerSessionState.Ready(ticket.copy(startPositionMs = start).onThisServer(), replacement = true)
+            val started = ticket.copy(startPositionMs = start).onThisServer()
+            // Set after [onThisServer] (its noteTicket clears it) and before the state moves: the player builds its selection on the state.
+            if (warmedLower != null) PlayerLadderHints.warmedStartBps = warmedLower
+            _state.value = PlayerSessionState.Ready(started, replacement = true)
             startFailureWatch()
             return
         }
@@ -1074,9 +1089,10 @@ class PlayerStore(
             var got: Result<StreamTicket>
             while (true) {
                 got = attempt {
-                    apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs).also { r ->
-                        if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, r.startVariantBps) }
-                    }
+                    val r = apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs)
+                    val landed = if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, r.startVariantBps) } else null
+                    p.warmedLower = r.warmedBelowStart(landed)
+                    r.startedOn(p.warmedLower)
                 }
                 if (got.isSuccess || pendingHandover !== p) break
                 failed++
@@ -1121,7 +1137,9 @@ class PlayerStore(
             handover = "direct play at ${p.streamBps / 1000}k (${p.reason}, asked ${(nowMs - p.askedAtWallMs) / 1000} s earlier for ${p.atMs}ms)")
         PlayerLadderHints.climbBlockedUntilMs = nowMs + CLIMB_BLOCK_AFTER_RECOVERY_MS
         PlayerLadderHints.rearmTracks = true
-        _state.value = PlayerSessionState.Ready(ticket.copy(startPositionMs = start).onThisServer(), replacement = unseenReplacements)
+        val started = ticket.copy(startPositionMs = start).onThisServer()
+        p.warmedLower?.let { PlayerLadderHints.warmedStartBps = it }
+        _state.value = PlayerSessionState.Ready(started, replacement = unseenReplacements)
         startFailureWatch()
         return true
     }

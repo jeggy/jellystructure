@@ -28,6 +28,17 @@ object HlsWarm {
     fun startVariant(variants: List<Variant>, startBps: Long?): Variant? =
         variants.firstOrNull { startBps != null && it.bandwidth == startBps } ?: variants.firstOrNull()
 
+    /**
+     * DEB-3330 (DEB-3093 FR-6, 2026-10-31) — the rungs a warm-up asks, in order: the start rung, the next one down, then the lowest.
+     * A rung is asked only when the one before it failed to fetch its first segment in time; fewer than three when the ladder has
+     * fewer (or when the start rung is already the lowest, nothing lower is asked).
+     */
+    fun fallbackOrder(variants: List<Variant>, startBps: Long?): List<Variant> {
+        val start = startVariant(variants, startBps) ?: return emptyList()
+        val below = variants.filter { it.bandwidth < start.bandwidth }.sortedByDescending { it.bandwidth }
+        return listOfNotNull(start, below.firstOrNull(), below.lastOrNull()).distinctBy { it.url }
+    }
+
     /** The first [count] segments of a media playlist, absolute. Empty for a master or an empty playlist. */
     fun firstSegments(media: String, mediaUrl: String, count: Int): List<String> {
         val lines = media.lines().map { it.trim() }

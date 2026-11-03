@@ -33,6 +33,17 @@ class HlsWarmTest {
         assertNull(HlsWarm.startVariant(emptyList(), 1L))
     }
 
+    @Test fun `a warm-up asks the start rung, then the next one down, then the lowest`() {
+        val four = HlsWarm.variants(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=11455000\na/i.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\nb/i.m3u8\n" +
+                "#EXT-X-STREAM-INF:BANDWIDTH=4000000\nc/i.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1500000\nd/i.m3u8\n", masterUrl)
+        assertEquals(listOf(4_000_000L, 1_500_000L), HlsWarm.fallbackOrder(four, 4_000_000L).map { it.bandwidth })
+        assertEquals(listOf(11_455_000L, 8_000_000L, 1_500_000L), HlsWarm.fallbackOrder(four, 11_455_000L).map { it.bandwidth })
+        assertEquals(listOf(8_000_000L, 4_000_000L, 1_500_000L), HlsWarm.fallbackOrder(four, 8_000_000L).map { it.bandwidth })
+        assertEquals(listOf(1_500_000L), HlsWarm.fallbackOrder(four, 1_500_000L).map { it.bandwidth })
+        assertEquals(emptyList(), HlsWarm.fallbackOrder(emptyList(), 1L))
+    }
+
     @Test fun `the first segments of a media playlist are listed in order and made absolute`() {
         val media = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nseg0.ts\n#EXTINF:4.0,\nseg1.ts?x=1\n#EXTINF:4.0,\nseg2.ts\n#EXT-X-ENDLIST"
         assertEquals(

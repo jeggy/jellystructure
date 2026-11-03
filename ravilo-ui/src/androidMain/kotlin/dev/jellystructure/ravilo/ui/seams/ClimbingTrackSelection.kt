@@ -33,6 +33,8 @@ internal class ClimbingTrackSelection(
     private val buffer: LadderBuffer,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val onLadderEvent: (String) -> Unit = {},
+    // DEB-3330 (FR-6) — the rung a replacement was warmed on when that was lower than the server's start rung; read once, at build.
+    private val startCapBps: Long? = PlayerLadderHints.warmedStartBps,
 ) : AdaptiveTrackSelection(
     group, tracks, type, bandwidthMeter,
     MIN_INCREASE_MS, MAX_DECREASE_MS, RETAIN_AFTER_DISCARD_MS,
@@ -72,7 +74,7 @@ internal class ClimbingTrackSelection(
         val fallen = trend.observe(nowMs(), bufferedMs)
         // DEB-2627 (FR-3) — a live channel adapts over its source's rungs on Media3's own rule: no 309 bound.
         allowedMaxBps = if (PlayerLadderHints.live) null else LadderRules.allowedMaxBps(rungs, playing, bufferedMs, lastBufferedMs, PlayerLadderHints.oursEncoder,
-            climbBlocked = PlayerLadderHints.climbBlocked(nowMs()), fallenForWindow = fallen)
+            climbBlocked = PlayerLadderHints.climbBlocked(nowMs()), fallenForWindow = fallen, startCapBps = startCapBps)
         lastBufferedMs = bufferedMs
         super.updateSelectedTrack(playbackPositionUs, bufferedDurationUs, availableDurationUs, queue, mediaChunkIterators)
     }
