@@ -35,10 +35,10 @@ internal fun afUrlEncode(s: String): String = buildString {
     }
 }
 
-/** FR-10.4 — *File a bug report on GitHub*, pre-filled with the URL's host, the TMDB id and the five steps' outcomes. Never the page's content, never the URL's path. */
+/** FR-10.4 — *File a bug report on GitHub*, pre-filled with the URL's host, the TMDB id and the five steps' outcomes. Never the page's content, never the URL's path — so never the model's `reason`, which quotes the page. */
 internal fun afBugReportUrl(inv: AfInvestigation): String {
     val steps = inv.steps.joinToString(" · ") { "${it.key}: ${it.state}" }
-    val body = "Host: ${inv.host}\nTMDB id: ${inv.tmdbId ?: "page only"}\nSteps: $steps\nReason: ${inv.reason.orEmpty()}"
+    val body = "Host: ${inv.host}\nTMDB id: ${inv.tmdbId ?: "page only"}\nSteps: $steps"
     return "https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml&title=${afUrlEncode("Auto-fetch: could not set up ${inv.host}")}&body=${afUrlEncode(body)}"
 }
 

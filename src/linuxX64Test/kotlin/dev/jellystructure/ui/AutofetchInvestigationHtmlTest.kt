@@ -88,6 +88,14 @@ class AutofetchInvestigationHtmlTest {
     }
 
     @Test
+    fun `the bug report link leaves out the model's reason because it quotes the page`() {
+        val quote = "Eitt sending quoted from the page"
+        val url = afBugReportUrl(inv("failed", "done", "done", "fail", reason = "This page hosts one broadcast ('$quote')", notASeries = true))
+        assertTrue("Reason" !in url && "quoted" !in url && "Eitt" !in url && "hosts" !in url, "no reason in the link: $url")
+        assertTrue("varpid.example.fo" in url.replace("%2E", ".") && "9000001" in url, url)
+    }
+
+    @Test
     fun `a limit stop and a stopped investigation say so and a stopped one has no bug report link`() {
         val limit = card(inv("failed", "done", reason = "limit reached — x", limit = true))
         assertTrue("Stopped at this month's limit" in limit)
