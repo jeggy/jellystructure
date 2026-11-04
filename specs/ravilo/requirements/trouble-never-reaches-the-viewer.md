@@ -270,6 +270,10 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
   - **A failed load falls to the rung below at once** (FR-4). On a segment or level-playlist error of the main video the next load level is
     the one below, so the first retry already asks the lower rung, and that rung is held out for 15 s (`WebRungHolds`, which
     `boundLadder` applies as `autoLevelCapping` beside the 309 rule).
+    *2026-11-05, DEB-3544:* the hold ending is not enough on hls.js. Its own ABR skips a level that has a load error until one of that
+    level's segments is buffered, and `errorPenaltyExpireMs` defaults to 0, which is never; a rung skipped is never loaded, so QA saw the
+    player stay on the rung below for 130+ s after the cap lifted at 15 s. The config sets `errorPenaltyExpireMs` to the same 15 s
+    (`WebHlsPolicy.ERROR_PENALTY_EXPIRE_MS`), so the rung is a candidate again when the hold ends and hls.js's own rule (× 0.5 up) decides.
   - **A slow segment is abandoned** (FR-4, `WebSegmentAbandon`). hls.js's own abandon compares a load's projected finish with the whole
     buffer; FR-4's is against the buffer minus 5 s, with DEB-3172's carve-out (nothing is judged with nothing buffered, nor until the buffer
     has once held 5 s plus the segment, nor under a second old, nor on the lowest rung) and the rate of the load's own bytes. It is

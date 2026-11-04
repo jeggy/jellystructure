@@ -51,6 +51,12 @@ class WebTroubleTest {
         assertTrue(WebHlsPolicy.retryAllowed(500, 8_000))
     }
 
+    @Test fun `hls_js stops skipping a rung after a failed load when the 15 s hold ends — its default never does (DEB-3544)`() {
+        val penalty = Json.parseToJsonElement(WebHlsPolicy.configJson()).jsonObject.getValue("errorPenaltyExpireMs").jsonPrimitive.int
+        assertEquals(15_000, penalty)
+        assertEquals(LadderRules.EXCLUDE_FAILED_RUNG_MS.toInt(), penalty)
+    }
+
     // ── FR-4 / FR-5 — what holds the rung down ──
 
     @Test fun `a failed load keeps its rung out for 15 s`() {

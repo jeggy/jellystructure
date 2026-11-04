@@ -39,9 +39,16 @@ internal object WebHlsPolicy {
     private fun policy(maxLoadMs: Int): String =
         """{"default":{"maxTimeToFirstByteMs":$FIRST_BYTE_TIMEOUT_MS,"maxLoadTimeMs":$maxLoadMs,"timeoutRetry":${retry()},"errorRetry":${retry()}}}"""
 
-    /** The three policies, as a JSON object keyed by hls.js's config names. */
+    /**
+     * FR-4 — how long hls.js's own ABR keeps a rung out after a load of it failed. hls.js's default is 0, which means never: a level with a
+     * load error is skipped by its ABR until one of its segments is buffered, and a skipped rung never gets one. [WebRungHolds] lifts its
+     * own cap after [LadderRules.EXCLUDE_FAILED_RUNG_MS], so hls.js's penalty ends with it (DEB-3544).
+     */
+    const val ERROR_PENALTY_EXPIRE_MS = LadderRules.EXCLUDE_FAILED_RUNG_MS
+
+    /** The three policies, and the rung penalty, as a JSON object keyed by hls.js's config names. */
     fun configJson(): String =
-        """{"fragLoadPolicy":${policy(FRAG_MAX_LOAD_MS)},"manifestLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"playlistLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)}}"""
+        """{"fragLoadPolicy":${policy(FRAG_MAX_LOAD_MS)},"manifestLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"playlistLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"errorPenaltyExpireMs":$ERROR_PENALTY_EXPIRE_MS}"""
 }
 
 /**

@@ -680,6 +680,9 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double,
                         pol[k].default.timeoutRetry.shouldRetry = retryWhileBuffered;
                         cfg[k] = pol[k];
                     });
+                    // DEB-3544 (FR-4) — hls.js's own ABR skips a rung with a load error for good (its default penalty is 0 = never expires), so the
+                    // 15 s hold would lift the cap and the player would still stay a rung down. The penalty ends with the hold.
+                    cfg.errorPenaltyExpireMs = pol.errorPenaltyExpireMs;
                     var hls = new Hls(cfg);
                     video._hls = hls;
                     video._rvFailed = []; video._rvLoad = null;
