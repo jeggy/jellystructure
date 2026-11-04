@@ -112,6 +112,12 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-5.1, FR-10.1 and FR-10.4: the model is told to look for such a marker. The review shows a live row as *live now · on a later run*. The bug report says whether the recipe has a `live` rule, never its pattern.
 - *Stand-in data* and *Acceptance* 10 say the same.
 
+**Amended 2026-11-04 (DEB-3591, owner on DEB-3591):** *"Let's add a disrespect flag. So I can check this disrespect rules and then it will do it anyway."* The owner's investigation of a broadcaster's series page stopped at *Read the page* with *this site's robots.txt does not allow* a path under the site's own video player. FR-2.2 offered no way past that.
+- FR-2.8 (new): a fetcher may be set to **ignore this site's `robots.txt`**. It is a tick, off by default, chosen per fetcher by the admin and kept on the saved fetcher. It lifts only `robots.txt`'s *Disallow* rules, for that fetcher's requests. The User-Agent, the pacing (the site's `Crawl-delay` included), the back-off, and the stop when the site blocks us all still hold.
+- FR-2.2, FR-2.5, FR-5.2 and FR-6.3 each carry the exception where they say `robots.txt` binds.
+- FR-10.4, FR-10.7 (new) and FR-12: the form gets the tick, and a robots.txt refusal says the tick is there. The open row lets the tick be changed. The list row and the bug report say when it is set. The routes carry `ignoreRobots`.
+- *Acceptance* 20 says the same. Phase 270's FR-270-8 line has a dated line saying the same.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -151,7 +157,8 @@ Auto-fetch refuses.
    agents by name in its `robots.txt`; both allow a general crawler on their programme pages, and the other asks for
    ten seconds between requests. So this server fetches, under its own name, within the `robots.txt` rules for a
    general crawler, and hands the model what it read (FR-2, FR-5.2). A site that forbids AI agents by name gets the
-   same treatment as any other: the owner decided so (Q3).
+   same treatment as any other: the owner decided so (Q3). Since 2026-11-04 the admin may lift the `robots.txt`
+   rules for one fetcher (FR-2.8, DEB-3591). The rest of this paragraph holds for that fetcher too.
 5. **A scheduled fetcher is a bot, and the first site that notices will block it.** Today nothing in jellystructure
    paces a download, and phase 183's limiter only paces requests. A site gets one lane for every fetcher pointed at
    it, and a block stops the whole site, not one fetcher (FR-2).
@@ -247,7 +254,8 @@ one lane.
    it. A path the rules forbid is never requested: an investigation that needs one stops with the reason
    (*this site's robots.txt does not allow /path*), and a saved fetcher whose listing becomes forbidden stops (FR-2.5).
    A rule that names only AI agents (Anthropic's among them) does not bind this server, which is not one of those
-   agents (Q3). The model never fetches anything itself (FR-5.1).
+   agents (Q3). The model never fetches anything itself (FR-5.1). A fetcher set to ignore `robots.txt` is not bound
+   by its rules (FR-2.8, amended 2026-11-04).
 3. **Pacing.**
    - Page, listing and API requests: at most one every **10 seconds**, or the site's own `Crawl-delay` when it asks for
      more. A limiter of its own, keyed by site (there is no generic per-host limiter: phase 183 paced TMDB only).
@@ -262,7 +270,8 @@ one lane.
    every run (FR-6.1).
 5. **Being blocked.** The lane **stops** on any of: a `401` or `403` on a URL that worked on a previous run; a challenge
    page (an HTML answer where the recipe expects JSON or a manifest, or a known challenge marker such as
-   `cf-mitigated`); a third `429` in one day; `robots.txt` newly forbidding the listing. A stopped site:
+   `cf-mitigated`); a third `429` in one day; `robots.txt` newly forbidding the listing of a fetcher that does not
+   ignore it (FR-2.8). A stopped site:
    - runs nothing for any of its fetchers, and holds no retry timer;
    - shows on every one of its fetchers as **Site stopped** with the reason and the time, on the Dashboard as one row
      per stopped site, and as one notification (Notifications ▸ the existing owner webhook);
@@ -288,6 +297,32 @@ one lane.
    - A CDN that rotates between edges is recorded by all the edges seen; an edge the recipe does not record is refused
      with the `310` above, which the proof reports and *Re-investigate page* can repair.
    - The subtitle rendition's first chunk (FR-6.4) is read through the same final-URL base.
+8. **Ignoring `robots.txt`, per fetcher (amended 2026-11-04, DEB-3591).** The owner asked for a tick that lets a
+   fetcher read a path that `robots.txt` forbids: *"So I can check this disrespect rules and then it will do it
+   anyway."*
+   - **Chosen by the admin, one fetcher at a time.** The admin ticks *Ignore this site's robots.txt* on the form
+     (FR-10.7). The investigation then starts with `ignoreRobots: true`, and the fetcher saved from it keeps the
+     setting. It is off by default and on every new form. There is no `config.toml` or site-wide setting. The model
+     never sets it, and a refusal never sets it on its own.
+   - **What it lifts.** For that fetcher's requests, `robots.txt`'s *Disallow* rules do not apply, and a forbidden path
+     is requested like any other. That covers the investigation, *Re-investigate page*, scheduled runs, *Run now*,
+     and yt-dlp's admission and paced listing (FR-6.3). If `robots.txt` cannot be read, the request still goes ahead,
+     at the 10-second pace. `robots.txt` newly forbidding that fetcher's listing does not stop the site (FR-2.5).
+   - **What still holds.** All the rest of FR-2 still applies to that fetcher:
+     - The User-Agent is unchanged, so the site still sees who is asking (FR-2.1). Ignoring `robots.txt` never extends
+       to pretending to be a browser or rotating an address.
+     - `robots.txt` is still read once a day, and its `Crawl-delay` is still honoured when it asks for more than
+       10 seconds (FR-2.3).
+     - The 25-request cap, one download at a time, the back-off, and the stop on a block all still apply (FR-2.3 to
+       FR-2.5).
+     - The recorded-host rule still applies (FR-2.7).
+     - Nothing behind a login or DRM is read (FR-3.3).
+   - **One fetcher's setting, one site's lane.** Another fetcher on the same site that is not ticked is still bound by
+     `robots.txt`. A block that the ticked fetcher provokes stops the whole site, the unticked fetchers included,
+     exactly as FR-2.5 says. That is the cost of the tick, and its hint says so (FR-10.7).
+   - **Changed later.** The fetcher's open row has the same tick, editable in place. *Re-investigate page* uses the
+     fetcher's current setting. Unticked, the fetcher is bound by `robots.txt` again from its next request, FR-2.2 and
+     FR-2.5 included.
 
 ### FR-3 — What Auto-fetch accepts and what it refuses
 
@@ -646,7 +681,9 @@ one lane.
    household has is worked out on this server, after the model has answered.* This applies to every site, including a
    site whose `robots.txt` names Anthropic's agents: the owner decided (Q3) that what this server reads under its own
    name, within the general-crawler rules, goes to the model as it would from any other site. A page-only
-   investigation has no `tmdb_series` tool and sends nothing from TMDB (FR-15.9).
+   investigation has no `tmdb_series` tool and sends nothing from TMDB (FR-15.9). On a fetcher set to ignore
+   `robots.txt` (FR-2.8, amended 2026-11-04), what this server read without those rules goes to the model the same
+   way. The model is not told about the setting, and it changes nothing about what the model may ask for.
 3. **Page content is data, not instructions.** The system prompt says so; and nothing the model answers is acted on
    except through FR-4's schema and FR-4.2's proof. A page that tells the model to fetch another site, write a file or
    change the schedule can at worst produce a recipe that fails its proof.
@@ -690,7 +727,8 @@ one lane.
    - **Held to the lane (FR-2).** yt-dlp is a program making its own requests, so the engine holds it to what the lane
      promises. The listing is one paced page request against `source.url` (checked against `robots.txt` for a general
      crawler, stopped and backed off like any other). An item's link is checked against `robots.txt` before yt-dlp
-     opens it. The download runs inside the lane's download slot (one at a time, 60 s between two episodes). yt-dlp is
+     opens it. On a fetcher set to ignore `robots.txt`, neither check applies (FR-2.8, amended 2026-11-04). The rest of
+     this item still holds. The download runs inside the lane's download slot (one at a time, 60 s between two episodes). yt-dlp is
      started with this server's own User-Agent (FR-2.1), `--sleep-requests 10`, `--ignore-config` and no cache, and
      with its `generic` extractor off (`--use-extractors default,-generic`): only a site yt-dlp has an extractor for is
      read, and a page cannot send it to whatever its markup names. What yt-dlp's last error says is judged like an
@@ -856,7 +894,8 @@ As drawn in round 2, with these changes:
    - **The body**, in this order:
      1. `Host:` the page URL's host. Never its path, query or fragment.
      2. `Fetcher: TMDB series` or `Fetcher: page only`. **The TMDB id is no longer sent.** One lookup on TMDB turns it
-        into the title, so it names what the household wants as surely as the title does.
+        into the title, so it names what the household wants as surely as the title does. When the investigation
+        ignored `robots.txt` (FR-2.8), the line ends ` · robots.txt ignored` (amended 2026-11-04, DEB-3591).
      3. `Server:` the running server's version (`ServerVersion.current`, such as `v1.62-54-g8bb7b638`).
      4. `Model:` the Auto-fetch job's model id and effort.
      5. `Ended:` `not a series`, `limit reached` or `failed`, then `· turns: t of 12 · site requests: n of 20 · cost: $x`.
@@ -959,6 +998,23 @@ As drawn in round 2, with these changes:
      before it is saved: *Saving this deletes 4 episodes at the next run*.
    - **The run line** gains the deletions, one line each, as FR-16.6 words them.
    - **The fetchers list.** A row with retention shows it beside the schedule: *Daily · 04:00 · keeps newest 12*.
+7. **Ignoring `robots.txt`** (amended 2026-11-04, DEB-3591; FR-2.8). This needs no design round. It reuses the form's
+   existing tick, the failed state's existing line under the reason, and the list row's existing note beside the
+   schedule. It adds no CSS class.
+   - **The form.**
+     - It gains a tick, *Ignore this site's robots.txt*, under *This programme is not on TMDB*. It is unticked on
+       every new form, and pressing *Dismiss* unticks it.
+     - Ticked, its hint reads *Reads pages this site asks crawlers to leave alone. Requests stay paced and say who is
+       asking. If the site blocks them, every fetcher on this site stops.*
+   - **The failed state.** When the server marks a failure as a `robots.txt` refusal (`robotsRefused`, FR-12), a line
+     under the reason reads *Tick "Ignore this site's robots.txt" and investigate again to read it anyway.* The line is
+     never shown on an investigation that already ignored `robots.txt`, and never for any other reason. The server
+     decides when the line shows. The admin does not work it out from the reason's words.
+   - **The review state.** The settings box shows one line, *Ignores this site's robots.txt*, when the investigation
+     did.
+   - **The fetcher's open row** has the same tick, editable in place, with the same hint. Saving it is the `PATCH`.
+   - **The fetchers list.** A row that ignores `robots.txt` says so beside the schedule, after any retention note:
+     *Daily · 04:00 · keeps newest 12 · ignores robots.txt*.
 
 ### FR-11 — Activity
 
@@ -987,6 +1043,12 @@ All admin-only, behind the admin's existing auth, not on the Ravilo wire:
 - `POST /api/autofetch/{id}/retention/preview` `{retention}` → what saving that retention would delete at the next
   run, counted by the server (FR-10.6, FR-16.1). Saving it is the `PATCH`. `POST /api/autofetch/investigate` takes
   `{url, tmdbId: null, pageOnly: true}` for a page-only fetcher (FR-15.1);
+- *Added 2026-11-04 (DEB-3591, FR-2.8):* `POST /api/autofetch/investigate` takes `ignoreRobots` (default `false`). A
+  *Re-investigate page* ignores the body's value and takes the fetcher's own setting. The investigation's pushed view
+  carries `ignoreRobots`, and a failed one carries `robotsRefused: true` when a `robots.txt` refusal ended it. The
+  saved fetcher takes `ignoreRobots` from the investigation it was saved from, not from the save's body, as
+  `pageOnly` already does. Each fetcher in `GET /api/autofetch` carries `ignoreRobots`, and
+  `PATCH /api/autofetch/{id}` accepts `{ignoreRobots}`;
 - `POST /api/autofetch/sites/{site}/resume`;
 - `POST /api/autofetch/{id}/items/{itemId}/number` `{season, episode}` and `…/propose`;
 - `GET /api/autofetch/queue/{episodeId}/still/{n}`, `POST /api/autofetch/queue/{episodeId}/submitted`.
@@ -1002,7 +1064,9 @@ The admin renders server-pushed state only.
 
 `[autofetch]` in `config.toml`: `enabled` (default **false**; off means no fetcher runs and no investigation starts).
 Fetchers, recipes, sites' state and the queue live in the database, not in `config.toml`. The pacing numbers of FR-2.3 are constants in code, not
-settings: a household that wants to fetch faster than a site allows is not a case to support.
+settings: a household that wants to fetch faster than a site allows is not a case to support. Ignoring `robots.txt`
+is a setting on each fetcher (FR-2.8), not in `config.toml`, and it changes none of those numbers (amended 2026-11-04,
+DEB-3591).
 
 ### FR-14 — Design work this file needs
 
@@ -1319,6 +1383,32 @@ Added 2026-11-03 (DEB-3459):
     - The link starts `https://github.com/jeggy/jellystructure/issues/new?title=` and carries no `template=`.
     - A stopped investigation has no `report`, and the card draws no link.
 
+Added 2026-11-04 (DEB-3591):
+
+20. **Ignoring `robots.txt` (FR-2.8).** The fixture site's `robots.txt` has `User-agent: *`, `Disallow: /player/` and
+    `Crawl-delay: 20`.
+    - Unit, lane: an unticked fetcher's request for `/player/x` is refused with *this site's robots.txt does not allow
+      /player/x*, and nothing is requested. A ticked fetcher's request for it is made, with the same User-Agent and at
+      least 20 seconds after the request before it. A ticked fetcher's request still goes ahead when `robots.txt`
+      cannot be read.
+    - Unit, lane: two fetchers share one site, A ticked and B unticked. A's request for `/player/x` is made and B's is
+      refused. A `403` on A's listing, which worked on the last run, stops the site, and B then runs nothing.
+    - Unit, lane: `robots.txt` comes to forbid a ticked fetcher's listing. The site is not stopped. The same change
+      under an unticked fetcher stops the site as before (FR-2.5).
+    - Unit, yt-dlp: a ticked fetcher's item link under `/player/` is admitted and paced. An unticked fetcher's is
+      refused.
+    - Unit, investigation: an investigation ended by a `robots.txt` refusal pushes `robotsRefused: true`. One ended by
+      any other refusal pushes `false`, and so does a ticked investigation. Its bug report's `Fetcher:` line ends
+      ` · robots.txt ignored` only when the investigation was ticked.
+    - Unit, routes: saving from a ticked investigation stores `ignoreRobots: true`, whatever the save's body says.
+      `PATCH {ignoreRobots: false}` binds the fetcher's next request to `robots.txt` again. *Re-investigate page* uses
+      the fetcher's setting and ignores the body's.
+    - Unit, admin: the tick is unticked on a new form and after *Dismiss*. The failed state shows the *Tick "Ignore this
+      site's robots.txt"* line only when `robotsRefused` is true. A ticked fetcher's list row ends
+      `· ignores robots.txt`.
+    - The schema migration adds the fetcher's setting with a default of off. Every fetcher saved before it reads as
+      unticked.
+
 ## Non-goals
 
 - Films and one-off clips (FR-3.1), and anything behind a login or DRM (FR-3.3).
@@ -1345,7 +1435,9 @@ Added 2026-11-03 (DEB-3459):
 ## Amends
 
 - **Phase 270**, at build, a dated amendment: FR-270-1 gains the *Auto-fetch* card; FR-270-8 gains FR-5.2's line;
-  FR-270-6's check runs per turn for this job, which is not a batch (FR-5.4).
+  FR-270-6's check runs per turn for this job, which is not a batch (FR-5.4). *Amended 2026-11-04 (DEB-3591):*
+  FR-270-8's *within a general crawler's robots.txt rules* gains *unless a fetcher is set to ignore them* (FR-2.8).
+  That file has a dated line saying so.
 - **`suggestions-as-a-tab-on-the-ai-page.md` FR-2**: `"fetchers"` joins the tab list (FR-1.1). *Amended 2026-11-04
   (DEB-3566):* it is in the list only while AI and Auto-fetch are on. That file has a dated line saying so.
 

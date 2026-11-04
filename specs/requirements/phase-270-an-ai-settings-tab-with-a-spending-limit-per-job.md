@@ -320,7 +320,9 @@ wait a day for: the admin watches the investigation live, so it uses the synchro
   library.* For a page-only fetcher (FR-15) it reads *the page URL and what this server read from that site during the
   investigation. Nothing from TMDB, and nothing from the library.* This server does the reading, under its own
   name and within a general crawler's `robots.txt` rules; the model never fetches anything itself, and a site whose
-  `robots.txt` names Anthropic's agents is treated like any other (owner, 2026-10-25, Q3).
+  `robots.txt` names Anthropic's agents is treated like any other (owner, 2026-10-25, Q3). *Amended 2026-11-04
+  (DEB-3591, `auto-fetch-…` FR-2.8):* the card's sentence reads *within a general crawler's robots.txt rules, unless a
+  fetcher is set to ignore them*.
 - **FR-270-7:** the starting assumption for the card is ~8 turns of ~15k input and ~1.5k output each, about $0.90 an
   investigation on Opus 5 and $0.36 on Sonnet 5, at full price. The card shows the cost of one investigation, from the
   job's own ledger once it has run.
