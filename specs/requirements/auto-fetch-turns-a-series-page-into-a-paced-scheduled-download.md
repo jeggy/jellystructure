@@ -87,6 +87,12 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-1.3: while the tab is hidden, a stopped site's Dashboard row opens Settings ▸ AI and not the hidden tab. On 2026-11-04 Activity ▸ Schedule, where FR-11 lists the fetchers, was not built (DEB-2197). Until it is, a hidden tab leaves the fetchers' runs visible only as entries on Activity ▸ History.
 - Acceptance 1 says the same.
 
+**Amended 2026-11-04 (DEB-3567, owner on DEB-799, comment `a8cf8378`):** *"This series is a news series, so new episodes every day (even multiple times a day)."* The owner set up a page-only fetcher for a broadcaster's news programme. The model's recipe was right: an `html` listing, `ytdlp` media and `date` numbering. Two of our own gaps stopped it. The page prints each item's date with its time and length after it (`3. Nov. 2026 18.30 | 25m`). That was not read as a date, so no item had a number. And with three items on one date, FR-4.5 refused the recipe at save, so a programme that airs more than once a day could never be set up.
+- FR-4.5: a date is read the way the page prints it even when a time or other text follows it. That is what FR-4.5 already said, so this part is a fix and not a change.
+- FR-4.1 and FR-4.5: a new numbering, `datetime`, for a page-only programme that airs more than once a day. The season is the year and the week, and the episode is the day and the time. 3 November 2026 at 18.30 is `S2644E808`. `date` is unchanged, so no saved fetcher is renumbered.
+- FR-5.1, FR-15.8: the model is told when to choose `datetime`. A `date` recipe refused for two items on one date says so to the model.
+- *Stand-in data*, *Acceptance* 10 and *Non-goals* say the same.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -346,8 +352,9 @@ one lane.
          (`var media = 'DOV7313'`) is on the listing. Each other id sits only on that item's own page
          (`?sid=214396` → `DOV7302`).
    - `numbering`: `source` (the item's own season and episode numbers, read by a pattern), `mapped` (an
-     explicit table, item id → `SxxEyy`, FR-4.3), or `date` (the item's published date, page-only fetchers only,
-     FR-4.5);
+     explicit table, item id → `SxxEyy`, FR-4.3), `date` (the item's published date, page-only fetchers only,
+     FR-4.5), or `datetime` (the item's published date and time, page-only fetchers only, FR-4.5's amendment of
+     2026-11-04, DEB-3567);
    - `series`, page-only fetchers only (FR-15.3): where the page gives the programme's name, description and image,
      in the same form as `list`'s fields;
    - `retention`: `all`, or the newest `N` with *mirror the page* on or off (FR-16);
@@ -442,6 +449,71 @@ one lane.
      carries on.
    - **Not for a TMDB fetcher.** TMDB numbers its own episodes, so `date` is offered only to a page-only fetcher.
      Showing the air date in Ravilo instead of the code would be a Ravilo spec of its own, not part of this one.
+   - **Amended 2026-11-04 (DEB-3567): a date with something after it.** A page often prints the time and the length
+     after the date, as in `4. Nov. 2026 6.00 | 4t 0m`. That reads as 2026-11-04. Every form `isoDate` reads
+     (`dd. Month yyyy`, `dd.MM.yyyy`, `dd/MM/yyyy`, `yyyy-MM-dd`) is read when the text after the year is empty or
+     starts with whitespace. Text before the date still means it is not a date. Before this, the `dd. Month yyyy` and
+     `dd.MM.yyyy` forms refused anything after the year. So *the way the page prints it* failed on such a page, and
+     every item read *maps to no season and episode*. This part restores FR-4.5 and changes nothing it promised.
+   - **Amended 2026-11-04 (DEB-3567): more than one broadcast a day, `numbering: datetime`.** This is for a page-only
+     fetcher of a programme that airs more than once on some dates, such as a news programme. `date` stays as it is,
+     for a programme that airs at most once a day. A saved `date` fetcher is not renumbered, because nothing about
+     `date` changes.
+     - **The time.** It is read from the same published text as the date: the first `H.MM` or `H:MM` after the date
+       (hour 0–23, minute 00–59), with or without `kl.` before it. An ISO `2026-11-03T18:30…` gives 18:30. Everything
+       after the time is ignored (` | 25m`). The time is the clock time the page prints. No time zone is applied,
+       even when the text carries an offset, as for the date.
+     - **The number.** Let *d* be the date's day of the year (1–366), as for `date`, and *m* the time's minute of
+       the day (0–1439).
+       - The season is the last two digits of the year, followed by the week of the year as two digits:
+         `(year − 2000) × 100 + ⌊(d − 1) ÷ 7⌋ + 1`. Week 1 is 1–7 January, and week 53 holds 31 December, and
+         30 December in a leap year. These are not ISO weeks.
+       - The episode is `((d − 1) mod 7) × 140 + ⌊m × 140 ÷ 1440⌋ + 1`, from 1 to 980. Each day of the week has 140
+         slots of about ten minutes, 10 min 17 s each.
+       - 3 November 2026 is day 307. At 18.30 it is `S2644E808`, and at 21.00 it is `S2644E823`. 4 November at 6.00
+         is `S2644E876`.
+       - A date outside 2010–2099 gives no number. The season then always has four digits.
+     - **Why this shape.** Every one of FR-4.5's reasons for a number still holds. Two more constraints narrow it.
+       - `SEASON_EP_RE` reads at most four season digits and three episode digits. A date and a time do not fit
+         readably into seven digits, so one of the two numbers has to be packed.
+       - The number depends on the item's own date and time and on nothing else. So it is the same on every run, and
+         neither retention nor a newly listed item renumbers anything. Seasons sort by week, and episodes sort by day
+         and time within the week, so the order is air order.
+       - Two items can fall into one slot only if they air less than 10 min 17 s apart. 18.25 and 18.30 share one;
+         18.30 and 18.35 do not. A broadcaster does not air the same programme twice that close together.
+       - Rejected: one season per month, `S2611`. A month leaves 32 slots a day, so the slots are 45 minutes long,
+         and bulletins at 18.00 and 18.30 would share a number.
+       - Rejected: one season per day. A season number cannot hold a readable date in four digits. A daily season
+         also gives a programme kept in full 365 seasons a year on a TV's season picker.
+       - Rejected: a wider `SEASON_EP_RE`, such as `S20261103E1830`. That changes how the whole library's file names
+         are read, and Jellyfin reads the file name with its own rules.
+       - Rejected: numbering by the item's place among that date's items. That number changes when an earlier item
+         turns up late, and it is not stable across runs without being stored.
+       - Ravilo shows a code like `S2644E808` and the air date (R148). It does not show the time. Showing the date and
+         time in place of the code is still a Ravilo spec of its own (*Non-goals*).
+     - **Filename.** Placed per FR-6.6, with the time after the ISO date:
+       `<Series>/Season 2644/<Series> - S2644E808 - 2026-11-03 18.30 - <episode name>.mkv`. The time is written
+       `HH.MM`, because a colon is not allowed in a file name.
+     - **An item with a date and no time.** The proof fails with *'<title>' has a date but no time, so it cannot be
+       numbered by date and time*. On a run the item is skipped with `<title>: the page gives it no time`. That is not
+       a failure, and it does not count toward FR-6.5's three.
+     - **Two items in one slot.** These fail FR-4.2's *no two items map to the same one* at save, with *2 items on
+       2026-11-03 (18.25, 18.30) air too close together to get numbers of their own*. On a later run the second is
+       skipped with `<title>: airs too close to 2026-11-03 18.30, already placed`.
+       The fetcher carries on.
+     - **A `ytdlp` listing.** Its published value is a date with no time (FR-4.1's *An item with no date*), so a
+       `ytdlp` listing cannot be numbered by `datetime`. The proof fails it with *yt-dlp gives these items no time*.
+       Reading a time from yt-dlp's `timestamp` is not in this amendment (*Non-goals*).
+     - **The model's examples** (FR-5.1). Under `datetime` the engine compares an example's date with the date it
+       read, and it does not compare the season or episode the model gave. The model is not asked to do the
+       arithmetic above.
+     - **Everywhere else.** Where this file says *`date` numbering*, `datetime` follows the same rule, except for the
+       number itself, the filename's time and the two cases above. That covers page-only fetchers only, the
+       `published` field the listing needs, FR-8's air date, FR-16.3's order and the queue's exclusions. The fetcher's
+       row reads *By date and time*, and its description reads *season = the year and week, episode = the day and
+       time*. The review shows the time after each row's date.
+     - **Re-investigating a saved fetcher.** If *Re-investigate page* changes a fetcher between `date` and `datetime`,
+       the files already placed keep their names and numbers. Only items not yet placed are numbered the new way.
 
 ### FR-5 — What the AI does, and what leaves the house
 
@@ -466,6 +538,11 @@ one lane.
      their own, answer `numbering: mapped` with `mapping`* (TMDB) or *… answer `numbering: date`* (page-only).
    - **The group syntax.** The prompt's *Regexes* line, and the schema's descriptions of `pattern[].regex` and
      `item_page.pattern`, say that a named group is written `(?<value>…)`, not `(?P<value>…)` (FR-4.1).
+   - **More than one broadcast a day (2026-11-04, DEB-3567).** The schema's `numbering` offers `datetime`. On a
+     page-only fetcher, the numbering step says to answer `numbering: date` for a programme that airs at most once a
+     day, and `numbering: datetime` when two items can share a date and the published text carries a time. A `date`
+     recipe the proof refuses because items share a date gets that reason with *if the published text gives a time,
+     answer `numbering: datetime`* added, so the model can correct it within FR-5.1's two corrections.
    - Rejected: a new numbering that matches an item's title to a TMDB episode name with no model and no tick. That is
      `mapped` without the admin's approval, and FR-4.3 (Q2) is that a mapping fails closed.
 2. **What is sent** (FR-270-8 gains this line): *the page URL and what this server read from that site during the
@@ -812,7 +889,8 @@ no TMDB id, on purpose. Everything in this file holds for it except what this FR
    - the `series` block yields a non-empty name.
 
    The TMDB agreement check is skipped. Q1's *proven* has nothing to decide, because nothing goes to the queue.
-   `mapped` numbering is not offered, because it maps onto TMDB's episodes. The numbering is `source` or `date`.
+   `mapped` numbering is not offered, because it maps onto TMDB's episodes. The numbering is `source` or `date`,
+   or `datetime` for a programme that airs more than once a day (FR-4.5, amended 2026-11-04, DEB-3567).
 9. **The investigation (FR-5).**
    - The `tmdb_series` tool is not offered.
    - The model is told the fetcher is page-only, and that it must find the `series` block.
@@ -892,7 +970,10 @@ one path that does, and its rules are what make that safe.
 `Royndin`, TMDB `9000001`, `varpid.example.fo/sendingar/royndin`, episode name `Útfall` (all cleared under DEB-1246);
 `Nordvest` on `play.example.dk`. For a page-only, date-numbered fetcher (FR-15, FR-4.5), use `Dagbók` at
 `varpid.example.fo/sendingar/dagbok`. It is a daily programme with no TMDB id, a 12-item listing dated 2026-10-16 to
-2026-10-27, and generic episode headings `Dagbók · 16. oktober` and so on (added 2026-10-27, DEB-2626). Tests and any
+2026-10-27, and generic episode headings `Dagbók · 16. oktober` and so on (added 2026-10-27, DEB-2626). For a
+programme that airs more than once a day (`datetime`, FR-4.5), use `Kvøldbók` at `varpid.example.fo/sendingar/kvoldbok`.
+It has no TMDB id, and its published text is printed as `3. Nov. 2026 18.30 | 25m`. Its listing has three items on
+2026-11-03 (6.00, 18.30, 21.00) and one each on 2026-11-02 and 2026-11-05 (added 2026-11-04, DEB-3567). Tests and any
 new picture use only these. No real broadcaster page, title, slug or
 TMDB id appears in this repository; a test that needs a live-looking listing uses a fixture served by the test itself.
 
@@ -940,6 +1021,21 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
     - The Ravilo series detail lists the 12 by date with 12 different codes.
     - A listing with two items on 2026-10-20 fails the proof at save. On a later run, a second item on a date already
       placed is skipped with its line.
+
+    Added 2026-11-04 (DEB-3567):
+    - `isoDate` reads `4. Nov. 2026 6.00 | 4t 0m` as 2026-11-04, and `3. Nov. 2026 21.00 | 25m` and
+      `3. Nov. 2026 18.30 | 25m` as 2026-11-03. It still reads `27. oktober 2026`, `27.10.2026`, `2026-10-27` and
+      `20261027` as before, and it reads nothing from `Sent 27. oktober 2026`.
+    - Under `datetime`, those three lines give `S2644E876`, `S2644E823` and `S2644E808`. 1 January 2026 at 0.00 is
+      `S2601E001`, and 31 December 2026 at 23.59 is `S2653E140`.
+    - `Kvøldbók`'s listing saves under `datetime`, and its five items are placed under `Season 2644` and `Season 2645`
+      as `Kvøldbók - S2644E808 - 2026-11-03 18.30 - …mkv` and so on. The Ravilo series detail lists them in air order
+      with five different codes. A second run places nothing new and renames nothing.
+    - The same listing under `date` fails the proof with *3 items share the date 2026-11-03*, and the reason told back
+      to the model names `datetime`.
+    - Items at 18.25 and 18.30 on one date fail the proof under `datetime`. An item with a date and no time fails it
+      too.
+    - `parseSeasonEpisodes` reads `S2644E808 - 2026-11-03 18.30 - …` as season 2644, episode 808, and no range.
 11. **The newest 12.** The page grows to 13 items.
     - The run downloads the new one and deletes the oldest: the file, its NFO and its thumb.
     - Jellyfin gets `"Deleted"` for that path, and the run record and Activity each carry the line.
@@ -1013,7 +1109,11 @@ Added 2026-11-03 (DEB-3459):
   there (FR-6.1), but it does not take over the old fetcher's placed rows, so its retention does not count them
   (FR-16.2).
 - Deleting anything a fetcher did not place, and any retention outside Auto-fetch.
-- Showing the air date in place of `SxxEyy` on a Ravilo client (FR-4.5).
+- Showing the air date in place of `SxxEyy` on a Ravilo client (FR-4.5), or the air time (FR-4.5's `datetime`).
+- A season name such as *Week of 2 November* for a `datetime` season (2026-11-04, DEB-3567). Ravilo shows
+  `Season 2644`.
+- Reading an item's time from yt-dlp's `timestamp`, so that a `ytdlp` listing can be numbered by `datetime`
+  (2026-11-04, DEB-3567).
 - **The Internet Archive through the `ytdlp` reader, and any rewriting of a link** (2026-11-02, DEB-3405). An Internet
   Archive item lists `archive.org/download/<id>/<file>` links. They are plain files, and yt-dlp has no extractor for
   them. The generic extractor stays off (FR-6.3), and a recipe cannot rewrite a link (FR-4.1). No site the household
