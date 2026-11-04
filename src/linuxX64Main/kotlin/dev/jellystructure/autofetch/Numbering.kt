@@ -8,6 +8,8 @@ package dev.jellystructure.autofetch
  */
 object PatternSafety {
     private const val MAX_LEN = 200
+    /** FR-10.4 (DEB-3569) — where the regex engine's own message starts in the reason below: the bug report leaves everything after it out. */
+    const val INVALID_REGEX_LEAD = "the pattern is not a valid regular expression: "
     private val GROUP_NAME = Regex("""\(\?<([A-Za-z][A-Za-z0-9]*)>""")
 
     /** The reason [regex] is refused, or null when it is stored as written. */
@@ -17,7 +19,7 @@ object PatternSafety {
         shapeProblem(regex)?.let { return it }
         // FR-4.1 (DEB-3459): the engine's own message, so the model's correction is not a guess.
         val compiled = try { Regex(regex) } catch (e: Throwable) {
-            return "the pattern is not a valid regular expression: ${(e.message ?: e.toString()).replace(Regex("\\s+"), " ").trim().take(160)}"
+            return "$INVALID_REGEX_LEAD${(e.message ?: e.toString()).replace(Regex("\\s+"), " ").trim().take(160)}"
         }
         val names = GROUP_NAME.findAll(regex).map { it.groupValues[1] }.toList()
         val allowed = required + anyOf

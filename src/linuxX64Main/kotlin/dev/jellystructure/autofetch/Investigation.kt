@@ -109,7 +109,13 @@ data class InvestigationView(
     val spentMicroUsd: Long = 0,
     val startedAt: Long = 0,
     val review: ReviewView? = null,
+    /** FR-10.4 — set on a `failed` investigation only; a stopped one has none. */
+    val report: ReportView? = null,
 )
+
+/** FR-10.4 (DEB-3569) — the GitHub issue the server wrote for a failed investigation, already redacted. Admin-only wire (FR-12); no client reads it. */
+@Serializable
+data class ReportView(val title: String, val body: String)
 
 @Serializable
 data class InvestigateGate(val allowed: Boolean, val reason: String? = null)
@@ -150,6 +156,8 @@ class Investigator(
         /** FR-4.3 — an episode's overview as `tmdb_series` shows it to the model, for the `mapped` titles-and-descriptions comparison. */
         const val TMDB_OVERVIEW_CHARS = 280
         const val NOT_IN_12 = "the page could not be worked out in 12 steps"
+        /** FR-10.4 (DEB-3569) — where the HTTP client's message starts in the reason below: the bug report leaves everything after it out. */
+        const val UNREACHABLE_LEAD = "Anthropic could not be reached: "
     }
 
     /** Everything one run keeps between turns. */
@@ -165,24 +173,37 @@ class Investigator(
         var variantsText = ""
         var tmdbText: String? = null
         var tmdbName: String? = null
+        // FR-10.4 (DEB-3569) — what the bug report is written from.
+        var model: String? = null
+        var effort = ""
+        val refusals = ArrayList<Refusal>()
+        var recipe: MRecipe? = null
+        var proof: ProofResult? = null
     }
 
     suspend fun run(id: String, url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String?, publish: (InvestigationView) -> Unit): Outcome {
         val site = Urls.siteOf(url).orEmpty()
         val r = Run(id, url, site, tmdbId, pageOnly, fetcherId, world.nowSec())
-        fun view(state: String, reason: String? = null, notASeries: Boolean = false, limit: Boolean = false, review: ReviewView? = null) = InvestigationView(
+        fun view(state: String, reason: String? = null, notASeries: Boolean = false, limit: Boolean = false, review: ReviewView? = null, report: ReportView? = null) = InvestigationView(
             id = id, state = state, url = url, host = Urls.host(url).orEmpty(), tmdbId = tmdbId, pageOnly = pageOnly, fetcherId = fetcherId,
             steps = r.steps.toList(), reason = reason, notASeries = notASeries, limitReached = limit, turns = r.turns, requests = r.requests,
-            spentMicroUsd = r.spent, startedAt = r.startedAt, review = review,
+            spentMicroUsd = r.spent, startedAt = r.startedAt, review = review, report = report,
         )
         fun pub() = publish(view("running"))
-        fun fail(reason: String, stepKey: String? = null, notASeries: Boolean = false, limit: Boolean = false): Outcome {
+        fun fail(reason: String, stepKey: String? = null, notASeries: Boolean = false, limit: Boolean = false, modelWords: Boolean = false): Outcome {
             if (stepKey != null) failAt(r, stepKey)
+            val ended = if (limit) "limit reached" else if (notASeries) "not a series" else "failed"
             ai.noteRun("${if (limit) "stopped at the limit" else if (notASeries) "not a series" else "failed"} · ${reason.take(140)} · ${AiPricing.usd(r.spent)}")
-            return Outcome(view("failed", reason, notASeries, limit), null)
+            val report = BugReport.build(ReportInput(
+                id = id, host = Urls.host(url).orEmpty(), pageOnly = pageOnly, ended = ended, reason = reason, reasonIsModelWords = modelWords,
+                model = r.model, effort = r.effort, turns = r.turns, requests = r.requests, spentMicroUsd = r.spent, steps = r.steps.toList(),
+                recipe = r.recipe, proof = r.proof, refusals = r.refusals.toList(),
+            ))
+            return Outcome(view("failed", reason, notASeries, limit, report = report), null)
         }
 
         val settings = ai.settings() ?: return fail(ai.offReason())
+        r.model = settings.model; r.effort = settings.effort
         startStep(r, STEP_PAGE); pub()
         val system = systemPrompt(pageOnly)
         val messages = ArrayList<JsonObject>()
@@ -208,7 +229,7 @@ class Investigator(
                 val status = (e as? AnthropicClient.ApiException)?.status
                 return fail(when (status) {
                     401, 403 -> "The key was refused — Settings ▸ AI"
-                    null -> "Anthropic could not be reached: ${e.message ?: "no answer"}"
+                    null -> "$UNREACHABLE_LEAD${e.message ?: "no answer"}"
                     else -> "Anthropic answered $status"
                 }, runningStep(r))
             }
@@ -242,7 +263,7 @@ class Investigator(
                         continue
                     }
                     if (answer.verdict == "not_a_series") refused(r, answer.reason.ifBlank { "the model could not identify the page as a series" }, text, "not_a_series")
-                    if (answer.verdict == "not_a_series") return fail(answer.reason.ifBlank { "the model could not identify the page as a series" }, STEP_SERIES, notASeries = true)
+                    if (answer.verdict == "not_a_series") return fail(answer.reason.ifBlank { "the model could not identify the page as a series" }, STEP_SERIES, notASeries = true, modelWords = true)
                     val mr = answer.recipe
                     if (mr == null) {
                         refused(r, "the model gave no recipe", text)
@@ -250,6 +271,7 @@ class Investigator(
                         messages += userText("You answered `series` but gave no recipe. Give the recipe, or answer `not_a_series` with the reason.")
                         continue
                     }
+                    r.recipe = mr
                     startStep(r, STEP_SERIES); pub()
                     when (val proved = prove(r, settings, mr, answer.examples, answer.mapping)) {
                         is Proved.Ok -> {
@@ -282,6 +304,7 @@ class Investigator(
      * model's answer as it came back, cut at [LOG_ANSWER_CHARS]. An investigation that reaches the review logs nothing extra.
      */
     private suspend fun refused(r: Run, reason: String, answer: String, verdict: String? = null) {
+        r.refusals += Refusal(r.turns, reason, modelWords = verdict != null)
         val cut = if (answer.length > LOG_ANSWER_CHARS) answer.take(LOG_ANSWER_CHARS) + "… (cut at $LOG_ANSWER_CHARS characters of ${answer.length})" else answer
         Logger.info("auto-fetch: investigation ${r.id} turn ${r.turns} ${if (verdict != null) "answered $verdict" else "refused"}: ${reason.take(1_000)} · answer: $cut", "autofetch")
     }
@@ -308,7 +331,7 @@ class Investigator(
         val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).let { it.copy(retention = if (r.pageOnly) RetentionSpec("newest", 12, true) else RetentionSpec("all")) }
         RecipeValidator.validate(recipe, r.pageOnly).firstOrNull()?.let { return Proved.Retry(it, STEP_SCRIPT) }
         val lane = lanes.forSite(r.site)
-        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping)
+        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping).also { r.proof = it }
         if (!pr.ok) {
             pr.blocked?.let { return Proved.End(pr.failure ?: "the site refused the recipe's request", STEP_PAGE) }
             val why = pr.failure ?: "the recipe failed its proof"

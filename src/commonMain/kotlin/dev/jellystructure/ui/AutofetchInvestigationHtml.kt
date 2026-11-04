@@ -35,12 +35,15 @@ internal fun afUrlEncode(s: String): String = buildString {
     }
 }
 
-/** FR-10.4 — *File a bug report on GitHub*, pre-filled with the URL's host, the TMDB id and the five steps' outcomes. Never the page's content, never the URL's path — so never the model's `reason`, which quotes the page. */
-internal fun afBugReportUrl(inv: AfInvestigation): String {
-    val steps = inv.steps.joinToString(" · ") { "${it.key}: ${it.state}" }
-    val body = "Host: ${inv.host}\nTMDB id: ${inv.tmdbId ?: "page only"}\nSteps: $steps"
-    return "https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml&title=${afUrlEncode("Auto-fetch: could not set up ${inv.host}")}&body=${afUrlEncode(body)}"
-}
+/** FR-10.4 — *File a bug report on GitHub*: the title and body the server wrote for a failed investigation, URL-encoded and nothing added. No report, no link. */
+internal fun afBugReportUrl(inv: AfInvestigation): String? = inv.report?.let { afBugReportLink(it.title, it.body) }
+
+/** FR-10.4 — the new-issue link for [title] and [body]. The server fits the pair to [AF_BUG_REPORT_LINK_MAX] with this same function. */
+internal fun afBugReportLink(title: String, body: String): String =
+    "https://github.com/jeggy/jellystructure/issues/new?title=${afUrlEncode(title)}&body=${afUrlEncode(body)}"
+
+/** GitHub refuses a new-issue link much over 8 kB. */
+internal const val AF_BUG_REPORT_LINK_MAX = 8_000
 
 /** The form (FR-10.6): the page URL, the TMDB id, the page-only tick (FR-15.1), and *Investigate* — or *Stop* while one runs. */
 internal fun afFormHtml(form: AfForm, gate: AfGate, running: Boolean): String {
@@ -70,9 +73,10 @@ private fun failedHtml(inv: AfInvestigation): String {
         inv.notASeries -> "Not a series" to "The page could not be identified as a TV series, so nothing was written. Auto-fetch only sets itself up when it is sure — a half-right guess would file files under the wrong title."
         else -> "Can't set up auto-fetch for this URL" to "Nothing was written."
     }
-    val bug = if (inv.state == "stopped") "" else """<div class="row center" style="margin-top:12px;gap:8px;flex-wrap:wrap;">
-        <a class="btn sm" href="${afEsc(afBugReportUrl(inv))}" target="_blank" rel="noopener" data-stop-click>File a bug report on GitHub ↗</a>
-        <span class="tiny muted">The report is pre-filled with the URL's host, the TMDB id and the five steps' outcomes — never with the page's content or the URL's path.</span></div>"""
+    val link = if (inv.state == "stopped") null else afBugReportUrl(inv)
+    val bug = if (link == null) "" else """<div class="row center" style="margin-top:12px;gap:8px;flex-wrap:wrap;">
+        <a class="btn sm" href="${afEsc(link)}" target="_blank" rel="noopener" data-stop-click>File a bug report on GitHub ↗</a>
+        <span class="tiny muted">The report is pre-filled with how the investigation went: the host, the steps, the turns and the recipe's shape. Never a title, the page's content or the URL's path.</span></div>"""
     return """<div class="af-fail"><h4>${afEsc(head)}</h4><p>${afEsc(lead)}</p>
       ${inv.reason?.let { """<div class="why">reason: ${afMono(it)}</div>""" }.orEmpty()}$bug
       <div class="row center" style="margin-top:12px"><span class="btn sm ghost" data-af-dismissinv>Dismiss</span></div></div>"""

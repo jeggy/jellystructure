@@ -81,6 +81,9 @@ sealed class Gated<out T> {
     data class Through<T>(val value: T) : Gated<T>()
 }
 
+/** FR-10.4 (DEB-3569) — where the HTTP client's own message starts in a [LaneOutcome.Failed] reason: the bug report leaves everything after it out. */
+const val REQUEST_FAILED_LEAD = "the request failed: "
+
 sealed class LaneOutcome {
     data class Ok(val reply: HttpReply) : LaneOutcome()
     /** The site is stopped (FR-2.5): nothing was requested. */
@@ -276,7 +279,7 @@ class SiteLane(
         val reply = try { transport.get(url) } catch (e: Throwable) {
             // Phase 310 — only the caller's own cancellation ends the request; a foreign one is a failed call like any other.
             if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e
-            return LaneOutcome.Failed("the request failed: ${e.message ?: e::class.simpleName}")
+            return LaneOutcome.Failed("$REQUEST_FAILED_LEAD${e.message ?: e::class.simpleName}")
         }
         return judge(trustRedirect(url, reply, hosts), expect)
     }

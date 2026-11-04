@@ -243,7 +243,7 @@ object RecipeValidator {
 
     private fun templateErrors(label: String, template: String, hosts: Set<String>, allowed: Set<String>): List<String> {
         val errors = ArrayList<String>()
-        for (m in PLACEHOLDERS.findAll(template)) if (m.groupValues[1] !in allowed) errors += "$label: unknown placeholder {${m.groupValues[1]}}"
+        for (m in PLACEHOLDERS.findAll(template)) if (m.groupValues[1] !in allowed) errors += "$label: unknown placeholder '{${m.groupValues[1]}}'"
         // A placeholder in the host position would let a page choose where the engine connects.
         val h = Urls.host(template.replace(PLACEHOLDERS, "x"))
         if (h == null) errors += "$label is not an http or https address"

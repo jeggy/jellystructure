@@ -3,6 +3,8 @@ package dev.jellystructure.ui
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** DEB-2478 (DEB-2474, FR-5, FR-10.1, FR-10.4, FR-10.6, FR-15.1) — the New auto-fetcher card's markup and words. Stand-in corpus only. */
@@ -16,10 +18,10 @@ class AutofetchInvestigationHtmlTest {
 
     private val steps = listOf("page" to "Read the page", "videos" to "Find how the videos are served", "series" to "Confirm this is a series", "pattern" to "Map episode titles to seasons and episodes", "script" to "Write the recipe")
 
-    private fun inv(state: String, vararg st: String, reason: String? = null, review: AfReview? = null, notASeries: Boolean = false, limit: Boolean = false) = AfInvestigation(
+    private fun inv(state: String, vararg st: String, reason: String? = null, review: AfReview? = null, notASeries: Boolean = false, limit: Boolean = false, report: AfReport? = null) = AfInvestigation(
         id = "i1", state = state, url = "https://varpid.example.fo/sendingar/royndin", host = "varpid.example.fo", tmdbId = 9000001, notASeries = notASeries, limitReached = limit,
         steps = steps.withIndex().map { (i, s) -> AfStep(s.first, s.second, st.getOrElse(i) { "pending" }, if (st.getOrElse(i) { "pending" } == "done") "fx ${s.first}" else "", if (st.getOrElse(i) { "" } == "done") 2100L else null) },
-        reason = reason, review = review,
+        reason = reason, review = review, report = report,
     )
 
     private fun review(pageOnly: Boolean = false, proven: Boolean = true, replaces: String? = null) = AfReview(
@@ -76,30 +78,34 @@ class AutofetchInvestigationHtmlTest {
         assertFalse("An investigation is already running" in h, "the form shows no reason while it is the one running")
     }
 
+    private val report = AfReport("Auto-fetch: could not set up varpid.example.fo · pattern", "Host: varpid.example.fo\nFetcher: TMDB series\nReason: '<text 1>' maps to no season and episode")
+
     @Test
-    fun `the failed state names the failing check and links a bug report with no page content or path`() {
-        val h = card(inv("failed", "done", "done", "fail", reason = "1 video found, no recurring title", notASeries = true))
+    fun `the failed state names the failing check and links the report the server wrote - DEB-3572`() {
+        val h = card(inv("failed", "done", "done", "fail", reason = "1 video found, no recurring title", notASeries = true, report = report))
         assertTrue("""class="af-step fail"""" in h && "Not a series" in h && "reason: 1 video found, no recurring title" in h)
         assertTrue("nothing was written" in h)
-        val url = afBugReportUrl(inv("failed", "done", "done", "fail", reason = "x"))
-        assertTrue(url.startsWith("https://github.com/jeggy/jellystructure/issues/new?template=autofetch.yml"), url)
-        assertTrue("varpid.example.fo" in url.replace("%2E", ".") && "9000001" in url && "sendingar" !in url, "host and id, never the path: $url")
-        assertTrue("steps%3A" in url.lowercase() || "Steps%3A" in url, url)
+        val url = assertNotNull(afBugReportUrl(inv("failed", "done", "done", "fail", reason = "x", report = report)))
+        assertEquals("https://github.com/jeggy/jellystructure/issues/new?title=${afUrlEncode(report.title)}&body=${afUrlEncode(report.body)}", url)
+        assertFalse("template=" in url, "no such issue template exists: $url")
+        assertFalse("9000001" in url, "the TMDB id is no longer sent: $url")
+        assertTrue("File a bug report on GitHub" in h && "Never a title, the page's content or the URL's path." in h)
     }
 
     @Test
-    fun `the bug report link leaves out the model's reason because it quotes the page`() {
+    fun `the link carries what the server wrote and adds nothing so the model's reason is never put there by the admin - DEB-3572`() {
         val quote = "Eitt sending quoted from the page"
-        val url = afBugReportUrl(inv("failed", "done", "done", "fail", reason = "This page hosts one broadcast ('$quote')", notASeries = true))
-        assertTrue("Reason" !in url && "quoted" !in url && "Eitt" !in url && "hosts" !in url, "no reason in the link: $url")
-        assertTrue("varpid.example.fo" in url.replace("%2E", ".") && "9000001" in url, url)
+        val url = assertNotNull(afBugReportUrl(inv("failed", "done", "done", "fail", reason = "This page hosts one broadcast ('$quote')", notASeries = true, report = report)))
+        assertTrue("Eitt" !in url && "quoted" !in url && "hosts" !in url, "the card's reason is not in the link: $url")
     }
 
     @Test
-    fun `a limit stop and a stopped investigation say so and a stopped one has no bug report link`() {
-        val limit = card(inv("failed", "done", reason = "limit reached — x", limit = true))
-        assertTrue("Stopped at this month's limit" in limit)
-        val stopped = card(inv("stopped", "done", reason = "stopped; nothing was written"))
+    fun `a failed investigation with no report draws no link and a limit stop and a stopped investigation say so - DEB-3572`() {
+        assertNull(afBugReportUrl(inv("failed", "done", reason = "x")))
+        assertFalse("File a bug report" in card(inv("failed", "done", reason = "the investigation failed unexpectedly; nothing was written")))
+        val limit = card(inv("failed", "done", reason = "limit reached — x", limit = true, report = report))
+        assertTrue("Stopped at this month's limit" in limit && "File a bug report" in limit)
+        val stopped = card(inv("stopped", "done", reason = "stopped; nothing was written", report = report))
         assertTrue("What it found was discarded" in stopped && "File a bug report" !in stopped)
     }
 

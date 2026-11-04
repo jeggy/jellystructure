@@ -47,6 +47,8 @@ data class YtDlpDownload(
 )
 
 object YtDlpErrors {
+    /** FR-10.4 (DEB-3569) — where yt-dlp's own line starts in a failure's message (it quotes the link): the bug report leaves everything after it out. */
+    const val MESSAGE_LEAD = "yt-dlp: "
     private val HTTP = Regex("""HTTP Error (\d{3})""")
     private val DRM = Regex("""(?i)\bDRM\b""")
     private val SUBTITLE = Regex("""(?i)subtitle|subs\b|\.vtt|\.srt|webvtt|postprocessing""")
@@ -64,7 +66,7 @@ object YtDlpErrors {
             drm -> RecipeRefusal.DRM
             output.contains("No suitable extractor") || output.contains("Unsupported URL") -> YtDlpTexts.NO_EXTRACTOR
             last.isEmpty() -> "yt-dlp exited with status $exit"
-            else -> "yt-dlp: ${last.take(300)}"
+            else -> "$MESSAGE_LEAD${last.take(300)}"
         }
         return YtDlpOutput(false, message = message, status = status, drm = drm)
     }

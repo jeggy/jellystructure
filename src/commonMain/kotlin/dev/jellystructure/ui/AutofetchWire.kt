@@ -155,6 +155,10 @@ data class AfReview(
     val replaces: String? = null,
 )
 
+/** FR-10.4 (DEB-3569) — the bug report the server wrote for a failed investigation: the issue's title and body, already redacted. */
+@Serializable
+data class AfReport(val title: String = "", val body: String = "")
+
 /** `running` · `review` · `failed` · `stopped`. */
 @Serializable
 data class AfInvestigation(
@@ -174,6 +178,8 @@ data class AfInvestigation(
     val spentMicroUsd: Long = 0,
     val startedAt: Long = 0,
     val review: AfReview? = null,
+    /** FR-10.4 — set on a `failed` investigation only; a stopped one has none, and the card draws no link. */
+    val report: AfReport? = null,
 )
 
 @Serializable
