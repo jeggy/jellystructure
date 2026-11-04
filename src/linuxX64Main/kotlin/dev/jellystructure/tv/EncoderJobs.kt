@@ -58,6 +58,10 @@ class EncoderJobs(
     private val freeBytes: () -> Long = { freeBytesOf(root) },
     /** DEB-3100 (FR-2) — below this many free bytes a job is not started before the folder has been pruned. */
     private val minFreeBytes: Long = MIN_FREE_BYTES,
+    /** DEB-3629 (FR-313-12) — a stream's first job that has written no segment this long after it started is refused. Tests only replace it. */
+    private val firstSegmentDeadlineMs: Long = FIRST_SEGMENT_MS,
+    /** …and the same for the first job on a card since the backend started (a cold CUDA start was measured at 9 s). Tests only replace it. */
+    private val coldFirstSegmentDeadlineMs: Long = COLD_FIRST_SEGMENT_MS,
 ) {
     /**
      * DEB-3100 (FR-2) — a restart that found no slot for the whole ladder: [kept] are the indexes (in the stream's own plan) of the rungs
@@ -120,6 +124,8 @@ class EncoderJobs(
 
     private val mutex = Mutex()
     private val streams = mutableMapOf<String, Stream>()
+    /** DEB-3629 (FR-313-12) — the CUDA cards that have written a segment since this process started: their next first job is not cold. */
+    private val warmCards = mutableSetOf<Int>()
     private val dispatcher = newFixedThreadPoolContext(MAX_JOBS + 1, "encoder-jobs")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
@@ -187,6 +193,7 @@ class EncoderJobs(
                     if (job.firstSegmentMs == null) {
                         job.firstSegmentMs = nowMs() - job.startedAtMs
                         Logger.info("encoder $streamId: first segment in ${job.firstSegmentMs} ms (segment $k, variant $variant)", "tv")
+                        job.plan.cudaDevice?.let { card -> mutex.withLock { warmCards += card } }
                     }
                     recordWait(stats, askedAtMs)
                     return path
@@ -273,8 +280,10 @@ class EncoderJobs(
         for (v in 0 until plan.variantCount) mkdir("$dir/$v", 0x1C0u)
         val job = Job(streamId, dir, k, plan.variantCount, plan, streamRungs, kept)
         val cmd = encoderCommand(plan, k, dir, ffmpeg)
+        val deadlineMs = if (plan.cudaDevice != null && plan.cudaDevice !in warmCards) coldFirstSegmentDeadlineMs else firstSegmentDeadlineMs
         Logger.info("encoder $streamId: start at segment $k — ${plan.codec} ${plan.rungs.size} rungs ${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }}, " +
             "${plan.audio.size} audio, ${plan.mux}, card ${plan.cudaDevice ?: "cpu"}${if (plan.tonemaps) ", tone-mapped" else ""}${if (plan.burnSubtitleOrder != null) ", burn-in" else ""}", "tv")
+        if (canRefuse) scope.launch { watchFirstSegment(streamId, job, deadlineMs) }
         scope.launch {
             memScoped {
                 val pipe = popen("echo \$\$; ${envPrefix()} exec $cmd 2>${"'" + dir + "/ffmpeg.log'"}", "r")
@@ -324,6 +333,29 @@ class EncoderJobs(
             }
         }
         return job
+    }
+
+    /**
+     * DEB-3629 (FR-313-12) — a stream's first job that is still running with no segment [deadlineMs] after it started is a failed start
+     * like an exit with an error: stopped, the stream refused (its URLs answer 410) and the source marked for Jellyfin. Found live: ffmpeg
+     * waited for audio from two tracks that carry no packets, wrote nothing, and the player was answered 503 until the viewer pressed Back.
+     */
+    private suspend fun watchFirstSegment(streamId: String, job: Job, deadlineMs: Long) {
+        while (true) {
+            if (job.stopped || job.exited) return
+            refresh(job)
+            if (job.highest >= job.startSegment) { job.plan.cudaDevice?.let { card -> mutex.withLock { warmCards += card } }; return }
+            if (nowMs() - job.startedAtMs >= deadlineMs) break
+            delay(25)
+        }
+        val refusing = mutex.withLock {
+            val s = streams[streamId]
+            if (s == null || s.current !== job || job.stopped || job.exited) false else { s.refused = true; job.stopped = true; true }
+        }
+        if (!refusing) return
+        kill(job)
+        Logger.warn("encoder $streamId: no first segment in ${nowMs() - job.startedAtMs} ms — the file goes to Jellyfin (313)", "tv")
+        runCatching { onRefused(job.plan, NO_FIRST_SEGMENT) }
     }
 
     /**
@@ -417,6 +449,12 @@ class EncoderJobs(
         const val REACH_AHEAD = 10       // a request up to 20 s past what exists waits for this job
         const val KEEP_RETIRED = 2
         const val SEGMENT_WAIT_MS = 15_000L
+        /** DEB-3629 (FR-313-12) — a stream's first job writes its first segment within this, or the stream is refused. */
+        const val FIRST_SEGMENT_MS = 5_000L
+        /** …and within this when it is the first job on its card since the backend started. */
+        const val COLD_FIRST_SEGMENT_MS = 15_000L
+        /** DEB-3629 — the exit code [onRefused] is told when a job was refused for writing nothing in time, not for exiting. */
+        const val NO_FIRST_SEGMENT = -1
         /** 60 s of 2 s segments kept behind the furthest request: with 40 s ahead, one 4-rung HEVC stream holds ~420 MB,
          *  so the 4 GB work folder fits more streams than [MAX_JOBS]. A seek further back restarts the job (~1–2 s). */
         const val KEEP_BEHIND = 30

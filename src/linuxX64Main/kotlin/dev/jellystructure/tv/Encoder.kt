@@ -53,6 +53,8 @@ class Encoder(
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     /** Tests only: the jobs' free-space reading and its floor (see [EncoderJobs]). */
     private val freeBytes: (() -> Long)? = null,
+    /** DEB-3629 (FR-313-12) — tests only: the first-segment deadline of a stream's first job, and of the first job on a card since start. */
+    private val firstSegmentDeadlinesMs: Pair<Long, Long> = EncoderJobs.FIRST_SEGMENT_MS to EncoderJobs.COLD_FIRST_SEGMENT_MS,
 ) {
     private fun nowMs(): Long = clock()
 
@@ -85,7 +87,8 @@ class Encoder(
         // FR-313-9 — the configured work folder (a tmpfs in docker-compose.gpu.yml), else /tmp when it can't be made.
         val root = cfg.workDir.takeIf { mkdirs(it) } ?: "/tmp/js-encoder"
         mkdirs(cfg.cudaCacheDir)
-        EncoderJobs(root, freeBytes = freeBytes ?: { freeBytesOf(root) }, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
+        EncoderJobs(root, freeBytes = freeBytes ?: { freeBytesOf(root) },
+            firstSegmentDeadlineMs = firstSegmentDeadlinesMs.first, coldFirstSegmentDeadlineMs = firstSegmentDeadlinesMs.second, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
             onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, clock()) },
             onStopped = { id, summary ->
                 // DEB-2205 (FR-8) — a PLAY's job stopped: its summary goes to the play's QoE row. A prewarm nobody played has none.

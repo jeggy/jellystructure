@@ -555,7 +555,9 @@ internal class RefusedSources(private val ttlMs: Long = 6 * 3_600_000L) {
     fun markRefused(path: String, codec: EncoderCodec, exitCode: Int, nowMs: Long) {
         while (true) {
             val cur = refused.value
-            if (refused.compareAndSet(cur, cur + (path to (nowMs to "ffmpeg refused this file ($codec, exit $exitCode) — Jellyfin serves it (313)")))) return
+            val why = if (exitCode == EncoderJobs.NO_FIRST_SEGMENT) "ffmpeg wrote no first segment in time for this file ($codec) — Jellyfin serves it (313)"
+                else "ffmpeg refused this file ($codec, exit $exitCode) — Jellyfin serves it (313)"
+            if (refused.compareAndSet(cur, cur + (path to (nowMs to why)))) return
         }
     }
     /** The reason [path] goes to Jellyfin, or null when ffmpeg hasn't refused it within [ttlMs]. */
