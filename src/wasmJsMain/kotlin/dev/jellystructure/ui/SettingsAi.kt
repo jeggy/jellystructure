@@ -309,7 +309,7 @@ private fun paintSupportControls() {
     val summary = supSummary
     val busyLane = if (supLaneBusy) " disabled" else ""
     val err = if (supLaneError) " Not saved — try again." else ""
-    val rowStyle = "display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"
+    val rowStyle = "display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:8px"
     supEl("ai-support-lane")?.innerHTML = when {
         // Nothing is assumed before the server has said.
         summary == null -> ""
@@ -330,7 +330,7 @@ private fun paintSupportControls() {
         val text = SupportText.hervorStrip(live, summary.hervorEnabled, formatClock(live.issuedAt.toString()), live.lastUsedAt?.let { formatRelativeAgo(it.toString()) })
         val first = if (summary.hervorEnabled) """<button type="button" class="btn sm" data-ai-s="hv-off"$busy>Switch Hervør off</button>"""
             else """<button type="button" class="btn primary sm" data-ai-s="hv-on"$busy>Switch Hervør on</button>"""
-        """<div style="$rowStyle"><span class="tiny muted" style="flex:1">${text.esc()}$note</span>$first<button type="button" class="btn sm" data-ai-s="hv-replace"$busy>Replace token</button><button type="button" class="btn sm" data-ai-s="hv-revoke"$busy>Revoke</button></div>"""
+        """<div style="$rowStyle"><span class="tiny muted" style="flex:1 1 220px;min-width:0">${text.esc()}$note</span>$first<button type="button" class="btn sm" data-ai-s="hv-replace"$busy>Replace token</button><button type="button" class="btn sm" data-ai-s="hv-revoke"$busy>Revoke</button></div>"""
     }
     host.innerHTML = row + """<p class="tiny muted" style="margin:0">${SupportText.HERVOR_READS.esc()}</p>"""
 }
