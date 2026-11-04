@@ -107,5 +107,12 @@ expect fun mergesExternalAudio(): Boolean
  */
 expect fun reportsDecodeHealth(): Boolean
 
+/**
+ * DEB-3213 (DEB-3093 FR-6, FR-9) — this player keeps the picture on screen across a change of stream without the engine's help, so a
+ * replacement the viewer did not ask for can run behind it ([reportsDecodeHealth] already says so for Android's Media3). The web does: the
+ * frame is held as the `<video>`'s poster until the new stream's first frame. The desktop's mpv and AVPlayer are FR-9's other rows.
+ */
+expect fun holdsLastFrameAcrossSource(): Boolean
+
 /** DEB-2205 (FR-4) — the device's memory class in MB (`ActivityManager.getMemoryClass()`), which bounds the direct-play buffer; 0 = unknown. */
 expect fun deviceMemoryClassMb(): Int

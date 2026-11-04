@@ -19,6 +19,7 @@ import dev.jellystructure.ravilo.ui.seams.supportedContainers
 import dev.jellystructure.ravilo.ui.seams.switchesAudioInFile
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.playsAdaptiveHls
+import dev.jellystructure.ravilo.ui.seams.holdsLastFrameAcrossSource
 import dev.jellystructure.ravilo.ui.seams.reportsDecodeHealth
 import dev.jellystructure.ravilo.ui.seams.deviceMemoryClassMb
 import dev.jellystructure.ravilo.ui.seams.mergesExternalAudio
@@ -246,8 +247,8 @@ class PlayerStore(
     val shuffle: Boolean = false,
     /** DEB-3103 (FR-6) — the delays between a replacement's failed calls; a test shortens them. */
     private val replacementRetryMs: List<Long> = REPLACEMENT_RETRY_MS,
-    /** DEB-3103 (FR-6) — the player can switch streams behind the picture (Android's Media3; the other clients follow in FR-9): elsewhere a replacement keeps today's `Loading`. */
-    private val unseenReplacements: Boolean = reportsDecodeHealth(),
+    /** DEB-3103 (FR-6) — the player can switch streams behind the picture (Android's Media3; the web holds the frame itself, DEB-3213; the rest follow in FR-9): elsewhere a replacement keeps today's `Loading`. */
+    private val unseenReplacements: Boolean = reportsDecodeHealth() || holdsLastFrameAcrossSource(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

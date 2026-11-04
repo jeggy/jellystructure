@@ -128,4 +128,7 @@ actual fun mergesExternalAudio(): Boolean = false
 /** DEB-2205 — a <video> element reports neither; the browser keeps today's rule. */
 actual fun reportsDecodeHealth(): Boolean = false
 
+/** DEB-3213 (FR-6) — the last frame is held as the element's poster across a source change ([RaviloPlayer.load]). */
+actual fun holdsLastFrameAcrossSource(): Boolean = true
+
 actual fun deviceMemoryClassMb(): Int = 0

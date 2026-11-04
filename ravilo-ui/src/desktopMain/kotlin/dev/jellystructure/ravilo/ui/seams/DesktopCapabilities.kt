@@ -126,4 +126,7 @@ actual fun mergesExternalAudio(): Boolean = false
 /** DEB-2205 — mpv and AVPlayer give no dropped-frame or frozen-picture signal that this app reads. */
 actual fun reportsDecodeHealth(): Boolean = false
 
+/** DEB-3213 — mpv and AVPlayer: FR-9's Linux and Mac rows (DEB-3214, DEB-3215). */
+actual fun holdsLastFrameAcrossSource(): Boolean = false
+
 actual fun deviceMemoryClassMb(): Int = 0

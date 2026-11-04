@@ -38,14 +38,55 @@ actual class RaviloPlayer actual constructor() {
     /** R376 (FR-R376-2) — what the element reported since the last read, in order; a stall records where it was. */
     private fun sync() {
         events.feed(drainEvents(video), positionMs, (bufferedMs - positionMs).coerceAtLeast(0), jsQ308(video, "bps").toLong().takeIf { it > 0 })
-        if (!liveLoaded) boundLadder()   // DEB-2627 (FR-3) — a channel's hls.js ABR is not capped by 309
+        if (!liveLoaded) { watchTrouble(); boundLadder() }   // DEB-2627 (FR-3) — a channel's hls.js ABR is not capped by 309
     }
 
     /** 309 (FR-309-16) — the shared ladder rule over hls.js's own ABR, evaluated about once a second. */
     private val ladderCap = WebLadderCap()
+    /** DEB-3213 (FR-4, FR-5) — what a failed load, an abandoned segment and a stall hold hls.js's rung under, and the one judgement of the segment in flight. */
+    private val rungHolds = WebRungHolds()
+    private val segmentAbandon = WebSegmentAbandon()
+    private var stallsSeen = 0
+    private var judgedAtMs = 0.0
     /** DEB-2627 (FR-3) — the stream loaded now is a live channel's: hls.js ABR, no [WebLadderCap]. */
     private var liveLoaded = false
     private var ladderAtMs = 0.0
+
+    /**
+     * DEB-3213 (FR-4, FR-5) — the three troubles hls.js cannot answer by its own rules. A load that failed (hls.js said so, [attachSource])
+     * and a stall (the element said so) hold the rung under the one they happened on; a segment loading too slowly for the buffer minus 5 s
+     * is dropped for the rung below ([WebSegmentAbandon]). [boundLadder] applies the holds.
+     */
+    private fun watchTrouble() {
+        val now = nowMs()
+        drainFailedLoads(video).takeIf { it.isNotEmpty() }?.split(',')?.forEach { e ->
+            val level = e.substringBefore('@').toIntOrNull() ?: return@forEach
+            rungHolds.failedLoad(level, e.substringAfter('@').toDoubleOrNull() ?: now)
+        }
+        if (events.stallCount > stallsSeen) {
+            stallsSeen = events.stallCount
+            val level = hlsCurrentLevel(video).toInt()
+            if (level > 0) rungHolds.stalled(level, now)
+            ladderAtMs = 0.0   // the cap goes on at once, not at the next second
+        }
+        if (now - judgedAtMs < JUDGE_EVERY_MS) return
+        judgedAtMs = now
+        val p = hlsLoadInFlight(video)
+        if (p.isEmpty()) return
+        val f = p.split(',')
+        if (f.size < 8) return
+        val load = WebSegmentAbandon.Load(
+            key = f[0], level = f[1].toInt(), ageMs = f[2].toLong(), bytesLoaded = f[3].toLong(), segmentMs = f[4].toLong(), bitrate = f[5].toLong(),
+            sinceFirstByteMs = f[6].toLong(), estimateBps = f[7].toLong(),
+        )
+        val ahead = bufferAheadMs(video).toLong()
+        if (video.seeking) { segmentAbandon.reset(); return }
+        if (!segmentAbandon.shouldAbandon(load, ahead)) return
+        rungHolds.abandoned(load.level, now)
+        abandonLoadInFlight(video, load.level - 1, ahead.toDouble(), load.ageMs.toDouble())
+        ladderAtMs = 0.0
+    }
+
     private fun boundLadder() {
         val now = nowMs()
         if (now - ladderAtMs < LADDER_EVERY_MS) return
@@ -54,8 +95,9 @@ actual class RaviloPlayer actual constructor() {
         if (levels.isEmpty()) { ladderCap.reset(); return }   // not hls.js, or its manifest is not read yet
         val ahead = bufferAheadMs(video)
         // A seek is not a falling buffer: forget the sample, bound nothing new.
-        if (video.seeking) { ladderCap.reset(); return }
-        val decision = ladderCap.evaluate(levels, hlsCurrentLevel(video).toInt(), ahead.toLong(), PlayerLadderHints.oursEncoder) ?: return
+        if (video.seeking) { ladderCap.reset(); segmentAbandon.reset(); return }
+        val current = hlsCurrentLevel(video).toInt()
+        val decision = boundedByHolds(ladderCap.evaluate(levels, current, ahead.toLong(), PlayerLadderHints.oursEncoder), rungHolds.ceiling(now), current) ?: return
         applyLadderCap(video, decision.capLevel, decision.stepDown, ahead)
     }
 
@@ -78,10 +120,13 @@ actual class RaviloPlayer actual constructor() {
         // not from whenever the browser gets round to `loadstart`.
         sync()
         ladderCap.reset()
+        rungHolds.reset(); segmentAbandon.reset(); stallsSeen = events.stallCount
         liveLoaded = live != null
         if (live != null) PlayerLadderHints.beginLive()
         // R376 (FR-R376-S1) — the element shows again, its unlock bookkeeping stops, and it tries sound again (a film
         // left muted by a gesture-less start must not leave the next one silent with no pill).
+        // DEB-3213 (FR-6) — a source swapped in behind a playing picture keeps that picture on screen until its own first frame.
+        holdLastFrame(video, events.firstFrame && !events.ended && !events.failed)
         prepareForSource(video)
         events.on("loadstart", nowMs())
         // R284 (FR-R284-4) — only subtitles this player can DRAW are its tracks. A URL-less entry is a
@@ -99,7 +144,7 @@ actual class RaviloPlayer actual constructor() {
         // R17: lazy-load hls.js for HLS streams (the R56 transcode / burn-in TranscodingUrl is an
         // .m3u8, which non-Safari browsers can't play natively). Direct-play URLs set video.src.
         // R376 (FR-R376-7) — hls.js starts at the ticket's position itself (`startPosition`).
-        attachSource(video, streamUrl, startPositionMs / 1000.0, live?.hls == true)
+        attachSource(video, streamUrl, startPositionMs / 1000.0, live?.hls == true, WebHlsPolicy.configJson())
         // R44: route browser/OS media keys to the <video> via the Media Session API.
         wireMediaSession(video)
         // R376 (FR-R376-4) — and name what plays, so the OS's media controls and lock screen say it (the research
@@ -337,10 +382,39 @@ private fun prepareForSource(video: HTMLVideoElement): Unit = js(
     """{ video._rvQuiet = false; video.muted = false; video.style.visibility = 'visible'; }"""
 )
 
+/**
+ * DEB-3213 (FR-6) — the picture a replacement holds. A `<video>` loses its frame when hls.js is destroyed (it removes `src` and calls
+ * `load()`), so the frame on screen is drawn to a canvas (at most 960 px wide) and set as the element's `poster`, which a browser shows
+ * from the source change until the new source's first frame. It is removed at that frame (`loadeddata` or `playing`), after 10 s at most,
+ * and by every load that is not a replacement ([keep] false) and by [resetElement]. Anything that throws leaves the element without one.
+ */
+private fun holdLastFrame(video: HTMLVideoElement, keep: Boolean): Unit = js(
+    """{
+        if (video._rvPosterTimer) { clearTimeout(video._rvPosterTimer); video._rvPosterTimer = 0; }
+        video.removeAttribute('poster');
+        if (!keep || !video.videoWidth || video.readyState < 2) return;
+        try {
+            var w = Math.min(video.videoWidth, 960), h = Math.max(1, Math.round(video.videoHeight * w / video.videoWidth));
+            var c = document.createElement('canvas'); c.width = w; c.height = h;
+            c.getContext('2d').drawImage(video, 0, 0, w, h);
+            video.poster = c.toDataURL('image/jpeg', 0.85);
+            var clear = function () {
+                video.removeEventListener('loadeddata', clear); video.removeEventListener('playing', clear);
+                if (video._rvPosterTimer) { clearTimeout(video._rvPosterTimer); video._rvPosterTimer = 0; }
+                video.removeAttribute('poster');
+            };
+            video.addEventListener('loadeddata', clear); video.addEventListener('playing', clear);
+            video._rvPosterTimer = setTimeout(clear, 10000);
+        } catch (e) { video.removeAttribute('poster'); }
+    }"""
+)
+
 /** R376 (FR-R376-S1) — back to idle: paused, no source, no `<track>`s, nothing queued, the default fit, hidden. */
 private fun resetElement(video: HTMLVideoElement): Unit = js(
     """{
         video._rvWantPlay = false;
+        if (video._rvPosterTimer) { clearTimeout(video._rvPosterTimer); video._rvPosterTimer = 0; }
+        video.removeAttribute('poster');
         try { video.pause(); } catch (e) {}
         while (video.firstChild) video.removeChild(video.firstChild);
         video.removeAttribute('src');
@@ -349,6 +423,45 @@ private fun resetElement(video: HTMLVideoElement): Unit = js(
         video._raviloShow = -1;
         video.style.objectFit = 'contain';
         video.style.visibility = 'hidden';
+    }"""
+)
+
+/** DEB-3213 (FR-4) — how often the segment in flight is judged against the buffer minus 5 s. */
+private const val JUDGE_EVERY_MS = 200.0
+
+/** DEB-3213 (FR-4) — the loads that failed since the last read, as `level@ms` joined by commas (the level hls.js numbers, ascending). */
+private fun drainFailedLoads(video: HTMLVideoElement): String = js(
+    """(function(){ var q = video._rvFailed || []; video._rvFailed = []; return q.join(','); })()"""
+)
+
+/**
+ * DEB-3213 (FR-4) — the main-video segment hls.js is loading now: `key,level,ageMs,bytesLoaded,segmentMs,levelBitrate,msSinceFirstByte
+ * (-1 = none),estimateBps`; empty when nothing is loading or the load is over. The numbers are hls.js's own load statistics.
+ */
+private fun hlsLoadInFlight(video: HTMLVideoElement): String = js(
+    """(function(){
+        var h = video._hls, l = video._rvLoad; if (!h || !l || !l.frag) return '';
+        var f = l.frag, st = f.stats; if (!st || st.aborted || !st.loading || !st.loading.start || (st.loaded && st.loaded === st.total)) return '';
+        var lv = h.levels && h.levels[f.level]; if (!lv) return '';
+        var now = performance.now(), first = st.loading.first;
+        return [f.sn + ':' + f.level, f.level, Math.round(now - st.loading.start), Math.round(st.loaded || 0), Math.round((f.duration || 0) * 1000),
+                Math.round(lv.bitrate || 0), first ? Math.round(now - first) : -1, Math.round(h.bandwidthEstimate || 0)].join(',');
+    })()"""
+)
+
+/**
+ * DEB-3213 (FR-4) — drop the segment in flight for [lower]: the same moves hls.js's own abandon makes (the next level, the emergency-abort
+ * event its stream controller resets on, the request cancelled), and one log line in the form of Android's.
+ */
+private fun abandonLoadInFlight(video: HTMLVideoElement, lower: Int, aheadMs: Double, ageMs: Double): Unit = js(
+    """{
+        var h = video._hls, l = video._rvLoad; if (!h || !l || !l.frag || !h.levels[lower]) return;
+        var f = l.frag;
+        try { console.log('ladder: abandoned a ' + Math.round((h.levels[f.level].bitrate || 0) / 1000) + 'k segment after ' + Math.round(ageMs) + ' ms with ' + Math.round(aheadMs / 1000) + ' s in hand → ' + Math.round((h.levels[lower].bitrate || 0) / 1000) + 'k'); } catch (e) {}
+        h.nextLoadLevel = h.nextAutoLevel = lower;
+        try { h.trigger(window.Hls.Events.FRAG_LOAD_EMERGENCY_ABORTED, { frag: f, part: null, stats: f.stats }); } catch (e) {}
+        try { f.abortRequests(); } catch (e) {}
+        video._rvLoad = null;
     }"""
 )
 
@@ -507,7 +620,7 @@ private fun clearMediaMetadata(): Unit = js("""{ try { if (navigator.mediaSessio
  * position, and Managed Media Source where only that exists (an iPhone that reaches hls.js). A fatal media error is
  * recovered once; anything else fatal is queued as `hlsfatal` (FR-R376-2), which R306 turns into the error card.
  */
-private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double, hlsTicket: Boolean): Unit = js(
+private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double, hlsTicket: Boolean, policyJson: String): Unit = js(
     """{
         video._rvWantAudio = null;
         // R376 (FR-R376-S1, live test 2026-10-09) — a play() asked for while the source was still being swapped in
@@ -552,8 +665,24 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double,
                     // never fetches 1080p.
                     if (hlsTicket) cfg.capLevelToPlayerSize = true;
                     else if (window.__raviloAbrSeed > 0) cfg.abrEwmaDefaultEstimate = window.__raviloAbrSeed;
+                    // DEB-3213 (DEB-3093 FR-9, FR-3/FR-4) — the same waits and retries Android has: 20 s to a first byte, five retries
+                    // 0.5/1/2/4/5 s apart, and beyond them a failed load goes on being retried for as long as the buffer holds picture.
+                    // hls.js's own rule would not retry a 4xx at all, and FR-4 treats any status as a reason for another try.
+                    var pol = JSON.parse(policyJson);
+                    function bufferedAhead() {
+                        var b = video.buffered, t = video.currentTime;
+                        for (var i = 0; i < b.length; i++) { if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i) - t; }
+                        return 0;
+                    }
+                    function retryWhileBuffered(c, n) { return n < c.maxNumRetry || bufferedAhead() > 0; }
+                    ['fragLoadPolicy', 'manifestLoadPolicy', 'playlistLoadPolicy'].forEach(function (k) {
+                        pol[k].default.errorRetry.shouldRetry = retryWhileBuffered;
+                        pol[k].default.timeoutRetry.shouldRetry = retryWhileBuffered;
+                        cfg[k] = pol[k];
+                    });
                     var hls = new Hls(cfg);
                     video._hls = hls;
+                    video._rvFailed = []; video._rvLoad = null;
                     var q = video._q308 || (video._q308 = { down: 0, up: 0, bps: 0, h: 0 });
                     q.bps = 0; q.h = 0;
                     hls.on(Hls.Events.LEVEL_SWITCHED, function (e, d) {
@@ -561,7 +690,21 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double,
                         if (q.bps && l.bitrate !== q.bps) { if (l.bitrate < q.bps) q.down++; else q.up++; if (video._rvPush) video._rvPush('variant'); }
                         q.bps = l.bitrate || 0; q.h = l.height || 0;
                     });
+                    // DEB-3213 (FR-4) — the segment in flight, for the abandon rule (RaviloPlayer.watchTrouble reads it).
+                    hls.on(Hls.Events.FRAG_LOADING, function (e, d) { video._rvLoad = d && d.frag && d.frag.type === 'main' ? { frag: d.frag } : null; });
+                    hls.on(Hls.Events.FRAG_LOADED, function () { video._rvLoad = null; });
+                    hls.on(Hls.Events.FRAG_LOAD_EMERGENCY_ABORTED, function () { video._rvLoad = null; });
                     hls.on(Hls.Events.ERROR, function (ev, d) {
+                        // DEB-3213 (FR-4) — any failed segment or playlist of the main video falls to the rung below at once, and the rung
+                        // is held out for 15 s (RaviloPlayer.watchTrouble reads _rvFailed). A retry takes the next segment from that rung.
+                        if (d && /^(fragLoad|levelLoad)/.test(d.details || '')) {
+                            video._rvLoad = null;
+                            var lvl = d.frag ? (d.frag.type === 'main' ? d.frag.level : -1) : (d.context && d.context.type === 'level' ? d.level : -1);
+                            if (typeof lvl === 'number' && lvl > 0) {
+                                if (video._rvFailed.length < 50) video._rvFailed.push(lvl + '@' + performance.now());
+                                try { hls.nextLoadLevel = hls.nextAutoLevel = lvl - 1; } catch (e) {}
+                            }
+                        }
                         if (!d || !d.fatal) return;
                         if (d.type === Hls.ErrorTypes.MEDIA_ERROR && !hls._rvRecovered) { hls._rvRecovered = true; hls.recoverMediaError(); return; }
                         if (video._rvPush) video._rvPush('hlsfatal');

@@ -251,6 +251,42 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
   - **Not done:** FR-4's fall to a lower rung on a failed or abandoned segment, and FR-5's cap one rung down at once on a stall.
     FR-9 names Shaka's retry parameters as the whole of FR-4 here; the receiver registers no segment-failure hook, and `ReceiverAbr`
     sees buffer levels only. None of this is verified on a Chromecast; the tests are the pure decisions in `CastRecoveryTest`.
+- *2026-11-04, DEB-3213 — what the web client (hls.js 1.7.3) does, and what a browser does not allow.* Web only; a film on hls.js. A live
+  channel keeps hls.js's own ABR (DEB-2627) and gets the load policies below but none of the holds. Native HLS (Safari, and an iPhone
+  that takes it) is not hls.js and keeps what it had.
+  - **FR-3 and FR-4, through hls.js's load policies** (`WebHlsPolicy`). `fragLoadPolicy`, `manifestLoadPolicy` and `playlistLoadPolicy` (1.7
+    has no `levelLoadPolicy`; a level's playlist is the last): 20 s to the first byte, five retries at 0.5, 1, 2, 4 and 5 s
+    (`exponential`, capped at 5 s, a timeout and an error alike). Beyond the fifth, a failed load goes on being retried for as long as the
+    buffer holds picture, and ends as the error only with the buffer empty (`shouldRetry`, `LadderRules.retryLimit`). hls.js would not
+    retry a 4xx at all; here any status is retried. A whole segment may take 120 s, a playlist 30 s.
+  - **A failed load falls to the rung below at once** (FR-4). On a segment or level-playlist error of the main video the next load level is
+    the one below, so the first retry already asks the lower rung, and that rung is held out for 15 s (`WebRungHolds`, which
+    `boundLadder` applies as `autoLevelCapping` beside the 309 rule).
+  - **A slow segment is abandoned** (FR-4, `WebSegmentAbandon`). hls.js's own abandon compares a load's projected finish with the whole
+    buffer; FR-4's is against the buffer minus 5 s, with DEB-3172's carve-out (nothing is judged with nothing buffered, nor until the buffer
+    has once held 5 s plus the segment, nor under a second old, nor on the lowest rung) and the rate of the load's own bytes. It is
+    `LadderRules.shouldAbandonSegment`, judged every 200 ms on hls.js's own load statistics; an abandon moves the next level, fires the
+    emergency-abort event hls.js's stream controller resets on, cancels the request, holds the rung below for 30 s and writes one console
+    line in the form of Android's (`ladder: abandoned a 1000k segment after 1300 ms with 8 s in hand → 500k`). hls.js's own rule stays on.
+  - **FR-5's cap.** A stall caps one rung down at once, for the 2 minutes Android's cap holds (`CLIMB_BLOCK_AFTER_RECOVERY_MS`). The 2 s draw
+    rule is the shared `PlayerScreen`'s and is not touched.
+  - **FR-6 is on** for the web: `unseenReplacements` is true here too (`holdsLastFrameAcrossSource()`). hls.js's `destroy` removes the
+    element's `src` and calls `load()`, which drops the frame, so a load on an element that has played a frame draws it to a canvas (960 px
+    wide at most) and sets it as the `<video>`'s `poster`; a browser shows the poster from the source change until the new source's first
+    frame, where it is removed (and after 10 s at most, and by every load that is not a replacement). The restream runs behind the picture as
+    on Android: no `Loading`, no shutter.
+  - **Not done.** (1) **FR-5's resume at 4 s buffered.** hls.js has no rebuffering goal; the browser resumes an element that has run dry
+    when it has a few frames, and holding it to 4 s means pausing the element, which the chrome, the media session and the play state sent
+    to the server would all read as the viewer's pause. A stall resumes sooner than Android's, and the cap above is what keeps one stall from
+    becoming a train. (2) **The warm-up's bytes are still dropped** (`WarmedSegments.wasmJs.kt`): hls.js reads the new stream's first segments
+    from the network, so the warm-up pays only the wait, not the fetch; serving them from the cache would need a custom hls.js loader.
+    (3) **The 0.5 s bound of held picture** is not measured on a browser; whether Safari and Firefox show the poster in that gap as Chromium
+    does is QA's. (4) **No Playwright spec in CI:** the config lives in a `js()` string of the wasm bundle that runs only when a film plays
+    on a signed-in session; the tests are the pure rules in `WebTroubleTest` (`WebHlsPolicy`, `WebRungHolds`, `WebSegmentAbandon`). A lab run
+    in Chromium with the app's own JS lifted out of `RaviloPlayerWasm.kt`, a three-rung VP9 HLS ladder and a throttling server read: the
+    config accepted by hls.js 1.7.3 (20 s to the first byte, five retries, `shouldRetry` a function); a top rung answering 503 or 404 from one
+    segment on gave one failed request, then every later segment from the rung below with no stall; an abandon from the page's side moved the
+    next request to the lower rung; and the poster showed the held frame while the new source had no data and was gone at its first frame.
 
 ## What this does not do yet
 

@@ -75,6 +75,9 @@ actual fun mergesExternalAudio(): Boolean = true
 /** DEB-2205 — Media3's dropped-frame counts and [dev.jellystructure.ravilo.ui.screens.PlayerStore]'s frozen-picture watch (FR-3), and its hand-over (FR-4). */
 actual fun reportsDecodeHealth(): Boolean = true
 
+/** DEB-3213 — Android's replacements are unseen through [reportsDecodeHealth] (Media3 switches behind the picture). */
+actual fun holdsLastFrameAcrossSource(): Boolean = false
+
 actual fun deviceMemoryClassMb(): Int = runCatching {
     (dev.jellystructure.ravilo.ui.RaviloAppContext.get().getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).memoryClass
 }.getOrDefault(0)
