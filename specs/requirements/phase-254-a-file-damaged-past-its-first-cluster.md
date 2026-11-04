@@ -1,11 +1,18 @@
 # Phase 254 — A file damaged past its first cluster is found, said, and repaired by jellystructure
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-21, the day it was written — from an owner report: *"Hoppe Hares Byggebande is
+Written and built 2026-09-21, spec first, from an owner report: *"Hoppe Hares Byggebande is
 still not working properly. Something going on with their files. And when opening it, jellystructure
-does not report anything — why is that?"* Spec first, then code. **Not deployed, not dev-reviewed, and
-no production file has been touched** — acceptance 4 needs a release and an operator's click.
+does not report anything — why is that?"* It adds the whole-file deep check, its table, the
+`file_damage` Triage type and the replace-from-source repair. Phase 261 later moved its scheduling
+into the `verify_files` pipeline step.
+
+**Amended 2026-11-05 (DEB-3633):** the deep check's single read also yields the file's packet
+timeline, so the same pass finds stretches where the picture and the sound are both missing (FR-254-1).
+A torrent's copy is only a source if its timeline has no more holes than the library file (FR-254-9).
+See `a-file-with-holes-in-its-picture-and-sound-is-found.md`, FR-1 and FR-8. The damage rules
+(FR-254-2) are unchanged.
 
 **Amended by phase 263 (2026-09-26):** FR-254-10's carry-over by stream index mislabelled audio whenever the
 library's tracks are not in the source's order (33 of 36 damaged production files with a source), and all three
