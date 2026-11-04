@@ -249,7 +249,7 @@ actual object MusicEngine {
         loadJob?.cancel()
         loadJob = scope.launch {
             val c = client()
-            val ticket = runCatching { c?.playMusic(track.id, musicCapabilities, startMs.takeIf { it > 0 }) }.getOrNull()
+            val ticket = resolveStream("song", startMs) { c?.playMusic(track.id, musicCapabilities, startMs.takeIf { it > 0 }) }
             if (!isActive) return@launch
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = track.id
@@ -258,6 +258,26 @@ actual object MusicEngine {
             MacNowPlaying.artwork(nowPlaying, artworkUrl(track.imageUrl))
             loadTicket(ticket, startMs, play, rate = 1f, volume = musicVolumeScale(track, context, q.shuffled, MusicPrefs.evenVolume))
             publish(); save(); startTicks()
+        }
+    }
+
+    /**
+     * DEB-3599 (FR-3, FR-5, FR-6) — asks the server for the stream of a song or part. A server that cannot be reached is a
+     * network failure: it is asked again, with the pulse showing, until it is back, and the log says so once when the wait
+     * begins and once with its outcome (*restarted* when the song went on, *sheet* when it did not). This used to be
+     * `runCatching { … }.getOrNull()`, so a start that failed left no line and no second try. Null: the start has failed.
+     */
+    private suspend fun resolveStream(what: String, atMs: Long, ask: suspend () -> StreamTicket?): StreamTicket? {
+        val r = resolveStart(onUnreachable = { e -> DesktopLog.note("music: $what start at $atMs ms could not reach the server (${e.message ?: e::class.simpleName}) — waiting for it") }, ask = ask)
+        return when (r) {
+            is StartResolve.Resolved -> {
+                if (r.failures > 0) DesktopLog.note("music: $what start at $atMs ms: restarted after ${r.waitedMs} ms")
+                r.value
+            }
+            is StartResolve.Failed -> {
+                DesktopLog.note("music: $what start at $atMs ms failed after ${r.waitedMs} ms (${r.error.message ?: r.error::class.simpleName}) — sheet")
+                null
+            }
         }
     }
 
@@ -669,7 +689,7 @@ actual object MusicEngine {
         publish()
         loadJob?.cancel()
         loadJob = scope.launch {
-            val ticket = early ?: runCatching { client()?.playAudiobook(d.id, part, musicCapabilities, startMs.takeIf { it > 0 }) }.getOrNull()
+            val ticket = early ?: resolveStream("book part", startMs) { client()?.playAudiobook(d.id, part, musicCapabilities, startMs.takeIf { it > 0 }) }
             if (!isActive) return@launch
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = d.parts[part].id
