@@ -107,7 +107,7 @@ data class RunLine(val kind: String, val text: String)
 data class RunRecord(val id: Long, val fetcherId: String, val startedAt: Long, val finishedAt: Long?, val trigger: String, val status: String, val summary: String, val lines: List<RunLine>)
 
 /** The `autofetch_*` tables. Lives on the shared database; every write is one statement. */
-class AutofetchStore(private val db: JellystructureDb) : SiteStore {
+class AutofetchStore(private val db: JellystructureDb) : SiteStore, SessionStore {
     private val q get() = db.autofetchQueries
     private val json = Json { ignoreUnknownKeys = true }
     private val retentionJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -156,6 +156,14 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
         state.backoffUntil, state.backoffLevel.toLong(), state.rateLimitedDay, state.rateLimitedCount.toLong(), if (state.everOk) 1 else 0)
 
     fun sites(): List<SiteState> = q.siteAll().executeAsList().map { get(it.site) }
+
+    // ---- sessions (DEB-3613, FR-3.6): the value goes out through [session] only, to the code that makes the engine's own requests ----------
+
+    override fun session(site: String): StoredSession? = q.sessionGet(site).executeAsOneOrNull()?.let { StoredSession(it.cookies, it.saved_at, it.expires_at) }
+    override fun putSession(site: String, cookiesTxt: String, savedAt: Long, expiresAt: Long?) = q.sessionPut(site, cookiesTxt, savedAt, expiresAt)
+    override fun deleteSession(site: String) = q.sessionDelete(site)
+    /** The sites that have a session, so one saved before any request to the site is still listed (it has no `autofetch_site` row yet). */
+    fun sessionSites(): List<String> = q.sessionSites().executeAsList()
 
     // ---- items -------------------------------------------------------------------------------------------------------
 

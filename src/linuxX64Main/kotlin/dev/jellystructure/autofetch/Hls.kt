@@ -65,19 +65,23 @@ object Manifests {
 object FetchCommands {
     private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
 
+    /** DEB-3613 (FR-3.6) — ffmpeg's `-cookies` for the site's session (` -cookies '…'`), or nothing. ffmpeg scopes each cookie by its own `domain`, and the HLS demuxer passes it on to its segments. */
+    fun cookiesArg(cookies: String?): String = if (cookies.isNullOrEmpty()) "" else " -cookies ${q(cookies)}"
+
     /**
      * Highest variant plus its best audio rendition (and the subtitle rendition when one exists), copied into one MKV with the
      * audio tagged [audioLang] in this same mux — never after with `mkvpropedit` (FR-6.4). Inputs: 0 = the variant, then the
      * audio and subtitle renditions when they are separate playlists.
      */
-    fun hlsToMkv(variantUrl: String, audioUrl: String?, subtitleUrl: String?, out: String, audioLang: String, subtitleLang: String): String {
-        val inputs = StringBuilder("-i ${q(variantUrl)}")
+    fun hlsToMkv(variantUrl: String, audioUrl: String?, subtitleUrl: String?, out: String, audioLang: String, subtitleLang: String, cookies: String? = null): String {
+        val ck = cookiesArg(cookies).trim().let { if (it.isEmpty()) "" else "$it " }
+        val inputs = StringBuilder("$ck-i ${q(variantUrl)}")
         var idx = 1
         val maps = StringBuilder("-map 0:v:0")
         var audioIn = 0
-        if (audioUrl != null) { inputs.append(" -i ${q(audioUrl)}"); audioIn = idx++; maps.append(" -map $audioIn:a:0") } else maps.append(" -map 0:a:0?")
+        if (audioUrl != null) { inputs.append(" $ck-i ${q(audioUrl)}"); audioIn = idx++; maps.append(" -map $audioIn:a:0") } else maps.append(" -map 0:a:0?")
         var subIn = -1
-        if (subtitleUrl != null) { inputs.append(" -extension_picky 0 -i ${q(subtitleUrl)}"); subIn = idx++; maps.append(" -map $subIn:s:0?") }
+        if (subtitleUrl != null) { inputs.append(" -extension_picky 0 $ck-i ${q(subtitleUrl)}"); subIn = idx++; maps.append(" -map $subIn:s:0?") }
         val meta = StringBuilder()
         if (audioLang.isNotBlank()) meta.append(" -metadata:s:a:0 language=$audioLang")
         if (subIn >= 0 && subtitleLang.isNotBlank()) meta.append(" -metadata:s:s:0 language=$subtitleLang")
@@ -86,7 +90,7 @@ object FetchCommands {
     }
 
     /** A media playlist or an MPD handed to ffmpeg whole: its first video and first audio stream (the caller chose by `ffprobe`). */
-    fun streamsToMkv(url: String, videoIndex: Int, audioIndex: Int?, out: String, audioLang: String, subtitleLang: String, subtitleIndex: Int?): String {
+    fun streamsToMkv(url: String, videoIndex: Int, audioIndex: Int?, out: String, audioLang: String, subtitleLang: String, subtitleIndex: Int?, cookies: String? = null): String {
         val maps = StringBuilder("-map 0:$videoIndex")
         if (audioIndex != null) maps.append(" -map 0:$audioIndex")
         if (subtitleIndex != null) maps.append(" -map 0:$subtitleIndex")
@@ -94,7 +98,7 @@ object FetchCommands {
         if (audioLang.isNotBlank() && audioIndex != null) meta.append(" -metadata:s:a:0 language=$audioLang")
         if (subtitleLang.isNotBlank() && subtitleIndex != null) meta.append(" -metadata:s:s:0 language=$subtitleLang")
         val sub = if (subtitleIndex != null) " -c:s srt" else ""
-        return "nice -n 19 ionice -c3 ffmpeg -nostdin -y -v error -protocol_whitelist file,http,https,tcp,tls,crypto -i ${q(url)} $maps -c:v copy -c:a copy$sub$meta -map_metadata -1 -f matroska ${q(out)}"
+        return "nice -n 19 ionice -c3 ffmpeg -nostdin -y -v error -protocol_whitelist file,http,https,tcp,tls,crypto${cookiesArg(cookies)} -i ${q(url)} $maps -c:v copy -c:a copy$sub$meta -map_metadata -1 -f matroska ${q(out)}"
     }
 
     /** `mkvinfo -v` prints the segment's children in file order; the first of `Tracks` / `Cluster` is what FR-6.5 needs. */

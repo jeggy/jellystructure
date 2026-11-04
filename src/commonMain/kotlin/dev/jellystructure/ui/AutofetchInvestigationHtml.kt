@@ -28,6 +28,24 @@ data class AfReviewDraft(
     val accept: Set<String> = emptySet(),
 )
 
+/**
+ * DEB-3613 (FR-3.6, FR-10.8) — the paste field for the admin's own session, as typed and not yet sent. [key] says where it is open: an investigation's id
+ * (the failed *Needs a sign-in* state) or `site:<site>` (a fetcher's site line). [text] is never shown again once sent, and never kept past the send.
+ */
+data class AfSessionDraft(val key: String, val site: String, val text: String = "", val error: String? = null, val saving: Boolean = false)
+
+internal fun afSiteKey(site: String) = "site:$site"
+
+internal fun afSessionHint(site: String): String =
+    "Sign in to $site in your own browser, export its cookies as cookies.txt (or copy the Cookie header), and paste them here. Requests are made as you. If the site objects, it is your account it may block."
+
+/** The paste field, its hint, the server's refusal under it, and *Save session and investigate again* (or *Save session* from the site's line). */
+internal fun afSessionPaste(d: AfSessionDraft, investigateAgain: Boolean): String = """<div class="field" style="margin-top:12px"><label>Your session on ${afEsc(d.site)}</label>
+      <textarea class="input mono" data-af-session-text rows="5" spellcheck="false" autocomplete="off" placeholder="# Netscape HTTP Cookie File …   or   name=value; name=value"${if (d.saving) " disabled" else ""}>${afEsc(d.text)}</textarea>
+      <span class="hint">${afEsc(afSessionHint(d.site))}</span>${d.error?.let { """<div class="af-why" style="margin-top:6px;color:var(--bad)" data-af-session-error>${afEsc(it)}</div>""" }.orEmpty()}</div>
+    <div class="row center" style="gap:8px;margin-top:8px"><span class="btn primary${if (d.saving || d.text.isBlank()) " af-dis" else ""}" data-af-session-save>${if (d.saving) "Saving…" else if (investigateAgain) "Save session and investigate again" else "Save session"}</span>
+      <span class="btn sm ghost${if (d.saving) " af-dis" else ""}" data-af-session-cancel>Cancel</span></div>"""
+
 private fun seconds(ms: Long?): String = if (ms == null) "" else "${ms / 1000}.${(ms % 1000) / 100}s"
 
 internal fun afUrlEncode(s: String): String = buildString {
@@ -69,6 +87,14 @@ private fun stepsHtml(steps: List<AfStep>): String = """<div class="af-steps">${
     val now = if (s.state == "run") """ <span class="af-now">— now</span>""" else ""
     """<div class="af-step $cls"><span class="ic"><span class="g">$glyph</span></span><div><div class="lb">${afEsc(s.label)}$now</div><div class="fx">${afEsc(s.text)}</div></div><span class="t">${seconds(s.ms)}</span></div>"""
 }}</div>"""
+
+/** FR-10.8 item 8 — *Needs a sign-in*: the failed state with the server's sentence, *Give up* and *Use my session*. No bug-report link: nothing here went wrong. */
+private fun signInHtml(inv: AfInvestigation, sd: AfSessionDraft?): String {
+    val open = sd != null && sd.key == inv.id
+    return """<div class="af-fail"><h4>Needs a sign-in</h4><p>${afEsc(inv.reason.orEmpty())}</p>
+      ${if (open) afSessionPaste(sd!!, investigateAgain = true) else ""}
+      <div class="row center" style="margin-top:12px;gap:8px"><span class="btn sm ghost" data-af-dismissinv>Give up</span>${if (open) "" else """<span class="btn primary" data-af-usesession>Use my session</span>"""}</div></div>"""
+}
 
 private fun failedHtml(inv: AfInvestigation): String {
     val (head, lead) = when {
@@ -158,13 +184,14 @@ private fun reviewHtml(inv: AfInvestigation, r: AfReview, d: AfReviewDraft): Str
 }
 
 /** The whole *New auto-fetcher* card. */
-internal fun afNewCard(o: AfOverview, form: AfForm, rv: AfReviewDraft?): String {
+internal fun afNewCard(o: AfOverview, form: AfForm, rv: AfReviewDraft?, sd: AfSessionDraft? = null): String {
     val inv = o.investigation
     val running = inv?.state == "running"
     val body = when {
         inv == null -> ""
         inv.state == "running" -> stepsHtml(inv.steps) + """<div class="tiny muted" style="margin-top:10px;">Nothing has been written yet. <b>Stop</b> ends the investigation and discards what it found.</div>"""
         inv.state == "review" && inv.review != null && rv != null -> stepsHtml(inv.steps) + reviewHtml(inv, inv.review, rv)
+        inv.state == "failed" && inv.needsSignIn -> stepsHtml(inv.steps) + signInHtml(inv, sd)
         else -> stepsHtml(inv.steps) + failedHtml(inv)
     }
     val echo = if (inv?.review != null) """<div class="af-echo"><span class="ph"></span><span>${if (inv.review.pageOnly) "<b>${afEsc(inv.review.name)}</b> · page only · the page's own name" else "<b>${afEsc(inv.review.name)}</b> · TV series · TMDB ${inv.review.tmdbId}"}</span></div>""" else ""

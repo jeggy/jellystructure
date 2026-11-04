@@ -17,13 +17,17 @@ data class DownloadSpec(
     val outPath: String,
     val audioLang: String,
     val subtitleLang: String,
-)
+    /** DEB-3613 (FR-3.6) — ffmpeg's `-cookies` value for the site's session, scoped by domain; never printed. */
+    val cookies: String? = null,
+) {
+    override fun toString(): String = "DownloadSpec(manifestUrl=$manifestUrl, kind=$kind, outPath=$outPath, cookies=${if (cookies != null) "set" else "none"})"
+}
 
 /**
  * [message] is why a download failed; on a success it is the note that ends the run line (`no subtitle: …`, FR-6.4), or empty.
  * [drm] says the source protects the video (FR-3.3); [status] is the HTTP status yt-dlp named, which the lane judges (FR-2.4).
  */
-data class ToolResult(val ok: Boolean, val message: String = "", val drm: Boolean = false, val status: Int? = null)
+data class ToolResult(val ok: Boolean, val message: String = "", val drm: Boolean = false, val status: Int? = null, val needsLogin: Boolean = false)
 
 /** What `ffprobe` shows of a finished file (FR-6.5). */
 data class FileFacts(
@@ -36,16 +40,16 @@ data class FileFacts(
 
 interface MediaTools {
     /** Whether a manifest resolves to a video variant `ffprobe` can read, and its duration (FR-4.2). Null when it cannot be read. */
-    suspend fun probeManifest(url: String, text: String, kind: String): ManifestFacts?
+    suspend fun probeManifest(url: String, text: String, kind: String, cookies: String? = null): ManifestFacts?
     /** FR-6.3/6.4 — highest variant and best audio into one MKV, audio tagged at the mux, subtitles embedded when the source has them. */
     suspend fun download(spec: DownloadSpec, stop: () -> Boolean): ToolResult
     suspend fun inspect(path: String): FileFacts?
     /** FR-6.3 — yt-dlp's flat playlist of [url] as JSON. Unavailable until a binding says otherwise, so a fake that does not read a `ytdlp` recipe never has to. */
-    suspend fun ytdlpListing(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
+    suspend fun ytdlpListing(url: String, cookies: String? = null): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
     /** FR-6.3 — yt-dlp's metadata for one item at [url], for the proof's probe (FR-4.2). */
-    suspend fun ytdlpInfo(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
+    suspend fun ytdlpInfo(url: String, cookies: String? = null): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
     /** DEB-3407 (FR-4.1) — one item's own date fields at [url], and nothing else; [YtDlpDate.parse] reads them. */
-    suspend fun ytdlpDate(url: String): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
+    suspend fun ytdlpDate(url: String, cookies: String? = null): YtDlpOutput = YtDlpOutput.NOT_INSTALLED
     /** FR-6.3 — one item downloaded by yt-dlp straight into [YtDlpDownload.outPath], language-tagged at its own mux. */
     suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult = ToolResult(false, YtDlpTexts.NOT_INSTALLED)
     /** FR-6.5 — the first top-level element after the segment header, `Tracks` or `Cluster`; null when unreadable. */

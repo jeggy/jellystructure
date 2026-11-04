@@ -41,6 +41,37 @@ class AutofetchInvestigationHtmlTest {
     private fun card(i: AfInvestigation?, gate: AfGate = AfGate(true), form: AfForm = AfForm("https://varpid.example.fo/sendingar/royndin", "9000001"), d: AfReviewDraft? = i?.review?.let { draft(it) }) =
         afNewCard(AfOverview(true, emptyList(), emptyList(), emptyList(), gate, i), form, d)
 
+    // ---- DEB-3613 (FR-3.6, FR-10.8, Acceptance 21) — Needs a sign-in ------------------------------------------------------------
+
+    private val signInSentence = "It didn't work: varpid.example.fo lists 3 episodes but plays them only to someone signed in. Auto-fetch cannot sign in by itself."
+    private fun signIn() = inv("failed", "done", "fail", reason = signInSentence, report = AfReport("t", "b")).copy(needsSignIn = true, site = "varpid.example.fo")
+
+    @Test
+    fun `a failed investigation that needs a sign-in says so with the servers sentence and offers Give up and Use my session - no bug-report link - no Not a series`() {
+        val h = card(signIn())
+        assertTrue("<h4>Needs a sign-in</h4>" in h && afEsc(signInSentence) in h, h)
+        assertTrue("data-af-dismissinv>Give up</span>" in h && "data-af-usesession>Use my session</span>" in h)
+        assertFalse("Not a series" in h || "File a bug report" in h || "Dismiss" in h)
+        assertFalse("data-af-session-text" in h, "the paste field is closed until Use my session")
+        // Chosen from the flag, never from the words: the same words without the flag are the plain failed state.
+        assertFalse("data-af-usesession" in card(signIn().copy(needsSignIn = false)))
+    }
+
+    @Test
+    fun `Use my session opens the paste field with the hint - the refusal in the servers words and Save session and investigate again`() {
+        val inv = signIn()
+        val open = afNewCard(AfOverview(true, emptyList(), emptyList(), emptyList(), AfGate(true), inv), AfForm(), null, AfSessionDraft("i1", "varpid.example.fo", text = "s=ok"))
+        assertTrue("data-af-session-text" in open && "<textarea" in open)
+        assertTrue(afEsc("Sign in to varpid.example.fo in your own browser, export its cookies as cookies.txt (or copy the Cookie header), and paste them here. Requests are made as you. If the site objects, it is your account it may block.") in open)
+        assertTrue("data-af-session-save>Save session and investigate again</span>" in open && "data-af-session-cancel" in open)
+        assertFalse("data-af-usesession" in open, "the opener is replaced by the field")
+        assertFalse("data-af-session-error" in open)
+        val refused = afNewCard(AfOverview(true, emptyList(), emptyList(), emptyList(), AfGate(true), inv), AfForm(), null, AfSessionDraft("i1", "varpid.example.fo", text = "x", error = "That holds no cookie for varpid.example.fo."))
+        assertTrue("""data-af-session-error>That holds no cookie for varpid.example.fo.</div>""" in refused)
+        assertTrue("""af-dis" data-af-session-save""" in afNewCard(AfOverview(true, emptyList(), emptyList(), emptyList(), AfGate(true), inv), AfForm(), null, AfSessionDraft("i1", "varpid.example.fo")), "an empty paste cannot be sent")
+        assertFalse("data-af-session-text" in afNewCard(AfOverview(true, emptyList(), emptyList(), emptyList(), AfGate(true), inv), AfForm(), null, AfSessionDraft("another", "varpid.example.fo")), "a draft for another place is not drawn here")
+    }
+
     // ---- DEB-3592 (FR-2.8, FR-10.7, Acceptance 20) — the robots.txt tick ----------------------------------------------------------
 
     private val robotsHint = "Reads pages this site asks crawlers to leave alone. Requests stay paced and say who is asking. If the site blocks them, every fetcher on this site stops."

@@ -92,7 +92,12 @@ data class AfSite(
     val stoppedAt: Long? = null,
     val backoffUntil: Long? = null,
     val fetchers: Int = 0,
+    /** DEB-3613 (FR-3.6, FR-10.8) — the site has the admin's own session: when it was saved, and when its first cookie runs out. Never the session. */
+    val session: AfSession? = null,
 )
+
+@Serializable
+data class AfSession(val set: Boolean = true, val savedAt: Long = 0, val expiresAt: Long? = null)
 
 /** One row of *Not on TMDB yet*. [title] and [overview] are the page's own words, verbatim, or null when the page has none (FR-8.2). */
 @Serializable
@@ -178,6 +183,10 @@ data class AfInvestigation(
     /** DEB-3592 (FR-10.7) — a `robots.txt` refusal ended it: the server's call, never read from [reason]'s words. */
     val robotsRefused: Boolean = false,
     val notASeries: Boolean = false,
+    /** DEB-3613 (FR-3.6, FR-10.8) — the site plays only to a signed-in viewer: the server's call, never read from [reason]'s words. */
+    val needsSignIn: Boolean = false,
+    /** The site a pasted session is saved for (FR-2's lane key). */
+    val site: String = "",
     val limitReached: Boolean = false,
     val turns: Int = 0,
     val requests: Int = 0,

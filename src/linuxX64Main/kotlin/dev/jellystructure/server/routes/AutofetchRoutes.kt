@@ -25,11 +25,17 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
+import dev.jellystructure.autofetch.SessionResult
 import kotlinx.io.files.Path
 import kotlinx.serialization.Serializable
 
 @Serializable
 private data class SettingsPatch(val retention: RetentionSpec? = null, val schedule: String? = null, val enabled: Boolean? = null, val ignoreRobots: Boolean? = null)
+
+/** DEB-3613 (FR-3.6) — `PUT …/session`'s body: a `cookies.txt` or the value of a `Cookie:` header. Never echoed, never logged. */
+@Serializable
+private data class SessionPut(val cookies: String = "")
 
 @Serializable
 private data class PreviewRequest(val retention: RetentionSpec)
@@ -65,7 +71,9 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         call.respond(AutofetchOverview(
             enabled = configStore.current.autofetch.enabled,
             fetchers = rt.store.fetchers().map { rt.view(it) },
-            sites = rt.store.sites().map { st -> SiteView(st.site, st.stopped, st.stoppedReason, st.stoppedAt, st.backoffUntil, rt.store.fetchers().count { it.site == st.site }) },
+            sites = (rt.store.sites().map { it.site } + rt.store.sessionSites()).distinct().map { rt.store.get(it) }.map { st ->
+                SiteView(st.site, st.stopped, st.stoppedReason, st.stoppedAt, st.backoffUntil, rt.store.fetchers().count { it.site == st.site }, rt.store.session(st.site)?.view())
+            },
             queue = rt.queueViews(),
             investigate = rt.investigations?.gate() ?: InvestigateGate(false, "The investigation is not running"),
             investigation = rt.investigations?.view(),
@@ -189,6 +197,22 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         val rt = runtime ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
         val problem = rt.service.resume(call.parameters["site"].orEmpty())
         if (problem == null) call.respond(HttpStatusCode.OK, mapOf("resumed" to true)) else call.respond(HttpStatusCode.Conflict, mapOf("error" to problem))
+    }
+
+    // DEB-3613 (FR-3.6, FR-12) — the admin's own pasted session for a site. The answers never hold it.
+    put("/autofetch/sites/{site}/session") {
+        val rt = runtime ?: return@put call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
+        val req = runCatching { call.receive<SessionPut>() }.getOrNull() ?: return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "the request is not a valid session"))
+        when (val r = rt.service.setSession(call.parameters["site"].orEmpty(), req.cookies)) {
+            is SessionResult.Saved -> call.respond(HttpStatusCode.OK, r.view)
+            is SessionResult.Refused -> call.respond(HttpStatusCode.fromValue(r.status), mapOf("error" to r.reason))
+        }
+    }
+
+    delete("/autofetch/sites/{site}/session") {
+        val rt = runtime ?: return@delete call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
+        if (rt.service.forgetSession(call.parameters["site"].orEmpty())) call.respond(HttpStatusCode.NoContent)
+        else call.respond(HttpStatusCode.NotFound, mapOf("error" to "no session is set for that site"))
     }
 
     // FR-9.4 — a still: a JPEG cut on this server, kept in the application's data directory and served to the admin only.

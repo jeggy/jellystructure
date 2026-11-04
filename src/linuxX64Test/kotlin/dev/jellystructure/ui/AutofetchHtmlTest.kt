@@ -282,4 +282,19 @@ class AutofetchHtmlTest {
         assertEquals("https%3A%2F%2Fvarpid.example.fo%2Fsendingar%2Froyndin%2F9", afUrlEncode("https://varpid.example.fo/sendingar/royndin/9"))
         assertEquals("R4", afUrlEncode("R4"))
     }
+
+    // ---- DEB-3613 (FR-3.6, FR-10.8) — the site line ----
+
+    @Test
+    fun `a site with a session says so on the open row with Replace session and Forget session - and says when there is no expiry`() {
+        val f = fetcher()
+        val withExpiry = afOpenRow(f, AfDraft(f.schedule, f.retention), clock, false, AfGate(true), AfSession(true, 100, 200))
+        assertTrue("Signed in with your session · saved 04:00 · runs out 04:00" in withExpiry, withExpiry)
+        assertTrue("""data-af-replacesession="${f.site}">Replace session</span>""" in withExpiry && """data-af-forgetsession="${f.site}">Forget session</span>""" in withExpiry)
+        val none = afOpenRow(f, AfDraft(f.schedule, f.retention), clock, false, AfGate(true), AfSession(true, 100, null))
+        assertTrue("Signed in with your session · saved 04:00 · no expiry given" in none)
+        assertFalse("Signed in with your session" in afOpenRow(f, AfDraft(f.schedule, f.retention), clock, false, AfGate(true)))
+        val replacing = afOpenRow(f, AfDraft(f.schedule, f.retention), clock, false, AfGate(true), AfSession(true, 100, null), AfSessionDraft(afSiteKey(f.site), f.site, "s=ok"))
+        assertTrue("data-af-session-text" in replacing && "data-af-session-save>Save session</span>" in replacing && "data-af-replacesession" !in replacing)
+    }
 }

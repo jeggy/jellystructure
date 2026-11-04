@@ -70,6 +70,13 @@ data class HttpReply(val status: Int, val headers: Map<String, String>, val body
 
 fun interface Transport {
     suspend fun get(url: String): HttpReply
+
+    /**
+     * DEB-3613 (FR-3.6) — as [get], with the admin's session: [cookieFor] gives the `Cookie:` header for a URL, or null. A transport that follows a
+     * redirect asks it again for each hop and sends the header only where it answers, so a session never follows a redirect to a host the recipe does
+     * not record. A transport without sessions sends none.
+     */
+    suspend fun get(url: String, cookieFor: (String) -> String?): HttpReply = get(url)
 }
 
 /** What a page request is expected to answer: a challenge page is an HTML answer where something else was expected. */
@@ -171,9 +178,17 @@ class SiteLane private constructor(
     private val gates: LaneGates,
     /** DEB-3592 (FR-2.8) — this view is a fetcher that ignores `robots.txt`'s Disallow rules. Pacing, `Crawl-delay`, back-off and the stop on a block are the lane's, whatever this says. */
     val ignoreRobots: Boolean,
+    private val sessions: SessionStore?,
+    /** DEB-3613 (FR-3.6) — this view is the engine's own: it sends the site's session to the hosts the recipe records. The model's view never does. */
+    val signedIn: Boolean,
+    /**
+     * DEB-3613 (FR-3.6) — this view is a recipe's proof. A `401`/`403` it gets when it sent no session is the finding that the site plays only to a signed-in
+     * viewer, so it does not stop the site (FR-2.5): the caller reads the status and ends the investigation as *Needs a sign-in*.
+     */
+    val proving: Boolean,
 ) {
-    constructor(site: String, store: SiteStore, transport: Transport, clock: LaneClock = SystemLaneClock) :
-        this(site, store, transport, clock, LaneGates(), false)
+    constructor(site: String, store: SiteStore, transport: Transport, clock: LaneClock = SystemLaneClock, sessions: SessionStore? = null) :
+        this(site, store, transport, clock, LaneGates(), false, sessions, false, false)
 
     private val pageGate get() = gates.pageGate
     private val downloadGate get() = gates.downloadGate
@@ -185,7 +200,30 @@ class SiteLane private constructor(
         set(v) { gates.lastDownloadEndMs = v }
 
     /** The same lane, seen by a fetcher whose tick is [ignore] (FR-2.8): one site, one set of gates, one stop. */
-    fun forFetcher(ignore: Boolean): SiteLane = if (ignore == ignoreRobots) this else SiteLane(site, store, transport, clock, gates, ignore)
+    fun forFetcher(ignore: Boolean, signedIn: Boolean = this.signedIn, proving: Boolean = this.proving): SiteLane =
+        if (ignore == ignoreRobots && signedIn == this.signedIn && proving == this.proving) this else SiteLane(site, store, transport, clock, gates, ignore, sessions, signedIn, proving)
+
+    /** The site's stored cookies as a jar, when this view is signed in and a session is stored. */
+    private fun jar(): SessionJar? {
+        if (!signedIn) return null
+        val stored = sessions?.session(site) ?: return null
+        return SessionJar(SiteSessions.fromStored(stored.cookiesTxt)) { clock.nowSec() }
+    }
+
+    /** The hosts a session may go to: the ones the recipe records, and the site itself (FR-2.7). */
+    private fun sessionHosts(hosts: Set<String>): Set<String> = hosts + site + "www.$site"
+
+    /**
+     * DEB-3613 (FR-3.6) — the `cookies.txt` for a program that makes its own requests (yt-dlp), holding only the cookies that match a host in [hosts];
+     * null when this view is not signed in, no session is stored, or none matches. The caller writes it for one call and removes it.
+     */
+    fun cookiesFile(hosts: Set<String>): String? = jar()?.fileFor(sessionHosts(hosts))
+
+    /** ffmpeg's `-cookies` value for the same hosts as [cookiesFile]; null when there is none. */
+    fun ffmpegCookies(hosts: Set<String>): String? = jar()?.ffmpegFor(sessionHosts(hosts))
+
+    /** Whether a session is stored for this site, whatever the view. The model is told only this (FR-5.2). */
+    fun hasSession(): Boolean = sessions?.session(site) != null
 
     fun state(): SiteState = store.get(site)
 
@@ -243,8 +281,24 @@ class SiteLane private constructor(
     /** What a finished program run means for the lane: the HTTP status it named is judged as an answer would be (FR-2.4, FR-2.5); no status is no news. */
     fun judgeProgram(status: Int?): LaneOutcome? = if (status == null) null else judge(HttpReply(status, emptyMap(), ""), Expect.ANY)
 
-    /** The outcome of a program run that failed with [message]: the lane's own verdict when the status it named slows or stops the site, else a plain failure. */
-    fun programFailure(message: String, status: Int?): LaneOutcome = judgeProgram(status).let { if (it == null || it is LaneOutcome.Failed) LaneOutcome.Failed(message, status) else it }
+    /**
+     * The outcome of a program run that failed with [message]: the lane's own verdict when the status it named slows or stops the site, else a plain failure.
+     * DEB-3613 (FR-3.6): [needsLogin] is yt-dlp saying it needs a login or cookies; when the run was given the session ([cookiesUsed]) that, or a `401`/`403`,
+     * means the session has run out and the site stops (FR-2.5).
+     */
+    fun programFailure(message: String, status: Int?, needsLogin: Boolean = false, cookiesUsed: Boolean = false): LaneOutcome {
+        if (cookiesUsed && (needsLogin || status == 401 || status == 403)) return sessionRanOut()
+        // A run (not a proof) that is told to log in has lost its session, or never had one it needs: the site stops until a new one is pasted.
+        if (needsLogin && !proving) return sessionRanOut()
+        return judgeProgram(status).let { if (it == null || it is LaneOutcome.Failed) LaneOutcome.Failed(message, status) else it }
+    }
+
+    /** FR-3.6 — the session that was sent is no longer taken: the site stops until a new one is pasted. */
+    private fun sessionRanOut(): LaneOutcome.Stopped {
+        val reason = SiteSessions.expiredReason(site)
+        stop(reason)
+        return LaneOutcome.Stopped(store.get(site).stoppedReason ?: reason)
+    }
 
     /** A program's successful run counts as an answer the site gave: the site worked, the back-off level resets. */
     fun programSucceeded() { judge(HttpReply(200, emptyMap(), ""), Expect.ANY) }
@@ -299,12 +353,27 @@ class SiteLane private constructor(
     }
 
     private suspend fun requestAndJudge(url: String, expect: Expect, hosts: Set<String>): LaneOutcome {
-        val reply = try { transport.get(url) } catch (e: Throwable) {
+        val jar = jar()
+        val allowed = sessionHosts(hosts)
+        var attached = false
+        val reply = try {
+            if (jar == null) transport.get(url) else transport.get(url) { u -> jar.headerFor(u, allowed)?.also { attached = true } }
+        } catch (e: Throwable) {
             // Phase 310 — only the caller's own cancellation ends the request; a foreign one is a failed call like any other.
             if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e
             return LaneOutcome.Failed("$REQUEST_FAILED_LEAD${e.message ?: e::class.simpleName}")
         }
-        return judge(trustRedirect(url, reply, hosts), expect)
+        // FR-3.6 — a request that carried the session and was sent to a sign-in page: the session no longer works.
+        if (attached && sentToSignIn(url, reply)) return sessionRanOut()
+        return judge(trustRedirect(url, reply, hosts), expect, sessionSent = attached)
+    }
+
+    /** The answer came from a sign-in page: the final address differs from the one asked for and looks like a login. */
+    private fun sentToSignIn(requested: String, reply: HttpReply): Boolean {
+        val final = reply.finalUrl ?: return false
+        if (final == requested) return false
+        if (Urls.host(final) == Urls.host(requested) && Urls.path(final) == Urls.path(requested)) return false
+        return SIGN_IN.containsMatchIn(Urls.host(final).orEmpty() + Urls.path(final))
     }
 
     /**
@@ -319,12 +388,14 @@ class SiteLane private constructor(
     }
 
     /** FR-2.4/2.5 — what an answer means for the lane. */
-    internal fun judge(reply: HttpReply, expect: Expect): LaneOutcome {
+    internal fun judge(reply: HttpReply, expect: Expect, sessionSent: Boolean = false): LaneOutcome {
         val s = store.get(site)
         val st = reply.status
         if (st == 429 || st == 503) return slow(s, reply)
         if (st == 401 || st == 403) {
-            if (s.everOk) {
+            // FR-3.6 — the session was sent and the site still refuses: the session has run out, whether or not this page ever worked.
+            if (sessionSent) return sessionRanOut()
+            if (s.everOk && !proving) {
                 val reason = "the site answered $st on a page that worked before"
                 stop(reason)
                 return LaneOutcome.Stopped(reason)
@@ -357,6 +428,8 @@ class SiteLane private constructor(
         }
         return LaneOutcome.BackOff(until, "the site answered ${reply.status}${if (retryAfter != null) " with Retry-After $retryAfter" else ""}")
     }
+
+    private val SIGN_IN = Regex("(?i)(^|[/.\\-_])(log-?in|sign-?in|signin|logon|sso|auth(entication)?)([/.\\-_?]|$)")
 
     private fun isChallenge(reply: HttpReply, expect: Expect): Boolean {
         if (reply.headers.keys.any { it.equals("cf-mitigated", true) }) return true
@@ -395,10 +468,12 @@ class SiteLanes(
     private val store: SiteStore,
     private val transport: Transport,
     private val clock: LaneClock = SystemLaneClock,
+    private val sessions: SessionStore? = null,
 ) {
     private val lanes = HashMap<String, SiteLane>()
     private val lock = Mutex()
     /** [ignoreRobots] is the fetcher's tick (FR-2.8); the lane behind it is the site's one. */
-    suspend fun forSite(site: String, ignoreRobots: Boolean = false): SiteLane =
-        lock.withLock { lanes.getOrPut(site) { SiteLane(site, store, transport, clock) } }.forFetcher(ignoreRobots)
+    /** [signedIn] is the engine's own view (DEB-3613, FR-3.6): it sends the site's session to the hosts the recipe records. The default view, the model's, never does. */
+    suspend fun forSite(site: String, ignoreRobots: Boolean = false, signedIn: Boolean = false, proving: Boolean = false): SiteLane =
+        lock.withLock { lanes.getOrPut(site) { SiteLane(site, store, transport, clock, sessions) } }.forFetcher(ignoreRobots, signedIn, proving)
 }

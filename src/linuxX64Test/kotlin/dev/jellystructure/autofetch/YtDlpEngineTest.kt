@@ -153,7 +153,7 @@ class YtDlpEngineTest {
     @Test
     fun `a binding without yt-dlp says it is not installed and nothing else is asked`() = runBlocking<Unit> {
         val bare = object : MediaTools by h.tools {
-            override suspend fun ytdlpListing(url: String) = YtDlpOutput.NOT_INSTALLED
+            override suspend fun ytdlpListing(url: String, cookies: String?) = YtDlpOutput.NOT_INSTALLED
         }
         val lane = h.lanes.forSite("varpid.example.fo")
         val read = ListingFetcher.read(recipe, lane, bare)

@@ -1,0 +1,8 @@
+-- DEB-3613 (DEB-3567, DEB-2474 FR-3.6) — the admin's own pasted session for a site that plays only to a signed-in viewer. One row per site; cookies
+-- holds the paste as cookies.txt text and is never answered by any route. This file is the migration; Autofetch.sq carries the same table.
+CREATE TABLE autofetch_site_session (
+    site TEXT NOT NULL PRIMARY KEY,
+    cookies TEXT NOT NULL,
+    saved_at INTEGER NOT NULL,
+    expires_at INTEGER
+);

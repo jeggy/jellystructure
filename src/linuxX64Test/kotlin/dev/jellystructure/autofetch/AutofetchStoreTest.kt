@@ -103,11 +103,18 @@ class AutofetchStoreTest {
             extendedConfig = DatabaseConfiguration.Extended(basePath = path.substringBeforeLast('/')),
         ))
         raw.execute(null, "ALTER TABLE autofetch_fetcher DROP COLUMN ignore_robots", 0)
+        // DEB-3613 — 98.sqm adds the session table, which runs after 97 here, so the simulated database must not have it yet.
+        raw.execute(null, "DROP TABLE autofetch_site_session", 0)
         raw.execute(null, "PRAGMA user_version = $MIGRATION_ROBOTS", 0)
         raw.close()
         val again = AutofetchStore(createDatabase(path))
         assertEquals(setOf("a", "b"), again.fetchers().map { it.id }.toSet())
         assertTrue(again.fetchers().none { it.ignoreRobots })
+        // 98.sqm created the session table on the way: a session round trips and is forgotten.
+        assertNull(again.session("x.example"))
+        again.putSession("x.example", "c", 5, null)
+        assertEquals(5L, again.session("x.example")!!.savedAt)
+        again.deleteSession("x.example"); assertNull(again.session("x.example"))
     }
 }
 

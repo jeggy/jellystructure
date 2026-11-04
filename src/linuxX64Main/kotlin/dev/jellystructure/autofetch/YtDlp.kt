@@ -31,6 +31,8 @@ data class YtDlpOutput(
     val message: String = "",
     val status: Int? = null,
     val drm: Boolean = false,
+    /** DEB-3613 (FR-3.6) — yt-dlp says the video needs a login or cookies. */
+    val needsLogin: Boolean = false,
 ) {
     companion object {
         val NOT_INSTALLED = YtDlpOutput(false, message = YtDlpTexts.NOT_INSTALLED)
@@ -44,13 +46,19 @@ data class YtDlpDownload(
     val audioLang: String,
     val subtitleLang: String,
     val userAgent: String,
-)
+    /** DEB-3613 (FR-3.6) — the session as a `cookies.txt`, handed over for this call only; [toString] shows none of it. */
+    val cookies: String? = null,
+) {
+    override fun toString(): String = "YtDlpDownload(link=$link, outPath=$outPath, cookies=${if (cookies != null) "set" else "none"})"
+}
 
 object YtDlpErrors {
     /** FR-10.4 (DEB-3569) — where yt-dlp's own line starts in a failure's message (it quotes the link): the bug report leaves everything after it out. */
     const val MESSAGE_LEAD = "yt-dlp: "
     private val HTTP = Regex("""HTTP Error (\d{3})""")
     private val DRM = Regex("""(?i)\bDRM\b""")
+    /** DEB-3613 (FR-3.6) — yt-dlp's own wording when a video needs the viewer signed in; read from the error lines only. */
+    private val LOGIN = Regex("""(?i)(log(?:ging)? ?in\b|\blogged in\b|sign(?:ing)? ?in\b|--cookies|registered users|authentication (?:is )?required|requires authentication|account required)""")
     private val SUBTITLE = Regex("""(?i)subtitle|subs\b|\.vtt|\.srt|webvtt|postprocessing""")
 
     /** Reads a failed run's output: the status it names, whether it is DRM, and the line to show. */
@@ -62,13 +70,14 @@ object YtDlpErrors {
         val last = (errors.lastOrNull() ?: lines.lastOrNull().orEmpty()).removePrefix("ERROR:").trim()
         val status = HTTP.findAll(output).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()
         val drm = errors.any { DRM.containsMatchIn(it) }
+        val needsLogin = !drm && errors.any { LOGIN.containsMatchIn(it) }
         val message = when {
             drm -> RecipeRefusal.DRM
             output.contains("No suitable extractor") || output.contains("Unsupported URL") -> YtDlpTexts.NO_EXTRACTOR
             last.isEmpty() -> "yt-dlp exited with status $exit"
             else -> "$MESSAGE_LEAD${last.take(300)}"
         }
-        return YtDlpOutput(false, message = message, status = status, drm = drm)
+        return YtDlpOutput(false, message = message, status = status, drm = drm, needsLogin = needsLogin)
     }
 
     /**
@@ -127,28 +136,30 @@ object YtDlpCommands {
     const val PLAYLIST_END = 100
     private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
 
-    private fun base(userAgent: String) =
+    /** [cookieFile] is the path of the session's `cookies.txt` for this call (DEB-3613, FR-3.6): a path, never the cookies themselves. */
+    private fun base(userAgent: String, cookieFile: String? = null) =
         "nice -n 19 ionice -c3 env PYTHONDONTWRITEBYTECODE=1 yt-dlp --ignore-config --no-cache-dir --no-plugin-dirs --use-extractors default,-generic " +
-            "--user-agent ${q(userAgent)} --sleep-requests ${LaneRules.PAGE_INTERVAL_SEC} --socket-timeout 30 --retries 3 --no-colors --no-warnings"
+            "--user-agent ${q(userAgent)} --sleep-requests ${LaneRules.PAGE_INTERVAL_SEC} --socket-timeout 30 --retries 3 --no-colors --no-warnings" +
+            (if (cookieFile != null) " --cookies ${q(cookieFile)}" else "")
 
     /** The playlist at [url], one JSON document on stdout. */
-    fun listing(url: String, userAgent: String): String =
-        "${base(userAgent)} --flat-playlist --playlist-end $PLAYLIST_END -J ${q(url)}"
+    fun listing(url: String, userAgent: String, cookieFile: String? = null): String =
+        "${base(userAgent, cookieFile)} --flat-playlist --playlist-end $PLAYLIST_END -J ${q(url)}"
 
     /**
      * One item's metadata, no download: only what the proof reads (FR-5.1) — the duration and top-level codec on one line, each format's codec
      * and DRM flag as an array on the next, and the item's date fields on a third (FR-4.1, DEB-3407: the probe dates its own item). `-J` of one YouTube video is 11 MB, past the shell's capture cap (DEB-3404).
      */
-    fun info(url: String, userAgent: String): String =
-        "${base(userAgent)} --no-playlist --skip-download --print ${q("%(.{duration,vcodec})j")} --print ${q("%(formats.:.{vcodec,has_drm})j")} " +
+    fun info(url: String, userAgent: String, cookieFile: String? = null): String =
+        "${base(userAgent, cookieFile)} --no-playlist --skip-download --print ${q("%(.{duration,vcodec})j")} --print ${q("%(formats.:.{vcodec,has_drm})j")} " +
             "--print ${q("%(.{upload_date,release_date,timestamp})j")} ${q(url)}"
 
     /**
      * One item's own date, no download (DEB-3407, FR-4.1): the three fields a listing's `published` defaults to, on one line, and nothing else.
      * Never `-J`: the answer for one YouTube video is 11 MB (DEB-3404).
      */
-    fun date(url: String, userAgent: String): String =
-        "${base(userAgent)} --no-playlist --skip-download --print ${q("%(.{upload_date,release_date,timestamp})j")} ${q(url)}"
+    fun date(url: String, userAgent: String, cookieFile: String? = null): String =
+        "${base(userAgent, cookieFile)} --no-playlist --skip-download --print ${q("%(.{upload_date,release_date,timestamp})j")} ${q(url)}"
 
     /** The folder yt-dlp keeps its intermediate files in: beside the work file, so it is on the same filesystem and under the work folder. */
     fun tempDir(outPath: String): String = "$outPath.part"
@@ -157,7 +168,7 @@ object YtDlpCommands {
      * Highest video and best audio into one MKV, the audio tagged [YtDlpDownload.audioLang] in yt-dlp's own ffmpeg step (never after),
      * the source's subtitles embedded when [withSubs]. `-o` takes the work file without its extension; a literal `%` in it is doubled.
      */
-    fun download(d: YtDlpDownload, withSubs: Boolean): String {
+    fun download(d: YtDlpDownload, withSubs: Boolean, cookieFile: String? = null): String {
         val stem = d.outPath.removeSuffix(".mkv").replace("%", "%%")
         val ppa = if (d.audioLang.isNotBlank()) {
             val args = "-metadata:s:a:0 language=${d.audioLang}"
@@ -171,7 +182,7 @@ object YtDlpCommands {
             " --write-subs --embed-subs --sub-langs ${q(langs)}$list"
         } else ""
         val tmp = tempDir(d.outPath)
-        return "${base(d.userAgent)} --no-playlist --no-part --no-mtime --no-progress -f ${q("bv*+ba/b")} --merge-output-format mkv --remux-video mkv" +
+        return "${base(d.userAgent, cookieFile)} --no-playlist --no-part --no-mtime --no-progress -f ${q("bv*+ba/b")} --merge-output-format mkv --remux-video mkv" +
             "$ppa$subs -P ${q("temp:$tmp")} -P ${q("subtitle:$tmp")} -o ${q("$stem.%(ext)s")} ${q(d.link)}"
     }
 }
@@ -264,28 +275,45 @@ object YtDlpListing {
 
 /** The real binding: the `yt-dlp` on PATH, run through the same shell as ffmpeg, so it sits under the same [dev.jellystructure.ops.ProcessGate]. */
 class ProductionYtDlp(private val shell: FileFixShell) {
-    suspend fun listing(url: String, userAgent: String): YtDlpOutput = json(shell.run(YtDlpCommands.listing(url, userAgent)))
-    suspend fun info(url: String, userAgent: String): YtDlpOutput = json(shell.run(YtDlpCommands.info(url, userAgent)))
-    suspend fun date(url: String, userAgent: String): YtDlpOutput = json(shell.run(YtDlpCommands.date(url, userAgent)))
+    suspend fun listing(url: String, userAgent: String, cookies: String? = null): YtDlpOutput =
+        withCookies(cookies) { f -> json(shell.run(YtDlpCommands.listing(url, userAgent, f))) }
+    suspend fun info(url: String, userAgent: String, cookies: String? = null): YtDlpOutput =
+        withCookies(cookies) { f -> json(shell.run(YtDlpCommands.info(url, userAgent, f))) }
+    suspend fun date(url: String, userAgent: String, cookies: String? = null): YtDlpOutput =
+        withCookies(cookies) { f -> json(shell.run(YtDlpCommands.date(url, userAgent, f))) }
 
     private fun json(r: ShellResult): YtDlpOutput =
         if (r.ok) YtDlpOutput(true, body = r.output) else YtDlpErrors.classify(r.exit, r.output)
 
-    suspend fun download(d: YtDlpDownload, stop: () -> Boolean): ToolResult {
-        val subs = shell.runStoppable(YtDlpCommands.download(d, withSubs = true), d.outPath, stop)
+    /**
+     * DEB-3613 (FR-3.6) — the session's `cookies.txt` exists only for [block]: made by `mktemp` (mode 0600, so nobody else reads it), filled, and removed
+     * whatever happens. Only its path is ever on a command line. A session that cannot be written is no session: the call goes out without it.
+     */
+    private suspend fun <T> withCookies(cookies: String?, block: suspend (String?) -> T): T {
+        if (cookies == null) return block(null)
+        val made = shell.run("mktemp /tmp/jellystructure-cookies.XXXXXXXX")
+        val path = made.output.lines().map { it.trim() }.firstOrNull { it.startsWith("/tmp/jellystructure-cookies.") }
+        if (!made.ok || path == null || !shell.writeText(path, cookies)) { if (path != null) shell.remove(path); return block(null) }
+        try { return block(path) } finally { shell.remove(path) }
+    }
+
+    suspend fun download(d: YtDlpDownload, stop: () -> Boolean): ToolResult = withCookies(d.cookies) { cookieFile -> download(d, stop, cookieFile) }
+
+    private suspend fun download(d: YtDlpDownload, stop: () -> Boolean, cookieFile: String?): ToolResult {
+        val subs = shell.runStoppable(YtDlpCommands.download(d, withSubs = true, cookieFile = cookieFile), d.outPath, stop)
         try {
             val first = subs ?: return ToolResult(false, "stopped")
             if (first.ok && shell.exists(d.outPath)) return ToolResult(true, absentNote(d))
             val why = YtDlpErrors.classify(first.exit, first.output)
             // A subtitle never fails the episode (FR-6.4): when the output blames one, the same download is run once more without them.
-            if (why.drm || why.status != null || why.message == YtDlpTexts.NOT_INSTALLED || !YtDlpErrors.blamesSubtitle(first.output))
-                return ToolResult(false, why.message, drm = why.drm, status = why.status)
+            if (why.drm || why.status != null || why.needsLogin || why.message == YtDlpTexts.NOT_INSTALLED || !YtDlpErrors.blamesSubtitle(first.output))
+                return ToolResult(false, why.message, drm = why.drm, status = why.status, needsLogin = why.needsLogin)
             shell.run("rm -rf ${q(YtDlpCommands.tempDir(d.outPath))}")
             shell.remove(d.outPath)
-            val second = shell.runStoppable(YtDlpCommands.download(d, withSubs = false), d.outPath, stop) ?: return ToolResult(false, "stopped")
+            val second = shell.runStoppable(YtDlpCommands.download(d, withSubs = false, cookieFile = cookieFile), d.outPath, stop) ?: return ToolResult(false, "stopped")
             if (second.ok && shell.exists(d.outPath)) return ToolResult(true, "no subtitle: yt-dlp could not embed it: ${lastLine(first.output)}")
             val why2 = YtDlpErrors.classify(second.exit, second.output)
-            return ToolResult(false, why2.message, drm = why2.drm, status = why2.status)
+            return ToolResult(false, why2.message, drm = why2.drm, status = why2.status, needsLogin = why2.needsLogin)
         } finally {
             shell.run("rm -rf ${q(YtDlpCommands.tempDir(d.outPath))}")
         }

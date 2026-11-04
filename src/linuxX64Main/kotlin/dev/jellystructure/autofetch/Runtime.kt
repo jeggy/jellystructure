@@ -179,7 +179,11 @@ data class QueueEntryView(
 )
 
 @Serializable
-data class SiteView(val site: String, val stopped: Boolean, val reason: String?, val stoppedAt: Long?, val backoffUntil: Long?, val fetchers: Int = 0)
+data class SiteView(
+    val site: String, val stopped: Boolean, val reason: String?, val stoppedAt: Long?, val backoffUntil: Long?, val fetchers: Int = 0,
+    /** DEB-3613 (FR-3.6, FR-12) — that a session is set for the site, when it was saved and when its first cookie runs out; null when none. Never the session. */
+    val session: SessionView? = null,
+)
 
 @Serializable
 data class AutofetchOverview(

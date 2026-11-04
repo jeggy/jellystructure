@@ -76,7 +76,7 @@ class AutofetchEngine(
             store.setState(f.id, "refused", reason)
             return RunResult("refused", reason, lines.also { it += RunLine("refused", reason) })
         }
-        val lane = lanes.forSite(f.site, f.ignoreRobots)
+        val lane = lanes.forSite(f.site, f.ignoreRobots, signedIn = true)
         lane.state().let { if (it.stopped) return RunResult("stopped", "Site stopped · ${it.stoppedReason}", lines) }
         val stoppedBefore = lane.state().stopped
 
@@ -331,11 +331,14 @@ class AutofetchEngine(
         val work = WorkFiles.pathFor(finalPath, WorkFiles.Kind.FETCH)
         shell.run(WorkFiles.prepareCommand(finalPath)).let { if (!it.ok) return OneResult.Failed("could not make the work folder") }
 
+        val recipeHosts = RecipeValidator.lanes(recipe)
+        // DEB-3613 (FR-3.6) — the session goes to yt-dlp as a file that exists for this call only, and to ffmpeg as cookies scoped to their own domains.
+        val cookies = if (source is Source.YtDlp) lane.cookiesFile(recipeHosts) else null
         return lane.download {
             try {
                 val dl = when (source) {
-                    is Source.Manifest -> tools.download(DownloadSpec(source.reply.finalUrl ?: source.url, source.reply.body, recipe.media.kind, work, recipe.language.audio, recipe.language.subtitle), stop)
-                    is Source.YtDlp -> tools.ytdlpDownload(YtDlpDownload(source.link, work, recipe.language.audio, recipe.language.subtitle, FetchIdentity.userAgent()), stop)
+                    is Source.Manifest -> tools.download(DownloadSpec(source.reply.finalUrl ?: source.url, source.reply.body, recipe.media.kind, work, recipe.language.audio, recipe.language.subtitle, lane.ffmpegCookies(recipeHosts)), stop)
+                    is Source.YtDlp -> tools.ytdlpDownload(YtDlpDownload(source.link, work, recipe.language.audio, recipe.language.subtitle, FetchIdentity.userAgent(), cookies), stop)
                 }
                 if (source is Source.YtDlp) {
                     // What yt-dlp's own last error says is an answer from the site: a 429 slows the lane, a 403 on a site that worked stops it (FR-2.4, FR-2.5).
@@ -345,7 +348,7 @@ class AutofetchEngine(
                             store.setItemState(f.id, item.itemId, "refused", RecipeRefusal.DRM, item.failures)
                             return@download OneResult.Skipped(RecipeRefusal.DRM)
                         }
-                        val o = lane.programFailure(dl.message, dl.status)
+                        val o = lane.programFailure(dl.message, dl.status, dl.needsLogin, cookies != null)
                         if (o is LaneOutcome.Stopped || o is LaneOutcome.BackOff) return@download refusal(o)
                     }
                 }

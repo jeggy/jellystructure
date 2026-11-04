@@ -83,7 +83,7 @@ data class MapRow(val link: String = "", val title: String = "", val season: Int
 
 @Serializable
 data class MAnswer(
-    /** `series` · `not_a_series`. */
+    /** `series` · `not_a_series` · `needs_sign_in` (DEB-3613, FR-3.6: a series whose videos play only to a signed-in viewer; the recipe still reads the listing). */
     val verdict: String = "",
     val reason: String = "",
     val recipe: MRecipe? = null,
@@ -168,7 +168,7 @@ object ModelRecipe {
 
     /** The `output_config.format.schema` of an investigation's final answer. */
     val SCHEMA: JsonObject = obj(mapOf(
-        "verdict" to enumOf("series", "not_a_series"),
+        "verdict" to enumOf("series", "not_a_series", "needs_sign_in"),
         "reason" to str("one plain sentence: why this is, or is not, a series Auto-fetch can fetch"),
         "recipe" to obj(mapOf(
             "list" to obj(mapOf(

@@ -27,6 +27,11 @@ sealed class NumberResult {
     data class Refused(val status: Int, val reason: String) : NumberResult()
 }
 
+sealed class SessionResult {
+    data class Saved(val view: SessionView) : SessionResult()
+    data class Refused(val status: Int, val reason: String) : SessionResult()
+}
+
 sealed class SaveResult {
     data class Saved(val fetcher: Fetcher, val proof: ProofResult) : SaveResult()
     /** [status] is the HTTP status the route answers; [notASeries] marks the drawn *Not a series* state. */
@@ -79,7 +84,7 @@ class AutofetchService(
         }
 
         // The proof (FR-4.2 / FR-15.8). Whatever it finds is the failed state with its reason; nothing is written.
-        val lane = lanes.forSite(site, ignoreRobots)
+        val lane = lanes.forSite(site, ignoreRobots, signedIn = true, proving = true)
         val pr = proof.prove(recipe, req.pageOnly, req.tmdbId, lane, req.mapping)
         if (!pr.ok) {
             val blocked = pr.blocked
@@ -114,7 +119,7 @@ class AutofetchService(
         val f = store.fetcher(id) ?: return SaveResult.Refused(404, "no such fetcher")
         val recipe = recipe0.copy(source = recipe0.source.copy(url = f.pageUrl, hosts = (recipe0.source.hosts + listOfNotNull(Urls.host(f.pageUrl))).distinct()), retention = f.retention)
         RecipeValidator.validate(recipe, f.pageOnly).firstOrNull()?.let { return SaveResult.Refused(422, it) }
-        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site, f.ignoreRobots), mapping)
+        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site, f.ignoreRobots, signedIn = true, proving = true), mapping)
         if (!pr.ok) return SaveResult.Refused(if (pr.blocked != null) 502 else 422, pr.failure ?: "the recipe failed its proof", notASeries = pr.blocked == null, proof = pr)
         // A recipe that no longer maps by hand drops the numbers the admin approved for items it has not placed; a placed one keeps its own.
         if (f.recipe?.numbering?.kind == "mapped" && recipe.numbering.kind != "mapped") store.clearApprovedUnplaced(id)
@@ -213,13 +218,40 @@ class AutofetchService(
 
     /** `POST /api/autofetch/sites/{site}/resume` — one listing request; back to stopped if that is refused too (FR-2.5). */
     suspend fun resume(site: String): String? {
-        val lane = lanes.forSite(site)
+        val lane = lanes.forSite(site, signedIn = true)
         if (!lane.state().stopped) return "that site is not stopped"
         lane.resume()
         val fetcher = store.fetchers().firstOrNull { it.site == site } ?: return null
         val probe = fetcher.recipe ?: return null
         val read = ListingFetcher.read(probe.copy(list = probe.list.copy(next = null)), lane.forFetcher(fetcher.ignoreRobots), tools)
         return if (read is ListingRead.Blocked && lane.state().stopped) "the site refused again: ${lane.state().stoppedReason}" else null
+    }
+
+    /**
+     * DEB-3613 (FR-3.6, FR-12) — `PUT /api/autofetch/sites/{site}/session`: the admin's own pasted session for [site], kept once for every fetcher on it.
+     * A paste that cannot be read, or holds no cookie for the site, is refused (`422`) and nothing is kept. A site stopped because its session ran out
+     * resumes. The answer never holds the session.
+     */
+    fun setSession(site0: String, text: String): SessionResult {
+        val site = site0.trim().lowercase().removePrefix("www.")
+        if (site.isEmpty() || !site.contains('.') || site.any { it == '/' || it.isWhitespace() }) return SessionResult.Refused(422, "That is not a site.")
+        if (text.length > SiteSessions.MAX_PASTE) return SessionResult.Refused(422, SiteSessions.TOO_LARGE)
+        val paste = SiteSessions.parse(text, site)
+        if (paste is SessionPaste.Refused) return SessionResult.Refused(422, paste.reason)
+        paste as SessionPaste.Parsed
+        val now = world.nowSec()
+        store.putSession(site, SiteSessions.toNetscape(paste.cookies), now, paste.expiresAt)
+        // A site stopped because the old session ran out takes the new one; any other stop is the admin's *Resume site* to press.
+        if (SiteSessions.isExpiredReason(site, store.get(site).stoppedReason)) store.put(store.get(site).copy(stoppedReason = null, stoppedAt = null, backoffUntil = null, backoffLevel = 0))
+        return SessionResult.Saved(SessionView(true, now, paste.expiresAt))
+    }
+
+    /** `DELETE …/session` — forgets it. Fetchers that need it stop at their next run with FR-3.6's reason. True when there was one. */
+    fun forgetSession(site0: String): Boolean {
+        val site = site0.trim().lowercase().removePrefix("www.")
+        if (store.session(site) == null) return false
+        store.deleteSession(site)
+        return true
     }
 
     /** Where a queued episode's still [n] is kept (FR-9.4). */

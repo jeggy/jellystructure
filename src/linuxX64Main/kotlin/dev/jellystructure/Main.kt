@@ -397,7 +397,7 @@ fun main() = runBlocking {
         scanner = scanner, dataDir = dataDir, scanRunning = { scanTracker.running },
     )
     val autofetchTools = dev.jellystructure.autofetch.ProductionMediaTools()
-    val autofetchLanes = dev.jellystructure.autofetch.SiteLanes(autofetchStore, dev.jellystructure.autofetch.KtorTransport)
+    val autofetchLanes = dev.jellystructure.autofetch.SiteLanes(autofetchStore, dev.jellystructure.autofetch.KtorTransport, sessions = autofetchStore)
     val autofetchEngine = dev.jellystructure.autofetch.AutofetchEngine(autofetchStore, autofetchLanes, autofetchTools, autofetchWorld)
     @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
     val autofetchService = dev.jellystructure.autofetch.AutofetchService(autofetchStore, autofetchEngine, autofetchLanes, autofetchTools, autofetchWorld) { kotlin.uuid.Uuid.random().toString() }

@@ -13,6 +13,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.HTMLTextAreaElement
 
 /**
  * DEB-2477 (DEB-2474, FR-1, FR-9, FR-10, FR-11) — the Fetchers tab on the AI page: the fetchers and their sites, the open row's
@@ -59,6 +60,8 @@ private var afPreviewJob: Job? = null
 private var afForm = AfForm()
 private var afReview: AfReviewDraft? = null
 private var afInvPoll: Job? = null
+// DEB-3613 (FR-10.8) — the paste field for the admin's own session. Typed text lives here only until it is sent; it is never drawn back from the server.
+private var afSession: AfSessionDraft? = null
 
 /** Called when the AI page is left or drawn again: the poll stops and an answer still in flight finds the page changed. */
 fun leaveFetchersTab() {
@@ -66,7 +69,7 @@ fun leaveFetchersTab() {
     afPoll?.cancel(); afPoll = null
     afPreviewJob?.cancel(); afPreviewJob = null
     afInvPoll?.cancel(); afInvPoll = null
-    afForm = AfForm(); afReview = null
+    afForm = AfForm(); afReview = null; afSession = null
     afPanel = null; afOverview = null; afSnapshot = ""
     afOpenFetcher = null; afOpenQueue = null
     afDrafts.clear(); afResuming.clear(); afPicked.clear(); afNote = null
@@ -93,7 +96,7 @@ fun renderFetchersTab(panel: Element, scope: CoroutineScope) {
 
 private fun editing(panel: Element): Boolean {
     val a = document.activeElement ?: return false
-    return panel.contains(a) && (a is HTMLInputElement || a is HTMLSelectElement)
+    return panel.contains(a) && (a is HTMLInputElement || a is HTMLSelectElement || a is HTMLTextAreaElement)
 }
 
 private suspend fun refresh(scope: CoroutineScope, gen: Int, force: Boolean) {
@@ -162,7 +165,7 @@ private fun paint() {
     val panel = afPanel ?: return
     val o = afOverview ?: return
     val note = afNote?.let { """<div class="af-prev" style="margin-bottom:12px"><span class="bi">!</span><span>${afEsc(it)}</span><span class="spacer"></span><span class="btn sm ghost" data-af-dismiss>OK</span></div>""" }.orEmpty()
-    panel.innerHTML = note + afPanelHtml(o, afOpenFetcher, afOpenQueue, afDrafts, afResuming, afPicked, nowSec(), AfClockJs, afForm, afReview)
+    panel.innerHTML = note + afPanelHtml(o, afOpenFetcher, afOpenQueue, afDrafts, afResuming, afPicked, nowSec(), AfClockJs, afForm, afReview, afSession)
 }
 
 private fun fetcherOf(el: Element): AfFetcher? {
@@ -196,6 +199,40 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             return@addEventListener
         }
         t.closest("[data-af-stop]")?.let { act(scope, gen) { AutofetchApi.stopInvestigation(afOverview?.investigation?.id.orEmpty()) }; return@addEventListener }
+        // ---- DEB-3613 (FR-3.6, FR-10.8): the admin's own session
+        t.closest("[data-af-usesession]")?.let {
+            val inv = afOverview?.investigation ?: return@let
+            afSession = AfSessionDraft(inv.id, inv.site.ifBlank { inv.host }); paint(); return@addEventListener
+        }
+        t.closest("[data-af-replacesession]")?.let { b ->
+            val site = b.getAttribute("data-af-replacesession") ?: return@let
+            afSession = AfSessionDraft(afSiteKey(site), site); paint(); return@addEventListener
+        }
+        t.closest("[data-af-session-cancel]")?.let { afSession = null; paint(); return@addEventListener }
+        t.closest("[data-af-forgetsession]")?.let { b ->
+            val site = b.getAttribute("data-af-forgetsession") ?: return@let
+            if (!confirmJs("Forget the session for $site? Fetchers that need it stop at their next run.")) return@addEventListener
+            act(scope, gen) { AutofetchApi.forgetSession(site).also { afSession = null } }; return@addEventListener
+        }
+        t.closest("[data-af-session-save]")?.let {
+            val d = afSession ?: return@let
+            if (d.text.isBlank()) return@let
+            val inv = afOverview?.investigation
+            afSession = d.copy(saving = true, error = null); paint()
+            scope.launch {
+                val saved = AutofetchApi.saveSession(d.site, d.text)
+                if (gen != afGen) return@launch
+                if (!saved.ok) { afSession = d.copy(saving = false, error = saved.error); paint(); return@launch }
+                afSession = null
+                // From the failed state the same investigation starts again with the same settings; from the site's line the session is simply kept.
+                if (d.key == inv?.id) {
+                    val again = AutofetchApi.investigate(inv.url, inv.tmdbId, inv.pageOnly, inv.fetcherId, inv.ignoreRobots)
+                    afNote = again.error
+                }
+                refresh(scope, gen, force = true)
+            }
+            return@addEventListener
+        }
         t.closest("[data-af-dismissinv]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(afOverview?.investigation?.id.orEmpty()).also { afForm = afForm.afterInvestigation() } }; return@addEventListener }
         t.closest("[data-rv]")?.let { host ->
             val d = afReview ?: return@let
@@ -330,6 +367,13 @@ private fun bind(panel: Element, scope: CoroutineScope) {
     // The open row's schedule, and the number in Keep: the form, sent only by Save.
     // The form's two fields are kept as typed; nothing repaints under the caret (the poll skips a panel being edited).
     panel.addEventListener("input", { ev ->
+        // The paste is kept as typed so a repaint cannot lose it; the button's state follows it without a repaint, so the caret stays.
+        (ev.target as? HTMLTextAreaElement)?.takeIf { it.hasAttribute("data-af-session-text") }?.let { ta ->
+            afSession = afSession?.copy(text = ta.value, error = null)
+            val ok = ta.value.isNotBlank()
+            ta.closest(".af-fail, .af-open")?.querySelector("[data-af-session-save]")?.classList?.let { if (ok) it.remove("af-dis") else it.add("af-dis") }
+            return@addEventListener
+        }
         val t = ev.target as? HTMLInputElement ?: return@addEventListener
         when {
             t.hasAttribute("data-af-url") -> afForm = afForm.copy(url = t.value)

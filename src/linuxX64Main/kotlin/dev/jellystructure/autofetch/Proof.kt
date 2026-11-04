@@ -55,11 +55,12 @@ object ListingFetcher {
 private suspend fun readYtDlp(recipe: Recipe, lane: SiteLane, tools: MediaTools?): ListingRead {
     if (tools == null) return ListingRead.Blocked(LaneOutcome.Failed(YtDlpTexts.NOT_INSTALLED))
     val url = recipe.source.url
-    val out = when (val g = lane.pacedProgram(url, listing = true) { tools.ytdlpListing(url) }) {
+    val cookies = lane.cookiesFile(RecipeValidator.lanes(recipe))
+    val out = when (val g = lane.pacedProgram(url, listing = true) { tools.ytdlpListing(url, cookies) }) {
         is Gated.Refused -> return ListingRead.Blocked(g.outcome)
         is Gated.Through -> g.value
     }
-    if (!out.ok) return ListingRead.Blocked(lane.programFailure(out.message, out.status))
+    if (!out.ok) return ListingRead.Blocked(lane.programFailure(out.message, out.status, out.needsLogin, cookies != null))
     lane.programSucceeded()
     val json = out.body.substring(out.body.indexOf('{').coerceAtLeast(0))
     val page0 = ListingReader.readJson(YtDlpListing.asJsonList(recipe.list), json, url, recipe.media.manifestField)
@@ -93,11 +94,12 @@ object ItemDates {
     suspend fun read(recipe: Recipe, item: ListedItem, lane: SiteLane, tools: MediaTools): DateRead {
         val link = item.link?.takeIf { it.isNotBlank() } ?: return DateRead.NotAsked
         if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return DateRead.NotAsked
-        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpDate(link) }) {
+        val cookies = lane.cookiesFile(RecipeValidator.lanes(recipe))
+        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpDate(link, cookies) }) {
             is Gated.Refused -> return DateRead.Unread(g.outcome)
             is Gated.Through -> g.value
         }
-        if (!out.ok) return DateRead.Unread(lane.programFailure(out.message, out.status))
+        if (!out.ok) return DateRead.Unread(lane.programFailure(out.message, out.status, out.needsLogin, cookies != null))
         lane.programSucceeded()
         return DateRead.Answered(YtDlpDate.parse(out.body))
     }
@@ -121,6 +123,8 @@ data class ProofResult(
     val blocked: LaneOutcome? = null,
     /** DEB-3592 (FR-10.7) — the lane refused a request of the proof for `robots.txt` (FR-2.2): what the failed state says the tick is for. */
     val robotsRefused: Boolean = false,
+    /** DEB-3613 (FR-3.6) — the proof's own media read was refused for want of a sign-in (`401`/`403`, or yt-dlp asking for a login) and no session was sent. */
+    val needsSignIn: Boolean = false,
     /** FR-4.3 — a `mapped` proposal: [numbered] holds only the rows that resolved to an item, and [whys] the model's reason for each, by item id. */
     val mapped: Boolean = false,
     val whys: Map<String, String> = emptyMap(),
@@ -157,7 +161,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             val probeFirst = if (recipe.media.kind == "ytdlp" && recipe.numbering.kind != "mapped") toDate.firstOrNull() else null
             if (probeFirst != null) {
                 val p = probeYtDlp(recipe, probeFirst, lane)
-                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked, robotsRefused = p.robotsRefused) }
+                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked, robotsRefused = p.robotsRefused, needsSignIn = p.signIn) }
                 early = p
                 if (p.dateRead) dated[itemKeyOf(probeFirst)] = p.date
                 toDate.remove(probeFirst)
@@ -198,7 +202,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         if (pageOnly && series?.name.isNullOrBlank()) return fail("the page gives the programme no name", items, numbered)
 
         val probe = early ?: probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
-        probe.failure?.let { return fail(it, items, numbered) }
+        probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn) }
         val facts = probe.facts!!
         if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
 
@@ -241,7 +245,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         }
         if (numbered.isEmpty()) return fail("the proposal maps no item of the listing to an episode TMDB has", items)
         val probe = probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
-        probe.failure?.let { return fail(it, items, numbered) }
+        probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn) }
         val facts = probe.facts!!
         if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
         return ProofResult(true, items = items, numbered = numbered, proven = false, probe = facts, mapped = true, whys = resolved.associate { (item, row) -> itemKeyOf(item) to row.why })
@@ -316,20 +320,24 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         /** The lane's refusal that failed this probe, when it was one that stops the run. */
         val blocked: LaneOutcome? = null,
         val robotsRefused: Boolean = false,
+        /** DEB-3613 (FR-3.6) — this probe's read was refused for want of a sign-in, with no session sent. */
+        val signIn: Boolean = false,
     )
 
     /** FR-6.3 — an item yt-dlp is to download: its link is on a recorded host and robots.txt allows it, and yt-dlp's own metadata shows a video format, not all DRM. */
     private suspend fun probeYtDlp(recipe: Recipe, item: ListedItem, lane: SiteLane): Probed {
         val link = item.link ?: return Probed(null, "the item has no link")
         if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return Probed(null, "the item's link is on ${Urls.host(link)}, which the recipe does not record")
-        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpInfo(link) }) {
+        val cookies = lane.cookiesFile(RecipeValidator.lanes(recipe))
+        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpInfo(link, cookies) }) {
             is Gated.Refused -> return Probed(null, describe(g.outcome), blocked = g.outcome.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff }, robotsRefused = g.outcome is LaneOutcome.Forbidden)
             is Gated.Through -> g.value
         }
         if (!out.ok) {
             if (out.drm) return Probed(null, RecipeRefusal.DRM)
-            val o = lane.programFailure(out.message, out.status)
-            return Probed(null, describe(o), blocked = o.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff })
+            val o = lane.programFailure(out.message, out.status, out.needsLogin, cookies != null)
+            val signIn = cookies == null && (out.needsLogin || out.status == 401 || out.status == 403)
+            return Probed(null, describe(o), blocked = o.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff }, signIn = signIn)
         }
         lane.programSucceeded()
         if (YtDlpInfo.allDrm(out.body)) return Probed(null, RecipeRefusal.DRM)
@@ -342,11 +350,12 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         return when (manifestUrl) {
             is ManifestResolver.Resolved -> {
                 val m = lane.page(manifestUrl.url, Expect.MANIFEST, player = true, hosts = RecipeValidator.lanes(recipe))
-                if (m !is LaneOutcome.Ok) return Probed(null, describe(m))
+                if (m !is LaneOutcome.Ok) return Probed(null, describe(m), blocked = m.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff },
+                    signIn = m is LaneOutcome.Failed && (m.status == 401 || m.status == 403))
                 if (Manifests.hasDrm(m.reply.body)) return Probed(null, RecipeRefusal.DRM)
-                Probed(tools.probeManifest(m.reply.finalUrl ?: manifestUrl.url, m.reply.body, recipe.media.kind), null)
+                Probed(tools.probeManifest(m.reply.finalUrl ?: manifestUrl.url, m.reply.body, recipe.media.kind, lane.ffmpegCookies(RecipeValidator.lanes(recipe))), null)
             }
-            is ManifestResolver.Skipped -> Probed(null, manifestUrl.reason)
+            is ManifestResolver.Skipped -> Probed(null, manifestUrl.reason, blocked = manifestUrl.blocked, signIn = manifestUrl.signIn)
         }
     }
 
@@ -369,7 +378,8 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
 object ManifestResolver {
     sealed class Result
     data class Resolved(val url: String, val value: String? = null) : Result()
-    data class Skipped(val reason: String) : Result()
+    /** [signIn]: the item's page answered `401`/`403` with no session sent (DEB-3613, FR-3.6). [blocked]: the lane's stop or back-off that ended it. */
+    data class Skipped(val reason: String, val signIn: Boolean = false, val blocked: LaneOutcome? = null) : Result()
 
     /**
      * [onValue] is told the value read from the item's page, so the caller stores it. The item's page is requested through [lane]
@@ -390,7 +400,7 @@ object ManifestResolver {
                 is LaneOutcome.Forbidden -> page.reason
                 is LaneOutcome.Failed -> page.reason
                 is LaneOutcome.Ok -> ""
-            })
+            }, signIn = page is LaneOutcome.Failed && (page.status == 401 || page.status == 403), blocked = page.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff })
             val ip = recipe.media.itemPage
             val raw = if (ip.pattern.isNotBlank()) Numbering.itemPageValue(ip.pattern, page.reply.body)
             else Html.parse(page.reply.body).selectFirst(ip.selector)?.let { n -> if (ip.attr.isBlank() || ip.attr == "text") n.text() else n.attr(ip.attr) }?.let { Numbering.validMediaValue(it) }

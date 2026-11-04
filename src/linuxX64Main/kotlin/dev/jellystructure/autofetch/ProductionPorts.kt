@@ -50,17 +50,49 @@ object FetchIdentity {
  * reply says where it ended ([HttpReply.finalUrl]); whether that host is trusted is the lane's call (FR-2.7), not the transport's.
  */
 object KtorTransport : Transport {
+    private val noRedirect by lazy { OutboundHttp.client.config { followRedirects = false } }
+    private const val MAX_HOPS = 5
+    private val REDIRECTS = setOf(301, 302, 303, 307, 308)
+
     override suspend fun get(url: String): HttpReply = OutboundHttp.withPermit {
         val r = OutboundHttp.client.get(url) {
             header(HttpHeaders.UserAgent, FetchIdentity.userAgent())
-            header(HttpHeaders.Accept, "text/html,application/json,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.5")
+            header(HttpHeaders.Accept, ACCEPT)
             timeout { requestTimeoutMillis = 30_000; connectTimeoutMillis = 10_000; socketTimeoutMillis = 30_000 }
         }
+        reply(r, r.request.url.toString())
+    }
+
+    /**
+     * DEB-3613 (FR-3.6) — a request that may carry the admin's session. Redirects are followed here, hop by hop, and [cookieFor] is asked about each
+     * hop's own address: the shared client would copy a `Cookie:` header to wherever a redirect points. A hop it gives no header gets none.
+     */
+    override suspend fun get(url: String, cookieFor: (String) -> String?): HttpReply = OutboundHttp.withPermit {
+        var at = url
+        var last: HttpReply? = null
+        for (hop in 0..MAX_HOPS) {
+            val cookie = cookieFor(at)
+            val r = noRedirect.get(at) {
+                header(HttpHeaders.UserAgent, FetchIdentity.userAgent())
+                header(HttpHeaders.Accept, ACCEPT)
+                if (cookie != null) header(HttpHeaders.Cookie, cookie)
+                timeout { requestTimeoutMillis = 30_000; connectTimeoutMillis = 10_000; socketTimeoutMillis = 30_000 }
+            }
+            val next = r.headers[HttpHeaders.Location]?.takeIf { r.status.value in REDIRECTS }?.let { Urls.resolve(at, it) }
+            if (next == null || hop == MAX_HOPS) { last = reply(r, at); break }
+            at = next
+        }
+        last!!
+    }
+
+    private const val ACCEPT = "text/html,application/json,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.5"
+
+    private suspend fun reply(r: io.ktor.client.statement.HttpResponse, finalUrl: String): HttpReply {
         val headers = HashMap<String, String>()
         r.headers.forEach { k, v -> headers[k] = v.joinToString(",") }
         val len = r.headers[HttpHeaders.ContentLength]?.toLongOrNull()
         val body = if (len != null && len > LaneRules.MAX_BODY_BYTES) "" else r.bodyAsText().take(LaneRules.MAX_BODY_BYTES)
-        HttpReply(r.status.value, headers, body, r.request.url.toString())
+        return HttpReply(r.status.value, headers, body, finalUrl)
     }
 }
 
@@ -68,22 +100,22 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
     private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
     private val ytdlp = ProductionYtDlp(shell)
 
-    override suspend fun ytdlpListing(url: String): YtDlpOutput = ytdlp.listing(url, FetchIdentity.userAgent())
-    override suspend fun ytdlpInfo(url: String): YtDlpOutput = ytdlp.info(url, FetchIdentity.userAgent())
-    override suspend fun ytdlpDate(url: String): YtDlpOutput = ytdlp.date(url, FetchIdentity.userAgent())
+    override suspend fun ytdlpListing(url: String, cookies: String?): YtDlpOutput = ytdlp.listing(url, FetchIdentity.userAgent(), cookies)
+    override suspend fun ytdlpInfo(url: String, cookies: String?): YtDlpOutput = ytdlp.info(url, FetchIdentity.userAgent(), cookies)
+    override suspend fun ytdlpDate(url: String, cookies: String?): YtDlpOutput = ytdlp.date(url, FetchIdentity.userAgent(), cookies)
     override suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult = ytdlp.download(d, stop)
     private val json = Json { ignoreUnknownKeys = true }
 
-    private suspend fun ffprobeStreams(url: String): JsonObject? {
-        val cmd = "ffprobe -v error -protocol_whitelist file,http,https,tcp,tls,crypto -show_format -show_streams -of json ${q(url)} 2>/dev/null"
+    private suspend fun ffprobeStreams(url: String, cookies: String? = null): JsonObject? {
+        val cmd = "ffprobe -v error -protocol_whitelist file,http,https,tcp,tls,crypto${FetchCommands.cookiesArg(cookies)} -show_format -show_streams -of json ${q(url)} 2>/dev/null"
         val out = shell.run(cmd)
         if (!out.ok) return null
         return runCatching { json.parseToJsonElement(out.output).jsonObject }.getOrNull()
     }
 
-    override suspend fun probeManifest(url: String, text: String, kind: String): ManifestFacts? {
+    override suspend fun probeManifest(url: String, text: String, kind: String, cookies: String?): ManifestFacts? {
         val target = Manifests.parseHlsMaster(text, url)?.best()?.url ?: url
-        val probe = ffprobeStreams(target) ?: return null
+        val probe = ffprobeStreams(target, cookies) ?: return null
         val streams = probe["streams"]?.jsonArray?.map { it.jsonObject }.orEmpty()
         val hasVideo = streams.any { it["codec_type"]?.jsonPrimitive?.contentOrNull == "video" }
         val dur = probe["format"]?.jsonObject?.get("duration")?.jsonPrimitive?.doubleOrNull
@@ -106,18 +138,18 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
                     val advertised = master.subtitleFor(best, spec.subtitleLang)?.uri
                     val sub = advertised?.takeIf { subtitleHasCues(it) }
                     if (advertised != null && sub == null) note = "no subtitle: the first chunk holds no cues"
-                    withoutSub = FetchCommands.hlsToMkv(best.url, audio, null, spec.outPath, spec.audioLang, spec.subtitleLang)
-                    withSub = if (sub != null) FetchCommands.hlsToMkv(best.url, audio, sub, spec.outPath, spec.audioLang, spec.subtitleLang) else withoutSub
+                    withoutSub = FetchCommands.hlsToMkv(best.url, audio, null, spec.outPath, spec.audioLang, spec.subtitleLang, spec.cookies)
+                    withSub = if (sub != null) FetchCommands.hlsToMkv(best.url, audio, sub, spec.outPath, spec.audioLang, spec.subtitleLang, spec.cookies) else withoutSub
                 } else {
-                    val streams = pickStreams(spec.manifestUrl) ?: return ToolResult(false, "ffprobe could not read the playlist")
-                    withSub = FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null)
+                    val streams = pickStreams(spec.manifestUrl, spec.cookies) ?: return ToolResult(false, "ffprobe could not read the playlist")
+                    withSub = FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null, spec.cookies)
                     withoutSub = null
                 }
             }
             "dash" -> {
-                val streams = pickStreams(spec.manifestUrl) ?: return ToolResult(false, "ffprobe could not read the manifest")
-                withSub = FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, streams.subtitle)
-                withoutSub = if (streams.subtitle != null) FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null) else null
+                val streams = pickStreams(spec.manifestUrl, spec.cookies) ?: return ToolResult(false, "ffprobe could not read the manifest")
+                withSub = FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, streams.subtitle, spec.cookies)
+                withoutSub = if (streams.subtitle != null) FetchCommands.streamsToMkv(spec.manifestUrl, streams.video, streams.audio, spec.outPath, spec.audioLang, spec.subtitleLang, null, spec.cookies) else null
             }
             else -> return ToolResult(false, "unsupported media kind ${spec.kind}")
         }
@@ -137,8 +169,8 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
     private data class Picked(val video: Int, val audio: Int?, val subtitle: Int?)
 
     /** DASH and plain media playlists: the highest video stream (pixels, then bitrate), the highest audio, the first subtitle. */
-    private suspend fun pickStreams(url: String): Picked? {
-        val probe = ffprobeStreams(url) ?: return null
+    private suspend fun pickStreams(url: String, cookies: String? = null): Picked? {
+        val probe = ffprobeStreams(url, cookies) ?: return null
         val streams = probe["streams"]?.jsonArray?.map { it.jsonObject }.orEmpty()
         fun idx(o: JsonObject) = o["index"]?.jsonPrimitive?.intOrNull ?: 0
         fun num(o: JsonObject, k: String) = o[k]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L

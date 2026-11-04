@@ -224,13 +224,24 @@ internal fun scheduleControl(schedule: String): String {
 }
 
 /** The open row: the stop band when the site is stopped, the recipe and its settings, and the last runs (FR-10.6). */
-internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, gate: AfGate = AfGate(true)): String {
+/**
+ * DEB-3613 (FR-3.6, FR-10.8) — the site line when the admin has given the site their own session: when it was saved, when its first cookie runs out,
+ * *Replace session* and *Forget session*. Opening *Replace session* shows the paste field in place ([sd] is open for this site).
+ */
+internal fun afSessionLine(site: String, s: AfSession, c: AfClock, sd: AfSessionDraft?): String {
+    val expires = s.expiresAt?.let { "runs out ${c.at(it)}" } ?: "no expiry given"
+    val open = sd != null && sd.key == afSiteKey(site)
+    return """<div class="af-why" style="margin-bottom:10px" data-af-session-line>Signed in with your session · saved ${afEsc(c.at(s.savedAt))} · ${afEsc(expires)}
+      ${if (open) "" else """<span class="btn sm ghost" data-af-replacesession="${afEsc(site)}">Replace session</span>"""}<span class="btn sm ghost" data-af-forgetsession="${afEsc(site)}">Forget session</span></div>${if (open) afSessionPaste(sd!!, investigateAgain = false) else ""}"""
+}
+
+internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, gate: AfGate = AfGate(true), session: AfSession? = null, sd: AfSessionDraft? = null): String {
     val dirty = d.schedule != f.schedule || d.retention != f.retention || d.ignoreRobots != f.ignoreRobots
     // DEB-2478 (FR-1.2, FR-4.4) — *Re-investigate page* writes a new recipe beside this one; shown disabled, with the reason, when a new investigation cannot start.
     val reinv = """<span class="btn sm ghost${if (gate.allowed && !f.siteStopped) "" else " af-dis"}" data-af-reinv>Re-investigate page</span>"""
     val reinvWhy = if (!gate.allowed && gate.reason != null) """<div class="af-why" style="margin-top:6px">${afEsc(gate.reason)}</div>""" else ""
     return """<tr class="af-det"><td colspan="7"><div class="af-open" data-fid="${afEsc(f.id)}">${if (f.siteStopped) afStopBand(f, c, resuming) else ""}
-      ${afWaitingBand(f, gate)}
+      ${if (session != null) afSessionLine(f.site, session, c, sd) else ""}${afWaitingBand(f, gate)}
       <div class="af-det-in"><div><div class="af-h">Recipe</div><pre class="af-script">${afRecipe(f)}</pre>
         <div class="af-cfg">${scheduleControl(d.schedule)}${afKeepControl(d.retention, d.preview)}
           <div class="field">${afRobotsTick("data-af-robots-row", d.ignoreRobots, false)}</div>
@@ -254,14 +265,14 @@ internal fun afRow(f: AfFetcher, open: Boolean, enabledGlobally: Boolean, c: AfC
 }
 
 /** The card of fetchers. [drafts] holds the open row's unsaved form; [now] is the server's clock reading for the *next check* line. */
-internal fun afFetchersCard(o: AfOverview, openId: String?, drafts: Map<String, AfDraft>, resuming: Set<String>, now: Long, c: AfClock): String {
+internal fun afFetchersCard(o: AfOverview, openId: String?, drafts: Map<String, AfDraft>, resuming: Set<String>, now: Long, c: AfClock, sd: AfSessionDraft? = null): String {
     val next = o.fetchers.filter { it.enabled && !it.siteStopped }.mapNotNull { it.nextRunAt }.minOrNull()
     val stopped = o.sites.filter { it.stopped }.joinToString(" · ") { "${it.site} is stopped" }
     val header = listOfNotNull(next?.let { if (it <= now) "next check due" else "next check in ${c.until(it)}" }, stopped.ifBlank { null }).joinToString(" · ")
     val body = if (o.fetchers.isEmpty()) """<tr><td colspan="7"><div class="af-empty"><b>No auto-fetchers yet</b>A fetcher is saved with a recipe and a schedule; saved ones are listed here.</div></td></tr>"""
     else o.fetchers.joinToString("") { f ->
         val open = f.id == openId
-        afRow(f, open, o.enabled, c) + if (open) afOpenRow(f, drafts[f.id] ?: AfDraft(f.schedule, f.retention), c, f.site in resuming, o.investigate) else ""
+        afRow(f, open, o.enabled, c) + if (open) afOpenRow(f, drafts[f.id] ?: AfDraft(f.schedule, f.retention), c, f.site in resuming, o.investigate, o.sites.firstOrNull { it.site == f.site }?.session, sd) else ""
     }
     return """<div class="card" style="margin-top:16px;"><div class="row center"><h3 style="margin:0;font-size:1.1rem;">Auto-fetchers</h3>
       <span class="badge" style="margin-left:8px;">${o.fetchers.size}</span><span class="spacer"></span>
@@ -348,6 +359,6 @@ internal fun afQueueCard(o: AfOverview, openId: Long?, picked: Map<Long, Int>, c
 /** The whole panel. */
 internal fun afPanelHtml(
     o: AfOverview, openFetcher: String?, openQueue: Long?, drafts: Map<String, AfDraft>, resuming: Set<String>, picked: Map<Long, Int>, now: Long, c: AfClock,
-    form: AfForm = AfForm(), review: AfReviewDraft? = null,
+    form: AfForm = AfForm(), review: AfReviewDraft? = null, sessionDraft: AfSessionDraft? = null,
 ): String =
-    (if (o.enabled) "" else afOffNotice()) + afQueueCard(o, openQueue, picked, c) + (if (o.enabled) """<div style="margin-top:16px">${afNewCard(o, form, review)}</div>""" else "") + afFetchersCard(o, openFetcher, drafts, resuming, now, c)
+    (if (o.enabled) "" else afOffNotice()) + afQueueCard(o, openQueue, picked, c) + (if (o.enabled) """<div style="margin-top:16px">${afNewCard(o, form, review, sessionDraft)}</div>""" else "") + afFetchersCard(o, openFetcher, drafts, resuming, now, c, sessionDraft)

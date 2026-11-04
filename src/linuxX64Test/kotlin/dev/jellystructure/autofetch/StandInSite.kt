@@ -71,7 +71,30 @@ high.m3u8
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="fo",LANGUAGE="fo",DEFAULT=YES,URI="audio.m3u8"
 """
 
-    override suspend fun get(url: String): HttpReply {
+    /** DEB-3613 (FR-3.6) — when set (`s=ok`), the media host answers `403` to a request that does not carry that cookie. */
+    var mediaNeedsCookie: String? = null
+    /** Every request with the `Cookie:` header it carried (null = none), in order. */
+    val cookiesSeen = ArrayList<Pair<String, String?>>()
+    /** DEB-3613 — a media host that answers `403` whatever is sent (the session has run out). */
+    var mediaRefusesAll = false
+
+    private fun gated(url: String, cookie: String?): Boolean {
+        if (Urls.host(url) != "media.example.fo") return false
+        if (mediaRefusesAll) return true
+        val need = mediaNeedsCookie ?: return false
+        return cookie?.contains(need) != true
+    }
+
+    override suspend fun get(url: String): HttpReply = get(url) { null }
+
+    override suspend fun get(url: String, cookieFor: (String) -> String?): HttpReply {
+        val cookie = cookieFor(url)
+        cookiesSeen += url to cookie
+        if (gated(url, cookie)) { requests += url to clock.ms; return HttpReply(403, emptyMap(), "") }
+        return serve(url)
+    }
+
+    private fun serve(url: String): HttpReply {
         requests += url to clock.ms
         val path = Urls.path(url)
         return when {
@@ -116,7 +139,12 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     val ytdlpInfos = ArrayList<String>()
     val ytdlpDownloads = ArrayList<YtDlpDownload>()
 
-    override suspend fun ytdlpListing(url: String): YtDlpOutput {
+    /** DEB-3613 — the `cookies.txt` each yt-dlp read and download was handed (null = none), in order. */
+    val ytdlpCookies = ArrayList<String?>()
+    val probeCookies = ArrayList<String?>()
+
+    override suspend fun ytdlpListing(url: String, cookies: String?): YtDlpOutput {
+        ytdlpCookies += cookies
         ytdlpListings += url
         return ytdlpListingOut ?: YtDlpOutput(true, body = """{"_type":"playlist","entries":[""" + ytdlpEntries.joinToString(",") { e ->
             """{"id":"${e[0]}","url":"${e[1]}","title":"${e[2]}","upload_date":${if (e[3].isBlank()) "null" else "\"${e[3]}\""}}"""
@@ -127,13 +155,15 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     var ytdlpDateOf: (String) -> String? = { null }
     val ytdlpDateReads = ArrayList<String>()
 
-    override suspend fun ytdlpDate(url: String): YtDlpOutput {
+    override suspend fun ytdlpDate(url: String, cookies: String?): YtDlpOutput {
+        ytdlpCookies += cookies
         ytdlpDateReads += url
         val d = ytdlpDateOf(url)
         return YtDlpOutput(true, body = if (d == null) "{}" else """{"upload_date":"$d"}""")
     }
 
-    override suspend fun ytdlpInfo(url: String): YtDlpOutput {
+    override suspend fun ytdlpInfo(url: String, cookies: String?): YtDlpOutput {
+        ytdlpCookies += cookies
         ytdlpInfos += url
         return ytdlpInfoOut ?: YtDlpOutput(true, body = """{"id":"x","duration":$duration,"formats":[{"vcodec":"none","acodec":"mp4a"},{"vcodec":"avc1","acodec":"none"}]}""" +
             (ytdlpDateOf(url)?.let { "\n" + """{"upload_date":"$it"}""" } ?: ""))
@@ -141,6 +171,7 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
 
     override suspend fun ytdlpDownload(d: YtDlpDownload, stop: () -> Boolean): ToolResult {
         ytdlpDownloads += d
+        ytdlpCookies += d.cookies
         downloads += d.link to clock.ms
         clock.ms += 5_000
         ytdlpFail?.let { return it }
@@ -149,7 +180,7 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
         return ToolResult(true, downloadNote)
     }
 
-    override suspend fun probeManifest(url: String, text: String, kind: String): ManifestFacts { probed += url; return ManifestFacts(true, duration) }
+    override suspend fun probeManifest(url: String, text: String, kind: String, cookies: String?): ManifestFacts { probed += url; probeCookies += cookies; return ManifestFacts(true, duration) }
 
     override suspend fun download(spec: DownloadSpec, stop: () -> Boolean): ToolResult {
         if (++active > 1) overlapping = true
@@ -234,7 +265,7 @@ class Harness {
     init {
         platform.posix.system("rm -rf '$dir'; mkdir -p '$lib'")
         store = AutofetchStore(createDatabase("$dir/test.db"))
-        lanes = SiteLanes(store, site, clock)
+        lanes = SiteLanes(store, site, clock, store)
         engine = AutofetchEngine(store, lanes, tools, world)
         service = AutofetchService(store, engine, lanes, tools, world) { "f${++ids}" }
     }

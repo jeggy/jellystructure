@@ -10,6 +10,7 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -35,6 +36,10 @@ private data class SaveInvestigationBody(
     val name: String? = null, val libraryPath: String? = null, val schedule: String? = null, val retention: AfRetention? = null, val runFirst: Boolean = true,
     val accept: List<String> = emptyList(),
 )
+
+/** DEB-3613 (FR-3.6) — the paste, sent once and never kept: a `cookies.txt` or the value of a `Cookie:` header. */
+@Serializable
+private data class SessionBody(val cookies: String)
 
 @Serializable
 private data class NumberBody(val season: Int, val episode: Int)
@@ -78,6 +83,12 @@ object AutofetchApi {
     suspend fun investigate(url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String? = null, ignoreRobots: Boolean = false): Outcome = outcome {
         httpClient.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(InvestigateBody(url, tmdbId, pageOnly, fetcherId, ignoreRobots)) }
     }
+
+    /** DEB-3613 (FR-3.6, FR-12) — saves the admin's own session for [site]; a refusal comes back in the server's words. */
+    suspend fun saveSession(site: String, cookies: String): Outcome = outcome {
+        httpClient.put("/api/autofetch/sites/${afUrlEncode(site)}/session") { contentType(ContentType.Application.Json); setBody(SessionBody(cookies)) }
+    }
+    suspend fun forgetSession(site: String): Outcome = outcome { httpClient.delete("/api/autofetch/sites/${afUrlEncode(site)}/session") }
 
     suspend fun stopInvestigation(id: String): Outcome = outcome { httpClient.post("/api/autofetch/investigate/$id/stop") }
     suspend fun discardInvestigation(id: String): Outcome = outcome { httpClient.delete("/api/autofetch/investigate/$id") }

@@ -106,6 +106,10 @@ data class InvestigationView(
     val robotsRefused: Boolean = false,
     /** The drawn *Not a series* state: the page could not be set up as a series. */
     val notASeries: Boolean = false,
+    /** DEB-3613 (FR-3.6, FR-10.8) — a `failed` investigation that ended because the site plays only to a signed-in viewer: the screen then offers *Give up* and *Use my session*. The server decides; the screen never reads the reason's words. */
+    val needsSignIn: Boolean = false,
+    /** DEB-3613 (FR-3.6) — the site (FR-2's lane key) a session would be saved for. */
+    val site: String = "",
     /** The month's limit stopped it. */
     val limitReached: Boolean = false,
     val turns: Int = 0,
@@ -167,6 +171,8 @@ class Investigator(
     /** Everything one run keeps between turns. */
     private class Run(val id: String, val url: String, val site: String, val tmdbId: Int?, val pageOnly: Boolean, val fetcherId: String?, val ignoreRobots: Boolean, val startedAt: Long) {
         var requests = 0
+        /** DEB-3613 (FR-3.6) — a session is stored for the site: the model is told so, in one line, and never the session. */
+        var sessionSet = false
         /** A lane refusal for `robots.txt` is what the investigation is ending on (FR-10.7). */
         var robotsRefused = false
         var turns = 0
@@ -190,30 +196,33 @@ class Investigator(
     suspend fun run(id: String, url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String?, ignoreRobots: Boolean = false, publish: (InvestigationView) -> Unit): Outcome {
         val site = Urls.siteOf(url).orEmpty()
         val r = Run(id, url, site, tmdbId, pageOnly, fetcherId, ignoreRobots, world.nowSec())
-        fun view(state: String, reason: String? = null, notASeries: Boolean = false, limit: Boolean = false, review: ReviewView? = null, report: ReportView? = null) = InvestigationView(
+        fun view(state: String, reason: String? = null, notASeries: Boolean = false, limit: Boolean = false, review: ReviewView? = null, report: ReportView? = null, needsSignIn: Boolean = false) = InvestigationView(
             id = id, state = state, url = url, host = Urls.host(url).orEmpty(), tmdbId = tmdbId, pageOnly = pageOnly, fetcherId = fetcherId, ignoreRobots = ignoreRobots,
             steps = r.steps.toList(), reason = reason, robotsRefused = state == "failed" && r.robotsRefused && !ignoreRobots, notASeries = notASeries, limitReached = limit, turns = r.turns, requests = r.requests,
-            spentMicroUsd = r.spent, startedAt = r.startedAt, review = review, report = report,
+            spentMicroUsd = r.spent, startedAt = r.startedAt, review = review, report = report, needsSignIn = needsSignIn, site = r.site,
         )
         fun pub() = publish(view("running"))
-        fun fail(reason: String, stepKey: String? = null, notASeries: Boolean = false, limit: Boolean = false, modelWords: Boolean = false): Outcome {
+        fun fail(reason: String, stepKey: String? = null, notASeries: Boolean = false, limit: Boolean = false, modelWords: Boolean = false, signIn: Int? = null): Outcome {
             if (stepKey != null) failAt(r, stepKey)
-            val ended = if (limit) "limit reached" else if (notASeries) "not a series" else "failed"
-            ai.noteRun("${if (limit) "stopped at the limit" else if (notASeries) "not a series" else "failed"} · ${reason.take(140)} · ${AiPricing.usd(r.spent)}")
+            val ended = if (limit) "limit reached" else if (signIn != null) "needs a sign-in" else if (notASeries) "not a series" else "failed"
+            // FR-3.6 — the run line and the report carry the host-free sentence; the view carries the fixed sentence with the site and count filled in.
+            val plain = if (signIn != null) SignIn.plain(signIn) else reason
+            ai.noteRun("${if (limit) "stopped at the limit" else if (signIn != null) "needs a sign-in" else if (notASeries) "not a series" else "failed"} · ${plain.take(140)} · ${AiPricing.usd(r.spent)}")
             val report = BugReport.build(ReportInput(
-                id = id, host = Urls.host(url).orEmpty(), pageOnly = pageOnly, ended = ended, reason = reason, reasonIsModelWords = modelWords,
+                id = id, host = Urls.host(url).orEmpty(), pageOnly = pageOnly, ended = ended, reason = plain, reasonIsModelWords = modelWords,
                 model = r.model, effort = r.effort, turns = r.turns, requests = r.requests, spentMicroUsd = r.spent, steps = r.steps.toList(),
                 recipe = r.recipe, proof = r.proof, refusals = r.refusals.toList(), ignoreRobots = ignoreRobots,
             ))
-            return Outcome(view("failed", reason, notASeries, limit, report = report), null)
+            return Outcome(view("failed", reason, notASeries, limit, report = report, needsSignIn = signIn != null), null)
         }
 
         val settings = ai.settings() ?: return fail(ai.offReason())
         r.model = settings.model; r.effort = settings.effort
+        r.sessionSet = lanes.forSite(site).hasSession()
         startStep(r, STEP_PAGE); pub()
         val system = systemPrompt(pageOnly)
         val messages = ArrayList<JsonObject>()
-        messages += userText(openingMessage(url, tmdbId, pageOnly))
+        messages += userText(openingMessage(url, tmdbId, pageOnly, r.sessionSet))
         var repairs = 0
 
         while (true) {
@@ -270,6 +279,15 @@ class Investigator(
                     }
                     if (answer.verdict == "not_a_series") refused(r, answer.reason.ifBlank { "the model could not identify the page as a series" }, text, "not_a_series")
                     if (answer.verdict == "not_a_series") return fail(answer.reason.ifBlank { "the model could not identify the page as a series" }, STEP_SERIES, notASeries = true, modelWords = true)
+                    if (answer.verdict == "needs_sign_in") {
+                        // FR-3.6 — accepted only after the listing yields at least two items, counted by this server from the recipe the model gave. The words are the server's.
+                        val listed = signInListing(r, settings, answer.recipe)
+                        refused(r, "the model answered needs_sign_in${if (listed != null && listed >= 2) "" else " without a listing of at least two items"}", text, "needs_sign_in")
+                        if (listed != null && listed >= 2) return fail(SignIn.sentence(r.site, listed), STEP_VIDEOS, signIn = listed)
+                        if (++repairs > MAX_REPAIRS) return fail("the model answered needs_sign_in without a recipe whose listing yields two items", STEP_SERIES, notASeries = true)
+                        messages += userText("needs_sign_in is accepted only when your recipe's listing yields at least two items, which the engine reads itself. Give the recipe for the listing with needs_sign_in, or answer `series` with a recipe that works, or `not_a_series`.")
+                        continue
+                    }
                     val mr = answer.recipe
                     if (mr == null) {
                         refused(r, "the model gave no recipe", text)
@@ -284,6 +302,7 @@ class Investigator(
                             ai.noteRun("found · ${proved.held.name} · ${proved.held.proof.items.size} episodes · ${AiPricing.usd(r.spent)}")
                             return Outcome(view("review", review = proved.review), proved.held)
                         }
+                        is Proved.SignIn -> { refused(r, "the proof's own media read was refused for want of a sign-in", text); return fail(SignIn.sentence(r.site, proved.count), STEP_VIDEOS, signIn = proved.count) }
                         is Proved.End -> { refused(r, proved.reason, text); return fail(proved.reason, proved.step, notASeries = proved.notASeries) }
                         is Proved.Retry -> {
                             refused(r, proved.reason, text)
@@ -303,6 +322,18 @@ class Investigator(
                 else -> return fail("the model stopped with '${reply.stopReason}'", runningStep(r))
             }
         }
+    }
+
+    /**
+     * DEB-3613 (FR-3.6) — how many items the recipe the model gave for a `needs_sign_in` answer lists, read by this server in the engine's signed-in view
+     * (the model's own `fetch` sends no session). Null when there is no usable recipe or the listing could not be read.
+     */
+    private suspend fun signInListing(r: Run, settings: InvestigationSettings, mr: MRecipe?): Int? {
+        mr ?: return null
+        val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).copy(retention = RetentionSpec("all"))
+        if (RecipeValidator.validate(recipe, r.pageOnly).isNotEmpty()) return null
+        val lane = lanes.forSite(r.site, r.ignoreRobots, signedIn = true, proving = true)
+        return (ListingFetcher.read(recipe, lane, tools) as? ListingRead.Read)?.items?.size
     }
 
     /**
@@ -329,6 +360,8 @@ class Investigator(
         class Ok(val held: Held, val review: ReviewView) : Proved()
         /** The model may correct this. */
         class Retry(val reason: String, val step: String?, val notASeries: Boolean = false) : Proved()
+        /** DEB-3613 (FR-3.6) — the site plays only to a signed-in viewer; [count] is what the listing yielded. */
+        class SignIn(val count: Int) : Proved()
         /** Nothing the model can do about it. */
         class End(val reason: String, val step: String?, val notASeries: Boolean = false) : Proved()
     }
@@ -336,9 +369,11 @@ class Investigator(
     private suspend fun prove(r: Run, settings: InvestigationSettings, mr: MRecipe, examples: List<Example>, mapping: List<MapRow>): Proved {
         val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).let { it.copy(retention = if (r.pageOnly) RetentionSpec("newest", 12, true) else RetentionSpec("all")) }
         RecipeValidator.validate(recipe, r.pageOnly).firstOrNull()?.let { return Proved.Retry(it, STEP_SCRIPT) }
-        val lane = lanes.forSite(r.site, r.ignoreRobots)
+        val lane = lanes.forSite(r.site, r.ignoreRobots, signedIn = true, proving = true)
         val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping).also { r.proof = it; r.robotsRefused = it.robotsRefused }
         if (!pr.ok) {
+            // FR-3.6 — the proof's own media read was refused for want of a sign-in: the server ends it, whatever the model said. The listing had at least two items.
+            if (pr.needsSignIn && pr.items.size >= 2) return Proved.SignIn(pr.items.size)
             pr.blocked?.let { return Proved.End(pr.failure ?: "the site refused the recipe's request", STEP_PAGE) }
             val why = pr.failure ?: "the recipe failed its proof"
             if (why == RecipeRefusal.DRM) return Proved.End(why, STEP_VIDEOS)
@@ -476,7 +511,8 @@ class Investigator(
         if (Urls.siteOf(url) != r.site) return ToolAnswer("fetch is refused: $host is not ${r.site}. This tool reads the page's own site only.", true)
         budget(r)?.let { return it }
         r.requests++
-        val lane = lanes.forSite(r.site, r.ignoreRobots)
+        // FR-3.6 — the model's view of the lane sends no session: a signed-in page can carry the account's name or e-mail, and never goes to Anthropic.
+        val lane = lanes.forSite(r.site, r.ignoreRobots, proving = true)
         return when (val o = lane.page(url, Expect.ANY, hosts = setOf(host))) {
             is LaneOutcome.Ok -> {
                 val body = o.reply.body
@@ -500,7 +536,7 @@ class Investigator(
         if (Urls.siteOf(url) != r.site && host !in r.seenHosts) return ToolAnswer("probe is refused: $host appears nowhere in what was read from ${r.site}.", true)
         budget(r)?.let { return it }
         r.requests++
-        val lane = lanes.forSite(r.site, r.ignoreRobots)
+        val lane = lanes.forSite(r.site, r.ignoreRobots, proving = true)
         return when (val o = lane.page(url, Expect.MANIFEST, player = true, hosts = r.seenHosts + host + r.site)) {
             is LaneOutcome.Ok -> {
                 if (Manifests.hasDrm(o.reply.body)) { r.drm = true; return ToolAnswer(RecipeRefusal.DRM, true) }
@@ -592,8 +628,10 @@ class Investigator(
         if (!pageOnly) add(tool("tmdb_series", "The TMDB series this fetcher was given: its name, and every season's episode numbers, names and air dates.", mapOf("id" to "the TMDB id")))
     }
 
-    private fun openingMessage(url: String, tmdbId: Int?, pageOnly: Boolean): String = buildString {
+    private fun openingMessage(url: String, tmdbId: Int?, pageOnly: Boolean, sessionSet: Boolean): String = buildString {
         append("Series page: $url\n")
+        // FR-5.2 (DEB-3613) — one line, never the session.
+        if (sessionSet) append("The admin has given the engine a signed-in session for this site. The engine uses it for its own reads and for yt-dlp; your fetch and probe do not send it, so a page may look signed out to you.\n")
         if (pageOnly) append("This is a PAGE-ONLY fetcher: the programme is not on TMDB and there is no tmdb_series tool. You must find where the page gives the programme's own name, description and image, and give them as the recipe's `series` block (name, description, image).\n")
         else append("TMDB id: $tmdbId (use tmdb_series to see the series' seasons and episodes).\n")
         append("Work out the recipe, then answer in the required form.")
@@ -621,6 +659,8 @@ Recipe vocabulary:
 - audio_language and subtitle_language: ISO 639-2 codes (such as `fao`, `dan`, `eng`), or blank.
 - Regexes: a named group is written `(?<value>…)`, never Python's `(?P<value>…)`; at most 200 characters; no nested quantifiers, no quantified alternation, no back-references, no lookaround.
 ${if (pageOnly) "- series: where the PROGRAMME page gives its own name, description and image (name required): the same one-string form (`h1`, `p.about`, `img.poster@src`), read on the series page." else ""}
+
+If the listing IS a series but its videos play only to a signed-in viewer (the player says to log in, or the media host answers 401/403), answer `needs_sign_in` WITH the recipe that reads the listing; never `not_a_series` for that. The engine counts the listing itself and words the result.
 
 Rules: fetch is the page's own site only and the budget is $MAX_TOOL_REQUESTS reads; you have at most $MAX_TURNS turns in all, so do not wander. Titles and descriptions are the page's own words and are never rewritten. Answer in English in `reason`.
 """.trim()
@@ -652,4 +692,13 @@ object PageText {
     }
 
     private fun trim(s: String, limit: Int) = if (s.length <= limit) s else s.take(limit) + "\n[cut at ${limit / 1000} kB]"
+}
+
+/** DEB-3613 (FR-3.6) — the words of the *Needs a sign-in* ending: fixed text, the site and the count filled in. The model's own words are never shown. */
+object SignIn {
+    fun sentence(site: String, count: Int): String =
+        "It didn't work: $site lists $count episodes but plays them only to someone signed in. Auto-fetch cannot sign in by itself."
+
+    /** The same sentence without the site, for the run line and the bug report (FR-10.4: the report names the host once, in its head). */
+    fun plain(count: Int): String = "the site lists $count episodes but plays them only to someone signed in"
 }

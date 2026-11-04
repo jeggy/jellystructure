@@ -37,6 +37,14 @@ CREATE TABLE autofetch_site (
     ever_ok INTEGER NOT NULL DEFAULT 0
 );
 
+-- DEB-3613 (FR-3.6) — 98.sqm's CREATE TABLE. Its own table: sitePut replaces the whole autofetch_site row, and that must never lose a session.
+CREATE TABLE autofetch_site_session (
+    site TEXT NOT NULL PRIMARY KEY,
+    cookies TEXT NOT NULL,
+    saved_at INTEGER NOT NULL,
+    expires_at INTEGER
+);
+
 CREATE TABLE autofetch_item (
     fetcher_id TEXT NOT NULL,
     item_id TEXT NOT NULL,
@@ -145,6 +153,18 @@ SELECT * FROM autofetch_site;
 sitePut:
 INSERT OR REPLACE INTO autofetch_site(site, stopped_reason, stopped_at, robots_text, robots_fetched_at, backoff_until, backoff_level, rate_limited_day, rate_limited_count, ever_ok)
 VALUES (:site, :stopped_reason, :stopped_at, :robots_text, :robots_fetched_at, :backoff_until, :backoff_level, :rate_limited_day, :rate_limited_count, :ever_ok);
+
+sessionGet:
+SELECT * FROM autofetch_site_session WHERE site = :site;
+
+sessionPut:
+INSERT OR REPLACE INTO autofetch_site_session(site, cookies, saved_at, expires_at) VALUES (:site, :cookies, :saved_at, :expires_at);
+
+sessionSites:
+SELECT site FROM autofetch_site_session ORDER BY site;
+
+sessionDelete:
+DELETE FROM autofetch_site_session WHERE site = :site;
 
 itemsByFetcher:
 SELECT * FROM autofetch_item WHERE fetcher_id = :fetcher_id ORDER BY list_order, item_id;
