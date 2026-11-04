@@ -19,7 +19,7 @@ import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 
 @Serializable
-private data class SettingsBody(val retention: AfRetention? = null, val schedule: String? = null, val enabled: Boolean? = null)
+private data class SettingsBody(val retention: AfRetention? = null, val schedule: String? = null, val enabled: Boolean? = null, val ignoreRobots: Boolean? = null)
 
 @Serializable
 private data class PreviewBody(val retention: AfRetention)
@@ -28,7 +28,7 @@ private data class PreviewBody(val retention: AfRetention)
 private data class MomentBody(val at: Int)
 
 @Serializable
-private data class InvestigateBody(val url: String = "", val tmdbId: Int? = null, val pageOnly: Boolean = false, val fetcherId: String? = null)
+private data class InvestigateBody(val url: String = "", val tmdbId: Int? = null, val pageOnly: Boolean = false, val fetcherId: String? = null, val ignoreRobots: Boolean = false)
 
 @Serializable
 private data class SaveInvestigationBody(
@@ -54,8 +54,8 @@ object AutofetchApi {
     suspend fun delete(id: String): Outcome = outcome { httpClient.delete("/api/autofetch/$id") }
     suspend fun submit(queueId: Long): Outcome = outcome { httpClient.post("/api/autofetch/queue/$queueId/submitted") }
 
-    suspend fun settings(id: String, retention: AfRetention?, schedule: String?, enabled: Boolean?): Outcome = outcome {
-        httpClient.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody(SettingsBody(retention, schedule, enabled)) }
+    suspend fun settings(id: String, retention: AfRetention?, schedule: String?, enabled: Boolean?, ignoreRobots: Boolean? = null): Outcome = outcome {
+        httpClient.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody(SettingsBody(retention, schedule, enabled, ignoreRobots)) }
     }
 
     suspend fun cutStill(queueId: Long, n: Int, at: Int): Outcome = outcome {
@@ -75,8 +75,8 @@ object AutofetchApi {
         httpClient.get("/api/autofetch/investigation").takeIf { it.status == HttpStatusCode.Accepted || it.status == HttpStatusCode.OK }?.body<AfInvestigation>()
     }.getOrNull()
 
-    suspend fun investigate(url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String? = null): Outcome = outcome {
-        httpClient.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(InvestigateBody(url, tmdbId, pageOnly, fetcherId)) }
+    suspend fun investigate(url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String? = null, ignoreRobots: Boolean = false): Outcome = outcome {
+        httpClient.post("/api/autofetch/investigate") { contentType(ContentType.Application.Json); setBody(InvestigateBody(url, tmdbId, pageOnly, fetcherId, ignoreRobots)) }
     }
 
     suspend fun stopInvestigation(id: String): Outcome = outcome { httpClient.post("/api/autofetch/investigate/$id/stop") }

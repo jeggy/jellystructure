@@ -19,7 +19,8 @@ CREATE TABLE autofetch_fetcher (
     state_reason TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     last_run_at INTEGER,
-    last_list_ok_at INTEGER
+    last_list_ok_at INTEGER,
+    ignore_robots INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX autofetch_fetcher_by_site ON autofetch_fetcher(site);
 
@@ -111,8 +112,11 @@ fetcherById:
 SELECT * FROM autofetch_fetcher WHERE id = :id;
 
 fetcherInsert:
-INSERT INTO autofetch_fetcher(id, name, page_url, site, tmdb_id, page_only, library_path, series_path, recipe_json, proven, series_description, series_image, retention, schedule, enabled, created_at)
-VALUES (:id, :name, :page_url, :site, :tmdb_id, :page_only, :library_path, :series_path, :recipe_json, :proven, :series_description, :series_image, :retention, :schedule, :enabled, :created_at);
+INSERT INTO autofetch_fetcher(id, name, page_url, site, tmdb_id, page_only, library_path, series_path, recipe_json, proven, series_description, series_image, retention, schedule, enabled, created_at, ignore_robots)
+VALUES (:id, :name, :page_url, :site, :tmdb_id, :page_only, :library_path, :series_path, :recipe_json, :proven, :series_description, :series_image, :retention, :schedule, :enabled, :created_at, :ignore_robots);
+
+fetcherSetIgnoreRobots:
+UPDATE autofetch_fetcher SET ignore_robots = :ignore_robots WHERE id = :id;
 
 fetcherUpdateSettings:
 UPDATE autofetch_fetcher SET retention = :retention, schedule = :schedule, enabled = :enabled WHERE id = :id;

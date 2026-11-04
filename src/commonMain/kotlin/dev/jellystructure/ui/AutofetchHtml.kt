@@ -22,7 +22,7 @@ interface AfClock {
 }
 
 /** What the admin has typed into one open row and not saved yet — the form, not the server's state. */
-data class AfDraft(val schedule: String, val retention: AfRetention, val preview: AfPreview? = null, val saving: Boolean = false)
+data class AfDraft(val schedule: String, val retention: AfRetention, val preview: AfPreview? = null, val saving: Boolean = false, val ignoreRobots: Boolean = false)
 
 internal fun afEsc(s: String): String = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
@@ -72,6 +72,17 @@ internal fun afScheduleOf(kind: String, day: Int, time: String): String = when (
 
 /** The list row's note under the schedule (FR-10.6): *keeps newest 12*. */
 internal fun afKeepsNote(r: AfRetention): String? = if (r.newest) "keeps newest ${r.keep}" else null
+
+/** The list row's notes under the schedule: the retention note, then *ignores robots.txt* when the fetcher's tick is on (FR-10.7). */
+internal fun afRowNote(f: AfFetcher): String? = listOfNotNull(afKeepsNote(f.retention), if (f.ignoreRobots) "ignores robots.txt" else null).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+
+/** The tick's label and its hint (FR-10.7), on the form and on the fetcher's open row. */
+internal const val AF_ROBOTS_LABEL = "Ignore this site's robots.txt"
+internal const val AF_ROBOTS_HINT = "Reads pages this site asks crawlers to leave alone. Requests stay paced and say who is asking. If the site blocks them, every fetcher on this site stops."
+
+/** FR-10.7 — the tick; [attr] says where it sits (`data-af-robots` on the form, `data-af-robots-row` on the open row). Ticked, its hint shows. */
+internal fun afRobotsTick(attr: String, on: Boolean, disabled: Boolean): String =
+    """<label class="af-opt${if (disabled) " af-dis" else ""}" $attr><span class="af-tick${if (on) " on" else ""}">✓</span><span>${afEsc(AF_ROBOTS_LABEL)}</span></label>${if (on) """<span class="hint">${afEsc(AF_ROBOTS_HINT)}</span>""" else ""}"""
 
 /** The hint under Keep (FR-10.6): the cost in plain words, from the server's count of what the page lists. */
 internal fun afKeepHint(r: AfRetention, p: AfPreview?): String = when {
@@ -214,7 +225,7 @@ internal fun scheduleControl(schedule: String): String {
 
 /** The open row: the stop band when the site is stopped, the recipe and its settings, and the last runs (FR-10.6). */
 internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, gate: AfGate = AfGate(true)): String {
-    val dirty = d.schedule != f.schedule || d.retention != f.retention
+    val dirty = d.schedule != f.schedule || d.retention != f.retention || d.ignoreRobots != f.ignoreRobots
     // DEB-2478 (FR-1.2, FR-4.4) — *Re-investigate page* writes a new recipe beside this one; shown disabled, with the reason, when a new investigation cannot start.
     val reinv = """<span class="btn sm ghost${if (gate.allowed && !f.siteStopped) "" else " af-dis"}" data-af-reinv>Re-investigate page</span>"""
     val reinvWhy = if (!gate.allowed && gate.reason != null) """<div class="af-why" style="margin-top:6px">${afEsc(gate.reason)}</div>""" else ""
@@ -222,6 +233,7 @@ internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, 
       ${afWaitingBand(f, gate)}
       <div class="af-det-in"><div><div class="af-h">Recipe</div><pre class="af-script">${afRecipe(f)}</pre>
         <div class="af-cfg">${scheduleControl(d.schedule)}${afKeepControl(d.retention, d.preview)}
+          <div class="field">${afRobotsTick("data-af-robots-row", d.ignoreRobots, false)}</div>
           <div class="af-cfg-go"><span class="btn sm${if (dirty && !d.saving) "" else " af-dis"}" data-af-save>${if (d.saving) "Saving…" else "Save"}</span>$reinv<span class="spacer"></span>
             <span class="btn sm ghost" style="color:var(--bad)" data-af-delete>Delete</span></div>$reinvWhy</div></div>
         <div>${afRuns(f, c)}</div></div></div></td></tr>"""
@@ -230,7 +242,7 @@ internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, 
 internal fun afRow(f: AfFetcher, open: Boolean, enabledGlobally: Boolean, c: AfClock): String {
     val blocked = f.siteStopped
     val runOff = blocked || f.running || !enabledGlobally || f.state == "needs_reinvestigation" || f.state == "refused"
-    val keeps = afKeepsNote(f.retention)?.let { """<div class="keep">${afEsc(it)}</div>""" }.orEmpty()
+    val keeps = afRowNote(f)?.let { """<div class="keep">${afEsc(it)}</div>""" }.orEmpty()
     return """<tr class="af-row${if (open) " open" else ""}${if (blocked) " af-stopped" else ""}" data-af-row="${afEsc(f.id)}">
       <td class="nm"><b>${afEsc(f.name)}</b><div class="src">${afEsc(f.site)}</div></td>
       <td class="pat hide-m">${afEsc(f.pattern)}</td>

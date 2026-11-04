@@ -77,6 +77,21 @@ class AutofetchRoutesTest {
     }
 
     @Test
+    fun `the robots tick is on each fetcher in the list and PATCH changes it`() = app {
+        client.post("/api/autofetch") { contentType(ContentType.Application.Json); setBody(save()) }
+        val id = h.store.fetchers().single().id
+        assertTrue("\"ignoreRobots\":false" in client.get("/api/autofetch").bodyAsText())
+        val on = client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"ignoreRobots":true}""") }
+        assertEquals(HttpStatusCode.OK, on.status); assertTrue("\"ignoreRobots\":true" in on.bodyAsText())
+        assertTrue(h.store.fetcher(id)!!.ignoreRobots)
+        assertTrue("\"ignoreRobots\":true" in client.get("/api/autofetch").bodyAsText())
+        client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"enabled":false}""") }
+        assertTrue(h.store.fetcher(id)!!.ignoreRobots, "a PATCH that does not name the tick leaves it")
+        client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"ignoreRobots":false}""") }
+        assertFalse(h.store.fetcher(id)!!.ignoreRobots)
+    }
+
+    @Test
     fun `the queue is listed with the page's words and its stills are served to the admin and can be cut again`() = app {
         h.world.tmdbEps = listOf(TmdbEpisodeFact(2026, 1, "Útfall", "2026-01-10"), TmdbEpisodeFact(2026, 2, "Onnur", "2026-02-12"))
         val saved = h.service.save(SaveRequest("https://varpid.example.fo/sendingar/royndin", 9000001, false, h.royndinRecipe)) as SaveResult.Saved

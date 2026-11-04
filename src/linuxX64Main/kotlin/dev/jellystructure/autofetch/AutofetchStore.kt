@@ -32,6 +32,8 @@ data class Fetcher(
     val createdAt: Long,
     val lastRunAt: Long?,
     val lastListOkAt: Long?,
+    /** DEB-3592 (FR-2.8) — the admin's tick: this fetcher's requests ignore the site's `robots.txt` Disallow rules. Off for every fetcher saved before it. */
+    val ignoreRobots: Boolean = false,
 ) {
     val recipe: Recipe? get() = RecipeCodec.decode(recipeJson)
 }
@@ -116,10 +118,12 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
     fun fetcher(id: String): Fetcher? = q.fetcherById(id).executeAsOneOrNull()?.let { map(it) }
 
     fun insert(f: Fetcher) = q.fetcherInsert(f.id, f.name, f.pageUrl, f.site, f.tmdbId?.toLong(), if (f.pageOnly) 1 else 0, f.libraryPath, f.seriesPath,
-        f.recipeJson, if (f.proven) 1 else 0, f.seriesDescription, f.seriesImage, retentionJson.encodeToString(RetentionSpec.serializer(), f.retention), f.schedule, if (f.enabled) 1 else 0, f.createdAt)
+        f.recipeJson, if (f.proven) 1 else 0, f.seriesDescription, f.seriesImage, retentionJson.encodeToString(RetentionSpec.serializer(), f.retention), f.schedule, if (f.enabled) 1 else 0, f.createdAt, if (f.ignoreRobots) 1 else 0)
 
     fun updateSettings(id: String, retention: RetentionSpec, schedule: String, enabled: Boolean) =
         q.fetcherUpdateSettings(retentionJson.encodeToString(RetentionSpec.serializer(), retention), schedule, if (enabled) 1 else 0, id)
+
+    fun setIgnoreRobots(id: String, ignore: Boolean) = q.fetcherSetIgnoreRobots(if (ignore) 1 else 0, id)
 
     fun setState(id: String, state: String, reason: String) = q.fetcherSetState(state, reason, id)
     /** DEB-2478 — *Re-investigate page* saved: the fetcher's recipe, and what it says of the series, replaced. */
@@ -138,7 +142,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
         libraryPath = r.library_path, seriesPath = r.series_path, recipeJson = r.recipe_json, proven = r.proven != 0L, seriesDescription = r.series_description, seriesImage = r.series_image,
         retention = runCatching { json.decodeFromString(RetentionSpec.serializer(), r.retention) }.getOrDefault(RetentionSpec()),
         schedule = r.schedule, enabled = r.enabled != 0L, state = r.state, stateReason = r.state_reason, createdAt = r.created_at,
-        lastRunAt = r.last_run_at, lastListOkAt = r.last_list_ok_at,
+        lastRunAt = r.last_run_at, lastListOkAt = r.last_list_ok_at, ignoreRobots = r.ignore_robots != 0L,
     )
 
     // ---- sites -------------------------------------------------------------------------------------------------------

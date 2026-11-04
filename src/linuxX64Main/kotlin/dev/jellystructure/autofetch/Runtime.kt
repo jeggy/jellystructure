@@ -85,6 +85,7 @@ class AutofetchRuntime(
             quality = recipe?.let { RecipeView.qualityText(it) }.orEmpty(),
             queued = store.queueOf(f.id).count { it.state != "cleared" },
             waiting = waitingItems(items),
+            ignoreRobots = f.ignoreRobots,
         )
     }
 
@@ -148,6 +149,8 @@ data class FetcherView(
     val queued: Int = 0,
     /** DEB-2479 (FR-4.3, FR-10.2) — items waiting for a number the admin approves; the row says *n items waiting for a number*. */
     val waiting: List<WaitingItemView> = emptyList(),
+    /** DEB-3592 (FR-2.8, FR-12) — this fetcher's requests ignore the site's `robots.txt` Disallow rules. */
+    val ignoreRobots: Boolean = false,
 )
 
 /** An item the page lists that is not downloaded until the admin gives it a number: the page's own words, verbatim, and the model's proposal if asked for. */

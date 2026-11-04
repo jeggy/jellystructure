@@ -85,6 +85,26 @@ class AutofetchHtmlTest {
     }
 
     @Test
+    fun `a fetcher that ignores robots txt says so after any retention note on its list row - and an unticked one does not`() {
+        assertTrue("""<div class="keep">keeps newest 12 · ignores robots.txt</div>""" in panel(overview(fetcher(retention = AfRetention("newest", 12, true)).copy(ignoreRobots = true))))
+        assertTrue("""<div class="keep">ignores robots.txt</div>""" in panel(overview(fetcher().copy(ignoreRobots = true))))
+        assertFalse("ignores robots.txt" in panel(overview(fetcher(retention = AfRetention("newest", 12, true)))))
+    }
+
+    @Test
+    fun `the open row has the tick - editable in place - with the hint when ticked - and Save wakes when it changes`() {
+        val f = fetcher()
+        val plain = afOpenRow(f, AfDraft(f.schedule, f.retention), clock, false, AfGate(true))
+        assertTrue("data-af-robots-row" in plain && """<span class="af-tick">✓</span>""" in plain && "Reads pages this site asks crawlers to leave alone." !in plain)
+        assertTrue("""btn sm af-dis" data-af-save""" in plain, "nothing changed")
+        val ticked = afOpenRow(f, AfDraft(f.schedule, f.retention, ignoreRobots = true), clock, false, AfGate(true))
+        assertTrue("""<span class="af-tick on">✓</span>""" in ticked && "Reads pages this site asks crawlers to leave alone." in ticked)
+        assertTrue("""btn sm" data-af-save""" in ticked, "the tick is a change to save")
+        val saved = afOpenRow(f.copy(ignoreRobots = true), AfDraft(f.schedule, f.retention, ignoreRobots = true), clock, false, AfGate(true))
+        assertTrue("""btn sm af-dis" data-af-save""" in saved)
+    }
+
+    @Test
     fun `a state the admin has to act on replaces Up to date`() {
         assertTrue("Needs re-investigation" in afStatusCell(fetcher(state = "needs_reinvestigation").copy(stateReason = "0 videos found"), clock))
         assertTrue("Paused" in afStatusCell(fetcher(enabled = false), clock))

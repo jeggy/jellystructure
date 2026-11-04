@@ -14,7 +14,11 @@ import kotlinx.serialization.Serializable
 
 /** `POST /api/autofetch/investigate`. [fetcherId] is *Re-investigate page*: the url, TMDB id and mode are the fetcher's own. */
 @Serializable
-data class InvestigateRequest(val url: String = "", val tmdbId: Int? = null, val pageOnly: Boolean = false, val fetcherId: String? = null)
+data class InvestigateRequest(
+    val url: String = "", val tmdbId: Int? = null, val pageOnly: Boolean = false, val fetcherId: String? = null,
+    /** DEB-3592 (FR-2.8) — the form's tick. A *Re-investigate page* ignores this and takes the fetcher's own setting. */
+    val ignoreRobots: Boolean = false,
+)
 
 /** What the review screen sends with *Save auto-fetcher* (FR-10.1). The recipe is never sent back: the server holds the one it proved. */
 @Serializable
@@ -76,6 +80,7 @@ class Investigations(
         val url = fetcher?.pageUrl ?: req.url.trim()
         val tmdbId = if (fetcher != null) fetcher.tmdbId else req.tmdbId
         val pageOnly = fetcher?.pageOnly ?: req.pageOnly
+        val ignoreRobots = fetcher?.ignoreRobots ?: req.ignoreRobots
         if (Urls.siteOf(url) == null) return StartResult.Refused(400, "the page URL is not an http or https address")
         // FR-15.1 — a page-only fetcher is chosen, never inferred.
         if (tmdbId == null && !pageOnly) return StartResult.Refused(400, RecipeRefusal.NO_TMDB_ID)
@@ -90,13 +95,13 @@ class Investigations(
         val id = newId()
         held = null
         val first = InvestigationView(
-            id = id, state = "running", url = url, host = Urls.host(url).orEmpty(), tmdbId = tmdbId, pageOnly = pageOnly, fetcherId = fetcher?.id,
+            id = id, state = "running", url = url, host = Urls.host(url).orEmpty(), tmdbId = tmdbId, pageOnly = pageOnly, fetcherId = fetcher?.id, ignoreRobots = ignoreRobots,
             steps = Investigator.STEP_LABELS.map { (k, l) -> StepView(k, l) }, startedAt = world.nowSec(),
         )
         current.value = first
         job = scope.launch(GateClass.BACKGROUND) {
             val outcome = try {
-                investigator.run(id, url, tmdbId, pageOnly, fetcher?.id) { v -> if (current.value?.id == id && current.value?.state == "running") current.value = v }
+                investigator.run(id, url, tmdbId, pageOnly, fetcher?.id, ignoreRobots) { v -> if (current.value?.id == id && current.value?.state == "running") current.value = v }
             } catch (e: Throwable) {
                 if (e is CancellationException && !currentCoroutineContext().isActive) throw e
                 Logger.warn("auto-fetch: the investigation failed: ${e.message}", "autofetch")
@@ -146,7 +151,7 @@ class Investigations(
         else service.save(SaveRequest(
             url = v.url, tmdbId = v.tmdbId, pageOnly = v.pageOnly, recipe = h.recipe, libraryPath = c.libraryPath ?: h.libraryPath.ifBlank { null },
             name = c.name?.takeIf { it.isNotBlank() } ?: h.name, schedule = c.schedule, retention = c.retention, mapping = h.mapping, accept = c.accept,
-        ))
+        ), ignoreRobots = v.ignoreRobots)
         return when (result) {
             is SaveResult.Saved -> {
                 if (current.value?.id == id) { held = null; current.value = null }

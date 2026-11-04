@@ -181,12 +181,13 @@ private fun bind(panel: Element, scope: CoroutineScope) {
 
         // ---- DEB-2478: the form, the investigation and its review
         t.closest("[data-af-pageonly]")?.let { afForm = afForm.copy(pageOnly = !afForm.pageOnly, tmdb = if (!afForm.pageOnly) "" else afForm.tmdb); paint(); return@addEventListener }
+        t.closest("[data-af-robots]")?.let { afForm = afForm.copy(ignoreRobots = !afForm.ignoreRobots); paint(); return@addEventListener }
         t.closest("[data-af-go]")?.let {
             val tmdb = afForm.tmdb.trim()
             if (!afForm.pageOnly && tmdb.isNotEmpty() && tmdb.toIntOrNull() == null) { afNote = "A TMDB id is a number."; paint(); return@addEventListener }
             afForm = afForm.copy(starting = true); paint()
             val f = afForm
-            act(scope, gen) { AutofetchApi.investigate(f.url.trim(), if (f.pageOnly) null else tmdb.toIntOrNull(), f.pageOnly).also { afForm = afForm.copy(starting = false) } }
+            act(scope, gen) { AutofetchApi.investigate(f.url.trim(), if (f.pageOnly) null else tmdb.toIntOrNull(), f.pageOnly, ignoreRobots = f.ignoreRobots).also { afForm = afForm.copy(starting = false) } }
             return@addEventListener
         }
         t.closest("[data-af-reinv]")?.let { b ->
@@ -195,7 +196,7 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             return@addEventListener
         }
         t.closest("[data-af-stop]")?.let { act(scope, gen) { AutofetchApi.stopInvestigation(afOverview?.investigation?.id.orEmpty()) }; return@addEventListener }
-        t.closest("[data-af-dismissinv]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(afOverview?.investigation?.id.orEmpty()) }; return@addEventListener }
+        t.closest("[data-af-dismissinv]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(afOverview?.investigation?.id.orEmpty()).also { afForm = afForm.afterInvestigation() } }; return@addEventListener }
         t.closest("[data-rv]")?.let { host ->
             val d = afReview ?: return@let
             t.closest("[data-af-keep]")?.let { b ->
@@ -216,13 +217,13 @@ private fun bind(panel: Element, scope: CoroutineScope) {
                 val all = afOverview?.investigation?.review?.rows.orEmpty().filter { it.code.isNotEmpty() }.map { it.itemId }.toSet()
                 afReview = d.copy(accept = if (all.isNotEmpty() && d.accept.containsAll(all)) emptySet() else all); paint(); return@addEventListener
             }
-            t.closest("[data-rv-discard]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(d.investigation).also { afReview = null } }; return@addEventListener }
+            t.closest("[data-rv-discard]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(d.investigation).also { afReview = null; afForm = afForm.afterInvestigation() } }; return@addEventListener }
             t.closest("[data-rv-save]")?.let {
                 val replacing = afOverview?.investigation?.review?.replaces != null
                 afReview = d.copy(saving = true); paint()
                 act(scope, gen) {
                     AutofetchApi.saveInvestigation(d.investigation, d.name.takeIf { !replacing }, d.libraryPath.takeIf { !replacing && it.isNotBlank() }, d.schedule.takeIf { !replacing }, d.retention.takeIf { !replacing }, d.runFirst, d.accept.toList())
-                        .also { if (!it.ok) afReview = afReview?.copy(saving = false) }
+                        .also { if (!it.ok) afReview = afReview?.copy(saving = false) else afForm = afForm.afterInvestigation() }
                 }
                 return@addEventListener
             }
@@ -252,11 +253,17 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             afDrafts[f.id] = d.copy(retention = d.retention.copy(leavesPage = !d.retention.leavesPage), preview = null)
             repaintOpenRow(scope, f); return@addEventListener
         }
+        t.closest("[data-af-robots-row]")?.let { b ->
+            val f = fetcherOf(b) ?: return@let
+            val d = draft(f)
+            afDrafts[f.id] = d.copy(ignoreRobots = !d.ignoreRobots)
+            repaintOpenRow(scope, f); return@addEventListener
+        }
         t.closest("[data-af-save]")?.let { b ->
             val f = fetcherOf(b) ?: return@let
             val d = draft(f)
             afDrafts[f.id] = d.copy(saving = true); paint()
-            act(scope, gen) { AutofetchApi.settings(f.id, d.retention.takeIf { it != f.retention }, d.schedule.takeIf { it != f.schedule }, null).also { afDrafts.remove(f.id) } }
+            act(scope, gen) { AutofetchApi.settings(f.id, d.retention.takeIf { it != f.retention }, d.schedule.takeIf { it != f.schedule }, null, d.ignoreRobots.takeIf { it != f.ignoreRobots }).also { afDrafts.remove(f.id) } }
             return@addEventListener
         }
         t.closest("[data-af-delete]")?.let { b ->
@@ -293,7 +300,7 @@ private fun bind(panel: Element, scope: CoroutineScope) {
         t.closest("[data-af-row]")?.let { r ->
             val id = r.getAttribute("data-af-row")
             afOpenFetcher = if (afOpenFetcher == id) null else id
-            if (afOpenFetcher != null) afOverview?.fetchers?.firstOrNull { it.id == id }?.let { f -> afDrafts[f.id] = AfDraft(f.schedule, f.retention) }
+            if (afOpenFetcher != null) afOverview?.fetchers?.firstOrNull { it.id == id }?.let { f -> afDrafts[f.id] = AfDraft(f.schedule, f.retention, ignoreRobots = f.ignoreRobots) }
             paint(); return@addEventListener
         }
         // ---- Not on TMDB yet
@@ -380,7 +387,7 @@ private fun bind(panel: Element, scope: CoroutineScope) {
     })
 }
 
-private fun draft(f: AfFetcher): AfDraft = afDrafts.getOrPut(f.id) { AfDraft(f.schedule, f.retention) }
+private fun draft(f: AfFetcher): AfDraft = afDrafts.getOrPut(f.id) { AfDraft(f.schedule, f.retention, ignoreRobots = f.ignoreRobots) }
 
 /** Redraws, and asks the server what the draft's retention would delete — the screen shows that count and never one of its own (FR-16.1). */
 private fun repaintOpenRow(scope: CoroutineScope, f: AfFetcher) {

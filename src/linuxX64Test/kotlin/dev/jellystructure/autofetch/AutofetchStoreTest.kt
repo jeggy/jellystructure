@@ -1,5 +1,7 @@
 package dev.jellystructure.autofetch
 
+import co.touchlab.sqliter.DatabaseConfiguration
+import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.db.closeLastDatabaseForTests
 import dev.jellystructure.db.createDatabase
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -84,4 +86,30 @@ class AutofetchStoreTest {
         val b = FetchSchedule.nextDue("daily@04:00", "fetcher-bbbb", 1_700_000_000L, 0)
         assertTrue(FetchSchedule.spreadMinutes("fetcher-aaaa") != FetchSchedule.spreadMinutes("fetcher-bbbb") || a == b)
     }
+
+    @Test
+    fun `the robots tick is off by default - round trips - and a database from before the column reads every fetcher as unticked`() {
+        val store = AutofetchStore(createDatabase(path))
+        store.insert(fetcher("a")); store.insert(fetcher("b").copy(ignoreRobots = true))
+        assertFalse(store.fetcher("a")!!.ignoreRobots); assertTrue(store.fetcher("b")!!.ignoreRobots)
+        store.setIgnoreRobots("a", true); assertTrue(store.fetcher("a")!!.ignoreRobots)
+        store.setIgnoreRobots("a", false); assertFalse(store.fetcher("a")!!.ignoreRobots)
+
+        // DEB-3592 (FR-2.8) — 97.sqm adds the column: a database one version back, with its fetchers in it, upgrades and reads them unticked.
+        closeLastDatabaseForTests()
+        val v = JellystructureDb.Schema.version.toInt()
+        val raw = app.cash.sqldelight.driver.native.NativeSqliteDriver(DatabaseConfiguration(
+            name = path.substringAfterLast('/'), version = v, create = {}, upgrade = { _, _, _ -> },
+            extendedConfig = DatabaseConfiguration.Extended(basePath = path.substringBeforeLast('/')),
+        ))
+        raw.execute(null, "ALTER TABLE autofetch_fetcher DROP COLUMN ignore_robots", 0)
+        raw.execute(null, "PRAGMA user_version = $MIGRATION_ROBOTS", 0)
+        raw.close()
+        val again = AutofetchStore(createDatabase(path))
+        assertEquals(setOf("a", "b"), again.fetchers().map { it.id }.toSet())
+        assertTrue(again.fetchers().none { it.ignoreRobots })
+    }
 }
+
+/** DEB-3592's migration is 97.sqm: a database at user_version 97 runs it (migration N takes N to N+1). */
+private const val MIGRATION_ROBOTS = 97

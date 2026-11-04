@@ -29,7 +29,7 @@ import kotlinx.io.files.Path
 import kotlinx.serialization.Serializable
 
 @Serializable
-private data class SettingsPatch(val retention: RetentionSpec? = null, val schedule: String? = null, val enabled: Boolean? = null)
+private data class SettingsPatch(val retention: RetentionSpec? = null, val schedule: String? = null, val enabled: Boolean? = null, val ignoreRobots: Boolean? = null)
 
 @Serializable
 private data class PreviewRequest(val retention: RetentionSpec)
@@ -136,7 +136,7 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         val rt = runtime ?: return@patch call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Auto-fetch is not running"))
         val id = call.parameters["id"].orEmpty()
         val p = runCatching { call.receive<SettingsPatch>() }.getOrNull() ?: return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a valid settings change"))
-        val problem = rt.service.update(id, p.retention, p.schedule, p.enabled)
+        val problem = rt.service.update(id, p.retention, p.schedule, p.enabled, p.ignoreRobots)
         if (problem == null) call.respond(rt.view(rt.store.fetcher(id)!!))
         else call.respond(if (problem == "no such fetcher") HttpStatusCode.NotFound else HttpStatusCode.BadRequest, mapOf("error" to problem))
     }

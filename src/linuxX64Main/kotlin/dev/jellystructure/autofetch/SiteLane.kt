@@ -155,16 +155,37 @@ class Robots private constructor(private val rules: List<Pair<Boolean, String>>,
     }
 }
 
-class SiteLane(
+/** What every view of one site's lane shares: the two gates and the clock readings that pace them (FR-2.3). */
+internal class LaneGates {
+    val pageGate = Mutex()
+    val downloadGate = Mutex()
+    var lastPageAtMs: Long? = null
+    var lastDownloadEndMs: Long? = null
+}
+
+class SiteLane private constructor(
     val site: String,
     private val store: SiteStore,
     private val transport: Transport,
-    private val clock: LaneClock = SystemLaneClock,
+    private val clock: LaneClock,
+    private val gates: LaneGates,
+    /** DEB-3592 (FR-2.8) — this view is a fetcher that ignores `robots.txt`'s Disallow rules. Pacing, `Crawl-delay`, back-off and the stop on a block are the lane's, whatever this says. */
+    val ignoreRobots: Boolean,
 ) {
-    private val pageGate = Mutex()
-    private val downloadGate = Mutex()
-    private var lastPageAtMs: Long? = null
-    private var lastDownloadEndMs: Long? = null
+    constructor(site: String, store: SiteStore, transport: Transport, clock: LaneClock = SystemLaneClock) :
+        this(site, store, transport, clock, LaneGates(), false)
+
+    private val pageGate get() = gates.pageGate
+    private val downloadGate get() = gates.downloadGate
+    private var lastPageAtMs: Long?
+        get() = gates.lastPageAtMs
+        set(v) { gates.lastPageAtMs = v }
+    private var lastDownloadEndMs: Long?
+        get() = gates.lastDownloadEndMs
+        set(v) { gates.lastDownloadEndMs = v }
+
+    /** The same lane, seen by a fetcher whose tick is [ignore] (FR-2.8): one site, one set of gates, one stop. */
+    fun forFetcher(ignore: Boolean): SiteLane = if (ignore == ignoreRobots) this else SiteLane(site, store, transport, clock, gates, ignore)
 
     fun state(): SiteState = store.get(site)
 
@@ -195,6 +216,8 @@ class SiteLane(
     /** `robots.txt` for [url]'s site and whether it allows [url]'s path to a general crawler (FR-2.2); [listing] is the recipe's listing (FR-2.5). */
     private suspend fun robotsFor(url: String, listing: Boolean): RobotsCheck {
         val path = Urls.path(url)
+        // FR-2.8 — robots.txt is still read (its Crawl-delay still paces), but its Disallow rules, and a file that cannot be read, refuse nothing.
+        if (ignoreRobots) return RobotsCheck(robots(Urls.origin(url)) ?: Robots.ALLOW_ALL)
         val robots = robots(Urls.origin(url)) ?: return RobotsCheck(refusal = LaneOutcome.Failed("robots.txt could not be read, so nothing was requested"))
         if (!robots.allows(path)) {
             val s = store.get(site)
@@ -349,8 +372,8 @@ class SiteLane(
     /** A paced request that is not a text page (the programme's image): the same stop, back-off and `robots.txt` rules, the same 10 s. Null when it may not be made. */
     suspend fun <T> pacedRaw(url: String, block: suspend () -> T): T? {
         if (preflight() != null) return null
-        val robots = robots(Urls.origin(url)) ?: return null
-        if (!robots.allows(Urls.path(url))) return null
+        val robots = if (ignoreRobots) robots(Urls.origin(url)) ?: Robots.ALLOW_ALL else (robots(Urls.origin(url)) ?: return null)
+        if (!ignoreRobots && !robots.allows(Urls.path(url))) return null
         return paced(robots, block)
     }
 
@@ -375,5 +398,7 @@ class SiteLanes(
 ) {
     private val lanes = HashMap<String, SiteLane>()
     private val lock = Mutex()
-    suspend fun forSite(site: String): SiteLane = lock.withLock { lanes.getOrPut(site) { SiteLane(site, store, transport, clock) } }
+    /** [ignoreRobots] is the fetcher's tick (FR-2.8); the lane behind it is the site's one. */
+    suspend fun forSite(site: String, ignoreRobots: Boolean = false): SiteLane =
+        lock.withLock { lanes.getOrPut(site) { SiteLane(site, store, transport, clock) } }.forFetcher(ignoreRobots)
 }

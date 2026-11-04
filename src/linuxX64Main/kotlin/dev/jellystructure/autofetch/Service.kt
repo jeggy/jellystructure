@@ -43,7 +43,8 @@ class AutofetchService(
 ) {
     private val proof = RecipeProof(tools, world)
 
-    suspend fun save(req: SaveRequest): SaveResult {
+    /** [ignoreRobots] is the investigation's tick (FR-2.8), kept on the fetcher; it is not part of the request body. */
+    suspend fun save(req: SaveRequest, ignoreRobots: Boolean = false): SaveResult {
         if (!world.enabled()) return SaveResult.Refused(409, "Auto-fetch is switched off ([autofetch] enabled)")
         // FR-15.1 — a page-only fetcher is chosen, never inferred.
         if (req.tmdbId == null && !req.pageOnly) return SaveResult.Refused(400, RecipeRefusal.NO_TMDB_ID)
@@ -78,7 +79,7 @@ class AutofetchService(
         }
 
         // The proof (FR-4.2 / FR-15.8). Whatever it finds is the failed state with its reason; nothing is written.
-        val lane = lanes.forSite(site)
+        val lane = lanes.forSite(site, ignoreRobots)
         val pr = proof.prove(recipe, req.pageOnly, req.tmdbId, lane, req.mapping)
         if (!pr.ok) {
             val blocked = pr.blocked
@@ -96,7 +97,7 @@ class AutofetchService(
             libraryPath = lib.localPath.trimEnd('/'), seriesPath = seriesPath, recipeJson = RecipeCodec.encode(recipe), proven = pr.proven,
             seriesDescription = pr.series?.description, seriesImage = pr.series?.image,
             retention = retention, schedule = schedule, enabled = true, state = "ok", stateReason = "", createdAt = world.nowSec(),
-            lastRunAt = null, lastListOkAt = world.nowSec(),
+            lastRunAt = null, lastListOkAt = world.nowSec(), ignoreRobots = ignoreRobots,
         )
         store.insert(f)
         if (req.pageOnly) store.mark(seriesPath, f.id)
@@ -113,7 +114,7 @@ class AutofetchService(
         val f = store.fetcher(id) ?: return SaveResult.Refused(404, "no such fetcher")
         val recipe = recipe0.copy(source = recipe0.source.copy(url = f.pageUrl, hosts = (recipe0.source.hosts + listOfNotNull(Urls.host(f.pageUrl))).distinct()), retention = f.retention)
         RecipeValidator.validate(recipe, f.pageOnly).firstOrNull()?.let { return SaveResult.Refused(422, it) }
-        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site), mapping)
+        val pr = proof.prove(recipe, f.pageOnly, f.tmdbId, lanes.forSite(f.site, f.ignoreRobots), mapping)
         if (!pr.ok) return SaveResult.Refused(if (pr.blocked != null) 502 else 422, pr.failure ?: "the recipe failed its proof", notASeries = pr.blocked == null, proof = pr)
         // A recipe that no longer maps by hand drops the numbers the admin approved for items it has not placed; a placed one keeps its own.
         if (f.recipe?.numbering?.kind == "mapped" && recipe.numbering.kind != "mapped") store.clearApprovedUnplaced(id)
@@ -189,8 +190,8 @@ class AutofetchService(
         return null
     }
 
-    /** `PATCH /api/autofetch/{id}` — retention, schedule and the paused switch; none of them needs *Re-investigate page* (FR-16.1). */
-    fun update(id: String, retention: RetentionSpec?, schedule: String?, enabled: Boolean?): String? {
+    /** `PATCH /api/autofetch/{id}` — retention, schedule, the paused switch and the robots.txt tick (FR-2.8); none of them needs *Re-investigate page* (FR-16.1). */
+    fun update(id: String, retention: RetentionSpec?, schedule: String?, enabled: Boolean?, ignoreRobots: Boolean? = null): String? {
         val f = store.fetcher(id) ?: return "no such fetcher"
         retention?.let {
             if (it.mode != "all" && it.mode != "newest") return "retention must be all or newest"
@@ -198,6 +199,7 @@ class AutofetchService(
         }
         if (schedule != null && !FetchSchedule.valid(schedule)) return "the schedule must be every6h, daily@HH:MM or weekly@D@HH:MM; no custom schedule below 6 hours"
         store.updateSettings(id, retention ?: f.retention, schedule ?: f.schedule, enabled ?: f.enabled)
+        if (ignoreRobots != null) store.setIgnoreRobots(id, ignoreRobots)
         return null
     }
 
@@ -214,8 +216,9 @@ class AutofetchService(
         val lane = lanes.forSite(site)
         if (!lane.state().stopped) return "that site is not stopped"
         lane.resume()
-        val probe = store.fetchers().firstOrNull { it.site == site }?.recipe ?: return null
-        val read = ListingFetcher.read(probe.copy(list = probe.list.copy(next = null)), lane, tools)
+        val fetcher = store.fetchers().firstOrNull { it.site == site } ?: return null
+        val probe = fetcher.recipe ?: return null
+        val read = ListingFetcher.read(probe.copy(list = probe.list.copy(next = null)), lane.forFetcher(fetcher.ignoreRobots), tools)
         return if (read is ListingRead.Blocked && lane.state().stopped) "the site refused again: ${lane.state().stoppedReason}" else null
     }
 

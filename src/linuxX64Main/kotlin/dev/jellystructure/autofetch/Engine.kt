@@ -76,7 +76,7 @@ class AutofetchEngine(
             store.setState(f.id, "refused", reason)
             return RunResult("refused", reason, lines.also { it += RunLine("refused", reason) })
         }
-        val lane = lanes.forSite(f.site)
+        val lane = lanes.forSite(f.site, f.ignoreRobots)
         lane.state().let { if (it.stopped) return RunResult("stopped", "Site stopped · ${it.stoppedReason}", lines) }
         val stoppedBefore = lane.state().stopped
 

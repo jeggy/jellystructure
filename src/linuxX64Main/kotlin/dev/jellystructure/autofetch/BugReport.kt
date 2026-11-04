@@ -35,6 +35,8 @@ internal class ReportInput(
     val recipe: MRecipe?,
     val proof: ProofResult?,
     val refusals: List<Refusal>,
+    /** DEB-3592 (FR-2.8) — the investigation ignored the site's `robots.txt`. */
+    val ignoreRobots: Boolean = false,
 )
 
 internal object BugReport {
@@ -60,7 +62,7 @@ internal object BugReport {
 
         val head = buildString {
             append("Host: ${i.host}\n")
-            append("Fetcher: ${if (i.pageOnly) "page only" else "TMDB series"}\n")
+            append("Fetcher: ${if (i.pageOnly) "page only" else "TMDB series"}${if (i.ignoreRobots) " · robots.txt ignored" else ""}\n")
             append("Server: ${ServerVersion.current.ifBlank { "dev" }}\n")
             append("Model: ${i.model?.let { m -> m + i.effort.takeIf { it.isNotBlank() }?.let { e -> " · effort $e" }.orEmpty() } ?: "none"}\n")
             append("Ended: ${i.ended} · turns: ${i.turns} of ${Investigator.MAX_TURNS} · site requests: ${i.requests} of ${Investigator.MAX_TOOL_REQUESTS} · cost: ${AiPricing.usd(i.spentMicroUsd)}\n")

@@ -8,7 +8,10 @@ package dev.jellystructure.ui
  */
 
 /** The form's three inputs, as typed and not yet sent. */
-data class AfForm(val url: String = "", val tmdb: String = "", val pageOnly: Boolean = false, val starting: Boolean = false)
+data class AfForm(val url: String = "", val tmdb: String = "", val pageOnly: Boolean = false, val starting: Boolean = false, val ignoreRobots: Boolean = false)
+
+/** *Dismiss*, *Discard* and a saved fetcher leave a clean form: the robots.txt tick is off on every new one (FR-10.7). */
+fun AfForm.afterInvestigation(): AfForm = copy(ignoreRobots = false)
 
 /** The review's settings, as the admin has set them and not yet saved. */
 data class AfReviewDraft(
@@ -57,6 +60,7 @@ internal fun afFormHtml(form: AfForm, gate: AfGate, running: Boolean): String {
       <div class="field"><label>TMDB id</label><input class="input mono" data-af-tmdb value="${afEsc(if (form.pageOnly) "" else form.tmdb)}" spellcheck="false" inputmode="numeric"${if (off || form.pageOnly) " disabled" else ""}><span class="hint">${afEsc(tmdbHint)}</span></div>
       $go
       <label class="af-opt${if (off) " af-dis" else ""}" data-af-pageonly><span class="af-tick${if (form.pageOnly) " on" else ""}">✓</span><span>This programme is not on TMDB</span></label>
+      ${afRobotsTick("data-af-robots", form.ignoreRobots, off)}
     </div>$why"""
 }
 
@@ -78,7 +82,7 @@ private fun failedHtml(inv: AfInvestigation): String {
         <a class="btn sm" href="${afEsc(link)}" target="_blank" rel="noopener" data-stop-click>File a bug report on GitHub ↗</a>
         <span class="tiny muted">The report is pre-filled with how the investigation went: the host, the steps, the turns and the recipe's shape. Never a title, the page's content or the URL's path.</span></div>"""
     return """<div class="af-fail"><h4>${afEsc(head)}</h4><p>${afEsc(lead)}</p>
-      ${inv.reason?.let { """<div class="why">reason: ${afMono(it)}</div>""" }.orEmpty()}$bug
+      ${inv.reason?.let { """<div class="why">reason: ${afMono(it)}</div>""" }.orEmpty()}${if (inv.robotsRefused && !inv.ignoreRobots) """<div class="why">Tick "${afEsc(AF_ROBOTS_LABEL)}" and investigate again to read it anyway.</div>""" else ""}$bug
       <div class="row center" style="margin-top:12px"><span class="btn sm ghost" data-af-dismissinv>Dismiss</span></div></div>"""
 }
 
@@ -135,7 +139,8 @@ private fun reviewHtml(inv: AfInvestigation, r: AfReview, d: AfReviewDraft): Str
     val replacing = r.replaces != null
     val libs = if (r.libraries.size > 1) """<div class="field"><label>Library</label><select class="input" data-rv-lib>${r.libraries.joinToString("") { l ->
         """<option value="${afEsc(l.path)}"${if (l.path == d.libraryPath) " selected" else ""}>${afEsc(l.name.ifBlank { l.path })}</option>""" }}</select></div>""" else ""
-    val settings = if (replacing) """<div class="af-why" style="margin-bottom:10px">The fetcher keeps its name, schedule and Keep. Saving replaces its recipe; the old one runs until you do.</div>""" else
+    val robots = if (inv.ignoreRobots) """<div class="af-why" style="margin-bottom:10px">Ignores this site's robots.txt</div>""" else ""
+    val settings = robots + if (replacing) """<div class="af-why" style="margin-bottom:10px">The fetcher keeps its name, schedule and Keep. Saving replaces its recipe; the old one runs until you do.</div>""" else
         """<div class="field"><label>Name</label><input class="input" data-rv-name value="${afEsc(d.name)}"></div>$libs
         ${scheduleControl(d.schedule)}${afKeepControl(d.retention, d.preview)}
         <div class="af-why" style="margin:-2px 0 10px">Nothing is deleted when you save: retention only ever removes episodes this fetcher has placed itself, and it has placed none yet.</div>

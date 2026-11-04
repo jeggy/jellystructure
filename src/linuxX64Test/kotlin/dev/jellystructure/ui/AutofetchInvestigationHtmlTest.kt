@@ -41,6 +41,38 @@ class AutofetchInvestigationHtmlTest {
     private fun card(i: AfInvestigation?, gate: AfGate = AfGate(true), form: AfForm = AfForm("https://varpid.example.fo/sendingar/royndin", "9000001"), d: AfReviewDraft? = i?.review?.let { draft(it) }) =
         afNewCard(AfOverview(true, emptyList(), emptyList(), emptyList(), gate, i), form, d)
 
+    // ---- DEB-3592 (FR-2.8, FR-10.7, Acceptance 20) — the robots.txt tick ----------------------------------------------------------
+
+    private val robotsHint = "Reads pages this site asks crawlers to leave alone. Requests stay paced and say who is asking. If the site blocks them, every fetcher on this site stops."
+
+    @Test
+    fun `the form has the robots tick unticked on a new form and after Dismiss - and its hint shows only when ticked`() {
+        val off = card(null)
+        assertTrue("""<span class="af-tick">✓</span><span>Ignore this site's robots.txt""" in off && "data-af-robots" in off && robotsHint !in off, "off: no hint")
+        val on = card(null, form = AfForm("u", "", ignoreRobots = true))
+        assertTrue("""<span class="af-tick on">✓</span><span>Ignore this site's robots.txt""" in on && robotsHint in on)
+        assertFalse(AfForm().ignoreRobots)
+        assertFalse(AfForm("u", "", ignoreRobots = true).afterInvestigation().ignoreRobots, "Dismiss, Discard and a save untick it")
+        assertEquals("u", AfForm("u", "", ignoreRobots = true).afterInvestigation().url)
+    }
+
+    @Test
+    fun `the failed state says the tick is there only when the server marks a robots refusal on an investigation that did not ignore robots`() {
+        val line = """Tick "Ignore this site's robots.txt" and investigate again to read it anyway."""
+        val refused = inv("failed", "fail", reason = "this site's robots.txt does not allow /x").copy(robotsRefused = true)
+        assertTrue(line in card(refused))
+        assertFalse(line in card(inv("failed", "fail", reason = "this site's robots.txt does not allow /x")), "the screen does not read the reason's words")
+        assertFalse(line in card(refused.copy(ignoreRobots = true)), "never on an investigation that already ignored robots.txt")
+        assertFalse(line in card(inv("failed", "fail", reason = "the site answered 403")))
+    }
+
+    @Test
+    fun `the review shows one line when the investigation ignored robots txt`() {
+        val r = review()
+        assertTrue("Ignores this site's robots.txt" in card(inv("review", "done", "done", "done", "done", "done", review = r).copy(ignoreRobots = true)))
+        assertFalse("Ignores this site's robots.txt" in card(inv("review", "done", "done", "done", "done", "done", review = r)))
+    }
+
     @Test
     fun `the form has the page url the tmdb id the tick and Investigate`() {
         val h = card(null)

@@ -98,8 +98,12 @@ data class InvestigationView(
     val tmdbId: Int?,
     val pageOnly: Boolean,
     val fetcherId: String? = null,
+    /** DEB-3592 (FR-2.8, FR-12) — the investigation ignores this site's `robots.txt`: the admin's tick, or the fetcher's own on a *Re-investigate page*. */
+    val ignoreRobots: Boolean = false,
     val steps: List<StepView>,
     val reason: String? = null,
+    /** DEB-3592 (FR-10.7) — a `failed` investigation that a `robots.txt` refusal ended: the screen then says the tick is there. The server decides; the screen never reads the reason's words. */
+    val robotsRefused: Boolean = false,
     /** The drawn *Not a series* state: the page could not be set up as a series. */
     val notASeries: Boolean = false,
     /** The month's limit stopped it. */
@@ -161,8 +165,10 @@ class Investigator(
     }
 
     /** Everything one run keeps between turns. */
-    private class Run(val id: String, val url: String, val site: String, val tmdbId: Int?, val pageOnly: Boolean, val fetcherId: String?, val startedAt: Long) {
+    private class Run(val id: String, val url: String, val site: String, val tmdbId: Int?, val pageOnly: Boolean, val fetcherId: String?, val ignoreRobots: Boolean, val startedAt: Long) {
         var requests = 0
+        /** A lane refusal for `robots.txt` is what the investigation is ending on (FR-10.7). */
+        var robotsRefused = false
         var turns = 0
         var spent = 0L
         val steps = STEP_LABELS.map { (k, l) -> StepView(k, l) }.toMutableList()
@@ -181,12 +187,12 @@ class Investigator(
         var proof: ProofResult? = null
     }
 
-    suspend fun run(id: String, url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String?, publish: (InvestigationView) -> Unit): Outcome {
+    suspend fun run(id: String, url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String?, ignoreRobots: Boolean = false, publish: (InvestigationView) -> Unit): Outcome {
         val site = Urls.siteOf(url).orEmpty()
-        val r = Run(id, url, site, tmdbId, pageOnly, fetcherId, world.nowSec())
+        val r = Run(id, url, site, tmdbId, pageOnly, fetcherId, ignoreRobots, world.nowSec())
         fun view(state: String, reason: String? = null, notASeries: Boolean = false, limit: Boolean = false, review: ReviewView? = null, report: ReportView? = null) = InvestigationView(
-            id = id, state = state, url = url, host = Urls.host(url).orEmpty(), tmdbId = tmdbId, pageOnly = pageOnly, fetcherId = fetcherId,
-            steps = r.steps.toList(), reason = reason, notASeries = notASeries, limitReached = limit, turns = r.turns, requests = r.requests,
+            id = id, state = state, url = url, host = Urls.host(url).orEmpty(), tmdbId = tmdbId, pageOnly = pageOnly, fetcherId = fetcherId, ignoreRobots = ignoreRobots,
+            steps = r.steps.toList(), reason = reason, robotsRefused = state == "failed" && r.robotsRefused && !ignoreRobots, notASeries = notASeries, limitReached = limit, turns = r.turns, requests = r.requests,
             spentMicroUsd = r.spent, startedAt = r.startedAt, review = review, report = report,
         )
         fun pub() = publish(view("running"))
@@ -197,7 +203,7 @@ class Investigator(
             val report = BugReport.build(ReportInput(
                 id = id, host = Urls.host(url).orEmpty(), pageOnly = pageOnly, ended = ended, reason = reason, reasonIsModelWords = modelWords,
                 model = r.model, effort = r.effort, turns = r.turns, requests = r.requests, spentMicroUsd = r.spent, steps = r.steps.toList(),
-                recipe = r.recipe, proof = r.proof, refusals = r.refusals.toList(),
+                recipe = r.recipe, proof = r.proof, refusals = r.refusals.toList(), ignoreRobots = ignoreRobots,
             ))
             return Outcome(view("failed", reason, notASeries, limit, report = report), null)
         }
@@ -330,8 +336,8 @@ class Investigator(
     private suspend fun prove(r: Run, settings: InvestigationSettings, mr: MRecipe, examples: List<Example>, mapping: List<MapRow>): Proved {
         val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).let { it.copy(retention = if (r.pageOnly) RetentionSpec("newest", 12, true) else RetentionSpec("all")) }
         RecipeValidator.validate(recipe, r.pageOnly).firstOrNull()?.let { return Proved.Retry(it, STEP_SCRIPT) }
-        val lane = lanes.forSite(r.site)
-        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping).also { r.proof = it }
+        val lane = lanes.forSite(r.site, r.ignoreRobots)
+        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping).also { r.proof = it; r.robotsRefused = it.robotsRefused }
         if (!pr.ok) {
             pr.blocked?.let { return Proved.End(pr.failure ?: "the site refused the recipe's request", STEP_PAGE) }
             val why = pr.failure ?: "the recipe failed its proof"
@@ -470,7 +476,7 @@ class Investigator(
         if (Urls.siteOf(url) != r.site) return ToolAnswer("fetch is refused: $host is not ${r.site}. This tool reads the page's own site only.", true)
         budget(r)?.let { return it }
         r.requests++
-        val lane = lanes.forSite(r.site)
+        val lane = lanes.forSite(r.site, r.ignoreRobots)
         return when (val o = lane.page(url, Expect.ANY, hosts = setOf(host))) {
             is LaneOutcome.Ok -> {
                 val body = o.reply.body
@@ -479,7 +485,7 @@ class Investigator(
                 startStep(r, STEP_VIDEOS)
                 ToolAnswer(PageText.reduce(body, ANSWER_CHARS))
             }
-            is LaneOutcome.Forbidden -> { r.blocked = o.reason; ToolAnswer(o.reason, true) }
+            is LaneOutcome.Forbidden -> { r.blocked = o.reason; r.robotsRefused = true; ToolAnswer(o.reason, true) }
             is LaneOutcome.Stopped -> { r.blocked = "the site is stopped: ${o.reason}"; ToolAnswer(o.reason, true) }
             is LaneOutcome.BackOff -> { r.blocked = "the site asked us to slow down: ${o.reason}"; ToolAnswer(o.reason, true) }
             is LaneOutcome.Failed -> ToolAnswer("The request failed: ${o.reason}", true)
@@ -494,7 +500,7 @@ class Investigator(
         if (Urls.siteOf(url) != r.site && host !in r.seenHosts) return ToolAnswer("probe is refused: $host appears nowhere in what was read from ${r.site}.", true)
         budget(r)?.let { return it }
         r.requests++
-        val lane = lanes.forSite(r.site)
+        val lane = lanes.forSite(r.site, r.ignoreRobots)
         return when (val o = lane.page(url, Expect.MANIFEST, player = true, hosts = r.seenHosts + host + r.site)) {
             is LaneOutcome.Ok -> {
                 if (Manifests.hasDrm(o.reply.body)) { r.drm = true; return ToolAnswer(RecipeRefusal.DRM, true) }

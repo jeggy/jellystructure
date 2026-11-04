@@ -119,6 +119,8 @@ data class ProofResult(
     val series: SeriesFacts? = null,
     val probe: ManifestFacts? = null,
     val blocked: LaneOutcome? = null,
+    /** DEB-3592 (FR-10.7) — the lane refused a request of the proof for `robots.txt` (FR-2.2): what the failed state says the tick is for. */
+    val robotsRefused: Boolean = false,
     /** FR-4.3 — a `mapped` proposal: [numbered] holds only the rows that resolved to an item, and [whys] the model's reason for each, by item id. */
     val mapped: Boolean = false,
     val whys: Map<String, String> = emptyMap(),
@@ -134,7 +136,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
     /** [mapping] is the model's proposed table when the recipe's numbering is `mapped` (FR-4.3); nothing else reads it. */
     suspend fun prove(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, mapping: List<MapRow> = emptyList()): ProofResult {
         val read = ListingFetcher.read(recipe, lane, tools)
-        if (read is ListingRead.Blocked) return fail(describe(read.outcome)).copy(blocked = read.outcome)
+        if (read is ListingRead.Blocked) return fail(describe(read.outcome)).copy(blocked = read.outcome, robotsRefused = read.outcome is LaneOutcome.Forbidden)
         read as ListingRead.Read
         val listed = read.items
         if (listed.size < 2) return fail("the listing yields ${listed.size} item${if (listed.size == 1) "" else "s"}; a series needs at least two", listed)
@@ -155,7 +157,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             val probeFirst = if (recipe.media.kind == "ytdlp" && recipe.numbering.kind != "mapped") toDate.firstOrNull() else null
             if (probeFirst != null) {
                 val p = probeYtDlp(recipe, probeFirst, lane)
-                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked) }
+                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked, robotsRefused = p.robotsRefused) }
                 early = p
                 if (p.dateRead) dated[itemKeyOf(probeFirst)] = p.date
                 toDate.remove(probeFirst)
@@ -165,7 +167,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
                 when (val r = ItemDates.read(recipe, it, lane, tools)) {
                     is DateRead.NotAsked -> {}
                     is DateRead.Unread -> if (r.outcome !is LaneOutcome.Failed)
-                        return fail(describe(r.outcome), listed).copy(blocked = r.outcome.takeIf { o -> o is LaneOutcome.Stopped || o is LaneOutcome.BackOff })
+                        return fail(describe(r.outcome), listed).copy(blocked = r.outcome.takeIf { o -> o is LaneOutcome.Stopped || o is LaneOutcome.BackOff }, robotsRefused = r.outcome is LaneOutcome.Forbidden)
                     is DateRead.Answered -> { dated[itemKeyOf(it)] = r.date; readNow[itemKeyOf(it)] = r.date }
                 }
             }
@@ -313,6 +315,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val date: String? = null, val dateRead: Boolean = false,
         /** The lane's refusal that failed this probe, when it was one that stops the run. */
         val blocked: LaneOutcome? = null,
+        val robotsRefused: Boolean = false,
     )
 
     /** FR-6.3 — an item yt-dlp is to download: its link is on a recorded host and robots.txt allows it, and yt-dlp's own metadata shows a video format, not all DRM. */
@@ -320,7 +323,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val link = item.link ?: return Probed(null, "the item has no link")
         if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return Probed(null, "the item's link is on ${Urls.host(link)}, which the recipe does not record")
         val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpInfo(link) }) {
-            is Gated.Refused -> return Probed(null, describe(g.outcome), blocked = g.outcome.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff })
+            is Gated.Refused -> return Probed(null, describe(g.outcome), blocked = g.outcome.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff }, robotsRefused = g.outcome is LaneOutcome.Forbidden)
             is Gated.Through -> g.value
         }
         if (!out.ok) {

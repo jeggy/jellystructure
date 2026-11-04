@@ -1,0 +1,3 @@
+-- DEB-3592 (DEB-2474, FR-2.8) — a fetcher may ignore this site's robots.txt. ignore_robots is the admin's tick (0 = bound by robots.txt, the
+-- default every fetcher saved before this reads as). This file is the migration; Autofetch.sq carries the same column.
+ALTER TABLE autofetch_fetcher ADD COLUMN ignore_robots INTEGER NOT NULL DEFAULT 0;

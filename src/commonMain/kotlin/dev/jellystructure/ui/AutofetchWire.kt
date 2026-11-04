@@ -65,6 +65,8 @@ data class AfFetcher(
     val queued: Int = 0,
     /** FR-4.3, FR-10.2 — the items waiting for a number the admin approves. */
     val waiting: List<AfWaiting> = emptyList(),
+    /** DEB-3592 (FR-2.8, FR-10.7) — this fetcher's requests ignore the site's `robots.txt`. */
+    val ignoreRobots: Boolean = false,
 )
 
 /** An item the page lists that is not downloaded until it has a number: the page's own words, and the model's proposal when asked for. */
@@ -169,8 +171,12 @@ data class AfInvestigation(
     val tmdbId: Int? = null,
     val pageOnly: Boolean = false,
     val fetcherId: String? = null,
+    /** DEB-3592 (FR-2.8) — the investigation ignores this site's `robots.txt`. */
+    val ignoreRobots: Boolean = false,
     val steps: List<AfStep> = emptyList(),
     val reason: String? = null,
+    /** DEB-3592 (FR-10.7) — a `robots.txt` refusal ended it: the server's call, never read from [reason]'s words. */
+    val robotsRefused: Boolean = false,
     val notASeries: Boolean = false,
     val limitReached: Boolean = false,
     val turns: Int = 0,
