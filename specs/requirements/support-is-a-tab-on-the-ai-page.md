@@ -455,3 +455,38 @@ asserts that the tab draws no `#tk-lane` in either lane state and no **Close sup
 `tests/e2e/settings-ai-support.spec.ts`, stubs `/api/config`, `/api/ai/status` and `/api/support/**` (the same
 in-memory lane the tab's spec uses) and covers acceptance 1 and 2 on Settings: both lane lines, the close dialog and
 its Cancel, the open press, a failed write's *Not saved* line, and a Save that sends no `support` key.
+
+## Amendment 2026-11-04 — the list opens on *Open* (DEB-3578)
+
+> Owner, 2026-11-04 (DEB-3578), on `#/ai?tab=support`: *"I want it to select "Open" by default and not the "All" by
+> default."*
+
+FR-6 drew the six filters in the order *All · Open · …* and never said which one is pressed when the tab first draws.
+The build pressed the first, **All**, so the list mixed resolved tickets in with the ones still waiting. The count the
+sidebar's **AI** entry carries (FR-2) is `open`, so the list it leads to now shows those same tickets.
+
+- **FR-6 — the filter the tab opens on.** When the admin page loads, the Support tab's filter is **Open**
+  (`state=OPEN`), and the first `GET /api/support/tickets` asks for it. The segmented control keeps FR-6's order and
+  labels: **All** stays first and is one press away, and nothing moves. A filter the admin presses still holds while
+  they stay on the same page load — leaving the AI page and coming back, or opening a ticket and pressing
+  **← AI · Support**, shows the filter they left. A reload starts on **Open** again. The filter is not written into the
+  URL, and nothing is stored on the server or in the browser.
+- **FR-6 — a row that stops matching goes.** This is FR-6's existing rule, now on the default list: a ticket resolved
+  from its detail, or by a `support_ticket` event, leaves the **Open** list without a reload. Reopening it brings it back.
+- **FR-6 — the empty line under *Open*.** With no open tickets, the list reads *"No open tickets."* Under **All** it
+  stays *"No tickets yet."*, and under every other filter *"No tickets match this filter."* All three are built from the
+  filter the admin is on, never from counting rows.
+- **No wire change.** No route, DTO or field changes. The filters' queries and counts are FR-6's table, unchanged.
+
+**Acceptance — added.**
+
+10. **Opens on Open.** With the stand-in data (#41 and #38 open, #36 resolved), `#/ai?tab=support` draws **Open · 2**
+    as the pressed filter and lists #41 and #38 only, and its first tickets request carries `state=OPEN`. Pressing
+    **All** lists all three. Going to Activity and back to the AI page still shows **All**. A reload shows **Open**
+    again. With no tickets at all, the list reads *"No open tickets."*
+
+**Tests.** `SupportAdminTextTest` asserts that the default filter is `open` and the three empty lines by filter key, so
+the default and the strings live in `SupportText` (`commonMain`), not in `SupportTab.kt`.
+`tests/e2e/ai-page-support-tab.spec.ts` takes acceptance 10 as a test of its own, at both viewports. The tests above it
+that count rows on mount (acceptance 1's *"all three, the resolved one included"*, and FR-6's filter test) press
+**All** first, or count the two open rows, so each still proves what it says.
