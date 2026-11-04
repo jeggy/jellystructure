@@ -99,6 +99,11 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-5.1, FR-15.8: the model is told when to choose `datetime`. A `date` recipe refused for two items on one date says so to the model.
 - *Stand-in data*, *Acceptance* 10 and *Non-goals* say the same.
 
+**Amended again 2026-11-04 (DEB-3567, owner on DEB-799, comments `87543d72` and `5c120580`):** *"We shouldn't have a date reader. We should have AI to solve this. So AI should investigate everything and after fully having all the overview of the specific page and it's way of ordering episodes, then it'll create the script."* This replaces the first bullet above. The engine does not learn another printed date form.
+- FR-4.1 and FR-4.5: the model writes how *this* page prints its dates into the recipe, as `numbering.when`. That is a pattern with named groups for the year, month, day and, for `datetime`, hour and minute, plus the page's month names. The engine runs it and proves it against the page. `isoDate` is not widened.
+- The recipe stays data. The model writes no code that runs on the server, because a saved recipe re-runs unattended on a schedule (FR-4.1, *Nothing in a recipe is executed*).
+- FR-5.1: the model's examples carry the date and time it read, and the engine checks them against what `when` reads.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -456,20 +461,40 @@ one lane.
      carries on.
    - **Not for a TMDB fetcher.** TMDB numbers its own episodes, so `date` is offered only to a page-only fetcher.
      Showing the air date in Ravilo instead of the code would be a Ravilo spec of its own, not part of this one.
-   - **Amended 2026-11-04 (DEB-3567): a date with something after it.** A page often prints the time and the length
-     after the date, as in `4. Nov. 2026 6.00 | 4t 0m`. That reads as 2026-11-04. Every form `isoDate` reads
-     (`dd. Month yyyy`, `dd.MM.yyyy`, `dd/MM/yyyy`, `yyyy-MM-dd`) is read when the text after the year is empty or
-     starts with whitespace. Text before the date still means it is not a date. Before this, the `dd. Month yyyy` and
-     `dd.MM.yyyy` forms refused anything after the year. So *the way the page prints it* failed on such a page, and
-     every item read *maps to no season and episode*. This part restores FR-4.5 and changes nothing it promised.
+   - **Amended 2026-11-04 (DEB-3567): the model says how the page prints a date, `numbering.when`.** This replaces an
+     earlier bullet of the same day, which widened `isoDate`'s fixed forms. The owner ruled that out: *"We shouldn't
+     have a date reader. We should have AI to solve this."* A page prints `4. Nov. 2026 6.00 | 4t 0m`, and the next
+     site prints something else again. So the model, which has read the page, writes down how this page prints it.
+     - **The shape.** `numbering.when` is `{on, regex, months}`.
+       - `on` is the listing field it reads, normally `published`. It may also be `title` or `description`, for a
+         page that prints the date only in the heading.
+       - `regex` is one rule of `pattern`'s grammar. It is checked the same way for size and backtracking, and
+         `(?P<` is rewritten as there (DEB-3459). It has the named groups `year`, `month` and `day`, and for
+         `datetime` also `hour` and `minute`. For DR's text that is
+         `(?<day>\d{1,2})\.\s*(?<month>\p{L}+)\.?\s+(?<year>\d{4})\s+(?<hour>\d{1,2})[.:](?<minute>\d{2})`.
+       - `months` maps the page's own month names and abbreviations to 1–12 (`{"nov": 11, "november": 11, …}`). It
+         is matched without regard to case and a trailing dot. A `month` group that is digits is read as a number,
+         and `months` may then be left out.
+       - A two-digit `year` is 2000 + it. The values must make a real date and a real time (hour 0–23, minute
+         0–59), or the item has none. No time zone is applied: the clock time is the one the page prints.
+     - **When it is used.** `datetime` needs `when`. `date` may carry it, and when it does, it is used in place of
+       `isoDate`. A `date` recipe without `when` reads its dates as before, so no saved fetcher changes, and a
+       `ytdlp` listing still gets yt-dlp's own dates (FR-4.1). A `source` or `mapped` recipe has no `when`.
+     - **Proved against the page.** Every item the proof numbers must be matched by `when` and give a real date
+       (and time). Otherwise the proof fails with *the date pattern finds no date in '<the item's text, at most 80
+       characters>'*, and that goes back to the model as FR-5.1's correction, quoting the text so it can fix the
+       pattern. The model's examples (FR-5.1) carry the date, and under `datetime` the time, that the model read
+       (`2026-11-03 18:30`). An example that differs from what `when` gives is told back the same way.
+     - **Nothing executes.** `when` is data. The engine runs the one regular expression and looks names up in the
+       table. Rejected: a script the model writes and the server runs. A saved recipe re-runs unattended on a
+       schedule, prod serves users beyond the household, and FR-4.1 says nothing in a recipe is executed.
+     - **Rejected:** widening `isoDate` with more fixed forms. That is a date reader that has to learn each new site,
+       which the owner ruled out.
    - **Amended 2026-11-04 (DEB-3567): more than one broadcast a day, `numbering: datetime`.** This is for a page-only
      fetcher of a programme that airs more than once on some dates, such as a news programme. `date` stays as it is,
      for a programme that airs at most once a day. A saved `date` fetcher is not renumbered, because nothing about
      `date` changes.
-     - **The time.** It is read from the same published text as the date: the first `H.MM` or `H:MM` after the date
-       (hour 0–23, minute 00–59), with or without `kl.` before it. An ISO `2026-11-03T18:30…` gives 18:30. Everything
-       after the time is ignored (` | 25m`). The time is the clock time the page prints. No time zone is applied,
-       even when the text carries an offset, as for the date.
+     - **The date and the time** are what `numbering.when` reads (the bullet above), never a fixed form.
      - **The number.** Let *d* be the date's day of the year (1–366), as for `date`, and *m* the time's minute of
        the day (0–1439).
        - The season is the last two digits of the year, followed by the week of the year as two digits:
@@ -501,8 +526,8 @@ one lane.
      - **Filename.** Placed per FR-6.6, with the time after the ISO date:
        `<Series>/Season 2644/<Series> - S2644E808 - 2026-11-03 18.30 - <episode name>.mkv`. The time is written
        `HH.MM`, because a colon is not allowed in a file name.
-     - **An item with a date and no time.** The proof fails with *'<title>' has a date but no time, so it cannot be
-       numbered by date and time*. On a run the item is skipped with `<title>: the page gives it no time`. That is not
+     - **An item with a date and no time.** An item `when` does not match, or matches with no `hour` and `minute`,
+       has no number. The proof fails with *the date pattern finds no date in '…'* as above. On a run the item is skipped with `<title>: the page gives it no time`. That is not
        a failure, and it does not count toward FR-6.5's three.
      - **Two items in one slot.** These fail FR-4.2's *no two items map to the same one* at save, with *2 items on
        2026-11-03 (18.25, 18.30) air too close together to get numbers of their own*. On a later run the second is
@@ -510,9 +535,10 @@ one lane.
        The fetcher carries on.
      - **A `ytdlp` listing.** Its published value is a date with no time (FR-4.1's *An item with no date*), so a
        `ytdlp` listing cannot be numbered by `datetime`. The proof fails it with *yt-dlp gives these items no time*.
+       A `ytdlp` listing whose items' own fields print the time may still use `datetime` with `when` on that field.
        Reading a time from yt-dlp's `timestamp` is not in this amendment (*Non-goals*).
-     - **The model's examples** (FR-5.1). Under `datetime` the engine compares an example's date with the date it
-       read, and it does not compare the season or episode the model gave. The model is not asked to do the
+     - **The model's examples** (FR-5.1). Under `datetime` the engine compares an example's date and time with what
+       `when` read, and it does not compare the season or episode the model gave. The model is not asked to do the
        arithmetic above.
      - **Everywhere else.** Where this file says *`date` numbering*, `datetime` follows the same rule, except for the
        number itself, the filename's time and the two cases above. That covers page-only fetchers only, the
@@ -545,7 +571,10 @@ one lane.
      their own, answer `numbering: mapped` with `mapping`* (TMDB) or *… answer `numbering: date`* (page-only).
    - **The group syntax.** The prompt's *Regexes* line, and the schema's descriptions of `pattern[].regex` and
      `item_page.pattern`, say that a named group is written `(?<value>…)`, not `(?P<value>…)` (FR-4.1).
-   - **More than one broadcast a day (2026-11-04, DEB-3567).** The schema's `numbering` offers `datetime`. On a
+   - **More than one broadcast a day (2026-11-04, DEB-3567).** The schema's `numbering` offers `datetime`, and the
+     recipe's schema carries `numbering.when` (FR-4.5). The numbering step tells the model to read how the page
+     prints its dates, write `when` for them with the page's month names, and carry the date and time it read on
+     each example. A refusal from `when` quotes the item's text back to it. On a
      page-only fetcher, the numbering step says to answer `numbering: date` for a programme that airs at most once a
      day, and `numbering: datetime` when two items can share a date and the published text carries a time. A `date`
      recipe the proof refuses because items share a date gets that reason with *if the published text gives a time,
@@ -1115,9 +1144,12 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
       placed is skipped with its line.
 
     Added 2026-11-04 (DEB-3567):
-    - `isoDate` reads `4. Nov. 2026 6.00 | 4t 0m` as 2026-11-04, and `3. Nov. 2026 21.00 | 25m` and
-      `3. Nov. 2026 18.30 | 25m` as 2026-11-03. It still reads `27. oktober 2026`, `27.10.2026`, `2026-10-27` and
-      `20261027` as before, and it reads nothing from `Sent 27. oktober 2026`.
+    - With the `when` of FR-4.5's example and `months: {"nov": 11}`, `4. Nov. 2026 6.00 | 4t 0m` reads as 2026-11-04
+      6:00, and `3. Nov. 2026 21.00 | 25m` and `3. Nov. 2026 18.30 | 25m` as 2026-11-03 21:00 and 18:30. A month name
+      missing from `months`, `31. Nov. 2026` and `24.00` give no date. `isoDate` is unchanged, and a `date` recipe
+      with no `when` reads its dates as before.
+    - A `when` that matches no item fails the proof, and the reason quotes the item's text. A `when` with a
+      catastrophic-backtracking regex is refused before the proof runs.
     - Under `datetime`, those three lines give `S2644E876`, `S2644E823` and `S2644E808`. 1 January 2026 at 0.00 is
       `S2601E001`, and 31 December 2026 at 23.59 is `S2653E140`.
     - `Kvøldbók`'s listing saves under `datetime`, and its five items are placed under `Season 2644` and `Season 2645`
@@ -1219,6 +1251,8 @@ Added 2026-11-03 (DEB-3459):
 - Showing the air date in place of `SxxEyy` on a Ravilo client (FR-4.5), or the air time (FR-4.5's `datetime`).
 - A season name such as *Week of 2 November* for a `datetime` season (2026-11-04, DEB-3567). Ravilo shows
   `Season 2644`.
+- A model-written script, or any code from a recipe, run on the server (2026-11-04, DEB-3567). `numbering.when` is a
+  pattern and a table that the engine runs.
 - Reading an item's time from yt-dlp's `timestamp`, so that a `ytdlp` listing can be numbered by `datetime`
   (2026-11-04, DEB-3567).
 - **The Internet Archive through the `ytdlp` reader, and any rewriting of a link** (2026-11-02, DEB-3405). An Internet
