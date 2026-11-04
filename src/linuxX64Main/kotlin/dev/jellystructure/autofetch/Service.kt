@@ -134,7 +134,7 @@ class AutofetchService(
             for ((item, se) in pr.numbered) {
                 val itemId = itemKeyOf(item)
                 if (itemId.isEmpty()) continue
-                store.upsertListed(fetcherId, itemId, item, se, Numbering.isoDate(item.published), now)
+                store.upsertListed(fetcherId, itemId, item, se, PageDates.dateOf(recipe, item), now)
             }
             storeDated(fetcherId, pr, now)
             return

@@ -51,10 +51,18 @@ data class MMedia(
 data class MSeries(val name: String = "", val description: String = "", val image: String = "")
 
 @Serializable
+data class MMonth(val name: String = "", val month: Int = 0)
+
+@Serializable
+data class MDatePattern(val on: String = "published", val regex: String = "", val months: List<MMonth> = emptyList())
+
+@Serializable
 data class MRecipe(
     val list: MList = MList(),
     val media: MMedia = MMedia(),
     val numbering: String = "source",
+    /** DEB-3567 (FR-4.5) — how the page prints its dates; a blank [MDatePattern.regex] is none. */
+    @SerialName("date_pattern") val datePattern: MDatePattern = MDatePattern(),
     val pattern: List<PatternRule> = emptyList(),
     val series: MSeries? = null,
     val hosts: List<String> = emptyList(),
@@ -126,7 +134,10 @@ object ModelRecipe {
             source = RecipeSource(url = pageUrl, hosts = (listOfNotNull(host) + m.hosts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }).distinct()),
             list = ListSpec(kind = m.list.kind, itemSelector = m.list.itemSelector, url = m.list.url, itemsPath = m.list.itemsPath, fields = fields, next = field(m.list.next)),
             media = MediaSpec(kind = m.media.kind, manifest = m.media.manifest, manifestField = field(m.media.manifestField), itemPage = itemPage(m.media.itemPage)),
-            numbering = NumberingSpec(m.numbering),
+            numbering = NumberingSpec(m.numbering, m.datePattern.takeIf { it.regex.isNotBlank() && m.numbering in setOf("date", "datetime") }?.let { d ->
+                WhenSpec(d.on.trim().ifEmpty { "published" }, groupSyntax(d.regex.trim()),
+                    d.months.filter { it.name.isNotBlank() }.associate { it.name.trim().trimEnd('.').lowercase() to it.month })
+            }),
             series = m.series?.let { SeriesSpec(name = field(it.name) ?: Field(), description = field(it.description), image = field(it.image)) },
             pattern = m.pattern.map { it.copy(regex = groupSyntax(it.regex)) },
             language = LanguageSpec(audio = m.audioLanguage.trim().lowercase(), subtitle = m.subtitleLanguage.trim().lowercase()),
@@ -177,7 +188,12 @@ object ModelRecipe {
                 "manifest_field" to FIELD,
                 "item_page" to obj(mapOf("selector" to str(), "attr" to str(), "pattern" to str("one regex with the single named group `(?<value>…)`, not Python's `(?P<value>…)`")), listOf("selector", "attr", "pattern")),
             ), listOf("kind", "manifest")),
-            "numbering" to enumOf("source", "date", "mapped"),
+            "numbering" to enumOf("source", "date", "datetime", "mapped"),
+            "date_pattern" to obj(mapOf(
+                "on" to enumOf("published", "title", "description"),
+                "regex" to str("named groups `(?<year>…)`, `(?<month>…)`, `(?<day>…)` and for datetime `(?<hour>…)`, `(?<minute>…)`, not Python's `(?P<year>…)`. Blank = none"),
+                "months" to buildJsonObject { put("type", "array"); put("items", obj(mapOf("name" to str("the page's month name or abbreviation"), "month" to int()), listOf("name", "month"))) },
+            ), listOf("on", "regex", "months")),
             "pattern" to buildJsonObject {
                 put("type", "array")
                 put("items", obj(mapOf("on" to enumOf("title", "link", "description", "published"), "regex" to str("named groups `(?<season>…)` and/or `(?<episode>…)`, not Python's `(?P<season>…)`")), listOf("on", "regex")))
@@ -186,10 +202,10 @@ object ModelRecipe {
             "hosts" to buildJsonObject { put("type", "array"); put("items", str()) },
             "audio_language" to str("ISO 639-2 of the spoken language, such as `fao`"),
             "subtitle_language" to str("ISO 639-2 of the subtitle track to look for, or blank"),
-        ), listOf("list", "media", "numbering", "pattern", "hosts", "audio_language", "subtitle_language")),
+        ), listOf("list", "media", "numbering", "date_pattern", "pattern", "hosts", "audio_language", "subtitle_language")),
         "examples" to buildJsonObject {
             put("type", "array")
-            put("items", obj(mapOf("title" to str(), "season" to int(), "episode" to int(), "date" to str("yyyy-MM-dd, for date numbering")), listOf("title")))
+            put("items", obj(mapOf("title" to str(), "season" to int(), "episode" to int(), "date" to str("yyyy-MM-dd, for date and datetime numbering")), listOf("title")))
         },
         "mapping" to buildJsonObject {
             put("type", "array")

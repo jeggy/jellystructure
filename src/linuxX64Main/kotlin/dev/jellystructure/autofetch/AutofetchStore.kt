@@ -244,7 +244,7 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore {
 
     /** DEB-2916 (FR-1) — the series paths, trailing slash trimmed, fed by an Auto-fetch whose recipe numbers by air date. */
     fun dateNumberedSeriesPaths(): Set<String> {
-        val dateFetchers = fetchers().filter { it.recipe?.numbering?.kind == "date" }.map { it.id }.toSet()
+        val dateFetchers = fetchers().filter { it.recipe?.numbering?.kind.let { k -> k == "date" || k == "datetime" } }.map { it.id }.toSet()
         if (dateFetchers.isEmpty()) return emptySet()
         return q.markAll().executeAsList().filter { it.fetcher_id in dateFetchers }.map { it.series_path.trimEnd('/') }.toSet()
     }

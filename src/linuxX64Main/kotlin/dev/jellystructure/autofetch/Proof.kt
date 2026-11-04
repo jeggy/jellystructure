@@ -143,6 +143,8 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             if (pageOnly) { if (it.title.isNullOrBlank() && Numbering.isoDate(it.published) == null) return fail("an item has neither a title nor a date", listed) }
             else if (it.title.isNullOrBlank()) return fail("an item has no title", listed)
         }
+        // FR-4.5 (DEB-3567) — a yt-dlp listing's published value is a date with no time, so it cannot be numbered by date and time.
+        if (recipe.list.kind == "ytdlp" && recipe.numbering.kind == "datetime" && recipe.numbering.whenPattern == null) return fail("yt-dlp gives these items no time, so they cannot be numbered by date and time", listed)
         // FR-4.1 — the first three items a yt-dlp flat entry gives no date are dated from their own answer, and no others. When the media is
         // yt-dlp's too, the probe's read of the first of them dates it (the probe prints the same three fields), so the proof makes four requests.
         val dated = LinkedHashMap<String, String?>()
@@ -175,13 +177,19 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val byDate = recipe.list.kind == "ytdlp" && recipe.numbering.kind == "date"
         for (it in items) {
             if (byDate && ItemDates.undated(it)) continue
-            val se = numberOf(recipe, it) ?: return fail("'${it.title ?: it.link}' maps to no season and episode", items)
+            val se = numberOf(recipe, it)
+                ?: return fail(if (recipe.numbering.whenPattern != null) "the date pattern finds no date in '${PageDates.quote(recipe.numbering, it)}'"
+                else "'${it.title ?: it.link}' maps to no season and episode", items)
             numbered += it to se
         }
         if (byDate && numbered.map { Numbering.isoDate(it.first.published) }.distinct().size < 2)
             return fail("yt-dlp gives these items no date, so they cannot be numbered by date", items, numbered)
         numbered.groupBy { it.second }.entries.firstOrNull { it.value.size > 1 }?.let { (se, group) ->
-            val what = if (recipe.numbering.kind == "date") "share the date ${Numbering.isoDate(group[0].first.published)}" else "both map to ${Numbering.code(se)}"
+            if (recipe.numbering.kind == "datetime") {
+                val times = group.mapNotNull { PageDates.read(recipe.numbering, it.first)?.minute }.sorted().joinToString(", ") { Numbering.clock(it) }
+                return fail("${group.size} items on ${PageDates.read(recipe.numbering, group[0].first)?.date} ($times) air too close together to get numbers of their own", items, numbered)
+            }
+            val what = if (recipe.numbering.kind == "date") "share the date ${PageDates.read(recipe.numbering, group[0].first)?.date}" else "both map to ${Numbering.code(se)}"
             return fail("${group.size} items $what; every item needs a number of its own", items, numbered)
         }
         val series = if (pageOnly) readSeries(recipe, read) else null
@@ -274,7 +282,8 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
     }
 
     internal fun numberOf(recipe: Recipe, item: ListedItem): SeasonEpisode? = when (recipe.numbering.kind) {
-        "date" -> Numbering.isoDate(item.published)?.let { Numbering.fromDate(it) }
+        "date" -> PageDates.read(recipe.numbering, item)?.let { Numbering.fromDate(it.date) }
+        "datetime" -> PageDates.read(recipe.numbering, item)?.let { p -> p.minute?.let { m -> Numbering.fromDateTime(p.date, m) } }
         "source" -> Numbering.fromSource(recipe.pattern, item)
         else -> null
     }

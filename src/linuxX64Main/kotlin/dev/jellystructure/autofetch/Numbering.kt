@@ -144,6 +144,9 @@ object Numbering {
         return null
     }
 
+    /** `HH.MM` of a minute of the day, the form a file name carries (a colon is not allowed in one). */
+    fun clock(minuteOfDay: Int): String = (minuteOfDay / 60).toString().padStart(2, '0') + "." + (minuteOfDay % 60).toString().padStart(2, '0')
+
     /** The UTC calendar date of [epochSec] as `yyyy-MM-dd` (a yt-dlp `timestamp`), no time-zone shift. */
     fun dateOfEpoch(epochSec: Long): String? {
         val z = epochSec.floorDiv(86_400L) + 719_468L
@@ -158,7 +161,7 @@ object Numbering {
         return build(y.toString(), m.toString(), d.toString())
     }
 
-    private fun build(y: String, m: String, d: String): String? {
+    internal fun build(y: String, m: String, d: String): String? {
         val year = y.toIntOrNull() ?: return null; val month = m.toIntOrNull() ?: return null; val day = d.toIntOrNull() ?: return null
         if (year !in 1900..2200 || month !in 1..12 || day !in 1..daysIn(year, month)) return null
         return "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}"
@@ -174,6 +177,17 @@ object Numbering {
         var doy = d
         for (k in 1 until mo) doy += daysIn(y, k)
         return SeasonEpisode(y, doy)
+    }
+
+    /**
+     * FR-4.5 (amended 2026-11-04, DEB-3567) — `datetime`: season = `(year − 2000) × 100 + week`, episode = the day of the week and a ~10-minute slot
+     * of the time. 3 November 2026 at 18.30 is S2644E808. Null outside 2010–2099.
+     */
+    fun fromDateTime(iso: String, minuteOfDay: Int): SeasonEpisode? {
+        val de = fromDate(iso) ?: return null
+        if (de.season !in 2010..2099 || minuteOfDay !in 0..1439) return null
+        val d = de.episode
+        return SeasonEpisode((de.season - 2000) * 100 + (d - 1) / 7 + 1, ((d - 1) % 7) * 140 + minuteOfDay * 140 / 1440 + 1)
     }
 
     // ---- names (FR-6.6) -------------------------------------------------------------------------------------------
@@ -194,16 +208,72 @@ object Numbering {
         return "S${s}E$e"
     }
 
+    /** `datetime` writes the episode with three digits, `S2601E001`, since its episodes run to 980 (FR-4.5, amended 2026-11-04). */
+    fun codeFor(numbering: String, se: SeasonEpisode): String =
+        if (numbering == "datetime") "S${se.season}E${se.episode.toString().padStart(3, '0')}" else code(se)
+
     /**
      * The file name of an episode (FR-6.6, FR-4.5): `<Series> - SxxEyy - <name>.mkv`, and for date numbering
-     * `<Series> - S2026E300 - 2026-10-27 - <name>.mkv`. The name is absent when the page has none.
+     * `<Series> - S2026E300 - 2026-10-27 - <name>.mkv`, and for `datetime` numbering the time follows the date:
+     * `<Series> - S2644E808 - 2026-11-03 18.30 - <name>.mkv`. The name is absent when the page has none.
      */
-    fun fileName(series: String, se: SeasonEpisode, isoDate: String?, episodeName: String?): String {
+    fun fileName(series: String, se: SeasonEpisode, isoDate: String?, episodeName: String?, time: String? = null): String {
         val parts = ArrayList<String>()
         parts += cleanName(series)
-        parts += code(se)
-        if (isoDate != null) parts += isoDate
+        parts += codeFor(if (time != null) "datetime" else "", se)
+        if (isoDate != null) parts += if (time != null) "$isoDate $time" else isoDate
         episodeName?.let { cleanName(it) }?.takeIf { it.isNotEmpty() }?.let { parts += it }
         return parts.joinToString(" - ") + ".mkv"
+    }
+}
+
+/** DEB-3567 (FR-4.5) — a date, and under `datetime` the minute of the day (0–1439), as the recipe's `numbering.when` read them. */
+data class PublishedAt(val date: String, val minute: Int?) {
+    /** `2026-11-03 18:30`, or the date alone. */
+    val stamp: String get() = if (minute == null) date else "$date ${(minute / 60).toString().padStart(2, '0')}:${(minute % 60).toString().padStart(2, '0')}"
+}
+
+/**
+ * DEB-3567 (FR-4.5, amended 2026-11-04) — an item's date, read the way the recipe says the page prints it. `numbering.when` is data: one
+ * regular expression with the named groups `year`, `month`, `day` (and `hour`, `minute`) and the page's month names. Without it, `date`
+ * numbering reads the published text as before.
+ */
+object PageDates {
+    private const val MAX_INPUT = 2_000
+
+    /** The text [w] reads from [item]. */
+    fun textOf(on: String, item: ListedItem): String? = when (on) {
+        "title" -> item.title
+        "description" -> item.description
+        else -> item.published
+    }
+
+    fun read(n: NumberingSpec, item: ListedItem): PublishedAt? {
+        val w = n.whenPattern ?: return if (n.kind == "datetime") null else Numbering.isoDate(item.published)?.let { PublishedAt(it, null) }
+        val text = textOf(w.on, item)?.take(MAX_INPUT) ?: return null
+        return byPattern(w, text)
+    }
+
+    /** The date of [item] under [recipe], or the plain reading of its published text. */
+    fun dateOf(recipe: Recipe, item: ListedItem): String? = read(recipe.numbering, item)?.date ?: Numbering.isoDate(item.published)
+
+    /** The text a refusal quotes back to the model: at most 80 characters. */
+    fun quote(n: NumberingSpec, item: ListedItem): String =
+        (textOf(n.whenPattern?.on ?: "published", item) ?: item.title ?: item.link ?: "").replace(Regex("\\s+"), " ").trim().take(80)
+
+    fun byPattern(w: WhenSpec, text: String): PublishedAt? {
+        val m = runCatching { Regex(w.regex).find(text) }.getOrNull() ?: return null
+        fun g(name: String) = runCatching { m.groups[name]?.value }.getOrNull()
+        val year = g("year")?.toIntOrNull()?.let { if (it < 100) 2000 + it else it } ?: return null
+        val rawMonth = g("month")?.trim()?.trimEnd('.')?.lowercase() ?: return null
+        val month = rawMonth.toIntOrNull() ?: w.months[rawMonth] ?: return null
+        val day = g("day")?.toIntOrNull() ?: return null
+        val date = Numbering.build(year.toString(), month.toString(), day.toString()) ?: return null
+        val hourText = g("hour"); val minuteText = g("minute")
+        if (hourText == null && minuteText == null) return PublishedAt(date, null)
+        val hour = hourText?.toIntOrNull() ?: return null
+        val minute = minuteText?.toIntOrNull() ?: return null
+        if (hour !in 0..23 || minute !in 0..59) return null
+        return PublishedAt(date, hour * 60 + minute)
     }
 }

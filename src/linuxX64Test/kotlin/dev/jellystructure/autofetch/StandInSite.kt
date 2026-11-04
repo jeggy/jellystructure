@@ -36,6 +36,15 @@ class StandInSite(private val clock: FakeClock) : Transport {
     /** Royndin: year-seasons with a title like `Royndin 2026 · 1. partur`. */
     var royndinParts: List<Int> = listOf(1, 2, 3)
 
+    /** DEB-3567 — Kvøldbók, a programme that airs more than once a day: (item number, as the page prints the date), newest first. */
+    var kvoldbok: List<Pair<Int, String>> = listOf(
+        5 to "5. Nov. 2026 6.00 | 25m", 4 to "3. Nov. 2026 21.00 | 25m", 3 to "3. Nov. 2026 18.30 | 25m", 2 to "3. Nov. 2026 6.00 | 25m", 1 to "2. Nov. 2026 18.30 | 25m",
+    )
+
+    fun kvoldbokListing(): String = kvoldbok.joinToString("\n", "<html><body><h1>Kvøldbók</h1><p class=\"about\">Tíðindi dagliga.</p><img class=\"poster\" src=\"/img/kvoldbok.jpg\"><ul>", "</ul></body></html>") { (n, at) ->
+        """<li class="ep"><a href="/sendingar/kvoldbok/$n">Kvøldbók · $n</a><span class="when">$at</span><p>Lýsing $n</p></li>"""
+    }
+
     fun nonRobots() = requests.filter { !it.first.endsWith("/robots.txt") }.map { it.first }
     fun reset() = requests.clear()
 
@@ -68,6 +77,8 @@ high.m3u8
         return when {
             path == "/robots.txt" -> HttpReply(200, emptyMap(), robots)
             path == "/sendingar/dagbok" -> if (listingStatus != 200) HttpReply(listingStatus, listingHeaders, "") else HttpReply(200, emptyMap(), dagbokListing())
+            path == "/sendingar/kvoldbok" -> HttpReply(200, emptyMap(), kvoldbokListing())
+            path.startsWith("/sendingar/kvoldbok/") -> HttpReply(200, emptyMap(), "<html><script>var media = 'KV${path.substringAfterLast('/')}';</script></html>")
             path == "/sendingar/royndin" -> HttpReply(200, emptyMap(), royndinListing())
             path.startsWith("/sendingar/dagbok/") -> {
                 val d = path.substringAfterLast('/').toInt()
@@ -244,6 +255,20 @@ class Harness {
         series = SeriesSpec(name = Field("h1"), description = Field("p.about"), image = Field("img.poster", "src")),
         language = LanguageSpec("fao", ""),
     )
+
+    /** DEB-3567 — the same recipe as Dagbók's, for a listing whose published text is `3. Nov. 2026 18.30 | 25m`. */
+    val kvoldbokUrl = "https://varpid.example.fo/sendingar/kvoldbok"
+    fun kvoldbokRecipe(numbering: String = "datetime") = dagbokRecipe.copy(
+        source = dagbokRecipe.source.copy(url = kvoldbokUrl),
+        list = dagbokRecipe.list.copy(fields = dagbokRecipe.list.fields + ("published" to Field("span.when"))),
+        numbering = NumberingSpec(numbering, WhenSpec("published",
+            """(?<day>\d{1,2})\.\s*(?<month>\p{L}+)\.?\s+(?<year>\d{4})(?:\s+(?<hour>\d{1,2})[.:](?<minute>\d{2}))?""", mapOf("nov" to 11))),
+    )
+    suspend fun saveKvoldbok(retention: RetentionSpec? = null): Fetcher =
+        when (val r = service.save(SaveRequest(kvoldbokUrl, null, true, kvoldbokRecipe(), retention = retention))) {
+            is SaveResult.Saved -> r.fetcher
+            is SaveResult.Refused -> error("save refused: ${r.reason}")
+        }
 
     val royndinRecipe = Recipe(
         source = RecipeSource("https://varpid.example.fo/sendingar/royndin", listOf("varpid.example.fo", "media.example.fo")),

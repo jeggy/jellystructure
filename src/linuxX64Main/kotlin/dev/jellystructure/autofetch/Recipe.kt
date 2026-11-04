@@ -83,6 +83,16 @@ data class ItemPageSpec(
 data class NumberingSpec(
     /** `source` · `date` (page-only only, FR-4.5) · `mapped` (a TMDB fetcher only, FR-4.3: the table is the items' approved numbers, not part of the recipe). */
     val kind: String = "source",
+    /** DEB-3567 (FR-4.5) — how this page prints its dates; `datetime` needs it, `date` may carry it. */
+    @SerialName("when") val whenPattern: WhenSpec? = null,
+)
+
+/** `numbering.when`: [on] the listing field it reads, [regex] with the named groups `year`, `month`, `day` (and `hour`, `minute`), [months] the page's own names for 1–12. */
+@Serializable
+data class WhenSpec(
+    val on: String = "published",
+    val regex: String = "",
+    val months: Map<String, Int> = emptyMap(),
 )
 
 @Serializable
@@ -189,9 +199,19 @@ object RecipeValidator {
                     PatternSafety.check(r.regex, required = emptySet(), anyOf = setOf("season", "episode"))?.let { errors += "pattern rule ${i + 1}: $it" }
                 }
             }
-            "date" -> {
-                if (!pageOnly) errors += "date numbering is offered only to a page-only fetcher"
-                if (YtDlpListing.fieldsOf(recipe.list)["published"] == null) errors += "date numbering needs the listing's published field"
+            "date", "datetime" -> {
+                val kind = recipe.numbering.kind
+                val w = recipe.numbering.whenPattern
+                if (!pageOnly) errors += "$kind numbering is offered only to a page-only fetcher"
+                if (kind == "datetime" && w == null) errors += "datetime numbering needs numbering.when, how the page prints its dates"
+                val on = w?.on ?: "published"
+                if (on !in setOf("title", "description", "published")) errors += "numbering.when reads title, description or published, not '$on'"
+                else if (YtDlpListing.fieldsOf(recipe.list)[on] == null) errors += "$kind numbering needs the listing's $on field"
+                if (w != null) {
+                    val needed = if (kind == "datetime") setOf("year", "month", "day", "hour", "minute") else setOf("year", "month", "day")
+                    PatternSafety.check(w.regex, required = needed, anyOf = setOf("hour", "minute").minus(needed))?.let { errors += "numbering.when: $it" }
+                    if (w.months.values.any { it !in 1..12 }) errors += "numbering.when: a month name maps to 1–12"
+                }
             }
             // FR-4.3 — the table is not in the recipe: an item's number is the one the admin approved, held on the item.
             "mapped" -> if (pageOnly) errors += RecipeRefusal.MAPPED_PAGE_ONLY

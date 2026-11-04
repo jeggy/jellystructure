@@ -126,7 +126,7 @@ class AutofetchEngine(
             // FR-4.3 — the admin's approved number outranks whatever the recipe works out, and `mapped` works out none.
             val se = store.item(f.id, itemId)?.approved ?: proofHelper.numberOf(recipe, it)
             listed[itemId] = it to se
-            store.upsertListed(f.id, itemId, it, se, Numbering.isoDate(it.published), now)
+            store.upsertListed(f.id, itemId, it, se, PageDates.dateOf(recipe, it), now)
             if (itemId in dateReads) store.setOwnDate(f.id, itemId, dateReads[itemId])
         }
         val stored = store.items(f.id)
@@ -147,7 +147,7 @@ class AutofetchEngine(
             return onTmdb?.let { (se.season to se.episode) in it }
         }
 
-        val takenThisRun = HashSet<SeasonEpisode>()
+        val takenThisRun = HashMap<SeasonEpisode, String>()
         val placedLines = ArrayList<String>()
         var placed = 0
         var attempted = 0
@@ -164,6 +164,11 @@ class AutofetchEngine(
                     if (item.ownDateRead) lines += RunLine("skipped", "${label(item)}: yt-dlp gives it no date")
                     return@run null
                 }
+                // FR-4.5 (DEB-3567) — under `datetime` a date with no time has no number: skipped, and not one of FR-6.5's three failures.
+                if (recipe.numbering.kind == "datetime" && PageDates.read(recipe.numbering, listedItem)?.minute == null) {
+                    lines += RunLine("skipped", "${label(item)}: the page gives it no time")
+                    return@run null
+                }
                 // FR-4.3 — a `mapped` item with no approved number is never downloaded on a guess: it waits for the admin.
                 if (recipe.numbering.kind == "mapped") { waiting(f, item, "no number approved yet"); lines += RunLine("waiting", "${label(item)}: waiting for a number") }
                 else lines += RunLine("skipped", "${label(item)}: no season and episode")
@@ -174,9 +179,13 @@ class AutofetchEngine(
                 lines += RunLine("waiting", "${Numbering.code(se)}: waiting for the admin's number, the pattern is not proven against TMDB"); continue
             }
             if (item.state == "waiting") store.setItemState(f.id, item.itemId, "new", "", item.failures)   // it has a number now (approved, or the pattern is proven)
-            if (se in takenThisRun || se in folderCodes) {
-                lines += RunLine("skipped", if (recipe.numbering.kind == "date") "${label(item)}: shares ${Numbering.isoDate(item.published) ?: Numbering.code(se)} with an episode already placed"
-                else "${label(item)}: ${Numbering.code(se)} already has a file")
+            if (se in takenThisRun.keys || se in folderCodes) {
+                lines += RunLine("skipped", when (recipe.numbering.kind) {
+                    "date" -> "${label(item)}: shares ${Numbering.isoDate(item.published) ?: Numbering.code(se)} with an episode already placed"
+                    // FR-4.5 (DEB-3567) — the slot is taken by an episode a few minutes away: name where that one aired.
+                    "datetime" -> "${label(item)}: airs too close to ${slotOwner(f, se, takenThisRun[se])}, already placed"
+                    else -> "${label(item)}: ${Numbering.code(se)} already has a file"
+                })
                 continue
             }
             if (attempted >= LaneRules.MAX_PER_RUN) { skippedForCap++; continue }
@@ -186,7 +195,7 @@ class AutofetchEngine(
             attempted++
             when (val r = fetchOne(f, recipe, lane, listedItem, item, se, stop)) {
                 is OneResult.Placed -> {
-                    placed++; takenThisRun += se
+                    placed++; takenThisRun[se] = airedAt(recipe, listedItem)
                     // TMDB unreachable is not evidence the episode is there: it is filed, and the daily check clears it if TMDB has it.
                     val queued = !f.pageOnly && f.proven && tmdbHas(se) != true && queue.file(f, item, r.path, r.durationSec)
                     val text = r.text + if (queued) " · not on TMDB → queued" else ""
@@ -223,6 +232,16 @@ class AutofetchEngine(
     }
 
     private fun label(item: FetchItem) = item.title ?: item.link
+
+    /** `2026-11-03 18.30` — when a `datetime` item aired, as its file name carries it. */
+    private fun airedAt(recipe: Recipe, listed: ListedItem): String =
+        PageDates.read(recipe.numbering, listed)?.let { p -> listOfNotNull(p.date, p.minute?.let { Numbering.clock(it) }).joinToString(" ") }.orEmpty()
+
+    /** When the episode holding [se] aired: this run's own placement, else the date and time in the placed file's name. */
+    private fun slotOwner(f: Fetcher, se: SeasonEpisode, thisRun: String?): String =
+        thisRun ?: store.items(f.id).firstOrNull { it.season == se.season && it.episode == se.episode && it.placedPath != null }?.placedPath
+            ?.let { Regex("""(\d{4}-\d{2}-\d{2} \d{2}\.\d{2})""").find(it.substringAfterLast('/'))?.groupValues?.get(1) }
+        ?: Numbering.codeFor("datetime", se)
 
     /** The item is waiting for the admin's number (FR-4.3): the fetcher's row counts it, and the next run looks at it again. */
     private fun waiting(f: Fetcher, item: FetchItem, why: String) {
@@ -301,9 +320,11 @@ class AutofetchEngine(
             Source.Manifest(manifestUrl, manifest.reply)
         }
 
-        val isoDate = if (recipe.numbering.kind == "date") Numbering.isoDate(item.published) else null
+        val isoDate = if (recipe.numbering.kind == "date" || recipe.numbering.kind == "datetime") Numbering.isoDate(item.published) else null
+        // The stored `published` is the date alone; the time is on the item as the page printed it (FR-4.5, DEB-3567).
+        val time = if (recipe.numbering.kind == "datetime") PageDates.read(recipe.numbering, listed)?.minute?.let { Numbering.clock(it) } else null
         val name = (item.title ?: "").let { t -> if (t.isNotBlank()) t else null }
-        val fileName = Numbering.fileName(f.name, se, isoDate, name)
+        val fileName = Numbering.fileName(f.name, se, isoDate, name, time)
         val seasonDir = "${f.seriesPath}/${Numbering.seasonFolder(se.season)}"
         val finalPath = "$seasonDir/$fileName"
         if (shell.exists(finalPath)) return OneResult.Skipped("${Numbering.code(se)} already has a file")

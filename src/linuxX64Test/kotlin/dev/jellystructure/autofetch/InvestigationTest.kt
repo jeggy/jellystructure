@@ -284,6 +284,58 @@ class InvestigationTest {
         assertTrue("maps to no season and episode; if the items carry no number of their own, answer `numbering: date`" in told && "mapped" !in told, told)
     }
 
+    // ---- DEB-3567 (FR-5.1): a programme that airs more than once a day ----
+
+    private val kvoldbokAnswer = dagbokAnswer.replace("\"published\":\"time@datetime\"", "\"published\":\"span.when\"")
+        .replace("\"numbering\":\"date\"", "\"numbering\":\"datetime\",\"date_pattern\":{\"on\":\"published\",\"regex\":\"(?P<day>\\\\d{1,2})\\\\.\\\\s*(?P<month>\\\\p{L}+)\\\\.?\\\\s+(?P<year>\\\\d{4})\\\\s+(?P<hour>\\\\d{1,2})[.:](?P<minute>\\\\d{2})\",\"months\":[{\"name\":\"Nov\",\"month\":11}]}")
+        .replace("""[{"title":"Dagbók · 27. oktober","date":"2026-10-27"}]""", """[{"title":"Kvøldbók · 3","season":1,"episode":1,"date":"2026-11-03 18:30"}]""")
+
+    private fun kvoldbokTools() {
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/kvoldbok"}""")
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/kvoldbok/3"}""")
+        ai.tool("probe", """{"url":"https://media.example.fo/KV3/master.m3u8"}""")
+    }
+
+    @Test
+    fun `a page-only prompt offers datetime for a programme that airs more than once a day and the schema lists it - DEB-3567`() {
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.kvoldbokUrl, null, true)
+        val prompt = systemOf(0)
+        assertTrue("numbering: datetime" in prompt && "at most once a day" in prompt, prompt)
+        assertTrue("\"datetime\"" in ai.sent[0], "the schema's numbering enum offers datetime")
+    }
+
+    @Test
+    fun `a date recipe refused for a shared date is told to answer datetime when the text gives a time - DEB-3567`() {
+        kvoldbokTools()
+        ai.answer(kvoldbokAnswer.replace("\"numbering\":\"datetime\"", "\"numbering\":\"date\""))   // the date pattern is kept, so it reads the dates
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.kvoldbokUrl, null, true)
+        val told = toldBack(ai.sent.size - 1)
+        assertTrue("3 items share the date 2026-11-03; every item needs a number of its own; if the published text gives a time, answer `numbering: datetime`" in told, told)
+    }
+
+    @Test
+    fun `a datetime answer reaches the review with the time after each date and its season and episode examples are not compared - DEB-3567`() {
+        kvoldbokTools(); ai.answer(kvoldbokAnswer)
+        val (out, _) = run(h.kvoldbokUrl, null, true)
+        val review = assertNotNull(out.view.review)
+        assertEquals("datetime", review.numbering)
+        assertEquals(5, review.found)
+        assertTrue(review.rows.any { it.code == "S2644E808" && it.date == "2026-11-03 18.30" }, review.rows.toString())
+        assertEquals("By date and time", review.pattern)
+        assertTrue("each with its own date and time" in review.proof, review.proof)
+    }
+
+    @Test
+    fun `a datetime answer whose example names another date is told back - DEB-3567`() {
+        kvoldbokTools()
+        ai.answer(kvoldbokAnswer.replace("\"date\":\"2026-11-03 18:30\"", "\"date\":\"2026-11-03 18:35\""))
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.kvoldbokUrl, null, true)
+        assertTrue("on 'Kvøldbók · 3' you said" in toldBack(ai.sent.size - 1))
+    }
+
     private fun <T> withActivityLog(body: suspend (ActivityLog) -> T): T = runBlocking {
         val dir = "/tmp/jellystructure-test-inv-log-${platform.posix.getpid()}"
         platform.posix.system("rm -rf '$dir'; mkdir -p '$dir'")

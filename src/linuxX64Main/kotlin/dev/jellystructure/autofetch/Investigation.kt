@@ -288,7 +288,9 @@ class Investigator(
 
     /** FR-5.1 (DEB-3459) — what the model is told when its `source` pattern numbers an item that carries no number. */
     private fun noNumberAdvice(reason: String, pageOnly: Boolean): String =
-        if (!reason.contains("maps to no season and episode")) ""
+        // DEB-3567 (FR-5.1) — a `date` recipe refused because items share a date is told what to answer when the published text carries a time.
+        if (pageOnly && reason.contains("share the date")) "; if the published text gives a time, answer `numbering: datetime`"
+        else if (!reason.contains("maps to no season and episode")) ""
         else if (pageOnly) "; if the items carry no number of their own, answer `numbering: date`"
         else "; if the items carry no number of their own, answer `numbering: mapped` with `mapping`"
 
@@ -324,9 +326,12 @@ class Investigator(
         for (e in examples) {
             val hit = titled(e) ?: continue
             val (item, se) = hit
-            val dateOk = e.date == null || Numbering.isoDate(item.published) == e.date
-            val seOk = (e.season == null || e.season == se.season) && (e.episode == null || e.episode == se.episode)
-            if (!dateOk || !seOk) return Proved.Retry("on '${e.title}' you said ${listOfNotNull(e.season?.let { "season $it" }, e.episode?.let { "episode $it" }, e.date).joinToString(", ")}, and the engine reads ${Numbering.code(se)}${Numbering.isoDate(item.published)?.let { " ($it)" }.orEmpty()}", STEP_PATTERN)
+            val read = PageDates.read(recipe.numbering, item)
+            // DEB-3567 — the example carries the date, and under `datetime` the time (`2026-11-03 18:30`), as the model read them.
+            val dateOk = e.date == null || (if (e.date.trim().length > 10) read?.stamp else read?.date) == e.date.trim()
+            // DEB-3567 — under `datetime` the model is not asked to do the arithmetic: only the date it gave is compared.
+            val seOk = mr.numbering == "datetime" || (e.season == null || e.season == se.season) && (e.episode == null || e.episode == se.episode)
+            if (!dateOk || !seOk) return Proved.Retry("on '${e.title}' you said ${listOfNotNull(e.season?.let { "season $it" }, e.episode?.let { "episode $it" }, e.date).joinToString(", ")}, and the engine reads ${Numbering.codeFor(recipe.numbering.kind, se)}${read?.stamp?.let { " ($it)" }.orEmpty()}", STEP_PATTERN)
         }
 
         val libs = libraries()
@@ -342,12 +347,12 @@ class Investigator(
             val names = tmdb.orEmpty().associate { (it.season to it.episode) to it.name }
             pr.items.map { item ->
                 val key = itemKeyOf(item); val se = placed[key]
-                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), se?.let { Numbering.code(it) }.orEmpty(), Numbering.isoDate(item.published),
+                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), se?.let { Numbering.code(it) }.orEmpty(), reviewDate(recipe, item),
                     have = se != null && se in have, itemId = key, tmdbName = se?.let { names[it.season to it.episode] }, why = pr.whys[key]?.takeIf { it.isNotBlank() })
             }
         } else {
             val rows = pr.numbered.map { (item, se) ->
-                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), Numbering.code(se), Numbering.isoDate(item.published), have = se in have)
+                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), Numbering.codeFor(recipe.numbering.kind, se), reviewDate(recipe, item), have = se in have)
             }
             if (r.pageOnly) rows else pr.numbered.zip(rows).map { (n, row) -> row.copy(notOnTmdb = !row.have && n.second.season to n.second.episode !in tmdbHas) }
         }
@@ -357,7 +362,7 @@ class Investigator(
             source = "${Urls.host(r.url).orEmpty()} · ${recipe.media.kind.uppercase()} manifest · ${r.variantsText.ifBlank { "best variant, always" }}",
             found = withTmdb.size, missing = withTmdb.count { !it.have }, have = withTmdb.count { it.have }, notOnTmdb = withTmdb.count { it.notOnTmdb },
             pattern = RecipeView.patternText(recipe), numbering = recipe.numbering.kind,
-            proof = proofLine(r, pr), proven = pr.proven, rows = withTmdb,
+            proof = proofLine(r, pr, recipe), proven = pr.proven, rows = withTmdb,
             libraries = libs, libraryPath = lib?.path.orEmpty(), retention = recipe.retention, schedule = "daily@04:00", replaces = r.fetcherId,
         )
         return Proved.Ok(Held(recipe, pr, name, lib?.path.orEmpty(), mapping), review)
@@ -365,14 +370,20 @@ class Investigator(
 
     private fun proofStep(why: String): String = when {
         why.contains("listing yields") || why.contains("has no link") || why.contains("has no title") || why.contains("neither a title nor a date") || why.contains("gives the programme no name") -> STEP_SERIES
-        why.contains("maps to no season") || why.contains("both map to") || why.contains("share the date") || why.contains("disagrees with TMDB") || why.contains("TMDB could not be reached") || why.contains("which TMDB does not have") || why.contains("proposal maps no item") -> STEP_PATTERN
+        why.contains("maps to no season") || why.contains("both map to") || why.contains("share the date") || why.contains("date pattern finds no date") || why.contains("air too close together") || why.contains("gives these items no time") || why.contains("disagrees with TMDB") || why.contains("TMDB could not be reached") || why.contains("which TMDB does not have") || why.contains("proposal maps no item") -> STEP_PATTERN
         why.contains("manifest") || why.contains("probe") -> STEP_VIDEOS
         else -> STEP_SCRIPT
     }
 
-    private fun proofLine(r: Run, pr: ProofResult): String = when {
+    /** The date a review row shows (FR-4.5): under `datetime` the time follows it, `2026-11-03 18.30`. */
+    private fun reviewDate(recipe: Recipe, item: ListedItem): String? {
+        val p = PageDates.read(recipe.numbering, item) ?: return Numbering.isoDate(item.published)
+        return if (recipe.numbering.kind == "datetime" && p.minute != null) "${p.date} ${Numbering.clock(p.minute)}" else p.date
+    }
+
+    private fun proofLine(r: Run, pr: ProofResult, recipe: Recipe): String = when {
         pr.mapped -> "mapped by the model's proposal, not by a pattern — ${pr.numbered.size} of ${pr.items.size} items have a proposed number. Nothing is stored that you do not tick; every other item waits for your number."
-        r.pageOnly -> "${pr.items.size} items, each with its own ${if (pr.numbered.firstOrNull()?.first?.published != null && r.pageOnly) "date" else "number"}"
+        r.pageOnly -> "${pr.items.size} items, each with its own ${if (pr.numbered.firstOrNull()?.first?.published != null && r.pageOnly) (if (recipe.numbering.kind == "datetime") "date and time" else "date") else "number"}"
         pr.proven -> "pattern agrees with TMDB on ${pr.agreements} of ${pr.tmdbChecked} episodes TMDB has"
         else -> "pattern not proven — TMDB has ${pr.tmdbChecked} of these episodes, and at least two must agree. Every episode TMDB lacks will wait for your number."
     }
@@ -568,7 +579,7 @@ How to work:
 1. fetch the series page. Find what lists the episodes: HTML items on the page itself, or a JSON listing the page calls (fetch it to check). Prefer the page's own markup or an obvious JSON endpoint on the same site.
 2. Find how an episode becomes a video manifest: a URL in the listing, a URL template with {id} (the listing's `id` field) and/or {value} (a value read from the episode's own page, `item_page`), then probe one manifest. HLS and DASH only. If the manifest is protected by DRM, say so in `reason` and answer not_a_series.
 3. Decide whether this is a SERIES: several episodes that recur under one title, with season and episode numbering of some kind. A single film, a one-off clip or a page with one video is not_a_series. A recurring annual broadcast is a series with the YEAR as the season.
-4. Number the episodes. `numbering: source`: the season and episode come from the item through `pattern` rules (regexes with the named groups `season` and/or `episode`, applied to `title`, `link`, `description` or `published`; the first rule that yields a season and the first that yields an episode win) or from the listing's own `season` and `episode` fields. This needs a season or an episode number in the item itself; items that carry none, only a title (TMDB's own title included) or a date, are not `source`: ${if (pageOnly) "answer `numbering: date`" else "answer `numbering: mapped` with `mapping` (step 5)"}. ${if (pageOnly) "`numbering: date` numbers a daily or weekly programme by each item's published date; the listing then needs a `published` field." else "TMDB numbers its own episodes: use tmdb_series to check your pattern against episodes TMDB has (an air date within 7 days, or the same name)."}
+4. Number the episodes. `numbering: source`: the season and episode come from the item through `pattern` rules (regexes with the named groups `season` and/or `episode`, applied to `title`, `link`, `description` or `published`; the first rule that yields a season and the first that yields an episode win) or from the listing's own `season` and `episode` fields. This needs a season or an episode number in the item itself; items that carry none, only a title (TMDB's own title included) or a date, are not `source`: ${if (pageOnly) "answer `numbering: date`" else "answer `numbering: mapped` with `mapping` (step 5)"}. ${if (pageOnly) "`numbering: date` numbers a programme that airs at most once a day by each item's published date; the listing then needs a `published` field. When two items can share a date and the page prints a time (`3. Nov. 2026 18.30`), answer `numbering: datetime` instead: it numbers by the date and the time, and the engine does the arithmetic. Read how THIS page prints its dates and write it as `date_pattern` (`datetime` needs it; `date` may use it when the printed form is not an ISO, dd.MM.yyyy or `d. month yyyy` date): `on` the listing field it reads (usually `published`), `regex` with the named groups `year`, `month`, `day` and, for `datetime`, `hour`, `minute` (for `4. Nov. 2026 6.00 | 4t 0m`: `(?<day>\\d{1,2})\\.\\s*(?<month>\\p{L}+)\\.?\\s+(?<year>\\d{4})\\s+(?<hour>\\d{1,2})[.:](?<minute>\\d{2})`), and `months` mapping the page's month names to 1-12. Leave `date_pattern.regex` blank when you do not use one. Give each example's `date` as `yyyy-MM-dd`, and under `datetime` as `yyyy-MM-dd HH:mm`." else "TMDB numbers its own episodes: use tmdb_series to check your pattern against episodes TMDB has (an air date within 7 days, or the same name)."}
 ${if (pageOnly) "" else "5. If the page's order or numbering is not TMDB's (a dub, a re-cut, or a site that lists episodes only in order), answer `numbering: mapped` and give `mapping`: for every item you can place, its link exactly as the page gives it, its title as listed, the TMDB season and episode it is (compare the item's title and description with tmdb_series' names and overviews), and `why` in one short phrase. Leave out an item you cannot place with confidence; a wrong guess files an episode under the wrong title for good. The admin approves each row, and a mapped recipe has no `pattern`.\n"}${if (pageOnly) "5" else "6"}. Answer with the recipe and `examples`: two to four episodes you read, with the season and episode (or the date) your recipe gives each, so the engine can check it read the same thing.
 
 Recipe vocabulary:

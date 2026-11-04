@@ -202,6 +202,7 @@ object RecipeView {
         }, qualityText(r)))
         add(RecipeLineView("numbering", r.numbering.kind, when (r.numbering.kind) {
             "date" -> "season = the published year, episode = its day of the year"
+            "datetime" -> "season = the year and week, episode = the day and time"
             "mapped" -> "an explicit item → SxxEyy table, only the rows you accepted"
             else -> ""
         }))
@@ -214,6 +215,7 @@ object RecipeView {
 
     fun patternText(r: Recipe): String = when (r.numbering.kind) {
         "date" -> "By date"
+        "datetime" -> "By date and time"
         "mapped" -> "Mapped"
         else -> r.pattern.joinToString(" · ") { it.regex }.ifBlank { "—" }
     }
