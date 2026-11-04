@@ -64,6 +64,11 @@ Support and Fetchers are not built, so today the list is `["suggestions"]` or no
 even with one tab, so it keeps its shape when the next tab lands. (Round 5 decided that once Fetchers is built it is
 present whenever a key is set, so Suggestions will not be the only tab for long.)
 
+*Amended 2026-11-04 (DEB-3566, owner on DEB-799):* Fetchers' gate is no longer only the key. The tab is present only
+while the key is set, AI is on and Auto-fetch is on (`auto-fetch-turns-a-series-page-into-a-paced-scheduled-download.md`
+FR-1.1 as amended). The order and the 404 rule above are unchanged. Support is always present with a key, so a hidden
+Fetchers tab never empties the list.
+
 *Amended 2026-10-16 (DEB-1499), for the build after this one:* the Support tab
 ([`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md), DEB-1500) is present whenever a key is set.
 Once that is built, a key with no Seerr answers `{"tabs":["support"]}` instead of 404. This work's acceptance 1 is

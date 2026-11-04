@@ -82,6 +82,11 @@ video or audio failure counts toward FR-6.5's three failures.
 **Amended 2026-11-03 (DEB-3460)**, after QA on DEB-3373. The open row's recipe header was drawn as `# recipe v1 · <name> · … · written by the model, read-only here`, without a date. The date was stored but never shown, so after *Re-investigate page* and saving, an admin could not tell from the screen whether the recipe had been replaced. The `v1` does not help: it is the schema version, and every recipe has it.
 - FR-4.4: the header names the day the recipe was written, after the model: `· written by claude-sonnet-5 on 2026-11-03 ·`. A recipe written by hand has neither. The `v1` stays the schema version and is not a revision count.
 
+**Amended 2026-11-04 (DEB-3566, owner on DEB-799, comment `f54bca69`):** *"make sure that the "Auto Fetcher" tab is not even showed in the case of it being disabled."* The owner opened AI ▸ Fetchers with the Auto-fetch job switched off, pasted a page and could not press *Investigate*. The only reason given was the footer line *Auto-fetch is switched off in Settings ▸ AI*, and he did not see it.
+- FR-1.1 and FR-1.2: the tab is present only while a new fetcher could be set up. That needs a key, AI switched on, the Auto-fetch job switched on and `[autofetch] enabled`. A refused key and a spent limit keep the tab, because the owner did not choose them. The *AI is switched off* and *Auto-fetch is switched off* reasons are no longer drawn on the tab.
+- FR-1.3: while the tab is hidden, a stopped site's Dashboard row opens Settings ▸ AI and not the hidden tab. On 2026-11-04 Activity ▸ Schedule, where FR-11 lists the fetchers, was not built (DEB-2197). Until it is, a hidden tab leaves the fetchers' runs visible only as entries on Activity ▸ History.
+- Acceptance 1 says the same.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -167,13 +172,40 @@ Owner, 2026-10-27, on DEB-1076, when a daily programme was moved onto Auto-fetch
 1. The **Fetchers** tab is present on the AI page whenever an AI key is set, the same key test the AI page already uses
    (non-blank, `suggestions-as-a-tab-on-the-ai-page.md` FR-1). `GET /api/ai/page` gains `"fetchers"`, in the fixed
    order *Support · Fetchers · Suggestions*.
+
+   *Amended 2026-11-04 (DEB-3566):* the tab is present only while a new fetcher could be set up. That means all four of
+   these hold: the key is set, AI is switched on (`[ai] enabled`), the Auto-fetch job is switched on
+   (`[ai.autofetch] enabled`, its card on Settings ▸ AI), and Auto-fetch itself is on (`[autofetch] enabled`, FR-13).
+   When any of them fails, `GET /api/ai/page` leaves `"fetchers"` out of its list. The order of the tabs that remain
+   does not change. The server decides this. The admin reads the list when the page opens, and an absent `?tab=fetchers`
+   opens the first present tab (`suggestions-as-a-tab-on-the-ai-page.md` FR-5.3). The tab list is read only by the
+   admin (`AiPageApi`, the sidebar's probe) and is not on the Ravilo wire.
 2. **A switched-off AI, a revoked key or a spent limit does not remove the tab, and does not stop a fetcher.** A saved
    fetcher runs from its recipe with no model call (finding 2). What those states stop is a *new* investigation and
    *Re-investigate page*. Those buttons are shown, disabled, with the reason (`processing-runs-as-nine-features.md`
    FR-11): *AI is switched off in Settings ▸ AI* · *The key was refused — Settings ▸ AI* · *This month's Auto-fetch
    limit is spent ($n of $m)*.
+
+   *Amended 2026-11-04 (DEB-3566):* a **switched-off AI or a switched-off Auto-fetch removes the tab** (FR-1.1). The
+   tab is not drawn with a disabled button and a reason. The two switches are choices the owner made, and the reason
+   line was easy to miss. **A refused key and a spent limit keep the tab.** The owner did not choose either of them, so
+   the tab still shows them: a refused key in the failed state (amendment of 2026-11-02, DEB-2478), and a spent limit
+   as *Investigate* and *Re-investigate page* disabled with *This month's Auto-fetch limit is spent ($n of $m)*. The
+   reasons *AI is switched off in Settings ▸ AI* and *Auto-fetch is switched off in Settings ▸ AI* stay as the `409`
+   answer of the investigation routes, which the tab draws in its failed state if a switch changes while it is open.
+   This amendment does not change when a saved fetcher runs. It still runs while AI or the Auto-fetch job is switched
+   off, and it does not run while `[autofetch] enabled` is off (FR-13).
 3. With no key, the AI page is absent, as drawn (*No AI key*). Saved fetchers keep running; they are listed on
    Activity ▸ Schedule (FR-11), so a fetcher never runs where nobody can see it.
+
+   *Amended 2026-11-04 (DEB-3566):* this applies to a hidden Fetchers tab as well as to an absent AI page. Saved
+   fetchers, their recipes, their sites' state and the *Not on TMDB yet* queue are kept unchanged. All of them are on
+   the tab again when it returns. While the tab is hidden, a stopped site's Dashboard row (FR-2.5) opens
+   **Settings ▸ AI** (`/settings?tab=ai`) and not `/ai?tab=fetchers`, with the path *Settings ▸ AI › Auto-fetch* and
+   the action *Settings*. The admin brings the tab back there, then presses *Resume site* on it. The row's sentence is
+   unchanged. **On 2026-11-04 Activity ▸ Schedule was not built** (`processing-runs-as-nine-features.md` FR-8, DEB-2197).
+   Until it is, a fetcher that runs while its tab is hidden is visible only as its entries on Activity ▸ History (FR-11). This
+   is also true today with no key.
 
 ### FR-2 — One lane per site: pacing, `robots.txt` and being blocked
 
@@ -868,6 +900,13 @@ TMDB id appears in this repository; a test that needs a live-looking listing use
 
 1. With a key set, the AI page shows *Support · Fetchers · Suggestions*. With AI switched off, *Investigate* is
    disabled with its reason and a saved fetcher still runs.
+
+   *Amended 2026-11-04 (DEB-3566):* with a key set, AI on and Auto-fetch on (both switches and `[autofetch] enabled`),
+   the AI page shows *Support · Fetchers · Suggestions*. With AI switched off, with the Auto-fetch job switched off, or
+   with `[autofetch] enabled = false`, `GET /api/ai/page` answers *Support · Suggestions* (or *Support* alone without
+   Seerr). The AI page draws no Fetchers tab, `/ai?tab=fetchers` opens Support, and a saved fetcher still runs while AI
+   or the job is off. With the limit spent, the tab is there and *Investigate* is disabled with its reason. While the
+   tab is hidden, a stopped site's Dashboard row opens Settings ▸ AI.
 2. A stand-in series page served by the test with year-season titles: *Investigate* shows five steps, the review
    shows the mapping and *pattern agrees with TMDB on 2 of 2*, *Save* places the missing episodes as
    `Season 2026/Royndin - S2026E01 - Útfall.mkv`, each with the audio language tagged, `Tracks` before `Cluster`, and
@@ -985,7 +1024,8 @@ Added 2026-11-03 (DEB-3459):
 
 - **Phase 270**, at build, a dated amendment: FR-270-1 gains the *Auto-fetch* card; FR-270-8 gains FR-5.2's line;
   FR-270-6's check runs per turn for this job, which is not a batch (FR-5.4).
-- **`suggestions-as-a-tab-on-the-ai-page.md` FR-2**: `"fetchers"` joins the tab list (FR-1.1).
+- **`suggestions-as-a-tab-on-the-ai-page.md` FR-2**: `"fetchers"` joins the tab list (FR-1.1). *Amended 2026-11-04
+  (DEB-3566):* it is in the list only while AI and Auto-fetch are on. That file has a dated line saying so.
 
 ## Code anchors (`main` at `1d5ed554`)
 
