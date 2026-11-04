@@ -317,3 +317,49 @@ both confirm dialogs, with `/api/support/seat-token` and `/api/support/hervor` s
 - **More than one seat or one live token.** `seat` is a column so a later spec can add one without a migration.
 - **DEB-1500 FR-11's *Owner* forward row.** It needed Hervør and still needs its own spec.
 - **A per-read audit trail.**
+
+## Amendment 2026-11-04 — Hervør's controls move to Settings ▸ AI (DEB-3558)
+
+> Owner, 2026-11-04 (DEB-3558), on a picture of the Support tab's lane strip and Hervør strip: *"I don't like these two
+> rows. They are just wasting space. Please remove the "Close support" and "Switch hervør off", "Replace token",
+> "Revoke". So these two rows are fully gone. If this means some settings are being removed from the system, then just
+> make sure those settings will be available within the Settings > AI."*
+
+Hervør's strip leaves AI ▸ Support, in all four states. Her switch and token are not removed from the system: they move
+to the **Support** card on Settings ▸ AI, under the lane's switch line that the same date's amendment to
+[`support-is-a-tab-on-the-ai-page.md`](support-is-a-tab-on-the-ai-page.md) (FR-3) puts there. **No route, DTO, field or
+seat behaviour changes**: FR-1 to FR-14 stand word for word, and the token still opens exactly FR-4's five routes.
+
+- **FR-8.** *"`hervor_enabled` is switched on the Support tab"* now reads *on Settings ▸ AI's Support card*. The route,
+  the 409 and the effective value are unchanged.
+- **FR-15 — replaced: a Hervør line on Settings ▸ AI's Support card.** Under the lane's line, and under the same
+  *"These act at once — they are not part of Save."* hint. Every string, state, button and dialog of FR-15 is kept as
+  written: the four states (*no token* · *token live, switch off* · *token live, switch on* · *after issuing or
+  replacing*), **Issue a token**, **Switch Hervør on** / **Switch Hervør off**, **Replace token**, one-click **Revoke**
+  and its result line, the two confirm dialogs, and the line saying what she reads. What changes:
+  - **Where and when.** The line is read from `GET /api/support/seat-token` and the summary's `hervorEnabled` when the
+    AI section of Settings opens, and is drawn whenever the Support card is, lane open or closed and with or without a
+    key, so an admin can prepare Hervør before opening the lane. Until both reads answer, it is not drawn. Each write
+    renders its answer and nothing it assumed. A failed write adds *"Not saved — try again."*
+  - **Not part of Save.** Every press calls its route at once (FR-2, FR-8). None marks the form changed, and the
+    page's Save never sends `[support]`.
+  - **The one-time token.** After issuing or replacing, the token sits in the read-only `.input.mono` field with
+    `user-select: all` until the admin leaves Settings ▸ AI, whether to another Settings tab or another page. The
+    page holds the plaintext in that field only, never in a variable that outlives it, and never in the form state
+    that Save serialises or the TOML preview prints.
+  - **Markup.** The Settings page's own: the flex row of *Use AI*, `.hint`, `.tiny.muted`, `.btn.sm` / `.btn.primary.sm`,
+    and the shared `.modal-back` / `.modal` dialog. **No `.tk-*` class and no new CSS class.** If the build needs one, it
+    stops and asks for it through Rannvá.
+  - **The *no token* state** loses the `.tk-lane.closed` warning look with the strip. It reads as the other lines do:
+    the sentence, then **Issue a token** as the primary button.
+- **The Support tab** has no Hervør strip and no token field, in any state. *Forward to* still lists **Hervør · support**
+  only while `hervorEnabled` (DEB-1500 FR-11), unchanged.
+
+**Tests — replaced.** `tests/e2e/ai-page-support-tab.spec.ts` asserts that the tab draws no `#tk-hv` and no
+`#tk-hv-token`, with a token live and with none. `tests/e2e/settings-ai-support.spec.ts` (DEB-1500's amendment of the
+same date) takes the four states, the one-time token field — gone after moving to another Settings tab and back, and
+absent from a Save's request body — both confirm dialogs and their Cancel, one-click Revoke's result line, and the 409
+`no_seat_token` answer, with `/api/support/seat-token` and `/api/support/hervor` stubbed. The backend tests are
+unchanged.
+
+**Acceptance.** Items 1, 4 and 5 are pressed on Settings ▸ AI instead of the tab. Their outcomes are unchanged.

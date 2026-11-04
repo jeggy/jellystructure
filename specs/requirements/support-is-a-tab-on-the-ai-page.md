@@ -389,3 +389,69 @@ about 22 px of itself, and *Needs a reply · 0* breaks over four lines. That hol
   shared `.seg` is not changed, so Activity's view switch and every other segmented control stay as they are.
 - **Test.** The Playwright spec's phone viewport (`tests/e2e/ai-page-support-tab.spec.ts`, `phone 412px`) checks that
   each of the six filters lies wholly inside the page and that no filter is taller than one line of its text.
+
+## Amendment 2026-11-04 — the lane's switch moves to Settings ▸ AI (DEB-3558)
+
+> Owner, 2026-11-04 (DEB-3558), on a picture of the Support tab's two strips: *"I don't like these two rows. They are
+> just wasting space. Please remove the "Close support" and "Switch hervør off", "Replace token", "Revoke". So these two
+> rows are fully gone. If this means some settings are being removed from the system, then just make sure those settings
+> will be available within the Settings > AI."*
+
+The lane strip leaves the Support tab, in every state. The switch is not removed from the system: it moves to the Support
+card on Settings ▸ AI, beside the AI Agent job it gates. Hervør's strip moves with it, by the same date's amendment to
+[`hervor-answers-support-tickets-with-a-seat-token.md`](hervor-answers-support-tickets-with-a-seat-token.md) (FR-15).
+**No route, DTO or field changes**: `POST /api/support/enabled`, `laneOpen` and `hervorEnabled` stay exactly as FR-3
+and FR-4 say. Only where the admin presses them changes, and one server string (FR-5 below).
+
+- **FR-1.** *"the switch lives inside the tab (FR-3)"* now reads *the switch is on Settings ▸ AI (FR-3)*. Nothing else
+  in FR-1 changes: the tab is still listed whether the lane is open or closed.
+- **FR-3 — replaced.** The Support tab has **no lane strip**, open or closed. The tab begins with the list's filter row
+  (FR-6). Nothing is drawn in the strip's place. A closed lane still shows on the tab where it already did: the
+  composer's closed line (FR-9, below) and the sidebar count hidden (FR-2).
+
+  The switch is a line on Settings ▸ AI's **Support** card, under the card's status lines (*Spent this month*, *Last
+  run*, the estimate). That card is drawn whether or not a key is set, so the switch is reachable before the AI page
+  exists. It is read from `GET /api/support/summary` when the AI section of Settings opens, and it renders `laneOpen`
+  and nothing it assumed. Until that read answers, the line is not drawn.
+  - **Open:** *"Open to viewers — Ravilo shows them a Support entry."* and a plain button **Close support**. Pressing
+    it asks first, in the dialog FR-3 already wrote: *"Close support? Viewers lose the Support entry in Ravilo. Their
+    tickets are kept, and come back when you open it again."* Buttons **Close support** and **Cancel**.
+  - **Closed:** *"Closed to viewers — Ravilo shows them no Support entry, and nothing can be filed. Tickets already
+    filed are kept."* and a primary button **Open support to viewers**, one click, as before.
+  - Either press calls `POST /api/support/enabled` at once and renders its answer. **It is not part of the page's Save**,
+    and pressing it does not mark the form changed. `PUT /api/config` goes on restoring `[support]`, so a Save never
+    flips the lane. A failed write leaves the line as the server last said and adds *"Not saved — try again."*
+  - One `.hint` line heads this block and Hervør's: *"These act at once — they are not part of Save."*
+  - After a lane write, the card re-reads `GET /api/ai/status`, so FR-5's line appears or goes from the server's answer.
+- **FR-5 — the sentence loses its pointer.** `AiJobs.SUPPORT_CLOSED_REASON` reads *"Support is closed to viewers, so
+  there is nothing to answer."* The switch is now in the same card, so the line no longer names a page, and the link
+  that `SettingsAi.kt` wraps around *AI › Support* is removed. `inactiveReason` keeps its name and type, and is
+  admin-only, so no installed Ravilo client reads it.
+- **FR-9 — the closed composer points to Settings.** *"Support is closed — open it above to reply."* pointed at the
+  strip this removes. It reads *"Support is closed — open it in Settings › AI to reply."*, and *Settings › AI* is a link
+  to `#/settings?tab=ai` (`SupportText.CLOSED_COMPOSER`; the page escapes the sentence and wraps only that name).
+- **FR-17 — no new CSS.** The `.tk-lane` rules in `design/app/support.css` are scoped to `.tksup` and do not reach
+  Settings. The Settings lines are built from the Settings page's own markup — the flex row of *Use AI*, `.hint`,
+  `.tiny.muted`, `.btn.sm` — and the dialog is the shared `.modal-back` / `.modal` shell (`detail.css`). No `.tk-*`
+  class appears on Settings. If the build finds it needs a new class, it stops and asks for it through Rannvá.
+  Removing the now-unused `.tksup .tk-lane` rules is Rannvá's call, not this build's.
+
+**Acceptance — replaced.**
+
+1. **The owner's case.** With a key set and `[support] enabled = false`: the AI page opens on **Support**, and the tab's
+   first element is the filter row, with no strip above it. Settings ▸ AI's Support card reads *"Support is closed to
+   viewers, so there is nothing to answer."* above its spend, with no link, and its switch line reads *"Closed to
+   viewers…"* with **Open support to viewers**.
+2. **Open.** Pressing **Open support to viewers** on Settings makes `/api/tv/config` carry `"support_enabled":true`, a
+   connected Ravilo socket receives `config_changed`, and the card's closed line goes. The page's Save stays clean.
+   **Close support**, confirmed, takes all of it back. A Settings Save in between changes neither.
+3. **The tab, open.** With the lane open, the Support tab also has no strip, and no **Close support** button.
+
+The other acceptance items stand. Acceptance 9 (offline) applies to the tab's own writes; the lane switch is no longer
+one of them.
+
+**Tests.** `AiJobsTest`'s two `inactiveReason` assertions take the new sentence. `tests/e2e/ai-page-support-tab.spec.ts`
+asserts that the tab draws no `#tk-lane` in either lane state and no **Close support** button. A new Playwright spec,
+`tests/e2e/settings-ai-support.spec.ts`, stubs `/api/config`, `/api/ai/status` and `/api/support/**` (the same
+in-memory lane the tab's spec uses) and covers acceptance 1 and 2 on Settings: both lane lines, the close dialog and
+its Cancel, the open press, a failed write's *Not saved* line, and a Save that sends no `support` key.
