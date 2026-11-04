@@ -1,8 +1,8 @@
 import { test, expect, Browser, BrowserContext, Page, WebSocketRoute } from "@playwright/test";
 
 /**
- * DEB-1500 (specs/requirements/support-is-a-tab-on-the-ai-page.md) — Support as a tab on the admin's AI page, the lane's
- * switch, the list, one ticket, the rail, the forward and the flag, Activity › Support log, and the offline strip.
+ * DEB-1500 (specs/requirements/support-is-a-tab-on-the-ai-page.md) — Support as a tab on the admin's AI page, the list, one ticket, the rail, the forward and the flag, Activity › Support log, and the offline strip.
+ * The lane's switch and Hervør's controls are on Settings ▸ AI (`settings-ai-support.spec.ts`); this tab draws no strip (DEB-3558).
  * Acceptance 1, 4, 5, 7 and 9, at a phone and a desktop viewport.
  *
  * The e2e stack has no AI key and no tickets, so `/api/ai/page`, `/api/ai/status`, `/api/support/**` and the `/ws` event are
@@ -127,7 +127,7 @@ async function newPage(ctx: BrowserContext, lane: Lane): Promise<Page> {
     keyHint: "…abcd", pricesAsOf: "2026-10-01",
     models: [{ id: "claude-opus-5", label: "Claude Opus 5", inputPerMTok: 5, outputPerMTok: 25, effort: true }],
     rerank: { spentThisMonthMicroUsd: 0 }, themes: { spentThisMonthMicroUsd: 0 }, clusters: { spentThisMonthMicroUsd: 0 },
-    support: { spentThisMonthMicroUsd: 1_230_000, ...(lane.laneOpen ? {} : { inactiveReason: "Support is closed to viewers, so there is nothing to answer. Open it on AI › Support." }) },
+    support: { spentThisMonthMicroUsd: 1_230_000, ...(lane.laneOpen ? {} : { inactiveReason: "Support is closed to viewers, so there is nothing to answer." }) },
   } }));
   await page.route(/\/api\/support\//, async (r) => {
     const req = r.request();
@@ -247,30 +247,32 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
       test.beforeEach(() => { lane = new Lane(); });
       test.afterEach(async () => { await page.close(); });
 
-      test("1 — the owner's case: a key and a closed lane open the AI page on Support, with the switch inside it (FR-1, FR-3)", async () => {
+      test("1 — the owner's case: a key and a closed lane open the AI page on Support, with no strip above the filter row (FR-1, FR-3, DEB-3558)", async () => {
         lane.laneOpen = false;
         page = await newPage(ctx, lane);
         await page.goto("/#/ai");
         await expect.poll(() => hash(page)).toBe("#/ai?tab=support");
         await expect(page.locator("#ai-tabs span")).toHaveText(["Support"]);
         await expect(page.locator("#ai-tabs span.on")).toHaveText("Support");
-        const strip = panel(page).locator("#tk-lane .tk-lane.closed");
-        await expect(strip).toContainText("Support is closed. Ravilo shows viewers no Support entry, and nothing can be filed. Tickets already filed are kept.");
-        await expect(strip.locator("button")).toHaveText("Open support to viewers");
         // A closed lane still has tickets an admin can read: all three, the resolved one included.
         await expect(rows(page)).toHaveCount(3);
+        // The tab begins at the filter row and draws nothing for the lane: the switch is on Settings ▸ AI.
+        await expect(panel(page).locator("> *")).toHaveCount(1);
+        await expect(panel(page).locator("#tk-body > *").first()).toHaveClass(/tk-bar/);
+        await expect(panel(page).locator("#tk-lane, #tk-hv, #tk-hv-token")).toHaveCount(0);
+        await expect(panel(page).getByRole("button", { name: /Close support|Open support to viewers/ })).toHaveCount(0);
         // No count on the AI entry while the lane is closed (FR-2), even though the summary says two are open.
         await expect(navAi(page).locator(".count")).toBeHidden();
       });
 
-      test("1b — Settings ▸ AI's Support card says why it is not running, above its spend, with a link to the tab (FR-5)", async () => {
+      test("1b — Settings ▸ AI's Support card says why it is not running, above its spend, with no link (FR-5, DEB-3558)", async () => {
         lane.laneOpen = false;
         page = await newPage(ctx, lane);
         await page.goto("/#/settings?tab=ai");
         const why = page.locator("#ai-support-inactive");
         await expect(why).toBeVisible({ timeout: 15_000 });
-        await expect(why).toContainText("Support is closed to viewers, so there is nothing to answer. Open it on AI › Support.");
-        await expect(why.locator("a")).toHaveAttribute("href", "#/ai?tab=support");
+        await expect(why).toContainText("Support is closed to viewers, so there is nothing to answer.");
+        await expect(why.locator("a")).toHaveCount(0);
         const spent = page.locator("#ai-support-spent");
         await expect(spent).toContainText("Spent this month");
         expect((await why.boundingBox())!.y).toBeLessThan((await spent.boundingBox())!.y);
@@ -284,35 +286,24 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await expect(page.locator("#ai-support-inactive")).toBeHidden();
       });
 
-      test("2 — Open support to viewers calls the route and the strip renders its answer; Close asks first (FR-3)", async () => {
-        lane.laneOpen = false;
-        lane.delayMs = 400;
-        page = await newPage(ctx, lane);
-        await page.goto("/#/ai?tab=support");
-        const strip = panel(page).locator("#tk-lane");
-        await expect(strip).toContainText("Support is closed.");
-        await strip.locator("button").click();
-        // Until the server answers the strip still says what it last heard, and the control is parked.
-        await expect(strip).toContainText("Support is closed.");
-        await expect(strip.locator("button")).toBeDisabled();
-        await expect(strip).toContainText("Open to viewers");
-        expect(lane.writes.map((w) => [w.path, w.body])).toEqual([["/enabled", { enabled: true }]]);
-        await expect(strip.locator("button")).toHaveText("Close support");
-        lane.delayMs = 0;
-
-        // Close asks first, in a dialog. Cancel leaves it open and calls nothing.
-        await strip.locator("button").click();
-        const dlg = panel(page).locator('[data-tk-dlg="close"]');
-        await expect(dlg).toContainText("Close support?");
-        await expect(dlg).toContainText("Viewers lose the Support entry in Ravilo. Their tickets are kept, and come back when you open it again.");
-        await dlg.getByRole("button", { name: "Cancel" }).click();
-        await expect(dlg).toHaveCount(0);
-        expect(lane.writes).toHaveLength(1);
-        await expect(strip).toContainText("Open to viewers");
-        await strip.locator("button").click();
-        await panel(page).locator('[data-tk-dlg="close"]').getByRole("button", { name: "Close support" }).click();
-        await expect(strip).toContainText("Support is closed.");
-        expect(lane.writes.map((w) => w.body.enabled)).toEqual([true, false]);
+      test("2 — the tab draws no lane strip and no Hervør strip, lane open or closed, with a token live or none (FR-3, DEB-3558)", async () => {
+        for (const [laneOpen, seat] of [[true, null], [false, null], [true, { issuedAt: NOW - 86_400, issuedBy: "Hallur", lastUsedAt: NOW - 3_600 }], [false, { issuedAt: NOW - 86_400, issuedBy: "Hallur", lastUsedAt: null }]] as const) {
+          lane = new Lane();
+          lane.laneOpen = laneOpen;
+          lane.seat = seat;
+          lane.hervor = !!seat && laneOpen;
+          page = await newPage(ctx, lane);
+          await page.goto("/#/ai?tab=support");
+          await expect(rows(page)).toHaveCount(3, { timeout: 15_000 });
+          // Both reads have answered by now, so a strip that was going to be drawn would be there.
+          await expect.poll(() => lane.summaryReads).toBeGreaterThan(0);
+          await expect(panel(page).locator("#tk-lane, #tk-hv, #tk-hv-token")).toHaveCount(0);
+          await expect(panel(page).locator("#tk-body > *").first()).toHaveClass(/tk-bar/);
+          await expect(panel(page).getByRole("button", { name: /Close support|Open support to viewers|Switch Hervør|Replace token|Revoke|Issue a token/ })).toHaveCount(0);
+          await expect(panel(page)).not.toContainText("Hervør has no token");
+          await page.close();
+        }
+        page = await ctx.newPage();   // the afterEach closes one page
       });
 
       test("3 — the tab order is Support first, and #/ai lands on it whether or not Seerr is connected (FR-1)", async () => {
@@ -332,7 +323,6 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await expect(navAi(page).locator(".count")).toHaveText("2", { timeout: 15_000 });
         await page.goto("/#/ai?tab=support");
         await expect(rows(page)).toHaveCount(3);
-        await expect(panel(page).locator("#tk-lane")).toContainText("Open to viewers");
         await expect(row(page, 41)).toContainText("Jákup Hansen");
         await expect(row(page, 41)).toContainText(TITLE_41);
         await expect(row(page, 41).locator(".mono").first()).toContainText("#41");
@@ -505,7 +495,7 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         lane.laneOpen = false;
         await panel(page).locator("#tk-reply").fill("Hello");
         await panel(page).getByRole("button", { name: "Send" }).click();
-        await expect(panel(page).locator(".tk-cp")).toContainText("Support is closed — open it above to reply.");
+        await expect(panel(page).locator(".tk-cp")).toContainText("Support is closed — open it in Settings › AI to reply.");
         await expect(panel(page).locator("#tk-reply")).toHaveCount(0);
       });
 
@@ -597,134 +587,31 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
       });
 
       test("9 — losing the server shows the strip and parks every Support write; it clears on its own (FR-16)", async () => {
-        lane.laneOpen = false;
         page = await newPage(ctx, lane);
         await page.goto("/#/ai?tab=support");
-        const open = panel(page).getByRole("button", { name: "Open support to viewers" });
-        await expect(open).toBeVisible({ timeout: 15_000 });
+        await row(page, 41).click();
+        const resolve = panel(page).locator('[data-tk="resolve"]');
+        await expect(resolve).toBeVisible({ timeout: 15_000 });
         await expect(page.locator("#ai-offl")).toBeHidden();
 
         lane.down = true;
-        await open.click();
+        await resolve.click();
         await expect(page.locator("#ai-offl")).toBeVisible();
         await expect(page.locator("#ai-offl")).toContainText("Connection to this server lost · reconnecting.");
         await expect(page.locator("#ai-offl")).toContainText("Nothing is sent until it’s back.");
         await expect(page.locator("#ai-offl")).not.toContainText("Download");
-        expect((await open.evaluate((el) => getComputedStyle(el).pointerEvents))).toBe("none");
+        expect((await resolve.evaluate((el) => getComputedStyle(el).pointerEvents))).toBe("none");
         // Even a forced press sends nothing.
         const served = lane.writes.length;
-        await open.dispatchEvent("click");
+        await resolve.dispatchEvent("click");
         expect(lane.writes.length).toBe(served);
 
         lane.down = false;
         await expect(page.locator("#ai-offl")).toBeHidden({ timeout: 12_000 });
-        await expect(open).toBeVisible();
-        expect((await open.evaluate((el) => getComputedStyle(el).pointerEvents))).not.toBe("none");
-        await open.click();
-        await expect(panel(page).locator("#tk-lane")).toContainText("Open to viewers");
-        expect(lane.writes.map((w) => w.path)).toEqual(["/enabled"]);
-      });
-
-      test("11 — Hervør's strip: its four states, the one-time token field, both confirms, and a one-click revoke (DEB-1508 FR-15)", async () => {
-        page = await newPage(ctx, lane);
-        await page.goto("/#/ai?tab=support");
-        const strip = panel(page).locator("#tk-hv");
-        const buttons = strip.locator("button");
-        const shown = panel(page).locator("#tk-hv-token");
-
-        // State 1 — no token. A second strip under the lane's, built from the same markup (no class of its own).
-        await expect(strip.locator(".tk-lane.closed")).toContainText("Hervør has no token, so she can't read or answer tickets.", { timeout: 15_000 });
-        await expect(buttons).toHaveText(["Issue a token"]);
-        await expect(strip).toContainText("Hervør reads the tickets she holds — their text and the viewer's language, never the viewer's name or id.");
-        expect((await panel(page).locator("#tk-lane").boundingBox())!.y).toBeLessThan((await strip.boundingBox())!.y);
-
-        // Issuing shows the plaintext once, in a read-only mono field the admin can select in one go.
-        await buttons.click();
-        await expect(shown).toContainText("Token issued — copy it now, it won't be shown again:");
-        await expect(shown.locator(".input.mono")).toHaveText(seatToken(1));
-        expect(await shown.locator(".input.mono").evaluate((el) => getComputedStyle(el).userSelect)).toBe("all");
-        expect(lane.writes.map((w) => w.path)).toEqual(["/seat-token"]);
-
-        // State 2 — a live token, the switch off.
-        await expect(strip.locator(".tk-lane")).toContainText("Hervør's token was issued");
-        await expect(strip.locator(".tk-lane")).toContainText("by Hallur · last used never. She is switched off, so tickets go to admins.");
-        await expect(buttons).toHaveText(["Switch Hervør on", "Replace token", "Revoke"]);
-        // The token never reaches the strip, only the one-time field.
-        await expect(strip).not.toContainText("jss_");
-
-        // State 3 — switched on: the strip renders the summary the server answered with, and Forward to lists her.
-        await strip.getByRole("button", { name: "Switch Hervør on" }).click();
-        await expect(strip.locator(".tk-lane")).toContainText("Hervør answers what AI Agent forwards to her · token issued");
-        await expect(strip.locator(".tk-lane")).toContainText("by Hallur · last used never.");
-        await expect(buttons).toHaveText(["Switch Hervør off", "Replace token", "Revoke"]);
-        expect(lane.writes.map((w) => [w.path, w.body])).toEqual([["/seat-token", {}], ["/hervor", { enabled: true }]]);
-        await row(page, 41).click();
-        await expect(panel(page).locator("#tk-rail")).toContainText("Hervør · support");
-        await panel(page).locator('[data-tk="back"]').click();
-
-        // Switch off asks first; Cancel calls nothing.
-        await strip.getByRole("button", { name: "Switch Hervør off" }).click();
-        const off = panel(page).locator('[data-tk-dlg="hv-off"]');
-        await expect(off).toContainText("Switch Hervør off?");
-        await expect(off).toContainText("Every ticket she holds or owes goes back to admins. The viewers see it forwarded.");
-        await expect(off.getByRole("button")).toHaveText(["Switch off", "Cancel"]);
-        await off.getByRole("button", { name: "Cancel" }).click();
-        await expect(off).toHaveCount(0);
-        expect(lane.writes).toHaveLength(2);
-        await strip.getByRole("button", { name: "Switch Hervør off" }).click();
-        await panel(page).locator('[data-tk-dlg="hv-off"]').getByRole("button", { name: "Switch off" }).click();
-        await expect(buttons).toHaveText(["Switch Hervør on", "Replace token", "Revoke"]);
-        expect(lane.writes[2]).toEqual({ path: "/hervor", body: { enabled: false } });
-        await strip.getByRole("button", { name: "Switch Hervør on" }).click();
-        await expect(buttons).toHaveText(["Switch Hervør off", "Replace token", "Revoke"]);
-
-        // Replace asks first, then shows the new token and leaves the switch where it was.
-        await strip.getByRole("button", { name: "Replace token" }).click();
-        const replace = panel(page).locator('[data-tk-dlg="hv-replace"]');
-        await expect(replace).toContainText("Replace Hervør's token?");
-        await expect(replace).toContainText("The one she has stops working at once, and she can't answer until she is given the new one.");
-        await expect(replace.getByRole("button")).toHaveText(["Replace", "Cancel"]);
-        await replace.getByRole("button", { name: "Cancel" }).click();
-        expect(lane.seatIssued).toBe(1);
-        await strip.getByRole("button", { name: "Replace token" }).click();
-        await panel(page).locator('[data-tk-dlg="hv-replace"]').getByRole("button", { name: "Replace" }).click();
-        await expect(shown.locator(".input.mono")).toHaveText(seatToken(2));
-        await expect(buttons).toHaveText(["Switch Hervør off", "Replace token", "Revoke"]);
-        expect(lane.hervor).toBe(true);
-
-        // Revoke is one click, with no dialog: the strip is back to no token, it says what happened, and the token field is gone.
-        await strip.getByRole("button", { name: "Revoke" }).click();
-        await expect(panel(page).locator('[data-tk-dlg]')).toHaveCount(0);
-        await expect(strip.locator(".tk-lane.closed")).toContainText("Hervør has no token, so she can't read or answer tickets.");
-        await expect(strip).toContainText("Revoked. Hervør is switched off, and her tickets are with admins.");
-        await expect(shown).toBeEmpty();
-        expect(lane.hervor).toBe(false);
-        expect(lane.writes.at(-1)).toEqual({ path: "/seat-token", body: {} });
-      });
-
-      test("11b — a token already issued is read on open, and the offline strip parks every Hervør button (DEB-1508 FR-15)", async () => {
-        lane.seat = { issuedAt: NOW - 86_400, issuedBy: "Hallur", lastUsedAt: NOW - 3_600 };
-        lane.hervor = true;
-        page = await newPage(ctx, lane);
-        await page.goto("/#/ai?tab=support");
-        const strip = panel(page).locator("#tk-hv");
-        await expect(strip.locator(".tk-lane")).toContainText("Hervør answers what AI Agent forwards to her · token issued", { timeout: 15_000 });
-        await expect(strip.locator(".tk-lane")).toContainText("last used 1h ago.");
-        // A reload shows only the issued-by line: the plaintext is not anywhere.
-        await expect(panel(page).locator("#tk-hv-token")).toBeEmpty();
-        await expect(panel(page)).not.toContainText("jss_");
-
-        lane.down = true;
-        await strip.getByRole("button", { name: "Revoke" }).click();
-        await expect(page.locator("#ai-offl")).toBeVisible();
-        for (const name of ["Switch Hervør off", "Replace token", "Revoke"]) {
-          expect(await strip.getByRole("button", { name: name }).evaluate((el) => getComputedStyle(el).pointerEvents), name).toBe("none");
-        }
-        const served = lane.writes.length;
-        await strip.getByRole("button", { name: "Revoke" }).dispatchEvent("click");
-        expect(lane.writes.length).toBe(served);
-        lane.down = false;
-        await expect(page.locator("#ai-offl")).toBeHidden({ timeout: 12_000 });
+        expect((await resolve.evaluate((el) => getComputedStyle(el).pointerEvents))).not.toBe("none");
+        await resolve.click();
+        await expect(panel(page).locator('[data-tk="reopen"]')).toBeVisible();
+        expect(lane.writes.map((w) => w.path)).toEqual(["/tickets/41/state"]);
       });
     });
   }

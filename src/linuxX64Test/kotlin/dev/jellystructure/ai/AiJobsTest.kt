@@ -248,7 +248,7 @@ class AiJobsTest {
         val j = jobs(FakeTransport { _, _, _ -> error("no call") })
         configStore.update(configStore.current.copy(support = configStore.current.support.copy(enabled = false)))
         val closed = j.status(viewers = 4)
-        assertEquals("Support is closed to viewers, so there is nothing to answer. Open it on AI › Support.", closed.support.inactiveReason)
+        assertEquals("Support is closed to viewers, so there is nothing to answer.", closed.support.inactiveReason)
         assertEquals(listOf<String?>(null, null, null), listOf(closed.rerank.inactiveReason, closed.themes.inactiveReason, closed.clusters.inactiveReason))
         configStore.update(configStore.current.copy(support = configStore.current.support.copy(enabled = true)))
         assertEquals(null, j.status(viewers = 4).support.inactiveReason, "open: the job would run")

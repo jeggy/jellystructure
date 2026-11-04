@@ -2735,6 +2735,7 @@ private fun updateRestartBanner() {
 // Phase 55 — one panel visible at a time, selected by the rail and addressable in the URL.
 private fun showTab(name: String?) {
     val tab = name?.takeIf { it in SETTINGS_TABS } ?: "connections"
+    if (tab != "ai") leaveAiSettingsTab()   // DEB-3558 — the one-time Hervør token goes when the AI section is left
     document.querySelectorAll(".settings-nav-item[data-tab]").let { nodes ->
         for (i in 0 until nodes.length) {
             val b = nodes.item(i) as? HTMLElement ?: continue

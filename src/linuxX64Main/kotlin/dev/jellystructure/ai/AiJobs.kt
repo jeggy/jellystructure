@@ -809,7 +809,7 @@ class AiJobs(
         /** DEB-2478 (FR-5.4) — the starting assumption: ~8 turns of ~15k input and ~1.5k output each. */
         const val AUTOFETCH_TURNS_ASSUMED = 8
         private val AUTOFETCH_TURN_ASSUMED = AiPricing.Usage(input = 15_000, output = 1_500)
-        const val SUPPORT_CLOSED_REASON = "Support is closed to viewers, so there is nothing to answer. Open it on AI › Support."
+        const val SUPPORT_CLOSED_REASON = "Support is closed to viewers, so there is nothing to answer."
 
         private fun nounOf(job: String) = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; AiRequests.SUPPORT_JOB -> "ticket"; AiRequests.AUTOFETCH_JOB -> "investigation"; else -> "title" }
 

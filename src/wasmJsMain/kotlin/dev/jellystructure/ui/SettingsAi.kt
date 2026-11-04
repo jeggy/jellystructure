@@ -6,12 +6,19 @@ import dev.jellystructure.api.AiJobConfig
 import dev.jellystructure.api.AiJobStatus
 import dev.jellystructure.api.AiModel
 import dev.jellystructure.api.AiStatus
+import dev.jellystructure.api.SupportApi
+import dev.jellystructure.formatClock
+import dev.jellystructure.formatRelativeAgo
+import dev.jellystructure.model.SupportSeatTokenState
+import dev.jellystructure.model.SupportSummary
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.events.Event
 
 /*
  * Phase 270 — Settings → AI. One provider (Anthropic) drawn as a choice; a masked key with *Test key*; AI
@@ -90,7 +97,7 @@ private fun aiJobCardHtml(j: AiJobUi): String = """
                 <div class="tiny muted" id="ai-${j.key}-inactive" style="margin-top:10px;display:none"></div>
                 <div class="tiny muted" id="ai-${j.key}-spent" style="margin-top:10px"></div>
                 <div class="tiny muted" id="ai-${j.key}-last" style="margin-top:2px"></div>
-                <div class="tiny muted" id="ai-${j.key}-estimate" style="margin-top:2px"></div>
+                <div class="tiny muted" id="ai-${j.key}-estimate" style="margin-top:2px"></div>${if (j.key == "support") "\n                <div id=\"ai-support-acts\" style=\"margin-top:10px\"></div>" else ""}
               </div>
 """
 
@@ -168,6 +175,7 @@ internal fun wireAi(scope: CoroutineScope, onChange: () -> Unit) {
         }
     }
     scope.launch { aiStatus = AiApi.status(); renderAiStatus() }
+    wireSupportControls(scope)
 }
 
 private fun renderAiStatus() {
@@ -195,12 +203,12 @@ private fun renderAiJob(key: String) {
     // FR-270-3 — effort only for a model that takes it (Haiku 4.5 rejects the parameter).
     (document.getElementById("ai-$key-effort-field") as? HTMLElement)?.style?.display = if (model?.effort == false) "none" else ""
     val limit = input("ai-$key-limit")?.value?.toDoubleOrNull()
-    // DEB-1500 (FR-5) — why the job is not running, in the server's words, as the card's first status line. The server names
-    // the page that opens it, and that name is the link; nothing else in the sentence is markup.
+    // DEB-1500 (FR-5) — why the job is not running, in the server's words, as the card's first status line. Plain text: the
+    // switch it speaks of is in the same card (DEB-3558).
     (document.getElementById("ai-$key-inactive") as? HTMLElement)?.let { el ->
         val why = job.inactiveReason
         el.style.display = if (why == null) "none" else ""
-        el.innerHTML = why?.esc()?.replace("AI › Support", """<a href="#/ai?tab=support">AI › Support</a>""").orEmpty()
+        el.textContent = why.orEmpty()
     }
     (document.getElementById("ai-$key-spent") as? HTMLElement)?.textContent =
         "Spent this month: ${usd(job.spentThisMonthMicroUsd)}" + (limit?.let { " of ${usd((it * 1_000_000).toLong())}" } ?: "") +
@@ -230,4 +238,205 @@ internal fun aiTomlPreview(c: AiConfig): String = buildString {
         appendLine("effort = \"${j.effort}\"")
         appendLine("monthly_limit_usd = ${j.monthlyLimitUsd}")
     }
+}
+
+// ── the Support card's two lines (DEB-3558: DEB-1500 FR-3, DEB-1508 FR-15) ───────────────────────────────────────────────
+//
+// The lane's switch and Hervør's switch and token. Every press calls its route at once and draws the server's answer; none is
+// part of Save, so none calls `onChange()` and none reaches `readAi()`. Nothing is drawn until the reads have answered. The
+// plaintext token lives only in its `.input.mono` field, which goes when the admin leaves this Settings tab.
+
+private var supScope: CoroutineScope? = null
+private var supGen = 0
+private var supSummary: SupportSummary? = null
+private var supSeat: SupportSeatTokenState? = null
+private var supLaneBusy = false
+private var supLaneError = false
+private var supSeatBusy = false
+private var supSeatNote: String? = null
+private var supEsc: ((Event) -> Unit)? = null
+
+private fun supEl(id: String): HTMLElement? = document.getElementById(id) as? HTMLElement
+
+private fun wireSupportControls(scope: CoroutineScope) {
+    closeSupDialog()
+    supScope = scope; supGen++
+    supSummary = null; supSeat = null; supLaneBusy = false; supLaneError = false; supSeatBusy = false; supSeatNote = null
+    val host = supEl("ai-support-acts") ?: return
+    host.innerHTML = """<div id="ai-support-lane"></div><div id="ai-support-hv"></div><div id="ai-support-hv-token"></div>"""
+    host.addEventListener("click") { ev ->
+        val target = ev.target as? Element ?: return@addEventListener
+        val action = target.closest("[data-ai-s]")?.getAttribute("data-ai-s")
+        // The dialog's backdrop closes it; a press inside the dialog does not.
+        if (action == null && target.getAttribute("data-ai-dlg") != null) { closeSupDialog(); return@addEventListener }
+        when (action) {
+            "lane-open" -> setSupLane(true)
+            "lane-close" -> showSupDialog("close")
+            "lane-close-yes" -> setSupLane(false)
+            "dlg-cancel" -> closeSupDialog()
+            "hv-issue" -> issueSupSeatToken()
+            "hv-on" -> setSupHervor(true)
+            "hv-off" -> showSupDialog("hv-off")
+            "hv-off-yes" -> setSupHervor(false)
+            "hv-replace" -> showSupDialog("hv-replace")
+            "hv-replace-yes" -> issueSupSeatToken()
+            "hv-revoke" -> revokeSupSeatToken()
+        }
+    }
+    val gen = supGen
+    scope.launch {
+        val s = SupportApi.summary()
+        if (gen != supGen) return@launch
+        s?.let { supSummary = it; SupportLive.seed(it) }
+        paintSupportControls()
+    }
+    scope.launch {
+        val seat = SupportApi.seatToken()
+        if (gen != supGen) return@launch
+        supSeat = seat
+        paintSupportControls()
+    }
+}
+
+/** Called by Settings when another tab is shown: the one-time token goes with the AI section, and so does an open dialog. */
+internal fun leaveAiSettingsTab() {
+    supGen++
+    supEl("ai-support-hv-token")?.innerHTML = ""
+    closeSupDialog()
+}
+
+private fun paintSupportControls() {
+    val summary = supSummary
+    val busyLane = if (supLaneBusy) " disabled" else ""
+    val err = if (supLaneError) " Not saved — try again." else ""
+    val rowStyle = "display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"
+    supEl("ai-support-lane")?.innerHTML = when {
+        // Nothing is assumed before the server has said.
+        summary == null -> ""
+        else -> """<p class="hint" style="margin:0 0 8px">These act at once — they are not part of Save.</p>""" + when {
+            summary.laneOpen -> """<div style="$rowStyle"><span class="tiny muted">Open to viewers — Ravilo shows them a Support entry.$err</span><button type="button" class="btn sm" data-ai-s="lane-close"$busyLane>Close support</button></div>"""
+            else -> """<div style="$rowStyle"><span class="tiny muted">Closed to viewers — Ravilo shows them no Support entry, and nothing can be filed. Tickets already filed are kept.$err</span><button type="button" class="btn primary sm" data-ai-s="lane-open"$busyLane>Open support to viewers</button></div>"""
+        }
+    }
+    val seat = supSeat
+    val host = supEl("ai-support-hv") ?: return
+    if (seat == null || summary == null) { host.innerHTML = ""; return }
+    val busy = if (supSeatBusy) " disabled" else ""
+    val note = supSeatNote?.let { " ${it.esc()}" }.orEmpty()
+    val live = seat.live
+    val row = if (live == null) {
+        """<div style="$rowStyle"><span class="tiny muted">${SupportText.HERVOR_NO_TOKEN.esc()}$note</span><button type="button" class="btn primary sm" data-ai-s="hv-issue"$busy>Issue a token</button></div>"""
+    } else {
+        val text = SupportText.hervorStrip(live, summary.hervorEnabled, formatClock(live.issuedAt.toString()), live.lastUsedAt?.let { formatRelativeAgo(it.toString()) })
+        val first = if (summary.hervorEnabled) """<button type="button" class="btn sm" data-ai-s="hv-off"$busy>Switch Hervør off</button>"""
+            else """<button type="button" class="btn primary sm" data-ai-s="hv-on"$busy>Switch Hervør on</button>"""
+        """<div style="$rowStyle"><span class="tiny muted" style="flex:1">${text.esc()}$note</span>$first<button type="button" class="btn sm" data-ai-s="hv-replace"$busy>Replace token</button><button type="button" class="btn sm" data-ai-s="hv-revoke"$busy>Revoke</button></div>"""
+    }
+    host.innerHTML = row + """<p class="tiny muted" style="margin:0">${SupportText.HERVOR_READS.esc()}</p>"""
+}
+
+private fun setSupLane(open: Boolean) {
+    if (supLaneBusy) return
+    val scope = supScope ?: return
+    val gen = supGen
+    supLaneBusy = true; supLaneError = false; paintSupportControls()
+    scope.launch {
+        val r = SupportApi.setEnabled(open)
+        if (gen != supGen) return@launch
+        supLaneBusy = false
+        // The line renders the server's answer and nothing it assumed.
+        if (r is SupportApi.Switched.Ok) { supSummary = r.summary; SupportLive.seed(r.summary) } else supLaneError = true
+        closeSupDialog()
+        paintSupportControls()
+        // The card's inactive line follows the lane: read the status again rather than work it out.
+        AiApi.status()?.let { if (gen == supGen) { aiStatus = it; renderAiStatus() } }
+    }
+}
+
+private fun setSupHervor(on: Boolean) {
+    if (supSeatBusy) return
+    val scope = supScope ?: return
+    val gen = supGen
+    supSeatBusy = true; supSeatNote = null; paintSupportControls()
+    scope.launch {
+        val r = SupportApi.setHervor(on)
+        if (gen != supGen) return@launch
+        supSeatBusy = false
+        closeSupDialog()
+        if (r is SupportApi.Switched.Ok) { supSummary = r.summary; SupportLive.seed(r.summary) } else supSeatNote = "Not saved — try again."
+        paintSupportControls()
+    }
+}
+
+private fun issueSupSeatToken() {
+    if (supSeatBusy) return
+    val scope = supScope ?: return
+    val gen = supGen
+    supSeatBusy = true; supSeatNote = null; paintSupportControls()
+    scope.launch {
+        val w = SupportApi.issueSeatToken()
+        if (gen != supGen) return@launch
+        supSeatBusy = false
+        closeSupDialog()
+        when (w) {
+            // The plaintext goes into the field and nowhere else: not a variable, not the line, not a log.
+            is SupportApi.SeatWrite.Issued -> { supSeat = SupportSeatTokenState(live = w.issued.live, past = supSeat?.past.orEmpty()); showSupIssuedToken(w.issued.token) }
+            else -> supSeatNote = "Not issued — try again."
+        }
+        paintSupportControls()
+    }
+}
+
+private fun revokeSupSeatToken() {
+    if (supSeatBusy) return
+    val scope = supScope ?: return
+    val gen = supGen
+    supSeatBusy = true; supSeatNote = null; paintSupportControls()
+    scope.launch {
+        val w = SupportApi.revokeSeatToken()
+        if (gen != supGen) return@launch
+        supSeatBusy = false
+        supEl("ai-support-hv-token")?.innerHTML = ""
+        if (w is SupportApi.SeatWrite.State) {
+            supSeat = w.state
+            supSeatNote = SupportText.HERVOR_REVOKED
+            // Revoking switched her off, so the summary the line reads is read again.
+            SupportApi.summary()?.let { if (gen == supGen) { supSummary = it; SupportLive.seed(it) } }
+        } else supSeatNote = "Not revoked — try again."
+        paintSupportControls()
+    }
+}
+
+/** *Token issued — copy it now* and the token in a read-only `.input.mono` field, set with `textContent` after the markup. */
+private fun showSupIssuedToken(token: String) {
+    val host = supEl("ai-support-hv-token") ?: return
+    host.innerHTML = """<p class="tiny" style="margin:8px 0 0"><b>${SupportText.HERVOR_TOKEN_SHOWN.esc()}</b></p><div class="input mono" id="ai-support-hv-tok" style="margin-top:6px;user-select:all;word-break:break-all;"></div>"""
+    supEl("ai-support-hv-tok")?.textContent = token
+}
+
+private fun showSupDialog(kind: String) {
+    val host = supEl("ai-support-acts") ?: return
+    closeSupDialog()
+    val (title, body, yes) = when (kind) {
+        "close" -> Triple("Close support?", "Viewers lose the Support entry in Ravilo. Their tickets are kept, and come back when you open it again.", "Close support")
+        "hv-off" -> Triple(SupportText.HERVOR_OFF_TITLE, SupportText.HERVOR_OFF_BODY, "Switch off")
+        else -> Triple(SupportText.HERVOR_REPLACE_TITLE, SupportText.HERVOR_REPLACE_BODY, "Replace")
+    }
+    val action = if (kind == "close") "lane-close-yes" else "$kind-yes"
+    val back = document.createElement("div") as HTMLElement
+    back.className = "modal-back open"
+    back.setAttribute("data-ai-dlg", kind)
+    back.innerHTML = """<div class="modal" role="dialog" aria-modal="true" aria-label="${title.esc()}"><h3>${title.esc()}</h3><p>${body.esc()}</p><div style="display:flex;gap:8px;margin-top:14px"><button type="button" class="btn primary" data-ai-s="$action">$yes</button><button type="button" class="btn ghost" data-ai-s="dlg-cancel">Cancel</button></div></div>"""
+    host.appendChild(back)
+    val onKey: (Event) -> Unit = { e -> if (supKeyOf(e) == "Escape") closeSupDialog() }
+    supEsc = onKey
+    document.addEventListener("keydown", onKey)
+}
+
+private fun supKeyOf(e: Event): String = js("e.key || ''")
+
+private fun closeSupDialog() {
+    supEsc?.let { document.removeEventListener("keydown", it) }
+    supEsc = null
+    document.querySelectorAll("[data-ai-dlg]").let { all -> for (i in 0 until all.length) (all.item(i) as? HTMLElement)?.remove() }
 }

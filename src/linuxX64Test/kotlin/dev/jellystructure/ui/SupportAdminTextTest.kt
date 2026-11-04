@@ -149,7 +149,7 @@ class SupportAdminTextTest {
 
     @Test fun theComposerCopyIsThePlaceholderTheClosedLaneAndTheFlagAsSpecified() {
         assertEquals("Reply as Hallur · admin — it sends itself and lands in the thread", SupportText.composerPlaceholder("Hallur"))
-        assertEquals("Support is closed — open it above to reply.", SupportText.CLOSED_COMPOSER)
+        assertEquals("Support is closed — open it in Settings › AI to reply.", SupportText.CLOSED_COMPOSER)
         assertEquals("Replies are off while this ticket is flagged.", SupportText.FLAGGED_COMPOSER)
         assertTrue(SupportText.FLAGGED_BANNER.startsWith("Flagged as abuse. No reply will be sent, not even AI Agent's."))
         assertFalse("by " in SupportText.FLAGGED_BANNER, "the banner names no admin, because the flag line does not record one")

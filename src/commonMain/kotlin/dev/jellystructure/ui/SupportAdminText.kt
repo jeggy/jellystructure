@@ -158,7 +158,7 @@ internal object SupportText {
     /** FR-9. */
     fun composerPlaceholder(adminName: String): String = "Reply as $adminName · admin — it sends itself and lands in the thread"
 
-    const val CLOSED_COMPOSER = "Support is closed — open it above to reply."
+    const val CLOSED_COMPOSER = "Support is closed — open it in Settings › AI to reply."
     const val FLAGGED_COMPOSER = "Replies are off while this ticket is flagged."
     const val FLAGGED_BANNER = "Flagged as abuse. No reply will be sent, not even AI Agent's. The viewer sees an open ticket and nothing about the flag."
 
