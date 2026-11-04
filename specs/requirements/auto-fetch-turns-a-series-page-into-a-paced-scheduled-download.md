@@ -953,6 +953,12 @@ As drawn in round 2, with these changes:
 
         A new reason that carries another program's text must mark where that text starts, so this step never has
         to guess. Each redacted reason is then cut at 300 characters.
+
+     *As built (2026-11-04, DEB-3572, `4980b502`).* Step 6 runs before step 2, so a quote inside a program's message
+     never takes a number and the numbers have no gaps. Three engine sentences that name a host get `<host>` by their
+     position in the sentence, not by step 5's pattern. The *unknown placeholder* sentence now quotes the name, so step 2
+     covers it. None of the three changes what the report may carry. An investigation that fails with an unexpected
+     error is a failed investigation as well, and it gets a report like any other (DEB-3572 left it with none).
    - **Length.** GitHub refuses a new-issue link much over 8 kB. So the link, encoded the way the admin encodes it
      (`afUrlEncode`), is at most 8,000 characters, and the server cuts the body to fit. It drops the refused turns
      first, oldest first, and leaves `(n earlier refused turns left out)`. Then it drops the *Proof* and *Recipe*
