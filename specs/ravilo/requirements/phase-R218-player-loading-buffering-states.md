@@ -142,6 +142,10 @@ point:
 
 There is **no escape hatch, no prompt and no cancel affordance** — see FR-R218-5.
 
+> *Amendment 2026-11-05 (DEB-3627):* this holds for a stall **after** the first frame. A **start** that has shown no
+> picture is now bounded by FR-R218-7. It moves once to the other route, then ends on R237's error, and never reaches
+> 60 s. The wording of the wait itself is unchanged.
+
 ### FR-R218-4 — One string, already translated
 
 Every presentation that shows text shows the **existing** `"Loading…"` / `"Indlæder…"` / `"Ledur inn…"`
@@ -167,6 +171,40 @@ transport with the same spinner-in-the-play-button rule. Leaving is the platform
 and ends the session identically. The wasm player needs its own `waiting`/`playing` wiring to produce
 FR-R218-1's state; where it cannot (no equivalent event), it falls back to moment A's behaviour rather
 than inventing one.
+
+### FR-R218-7 — A start that shows no picture is bounded (amendment 2026-11-05, DEB-3627)
+
+> Owner, DEB-3093, 2026-10-30, on the class: quality may drop, but the picture never just sits loading.
+
+**What happened.** On 2026-11-04 the stue TV started an episode whose Matroska header lists its tracks twice. Three
+starts on our encoder got no segment at all (313's amendment of the same date). A fourth start went direct. The player
+read 72 901 bytes, which ends where the damaged header begins, opened no decoder and showed the start screen for 34 s
+until the viewer pressed Back. Nothing on either route set a bound, because this FR's moment B waited by design.
+Prod, 30 days to 11-04: first frame p50 0.7 s, p90 1.9 s, p99 6.6 s over 1 022 video starts, and 6 starts over 10 s.
+13 of about 1 036 native and Cast video starts never opened a decoder. Three were this file. The rest cannot be told
+apart from a quick Back.
+
+- **10 s with no first frame moves the start once.** The clock starts when the player is handed the stream. It does not
+  start at Play, so a slow ticket answer does not count against it.
+  - A **direct play** asks for the item again as a transcode. Direct play stays off for that item for the rest of the
+    session. This is the existing restream call, not a new one.
+  - A start on **our encoder** asks for Jellyfin's stream, which is DEB-3093 FR-6's second try. If 313's deadline has
+    already refused the stream, the player is already on this step.
+  - A start on **Jellyfin's stream** has no other route. It goes straight to the last step.
+- **20 s more with no first frame ends on R237's error.** This uses the error's existing wording and its Try again. A
+  retry is a new start with a fresh bound. Back works throughout, as FR-R218-5 says.
+- **What the viewer sees does not change while waiting.** The move happens behind moment B's start screen, with no new
+  text and no flash. The longest a viewer can wait for a picture is now about 30 s plus the ticket.
+- **A seek or resume inside a play is not a start.** A stall after the first frame stays under DEB-3093 FR-4 and
+  DEB-2205 FR-5.
+- **Evidence.** The QoE row of a start that hit a bound carries `start_failure_status = -1`, meaning "no first frame by
+  the bound". The field is already an `Int`, so this is not a wire change. Both legs keep their own QoE rows, as today.
+- **Platforms.** Android TV and phone first, where all 13 starts above were. The Mac, Linux, Cast receiver and web take
+  the same rule as their players expose a first-frame event (FR-R218-6, R335 FR-R335-9).
+
+**Tests.** `:ravilo-ui:desktopTest`, with a fake `RaviloPlayer` that never renders. A direct start re-asks as a transcode
+at 10 s. An encoder start re-asks for Jellyfin at 10 s. A Jellyfin start, or a second leg, ends on the error 20 s after
+its stream was handed over. A first frame at 9.9 s cancels the bound. A seek after the first frame never fires it.
 
 ## Invariants
 

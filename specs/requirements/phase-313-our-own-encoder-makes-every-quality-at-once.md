@@ -165,6 +165,9 @@ From `specs/research-reports/ravilo-streaming-evidence-2026-10-08.md` and `…-a
 
 ### FR-313-12 — When Jellyfin does it instead
 
+> *Amendment 2026-11-05 (DEB-3627):* "fails at start" includes a job that is still running and has written nothing. A cold
+> card gets 15 s, and the play in flight moves. See the amendment of that date at the end of this file.
+
 Decided per play, before the job starts, and logged with the reason (`encoder: fallback to Jellyfin — <reason>`):
 no GPU or no slot (FR-313-8), the file isn't on our disk or not scanned, a video codec the image can't decode on the GPU
 (VC-1, MPEG-2 interlaced — measured in 313a), Dolby Vision profile 5 when `libplacebo` can't tone-map it, a live TV
@@ -1036,3 +1039,38 @@ receiver's HEVC claim has not been probed at 4K. The Mac still reports no ceilin
 and with an unknown size are not; a URL with no cap is not. `EncoderPlanTest`: a device with no declared ceiling keeps the
 2160p top rung; one that declared 1920×1080 and reached the plan by this rule tops out at 1080p; one that reached the plan by
 `VideoRangeTypeNotSupported` keeps today's rungs.
+
+## Amendment 2026-11-05 — a job that never writes its first segment is a failed start, alive or not (DEB-3627)
+
+Measured on prod, 2026-11-04 ~23:17Z, stue TV. An episode whose Matroska header lists its tracks twice: the file carries
+one video and two audio tracks, but ffprobe and Jellyfin both read two video and four audio tracks, and the second set
+carries no packets. The plan mapped all four audio tracks (`-map 0:a:0` … `0:a:3`). ffmpeg stayed alive waiting for audio
+from the two empty tracks and wrote nothing. Three starts on our encoder each ended with `segments=0` and `input=-MB/s`, with up to
+six `segment 0 … not ready in 15000ms` answers (503, DEB-3093 FR-3). The player kept asking until the viewer pressed
+Back, after 22 s, 59 s and 2 s. There was no fallback, no `encoder: fallback` line and no error. The viewer saw a
+spinner each time. Reproduced on prod's own ffmpeg with the plan's shape: with two audio maps the job wrote four
+segments in 5 s, with four it wrote none in 30 s. The next episode from the same release started in 494 ms.
+
+FR-313-12 already says a job with no first segment within 5 s falls back. The code counts only a job that **exits**
+with an error before its first segment (`refusedBeforeFirstSegment`). A job that stays alive is never caught. This
+amendment restores the FR and says how it reads:
+
+- **A first start with no first segment by its deadline is refused, whether ffmpeg has exited or not.** The job is
+  stopped, and the stream is handled exactly like an exit refusal: its URLs answer 410, the file goes to Jellyfin for
+  6 h (`RefusedSources`), and one line is logged, `encoder <id>: no first segment in <ms> ms — the file goes to
+  Jellyfin (313)`. Its `encoder_summary` keeps `segments=0`.
+- **The deadline is 5 s from the job's start.** The first job on a card after a backend start gets **15 s** instead,
+  because a cold CUDA start was measured at 9 s (Live testing, 2026-10-08). On prod over the 30 days to 11-04, our
+  encoder's first frame was under 2 s at p90 and 6.7 s at p99.
+- **Only a stream's first start can be refused this way** (DEB-3093 FR-2). An adopted prewarm counts as that first start.
+  A later job, such as a seek or a restart after a deploy, keeps FR-2's rule: started again, and 503 meanwhile.
+- **The play in flight moves, not only the next play.** The 410 reaches the player while it is still starting. DEB-3093
+  FR-6 then replaces the stream with Jellyfin's. R218's amendment of the same date is the net if no picture arrives.
+- **Not done here:** leaving out a track that carries no packets. That would let a file like this one play on our
+  encoder from the first try. One file in the library (1 of 22 992 items with stream data) has the defect today, and the
+  deadline covers it and any cause we have not met yet.
+
+**Tests.** `EncoderJobsTest` (or the nearest existing class): a first job that stays alive and writes no segment is
+refused at 5 s, and at 15 s when it is the card's first job since start. A first job that writes segment 0 at 4.9 s is
+not refused. A non-first job that stays silent is not refused. A refused-by-deadline stream answers 410 and its file is
+in `RefusedSources`.
