@@ -56,6 +56,8 @@ class Lane {
   nextId = 100;
   writes: { path: string; body: any }[] = [];
   summaryReads = 0;
+  /** Every `GET /tickets` query string, in order. */
+  listReads: string[] = [];
   tickets = new Map<number, Ticket>();
   threads = new Map<number, Message[]>();
   composing = new Set<number>();
@@ -138,7 +140,7 @@ async function newPage(ctx: BrowserContext, lane: Lane): Promise<Page> {
     const body = method === "POST" ? (() => { try { return req.postDataJSON() ?? {}; } catch { return {}; } })() : {};
     let m: RegExpMatchArray | null;
     if (method === "GET" && path === "/summary") { lane.summaryReads++; return r.fulfill({ json: lane.summary() }); }
-    if (method === "GET" && path === "/tickets") return r.fulfill({ json: { tickets: lane.list(url.searchParams) } });
+    if (method === "GET" && path === "/tickets") { lane.listReads.push(url.search); return r.fulfill({ json: { tickets: lane.list(url.searchParams) } }); }
     if (method === "GET" && path === "/log") return r.fulfill({ json: { entries: lane.log } });
     if (method === "GET" && (m = path.match(/^\/tickets\/(\d+)\/transcript$/))) {
       const n = Number(m[1]);
@@ -254,7 +256,9 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await expect.poll(() => hash(page)).toBe("#/ai?tab=support");
         await expect(page.locator("#ai-tabs span")).toHaveText(["Support"]);
         await expect(page.locator("#ai-tabs span.on")).toHaveText("Support");
-        // A closed lane still has tickets an admin can read: all three, the resolved one included.
+        // A closed lane still has tickets an admin can read: all three, the resolved one included, once All is pressed.
+        await expect(rows(page)).toHaveCount(2);
+        await panel(page).locator('[data-tk-filter="all"]').click();
         await expect(rows(page)).toHaveCount(3);
         // The tab begins at the filter row and draws nothing for the lane: the switch is on Settings ▸ AI.
         await expect(panel(page).locator("> *")).toHaveCount(1);
@@ -294,7 +298,7 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
           lane.hervor = !!seat && laneOpen;
           page = await newPage(ctx, lane);
           await page.goto("/#/ai?tab=support");
-          await expect(rows(page)).toHaveCount(3, { timeout: 15_000 });
+          await expect(rows(page)).toHaveCount(2, { timeout: 15_000 });
           // Both reads have answered by now, so a strip that was going to be drawn would be there.
           await expect.poll(() => lane.summaryReads).toBeGreaterThan(0);
           await expect(panel(page).locator("#tk-lane, #tk-hv, #tk-hv-token")).toHaveCount(0);
@@ -322,7 +326,7 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await page.goto("/#/dashboard");
         await expect(navAi(page).locator(".count")).toHaveText("2", { timeout: 15_000 });
         await page.goto("/#/ai?tab=support");
-        await expect(rows(page)).toHaveCount(3);
+        await expect(rows(page)).toHaveCount(2);
         await expect(row(page, 41)).toContainText("Jákup Hansen");
         await expect(row(page, 41)).toContainText(TITLE_41);
         await expect(row(page, 41).locator(".mono").first()).toContainText("#41");
@@ -334,7 +338,7 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         lane.tickets.set(42, ticket({ number: 42, ownerId: "u-asa", ownerName: "Ása Dam", holder: "AI_AGENT", preview: "the app closes when I press play", unread: 1 }));
         lane.threads.set(42, [msg(1, { author: "VIEWER", body: "the app closes when I press play", devicePlatform: "phone" })]);
         lane.push(42);
-        await expect(rows(page)).toHaveCount(4);
+        await expect(rows(page)).toHaveCount(3);
         await expect(row(page, 42)).toContainText("the app closes when I press play");
         await expect(row(page, 42).locator(".tt")).toHaveClass(/\bpv\b/); // no englishTitle yet: the preview, muted
         await expect(navAi(page).locator(".count")).toHaveText("3");
@@ -367,12 +371,12 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await panel(page).locator(".tk-back").click();
         expect(await hash(page)).toBe("#/ai?tab=support");
         expect(await historyLength(page)).toBe(len);
-        await expect(rows(page)).toHaveCount(4);
+        await expect(rows(page)).toHaveCount(3);
 
         // A ticket deleted by its viewer goes from the list on the event.
         lane.tickets.delete(42);
         lane.push(42, true);
-        await expect(rows(page)).toHaveCount(3);
+        await expect(rows(page)).toHaveCount(2);
         await expect(navAi(page).locator(".count")).toHaveText("2");
       });
 
@@ -387,13 +391,13 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await expect(panel(page)).toContainText("This ticket no longer exists.");
         await panel(page).locator(".tk-back").click();
         expect(await hash(page)).toBe("#/ai?tab=support");
-        await expect(rows(page)).toHaveCount(3);
+        await expect(rows(page)).toHaveCount(2);
       });
 
       test("6 — the filters ask the server and count from the summary; narrow, the table stacks (FR-6)", async () => {
         page = await newPage(ctx, lane);
         await page.goto("/#/ai?tab=support");
-        await expect(rows(page)).toHaveCount(3);
+        await expect(rows(page)).toHaveCount(2);
         await expect(panel(page).locator("#tk-seg span")).toHaveText(["All", "Open · 2", "Needs a reply · 1", "Overdue · 0", "Resolved", "Flagged"]);
         // The six filters are each whole and on one line of their own text, at either width. At ≤ 560 px the row wraps
         // to get there (amendment 2026-10-17): none hangs past the page, none is clipped, the page never scrolls sideways.
@@ -421,10 +425,44 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         // The columns' header is a row of its own at width, and goes when the table stacks.
         const header = panel(page).locator(".tk-row.hd");
         if (vp.mobile) await expect(header).toBeHidden(); else await expect(header).toBeVisible();
-        // With no tickets at all: the empty line.
+        // With no tickets at all: the empty line under each of the three wordings. A reload starts on Open.
         lane.tickets.clear();
         await page.reload();
-        await expect(panel(page).locator("#tk-rows")).toContainText("No tickets yet.", { timeout: 15_000 });
+        await expect(panel(page).locator("#tk-rows")).toContainText("No open tickets.", { timeout: 15_000 });
+        await panel(page).locator('[data-tk-filter="all"]').click();
+        await expect(panel(page).locator("#tk-rows")).toContainText("No tickets yet.");
+        await panel(page).locator('[data-tk-filter="resolved"]').click();
+        await expect(panel(page).locator("#tk-rows")).toContainText("No tickets match this filter.");
+      });
+
+      test("11 — the list opens on Open, All is one press away and holds across Activity, a reload starts on Open again, and no tickets reads No open tickets. (FR-6, DEB-3578)", async () => {
+        page = await newPage(ctx, lane);
+        await page.goto("/#/ai?tab=support");
+        await expect(rows(page)).toHaveCount(2, { timeout: 15_000 });
+        await expect(panel(page).locator("#tk-seg span.on")).toHaveText("Open · 2");
+        await expect(row(page, 41)).toBeVisible();
+        await expect(row(page, 38)).toBeVisible();
+        await expect(row(page, 36)).toHaveCount(0);
+        expect(lane.listReads[0]).toBe("?state=OPEN");
+        // All stays first in the control and lists all three.
+        await expect(panel(page).locator("#tk-seg span").first()).toHaveText("All");
+        await panel(page).locator('[data-tk-filter="all"]').click();
+        await expect(rows(page)).toHaveCount(3);
+        // Leaving the AI page for Activity and coming back, within the same page load, shows the filter that was left.
+        await page.evaluate(() => { location.hash = "#/activity"; });
+        await expect(panel(page)).toHaveCount(0);
+        await page.evaluate(() => { location.hash = "#/ai?tab=support"; });
+        await expect(panel(page).locator("#tk-seg span.on")).toHaveText("All");
+        await expect(rows(page)).toHaveCount(3);
+        // A reload starts on Open again: the filter is not in the URL and nothing is stored.
+        await page.reload();
+        await expect(panel(page).locator("#tk-seg span.on")).toHaveText("Open · 2", { timeout: 15_000 });
+        await expect(rows(page)).toHaveCount(2);
+        expect(lane.listReads.at(-1)).toBe("?state=OPEN");
+        // With no tickets at all the default list says so in its own words.
+        lane.tickets.clear();
+        await page.reload();
+        await expect(panel(page).locator("#tk-rows")).toContainText("No open tickets.", { timeout: 15_000 });
       });
 
       test("5 — forward moves a ticket from AI Agent to Admins and Viewer sees changes; flagging hides the composer (FR-9, FR-10, FR-11)", async () => {

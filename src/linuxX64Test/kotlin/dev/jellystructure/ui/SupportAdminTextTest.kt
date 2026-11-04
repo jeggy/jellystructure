@@ -216,4 +216,19 @@ class SupportAdminTextTest {
         assertEquals("Token issued — copy it now, it won't be shown again:", SupportText.HERVOR_TOKEN_SHOWN)
         assertTrue("never the viewer's name or id" in SupportText.HERVOR_READS)
     }
+
+    @Test
+    fun theTabOpensOnOpenAndAllStaysFirst() {
+        assertEquals("open", SupportText.DEFAULT_FILTER)
+        assertEquals("open", SupportText.filterOf(SupportText.DEFAULT_FILTER).key)
+        assertEquals("state=OPEN", SupportText.filterOf(SupportText.DEFAULT_FILTER).query)
+        assertEquals("all", SupportText.FILTERS.first().key)
+    }
+
+    @Test
+    fun theEmptyLineIsBuiltFromTheFilterKey() {
+        assertEquals("No open tickets.", SupportText.emptyLine("open"))
+        assertEquals("No tickets yet.", SupportText.emptyLine("all"))
+        for (k in listOf("owes", "overdue", "resolved", "flagged")) assertEquals("No tickets match this filter.", SupportText.emptyLine(k))
+    }
 }

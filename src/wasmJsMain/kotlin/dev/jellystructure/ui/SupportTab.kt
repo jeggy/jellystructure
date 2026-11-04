@@ -73,7 +73,7 @@ private fun nowSecSupport(): Long = (nowMsSupport() / 1000.0).toLong()
 private var tkScope: CoroutineScope? = null
 private var tkPanel: Element? = null
 private var tkGen = 0
-private var tkFilter = "all"
+private var tkFilter = SupportText.DEFAULT_FILTER
 private var tkTickets: List<SupportAdminTicket>? = null
 private var tkListFailed = false
 private var tkOpen: Long? = null
@@ -228,7 +228,7 @@ private fun paintRows() {
     val rows = tkTickets
     host.innerHTML = when {
         rows == null -> """<div class="tk-empty">${if (tkListFailed) "Couldn’t read the tickets." else "Loading…"}</div>"""
-        rows.isEmpty() -> """<div class="tk-empty">${if (tkFilter == "all") "No tickets yet." else "No tickets match this filter."}</div>"""
+        rows.isEmpty() -> """<div class="tk-empty">${SupportText.emptyLine(tkFilter)}</div>"""
         else -> rows.joinToString("") { rowHtml(it) }
     }
 }

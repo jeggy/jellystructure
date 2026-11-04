@@ -30,6 +30,16 @@ internal object SupportText {
         Filter("flagged", "Flagged", "flagged=true") { null },
     )
 
+    /** FR-6 (DEB-3578) — the filter the tab opens on; *All* stays first in the control. */
+    const val DEFAULT_FILTER = "open"
+
+    /** FR-6 (DEB-3578) — the empty list's line, by the filter that is showing. */
+    fun emptyLine(filterKey: String): String = when (filterKey) {
+        "open" -> "No open tickets."
+        "all" -> "No tickets yet."
+        else -> "No tickets match this filter."
+    }
+
     fun filterOf(key: String?): Filter = FILTERS.firstOrNull { it.key == key } ?: FILTERS.first()
 
     /**
