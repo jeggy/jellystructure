@@ -104,6 +104,14 @@ video or audio failure counts toward FR-6.5's three failures.
 - The recipe stays data. The model writes no code that runs on the server, because a saved recipe re-runs unattended on a schedule (FR-4.1, *Nothing in a recipe is executed*).
 - FR-5.1: the model's examples carry the date and time it read, and the engine checks them against what `when` reads.
 
+**Amended 2026-11-04 (DEB-3573, owner on DEB-3570, comment `38f1ee6e`):** *"when it says 4t 0m, it's because it's currently live. So not actually 4hours. It would be nice for the AI parsing and testing, to figure that out, so this episode would be skipped and at a later point it would download it."* The broadcaster's page lists the bulletin that is on air now with its slot length, `4. Nov. 2026 6.00 | 4t 0m`. Downloaded now, it is a partial file whose duration is not within 10 % of the listing's. FR-6.5 then fails it three times and marks it *failed*, so the finished bulletin is never fetched.
+- FR-4.1: the recipe may carry `list.live`, a pattern the model writes for how *this* page marks an item that is still on air or not out yet. An item it matches is skipped on that run with `<title>: live now, on a later run`. That is not a failure, it does not count toward FR-6.5's three, and the next run looks at the item again. It is data like `numbering.when`, and it applies under every numbering, not only `date` and `datetime`.
+- FR-4.1: a `live` match on an item dated two or more days before the run no longer holds. So a pattern that also matches a finished programme delays it by two days and does not lose it.
+- FR-4.2: the proof sets live items aside. It fails when `live` leaves fewer than two items, or matches more than half of them, and the reason goes back to the model.
+- FR-6.3: a `ytdlp` download also refuses an entry yt-dlp itself calls live or upcoming, with the same line. That needs no extra request.
+- FR-5.1, FR-10.1 and FR-10.4: the model is told to look for such a marker. The review shows a live row as *live now · on a later run*. The bug report says whether the recipe has a `live` rule, never its pattern.
+- *Stand-in data* and *Acceptance* 10 say the same.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -348,6 +356,50 @@ one lane.
        it. A recipe has no step that rewrites a link, because a rewritten link is a URL the model wrote, and FR-6.3
        only lets yt-dlp be told a link the site listed. A listing whose links yt-dlp has no extractor for is refused at
        the proof with *no extractor*. Such a listing is the Internet Archive's `/download/` file links (*Non-goals*).
+     - **`live`: an item that is not finished yet (2026-11-04, DEB-3573).** A broadcaster's page can list the
+       programme that is on air now, or one that has not aired yet. Such an item has no finished file yet. DR prints the
+       bulletin on air as `4. Nov. 2026 6.00 | 4t 0m`, where `4t 0m` is the slot and not the length of the file. So the
+       model, which has read the page, writes down how this page marks such an item.
+       - **The shape.** `list.live` is optional. It is `{on, regex}` or `{field, regex}`.
+         - `on` names one of the listing's own fields: `title`, `published`, `description` or `duration`.
+         - `field` is for a marker that is none of those, such as a *LIVE* badge. It is read the way the listing's
+           fields are: a selector and attribute inside the item for `html`, a path into the entry for `json` and
+           `ytdlp`. It is not one of the listing's fields, so it adds no name to them.
+         - `regex` is one rule of `pattern`'s grammar with no named groups. It gets the same size and backtracking
+           checks and the same `(?P<` rewrite (DEB-3459). An item is live when the regex finds a match in that text.
+           For DR's text that is `\|\s*4t\s+0m\s*$`, unless the page has a better marker.
+       - **On a run**, a live item is skipped before anything else is done for it. Nothing beyond the listing is read
+         for it: no item page, no yt-dlp date read. The run line is `<title>: live now, on a later run`. That is not a
+         failure, and it does not count toward FR-6.5's three. Nothing about it is stored as an outcome, so the next run
+         looks at the item again, and once the page no longer marks it, it is numbered and downloaded like any other.
+         FR-16.3's order counts it only once it is no longer live, as for an undated item. The fetcher's row reads
+         *n items live now* while a run's last listing had any.
+       - **It does not hold forever.** A `live` match on an item whose published date is two or more days before the
+         run's date (the server's local date) is ignored, and the item is fetched as usual. So a pattern that also
+         matches a finished programme of exactly that length delays it by two days and does not lose it. An item with
+         no published date has no such limit, and its fetcher's row keeps saying so.
+       - **In the proof** (FR-4.2, FR-15.8), the same limit applies, and live items are set aside before every other
+         check. They are not numbered, not held against *every item maps to exactly one identity*, not compared with
+         TMDB, never the item whose manifest is probed, and never an example.
+         - The listing must still give at least two items that are not live, and `live` may match at most half of
+           the listing. Otherwise the proof fails with *the live pattern matches n of the m items, so it does not pick
+           out only the item on air*. That goes back to the model as FR-5.1's correction. So a listing where every item
+           matches fails.
+         - A `live` that matches no item passes: nothing may be on air during the investigation.
+         - An example (FR-5.1) that `live` matches is told back: *'<title>' is live now, so it cannot be an example*.
+       - **yt-dlp's own word.** A `ytdlp` download also refuses an entry whose `live_status` is `is_live` or
+         `is_upcoming`, as part of the same yt-dlp call (such as `--match-filter "live_status!=?is_live &
+         live_status!=?is_upcoming"`, where a missing field passes). No extra request is made. The item is skipped
+         with the same line, whether or not the recipe has `live`. This is a backstop. A site's extractor may not set
+         the field, so the model's `live` is what the owner's case rests on.
+       - **Nothing executes.** `live` is data, one regular expression on one text, like `numbering.when`.
+       - Rejected: working out *live* from the printed start time and length (6.00 plus 4t 0m is not yet past). The
+         page's clock time carries no time zone (FR-4.5), and the server's can differ by an hour. The slot length is
+         also not the file's length.
+       - Rejected: `numbering.when.skip`. An item is live under any numbering, and `when` exists only for `date` and
+         `datetime`.
+       - Rejected: letting FR-6.5's duration check catch it. That spends a full download each run, and after three it
+         marks the finished item *failed*.
    - `media`: how an item becomes a stream — a manifest URL template or a JSON path to it, or `ytdlp`;
      - **`ytdlp` media (2026-11-02, DEB-2480).** The item's own link, which must be on a host the recipe records, is
        handed to yt-dlp (FR-6.3). There is no manifest, no `manifest` template and no `item_page`.
@@ -398,6 +450,9 @@ one lane.
      date is within 7 days of the item's published date, or the TMDB episode name equals the item's title. Under Q1, at
      least **two** such agreements, with none against, are what *proven* means. A fetcher whose
      pattern is not proven can still be saved, and then every episode TMDB lacks waits for the admin (FR-4.3's flow).
+
+   Items that `list.live` matches are set aside before these checks, and `live` itself must leave at least two items
+   and match at most half of the listing (FR-4.1's `live`, 2026-11-04, DEB-3573).
 
    Anything else is the *Not a series* state with the failing check as its reason, and nothing is written. A
    page-only fetcher skips the TMDB check and has two of its own instead (FR-15.8).
@@ -579,6 +634,11 @@ one lane.
      day, and `numbering: datetime` when two items can share a date and the published text carries a time. A `date`
      recipe the proof refuses because items share a date gets that reason with *if the published text gives a time,
      answer `numbering: datetime`* added, so the model can correct it within FR-5.1's two corrections.
+   - **An item that is not finished yet (2026-11-04, DEB-3573).** The recipe's schema carries `list.live` (FR-4.1). The
+     listing step tells the model to look for an item the page shows as on air now or not out yet. It should prefer a
+     marker the page shows only then, such as a badge, a word or a class. It falls back to a length the page prints
+     only while the item is on air. It answers `live` with that marker, and leaves `live` out when the page has none. It
+     never gives such an item as an example. The proof's refusals for `live` go back to it like any other.
    - Rejected: a new numbering that matches an item's title to a TMDB episode name with no model and no tick. That is
      `mapped` without the admin's approval, and FR-4.3 (Q2) is that a mapping fails closed.
 2. **What is sent** (FR-270-8 gains this line): *the page URL and what this server read from that site during the
@@ -696,6 +756,8 @@ one lane.
    three failures the item is marked *failed* until *Re-investigate page*.
    The check never asks for a subtitle stream, and a missing or unusable subtitle (FR-6.4) is not a failure here:
    only the video, the audio, the language, the duration and `Tracks` count toward the three.
+   An item that FR-4.1's `live` or yt-dlp's own `live_status` marks as live never reaches this check (2026-11-04,
+   DEB-3573).
 6. **Placed atomically, never over anything.** The file is written under phase 311's work folder in its destination
    season folder (`<Season folder>/.jellystructure/`, which Sonarr, Radarr and Jellyfin all skip, and which the
    leftover sweep already cleans), then renamed into `<Series>/Season NN/<Series> - SxxEyy - <episode name>.mkv`
@@ -773,9 +835,11 @@ As drawn in round 2, with these changes:
    for the admin's number. A disagreement is not a review state: it fails the proof, so it is the failed state, its
    reason naming the check and the disagreeing rows listed under it (corrected 2026-10-25, DEB-2481: this line said
    the review state showed the disagreement, which FR-4.2 rules out). For `mapped` numbering, every mapping row has an
-   accept tick, all unticked.
+   accept tick, all unticked. A row that `list.live` matched reads *live now · on a later run* in place of its number
+   (2026-11-04, DEB-3573).
 2. **The fetchers list** gains two states per row: **Site stopped** (FR-2.5, with *Resume site*) and **n items waiting
-   for a number** (FR-4.3). *Needs re-investigation* is the drawn third row.
+   for a number** (FR-4.3). *n items live now* (FR-4.1's `live`, 2026-11-04, DEB-3573) is a note on the row in the same
+   place, not a state. *Needs re-investigation* is the drawn third row.
 3. **The still copy** reads *Three frames picked from the video* instead of *the model picked* (Q4).
 4. **The bug-report link** (*File a bug report on GitHub*) is kept on the failed state, and a stopped investigation
    still has none. *Amended 2026-11-04 (DEB-3569).* Until then it was pre-filled with the URL's host, the TMDB id and
@@ -804,6 +868,7 @@ As drawn in round 2, with these changes:
         - whether it reads a next page;
         - the media kind, and `item_page` by selector or by pattern, when it has one;
         - the numbering kind and the number of pattern rules;
+        - whether it has a `live` rule, and `on <field>` or `own field`, never its regex (2026-11-04, DEB-3573);
         - whether it has a `series` block;
         - the audio and subtitle language codes;
         - how many hosts it records besides the page's.
@@ -1094,7 +1159,9 @@ one path that does, and its rules are what make that safe.
 2026-10-27, and generic episode headings `Dagbók · 16. oktober` and so on (added 2026-10-27, DEB-2626). For a
 programme that airs more than once a day (`datetime`, FR-4.5), use `Kvøldbók` at `varpid.example.fo/sendingar/kvoldbok`.
 It has no TMDB id, and its published text is printed as `3. Nov. 2026 18.30 | 25m`. Its listing has three items on
-2026-11-03 (6.00, 18.30, 21.00) and one each on 2026-11-02 and 2026-11-05 (added 2026-11-04, DEB-3567). Tests and any
+2026-11-03 (6.00, 18.30, 21.00) and one each on 2026-11-02 and 2026-11-05 (added 2026-11-04, DEB-3567). A second
+state of the same listing, `kvoldbok-live`, adds a sixth item on 2026-11-06 printed `6. Nov. 2026 6.00 | 4t 0m`, with
+a `Beinleiðis` badge that no other item has (added 2026-11-04, DEB-3573). Tests and any
 new picture use only these. No real broadcaster page, title, slug or
 TMDB id appears in this repository; a test that needs a live-looking listing uses a fixture served by the test itself.
 
@@ -1160,6 +1227,20 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
     - Items at 18.25 and 18.30 on one date fail the proof under `datetime`. An item with a date and no time fails it
       too.
     - `parseSeasonEpisodes` reads `S2644E808 - 2026-11-03 18.30 - …` as season 2644, episode 808, and no range.
+
+    Added 2026-11-04 (DEB-3573):
+    - `kvoldbok-live` saves under `datetime` with `live` on the badge, and with `live` `{on: published, regex:
+      "\\|\\s*4t\\s+0m\\s*$"}`. The proof sets the sixth item aside, never probes its manifest, and the review shows
+      it as *live now · on a later run*. A run on 2026-11-06 places the other five and writes
+      `<title>: live now, on a later run` for the sixth, with no failure counted. The next run, on the plain listing
+      where the sixth item reads `6. Nov. 2026 6.00 | 3t 30m` with no badge, places it as `S2645E176`.
+    - A `live` that matches every item, or four of the six, fails the proof with *the live pattern matches n of the m
+      items…*, and the reason goes back to the model. A `live` that matches none passes.
+    - A run on 2026-11-08 with the sixth item still matched by `live` fetches it: the match no longer holds two days on.
+    - An example that `live` matches is told back as *'<title>' is live now…*.
+    - A `ytdlp` stand-in entry with `live_status: is_live` is skipped with the same line and no failure counted, with or
+      without `live` in the recipe. An entry with no `live_status` downloads.
+    - A recipe with no `live` runs exactly as before.
 11. **The newest 12.** The page grows to 13 items.
     - The run downloads the new one and deletes the oldest: the file, its NFO and its thumb.
     - Jellyfin gets `"Deleted"` for that path, and the run record and Activity each carry the line.
