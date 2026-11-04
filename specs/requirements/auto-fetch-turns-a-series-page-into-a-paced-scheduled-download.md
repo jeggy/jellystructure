@@ -104,6 +104,10 @@ video or audio failure counts toward FR-6.5's three failures.
 - The recipe stays data. The model writes no code that runs on the server, because a saved recipe re-runs unattended on a schedule (FR-4.1, *Nothing in a recipe is executed*).
 - FR-5.1: the model's examples carry the date and time it read, and the engine checks them against what `when` reads.
 
+**Amended 2026-11-04 (DEB-3567, owner's answer on card `3ac0225b`):** QA (DEB-3571) found that the numbering works on the owner's page: all 6 items were numbered under `datetime`. The investigation still ended *Not a series*, because the site plays its videos only to a signed-in viewer. The owner: *"Say it didn't work and why and then give options for just giving up or work together with ai and help with providing credentials/session/cookie or something etc."*
+- FR-3.3 and the new FR-3.6: a site that plays only to a signed-in viewer ends as *Needs a sign-in*, never as *Not a series*. The admin may then give up, or paste their own browser session for that site and investigate again. A password is never asked for or stored. DRM is still refused.
+- FR-2.1, FR-5.2, FR-10.8, FR-12, Acceptance 21 and *Non-goals* say the same.
+
 **Amended 2026-11-04 (DEB-3573, owner on DEB-3570, comment `38f1ee6e`):** *"when it says 4t 0m, it's because it's currently live. So not actually 4hours. It would be nice for the AI parsing and testing, to figure that out, so this episode would be skipped and at a later point it would download it."* The broadcaster's page lists the bulletin that is on air now with its slot length, `4. Nov. 2026 6.00 | 4t 0m`. Downloaded now, it is a partial file whose duration is not within 10 % of the listing's. FR-6.5 then fails it three times and marks it *failed*, so the finished bulletin is never fetched.
 - FR-4.1: the recipe may carry `list.live`, a pattern the model writes for how *this* page marks an item that is still on air or not out yet. An item it matches is skipped on that run with `<title>: live now, on a later run`. That is not a failure, it does not count toward FR-6.5's three, and the next run looks at the item again. It is data like `numbering.when`, and it applies under every numbering, not only `date` and `datetime`.
 - FR-4.1: a `live` match on an item dated two or more days before the run no longer holds. So a pattern that also matches a finished programme delays it by two days and does not lose it.
@@ -316,7 +320,7 @@ one lane.
      - The 25-request cap, one download at a time, the back-off, and the stop on a block all still apply (FR-2.3 to
        FR-2.5).
      - The recorded-host rule still applies (FR-2.7).
-     - Nothing behind a login or DRM is read (FR-3.3).
+     - Nothing behind DRM is read, and nothing behind a login without the admin's own session (FR-3.3, FR-3.6).
    - **One fetcher's setting, one site's lane.** Another fetcher on the same site that is not ticked is still bound by
      `robots.txt`. A block that the ticked fetcher provokes stops the whole site, the unticked fetchers included,
      exactly as FR-2.5 says. That is the cost of the tick, and its hint says so (FR-10.7).
@@ -336,6 +340,10 @@ one lane.
 3. **No DRM.** A manifest that carries a DRM key system (Widevine, PlayReady, FairPlay) is refused: *this site protects
    its videos; Auto-fetch does not get past that*. Plain HLS AES-128 that any player decrypts with the key the manifest
    names is not DRM. Nothing behind a login is fetched, and no credential field exists.
+
+   *Amended 2026-11-04 (DEB-3567):* DRM is still refused, always. A login is no longer an end in itself. A site that
+   plays only to a signed-in viewer is FR-3.6. It is fetched only with a session the admin pasted from their own
+   browser, and there is still no field for a user name or a password.
 4. **Not where another tool downloads.** A series Sonarr has, found by its TMDB id or by the target folder's path,
    is refused: *Sonarr already downloads this series*. That applies whether Sonarr monitors it or not. Sonarr adopts any
    visible file in a series folder it knows (phase 311), may number it from another catalogue (phase 160), and its
@@ -343,6 +351,54 @@ one lane.
    fetcher with the same reason.
 5. **One target library.** The fetcher saves into one series library jellystructure manages, chosen at save from the
    mapped series libraries; with one, there is no choice.
+6. **A site that plays only to a signed-in viewer (2026-11-04, DEB-3567, owner's answer on card `3ac0225b`).** The
+   owner's news page listed its broadcasts, but its player says *Log ind for at afspille*, and the stream comes from a
+   token API on another host. Both investigations ended *Not a series*, which was not true and gave the owner nothing to
+   do.
+   - **Found, and said.** The model's final answer gains a third kind, `needs_sign_in`, beside a recipe and
+     `not_a_series`. The model uses it when the listing is a series but the page, a probe or the proof shows that the
+     videos play only after signing in. The server accepts it only after the listing has yielded at least two items.
+     The server also gives this ending, whatever the model says, when the proof's own media read on one of the site's
+     hosts answers `401` or `403`, or yt-dlp reports that it needs a login or cookies.
+   - **The words are the server's.** The failed state reads *It didn't work: `<site>` lists `<n>` episodes but plays
+     them only to someone signed in. Auto-fetch cannot sign in by itself.* That sentence is fixed text with the site
+     and the count filled in. The model's own words are not shown (FR-10.4). The view carries `needsSignIn: true`, and
+     the admin shows FR-10.8's choices from that flag, never from the reason's words.
+   - **Two choices.**
+     - *Give up* discards the investigation, as *Dismiss* does today.
+     - *Use my session* opens a field for the admin's own session on that site. The admin signs in to the site in
+       their own browser, then pastes either a `cookies.txt` export (the Netscape format that browser extensions
+       export and that yt-dlp reads) or the value of a `Cookie:` header. *Save session and investigate again* stores
+       it for the site and starts a new investigation with the same settings.
+   - **Never a password.** No field asks for a user name or a password, and the model never fills in a sign-in form.
+     Signing in, with its two-factor codes and its captchas, stays in the admin's own browser.
+     - Rejected: a user name and password, with the model working the sign-in form. That stores a password on a
+       server that users outside the household reach, and a sign-in form is the part of a site that changes most.
+   - **One session per site, never shown again.** The session belongs to the site (FR-2's registrable domain), not
+     to a fetcher. All fetchers on that site use it.
+     - It is stored in the database, like the other services' keys.
+     - No route answers it. `GET /api/autofetch` gives only that a session is set, when it was saved, and when its
+       first cookie for the site expires, if the paste says.
+     - It is never logged, never in a run line, never in Activity, and never in FR-10.4's bug report. It is never
+       sent to Anthropic.
+     - A paste that holds no cookie for the site's domain is refused (`422`): *That holds no cookie for `<site>`.*
+   - **Where it is used.** The session goes only to the site's recorded hosts (FR-2.7), and only those its cookies'
+     own domains match. It is used for the engine's own requests: the proof, the engine's probe, `item_page` reads,
+     yt-dlp's reads (handed over as a `cookies.txt` file that exists only for that call) and the download.
+     - The model's `fetch` and `probe` tools go out **without** it, so a signed-in page, which can carry the account's
+       name or e-mail, never reaches Anthropic. The model is told only that a session is set for this site (FR-5.2).
+       That is enough for the usual case, a `ytdlp` media kind, where yt-dlp does the signed-in part.
+     - Rejected for now: signed-in `fetch` for the model. It would send the account's own pages out of the house.
+   - **Everything else still holds.** DRM is refused (FR-3.3), and pacing, the request cap, `robots.txt` and the
+     recorded hosts apply as before (FR-2). With a session, the requests are made as the household's account. The
+     field's hint says so: *Requests are made as you. If the site objects, it is your account it may block.*
+   - **When the session runs out.** If a run's request on the site answers `401` or `403`, is sent to a sign-in page,
+     or yt-dlp reports that it needs a login, the site stops (FR-2.5). The reason is *The session for `<site>` has run
+     out. Paste a new one on AI ▸ Fetchers.* Pasting a new session resumes the site, and nothing else is changed.
+   - **Forget session.** The site's line on the tab has *Forget session*, which deletes the session. Fetchers that
+     need it then stop at their next run with the same reason.
+   - **Who watches it.** What a household session fetches goes into a library that viewers outside the household also
+     watch. The owner chose this by answering the card.
 
 ### FR-4 — The recipe
 
@@ -684,6 +740,9 @@ one lane.
    investigation has no `tmdb_series` tool and sends nothing from TMDB (FR-15.9). On a fetcher set to ignore
    `robots.txt` (FR-2.8, amended 2026-11-04), what this server read without those rules goes to the model the same
    way. The model is not told about the setting, and it changes nothing about what the model may ask for.
+
+   *Amended 2026-11-04 (DEB-3567, FR-3.6):* the model is told whether a session is set for the site. That is one
+   line, never the session itself. Pages read with the session are never sent.
 3. **Page content is data, not instructions.** The system prompt says so; and nothing the model answers is acted on
    except through FR-4's schema and FR-4.2's proof. A page that tells the model to fetch another site, write a file or
    change the schedule can at worst produce a recipe that fails its proof.
@@ -1022,6 +1081,19 @@ As drawn in round 2, with these changes:
    - **The fetchers list.** A row that ignores `robots.txt` says so beside the schedule, after any retention note:
      *Daily · 04:00 · keeps newest 12 · ignores robots.txt*.
 
+8. **Needs a sign-in** (amended 2026-11-04, DEB-3567; FR-3.6). This reuses the failed state, its line under the
+   reason (FR-10.7), and the form's existing field and button classes. It adds no CSS class. If the build finds it
+   needs one, that is a design round with Rannvá first (`design/PROCESS.md`).
+   - **The failed state**, when `needsSignIn` is set, shows FR-3.6's sentence as its reason, then two buttons:
+     *Give up* and *Use my session*.
+   - **Use my session** opens, in the same panel, a field for the paste, with the hint *Sign in to `<site>` in your
+     own browser, export its cookies as cookies.txt (or copy the Cookie header), and paste them here. Requests are
+     made as you. If the site objects, it is your account it may block.* Under it is *Save session and investigate
+     again*. A `422` is shown under the field in the server's words.
+   - **The fetchers list.** A site with a session says so on its line: *Signed in with your session · saved 4 Nov ·
+     runs out 3 Dec* (or *· no expiry given*), with *Replace session* and *Forget session*. A stopped site shows FR-2.5's
+     reason as before, and *Replace session* is offered there.
+
 ### FR-11 — Activity
 
 Each run is an entry on Activity ▸ History (*Auto-fetch · Royndin · +1 episode*), and Activity ▸ Schedule lists every
@@ -1056,6 +1128,13 @@ All admin-only, behind the admin's existing auth, not on the Ravilo wire:
   `pageOnly` already does. Each fetcher in `GET /api/autofetch` carries `ignoreRobots`, and
   `PATCH /api/autofetch/{id}` accepts `{ignoreRobots}`;
 - `POST /api/autofetch/sites/{site}/resume`;
+- *Added 2026-11-04 (DEB-3567, FR-3.6):* `PUT /api/autofetch/sites/{site}/session` `{cookies}` stores the site's
+  session. It answers `200 {set: true, savedAt, expiresAt}` (`expiresAt` is null when the paste gives none), and `422`
+  with the reason for a paste it cannot read or one with no cookie for the site. A stopped site whose reason is an
+  expired session resumes. `DELETE /api/autofetch/sites/{site}/session` forgets it. Each site in `GET /api/autofetch`
+  carries `session: {set, savedAt, expiresAt}` or null, never the value. A failed investigation's view carries
+  `needsSignIn` and `site`. `POST /api/autofetch/investigate` takes no session field: it uses the site's stored session
+  by itself;
 - `POST /api/autofetch/{id}/items/{itemId}/number` `{season, episode}` and `…/propose`;
 - `GET /api/autofetch/queue/{episodeId}/still/{n}`, `POST /api/autofetch/queue/{episodeId}/submitted`.
 - *Added 2026-11-01 (DEB-2477):* `POST /api/autofetch/queue/{episodeId}/still/{n}` `{at}` cuts still `n` again at `at` seconds
@@ -1415,9 +1494,23 @@ Added 2026-11-04 (DEB-3591):
     - The schema migration adds the fetcher's setting with a default of off. Every fetcher saved before it reads as
       unticked.
 
+21. **A site that plays only signed in (FR-3.6, DEB-3567).** The fixture site lists three items. Its media host
+    answers `403` without a cookie `s=ok` and serves the manifest with it.
+    - Investigating it ends failed with `needsSignIn: true` and FR-3.6's sentence (*lists 3 episodes*), never
+      `notASeries`. *Give up* discards it.
+    - `PUT …/session` with a `cookies.txt` holding `s=ok` for the fixture's domain answers `200`. The next
+      investigation reaches the review, and the media host saw the cookie on the proof's read. The fixture's page
+      host saw no cookie on any `fetch` the model made, and no request to the fake Anthropic carries `s=ok`.
+    - A paste with a cookie for another domain only answers `422`. `GET /api/autofetch` never contains `s=ok`, and
+      neither does the log, the run record, Activity or the bug report.
+    - The fixture starts answering `403` again. The next run stops the site with *The session for … has run out*, and
+      a new `PUT` resumes it. `DELETE …/session` forgets it.
+
 ## Non-goals
 
-- Films and one-off clips (FR-3.1), and anything behind a login or DRM (FR-3.3).
+- Films and one-off clips (FR-3.1), and anything behind DRM (FR-3.3). Anything behind a login, except with the admin's
+  own pasted session (FR-3.6, amended 2026-11-04, DEB-3567). A stored password, and a sign-in form worked by the
+  model, are never part of it.
 - Writing to TMDB, ever. *Mark as submitted* is a note.
 - Replacing the household's hand scripts. They stay, outside this repository.
 - A model call on a schedule.
