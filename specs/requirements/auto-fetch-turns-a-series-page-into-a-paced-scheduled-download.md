@@ -206,7 +206,8 @@ Owner, 2026-10-27, on DEB-1076, when a daily programme was moved onto Auto-fetch
    reasons *AI is switched off in Settings ▸ AI* and *Auto-fetch is switched off in Settings ▸ AI* stay as the `409`
    answer of the investigation routes, which the tab draws in its failed state if a switch changes while it is open.
    This amendment does not change when a saved fetcher runs. It still runs while AI or the Auto-fetch job is switched
-   off, and it does not run while `[autofetch] enabled` is off (FR-13).
+   off, and it does not run while `[autofetch] enabled` is off (FR-13). The owner chose this on DEB-3566 (2026-11-04): *Yes: keep
+   downloading, as today*, over pausing the fetchers while the tab is hidden.
 3. With no key, the AI page is absent, as drawn (*No AI key*). Saved fetchers keep running; they are listed on
    Activity ▸ Schedule (FR-11), so a fetcher never runs where nobody can see it.
 
