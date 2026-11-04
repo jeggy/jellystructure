@@ -76,7 +76,7 @@ class MusicEditionsStoreTest {
         // …and DEB-2194's 89 creates processing_feature_run.
         raw.execute(null, "DROP TABLE IF EXISTS processing_feature_run", 0)
         // …and DEB-2476's 90 creates the five autofetch tables, and DEB-2477's 93 a sixth, the queue (their indexes go with them).
-        for (t in listOf("autofetch_fetcher", "autofetch_site", "autofetch_item", "autofetch_run", "autofetch_series_mark", "autofetch_queue")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        for (t in listOf("autofetch_fetcher", "autofetch_site", "autofetch_item", "autofetch_run", "autofetch_series_mark", "autofetch_queue", "autofetch_site_session")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
         // …and DEB-2826's 91 creates ai_viewer.
         raw.execute(null, "DROP TABLE IF EXISTS ai_viewer", 0)
         // …and DEB-3100's 92 creates stream_plan (its index goes with it).
