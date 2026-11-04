@@ -87,6 +87,12 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-1.3: while the tab is hidden, a stopped site's Dashboard row opens Settings ▸ AI and not the hidden tab. On 2026-11-04 Activity ▸ Schedule, where FR-11 lists the fetchers, was not built (DEB-2197). Until it is, a hidden tab leaves the fetchers' runs visible only as entries on Activity ▸ History.
 - Acceptance 1 says the same.
 
+**Amended 2026-11-04 (DEB-3569, owner on DEB-799, comment `87543d72`):** *"the github link to file a bug report, is showing very little information. I think it should include more information than this."* The pre-fill was the host, the TMDB id and five words for the steps. It did not carry the failure reason the card shows just above the link.
+- FR-10.4: the server writes the report, and it carries the reason, every refused turn's reason, the turns and the site requests, the server version, the model, each step's time, and the last recipe's shape. Every reason goes through a fixed redaction: a quoted span becomes `'<text n>'`, a URL keeps only its host, a path becomes `/…`, a host other than the page's becomes `<host>`, and another program's message is left out. The model's own words, selectors, JSON paths and patterns are never in the report.
+- FR-10.4: the TMDB id is no longer sent, because one TMDB lookup turns it into the title. The report says *TMDB series* or *page only* instead.
+- FR-10.4: the link drops `template=autofetch.yml`, because no such template exists, and it is cut to fit 8,000 characters.
+- Acceptance 19 says the same.
+
 **Amended 2026-11-04 (DEB-3567, owner on DEB-799, comment `a8cf8378`):** *"This series is a news series, so new episodes every day (even multiple times a day)."* The owner set up a page-only fetcher for a broadcaster's news programme. The model's recipe was right: an `html` listing, `ytdlp` media and `date` numbering. Two of our own gaps stopped it. The page prints each item's date with its time and length after it (`3. Nov. 2026 18.30 | 25m`). That was not read as a date, so no item had a number. And with three items on one date, FR-4.5 refused the recipe at save, so a programme that airs more than once a day could never be set up.
 - FR-4.5: a date is read the way the page prints it even when a time or other text follows it. That is what FR-4.5 already said, so this part is a fix and not a change.
 - FR-4.1 and FR-4.5: a new numbering, `datetime`, for a page-only programme that airs more than once a day. The season is the year and the week, and the episode is the day and the time. 3 November 2026 at 18.30 is `S2644E808`. `date` is unchanged, so no saved fetcher is renumbered.
@@ -741,8 +747,93 @@ As drawn in round 2, with these changes:
 2. **The fetchers list** gains two states per row: **Site stopped** (FR-2.5, with *Resume site*) and **n items waiting
    for a number** (FR-4.3). *Needs re-investigation* is the drawn third row.
 3. **The still copy** reads *Three frames picked from the video* instead of *the model picked* (Q4).
-4. **The bug-report link** (*File a bug report on GitHub*) is kept, pre-filled with the URL's host, the TMDB id and the
-   five steps' outcomes. Never the page's content, as drawn, and never the full URL path: a path can carry a title.
+4. **The bug-report link** (*File a bug report on GitHub*) is kept on the failed state, and a stopped investigation
+   still has none. *Amended 2026-11-04 (DEB-3569).* Until then it was pre-filled with the URL's host, the TMDB id and
+   the five steps' outcomes, and nothing else. The owner found that too little to act on (DEB-799, comment `87543d72`).
+   The repository is public, so the report is public. What it may carry is therefore set here by rule, never by
+   judgement, and a title is a title whatever kind of programme it names.
+   - **Who writes it.** The server writes the issue's title and body and pushes them on the investigation
+     (`InvestigationView.report`, `{title, body}`, present on a `failed` investigation only). Only the server holds
+     the turns, the refused answers and the last recipe. The admin URL-encodes the two into
+     `https://github.com/jeggy/jellystructure/issues/new?title=…&body=…` and adds nothing. `template=autofetch.yml` is
+     dropped. There is no such file in `.github/`, and if one were added as an issue form, GitHub would ignore `body`.
+   - **The title.** `Auto-fetch: could not set up <host>`, then ` · <step>` when a step failed, where `<step>` is that
+     step's key (`page`, `videos`, `series`, `pattern`, `script`).
+   - **The body**, in this order:
+     1. `Host:` the page URL's host. Never its path, query or fragment.
+     2. `Fetcher: TMDB series` or `Fetcher: page only`. **The TMDB id is no longer sent.** One lookup on TMDB turns it
+        into the title, so it names what the household wants as surely as the title does.
+     3. `Server:` the running server's version (`ServerVersion.current`, such as `v1.62-54-g8bb7b638`).
+     4. `Model:` the Auto-fetch job's model id and effort.
+     5. `Ended:` `not a series`, `limit reached` or `failed`, then `· turns: t of 12 · site requests: n of 20 · cost: $x`.
+     6. `Reason:` the failed state's reason, redacted as below.
+     7. `Steps:` one line per step: its key, its state and its time where it has one (`pattern: fail · 3.1s`). A step's
+        text is never sent, because the *series* step's text names TMDB's title.
+     8. `Recipe (shape only):` the last recipe the model answered, when one parsed. It lists:
+        - the list kind, and the names of the fields it sets, from FR-4.1's fixed set (`title, link, published`);
+        - whether it reads a next page;
+        - the media kind, and `item_page` by selector or by pattern, when it has one;
+        - the numbering kind and the number of pattern rules;
+        - whether it has a `series` block;
+        - the audio and subtitle language codes;
+        - how many hosts it records besides the page's.
+
+        With no recipe, the line reads `Recipe: none`.
+     9. `Proof:` the counts from the last proof the engine ran: items listed, items numbered, TMDB episodes checked
+        and TMDB episodes agreeing. The line is left out when no proof ran.
+     10. `Refused turns:` one line for each answer FR-5.6 logs, in turn order, as `turn 5: <the engine's reason,
+         redacted>`. A `not_a_series` answer reads `turn 7: the model answered not_a_series (its reason quotes the page
+         and is left out)`.
+     11. A last line: `Titles, the page's content, the model's answers and the URL's path are left out by rule. The
+         server's log holds the full answers under autofetch, investigation <id>.`
+   - **Never in it:**
+     - a title of any kind: an item's, the programme's, TMDB's;
+     - an item's link, or the page URL's path, query or fragment;
+     - any text the page served, and any text the model wrote;
+     - a CSS selector, a JSON path, a regular expression or a URL template;
+     - a host other than the page's;
+     - a file name or a library path.
+
+     The selectors, JSON paths and patterns are the site's markup, but the model writes them, and on the sites seen so
+     far they carry the programme's slug: KVF's listing is `/sjon/sending/dv` (FR-4.1). Without the page they select
+     from, a developer could not check them anyway.
+   - **The redaction.** Every reason in the body goes through these steps, in this order:
+     1. A reason in the model's own words is never shown. A `not_a_series` reason, which the failed state shows as
+        the model wrote it, is replaced as in item 10, and so is the `Reason:` line when that is how it ended.
+     2. Every span in single quotes becomes `'<text n>'`. It is numbered by first appearance in the body, so the
+        same title reads the same everywhere in it. The engine quotes every title, link and unknown kind it names
+        this way: `'<text 1>' maps to no season and episode`, and `on '<text 2>' you said episode 3, and the engine
+        reads S01E04`.
+     3. Every `http://` or `https://` URL becomes its host followed by `/…`.
+     4. Every other word that starts with `/` becomes `/…`, so `this site's robots.txt does not allow /…`.
+     5. Every word that reads as a host name and is not the page's host becomes `<host>`. A host name here is two or
+        more labels of letters, digits and hyphens, joined by dots, and ending in a label of two or more letters. This
+        covers `the recipe records <host>, which is not a public host name`.
+     6. When a reason ends in another program's message after a colon, that message becomes `<message left out>`.
+        The reasons that carry one today are:
+        - `the pattern is not a valid regular expression:` (its message quotes the pattern);
+        - `the request failed:`;
+        - `Anthropic could not be reached:`;
+        - a failure carrying yt-dlp's, ffmpeg's or ffprobe's own output (`LaneOutcome.Failed` from
+          `programFailure`; yt-dlp's message quotes the link).
+
+        A new reason that carries another program's text must mark where that text starts, so this step never has
+        to guess. Each redacted reason is then cut at 300 characters.
+   - **Length.** GitHub refuses a new-issue link much over 8 kB. So the link, encoded the way the admin encodes it
+     (`afUrlEncode`), is at most 8,000 characters, and the server cuts the body to fit. It drops the refused turns
+     first, oldest first, and leaves `(n earlier refused turns left out)`. Then it drops the *Proof* and *Recipe*
+     lines. The title and items 1 to 7 are never cut.
+   - **The note beside the link** reads *The report is pre-filled with how the investigation went: the host, the
+     steps, the turns and the recipe's shape. Never a title, the page's content or the URL's path.* It is the same
+     line, reworded, so no new surface and no design round.
+   - **The admin still reads it first.** GitHub opens the issue form with the body in it, and the admin can read or
+     edit it before submitting. That is a second look, not the rule: the body is clean without it.
+   - Rejected:
+     - the model's last answer, even cut short, because it quotes the page;
+     - the selectors, JSON paths and patterns, for the reason above;
+     - recognising a title to redact it, from a list of the household's titles or from TMDB's name. Recognition
+       misses a title it has not seen, while the quotes are in the engine's own sentences;
+     - keeping the TMDB id because a developer could open the series on TMDB. That is exactly why it identifies it.
 5. The drawn *Investigating* spinner is an infinite animation, which the screenshot fence forbids (round 2's
    `MANIFEST.md`, *Open at promotion*); the promotion replaces it (FR-14).
 6. **The page-only choice and retention** (amended 2026-10-27, DEB-2626; drawn by FR-14.4's round,
@@ -1098,6 +1189,21 @@ Added 2026-11-03 (DEB-3459):
       and the answer. An answer over 8 kB is cut.
     - Live, DEB-3373 check 16 again, three runs on the same fixture and settings: each run reaches the review with
       `mapped` numbering and 4 of 4 items proposed. A run that fails is filed with its log line.
+19. **The bug report (FR-10.4, DEB-3569).** A test fixture plants one sentinel word in every string that comes from
+    outside the engine: each item's title and link, the page URL's path and query, the programme's name, TMDB's
+    series and episode names, the model's `not_a_series` reason and its whole answer text, every selector, JSON path,
+    pattern and URL template in its recipe, a host it records, and the messages of the regular-expression engine,
+    yt-dlp and the HTTP client.
+    - The fixture drives each refusal the engine has to a failed investigation: *maps to no season and episode*, the
+      example mismatch, two items on one number, a pattern that does not compile, a robots.txt refusal, a non-public
+      host, a yt-dlp failure, *not in the recipe's form*, `not_a_series`, *the page could not be worked out in 12
+      steps* and *limit reached*.
+    - On each one, `report.title` and `report.body` hold no sentinel and no TMDB id. They name the page's host, the
+      server version, the model, the turns, the failing step, the redacted reason and one line for each refused turn.
+    - A body with enough refused turns to pass the limit gives a link of at most 8,000 characters. It ends its turns
+      with `(n earlier refused turns left out)` and keeps items 1 to 7.
+    - The link starts `https://github.com/jeggy/jellystructure/issues/new?title=` and carries no `template=`.
+    - A stopped investigation has no `report`, and the card draws no link.
 
 ## Non-goals
 
