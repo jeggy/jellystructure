@@ -353,6 +353,27 @@ and the release that ships it, so making the push path blocking buys no coverage
 pipeline prod depends on. This was written and pushed as a dev-authored narrowing on 2026-10-12 and flagged for the
 decision rather than assumed; the decision is now on the record and the line does not need revisiting.
 
+## Amendment (2026-11-04, DEB-3603): the push path is advisory by construction, not by `continue-on-error`
+
+The 2026-10-12 narrowing above (push to main → advisory; approved DEB-890) did not survive the failure that actually
+occurs. `continue-on-error` covers a job that *fails*, not one that is *cancelled*, and a macOS runner that never arrives
+is cancelled after exactly 15 minutes with no steps run. The reusable `ci` then concludes `cancelled`, the run concludes
+`failure`, and every `needs: ci` publish job is skipped — no SHA-tagged image for any push to main while it lasts. Three
+attempts on `8575321d` all ended that way. The line "the job still short-circuits in seconds" was also untrue: the path
+filter ran *after* the runner was obtained, which was the wait.
+
+The decision is unchanged and this restores it. Two changes in the workflows:
+
+- **The path filter runs on a Linux runner.** `ci-macos.yml` holds the Mac job; its first job (`changed`) decides, on
+  `ubuntu-latest`, whether anything Mac-shaped changed, and the `macos-15` job is skipped when nothing did — it never
+  queues for a Mac it will not use.
+- **A push to main runs `ci-macos.yml` as a sibling of `ci`, not inside it.** `publish.yml` has a `macos` job that nothing
+  `needs`, so a Mac failure or a missing runner is reported on the run and holds back no publish job. A pull request and a
+  release still run it inside `ci.yml`, **blocking**, exactly as the 2026-10-12 list says.
+
+What a push now costs: a Mac-shaped push whose Mac job fails or is cancelled leaves the *run* red (the job is reported),
+while `ci`, `publish`, `publish-avsync` and the SHA-tagged images are unaffected.
+
 ## Amendment (2026-10-12): acceptance 2 is not provable on the MacBook as it stands, and the install path has a trap
 
 From the Mac walk (DEB-721) and DEB-756.

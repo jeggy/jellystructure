@@ -81,6 +81,14 @@ jobs:
     with:
       ref: ${{ needs.version.outputs.tag }}
 
+  # DEB-3603 (R331 FR-R331-7) — the Mac build on a push to main. ADVISORY by construction: nothing `needs` this job, so
+  # a Mac break, or a macOS runner that never arrives (cancelled after 15 min, which `continue-on-error` does not cover),
+  # leaves `ci` and every publish job below untouched. A release and a pull request run it inside ci.yml, blocking.
+  macos:
+    needs: version
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci-macos.yml
+
   # The two images that are deployed as a pair. The A/V sync sidecar is NOT in this matrix (DEB-3118, FR-317-44): a matrix
   # leg that fails cancels its siblings and skips every `needs: publish` job below, and the sidecar is optional.
   publish:

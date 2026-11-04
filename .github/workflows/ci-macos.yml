@@ -1,0 +1,70 @@
+name: CI (Mac)
+
+# R331 (FR-R331-7) — the Mac app built on a Mac between releases: the Swift library and the bundle, unsigned, then its own
+# --self-test. Only when something Mac-shaped changed.
+#
+# Called from two places (DEB-3603):
+#  - ci.yml, for a pull request and a release — BLOCKING. A Mac break must stop a RELEASE (publish.yml would otherwise attach
+#    every other platform's file and silently leave the .dmg out) and a PULL REQUEST (the cheapest place to see it).
+#  - publish.yml, for a push to main — ADVISORY, as a sibling of `ci` that no publish job `needs`. That pipeline also
+#    publishes the backend image prod runs on, and a Compose/Swift break on a Mac, or a macOS runner that never arrives,
+#    must not hold that back (R331 §FR-R331-7 amended 2026-10-12, approved DEB-890). `continue-on-error` cannot do this:
+#    GitHub applies it to a job that FAILS, not to one that is CANCELLED, and a runner-queue timeout cancels.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to test (a release tag); defaults to the triggering commit"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  # A reusable workflow cannot filter on `paths:` (R331 dev review 6), so it is decided here — on a Linux runner, so a
+  # push that touches nothing Mac-shaped never queues for a macOS one (DEB-3603: that wait was the whole failure).
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.changed.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+      - name: Did the Mac app change?
+        id: changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # With nothing to compare with (a dispatch, a release tag), it builds.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BASE" HEAD | grep -qE '^(ravilo-desktop/|ravilo-castv2/|ravilo-ui/src/desktop(Main|Test)/|shared/src/desktopMain/|gradle/libs\.versions\.toml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing Mac-specific changed since $BASE — no Mac build."
+          fi
+
+  macos:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: The Swift library and the app, unsigned
+        run: ./gradlew :ravilo-desktop:buildMacNative :ravilo-desktop:createDistributable --no-daemon
+      - name: The bundle's self-test (FR-R331-4)
+        run: ravilo-desktop/build/compose/binaries/main/app/Ravilo.app/Contents/MacOS/Ravilo --self-test
