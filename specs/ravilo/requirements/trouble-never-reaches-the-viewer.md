@@ -141,6 +141,14 @@ stall's move to the ladder.
 - A failed encoder stream is first asked for again (FR-2 restarts it). Jellyfin's stream is the second try, not the first.
 - *2026-10-31:* a warm-up that cannot fetch its first segment in time asks the next rung down, then the lowest, before it counts as
   a failed try. At 1 Mbps it kept asking the rung the server chose and never finished, so the switch never came (DEB-3149).
+- *2026-11-04, DEB-3545 — "its first two segments" are the two the player reads first,* the segment that holds the replacement's
+  position and the one after it, and the rung's init segment (`#EXT-X-MAP`) where it has one. They are not the first two entries of the
+  playlist. Our encoder's playlists, and Jellyfin's, list the whole film from segment 0. A warm-up that takes the first two entries
+  fetches the film's opening 4 s, and on our encoder that request starts the stream's job at segment 0
+  (`EncoderJobs.segment`: a segment outside the running job restarts it). The player's first read at the position then restarts the
+  job there after the switch, so the held picture pays a cold encoder start. Past the film's first 4 s, Android's cache (DEB-3171)
+  never holds what the player asks for either. The position is found by adding up the playlist's `#EXTINF` durations, so Jellyfin's segment lengths need no
+  rule of their own. This holds for every client that warms a replacement: Android, the web and the Cast receiver.
 - A viewer's own audio, subtitle or version pick keeps today's treatment: that wait is their action (DEB-2205, FR-1).
 - If the old stream is frozen (FR-5.2 of DEB-2205) there is nothing to keep playing: the switch shows the held frame until
   the new stream's first frame, and still draws no spinner under 2 s.
@@ -287,6 +295,17 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
     config accepted by hls.js 1.7.3 (20 s to the first byte, five retries, `shouldRetry` a function); a top rung answering 503 or 404 from one
     segment on gave one failed request, then every later segment from the rung below with no stall; an abandon from the page's side moved the
     next request to the lower rung; and the poster showed the held frame while the new source had no data and was gone at its first frame.
+  - *2026-11-04, DEB-3545 — what a browser costs, measured.* QA's run on prod (DEB-3535, headless Chromium 149 on the hls.js path, a
+    1080p top rung at 18 Mb/s on our encoder, a frozen old stream) held the poster for 1373 ms and 1778 ms, with no black frame. A
+    lab run in the same Chromium build timed only the browser's own part. It used a synthetic three-rung fMP4 ladder (18 Mb/s 1080p
+    with grain) served from localhost, an audio rendition beside it, and the player's own config, poster, `destroy` and new instance.
+    The new source's first frame came **307–404 ms** after the source change when the start position sat on a segment boundary, and
+    **567–842 ms** when it sat 1.3–2 s into a segment. The difference is the decoder working forward from the segment's keyframe, in
+    software in a headless browser. Answering the same requests from memory gained nothing on localhost.
+    So the bound is within a browser's reach, and most of what QA measured is the warm-up defect in FR-6's 2026-11-04 note.
+    The web keeps FR-6's 0.5 s. What remains after that fix is the network fetch of segments the warm-up already fetched (item 2
+    above), which costs most on a slow link, and the decode from the keyframe. Each is decided on QA's measurement after the fix, not
+    before it. Safari plays native HLS and not hls.js, so a custom loader would never reach it.
 
 ## What this does not do yet
 
