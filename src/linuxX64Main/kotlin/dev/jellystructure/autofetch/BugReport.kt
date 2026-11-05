@@ -21,7 +21,7 @@ internal class ReportInput(
     val id: String,
     val host: String,
     val pageOnly: Boolean,
-    /** `not a series` · `limit reached` · `failed`. */
+    /** `not a series` · `videos not found` · `needs a sign-in` · `limit reached` · `failed`. */
     val ended: String,
     val reason: String,
     /** The reason is the model's own words (a `not_a_series` answer): never shown. */

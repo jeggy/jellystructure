@@ -143,6 +143,15 @@ class AutofetchInvestigationHtmlTest {
 
     private val report = AfReport("Auto-fetch: could not set up varpid.example.fo · pattern", "Host: varpid.example.fo\nFetcher: TMDB series\nReason: '<text 1>' maps to no season and episode")
 
+    // DEB-3643 (FR-10.9) — the failed state reads Videos not found, with the server's sentence, the bug-report link, and no new class.
+    @Test
+    fun `a series whose videos were not found has its own heading and the servers sentence - DEB-3643`() {
+        val sentence = "It didn't work: varpid.example.fo lists 3 episodes, but Auto-fetch could not find how it plays them."
+        val h = card(inv("failed", "done", "fail", "done", reason = sentence, report = report).copy(videosNotFound = true))
+        assertTrue("<h4>Videos not found</h4>" in h && "Not a series" !in h, h)
+        assertTrue("reason: " in h && "lists 3 episodes" in h && "File a bug report on GitHub" in h && "data-af-dismissinv" in h)
+    }
+
     @Test
     fun `the failed state names the failing check and links the report the server wrote - DEB-3572`() {
         val h = card(inv("failed", "done", "done", "fail", reason = "1 video found, no recurring title", notASeries = true, report = report))

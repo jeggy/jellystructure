@@ -185,6 +185,8 @@ data class AfInvestigation(
     val notASeries: Boolean = false,
     /** DEB-3613 (FR-3.6, FR-10.8) — the site plays only to a signed-in viewer: the server's call, never read from [reason]'s words. */
     val needsSignIn: Boolean = false,
+    /** DEB-3643 (FR-5.8, FR-10.9) — a series whose videos were not found: the server's call, never read from [reason]'s words. */
+    val videosNotFound: Boolean = false,
     /** The site a pasted session is saved for (FR-2's lane key). */
     val site: String = "",
     val limitReached: Boolean = false,

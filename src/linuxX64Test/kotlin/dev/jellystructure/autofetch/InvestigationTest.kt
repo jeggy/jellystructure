@@ -527,6 +527,78 @@ class InvestigationTest {
         assertTrue(PageText.reduce("x".repeat(70_000), 60_000).endsWith("[cut at 60 kB]"))
     }
 
+    // ---- DEB-3643 — the site's own player script, and Videos not found ------------------------------------------------------------
+
+    @Test
+    fun `page text keeps an external script on the pages own site as an empty tag and removes any other site's`() {
+        val html = "<html><head><script async src=\"/js/player.js?v=3\" type=\"text/javascript\">x()</script><script src='https://varpid.example.fo/b.js'></script>" +
+            "<script src=\"https://cdn.other.example/lib.js\"></script><script src=\"//www.varpid.example.fo/c.js\"></script></head><body><script>var media = 'M1';</script></body></html>"
+        val t = PageText.reduce(html, 60_000, "https://varpid.example.fo/sendingar/dagbok/27")
+        assertTrue("<script src=\"https://varpid.example.fo/js/player.js?v=3\"></script>" in t, t)
+        assertTrue("<script src=\"https://varpid.example.fo/b.js\"></script>" in t && "<script src=\"https://www.varpid.example.fo/c.js\"></script>" in t, t)
+        assertFalse("cdn.other" in t || "x()" in t || "async" in t || "text/javascript" in t, t)
+        assertTrue("var media = 'M1';" in t)
+        assertFalse("src=" in PageText.reduce(html, 60_000), "with no page address nothing is kept")
+    }
+
+    @Test
+    fun `fetch of a script answers its text unreduced and cut at 60 kB`() {
+        ai.limit = 50_000_000L
+        h.site.itemExtra = "<script src=\"/js/player.js\"></script><script src=\"https://cdn.other.example/lib.js\"></script>"
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok/27"}""")
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/js/player.js"}""")
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        val (o, _) = run(h.dagbokUrl, null, true)
+        assertEquals(3, ai.sent.size, "${o.view.state}: ${o.view.reason}")
+        assertTrue("<script src=\"https://varpid.example.fo/js/player.js\"></script>" in ai.resultOf(1) && "cdn.other" !in ai.resultOf(1), ai.resultOf(1))
+        assertTrue("return 'https://media.example.fo/' + media + '/master.m3u8'" in ai.resultOf(2) && "<p>not html</p>" in ai.resultOf(2), "no HTML reduction on a script")
+        assertTrue(ai.resultOf(2).contains("[cut at 60 kB]"))
+        assertTrue("media.example.fo" in ai.resultOf(2) && h.site.requests.any { it.first.endsWith("/js/player.js") })
+    }
+
+    @Test
+    fun `a manifest host named only by the player script is probe-able and its edge redirect is trusted`() {
+        ai.limit = 50_000_000L
+        h.site.itemExtra = "<script src=\"/js/player.js\"></script>"
+        h.site.masterEdge = "edge3.example.fo"
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok/27"}""")
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/js/player.js"}""")
+        ai.tool("probe", """{"url":"https://media.example.fo/DOV7327/master.m3u8"}""")
+        ai.answer(dagbokAnswer)
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertFalse(ai.isError(3), ai.resultOf(3))
+        assertTrue("Final address: https://edge3.example.fo/" in ai.resultOf(3), ai.resultOf(3))
+        assertEquals("review", out.view.state, out.view.reason)
+    }
+
+    @Test
+    fun `not_a_series after a listing of three items ends as Videos not found in the servers words`() {
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")
+        h.site.days = listOf(27, 26, 25)
+        ai.answer(dagbokAnswer.replace("\"verdict\":\"series\"", "\"verdict\":\"not_a_series\"").replace("A daily programme with a dated listing.", "no manifest"))
+        val (out, _) = run(h.dagbokUrl, null, true)
+        val v = out.view
+        assertEquals("failed", v.state)
+        assertTrue(v.videosNotFound, v.reason); assertFalse(v.notASeries)
+        assertEquals("It didn't work: varpid.example.fo lists 3 episodes, but Auto-fetch could not find how it plays them.", v.reason)
+        assertEquals(listOf("done", "fail", "done", "pending", "pending"), v.steps.map { it.state })
+        assertEquals("videos not found", v.report!!.body.lineSequence().first { it.startsWith("Ended:") }.removePrefix("Ended: ").substringBefore(" ·"))
+        assertTrue(ai.runs.single().startsWith("videos not found"), ai.runs.single())
+        assertFalse("no manifest" in v.report!!.body, "the model's words stay out of the report")
+    }
+
+    @Test
+    fun `a videos_not_found answer needs a listing of two items and otherwise is Not a series`() {
+        ai.answer("""{"verdict":"videos_not_found","reason":"one clip"}""")
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertTrue(out.view.notASeries); assertFalse(out.view.videosNotFound)
+        val ai2 = FakeAi(); h.site.days = listOf(27, 26)
+        ai2.answer(dagbokAnswer.replace("\"verdict\":\"series\"", "\"verdict\":\"videos_not_found\""))
+        val o2 = runBlocking { Investigator(ai2, h.lanes, h.tools, h.world, RecipeProof(h.tools, h.world), libraries = { listOf(LibraryChoice(h.lib, "TV")) }, existing = { h.engine.existingCodes(it) }, today = { "2026-11-02" }).run("inv2", h.dagbokUrl, null, true, null) {} }
+        assertTrue(o2.view.videosNotFound, o2.view.reason); assertFalse(o2.view.notASeries)
+        assertTrue("lists 2 episodes" in o2.view.reason!!)
+    }
+
     // ---- the registry: one at a time, stop, save ---------------------------------------------------------------------------------
 
     private fun registry(scope: CoroutineScope = CoroutineScope(Dispatchers.Default)): Investigations {

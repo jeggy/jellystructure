@@ -318,11 +318,20 @@ class AutofetchEngineTest {
 
     @Test
     fun `a manifest redirected to a host the recipe does not record is refused as 310 and nothing is probed`() = runBlocking<Unit> {
-        h.site.masterEdge = "w-vod-edge3.example.fo"
+        h.site.masterEdge = "w-vod-edge3.cdn-example.fo"
         val r = refused(h.service.save(SaveRequest(h.dagbokUrl, null, true, withEdge("w-vod-edge1.example.fo"))))
         assertTrue("310" in r.reason, r.reason)
         assertTrue(h.tools.probed.isEmpty())
         assertTrue(h.store.fetchers().isEmpty())
+    }
+
+    // DEB-3643 (FR-2.7) — the same registrable domain as the host asked for is trusted without being recorded.
+    @Test
+    fun `a manifest redirected to an unrecorded edge under the same registrable domain is trusted`() = runBlocking<Unit> {
+        h.site.masterEdge = "w-vod-edge9.example.fo"
+        val saved = h.service.save(SaveRequest(h.dagbokUrl, null, true, withEdge("w-vod-edge1.example.fo")))
+        assertTrue(saved is SaveResult.Saved, saved.toString())
+        assertEquals("https://w-vod-edge9.example.fo/video/x.smil/playlist.m3u8", h.tools.probed.single())
     }
 
     @Test

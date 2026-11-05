@@ -299,6 +299,31 @@ object Urls {
     /** The lane key for a page URL: its host without a leading `www.`. */
     fun siteOf(url: String): String? = host(url)?.removePrefix("www.")
 
+    /**
+     * DEB-3643 (FR-2.7) — the registrable domain of [host]: its public suffix and one label before it (`w-vod-edge2.kringvarp.fo` → `kringvarp.fo`,
+     * `a.example.co.uk` → `example.co.uk`). The list is the multi-label suffixes of the public suffix list that a household's sites can plausibly sit
+     * under, plus the hosting suffixes whose subdomains belong to different owners (`x.github.io` and `y.github.io` are not one operator). A bare
+     * IP address is its own domain.
+     */
+    fun registrableDomain(host: String): String {
+        val h = host.lowercase().trimEnd('.')
+        if (h.all { it.isDigit() || it == '.' } || h.contains(':')) return h
+        val labels = h.split('.')
+        if (labels.size <= 2) return h
+        val keep = if (labels.takeLast(2).joinToString(".") in TWO_LABEL_SUFFIXES) 3 else if (labels.takeLast(3).joinToString(".") in THREE_LABEL_SUFFIXES) 4 else 2
+        return labels.takeLast(minOf(keep, labels.size)).joinToString(".")
+    }
+
+    private val TWO_LABEL_SUFFIXES = setOf(
+        "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "sch.uk", "com.au", "net.au", "org.au", "edu.au", "gov.au", "co.nz", "net.nz", "org.nz",
+        "co.jp", "ne.jp", "or.jp", "ac.jp", "go.jp", "com.br", "net.br", "org.br", "com.mx", "com.ar", "com.co", "co.za", "org.za", "co.in", "net.in", "org.in", "com.cn", "net.cn", "org.cn",
+        "com.tr", "com.tw", "com.hk", "com.sg", "co.kr", "co.il", "co.id", "co.th", "com.my", "com.ph", "com.vn", "com.ua", "com.pl", "com.ru", "com.es", "com.pt", "com.gr",
+        // Hosting suffixes: the label before them is a tenant, not the operator.
+        "github.io", "gitlab.io", "blogspot.com", "cloudfront.net", "herokuapp.com", "azurewebsites.net", "amazonaws.com", "vercel.app", "netlify.app", "pages.dev", "workers.dev",
+        "web.app", "firebaseapp.com", "appspot.com", "wordpress.com", "wixsite.com", "weebly.com", "fastly.net", "akamaized.net", "edgekey.net", "azureedge.net",
+    )
+    private val THREE_LABEL_SUFFIXES = setOf("s3.amazonaws.com", "elb.amazonaws.com", "compute.amazonaws.com")
+
     /** [ref] resolved against [base] (absolute, protocol-relative, root-relative or relative). Null when it is not http(s). */
     fun resolve(base: String, ref: String): String? {
         val r = ref.trim()

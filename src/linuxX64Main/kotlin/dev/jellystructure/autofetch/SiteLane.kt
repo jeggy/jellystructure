@@ -378,12 +378,15 @@ class SiteLane private constructor(
 
     /**
      * FR-2.7 — an answer that came from another host is the lane's own only when the recipe records that host; otherwise it is
-     * discarded as a `310` with no body. The final URL travels on a trusted reply, so a caller resolves against it.
+     * discarded as a `310` with no body. DEB-3643: a final host under the same registrable domain as the *requested* host is trusted too, since a
+     * media host that redirects to a rotating edge of its own site is the usual shape. The final URL travels on a trusted reply, so a caller resolves against it.
      */
     internal fun trustRedirect(requested: String, reply: HttpReply, hosts: Set<String>): HttpReply {
         val final = reply.finalUrl ?: return reply
         val fh = Urls.host(final) ?: return HttpReply(310, emptyMap(), "")
         if (fh == Urls.host(requested) || fh in hosts) return reply
+        val asked = Urls.host(requested)?.let { Urls.registrableDomain(it) }
+        if (asked != null && Urls.registrableDomain(fh) == asked) return reply
         return HttpReply(310, emptyMap(), "")
     }
 

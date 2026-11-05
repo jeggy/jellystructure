@@ -100,6 +100,7 @@ private fun failedHtml(inv: AfInvestigation): String {
     val (head, lead) = when {
         inv.state == "stopped" -> "Stopped" to "The investigation was stopped. What it found was discarded and nothing was written."
         inv.limitReached -> "Stopped at this month's limit" to "The next turn could have taken Auto-fetch past its monthly limit, so it was not sent. Nothing was written."
+        inv.videosNotFound -> "Videos not found" to "The page is a series, but Auto-fetch could not find how its videos are served, so nothing was written."
         inv.notASeries -> "Not a series" to "The page could not be identified as a TV series, so nothing was written. Auto-fetch only sets itself up when it is sure — a half-right guess would file files under the wrong title."
         else -> "Can't set up auto-fetch for this URL" to "Nothing was written."
     }

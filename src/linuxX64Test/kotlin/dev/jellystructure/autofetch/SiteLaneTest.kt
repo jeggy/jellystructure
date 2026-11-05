@@ -74,15 +74,39 @@ class SiteLaneTest {
     @Test
     fun `an answer from another host is the lane's only when the recipe records that host`() = runBlocking<Unit> {
         val clock = FakeClock(); val site = Site(clock); val l = lane(site, clock)
-        val edge = "https://edge2.example.fo/x/playlist.m3u8"
+        val edge = "https://edge2.cdn-example.fo/x/playlist.m3u8"
         site.listing = { HttpReply(200, emptyMap(), "#EXTM3U", finalUrl = edge) }
-        val ok = assertIs<LaneOutcome.Ok>(l.page(url, Expect.MANIFEST, player = true, hosts = setOf("varpid.example.fo", "edge2.example.fo")))
+        val ok = assertIs<LaneOutcome.Ok>(l.page(url, Expect.MANIFEST, player = true, hosts = setOf("varpid.example.fo", "edge2.cdn-example.fo")))
         assertEquals(edge, ok.reply.finalUrl)
         val refused = assertIs<LaneOutcome.Failed>(l.page(url, Expect.MANIFEST, player = true, hosts = setOf("varpid.example.fo")))
         assertEquals(310, refused.status)
         // the same host answering after a redirect inside the site needs no entry
         site.listing = { HttpReply(200, emptyMap(), "#EXTM3U", finalUrl = "https://varpid.example.fo/other") }
         assertIs<LaneOutcome.Ok>(l.page(url, Expect.MANIFEST, player = true))
+    }
+
+    // DEB-3643 (FR-2.7) — an edge under the registrable domain of the host asked for is the same operator's, whatever the recipe records.
+    @Test
+    fun `a redirect to a sibling host under the same registrable domain is trusted and one to another domain is not`() = runBlocking<Unit> {
+        val clock = FakeClock(); val site = Site(clock); val l = lane(site, clock)
+        val asked = "https://vod.example.fo/redirect/x.smil?type=m3u8"
+        val edge = "https://w-vod-edge2.example.fo/x/playlist.m3u8"
+        site.listing = { HttpReply(200, emptyMap(), "#EXTM3U", finalUrl = edge) }
+        val ok = assertIs<LaneOutcome.Ok>(l.page(asked, Expect.MANIFEST, player = true, hosts = setOf("vod.example.fo")))
+        assertEquals(edge, ok.reply.finalUrl)
+        site.listing = { HttpReply(200, emptyMap(), "#EXTM3U", finalUrl = "https://edge.other-example.fo/x/playlist.m3u8") }
+        assertEquals(310, assertIs<LaneOutcome.Failed>(l.page(asked, Expect.MANIFEST, player = true, hosts = setOf("vod.example.fo"))).status)
+    }
+
+    @Test
+    fun `the registrable domain follows the public suffix and a hosting suffix is not one operator`() {
+        assertEquals("kringvarp.fo", Urls.registrableDomain("w-vod-edge2.kringvarp.fo"))
+        assertEquals("example.co.uk", Urls.registrableDomain("a.example.co.uk"))
+        assertEquals("example.co.uk", Urls.registrableDomain("b.example.co.uk"))
+        assertEquals("other.co.uk", Urls.registrableDomain("x.other.co.uk"))
+        assertEquals("a.github.io", Urls.registrableDomain("a.github.io"))
+        assertEquals("kvf.fo", Urls.registrableDomain("kvf.fo"))
+        assertEquals("192.0.2.10", Urls.registrableDomain("192.0.2.10"))
     }
 
     @Test
