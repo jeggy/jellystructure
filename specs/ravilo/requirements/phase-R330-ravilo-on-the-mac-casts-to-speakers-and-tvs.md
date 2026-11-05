@@ -426,3 +426,99 @@ within ~2 s of the speaker's; a pause holds; the log shows `from=ravilo` on the 
 - *A seek.* A seek sends no receiver status, so while CAF is silent the bar can trail a seek by up to 15 s. QA records
   it on DEB-2459 as data, not as a failure. If it shows, the fix is a status at the first `TIME_UPDATE` after a seek.
 
+## Amendment 2026-11-05 — a speaker cast survives the Mac in the background (DEB-3670)
+
+**Why.** The owner reports this often. Ravilo on the Mac sits in the background, casting music to Stue or
+Gæsteværelse. After 2–5 songs the Mac loses the session. The speaker plays on, but the Mac's bar, its volume and its
+Now Playing look as if nothing plays. Joining again from the sheet works, but it opens the cast remote, not the
+controls the Mac had. FR-R330-3 promises that a dropped connection is rejoined. Read against `main` `4961fd5c`, the
+sender has four ways to lose the session without rejoining it, or to rejoin it blank:
+
+1. **A `CLOSE` on the connection channel is treated as the app ending.** `CastSession` closes the session as *the
+   device closed the app* when a `CLOSE` arrives from `receiver-0` or from our app's transport, and
+   `CastSenderDesktop.onClosed` counts that reason as silent, so the three tries never run. A `CLOSE` means the device
+   dropped **this connection**. CAF sends one to a sender it thinks has gone quiet (its `maxInactivity`, 10 s by
+   default). Whether our app still runs is told by the receiver's status, not by the `CLOSE`.
+2. **A receiver status without an application list is treated as the app ending.** `CastParse.receiverStatus` reads a
+   `status` with no `applications` key as an empty list. An empty list passes the *only the backdrop runs* test, so
+   the session closes as *the app ended*. That reason is silent too.
+3. **A rejoin after a drop asks the receiver for nothing, and blanks the bar while it tries.** Only the start-up
+   rejoin (FR-R330-5) sends our `status`. FR-R330-4 says every join does. Each try in `open` also clears the status,
+   the volume and the receiver's last word, so the Mac shows nothing while the ladder runs. Until a queue arrives, the
+   rebuilt status does not read as music: the music screens let go of the speaker, and Now Playing switches to its
+   film mode. The receiver does send its whole queue to a sender that connects (FR-R356-8), so this usually heals
+   within one status. The start-up rejoin does not rely on that, and a drop's rejoin should not either.
+4. **Nothing stops macOS from napping a casting app.** While the Mac plays music itself, the audio keeps App Nap away.
+   While it casts, it plays nothing, and a hidden or covered window is napped after a while. App Nap coalesces timers
+   by seconds, and FR-R330-1's 5 s heartbeat is a timer. Once a ping is late past CAF's 10 s, the device closes the
+   connection, which is case 1. One more point fits this, but it has not been measured. Since R383's FR-R383-3 slices
+   (2026-10-16/18), a hidden app stops drawing. Before them, a hidden casting app drew 120 frames/s and was never
+   idle enough to nap.
+
+No log has shown yet which of these the owner hits. The Mac writes `cast: session to {device} closed ({reason})`
+whenever a session ends, and QA reads it (§Acceptance, step 0). The requirements below hold whichever one it is.
+
+**FR-R330-3a — Only the device's answer makes an end silent.** A session ends without a rejoin only after this
+Mac's own *Stop casting*, leave or switch to another device, or after a receiver status that **carries an application
+list** shows our session is gone. That status is either one the device sent, or the answer to the ladder's own ask.
+Everything else is a dropped connection, and the rejoin ladder runs: a `CLOSE` on the connection channel from either
+source, the device closing TCP, a failed send, three unanswered pings, an unreadable stream. The ladder's first try
+asks the receiver (`GET_STATUS`) whether our app runs. If the receiver says it does not, because the queue played
+out or another sender's app took over, the ladder ends at once and in silence, exactly as such an end does today. If
+our app runs, the Mac joins. A status with no `applications` key says nothing about the apps and ends nothing. The
+volume it carries still counts.
+
+**FR-R330-3b — A rejoin asks for the receiver's status.** Every join after a drop sends our `status` command, as the
+start-up rejoin does. The Queue tab, Playing and Now Playing then rebuild from the receiver's snapshot (FR-R330-4).
+
+**FR-R330-3c — The Mac stays on the speaker through a rejoin.** While the link is `RECONNECTING` to the same device,
+everything holds as it was: the last status, the device's volume, the music screens and Now Playing. The place does
+not move on, since it is not known. A press during the rejoin is not queued. Everything is cleared only when the
+ladder ends without a join, and R353's hand-back then runs as it does today. A rejoin that succeeds leaves the viewer
+with the controls they had: the music screens, the mini bar and Now Playing, never the R245 remote. If this is built
+in common code (`castMusicLive`), Android's own `RECONNECTING` gets the same hold. That is what R371 already asks for
+there: no hand-back while the link reconnects.
+
+**FR-R330-3d — A cast keeps the Mac from napping.** On a Mac, while a cast session is joined or rejoining, the app
+holds one process activity (`NSProcessInfo.beginActivity`, `.userInitiatedAllowingIdleSystemSleep`, reason *Ravilo
+is casting*) and releases it when the session ends. It sits beside R329's display assertion in `Power.swift`. The
+system may still sleep, and so may the display. A Mac that sleeps loses the cast as it does today, and FR-R330-3e
+finds the speaker again when the Mac wakes. The activity adds no timer of its own. FR-R383-2's hidden-window budgets
+are measured with a cast running, as before. Linux and Windows do nothing.
+
+**FR-R330-3e — A speaker lost in the background is found again when the window comes back.** Sometimes the ladder
+ends without a join, because the device was unreachable for the whole ~66 s worst case (amendment 2026-10-12, item 3).
+The device then stays remembered (`cast.last_device`; only *Stop casting* and leave clear it). The next time the
+window is shown, the Mac runs FR-R330-5's rejoin, once per showing. It joins only if our app still runs there with
+something loaded, and then the screens are back on the speaker. The song R353 handed back stays paused underneath, as
+after any cast. If our app no longer runs there, nothing shows: no bar, no toast.
+
+**FR-R330-3f — The log says why.** The `closed ({reason})` line also says, for a `CLOSE`, which source sent it
+(`receiver-0` or the transport) and any `reasonCode`, plus the time since the last ping went out and since the last
+frame came in (`last ping 14.2 s ago · last frame 9.8 s ago`). That time is what shows a napped heartbeat. The
+activity logs `cast: activity held` and `cast: activity released`. Each try of the ladder already logs its outcome.
+
+**Unchanged.** The phone (its Cast SDK rejoins on its own), the receiver, and the wire: no message, field or DTO is
+added. The rejoin ladder keeps its three tries, 2 s apart. **DEB-2185** (one remote) and **DEB-1959** (the speaker
+volume slider) stay separate. This amendment touches volume only by keeping the last known level through a rejoin
+(FR-R330-3c).
+
+**Acceptance.** Mac plus Stue or Gæsteværelse, one Ravilo running (amendment 2026-10-12: two Ravilos fight over one
+session).
+
+0. *Before the build: the evidence.* On the owner's Mac, read `~/Library/Logs/Ravilo/` since 2026-10-25. For every
+   `cast: session to … closed (…)` line, record its reason, the ~20 lines before it, and whether a `rejoin … →` line
+   followed. Quote only `cast:` reason, link and timing lines, never a song title. This step says which of cases 1–4
+   the owner hits.
+1. Music from the Mac to a speaker. Hide the window (⌘H), then cover it with another app's full-screen window. Leave
+   the Mac alone for at least 25 minutes, or at least 5 natural song changes. Pass: the log shows `activity held`, no
+   `closed (` line, and showing the window again puts the bar on the speaker's current song within ~4 s.
+2. A forced drop. With the window hidden, block the Mac's traffic to the speaker's port 8009 for 20 s, with a pf rule
+   that removes itself. Pass: one `closed (…)` line, a `rejoin … → joined` line, a `status` asked for, the bar and Now
+   Playing on the speaker throughout, no R245 remote, no hand-back line.
+3. The same with the block held for 90 s, longer than the ladder. Pass: the ladder ends and the hand-back runs, as
+   today. When the window is shown afterwards, the Mac rejoins on its own (`rejoin … → joined`) and the screens are on
+   the speaker.
+4. *Stop casting* from the Mac, and separately Spotify taking the speaker over. Pass: both end in silence, with no
+   `rejoin` line.
+
