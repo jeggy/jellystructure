@@ -176,3 +176,40 @@ carries its own release's album, cover and year, and FR-3.1's date order reads t
 **Acceptance 4, amended.** For an artist with a compilation that repeats album songs, every queued song's `album_id`
 forms runs that are contiguous, in FR-3.1's date order, in both sorts. Each album's run is its whole tracklist, and the
 compilation's run holds only its songs that are on no album.
+
+## Amendment (2026-11-05): an album's run holds every song its page lists (DEB-3744)
+
+QA (DEB-3744, on DEB-3671's run) found an album page listing 22 songs whose run in the queue held 12. Eight of the others
+played inside a compilation of the same year, and three played nowhere in the order. The code does what FR-3.2 says:
+*"what its Play album plays: its official tracklist when R373 matched one"*. R373's plain *Play album* leaves out the
+album's **extras**, and FR-3.2's single-or-EP sentence leaves out the **B-sides** of the singles that live under it,
+because those songs are not on the album's tracklist. So FR-3.3 counted them as on no album: a compilation that holds
+them played them in its own run, and the ones no other release holds dropped out of the order, though the artist page's
+*Songs* list shows them. D3's intent was that every album plays whole. These amendments make "whole" mean every song the
+album page lists (PO call, Tróndur on DEB-3744, within D3).
+
+**FR-3.2, amended.** An own release contributes what its album page's **Play album + extras** queues (R373's
+FR-R373-2 and its queue rule): its official songs, then its extras, then the B-sides of the singles that live under it
+(`bsides`, the page's *Singles & B-sides*). For a release R373 matched to no official tracklist, that is its files in
+disc/track order, then those B-sides. A single or EP that lives under an album still contributes nothing as its own
+release. Its A-side is already in the album, and its other songs reach the order as that album's B-sides. An *Appears
+on* album is unchanged: the artist's songs on it, in that album's disc/track order. The viewer's remembered *Play album*
+pick on an album page (R373) is not consulted. The artist order has no per-album pick, and leaving songs out is the defect
+this amendment fixes.
+
+**FR-3.3, amended again.** "On an *album*" means anywhere in an *album*-type release's FR-3.2 list, extras and B-sides
+included. Each entry is still the file on the release it plays in (the first amendment), so a B-side plays the single's
+file and carries the single's album, cover and year inside its album's run. An extra or a B-side that is the same song
+as an earlier entry (by `View.shown`'s identity) is not played twice, as before.
+
+FR-6 follows with no change of its own: its ties read FR-3's newest-first order, which now ranks extras and B-sides too.
+
+**Acceptance 4, amended again.** For an artist with a compilation that repeats album songs, in both sorts: each album's
+run is its official songs, then its extras, then its B-sides. Its official songs and extras carry the album's
+`album_id`, and each single's B-sides carry that single's `album_id` as one block at the run's end. The runs come in
+FR-3.1's date order, and the compilation's run holds only its songs that are in no album's run. Below the cap, every song
+in the artist's folded song list (`songsBy`, folded, which the *Songs* list draws) is in the order exactly once.
+
+**Acceptance 10, added to.** The fixture gains an album R373 matched with one extra, a single under it with one B-side,
+and a same-year compilation holding that extra and that B-side. The extra and the B-side play in the album's run and
+not in the compilation's, in both sorts. A second extra that no other release holds is in the order.
