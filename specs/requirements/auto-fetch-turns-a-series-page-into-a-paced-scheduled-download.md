@@ -122,6 +122,23 @@ video or audio failure counts toward FR-6.5's three failures.
 - FR-10.4, FR-10.7 (new) and FR-12: the form gets the tick, and a robots.txt refusal says the tick is there. The open row lets the tick be changed. The list row and the bug report say when it is set. The routes carry `ignoreRobots`.
 - *Acceptance* 20 says the same. Phase 270's FR-270-8 line has a dated line saying the same.
 
+**Amended 2026-11-05 (DEB-3643, owner on DEB-3643):** *"Our simple usecase of kvf.fo won't work yet."* The owner's
+investigation of a daily programme's page on kvf.fo ended *Not a series*. The model's own reason said the page *is* a
+recurring programme with many dated episodes, but that no manifest could be reached. It had guessed Wowza addresses on a
+host the page never names, and they answered `404` and `310`. The engine had already read the item's media id
+(`var media = '…'`). The stream address is built from that id by the site's own player script on `kvf.fo`, a 15 kB file
+that `robots.txt` allows. The model never saw it, because `fetch` removes every external `<script src>` tag, address
+included, so the model could not even ask for the file. This is the first site Auto-fetch was written for (FR-4.1's
+`item_page` example), and the household's hand scripts use that same template.
+- FR-5.7 (new): `fetch` keeps the address of an external script on the page's own site, as an empty tag, and the model
+  may `fetch` that script. A script on another site is still removed, address and all.
+- FR-2.7: the right address would still have failed. KVF's manifest host redirects to a rotating edge on the same
+  registrable domain, and the lane refused the edge as an unrecorded host (`310`). A redirect within the asked host's
+  own registrable domain is now trusted.
+- FR-5.8 (new): a page that is a series but whose videos the model could not find ends as *Videos not found*, never as
+  *Not a series*. The step that failed is the one shown as failed.
+- FR-10.9 and *Acceptance* 22 say the same.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -301,6 +318,16 @@ one lane.
    - A CDN that rotates between edges is recorded by all the edges seen; an edge the recipe does not record is refused
      with the `310` above, which the proof reports and *Re-investigate page* can repair.
    - The subtitle rendition's first chunk (FR-6.4) is read through the same final-URL base.
+   - **The same operator's edge (amended 2026-11-05, DEB-3643).** A redirect whose final host is under the **same
+     registrable domain as the host asked for** is trusted too, in the investigation's `probe`, the proof and a run. KVF's
+     `vod.kringvarp.fo/redirect/…` answers `302` to `w-vod-edge2.kringvarp.fo/…`. The investigation had never seen that
+     edge, so even the right address came back `310`. The edges rotate, so recording them one at a time would stop a
+     run the day KVF sends it to an edge the proof never saw.
+     - A redirect to another registrable domain is still `310` unless the recipe records that host, as above.
+     - The registrable domain is FR-2's, read from the public suffix list. A redirect from `a.example.co.uk` to
+       `b.example.co.uk` is trusted, and one to `other.co.uk` is not.
+     - This does not widen `fetch`, which still reads the page's own site only (FR-5.1). It also does not widen which
+       host a request may be **sent** to. Only the answer to one may come from a sibling host.
 8. **Ignoring `robots.txt`, per fetcher (amended 2026-11-04, DEB-3591).** The owner asked for a tick that lets a
    fetcher read a path that `robots.txt` forbids: *"So I can check this disrespect rules and then it will do it
    anyway."*
@@ -764,6 +791,50 @@ one lane.
      and the AI page reads it as a list of batches. An investigation is not a batch.
    - Rejected for now: showing the refused answers in the failed state. That is a new admin surface and needs a
      design round. This file asks for one when a household admin, not QA, needs to read them.
+7. **The site's own player script can be read (2026-11-05, DEB-3643).** Many broadcaster pages put a media id in the
+   page and build the stream address in a player script. KVF does this. Each item page carries `var media = '…'`, and
+   `jwplayer_on_demand.js` on `kvf.fo` turns it into
+   `https://vod.kringvarp.fo/redirect/<app>/_definst_/smil:smil/<app>/<media>.smil?type=m3u8`.
+   - **The address survives.** `fetch`'s reduction keeps an external script whose `src` is on the page's own site
+     (FR-2's registrable domain, a relative `src` included) as `<script src="…"></script>`, with the address resolved
+     against the page. Nothing else from the tag is kept. An external script on any other site is removed, address and
+     all, as before. Inline scripts keep their first 1.5 kB (DEB-2478).
+   - **The model may read it.** A script is fetched like any other address on the page's own site: one request in
+     FR-2's lane, paced, checked against `robots.txt` (or not, under FR-2.8), counted in FR-5.1's 20 reads, with the
+     answer cut at 60 kB. A script's text is passed through as text. The HTML reduction does not run on it.
+   - **The prompt says when.** The step *Find how the videos are served* tells the model: when an item page names a
+     media id but no manifest, read the site's own player script for how the address is built, and `probe` the
+     address it gives. Never guess a host. A manifest host the script names counts as a host *seen* for `probe`
+     (FR-5.1, DEB-2478), so `probe` may reach it. The recipe still records it, as FR-4.1 requires.
+   - **The script is data.** It is never run, on this server or anywhere else. What the model learns from it becomes
+     a `media` URL template in the recipe, which the engine fills in and FR-4.2's proof checks against the live site.
+     FR-5.3 holds: a script that tells the model to do anything can at worst produce a recipe that fails its proof.
+   - **What is sent** (FR-5.2) does not change. A script the model read on the page's site is *what this server read
+     from that site*.
+   - Rejected: building KVF's template into the engine or the prompt. It works for one site, and it breaks the day KVF
+     moves its streams, which it has done before (the script still carries three older templates in comments). The
+     owner asked that the model works each site out (DEB-3567).
+   - Rejected: reading scripts on other sites, such as a CDN's copy of a player library. A library does not know a
+     site's stream address. Only the site's own script does.
+   - Rejected: the progressive MP4 files in the site's podcast feed. They are a different and smaller file, not every
+     programme has one, and a plain-file media kind is a non-goal (DEB-3405).
+8. **A series whose videos were not found is not *Not a series* (2026-11-05, DEB-3643).** On DEB-3643 the failed state
+   said *Not a series*, and *Find how the videos are served* was ticked green. Both were wrong. The model had said the
+   page was a series, and the step it could not do was the videos.
+   - The model's final answer gains `videos_not_found`, beside a recipe, `not_a_series` and `needs_sign_in`
+     (FR-3.6). The server accepts it only after the listing has yielded at least two items. With fewer, it is
+     `not_a_series`, as before.
+   - The server gives the same ending, whatever the model says, when it answers `not_a_series` after the listing has
+     yielded two or more items and no manifest `probe` has succeeded.
+   - **The words are the server's.** The failed state reads *It didn't work: `<site>` lists `<n>` episodes, but
+     Auto-fetch could not find how it plays them.* That sentence is fixed text with the site and the count filled
+     in. The view carries `videosNotFound: true`, and never `notASeries`.
+   - **The steps tell the truth.** *Read the page* and *Confirm this is a series* are done. *Find how the videos are
+     served* is the failed step. The later steps are not started.
+   - The bug report (FR-10.4) is kept, and its ending reads *videos not found*. The run line on Activity and the
+     AI job's last run read the same.
+   - Rejected: asking the owner for the stream address in the failed state. That is a new surface, and the address
+     belongs in the recipe the model writes and the proof checks.
 
 ### FR-6 — A run
 
@@ -1093,6 +1164,10 @@ As drawn in round 2, with these changes:
    - **The fetchers list.** A site with a session says so on its line: *Signed in with your session · saved 4 Nov ·
      runs out 3 Dec* (or *· no expiry given*), with *Replace session* and *Forget session*. A stopped site shows FR-2.5's
      reason as before, and *Replace session* is offered there.
+9. **Videos not found** (amended 2026-11-05, DEB-3643; FR-5.8). This reuses the failed state and adds no CSS class.
+   When `videosNotFound` is set, the failed state's heading is *Videos not found*, not *Not a series*. Its reason is
+   FR-5.8's sentence. The bug-report link (FR-10.4) and *Dismiss* stay as they are on *Not a series*. The step list marks
+   *Find how the videos are served* as the failed step.
 
 ### FR-11 — Activity
 
@@ -1505,6 +1580,21 @@ Added 2026-11-04 (DEB-3591):
       neither does the log, the run record, Activity or the bug report.
     - The fixture starts answering `403` again. The next run stops the site with *The session for … has run out*, and
       a new `PUT` resumes it. `DELETE …/session` forgets it.
+22. **A stream address built by the site's own script (FR-5.7, FR-5.8, FR-2.7; DEB-3643).** The fixture site's item
+    pages carry `var media = 'ABC123'`, no manifest, and `<script src="/js/player.js">` plus one script on another site.
+    `player.js` builds `https://media.<fixture domain>/redirect/{media}.smil`, which answers `302` to
+    `https://edge3.<fixture domain>/{media}/playlist.m3u8`.
+    - `PageText.reduce` keeps `<script src="https://<fixture site>/js/player.js"></script>` with an empty body, and
+      removes the other site's script tag entirely. A `fetch` of `player.js` answers its text unreduced.
+    - `probe` of the media address follows the `302` to the sibling edge and reads the variants. A `302` to
+      another registrable domain is still `310`.
+    - With a fake model that reads `player.js` and answers a recipe with that template, the investigation reaches the
+      review, and the proof's probe resolves the variants against the edge's URL.
+    - With a fake model that answers `not_a_series` after the listing gave three items, the view has
+      `videosNotFound: true`, `notASeries: false` and FR-5.8's sentence (*lists 3 episodes*). *Read the page* and
+      *Confirm this is a series* are done, and *Find how the videos are served* is failed.
+    - On prod, after the build is deployed, the owner's kvf.fo page reaches the review with a `media` template on
+      `vod.kringvarp.fo`. This step is QA's, not a unit test.
 
 ## Non-goals
 
