@@ -139,6 +139,30 @@ included, so the model could not even ask for the file. This is the first site A
   *Not a series*. The step that failed is the one shown as failed.
 - FR-10.9 and *Acceptance* 22 say the same.
 
+**Amended 2026-11-05 (DEB-3695, owner on DEB-1076):** the household's first page-only fetcher, a daily `date`
+programme, lost an episode, and its page could no longer be investigated. Both come from something this file never
+considered: a broadcaster that **re-uploads** an episode. On 2026-10-30 the page listed a re-upload of the 10-29 episode
+as a new item, dated by its upload, 10-30, beside the original. The run placed it as `S2026E303 - 2026-10-30`. Later the
+page re-dated it 10-29 and dropped the original, which retention then deleted as *left the page*. The engine renumbered
+the item's row to `E302` and left its file named `E303`. Since then the real 10-30 episode has been skipped on every run
+as *shares 2026-10-30 with an episode already placed*, and the run summary said *no new episodes*. Nothing in the engine
+shifts a date: the stored rows allow no other reading than the page changing the date after placement. When the owner
+re-ran *Investigate*, the model answered on the last of its 12 turns. Its answer was refused because two items in the
+page's older listing had one date and time, most likely another re-upload, and no turn was left to correct it. Its stream
+address was a guess on a host the page never names. That is what FR-5.7 (DEB-3643) fixes, and it was not built yet.
+- FR-4.5 (new bullets *A date that moves* and *A re-upload*): a placed file follows its item's date. When the page
+  re-dates a placed item, its file is renamed to the new number before the run's diff, if that number is free. A
+  re-upload whose number belongs to a placed episode that has left the page replaces that episode in place. The engine
+  never moves a file onto a date its item does not carry.
+- FR-6.8: a run's summary counts the items it skipped and the ones that failed, so *no new episodes* is never the whole
+  line while an item waits.
+- FR-4.2: two items on one number no longer fail the proof by themselves under `date` and `datetime`. The proof refuses
+  a listing where three items share a number, or more than a quarter of the items share one.
+- FR-5.9 (new): the model is told how many turns are left, and its two corrections get two turns of their own past the
+  12. Running out of turns is no longer *Not a series*.
+- FR-6.6 and FR-16.2 carry the exception and the new row state. *Acceptance* 10 and 23 say the same. No route, DTO or
+  screen is added. The misfiled episode is repaired by the engine's own first run after the build, never by hand.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -572,6 +596,14 @@ one lane.
    Items that `list.live` matches are set aside before these checks, and `live` itself must leave at least two items
    and match at most half of the listing (FR-4.1's `live`, 2026-11-04, DEB-3573).
 
+   *Amended 2026-11-05 (DEB-3695):* under `date` and `datetime`, *no two items map to the same one* is read this way.
+   The proof refuses the recipe when three or more items share one number, or when more than a quarter of the numbered
+   items share their number with another item. The reasons are FR-4.5's (*3 items share the date …*, *… air too close
+   together …*), and they go back to the model as before. Below that, a shared number is a re-upload or a double, not
+   the numbering's fault. The recipe passes, and the review shows each item a run will not fetch as *shares
+   2026-10-29 with '<title>' · one is fetched* in place of its number, as it shows a live row. A run treats such a pair
+   by FR-4.5. Under `source` and `mapped`, any two items on one number still fail.
+
    Anything else is the *Not a series* state with the failing check as its reason, and nothing is written. A
    page-only fetcher skips the TMDB check and has two of its own instead (FR-15.8).
 3. **Mapped numbering fails closed** (Q2). For a source whose order is not an identity, the model
@@ -632,6 +664,55 @@ one lane.
    - **Two items on one date.** These fail FR-4.2's *no two items map to the same one* at save. On a later run, the
      second item is not downloaded. The run line says *shares 2026-10-27 with an episode already placed*. The fetcher
      carries on.
+     *Amended 2026-11-05 (DEB-3695):* a pair no longer fails at save by itself (FR-4.2). On a run the rule stands: the
+     item whose file holds the number keeps it, and the other is skipped with that line. When neither is placed, the
+     first in listing order is fetched. The next two bullets say when the other item may take the number.
+   - **A date that moves (2026-11-05, DEB-3695).** A page may re-date an item after it was placed. An item's number is
+     its own date (*Identity*), so its file follows the date.
+     - After the listing is numbered and before the diff (FR-6.1), the engine compares each placed item's number with
+       the code in its placed file's name. When they differ, the item has moved.
+     - When the new number is **free**, meaning no video in the series folder carries it, the file is renamed to the
+       name the new number and date give (*Filename*), in its season folder or the new year's. Its `<base>.nfo` and
+       `<base>-thumb.jpg`, the two sidecars FR-16.6 names, are renamed with it. The rename refuses to overwrite, as
+       FR-6.6's does. The row records the new path. Jellyfin is told `"Deleted"` for the old path and `"Created"` for
+       the new one, so that one episode's resume point and watched mark do not carry over. The run line is
+       `S2026E303 → S2026E302 · the page now dates it 2026-10-29`.
+     - When the new number belongs to a placed episode of this fetcher that has **left the page**, it is a re-upload,
+       and the next bullet applies with the moved file as the new copy.
+     - Otherwise the file keeps its name, and the row keeps the number the file carries. The run line says
+       `<title>: the page now dates it 2026-10-29, and S2026E302 already has a file; kept as S2026E303`, and the
+       fetcher carries on.
+     - A file is never renamed while it plays (FR-16.6). It waits for the next run.
+     - The engine never moves a file onto a date its item does not carry, and never moves an item to a free date. So a
+       skip always names the item's own date.
+     - Under `datetime` the same holds for the date and the time together.
+     - Rejected: fixing the number when the file is placed. The misfiled file would then hold the real next episode's
+       number for good.
+   - **A re-upload (2026-11-05, DEB-3695).** A broadcaster may withdraw an episode and list it again as a new item on
+     the same date, often corrected. When an item on the page has the number of a placed episode of this fetcher whose
+     item has **left the page**, the new item **replaces** that episode.
+     - *Left the page* is FR-16.5's test, every guard included, the two full reads 6 hours apart among them. When any
+       guard fails, nothing is replaced. The setting *Also delete an episode once it leaves the page* does not have to
+       be on, and retention `all` replaces too, because a replacement takes nothing away.
+     - The new item is downloaded like any other, into the work folder (FR-6.3 to FR-6.5). Only when every FR-6.5 check
+       passes does it take the old file's place, **under the old file's path**, by the temp-and-swap phase 311's
+       processing features use. A failed download leaves the old file as it was. Because the path stays, Jellyfin keeps
+       the episode's entry, and it is told `"Modified"` for that path. The episode name in the file name stays the old
+       item's.
+     - When the new copy is a moved file (the bullet above), there is no download. The moved file is renamed onto the
+       old path, replacing the old file, and its own two sidecars go.
+     - The old item's row becomes `replaced`, with no placed path, and retention never counts it again (FR-16.2). The
+       new item's row takes the path.
+     - The run line is `S2026E302 (1080p, 1.1 GB) · replaces the episode that left the page`, and it counts in the
+       summary's `+n`.
+     - While the placed item is still on the page, the pair stays as *Two items on one date* says: the placed one holds
+       the number. Rejected: replacing as soon as a second item appears. The page then lists both, and the engine
+       cannot tell a re-upload from a second programme on that date without downloading both.
+   - **The episode misfiled on 2026-10-30.** The first run after this build repairs it, with no one-off step and
+     nothing done by hand in the library. *A date that moves* finds the placed re-upload numbered `E302`, with a file
+     named `E303 - 2026-10-30`. `E302`'s file was deleted on 2026-10-30 when the original left the page, so the number
+     is free and the file is renamed. `E303` is then free, and the real 10-30 item is placed in the same run while it is
+     still on the page and among the newest N (FR-16.4).
    - **Not for a TMDB fetcher.** TMDB numbers its own episodes, so `date` is offered only to a page-only fetcher.
      Showing the air date in Ravilo instead of the code would be a Ravilo spec of its own, not part of this one.
    - **Amended 2026-11-04 (DEB-3567): the model says how the page prints a date, `numbering.when`.** This replaces an
@@ -729,7 +810,8 @@ one lane.
    which runs `ffprobe` on a manifest and answers with its variants; and `tmdb_series(id)`, which answers with the
    series' seasons and episode names, numbers and air dates. `fetch` refuses a URL whose host is not the page's site.
    The conversation ends with the recipe, constrained by `output_config.format`. At most **12 turns**; past that it
-   stops as *Not a series* with *the page could not be worked out in 12 steps*.
+   stops as *Not a series* with *the page could not be worked out in 12 steps*. *(Amended 2026-11-05, DEB-3695: two
+   correction turns past the 12, and running out of turns is a failure, not *Not a series*; FR-5.9.)*
    **`ytdlp` (2026-11-02, DEB-2480).** The recipe's schema also offers `ytdlp` for `list.kind` and `media.kind`, and the
    system prompt tells the model to choose it only for a site whose page is built in the browser and that yt-dlp has an
    extractor for. The model has no tool that runs yt-dlp: the proof (FR-4.2) does, through FR-6.3's reader, and a site
@@ -835,6 +917,25 @@ one lane.
      AI job's last run read the same.
    - Rejected: asking the owner for the stream address in the failed state. That is a new surface, and the address
      belongs in the recipe the model writes and the proof checks.
+9. **Room for the answer (2026-11-05, DEB-3695).** On DEB-3695 the model used 11 turns and 18 reads on the page, its
+   item pages and guessed stream hosts, and answered on turn 12. The proof refused that answer, and FR-5.1's two
+   corrections had no turn left, so the investigation ended *Not a series* for a page the model had called a series.
+   - From turn 9 on, every tool answer ends with one line: *Turn 9 of 12. Answer with the recipe by turn 12; the engine
+     keeps two more turns for its corrections.*
+   - Each of FR-5.1's two corrections gets one turn past the 12, so an investigation takes at most 14 turns. A turn past
+     the 12 that asks for a tool is refused and ends the investigation. FR-5.4's worst case counts the 14 turns. At the
+     card's estimate the two turns add about $0.09 on Sonnet 5 at worst, and nothing when the answer passes.
+   - When the turns run out, the investigation **fails** and never reads *Not a series*, since the model has not said
+     that. After a refused answer, the reason is that refusal's own, on its own step. With no answer it is *the page
+     could not be worked out in 12 steps*, on the step that was running. FR-5.8 still applies when the model answers
+     `not_a_series` after the listing yielded two items.
+   - Rejected: a larger budget, such as 20 turns. The model reached an answer inside 12, and what it lacked was one turn
+     to correct it. Every extra turn raises each investigation's worst case, and FR-5.4 checks that against the limit
+     before every turn.
+   - Rejected: a fixed engine step that reads one item page outside the model's budget. The model had read the item
+     page, and it said in its answer that the media id is there. What it could not find was the stream address, and the
+     site's own player script (FR-5.7) is what gives it. The engine also cannot know which link is an item before a
+     recipe exists.
 
 ### FR-6 — A run
 
@@ -932,6 +1033,9 @@ one lane.
    (year-seasons as `Season 2026`, as drawn). The rename refuses to overwrite: if anything is at that path, the file is
    discarded and nothing is replaced. The series folder is created only on a fetcher's first placed episode. The
    episode name in the filename is the page's, cleaned of path characters, or absent when the page has none.
+   *Amended 2026-11-05 (DEB-3695):* there is one exception to *never over anything*. A re-upload replaces a file this
+   fetcher placed, for an item that has left the page, under FR-4.5's *A re-upload*, and only after the new copy passes
+   FR-6.5. Nothing else is ever replaced.
 7. **Then jellystructure takes it from there.** The placed file is announced to Jellyfin by path (*Created*), exactly
    as a new file is today, and handed to the single-title run every new episode gets
    (`processing-runs-as-nine-features.md` FR-3.1). No per-item Jellyfin metadata refresh is ever triggered.
@@ -940,6 +1044,11 @@ one lane.
    drawn. Retention is the one thing that deletes a file, and only under FR-16's rules (amended 2026-10-27). When a
    fetcher is deleted or paused, or its retention is set to *All*, nothing is deleted. Files it placed stay in the
    library as ordinary files.
+   *Amended 2026-11-05 (DEB-3695):* the summary says what the run left behind. After *no new episodes* or the `+n`
+   part, it adds ` · <n> skipped` for every item skipped with a line, and ` · <n> failed` for every item that failed.
+   An item that is *live now* (FR-4.1) is not counted, and neither is one outside retention (FR-6.1). A re-file adds
+   ` · <n> re-filed` (FR-4.5). On the runs of DEB-3695 the line would have read *no new episodes · 1 skipped*. The list
+   row and Activity show the summary as before, so no screen changes.
 
 ### FR-7 — Where it sits among the processing features
 
@@ -1334,6 +1443,8 @@ one path that does, and its rules are what make that safe.
      moved or renamed by hand, and one deleted by someone else.
    - A file placed by hand in the same folder is never counted and never deleted, whatever its number. Neither is
      anything another fetcher placed.
+   - *Amended 2026-11-05 (DEB-3695):* a row whose episode a re-upload replaced is `replaced` and has no placed path, so
+     retention never counts it. A row FR-4.5 re-filed keeps being the fetcher's under its new path.
 3. **What *the newest N* means.**
    - The episodes are ordered by air date (the item's published date), newest first, and ties go by listing order.
    - N counts episodes **in the library**, not items on the page. A download that failed never makes room by deleting
@@ -1433,6 +1544,10 @@ Added 2026-10-27 (DEB-2626), each against a stand-in site the test serves itself
     - The Ravilo series detail lists the 12 by date with 12 different codes.
     - A listing with two items on 2026-10-20 fails the proof at save. On a later run, a second item on a date already
       placed is skipped with its line.
+      *Amended 2026-11-05 (DEB-3695), replacing the bullet above:* a 12-item listing with two items on 2026-10-20 saves,
+      and the review shows the second as *shares 2026-10-20 with '<title>' · one is fetched*. Three items on
+      2026-10-20, or pairs on three dates of the 12, fail the proof with FR-4.5's reasons. On a run, a second item on a
+      date already placed is skipped with its line, and the summary ends ` · 1 skipped`.
 
     Added 2026-11-04 (DEB-3567):
     - With the `when` of FR-4.5's example and `months: {"nov": 11}`, `4. Nov. 2026 6.00 | 4t 0m` reads as 2026-11-04
@@ -1595,6 +1710,35 @@ Added 2026-11-04 (DEB-3591):
       *Confirm this is a series* are done, and *Find how the videos are served* is failed.
     - On prod, after the build is deployed, the owner's kvf.fo page reaches the review with a `media` template on
       `vod.kringvarp.fo`. This step is QA's, not a unit test.
+23. **A re-dated item and a re-upload (FR-4.5, FR-4.2, FR-6.6, FR-6.8, FR-5.9; DEB-3695).** `Dagbók`, page-only,
+    numbered by `date`, with its 12 items placed. O is its 2026-10-27 item.
+    - *What happened on prod.* Retention is *the newest 12* with *leaves the page* on. Read 1 adds item R, dated
+      2026-10-28, while O is still listed, and R is placed as `Dagbók - S2026E301 - 2026-10-28 - …mkv`. Reads 2 and
+      3, 6 hours apart, lack O, date R 2026-10-27, and add item N on 2026-10-28.
+      - On read 2, O has not yet left the page by FR-16.5. R keeps `E301` with the *kept as S2026E301* line, N is
+        skipped with *shares 2026-10-28 with an episode already placed*, and the summary ends ` · 2 skipped`.
+      - On read 3, R's file is renamed onto O's path, O's row is `replaced`, and R's old `.nfo` and `-thumb.jpg` are
+        gone. N is then placed as `S2026E301 - 2026-10-28` in the same run. Jellyfin gets `"Deleted"` for R's old
+        path and `"Modified"` for O's. Nothing is downloaded for `E300`, and retention deletes nothing.
+    - *The repair.* Start from the state the prod rows show. R is placed with a file named `S2026E301 - 2026-10-28` and
+      a row numbered `E300`, O is `deleted` with no file, and N is `new`. One run renames R's file to
+      `Dagbók - S2026E300 - 2026-10-27 - …mkv` with *S2026E301 → S2026E300 · the page now dates it 2026-10-27*, then
+      places N as `S2026E301`. The summary reads `+1 · S2026E301 (…) · 1 re-filed`. A second run renames nothing and
+      places nothing.
+    - *A re-upload on the same date.* Retention is `all`. The page lists O and R, both on 2026-10-27, and R is skipped
+      with *shares …*. Once two full reads 6 hours apart lack O, the run downloads R into the work folder, swaps it onto
+      O's path after FR-6.5's checks, writes *S2026E300 (…) · replaces the episode that left the page*, and marks O
+      `replaced`. A download that fails FR-6.5 leaves O's file as it was, and O stays placed.
+    - *A number that is not free.* With a hand-placed file at `E300` and O gone, R re-dated to 2026-10-27 keeps `E301`
+      with the *kept as* line. Nothing is renamed or deleted.
+    - *Never a shift.* In none of these cases does a run place or rename a file onto a date its item does not carry.
+    - *The investigation.* A fake model uses tools for 11 turns and answers on turn 12 with a `date` recipe that the
+      proof refuses. The refusal goes back to it, and a corrected answer on turn 13 reaches the review. A fake model
+      that asks for a tool on turn 13 ends the investigation failed, with the refusal's reason, and `notASeries: false`.
+      A fake model that only asks for tools ends on turn 12, failed, with *the page could not be worked out in 12
+      steps* and `notASeries: false`. The tool answers from turn 9 on carry the *Turn n of 12* line.
+    - On prod, after the build is deployed, the first run renames the misfiled episode to its own date and places the
+      one that was missing. QA checks this from the run record. It is not a unit test.
 
 ## Non-goals
 
@@ -1696,3 +1840,15 @@ Each piece files its own QA row when built, with a written plan and no named sea
 - **Slice 5** is unchanged. `mapped` is not offered to a page-only fetcher.
 - **`item_page`** (FR-4.1, added the same day for DEB-1076) is **slice 2's**: it is part of the recipe and the `html`
   reader, and Dagur og vika cannot be written without it.
+
+**Where the 2026-11-05 amendment lands (DEB-3695).** Two pieces, each its own task, and the run comes first. Each run
+that leaves the missing episode skipped brings it closer to falling off the page and out of the newest N, and then it
+is lost for good.
+
+1. **Backend: the run.** FR-4.5's *A date that moves* and *A re-upload*, FR-6.6's exception, FR-6.8's summary and
+   FR-16.2's `replaced` row (`autofetch/Engine.kt`, `Retention.kt`, `AutofetchStore.kt`). *Acceptance* 23 without its
+   last two bullets. The row state is a new value in an existing text column, so no migration is needed.
+2. **Backend: the proof and the investigation.** FR-4.2's reading of shared numbers, with the review's *shares …* row,
+   and FR-5.9 (`autofetch/Proof.kt`, `Investigation.kt`). *Acceptance* 10's amendment and 23's investigation bullet.
+   DEB-3643's FR-5.7 (DEB-3656) is what lets the owner's page reach the review, and this piece is what lets that
+   answer be corrected.
