@@ -214,12 +214,55 @@ class InvestigationTest {
     }
 
     @Test
-    fun `twelve turns without an answer is not a series`() {
+    fun `twelve turns without an answer fails on the step that was running and is not a series - DEB-3695`() {
         repeat(Investigator.MAX_TURNS) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
         val (out, _) = run(h.dagbokUrl, null, true)
-        assertEquals("failed", out.view.state); assertTrue(out.view.notASeries)
+        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries)
         assertEquals("the page could not be worked out in 12 steps", out.view.reason)
         assertEquals(Investigator.MAX_TURNS, ai.sent.size)
+        assertEquals("fail", out.view.steps.first { it.key == "videos" }.state)
+    }
+
+    @Test
+    fun `from turn 9 every tool answer ends with the turn count and before it none does - DEB-3695 FR-5_9`() {
+        repeat(Investigator.MAX_TURNS) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+        run(h.dagbokUrl, null, true)
+        // ai.sent[i] is turn i + 1's request, whose last message carries turn i's answers.
+        assertFalse("of 12. Answer with the recipe" in ai.resultOf(8))
+        assertTrue(ai.resultOf(9).endsWith("Turn 9 of 12. Answer with the recipe by turn 12; the engine keeps two more turns for its corrections."), ai.resultOf(8))
+        assertTrue(ai.resultOf(11).endsWith("Turn 11 of 12. Answer with the recipe by turn 12; the engine keeps two more turns for its corrections."), ai.resultOf(11))
+    }
+
+    @Test
+    fun `an answer on turn 12 that is refused gets a thirteenth turn to be corrected - DEB-3695 FR-5_9`() {
+        repeat(Investigator.MAX_TURNS - 1) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+        ai.answer("not a recipe")
+        ai.answer(dagbokAnswer)
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertEquals("review", out.view.state, out.view.reason)
+        assertEquals(13, ai.sent.size); assertEquals(13, out.view.turns)
+    }
+
+    @Test
+    fun `two refusals past turn 12 end the investigation as a failure with the last refusal and never as not a series - DEB-3695 FR-5_9`() {
+        repeat(Investigator.MAX_TURNS - 1) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+        repeat(3) { ai.answer("not a recipe") }
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries)
+        assertEquals("the model's answer was not in the recipe's form", out.view.reason)
+        assertEquals(14, ai.sent.size)
+    }
+
+    @Test
+    fun `a tool request past turn 12 after a refusal ends it with that refusal on its step - DEB-3695 FR-5_9`() {
+        repeat(Investigator.MAX_TURNS - 1) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+        ai.answer("not a recipe")
+        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries)
+        assertEquals("the model's answer was not in the recipe's form", out.view.reason)
+        assertEquals(13, ai.sent.size)
+        assertEquals("fail", out.view.steps.first { it.key == "script" }.state)
     }
 
     @Test
@@ -282,6 +325,39 @@ class InvestigationTest {
         run(h.dagbokUrl, null, true)
         val told = toldBack(1)
         assertTrue("maps to no season and episode; if the items carry no number of their own, answer `numbering: date`" in told && "mapped" !in told, told)
+    }
+
+    // ---- DEB-3695 (FR-4.2): a few shared dates are re-uploads, not a broken numbering ----
+
+    private fun days(range: IntRange) = range.map { it to "2026-10-${it.toString().padStart(2, '0')}" }
+
+    @Test
+    fun `one pair on a shared date passes the date proof and the review marks the one a run will not fetch - DEB-3695 FR-4_2`() {
+        h.site.dagbokItems = listOf(100 to "2026-10-27") + days(16..27).reversed()
+        dagbokTools(); ai.answer(dagbokAnswer)
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertEquals("review", out.view.state, out.view.reason)
+        val rows = out.view.review!!.rows
+        val shares = rows.filter { it.code.startsWith("shares ") }
+        assertEquals(1, shares.size, rows.toString())
+        assertTrue(shares.single().code.startsWith("shares 2026-10-27 with '") && shares.single().code.endsWith("' · one is fetched"), shares.single().code)
+        assertEquals(1, rows.count { it.code == "S2026E300" }, "the pair's number is shown once, on the item a run fetches")
+    }
+
+    @Test
+    fun `three items on one date fail the date proof - DEB-3695 FR-4_2`() {
+        h.site.dagbokItems = listOf(100 to "2026-10-27", 101 to "2026-10-27") + days(16..27).reversed()
+        dagbokTools(); ai.answer(dagbokAnswer); ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.dagbokUrl, null, true)
+        assertTrue("3 items share the date 2026-10-27" in toldBack(4), toldBack(4))
+    }
+
+    @Test
+    fun `more than a quarter of the items sharing a date fails the date proof - DEB-3695 FR-4_2`() {
+        h.site.dagbokItems = listOf(100 to "2026-10-26", 101 to "2026-10-27") + days(26..27).reversed()
+        dagbokTools(); ai.answer(dagbokAnswer); ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.dagbokUrl, null, true)
+        assertTrue("share the date" in toldBack(4), toldBack(4))
     }
 
     // ---- DEB-3567 (FR-5.1): a programme that airs more than once a day ----

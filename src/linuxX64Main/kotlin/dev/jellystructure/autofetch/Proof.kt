@@ -190,7 +190,13 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         }
         if (byDate && numbered.map { Numbering.isoDate(it.first.published) }.distinct().size < 2)
             return fail("yt-dlp gives these items no date, so they cannot be numbered by date", items, numbered)
-        numbered.groupBy { it.second }.entries.firstOrNull { it.value.size > 1 }?.let { (se, group) ->
+        val shared = numbered.groupBy { it.second }.entries.filter { it.value.size > 1 }
+        // DEB-3695 (FR-4.2) — under `date` and `datetime` a shared number is a re-upload or a double, not the numbering's fault: it fails the proof
+        // only when three items share one number, or when more than a quarter of the numbered items share theirs. `source` and `mapped` keep any two.
+        val tolerated = recipe.numbering.kind == "date" || recipe.numbering.kind == "datetime"
+        val refusing = if (!tolerated) shared.firstOrNull()
+            else shared.firstOrNull { it.value.size >= 3 } ?: shared.firstOrNull().takeIf { shared.sumOf { g -> g.value.size } * 4 > numbered.size }
+        refusing?.let { (se, group) ->
             if (recipe.numbering.kind == "datetime") {
                 val times = group.mapNotNull { PageDates.read(recipe.numbering, it.first)?.minute }.sorted().joinToString(", ") { Numbering.clock(it) }
                 return fail("${group.size} items on ${PageDates.read(recipe.numbering, group[0].first)?.date} ($times) air too close together to get numbers of their own", items, numbered)

@@ -147,6 +147,10 @@ class Investigator(
 
     companion object {
         const val MAX_TURNS = 12
+        /** DEB-3695 (FR-5.9) — each of the two corrections gets one turn past [MAX_TURNS]. */
+        const val HARD_MAX_TURNS = 14
+        /** FR-5.9 — from this turn on, a tool answer ends with the turn count. */
+        const val TURN_NOTICE_FROM = 9
         /** FR-2.3: an investigation reads at most 25 requests from the site; the proof that follows takes the last few. */
         const val MAX_TOOL_REQUESTS = 20
         const val MAX_TOKENS = 8_000
@@ -191,6 +195,8 @@ class Investigator(
         val refusals = ArrayList<Refusal>()
         var recipe: MRecipe? = null
         var proof: ProofResult? = null
+        /** FR-5.9 — the reason and step of the last answer the engine refused, for an investigation that runs out of turns after it. */
+        var lastRefusal: Pair<String, String?>? = null
     }
 
     suspend fun run(id: String, url: String, tmdbId: Int?, pageOnly: Boolean, fetcherId: String?, ignoreRobots: Boolean = false, publish: (InvestigationView) -> Unit): Outcome {
@@ -216,6 +222,9 @@ class Investigator(
             return Outcome(view("failed", reason, notASeries, limit, report = report, needsSignIn = signIn != null), null)
         }
 
+        // DEB-3695 (FR-5.9) — out of turns is a failure, never *Not a series*: after a refusal, that refusal's own reason on its step; with no answer, the 12-step sentence.
+        fun runOut(): Outcome = r.lastRefusal?.let { (why, step) -> fail(why, step) } ?: fail(NOT_IN_12, runningStep(r))
+
         val settings = ai.settings() ?: return fail(ai.offReason())
         r.model = settings.model; r.effort = settings.effort
         r.sessionSet = lanes.forSite(site).hasSession()
@@ -227,10 +236,10 @@ class Investigator(
 
         while (true) {
             r.turns++
-            if (r.turns > MAX_TURNS) return fail(NOT_IN_12, notASeries = true)
+            if (r.turns > MAX_TURNS + minOf(repairs, MAX_REPAIRS)) return runOut()
             val request = buildRequest(settings, system, messages, pageOnly)
             // FR-5.4 — the worst case of this turn and every turn after it, against the month's limit, before anything is sent.
-            val left = MAX_TURNS - r.turns + 1
+            val left = HARD_MAX_TURNS - r.turns + 1
             val inputTokens = (request.length + 2L) / 3
             val worst = AiPricing.worstCaseTurnsMicroUsd(settings.model, left, inputTokens + TOOL_ANSWER_TOKENS, MAX_TOKENS)
             val spentMonth = ai.spentMicroUsd()
@@ -254,13 +263,13 @@ class Investigator(
 
             when (reply.stopReason) {
                 "tool_use" -> {
-                    if (r.turns >= MAX_TURNS) return fail(NOT_IN_12, notASeries = true)
+                    if (r.turns >= MAX_TURNS) return runOut()
                     val results = ArrayList<JsonElement>()
                     for (block in reply.content.filter { it["type"]?.jsonPrimitive?.contentOrNull == "tool_use" }) {
                         val answer = useTool(r, block)
                         results += buildJsonObject {
                             put("type", "tool_result"); put("tool_use_id", block["id"]?.jsonPrimitive?.contentOrNull.orEmpty())
-                            put("content", answer.text); if (answer.error) put("is_error", true)
+                            put("content", if (r.turns >= TURN_NOTICE_FROM) answer.text + "\n\nTurn ${r.turns} of $MAX_TURNS. Answer with the recipe by turn $MAX_TURNS; the engine keeps two more turns for its corrections." else answer.text); if (answer.error) put("is_error", true)
                         }
                         r.blocked?.let { return fail(it, STEP_PAGE) }
                         if (r.drm) return fail(RecipeRefusal.DRM, STEP_VIDEOS)
@@ -273,6 +282,7 @@ class Investigator(
                     val answer = ModelRecipe.parse(text)
                     if (answer == null) {
                         refused(r, "the model's answer was not in the recipe's form", text)
+                        r.lastRefusal = "the model's answer was not in the recipe's form" to STEP_SCRIPT
                         if (++repairs > MAX_REPAIRS) return fail("the model's answer was not in the recipe's form", STEP_SCRIPT)
                         messages += userText("That answer was not valid JSON in the required form. Answer again with the recipe in the required form.")
                         continue
@@ -285,6 +295,7 @@ class Investigator(
                         val accepted = listed.why == null && (listed.count ?: 0) >= 2
                         refused(r, "the model answered needs_sign_in${if (accepted) "" else ": ${listed.why}"}", text, "needs_sign_in")
                         if (accepted) return fail(SignIn.sentence(r.site, listed.count!!), STEP_VIDEOS, signIn = listed.count)
+                        r.lastRefusal = "the model answered needs_sign_in without a recipe whose listing yields two items: ${listed.why}" to STEP_SERIES
                         if (++repairs > MAX_REPAIRS) return fail("the model answered needs_sign_in without a recipe whose listing yields two items: ${listed.why}", STEP_SERIES, notASeries = true)
                         // FR-5.1 — the check that failed, in the engine's own words; the rule is never sent alone.
                         messages += userText("needs_sign_in is accepted only when your recipe's listing yields at least two items, which the engine reads itself. It did not here: ${listed.why}. Correct the recipe's listing and answer needs_sign_in again, or answer `series` with a recipe that works, or `not_a_series`.")
@@ -293,6 +304,7 @@ class Investigator(
                     val mr = answer.recipe
                     if (mr == null) {
                         refused(r, "the model gave no recipe", text)
+                        r.lastRefusal = "the model gave no recipe" to STEP_SCRIPT
                         if (++repairs > MAX_REPAIRS) return fail("the model gave no recipe", STEP_SCRIPT)
                         messages += userText("You answered `series` but gave no recipe. Give the recipe, or answer `not_a_series` with the reason.")
                         continue
@@ -308,6 +320,7 @@ class Investigator(
                         is Proved.End -> { refused(r, proved.reason, text); return fail(proved.reason, proved.step, notASeries = proved.notASeries) }
                         is Proved.Retry -> {
                             refused(r, proved.reason, text)
+                            r.lastRefusal = proved.reason to proved.step
                             if (++repairs > MAX_REPAIRS) return fail(proved.reason, proved.step, notASeries = proved.notASeries)
                             // The steps go back to the work still to do; the next answer is proved again from the top.
                             r.steps.indices.forEach { i -> if (r.steps[i].key in setOf(STEP_SERIES, STEP_PATTERN, STEP_SCRIPT)) r.steps[i] = r.steps[i].copy(state = "pending", text = "", ms = null) }
@@ -423,8 +436,16 @@ class Investigator(
                     have = se != null && se in have, itemId = key, tmdbName = se?.let { names[it.season to it.episode] }, why = pr.whys[key]?.takeIf { it.isNotBlank() })
             }
         } else {
+            // DEB-3695 (FR-4.2) — of items sharing one number a run fetches the first in listing order; the others read as a live row does, in place of the number.
+            val firstOf = HashMap<SeasonEpisode, ListedItem>()
+            for ((item, se) in pr.numbered) firstOf.getOrPut(se) { item }
             val rows = pr.numbered.map { (item, se) ->
-                ReviewRow(item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty(), Numbering.codeFor(recipe.numbering.kind, se), reviewDate(recipe, item), have = se in have)
+                val title = item.title?.takeIf { it.isNotBlank() } ?: item.link.orEmpty()
+                val keeper = firstOf[se]!!
+                if (keeper !== item) {
+                    val keeperTitle = keeper.title?.takeIf { it.isNotBlank() } ?: keeper.link.orEmpty()
+                    ReviewRow(title, "shares ${PageDates.read(recipe.numbering, item)?.date ?: Numbering.isoDate(item.published) ?: Numbering.codeFor(recipe.numbering.kind, se)} with '$keeperTitle' · one is fetched", reviewDate(recipe, item))
+                } else ReviewRow(title, Numbering.codeFor(recipe.numbering.kind, se), reviewDate(recipe, item), have = se in have)
             }
             if (r.pageOnly) rows else pr.numbered.zip(rows).map { (n, row) -> row.copy(notOnTmdb = !row.have && n.second.season to n.second.episode !in tmdbHas) }
         }
