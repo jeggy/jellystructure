@@ -158,3 +158,21 @@ None new. `browse.sort.oldest` (*Oldest first* / *Ældste først* / *Elst fyrst*
 
 A remembered order. A *Shuffle* change. A version filter (excluding remixes and live recordings; phase 292). The TV,
 the web and the receiver.
+
+## Amendment (2026-11-05): a song plays from the release it sits in (DEB-3677)
+
+QA (DEB-3677) found that the queue for an artist with a compilation looks interleaved: an album's run of songs
+carries the compilation's album, and *Oldest first* seems to play a 2006 compilation before a 1978 album. The order of
+songs is FR-3's. The **file** is the defect, and it comes from this spec's own FR-3.3: *"the copy the viewer is
+shown"*. R373's shown copy (FR-305-10) is the better file of the song wherever it lives, and that is often the
+compilation's. FR-3.2 says each release plays *"what its Play album plays"*, and the album page plays its own files,
+so FR-3.2 and FR-3.3 disagreed. FR-3.2 wins:
+
+**FR-3.3, amended.** The order still holds one entry per song (folded by `View.shown`'s identity, as before). The entry
+is the **file on the release the song plays in**: an album's own file for an album, and for every other release the file
+it holds. The shown copy decides only *which* songs are the same, never which file plays. So every run in the queue
+carries its own release's album, cover and year, and FR-3.1's date order reads true in the player.
+
+**Acceptance 4, amended.** For an artist with a compilation that repeats album songs, every queued song's `album_id`
+forms runs that are contiguous, in FR-3.1's date order, in both sorts. Each album's run is its whole tracklist, and the
+compilation's run holds only its songs that are on no album.
