@@ -353,3 +353,60 @@ coverable there, and so on the QA ticket: the Ravilo menu item and its click, *R
 version, Sparkle's own window for the toggle-off *Download*, a real background download's state 3, and Danish and Faroese
 clipping against the frames on the Mac's own fonts.
 
+## Amendment (2026-11-05): a cast does not hold the update back (DEB-3718)
+
+Owner, 2026-11-05, on DEB-3718, with a screenshot of the notice reading *After playback* while a song played on one of
+the household's speakers: *"Pretty annoying I can't upgrade here… So should without issues be able to restart Ravilo
+and just keep playing."* Written by Bárður.
+
+**Why the old rule was too wide.** D3 says the update never interrupts playback. A restart of the Mac does not interrupt
+a cast. The receiver owns the queue and moves to the next song itself (R286). Quitting Ravilo sends the receiver
+nothing, because only an explicit stop does. On start, the Mac rejoins a device that still plays (FR-R330-5). The Mac
+re-test of 2026-10-09 recorded exactly this: the app was quit while a speaker played, the speaker played on, and the
+relaunch rejoined it with the song in its place and no hand-back. So FR-R386-4's *"plays or casts"* withheld a restart
+that costs the viewer nothing.
+
+**FR-R386-4, *While anything plays or casts*, replaced.** *Restart to update* is withheld only **while something plays
+on this Mac**. That means:
+- a film or a live channel in this Mac's own player (`Dest.Player`, `Dest.LiveTv`);
+- music or a book from this Mac's own music engine, while it is not handed to a device.
+
+The following **do not** withhold it:
+- music on a speaker or a group (`MusicCast.linked`);
+- a film cast to a TV or the hub;
+- the remote for any device this Mac controls (`Dest.Remote`).
+
+While music is linked, the music state is the receiver's report, not this Mac's playback. So "music plays on this Mac"
+is the music engine playing **and** `MusicCast.linked` false, never the music state alone. The 2026-10-16 amendment's
+list under FR-R386-8 (`Dest.CastRemote`, `MusicCast.linked`) is superseded by this one. `SoftwareUpdate.restart`
+still refuses in code while something plays on this Mac.
+
+**The restart keeps the cast.** The install-and-relaunch goes through the same quit as *Quit Ravilo*. Neither path may
+end a cast:
+- no stop or `CLOSE` is sent to a receiver;
+- the queue is not handed back to the Mac (R353);
+- the device the Mac last cast to is kept, so FR-R330-5 finds it on start.
+
+If the build finds that Sparkle's terminate skips Ravilo's quit handler, the cast still survives, since the receiver
+needs nothing from the sender. The build records which path Sparkle takes.
+
+**FR-R386-7 state 5 and FR-R386-8.** *Ready while playing*, its sentence, and the dashed *After playback* now mean
+"plays on this Mac". The strings are unchanged. With only a cast running, the block is state 4 and the notice shows
+**Restart**.
+
+**Out of scope, amended.** *"Installing an update while something plays"* now reads *"…while something plays on this
+Mac"*. Whether local playback should also be offered the restart, and resume after it, is a separate question for the
+owner on DEB-3718. Until it is answered, this amendment leaves local playback as it was.
+
+**Acceptance, added:**
+
+4a. **Unit (CI):** the "plays on this Mac" decision is one function with a test. Each of `Dest.Player` and
+`Dest.LiveTv` on top, and the local music engine playing unlinked, is *playing*. Music playing while `MusicCast.linked`,
+and `Dest.Remote` on top, are *not playing*. Nothing at all is *not playing*.
+
+4b. **On the Mac (QA queue):** hand music to a speaker, then let an update reach *Ready*. The notice shows **Restart**,
+not *After playback*. Press it. The speaker plays on through the install with no gap and moves on to the next song by
+itself. The relaunched app logs `cast: rejoin … → joined`, and the bar comes back on the speaker's current song. No
+hand-back line appears. Repeat with a film cast to a TV. Then play music on the Mac's own output: *After playback* is
+back, as before.
+
