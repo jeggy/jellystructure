@@ -102,6 +102,33 @@ class MusicArtistReleaseOrderTest {
     }
 
     @Test
+    fun an_albums_slot_plays_the_albums_own_file_when_a_compilation_holds_the_shown_copy() = runBlocking<Unit> {
+        // DEB-3619 FR-3.3 amended (DEB-3677) — Old Harbour (1978) and New Anchor (1990) reappear on Greatest Piers (2006),
+        // whose files are the better copies, so every song's shown copy lives on the compilation. Each album's slot still
+        // plays that album's file; the compilation adds only its song that is on no album.
+        runCatching { platform.posix.remove("$base.db") }
+        store = MusicStore(createDatabase("$base.db"))
+        fun at(id: String, album: String, pos: Int, rec: String, bitrate: Int) = track(id, album, pos, rec, bitrate = bitrate)
+        store.replaceLibrary(MusicLibraryRows(LIB, listOf(MusicArtist(id = "hl", libraryId = LIB, name = "Harbour Lights", path = "/m/hl")),
+            listOf(
+                EditionsFixture.album("old", "Old Harbour", 1978).copy(firstReleaseDate = "1978-04-01"),
+                EditionsFixture.album("new", "New Anchor", 1990).copy(firstReleaseDate = "1990-09-01"),
+                EditionsFixture.album("gp", "Greatest Piers", 2006, secondary = listOf("Compilation")).copy(firstReleaseDate = "2006-02-01"),
+            ),
+            listOf(
+                at("old-1", "old", 1, "q1", 192_000), at("old-2", "old", 2, "q2", 192_000), at("old-3", "old", 3, "q3", 192_000),
+                at("new-1", "new", 1, "q4", 192_000), at("new-2", "new", 2, "q5", 192_000),
+                at("gp-1", "gp", 1, "q2", 320_000), at("gp-2", "gp", 2, "q4", 320_000), at("gp-3", "gp", 3, "q1", 320_000), at("gp-4", "gp", 4, "q6", 320_000),
+            )))
+        svc = newService()
+        suspend fun runs(sort: String) = svc.selection(open, "artist", sort, null, null, false, "hl")!!.tracks.map { it.id to it.albumId }
+        assertEquals(listOf("old-1", "old-2", "old-3", "new-1", "new-2", "gp-4"), order("oldest"))
+        assertEquals(listOf("gp-4", "new-1", "new-2", "old-1", "old-2", "old-3"), order("newest"))
+        assertEquals(listOf("old", "old", "old", "new", "new", "gp"), runs("oldest").map { it.second })
+        assertEquals(listOf("gp", "new", "new", "old", "old", "old"), runs("newest").map { it.second })
+    }
+
+    @Test
     fun the_selection_for_a_viewer_is_theirs_the_hidden_room_and_an_unseen_artist_are_left_out() = runBlocking<Unit> {
         assertFalse("hid-1" in order("newest", onlyLib))
         assertEquals(order("newest").filter { it != "hid-1" }, order("newest", onlyLib))

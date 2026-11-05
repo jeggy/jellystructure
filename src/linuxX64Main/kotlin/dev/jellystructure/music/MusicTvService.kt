@@ -371,7 +371,8 @@ class MusicTvService(
      * page draws in a group (a single or EP homed under an album is in none, its album holds it), ordered by
      * [originalDate] with a missing month or day read as 01, ties by group order then title, undated last in both orders.
      * An own release plays as *Play album*; an *Appears on* album only the artist's songs on it. An album-type release
-     * keeps its whole tracklist; every other release adds only songs no album in the order has.
+     * keeps its whole tracklist; every other release adds only songs no album in the order has. Each entry is the file on
+     * the release it plays in, not the shown copy, which only decides which songs are the same.
      */
     private fun releaseOrder(v: View, r: MusicArtist, newest: Boolean): List<MusicTrack> {
         class Release(val album: MusicAlbum, val type: String, val songs: List<MusicTrack>)
@@ -386,7 +387,8 @@ class MusicTvService(
         val ordered = dated.sortedWith((if (newest) byDate.reversed() else byDate).thenBy(typeRank).thenBy { it.album.title.lowercase() }) +
             all.filter { key(it.album) == null }.sortedBy { it.album.title.lowercase() }
         val onAlbums = ordered.filter { it.type == "album" }.flatMapTo(HashSet()) { rel -> rel.songs.map { v.shown(it).id } }
-        return v.fold(ordered.flatMap { rel -> if (rel.type == "album") rel.songs else rel.songs.filter { v.shown(it).id !in onAlbums } })
+        // One entry per song, identified by the shown copy, but the entry is the file on the release it plays in (amendment 2026-11-05).
+        return ordered.flatMap { rel -> if (rel.type == "album") rel.songs else rel.songs.filter { v.shown(it).id !in onAlbums } }.distinctBy { v.shown(it).id }
     }
 
     fun genres(device: DeviceData): List<MusicGenreCount> {
@@ -634,7 +636,7 @@ class MusicTvService(
         )
         // Every song of theirs, most played first: the phone shows five and plays them all (R321 FR-R321-8).
         // DEB-3619 (FR-6) — songs with the same count follow the newest-first release order; one on no release goes after them.
-        val rank = releaseOrder(v, r, newest = true).withIndex().associate { (i, t) -> t.id to i }
+        val rank = releaseOrder(v, r, newest = true).withIndex().associate { (i, t) -> v.shown(t).id to i }
         val top = v.fold(v.songsBy(r.id)).sortedWith(compareByDescending<MusicTrack> { u.songPlays(v, it) }.thenBy { rank[it.id] ?: Int.MAX_VALUE }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(200)
         val vids = MusicVideoLinks.forArtist(r, videos(device)).map { m ->
             val vid = m.jellyfinId ?: m.id
