@@ -174,6 +174,9 @@ private fun fetcherOf(el: Element): AfFetcher? {
 }
 
 private fun bind(panel: Element, scope: CoroutineScope) {
+    // DEB-3731: the panel element outlives a tab switch, so a second bind would stack a second handler and every click would act twice.
+    if (panel.getAttribute("data-af-bound") == "1") return
+    panel.setAttribute("data-af-bound", "1")
     panel.addEventListener("click", { ev ->
         val t = ev.target as? Element ?: return@addEventListener
         if (t.closest("[data-copy]") != null || t.closest("[data-stop-click]") != null) return@addEventListener   // the document-level handler / a plain link
