@@ -51,6 +51,30 @@ class WebTroubleTest {
         assertTrue(WebHlsPolicy.retryAllowed(500, 8_000))
     }
 
+    @Test fun `a retry beyond the scheduled five is delayed by hls_js at 5 s, not started at once (DEB-3546, FR-3)`() {
+        // hls.js delays only while failures < maxNumRetry; at or beyond it the next load starts immediately (≈6 a second on a 404).
+        fun delayedByHls(failures: Int, bufferedMs: Long): Boolean = failures < WebHlsPolicy.maxNumRetryFor(failures, bufferedMs)
+        for (n in 0 until 5) assertTrue(delayedByHls(n, 0), "scheduled retry $n")
+        for (n in listOf(5, 6, 50, 322, 5_000)) {
+            assertTrue(WebHlsPolicy.retryAllowed(n, 100))
+            assertTrue(delayedByHls(n, 100), "retry $n with picture in hand is delayed")
+            assertEquals(5_000L, WebHlsPolicy.hlsDelayMs(n), "…by the 5 s ceiling")
+        }
+        assertEquals(5_000L, WebHlsPolicy.hlsDelayMs(100))
+    }
+
+    @Test fun `with an empty buffer after the fifth try the failure is the error — the retry count goes back to five`() {
+        assertEquals(5, WebHlsPolicy.maxNumRetryFor(5, 0))
+        assertFalse(5 < WebHlsPolicy.maxNumRetryFor(5, 0))
+        assertEquals(5, WebHlsPolicy.maxNumRetryFor(322, 0))
+    }
+
+    @Test fun `the config carries the numbers the page hook uses for maxNumRetry`() {
+        val cfg = Json.parseToJsonElement(WebHlsPolicy.configJson()).jsonObject
+        assertEquals(5, cfg.getValue("scheduledRetries").jsonPrimitive.int)
+        assertEquals(WebHlsPolicy.UNBOUNDED_RETRIES, cfg.getValue("unboundedRetries").jsonPrimitive.int)
+    }
+
     @Test fun `hls_js stops skipping a rung after a failed load when the 15 s hold ends — its default never does (DEB-3544)`() {
         val penalty = Json.parseToJsonElement(WebHlsPolicy.configJson()).jsonObject.getValue("errorPenaltyExpireMs").jsonPrimitive.int
         assertEquals(15_000, penalty)

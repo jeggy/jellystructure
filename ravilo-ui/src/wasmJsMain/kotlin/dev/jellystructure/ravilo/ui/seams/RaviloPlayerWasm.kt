@@ -674,7 +674,14 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double,
                         for (var i = 0; i < b.length; i++) { if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i) - t; }
                         return 0;
                     }
-                    function retryWhileBuffered(c, n) { return n < c.maxNumRetry || bufferedAhead() > 0; }
+                    // DEB-3546 (FR-3) — hls.js delays a retry only below maxNumRetry; at or beyond it the next load starts at once. So the retry this
+                    // allows beyond the scheduled five sets maxNumRetry out of reach (the delay then stays at its 5 s ceiling), and the refusal sets
+                    // it back at five (WebHlsPolicy.maxNumRetryFor).
+                    function retryWhileBuffered(c, n) {
+                        var ok = n < pol.scheduledRetries || bufferedAhead() > 0;
+                        c.maxNumRetry = ok ? pol.unboundedRetries : pol.scheduledRetries;
+                        return ok;
+                    }
                     ['fragLoadPolicy', 'manifestLoadPolicy', 'playlistLoadPolicy'].forEach(function (k) {
                         pol[k].default.errorRetry.shouldRetry = retryWhileBuffered;
                         pol[k].default.timeoutRetry.shouldRetry = retryWhileBuffered;

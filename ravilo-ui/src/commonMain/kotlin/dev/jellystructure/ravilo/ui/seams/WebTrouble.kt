@@ -24,7 +24,7 @@ internal object WebHlsPolicy {
     val retryDelaysMs: List<Long> get() = LadderRules.RETRY_DELAYS_MS
 
     /** hls.js's delay is `min(2^n × retryDelayMs, maxRetryDelayMs)` for `backoff: 'exponential'`; this is its n-th delay (n from 0). */
-    fun hlsDelayMs(n: Int): Long = minOf((1L shl n) * retryDelaysMs.first(), retryDelaysMs.last())
+    fun hlsDelayMs(n: Int): Long = minOf((1L shl n.coerceIn(0, 30)) * retryDelaysMs.first(), retryDelaysMs.last())
 
     /**
      * FR-4 — whether the failure number [failures] (0 = the first) of a load is retried: the scheduled retries always, and beyond them for
@@ -32,6 +32,19 @@ internal object WebHlsPolicy {
      * is the error (which the restream, FR-6, may still answer). Any status counts, a 4xx as well as a 5xx.
      */
     fun retryAllowed(failures: Int, bufferedMs: Long): Boolean = failures < LadderRules.retryLimit(bufferedMs)
+
+    /**
+     * FR-3 — hls.js delays a retry only while the failure count is below the policy's `maxNumRetry`; at or beyond it the stream controller
+     * goes back to idle at once, so a retry the hook allows beyond the scheduled five (the buffer still holds picture) was a request per
+     * round trip, 6 a second against a dead stream's 404 (DEB-3546). The hook therefore lifts `maxNumRetry` out of reach while it allows
+     * the retry, where [hlsDelayMs] stays at its 5 s ceiling, and puts it back at the scheduled count when it does not (the failure is then
+     * the error, as before). This is that number for failure [failures] with [bufferedMs] ahead.
+     */
+    fun maxNumRetryFor(failures: Int, bufferedMs: Long): Int =
+        if (retryAllowed(failures, bufferedMs)) UNBOUNDED_RETRIES else retryDelaysMs.size
+
+    /** Out of reach of any failure count, yet small enough that hls.js's `2^n` delay and its comparisons stay finite integers. */
+    const val UNBOUNDED_RETRIES = 1_000_000
 
     private fun retry(): String =
         """{"maxNumRetry":${retryDelaysMs.size},"retryDelayMs":${retryDelaysMs.first()},"maxRetryDelayMs":${retryDelaysMs.last()},"backoff":"exponential"}"""
@@ -48,7 +61,7 @@ internal object WebHlsPolicy {
 
     /** The three policies, and the rung penalty, as a JSON object keyed by hls.js's config names. */
     fun configJson(): String =
-        """{"fragLoadPolicy":${policy(FRAG_MAX_LOAD_MS)},"manifestLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"playlistLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"errorPenaltyExpireMs":$ERROR_PENALTY_EXPIRE_MS}"""
+        """{"fragLoadPolicy":${policy(FRAG_MAX_LOAD_MS)},"manifestLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"playlistLoadPolicy":${policy(PLAYLIST_MAX_LOAD_MS)},"errorPenaltyExpireMs":$ERROR_PENALTY_EXPIRE_MS,"scheduledRetries":${retryDelaysMs.size},"unboundedRetries":$UNBOUNDED_RETRIES}"""
 }
 
 /**
