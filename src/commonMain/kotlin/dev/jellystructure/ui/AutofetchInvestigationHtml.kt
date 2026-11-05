@@ -96,6 +96,15 @@ private fun signInHtml(inv: AfInvestigation, sd: AfSessionDraft?): String {
       <div class="row center" style="margin-top:12px;gap:8px"><span class="btn sm ghost" data-af-dismissinv>Give up</span>${if (open) "" else """<span class="btn primary" data-af-usesession>Use my session</span>"""}</div></div>"""
 }
 
+/** FR-10.10 — *Out of steps*: the server's sentence and the setting it names, then *Try again* and *Dismiss*, then the bug-report link as a plain link: running out of steps is often not a bug. */
+private fun outOfStepsHtml(inv: AfInvestigation): String {
+    val link = afBugReportUrl(inv)
+    val report = if (link == null) "" else """<div style="margin-top:12px"><a href="${afEsc(link)}" target="_blank" rel="noopener" data-stop-click>Report this as a bug on GitHub</a></div>"""
+    return """<div class="af-fail"><h4>Out of steps</h4><p>${afEsc(inv.reason.orEmpty())}</p>
+      <div class="why">The limit is Steps per investigation on Settings ▸ AI.</div>${inv.stepRefusal?.let { """<div class="why">reason: ${afMono(it)}</div>""" }.orEmpty()}
+      <div class="row center" style="margin-top:12px;gap:8px"><span class="btn primary" data-af-tryagain>Try again</span><span class="btn sm ghost" data-af-dismissinv>Dismiss</span></div>$report</div>"""
+}
+
 private fun failedHtml(inv: AfInvestigation): String {
     val (head, lead) = when {
         inv.state == "stopped" -> "Stopped" to "The investigation was stopped. What it found was discarded and nothing was written."
@@ -193,6 +202,7 @@ internal fun afNewCard(o: AfOverview, form: AfForm, rv: AfReviewDraft?, sd: AfSe
         inv.state == "running" -> stepsHtml(inv.steps) + """<div class="tiny muted" style="margin-top:10px;">Nothing has been written yet. <b>Stop</b> ends the investigation and discards what it found.</div>"""
         inv.state == "review" && inv.review != null && rv != null -> stepsHtml(inv.steps) + reviewHtml(inv, inv.review, rv)
         inv.state == "failed" && inv.needsSignIn -> stepsHtml(inv.steps) + signInHtml(inv, sd)
+        inv.state == "failed" && inv.outOfSteps -> stepsHtml(inv.steps) + outOfStepsHtml(inv)
         else -> stepsHtml(inv.steps) + failedHtml(inv)
     }
     val echo = if (inv?.review != null) """<div class="af-echo"><span class="ph"></span><span>${if (inv.review.pageOnly) "<b>${afEsc(inv.review.name)}</b> · page only · the page's own name" else "<b>${afEsc(inv.review.name)}</b> · TV series · TMDB ${inv.review.tmdbId}"}</span></div>""" else ""

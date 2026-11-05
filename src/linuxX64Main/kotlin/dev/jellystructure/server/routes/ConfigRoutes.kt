@@ -302,6 +302,11 @@ fun Route.configureConfigRoutes(
             call.respond(HttpStatusCode.BadRequest, mapOf("field" to "public_url", "error" to reason))
             return@put
         }
+        // DEB-3737 (FR-5.10) — the Auto-fetch investigation's step limit: refused on write with the bounds, never on load.
+        dev.jellystructure.config.AiAutofetchConfig.problem(config.ai.autofetch.maxTurns)?.let { reason ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("field" to "ai.autofetch.max_turns", "error" to reason))
+            return@put
+        }
         // DEB-1854 (FR-4) — same rule for the password page: refused on write, never on load.
         dev.jellystructure.model.PasswordChangeUrl.problem(config.passwordChangeUrl)?.let { reason ->
             call.respond(HttpStatusCode.BadRequest, mapOf("field" to "password_change_url", "error" to reason))

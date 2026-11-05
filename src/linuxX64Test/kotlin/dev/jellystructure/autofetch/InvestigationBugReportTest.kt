@@ -158,11 +158,11 @@ class InvestigationBugReportTest {
     }
 
     @Test
-    fun `twelve turns without an answer - DEB-3695 is a failure`() {
-        repeat(Investigator.MAX_TURNS) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+    fun `twelve turns without an answer - DEB-3737 ends out of steps`() {
+        repeat(12) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
         val body = clean(run(), "videos", 0)
-        assertEquals("the page could not be worked out in 12 steps", reasonOf(body))
-        assertTrue("Ended: failed · turns: 12 of 12" in body, body)
+        assertEquals("Auto-fetch stopped after 12 steps, its limit.", reasonOf(body))
+        assertTrue("Ended: out of steps (limit 12) · turns: 12 of 12" in body, body)
         assertTrue("Recipe (shape only): none" in body && "\nProof:" !in body, "no recipe parsed and no proof ran: $body")
     }
 

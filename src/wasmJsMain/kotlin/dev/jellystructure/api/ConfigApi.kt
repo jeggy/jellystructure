@@ -324,8 +324,20 @@ data class AiConfig(
     /** Phase 321 — carried on every save. The backend keeps `max_input_chars` and the two per-day/per-ticket bounds. */
     val support: AiJobConfig = AiJobConfig(effort = "medium"),
     /** DEB-2478 — carried on every save, so Settings never resets it. */
-    val autofetch: AiJobConfig = AiJobConfig(effort = "medium"),
+    val autofetch: AiAutofetchConfig = AiAutofetchConfig(),
 )
+
+/** DEB-3737 (DEB-2474 FR-5.10) — `[ai.autofetch]`: the job's four fields and the investigation's step limit, 6 to 30. */
+@Serializable
+data class AiAutofetchConfig(
+    val enabled: Boolean = false,
+    val model: String = "claude-opus-5",
+    val effort: String = "medium",
+    @SerialName("monthly_limit_usd") val monthlyLimitUsd: Double = 5.0,
+    @SerialName("max_turns") val maxTurns: Int = 12,
+) {
+    fun job() = AiJobConfig(enabled, model, effort, monthlyLimitUsd)
+}
 
 @Serializable
 data class AiJobConfig(

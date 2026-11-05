@@ -1,5 +1,6 @@
 package dev.jellystructure.ai
 
+import dev.jellystructure.config.AiAutofetchConfig
 import dev.jellystructure.config.AiJobConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
@@ -182,7 +183,7 @@ class AiJobs(
             AiRequests.RERANK_JOB -> it.rerank
             AiRequests.CLUSTERS_JOB -> it.clusters
             AiRequests.SUPPORT_JOB -> it.support.job()
-            AiRequests.AUTOFETCH_JOB -> it.autofetch
+            AiRequests.AUTOFETCH_JOB -> it.autofetch.job()
             else -> it.themes
         }
     }
@@ -595,7 +596,7 @@ class AiJobs(
     // ─── DEB-2478 — the autofetch job, which is not a batch ───────────────────
 
     /** The investigation's settings while the job can run (AI on, a key, the job on), else null — *off means off* (FR-270-1). */
-    fun autofetchSettings(): AiJobConfig? = configStore.current.ai.autofetch.takeIf { on(it) }
+    fun autofetchSettings(): AiAutofetchConfig? = configStore.current.ai.autofetch.takeIf { on(it.job()) }
 
     fun autofetchKey(): String = configStore.current.ai.apiKey
 

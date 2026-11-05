@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
 class FakeAi : InvestigationAi {
     var model = "claude-opus-5"
     var limit = 5_000_000L
+    var maxTurns = 12
     var spent = 0L
     var on = true
     val sent = ArrayList<String>()
@@ -39,7 +40,7 @@ class FakeAi : InvestigationAi {
     var gate: CompletableDeferred<Unit>? = null
     private var n = 0
 
-    override fun settings() = if (on) InvestigationSettings(model, "medium", limit) else null
+    override fun settings() = if (on) InvestigationSettings(model, "medium", limit, maxTurns) else null
     override fun offReason() = "AI is switched off in Settings ▸ AI"
     override fun spentMicroUsd() = spent
     override suspend fun send(requestJson: String): AnthropicClient.Message {
@@ -213,19 +214,25 @@ class InvestigationTest {
         assertTrue(ai.runs.single().startsWith("stopped at the limit"), ai.runs.single())
     }
 
+    private val dagbokFetch = """{"url":"https://varpid.example.fo/sendingar/dagbok"}"""
+    private fun stoppedAfter(n: Int, step: String) = "Auto-fetch stopped after $n steps, its limit, while on '$step'."
+
     @Test
-    fun `twelve turns without an answer fails on the step that was running and is not a series - DEB-3695`() {
-        repeat(Investigator.MAX_TURNS) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+    fun `twelve turns without an answer ends as out of steps on the step that was running - DEB-3737 FR-5_10`() {
+        repeat(12) { ai.tool("fetch", dagbokFetch) }
         val (out, _) = run(h.dagbokUrl, null, true)
-        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries)
-        assertEquals("the page could not be worked out in 12 steps", out.view.reason)
-        assertEquals(Investigator.MAX_TURNS, ai.sent.size)
+        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries); assertTrue(out.view.outOfSteps)
+        assertEquals(12, out.view.stepLimit)
+        assertEquals(stoppedAfter(12, "Find how the videos are served"), out.view.reason)
+        assertNull(out.view.stepRefusal)
+        assertEquals(12, ai.sent.size)
         assertEquals("fail", out.view.steps.first { it.key == "videos" }.state)
+        assertEquals("out of steps · 12 · ${AiPricing.usd(out.view.spentMicroUsd)}", ai.runs.single())
     }
 
     @Test
-    fun `from turn 9 every tool answer ends with the turn count and before it none does - DEB-3695 FR-5_9`() {
-        repeat(Investigator.MAX_TURNS) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+    fun `from three turns before the limit every tool answer ends with the turn count and before it none does - DEB-3695 FR-5_9`() {
+        repeat(12) { ai.tool("fetch", dagbokFetch) }
         run(h.dagbokUrl, null, true)
         // ai.sent[i] is turn i + 1's request, whose last message carries turn i's answers.
         assertFalse("of 12. Answer with the recipe" in ai.resultOf(8))
@@ -235,7 +242,7 @@ class InvestigationTest {
 
     @Test
     fun `an answer on turn 12 that is refused gets a thirteenth turn to be corrected - DEB-3695 FR-5_9`() {
-        repeat(Investigator.MAX_TURNS - 1) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+        repeat(11) { ai.tool("fetch", dagbokFetch) }
         ai.answer("not a recipe")
         ai.answer(dagbokAnswer)
         val (out, _) = run(h.dagbokUrl, null, true)
@@ -244,25 +251,81 @@ class InvestigationTest {
     }
 
     @Test
-    fun `two refusals past turn 12 end the investigation as a failure with the last refusal and never as not a series - DEB-3695 FR-5_9`() {
-        repeat(Investigator.MAX_TURNS - 1) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+    fun `two refusals past turn 12 end the investigation as out of steps with the last refusal as the extra line - DEB-3737 FR-5_10`() {
+        repeat(11) { ai.tool("fetch", dagbokFetch) }
         repeat(3) { ai.answer("not a recipe") }
         val (out, _) = run(h.dagbokUrl, null, true)
-        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries)
-        assertEquals("the model's answer was not in the recipe's form", out.view.reason)
+        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries); assertTrue(out.view.outOfSteps)
+        assertEquals(stoppedAfter(12, "Write the recipe"), out.view.reason)
+        assertEquals("the model's answer was not in the recipe's form", out.view.stepRefusal)
         assertEquals(14, ai.sent.size)
     }
 
     @Test
-    fun `a tool request past turn 12 after a refusal ends it with that refusal on its step - DEB-3695 FR-5_9`() {
-        repeat(Investigator.MAX_TURNS - 1) { ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""") }
+    fun `a tool request past turn 12 after a refusal ends it with that refusal on its step - DEB-3737 FR-5_10`() {
+        repeat(11) { ai.tool("fetch", dagbokFetch) }
         ai.answer("not a recipe")
-        ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")
+        ai.tool("fetch", dagbokFetch)
         val (out, _) = run(h.dagbokUrl, null, true)
-        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries)
-        assertEquals("the model's answer was not in the recipe's form", out.view.reason)
+        assertEquals("failed", out.view.state); assertFalse(out.view.notASeries); assertTrue(out.view.outOfSteps)
+        assertEquals("the model's answer was not in the recipe's form", out.view.stepRefusal)
         assertEquals(13, ai.sent.size)
         assertEquals("fail", out.view.steps.first { it.key == "script" }.state)
+    }
+
+    @Test
+    fun `a third refusal with turns to spare is a plain failure not out of steps - DEB-3737 FR-5_10`() {
+        repeat(3) { ai.answer("not a recipe") }
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertEquals("failed", out.view.state); assertFalse(out.view.outOfSteps)
+        assertEquals("the model's answer was not in the recipe's form", out.view.reason)
+        assertEquals(3, ai.sent.size)
+    }
+
+    // ---- DEB-3737 (FR-5.10, FR-10.10), Acceptance 24
+
+    @Test
+    fun `with the limit at 8 a model that only asks for tools ends after turn 8 as out of steps with the notice from turn 5 - Acceptance 24`() {
+        ai.maxTurns = 8
+        repeat(8) { ai.tool("fetch", dagbokFetch) }
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertTrue(out.view.outOfSteps); assertFalse(out.view.notASeries)
+        assertEquals(8, out.view.stepLimit); assertEquals(8, ai.sent.size)
+        assertEquals(stoppedAfter(8, "Find how the videos are served"), out.view.reason)
+        assertEquals("fail", out.view.steps.first { it.key == "videos" }.state)
+        assertFalse("Turn 4 of 8" in ai.resultOf(4)); assertTrue(ai.resultOf(5).endsWith("Turn 5 of 8. Answer with the recipe by turn 8; the engine keeps two more turns for its corrections."), ai.resultOf(5))
+        assertTrue("at most 8 turns" in Json.parseToJsonElement(ai.sent[0]).jsonObject["system"].toString(), "the prompt names the limit")
+        val report = assertNotNull(out.view.report)
+        assertTrue("Ended: out of steps (limit 8) · turns: 8 of 8" in report.body, report.body)
+    }
+
+    @Test
+    fun `with the limit at 8 a refusal on turn 8 gets corrections on turns 9 and 10 and a third refusal is out of steps with its reason - Acceptance 24`() {
+        ai.maxTurns = 8
+        repeat(7) { ai.tool("fetch", dagbokFetch) }
+        repeat(3) { ai.answer("not a recipe") }
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertTrue(out.view.outOfSteps); assertEquals(8, out.view.stepLimit); assertEquals(10, ai.sent.size)
+        assertEquals("the model's answer was not in the recipe's form", out.view.stepRefusal)
+        assertEquals(stoppedAfter(8, "Write the recipe"), out.view.reason)
+    }
+
+    @Test
+    fun `changing the setting while an investigation runs does not change that investigation's limit - Acceptance 24`() {
+        ai.maxTurns = 8
+        ai.tool("fetch", dagbokFetch) { ai.maxTurns = 30 }
+        repeat(7) { ai.tool("fetch", dagbokFetch) }
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertTrue(out.view.outOfSteps); assertEquals(8, out.view.stepLimit); assertEquals(8, ai.sent.size)
+    }
+
+    @Test
+    fun `a not_a_series answer with no listing still reads not a series - Acceptance 24`() {
+        ai.maxTurns = 8
+        ai.tool("fetch", dagbokFetch)
+        ai.answer("""{"verdict":"not_a_series","reason":"one video"}""")
+        val (out, _) = run(h.dagbokUrl, null, true)
+        assertTrue(out.view.notASeries); assertFalse(out.view.outOfSteps); assertEquals(0, out.view.stepLimit)
     }
 
     @Test

@@ -16,7 +16,7 @@ class AiJobsInvestigationAi(
     private val client: AnthropicClient = AnthropicClient(),
 ) : InvestigationAi {
     override fun settings(): InvestigationSettings? =
-        jobs()?.autofetchSettings()?.let { InvestigationSettings(it.model, it.effort, (it.monthlyLimitUsd * 1_000_000.0).toLong()) }
+        jobs()?.autofetchSettings()?.let { InvestigationSettings(it.model, it.effort, (it.monthlyLimitUsd * 1_000_000.0).toLong(), it.turns()) }
 
     /** FR-1.2 — the words the disabled button carries. */
     override fun offReason(): String {

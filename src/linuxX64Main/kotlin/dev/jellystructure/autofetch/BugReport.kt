@@ -2,6 +2,7 @@ package dev.jellystructure.autofetch
 
 import dev.jellystructure.ServerVersion
 import dev.jellystructure.ai.AiPricing
+import dev.jellystructure.config.AiAutofetchConfig
 import dev.jellystructure.ui.AF_BUG_REPORT_LINK_MAX
 import dev.jellystructure.ui.afBugReportLink
 
@@ -21,7 +22,7 @@ internal class ReportInput(
     val id: String,
     val host: String,
     val pageOnly: Boolean,
-    /** `not a series` · `videos not found` · `needs a sign-in` · `limit reached` · `failed`. */
+    /** `out of steps (limit N)` · `not a series` · `videos not found` · `needs a sign-in` · `limit reached` · `failed`. */
     val ended: String,
     val reason: String,
     /** The reason is the model's own words (a `not_a_series` answer): never shown. */
@@ -37,6 +38,8 @@ internal class ReportInput(
     val refusals: List<Refusal>,
     /** DEB-3592 (FR-2.8) — the investigation ignored the site's `robots.txt`. */
     val ignoreRobots: Boolean = false,
+    /** DEB-3737 (FR-5.10) — `[ai.autofetch] max_turns` as the investigation read it. */
+    val turnLimit: Int = AiAutofetchConfig.DEFAULT_TURNS,
 )
 
 internal object BugReport {
@@ -65,7 +68,7 @@ internal object BugReport {
             append("Fetcher: ${if (i.pageOnly) "page only" else "TMDB series"}${if (i.ignoreRobots) " · robots.txt ignored" else ""}\n")
             append("Server: ${ServerVersion.current.ifBlank { "dev" }}\n")
             append("Model: ${i.model?.let { m -> m + i.effort.takeIf { it.isNotBlank() }?.let { e -> " · effort $e" }.orEmpty() } ?: "none"}\n")
-            append("Ended: ${i.ended} · turns: ${i.turns} of ${Investigator.MAX_TURNS} · site requests: ${i.requests} of ${Investigator.MAX_TOOL_REQUESTS} · cost: ${AiPricing.usd(i.spentMicroUsd)}\n")
+            append("Ended: ${i.ended} · turns: ${i.turns} of ${i.turnLimit} · site requests: ${i.requests} of ${Investigator.MAX_TOOL_REQUESTS} · cost: ${AiPricing.usd(i.spentMicroUsd)}\n")
             append("Reason: ${if (i.reasonIsModelWords) MODEL_WORDS else redact.reason(i.reason)}\n")
             append("Steps:\n")
             i.steps.forEach { s -> append("- ${s.key}: ${s.state}${s.ms?.let { " · ${seconds(it)}" }.orEmpty()}\n") }

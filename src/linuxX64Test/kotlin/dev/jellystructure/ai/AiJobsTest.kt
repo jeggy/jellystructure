@@ -578,7 +578,7 @@ class AiJobsTest {
         val j = jobs(FakeTransport { _, _, _ -> error("the ledger needs no request") })
         assertNull(j.autofetchSettings(), "off by default")
         configStore.update(configStore.current.copy(ai = AiConfig(enabled = true, apiKey = "sk-ant-test-0000abcd",
-            autofetch = AiJobConfig(enabled = true, model = "claude-sonnet-5", effort = "low", monthlyLimitUsd = 2.0))))
+            autofetch = dev.jellystructure.config.AiAutofetchConfig(enabled = true, model = "claude-sonnet-5", effort = "low", monthlyLimitUsd = 2.0))))
         val s = j.autofetchSettings()!!
         assertEquals("claude-sonnet-5", s.model); assertEquals(2.0, s.monthlyLimitUsd)
 

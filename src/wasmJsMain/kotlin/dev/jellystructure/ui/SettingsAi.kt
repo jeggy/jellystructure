@@ -1,6 +1,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.api.AiApi
+import dev.jellystructure.api.AiAutofetchConfig
 import dev.jellystructure.api.AiConfig
 import dev.jellystructure.api.AiJobConfig
 import dev.jellystructure.api.AiJobStatus
@@ -92,7 +93,8 @@ private fun aiJobCardHtml(j: AiJobUi): String = """
                   <div class="field" style="margin:0"><label>Model</label><select id="ai-${j.key}-model" class="input" style="width:340px;max-width:100%"></select></div>
                   <div class="field" style="margin:0" id="ai-${j.key}-effort-field"><label>Effort</label>
                     <select id="ai-${j.key}-effort" class="input" style="width:120px"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-                  <div class="field" style="margin:0"><label>Monthly limit (USD)</label><input id="ai-${j.key}-limit" class="input" type="number" min="0" step="0.5" style="width:110px"></div>
+                  <div class="field" style="margin:0"><label>Monthly limit (USD)</label><input id="ai-${j.key}-limit" class="input" type="number" min="0" step="0.5" style="width:110px"></div>${if (j.key == "autofetch") """
+                  <div class="field" style="margin:0"><label>Steps per investigation</label><input id="ai-autofetch-turns" class="input" type="number" min="6" max="30" step="1" style="width:110px"></div>""" else ""}
                 </div>
                 <div class="tiny muted" id="ai-${j.key}-inactive" style="margin-top:10px;display:none"></div>
                 <div class="tiny muted" id="ai-${j.key}-spent" style="margin-top:10px"></div>
@@ -122,13 +124,14 @@ internal fun populateAi(c: AiConfig) {
     toggle("ai-enabled-toggle", aiEnabled)
     select("ai-provider")?.value = c.provider
     input("ai-key")?.value = ""
-    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support, "autofetch" to c.autofetch)) {
+    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support, "autofetch" to c.autofetch.job())) {
         aiJobEnabled[key] = job.enabled
         toggle("ai-$key-toggle", job.enabled)
         select("ai-$key-effort")?.value = job.effort
         input("ai-$key-limit")?.value = job.monthlyLimitUsd.toString()
         (document.getElementById("ai-$key-model") as? HTMLSelectElement)?.setAttribute("data-want", job.model)
     }
+    input("ai-autofetch-turns")?.value = c.autofetch.maxTurns.toString()
     renderAiStatus()
 }
 
@@ -149,7 +152,10 @@ internal fun readAi(): AiConfig {
         themes = job("themes", aiLoaded.themes),
         clusters = job("clusters", aiLoaded.clusters),
         support = job("support", aiLoaded.support),
-        autofetch = job("autofetch", aiLoaded.autofetch),
+        autofetch = job("autofetch", aiLoaded.autofetch.job()).let { j ->
+            // FR-5.10 — a blank or non-numeric field keeps the saved limit; a number outside 6–30 is sent as typed and the server answers 400 with the bounds.
+            AiAutofetchConfig(j.enabled, j.model, j.effort, j.monthlyLimitUsd, input("ai-autofetch-turns")?.value?.trim()?.toIntOrNull() ?: aiLoaded.autofetch.maxTurns)
+        },
     )
 }
 
@@ -164,6 +170,7 @@ internal fun wireAi(scope: CoroutineScope, onChange: () -> Unit) {
         select("ai-$key-model")?.addEventListener("change") { renderAiJob(key); onChange() }
         select("ai-$key-effort")?.addEventListener("change") { onChange() }
         input("ai-$key-limit")?.addEventListener("input") { renderAiJob(key); onChange() }
+        if (key == "autofetch") input("ai-autofetch-turns")?.addEventListener("input") { onChange() }
     }
     document.getElementById("ai-key-test")?.addEventListener("click") {
         val out = document.getElementById("ai-key-result") as? HTMLElement
@@ -230,13 +237,14 @@ internal fun aiTomlPreview(c: AiConfig): String = buildString {
     appendLine("enabled = ${c.enabled}")
     appendLine("provider = \"${c.provider}\"")
     appendLine("api_key = \"${if (c.apiKey.isBlank()) "" else "••••"}\"")
-    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support, "autofetch" to c.autofetch)) {
+    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters, "support" to c.support, "autofetch" to c.autofetch.job())) {
         appendLine()
         appendLine("[ai.$name]")
         appendLine("enabled = ${j.enabled}")
         appendLine("model = \"${j.model}\"")
         appendLine("effort = \"${j.effort}\"")
         appendLine("monthly_limit_usd = ${j.monthlyLimitUsd}")
+        if (name == "autofetch") appendLine("max_turns = ${c.autofetch.maxTurns}")
     }
 }
 

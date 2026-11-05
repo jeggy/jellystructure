@@ -236,6 +236,12 @@ private fun bind(panel: Element, scope: CoroutineScope) {
             }
             return@addEventListener
         }
+        // DEB-3737 (FR-10.10): the same page with the same choices, through the form's own route.
+        t.closest("[data-af-tryagain]")?.let {
+            val inv = afOverview?.investigation ?: return@let
+            act(scope, gen) { AutofetchApi.investigate(inv.url, inv.tmdbId, inv.pageOnly, inv.fetcherId, inv.ignoreRobots) }
+            return@addEventListener
+        }
         t.closest("[data-af-dismissinv]")?.let { act(scope, gen) { AutofetchApi.discardInvestigation(afOverview?.investigation?.id.orEmpty()).also { afForm = afForm.afterInvestigation() } }; return@addEventListener }
         t.closest("[data-rv]")?.let { host ->
             val d = afReview ?: return@let

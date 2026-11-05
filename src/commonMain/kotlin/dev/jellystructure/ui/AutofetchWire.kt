@@ -187,6 +187,12 @@ data class AfInvestigation(
     val needsSignIn: Boolean = false,
     /** DEB-3643 (FR-5.8, FR-10.9) — a series whose videos were not found: the server's call, never read from [reason]'s words. */
     val videosNotFound: Boolean = false,
+    /** DEB-3737 (FR-5.10, FR-10.10) — the steps ran out: the server's call, never read from [reason]'s words. */
+    val outOfSteps: Boolean = false,
+    /** DEB-3737 (FR-5.10) — the limit this investigation read when it started; 0 unless [outOfSteps]. */
+    val stepLimit: Int = 0,
+    /** DEB-3737 (FR-10.10) — the reason of the answer refused on the last turn, when the steps ran out on one. */
+    val stepRefusal: String? = null,
     /** The site a pasted session is saved for (FR-2's lane key). */
     val site: String = "",
     val limitReached: Boolean = false,

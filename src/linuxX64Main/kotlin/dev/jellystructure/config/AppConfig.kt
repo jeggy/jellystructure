@@ -223,7 +223,7 @@ data class AiConfig(
     /** Phase 321 (FR-321-1) — `AI Agent` answers a support ticket. Off by default, like every job. */
     val support: AiSupportConfig = AiSupportConfig(),
     /** DEB-2478 (DEB-2474, FR-5.4) — `[ai.autofetch]`: the investigation that writes a fetcher's recipe. Off by default, like every job. */
-    val autofetch: AiJobConfig = AiJobConfig(effort = "medium"),
+    val autofetch: AiAutofetchConfig = AiAutofetchConfig(),
 ) {
     /** Phase 321 (FR-321-1) — the job is active when AI is on, there is a key, the job is on, and phase 320's lane is on. */
     fun supportActive(lane: SupportConfig): Boolean = enabled && apiKey.isNotBlank() && support.enabled && lane.enabled
@@ -273,6 +273,32 @@ data class AiSupportConfig(
     @SerialName("turns_per_ticket") val turnsPerTicket: Int = 6,
 ) {
     fun job() = AiJobConfig(enabled, model, effort, monthlyLimitUsd)
+}
+
+/**
+ * DEB-3737 (DEB-2474 FR-5.10, FR-13) — `[ai.autofetch]`: an [AiJobConfig] and the investigation's step limit, [maxTurns]
+ * (12 by default, [MIN_TURNS]..[MAX_TURNS]; a save outside that is refused with `400`, and a file value outside it is clamped).
+ */
+@Serializable
+data class AiAutofetchConfig(
+    val enabled: Boolean = false,
+    val model: String = "claude-opus-5",
+    val effort: String = "medium",
+    @SerialName("monthly_limit_usd") val monthlyLimitUsd: Double = 5.0,
+    @SerialName("max_turns") val maxTurns: Int = DEFAULT_TURNS,
+) {
+    fun job() = AiJobConfig(enabled, model, effort, monthlyLimitUsd)
+
+    /** The limit an investigation starts with: [maxTurns], held inside the bounds. */
+    fun turns(): Int = maxTurns.coerceIn(MIN_TURNS, MAX_TURNS)
+
+    companion object {
+        const val DEFAULT_TURNS = 12
+        const val MIN_TURNS = 6
+        const val MAX_TURNS = 30
+        fun problem(turns: Int): String? =
+            if (turns in MIN_TURNS..MAX_TURNS) null else "Steps per investigation must be a whole number from $MIN_TURNS to $MAX_TURNS"
+    }
 }
 
 @Serializable

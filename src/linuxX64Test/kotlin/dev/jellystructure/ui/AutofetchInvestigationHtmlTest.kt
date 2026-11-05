@@ -152,6 +152,20 @@ class AutofetchInvestigationHtmlTest {
         assertTrue("reason: " in h && "lists 3 episodes" in h && "File a bug report on GitHub" in h && "data-af-dismissinv" in h)
     }
 
+    // DEB-3737 (FR-10.10, Acceptance 24) — Out of steps: the server's sentence, the setting, Try again before Dismiss, the report as a plain link.
+    @Test
+    fun `out of steps shows the sentence and the setting with Try again before Dismiss and the report as a plain link - DEB-3737`() {
+        val sentence = "Auto-fetch stopped after 8 steps, its limit, while on 'Write the recipe'."
+        val h = card(inv("failed", "done", "done", "fail", reason = sentence, report = report).copy(outOfSteps = true, stepLimit = 8, stepRefusal = "the model gave no recipe"))
+        assertTrue("<h4>Out of steps</h4>" in h && "Not a series" !in h && "Videos not found" !in h, h)
+        assertTrue(sentence in h.replace("&#39;", "'") && "The limit is Steps per investigation on Settings ▸ AI." in h && "reason: " in h && "the model gave no recipe" in h, h)
+        assertTrue(h.indexOf("data-af-tryagain") in 0 until h.indexOf("data-af-dismissinv"), "Try again comes before Dismiss")
+        assertTrue("""class="btn primary" data-af-tryagain>Try again""" in h, h)
+        val link = h.indexOf("Report this as a bug on GitHub")
+        assertTrue(link > h.indexOf("data-af-dismissinv") && "File a bug report" !in h, "the report follows the buttons")
+        assertFalse("""class="btn sm" href""" in h || """class="btn""" in h.substring(h.lastIndexOf("<a ", link), link), "a plain link, never a button")
+    }
+
     @Test
     fun `the failed state names the failing check and links the report the server wrote - DEB-3572`() {
         val h = card(inv("failed", "done", "done", "fail", reason = "1 video found, no recurring title", notASeries = true, report = report))
