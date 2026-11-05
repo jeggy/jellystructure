@@ -104,4 +104,19 @@ class RetentionPlannerTest {
         val a = RetentionRow("a", "2026-10-20", 0); val b = RetentionRow("b", "2026-10-20", 1); val c = RetentionRow("c", null, 2)
         assertEquals(listOf("a", "b", "c"), listOf(c, b, a).sortedWith(RetentionPlanner.NEWEST_FIRST).map { it.itemId })
     }
+
+    // ---- DEB-3695 (FR-4.5): the same test, asked by a re-upload ----
+
+    @Test
+    fun `an episode has left the page only on a full read with an overlap and two reads six hours apart`() {
+        val gone = placed(5, onPage = false, missingSince = 1_000_000)
+        val onPage = placed(6)
+        val later = 1_000_000 + RetentionPlanner.SIX_HOURS
+        assertEquals(listOf("i5"), RetentionPlanner.leftThePage(listOf(gone, onPage), full, later).map { it.itemId })
+        assertTrue(RetentionPlanner.leftThePage(listOf(gone, onPage), full, later - 1).isEmpty(), "missing on one read, or under 6 hours")
+        assertTrue(RetentionPlanner.leftThePage(listOf(gone, onPage), ListingEvidence(false, 13), later).isEmpty(), "not a full read")
+        assertTrue(RetentionPlanner.leftThePage(listOf(gone, onPage), ListingEvidence(true, 0), later).isEmpty(), "an empty listing")
+        assertTrue(RetentionPlanner.leftThePage(listOf(gone, placed(6, onPage = false, missingSince = 1)), full, later).isEmpty(), "no overlap with the library")
+        assertTrue(RetentionPlanner.leftThePage(listOf(placed(5, onPage = false, missingSince = 1_000_000, exists = false), onPage), full, later).isEmpty(), "the file is gone")
+    }
 }

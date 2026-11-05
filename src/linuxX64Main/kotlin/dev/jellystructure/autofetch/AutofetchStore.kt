@@ -186,6 +186,12 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore, SessionStore
     fun setPlaced(fetcherId: String, itemId: String, path: String, at: Long) = q.itemSetPlaced(path, at, fetcherId, itemId)
     fun release(fetcherId: String, itemId: String) = q.itemRelease(fetcherId, itemId)
     fun setDeleted(fetcherId: String, itemId: String, note: String) = q.itemSetDeleted(note, fetcherId, itemId)
+    /** DEB-3695 (FR-4.5) — a placed file followed its item's date; the row records the new path. */
+    fun setPath(fetcherId: String, itemId: String, path: String) = q.itemSetPath(path, fetcherId, itemId)
+    /** DEB-3695 (FR-4.5) — the row keeps the number its file carries, when the page's new number is not free. */
+    fun setNumber(fetcherId: String, itemId: String, se: SeasonEpisode) = q.itemSetNumber(se.season.toLong(), se.episode.toLong(), fetcherId, itemId)
+    /** DEB-3695 (FR-16.2) — a re-upload replaced this row's episode: no path, and retention never counts it again. */
+    fun setReplaced(fetcherId: String, itemId: String, note: String) = q.itemSetReplaced(note, fetcherId, itemId)
     fun markMissing(fetcherId: String, itemId: String, since: Long) = q.itemMarkMissing(since, fetcherId, itemId)
 
     /** DEB-2479 (FR-4.3) — the admin's number for an item; the proposal it answers goes, and a waiting item is waiting no longer. */

@@ -133,10 +133,24 @@ class AutofetchEngine(
         // Missing marks: only a full read is evidence (FR-16.5).
         if (read.full) for (s in stored) if (s.placedPath != null && s.itemId !in listed && s.missingSince == null) store.markMissing(f.id, s.itemId, now)
 
+        // ---- a placed file follows its item's date (FR-4.5, DEB-3695) — before the diff, so the numbers it frees are free in it -------------
+        val evidenceNow = ListingEvidence(fullRead = read.full && !stop(), itemCount = listed.size)
+        val followed = followDates(f, recipe, listed, evidenceNow, now, lines)
+
         // ---- the diff ---------------------------------------------------------------------------------------------------
-        val folderCodes = existingCodes(f.seriesPath)
+        val folderFiles = existingFiles(f.seriesPath)
+        val folderCodes = folderFiles.flatMap { it.second }.toSet()
         var rows = rowsOf(f.id, listed.keys)
-        val candidates = RetentionPlanner.downloadable(rows, f.retention)
+        // FR-4.5 *A re-upload* — an item whose number is held by one placed episode that has left the page (FR-16.5's test) replaces it.
+        val departed = RetentionPlanner.leftThePage(rows, evidenceNow, now).associateBy { it.placedPath }
+        val replacing = HashMap<String, RetentionRow>()
+        for ((itemId, entry) in listed) {
+            val se = entry.second ?: continue
+            if (store.item(f.id, itemId)?.placedPath != null) continue
+            val held = folderFiles.filter { se in it.second }
+            if (held.size == 1) departed[held[0].first]?.takeIf { it.itemId != itemId }?.let { replacing[itemId] = it }
+        }
+        val candidates = RetentionPlanner.downloadable(rows.filter { r -> replacing.values.none { it.itemId == r.itemId } }, f.retention)
         val tmdbEpisodes: Set<Pair<Int, Int>>? = if (!f.pageOnly && !f.proven && f.tmdbId != null) world.tmdbEpisodes(f.tmdbId)?.map { it.season to it.episode }?.toSet() ?: emptySet() else null
 
         // FR-9.1 — for a proven fetcher TMDB is asked once, after the first episode is placed, which of them it lacks.
@@ -179,7 +193,8 @@ class AutofetchEngine(
                 lines += RunLine("waiting", "${Numbering.code(se)}: waiting for the admin's number, the pattern is not proven against TMDB"); continue
             }
             if (item.state == "waiting") store.setItemState(f.id, item.itemId, "new", "", item.failures)   // it has a number now (approved, or the pattern is proven)
-            if (se in takenThisRun.keys || se in folderCodes) {
+            val replaced = replacing[row.itemId]?.takeIf { se !in takenThisRun.keys }
+            if (replaced == null && (se in takenThisRun.keys || se in folderCodes)) {
                 lines += RunLine("skipped", when (recipe.numbering.kind) {
                     "date" -> "${label(item)}: shares ${Numbering.isoDate(item.published) ?: Numbering.code(se)} with an episode already placed"
                     // FR-4.5 (DEB-3567) — the slot is taken by an episode a few minutes away: name where that one aired.
@@ -192,12 +207,15 @@ class AutofetchEngine(
             if (stop()) { cutShort = true; break }
             if (trigger != RunTrigger.MANUAL && world.waitForViewers()) { cutShort = true; lines += RunLine("waiting", "someone started watching; the rest waits for the next run"); break }
             if (lane.state().stopped) { cutShort = true; break }
+            if (replaced != null && world.episodePlaying(replaced.placedPath.orEmpty())) {
+                lines += RunLine("info", "${Numbering.codeFor(recipe.numbering.kind, se)} · the episode it replaces is playing now, it waits for the next run"); continue
+            }
             attempted++
-            when (val r = fetchOne(f, recipe, lane, listedItem, item, se, stop)) {
+            when (val r = fetchOne(f, recipe, lane, listedItem, item, se, stop, replaced)) {
                 is OneResult.Placed -> {
                     placed++; takenThisRun[se] = airedAt(recipe, listedItem)
                     // TMDB unreachable is not evidence the episode is there: it is filed, and the daily check clears it if TMDB has it.
-                    val queued = !f.pageOnly && f.proven && tmdbHas(se) != true && queue.file(f, item, r.path, r.durationSec)
+                    val queued = replaced == null && !f.pageOnly && f.proven && tmdbHas(se) != true && queue.file(f, item, r.path, r.durationSec)
                     val text = r.text + if (queued) " · not on TMDB → queued" else ""
                     placedLines += text; lines += RunLine("placed", text)
                 }
@@ -211,6 +229,9 @@ class AutofetchEngine(
             if (cutShort) break
         }
         if (skippedForCap > 0) lines += RunLine("info", "$placed of ${placed + skippedForCap} fetched · the rest on the next runs")
+        // FR-6.8 (DEB-3695) — what the run left behind: every item skipped with a line, and every item that failed.
+        val skippedN = lines.count { it.kind == "skipped" }
+        val failedN = lines.count { it.kind == "failed" }
 
         // ---- retention (FR-16) --------------------------------------------------------------------------------------------
         rows = rowsOf(f.id, listed.keys)
@@ -222,13 +243,18 @@ class AutofetchEngine(
         plan.note?.let { lines += RunLine("retention", it) }
 
         val summary = buildString {
-            if (placed == 0) append("no new episodes") else append("+$placed · ").append(placedLines.joinToString(" · "))
+            val allPlaced = followed.replacedLines + placedLines
+            val total = placed + followed.replacedLines.size
+            if (total == 0) append("no new episodes") else append("+$total · ").append(allPlaced.joinToString(" · "))
+            if (skippedN > 0) append(" · $skippedN skipped")
+            if (failedN > 0) append(" · $failedN failed")
+            if (followed.refiled > 0) append(" · ${followed.refiled} re-filed")
             if (deleted > 0) append(" · −$deleted by retention")
             if (cutShort) append(" · stopped early")
             if (undatedLeft > 0) append(" · $undatedLeft items not dated yet, on the next runs")
         }
-        val status = if (cutShort && placed == 0) "stopped" else "ok"
-        return RunResult(status, summary, lines, placed, deleted)
+        val status = if (cutShort && placed + followed.replacedLines.size == 0) "stopped" else "ok"
+        return RunResult(status, summary, lines, placed + followed.replacedLines.size, deleted)
     }
 
     private fun label(item: FetchItem) = item.title ?: item.link
@@ -266,12 +292,118 @@ class AutofetchEngine(
     }
 
     /** SxxEyy of every video already in the series folder, whoever put it there (FR-6.1). */
-    internal suspend fun existingCodes(seriesPath: String): Set<SeasonEpisode> {
-        if (!shell.exists(seriesPath)) return emptySet()
+    internal suspend fun existingCodes(seriesPath: String): Set<SeasonEpisode> = existingFiles(seriesPath).flatMap { it.second }.toSet()
+
+    /** Every video in the series folder with the codes its name carries, whoever put it there (FR-6.1, FR-4.5). */
+    internal suspend fun existingFiles(seriesPath: String): List<Pair<String, List<SeasonEpisode>>> {
+        if (!shell.exists(seriesPath)) return emptyList()
         val out = shell.run("find ${q(seriesPath)} -type f 2>/dev/null").output
         return out.lines().map { it.trim() }.filter { it.isNotEmpty() && "/.jellystructure/" !in it && it.substringAfterLast('.').lowercase() in VIDEO_EXT }
-            .mapNotNull { p -> val (s, eps) = parseSeasonEpisodes(p); if (s != null) eps.map { SeasonEpisode(s, it) } else null }.flatten().toSet()
+            .mapNotNull { p -> val (s, eps) = parseSeasonEpisodes(p); if (s != null) p to eps.map { SeasonEpisode(s, it) } else null }
     }
+
+    /** What FR-4.5's *A date that moves* did in a run: files renamed to their item's new number, and episodes a moved file replaced. */
+    private class Followed(var refiled: Int = 0, val replacedLines: MutableList<String> = ArrayList())
+
+    /**
+     * DEB-3695 (FR-4.5, *A date that moves*) — a page may re-date an item after it was placed, and the row follows the page. The file follows
+     * the row, never the other way: when its number is free the file is renamed to it, when a placed episode of this fetcher that has left
+     * the page (FR-16.5) holds it the moved file replaces that episode, and otherwise the file keeps its name and the row keeps its number.
+     * A file is never renamed while it plays. The engine never moves a file onto a date its item does not carry.
+     */
+    private suspend fun followDates(
+        f: Fetcher, recipe: Recipe, listed: Map<String, Pair<ListedItem, SeasonEpisode?>>, evidence: ListingEvidence, now: Long, lines: MutableList<RunLine>,
+    ): Followed {
+        val out = Followed()
+        val kind = recipe.numbering.kind
+        if (kind != "date" && kind != "datetime") return out
+        val moved = store.items(f.id).filter { it.placedPath != null && it.season != null && it.episode != null }.mapNotNull { row ->
+            val path = row.placedPath ?: return@mapNotNull null
+            val want = SeasonEpisode(row.season ?: return@mapNotNull null, row.episode ?: return@mapNotNull null)
+            val (s, eps) = parseSeasonEpisodes(path)
+            val has = if (s != null && eps.size == 1) SeasonEpisode(s, eps[0]) else return@mapNotNull null
+            if (has == want || !shell.exists(path)) null else Triple(row, has, want)
+        }
+        if (moved.isEmpty()) return out
+        val files = existingFiles(f.seriesPath).toMutableList()
+        val departed = RetentionPlanner.leftThePage(rowsOf(f.id, listed.keys), evidence, now).associateBy { it.placedPath }
+        for ((row, has, want) in moved) {
+            val path = row.placedPath ?: continue
+            val isoDate = Numbering.isoDate(row.published) ?: continue
+            // Under `datetime` the time is on the item as the page printed it, so only an item on the page can be named.
+            val time = if (kind == "datetime") listed[row.itemId]?.first?.let { PageDates.read(recipe.numbering, it)?.minute }?.let { Numbering.clock(it) } ?: continue else null
+            val on = if (time != null) "$isoDate $time" else isoDate
+            // Only a date that moved: a recipe that numbers the item another way (date to datetime) leaves the placed file's name alone (FR-4.5).
+            val named = FILE_DATE_RE.find(path.substringAfterLast('/')) ?: continue
+            if (named.groupValues[1] == isoDate && (named.groupValues[2].isEmpty() || named.groupValues[2] == time)) continue
+            val from = Numbering.codeFor(kind, has)
+            val to = Numbering.codeFor(kind, want)
+            if (world.episodePlaying(path)) {
+                lines += RunLine("info", "held · $from → $to · playing now, it waits for the next run"); continue
+            }
+            val holders = files.filter { it.first != path && want in it.second }
+            val holder = holders.singleOrNull()?.let { departed[it.first] }?.takeIf { it.itemId != row.itemId }
+            if (holders.isNotEmpty() && holder == null) {
+                // Held by a hand-placed file, another fetcher's, a placed episode still on the page: the file keeps its name.
+                store.setNumber(f.id, row.itemId, has)
+                lines += RunLine("skipped", "${row.title?.takeIf { it.isNotBlank() } ?: row.link}: the page now dates it $on, and $to already has a file; kept as $from")
+                continue
+            }
+            val base = path.substringBeforeLast('.')
+            if (holder != null) {
+                val target = holder.placedPath ?: continue
+                if (world.episodePlaying(target)) { lines += RunLine("info", "held · $to · the episode it replaces is playing now, it waits for the next run"); continue }
+                if (!swapOnto(path, target)) { lines += RunLine("failed", "$from → $to · the file could not be moved onto the episode that left the page"); continue }
+                for (p in listOf("$base.nfo", "$base-thumb.jpg")) shell.remove(p)
+                store.setReplaced(f.id, holder.itemId, "replaced by ${row.title ?: row.link}")
+                store.setPath(f.id, row.itemId, target)
+                files.removeAll { it.first == path }
+                removeSeasonIfEmpty(path.substringBeforeLast('/'))
+                world.history(path, "Auto-fetch moved $from onto the episode that left the page · ${target.substringAfterLast('/')}")
+                world.forgetEpisode(path)
+                world.announce(path, "Deleted")
+                world.announce(target, "Modified")
+                refreshThumbnail(f, target)
+                val facts = runCatching { tools.inspect(target) }.getOrNull()
+                val detail = listOfNotNull(facts?.height?.let { "${it}p" }, facts?.sizeBytes?.let { gb(it) }).joinToString(", ")
+                out.replacedLines += "$to${if (detail.isNotEmpty()) " ($detail)" else ""} · replaces the episode that left the page"
+                lines += RunLine("changed", "$from → $to · the page now dates it $on")
+                lines += RunLine("placed", out.replacedLines.last())
+                continue
+            }
+            val target = "${f.seriesPath}/${Numbering.seasonFolder(want.season)}/${Numbering.fileName(f.name, want, isoDate, row.title?.takeIf { it.isNotBlank() }, time)}"
+            shell.run("mkdir -p ${q(target.substringBeforeLast('/'))}")
+            if (!moveNoOverwrite(path, target)) {
+                store.setNumber(f.id, row.itemId, has)
+                lines += RunLine("skipped", "${row.title?.takeIf { it.isNotBlank() } ?: row.link}: the page now dates it $on, and $to already has a file; kept as $from")
+                continue
+            }
+            val newBase = target.substringBeforeLast('.')
+            for (suffix in listOf(".nfo", "-thumb.jpg")) if (shell.exists("$base$suffix") && !shell.exists("$newBase$suffix")) moveNoOverwrite("$base$suffix", "$newBase$suffix")
+            store.setPath(f.id, row.itemId, target)
+            files.removeAll { it.first == path }; files += target to listOf(want)
+            if (path.substringBeforeLast('/') != target.substringBeforeLast('/')) removeSeasonIfEmpty(path.substringBeforeLast('/'))
+            world.history(path, "Auto-fetch re-filed $from → $to · the page now dates it $on")
+            world.forgetEpisode(path)
+            world.announce(path, "Deleted")
+            world.announce(target, "Created")
+            out.refiled++
+            lines += RunLine("changed", "$from → $to · the page now dates it $on")
+        }
+        return out
+    }
+
+    /** A page-only episode's thumbnail is a frame of the file, so the file that took the place of another gets its own (FR-15.7). */
+    private suspend fun refreshThumbnail(f: Fetcher, path: String) {
+        if (!f.pageOnly) return
+        val facts = runCatching { tools.inspect(path) }.getOrNull() ?: return
+        val dur = facts.durationSec ?: return
+        runCatching { tools.thumbnail(path, dur, path.substringBeforeLast('.') + "-thumb.jpg") }
+    }
+
+    /** `rename(2)` over the file at [to] — the one place a fetcher replaces anything, and only an episode it placed that left the page (FR-6.6). */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun swapOnto(from: String, to: String): Boolean = platform.posix.rename(from, to) == 0
 
     private sealed class OneResult {
         data class Placed(val text: String, val path: String, val durationSec: Double) : OneResult()
@@ -286,7 +418,11 @@ class AutofetchEngine(
         class YtDlp(val link: String) : Source()
     }
 
-    private suspend fun fetchOne(f: Fetcher, recipe: Recipe, lane: SiteLane, listed: ListedItem, item: FetchItem, se: SeasonEpisode, stop: () -> Boolean): OneResult {
+    private suspend fun fetchOne(
+        f: Fetcher, recipe: Recipe, lane: SiteLane, listed: ListedItem, item: FetchItem, se: SeasonEpisode, stop: () -> Boolean,
+        /** FR-4.5 *A re-upload* — the placed episode that left the page; the new copy takes its path once FR-6.5's checks pass. */
+        replacing: RetentionRow? = null,
+    ): OneResult {
         val source: Source = if (recipe.media.kind == "ytdlp") {
             // yt-dlp opens the item's own link, so it is held to what a page request in the lane is: a recorded host, and robots.txt (DEB-2480).
             val link = listed.link
@@ -325,9 +461,11 @@ class AutofetchEngine(
         val time = if (recipe.numbering.kind == "datetime") PageDates.read(recipe.numbering, listed)?.minute?.let { Numbering.clock(it) } else null
         val name = (item.title ?: "").let { t -> if (t.isNotBlank()) t else null }
         val fileName = Numbering.fileName(f.name, se, isoDate, name, time)
-        val seasonDir = "${f.seriesPath}/${Numbering.seasonFolder(se.season)}"
-        val finalPath = "$seasonDir/$fileName"
-        if (shell.exists(finalPath)) return OneResult.Skipped("${Numbering.code(se)} already has a file")
+        val oldPath = replacing?.placedPath
+        val finalPath = oldPath ?: "${f.seriesPath}/${Numbering.seasonFolder(se.season)}/$fileName"
+        val seasonDir = finalPath.substringBeforeLast('/')
+        if (oldPath == null && shell.exists(finalPath)) return OneResult.Skipped("${Numbering.code(se)} already has a file")
+        if (oldPath != null && !shell.exists(finalPath)) return OneResult.Skipped("the episode it replaces is no longer there")
         val work = WorkFiles.pathFor(finalPath, WorkFiles.Kind.FETCH)
         shell.run(WorkFiles.prepareCommand(finalPath)).let { if (!it.ok) return OneResult.Failed("could not make the work folder") }
 
@@ -362,7 +500,13 @@ class AutofetchEngine(
                 if (facts.durationSec == null || facts.durationSec <= 0.0) return@download failItem(f, item, "the file has no duration")
                 val first = tools.firstTopLevel(work)
                 if (first != "Tracks") return@download failItem(f, item, "Tracks is not before the first Cluster ($first)")
-                if (!moveNoOverwrite(work, finalPath)) {
+                if (replacing != null) {
+                    if (!swapOnto(work, finalPath)) {
+                        shell.remove(work)
+                        return@download OneResult.Failed("the file could not be moved onto the episode that left the page; nothing was replaced")
+                    }
+                    store.setReplaced(f.id, replacing.itemId, "replaced by ${item.title ?: item.link}")
+                } else if (!moveNoOverwrite(work, finalPath)) {
                     shell.remove(work)
                     return@download OneResult.Skipped("something is already at ${fileName}; the download was discarded and nothing was replaced")
                 }
@@ -371,11 +515,11 @@ class AutofetchEngine(
                     runCatching { tools.thumbnail(finalPath, facts.durationSec, finalPath.substringBeforeLast('.') + "-thumb.jpg") }
                     runCatching { placePoster(f, lane) }
                 }
-                world.announce(finalPath, "Created")
-                world.history(finalPath, "Auto-fetch placed ${Numbering.code(se)} · $fileName")
+                world.announce(finalPath, if (replacing != null) "Modified" else "Created")
+                world.history(finalPath, if (replacing != null) "Auto-fetch replaced ${Numbering.code(se)} · ${finalPath.substringAfterLast('/')}" else "Auto-fetch placed ${Numbering.code(se)} · $fileName")
                 val res = facts.height?.let { "${it}p" }
                 val size = facts.sizeBytes?.let { gb(it) }
-                OneResult.Placed(path = finalPath, durationSec = facts.durationSec, text = "${Numbering.code(se)}${if (res != null || size != null) " (${listOfNotNull(res, size).joinToString(", ")})" else ""}${if (dl.message.isNotBlank()) " · ${dl.message}" else ""}")
+                OneResult.Placed(path = finalPath, durationSec = facts.durationSec, text = "${Numbering.code(se)}${if (res != null || size != null) " (${listOfNotNull(res, size).joinToString(", ")})" else ""}${if (dl.message.isNotBlank()) " · ${dl.message}" else ""}${if (replacing != null) " · replaces the episode that left the page" else ""}")
             } finally {
                 shell.remove(work)
                 cleanEmpty(seasonDir, f.seriesPath)
@@ -471,11 +615,13 @@ class AutofetchEngine(
         // The preview counts what the newest-N rule alone would remove: *leaves the page* needs a listing read the preview does not make.
         val deletes = RetentionPlanner.deletions(rows, retention.copy(leavesPage = false), ListingEvidence(true, rows.size), world.nowSec()).deletes.size
         val lastRead = items.maxOfOrNull { it.lastSeenAt ?: 0L } ?: 0L
-        val onPage = items.count { (it.lastSeenAt ?: 0L) == lastRead && it.state != "deleted" }
+        val onPage = items.count { (it.lastSeenAt ?: 0L) == lastRead && it.state != "deleted" && it.state != "replaced" }
         return RetentionPreview(deletes, if (retention.keepsAll) onPage else minOf(retention.keep, onPage), onPage)
     }
 
     companion object {
+        /** The date, and under `datetime` the time, straight after the code in a file name this engine wrote (`Series - S2026E300 - 2026-10-27 - Name.mkv`). */
+        private val FILE_DATE_RE = Regex("""S\d+E\d+ - (\d{4}-\d{2}-\d{2})(?: (\d{2}\.\d{2}))?""")
         private val VIDEO_EXT = setOf("mkv", "mp4", "avi", "mov", "m4v", "webm", "ts", "m2ts")
     }
 }

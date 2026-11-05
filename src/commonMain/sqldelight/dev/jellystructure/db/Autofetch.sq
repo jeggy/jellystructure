@@ -202,6 +202,18 @@ UPDATE autofetch_item SET state = 'placed', placed_path = :placed_path, placed_a
 itemRelease:
 UPDATE autofetch_item SET state = 'released', placed_path = NULL, placed_at = NULL WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
 
+-- DEB-3695 (FR-4.5, FR-16.2) — a placed file followed its item's date: the same row, a new path (placed_at stays the time it was first placed).
+itemSetPath:
+UPDATE autofetch_item SET placed_path = :placed_path WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+-- DEB-3695 (FR-4.5) — the number a file keeps when its item's new number is not free.
+itemSetNumber:
+UPDATE autofetch_item SET season = :season, episode = :episode WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
+-- DEB-3695 (FR-16.2) — a re-upload took the file's place: this row no longer has a path, and retention never counts it again.
+itemSetReplaced:
+UPDATE autofetch_item SET state = 'replaced', placed_path = NULL, placed_at = NULL, note = :note WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
+
 itemSetDeleted:
 UPDATE autofetch_item SET state = 'deleted', placed_path = NULL, placed_at = NULL, note = :note WHERE fetcher_id = :fetcher_id AND item_id = :item_id;
 

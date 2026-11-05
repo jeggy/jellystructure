@@ -188,7 +188,7 @@ class AutofetchService(
     /** Why [se] is not free for [itemId] of [f]: another of its items has it, or the series folder holds a file under it. Null when it is free. */
     internal suspend fun takenReason(f: Fetcher, itemId: String, se: SeasonEpisode): String? {
         val other = store.items(f.id).firstOrNull { o ->
-            o.itemId != itemId && o.state !in setOf("deleted", "released") && (o.approved ?: if (o.season != null && o.episode != null) SeasonEpisode(o.season, o.episode) else null) == se
+            o.itemId != itemId && o.state !in setOf("deleted", "released", "replaced") && (o.approved ?: if (o.season != null && o.episode != null) SeasonEpisode(o.season, o.episode) else null) == se
         }
         if (other != null) return "${Numbering.code(se)} is already the number of '${other.title?.takeIf { it.isNotBlank() } ?: other.link}'"
         if (se in engine.existingCodes(f.seriesPath)) return "${Numbering.code(se)} already has a file in the series folder"

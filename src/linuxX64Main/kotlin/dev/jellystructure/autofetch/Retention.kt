@@ -94,6 +94,18 @@ object RetentionPlanner {
         return DeletePlan(deletes.values.toList(), released, note)
     }
 
+    /**
+     * DEB-3695 (FR-4.5, FR-16.5) — the placed rows whose episode has left the page, by FR-16.5's whole test and whatever the retention
+     * says: a full read, at least one item, an overlap with the library, and the item missing on two full reads 6 hours apart. A re-upload
+     * may replace such an episode; nothing here deletes.
+     */
+    fun leftThePage(rows: List<RetentionRow>, evidence: ListingEvidence, now: Long): List<RetentionRow> {
+        if (!evidence.fullRead || evidence.itemCount < 1) return emptyList()
+        val library = rows.filter { it.placedPath != null && it.fileExists }
+        if (library.none { it.onPage }) return emptyList()
+        return library.filter { r -> !r.onPage && r.missingSince?.let { now - it >= SIX_HOURS } == true }
+    }
+
     private fun wantsToDelete(library: List<RetentionRow>, retention: RetentionSpec, evidence: ListingEvidence?, now: Long): Boolean =
         library.size > retention.keep || (retention.leavesPage && library.any { !it.onPage })
 }

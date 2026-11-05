@@ -20,6 +20,8 @@ class StandInSite(private val clock: FakeClock) : Transport {
     val requests = ArrayList<Pair<String, Long>>()
     /** Days of October 2026 on the page, newest first as a broadcaster lists them. */
     var days: List<Int> = (16..27).toList().reversed()
+    /** DEB-3695 — when set, Dagbók lists exactly these (item number as in its link, the date the page prints), in this order: an item can be re-dated or re-uploaded. */
+    var dagbokItems: List<Pair<Int, String>>? = null
     var listingStatus = 200
     var listingHeaders: Map<String, String> = emptyMap()
     var empty = false
@@ -52,9 +54,9 @@ class StandInSite(private val clock: FakeClock) : Transport {
 
     fun dagbokListing(): String {
         if (empty) return "<html><body><h1>Dagbók</h1><p class=\"about\">Dagligur tátturin.</p><ul></ul></body></html>"
-        val shown = if (onlyOnePage) days.take(1) else days
-        val items = shown.joinToString("\n") { d ->
-            """<li class="ep"><a href="/sendingar/dagbok/$d">Dagbók · $d. oktober</a><time datetime="2026-10-$d">$d.10.2026</time><p>Lýsing $d</p></li>"""
+        val shown = (dagbokItems ?: days.map { it to "2026-10-$it" }).let { if (onlyOnePage) it.take(1) else it }
+        val items = shown.joinToString("\n") { (d, date) ->
+            """<li class="ep"><a href="/sendingar/dagbok/$d">Dagbók · $d. oktober</a><time datetime="$date">$d.10.2026</time><p>Lýsing $d</p></li>"""
         }
         return """<html><body><h1>Dagbók</h1><p class="about">Dagligur tátturin.</p><img class="poster" src="/img/dagbok.jpg"><ul>$items$extraItems</ul>$listingExtra</body></html>"""
     }
