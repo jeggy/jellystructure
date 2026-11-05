@@ -360,4 +360,112 @@ class CastSessionTest {
         assertEquals(CastSession.State.CLOSED, s.state.value)
         advanceUntilIdle()
     }
+
+    private fun TestScope.joined(): Pair<FakeDevice, CastSession> {
+        val device = FakeDevice { m, body ->
+            if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body), app(APP))) else emptyList()
+        }
+        val s = session(device)
+        launch { s.joinIfRunning() }
+        runCurrent()
+        assertEquals(CastSession.State.JOINED, s.state.value)
+        return device to s
+    }
+
+    // DEB-3670 (FR-R330-3a) — a CLOSE is the device dropping THIS connection, not our app ending.
+    @Test
+    fun `a CLOSE from the platform receiver closes the session as a drop, not as the app ending`() = runTest {
+        val (device, s) = joined()
+        device.say(fromDevice(CastNamespaces.CONNECTION, """{"type":"CLOSE","reasonCode":2}"""))
+        runCurrent()
+        assertEquals(CastSession.State.CLOSED, s.state.value)
+        assertEquals("the device closed the connection (CLOSE from $PLATFORM_RECEIVER, reasonCode 2)", s.closedReason)
+        assertFalse(s.appGone)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a CLOSE from our app's transport closes the session as a drop with its source`() = runTest {
+        val (device, s) = joined()
+        device.say(fromDevice(CastNamespaces.CONNECTION, """{"type":"CLOSE"}""", source = "web-7"))
+        runCurrent()
+        assertEquals(CastSession.State.CLOSED, s.state.value)
+        assertEquals("the device closed the connection (CLOSE from transport)", s.closedReason)
+        assertFalse(s.appGone)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a CLOSE from somebody else's transport ends nothing`() = runTest {
+        val (device, s) = joined()
+        device.say(fromDevice(CastNamespaces.CONNECTION, """{"type":"CLOSE"}""", source = "web-99"))
+        runCurrent()
+        assertEquals(CastSession.State.JOINED, s.state.value)
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
+    fun `a receiver status without applications leaves the session joined and still updates the volume`() = runTest {
+        val (device, s) = joined()
+        device.say(fromDevice(CastNamespaces.RECEIVER, """{"type":"RECEIVER_STATUS","requestId":0,"status":{"volume":{"level":0.7,"muted":false}}}"""))
+        runCurrent()
+        assertEquals(CastSession.State.JOINED, s.state.value)
+        assertEquals(0.7, s.receiver.value?.volumeLevel)
+        assertFalse(s.receiver.value!!.appsListed)
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
+    fun `a status that lists applications without ours still ends the session, and says the app is gone`() = runTest {
+        val (device, s) = joined()
+        device.say(receiverStatus(0, app("CC1AD845", "sess-9", "web-9", "Spotify")))
+        runCurrent()
+        assertEquals("replaced by another app", s.closedReason)
+        assertTrue(s.appGone)
+        advanceUntilIdle()
+
+        val (device2, s2) = joined()
+        device2.say(receiverStatus(0))   // an empty LIST is the device's word: nothing runs
+        runCurrent()
+        assertEquals("the app ended", s2.closedReason)
+        assertTrue(s2.appGone)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `an answer to our own GET_STATUS with no application list reads as not running, and as answered`() = runTest {
+        val device = FakeDevice { m, body ->
+            if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS")
+                listOf(fromDevice(CastNamespaces.RECEIVER, """{"type":"RECEIVER_STATUS","requestId":${reqId(body)},"status":{"volume":{"level":0.4}}}"""))
+            else emptyList()
+        }
+        val s = session(device)
+        assertFalse(s.statusAnswered)
+        val joined = async { s.joinIfRunning() }
+        runCurrent()
+        assertFalse(joined.await())
+        assertTrue(s.statusAnswered)
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
+    fun `a device that never answers GET_STATUS is not an answer`() = runTest {
+        val s = session(FakeDevice())
+        val joined = async { s.joinIfRunning() }
+        advanceTimeBy(10_001); runCurrent()
+        assertFalse(joined.await())
+        assertFalse(s.statusAnswered)
+        s.close(); advanceUntilIdle()
+    }
+
+    // DEB-3670 (FR-R330-3f) — what shows a heartbeat that was napped.
+    @Test
+    fun `the silence note says how long ago the last ping went out and the last frame came in`() = runTest {
+        val (device, s) = joined()
+        assertTrue(Regex("""last ping never · last frame [0-9.]+ s ago""").matches(s.silenceNote()), s.silenceNote())
+        advanceTimeBy(5_001); runCurrent()
+        assertTrue(device.types(CastNamespaces.HEARTBEAT).contains("PING"))
+        assertTrue(Regex("""last ping [0-9.]+ s ago · last frame [0-9.]+ s ago""").matches(s.silenceNote()), s.silenceNote())
+        s.close(); advanceUntilIdle()
+    }
 }

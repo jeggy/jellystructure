@@ -63,6 +63,18 @@ class CastHandBackTest {
     }
 
     @Test
+    fun aLiveSessionStaysLiveThroughAReconnect() {
+        // DEB-3670 (R330 FR-R330-3c) — the screens hold on the speaker while a dropped connection is rejoined; only a link
+        // that was live does, and only NONE lets go.
+        val live = status(2, 13_000L, playing = true)
+        assertTrue(castMusicLive(CastLinkState.RECONNECTING, live, wasLive = true))
+        assertFalse(castMusicLive(CastLinkState.RECONNECTING, live, wasLive = false), "a start-up rejoin has not been live")
+        assertFalse(castMusicLive(CastLinkState.RECONNECTING, live.copy(ended = true), wasLive = true))
+        assertFalse(castMusicLive(CastLinkState.NONE, live, wasLive = true))
+        assertFalse(castMusicLive(CastLinkState.RECONNECTING, null, wasLive = true))
+    }
+
+    @Test
     fun aStopOnTheDeviceWhileConnectedIsAHandBack() {
         val live = status(1, 25_000L, playing = true)
         val ended = live.copy(playing = false, ended = true)

@@ -20,6 +20,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * R330 (FR-R330-1) — one sender's conversation with one Cast device, over any [CastTransport]:
@@ -87,6 +91,15 @@ class CastSession(
         private set
     var closedReason: String? = null
         private set
+    /**
+     * DEB-3670 (FR-R330-3a) — the device's own answer, a receiver status that lists the applications, said our session
+     * is gone ([closedReason] is *replaced by another app* or *the app ended*). Nothing else the device does ends a
+     * session for good: a `CLOSE`, its TCP closing, silence and a failed send are a dropped connection.
+     */
+    var appGone: Boolean = false
+        private set
+    private var lastPingAt: TimeMark? = null
+    private var lastFrameAt: TimeMark? = null
 
     fun start() {
         scope.launch { for (m in outbox) runCatching { transport.send(m.frame()) }.onFailure { close("send failed") } }
@@ -104,6 +117,7 @@ class CastSession(
                 delay(heartbeatMs)
                 if (unanswered >= maxMissedPongs) { close("no answer to $maxMissedPongs pings"); break }
                 unanswered++
+                lastPingAt = TimeSource.Monotonic.markNow()
                 post(CastNamespaces.HEARTBEAT, PLATFORM_RECEIVER, obj("type" to "PING"))
             }
         }
@@ -112,8 +126,13 @@ class CastSession(
 
     // ── questions ──
 
+    /** DEB-3670 — the device has answered a `GET_STATUS` of ours at least once: a "not running" after it is the device's word. */
+    var statusAnswered: Boolean = false
+        private set
+
     suspend fun requestReceiverStatus(): CastReceiverStatus? =
         request(CastNamespaces.RECEIVER, PLATFORM_RECEIVER, obj("type" to "GET_STATUS"))?.let(CastParse::receiverStatus)
+            ?.also { statusAnswered = true }
 
     /** D2 — whether [appId] can run on this device at all. */
     suspend fun appAvailable(): Boolean = appAvailableOrNull() ?: false
@@ -259,14 +278,26 @@ class CastSession(
         }
     }
 
+    /** DEB-3670 (FR-R330-3f) — `last ping 14.2 s ago · last frame 9.8 s ago`: what shows a heartbeat that was napped. */
+    fun silenceNote(): String = "last ping ${agoNote(lastPingAt)} · last frame ${agoNote(lastFrameAt)}"
+
+    private fun agoNote(at: TimeMark?): String = at?.let { "${it.elapsedNow().inWholeMilliseconds / 100 / 10.0} s ago" } ?: "never"
+
     private suspend fun dispatch(m: CastMessage) {
         unanswered = 0
+        lastFrameAt = TimeSource.Monotonic.markNow()
         if (m.destinationId != senderId && m.destinationId != "*") return
         val body = parsePayload(m.payloadUtf8)
         when (m.namespace) {
             CastNamespaces.HEARTBEAT -> if (body != null && CastParse.type(body) == "PING") post(CastNamespaces.HEARTBEAT, m.sourceId, obj("type" to "PONG"))
             CastNamespaces.CONNECTION -> if (body != null && CastParse.type(body) == "CLOSE") {
-                if (m.sourceId == PLATFORM_RECEIVER || m.sourceId == app?.transportId) close("the device closed the app")
+                // DEB-3670 (FR-R330-3a) — a CLOSE means the device dropped THIS connection (CAF sends one to a sender it
+                // thinks has gone quiet), not that our app ended: the receiver's status says that. A drop, then.
+                if (m.sourceId == PLATFORM_RECEIVER || m.sourceId == app?.transportId) {
+                    val source = if (m.sourceId == PLATFORM_RECEIVER) PLATFORM_RECEIVER else "transport"
+                    val code = body["reasonCode"]?.let { (it as? JsonPrimitive)?.intOrNull }?.let { ", reasonCode $it" } ?: ""
+                    close("the device closed the connection (CLOSE from $source$code)")
+                }
             }
             CastNamespaces.RECEIVER -> if (body != null && CastParse.type(body) == "RECEIVER_STATUS") {
                 val status = CastParse.receiverStatus(body)
@@ -275,8 +306,11 @@ class CastSession(
                 val joined = app
                 // 2026-10-05 — the receiver ending on its own (the last song of a queue) left nothing but the idle
                 // screen and was logged as *replaced by another app*; only another sender's app is a replacement.
-                if (joined != null && status != null && status.apps.none { it.sessionId == joined.sessionId })
+                // DEB-3670 — and only a status that LISTS the applications can say so: one without the key is silent on them.
+                if (joined != null && status != null && status.appsListed && status.apps.none { it.sessionId == joined.sessionId }) {
+                    appGone = true
                     close(if (status.apps.all { it.appId == BACKDROP_APP_ID }) "the app ended" else "replaced by another app")
+                }
             }
             CastNamespaces.MEDIA -> if (body != null) {
                 val read = if (CastParse.type(body) == "MEDIA_STATUS") CastParse.mediaStatus(body) else null

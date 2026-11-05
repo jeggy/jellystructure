@@ -36,7 +36,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -50,8 +53,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * (dev review 11); [status] is rebuilt by the shared [mergeCastStatus] from the media channel plus our channel.
  *
  * All state is touched on one thread (a single-parallelism dispatcher). A connection that drops is rejoined, up to
- * three times; the app closing, being replaced, or an explicit stop ends it in silence (FR-R245-5). On start, a
- * device this Mac last cast to that still runs Ravilo with something loaded is rejoined silently (FR-R330-5).
+ * three times; only the receiver's own word that the app is gone (a status that lists the applications), or an
+ * explicit stop, ends it in silence (FR-R245-5, FR-R330-3a). On start, and whenever the window is shown again with no
+ * session, a device this Mac last cast to that still runs Ravilo with something loaded is rejoined silently
+ * (FR-R330-5, FR-R330-3e).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal object CastSenderDesktop : CastSender {
@@ -61,6 +66,30 @@ internal object CastSenderDesktop : CastSender {
 
     private val _link = MutableStateFlow(CastLinkState.NONE)
     override val link: StateFlow<CastLinkState> = _link.asStateFlow()
+    private var activityHeld = false
+    private var reconnecting = false
+
+    init {
+        // DEB-3670 (FR-R330-3d) — one process activity while a session is joined or rejoining, so macOS does not nap a
+        // casting app whose 5 s heartbeat CAF drops after 10 s.
+        scope.launch { _link.map(::castActivityWanted).distinctUntilChanged().collect { holdActivity(it) } }
+        // DEB-3670 (FR-R330-3e) — a speaker lost while the window was away is found again when it is shown, once per showing.
+        scope.launch { DesktopWindow.shown.drop(1).collect { if (it) windowShown() } }
+    }
+
+    private fun holdActivity(on: Boolean) {
+        val lib = MacNative.lib ?: return
+        if (on == activityHeld) return
+        runCatching { lib.ravilo_cast_activity(if (on) 1 else 0) }
+            .onSuccess { activityHeld = on; println("${DesktopLog.stamp()} cast: activity ${if (on) "held" else "released"}") }
+            .onFailure { println("${DesktopLog.stamp()} cast: activity unavailable (${it::class.simpleName})") }   // a library from before it
+    }
+
+    private suspend fun windowShown() {
+        if (appId == null || session != null || _link.value != CastLinkState.NONE || reconnecting) return
+        reconnect()
+    }
+
     private val _device = MutableStateFlow<String?>(null)
     override val deviceName: StateFlow<String?> = _device.asStateFlow()
     private val _status = MutableStateFlow<CastRemoteStatus?>(null)
@@ -112,15 +141,19 @@ internal object CastSenderDesktop : CastSender {
 
     /** Whether the last [open] failed before reaching the device (no TCP/TLS connection), not at the app. */
     private var lastOpenNoConnection = false
+    /** DEB-3670 — the last [open] connected, but the device never answered the question whether our app runs. */
+    private var lastOpenUnanswered = false
 
     /**
      * [failLink] is the link a failure leaves: NONE ends it; RECONNECTING (a retry follows) keeps it, so a drop that is
      * retried never reads as ended in between — found live 2026-10-09 (Mac, R330): each failed try set NONE, and the
      * music bridge handed the speaker's queue back to the Mac (R353) while the next try was about to rejoin.
+     * [hold] (DEB-3670, FR-R330-3c) — a rejoin of the device the session was just lost to: its status, volume and last word
+     * stand until the ladder ends, so the bar and Now Playing do not blank while it tries.
      */
     private suspend fun open(
         d: CastDevice, launch: Boolean, confirm: suspend (CastSession) -> Boolean = { true },
-        failLink: CastLinkState = CastLinkState.NONE,
+        failLink: CastLinkState = CastLinkState.NONE, hold: Boolean = false,
     ): Boolean {
         val app = appId ?: return false
         // A device that was told to stop (music moving on to another one) gets the moment it needs to hear it:
@@ -129,13 +162,15 @@ internal object CastSenderDesktop : CastSender {
         closeQuietly()
         // Nothing the device before said describes this one — its receiver id least of all: sent along with the
         // first LOAD, it made the new device's receiver ask to enrol again on its own next load (289 FR-289-7).
-        _status.value = null; _volume.value = null; said = null; receiverPlace = null
+        val keep = castKeepsStateThroughRejoin(hold, device?.id, d.id)
+        if (!keep) { _status.value = null; _volume.value = null; said = null; receiverPlace = null }
         _link.value = if (launch) CastLinkState.CONNECTING else CastLinkState.RECONNECTING
         _device.value = d.name
         val opened = runCatching { CastSession(openCastTransport(d.host, d.port), app, scope).also { it.start() } }
         val s = opened.getOrNull()
         lastOpenNoConnection = s == null
         val joined = s != null && (if (launch) s.launchOrJoin() else s.joinIfRunning()) && confirm(s)
+        lastOpenUnanswered = s != null && !joined && !s.statusAnswered
         // Why a connection was not made, so the next "no connection" says more than that.
         val why = opened.exceptionOrNull()?.let { e -> " (${e::class.simpleName}: ${e.message} · ${d.host}:${d.port})" } ?: ""
         println("${DesktopLog.stamp()} cast: ${if (launch) "connect" else "rejoin"} ${d.name} [${d.model}] → ${if (s == null) "no connection$why" else if (joined) "joined" else "not joined (${s.closedReason ?: "no app"})"}")
@@ -145,7 +180,7 @@ internal object CastSenderDesktop : CastSender {
             if (failLink == CastLinkState.NONE) _device.value = null
             return false
         }
-        session = s; device = d; said = null
+        session = s; device = d; if (!keep) said = null
         _connectedId.value = d.id
         dev.jellystructure.ravilo.ui.seams.CastTargetHint.castDeviceId = d.id   // 309 — the detail page warms its receiver
         DesktopApp.prefs.put(LAST_DEVICE, d.id)
@@ -282,16 +317,28 @@ internal object CastSenderDesktop : CastSender {
         if (session !== s) return
         val reason = s.closedReason
         val d = device
-        println("${DesktopLog.stamp()} cast: session to ${d?.name} closed ($reason)")
+        // DEB-3670 (FR-R330-3f) — for a CLOSE the reason names its source and reasonCode; the note says how late the heartbeat ran.
+        println("${DesktopLog.stamp()} cast: session to ${d?.name} closed ($reason · ${s.silenceNote()})")
         session = null
         watch?.cancel(); watch = null
-        val silent = reason == null || reason == "stopped" || reason == "replaced by another app" || reason == "the app ended" || reason == "the device closed the app"
+        // FR-R330-3a — silent only after our own stop or switch, or the receiver's word that the app is gone.
+        val silent = reason == null || reason == "stopped" || reason == "switched" || s.appGone
         if (!silent && d != null) {
-            // The connection dropped, the app did not end: rejoin it, as the phone's SDK does.
-            repeat(3) {
-                delay(2_000)
+            // The connection dropped, the app did not end: rejoin it, as the phone's SDK does. The link reads RECONNECTING
+            // from now, not CONNECTED for the 2 s before the first try.
+            _link.value = CastLinkState.RECONNECTING
+            val joined = runRejoinLadder(STARTUP_REJOIN_GAP_MS) {
                 val again = CastDiscovery.devices.value.firstOrNull { it.id == d.id } ?: d
-                if (open(again, launch = false, failLink = CastLinkState.RECONNECTING)) return
+                when {
+                    open(again, launch = false, failLink = CastLinkState.RECONNECTING, hold = true) -> RejoinTry.JOINED
+                    lastOpenNoConnection || lastOpenUnanswered -> RejoinTry.UNREACHED
+                    else -> RejoinTry.NOT_THERE
+                }
+            }
+            if (joined) {
+                // FR-R330-3b — every join asks the receiver for its status; the screens rebuild from its snapshot.
+                session?.sendCustom(json.encodeToString(CastCommand.serializer(), CastCommand("status")))
+                return
             }
         }
         endQuietly()
@@ -318,7 +365,8 @@ internal object CastSenderDesktop : CastSender {
     /** FR-R330-5 — start-up: rejoin the last device if it still runs Ravilo with something loaded; otherwise nothing. */
     private suspend fun reconnect() {
         val lastId = DesktopApp.prefs.get(LAST_DEVICE) ?: return
-        if (session != null) return
+        if (session != null || reconnecting) return
+        reconnecting = true
         CastDiscovery.acquire()
         try {
             val d = withTimeoutOrNull(15_000) { CastDiscovery.devices.first { list -> list.any { it.id == lastId } } }
@@ -340,6 +388,7 @@ internal object CastSenderDesktop : CastSender {
             if (session == null && _link.value == CastLinkState.RECONNECTING) { _link.value = CastLinkState.NONE; _device.value = null }
             if (session != null) send(json.encodeToString(CastCommand.serializer(), CastCommand("status")))
         } finally {
+            reconnecting = false
             CastDiscovery.release()
         }
     }
@@ -470,3 +519,34 @@ internal const val STARTUP_REJOIN_GAP_MS = 2_000L
 /** Whether start-up tries the last device again after try [attempt]: only when no connection was made (a device that
  *  answered with nothing playing is nothing to rejoin), and at most [STARTUP_REJOIN_TRIES] tries in all. */
 internal fun startupRejoinRetries(attempt: Int, noConnection: Boolean): Boolean = noConnection && attempt < STARTUP_REJOIN_TRIES
+
+/** DEB-3670 (FR-R330-3d) — the process activity is held while a session is joined or rejoining. */
+internal fun castActivityWanted(link: CastLinkState): Boolean = link == CastLinkState.CONNECTED || link == CastLinkState.RECONNECTING
+
+/** DEB-3670 (FR-R330-3c) — a rejoin ([hold]) of the device the session was just lost to keeps what the bar shows. */
+internal fun castKeepsStateThroughRejoin(hold: Boolean, heldDeviceId: String?, newDeviceId: String): Boolean = hold && heldDeviceId == newDeviceId
+
+/** What one try of a rejoin ladder came to. */
+internal enum class RejoinTry {
+    JOINED,
+    /** No connection was made, or the device never answered whether our app runs: worth another try. */
+    UNREACHED,
+    /** The device answered, and our app is not running (or has nothing loaded): the end, in silence. */
+    NOT_THERE,
+}
+
+/**
+ * DEB-3670 (FR-R330-3a) — the rejoin ladder after a drop: up to [tries] tries [gapMs] apart. Only an unreached device is
+ * tried again; a device that answers without our app ends it at once. True when a try joined.
+ */
+internal suspend fun runRejoinLadder(gapMs: Long, tries: Int = STARTUP_REJOIN_TRIES, attempt: suspend () -> RejoinTry): Boolean {
+    repeat(tries) {
+        delay(gapMs)
+        when (attempt()) {
+            RejoinTry.JOINED -> return true
+            RejoinTry.NOT_THERE -> return false
+            RejoinTry.UNREACHED -> Unit
+        }
+    }
+    return false
+}

@@ -73,7 +73,7 @@ object MusicCast {
             combine(c.sender.link, c.sender.status, c.sender.deviceName) { l, s, n -> Triple(l, s, n) }.collect { (link, raw, name) ->
                 val wasLinked = _linked.value
                 // R370 — a relay launch (this app only starts the receiver for someone else) never links the music here.
-                val nowLinked = castMusicLive(link, raw) && !relaying
+                val nowLinked = castMusicLive(link, raw, wasConnected) && !relaying
                 // R358 (FR-R358-1/2) — until the device's word is a place of its own (it plays, or it names another
                 // song), what this device shows, follows and hands back is the hand-over's song and position. The
                 // sender's own "loading" status and a receiver that never got a stream both say 0:00, and that 0:00
@@ -83,7 +83,7 @@ object MusicCast {
                 _status.value = st
                 _device.value = name
                 _linked.value = nowLinked
-                holdsDevice = link == CastLinkState.CONNECTED && (st == null || st.music || st.radio || !st.loaded || st.ended || st.failed)
+                holdsDevice = castLinkLive(wasConnected, link) && (st == null || st.music || st.radio || !st.loaded || st.ended || st.failed)
                 if (nowLinked && st?.itemId != lastItemId) { lastItemId = st?.itemId; barHidden.value = false }
                 if (nowLinked && st != null) follow(st)
                 // FR-R324-3 — the session just connected from the music-mode sheet: hand the phone's queue over, or
@@ -159,7 +159,7 @@ object MusicCast {
      * sender directly), so that report itself counts.
      */
     fun shown(link: CastLinkState, st: CastRemoteStatus?): CastRemoteStatus? =
-        castShownStatus(st, handOver, heard || (castMusicLive(link, st) && st != null && castReportIsAPlace(st, handOver)))
+        castShownStatus(st, handOver, heard || (castMusicLive(link, st, wasConnected) && st != null && castReportIsAPlace(st, handOver)))
 
     /** FR-R353-5 — the speaker's last live song and place ([castHandBack]) into this device's player, paused. */
     private fun handBack(last: CastRemoteStatus?, elapsedMs: Long) {
@@ -520,9 +520,12 @@ fun castHandBack(last: CastRemoteStatus?, elapsedMs: Long, endedByApp: Boolean):
  * A connected device is playing (or holding paused) a music queue: the phone is its remote ([MusicCast.linked]). Only
  * such a report is kept as the place to hand back (FR-R353-5) — the idle status that follows the receiver's `ended` is
  * not (not loaded, not ended, position 0) and used to overwrite the song's place.
+ *
+ * DEB-3670 (FR-R330-3c) — a link that was live ([wasLive]) stays so through RECONNECTING ([castLinkLive]): the screens,
+ * the bar and Now Playing hold on the speaker while a dropped connection is rejoined.
  */
-fun castMusicLive(link: CastLinkState, st: CastRemoteStatus?): Boolean =
-    link == CastLinkState.CONNECTED && st != null && (st.music || st.radio) && st.loaded && !st.ended && !st.failed
+fun castMusicLive(link: CastLinkState, st: CastRemoteStatus?, wasLive: Boolean = false): Boolean =
+    castLinkLive(wasLive, link) && st != null && (st.music || st.radio) && st.loaded && !st.ended && !st.failed
 
 /**
  * DEB-2660 (DEB-2628 FR-11) — the station a speaker says it plays, as FR-10's [RadioLive]: the station is the kicker, the logo the

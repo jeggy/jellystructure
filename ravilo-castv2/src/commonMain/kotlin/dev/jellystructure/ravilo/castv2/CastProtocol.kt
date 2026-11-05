@@ -62,8 +62,11 @@ data class CastApp(
     val namespaces: List<String>,
 )
 
-/** `RECEIVER_STATUS.status`: what runs, and the device's (or group's) volume. */
-data class CastReceiverStatus(val apps: List<CastApp>, val volumeLevel: Double?, val muted: Boolean?)
+/**
+ * `RECEIVER_STATUS.status`: what runs, and the device's (or group's) volume. [appsListed] is false for a status with no
+ * `applications` key (DEB-3670, FR-R330-3a): it says nothing about the apps, so an empty [apps] is not "nothing runs".
+ */
+data class CastReceiverStatus(val apps: List<CastApp>, val volumeLevel: Double?, val muted: Boolean?, val appsListed: Boolean = true)
 
 /** One `MEDIA_STATUS.status[]` entry, with the moment it arrived so the position can move on between reports. */
 data class CastMediaStatus(
@@ -119,7 +122,8 @@ internal object CastParse {
             )
         }
         val volume = status["volume"] as? JsonObject
-        return CastReceiverStatus(apps, volume?.get("level")?.jsonPrimitive?.doubleOrNull, volume?.get("muted")?.jsonPrimitive?.booleanOrNull)
+        return CastReceiverStatus(apps, volume?.get("level")?.jsonPrimitive?.doubleOrNull, volume?.get("muted")?.jsonPrimitive?.booleanOrNull,
+            appsListed = status["applications"] is JsonArray)
     }
 
     /** The first entry of `MEDIA_STATUS.status`, or null for an empty list (nothing loaded). */

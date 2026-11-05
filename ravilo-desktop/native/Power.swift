@@ -24,3 +24,22 @@ public func ravilo_display_keep_awake(_ on: Int32) {
         displayAssertion = 0
     }
 }
+
+// DEB-3670 (FR-R330-3d) — while a cast is joined or rejoining, one process activity keeps macOS from napping the app: a
+// casting app plays nothing itself, so a hidden window is napped, and App Nap coalesces the 5 s heartbeat timer past the
+// 10 s CAF waits before closing the connection. The system and the display may still sleep.
+private var castActivity: NSObjectProtocol?
+private let castActivityLock = NSLock()
+
+@_cdecl("ravilo_cast_activity")
+public func ravilo_cast_activity(_ on: Int32) {
+    castActivityLock.lock()
+    defer { castActivityLock.unlock() }
+    if on != 0 {
+        guard castActivity == nil else { return }
+        castActivity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Ravilo is casting")
+    } else if let activity = castActivity {
+        ProcessInfo.processInfo.endActivity(activity)
+        castActivity = nil
+    }
+}
