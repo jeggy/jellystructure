@@ -4,7 +4,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.model.seasonSizeBytes
 import dev.jellystructure.model.sizeBytes
-import dev.jellystructure.model.formatSize
+import dev.jellystructure.shared.formatSize
 import dev.jellystructure.App
 import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.ArtworkCandidate

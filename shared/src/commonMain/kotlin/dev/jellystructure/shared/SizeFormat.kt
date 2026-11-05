@@ -1,4 +1,4 @@
-package dev.jellystructure.model
+package dev.jellystructure.shared
 
 /**
  * Phase 268 (FR-268-4) — THE size formatter for every admin surface: decimal units (1 GB = 1,000,000,000

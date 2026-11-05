@@ -963,6 +963,7 @@
   "about.seasons": {"text": "Sæsoner", "note": "R325 — a draft; the design carries no translation of this key"},
   "about.seasons_value": {"text": "{seasons} · {episodes} afsnit", "note": "R325 — a draft; the design carries no translation of this key"},
   "about.in_library_since": {"text": "I dit bibliotek siden", "note": "R325 — a draft; the design carries no translation of this key"},
+  "about.size": {"text": "Størrelse", "note": "DEB-3711 — a draft; the design carries no translation of this key"},
   "about.date": {"text": "{day}. {month} {year}", "note": "R325 — a draft; the design carries no translation of this key"},
   "about.month.1": {"text": "januar", "note": "R325 — a draft; the design carries no translation of this key"},
   "about.month.2": {"text": "februar", "note": "R325 — a draft; the design carries no translation of this key"},

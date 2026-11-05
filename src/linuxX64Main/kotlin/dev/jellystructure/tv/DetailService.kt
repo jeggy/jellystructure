@@ -15,6 +15,7 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Stinger
+import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
@@ -301,6 +302,7 @@ class DetailService(
             added = item.createdAt,
             seasons = if (series) item.episodes.mapNotNull { it.seasonNumber }.filter { it > 0 }.distinct().size.takeIf { it > 0 } else null,
             episodes = if (series) item.episodes.size.takeIf { it > 0 } else null,
+            sizeBytes = item.sizeBytes(),  // DEB-3711 (FR-1) — the one Phase 268 rule the admin's size chip calls
         )
     }
 

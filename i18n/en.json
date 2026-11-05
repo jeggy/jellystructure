@@ -1032,6 +1032,7 @@
   "about.seasons": "Seasons",
   "about.seasons_value": "{seasons} · {episodes} episodes",
   "about.in_library_since": "In your library since",
+  "about.size": "Size",
   "about.date": "{day} {month} {year}",
   "about.month.1": "January",
   "about.month.2": "February",

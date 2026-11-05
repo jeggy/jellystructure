@@ -12,6 +12,7 @@ import dev.jellystructure.media.Screengrabber
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.tmdb.TmdbClient
 import kotlinx.coroutines.runBlocking
 import platform.posix.getpid
@@ -136,5 +137,37 @@ class SeriesDetailMultiEpisodeFileTest {
     fun `a copy of an episode in another file never widens the range`() {
         val copy = episode(9, "/tv/Show/copy/S01E07.mkv", "jf-c")
         assertNull(resolvedEpisodeSpan(series(threeInOne + copy), "jf-c", season = 1, episode = 7).episodeEnd)
+    }
+
+    // DEB-3711 (FR-1, Acceptance 1) — AboutFacts.size_bytes is the admin chip's figure, MediaItem.sizeBytes().
+    private fun sized(n: Int, path: String, size: Long?) = episode(n, path, "jf-$n").copy(fileSizeBytes = size)
+
+    @Test
+    fun `DEB-3711 — the about size of a series is the sum over its distinct files`() = runBlocking {
+        val shared = "/tv/Show/Season 1/S01E01E02.mkv"
+        val item = series(listOf(sized(1, shared, 900), sized(2, shared, 900), sized(3, "/tv/Show/Season 1/S01E03.mkv", 300)))
+        mediaStore.addOrUpdate(item)
+        assertEquals(1_200L, item.sizeBytes())
+        assertEquals(item.sizeBytes(), service.getSeriesDetail(device, "series-jf")!!.about!!.sizeBytes)
+    }
+
+    @Test
+    fun `DEB-3711 — a series with one unsized episode states no size`() = runBlocking {
+        val item = series(listOf(sized(1, "/tv/Show/Season 1/S01E01.mkv", 900), sized(2, "/tv/Show/Season 1/S01E02.mkv", null)))
+        mediaStore.addOrUpdate(item)
+        assertNull(item.sizeBytes())
+        assertNull(service.getSeriesDetail(device, "series-jf")!!.about!!.sizeBytes)
+    }
+
+    @Test
+    fun `DEB-3711 — the about size of a film is its file`() = runBlocking {
+        val film = MediaItem(
+            id = "film", title = "Film", year = 2000, kind = MediaKind.MOVIE, path = "/movies/Film.mkv", tmdbId = null,
+            originalLanguage = null, posterPath = null, overview = null, tracks = emptyList(), issueCount = 0,
+            scannedAt = 0L, jellyfinId = "film-jf", fileSizeBytes = 23_400_000_000,
+        )
+        mediaStore.addOrUpdate(film)
+        assertEquals(film.sizeBytes(), service.getMovieDetail(device, "film-jf")!!.about!!.sizeBytes)
+        assertEquals(23_400_000_000L, film.sizeBytes())
     }
 }

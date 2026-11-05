@@ -24,6 +24,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.shared.formatSize
 import dev.jellystructure.shared.tv.AboutFacts
 
 /**
@@ -72,6 +73,8 @@ internal fun aboutRows(a: AboutFacts, series: Boolean): List<Pair<String, String
         add(str("about.seasons") to str("about.seasons_value", mapOf("seasons" to a.seasons.toString(), "episodes" to a.episodes.toString())))
     }
     a.added?.takeIf { it > 0 }?.let { add(str("about.in_library_since") to aboutDate(epochDayIso(it))) }
+    // DEB-3711 (FR-2/3/5) — last; the admin chip's text; a series' whole total; nothing for unknown or zero.
+    a.sizeBytes?.takeIf { it > 0 }?.let { add(str("about.size") to formatSize(it)) }
 }
 
 /** `2024-03-08` → `8 March 2024` in the viewer's language (`about.month.N`); a partial date is shown as it is. */

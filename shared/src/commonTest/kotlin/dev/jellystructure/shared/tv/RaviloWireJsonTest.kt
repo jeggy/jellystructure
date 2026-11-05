@@ -76,3 +76,18 @@ class RaviloWireEncodeTest {
         assertTrue(""""kind":"CUSTOM"""" in cfg, cfg)
     }
 }
+
+/** DEB-3711 (FR-1, Acceptance 2) — `size_bytes` is additive: an older server's About facts decode with no size. */
+class AboutFactsSizeWireTest {
+    @Test
+    fun aboutFactsWithoutSizeBytesDecodeToNull() {
+        val a = RaviloWireJson.decodeFromString(AboutFacts.serializer(), """{"runtime_min":98,"released":"2001-05-04"}""")
+        assertEquals(null, a.sizeBytes)
+    }
+
+    @Test
+    fun sizeBytesRoundTrips() {
+        val a = RaviloWireJson.decodeFromString(AboutFacts.serializer(), """{"size_bytes":23400000000}""")
+        assertEquals(23_400_000_000L, a.sizeBytes)
+    }
+}

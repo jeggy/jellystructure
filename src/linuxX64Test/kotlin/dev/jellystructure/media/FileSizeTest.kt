@@ -5,7 +5,7 @@ import dev.jellystructure.db.createDatabase
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
-import dev.jellystructure.model.formatSize
+import dev.jellystructure.shared.formatSize
 import dev.jellystructure.model.seasonSizeBytes
 import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.shared.tv.RowConfig

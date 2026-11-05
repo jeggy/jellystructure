@@ -947,6 +947,8 @@ data class AboutFacts(
     val added: Long? = null,
     val seasons: Int? = null,
     val episodes: Int? = null,
+    /** DEB-3711 (FR-1) — the title's size on disk, the admin chip's figure (`MediaItem.sizeBytes()`); null while unknown. */
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
 )
 
 @Serializable
