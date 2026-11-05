@@ -1041,6 +1041,35 @@ object MediaApi {
         httpClient.get("/api/media/$id/health/tracks").body<TrackCoverageStatus>()
     }.getOrNull()
 
+    // ── DEB-3637 (DEB-3633 FR-6) — this title's picture-and-sound holes. Every word is the server's. ──
+
+    @Serializable
+    data class TimelineFile(
+        val path: String,
+        val state: String = "holes",
+        val season: Int? = null,
+        val episodeTag: String? = null,
+        val checkedAt: Long? = null,
+        val holeCount: Int = 0,
+        val missingMs: Long = 0,
+        val longestMs: Long = 0,
+        val worstTrackMissingMs: Long? = null,
+        val holeLines: List<String> = emptyList(),
+        val what: String = "",
+        val experience: String = "",
+        val suggestion: String = "",
+    )
+
+    @Serializable
+    data class TimelineSeason(val season: Int? = null, val line: String = "")
+
+    @Serializable
+    data class TimelineStatus(val total: Int = 0, val whole: Int = 0, val unchecked: Int = 0, val files: List<TimelineFile> = emptyList(), val seasons: List<TimelineSeason> = emptyList())
+
+    suspend fun timelineStatus(id: String): TimelineStatus? = runCatching {
+        httpClient.get("/api/media/$id/health/timeline").body<TimelineStatus>()
+    }.getOrNull()
+
     // ── Phase 317 (FR-317-10) — this title's A/V sync. Every word is the server's; the page prints it. ──
 
     @Serializable

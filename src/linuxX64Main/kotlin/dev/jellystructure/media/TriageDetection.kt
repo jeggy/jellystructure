@@ -152,6 +152,9 @@ object TriageDetection {
      *  [mkvLayoutBrokenCount] for the same reason: the answer is not in the item. */
     fun fileDamageCount(item: MediaItem, damaged: Set<String>): Int = mkvLayoutBrokenCount(item, damaged)
 
+    /** DEB-3637 (DEB-3633 FR-5) — files a deep check's timeline found holes in; [holes] is the current path set. */
+    fun timelineHolesCount(item: MediaItem, holes: Set<String>): Int = mkvLayoutBrokenCount(item, holes)
+
     /** Phase 255 (FR-255-7) — files whose coverage check found a short track (`track_ends_early`) or a
      *  wrong header (`duration_header_wrong`); [flagged] is the matching path set. Same shape again. */
     fun trackCoverageCount(item: MediaItem, flagged: Set<String>): Int = mkvLayoutBrokenCount(item, flagged)

@@ -76,6 +76,7 @@ class DashboardService(
         "segments_lowconf" to Spec("series", WARNING, "open", "Intro and credits worth a look", "Across {titles}: found by the heuristic with low confidence.", "episode"),
         "mkv_track_layout" to Spec(null, CRITICAL, "open", "Unplayable in Ravilo (MKV structure)", "The Tracks element sits after the first Cluster. Repair rewrites the header in place.", "file"),
         "file_damage" to Spec(null, CRITICAL, "open", "Damaged video files", "Parts that can’t be read, in {titles}. A clean copy may still seed in qBittorrent.", "file"),
+        "timeline_holes" to Spec(null, CRITICAL, "open", "Picture and sound skip ahead", "Stretches of picture and sound are missing from the files in {titles}. Players jump over them; nothing in the file can put them back.", "file"),
         "track_ends_early" to Spec(null, CRITICAL, "open", "Audio or video stops before the file ends", "Viewers hear silence or see black from that point.", "file"),
         "duration_header_wrong" to Spec(null, WARNING, "open", "File claims to be longer than it is", "It never reaches 90 %, so it is never marked watched.", "file"),
         // Phase 317 (FR-317-9) — warnings, not critical: neither stops playback (285 FR-285-3).
@@ -296,6 +297,7 @@ class DashboardService(
     private fun titlesFor(key: String, pool: List<MediaItem>): List<String> {
         val mkv = if (key == "mkv_track_layout") dev.jellystructure.media.MkvHealthCache.brokenPathsOrNull()?.keys else null
         val damaged = if (key == "file_damage") dev.jellystructure.media.FileDamage.damagedPathsOrNull() else null
+        val holes = if (key == "timeline_holes") dev.jellystructure.media.TimelineHolesFlags.holePathsOrNull() else null
         val flagged = if (key == "track_ends_early" || key == "duration_header_wrong") dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull() else null
         val early = flagged?.filterValues { dev.jellystructure.media.TrackCoverageFlags.endsEarly(it) }?.keys
         val wrong = flagged?.filterValues { dev.jellystructure.media.TrackCoverageFlags.headerWrong(it) }?.keys
@@ -318,6 +320,7 @@ class DashboardService(
             "segments_lowconf" -> { it -> TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 }
             "mkv_track_layout" -> { it -> mkv != null && TriageDetection.mkvLayoutBrokenCount(it, mkv) > 0 }
             "file_damage" -> { it -> damaged != null && TriageDetection.fileDamageCount(it, damaged) > 0 }
+            "timeline_holes" -> { it -> holes != null && TriageDetection.timelineHolesCount(it, holes) > 0 }
             "track_ends_early" -> { it -> early != null && TriageDetection.trackCoverageCount(it, early) > 0 }
             "duration_header_wrong" -> { it -> wrong != null && TriageDetection.trackCoverageCount(it, wrong) > 0 }
             "av_offset" -> { it -> avOffset != null && TriageDetection.avSyncCount(it, avOffset) > 0 }

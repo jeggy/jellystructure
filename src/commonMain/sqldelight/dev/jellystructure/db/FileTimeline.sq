@@ -1,0 +1,50 @@
+-- DEB-3637 (DEB-3633 FR-3) — one row per video file whose deep check produced a packet timeline: the stretches
+-- where the picture AND the sound are both missing. A row is CURRENT only while the file's size and mtime
+-- still equal the ones stored here (phase 254's rule). hole_count = 0 is "checked, whole"; no row (or a stale
+-- one) is "unchecked" — never the same thing, and a pass that did not finish stores nothing.
+-- holes is a JSON list of {startMs, lengthMs} (the first 50); empty_streams a JSON list of the stream indexes
+-- that held no packet over the whole read (a-damaged-file-still-plays FR-1, DEB-3642). This file's CREATE TABLE
+-- must stay byte-for-byte with 99.sqm (the SQLDelight-migration rule).
+CREATE TABLE file_timeline (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    hole_count INTEGER NOT NULL,
+    missing_ms INTEGER NOT NULL,
+    longest_ms INTEGER NOT NULL,
+    worst_track_missing_ms INTEGER,
+    holes TEXT NOT NULL,
+    empty_streams TEXT NOT NULL
+);
+
+CREATE INDEX file_timeline_holes ON file_timeline(hole_count);
+
+put:
+INSERT OR REPLACE INTO file_timeline(path, size, mtime, checked_at, hole_count, missing_ms, longest_ms, worst_track_missing_ms, holes, empty_streams)
+VALUES (:path, :size, :mtime, :checked_at, :hole_count, :missing_ms, :longest_ms, :worst_track_missing_ms, :holes, :empty_streams);
+
+all:
+SELECT * FROM file_timeline;
+
+withHoles:
+SELECT * FROM file_timeline WHERE hole_count > 0;
+
+remove:
+DELETE FROM file_timeline WHERE path = :path;
+
+-- The Jobs view's "N findings today": read from the results, not the job rows.
+countFindingsSince:
+SELECT COUNT(*) FROM file_timeline WHERE checked_at >= :since AND hole_count > 0;
+
+-- One file's stored result, for the title page and the Checks card.
+byPath:
+SELECT * FROM file_timeline WHERE path = :path;
+
+-- FR-4 — the one-time backfill's order: the items a device played since :since, newest play first.
+lastPlayedSince:
+SELECT jellyfin_id, MAX(updated_at) AS played_at FROM playback_qoe WHERE updated_at >= :since GROUP BY jellyfin_id;
+
+-- Triage omits the type until a sweep has stored something (phase 203's rule).
+rowCount:
+SELECT COUNT(*) FROM file_timeline;

@@ -120,6 +120,8 @@ data class JobQueueHealth(
 /** Phase 222 (FR-222-6) — one envelope byte per second of audio: 2 700 bytes for a 45-minute episode,
  *  fine enough for the ±60 s strip the operator judges a boundary on. */
 private const val WAVEFORM_BUCKET_MS = 1_000L
+/** DEB-3637 (FR-4) — the verify backfill puts files played within this many days first. */
+private const val RECENT_PLAY_DAYS = 30L
 
 /**
  * Phase 317's 2026-10-13 fourth amendment (FR-317-29) — when a lane that is answered `503` for ever stops
@@ -1113,7 +1115,15 @@ class MediaJobQueue(
     /** What each check has stored, per path, in [StoredFileCheck]'s terms — null when the check's service
      *  is not wired (a test/bootstrap context). */
     private fun storedChecks(jobType: String): Map<String, StoredFileCheck>? = when (jobType) {
-        FileCheckSchedule.VERIFY_JOB -> fileIntegrity?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.damage_count > 0) }
+        // DEB-3637 (DEB-3633 FR-4) — the step is due when EITHER table lacks a current row: a file with a deep-check
+        // row and no timeline row for the same size+mtime is left out of the map, which `due` reads as "no result".
+        FileCheckSchedule.VERIFY_JOB -> fileIntegrity?.let { svc ->
+            val timelines = svc.timeline.rowsByPath()
+            svc.rowsByPath().mapNotNull { (path, r) ->
+                val t = timelines[path]?.takeIf { it.size == r.size && it.mtime == r.mtime } ?: return@mapNotNull null
+                path to StoredFileCheck(r.size, r.mtime, r.checked_at, r.damage_count > 0 || t.hole_count > 0)
+            }.toMap()
+        }
         FileCheckSchedule.LENGTHS_JOB -> trackCoverage?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.findings != "[]") }
         // Phase 273 — due-ness is the subtitle check's own (a new sidecar is due though the video is not changed).
         FileCheckSchedule.SUBTITLES_JOB -> subtitleChecks?.let { emptyMap() }
@@ -1173,7 +1183,10 @@ class MediaJobQueue(
             val why = FileCheckSchedule.due(stored[unit.path], stamp.size, stamp.mtime, nowMs, item.year, currentYear, step) ?: continue
             due += Triple(unit, why, stamp.mtime)
         }
-        due.sortWith(compareBy<Triple<FileUnit, FileCheckDue, Long>> { it.second.ordinal }.thenByDescending { it.third })
+        // DEB-3637 (FR-4) — the verify backfill answers the files a device played in the last 30 days first, newest
+        // play first, so what a viewer is watching is checked before the rest of the library; then 254's order.
+        val playedAt = if (jobType == FileCheckSchedule.VERIFY_JOB) recentPlays(items, nowMs / 1000) else emptyMap()
+        due.sortWith(compareBy<Triple<FileUnit, FileCheckDue, Long>> { it.second.ordinal }.thenByDescending { playedAt[it.first.path] ?: 0L }.thenByDescending { it.third })
         var fresh = 0; var cadence = 0; var already = 0
         for ((unit, why, _) in due) {
             if (shouldStop()) return FileCheckPass(fresh, cadence, already, true)
@@ -1194,6 +1207,17 @@ class MediaJobQueue(
             }
         }
         return FileCheckPass(fresh, cadence, already, false)
+    }
+
+    /** DEB-3637 (FR-4) — path → when a device last played that file (epoch s), for the files played since 30 days ago. */
+    private fun recentPlays(items: List<MediaItem>, nowSec: Long): Map<String, Long> {
+        val plays = fileIntegrity?.timeline?.lastPlayedByJellyfinId(nowSec - RECENT_PLAY_DAYS * 86_400L)?.takeIf { it.isNotEmpty() } ?: return emptyMap()
+        val out = HashMap<String, Long>()
+        for (item in items) for (unit in FileCheckSchedule.units(item)) {
+            val id = item.episodes.firstOrNull { it.path == unit.path }?.jellyfinId ?: item.jellyfinId
+            plays[id]?.let { out[unit.path] = it }
+        }
+        return out
     }
 
     /** Phase 273 (FR-273-8) — every video with a sidecar that has no current verdict, or an unsettled one a reference

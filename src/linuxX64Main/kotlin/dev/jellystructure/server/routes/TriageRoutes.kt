@@ -399,7 +399,7 @@ internal suspend fun triageCountFor(store: MediaStore, configStore: ConfigStore,
     // Phase 254 — a deep check's finding changes the count without touching the library version.
     // Phase 317 — and the A/V sync revision, which bumps on every measured file: the library's zero moves
     // with the sweep, so a verdict can change without any file changing.
-    val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${dev.jellystructure.media.AvSyncFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
+    val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${dev.jellystructure.media.AvSyncFlags.revision}:${dev.jellystructure.media.TimelineHolesFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
     triageCountCache?.let { (v, c) -> if (v == ver) return c }
     val all = store.allItems()
     val types = mediaTriageTypes(all, configStore, segmentStore)
@@ -504,6 +504,15 @@ private fun mediaTriageTypes(all: List<MediaItem>, configStore: ConfigStore, seg
                 "file_damage", "Damaged video files",
                 "A deep check (reading the whole file) found parts of these files that cannot be read — data was overwritten mid-file. Jellyfin resyncs past it; a viewer sees a stall, a skip or a smear part-way through. Open the title: jellystructure can replace the file from the clean copy qBittorrent is still seeding.",
                 all.sumOf { TriageDetection.fileDamageCount(it, damaged) }, all.count { TriageDetection.fileDamageCount(it, damaged) > 0 },
+            )
+        },
+        // DEB-3637 (DEB-3633 FR-5) — omitted until a sweep has stored a timeline, as `file_damage` is: an unchecked
+        // file is never counted as whole, and a count of 0 before any check would say it was.
+        dev.jellystructure.media.TimelineHolesFlags.holePathsOrNull()?.let { holes ->
+            TriageTypeCount(
+                dev.jellystructure.media.TimelineHolesFlags.TYPE_TIMELINE_HOLES, dev.jellystructure.media.TimelineHolesFlags.LABEL,
+                dev.jellystructure.media.TimelineHolesFlags.DESCRIPTION,
+                all.sumOf { TriageDetection.timelineHolesCount(it, holes) }, all.count { TriageDetection.timelineHolesCount(it, holes) > 0 },
             )
         },
         // Phase 255 (FR-255-7) — two types, because they mean different things; omitted while unknown.

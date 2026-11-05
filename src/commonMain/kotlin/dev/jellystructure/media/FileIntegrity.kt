@@ -20,6 +20,17 @@ object FileIntegrity {
     private val UNTAGGED_DAMAGE = listOf("Truncating packet")
     private val BENIGN = listOf("non monotonically increasing dts", "Last message repeated")
 
+    /**
+     * DEB-3637 (DEB-3633 FR-1) — the same single read, yielding the packet timeline as well as the damage:
+     * `-f framecrc` prints one line per packet on stdout, and the demuxer's complaints go to a file so a
+     * half-flushed packet line can never swallow one (a pipe shared by both would splice them). After the
+     * read the shell prints `JS_EXIT=<code>`, a `JS_STDERR` line, and the complaints; [DeepCheckReader] folds
+     * that stream line by line.
+     */
+    fun timelineCommand(filePath: String): String =
+        "e=\$(mktemp /tmp/js-deep.XXXXXX) && { nice -n 19 ffmpeg -nostdin -v error -i '${esc(filePath)}' -map 0 -c copy -f framecrc - 2>\"\$e\" </dev/null; " +
+            "echo ${DeepCheckReader.EXIT}\$?; echo ${DeepCheckReader.STDERR}; cat \"\$e\"; rm -f \"\$e\"; }"
+
     /** The lines of [ffmpegOutput] that mean the container itself could not be read. Empty = clean. */
     fun damageLines(ffmpegOutput: String): List<String> = ffmpegOutput.lineSequence()
         .map { it.trim() }
@@ -288,4 +299,50 @@ class FileRepairPlan(
             " && $swapCommand"
 
     private companion object { const val DAMAGE = "matroska,webm|Truncating packet" }
+}
+
+/** What one deep-check pass found: [damage] (FR-254-2's lines, or ffmpeg's last line when it could not open the
+ *  file) and the file's [timeline] (null when the pass could not produce one — never an empty report). */
+data class DeepCheck(val exit: Int, val damage: List<String>, val timeline: TimelineReport?)
+
+/**
+ * DEB-3637 — folds the output of [FileIntegrity.timelineCommand] line by line: packet lines into a
+ * [TimelineScan], then the exit code, then the demuxer's complaints through [FileIntegrity.damageLines].
+ * Nothing is held but the damage lines, so a film's half-million packets cost no memory.
+ */
+class DeepCheckReader(hints: Map<Int, StreamHint> = emptyMap()) {
+    private val scan = TimelineScan(hints)
+    private val damage = mutableListOf<String>()
+    private var lastError: String? = null
+    private var exit: Int? = null
+    private var inStderr = false
+
+    fun line(raw: String) {
+        val line = raw.trimEnd('\r', '\n')
+        when {
+            inStderr -> {
+                if (line.isNotBlank()) lastError = line.trim()
+                damage += FileIntegrity.damageLines(line)
+            }
+            line.startsWith(EXIT) -> exit = line.removePrefix(EXIT).trim().toIntOrNull()
+            line == STDERR -> inStderr = true
+            else -> scan.line(line)
+        }
+    }
+
+    /** Null when the pass did not finish (no exit code printed, ffmpeg missing): nothing may be stored. */
+    fun result(): DeepCheck? {
+        val code = exit ?: return null
+        if (!inStderr) return null
+        return when (code) {
+            0 -> DeepCheck(0, damage.toList(), scan.takeIf { it.sawHeader }?.report())
+            126, 127 -> null
+            else -> DeepCheck(code, damage.ifEmpty { listOf(lastError ?: "ffmpeg could not open the file (exit $code)") }, null)
+        }
+    }
+
+    companion object {
+        const val EXIT = "JS_EXIT="
+        const val STDERR = "JS_STDERR"
+    }
 }

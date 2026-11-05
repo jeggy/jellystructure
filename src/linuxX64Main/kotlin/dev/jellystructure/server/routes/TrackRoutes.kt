@@ -798,6 +798,16 @@ fun Route.trackRoutes(
         call.respond(service.statusFor(item))
     }
 
+    // DEB-3637 (DEB-3633 FR-6) — this title's packet-timeline state, per file with holes: the figures and every word
+    // the block shows. Stored results + one `stat` per file; never reads a media file on the request path.
+    get("/media/{mediaId}/health/timeline") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.TimelineHolesFlags.service ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        val integrity = dev.jellystructure.media.FileDamage.service ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        call.respond(service.statusFor(item, integrity.videoPaths(listOf(item))))
+    }
+
     // Phase 317 (FR-317-10) — this title's A/V sync, per file: the verdict computed on read from the
     // library's zero, with every word the banner shows and the command to fix it. Stored results + one
     // `stat` per file; never reads a media file on the request path (the mkvmerge ids were read at check time).

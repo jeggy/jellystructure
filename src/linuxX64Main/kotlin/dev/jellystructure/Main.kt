@@ -383,6 +383,7 @@ fun main() = runBlocking {
     // Phase 316 — films with no folder of their own: the Dashboard warning and the owner's Apply.
     val looseFilms = dev.jellystructure.media.LooseFilmsService(configStore, mediaStore, jellyfinClient, arrClient, qbClient, seedingSnapshot, mediaHistory, db, filmAssets)
     dev.jellystructure.media.FileDamage.service = fileIntegrity
+    dev.jellystructure.media.TimelineHolesFlags.service = fileIntegrity.timeline   // DEB-3637
     // Phase 255 — a track that stops before the file does: the tail probe, its table, and the two Triage types.
     val trackCoverage = dev.jellystructure.media.TrackCoverageService(db, fileIntegrity)
     // Phase 261 (FR-261-9) — the last run of each pipeline step per title, behind the title page's Checks card.

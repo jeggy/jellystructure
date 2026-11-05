@@ -103,6 +103,7 @@ private data class ProbeStream(
     @SerialName("codec_name") val codecName: String = "",
     val disposition: Map<String, Int> = emptyMap(),
     val tags: Map<String, String> = emptyMap(),
+    @SerialName("avg_frame_rate") val avgFrameRate: String = "",
 )
 
 /**
@@ -113,6 +114,9 @@ private data class ProbeStream(
 class FileIntegrityService(private val db: JellystructureDb, private val seeding: SeedingSnapshot) {
     private val q get() = db.fileIntegrityQueries
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** DEB-3637 — the packet timelines the same read yields (FR-1). */
+    val timeline = FileTimeline(db)
 
     // ── finding ─────────────────────────────────────────────────────────────────────────────────
 
@@ -141,34 +145,65 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
         .filter { row -> stampOf(row.path)?.let { isCurrent(row.size, row.mtime, it) } == true }
         .mapTo(mutableSetOf()) { it.path }
 
-    /** FR-254-1 — one deep check, persisted. Returns null when the file cannot even be stat-ed. */
+    /** FR-254-1 — one deep check, persisted. Returns null when the file cannot even be stat-ed.
+     *  DEB-3637 (FR-1, FR-3): the same read also yields the file's packet timeline, stored under the same
+     *  size+mtime rule; a pass that produced none (ffmpeg could not open the file) leaves the old row alone. */
     suspend fun check(path: String): IntegrityResult? {
         val before = stampOf(path) ?: return null
-        val lines = demuxDamage(path) ?: return null
+        val deep = deepCheck(path) ?: return null
         val after = stampOf(path) ?: return null
         // Rewritten while it was being read: the answer describes neither file. Leave it unchecked.
         if (after.size != before.size || after.mtime != before.mtime) return IntegrityResult(FileIntegrityState.UNCHECKED)
+        val lines = deep.damage
         val first = lines.firstOrNull()?.let(FileIntegrity::displayLine)
         q.put(path, after.size, after.mtime, nowEpochSec(), lines.size.toLong(), first)
+        deep.timeline?.let { report ->
+            timeline.store(path, after.size, after.mtime, report)
+            if (!report.whole) Logger.warn("deep check: ${report.holeCount} hole(s), ${TrackCoverage.mmss(report.missingMs)} missing in $path", "integrity")
+        }
         if (lines.isNotEmpty()) FileDamage.bump()
         if (lines.isNotEmpty()) Logger.warn("deep check: ${lines.size} damage line(s) in $path — $first", "integrity")
         return if (lines.isEmpty()) IntegrityResult(FileIntegrityState.CLEAN, checkedAt = nowEpochSec())
         else IntegrityResult(FileIntegrityState.DAMAGED, lines.size, first, nowEpochSec())
     }
 
-    /** The damage lines of one demux pass, or null when the pass itself did not happen — and *did not
-     *  happen* must never be stored as *clean*. ffmpeg exits 0 on a file it could read to the end however
-     *  many demux errors it printed; 126/127 is "no ffmpeg here" (null); any other failure is a file
-     *  ffmpeg could not open at all, which is damage, reported with ffmpeg's own last line. */
-    private suspend fun demuxDamage(path: String): List<String>? {
-        val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { capture("nice -n 19 ${FileIntegrity.checkCommand(path)}; echo JS_EXIT=\$?") } ?: return null
-        val exit = out.substringAfterLast("JS_EXIT=", "").trim().toIntOrNull() ?: return null
-        val body = out.substringBeforeLast("JS_EXIT=")
-        return when (exit) {
-            0 -> FileIntegrity.damageLines(body)
-            126, 127 -> null
-            else -> FileIntegrity.damageLines(body).ifEmpty { listOf(body.trim().lineSequence().lastOrNull { it.isNotBlank() } ?: "ffmpeg could not open the file (exit $exit)") }
+    /** DEB-3637 FR-8 — a file's timeline measured now, by the same single read (no row is stored). Null when
+     *  the pass did not finish or produced none. */
+    suspend fun measureTimeline(path: String): TimelineReport? = deepCheck(path)?.timeline
+
+    /**
+     * One deep-check pass: the damage lines and the packet timeline, from ONE read of the file. The timeline
+     * is streamed through [DeepCheckReader] line by line and never held. Null when the pass itself did not
+     * happen (no ffmpeg, no exit code) — *did not happen* must never be stored as *clean*. ffmpeg exits 0 on a
+     * file it could read to the end however many demux errors it printed; any other failure is a file ffmpeg
+     * could not open at all, which is damage, reported with ffmpeg's own last line (and no timeline).
+     */
+    private suspend fun deepCheck(path: String): DeepCheck? {
+        val hints = streamHints(path)
+        val reader = DeepCheckReader(hints)
+        val ran = dev.jellystructure.ops.SegmentProcessGate.withPermit { captureLines(FileIntegrity.timelineCommand(path), reader::line) }
+        if (!ran) return null
+        return reader.result()
+    }
+
+    /** What the header read says that packet lines cannot: the default flag, cover art, the frame rate. */
+    private suspend fun streamHints(path: String): Map<Int, StreamHint> {
+        val streams = probe(path, interactive = false) ?: return emptyMap()
+        return streams.associate { s ->
+            s.index to StreamHint(
+                default = (s.disposition["default"] ?: 0) != 0,
+                attachedPic = (s.disposition["attached_pic"] ?: 0) != 0,
+                frameRate = frameRate(s.avgFrameRate),
+                mediaType = s.codecType, codec = s.codecName,
+            )
         }
+    }
+
+    private fun frameRate(text: String): Double? {
+        val parts = text.split('/')
+        val n = parts.getOrNull(0)?.toDoubleOrNull() ?: return null
+        val d = parts.getOrNull(1)?.toDoubleOrNull() ?: 1.0
+        return if (d > 0.0 && n > 0.0) n / d else null
     }
 
     // ── saying ──────────────────────────────────────────────────────────────────────────────────
@@ -272,6 +307,13 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
         val want = hashPass(plan.sourceHashCommand) ?: return@withLock "Couldn't read the source copy"
         if (want.damage.isNotEmpty()) return@withLock "The copy in qBittorrent is damaged too"
         if (want.hashes.size != plan.pairs.size) return@withLock "Couldn't hash the source copy's tracks"
+        // DEB-3637 (DEB-3633 FR-8) — a seeding copy of the same release carries the same holes, and swapping one for
+        // the other would read as a fix that fixed nothing: a copy with more holes than the library file is no source.
+        val libraryHoles = timeline.resultFor(libraryPath).report?.holeCount
+            ?: measureTimeline(libraryPath)?.holeCount
+            ?: return@withLock "Couldn't read the library file's timeline"
+        val sourceHoles = measureTimeline(source)?.holeCount ?: return@withLock "Couldn't read the source copy's timeline"
+        if (sourceHoles > libraryHoles) return@withLock "The copy in qBittorrent is missing parts of its own ($sourceHoles gaps, against $libraryHoles in the library file)"
         // FR-263-8 — a label chose among these because the first two minutes could not; that is only
         // harmless if they are the same track all the way through.
         for (group in plan.identicalGroups) {
@@ -344,7 +386,7 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
     private class HashPass(val damage: List<String>, val hashes: Map<Int, String>)
 
     /** Phase 263 (FR-263-5) — one `streamhash` pass: the file's damage lines and its per-stream hashes.
-     *  Same exit handling as [demuxDamage]: 126/127 (no ffmpeg) is null, never a clean empty result. */
+     *  Same exit handling as [deepCheck]: 126/127 (no ffmpeg) is null, never a clean empty result. */
     private suspend fun hashPass(cmd: String): HashPass? {
         val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { capture("$cmd; echo JS_EXIT=\$?") } ?: return null
         val exit = out.substringAfterLast("JS_EXIT=", "").trim().toIntOrNull() ?: return null
@@ -372,6 +414,22 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
         while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
         pclose(pipe)
         sb.toString()
+    }
+
+    /** [cmd]'s stdout, one line at a time into [onLine] — nothing is held, so a pass that prints a line per
+     *  packet of a film costs no memory. False when the command could not be started. */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun captureLines(cmd: String, onLine: (String) -> Unit): Boolean = memScoped {
+        val pipe = popen(cmd, "r") ?: return@memScoped false
+        val buf = allocArray<ByteVar>(4096)
+        val pending = StringBuilder()
+        while (fgets(buf, 4096, pipe) != null) {
+            pending.append(buf.toKString())
+            if (pending.endsWith('\n')) { onLine(pending.toString()); pending.clear() }
+        }
+        if (pending.isNotEmpty()) onLine(pending.toString())
+        pclose(pipe)
+        true
     }
 
     @OptIn(ExperimentalForeignApi::class)

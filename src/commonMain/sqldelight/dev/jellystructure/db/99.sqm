@@ -1,0 +1,16 @@
+-- DEB-3637 (DEB-3633 FR-3, DEB-3642 FR-1) — packet-timeline results, per file. See FileTimeline.sq; this migration
+-- must stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE file_timeline (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    hole_count INTEGER NOT NULL,
+    missing_ms INTEGER NOT NULL,
+    longest_ms INTEGER NOT NULL,
+    worst_track_missing_ms INTEGER,
+    holes TEXT NOT NULL,
+    empty_streams TEXT NOT NULL
+);
+
+CREATE INDEX file_timeline_holes ON file_timeline(hole_count);

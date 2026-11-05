@@ -326,11 +326,19 @@ class TitleChecks(
     }
 
     private fun storedFor(jobType: String, path: String): Pair<StoredFileCheck?, String?> = when (jobType) {
+        // DEB-3637 (DEB-3633 FR-6) — the Verify line is the worst state across BOTH tables: a file with a deep-check row
+        // and no timeline row for the same size+mtime is not yet checked, and a file with holes is a finding.
         FileCheckSchedule.VERIFY_JOB -> {
             val r = integrity?.rowsFor(path)
-            (r?.let { StoredFileCheck(it.size, it.mtime, it.checked_at, it.damage_count > 0) }) to r?.let { row ->
-                "${row.damage_count} damage line${if (row.damage_count == 1L) "" else "s"}" + (row.first_damage?.let { " — $it" } ?: "")
-            }
+            val t = integrity?.timeline?.rowFor(path)?.takeIf { row -> r != null && row.size == r.size && row.mtime == r.mtime }
+            val stored = if (r == null || t == null) null else StoredFileCheck(r.size, r.mtime, r.checked_at, r.damage_count > 0 || t.hole_count > 0)
+            val detail = listOfNotNull(
+                r?.takeIf { it.damage_count > 0 }?.let { row ->
+                    "${row.damage_count} damage line${if (row.damage_count == 1L) "" else "s"}" + (row.first_damage?.let { " — $it" } ?: "")
+                },
+                t?.takeIf { it.hole_count > 0 }?.let { integrity?.timeline?.summaryOf(it) },
+            ).joinToString(" · ").ifEmpty { null }
+            stored to detail
         }
         else -> {
             val r = coverage?.rowFor(path)

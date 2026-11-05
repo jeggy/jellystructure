@@ -560,6 +560,10 @@ class MediaStore(
                     val damaged = FileDamage.damagedPathsOrNull().orEmpty()
                     items = items.filter { TriageDetection.fileDamageCount(it, damaged) > 0 }
                 }
+                TimelineHolesFlags.TYPE_TIMELINE_HOLES -> {  // DEB-3637 (DEB-3633 FR-5)
+                    val holes = TimelineHolesFlags.holePathsOrNull().orEmpty()
+                    items = items.filter { TriageDetection.timelineHolesCount(it, holes) > 0 }
+                }
                 TrackCoverageFlags.TYPE_TRACK_ENDS_EARLY -> {  // Phase 255 (FR-255-7)
                     val flagged = TrackCoverageFlags.flaggedOrNull().orEmpty().filterValues { TrackCoverageFlags.endsEarly(it) }.keys
                     items = items.filter { TriageDetection.trackCoverageCount(it, flagged) > 0 }

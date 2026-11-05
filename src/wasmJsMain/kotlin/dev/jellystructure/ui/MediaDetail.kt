@@ -872,6 +872,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         <div id="integrity-banner" style="display:none;margin-bottom:14px"></div>
         <div id="coverage-banner" style="display:none;margin-bottom:14px"></div>
         <div id="avsync-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="timeline-banner" style="display:none;margin-bottom:14px"></div>
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -1202,6 +1203,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadTrackCoverage(item) }   // Phase 255
     scope.launch { loadAvSync(item) }   // Phase 317
+    scope.launch { loadTimeline(item) }   // DEB-3637
     scope.launch { loadChecksCard(item, scope) }   // Phase 261
     scope.launch { loadSubtitleVerdicts(item, scope) }   // Phase 273
     scope.launch { loadFileFixTitleCard(item.id, scope) }   // Phase 314c
@@ -3405,6 +3407,7 @@ private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
                 loadChecksCard(item, scope)
                 if (action == "check_subtitles") loadSubtitleVerdicts(item, scope)
                 if (action == "check_avsync") loadAvSync(item)
+                if (action == "check_verify") loadTimeline(item)   // DEB-3637 — the same read
             }
         }
     }
@@ -3462,6 +3465,48 @@ private suspend fun loadTrackCoverage(item: MediaItem) {
       <div style="flex:1;min-width:200px;">
         <b style="font-size:.9rem;">${headline.esc()}.</b>
         <div class="tiny muted" style="margin-top:4px;">Measured from the file's own packets, not its header. After a fix the file changes, the next sweep re-checks it, and this clears itself.</div>
+        $body
+      </div>
+    </div>"""
+    banner.style.display = "block"
+}
+
+/**
+ * DEB-3637 (DEB-3633 FR-6) — the holes block, beside 254's integrity banner and 255's track block, never merged
+ * into either. Every word and figure is the server's; the page decides nothing. A series groups its files by
+ * season, expandable to the episodes.
+ */
+private suspend fun loadTimeline(item: MediaItem) {
+    val banner = document.getElementById("timeline-banner") as? HTMLElement ?: return
+    val status = MediaApi.timelineStatus(item.id) ?: run { banner.style.display = "none"; return }
+    if (status.files.isEmpty()) { banner.style.display = "none"; return }
+
+    fun label(f: MediaApi.TimelineFile): String = f.episodeTag ?: f.path.substringAfterLast('/')
+    fun block(f: MediaApi.TimelineFile): String = """<div style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--bad);background:var(--bad-soft);border-radius:4px;">
+             <b style="font-size:.84rem;">${f.what.esc()}</b>
+             <div class="tiny" style="margin-top:3px;line-height:1.6;">
+               <span class="muted">What a viewer gets:</span> ${f.experience.esc()}<br>
+               <span class="muted">Suggested fix:</span> ${f.suggestion.esc()}
+             </div>
+             <details style="margin-top:4px;"><summary class="tiny" style="cursor:pointer;">The gaps${if (f.holeCount > f.holeLines.size) " (the first ${f.holeLines.size})" else ""}</summary>
+               <div class="tiny" style="line-height:1.6;">${f.holeLines.joinToString(" · ") { it.esc() }}</div>
+             </details>
+           </div>"""
+    val body = if (item.kind == MediaKind.TV_SHOW) {
+        val lines = status.seasons.associate { it.season to it.line }
+        status.files.groupBy { it.season }.entries.sortedBy { it.key ?: Int.MAX_VALUE }.joinToString("") { (season, files) ->
+            """<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:.8rem;"><b>${(lines[season] ?: "").esc()}</b></summary>
+               ${files.joinToString("") { f -> """<div style="margin:6px 0 0 8px;"><b class="tiny">${label(f).esc()}</b>${block(f)}</div>""" }}
+               </details>"""
+        }
+    } else status.files.joinToString("") { block(it) }
+    val headline = if (item.kind == MediaKind.TV_SHOW) "${status.files.size} episode${if (status.files.size != 1) "s" else ""} skip${if (status.files.size == 1) "s" else ""} ahead" else "The picture and sound skip ahead"
+    banner.innerHTML = """
+    <div style="background:var(--surface-2,transparent);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <span class="badge bad" style="flex:none;margin-top:1px;">⚠ Picture and sound skip ahead</span>
+      <div style="flex:1;min-width:200px;">
+        <b style="font-size:.9rem;">${headline.esc()}.</b>
+        <div class="tiny muted" style="margin-top:4px;">Measured from the file's own packets. Nothing in the file can put the missing seconds back; a replaced file is re-checked and this clears itself.</div>
         $body
       </div>
     </div>"""
