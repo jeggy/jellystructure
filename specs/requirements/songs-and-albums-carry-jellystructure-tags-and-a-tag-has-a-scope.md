@@ -81,14 +81,12 @@ sees):
 | D3 | What a narrowed scope does to items already outside it | **They keep the tag.** The page says how many, and offers a removal that is a deliberate act (FR-4) | Invariant #6: only a manual removal drops a tag |
 | D4 | Ravilo | **Nothing** in this build (FR-11) | No ask names Ravilo. Keeping music tags out of Jellyfin leaves every viewer's library exactly as it is |
 
-**For the owner** (card on DEB-3701, 2026-11-05):
+**Owner's answers** (DEB-3701 card `401189ed`, 2026-11-05):
 
-| # | Question | Recommended | Alternative |
-|---|---|---|---|
-| Q1 | Does an album's tag carry down to its songs? | **Yes.** The song shows the album's tag marked *from the album*, the Songs list's filter finds it, and it is removed on the album | Album and song tags stay independent: a tag on the album says nothing about its songs |
-| Q2 | Can audiobooks carry tags too? | **Yes, in the same build.** The Book page gets the album's tag row, so the *Audiobooks* scope has something to apply to | Not yet: the *Audiobooks* scope can be chosen but applies to nothing, and the scope chip says so |
-
-FR-6 and FR-12 are written as the recommendations. A different answer rewrites them before their slice is built.
+| # | Question | Answer |
+|---|---|---|
+| Q1 | Does an album's tag carry down to its songs? | **No.** In the owner's words: *"No. But in jellystructure it should be possible to tag albums, but also have a 'Apply to all songs in album' button."* Album and song tags are independent, and the button copies an album's tag onto its songs as their own (FR-6) |
+| Q2 | Can audiobooks carry tags too? | **Yes, in the same build.** The Book page gets the album's tag row (FR-12) |
 
 ## Requirements
 
@@ -158,20 +156,25 @@ FR-6 and FR-12 are written as the recommendations. A different answer rewrites t
   1. the admin's add-tag and remove-tag routes (FR-9);
   2. a tag's deletion on the tags page, which strips the tag here too, as FR-199-7 does for films;
   3. FR-4's *Remove from the ‹n› outside its scope*;
-  4. FR-7's carry, which only ever **adds**.
+  4. FR-6's *Apply to all songs in album*, which only ever **adds**;
+  5. FR-7's carry, which only ever **adds**.
 
   No scan, ingest, match, MusicBrainz re-pull, Jellyfin refresh, `write_tags`, *Convert*, edition or version
   decision, Lidarr import, or later automation writes the table. A test asserts the list (Acceptance 5).
 - **A tag name that is not defined** in `js-tags.json` is never stored here. Tags have no rename today, and this spec
   adds none.
 
-**FR-6 — A song carries its album's tags** (Q1, recommended answer).
-- **The song's tags.** They are its own tags plus its album's.
-- **On the song,** an album tag shows marked *from the album* and has no remove control there. It is removed on the
-  album.
-- **Adding twice.** Adding a tag to a song that already has it from the album is refused as a no-op. When the album's
-  tag is later removed, a song that was also tagged by hand keeps it.
-- **The Tag facet** (FR-9) follows `MusicBrowse`'s existing rule: *a song inherits its album's*.
+**FR-6 — Album tags and song tags are independent, and an album's tag can be applied to its songs** (Q1).
+- **Independent.** A tag on an album is the album's. It says nothing about the album's songs, and a song shows,
+  filters and counts only its own tags.
+- **Apply to all songs in album.** Each tag chip on the album page (FR-9) has a menu with **Apply to all songs in
+  album**. It adds that tag to every song of the album that is not missing, as each song's own tag. A song that already
+  has it is left as it is. The confirm names the count (*Add ‹tag› to 11 songs*).
+- **It is a copy, done once.** Each song then owns its tag: removing the tag from the album later leaves the songs'
+  copies, and removing one song's copy leaves the album's. A song added to the album afterwards does not get it until
+  the button is pressed again.
+- **The Tag facet** (FR-9) is therefore **not** inherited, which is unlike `MusicBrowse`'s other album facets. The Songs
+  view matches a song's own tags, and the Albums view matches an album's own tags.
 
 **FR-7 — A tag follows its song or album to a new id.**
 - **When it runs.** A music scan finds a new song or album at the same moment a tagged one goes missing. That
@@ -198,11 +201,13 @@ FR-6 and FR-12 are written as the recommendations. A different answer rewrites t
 **FR-9 — Where the admin sets and sees music tags.**
 - **Album page, Genres tab.** The *Jellystructure tags* section as drawn: `chip` with a `tag-dot` per tag, then
   *＋ Add tag*. It opens the same tag dropdown the film detail page uses, with FR-3 applied.
-- **Album page, Tracks tab.** Each row shows its tags as `tag-dot`s after the title, own tags first, then the album's
-  (FR-6). A click on the dots, or on an empty row's *＋*, opens the dropdown for that song.
+- **Album page, Genres tab, each chip's menu:** *Apply to all songs in album* (FR-6) and *Remove*.
+- **Album page, Tracks tab.** Each row shows the song's own tags as `tag-dot`s after the title. A click on the dots,
+  or on an empty row's *＋*, opens the dropdown for that song.
 - **Library → Music:**
-  - a **Tag** facet in Albums and Songs, in `MusicBrowse.FACETS` after *Genre*. A song inherits its album's values
-    (FR-6). Only tags whose scope covers Music, plus any tag a music row still carries, are listed;
+  - a **Tag** facet in Albums and Songs, in `MusicBrowse.FACETS` after *Genre*. Each view matches its rows' own tags;
+    a song does not inherit its album's (FR-6). Only tags whose scope covers Music, plus any tag a music row still
+    carries, are listed;
   - the selection bar gains **Tag…** and **Untag…**, on albums and on songs, in the version ticks' bulk shape (292).
     *Select all shown* resolves on the server, as 292 FR-292-16 does.
 - **Metadata → Tags.** Each card's count includes albums and songs. *View in library* opens Library → Music filtered
@@ -222,7 +227,7 @@ FR-6 and FR-12 are written as the recommendations. A different answer rewrites t
   admin reads.
 - `WireCompatTest` passes unchanged.
 
-**FR-12 — Books carry tags** (Q2, recommended answer).
+**FR-12 — Books carry tags** (Q2).
 - **Storage.** A book carries tags exactly as an album does: `music_js_tag` with `subject_kind = book`, and the same
   closed list of writers (FR-5).
 - **The carry.** FR-7's album rungs, applied to the book's folder and its title and author.
@@ -256,8 +261,11 @@ FR-6 and FR-12 are written as the recommendations. A different answer rewrites t
    - the same disc, position and title.
 
    Two candidates on one rung carry nothing, and FR-8 lists the song.
-7. **Inheritance.** A song of a tagged album shows the tag as *from the album*, cannot remove it there, and is found by
-   the Songs view's Tag facet. Removing the album's tag leaves a song's own copy.
+7. **Independent, and the apply button.**
+   - A tagged album's songs carry nothing, and the Songs view's Tag facet does not find them.
+   - *Apply to all songs in album* gives each present song the tag, skips a song that has it, and leaves a missing song
+     alone.
+   - Removing the album's tag afterwards leaves every song's copy, and removing one song's copy leaves the album's.
 8. **Delete.** Deleting a tag on the tags page strips it from films and from `music_js_tag` (and books).
 9. **Nothing reaches viewers.** `album.nfo`, a written file's frames, and every `/api/tv` response are identical before
    and after tagging. An allowed-tag account still sees no music, and a blocked-tag-only account still sees all of it.
@@ -269,9 +277,8 @@ Three slices for one engineer. Each is blocked by the one before it.
 
 1. **The scope:** FR-1 to FR-4, and FR-11's `scopes`. Backend and admin. It depends on nothing open, so it is ready
    now.
-2. **Albums and songs:** FR-5 to FR-10, and FR-11's `jsTags`. It waits for Q1's answer only if the answer is *no*,
-   which removes FR-6.
-3. **Books:** FR-12. Built only if Q2 is answered *yes*.
+2. **Albums and songs:** FR-5 to FR-10, and FR-11's `jsTags`.
+3. **Books:** FR-12, and Acceptance 4, 5 and 8 for books.
 
 QA: one admin pass on prod after slice 2. Tag an album and a song, run a music scan, then upgrade or convert one
 tagged song and check the tag followed it. No device is needed.
