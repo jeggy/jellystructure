@@ -282,10 +282,12 @@ class Investigator(
                     if (answer.verdict == "needs_sign_in") {
                         // FR-3.6 — accepted only after the listing yields at least two items, counted by this server from the recipe the model gave. The words are the server's.
                         val listed = signInListing(r, settings, answer.recipe)
-                        refused(r, "the model answered needs_sign_in${if (listed != null && listed >= 2) "" else " without a listing of at least two items"}", text, "needs_sign_in")
-                        if (listed != null && listed >= 2) return fail(SignIn.sentence(r.site, listed), STEP_VIDEOS, signIn = listed)
-                        if (++repairs > MAX_REPAIRS) return fail("the model answered needs_sign_in without a recipe whose listing yields two items", STEP_SERIES, notASeries = true)
-                        messages += userText("needs_sign_in is accepted only when your recipe's listing yields at least two items, which the engine reads itself. Give the recipe for the listing with needs_sign_in, or answer `series` with a recipe that works, or `not_a_series`.")
+                        val accepted = listed.why == null && (listed.count ?: 0) >= 2
+                        refused(r, "the model answered needs_sign_in${if (accepted) "" else ": ${listed.why}"}", text, "needs_sign_in")
+                        if (accepted) return fail(SignIn.sentence(r.site, listed.count!!), STEP_VIDEOS, signIn = listed.count)
+                        if (++repairs > MAX_REPAIRS) return fail("the model answered needs_sign_in without a recipe whose listing yields two items: ${listed.why}", STEP_SERIES, notASeries = true)
+                        // FR-5.1 — the check that failed, in the engine's own words; the rule is never sent alone.
+                        messages += userText("needs_sign_in is accepted only when your recipe's listing yields at least two items, which the engine reads itself. It did not here: ${listed.why}. Correct the recipe's listing and answer needs_sign_in again, or answer `series` with a recipe that works, or `not_a_series`.")
                         continue
                     }
                     val mr = answer.recipe
@@ -325,16 +327,22 @@ class Investigator(
     }
 
     /**
-     * DEB-3613 (FR-3.6) — how many items the recipe the model gave for a `needs_sign_in` answer lists, read by this server in the engine's signed-in view
-     * (the model's own `fetch` sends no session). Null when there is no usable recipe or the listing could not be read.
+     * DEB-3613 (FR-3.6) — what the recipe the model gave for a `needs_sign_in` answer lists, read by this server in the engine's signed-in view
+     * (the model's own `fetch` sends no session). DEB-3715: only the listing part is validated and read; the media, `item_page`, numbering and `when`
+     * are the model's guess at what it cannot see signed out, and are not looked at. [SignInListing.why] names the check that failed.
      */
-    private suspend fun signInListing(r: Run, settings: InvestigationSettings, mr: MRecipe?): Int? {
-        mr ?: return null
+    private suspend fun signInListing(r: Run, settings: InvestigationSettings, mr: MRecipe?): SignInListing {
+        mr ?: return SignInListing(null, "the answer carried no recipe")
         val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).copy(retention = RetentionSpec("all"))
-        if (RecipeValidator.validate(recipe, r.pageOnly).isNotEmpty()) return null
+        RecipeValidator.validateListing(recipe).firstOrNull()?.let { return SignInListing(null, it) }
         val lane = lanes.forSite(r.site, r.ignoreRobots, signedIn = true, proving = true)
-        return (ListingFetcher.read(recipe, lane, tools) as? ListingRead.Read)?.items?.size
+        return when (val read = ListingFetcher.read(recipe, lane, tools)) {
+            is ListingRead.Blocked -> SignInListing(null, "the listing could not be read: ${describeOutcome(read.outcome)}")
+            is ListingRead.Read -> SignInListing(read.items.size, if (read.items.size >= 2) null else "the listing read gave ${read.items.size} item${if (read.items.size == 1) "" else "s"}")
+        }
     }
+
+    private class SignInListing(val count: Int?, val why: String?)
 
     /**
      * FR-5.6 (DEB-3459) — one `autofetch` log line for an answer the engine refuses: the investigation, the turn, the engine's reason and the

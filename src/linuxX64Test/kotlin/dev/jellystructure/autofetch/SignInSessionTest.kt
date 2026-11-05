@@ -114,6 +114,41 @@ class SignInSessionTest {
         assertTrue("accepted only when your recipe's listing yields at least two items" in ai.sent[1], "the model is told the rule")
     }
 
+    // DEB-3715 (DEB-3567, DEB-2474 FR-3.6) — the sign-in ending asks for a listing of two items, not a valid recipe: the model cannot see the signed-in media.
+    private val brokenMediaRecipe = """{"list":{"kind":"html","item_selector":"li.ep","fields":{"title":"a","link":"a@href","published":"time@datetime"}},"media":{"kind":"ytdlp","manifest":"{id}"},"numbering":"datetime","series":{"name":"h1"},"hosts":[],"audio_language":"fao"}"""
+    private fun brokenMedia(selector: String = "li.ep") =
+        """{"verdict":"needs_sign_in","reason":"Log ind","recipe":${brokenMediaRecipe.replace("li.ep", selector)},"examples":[]}"""
+
+    @Test
+    fun `a needs_sign_in with a listing of three items ends as Needs a sign-in though its media part is broken`() {
+        h.site.dagbokItems = listOf(27 to "2026-10-27", 28 to "2026-10-28", 29 to "2026-10-29")
+        ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""")
+        ai.answer(brokenMedia())
+        val out = run().view
+        assertEquals("failed", out.state)
+        assertTrue(out.needsSignIn, out.reason); assertFalse(out.notASeries)
+        assertTrue("lists 3 episodes" in out.reason!!, out.reason)
+    }
+
+    @Test
+    fun `a needs_sign_in whose listing reads one item is refused and the model is told the count`() {
+        h.site.dagbokItems = listOf(27 to "2026-10-27")
+        ai.answer(brokenMedia())
+        ai.answer("""{"verdict":"not_a_series","reason":"one clip"}""")
+        val out = run().view
+        assertFalse(out.needsSignIn)
+        assertTrue("the listing read gave 1 item" in ai.sent[1], "the model is told which check failed")
+        assertTrue("accepted only when your recipe's listing yields at least two items" in ai.sent[1])
+    }
+
+    @Test
+    fun `a needs_sign_in with a broken listing part is told the validators own listing error`() {
+        ai.answer(brokenMedia(selector = ""))
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run()
+        assertTrue("the html list needs an item selector" in ai.sent[1], ai.sent[1])
+    }
+
     // ---- the session ----
 
     @Test

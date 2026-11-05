@@ -279,13 +279,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
     private fun fail(why: String, items: List<ListedItem> = emptyList(), numbered: List<Pair<ListedItem, SeasonEpisode>> = emptyList()) =
         ProofResult(false, why, items, numbered)
 
-    private fun describe(o: LaneOutcome): String = when (o) {
-        is LaneOutcome.Stopped -> "the site is stopped: ${o.reason}"
-        is LaneOutcome.BackOff -> "the site asked us to slow down: ${o.reason}"
-        is LaneOutcome.Forbidden -> o.reason
-        is LaneOutcome.Failed -> o.reason
-        is LaneOutcome.Ok -> "ok"
-    }
+    private fun describe(o: LaneOutcome): String = describeOutcome(o)
 
     internal fun numberOf(recipe: Recipe, item: ListedItem): SeasonEpisode? = when (recipe.numbering.kind) {
         "date" -> PageDates.read(recipe.numbering, item)?.let { Numbering.fromDate(it.date) }
@@ -419,4 +413,13 @@ object ManifestResolver {
         if (Urls.host(abs) !in RecipeValidator.lanes(recipe)) return Skipped("the manifest is on ${Urls.host(abs)}, which the recipe does not record")
         return Resolved(abs, value)
     }
+}
+
+/** The words for a lane outcome that ended a read; the proof's failure and a `needs_sign_in` refusal both use them. */
+internal fun describeOutcome(o: LaneOutcome): String = when (o) {
+    is LaneOutcome.Stopped -> "the site is stopped: ${o.reason}"
+    is LaneOutcome.BackOff -> "the site asked us to slow down: ${o.reason}"
+    is LaneOutcome.Forbidden -> o.reason
+    is LaneOutcome.Failed -> o.reason
+    is LaneOutcome.Ok -> "ok"
 }

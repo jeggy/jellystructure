@@ -144,8 +144,11 @@ object RecipeValidator {
     private val PLACEHOLDERS = Regex("""\{([A-Za-z_]+)}""")
     private val FIELDS = setOf("title", "link", "published", "description", "id", "season", "episode", "duration", "image")
 
-    /** The reasons [recipe] cannot be stored, or an empty list. Checks shape and safety only; the proof against the site is [RecipeProof]. */
-    fun validate(recipe: Recipe, pageOnly: Boolean): List<String> {
+    /**
+     * DEB-3715 (DEB-3567, FR-3.6) — the reasons the recipe's *listing* cannot be read: its version, hosts, `list` and the list's fields. Media, numbering and
+     * retention are not looked at; a `needs_sign_in` answer is accepted on a listing alone.
+     */
+    fun validateListing(recipe: Recipe): List<String> {
         val errors = ArrayList<String>()
         if (recipe.version != 1) errors += "recipe version ${recipe.version} is not supported"
         val pageHost = Urls.host(recipe.source.url)
@@ -175,6 +178,17 @@ object RecipeValidator {
                 else if ((recipe.list.kind == "json" || recipe.list.kind == "ytdlp") && f.path.isBlank() && k != "image") errors += "the $k field needs a path"
             }
             if (fields["link"] == null) errors += "the listing needs a link field"
+        }
+        return errors
+    }
+
+    /** The reasons [recipe] cannot be stored, or an empty list. Checks shape and safety only; the proof against the site is [RecipeProof]. */
+    fun validate(recipe: Recipe, pageOnly: Boolean): List<String> {
+        val errors = ArrayList(validateListing(recipe))
+        val pageHost = Urls.host(recipe.source.url)
+        val hosts = (recipe.source.hosts + listOfNotNull(pageHost)).map { it.lowercase() }.toSet()
+        val fields = YtDlpListing.fieldsOf(recipe.list)
+        run {
             if (recipe.media.kind !in setOf("hls", "dash", "ytdlp")) errors += "unknown media kind '${recipe.media.kind}'"
             if (recipe.media.kind == "ytdlp") {
                 if (recipe.media.manifest.isNotBlank() || recipe.media.manifestField != null || recipe.media.itemPage != null)
