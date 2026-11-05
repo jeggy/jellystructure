@@ -98,11 +98,11 @@ fun Route.musicTvRoutes(
     }
     get("/tv/music/search") { call.respond(svc.search(call.attributes[DeviceKey], call.request.queryParameters["q"])) }
     // R388 (FR-R388-2) — the songs of a list: Play all / Shuffle all. An unknown scope, or a genre / search with nothing
-    // to go on, is a 400.
+    // to go on, is a 400. DEB-3619 (FR-4): `scope=artist&artist={id}&sort=newest|oldest` is the artist page's release order.
     get("/tv/music/selection") {
         val q = call.request.queryParameters
         val shuffle = q["shuffle"]?.lowercase().let { it == "true" || it == "1" }
-        call.respond(svc.selection(call.attributes[DeviceKey], q["scope"].orEmpty(), q["sort"], q["genre"], q["q"], shuffle)
+        call.respond(svc.selection(call.attributes[DeviceKey], q["scope"].orEmpty(), q["sort"], q["genre"], q["q"], shuffle, q["artist"])
             ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "scope")))
     }
 

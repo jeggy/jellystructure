@@ -11,6 +11,7 @@ import dev.jellystructure.model.MusicArtist
 import dev.jellystructure.model.MusicLyrics
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.effectiveGenres
+import dev.jellystructure.model.originalDate
 import dev.jellystructure.model.originalYear
 import dev.jellystructure.shared.tv.LyricLine
 import dev.jellystructure.shared.tv.MusicAlbumCard
@@ -86,7 +87,7 @@ class MusicTvService(
         private const val PLAYLIST_NAME_MAX = 100
         /** DEB-2254 (FR-5) — entries read to de-duplicate against, and to place a move. */
         private const val PLAYLIST_ENTRY_LIMIT = 20_000
-        private val SELECTION_SCOPES = setOf("library", "artists", "albums", "tracks", "genre", "search")
+        private val SELECTION_SCOPES = setOf("library", "artists", "albums", "tracks", "genre", "search", "artist")
         private val GROUP_ORDER = listOf("album", "single", "compilation", "live", "soundtrack")
 
         fun albumImage(a: MusicAlbum): String? = if (a.coverState != MusicArt.NONE) "/api/tv/image/music/album/${a.id.encodeURLPathPart()}?v=${a.updatedAt}" else null
@@ -316,22 +317,28 @@ class MusicTvService(
      * [MUSIC_SELECTION_CAP]. Null for an unknown scope or a `genre` / `q` its scope needs and has not got (a 400).
      * [shuffle] draws the cap at random from the whole selection and keeps the list's relative order.
      */
-    suspend fun selection(device: DeviceData, scope: String, sort: String?, genre: String?, q: String?, shuffle: Boolean): MusicSelection? {
+    suspend fun selection(device: DeviceData, scope: String, sort: String?, genre: String?, q: String?, shuffle: Boolean, artist: String? = null): MusicSelection? {
         val genreName = genre?.takeIf { it.isNotBlank() }
         val query = q?.trim()?.takeIf { it.isNotEmpty() }
+        val artistId = artist?.takeIf { it.isNotBlank() }
         if (scope !in SELECTION_SCOPES || (scope == "genre" && genreName == null) || (scope == "search" && query == null)) return null
+        // DEB-3619 (FR-4) — the artist page's release order; anything but newest or oldest is a 400.
+        if (scope == "artist" && (artistId == null || sort != "newest" && sort != "oldest")) return null
         val v = View(device)
         val u = userMusic(device)
-        fun albumSongs(a: MusicAlbum): List<MusicTrack> {
-            val held = v.tracksByAlbum[a.id].orEmpty()
-            return MusicOfficial.layout(a, held, v.fill).let { l -> if (l.official != null) l.rows.map { it.second } else held }
-        }
+        fun albumSongs(a: MusicAlbum) = albumSongsOf(v, a)
         fun artistSongs(r: MusicArtist): List<MusicTrack> {
             val own = v.ownAlbums(r.id).sortedWith(compareBy<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
             val ownIds = own.mapTo(HashSet()) { it.id }
             val rest = v.songsBy(r.id).filter { it.albumId !in ownIds }
                 .sortedWith(compareBy<MusicTrack> { it.albumId?.let { a -> v.albums[a]?.originalYear() } ?: it.year ?: 0 }.thenBy { it.albumId }.thenBy { it.disc ?: 1 }.thenBy { it.position ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
             return own.flatMap { albumSongs(it) } + rest
+        }
+        if (scope == "artist") {
+            // An artist this viewer cannot see answers nothing; `shuffle` is ignored for this scope.
+            val r = v.artists[artistId!!] ?: return MusicSelection(tracks = emptyList(), total = 0, capped = false)
+            val order = releaseOrder(v, r, newest = sort == "newest")
+            return MusicSelection(tracks = order.take(MUSIC_SELECTION_CAP).map { trackItem(v, it, u, folded = true) }, total = order.size, capped = order.size > MUSIC_SELECTION_CAP)
         }
         val ordered: List<MusicTrack> = when (scope) {
             "library" -> recentAlbums(v).flatMap { albumSongs(it) } +
@@ -346,6 +353,40 @@ class MusicTvService(
         val picked = if (shuffle && folded.size > MUSIC_SELECTION_CAP) folded.indices.shuffled(random).take(MUSIC_SELECTION_CAP).sorted().map { folded[it] }
             else folded.take(MUSIC_SELECTION_CAP)
         return MusicSelection(tracks = picked.map { trackItem(v, it, u, folded = true) }, total = folded.size, capped = folded.size > MUSIC_SELECTION_CAP)
+    }
+
+    /** What an album's *Play album* plays: its official tracklist when R373 matched one, else its files in disc/track order. */
+    private fun albumSongsOf(v: View, a: MusicAlbum): List<MusicTrack> {
+        val held = v.tracksByAlbum[a.id].orEmpty()
+        return MusicOfficial.layout(a, held, v.fill).let { l -> if (l.official != null) l.rows.map { it.second } else held }
+    }
+
+    /** Albums the artist is credited on without being its artist — the page's *Appears on* group. */
+    private fun appearsOn(v: View, r: MusicArtist): List<MusicAlbum> =
+        v.tracks.values.filter { t -> t.artists.any { it.artistId == r.id } }.mapNotNull { it.albumId?.let { a -> v.albums[a] } }
+            .filter { a -> a.albumArtists.none { it.artistId == r.id } }.distinctBy { it.id }
+
+    /**
+     * DEB-3619 (FR-3) — every song of [r], release by release, one copy of each. The releases are every album the artist
+     * page draws in a group (a single or EP homed under an album is in none, its album holds it), ordered by
+     * [originalDate] with a missing month or day read as 01, ties by group order then title, undated last in both orders.
+     * An own release plays as *Play album*; an *Appears on* album only the artist's songs on it. An album-type release
+     * keeps its whole tracklist; every other release adds only songs no album in the order has.
+     */
+    private fun releaseOrder(v: View, r: MusicArtist, newest: Boolean): List<MusicTrack> {
+        class Release(val album: MusicAlbum, val type: String, val songs: List<MusicTrack>)
+        val own = v.ownAlbums(r.id).filter { v.homedUnder(it.id) == null }.map { Release(it, MusicBrowse.albumType(it), albumSongsOf(v, it)) }
+        val mine = v.songsBy(r.id)
+        val guest = appearsOn(v, r).map { a -> Release(a, "appears_on", mine.filter { it.albumId == a.id }.sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() }))) }
+        fun key(a: MusicAlbum): String? = a.originalDate()?.split('-')?.let { p -> "${p[0]}-${p.getOrElse(1) { "01" }}-${p.getOrElse(2) { "01" }}" }
+        val typeRank = { rel: Release -> GROUP_ORDER.indexOf(rel.type).let { if (it < 0) GROUP_ORDER.size else it } }
+        val all = own + guest
+        val dated = all.filter { key(it.album) != null }
+        val byDate = compareBy<Release> { key(it.album) }
+        val ordered = dated.sortedWith((if (newest) byDate.reversed() else byDate).thenBy(typeRank).thenBy { it.album.title.lowercase() }) +
+            all.filter { key(it.album) == null }.sortedBy { it.album.title.lowercase() }
+        val onAlbums = ordered.filter { it.type == "album" }.flatMapTo(HashSet()) { rel -> rel.songs.map { v.shown(it).id } }
+        return v.fold(ordered.flatMap { rel -> if (rel.type == "album") rel.songs else rel.songs.filter { v.shown(it).id !in onAlbums } })
     }
 
     fun genres(device: DeviceData): List<MusicGenreCount> {
@@ -589,12 +630,12 @@ class MusicTvService(
             own.filter { MusicBrowse.albumType(it) == type }.sortedByDescending { it.originalYear() ?: 0 }.takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup(type, it.map { a -> albumCard(v, a) }) }
         } + listOfNotNull(
             // Credited on someone else's album — a group of its own, after the artist's own.
-            v.tracks.values.filter { t -> t.artists.any { it.artistId == r.id } }.mapNotNull { it.albumId?.let { a -> v.albums[a] } }
-                .filter { a -> a.albumArtists.none { it.artistId == r.id } }.distinctBy { it.id }
-                .takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup("appears_on", it.map { a -> albumCard(v, a) }) },
+            appearsOn(v, r).takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup("appears_on", it.map { a -> albumCard(v, a) }) },
         )
         // Every song of theirs, most played first: the phone shows five and plays them all (R321 FR-R321-8).
-        val top = v.fold(v.songsBy(r.id)).sortedWith(compareByDescending<MusicTrack> { u.songPlays(v, it) }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(200)
+        // DEB-3619 (FR-6) — songs with the same count follow the newest-first release order; one on no release goes after them.
+        val rank = releaseOrder(v, r, newest = true).withIndex().associate { (i, t) -> t.id to i }
+        val top = v.fold(v.songsBy(r.id)).sortedWith(compareByDescending<MusicTrack> { u.songPlays(v, it) }.thenBy { rank[it.id] ?: Int.MAX_VALUE }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(200)
         val vids = MusicVideoLinks.forArtist(r, videos(device)).map { m ->
             val vid = m.jellyfinId ?: m.id
             MusicVideoCard(vid, m.title, m.year, m.runtime?.let { it * 60_000L }, dev.jellystructure.tv.RaviloImageUrl.poster(vid))

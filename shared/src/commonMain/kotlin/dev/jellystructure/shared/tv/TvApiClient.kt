@@ -607,14 +607,15 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    /** R388 — [scope] `library` · `artists` · `albums` · `tracks` · `genre` · `search`; [genre] and [query] as the scope needs. */
-    suspend fun musicSelection(scope: String, sort: String? = null, genre: String? = null, query: String? = null, shuffle: Boolean = false): MusicSelection {
+    /** R388 — [scope] `library` · `artists` · `albums` · `tracks` · `genre` · `search`; [genre] and [query] as the scope needs. DEB-3619 — `artist` takes [artist] and a [sort] of `newest` or `oldest`. */
+    suspend fun musicSelection(scope: String, sort: String? = null, genre: String? = null, query: String? = null, shuffle: Boolean = false, artist: String? = null): MusicSelection {
         val r = client.get("$baseUrl/api/tv/music/selection") {
             auth()
             parameter("scope", scope)
             sort?.let { parameter("sort", it) }
             genre?.let { parameter("genre", it) }
             query?.let { parameter("q", it) }
+            artist?.let { parameter("artist", it) }
             if (shuffle) parameter("shuffle", true)
         }
         r.assertSuccess()
