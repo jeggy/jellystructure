@@ -410,3 +410,80 @@ itself. The relaunched app logs `cast: rejoin … → joined`, and the bar comes
 hand-back line appears. Repeat with a film cast to a TV. Then play music on the Mac's own output: *After playback* is
 back, as before.
 
+## Amendment (2026-11-05): nothing holds the update back, and what played picks up after it (DEB-3718)
+
+The owner answered the open question on DEB-3718's card (`0949ce43`) the same day: **"Everything, films too."** The
+options were *music too*, *speakers and TVs only* and *everything*. Written by Bárður. This amendment replaces the
+previous amendment's local-playback paragraph and its last sentence of acceptance 4b. The cast rules in that amendment
+stand.
+
+**D3, read with this answer.** The update still never restarts by itself (D3). But when the viewer presses *Restart*,
+it is offered whatever plays, and what played picks up again after the relaunch. A restart the viewer chose costs a few
+seconds, not the place they were at.
+
+**FR-R386-4, *While anything plays*, replaced.** *Restart to update* is never withheld because something plays,
+whether on this Mac or on a device it casts to. `SoftwareUpdate.restart` loses its playing refusal, and
+`SoftwareUpdate.setPlaying` goes with it once nothing else reads it. The previous amendment's "plays on this Mac"
+function stays: FR-R386-13 uses it to decide what to resume.
+
+**FR-R386-7 state 5 and FR-R386-8's *After playback* are retired.** A ready update is always state 4, and the notice
+always shows **Restart**. No new frame and no new string are needed, since state 4 is already drawn. The keys
+`mac.update.wait_sub` and `mac.update.notice_wait` are removed from en · da · fo once nothing uses them (FR-R386-11's
+rule). `SoftwareUpdateScreensTest`'s state-5 cases go with them.
+
+**FR-R386-13 (new) — What played picks up after an update restart.**
+
+*Before the handover.* When *Restart* (or the notice's *Restart*) asks Sparkle to install, Ravilo first writes one
+**resume record** to its local preferences. It records what plays on this Mac (the previous amendment's function) and
+whether it was playing or paused:
+- **music or a book** from the music engine: the engine saves its queue and place at once, rather than waiting for its
+  10-second save. The record says *music* or *book*.
+- **a film or an episode** in this Mac's player: the item's id, its position, and the audio and subtitle choice in use.
+  The stop the player already sends on quit (`TeardownWork`) still goes to the server as it does today.
+- **a live channel:** its channel id. A live channel resumes live, not at a position.
+- **a cast:** nothing new. FR-R330-5 already rejoins it, and the previous amendment keeps it alive.
+- **nothing playing:** no record.
+
+The record holds ids and numbers only, never a title. The handover line (state *handover*) shows as before.
+
+*On the next start*, after sign-in is restored, Ravilo reads the record and deletes it in the same step, so it is
+used **once**:
+- **music or a book:** the engine restores the saved queue at its place (FR-R322-3) and **plays** if it was playing.
+  Today that restore always lands paused; this restart is the one case that plays.
+- **a film or an episode:** the player opens on that item at the recorded position, with the recorded audio and
+  subtitle choice. It plays if it was playing and stays paused if it was paused. The viewer's Back from the player
+  lands on Home.
+- **a live channel:** the player tunes the same channel.
+- A record **older than 15 minutes** is deleted unused. Sparkle's install takes seconds; an older record means the
+  relaunch did not follow the install, and the viewer may have moved on.
+- If the item can no longer play — signed out, gone from the library, or a channel off air — Ravilo starts as it
+  normally does, with no message. The resume is a convenience and never an error the viewer has to dismiss.
+
+*Only the update restart writes the record.* *Quit Ravilo* and closing the window behave as they do today: music
+restores paused (FR-R322-3), and a film is reached from Continue Watching.
+
+*Logging (FR-R386-12's rules).* One `ravilo.log` line when the record is written (`update: resume saved <kind>
+playing|paused`). One line on start (`update: resume <kind> → started | skipped (<reason>)`). Neither line carries a
+title, an account or a token.
+
+**Out of scope, amended again.** *"Installing an update while something plays"* is removed from the list: it is now
+in scope. Resuming after an ordinary quit stays out of scope.
+
+**Acceptance, replacing 4 and the last sentence of 4b:**
+
+4. **Unit (CI):**
+   - The resume record round-trips for each kind and is gone after one read.
+   - A record older than 15 minutes is skipped.
+   - With a ready update, the notice shows **Restart** whatever plays.
+   - `restart()` installs whatever plays.
+
+4c. **On the Mac (QA queue)**, each from the notice's **Restart** with an update *Ready*:
+   - **music** playing on the Mac's own output: after the relaunch the same song plays on within a few seconds of
+     where it was, and the queue is intact;
+   - the same song **paused**: it comes back paused at its place;
+   - **a film** mid-way: the player reopens on it, playing, within a few seconds of its place, with the same audio and
+     subtitle track;
+   - **a live channel:** the same channel plays live;
+   - **an ordinary *Quit Ravilo*** during music: music comes back **paused**, as before;
+   - for each, the two `update: resume` lines in `ravilo.log`.
+
