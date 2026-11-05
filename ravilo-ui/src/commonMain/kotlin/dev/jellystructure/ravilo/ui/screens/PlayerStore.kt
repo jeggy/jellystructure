@@ -127,6 +127,8 @@ internal class StuckWatch(private val stuckMs: Long = OUR_STREAM_STUCK_MS, priva
     }
 }
 internal const val OUR_STREAM_STUCK_MS = 20_000L
+/** DEB-3630 (FR-R218-7) — the most a bound's QoE post may hold up the move it precedes. */
+internal const val START_BOUND_POST_WAIT_MS = 2_000L
 
 /**
  * R372 (FR-R372-10, amendment 2026-10-12) — the engine has run out and there is nothing to advance to (a film, a last
@@ -249,6 +251,11 @@ class PlayerStore(
     private val replacementRetryMs: List<Long> = REPLACEMENT_RETRY_MS,
     /** DEB-3103 (FR-6) — the player can switch streams behind the picture (Android's Media3; the web holds the frame itself, DEB-3213; the rest follow in FR-9): elsewhere a replacement keeps today's `Loading`. */
     private val unseenReplacements: Boolean = reportsDecodeHealth() || holdsLastFrameAcrossSource(),
+    /** DEB-3630 (FR-R218-7) — a start with no first frame is bounded. Android TV and phone first (their player reports the first frame, and the starts that never opened a decoder were there); the others follow as theirs does. */
+    private val boundsStart: Boolean = reportsDecodeHealth(),
+    /** DEB-3630 (FR-R218-7) — the two bounds; a test shortens them. */
+    private val startMoveMs: Long = START_MOVE_MS,
+    private val startEndMs: Long = START_END_MS,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -313,6 +320,16 @@ class PlayerStore(
     /** DEB-3103 (FR-6) — the item whose failed stream from our encoder was already asked for again from our encoder. */
     private var oursAskedAgainFor: String? = null
 
+    // ── DEB-3630 (FR-R218-7) — a start that shows no picture moves once, then ends on the error ──
+    /** The next [startFailureWatch] times a start: set where a stream is handed to the player for a start (not for a replacement behind the picture). */
+    private var armStartBound = false
+    /** This start already moved to the other route: its second leg only has the last step. Fresh for every [startSession] (a retry). */
+    private var startMoved = false
+    /** The current leg hit a bound: its QoE row says `start_failure_status = -1`. */
+    @kotlin.concurrent.Volatile private var startBoundHit = false
+    /** The item whose direct play was asked again as a transcode: direct play stays off for it for the rest of the session. */
+    private var directOffFor: String? = null
+
     // ── DEB-2205 (FR-3, FR-4) — a direct play's decode health and its hand-over to the ladder ──
     private val decodeMonitor = DecodeHealthMonitor()
     private var handoverRule: DirectPlayHandover? = null
@@ -355,13 +372,14 @@ class PlayerStore(
         failureWatchJob?.cancel()
         DetailPrewarm.playStarted(itemId)   // 309 — the detail page was left for this play: its early encode is ours now
         if (currentItemId != itemId) {
-            stuckRestreamedFor = null; oursAskedAgainFor = null; lastRestreamAudio = null; notOursFor = null
+            stuckRestreamedFor = null; oursAskedAgainFor = null; lastRestreamAudio = null; notOursFor = null; directOffFor = null
             freeze = FreezeRecovery(); frozenCount = 0; frozenMs = 0L; reportedFrozen = 0
             extraStalls.clear(); itemFirstFrameWallMs = -1L; pendingRecovery = null
             decodeMonitor.reset(); handoverRule = null; handoverRuleFor = null; pendingHandover = null
             decodeFailedToReport = null; stalledBpsToReport = null
         }
         currentItemId = itemId
+        startMoved = false; startBoundHit = false   // a retry is a new start with a fresh bound
         this.positionProvider = positionProvider
         this.isPausedProvider = isPausedProvider
         this.durationProvider = durationProvider
@@ -391,6 +409,7 @@ class PlayerStore(
                     // 309 (FR-309-6) — one builder, shared with the detail page's early encode, so the prewarm and the
                     // play negotiate the same thing (and Play adopts the prewarm's job).
                     val capabilities = currentClientCapabilities(link, airplayWireless = platformAirPlay?.wireless?.value == true)
+                        .let { if (directOffFor == itemId) it.copy(hlsOnly = true) else it }   // DEB-3630 (FR-R218-7) — a start moved off direct play stays off it
                     lastCapabilities = capabilities   // R282 (FR-R282-5)
                     // R343 — a Start over or a shuffled entry starts at 0:00 (the client's position wins over
                     // Jellyfin's on any server, so even an older one never resumes a shuffled episode); a
@@ -426,6 +445,7 @@ class PlayerStore(
                     reportedFirstFrame = false
                     startHeartbeat(itemId, positionProvider, isPausedProvider)
                     _state.value = PlayerSessionState.Ready(ticket.onThisServer())
+                    armStartBound = true
                     startFailureWatch()
                     return@launch
                 }
@@ -558,7 +578,7 @@ class PlayerStore(
             }
             // 313 (found live 2026-10-09) — the watch ends when the state leaves Ready (this restream's Loading), so a
             // stream that broke after a restream was never caught: "Loading…" forever. Armed again for the new stream.
-            if (_state.value is PlayerSessionState.Ready) startFailureWatch()
+            if (_state.value is PlayerSessionState.Ready) { armStartBound = true; startFailureWatch() }
         }
     }
 
@@ -797,6 +817,8 @@ class PlayerStore(
                     videoOutputRecoveryMs = snapshot.videoOutputRecoveryMs,
                     backgroundReturns = snapshot.backgroundReturns,
                     restoredAfterRecreate = snapshot.restoredAfterRecreate,
+                    // DEB-3630 (FR-R218-7) — the leg that hit a bound says so on every post of its row (an upsert rewrites the row).
+                    startFailureStatus = if (startBoundHit) START_BOUND_STATUS else null,
                 ),
             )
         }
@@ -860,6 +882,11 @@ class PlayerStore(
         failureWatchJob?.cancel()
         val failed = failedProvider
         decodeMonitor.reset(); handoverRule = null   // a new stream is its own window (DEB-2205 FR-3/-4)
+        // DEB-3630 (FR-R218-7) — the clock starts when the player is handed the stream, here; null = nothing to bound (a replacement
+        // behind the picture, a player that reports no first frame, or the first frame already seen).
+        var boundSinceMs: Long? = if (armStartBound && boundsStart) kotlin.time.Clock.System.now().toEpochMilliseconds() else null
+        if (armStartBound) startBoundHit = false
+        armStartBound = false
         failureWatchJob = scope.launch {
             val latch = FailureLatch()
             val stuck = StuckWatch()
@@ -889,6 +916,16 @@ class PlayerStore(
                     watchDirectPlay(item, t, watch, reading, frozenMeter, nowMs)) break
                 if (!failedNow && reading != null && reading.heldMs >= FROZEN_RECOVER_MS && t != null && !t.directPlay && item != null &&
                     recoverFromFreeze(item, t, pos ?: watch!!.positionMs, reading.bufferAheadMs, frozenMeter, nowMs)) break
+                // DEB-3630 (FR-R218-7) — no first frame: 10 s moves the start once, 20 s on the last route ends it.
+                val since = boundSinceMs
+                if (since != null && !failedNow && watch != null) {
+                    if (watch.firstFrame) boundSinceMs = null   // seen: a seek or a stall later in the play is not a start
+                    else when (startBoundAction(nowMs - since, false, startMoved, t != null && (t.directPlay || ours), startMoveMs, startEndMs)) {
+                        StartBoundAction.MOVE -> { moveStart(item!!, t!!, pos ?: 0L, nowMs - since); break }
+                        StartBoundAction.END -> { endStart(item!!, nowMs - since, pos); break }
+                        StartBoundAction.NONE -> {}
+                    }
+                }
                 val stuckNow = !failedNow && ours && pos != null &&
                     stuck.observe(pos, isPausedProvider?.invoke() == true, nowMs)
                 if (!failedNow && !stuckNow) continue
@@ -912,6 +949,45 @@ class PlayerStore(
                 break
             }
         }
+    }
+
+    /**
+     * DEB-3630 (FR-R218-7) — 10 s and no first frame: the start moves once. A direct play asks again as a transcode (direct play off
+     * for the item for the session: `hls_only`, which the server reads as no direct-play containers); a start on our encoder asks for
+     * Jellyfin's stream (DEB-3093 FR-6's second try). The leg that hit the bound writes its own row with `start_failure_status = -1`
+     * before the new stream is asked for. The state goes through `Loading` behind the start screen, which is already up.
+     */
+    private fun moveStart(item: String, t: StreamTicket, pos: Long, waitedMs: Long) {
+        startMoved = true
+        val route = if (t.directPlay) "direct play → a transcode" else "our encoder → Jellyfin"
+        if (t.directPlay) {
+            directOffFor = item
+            lastCapabilities = lastCapabilities?.copy(hlsOnly = true)
+        } else {
+            notOursFor = item; stuckRestreamedFor = item; oursAskedAgainFor = item
+        }
+        println("[player] DEB-3630 FR-R218-7: no first frame ${waitedMs / 1000.0} s after the stream was handed over — moving the start once ($route)")
+        val posted = postBoundHit(item)
+        val at = pos.takeIf { it > 0 } ?: t.startPositionMs
+        scope.launch {
+            // The row of the leg that failed is written before the server's session moves on.
+            kotlinx.coroutines.withTimeoutOrNull(START_BOUND_POST_WAIT_MS) { posted?.join() }
+            restreamWithSub(item, t.burnedSubtitleIndex ?: -1, at, lastRestreamAudio ?: t.audioStreamIndex)
+        }
+    }
+
+    /** DEB-3630 (FR-R218-7) — 20 s and no first frame on the last route: R237's error, its wording and Try again. */
+    private fun endStart(item: String, waitedMs: Long, pos: Long?) {
+        println("[player] DEB-3630 FR-R218-7: no first frame ${waitedMs / 1000.0} s after the stream was handed over, on the last route — ending on the error")
+        startBoundHit = true
+        if (qoeSnapshotProvider == null) reportStartFailure(item, START_BOUND_STATUS)   // the stop below posts the row when there is a snapshot
+        endOnError(PlayerSessionState.Error("The stream did not start", LoadErrorKind.GENERIC), pos)
+    }
+
+    /** Marks the current leg as having hit a bound and posts its row now; the returned job ends when the post has. */
+    private fun postBoundHit(item: String): Job? {
+        startBoundHit = true
+        return postQoeNow(item) ?: run { reportStartFailure(item, START_BOUND_STATUS); null }
     }
 
     /** One tick of the player's state: the item's first frame (for the stops' clock) and the end of a recovery's own stop ([finishRecovery]). */
