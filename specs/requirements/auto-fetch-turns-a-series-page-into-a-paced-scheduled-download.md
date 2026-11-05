@@ -163,6 +163,16 @@ address was a guess on a host the page never names. That is what FR-5.7 (DEB-364
 - FR-6.6 and FR-16.2 carry the exception and the new row state. *Acceptance* 10 and 23 say the same. No route, DTO or
   screen is added. The misfiled episode is repaired by the engine's own first run after the build, never by hand.
 
+**Amended again 2026-11-05 (DEB-3695, owner on DEB-1076, 12:03Z):** *"Let's also make the 12 step limit a
+configuration. And make it clear that it failed because of that, cause then opening a github issue might not make sense
+(Up to the user themself)"*.
+- FR-5.10 (new): the number of steps is a setting on the *Auto-fetch* job card, 12 by default, from 6 to 30, read when
+  an investigation starts. FR-5.9's notice, its two correction turns and FR-5.4's worst case follow it.
+- FR-5.10 and FR-10.10 (new): running out of steps is its own ending, *Out of steps*, never *Not a series*. It names the
+  limit, the step it stopped on and the setting, and offers *Try again*. The bug-report link stays on it, but it is not
+  the first action: whether to report is the admin's call.
+- FR-13 and *Acceptance* 24 say the same. *Not a series* keeps its words for a page the model judged not to be a series.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -936,6 +946,30 @@ one lane.
      page, and it said in its answer that the media id is there. What it could not find was the stream address, and the
      site's own player script (FR-5.7) is what gives it. The engine also cannot know which link is an item before a
      recipe exists.
+10. **The step limit is a setting, and running out of it says so (2026-11-05, DEB-3695, owner on DEB-1076).**
+   - **The setting.** The *Auto-fetch* job card on Settings ▸ AI (FR-5.4) gains *Steps per investigation*: a whole
+     number from 6 to 30, 12 by default. It is stored as `[ai.autofetch] max_turns`, beside the card's other settings,
+     and saved the way they are. A value outside 6–30 is refused with `400` and the bounds.
+   - **Read once.** An investigation reads the setting when it starts and keeps it to the end, so a change affects only
+     the next one. Every place this file says *12 turns* or *turn 12* means that number, N. The notice of FR-5.9
+     starts at turn N − 3 and reads *Turn 9 of N …*. The two correction turns come after turn N, so the most an
+     investigation takes is N + 2. FR-5.4's worst case counts N + 2. The prompt's *at most N turns* names N.
+   - **Its own ending.** An investigation that runs out of turns ends as **Out of steps**, never *Not a series* and
+     never a plain failure. That replaces FR-5.9's *the investigation fails*, but its two rules about the reason stay.
+     - The view carries `outOfSteps: true`, `stepLimit: N`, and `notASeries: false`. It is additive, admin-only wire
+       (FR-12).
+     - The sentence is the server's: *Auto-fetch stopped after N steps, its limit, while on '<step>'.* `<step>` is the
+       label of the step that was running, or of the refused answer's step (FR-5.9). Under it the failed state's line
+       reads *The limit is Steps per investigation on Settings ▸ AI.* When an answer was refused on the last turn,
+       one more line gives that refusal's reason, as the failed state shows a proof's reason today.
+     - The step list marks that step as the failed one, and the later steps as not started.
+     - The run line on Activity and the AI job's last run read *out of steps · N*, then the cost.
+     - The bug report (FR-10.4) is still written, and its ending reads *out of steps (limit N)*.
+   - *Not a series* keeps its words for an answer of `not_a_series` that FR-5.8 does not turn into *Videos not found*,
+     and for a proof failure on *Confirm this is a series*.
+   - Rejected: the limit on `config.toml` only. The owner asked for a setting, and the AI job's other limits are on
+     its card. Rejected: no upper bound. Each step is a full-price call, and FR-5.4's check before every turn is the
+     only brake, so a typo of 120 would let one investigation spend most of a month's limit.
 
 ### FR-6 — A run
 
@@ -1277,6 +1311,16 @@ As drawn in round 2, with these changes:
    When `videosNotFound` is set, the failed state's heading is *Videos not found*, not *Not a series*. Its reason is
    FR-5.8's sentence. The bug-report link (FR-10.4) and *Dismiss* stay as they are on *Not a series*. The step list marks
    *Find how the videos are served* as the failed step.
+10. **Out of steps** (amended 2026-11-05, DEB-3695; FR-5.10). This reuses the failed state, its line under the reason
+   (FR-10.7) and the buttons of *Needs a sign-in* (FR-10.8). It adds no CSS class. If the build finds it needs one,
+   that is a design round with Rannvá first (`design/PROCESS.md`).
+   - When `outOfSteps` is set, the heading is *Out of steps*, and the reason is FR-5.10's sentence with its lines.
+   - Two buttons follow: **Try again**, the primary one, and *Dismiss*. *Try again* starts a new investigation of the
+     same page with the same choices: the same TMDB id or page-only, and the same `robots.txt` tick. It posts the
+     form's own route, `POST /api/autofetch/investigate`, from the values the view carries. Nothing else changes.
+   - The bug-report link comes after the buttons, as a plain link, *Report this as a bug on GitHub*, never as a
+     button. Running out of steps is often not a bug, and whether it is one is the admin's call.
+   - *Not a series*, *Videos not found* and *Needs a sign-in* are unchanged.
 
 ### FR-11 — Activity
 
@@ -1336,6 +1380,9 @@ Fetchers, recipes, sites' state and the queue live in the database, not in `conf
 settings: a household that wants to fetch faster than a site allows is not a case to support. Ignoring `robots.txt`
 is a setting on each fetcher (FR-2.8), not in `config.toml`, and it changes none of those numbers (amended 2026-11-04,
 DEB-3591).
+*Amended 2026-11-05 (DEB-3695):* `[ai.autofetch] max_turns` (default 12, from 6 to 30) is the investigation's step
+limit (FR-5.10). It is edited on the job's card, like the job's other settings, and it changes none of FR-2.3's
+numbers. FR-5.1's 20 reads stay a constant.
 
 ### FR-14 — Design work this file needs
 
@@ -1739,6 +1786,18 @@ Added 2026-11-04 (DEB-3591):
       steps* and `notASeries: false`. The tool answers from turn 9 on carry the *Turn n of 12* line.
     - On prod, after the build is deployed, the first run renames the misfiled episode to its own date and places the
       one that was missing. QA checks this from the run record. It is not a unit test.
+24. **The step limit (FR-5.10, FR-10.10; DEB-3695).**
+    - `[ai.autofetch]` with no `max_turns` reads 12. Saving 5 or 31 on the card answers `400` and stores nothing.
+      Saving 8 stores 8.
+    - With the limit at 8, a fake model that only asks for tools ends after turn 8 with `outOfSteps: true`,
+      `stepLimit: 8` and `notASeries: false`. The reason reads *Auto-fetch stopped after 8 steps, its limit, while on
+      'Find how the videos are served'.*, and that step is marked failed. The tool answers carry the notice from turn 5.
+    - With the limit at 8, a refused answer on turn 8 gets its two corrections on turns 9 and 10. A third refusal
+      ends as *Out of steps*, and the refusal's reason is the extra line.
+    - Changing the setting while an investigation runs does not change that investigation's limit.
+    - The failed state shows *Out of steps*, *Try again* before *Dismiss*, and the bug-report link after them as a
+      plain link. *Try again* posts the same URL, TMDB id or page-only, and `ignoreRobots`.
+    - A fake model that answers `not_a_series` with no listing still reads *Not a series*, as before.
 
 ## Non-goals
 
@@ -1852,3 +1911,5 @@ is lost for good.
    and FR-5.9 (`autofetch/Proof.kt`, `Investigation.kt`). *Acceptance* 10's amendment and 23's investigation bullet.
    DEB-3643's FR-5.7 (DEB-3656) is what lets the owner's page reach the review, and this piece is what lets that
    answer be corrected.
+3. **Backend + admin: the step limit** (FR-5.10, FR-10.10, FR-13, added later that day). *Acceptance* 24. It builds on
+   piece 2's FR-5.9: `MAX_TURNS` becomes the setting read when the investigation starts.
