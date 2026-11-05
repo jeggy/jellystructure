@@ -102,6 +102,7 @@ actual class RaviloPlayer actual constructor() {
         this.streamUrl = streamUrl
         // DEB-2627 (FR-3) — a channel starts from no film ladder state; on Linux a ladder channel's rung is Ravilo's to choose.
         liveLoaded = live != null
+        reloadRungBps = 0L
         if (live != null) PlayerLadderHints.beginLive()
         rungStepper = if (live != null && DesktopEngines.isMpv && live.ladderBps.isNotEmpty()) dev.jellystructure.ravilo.ui.desktop.LiveRungStepper(live.ladderBps, live.linkEstimateBps) else null
         // FR-R329-5 — the text tracks Compose draws; a burn-in candidate (`encode`) is the common player's R282 restream.
@@ -136,17 +137,21 @@ actual class RaviloPlayer actual constructor() {
     /** DEB-2627 (FR-3) — Linux's live ladder: the rung playing, stepped down by a reload on the live edge when the line cannot hold it. */
     private var rungStepper: dev.jellystructure.ravilo.ui.desktop.LiveRungStepper? = null
     private var liveLoaded = false
+    /** DEB-3740 — the rung a step reloaded on, until its first frame is logged. */
+    private var reloadRungBps = 0L
 
     private fun stepLiveRung(s: dev.jellystructure.ravilo.ui.desktop.MacPlayerState) {
         val stepper = rungStepper ?: return
         // Only a stall of a playing picture counts: not the start, not a pause, not a seek, not the reload's own wait.
         val buffering = s.firstFrame && s.wantsPlay && !s.failed && !s.seeking && s.buffering
-        val rung = stepper.onSample(System.currentTimeMillis(), buffering) ?: return
-        println("${DesktopLog.stamp()} [player] DEB-2627 stall on a live ladder → reload on the live edge at ${rung / 1000}k")
+        val rung = stepper.onSample(System.currentTimeMillis(), buffering, engine.demuxedBytes()) ?: return
+        val measured = stepper.lastThroughputBps?.let { " (line measured at ${it / 1000}k)" } ?: " (no measurement: the next rung below)"
+        println("${DesktopLog.stamp()} [player] DEB-2627 stall on a live ladder → reload on the live edge at ${rung / 1000}k$measured")
         engine.setHlsBitrate(rung)
         engine.load(streamUrl, startMs = 0L)
         loadedAtMs = System.currentTimeMillis()
         firstFrameAtMs = 0L
+        reloadRungBps = rung
         stepper.reloaded()
     }
 
@@ -158,7 +163,11 @@ actual class RaviloPlayer actual constructor() {
             var ticks = 0
             while (isActive && engine.loaded) {
                 val s = engine.state
-                if (s.firstFrame && firstFrameAtMs == 0L) firstFrameAtMs = System.currentTimeMillis()
+                if (s.firstFrame && firstFrameAtMs == 0L) {
+                    firstFrameAtMs = System.currentTimeMillis()
+                    if (reloadRungBps > 0) println("${DesktopLog.stamp()} [player] DEB-3740 reload on ${reloadRungBps / 1000}k: first frame after ${firstFrameAtMs - loadedAtMs} ms")
+                    reloadRungBps = 0L
+                }
                 // Until the first frame (and whenever it fails or waits), AVFoundation's own account, once a second.
                 if (!s.firstFrame || s.failed || (s.buffering && ticks % 5 == 0)) println("${DesktopLog.stamp()} [player] ${engine.debug()}")
                 ticks++

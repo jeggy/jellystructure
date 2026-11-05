@@ -189,3 +189,30 @@ inherits FR-1 to FR-4:
   - the Linux rung picker: start rung from the link estimate, next rung below, the bottom rung stays;
   - the fallback decision: first frame timeout, fatal before the first frame, once per tune, never for `other`.
 - **On a device (QA):** acceptance 1 to 3, 5 and 6.
+
+## Amendment 2026-11-05 (DEB-3740) — a Linux step lands on a rung the line holds
+
+DEB-2701's Linux run (client from `fcefa587`, libmpv 0.37, 2 Mb/s `tbf`, abroad feed) found that "one short rebuffer per
+step" is not what a viewer gets. Each reload sat at mpv's `item=0` (master and first segment not yet opened) for **20.7 s**
+(to 4328k, which the cap cannot hold either), **41 s** (to 1496k, while ffmpeg logged `hls: skipping N segments ahead,
+expired from playlists`) and about 27 s (to 996k, stable): from the cap to a stable picture was about 2 minutes. A reload
+that lands on a rung the line cannot carry downloads its first segment slower than the live playlist moves on, so every
+wrong rung costs a full reload and then another stall. The cost of a reload is mpv's; the number of reloads is ours.
+
+**FR-3.1 — The stepper measures, and a step may skip rungs.** Replaces "reloads … with `hls-bitrate` set to the next rung
+below" for Linux only; FR-3's triggers (a rebuffer over 5 s, or a second within 30 s), "no climb" and "the bottom rung
+stays" are unchanged.
+- The player feeds the stepper the bytes mpv's demuxer has taken in (`demuxer-cache-state` → `total-bytes`) with each
+  one-second sample. The throughput is the growth over the last ≤ 10 s of samples since the tune or the last reload,
+  and is used when that window spans at least 3 s.
+- A step reloads on **the highest rung at or below 0.7 × that throughput** — the same 0.7 as the start — and always
+  **below the rung playing**. When no rung fits, the lowest. With no usable throughput (the window is too short, or the
+  engine reports no byte count) it is the next rung below, as before.
+- So under a 2 Mb/s cap with a 7.7 / 4.3 / 1.5 / 1.0 / 0.56 Mb/s ladder, the first step goes to 1.0 Mb/s, not 4.3.
+- Each reload logs how long it took to its first frame (`DEB-3740 reload on <rung>k: first frame after <n> ms`), and each
+  step logs the throughput it used, so the next run measures the reload itself instead of inferring it.
+
+**Acceptance 1, Linux, reads:** under the cap the picture reaches a rung the cap holds after one stall in the usual case
+(two when the first estimate was optimistic), and no step is a rung the measured line cannot carry. "One short rebuffer
+per step" is retired: a step is a reload, and its length is the log line above. Whether a reload's own 20–40 s can be cut
+(a different `live_start_index`, a smaller probe) is not decided here; it needs the log line from a Linux run.

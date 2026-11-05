@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
@@ -143,6 +145,13 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     override fun setHlsBitrate(bps: Long?) {
         val h = handle ?: create()?.also { handle = it } ?: return
         lib?.mpv_set_property_string(h, "hls-bitrate", bps?.toString() ?: "max")
+    }
+
+    override fun demuxedBytes(): Long? {
+        val l = lib ?: return null
+        val h = handle ?: return null
+        val json = Mpv.getString(l, h, "demuxer-cache-state") ?: return null
+        return runCatching { Json.parseToJsonElement(json).jsonObject["total-bytes"]?.jsonPrimitive?.longOrNull }.getOrNull()
     }
 
     override fun play() { handle?.let { lib?.mpv_set_property_string(it, "pause", "no") }; readAtNs = 0L }

@@ -38,6 +38,9 @@ internal interface DesktopEngine {
      *  rung at load and never switches, so the player steps it by reloading. An engine that adapts on its own ignores it. */
     fun setHlsBitrate(bps: Long?) {}
 
+    /** DEB-3740 (FR-3.1) — the bytes the engine has taken in since the last [load] (mpv's demuxer cache), or null when it cannot say. The Linux stepper reads the line's throughput from its growth. */
+    fun demuxedBytes(): Long? = null
+
     // ── Linux (FR-R335-5/6): the engine that renders subtitles and knows the container's tracks ──
     /** The surface's size in pixels, so a renderer that scales can stop at what is shown. */
     fun surfaceHint(width: Int, height: Int) {}
