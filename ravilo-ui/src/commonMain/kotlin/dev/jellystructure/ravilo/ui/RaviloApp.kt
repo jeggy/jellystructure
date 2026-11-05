@@ -3176,6 +3176,7 @@ fun RaviloApp(
                     // FR-R321-11 — a music video is a video: the film player (which stops the music, FR-R322-12).
                     onPlayVideo = { v -> push(Dest.Player(itemId = v.id, title = v.title, displayName = dest.displayName, seriesId = v.id, posterUrl = v.imageUrl)) },
                     onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                    playAll = keptStore("martistplay:${dest.id}") { dev.jellystructure.ravilo.ui.music.PlayAll(apiClient) },
                 )
             }
             is Dest.AudiobookDetail -> dev.jellystructure.ravilo.ui.music.AudiobookDetailScreen(

@@ -19,6 +19,7 @@ data class PlayAllRequest(
     val sort: String? = null,
     val genre: String? = null,
     val query: String? = null,
+    val artist: String? = null,
 ) {
     /** FR-R388-7 — *Playing from …*. [libraryLabel] is *Your library*; [searchLabel] is *Search “{q}”*. */
     fun context(libraryLabel: String, searchLabel: String): MusicContext = when (scope) {
@@ -45,6 +46,17 @@ fun browsePlayAllRequest(chip: String, sorts: Map<String, String>, genre: String
     else -> null
 }
 
+/**
+ * DEB-3619 (FR-2) — what the artist page's *Play all ▾* plays. [NEWEST] is the main half; [OLDEST] and [MOST_PLAYED] are the
+ * ▾ menu's two rows. The first two ask the selection route for the artist's release order; [MOST_PLAYED] plays the page's
+ * `topTracks` locally.
+ */
+enum class ArtistPlayOrder(val sort: String?) { NEWEST("newest"), OLDEST("oldest"), MOST_PLAYED(null) }
+
+/** The route's request for an artist in a release order (FR-4); [ArtistPlayOrder.MOST_PLAYED] has none. */
+fun artistPlayAllRequest(artistId: String, order: ArtistPlayOrder): PlayAllRequest? =
+    order.sort?.let { PlayAllRequest("artist", sort = it, artist = artistId) }
+
 /** Which half the viewer pressed — FR-R388-8's busy ring replaces that half's glyph. */
 enum class PlayAllHalf { PLAY, SHUFFLE }
 
@@ -66,10 +78,30 @@ class PlayAll(
     private val play: (List<MusicTrackItem>, Int, MusicContext, Boolean) -> Unit = { tracks, index, context, shuffle -> MusicPlayback.playQueue(tracks, index, context, shuffle) },
     private val pick: (Int) -> Int = { size -> (0 until size).random() },
 ) {
-    constructor(api: TvApiClient) : this({ request, shuffle -> api.musicSelection(request.scope, request.sort, request.genre, request.query, shuffle) })
+    constructor(api: TvApiClient) : this({ request, shuffle -> api.musicSelection(request.scope, request.sort, request.genre, request.query, shuffle, request.artist) })
 
     private val _busy = MutableStateFlow<PlayAllHalf?>(null)
     val busy: StateFlow<PlayAllHalf?> = _busy
+
+    /**
+     * DEB-3619 (FR-2, FR-5) — the artist page's press. [ArtistPlayOrder.MOST_PLAYED] plays [topTracks] from the first with no
+     * request and is never busy; the other two are R388's press on the main half, whichever row was picked.
+     */
+    suspend fun runArtist(
+        order: ArtistPlayOrder,
+        artistId: String,
+        context: MusicContext,
+        topTracks: List<MusicTrackItem>,
+        onFailure: () -> Unit,
+        onCapped: (shown: Int, total: Int) -> Unit,
+    ): Boolean {
+        val request = artistPlayAllRequest(artistId, order)
+        if (request == null) {
+            if (topTracks.isNotEmpty()) play(topTracks, 0, context, false)
+            return true
+        }
+        return run(request, PlayAllHalf.PLAY, context, onFailure, onCapped)
+    }
 
     /** True when the press was taken; false when one was already in flight. */
     suspend fun run(

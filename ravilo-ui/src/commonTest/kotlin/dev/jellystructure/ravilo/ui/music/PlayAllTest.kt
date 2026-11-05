@@ -138,6 +138,68 @@ class PlayAllTest {
         assertEquals(2, rig.asked.size)
     }
 
+    // ── DEB-3619: the artist page's Play all ▾ (FR-2, FR-5) ──
+
+    private val artistContext = MusicContext("artist", "Harbour Lights", "hl")
+    private val top = listOf(t("x"), t("y"))
+
+    private suspend fun Rig.artist(order: ArtistPlayOrder) =
+        runner.run2(order, artistContext, top, { failures += Unit }, { shown, total -> capped += shown to total })
+
+    private suspend fun PlayAll.run2(order: ArtistPlayOrder, context: MusicContext, topTracks: List<MusicTrackItem>, onFailure: () -> Unit, onCapped: (Int, Int) -> Unit) =
+        runArtist(order, "hl", context, topTracks, onFailure, onCapped)
+
+    @Test
+    fun `newest and oldest ask the route for the artist in that order`() = runTest {
+        assertEquals(PlayAllRequest("artist", sort = "newest", artist = "hl"), artistPlayAllRequest("hl", ArtistPlayOrder.NEWEST))
+        assertEquals(PlayAllRequest("artist", sort = "oldest", artist = "hl"), artistPlayAllRequest("hl", ArtistPlayOrder.OLDEST))
+        assertNull(artistPlayAllRequest("hl", ArtistPlayOrder.MOST_PLAYED))
+        for (order in listOf(ArtistPlayOrder.NEWEST, ArtistPlayOrder.OLDEST)) {
+            val rig = Rig({ _, _ -> MusicSelection(three, 3, false) })
+            assertTrue(rig.artist(order))
+            val (request, shuffle) = rig.asked.single()
+            assertEquals(order.sort, request.sort); assertEquals("hl", request.artist); assertFalse(shuffle)
+            val p = rig.played.single()
+            assertEquals(0, p.index); assertFalse(p.shuffle); assertEquals(three, p.tracks)
+            assertEquals(artistContext, p.context)
+        }
+    }
+
+    @Test
+    fun `most played plays the page's songs locally with no request and no busy ring`() = runTest {
+        val rig = Rig({ _, _ -> error("must not be asked") })
+        assertTrue(rig.artist(ArtistPlayOrder.MOST_PLAYED))
+        assertTrue(rig.asked.isEmpty())
+        val p = rig.played.single()
+        assertEquals(top, p.tracks); assertEquals(0, p.index); assertFalse(p.shuffle); assertEquals(artistContext, p.context)
+        assertNull(rig.runner.busy.value)
+    }
+
+    @Test
+    fun `a second artist press while one is in flight sends nothing, and the main half is the busy one`() = runTest {
+        val gate = CompletableDeferred<MusicSelection>()
+        val rig = Rig({ _, _ -> gate.await() })
+        val first = async { rig.artist(ArtistPlayOrder.OLDEST) }
+        advanceUntilIdle()
+        assertEquals(PlayAllHalf.PLAY, rig.runner.busy.value)
+        assertFalse(rig.artist(ArtistPlayOrder.NEWEST), "ignored")
+        assertEquals(1, rig.asked.size)
+        gate.complete(MusicSelection(three, 3, false))
+        assertTrue(first.await())
+        assertEquals(1, rig.played.size)
+    }
+
+    @Test
+    fun `an artist failure or an empty answer toasts and leaves the queue alone`() = runTest {
+        val broke = Rig({ _, _ -> error("offline") })
+        broke.artist(ArtistPlayOrder.NEWEST)
+        assertEquals(1, broke.failures.size); assertTrue(broke.played.isEmpty())
+        val empty = Rig({ _, _ -> MusicSelection(emptyList(), 0, false) })
+        empty.artist(ArtistPlayOrder.OLDEST)
+        assertEquals(1, empty.failures.size); assertTrue(empty.played.isEmpty())
+        assertNull(empty.runner.busy.value)
+    }
+
     @Test
     fun `the capped toast groups digits the way the locale does`() {
         assertEquals("1,000", groupedCount(1000, "en"))

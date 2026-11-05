@@ -289,8 +289,15 @@ class MusicArtistEditionsTest {
     private var opened: String? = null
     @Before fun setUp() = initContext()
 
+    private val asked = mutableListOf<PlayAllRequest>()
+    private val played = mutableListOf<Pair<List<MusicTrackItem>, MusicContext>>()
+    private val runner = PlayAll(
+        fetch = { r, _ -> asked += r; dev.jellystructure.shared.tv.MusicSelection(listOf(MusicTrackItem("n-1", "Newest One")), 1, false) },
+        play = { tracks, _, context, _ -> played += tracks to context },
+    )
+
     private fun render(d: MusicArtistDetail) {
-        rule.setContent { MusicArtistScreen(MusicLoader { d }, onBack = {}, onOpenAlbum = { opened = it }, onPlayVideo = {}, onTrackMore = {}) }
+        rule.setContent { MusicArtistScreen(MusicLoader { d }, onBack = {}, onOpenAlbum = { opened = it }, onPlayVideo = {}, onTrackMore = {}, playAll = runner) }
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Harbour Lights").fetchSemanticsNodes().isNotEmpty() }
         rule.waitForIdle()
     }
@@ -306,5 +313,29 @@ class MusicArtistEditionsTest {
         val twins = listOf(MusicTrackItem("kw-2", "Northern Line", album = "Kite Weather"), MusicTrackItem("nn-1", "Northern Line", album = "Nordic Nights Vol. 2"))
         render(MusicArtistDetail(MusicArtistCard("hl", "Harbour Lights"), topTracks = twins))
         assertEquals(2, rule.onAllNodesWithText("Northern Line").fetchSemanticsNodes().size, "the app folds nothing")
+    }
+
+    /** DEB-3619 (FR-1, FR-2) — Play all is a split button; the main half asks for newest first, the ▾ holds two rows. */
+    @Test fun play_all_is_a_split_button_with_two_orders() {
+        val mp = listOf(MusicTrackItem("mp-1", "Most Played One"))
+        render(MusicArtistDetail(MusicArtistCard("hl", "Harbour Lights"), topTracks = mp))
+        rule.onNodeWithTag("artist-play").performClick()
+        rule.waitUntil(5_000) { played.isNotEmpty() }
+        assertEquals(listOf(PlayAllRequest("artist", sort = "newest", artist = "hl")), asked)
+        assertEquals(MusicContext("artist", "Harbour Lights", "hl"), played.last().second)
+
+        rule.onNodeWithContentDescription("More ways to play").assertExists()
+        rule.onNodeWithTag("artist-play-more").performClick()
+        rule.onNodeWithText("Oldest first").assertExists()
+        rule.onNodeWithText("Most played").assertExists()
+        rule.onNodeWithTag("artist-row-oldest").performClick()
+        rule.waitUntil(5_000) { played.size == 2 }
+        assertEquals("oldest", asked.last().sort)
+
+        rule.onNodeWithTag("artist-play-more").performClick()
+        rule.onNodeWithTag("artist-row-most_played").performClick()
+        rule.waitUntil(5_000) { played.size == 3 }
+        assertEquals(2, asked.size, "Most played makes no request")
+        assertEquals(mp, played.last().first)
     }
 }

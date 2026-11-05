@@ -140,7 +140,7 @@ fun PlayAllControl(request: PlayAllRequest, runner: PlayAll, height: Dp, modifie
 
 /** One half: clickable (so Tab reaches it and Enter or Space press it), the app's focus ring while focused. */
 @Composable
-private fun Half(modifier: Modifier, pill: Dp, shape: RoundedCornerShape, onClick: () -> Unit, content: @Composable () -> Unit) {
+internal fun Half(modifier: Modifier, pill: Dp, shape: RoundedCornerShape, onClick: () -> Unit, content: @Composable () -> Unit) {
     val colors = RaviloTheme.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()

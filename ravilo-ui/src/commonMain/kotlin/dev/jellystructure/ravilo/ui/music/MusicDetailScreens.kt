@@ -33,6 +33,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -389,6 +392,78 @@ private fun TypeBadge(label: String) {
 
 // ── Artist (FR-R321-8, FR-R321-11) ──
 
+/**
+ * DEB-3619 (FR-1, FR-2, FR-5, FR-7) — the artist page's *▶ Play all | ▾*: the album page's split button in its primary fill, at the
+ * size and place of the pill it replaces. The main half plays newest first; the ▾ holds *Oldest first* and *Most played*. The main
+ * half shows the busy ring while the route answers ([PlayAll]); *Most played* plays [topTracks] locally and is never busy. Both
+ * halves are focusable, so Tab reaches *Play all*, then ▾; the menu opens with *Oldest first* focused.
+ */
+@Composable
+private fun ArtistPlayAll(playAll: PlayAll, artistId: String, context: MusicContext, topTracks: List<MusicTrackItem>, modifier: Modifier) {
+    val colors = RaviloTheme.colors
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    val scope = rememberCoroutineScope()
+    val lang = dev.jellystructure.ravilo.ui.i18n.LocalLang.current
+    val busy by playAll.busy.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    val firstRow = remember { androidx.compose.ui.focus.FocusRequester() }
+    val failText = str("music.fail_t")
+    val height = if (desk) 38.dp else 46.dp
+    val shape = RoundedCornerShape(if (desk) 10.dp else 24.dp)
+    val ink = if (desk) colors.background else colors.onAccent
+
+    fun press(order: ArtistPlayOrder) {
+        scope.launch {
+            playAll.runArtist(
+                order, artistId, context, topTracks,
+                onFailure = { MusicToasts.show(failText) },
+                onCapped = { shown, total ->
+                    MusicToasts.show(dev.jellystructure.ravilo.ui.i18n.t("music.selection_capped", lang, mapOf("shown" to groupedCount(shown, lang), "total" to groupedCount(total, lang))))
+                },
+            )
+        }
+    }
+
+    LaunchedEffect(open) { if (open) { kotlinx.coroutines.delay(60); runCatching { firstRow.requestFocus() } } }
+
+    Box(modifier) {
+        Row(
+            Modifier.then(if (desk) Modifier else Modifier.fillMaxWidth()).height(height)
+                .background(if (desk) Brush.linearGradient(listOf(colors.text, colors.text)) else colors.accentGradient, shape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Half(
+                Modifier.then(if (desk) Modifier else Modifier.weight(1f)).height(height).padding(horizontal = if (desk) 18.dp else 10.dp).testTag("artist-play"),
+                height, shape, onClick = { press(ArtistPlayOrder.NEWEST) },
+            ) {
+                Row(Modifier.then(if (desk) Modifier else Modifier.fillMaxWidth()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    if (busy != null) androidx.compose.material3.CircularProgressIndicator(Modifier.size(if (desk) 15.dp else 17.dp), color = ink, strokeWidth = 2.dp)
+                    else MusicGlyph(MusicIcon.PLAY, ink, if (desk) 15.dp else 17.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(str("music.play_all"), color = ink, fontSize = if (desk) 13.5.sp else 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)
+                }
+            }
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Color.Black.copy(alpha = if (desk) 0.14f else 0.22f)))
+            Half(Modifier.width(if (desk) 30.dp else 44.dp).height(height).testTag("artist-play-more"), height, shape, onClick = { open = true }) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ChevronGlyph(GlyphDirection.DOWN, ink, 14.dp, description = str("ed.more_play")) }
+            }
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = open, onDismissRequest = { open = false }, containerColor = colors.surface,
+            modifier = if (desk) Modifier.width(220.dp) else Modifier,
+        ) {
+            listOf(ArtistPlayOrder.OLDEST to "browse.sort.oldest", ArtistPlayOrder.MOST_PLAYED to "music.sort_played").forEachIndexed { i, (order, key) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(str(key), color = colors.text, fontSize = if (desk) 13.5.sp else 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) },
+                    leadingIcon = { MusicGlyph(MusicIcon.PLAY, colors.textSecondary, if (desk) 16.dp else 18.dp) },
+                    onClick = { open = false; press(order) },
+                    modifier = Modifier.then(if (i == 0) Modifier.focusRequester(firstRow) else Modifier).heightIn(min = if (desk) 42.dp else 52.dp).testTag("artist-row-" + order.name.lowercase()),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun MusicArtistScreen(
     loader: MusicLoader<MusicArtistDetail>,
@@ -396,6 +471,7 @@ fun MusicArtistScreen(
     onOpenAlbum: (String) -> Unit,
     onPlayVideo: (MusicVideoCard) -> Unit,
     onTrackMore: (MusicTrackItem) -> Unit,
+    playAll: PlayAll,
 ) {
     val colors = RaviloTheme.colors
     val state by loader.state.collectAsState()
@@ -432,7 +508,7 @@ fun MusicArtistScreen(
                                         Text(str(if (bioOpen) "music.less" else "music.more"), color = colors.accentSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { bioOpen = !bioOpen }.padding(vertical = 4.dp))
                                     }
                                     if (d.topTracks.isNotEmpty()) Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true) { MusicPlayback.playQueue(d.topTracks, 0, context) }
+                                        ArtistPlayAll(playAll, r.id, context, d.topTracks, Modifier)
                                         PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false) { MusicPlayback.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                                     }
                                 }
@@ -462,7 +538,7 @@ fun MusicArtistScreen(
                             }
                             Spacer(Modifier.height(8.dp))
                             if (d.topTracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true, pillWidth()) { MusicPlayback.playQueue(d.topTracks, 0, context) }
+                                ArtistPlayAll(playAll, r.id, context, d.topTracks, pillWidth())
                                 PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, pillWidth()) { MusicPlayback.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                             }
                         }
