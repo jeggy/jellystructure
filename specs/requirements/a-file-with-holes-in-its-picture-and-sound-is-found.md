@@ -85,6 +85,8 @@ with live playback. The sweep this spec adds is the census, deferred while anyon
   FR-254-3: a row is current only while both size and mtime match. There are three states, never two:
   `has holes`, `checked, whole`, `unchecked`. *Unchecked* is never counted or shown as whole. A pass that did
   not finish (killed, deferred mid-file, ffmpeg missing) stores nothing.
+  *Amended 2026-11-05 (DEB-3642):* the row also stores `empty_streams TEXT`, the streams with no packet over the
+  whole read, in the same migration. See `a-damaged-file-still-plays.md`, FR-1.
 - **FR-4 — when it runs.** It runs on the `verify_files` step (phase 261), one job per file, no new step and
   no new switch. That step is **due** for a file when `file_integrity` or `file_timeline` lacks a current row
   (FR-261-7's rule, applied to both tables). So every file verified before this ships becomes due once. That

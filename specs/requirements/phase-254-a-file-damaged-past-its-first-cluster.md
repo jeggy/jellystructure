@@ -14,6 +14,10 @@ A torrent's copy is only a source if its timeline has no more holes than the lib
 See `a-file-with-holes-in-its-picture-and-sound-is-found.md`, FR-1 and FR-8. The damage rules
 (FR-254-2) are unchanged.
 
+**Amended 2026-11-05 (DEB-3642):** playback now reads this check. A file whose damage starts before its
+first Cluster, or whose header lists a stream with no packets, is not offered for direct play, and our encoder
+maps only the streams that carry packets. See `a-damaged-file-still-plays.md`, FR-1 to FR-4.
+
 **Amended by phase 263 (2026-09-26):** FR-254-10's carry-over by stream index mislabelled audio whenever the
 library's tracks are not in the source's order (33 of 36 damaged production files with a source), and all three
 of its checks passed on the wrong file. The copy now pairs tracks by their packets and maps the source in the
