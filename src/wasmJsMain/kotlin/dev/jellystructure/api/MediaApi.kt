@@ -18,6 +18,7 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -26,6 +27,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json as KJson
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Bug fix: shadows `kotlin.runCatching` for every unqualified call in this file. Every MediaApi
@@ -699,8 +702,16 @@ object MediaApi {
             setBody("{${parts.joinToString(",")}}")
             contentType(ContentType.Application.Json)
         }
+        // DEB-3701 FR-3: a 409 carries "<tag> is not used for <group>"; the page shows it instead of "Save failed".
+        lastEditMetadataRefusal = if (response.status == HttpStatusCode.Conflict)
+            runCatching { KJson.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull()
+        else null
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
+
+    /** The reason of the last [editMetadata] the server refused with 409, or `null`. */
+    var lastEditMetadataRefusal: String? = null
+        private set
 
     // Phase 184 — sets (or, when [language] is null, clears back to automatic) the operator's chosen
     // TMDB metadata-fetch language. Triggers the ordinary re-pull path server-side; the returned item

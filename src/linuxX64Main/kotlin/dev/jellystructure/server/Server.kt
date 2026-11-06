@@ -661,7 +661,7 @@ fun startServer(
                     })
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, mediaStore)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline, processingRuns = processingRuns)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline, processingRuns = processingRuns, jsTagStore = jsTagStore)
                 processingRoutes(configStore, processingRuns, mediaJobQueue, scanTracker, mediaStore)   // DEB-1664 (FR-9)
                 activityRoutes(activityLog)
                 aiRoutes(configStore, jellyfinClient, deviceService)   // Phase 270; DEB-2826 (FR-1.7)

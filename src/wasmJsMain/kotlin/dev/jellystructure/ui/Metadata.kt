@@ -9,6 +9,7 @@ import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.MetadataEntry
 import dev.jellystructure.api.TagsResponse
 import dev.jellystructure.api.TrackerEntry
+import dev.jellystructure.model.TagScope
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
@@ -261,13 +262,16 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
     } else {
         append("""<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px">""")
         for (tag in data.jsTags) {
-            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-color="${tag.color}" data-desc="${tag.description.replace("\"", "&quot;")}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" data-hover="card">""")
+            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-color="${tag.color}" data-desc="${tag.description.replace("\"", "&quot;")}" data-scopes="${tag.scopes.joinToString(",")}" data-outside="${tag.outsideScope}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" data-hover="card">""")
             append("""<span class="tag-dot-lg" style="background:${tag.color};box-shadow:0 0 0 2px ${tag.color}33"></span>""")
             append("""<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">""")
             append("""<span style="color:var(--ink);font-weight:600">${tag.name}</span>""")
             if (tag.description.isNotBlank()) {
                 append("""<span class="tiny muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${tag.description}</span>""")
             }
+            // DEB-3701 FR-2 / FR-4: the scope, then (after a narrowing) how many items still carry the tag outside it.
+            append(tagScopeLineHtml(tag.scopes))
+            append(tagOutsideBadgeHtml(tag.name, tag.outsideScope, dev.jellystructure.encodeURIComponent(tag.name)))
             append("</span>")
             val enc102 = dev.jellystructure.encodeURIComponent(tag.name)
             append("""<a href="#/library?tags=$enc102" data-stop-click class="badge info" style="flex-shrink:0;cursor:pointer;text-decoration:none">${tag.count}</a>""")
@@ -301,14 +305,16 @@ private fun wireTagsTab(content: HTMLElement, scope: CoroutineScope) {
             val name = card.getAttribute("data-name") ?: return@addEventListener
             val color = card.getAttribute("data-color")
             val desc = card.getAttribute("data-desc")
-            showTagModal(content, scope, name, color, desc)
+            val scopes = card.getAttribute("data-scopes").orEmpty().split(",").filter { it.isNotBlank() }
+            val outside = card.getAttribute("data-outside")?.toIntOrNull() ?: 0
+            showTagModal(content, scope, name, color, desc, scopes, outside)
         }
     }
 }
 
 private val PRESET_COLORS = listOf("#7b6ef0", "#2dd49a", "#f5b542", "#3fb6f5", "#ff6f61", "#b15cd0", "#6b7280", "#e0639a")
 
-private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: String?, editColor: String? = null, editDesc: String? = null) {
+private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: String?, editColor: String? = null, editDesc: String? = null, editScopes: List<String> = emptyList(), editOutside: Int = 0) {
     val modal = content.querySelector("#tag-modal") as? HTMLElement ?: return
     val isNew = editName == null
     val initialColor = editColor?.takeIf { it.isNotBlank() } ?: "#7b6ef0"
@@ -338,6 +344,12 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
             <label>Description</label>
             <input id="modal-tag-desc" class="input" type="text" placeholder="optional description" style="width:100%" value="${initialDesc.replace("\"", "&quot;")}">
           </div>
+          <div class="field">
+            <label>Used for</label>
+            <div id="modal-scope-row">${tagScopeRowHtml(editScopes)}</div>
+            <div id="modal-scope-notice" class="tiny muted" style="margin-top:6px"></div>
+            ${if (!isNew && editOutside > 0) """<button id="modal-remove-outside-btn" class="btn sm ghost" style="margin-top:6px">${tagRemoveOutsideLabel(editOutside).esc()}</button>""" else ""}
+          </div>
           <div id="modal-tag-error" class="badge bad" style="display:none;margin-bottom:10px"></div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center">
             <div style="display:flex;gap:8px;align-items:center">
@@ -362,6 +374,41 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
         }
     }
     selectSwatch(initialColor)
+
+    // DEB-3701 FR-2 — the Used for chips. `TagScope.toggle` holds the rules: All clears the groups, a group clears All,
+    // and unticking the last group is All again. FR-4: on an edit the server says how many items the chosen scope leaves
+    // outside, before the save; nothing is removed by the save.
+    var selectedScopes = editScopes
+    fun wireScopeRow() {
+        val chips = modal.querySelectorAll("#modal-scope-row [data-scope]")
+        for (i in 0 until chips.length) {
+            val chip = chips.item(i) as? HTMLElement ?: continue
+            chip.addEventListener("click") { _ ->
+                val key = chip.getAttribute("data-scope").orEmpty().ifEmpty { null }
+                selectedScopes = TagScope.toggle(selectedScopes, key)
+                (modal.querySelector("#modal-scope-row") as? HTMLElement)?.innerHTML = tagScopeRowHtml(selectedScopes)
+                wireScopeRow()
+                if (editName != null) scope.launch {
+                    val r = MetadataApi.tagOutsideScope(editName, selectedScopes)
+                    (modal.querySelector("#modal-scope-notice") as? HTMLElement)?.textContent = if (r == null) "" else tagOutsideNoticeText(r.outside, r.byKind)
+                }
+            }
+        }
+    }
+    wireScopeRow()
+    modal.querySelector("#modal-remove-outside-btn")?.addEventListener("click") { _ ->
+        if (editName != null && window.confirm("Remove \"$editName\" from the $editOutside items outside its scope? This is a removal by hand; it cannot be undone from here.")) {
+            scope.launch {
+                MetadataApi.removeTagOutsideScope(editName)
+                FacetsCache.invalidate()
+                modal.style.display = "none"
+                val sort = (content.querySelector("#metadata-sort") as? HTMLInputElement)?.value ?: "count"
+                val tags = MetadataApi.getTags(sort)
+                content.innerHTML = if (tags == null) errorHtml() else renderTagsTab(tags)
+                if (tags != null) wireTagsTab(content, scope)
+            }
+        }
+    }
 
     // Wire "View in library" link — navigate via SPA router and close modal
     modal.querySelector("#modal-lib-btn")?.addEventListener("click") { ev ->
@@ -388,9 +435,9 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
             val errEl = modal.querySelector("#modal-tag-error") as? HTMLElement
             if (name.isBlank()) { errEl?.let { it.style.display = "block"; it.textContent = "Name is required" }; return@launch }
             val ok = if (isNew) {
-                MetadataApi.createTag(name, color, desc) != null
+                MetadataApi.createTag(name, color, desc, selectedScopes) != null
             } else {
-                MetadataApi.updateTag(name, color, desc) != null
+                MetadataApi.updateTag(name, color, desc, selectedScopes) != null
             }
             if (!ok) { errEl?.let { it.style.display = "block"; it.textContent = if (isNew) "Tag name already exists" else "Save failed" }; return@launch }
             FacetsCache.invalidate()

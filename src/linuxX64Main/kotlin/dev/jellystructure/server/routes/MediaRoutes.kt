@@ -51,6 +51,7 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaTrailer
+import dev.jellystructure.model.TagScope
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
@@ -215,6 +216,9 @@ fun Route.mediaRoutes(
     musicPipeline: dev.jellystructure.media.MusicPipeline? = null,
     // DEB-1664 (FR-9) — when each feature last ran, so a run started here records it and a Music or Audiobooks interval is measured from it.
     processingRuns: dev.jellystructure.media.ProcessingRuns? = null,
+    // DEB-3701 (FR-3) — so an edit that adds a jellystructure tag out of its scope is refused, and the Library can list
+    // the items outside a tag's scope (FR-4).
+    jsTagStore: dev.jellystructure.media.JsTagStore? = null,
 ) {
     // Phase 175 — shared collaborator bundle for every runPipeline() call these routes make.
     val pipelineDeps = PipelineDeps(
@@ -270,10 +274,17 @@ fun Route.mediaRoutes(
                 raviloConfigService.getConfig(viewer).heroes.map { it.itemId }.toSet() else emptySet()
             // Phase 98 — tracker filter: "any" = seeded anywhere, else a named tracker from the registry.
             val trackerFilter = call.request.queryParameters["tracker"]?.takeIf { it.isNotBlank() }
-            val seededIds = if (trackerFilter != null) {
+            val trackerIds = if (trackerFilter != null) {
                 seedingSnapshot.seededItemIds(trackerFilter, store.allItems(), configStore.current)
             } else null
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, query, seededIds, excludeMissing = viewer != null)
+            // DEB-3701 (FR-4): `filter=outside_scope&tags=<tag>` — the items that carry the tag although its scope does not
+            // cover their kind. Carried as an id restriction, the way the tracker filter is.
+            val outsideScope = filter == "outside_scope"
+            val outsideIds = if (outsideScope) tags.flatMap { t ->
+                jsTagStore?.get(t)?.let { itemsOutsideScope(store, t, it.scopes) }.orEmpty().map { it.id }
+            }.toSet() else null
+            val seededIds = if (trackerIds != null && outsideIds != null) trackerIds.intersect(outsideIds) else trackerIds ?: outsideIds
+            val result = store.list(kind, if (outsideScope) null else filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, query, seededIds, excludeMissing = viewer != null)
             // Phase 89: strip heavy fields not needed for grid cards (cast/crew/tracks/titlesByLang/episodes)
             // to reduce response size from ~61KB/item mean to ~1KB/item.
             val stripped = result.copy(items = result.items.map { it.copy(
@@ -1472,6 +1483,12 @@ fun Route.mediaRoutes(
                 val network: String? = null,
             )
             val req = call.receive<MetadataEditReq>()
+            // DEB-3701 FR-3: the whole tag list arrives, so only a jellystructure tag that is NEW in it is checked against
+            // its scope. A tag the item already had, or a removal, is never refused.
+            if (req.tags != null && jsTagStore != null) {
+                TagScope.firstRefusal(item.tags, req.tags, TagScope.groupOf(item.kind)) { jsTagStore.get(it)?.scopes }
+                    ?.let { return@patch call.respond(HttpStatusCode.Conflict, mapOf("error" to it)) }
+            }
             val newTitle = req.title?.takeIf { it.isNotBlank() } ?: item.title
             // If the user changed the title, record it in titlesByLang under the resolved language
             // so the manual title remains searchable. Never remove other languages' entries.

@@ -22,6 +22,7 @@ import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
 import dev.jellystructure.model.Track
+import dev.jellystructure.model.TagScope
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LangStepOutcome
 import dev.jellystructure.resolver.LanguageResolver
@@ -447,12 +448,15 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     val currentTags = item.tags.toMutableList()
     val jsTagMap = jsTags.associateBy { it.name }
+    // DEB-3701 FR-3: the picker offers only tags whose scope covers this item's group; a tag the item already carries
+    // outside its tag's scope keeps its chip (dashed, titled) and its ✕.
+    val itemGroup = TagScope.groupOf(item.kind)
+    val jsTagsInScope = jsTags.filter { TagScope.applies(it.scopes, itemGroup) }
     fun tagChipHtml(tag: String): String {
         val jt = jsTagMap[tag]
-        val dot = if (jt != null) """<span class="tag-dot" style="background:${jt.color};"></span>""" else ""
-        return """<span class="chip tag-chip" style="cursor:default;">$dot${tag.esc()} <span class="rm tag-rm" data-tag="${tag.esc()}">✕</span></span>"""
+        return tagChipWithScopeHtml(tag, jt?.color, outOfScope = jt != null && !TagScope.applies(jt.scopes, itemGroup))
     }
-    val tagSuggestions = jsTags.joinToString("") { jt ->
+    val tagSuggestions = jsTagsInScope.joinToString("") { jt ->
         """<div class="tag-suggest-item" data-tag="${jt.name.esc()}" style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;font-size:.85rem;border-radius:6px" data-hover="fill"><span class="tag-dot" style="background:${jt.color};"></span>${jt.name.esc()}</div>"""
     }
     val tagsChipsHtml = """<div class="card" id="tags-section">
@@ -1265,7 +1269,19 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 studio = studioVal,
                 network = if (item.kind == MediaKind.TV_SHOW) directorVal else null,
             )
-            metaMsg?.textContent = if (updated != null) "Saved ✓" else "Save failed"
+            val refusal = if (updated == null) MediaApi.lastEditMetadataRefusal else null
+            metaMsg?.textContent = if (updated != null) "Saved ✓" else refusal ?: "Save failed"
+            if (refusal != null) {
+                // FR-3: the server refused a newly added out-of-scope tag — take its chip back off, so the page shows what is stored.
+                val stored = item.tags.toSet()
+                val chips = document.querySelectorAll("#tags-chips .tag-rm")
+                for (i in 0 until chips.length) {
+                    val rm = chips.item(i) as? HTMLElement ?: continue
+                    val t = rm.getAttribute("data-tag") ?: continue
+                    val jt = jsTagMap[t]
+                    if (t !in stored && jt != null && !TagScope.applies(jt.scopes, itemGroup)) rm.parentElement?.remove()
+                }
+            }
             if (updated != null) {
                 FacetsCache.invalidate()
                 delay(1500); metaMsg?.textContent = ""
@@ -1316,7 +1332,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             tagDropdown.style.display = if (anyVisible) "block" else "none"
         }
         tagInput.addEventListener("focus") { _ ->
-            if (jsTags.isNotEmpty()) tagDropdown.style.display = "block"
+            if (jsTagsInScope.isNotEmpty()) tagDropdown.style.display = "block"
         }
         tagInput.addEventListener("blur") { _ ->
             // Delay so click on suggestion fires first

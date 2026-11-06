@@ -10,6 +10,7 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.TagScope
 import dev.jellystructure.tv.TaxonomyKey
 import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.resolver.CertificationResolver
@@ -65,13 +66,33 @@ data class JsTagWithCount(
     val color: String,
     val description: String,
     val count: Int,
+    /** DEB-3701 FR-1/FR-2 — empty = *All*. */
+    val scopes: List<String> = emptyList(),
+    /** DEB-3701 FR-4 — items that carry the tag outside its scope (they keep it), and how many of each kind. */
+    val outsideScope: Int = 0,
+    val outsideByKind: Map<String, Int> = emptyMap(),
 )
 
 @Serializable
-data class CreateTagRequest(val name: String, val color: String = "#6b7280", val description: String = "")
+data class CreateTagRequest(val name: String, val color: String = "#6b7280", val description: String = "", val scopes: List<String> = emptyList())
 
 @Serializable
-data class UpdateTagRequest(val color: String? = null, val description: String? = null)
+data class UpdateTagRequest(val color: String? = null, val description: String? = null, val scopes: List<String>? = null)
+
+/** DEB-3701 FR-4 — how many items carry a tag outside a scope, by kind (`GET /api/tags/{name}/outside-scope`). */
+@Serializable
+data class OutsideScopeResponse(val outside: Int, val byKind: Map<String, Int> = emptyMap())
+
+@Serializable
+data class RemoveOutsideScopeResponse(val removed: Int)
+
+/** DEB-3701 FR-4 — the items that carry [tag] although its [scopes] do not cover their kind. */
+internal suspend fun itemsOutsideScope(store: MediaStore, tag: String, scopes: List<String>): List<dev.jellystructure.model.MediaItem> =
+    if (scopes.isEmpty()) emptyList()
+    else store.allItems().filter { tag in it.tags && !TagScope.applies(scopes, TagScope.groupOf(it.kind)) }
+
+internal fun outsideByKind(items: List<dev.jellystructure.model.MediaItem>): Map<String, Int> =
+    items.groupingBy { TagScope.groupOf(it.kind) }.eachCount()
 
 // Phase 155 — one cascade-resolved certification code, its (best-effort) source-region label, how many
 // items resolve to it, and its normalized age (null = unmapped; the client defaults its stepper to 18).
@@ -295,8 +316,14 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                     if (tag.isNotBlank()) tagCounts[tag] = (tagCounts[tag] ?: 0) + 1
                 }
             }
+            val allItems = store.allItems()
             val jsTags = tagStore.all().map { jsTag ->
-                JsTagWithCount(name = jsTag.name, color = jsTag.color, description = jsTag.description, count = tagCounts[jsTag.name] ?: 0)
+                // FR-4: a narrowed scope removes nothing; the card says how many items still carry the tag outside it.
+                val outside = if (jsTag.scopes.isEmpty()) emptyList() else allItems.filter { jsTag.name in it.tags && !TagScope.applies(jsTag.scopes, TagScope.groupOf(it.kind)) }
+                JsTagWithCount(
+                    name = jsTag.name, color = jsTag.color, description = jsTag.description, count = tagCounts[jsTag.name] ?: 0,
+                    scopes = jsTag.scopes, outsideScope = outside.size, outsideByKind = outsideByKind(outside),
+                )
             }.let { list -> if (sort == "name") list.sortedBy { it.name.lowercase() } else list.sortedByDescending { it.count } }
             val otherTags = tagCounts.filter { it.key !in jsTagNames }
                 .map { (name, count) -> MetadataEntry(name = name, count = count) }
@@ -400,7 +427,9 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
         }
         post {
             val req = call.receive<CreateTagRequest>()
-            val tag = JsTag(name = req.name.trim(), color = req.color, description = req.description)
+            val scopes = TagScope.normalize(req.scopes)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown scope"))
+            val tag = JsTag(name = req.name.trim(), color = req.color, description = req.description, scopes = scopes)
             if (tag.name.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "name is required"))
             val ok = tagStore.create(tag)
             if (!ok) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "tag '${tag.name}' already exists"))
@@ -410,9 +439,33 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
             patch {
                 val name = call.parameters["name"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
                 val req = call.receive<UpdateTagRequest>()
-                val ok = tagStore.update(name, req.color, req.description)
+                val scopes = req.scopes?.let { TagScope.normalize(it) ?: return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown scope")) }
+                val ok = tagStore.update(name, req.color, req.description, scopes)
                 if (!ok) return@patch call.respond(HttpStatusCode.NotFound)
+                // DEB-3701 FR-4: narrowing a scope never touches an item. Nothing is written to the store here.
                 call.respond(tagStore.get(name)!!)
+            }
+            // DEB-3701 FR-4 — the modal's line before a save: how many items carry the tag outside `scopes`
+            // (omitted = the stored scope; `scopes=` empty = All).
+            get("/outside-scope") {
+                val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val tag = tagStore.get(name) ?: return@get call.respond(HttpStatusCode.NotFound)
+                val scopes = call.request.queryParameters["scopes"]?.let { raw ->
+                    TagScope.normalize(raw.split(",").filter { it.isNotBlank() })
+                        ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown scope"))
+                } ?: tag.scopes
+                val outside = itemsOutsideScope(store, name, scopes)
+                call.respond(OutsideScopeResponse(outside.size, outsideByKind(outside)))
+            }
+            // DEB-3701 FR-4 — *Remove from the n outside its scope*: the owner removing the tag by hand, from exactly
+            // the items outside the stored scope. The one explicit removal besides the delete route above and the
+            // item's own edit; `respectJsTags = false` as those do.
+            post("/remove-outside-scope") {
+                val name = call.parameters["name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val tag = tagStore.get(name) ?: return@post call.respond(HttpStatusCode.NotFound)
+                val outside = itemsOutsideScope(store, name, tag.scopes)
+                for (item in outside) store.updateOne(item.copy(tags = item.tags - name), respectJsTags = false)
+                call.respond(RemoveOutsideScopeResponse(outside.size))
             }
             delete {
                 val name = call.parameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)

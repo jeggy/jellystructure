@@ -36,6 +36,8 @@ data class JsTag(
     val name: String,
     val color: String = "#6b7280",
     val description: String = "",
+    /** DEB-3701 FR-1 — empty = *All*. */
+    val scopes: List<String> = emptyList(),
 )
 
 @Serializable
@@ -44,6 +46,10 @@ data class JsTagWithCount(
     val color: String,
     val description: String,
     val count: Int,
+    val scopes: List<String> = emptyList(),
+    /** DEB-3701 FR-4 — items that carry the tag outside its scope. */
+    val outsideScope: Int = 0,
+    val outsideByKind: Map<String, Int> = emptyMap(),
 )
 
 @Serializable
@@ -53,10 +59,16 @@ data class TagsResponse(
 )
 
 @Serializable
-data class CreateTagRequest(val name: String, val color: String = "#6b7280", val description: String = "")
+data class CreateTagRequest(val name: String, val color: String = "#6b7280", val description: String = "", val scopes: List<String> = emptyList())
 
 @Serializable
-data class UpdateTagRequest(val color: String? = null, val description: String? = null)
+data class UpdateTagRequest(val color: String? = null, val description: String? = null, val scopes: List<String>? = null)
+
+@Serializable
+data class OutsideScopeResponse(val outside: Int = 0, val byKind: Map<String, Int> = emptyMap())
+
+@Serializable
+data class RemoveOutsideScopeResponse(val removed: Int = 0)
 
 // Phase 155 — one cascade-resolved certification code, its normalized age (null = unmapped, the
 // stepper defaults to 18) and how many items resolve to it.
@@ -105,19 +117,29 @@ object MetadataApi {
         httpClient.post("/api/metadata/age-ratings/suggest").body<AgeRatingsResponse>()
     }.getOrNull()
 
-    suspend fun createTag(name: String, color: String, description: String): JsTag? = runCatching {
+    suspend fun createTag(name: String, color: String, description: String, scopes: List<String> = emptyList()): JsTag? = runCatching {
         val resp = httpClient.post("/api/tags") {
             contentType(ContentType.Application.Json)
-            setBody(CreateTagRequest(name, color, description))
+            setBody(CreateTagRequest(name, color, description, scopes))
         }
         if (resp.status == HttpStatusCode.Created) resp.body<JsTag>() else null
     }.getOrNull()
 
-    suspend fun updateTag(name: String, color: String?, description: String?): JsTag? = runCatching {
+    suspend fun updateTag(name: String, color: String?, description: String?, scopes: List<String>? = null): JsTag? = runCatching {
         httpClient.patch("/api/tags/${encodeURIComponent(name)}") {
             contentType(ContentType.Application.Json)
-            setBody(UpdateTagRequest(color, description))
+            setBody(UpdateTagRequest(color, description, scopes))
         }.body<JsTag>()
+    }.getOrNull()
+
+    /** DEB-3701 FR-4 — items that carry the tag outside [scopes] (`null` = the stored scope). */
+    suspend fun tagOutsideScope(name: String, scopes: List<String>? = null): OutsideScopeResponse? = runCatching {
+        val q = scopes?.let { "?scopes=${it.joinToString(",")}" } ?: ""
+        httpClient.get("/api/tags/${encodeURIComponent(name)}/outside-scope$q").body<OutsideScopeResponse>()
+    }.getOrNull()
+
+    suspend fun removeTagOutsideScope(name: String): Int? = runCatching {
+        httpClient.post("/api/tags/${encodeURIComponent(name)}/remove-outside-scope").body<RemoveOutsideScopeResponse>().removed
     }.getOrNull()
 
     suspend fun deleteTag(name: String): Boolean = runCatching {

@@ -11,6 +11,9 @@ data class JsTag(
     val name: String,
     val color: String = "#6b7280",
     val description: String = "",
+    /** DEB-3701 FR-1 — the groups this tag is used for ([dev.jellystructure.model.TagScope.KEYS]). Empty or absent = *All*;
+     *  an older `js-tags.json` has no such key, and (defaults are not encoded) is written back without one. */
+    val scopes: List<String> = emptyList(),
 )
 
 class JsTagStore(private val filePath: String) {
@@ -37,12 +40,13 @@ class JsTagStore(private val filePath: String) {
         return true
     }
 
-    fun update(name: String, color: String?, description: String?): Boolean {
+    fun update(name: String, color: String?, description: String?, scopes: List<String>? = null): Boolean {
         val idx = tags.indexOfFirst { it.name == name }
         if (idx < 0) return false
         tags[idx] = tags[idx].copy(
             color = color ?: tags[idx].color,
             description = description ?: tags[idx].description,
+            scopes = scopes ?: tags[idx].scopes,
         )
         persist()
         return true
