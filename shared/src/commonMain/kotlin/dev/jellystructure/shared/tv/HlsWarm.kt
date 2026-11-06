@@ -39,20 +39,42 @@ object HlsWarm {
         return listOfNotNull(start, below.firstOrNull(), below.lastOrNull()).distinctBy { it.url }
     }
 
-    /** The first [count] segments of a media playlist, absolute. Empty for a master or an empty playlist. */
-    fun firstSegments(media: String, mediaUrl: String, count: Int): List<String> {
+    /** What a warm-up fetches from one rung: its init segment (`#EXT-X-MAP`, null where the rung has none) and then [segments], absolute. */
+    data class Warm(val init: String?, val segments: List<String>) {
+        /** Init first, as the player reads it first. */
+        val urls: List<String> get() = listOfNotNull(init) + segments
+    }
+
+    /**
+     * DEB-3549 (DEB-3093 FR-6, 2026-11-04 note) — the [count] segments a player starting at [positionMs] reads first: the one that holds
+     * the position and the ones after it, plus the init segment in effect there. Our encoder's playlists and Jellyfin's list the whole
+     * film from segment 0, so the position is found by adding up the `#EXTINF` durations; a position at or past the end gives the last
+     * segment. Empty for a master or an empty playlist.
+     */
+    fun segmentsAt(media: String, mediaUrl: String, positionMs: Long, count: Int): Warm {
         val lines = media.lines().map { it.trim() }
-        if (lines.any { it.startsWith("#EXT-X-STREAM-INF") }) return emptyList()
-        val out = ArrayList<String>()
-        var pending = false
+        if (lines.any { it.startsWith("#EXT-X-STREAM-INF") }) return Warm(null, emptyList())
+        class Entry(val uri: String, val durationMs: Double, val map: String?)
+        val entries = ArrayList<Entry>()
+        var map: String? = null
+        var durationMs: Double? = null
         for (line in lines) {
             when {
-                line.startsWith("#EXTINF") -> pending = true
+                line.startsWith("#EXT-X-MAP") -> map = Regex("""URI="([^"]*)"""").find(line)?.groupValues?.get(1)
+                line.startsWith("#EXTINF") -> durationMs = (line.substringAfter(':').substringBefore(',').trim().toDoubleOrNull() ?: 0.0) * 1000.0
                 line.isEmpty() || line.startsWith("#") -> {}
-                pending -> { out += resolve(mediaUrl, line); pending = false; if (out.size >= count) break }
+                durationMs != null -> { entries += Entry(line, durationMs, map); durationMs = null }
             }
         }
-        return out
+        if (entries.isEmpty()) return Warm(null, emptyList())
+        var start = entries.lastIndex
+        var elapsed = 0.0
+        for ((i, e) in entries.withIndex()) {
+            if (positionMs < elapsed + e.durationMs) { start = i; break }
+            elapsed += e.durationMs
+        }
+        val chosen = entries.subList(start, minOf(entries.size, start + count))
+        return Warm(entries[start].map?.let { resolve(mediaUrl, it) }, chosen.map { resolve(mediaUrl, it.uri) })
     }
 
     /** [uri] against the URL it was listed in: absolute stays, `/path` takes the origin, anything else the directory. */

@@ -424,7 +424,9 @@ class TvApiClient(
     }
 
     /**
-     * DEB-3103 (FR-6) — fetches the master, the rung the stream starts on and that rung's first [segments] segments, each handed to
+     * DEB-3103 (FR-6) — fetches the master, the rung the stream starts on and that rung's [segments] segments at [positionMs] (the one
+     * holding the position and the next, plus the rung's init segment: DEB-3549 — not the film's first two, which would restart our
+     * encoder's job at segment 0 under the held frame), each handed to
      * [keep] as it arrives (never held whole): when this returns, the encoder (or Jellyfin) has the start of the stream ready and, where
      * [keep] stores the bytes, so does the player (DEB-3171: its reads of them cost no link time). The default drops them. Stream URLs
      * carry their own credential (the player sends no header either). Throws on any failure, so the caller counts it as a failed attempt.
@@ -435,30 +437,30 @@ class TvApiClient(
      * rung that just timed out would miss what was kept and fetch it again over the same slow link.
      */
     suspend fun warmHlsStart(
-        masterUrl: String, startBps: Long?, segments: Int = 2,
+        masterUrl: String, startBps: Long?, positionMs: Long = 0, segments: Int = 2,
         keep: suspend (url: String, body: io.ktor.utils.io.ByteReadChannel) -> Unit = { _, body -> HlsWarm.drain(body) },
     ): Long? {
         val master = client.get(masterUrl).also { it.assertSuccess() }.bodyAsText()
         val variants = HlsWarm.variants(master, masterUrl)
         // A media playlist given directly (no ladder): its own first segments.
-        if (variants.isEmpty()) { warmRung(master, masterUrl, segments, keep); return null }
+        if (variants.isEmpty()) { warmRung(master, masterUrl, positionMs, segments, keep); return null }
         var failure: Throwable? = null
         for (v in HlsWarm.fallbackOrder(variants, startBps)) {
             try {
-                warmRung(null, v.url, segments, keep)
+                warmRung(null, v.url, positionMs, segments, keep)
                 return v.bandwidth
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { failure = e }
         }
         throw failure ?: IllegalStateException("the stream's master lists no rung")
     }
 
-    /** One rung's first [segments] segments: its playlist ([playlist], or fetched from [mediaUrl] when null) and then each segment, streamed to [keep]. */
-    private suspend fun warmRung(playlist: String?, mediaUrl: String, segments: Int, keep: suspend (String, io.ktor.utils.io.ByteReadChannel) -> Unit) {
+    /** One rung's init segment and [segments] segments at [positionMs]: its playlist ([playlist], or fetched from [mediaUrl] when null) and then each, streamed to [keep]. */
+    private suspend fun warmRung(playlist: String?, mediaUrl: String, positionMs: Long, segments: Int, keep: suspend (String, io.ktor.utils.io.ByteReadChannel) -> Unit) {
         val media = playlist ?: client.get(mediaUrl).also { it.assertSuccess() }.bodyAsText()
-        val first = HlsWarm.firstSegments(media, mediaUrl, segments)
-        if (first.isEmpty()) throw IllegalStateException("the stream's playlist lists no segment")
+        val first = HlsWarm.segmentsAt(media, mediaUrl, positionMs, segments)
+        if (first.segments.isEmpty()) throw IllegalStateException("the stream's playlist lists no segment")
         // Streamed (DEB-3169): a whole segment as one array is 9.5 MB at 2160p, more than a TV's heap has left behind a full buffer.
-        for (url in first) client.getStreaming(url) { r -> r.assertSuccess(); keep(url, r.bodyAsChannel()) }
+        for (url in first.urls) client.getStreaming(url) { r -> r.assertSuccess(); keep(url, r.bodyAsChannel()) }
     }
 
     suspend fun markPlayed(itemId: String, watched: Boolean) {

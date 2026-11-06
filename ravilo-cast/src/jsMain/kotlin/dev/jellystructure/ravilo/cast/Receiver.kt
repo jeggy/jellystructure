@@ -1480,7 +1480,7 @@ private class Receiver {
             while (true) {
                 val got = try {
                     val nt = a.restream(d.itemId, sub, at, capabilities(), audio, notOurEncoder = d.itemId == notOursFor)
-                    if (!nt.directPlay) absolute(nt.hlsUrl)?.let { a.warmHlsStart(it, nt.startVariantBps) }
+                    if (!nt.directPlay) absolute(nt.hlsUrl)?.let { a.warmHlsStart(it, nt.startVariantBps, at) }
                     nt
                 } catch (e: CancellationException) { throw e } catch (e: Throwable) { note("DEB-3105 FR-9: the replacement failed (${e.message})"); null }
                 if (got != null) {

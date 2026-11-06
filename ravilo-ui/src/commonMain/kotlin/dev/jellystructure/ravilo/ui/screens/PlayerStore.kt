@@ -582,10 +582,13 @@ class PlayerStore(
         }
     }
 
-    /** DEB-3171 (FR-6) — the warm-up keeps the segments where the player reads them, so the switch does not fetch them again on a slow link. */
-    private suspend fun warmReplacement(hlsUrl: String, startBps: Long?): Long? {
+    /**
+     * DEB-3171 (FR-6) — the warm-up keeps the segments where the player reads them, so the switch does not fetch them again on a slow link.
+     * DEB-3549 — they are the ones at [positionMs], where the replacement will start, not the film's first two.
+     */
+    private suspend fun warmReplacement(hlsUrl: String, startBps: Long?, positionMs: Long): Long? {
         dev.jellystructure.ravilo.ui.seams.WarmedSegments.begin(hlsUrl)
-        return apiClient.warmHlsStart(hlsUrl, startBps) { url, body -> dev.jellystructure.ravilo.ui.seams.WarmedSegments.keep(url, body) }
+        return apiClient.warmHlsStart(hlsUrl, startBps, positionMs) { url, body -> dev.jellystructure.ravilo.ui.seams.WarmedSegments.keep(url, body) }
     }
 
     /**
@@ -619,7 +622,7 @@ class PlayerStore(
             val got = attempt {
                 val t = apiClient.restream(itemId, subtitleStreamIndex, askedAtPosition, lastCapabilities, audioStreamIndex, mediaSourceId,
                     notOurEncoder = itemId == notOursFor, belowBandwidthBps = belowBandwidthBps, handoverAtMs = at.takeIf { it > askedAtPosition })
-                val landed = if (t.directPlay) null else t.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, t.startVariantBps) }
+                val landed = if (t.directPlay) null else t.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, t.startVariantBps, at) }
                 warmedLower = t.warmedBelowStart(landed)
                 t.startedOn(warmedLower)
             }
@@ -1167,7 +1170,7 @@ class PlayerStore(
             while (true) {
                 got = attempt {
                     val r = apiClient.restream(item, t.burnedSubtitleIndex ?: -1, w.positionMs, caps, audio, currentMediaSourceId, handoverAtMs = d.atMs)
-                    val landed = if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, r.startVariantBps) } else null
+                    val landed = if (!r.directPlay && unseenReplacements) r.resolvedOnThisServer().hlsUrl?.let { warmReplacement(it, r.startVariantBps, d.atMs) } else null
                     p.warmedLower = r.warmedBelowStart(landed)
                     r.startedOn(p.warmedLower)
                 }
