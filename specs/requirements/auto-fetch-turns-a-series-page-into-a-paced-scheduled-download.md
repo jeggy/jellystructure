@@ -173,6 +173,23 @@ configuration. And make it clear that it failed because of that, cause then open
   the first action: whether to report is the admin's call.
 - FR-13 and *Acceptance* 24 say the same. *Not a series* keeps its words for a page the model judged not to be a series.
 
+**Amended 2026-11-06 (DEB-3831, owner on DEB-3831):** *"Didn't work. This was also after I pasted the session
+cookie in"*. The owner's DR news page ended *Videos not found*, with a session pasted. Prod's log and a check by hand
+found three causes. None of them was the session.
+- **DR does not need a sign-in for this page.** *Log ind for at afspille* is the text DR's player shows a signed-out
+  viewer. DR's own API serves the stream to the anonymous token every visitor gets: plain HLS, `drm: None`. The first
+  investigation answered `needs_sign_in` from that text alone, and that is why the owner was asked for a session.
+  FR-3.6's own account of the page (*the stream comes from a token API on another host*) is right about the host and
+  wrong about the sign-in.
+- **Ours: DR writes its episode links with a doubled slash** (`https://www.dr.dk//drtv/episode/…`). yt-dlp's DR
+  extractor does not match that, so the probe answered *yt-dlp has no extractor for this site* and the model gave up on
+  yt-dlp. FR-6.3 (new bullet *A link yt-dlp can read*): the link handed to yt-dlp has each run of `/` in its path made
+  one. Nothing stored changes.
+- **Not ours: yt-dlp's DR extractor fails on every DR episode.** Since about 2026-11-02, DR's page data carries a UUID
+  as the item id, and release 2026.10.26 sends it to DR's stream API, which answers `400`. The numeric id at the end
+  of the link still works. Upstream has the issue (yt-dlp #17979) and a three-line fix (PR #17980, open). Until the
+  image carries a release with it, no DR fetch can download, with or without a session.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -999,6 +1016,13 @@ one lane.
      read, and a page cannot send it to whatever its markup names. What yt-dlp's last error says is judged like an
      answer: `HTTP Error 429` backs the lane off (FR-2.4), `HTTP Error 401`/`403` on a site that worked before stops it
      (FR-2.5).
+   - **A link yt-dlp can read (amended 2026-11-06, DEB-3831).** Every link the engine hands to yt-dlp, for the proof's
+     probe, an item's date and the download, has each run of two or more `/` in its path made one `/`. The path is
+     everything after the host and before `?` or `#`; the `//` after the scheme and anything in the query are left as
+     they are. The `robots.txt` check reads the same link that yt-dlp is handed. The item's stored link, its id and the
+     fetcher's history keep what the page printed, so a saved fetcher's items are the same items after the build.
+     DR prints `https://www.dr.dk//drtv/episode/…`, which yt-dlp's extractor does not match, and it answered *yt-dlp has
+     no extractor for this site*. A listing URL the admin pasted is handed over as pasted.
    - **No DRM (FR-3.3).** yt-dlp saying *DRM protected*, or an item whose every format is marked DRM, refuses the item
      as FR-3.3 does: *this site protects its videos; Auto-fetch does not get past that*.
    - **Quality.** `-f "bv*+ba/b"`: the best video and the best audio, merged into MKV (`--merge-output-format mkv`); a
