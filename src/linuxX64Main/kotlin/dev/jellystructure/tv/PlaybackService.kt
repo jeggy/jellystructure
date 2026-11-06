@@ -848,7 +848,7 @@ class PlaybackService(
             val ourCaps = withReceiverRenditions(deviceKind, capabilities)
             val (plan, why) = if (notOurEncoder) null to "the player could not play ours"
             else if (file == null) null to "file not on this server's disk"
-            else encoder.planFor(ourCaps, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
+            else encoder.planFor(ourCaps, deviceKind, file.first, file.encoderMs, file.tracks, ticket.audio, ticket.audioStreamIndex,
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
@@ -952,7 +952,10 @@ class PlaybackService(
     /** R291 — the file on this server's disk behind a Jellyfin id (a movie, or one series' episode), and its
      *  length; the same top-level-or-episode lookup [requireVisible] does. */
     /** The file on this server's disk for [jellyfinId]: its path, length and our scan's tracks (R382 maps by them). */
-    private data class LocalFile(val first: String, val second: Long?, val tracks: List<dev.jellystructure.model.Track>)
+    private data class LocalFile(val first: String, val second: Long?, val tracks: List<dev.jellystructure.model.Track>, val contentEndMs: Long? = null) {
+        /** DEB-3642 (FR-7) — the length our encoder's playlist has: where the content ends when the header claims more. */
+        val encoderMs: Long? get() = contentLimited(second, contentEndMs)
+    }
 
     /**
      * DEB-3642 (a-damaged-file-still-plays FR-2–FR-4) — what the file checks say about the file behind [jellyfinId]: the streams
@@ -964,7 +967,7 @@ class PlaybackService(
 
     private fun ghostFactsFor(file: LocalFile): GhostFacts {
         val checks = fileChecks ?: return GhostFacts.NONE
-        return ghostFactsFrom(file.tracks, checks.emptyStreams(file.first), checks.damagedBeforeFirstCluster(file.first))
+        return ghostFactsFrom(file.tracks, checks.emptyStreams(file.first), checks.damagedBeforeFirstCluster(file.first), checks.coverage(file.first))
     }
 
     private suspend fun ghostFactsOf(jellyfinId: String): GhostFacts {
@@ -973,7 +976,11 @@ class PlaybackService(
     }
 
     /** FR-3 — the audio track a negotiation asks Jellyfin for: never one that holds no packets. Said once, where the swap is made. */
-    private suspend fun realAudioFor(jellyfinId: String, ghosts: GhostFacts, wanted: Int?, audio: () -> List<AudioTrack>): Int? {
+    private suspend fun realAudioFor(jellyfinId: String, ghosts: GhostFacts, wantedIndex: Int?, audio: () -> List<AudioTrack>): Int? {
+        // DEB-3642 (FR-6) — no choice of this viewer's: a short track is not the server's pick when a complete one says the same thing.
+        val (avoided, short) = avoidShortAudio(if (ghosts.shortAudio.isEmpty()) emptyList() else audio(), wantedIndex, ghosts.shortAudio)
+        if (short != null) Logger.info("playback: item=$jellyfinId audio $short ends early — carrying $avoided, the complete track (DEB-3642 FR-6)", "tv")
+        val wanted = avoided ?: wantedIndex
         if (ghosts.empty.isEmpty()) return wanted
         val pick = pickRealAudio(audio(), wanted, ghosts.empty)
         pick.logLine?.let { Logger.info("$it (item=$jellyfinId, DEB-3642 FR-3)", "tv") }
@@ -990,10 +997,13 @@ class PlaybackService(
     }
 
     private suspend fun localFileOf(jellyfinId: String): LocalFile? {
-        mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return LocalFile(it.path, it.tracks.fileDurationMs(), it.tracks) }
+        mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return LocalFile(it.path, it.tracks.fileDurationMs(), it.tracks, contentEndOf(it.path)) }
         val ep = mediaStore.allItems().firstNotNullOfOrNull { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId } } ?: return null
-        return LocalFile(ep.path, ep.tracks.fileDurationMs(), ep.tracks)
+        return LocalFile(ep.path, ep.tracks.fileDurationMs(), ep.tracks, contentEndOf(ep.path))
     }
+
+    /** DEB-3642 (FR-7) — where the file's content ends, when its current coverage check found the header claims more (kind E). */
+    private fun contentEndOf(path: String): Long? = fileChecks?.coverage(path)?.contentEndMs
 
     /** R248 — true when stops are queued on the [PlaybackWriter] (production): the Home-feed
      *  invalidation then runs from [onStopLanded] once Jellyfin has acknowledged the stop, not from the
@@ -1367,7 +1377,7 @@ class PlaybackService(
         val facts = factsOf(jellyfinId)
         val plan = SessionPlan(
             startOverSeriesId = facts?.seriesJellyfinId?.takeIf { asStartOver },
-            durationMs = facts?.durationMs?.takeIf { it > 0 } ?: ((itemDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS),
+            durationMs = facts?.finishMs?.takeIf { it > 0 } ?: ((itemDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS),   // DEB-3642 (FR-7) — 90 % of where the content ends
             creditsStartMs = facts?.creditsStartMs,
             shuffle = asShuffle,
             priorPositionMs = if (saved?.played == true) 0L else (saved?.playbackPositionTicks ?: 0L) / TICKS_PER_MS,
@@ -1547,7 +1557,7 @@ class PlaybackService(
             hlsUrl = master, startPositionMs = startPositionMs, subtitles = subs, audio = audio, trickplayUrl = null, expiresAt = nowMs() + TICKET_TTL_MS)
         // R291 (FR-R291-13) — the same offer the play will make, or the warm plan would differ from the play's and
         // adoptPrewarm would throw the warm encode away on every cast.
-        val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, askedAudio),
+        val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.encoderMs, file.tracks, audio, carriedAudioIndex(master, askedAudio),
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType, emptyStreams = ghosts.empty,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
             audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target),
@@ -1678,7 +1688,7 @@ class PlaybackService(
         // R347 / R343 — what the stop reports: the playhead, the end of the file for an item finished at its
         // credits (and a tick through mark), or a shuffled entry's position from before the shuffle.
         var cleared = false
-        val plan = plansMutex.withLock { plans.remove(key).also { cleared = clearLatched.remove(key) } } ?: factsOf(jellyfinId)?.let { SessionPlan(durationMs = it.durationMs, creditsStartMs = it.creditsStartMs) }
+        val plan = plansMutex.withLock { plans.remove(key).also { cleared = clearLatched.remove(key) } } ?: factsOf(jellyfinId)?.let { SessionPlan(durationMs = it.finishMs, creditsStartMs = it.creditsStartMs) }
         val decision = resolveStop(positionMs, plan)
         // R372 (FR-R372-12) — the watchdog's own stop is marked as such: a progress report after it brings the play
         // straight back under tracking, rather than being swallowed by the post-stop grace.
@@ -1729,18 +1739,21 @@ class PlaybackService(
      *  marker (the player's own lookup), and the series it belongs to (null for a film). Null when the id is
      *  not in this library (music, a stale id). A multi-episode file's credits are its LAST part's, as the
      *  player's episode entry takes them (`g.last().segments`). */
-    private data class ItemFacts(val durationMs: Long, val creditsStartMs: Long?, val seriesJellyfinId: String?)
+    private data class ItemFacts(val durationMs: Long, val creditsStartMs: Long?, val seriesJellyfinId: String?, val contentEndMs: Long? = null) {
+        /** DEB-3642 (FR-7) — the length a stop measures 90 % of: where the content ends when the header claims more. */
+        val finishMs: Long get() = contentLimited(durationMs, contentEndMs) ?: durationMs
+    }
 
     private suspend fun factsOf(jellyfinId: String): ItemFacts? {
         mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { film ->
             val credits = runCatching { segmentsFor?.invoke(film.id, "", 0, film.segments.stinger)?.creditsStartMs }.getOrNull()
-            return ItemFacts(film.tracks.fileDurationMs() ?: 0L, credits, null)
+            return ItemFacts(film.tracks.fileDurationMs() ?: 0L, credits, null, contentEndOf(film.path))
         }
         for (series in mediaStore.allItems()) {
             val ep = series.episodes.firstOrNull { it.jellyfinId == jellyfinId } ?: continue
             val last = series.episodes.filter { it.jellyfinId == jellyfinId && it.path == ep.path }.maxByOrNull { it.episodeNumber ?: 0 } ?: ep
             val credits = runCatching { segmentsFor?.invoke(series.id, last.filename, last.episodeNumber ?: 0, last.segments.stinger)?.creditsStartMs }.getOrNull()
-            return ItemFacts(ep.tracks.fileDurationMs() ?: 0L, credits, series.jellyfinId)
+            return ItemFacts(ep.tracks.fileDurationMs() ?: 0L, credits, series.jellyfinId, contentEndOf(ep.path))
         }
         return null
     }

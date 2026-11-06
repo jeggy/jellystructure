@@ -224,6 +224,13 @@ const val ENCODER_SEGMENT_MS = 2_000L
 
 internal fun encoderSegmentCount(durationMs: Long): Int = ((durationMs + ENCODER_SEGMENT_MS - 1) / ENCODER_SEGMENT_MS).toInt().coerceAtLeast(1)
 
+/**
+ * DEB-3653 (DEB-3642 FR-7) — the segment a seek or a start at [ms] lands on: never past the last real one. A job started at a
+ * segment the playlist does not have could not write one; the last real segment is written, and the playlist's `#EXT-X-ENDLIST`
+ * right after it ends the stream at once.
+ */
+internal fun encoderSeekSegment(durationMs: Long, ms: Long): Int = (ms.coerceAtLeast(0) / ENCODER_SEGMENT_MS).toInt().coerceAtMost(encoderSegmentCount(durationMs) - 1)
+
 /** The H.264 / HEVC level for a rung's box (also its CODECS string, FR-313's dev review item 9). */
 internal fun levelOf(codec: EncoderCodec, boxHeight: Int): String = when (codec) {
     EncoderCodec.H264 -> when { boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }

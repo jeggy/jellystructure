@@ -135,6 +135,23 @@ Where the build made a choice the text above leaves open:
 - **FR-5, "head of the queue".** The rescued file's `verify_file` row gets priority 2, ahead of an operator's Check now
   (priority 1), and keeps its `defer_while_playing` flag.
 
+## Amendment 2026-11-06 (DEB-3653, FR-6 and FR-7 built)
+
+Where the build made a choice the text above leaves open:
+
+- **FR-6, "no choice by this viewer".** A negotiation that carries no audio choice of its own (no remembered language that resolves to
+  a track, no restream with a track named) is the server's pick. The default-ranked track is the item's flagged default, else its
+  first audio track; when that track's stream index is a kind A finding in a current `file_track_coverage` row, the finding's
+  `alternativeStreamIndex` is asked of Jellyfin (`AudioStreamIndex`) instead, on every call site FR-3 already covers. The pick is
+  logged once, `audio N ends early — carrying M, the complete track`. It decides what the server asks for: a direct play whose
+  player picks its own default track is not rewritten (the ticket's `is_default` flags are Jellyfin's, unchanged).
+- **FR-7, the content end.** It is read from a current row that carries a kind E finding; a content end that is not shorter than
+  the length the scan stored is ignored. Our encoder's plan is made for the content end, so its playlists end there (the last
+  segment is partial) with `#EXT-X-ENDLIST`, and a start or seek at or past it is moved to the last real segment: the stream
+  registers with its start no later than the content end, and a job is never started at a segment the playlist does not list (a
+  request for one answers 404 with no ffmpeg). The play's "finished" length (`SessionPlan.durationMs`) is the content end on
+  every route, so the 90 % rule and R347's credits rule measure the content; `RunTimeTicks` and the length shown are untouched.
+
 ## Non-goals
 
 - **Rewriting any media file.** A remux that drops the ghost tracks (DEB-3640) or a replacement release is an

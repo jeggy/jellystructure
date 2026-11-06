@@ -234,7 +234,7 @@ class Encoder(
         mutex.withLock {
             val now = clock()
             entries.entries.removeAll { it.value.expiresAt < now }
-            val e = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceAtLeast(0), qoeKey = qoeKey)
+            val e = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceIn(0, plan.source.durationMs), qoeKey = qoeKey)   // DEB-3642 (FR-7) — a start past the content end is at it
             entries[id] = e
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(id)
             // A prewarm nobody has pressed Play on is memory-only; the play that adopts it stores it ([adoptPrewarm]).
@@ -478,7 +478,7 @@ class Encoder(
         val v = variantOf(e.plan, kind, index) ?: return null
         // 313 (found live 2026-10-09) — a player reads the init before its first segment: the job starts where the play
         // starts, not at 0:00 (a resumed play on the Mac and in Safari encoded from 0 first, then again at the seek).
-        return jobs.init(id, e.plan, ffmpegPath, v, nearSegment ?: (e.startMs / ENCODER_SEGMENT_MS).toInt(), restartFor(id, e))
+        return jobs.init(id, e.plan, ffmpegPath, v, encoderSeekSegment(e.plan.source.durationMs, (nearSegment?.toLong() ?: (e.startMs / ENCODER_SEGMENT_MS)) * ENCODER_SEGMENT_MS), restartFor(id, e))   // DEB-3642 (FR-7) — never a segment past the last real one
     }
 
     /**

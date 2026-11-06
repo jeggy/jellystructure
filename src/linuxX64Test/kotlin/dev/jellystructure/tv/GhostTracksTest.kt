@@ -46,7 +46,14 @@ import kotlin.test.assertTrue
 class GhostTracksTest {
     private fun track(i: Int, kind: TrackKind, codec: String, lang: String?, channels: Int? = null) =
         Track(streamIndex = i, specifier = "0:$i", kind = kind, codec = codec, language = lang, title = null, default = false, forced = false,
-            width = if (kind == TrackKind.VIDEO) 1920 else null, height = if (kind == TrackKind.VIDEO) 1080 else null, videoBitrate = if (kind == TrackKind.VIDEO) 8_000_000 else null)
+            width = if (kind == TrackKind.VIDEO) 1920 else null, height = if (kind == TrackKind.VIDEO) 1080 else null, videoBitrate = if (kind == TrackKind.VIDEO) 8_000_000 else null,
+            durationMs = if (kind == TrackKind.VIDEO) HEADER_MS else null)
+
+    /** DEB-3653 — what the header claims; the video streams carry it, as the scan stores it. */
+    private val HEADER_MS = 3_000_000L
+
+    /** User-data writes Jellyfin received (the stop's own `Played` flag is in them). */
+    private val userData = mutableListOf<String>()
 
     /** Video 0, audio 1–2, then a second set the header lists and no packet fills: video 5, audio 6–7. */
     private val tracks = listOf(
@@ -145,7 +152,8 @@ class GhostTracksTest {
 
     // ── acceptance 3 and 4 — FR-3, FR-4 — and 5 — FR-5 ─────────────────────────────────────────────
 
-    private class FakeChecks(var empty: Set<Int>? = null, var clusterDamage: Boolean = false, var current: Boolean = false) : PlaybackFileChecks {
+    private class FakeChecks(var empty: Set<Int>? = null, var clusterDamage: Boolean = false, var current: Boolean = false, var coverage: CoverageFacts? = null) : PlaybackFileChecks {
+        override fun coverage(path: String) = coverage
         val verified = mutableListOf<String>()
         override fun emptyStreams(path: String) = empty
         override fun damagedBeforeFirstCluster(path: String) = clusterDamage
@@ -176,7 +184,7 @@ class GhostTracksTest {
                 post("/Sessions/Playing") { call.receiveText(); call.respond(HttpStatusCode.NoContent) }
                 post("/Sessions/Playing/Progress") { call.receiveText(); call.respond(HttpStatusCode.NoContent) }
                 post("/Sessions/Playing/Stopped") { call.receiveText(); call.respond(HttpStatusCode.NoContent) }
-                post("/UserItems/{id}/UserData") { call.receiveText(); call.respondText("{}", ContentType.Application.Json) }
+                post("/UserItems/{id}/UserData") { userData += call.receiveText(); call.respondText("{}", ContentType.Application.Json) }
                 delete("/Videos/ActiveEncodings") { call.respond(HttpStatusCode.NoContent) }
                 post("/Sessions/Capabilities/Full") { call.respond(HttpStatusCode.NoContent) }
             }
@@ -265,5 +273,108 @@ class GhostTracksTest {
             delay(300)
             assertEquals(emptyList(), checked.verified)
         }
+    }
+    // ── acceptance 6 — FR-6 (DEB-3653) ─────────────────────────────────────────────────────────────
+
+    private val shortDefault = CoverageFacts(shortAudio = mapOf(1 to 6))
+
+    @Test
+    fun `the audio the server picks itself is the complete track when the default is short and a viewer's choice of the short one stands`() {
+        val list = listOf(AudioTrack(1, "eng", "English", "ac3", 6, true), AudioTrack(2, "dan", "Dansk", "ac3", 6, false), AudioTrack(6, "eng", "English", "ac3", 6, false))
+        assertEquals(6 to 1, avoidShortAudio(list, null, mapOf(1 to 6)))
+        assertEquals(1 to null, avoidShortAudio(list, 1, mapOf(1 to 6)), "a choice is always honoured, even a short track")
+        assertEquals(null to null, avoidShortAudio(list, null, mapOf(2 to 6)), "the default-ranked track is not the short one")
+        assertEquals(null to null, avoidShortAudio(list, null, emptyMap()))
+        assertEquals(null to null, avoidShortAudio(list, null, mapOf(1 to 9)), "an alternative the item does not list is not asked for")
+        val noDefault = list.map { it.copy(isDefault = false) }
+        assertEquals(6 to 1, avoidShortAudio(noDefault, null, mapOf(1 to 6)), "no flagged default: the first track is the default-ranked one")
+        val finding = { kind: String, i: Int?, alt: Int? -> dev.jellystructure.media.CoverageFinding(kind, i, "AUDIO", "ac3", "eng", null, "5.1", true, true, 100_000, 2_800_000, 2_900_000, alt) }
+        assertEquals(CoverageFacts(mapOf(1 to 6), null), coverageFactsFrom(listOf(finding("A", 1, 6), finding("B", 2, null)), 2_800_000))
+        assertNull(coverageFactsFrom(listOf(finding("B", 2, null), finding("C", 3, null)), 2_800_000), "kinds B and C change nothing")
+    }
+
+    @Test
+    fun `a negotiation with no choice asks for the complete track of a short default and one with a choice asks for that choice`() = rig("short", FakeChecks(empty = emptySet(), coverage = shortDefault)) { service, bodies, _ ->
+        val tv = device("tv-short")
+        service.startPlayback(tv, "film-ghost", caps)
+        assertTrue(""""AudioStreamIndex":6""" in bodies.last(), "stream 1 is short, 6 says the same thing in full — ${bodies.last()}")
+        service.restream(tv, "film-ghost", -1, 60_000, caps, audioStreamIndex = 1)
+        assertTrue(""""AudioStreamIndex":1""" in bodies.last(), "the viewer picked the short track: ${bodies.last()}")
+        service.restream(tv, "film-ghost", -1, 60_000, caps, audioStreamIndex = null)
+        assertTrue(""""AudioStreamIndex":6""" in bodies.last(), bodies.last())
+    }
+
+    @Test
+    fun `a file whose default track is complete or with no coverage row is negotiated as today`() {
+        rig("short-none", FakeChecks(empty = emptySet())) { service, bodies, _ ->
+            service.startPlayback(device("tv-short-none"), "film-ghost", caps)
+            assertFalse("AudioStreamIndex" in bodies.single(), bodies.single())
+        }
+        rig("short-other", FakeChecks(empty = emptySet(), coverage = CoverageFacts(shortAudio = mapOf(2 to 6)))) { service, bodies, _ ->
+            service.startPlayback(device("tv-short-other"), "film-ghost", caps)
+            assertFalse("AudioStreamIndex" in bodies.single(), bodies.single())
+        }
+    }
+
+    // ── acceptance 7 — FR-7 (DEB-3653) ─────────────────────────────────────────────────────────────
+
+    private val contentEnd = 2_873_000L
+
+    @Test
+    fun `the content end is only ever a shortening of the claimed length`() {
+        assertEquals(contentEnd, contentLimited(HEADER_MS, contentEnd))
+        assertEquals(HEADER_MS, contentLimited(HEADER_MS, null))
+        assertEquals(HEADER_MS, contentLimited(HEADER_MS, 4_000_000), "a content end past the claim is no shortening")
+        assertEquals(null, contentLimited(null, contentEnd))
+        val kindE = dev.jellystructure.media.CoverageFinding("E", null, null, null, null, null, null, false, false, contentEnd, contentEnd, HEADER_MS)
+        assertEquals(CoverageFacts(emptyMap(), contentEnd), coverageFactsFrom(listOf(kindE), contentEnd))
+    }
+
+    @Test
+    fun `our encoder's playlist ends at the content end and a seek past it asks for no segment that cannot be written`() = runBlocking {
+        val enc = encoder()
+        val plan = enc.planFor(caps, "tv", "/m/film.mkv", contentLimited(HEADER_MS, contentEnd), tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "SDR", emptyStreams = empty).first!!
+        val count = encoderSegmentCount(contentEnd)
+        assertEquals(1437, count)
+        val playlist = encoderPlaylist(plan.source.durationMs, plan.mux)
+        assertTrue(playlist.trimEnd().endsWith("#EXT-X-ENDLIST"), playlist)
+        assertEquals(count, playlist.lines().count { it.endsWith(".m4s") || it.endsWith(".ts") }, "the last segment before the content end is the last one listed")
+        assertEquals("#EXTINF:1.000,", playlist.lines().last { it.startsWith("#EXTINF") }, "the last segment is the 1 000 ms that remain of 2 873 000")
+        // a seek to 3 000 000 (the header's end): the stream is registered, the master says where it ends, and no segment past the last real one exists.
+        val id = enc.register(plan, "psid-seek", Long.MAX_VALUE / 2, startMs = HEADER_MS)
+        assertTrue("#EXT-X-START:TIME-OFFSET=2873.000" in enc.master(id)!!, enc.master(id)!!)
+        assertEquals(count - 1, encoderSeekSegment(plan.source.durationMs, HEADER_MS))
+        assertEquals(10, encoderSeekSegment(plan.source.durationMs, 20_500))
+        assertNull(enc.segment(id, "v", 0, count), "past the last real segment: nothing is asked of ffmpeg")
+        assertNull(enc.segment(id, "v", 0, 1500))
+        assertTrue(enc.running().isEmpty(), "no job was started")
+        assertEquals(Encoder.Miss.UNKNOWN, enc.miss(id, "v", 0, count))
+    }
+
+    @Test
+    fun `a stop past 90 percent of the content end is reported as played and one before it is not`() {
+        val plan = SessionPlan(durationMs = contentLimited(HEADER_MS, contentEnd)!!)
+        assertTrue(stopUserData(2_600_000, plan, false).played == true, "2 600 000 is past 90 % of 2 873 000 (2 585 700)")
+        assertEquals(0L, stopUserData(2_600_000, plan, false).positionMs, "played: no resume place")
+        assertFalse(stopUserData(2_500_000, plan, false).played == true)
+        assertFalse(stopUserData(2_600_000, SessionPlan(durationMs = HEADER_MS), false).played == true, "on the claimed length 2 600 000 is 86.7 %")
+    }
+
+    @Test
+    fun `a play of a file whose header claims too much is reported to Jellyfin as played from a stop past 90 percent of its content`() = rig("content-end", FakeChecks(empty = emptySet(), coverage = CoverageFacts(contentEndMs = contentEnd))) { service, _, _ ->
+        val tv = device("tv-content-end")
+        service.startPlayback(tv, "film-ghost", caps)
+        service.stopPlayback(tv, "film-ghost", 2_600_000)
+        repeat(100) { if (userData.none { "\"Played\":true" in it }) delay(50) }
+        assertTrue(userData.any { "\"Played\":true" in it }, "user-data writes: $userData")
+    }
+
+    @Test
+    fun `without a content end the same stop is not a finished play`() = rig("no-content-end", FakeChecks(empty = emptySet())) { service, _, _ ->
+        val tv = device("tv-no-content-end")
+        service.startPlayback(tv, "film-ghost", caps)
+        service.stopPlayback(tv, "film-ghost", 2_600_000)
+        delay(1500)
+        assertFalse(userData.any { "\"Played\":true" in it }, "user-data writes: $userData")
     }
 }

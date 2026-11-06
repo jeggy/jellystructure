@@ -2,7 +2,9 @@ package dev.jellystructure.media
 
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.tv.CoverageFacts
 import dev.jellystructure.tv.PlaybackFileChecks
+import dev.jellystructure.tv.coverageFactsFrom
 import kotlinx.coroutines.launch
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -18,7 +20,16 @@ class StoredFileChecks(
     private val jobs: MediaJobQueue,
     private val items: suspend () -> List<MediaItem>,
     private val scope: kotlinx.coroutines.CoroutineScope,
+    private val trackCoverage: TrackCoverageService? = null,
 ) : PlaybackFileChecks {
+    override fun coverage(path: String): CoverageFacts? {
+        val svc = trackCoverage ?: return null
+        val row = svc.rowFor(path) ?: return null
+        val result = svc.resultFor(path, mapOf(path to row))
+        if (result.state != TrackCoverageState.FINDINGS) return null
+        return coverageFactsFrom(result.findings, result.contentEndMs)
+    }
+
     override fun emptyStreams(path: String): Set<Int>? =
         integrity.timeline.resultFor(path).report?.emptyStreams?.toSet()
 

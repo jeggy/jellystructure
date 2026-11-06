@@ -434,7 +434,7 @@ fun main() = runBlocking {
     playbackService.embeddedSubtitles = embeddedSubtitleCache
     val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks, avSync = avSync, embeddedSubtitles = embeddedSubtitleCache)
     // DEB-3642 — the playback plan reads the file checks (ghost tracks, a broken header), and a rescued start queues its own check.
-    playbackService.fileChecks = dev.jellystructure.media.StoredFileChecks(fileIntegrity, mediaJobQueue, { mediaStore.allItems() }, rootScope)
+    playbackService.fileChecks = dev.jellystructure.media.StoredFileChecks(fileIntegrity, mediaJobQueue, { mediaStore.allItems() }, rootScope, trackCoverage)
     // Phase 278 (FR-278-7) — music's Convert…, a job on the media lane.
     // Phase 284 — the one tag writer: albums, converted songs and books all go through it (and Lidarr, read-only, beside it).
     val lidarrClient = dev.jellystructure.arr.LidarrClient()
