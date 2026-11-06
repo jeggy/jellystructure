@@ -395,7 +395,8 @@ object MusicFormats {
     fun reencodesOnPhone(container: String?, codec: String?): Boolean {
         val c = container?.lowercase()
         if (codec?.lowercase() in WMA_CODECS || c == "asf" || c == "wma") return true
-        return c != null && c !in PHONE_CONTAINERS
+        // Jellyfin reports an MP4-family file as a comma list (`mov,mp4,m4a,3gp,3g2,mj2`): any known token plays.
+        return c != null && c.split(',').none { it.trim() in PHONE_CONTAINERS }
     }
 
     /** What the admin reads: `WMA · 128`, `MP3 · 320`, `FLAC`. */

@@ -10,6 +10,7 @@ import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.model.MusicArt
 import dev.jellystructure.model.MusicMatch
+import dev.jellystructure.model.MusicFormats
 import dev.jellystructure.model.reencodesOnPhone
 import kotlinx.coroutines.runBlocking
 import platform.posix.getpid
@@ -60,6 +61,21 @@ class MusicIngestTest {
         assertTrue(wma.reencodesOnPhone())
         assertFalse(rows.tracks.single { it.id == "t1" }.reencodesOnPhone())
         assertEquals(1000, album.createdAt)
+    }
+
+    @Test
+    fun an_mp4_family_file_is_phone_playable_and_only_wma_is_a_convert_target() {
+        val mp4 = "mov,mp4,m4a,3gp,3g2,mj2"
+        for (codec in listOf("aac", "alac", "flac")) assertFalse(MusicFormats.reencodesOnPhone(mp4, codec), codec)
+        assertFalse(MusicFormats.reencodesOnPhone("m4a", "aac"))
+        assertFalse(MusicFormats.reencodesOnPhone("mp3", "mp3"))
+        assertFalse(MusicFormats.reencodesOnPhone("flac", "flac"))
+        assertTrue(MusicFormats.reencodesOnPhone("asf", "wmav2"))
+        assertTrue(MusicFormats.reencodesOnPhone("wma", null))
+        assertTrue(MusicFormats.reencodesOnPhone(mp4, "wmav2"))
+        assertTrue(MusicFormats.reencodesOnPhone("xyz", "aac"))
+        val rows = MusicIngest.build(lib, jf(track("t1", 1, mp4, "aac")), emptyMap(), emptyMap(), emptyMap(), now = 1000, exists = { false })
+        assertFalse(rows.tracks.single().reencodesOnPhone())
     }
 
     @Test
