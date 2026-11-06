@@ -1140,7 +1140,7 @@ class MediaJobQueue(
     /** FR-261-1 — one row per file on the segments lane, deduped per path by the partial unique index (a
      *  duplicate insert is a no-op, not a check-then-insert). No snapshot, no broadcast: nothing renders one
      *  (dev review item 1). An operator's request that meets a waiting row raises it (dev review item 2). */
-    fun enqueueFileCheck(jobType: String, unit: FileUnit, priority: Long, defer: Boolean): FileEnqueue {
+    fun enqueueFileCheck(jobType: String, unit: FileUnit, priority: Long, defer: Boolean, keepDeferral: Boolean = false): FileEnqueue {
         val key = FileCheckSchedule.dedupeKey(jobType, unit.path)
         val params = json.encodeToString(MediaJobParams.serializer(), MediaJobParams(filePath = unit.path, deferWhilePlaying = defer))
         val inserted = runCatching {
@@ -1154,8 +1154,22 @@ class MediaJobQueue(
         }.isSuccess
         if (inserted) return FileEnqueue.INSERTED
         if (priority < FileCheckSchedule.PRIORITY_OPERATOR) return FileEnqueue.ALREADY_QUEUED
-        val raised = queries.transactionWithResult { queries.promoteQueued(priority, key); queries.changes().executeAsOne() > 0L }
+        val raised = queries.transactionWithResult {
+            // DEB-3642 (FR-5) — [keepDeferral]: raise the waiting row to the head but leave it deferred while a play is on.
+            if (keepDeferral) queries.raiseQueued(priority, key) else queries.promoteQueued(priority, key)
+            queries.changes().executeAsOne() > 0L
+        }
         return if (raised) FileEnqueue.PROMOTED else FileEnqueue.ALREADY_QUEUED
+    }
+
+    /**
+     * DEB-3642 (FR-5) — [path]'s `verify_files` job at the head of the queue: a start the bounds had to rescue has no current
+     * deep check, and the next start of the file should get the plan the check makes possible. Still deferred while a play is
+     * on (the row asks to wait) and the check itself is niced, so it never competes with the play it is rescuing.
+     */
+    fun verifyFirst(item: MediaItem, path: String): FileEnqueue? {
+        val unit = FileCheckSchedule.units(item).firstOrNull { it.path == path } ?: return null
+        return enqueueFileCheck(FileCheckSchedule.VERIFY_JOB, unit, FileCheckSchedule.PRIORITY_RESCUE, defer = true, keepDeferral = true)
     }
 
     /** Phase 261 (FR-261-8) — what one pass of a file step queued. */

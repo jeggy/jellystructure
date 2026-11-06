@@ -124,6 +124,10 @@ internal fun deviceProfile(capabilities: ClientCapabilities, throughputCapBps: L
     return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities, throughputCapBps)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"$textSubMethod"},{"Format":"srt","Method":"$textSubMethod"},{"Format":"subrip","Method":"$textSubMethod"},{"Format":"ass","Method":"$textSubMethod"},{"Format":"ssa","Method":"$textSubMethod"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 }
 
+/** The PlaybackInfo request body; [noDirect] adds Jellyfin's own `EnableDirectPlay` / `EnableDirectStream` = false (DEB-3642 FR-4). */
+internal fun playbackInfoBody(deviceProfile: String, extra: String, noDirect: Boolean = false): String =
+    """{"DeviceProfile":$deviceProfile$extra${if (noDirect) ""","EnableDirectPlay":false,"EnableDirectStream":false""" else ""}}"""
+
 /**
  * Phase 177 §FR-177-2 — a per-codec `VideoBitrate` **requirement**, unlike [h264TargetConditions]'
  * declarative `IsRequired:false` target: above the device's own reported decode ceiling, the device
@@ -1252,6 +1256,8 @@ class JellyfinClient {
         throughputCapBps: Long? = null,
         /** DEB-2205 (FR-3) — a client that reports decode health: per codec family, the video bits/s its decode failed at. */
         decodeFailed: Map<String, Long> = emptyMap(),
+        /** DEB-3642 (FR-4) — the file's header is broken: direct play AND direct stream off for this negotiation (per file, never stored on the device). */
+        noDirect: Boolean = false,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
             (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
@@ -1262,7 +1268,7 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"DeviceProfile":${if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities, throughputCapBps, decodeFailed)}$mediaSourceBody$subBody}""")
+            setBody(playbackInfoBody(if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities, throughputCapBps, decodeFailed), mediaSourceBody + subBody, noDirect))
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 

@@ -188,4 +188,22 @@ class MkvLayoutTest {
 
         assertEquals(MkvLayout.OK, scanMkvLayout(buf))
     }
+
+    @Test
+    fun `the first Cluster's byte offset is the sum of everything before it`() {
+        val buf = Buffer().apply {
+            writeEbmlHeaderAndSegment()
+            writeElement(id = 0x114D9B74L, idLen = 4, contentSize = 3) // SeekHead
+            writeElement(id = 0x1654AE6BL, idLen = 4, contentSize = 6) // Tracks
+            writeElement(id = 0x1F43B675L, idLen = 4, contentSize = 0) // Cluster
+        }
+        // EBML header 4+1+5, Segment 4+4, SeekHead 4+1+3, Tracks 4+1+6
+        assertEquals(10L + 8 + 8 + 11, firstClusterOffset(buf))
+    }
+
+    @Test
+    fun `no first Cluster offset for a file without a Cluster or one that is not Matroska`() {
+        assertEquals(null, firstClusterOffset(Buffer().apply { writeEbmlHeaderAndSegment(); writeElement(id = 0x1654AE6BL, idLen = 4, contentSize = 6) }))
+        assertEquals(null, firstClusterOffset(Buffer().apply { repeat(32) { writeByte(0x55) } }))
+    }
 }

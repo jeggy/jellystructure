@@ -117,6 +117,32 @@ internal fun scanMkvLayout(source: Source): MkvLayout {
 }
 
 /**
+ * DEB-3642 (FR-4) — the byte offset of the first `Cluster`, by the same header-only walk as [scanMkvLayout]; null when
+ * the file is not Matroska, a top-level element cannot be measured, or there is no Cluster. A damage line whose
+ * position lies before it is a damaged header.
+ */
+internal fun firstClusterOffset(source: Source): Long? {
+    var pos = 0L
+    val ebml = readVintSized(source, stripMarker = false) ?: return null
+    if (ebml.value != EBML_HEADER_ID) return null
+    val ebmlSize = readVintSized(source, stripMarker = true) ?: return null
+    if (ebmlSize.value == UNKNOWN_SIZE || !safeSkip(source, ebmlSize.value)) return null
+    pos += ebml.bytesRead + ebmlSize.bytesRead + ebmlSize.value
+    val segment = readVintSized(source, stripMarker = false) ?: return null
+    if (segment.value != SEGMENT_ID) return null
+    val segmentSize = readVintSized(source, stripMarker = true) ?: return null
+    pos += segment.bytesRead + segmentSize.bytesRead
+    while (!source.exhausted()) {
+        val id = readVintSized(source, stripMarker = false) ?: return null
+        val size = readVintSized(source, stripMarker = true) ?: return null
+        if (id.value == CLUSTER_ID) return pos
+        if (size.value == UNKNOWN_SIZE || !safeSkip(source, size.value)) return null
+        pos += id.bytesRead + size.bytesRead + size.value
+    }
+    return null
+}
+
+/**
  * Phase 201, 2026-09-13 amendment — walks the children of the first `Cluster`, checking each declared
  * size against the bytes the `Cluster` itself said it had left.
  *

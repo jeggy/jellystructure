@@ -121,6 +121,20 @@ for a file nobody has checked yet. This spec is about making a checked file play
     Watching. The duration shown to the viewer is unchanged, because it is Jellyfin's `RunTimeTicks`, and
     changing it is a metadata write, not a playback one.
 
+## Amendment 2026-11-06 (DEB-3652, FR-1–FR-5 built)
+
+Where the build made a choice the text above leaves open:
+
+- **FR-1, "the file counts as damaged".** An empty video or audio stream (a cover picture is not one) is written as one more
+  `file_integrity` damage line, `stream N holds no packets`, after the demuxer's own lines. The file is then *damaged* for
+  Triage and the title page like any other, and `first_damage` still names the earliest real demuxer line. An empty subtitle
+  is listed in `file_timeline.empty_streams` and never adds a line. The title page's integrity block carries the sentence.
+- **FR-4, the position.** The check stores only the first damage line, so *damage before the first Cluster* reads that line's
+  `pos N` against the first Cluster's offset (a header-only walk of the file, a few hundred bytes, made only for a file whose
+  stored check is damaged). Negotiation asks Jellyfin with `EnableDirectPlay` and `EnableDirectStream` both `false`.
+- **FR-5, "head of the queue".** The rescued file's `verify_file` row gets priority 2, ahead of an operator's Check now
+  (priority 1), and keeps its `defer_while_playing` flag.
+
 ## Non-goals
 
 - **Rewriting any media file.** A remux that drops the ghost tracks (DEB-3640) or a replacement release is an

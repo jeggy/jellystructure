@@ -34,7 +34,9 @@ data class StreamHint(val default: Boolean = false, val attachedPic: Boolean = f
  * The file's figures (FR-2): the **default audio track's** (else the first's) — hole count, total missing,
  * longest, the first [TimelineHoles.KEPT_HOLES] holes — and the worst track's total when it differs by more
  * than a second. [emptyStreams] are the streams that held no packet over the whole read
- * (a-damaged-file-still-plays FR-1), whatever their kind.
+ * (a-damaged-file-still-plays FR-1), whatever their kind; [emptyAv] are those of them that are a picture or a sound
+ * (a cover picture is not one) — the ones that make a file damaged, where an empty subtitle never does. [emptyAv]
+ * is derived from the read and not stored: a playback plan joins [emptyStreams] with the file's own track kinds.
  */
 data class TimelineReport(
     val holeCount: Int,
@@ -43,6 +45,7 @@ data class TimelineReport(
     val worstTrackMissingMs: Long?,
     val holes: List<TimelineHole>,
     val emptyStreams: List<Int>,
+    val emptyAv: List<Int> = emptyList(),
 ) {
     val whole: Boolean get() = holeCount == 0
 }
@@ -134,7 +137,8 @@ class TimelineScan(private val hints: Map<Int, StreamHint> = emptyMap()) {
         // The main video is the real picture with the most packets; cover art is never it (phase 255's rule).
         val video = all.filter { type(it) == "video" && !isCoverArt(it) }.maxWithOrNull(compareBy<Stream> { it.packets }.thenByDescending { -it.index })
         val audio = all.filter { type(it) == "audio" && it.packets > 0 }
-        if (video == null || audio.isEmpty()) return TimelineReport(0, 0, 0, null, emptyList(), empty)
+        val emptyAv = all.filter { it.packets == 0L && type(it) in AV_TYPES && hints[it.index]?.attachedPic != true && codecOf(it) !in TrackCoverage.IMAGE_CODECS }.map { it.index }
+        if (video == null || audio.isEmpty()) return TimelineReport(0, 0, 0, null, emptyList(), empty, emptyAv)
         val perTrack = audio.associate { a -> a.index to holesBetween(video.coverage, a.coverage) }
         val chosen = (audio.firstOrNull { hints[it.index]?.default == true } ?: audio.first())
         val mine = perTrack.getValue(chosen.index)
@@ -147,6 +151,7 @@ class TimelineScan(private val hints: Map<Int, StreamHint> = emptyMap()) {
             worstTrackMissingMs = worstTotal.takeIf { it - total > TimelineHoles.WORST_TRACK_MARGIN_MS },
             holes = mine.take(TimelineHoles.KEPT_HOLES),
             emptyStreams = empty,
+            emptyAv = emptyAv,
         )
     }
 
@@ -187,5 +192,6 @@ class TimelineScan(private val hints: Map<Int, StreamHint> = emptyMap()) {
 
     private companion object {
         val COUNTED_TYPES = setOf("video", "audio", "subtitle")
+        val AV_TYPES = setOf("video", "audio")
     }
 }

@@ -89,7 +89,7 @@ class Encoder(
         mkdirs(cfg.cudaCacheDir)
         EncoderJobs(root, freeBytes = freeBytes ?: { freeBytesOf(root) },
             firstSegmentDeadlineMs = firstSegmentDeadlinesMs.first, coldFirstSegmentDeadlineMs = firstSegmentDeadlinesMs.second, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
-            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, clock()) },
+            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, clock()); onRefusedFile?.invoke(plan.source.path) },
             onStopped = { id, summary ->
                 // DEB-2205 (FR-8) — a PLAY's job stopped: its summary goes to the play's QoE row. A prewarm nobody played has none.
                 val e = mutex.withLock { entries[id] }
@@ -100,6 +100,10 @@ class Encoder(
     /** DEB-2205 (FR-8) — set by the playback service: (device, item, the play's QoE key, the encoder's summary of it) when its job stops. */
     @kotlin.concurrent.Volatile
     var onSummary: (suspend (String, String, String, EncoderSummary) -> Unit)? = null
+
+    /** DEB-3642 (FR-5) — set by the playback service: a file whose first job was refused (FR-313-12, or ffmpeg's own exit). */
+    @kotlin.concurrent.Volatile
+    var onRefusedFile: ((String) -> Unit)? = null
 
     /** 313 (2026-10-09) — files ffmpeg refused: their next plays go to Jellyfin instead of retrying the same command. */
     internal val refused = RefusedSources()
@@ -141,8 +145,14 @@ class Encoder(
         stallCapped: Boolean = false,
         /** DEB-3338 (FR-313-18) — the tallest box the top rung may use: set when the play reaches us only by the size-cap rule. */
         boxLimit: Int? = null,
+        /** DEB-3642 (FR-2) — the file's streams that hold no packet (its current packet timeline): none of them is mapped, offered or carried. */
+        emptyStreams: Set<Int> = emptySet(),
     ): Pair<EncoderPlan?, String> {
-        val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
+        // DEB-3642 (FR-2) — the plan's picture is always a stream with packets: the first video stream that has any, else (every one
+        // empty, or no timeline) the first as before. `0:v:N` counts every video stream of the input, empty ones included.
+        val videos = tracks.filter { it.kind == TrackKind.VIDEO }.sortedBy { it.streamIndex }
+        val video = if (emptyStreams.isEmpty()) tracks.firstOrNull { it.kind == TrackKind.VIDEO } else videos.firstOrNull { it.streamIndex !in emptyStreams } ?: videos.firstOrNull()
+        val videoOrder = if (emptyStreams.isEmpty()) 0 else videos.indexOf(video).coerceAtLeast(0)
         val range = sourceVideoRange.orEmpty()
         val source = video?.let {
             EncoderSource(
@@ -150,7 +160,7 @@ class Encoder(
                 videoBps = it.videoBitrate?.toLong(),
                 hdr = it.videoRange.equals("HDR", true) || range.contains("HDR", true) || range.contains("HLG", true) || range.startsWith("DOVI", true),
                 hlg = range.contains("HLG", true),
-                dolbyVisionProfile5 = range.equals("DOVI", true),
+                dolbyVisionProfile5 = range.equals("DOVI", true), videoOrder = videoOrder,
             )
         }
         val cards = if (cfg.enabled) cards() else emptyList()
@@ -162,18 +172,23 @@ class Encoder(
         if (burnRequested && burnSubtitleOrder == null) return null to "image subtitle not found among the file's subtitle streams (313d)"
         if (burnSubtitleOrder != null && tracks.count { it.kind == TrackKind.SUBTITLE } <= burnSubtitleOrder)
             return null to "image subtitle not found among the file's subtitle streams (313d)"
-        val order = fileAudioOrder(audio, tracks) ?: return null to "audio tracks don't match the file (R382)"
+        val order = fileAudioOrder(audio, tracks, emptyStreams) ?: return null to "audio tracks don't match the file (R382)"
+        val real = audio.filter { it.index !in emptyStreams }
+        if (audio.isNotEmpty() && real.isEmpty()) return null to "every audio track holds no packets (DEB-3642)"
+        // FR-2 — an empty carried track is swapped for its twin (else the default real one); said once, where it is made.
+        val pick = pickRealAudio(audio, carriedIndex, emptyStreams)
+        pick.logLine?.let { Logger.info(it, "tv") }
         // overlay_cuda composites 8-bit frames only: a burn-in play is H.264 SDR (tone-mapped once when HDR).
         val codec = if (burnSubtitleOrder != null) EncoderCodec.H264
             else encoderCodecFor(caps.hlsHevc, caps.hlsHevcCapable, caps.videoCodecs, caps.supportsHdr10, caps.supportsHlg, source)
         val ceiling = listOf(if (codec == EncoderCodec.HEVC) caps.maxHevcBitrate else caps.maxH264Bitrate, caps.maxVideoBitrate)
             .filter { it > 0 }.minOrNull()?.toLong()
-        val carried = audio.indexOfFirst { it.index == carriedIndex }.let { if (it < 0) audio.indexOfFirst { a -> a.isDefault }.coerceAtLeast(0) else it }
-        val positions = if (caps.hlsAudioRenditions) audio.indices.toList() else listOf(carried)
+        val carried = real.indexOfFirst { it.index == pick.index }.let { if (it < 0) real.indexOfFirst { a -> a.isDefault }.coerceAtLeast(0) else it }
+        val positions = if (caps.hlsAudioRenditions) real.indices.toList() else listOf(carried)
         // DEB-3101 (FR-313-5a) — one codec per master: the film's own Dolby codec when this device decodes it, else AAC.
-        val family = audioFamilyFor(audio.getOrNull(carried)?.codec, caps.platformAudioDecoders)
-        val encAudio = positions.filter { it in audio.indices }.map { pos ->
-            val a = audio[pos]
+        val family = audioFamilyFor(real.getOrNull(carried)?.codec, caps.platformAudioDecoders)
+        val encAudio = positions.filter { it in real.indices }.map { pos ->
+            val a = real[pos]
             audioRenditionFor(pos, order[pos], family, a.codec, a.channels, caps.maxAudioChannels, audioBps[a.index], a.language, a.label, pos == carried)
         }
         val audioPeak = encAudio.maxOfOrNull { audioBitrate(it) } ?: 0L

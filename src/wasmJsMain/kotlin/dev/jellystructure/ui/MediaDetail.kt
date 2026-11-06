@@ -3221,6 +3221,7 @@ private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
                <span class="muted"> · ${f.damageCount} unreadable spot${if (f.damageCount != 1) "s" else ""} · ${if (f.sourcePath != null) "clean copy found" else "no clean copy found"}</span></summary>
              <div class="tiny muted" style="margin:4px 0 2px;line-height:1.6;">
                ${(f.firstDamage ?: "").esc()}
+               ${f.emptyTracks?.let { "<br>${it.esc()}" } ?: ""}
                ${if (f.sourcePath != null) "<br>Clean copy: <code>${f.sourcePath.esc()}</code>" else ""}
              </div>
              ${if (f.sourcePath != null) """<div id="integrity-plan-$i" class="tiny muted" style="margin:4px 0 2px;">Matching the tracks…</div>"""

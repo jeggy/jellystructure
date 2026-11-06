@@ -4,6 +4,7 @@ import dev.jellystructure.config.AppConfig
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nowEpochSec
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.torrent.translateRemoteToLocal
@@ -62,6 +63,8 @@ data class FileIntegrityFileDto(
     val sourcePath: String? = null,
     /** The replacement as one shell snippet when a source exists; the lossy remux otherwise. */
     val command: String? = null,
+    /** DEB-3642 (FR-1) — the tracks the header lists and the file holds no packet of, in words; null when none. */
+    val emptyTracks: String? = null,
 )
 
 @Serializable
@@ -154,7 +157,9 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
         val after = stampOf(path) ?: return null
         // Rewritten while it was being read: the answer describes neither file. Leave it unchecked.
         if (after.size != before.size || after.mtime != before.mtime) return IntegrityResult(FileIntegrityState.UNCHECKED)
-        val lines = deep.damage
+        // DEB-3642 (FR-1) — a picture or sound stream the header lists and the file holds no packet of is damage; an empty
+        // subtitle never is. Listed after the demuxer's own lines, so `first_damage` keeps the earliest real one.
+        val lines = deep.damage + deep.timeline?.emptyAv.orEmpty().map(FileIntegrity::emptyStreamLine)
         val first = lines.firstOrNull()?.let(FileIntegrity::displayLine)
         q.put(path, after.size, after.mtime, nowEpochSec(), lines.size.toLong(), first)
         deep.timeline?.let { report ->
@@ -222,6 +227,7 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
                 // Phase 263 (FR-263-6): a replacement's command needs its tracks paired, which reads both
                 // files — it is asked for per file ([repairPlanFor]), never while this page loads.
                 command = if (r.state == FileIntegrityState.DAMAGED && source == null) TrackCommandBuilder.ffmpegRepairTracksLayout(path) else null,
+                emptyTracks = emptyTracksOf(item, path),
             )
         }
         return FileIntegrityStatusDto(
@@ -230,6 +236,15 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
             unchecked = results.values.count { it.state == FileIntegrityState.UNCHECKED },
             files = files,
         )
+    }
+
+    /** DEB-3642 (FR-1) — the stored empty streams of [path] joined with the file's own track kinds, as one sentence. */
+    private fun emptyTracksOf(item: MediaItem, path: String): String? {
+        val empty = (timeline.resultFor(path).report?.emptyStreams ?: return null).toSet()
+        if (empty.isEmpty()) return null
+        val tracks = item.episodes.firstOrNull { it.path == path }?.tracks ?: item.tracks
+        val gone = tracks.filter { it.streamIndex in empty }
+        return FileIntegrity.emptyTracksSentence(gone.count { it.kind == TrackKind.VIDEO }, gone.count { it.kind == TrackKind.AUDIO }, gone.count { it.kind == TrackKind.SUBTITLE })
     }
 
     // ── fixing ──────────────────────────────────────────────────────────────────────────────────

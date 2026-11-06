@@ -567,6 +567,11 @@ class PlaybackService(
         // DEB-3036 (FR-1) — the first segment a new stream answers releases the stream it replaced.
         // Off the segment's own response: the release talks to Jellyfin.
         enc.onServerFault = { deviceId -> serverFaults.note(deviceId, nowMs() / 1000) }
+        // DEB-3642 (FR-5) — a first job FR-313-12 refused sends its file to the head of the check queue.
+        enc.onRefusedFile = { path ->
+            val scope = backgroundScope
+            if (scope != null) scope.launch { runCatching { rescueVerify(path) } } else kotlinx.coroutines.runBlocking { runCatching { rescueVerify(path) } }
+        }
         enc.onSegmentServed = { playSessionId -> if (pendingAny) { val scope = backgroundScope; if (scope != null) scope.launch { releasePending(playSessionId) } else releasePending(playSessionId) } }
         // DEB-2205 (FR-8) — when a play's job stops, its summary goes to the play's QoE row (or waits for the row).
         enc.onSummary = { deviceId, itemId, qoeKey, summary ->
@@ -819,8 +824,13 @@ class PlaybackService(
         audioBps: Map<Int, Long> = emptyMap(),
     ): StreamTicket {
         val deviceKind = device?.kind ?: "tv"
+        // DEB-3642 (FR-2, FR-3) — the streams of this file that hold no packet are no track of the ticket: the client never lists one.
+        // The plan below still gets the whole list, so it can place each real track among the file's own audio streams.
+        val localFile = if (ticket.directPlay || fileChecks == null) null else localFileOf(jellyfinId)
+        val ghosts = localFile?.let { ghostFactsFor(it).empty }.orEmpty()
         val measured = ticket.copy(measuredBandwidthBps = measuredBps,
-            encoder = if (ticket.directPlay) "direct" else "jellyfin")
+            encoder = if (ticket.directPlay) "direct" else "jellyfin",
+            audio = if (ghosts.isEmpty()) ticket.audio else ticket.audio.filter { it.index !in ghosts })
         device?.let { noteServed(it, jellyfinId, measured.encoder ?: "jellyfin") }
         if (ticket.directPlay || capabilities == null || jellyfinPlaySessionId == null || abandoned) return measured
         val master = ticket.hlsUrl ?: return measured
@@ -828,7 +838,7 @@ class PlaybackService(
         // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
         val reencodes = reencodesVideo(master, sourceVideoCodec, sourceVideoRange, sourceWidth, sourceHeight)
         if (reencodes) {
-            val file = localFileOf(jellyfinId)
+            val file = localFile ?: localFileOf(jellyfinId)
             // DEB-3338 (FR-313-18) — a play that reaches us only because the source is larger than the URL's size cap, on a device
             // that declared a picture ceiling, gets no rung above it; a device that declared none gets its family's rungs.
             val boxLimit = sizeCapRungBox(master, sourceVideoCodec, sourceVideoRange, sourceWidth, sourceHeight,
@@ -842,7 +852,7 @@ class PlaybackService(
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
-                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit)
+                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit, emptyStreams = ghosts)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -898,13 +908,13 @@ class PlaybackService(
         if (file == null && ladder == null) return measured
         val id = audioRenditions.register(
             jellyfinPlaySessionId = jellyfinPlaySessionId, jellyfinMasterUrl = master,
-            audio = ticket.audio, carriedIndex = ticket.audioStreamIndex, expiresAt = ticket.expiresAt,
+            audio = measured.audio, carriedIndex = ticket.audioStreamIndex, expiresAt = ticket.expiresAt,
             filePath = file?.first ?: "", durationMs = file?.second ?: 0L,
-            withRenditions = file != null, ladder = ladder, fileTracks = file?.tracks,
+            withRenditions = file != null, ladder = ladder, fileTracks = file?.tracks, emptyStreams = ghosts,
         ) ?: return measured
-        val renditions = file != null && ticket.audio.size >= 2 && ticket.audioStreamIndex != null && (file.second ?: 0L) > 0L &&
-            ticket.audio.any { it.index == ticket.audioStreamIndex }
-        if (renditions) Logger.info("playback: item=$jellyfinId audio renditions=${ticket.audio.size} (R291)", "tv")
+        val renditions = file != null && measured.audio.size >= 2 && ticket.audioStreamIndex != null && (file.second ?: 0L) > 0L &&
+            measured.audio.any { it.index == ticket.audioStreamIndex }
+        if (renditions) Logger.info("playback: item=$jellyfinId audio renditions=${measured.audio.size} (R291)", "tv")
         if (ladder != null) Logger.info(
             "playback: item=$jellyfinId ladder top=${ladder.topBps / 1000}k ceiling=${ceiling?.let { "${it / 1000}k" } ?: "-"} " +
                 "measured=${measuredBps?.let { "${it / 1000}k" } ?: "none"} (308)", "tv",
@@ -943,6 +953,41 @@ class PlaybackService(
      *  length; the same top-level-or-episode lookup [requireVisible] does. */
     /** The file on this server's disk for [jellyfinId]: its path, length and our scan's tracks (R382 maps by them). */
     private data class LocalFile(val first: String, val second: Long?, val tracks: List<dev.jellystructure.model.Track>)
+
+    /**
+     * DEB-3642 (a-damaged-file-still-plays FR-2–FR-4) — what the file checks say about the file behind [jellyfinId]: the streams
+     * that hold no packet, and whether its header is broken (so Jellyfin is asked with direct play and direct stream off).
+     * Per file and per negotiation, never kept on the device's record. A file with no current check is [GhostFacts.NONE]:
+     * negotiated as today.
+     */
+    internal var fileChecks: PlaybackFileChecks? = null
+
+    private fun ghostFactsFor(file: LocalFile): GhostFacts {
+        val checks = fileChecks ?: return GhostFacts.NONE
+        return ghostFactsFrom(file.tracks, checks.emptyStreams(file.first), checks.damagedBeforeFirstCluster(file.first))
+    }
+
+    private suspend fun ghostFactsOf(jellyfinId: String): GhostFacts {
+        if (fileChecks == null) return GhostFacts.NONE
+        return ghostFactsFor(localFileOf(jellyfinId) ?: return GhostFacts.NONE)
+    }
+
+    /** FR-3 — the audio track a negotiation asks Jellyfin for: never one that holds no packets. Said once, where the swap is made. */
+    private suspend fun realAudioFor(jellyfinId: String, ghosts: GhostFacts, wanted: Int?, audio: () -> List<AudioTrack>): Int? {
+        if (ghosts.empty.isEmpty()) return wanted
+        val pick = pickRealAudio(audio(), wanted, ghosts.empty)
+        pick.logLine?.let { Logger.info("$it (item=$jellyfinId, DEB-3642 FR-3)", "tv") }
+        if (ghosts.noDirect) Logger.info("playback: item=$jellyfinId header-damaged — direct play and direct stream off (DEB-3642 FR-4)", "tv")
+        return pick.index
+    }
+
+    /** FR-5 — a start the bounds had to rescue (FR-313-12 refused the job, or a client moved on at FR-R218-7): check the file now. */
+    private suspend fun rescueVerify(path: String) {
+        val checks = fileChecks ?: return
+        if (checks.hasCurrentDeepCheck(path)) return
+        checks.verifyFirst(path)
+        Logger.info("playback: $path has no current deep check — its verify job goes first (DEB-3642 FR-5)", "tv")
+    }
 
     private suspend fun localFileOf(jellyfinId: String): LocalFile? {
         mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return LocalFile(it.path, it.tracks.fileDurationMs(), it.tracks) }
@@ -1267,7 +1312,10 @@ class PlaybackService(
         )?.also { Logger.info("playback start: device=${device.deviceId} item=$jellyfinId audio → stream $it, the added copy this device plays (314)", "tv") }
         // R379 — then the play's own track decides: an AC-3 one it can't decode is re-encoded, its HEVC picture copied in
         // fMP4; every use below sees the same narrowed capabilities.
-        val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), copyIndex ?: wantedAudioIndex))
+        // DEB-3642 (FR-3, FR-4) — the file's own checks: an audio track that holds no packets is never asked for, and a broken header is never direct-played.
+        val ghosts = ghostFactsOf(jellyfinId)
+        val askedAudio = realAudioFor(jellyfinId, ghosts, copyIndex ?: wantedAudioIndex) { buildAudioTracks(itemDetail, mediaSourceId) }
+        val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))
         if (negotiatedCaps !== capabilities) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId no platform ${missingPlatformAudio(capabilities).joinToString("/")} decoder — those are re-encoded${if (negotiatedCaps.hlsHevc && !capabilities.hlsHevc) ", HEVC copied in fMP4" else ""} (R379)", "tv")
         // 308 (FR-308-4) — direct play only when the file fits what this device has measured its path to carry: the
         // measured budget joins Phase 177's MaxStreamingBitrate, so a file above it is transcoded (and gets the ladder).
@@ -1277,7 +1325,7 @@ class PlaybackService(
         // direct-plays. No record: a player that climbs takes files up to 8 Mbps directly; one that can't is not capped.
         val take = takeOf(device)
         val cap = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = mediaSourceId ?: jellyfinId, audioStreamIndex = copyIndex ?: wantedAudioIndex, throughputCapBps = cap, decodeFailed = decodeFailedOf(device))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = mediaSourceId ?: jellyfinId, audioStreamIndex = askedAudio, throughputCapBps = cap, decodeFailed = decodeFailedOf(device), noDirect = ghosts.noDirect)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         Logger.info("playback start: device=${device.deviceId} item=$jellyfinId takes ${take?.let { "${it / 1000}k" } ?: "no record"}" +
@@ -1423,9 +1471,12 @@ class PlaybackService(
         val startPositionMs = resolveStartPositionTicks(null, itemDetail?.userData) / TICKS_PER_MS
         // R379 — the same narrowing as a start: an AC-3 episode on a device without the decoder is a transcode, so it is
         // not preloaded (R381's owner decision 2).
-        val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), null))
+        val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 (FR-3, FR-4) — a broken header is not preloaded as a direct play either
+        val askedAudio = realAudioFor(jellyfinId, ghosts, null) { buildAudioTracks(itemDetail) }
+        val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps,
-            identity = identity, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device), device.isTvApp), decodeFailed = decodeFailedOf(device))   // 309 — the start's own cap
+            identity = identity, audioStreamIndex = askedAudio, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device), device.isTvApp), decodeFailed = decodeFailedOf(device),   // 309 — the start's own cap
+            noDirect = ghosts.noDirect)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val direct = source != null && (source.supportsDirectPlay || source.transcodingUrl == null)
         Logger.info("playback prepare: device=${device.deviceId} item=$jellyfinId directPlay=$direct from ${startPositionMs}ms (R381, nothing reported)", "tv")
@@ -1481,8 +1532,10 @@ class PlaybackService(
                 ?.let { audio[it].index }
         }
         val take = takeOf(target)
+        val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 — the warm plan must be the play's: the same real tracks, the same route
+        val askedAudio = realAudioFor(jellyfinId, ghosts, wantedAudioIndex) { audio }
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, target.jellyfinUserId, jellyfinId, capabilities = caps, identity = identity,
-            audioStreamIndex = wantedAudioIndex, throughputCapBps = negotiationCap(caps.hlsAdaptive, take, target.isTvApp), decodeFailed = decodeFailedOf(target))
+            audioStreamIndex = askedAudio, throughputCapBps = negotiationCap(caps.hlsAdaptive, take, target.isTvApp), decodeFailed = decodeFailedOf(target), noDirect = ghosts.noDirect)
         val source = playbackInfo?.mediaSources?.firstOrNull() ?: return none("no PlaybackInfo")
         if (source.supportsDirectPlay || source.transcodingUrl == null) return dev.jellystructure.shared.tv.PrewarmResult("direct")
         val master = source.transcodingUrl
@@ -1494,8 +1547,8 @@ class PlaybackService(
             hlsUrl = master, startPositionMs = startPositionMs, subtitles = subs, audio = audio, trickplayUrl = null, expiresAt = nowMs() + TICKET_TTL_MS)
         // R291 (FR-R291-13) — the same offer the play will make, or the warm plan would differ from the play's and
         // adoptPrewarm would throw the warm encode away on every cast.
-        val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, wantedAudioIndex),
-            takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType,
+        val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, askedAudio),
+            takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType, emptyStreams = ghosts.empty,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
             audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target),
             boxLimit = sizeCapRungBox(master, video?.codec, video?.videoRangeType, video?.width, video?.height, caps.maxH264Width, caps.maxH264Height))
@@ -1955,6 +2008,12 @@ class PlaybackService(
      */
     fun recordQoe(device: DeviceData, report: PlaybackQoeReport) {
         playbackQoeStore.record(device.deviceId, qoeKeyOf(device, report.itemId) ?: playSessionIdFor(device, report.itemId), report, encoder = servedByOf(device.deviceId, report.itemId))
+        // DEB-3642 (FR-5) — a leg that moved on at FR-R218-7's bound (start_failure_status = -1) sends its file to the head of the check queue.
+        if (report.startFailureStatus == -1 && fileChecks != null) {
+            val rescue: suspend () -> Unit = { localFileOf(report.itemId)?.let { rescueVerify(it.first) } }
+            val scope = backgroundScope
+            if (scope != null) scope.launch { runCatching { rescue() } } else kotlinx.coroutines.runBlocking { runCatching { rescue() } }
+        }
         // 309 (FR-309-1) — the device's record learns from every post (a stall, a hold); never awaited by the route.
         val scope = backgroundScope
         if (scope != null) scope.launch { runCatching { foldIntoRecord(device, report) }.onFailure { Logger.warn("record: fold failed: ${it.message}", "tv") } }
@@ -2325,13 +2384,15 @@ class PlaybackService(
         // channel count, the H.264 size and level, the bitrate ceiling and the audio it plays. Without them a Nest Hub
         // that picked a picture subtitle was sent 1080p and six channels again.
         // R379 — narrowed first, so a burn-in on a device without a platform AC-3 decoder never copies AC-3 either.
-        val limits = burnInLimits(capabilities?.let { forPlatformAudio(it, playingAudioCodec(audio, audioStreamIndex)) })
+        val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 (FR-3, FR-4)
+        val askedAudio = realAudioFor(jellyfinId, ghosts, audioStreamIndex) { audio }
+        val limits = burnInLimits(capabilities?.let { forPlatformAudio(it, playingAudioCodec(audio, askedAudio)) })
         val measuredBps = measuredThroughputOf(device)   // 308 (FR-308-4)
         val take = takeOf(device)   // 309 (FR-309-1)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = limits, subtitleStreamIndex = subtitleStreamIndex, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities?.hlsAdaptive == true, take, device.isTvApp))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = limits, subtitleStreamIndex = subtitleStreamIndex, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = askedAudio, throughputCapBps = negotiationCap(capabilities?.hlsAdaptive == true, take, device.isTvApp), noDirect = ghosts.noDirect)
         val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { withChannelLimit(if (it.startsWith("http")) it else "$jellyfinBase$it", limits) }
-        Logger.info("PlaybackInfo(restream, burn-in): item=$jellyfinId sub=$subtitleStreamIndex audio=${audioStreamIndex ?: "default"} negotiated=${negotiated != null}", "tv")
+        Logger.info("PlaybackInfo(restream, burn-in): item=$jellyfinId sub=$subtitleStreamIndex audio=${askedAudio ?: "default"} negotiated=${negotiated != null}", "tv")
         // FR-239-2/-5 — `negotiated` is Jellyfin's own URL and is passed through untouched (see the
         // note at [startPlayback]'s streamUrl). Only the hand-built FALLBACK, used when PlaybackInfo is
         // unavailable, is ours to spell — and it is the branch that runs least often, which is exactly
@@ -2395,7 +2456,7 @@ class PlaybackService(
             // Phase 252 (FR-252-1) — the one fact the client cannot get anywhere else: this subtitle
             // is already in the pixels, so no text track may render beside it.
             burnedSubtitleIndex = subtitleStreamIndex,
-            audioStreamIndex = carriedAudioIndex(transcodingUrl, audioStreamIndex),
+            audioStreamIndex = carriedAudioIndex(transcodingUrl, askedAudio),
             versions = ticketVersions(itemDetail?.mediaSources.orEmpty(), chosenSource),   // phase 314c
             mediaSourceId = chosenSource,
         ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, device = device,
@@ -2436,16 +2497,18 @@ class PlaybackService(
         val measuredBps = measuredThroughputOf(device)   // 308 (FR-308-4)
         val chosenSource = chooseMediaSource(itemDetail?.mediaSources.orEmpty(), mediaSourceId, decodesDolbyVisionEl(capabilities))   // phase 314c
         // R379 — an audio switch to (or on) an AC-3 track on a device without the platform decoder is re-encoded.
-        val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), audioStreamIndex))
+        val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 (FR-3, FR-4)
+        val askedAudio = realAudioFor(jellyfinId, ghosts, audioStreamIndex) { buildAudioTracks(itemDetail, chosenSource) }
+        val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))
         val take = takeOf(device)   // 309 (FR-309-1)
         // DEB-2205 (FR-4) — a ladder that takes the place of a direct play starts within what the path measured, not at the file's own proof.
         val ladderTake = ladderTakeFor(servedByOf(device.deviceId, jellyfinId) == "direct", take, measuredBps)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = recoveryNegotiationCap(negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp), belowBandwidthBps), decodeFailed = decodeFailedOf(device))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = askedAudio, throughputCapBps = recoveryNegotiationCap(negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp), belowBandwidthBps), decodeFailed = decodeFailedOf(device), noDirect = ghosts.noDirect)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         // 2026-09-24 — this path serves an un-burn AND a plain audio switch (R284), and cannot tell them
         // apart; it used to log every one of them as "un-burn", which misread the soveværelse-TV sweep.
-        Logger.info("PlaybackInfo(restream, no burn-in): item=$jellyfinId audio=${audioStreamIndex ?: "default"} directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
+        Logger.info("PlaybackInfo(restream, no burn-in): item=$jellyfinId audio=${askedAudio ?: "default"} directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
         val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = !needsTranscode && negotiatedCaps.supportsEmbeddedTextSubs, hlsSubtitles = negotiatedCaps.hlsOnly && negotiatedCaps.hlsSubtitles)
 
         val startResult = playbackTracker.started(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
@@ -2473,7 +2536,7 @@ class PlaybackService(
             audio = ticketAudio(itemDetail, jellyfinId, needsTranscode, capabilities, chosenSource),
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
-            audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
+            audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, askedAudio) else null,
             versions = ticketVersions(itemDetail?.mediaSources.orEmpty(), chosenSource),   // phase 314c
             mediaSourceId = chosenSource,
             streamBps = if (!needsTranscode && capabilities.reportsDecodeHealth) fileStreamBpsOf(jellyfinId) else null,   // DEB-2205 (FR-4)

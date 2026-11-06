@@ -63,6 +63,12 @@ promoteQueued:
 UPDATE media_job SET priority = :priority, defer_while_playing = 0
 WHERE dedupe_key = :dedupe_key AND state = 'queued' AND (priority < :priority OR defer_while_playing != 0);
 
+-- DEB-3642 (FR-5) — a start the bounds had to rescue sends its file's waiting verify job to the head of the queue and
+-- leaves it deferred while a play is on: the check must not compete with the play it is rescuing.
+raiseQueued:
+UPDATE media_job SET priority = :priority
+WHERE dedupe_key = :dedupe_key AND state = 'queued' AND priority < :priority;
+
 countQueuedByLane:
 SELECT COUNT(*) FROM media_job WHERE lane = :lane AND state = 'queued';
 

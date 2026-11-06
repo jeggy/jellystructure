@@ -100,13 +100,15 @@ class AudioRenditions(
         ladder: LadderPlan? = null,
         /** R382 — the file's own tracks from our scan (ffprobe), to place each Jellyfin audio track in the file. */
         fileTracks: List<Track>? = null,
+        /** DEB-3642 (FR-2) — the file's streams that hold no packet; [audio] has already been cut by them. */
+        emptyStreams: Set<Int> = emptySet(),
     ): String? {
         val carried = audio.indexOfFirst { it.index == carriedIndex }
         // R382 (FR-R382-2/-3) — every rendition needs its place among the file's own audio streams; no confident
         // match ⇒ no renditions (the switch then restreams, as on a player without them). Phase 314b — an external
         // track (a sidecar beside the video) is made from its own file instead, found by phase 314's naming.
         val embedded = audio.filter { !it.external }
-        val embeddedOrder = if (fileTracks != null) fileAudioOrder(embedded, fileTracks) else embedded.indices.toList()
+        val embeddedOrder = if (fileTracks != null) fileAudioOrder(embedded, fileTracks, emptyStreams) else embedded.indices.toList()
         val sidecars = audio.filter { it.external }.associate { it.index to sidecarFileFor(filePath, it) }
         val order: List<Pair<Int, String?>>? = if (embeddedOrder == null || sidecars.values.any { it == null }) null else {
             var e = 0
@@ -394,11 +396,15 @@ internal fun sidecarFileFor(videoPath: String, track: AudioTrack, exists: (Strin
     return dev.jellystructure.filefix.sidecarPath(videoPath, planned).takeIf(exists)
 }
 
-internal fun fileAudioOrder(jellyfin: List<AudioTrack>, file: List<Track>): List<Int>? {
-    val fileAudio = file.filter { it.kind == TrackKind.AUDIO }.sortedBy { it.streamIndex }
+internal fun fileAudioOrder(jellyfin: List<AudioTrack>, file: List<Track>, emptyStreams: Set<Int> = emptySet()): List<Int>? {
+    val allAudio = file.filter { it.kind == TrackKind.AUDIO }.sortedBy { it.streamIndex }
+    // DEB-3642 (FR-2) — the streams that hold no packet are out of both lists; each remaining Jellyfin track still maps to
+    // its place among ALL the file's audio streams, because that is what ffmpeg's `0:a:N` counts.
+    val fileAudio = allAudio.withIndex().filter { it.value.streamIndex !in emptyStreams }
+    val jellyfin = jellyfin.filter { it.index !in emptyStreams }
     if (fileAudio.size != jellyfin.size) return null
     for ((i, a) in jellyfin.withIndex()) {
-        val f = fileAudio[i]
+        val f = fileAudio[i].value
         if (!sameAudioCodec(a.codec, f.codec)) return null
         // Found live 2026-10-09: Jellyfin reports a French track as `fra` (ISO 639-2/T) where the file — and so our scan —
         // tags it `fre` (639-2/B). Both name French: compare languages, not codes (every film with a French, German,
@@ -407,7 +413,7 @@ internal fun fileAudioOrder(jellyfin: List<AudioTrack>, file: List<Track>): List
         val lf = f.language?.takeIf { it.isNotBlank() }
         if (la != null && lf != null && !LanguageResolver.sameLanguage(la, lf)) return null
     }
-    return jellyfin.indices.toList()
+    return fileAudio.map { it.index }
 }
 
 private fun sameAudioCodec(a: String?, b: String?): Boolean {

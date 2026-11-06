@@ -188,6 +188,8 @@ data class EncoderSubtitle(val name: String, val language: String?, val forced: 
 data class EncoderSource(
     val path: String, val durationMs: Long, val videoCodec: String, val width: Int, val height: Int,
     val videoBps: Long?, val hdr: Boolean, val hlg: Boolean = false, val dolbyVisionProfile5: Boolean = false,
+    /** DEB-3642 (FR-2) — the picture's place among the file's video streams (`0:v:N`): 0 unless a stream before it holds no packet. */
+    val videoOrder: Int = 0,
 )
 
 /** Everything one job makes (fixed for its life: FR-313-1 — a running ffmpeg cannot gain an output). */
@@ -373,7 +375,7 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
     val tenBit = plan.keepsHdr
     val fmt = if (tenBit) "p010" else "nv12"
     val graph = StringBuilder()
-    val src = "[0:v:0]"
+    val src = "[0:v:${plan.source.videoOrder}]"
     if (gpu != null) {
         val top = plan.rungs[0]
         if (plan.tonemaps) {

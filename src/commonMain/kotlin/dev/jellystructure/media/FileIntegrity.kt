@@ -31,6 +31,23 @@ object FileIntegrity {
         "e=\$(mktemp /tmp/js-deep.XXXXXX) && { nice -n 19 ffmpeg -nostdin -v error -i '${esc(filePath)}' -map 0 -c copy -f framecrc - 2>\"\$e\" </dev/null; " +
             "echo ${DeepCheckReader.EXIT}\$?; echo ${DeepCheckReader.STDERR}; cat \"\$e\"; rm -f \"\$e\"; }"
 
+    /** DEB-3642 (FR-1) — the damage line for a picture or sound stream the header lists and the file holds no packet of. */
+    fun emptyStreamLine(index: Int): String = "stream $index holds no packets"
+
+    /**
+     * DEB-3642 (FR-1) — the title page's sentence for the streams a file lists and holds no packet of, by kind:
+     * *The file lists 2 audio tracks that hold no sound. Players that pick them play nothing.* Null when none.
+     */
+    fun emptyTracksSentence(video: Int, audio: Int, subtitle: Int): String? {
+        fun part(n: Int, noun: String, holds: String) = "$n $noun track${if (n == 1) "" else "s"} that ${if (n == 1) "holds" else "hold"} no $holds"
+        val parts = listOfNotNull(
+            part(video, "video", "picture").takeIf { video > 0 }, part(audio, "audio", "sound").takeIf { audio > 0 },
+            part(subtitle, "subtitle", "text").takeIf { subtitle > 0 },
+        )
+        if (parts.isEmpty()) return null
+        return "The file lists ${parts.joinToString(" and ")}." + if (video + audio > 0) " Players that pick them play nothing." else ""
+    }
+
     /** The lines of [ffmpegOutput] that mean the container itself could not be read. Empty = clean. */
     fun damageLines(ffmpegOutput: String): List<String> = ffmpegOutput.lineSequence()
         .map { it.trim() }

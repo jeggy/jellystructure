@@ -978,6 +978,7 @@ object MediaApi {
         val checkedAt: Long? = null,
         val sourcePath: String? = null,    // the clean copy the server found, if any
         val command: String? = null,       // the lossy remux, for a file with no clean copy; a replacement's is asked for per file (263)
+        val emptyTracks: String? = null,   // DEB-3642 FR-1 — the sentence naming the tracks the file lists but holds no packets for
     )
 
     @Serializable

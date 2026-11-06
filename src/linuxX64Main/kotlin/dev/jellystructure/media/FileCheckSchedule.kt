@@ -25,6 +25,8 @@ object FileCheckSchedule {
     const val PRIORITY_CADENCE = -1L
     const val PRIORITY_NEW = 0L
     const val PRIORITY_OPERATOR = 1L
+    /** DEB-3642 (FR-5) — a file whose start the playback bounds had to rescue: ahead of even an operator's Check now. */
+    const val PRIORITY_RESCUE = 2L
 
     /** FR-261-1 — the queue's job type for each step. */
     const val VERIFY_JOB = "verify_file"

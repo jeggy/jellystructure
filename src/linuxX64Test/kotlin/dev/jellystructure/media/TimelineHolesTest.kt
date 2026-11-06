@@ -333,4 +333,37 @@ class TimelineHolesTest {
         assertEquals(setOf(holed), service.timeline.holePathsOrNull())
         Unit
     }
+
+    // DEB-3642 acceptance 1 — FR-1
+    @Test
+    fun `a sound or picture stream with no packet is empty and damaging while an empty subtitle or a cover picture is not`() {
+        val lines = header("video" to "h264", "audio" to "aac", "audio" to "aac", "subtitle" to "subrip", "video" to "mjpeg") +
+            packets(0, 5_000, 40) + packets(1, 5_000, 20)
+        val r = scan(lines, mapOf(4 to StreamHint(attachedPic = true)))
+        assertEquals(listOf(2, 3, 4), r.emptyStreams)   // every empty stream is listed…
+        assertEquals(listOf(2), r.emptyAv)              // …only the sound one makes the file damaged
+        assertEquals(emptyList(), scan(header("video" to "h264", "audio" to "aac", "subtitle" to "subrip") + packets(0, 5_000, 40) + packets(1, 5_000, 20)).emptyAv)
+        assertEquals(listOf(1), scan(header("video" to "h264", "audio" to "aac") + packets(0, 5_000, 40)).emptyAv)   // a file with no sound packets at all
+    }
+
+    @Test
+    fun `the real deep check lists a ghost audio track and counts the file as damaged`() = runBlocking {
+        if (!ffmpegAvailable()) return@runBlocking
+        val db = createDatabase("$dir/ghost.db")
+        val service = FileIntegrityService(db, SeedingSnapshot(ConfigStore("$dir/ghost.toml"), QBittorrentClient()))
+        val p = "$dir/ghost.mkv"
+        // Stream 2 is a second audio track that the header lists and no packet of which is ever written.
+        val code = platform.posix.system(
+            "ffmpeg -v error -y -f lavfi -i testsrc=size=160x90:rate=25:duration=3 -f lavfi -i sine=frequency=440:duration=3 " +
+                "-f lavfi -i \"sine=frequency=440:duration=3,atrim=start=10\" -map 0:v -map 1:a -map 2:a -c:v libx264 -preset ultrafast -c:a aac '$p'",
+        )
+        assertEquals(0, code, "ffmpeg could not build the fixture")
+
+        val r = assertNotNull(service.check(p))
+        assertEquals(FileIntegrityState.DAMAGED, r.state)
+        assertEquals("stream 2 holds no packets", r.firstDamage)
+        assertEquals(listOf(2), service.timeline.resultFor(p).report?.emptyStreams)
+        assertEquals(setOf(p), service.damagedPaths())
+        Unit
+    }
 }
