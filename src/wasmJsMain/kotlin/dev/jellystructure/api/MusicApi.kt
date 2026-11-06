@@ -283,6 +283,46 @@ object MusicApi {
         if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
     }.getOrNull()
 
+    // ── DEB-3704 (DEB-3701 FR-5–FR-9): jellystructure tags on albums and songs ──
+
+    /** The server's own sentence, or its refusal (*‹tag› is not used for Music*); never throws. */
+    class JtResult(val ok: Boolean, val message: String)
+
+    private suspend fun jtResult(r: io.ktor.client.statement.HttpResponse, okText: (io.ktor.client.statement.HttpResponse) -> String = { "" }): JtResult =
+        if (r.status.isSuccess()) JtResult(true, okText(r)) else JtResult(false, runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "The server said no")
+
+    suspend fun jsTagAdd(kind: String, id: String, tag: String): JtResult = runCatching {
+        jtResult(httpClient.post("/api/music/$kind/${id.encodeURLParameter()}/js-tags") { contentType(ContentType.Application.Json); setBody(dev.jellystructure.model.MusicJsTagRequest(tag)) })
+    }.getOrElse { JtResult(false, "The server didn’t answer") }
+
+    suspend fun jsTagRemove(kind: String, id: String, tag: String): JtResult = runCatching {
+        jtResult(httpClient.delete("/api/music/$kind/${id.encodeURLParameter()}/js-tags/${tag.encodeURLParameter()}"))
+    }.getOrElse { JtResult(false, "The server didn’t answer") }
+
+    suspend fun jsTagApplyPreview(albumId: String, tag: String): dev.jellystructure.model.MusicJsTagApplyPreview? = runCatching {
+        val r = httpClient.get("/api/music/album/${albumId.encodeURLParameter()}/js-tags/${tag.encodeURLParameter()}/apply")
+        if (r.status.isSuccess()) r.body<dev.jellystructure.model.MusicJsTagApplyPreview>() else null
+    }.getOrNull()
+
+    suspend fun jsTagApply(albumId: String, tag: String): JtResult = runCatching {
+        val r = httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/js-tags/${tag.encodeURLParameter()}/apply")
+        if (r.status.isSuccess()) JtResult(true, r.body<MusicBulkResult>().sentence) else jtResult(r)
+    }.getOrElse { JtResult(false, "The server didn’t answer") }
+
+    suspend fun jsTagPreview(req: dev.jellystructure.model.MusicJsTagBulkRequest): dev.jellystructure.model.MusicJsTagPreview? = runCatching {
+        val r = httpClient.post("/api/music/js-tags/preview") { contentType(ContentType.Application.Json); setBody(req) }
+        if (r.status.isSuccess()) r.body<dev.jellystructure.model.MusicJsTagPreview>() else null
+    }.getOrNull()
+
+    suspend fun jsTagBulk(req: dev.jellystructure.model.MusicJsTagBulkRequest): JtResult = runCatching {
+        val r = httpClient.post("/api/music/js-tags/bulk") { contentType(ContentType.Application.Json); setBody(req) }
+        if (r.status.isSuccess()) JtResult(true, r.body<MusicBulkResult>().sentence) else jtResult(r)
+    }.getOrElse { JtResult(false, "The server didn’t answer") }
+
+    suspend fun jsTagGone(tag: String): List<dev.jellystructure.model.MusicJsTagGoneRow> = runCatching {
+        httpClient.get("/api/music/js-tags/${tag.encodeURLParameter()}/gone").body<List<dev.jellystructure.model.MusicJsTagGoneRow>>()
+    }.getOrDefault(emptyList())
+
     suspend fun versionTypes(): MusicVersionTypesDto? = runCatching { httpClient.get("/api/music/version-types").body<MusicVersionTypesDto>() }.getOrNull()
 
     suspend fun patchVersionType(key: String, color: String? = null, meaning: String? = null): MusicVersionTypesDto? = runCatching {

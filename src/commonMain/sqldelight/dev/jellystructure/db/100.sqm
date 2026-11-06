@@ -1,0 +1,11 @@
+-- DEB-3704 (DEB-3701 FR-5) — jellystructure tags on albums and songs. See MusicJsTag.sq; this migration must stay
+-- byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE music_js_tag (
+    subject_id TEXT NOT NULL,
+    subject_kind TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (subject_id, tag)
+);
+
+CREATE INDEX music_js_tag_by_tag ON music_js_tag(tag);

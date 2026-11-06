@@ -50,6 +50,8 @@ data class JsTagWithCount(
     /** DEB-3701 FR-4 — items that carry the tag outside its scope. */
     val outsideScope: Int = 0,
     val outsideByKind: Map<String, Int> = emptyMap(),
+    /** DEB-3704 FR-8 — tagged songs and albums no longer in the library. */
+    val goneMusic: Int = 0,
 )
 
 @Serializable

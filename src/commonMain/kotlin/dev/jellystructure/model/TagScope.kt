@@ -9,6 +9,10 @@ object TagScope {
     /** The Library's kind keys, in the picker's order: Movies · TV · Music videos · Music · Audiobooks. */
     val KEYS: List<String> = listOf("MOVIE", "TV_SHOW", "MUSIC_VIDEO", "music", "audiobooks")
 
+    /** The groups albums and songs (`music`) and books (`audiobooks`) belong to. */
+    const val MUSIC = "music"
+    const val AUDIOBOOKS = "audiobooks"
+
     private val LABELS = mapOf(
         "MOVIE" to "Movies", "TV_SHOW" to "TV", "MUSIC_VIDEO" to "Music videos", "music" to "Music", "audiobooks" to "Audiobooks",
     )

@@ -17,6 +17,9 @@ import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.ui.tagChipWithScopeHtml
+import dev.jellystructure.ui.tagGoneBadgeHtml
+import dev.jellystructure.ui.tagGoneText
+import dev.jellystructure.ui.tagLibraryHref
 import dev.jellystructure.ui.tagOutsideNoticeText
 import dev.jellystructure.ui.tagScopeLineHtml
 import dev.jellystructure.ui.tagScopeRowHtml
@@ -250,5 +253,17 @@ class TagScopeTest {
         // Widening changes no item.
         send("PATCH", "/api/tags/t", """{"scopes":[]}""")
         runBlocking { assertEquals(listOf("v1"), store.allItems().filter { "t" in it.tags }.map { it.id }) }
+    }
+
+    /** DEB-3704 (FR-8, FR-9) — the tags page opens Library → Music for a tag used for Music only, and words the gone rows. */
+    @Test
+    fun a_music_only_tag_opens_the_music_library_and_the_gone_line_is_worded() {
+        assertEquals("#/library?kind=music&mview=albums&f.tag=Live%20night", tagLibraryHref("Live%20night", listOf("music")))
+        assertEquals("#/library?tags=Live%20night", tagLibraryHref("Live%20night", emptyList()))
+        assertEquals("#/library?tags=Live%20night", tagLibraryHref("Live%20night", listOf("music", "MOVIE")))
+        assertEquals("1 tagged song or album is no longer in the library", tagGoneText(1))
+        assertEquals("3 tagged songs or albums are no longer in the library", tagGoneText(3))
+        assertEquals("", tagGoneBadgeHtml("x", 0))
+        assertTrue(tagGoneBadgeHtml("x", 2).contains("data-gone-tag=\"x\"") && tagGoneBadgeHtml("x", 2).contains("data-stop-click"))
     }
 }

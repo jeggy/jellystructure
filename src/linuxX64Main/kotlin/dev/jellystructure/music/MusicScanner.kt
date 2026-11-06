@@ -37,6 +37,8 @@ class MusicScanner(
     private val jellyfinClient: JellyfinClient,
     private val store: MusicStore,
     private val exists: (String) -> Boolean = { SystemFileSystem.exists(Path(it)) },
+    /** DEB-3704 (FR-7) — the carry writes one line on the album. Null where a site keeps no History. */
+    private val history: dev.jellystructure.media.MediaHistory? = null,
 ) {
     /** Phase 278 — when a scan last read a library (the Library's *mapped, not yet scanned* state). Since boot. */
     var lastScanAt: Long? = null
@@ -60,6 +62,7 @@ class MusicScanner(
             val rows = MusicIngest.build(lib, jf, prev.artists, prev.albums, prev.tracks, nowEpochSec(), exists)
             store.replaceLibrary(rows)
             carryVersionChoices(prev, rows)
+            carryJsTags(prev, rows)
             lastScanAt = nowEpochSec()
             Logger.info("scan_music: ${lib.name} — ${jf.albums.size} albums, ${jf.tracks.size} tracks, ${rows.artists.size} artists", "music")
         }
@@ -87,6 +90,36 @@ class MusicScanner(
         for (t in rows.tracks.filter { it.missingSince == null && it.id !in prev.tracks }) {
             val old = gone[base(t.path)] ?: continue
             store.moveChoices("trk:${old.id}", "trk:${t.id}", copyOnly = true)
+        }
+    }
+
+    /**
+     * DEB-3704 (DEB-3701 FR-7) — a tag follows its song or album to a new Jellyfin id (a Convert, a Lidarr upgrade, a
+     * re-import, a folder rename). [MusicTagCarry] finds the pairs, this adds the missing tags with the one writer that
+     * may ([MusicJsTagWriter.CARRY]: copy only, never a move, never a removal) and says so on the album's History.
+     * Only pairs where a row is new or newly missing in *this* scan are carried, so a tag the owner took off the new
+     * file is not put back by the scan after.
+     */
+    internal suspend fun carryJsTags(prev: MusicStore.Snapshot, rows: MusicLibraryRows) {
+        val snap = store.snapshot()
+        if (snap.jsTags.isEmpty()) return
+        val changed = HashSet<String>()
+        for (t in rows.tracks) if ((t.missingSince == null && t.id !in prev.tracks) || (t.missingSince != null && prev.tracks[t.id]?.missingSince == null)) changed += t.id
+        for (a in rows.albums) if ((a.missingSince == null && a.id !in prev.albums) || (a.missingSince != null && prev.albums[a.id]?.missingSince == null)) changed += a.id
+        if (changed.isEmpty()) return
+        val carries = MusicTagCarry.plan(snap, changed)
+        if (carries.isEmpty()) return
+        store.addJsTags(MusicJsTagWriter.CARRY, carries.flatMap { it.rows })
+        // One line per album: the tags that came over, and for songs how many songs they came to.
+        val byAlbum = LinkedHashMap<String, MutableList<MusicTagCarry.Carry>>()
+        for (c in carries) {
+            val album = if (c.kind == MusicJsTagRow.ALBUM) c.to else snap.tracks[c.to]?.albumId ?: continue
+            byAlbum.getOrPut(album) { ArrayList() } += c
+        }
+        for ((album, cs) in byAlbum) {
+            val tags = cs.flatMap { c -> c.rows.map { it.tag } }.distinct().joinToString(", ")
+            val songs = cs.count { it.kind == MusicJsTagRow.TRACK }
+            runCatching { history?.record(album, "music_js_tags", "tags carried from the replaced file: $tags" + if (songs > 1) " ($songs songs)" else "") }
         }
     }
 

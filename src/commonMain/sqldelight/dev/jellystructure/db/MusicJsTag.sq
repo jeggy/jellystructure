@@ -1,0 +1,26 @@
+-- DEB-3704 (DEB-3701 FR-5) — jellystructure tags on albums and songs (and books, FR-12). Not part of music_album.json
+-- or music_track.json: a scan replaces those rows wholesale and the tags must not ride on them. The writers of this
+-- table are a closed list (MusicStore.JsTagWriter), and a test fails on a new one. This file's CREATE TABLE must stay
+-- byte-for-byte with 100.sqm (the SQLDelight-migration rule).
+CREATE TABLE music_js_tag (
+    subject_id TEXT NOT NULL,
+    subject_kind TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (subject_id, tag)
+);
+
+CREATE INDEX music_js_tag_by_tag ON music_js_tag(tag);
+
+allJsTags:
+SELECT * FROM music_js_tag;
+
+-- Add-only: a tag a subject already has keeps its set_at.
+addJsTag:
+INSERT OR IGNORE INTO music_js_tag(subject_id, subject_kind, tag, set_at) VALUES (:subject_id, :subject_kind, :tag, :set_at);
+
+removeJsTag:
+DELETE FROM music_js_tag WHERE subject_id = :subject_id AND tag = :tag;
+
+stripJsTag:
+DELETE FROM music_js_tag WHERE tag = :tag;

@@ -50,7 +50,12 @@ class MusicStore(private val db: JellystructureDb) {
         val sameSong: Map<Pair<String, String>, String> = emptyMap(),
         /** Phase 305 (FR-305-9) — what `compare_songs` measured. */
         val soundPairs: List<MusicSoundPair> = emptyList(),
+        /** DEB-3704 (DEB-3701 FR-5) — the owner's jellystructure tags per subject id (an album, a song, later a book). */
+        val jsTags: Map<String, List<MusicJsTagRow>> = emptyMap(),
     ) {
+        /** A subject's own jellystructure tags, oldest first. Never inherited: an album's say nothing about its songs (FR-6). */
+        fun jsTagsOf(subjectId: String): List<String> = jsTags[subjectId].orEmpty().map { it.tag }
+
         /** Phase 305 — official lists, extras, single homes and B-sides, computed once per snapshot. */
         val editions: MusicEditionsIndex by lazy { MusicEditionsIndex(this) }
 
@@ -102,8 +107,10 @@ class MusicStore(private val db: JellystructureDb) {
         val homes = e.allHomes().executeAsList().associate { it.album_id to MusicSingleHome.Override(it.home_album_id, it.set_at) }
         val same = e.allSameSong().executeAsList().associate { (it.track_a to it.track_b) to it.state }
         val sound = e.allSoundPairs().executeAsList().map { MusicSoundPair(it.track_a, it.track_b, it.ber, it.coverage, it.offset_ms, it.measured_at) }
+        val jsTags = db.musicJsTagQueries.allJsTags().executeAsList().map { MusicJsTagRow(it.subject_id, it.subject_kind, it.tag, it.set_at) }
+            .sortedWith(compareBy({ it.setAt }, { it.tag })).groupBy { it.subjectId }
         return Snapshot(artists.associateBy { it.id }, albums.associateBy { it.id }, tracks.associateBy { it.id }, facts.associateBy { it.recordingMbid }, choices, types,
-            picks, homes, same, sound)
+            picks, homes, same, sound, jsTags)
     }
 
     fun artist(id: String): MusicArtist? = snapshot().artists[id]
@@ -210,6 +217,53 @@ class MusicStore(private val db: JellystructureDb) {
         val next = MusicVersionTypeOverride(color ?: had?.color, meaning ?: had?.meaning)
         db.transaction { db.musicVersionsQueries.putType(key, next.color, next.meaning) }
         cache.value = prev.copy(typeOverrides = prev.typeOverrides + (key to next)); versionAtomic.incrementAndGet()
+    }
+
+    // ── DEB-3704 (DEB-3701 FR-5): jellystructure tags on albums and songs ──
+    //
+    // The ONLY code that writes `music_js_tag`. Every mutator names its [MusicJsTagWriter] and refuses one that FR-5 does
+    // not list for that kind of change, and `MusicJsTagWritersTest` fails on a call site outside the list. A scan, a
+    // match, a MusicBrainz re-pull, `write_tags`, a Convert or a Jellyfin refresh never reaches here.
+
+    /** Add-only: a subject that already has a tag keeps its `set_at`. Returns how many rows were new. */
+    suspend fun addJsTags(writer: MusicJsTagWriter, rows: Collection<MusicJsTagRow>): Int = writeLock.withLock {
+        require(writer in MusicJsTagWriter.ADDERS) { "$writer may not add a music tag" }
+        val prev = snapshot()
+        val fresh = rows.distinctBy { it.subjectId to it.tag }.filter { r -> prev.jsTags[r.subjectId].orEmpty().none { it.tag == r.tag } }
+        if (fresh.isEmpty()) return@withLock 0
+        db.transaction { fresh.forEach { db.musicJsTagQueries.addJsTag(it.subjectId, it.kind, it.tag, it.setAt) } }
+        val next = prev.jsTags.toMutableMap()
+        for (r in fresh) next[r.subjectId] = (next[r.subjectId].orEmpty() + r).sortedWith(compareBy({ it.setAt }, { it.tag }))
+        cache.value = prev.copy(jsTags = next); versionAtomic.incrementAndGet()
+        fresh.size
+    }
+
+    /** The owner removing a tag from a subject, by hand. [pairs] are (subject id, tag). Returns how many rows went. */
+    suspend fun removeJsTags(writer: MusicJsTagWriter, pairs: Collection<Pair<String, String>>): Int = writeLock.withLock {
+        require(writer in MusicJsTagWriter.REMOVERS) { "$writer may not remove a music tag" }
+        val prev = snapshot()
+        val gone = pairs.distinct().filter { (id, tag) -> prev.jsTags[id].orEmpty().any { it.tag == tag } }
+        if (gone.isEmpty()) return@withLock 0
+        db.transaction { gone.forEach { (id, tag) -> db.musicJsTagQueries.removeJsTag(id, tag) } }
+        val next = prev.jsTags.toMutableMap()
+        for ((id, tag) in gone) {
+            val left = next[id].orEmpty().filter { it.tag != tag }
+            if (left.isEmpty()) next.remove(id) else next[id] = left
+        }
+        cache.value = prev.copy(jsTags = next); versionAtomic.incrementAndGet()
+        gone.size
+    }
+
+    /** A tag's deletion on the tags page (FR-199-7 for music): the tag goes from every subject. Returns how many rows. */
+    suspend fun stripJsTag(writer: MusicJsTagWriter, tag: String): Int = writeLock.withLock {
+        require(writer == MusicJsTagWriter.TAG_DELETE) { "$writer may not strip a tag from every subject" }
+        val prev = snapshot()
+        val n = prev.jsTags.values.sumOf { l -> l.count { it.tag == tag } }
+        if (n == 0) return@withLock 0
+        db.transaction { db.musicJsTagQueries.stripJsTag(tag) }
+        cache.value = prev.copy(jsTags = prev.jsTags.mapValues { (_, l) -> l.filter { it.tag != tag } }.filterValues { it.isNotEmpty() })
+        versionAtomic.incrementAndGet()
+        n
     }
 
     // ── Phase 305: the owner's decisions and the sound measurements ──
@@ -319,6 +373,37 @@ class MusicStore(private val db: JellystructureDb) {
         /** Lower-cased words for the admin's search (FR-275-8). */
         fun searchText(vararg parts: String?): String =
             parts.filterNotNull().joinToString(" ").lowercase().replace(Regex("\\s+"), " ").trim()
+    }
+}
+
+/** DEB-3704 (FR-5) — one jellystructure tag on one album, song or book. */
+data class MusicJsTagRow(val subjectId: String, val kind: String, val tag: String, val setAt: Long) {
+    companion object {
+        const val ALBUM = "album"
+        const val TRACK = "track"
+        const val BOOK = "book"
+    }
+}
+
+/**
+ * DEB-3704 (DEB-3701 FR-5) — the closed list of writers of `music_js_tag`. Invariant #6 for music, by construction:
+ * the table is written by these five and by nothing else. FR-6's apply button and FR-7's carry only ever **add**.
+ */
+enum class MusicJsTagWriter {
+    /** The admin's add-tag and remove-tag routes, and the bulk *Tag…* / *Untag…* (FR-9). */
+    ADMIN,
+    /** A tag's deletion on the tags page. */
+    TAG_DELETE,
+    /** FR-4's *Remove from the ‹n› outside its scope*. */
+    OUTSIDE_SCOPE,
+    /** FR-6's *Apply to all songs in album*. */
+    APPLY_TO_SONGS,
+    /** FR-7's carry to a new id. */
+    CARRY;
+
+    companion object {
+        val ADDERS = setOf(ADMIN, APPLY_TO_SONGS, CARRY)
+        val REMOVERS = setOf(ADMIN, OUTSIDE_SCOPE)
     }
 }
 

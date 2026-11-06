@@ -45,6 +45,9 @@ import dev.jellystructure.model.MusicVideoRow
 import dev.jellystructure.model.effectiveGenres
 import dev.jellystructure.model.originalYear
 import dev.jellystructure.music.MusicBrowse
+import dev.jellystructure.music.MusicJsTagRefused
+import dev.jellystructure.music.MusicJsTagRow
+import dev.jellystructure.music.MusicJsTagService
 import dev.jellystructure.music.MusicScanner
 import dev.jellystructure.music.MusicScoring
 import io.ktor.http.HttpStatusCode
@@ -90,8 +93,9 @@ internal suspend fun serveFile(call: ApplicationCall, path: String?) {
  * Phase 276 — the admin's MusicBrainz surface: *Match now*, Find match… (search, releases, identify by sound, use),
  * lock / clear, genre ticks, *Match this track…*, and the providers card's own save (FR-276-8/9).
  */
-fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, publishQueue: dev.jellystructure.publish.PublishQueue? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }) {
+fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, publishQueue: dev.jellystructure.publish.PublishQueue? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }, jsTagStore: dev.jellystructure.media.JsTagStore? = null) {
     val matcher = music.matcher
+    val jsTags = jsTagStore?.let { MusicJsTagService(music.store, it) }
     val noAnswer = mapOf("error" to "MusicBrainz didn't answer — try again in a moment")
 
     route("/music") {
@@ -343,7 +347,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val snap = music.store.snapshot()
             val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg), triage,
                 excluded = excluded, artist = artist.takeIf { view == MusicBrowse.SONGS }, everyCopy = qp["copies"] == "all",
-                page = page, pageSize = pageSize)
+                page = page, pageSize = pageSize, definedTags = jsTagStore?.all()?.associate { it.name to it.scopes }.orEmpty())
             call.respond(MusicBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
                 health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
@@ -480,6 +484,77 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         /** *Listen and decide*: the open pairs (FR-305-14). */
         get("/same-song/suggestions") {
             call.respond(dev.jellystructure.music.MusicAlbumPage.suggestions(music.store.snapshot()))
+        }
+
+        // ── DEB-3704 (DEB-3701 FR-5–FR-9): jellystructure tags on albums and songs ──
+        //
+        // Every write goes through MusicJsTagService to one of MusicStore's writers; a scan, a match or a refresh never
+        // reaches these. An undefined tag is a 400, a tag whose scope leaves Music out a 409 (FR-3).
+
+        suspend fun io.ktor.server.routing.RoutingContext.tagged(block: suspend (MusicJsTagService) -> Unit) {
+            val svc = jsTags ?: return call.respond(HttpStatusCode.ServiceUnavailable)
+            try { block(svc) } catch (e: MusicJsTagRefused) { call.respond(HttpStatusCode.fromValue(e.status), mapOf("error" to e.message)) }
+        }
+        for (kind in listOf(MusicJsTagRow.ALBUM, MusicJsTagRow.TRACK)) {
+            route("/$kind/{id}/js-tags") {
+                post {
+                    tagged { svc ->
+                        val id = call.parameters["id"]!!
+                        val snap = music.store.snapshot()
+                        if (!(if (kind == MusicJsTagRow.ALBUM) snap.albums.containsKey(id) else snap.tracks.containsKey(id))) return@tagged call.respond(HttpStatusCode.NotFound)
+                        val added = svc.add(kind, listOf(id), call.receive<dev.jellystructure.model.MusicJsTagRequest>().tag)
+                        call.respond(dev.jellystructure.model.MusicJsTagsDto(music.store.snapshot().jsTagsOf(id), added = added))
+                    }
+                }
+                delete("/{tag}") {
+                    tagged { svc ->
+                        val id = call.parameters["id"]!!
+                        val removed = svc.remove(kind, listOf(id), listOf(call.parameters["tag"]!!))
+                        call.respond(dev.jellystructure.model.MusicJsTagsDto(music.store.snapshot().jsTagsOf(id), removed = removed))
+                    }
+                }
+            }
+        }
+        /** FR-6 — *Apply to all songs in album*: the confirm's numbers, then the copy. Add-only. */
+        get("/album/{id}/js-tags/{tag}/apply") {
+            tagged { svc ->
+                call.respond(svc.applyPreview(call.parameters["id"]!!, call.parameters["tag"]!!) ?: return@tagged call.respond(HttpStatusCode.NotFound))
+            }
+        }
+        post("/album/{id}/js-tags/{tag}/apply") {
+            tagged { svc ->
+                val id = call.parameters["id"]!!
+                val added = svc.applyToSongs(id, call.parameters["tag"]!!)
+                call.respond(MusicBulkResult(if (added == 0) "Every song already has it" else "Added to $added song${if (added == 1) "" else "s"}"))
+            }
+        }
+        /** *Tag…* / *Untag…*, in the version ticks' bulk shape: a Songs filter is the set when it rides along (FR-292-16). */
+        post("/js-tags/preview") {
+            tagged { svc ->
+                val req = call.receive<dev.jellystructure.model.MusicJsTagBulkRequest>()
+                val kind = if (req.view == MusicBrowse.SONGS) MusicJsTagRow.TRACK else MusicJsTagRow.ALBUM
+                call.respond(svc.preview(kind, jsTagTargets(req, configStore.current, music.store.snapshot())))
+            }
+        }
+        post("/js-tags/bulk") {
+            tagged { svc ->
+                val req = call.receive<dev.jellystructure.model.MusicJsTagBulkRequest>()
+                val kind = if (req.view == MusicBrowse.SONGS) MusicJsTagRow.TRACK else MusicJsTagRow.ALBUM
+                val ids = jsTagTargets(req, configStore.current, music.store.snapshot())
+                var added = 0; var removed = 0
+                for (t in req.add.distinct()) added += svc.add(kind, ids, t)
+                if (req.remove.isNotEmpty()) removed = svc.remove(kind, ids, req.remove)
+                val noun = if (kind == MusicJsTagRow.TRACK) "song" else "album"
+                call.respond(MusicBulkResult(buildString {
+                    append("${ids.size} $noun${if (ids.size == 1) "" else "s"}")
+                    if (req.add.isNotEmpty()) append(" · $added tag${if (added == 1) "" else "s"} added")
+                    if (req.remove.isNotEmpty()) append(" · $removed removed")
+                }))
+            }
+        }
+        /** FR-8 — tagged songs and albums that are gone and that no carry took over, each with a manual *Remove* (the DELETE above). */
+        get("/js-tags/{tag}/gone") {
+            tagged { svc -> call.respond(svc.gone(call.parameters["tag"]!!).map { it.second }) }
         }
 
         // ── Phase 292: a song's version ──
@@ -662,6 +737,18 @@ private fun versionTargets(
     cfg: dev.jellystructure.config.AppConfig,
     snap: dev.jellystructure.music.MusicStore.Snapshot,
 ): List<String> {
+    val f = req.filter ?: return req.trackIds
+    val libs = dev.jellystructure.music.MusicScanner.musicLibraries(cfg)
+    return dev.jellystructure.music.MusicBrowse.songIdsOf(
+        snap, f,
+        libraryNames = libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } },
+        roots = dev.jellystructure.music.MusicFlags.roots(cfg),
+    )
+}
+
+/** DEB-3704 (FR-9) — the ids a bulk *Tag…* / *Untag…* stands for: the Songs filter when it rides along, else the ids of the view. */
+private fun jsTagTargets(req: dev.jellystructure.model.MusicJsTagBulkRequest, cfg: dev.jellystructure.config.AppConfig, snap: dev.jellystructure.music.MusicStore.Snapshot): List<String> {
+    if (req.view != dev.jellystructure.music.MusicBrowse.SONGS) return req.albumIds
     val f = req.filter ?: return req.trackIds
     val libs = dev.jellystructure.music.MusicScanner.musicLibraries(cfg)
     return dev.jellystructure.music.MusicBrowse.songIdsOf(

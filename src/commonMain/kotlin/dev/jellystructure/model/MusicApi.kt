@@ -207,6 +207,8 @@ data class MusicAlbumRow(
     /** Phase 305 (FR-305-13, dev review 9) — the held tracks off the official list (*11 songs + 1 extra*); [songs]
      *  then counts the official ones. */
     val extras: Int = 0,
+    /** DEB-3704 (DEB-3701 FR-9/FR-11) — the album's own jellystructure tags; never inherited (FR-6). */
+    @SerialName("js_tags") val jsTags: List<String> = emptyList(),
 )
 
 @Serializable
@@ -252,6 +254,8 @@ data class MusicSongRow(
      *  *sounds the same* · *you said so*). */
     @SerialName("copy_of") val copyOf: String? = null,
     val reason: String? = null,
+    /** DEB-3704 (DEB-3701 FR-9/FR-11) — the song's own jellystructure tags; never inherited (FR-6). */
+    @SerialName("js_tags") val jsTags: List<String> = emptyList(),
 )
 
 @Serializable
@@ -330,6 +334,8 @@ data class MusicTrackRow(
     /** An extra: unnumbered, below the divider, with *first on {release}, {year}*. */
     val extra: Boolean = false,
     @SerialName("first_on") val firstOn: String? = null,
+    /** DEB-3704 (DEB-3701 FR-9/FR-11) — the song's own jellystructure tags; never inherited (FR-6). */
+    @SerialName("js_tags") val jsTags: List<String> = emptyList(),
 )
 
 /** Phase 305 (FR-305-12) — the official album's line on the Tracks tab. */
@@ -514,6 +520,8 @@ data class MusicAlbumPageDto(
     @SerialName("is_single") val isSingle: Boolean = false,
     /** *Move to…*'s albums: the same artist's albums. */
     @SerialName("move_targets") val moveTargets: List<MusicAlbumRef> = emptyList(),
+    /** DEB-3704 (DEB-3701 FR-9/FR-11) — the album's own jellystructure tags; never inherited (FR-6). */
+    @SerialName("js_tags") val jsTags: List<String> = emptyList(),
 )
 
 /** Phase 283 (FR-283-3) — one flag on an album: the two sides quoted, the other folders, and what Find match… can
@@ -765,3 +773,47 @@ data class MusicConvertPlan(
 
 @Serializable
 data class MusicStreamDto(val url: String)
+
+// ── DEB-3704 (DEB-3701 FR-5–FR-9) — jellystructure tags on albums and songs ──
+
+/** Add one tag to an album or a song (`POST /api/music/{album|track}/{id}/js-tags`). */
+@Serializable
+data class MusicJsTagRequest(val tag: String)
+
+/**
+ * *Tag…* / *Untag…* on a selection, in the version ticks' bulk shape: [view] says which ids ride. A Songs filter
+ * ([filter], FR-292-16's select-all) **is** the set when it rides along, and [trackIds] is then not read.
+ */
+@Serializable
+data class MusicJsTagBulkRequest(
+    val view: String = "albums",
+    @SerialName("album_ids") val albumIds: List<String> = emptyList(),
+    @SerialName("track_ids") val trackIds: List<String> = emptyList(),
+    val filter: MusicSongFilter? = null,
+    val add: List<String> = emptyList(),
+    val remove: List<String> = emptyList(),
+)
+
+/** The dialog's numbers: how many rows the selection is, and how many of them carry each tag. */
+@Serializable
+data class MusicJsTagPreview(val subjects: Int, val counts: Map<String, Int> = emptyMap())
+
+/** FR-6's confirm: how many songs the button reaches, and how many of those already have the tag. */
+@Serializable
+data class MusicJsTagApplyPreview(val songs: Int, val already: Int)
+
+/** One tag removed or added by a single-subject route: the subject's tags afterwards. */
+@Serializable
+data class MusicJsTagsDto(val tags: List<String> = emptyList(), val added: Int = 0, val removed: Int = 0)
+
+/** FR-8 — a tagged song or album that is no longer in the library, with a manual *Remove*. */
+@Serializable
+data class MusicJsTagGoneRow(
+    val id: String,
+    /** `album` · `track` · `book`. */
+    val kind: String,
+    val title: String,
+    val artist: String = "",
+    val album: String? = null,
+    @SerialName("album_id") val albumId: String? = null,
+)

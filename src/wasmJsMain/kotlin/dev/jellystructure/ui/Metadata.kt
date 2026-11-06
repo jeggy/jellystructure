@@ -272,9 +272,10 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
             // DEB-3701 FR-2 / FR-4: the scope, then (after a narrowing) how many items still carry the tag outside it.
             append(tagScopeLineHtml(tag.scopes))
             append(tagOutsideBadgeHtml(tag.name, tag.outsideScope, dev.jellystructure.encodeURIComponent(tag.name)))
+            append(tagGoneBadgeHtml(dev.jellystructure.encodeURIComponent(tag.name), tag.goneMusic))   // DEB-3704 FR-8
             append("</span>")
             val enc102 = dev.jellystructure.encodeURIComponent(tag.name)
-            append("""<a href="#/library?tags=$enc102" data-stop-click class="badge info" style="flex-shrink:0;cursor:pointer;text-decoration:none">${tag.count}</a>""")
+            append("""<a href="${tagLibraryHref(enc102, tag.scopes)}" data-stop-click class="badge info" style="flex-shrink:0;cursor:pointer;text-decoration:none">${tag.count}</a>""")
             append("</div>")
         }
         append("</div>")
@@ -296,6 +297,21 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
 private fun wireTagsTab(content: HTMLElement, scope: CoroutineScope) {
     content.querySelector("#new-tag-btn")?.addEventListener("click") { _ ->
         showTagModal(content, scope, null)
+    }
+    // DEB-3704 FR-8 — tagged songs and albums that are gone: listed, each with a manual Remove.
+    val gone = content.querySelectorAll("[data-gone-tag]")
+    for (i in 0 until gone.length) {
+        val a = gone.item(i) as? HTMLElement ?: continue
+        a.addEventListener("click") { ev ->
+            ev.preventDefault()
+            val name = dev.jellystructure.decodeURIComponent(a.getAttribute("data-gone-tag") ?: return@addEventListener)
+            scope.launch { mtOpenGone(scope, name) { scope.launch {
+                val sort = (content.querySelector("#metadata-sort") as? HTMLInputElement)?.value ?: "count"
+                val tags = MetadataApi.getTags(sort)
+                content.innerHTML = if (tags == null) errorHtml() else renderTagsTab(tags)
+                if (tags != null) wireTagsTab(content, scope)
+            } } }
+        }
     }
     val cards = content.querySelectorAll(".js-tag-card")
     for (i in 0 until cards.length) {
@@ -326,7 +342,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
     }
     val libLink = if (!isNew) {
         val enc = dev.jellystructure.encodeURIComponent(editName!!)
-        """<a href="#/library?tags=$enc" class="btn sm ghost" id="modal-lib-btn">View in library →</a>"""
+        """<a href="${tagLibraryHref(enc, editScopes)}" class="btn sm ghost" id="modal-lib-btn">View in library →</a>"""
     } else ""
     modal.innerHTML = """
         <div style="background:var(--card-bg);border-radius:10px;padding:24px;width:340px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--line-2)">

@@ -396,6 +396,9 @@ private fun activeBar(d: MusicBrowseDto): String {
     }).joinToString(""" <span class="tiny muted">and</span> """) + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> ${muView} match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
 }
 
+/** DEB-3704 (FR-9) — the selection bar's two tag buttons, beside *Set version…* on Songs and the bulk actions on Albums. */
+private const val MT_BULK_BTNS = """<span class="btn sm" data-jtbulk="tag">Tag…</span><span class="btn sm ghost" data-jtbulk="untag">Untag…</span>"""
+
 /** Whether `#mu-sbar` carries `on` — the class the sticky bar is shown by. */
 private fun selBarOn(): Boolean = if (muView == "songs") muSongSel.isNotEmpty() || muSongAll else muView == "albums" && muSelected.isNotEmpty()
 
@@ -406,16 +409,17 @@ private fun selBar(): String {
     // `total`, which FR-278-14 computes over the filtered set and not over the pages loaded.
     if (muView == "songs" && muSongAll) {
         val total = muDto?.total ?: muLoaded
-        return """<b>$total</b> song${if (total == 1) "" else "s"} selected<span class="tiny muted" style="margin-left:6px">every song matching this filter</span>${muVersionBulkBtnHtml(vrBulkPressBusy())}<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+        return """<b>$total</b> song${if (total == 1) "" else "s"} selected<span class="tiny muted" style="margin-left:6px">every song matching this filter</span>${muVersionBulkBtnHtml(vrBulkPressBusy())}$MT_BULK_BTNS<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
     }
     if (muView == "songs" && muSongSel.isNotEmpty()) {
-        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected${muVersionBulkBtnHtml(vrBulkPressBusy())}<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected${muVersionBulkBtnHtml(vrBulkPressBusy())}$MT_BULK_BTNS<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
     }
     if (muView != "albums" || muSelected.isEmpty()) return ""
     return buildString {
         append("""<b>${muSelected.size}</b> selected""")
         for ((k, l) in listOf("match" to "Match now", "covers" to "Fetch covers", "nfo" to "Write NFOs", "tags" to "Write tags…", "lock" to "Lock match", "clear" to "Clear match"))   // Phase 284 — Write tags…
             append("""<span class="btn sm${if (k == "match") " primary" else if (k == "clear") " ghost" else ""}" data-bulk="$k">$l</span>""")
+        append(MT_BULK_BTNS)   // DEB-3704 (FR-9) — Tag… / Untag… on albums
         append("""<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="all">select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="none">✕ clear</span>""")
     }
 }
@@ -525,6 +529,13 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         // FR-292-17 — the refusal and the *Reading the versions…* label are both `vrOpenBulk`'s flag; the bar is
         // ours to redraw, and `muRenderSel` alone, because a rebuild would throw away every appended page.
         vrOpenBulk(scope, if (muSongAll) emptyList() else muSongSel.toList(), filter = filter, repaint = { muRenderSel() }, done = { muLoad(scope) }); return
+    }
+    // DEB-3704 (FR-9) — Tag… / Untag…: the Songs filter is the set under *select all shown* (FR-292-16), else the ticked ids.
+    t.closest("[data-jtbulk]")?.let { b ->
+        val add = b.getAttribute("data-jtbulk") == "tag"
+        if (muView == "songs") mtOpenBulk(scope, add, "songs", emptyList(), if (muSongAll) emptyList() else muSongSel.toList(), if (muSongAll) muSongFilter() else null) { muLoad(scope) }
+        else mtOpenBulk(scope, add, "albums", muSelected.toList(), emptyList(), null) { muSelected.clear(); muLoad(scope) }
+        return
     }
     t.closest("[data-vfi]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfi")!!, only = true); muSongSel.clear(); muLoad(scope); return }
     t.closest("[data-vfx]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfx")!!, only = false); muSongSel.clear(); muLoad(scope); return }

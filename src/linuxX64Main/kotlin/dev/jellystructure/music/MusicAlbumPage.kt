@@ -51,11 +51,11 @@ object MusicAlbumPage {
         var line: MusicOfficialLine? = null
         var gaps = emptyList<MusicGapRow>()
         if (official == null) {
-            rows = MusicBrowse.trackRows(tracks, snap.versions, lyricsOf)
+            rows = MusicBrowse.trackRows(tracks, snap.versions, snap::jsTagsOf, lyricsOf)
         } else {
-            val off = layout.rows.map { (i, t) -> MusicBrowse.trackRows(listOf(t), snap.versions, lyricsOf).single().copy(number = MusicOfficial.number(official, i), slot = i) }
+            val off = layout.rows.map { (i, t) -> MusicBrowse.trackRows(listOf(t), snap.versions, snap::jsTagsOf, lyricsOf).single().copy(number = MusicOfficial.number(official, i), slot = i) }
             val ext = layout.extras.map { t ->
-                MusicBrowse.trackRows(listOf(t), snap.versions, lyricsOf).single().copy(
+                MusicBrowse.trackRows(listOf(t), snap.versions, snap::jsTagsOf, lyricsOf).single().copy(
                     extra = true, firstOn = t.recordingMbid?.let { a.extraOrigins[it] }?.let { MusicOfficial.firstOnText(it) },
                 )
             }
@@ -91,8 +91,9 @@ object MusicAlbumPage {
             album = a, tracks = rows, genres = a.effectiveGenres(), coverUrl = coverUrl(a), type = MusicBrowse.albumType(a), year = a.originalYear(),
             versionSummary = MusicVersions.albumSummary(tracks.map { snap.versions.of(it) }),
             official = line, gaps = gaps, singles = singles,
-            bsides = bsides.map { (s, t) -> MusicBsideRow(MusicBrowse.trackRows(listOf(t), snap.versions, lyricsOf).single(), s.id, s.title, s.originalYear()) },
+            bsides = bsides.map { (s, t) -> MusicBsideRow(MusicBrowse.trackRows(listOf(t), snap.versions, snap::jsTagsOf, lyricsOf).single(), s.id, s.title, s.originalYear()) },
             singleFrom = singleFrom, isSingle = isSingle, moveTargets = targets,
+            jsTags = snap.jsTagsOf(a.id),
         )
     }
 

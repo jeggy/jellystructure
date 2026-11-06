@@ -282,3 +282,27 @@ Three slices for one engineer. Each is blocked by the one before it.
 
 QA: one admin pass on prod after slice 2. Tag an album and a song, run a music scan, then upgrade or convert one
 tagged song and check the tag followed it. No device is needed.
+
+## Build notes — slice 2 (DEB-3704, 2026-11-06)
+
+What the build settled where the FRs left room. None of it changes a promise above.
+
+- **Routes.** `POST /api/music/{album|track}/{id}/js-tags` (`{tag}`), `DELETE …/js-tags/{tag}`, `GET|POST /api/music/album/{id}/js-tags/{tag}/apply`
+  (FR-6's confirm numbers, then the copy), `POST /api/music/js-tags/preview|bulk` (the version ticks' bulk shape: the Songs
+  filter is the set when it rides along), `GET /api/music/js-tags/{tag}/gone` (FR-8). An undefined tag is `400`, a tag whose
+  scope leaves Music out `409` (*‹tag› is not used for Music*).
+- **Wire.** The admin DTOs gain `js_tags` (snake case, as the music DTOs are) on the album and song rows, the Tracks rows and the
+  album page, and `goneMusic` on a tags-page card. `/api/tv` is untouched.
+- **The writers (FR-5)** are `MusicJsTagWriter`: `ADMIN`, `TAG_DELETE`, `OUTSIDE_SCOPE`, `APPLY_TO_SONGS`, `CARRY`. Each `MusicStore`
+  mutator refuses a writer the list does not give that kind of change (apply and carry add; delete and outside-scope remove), and
+  `MusicJsTagsTest` greps the backend's sources, so a sixth call site fails the build. *Remove* on FR-8's list and the bulk
+  *Untag…* are the admin's own writer.
+- **The carry (FR-7)** runs at the end of `scan_music`, over the pairs where a row is new or newly missing **in that scan**, so a tag the
+  owner took off the new file is not put back by the next scan. A rung with two candidates, and a rung where two missing rows reach
+  one new row, carry nothing and stop the search. A song's album-bound rungs accept the album **or its successor** (an album
+  that went missing and has exactly one match on the album rungs). The carry keeps the tag's original `set_at`. One History line
+  per album: *tags carried from the replaced file: ‹tags›*, with *(n songs)* when several songs came over.
+- **FR-8** lists a (row, tag) pair that is on a missing row and that no present row takes over by the same rungs; the card's
+  number counts those pairs.
+- **The counts.** A tag card's count and its *outside its scope* include present albums and songs; a missing row is FR-8's.
+- **Not in this slice:** books (FR-12, slice 3). `kind = book` is accepted by the table and written by nothing yet.

@@ -676,7 +676,7 @@ fun startServer(
                 dev.jellystructure.filefix.FileFixService.current?.let { fileFixRoutes(it, appScope) }   // Phase 314
                 looseFilms?.let { looseFilmRoutes(it, appScope) }   // Phase 316 — FR-316-3/-4
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
-                metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
+                metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore, musicPipeline?.let { dev.jellystructure.music.MusicJsTagService(it.store, jsTagStore) })
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 containerConversionRoutes(mediaStore, mediaJobQueue, mediaHistory)   // DEB-2051 — FR-4, FR-6
                 jobsRoutes(mediaJobQueue)
@@ -684,7 +684,7 @@ fun startServer(
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 subtitleCheckWiring?.let { w -> subtitleCheckRoutes(configStore, w.db, mediaStore, w.checks, w.steering, w.hook, w.advisor) }
-                musicPipeline?.let { musicRoutes(configStore, it, appScope, mediaJobQueue, jellyfinClient, publishQueue) { mediaStore.allItems() } }   // Phases 276–278 (+ 307)
+                musicPipeline?.let { musicRoutes(configStore, it, appScope, mediaJobQueue, jellyfinClient, publishQueue, { mediaStore.allItems() }, jsTagStore) }   // Phases 276–278 (+ 307)
                 // Phases 280/281 — audiobooks: the Audiobooks kind, the Audiobook and Author pages.
                 musicPipeline?.let { mp ->
                     audiobooksRoutes(configStore, mp, jellyfinClient) { uid -> deviceService.allDevices().firstOrNull { it.jellyfinUserId == uid }?.jellyfinUsername }

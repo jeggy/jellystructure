@@ -89,6 +89,7 @@ private fun alReload(scope: CoroutineScope, openFind: Boolean = false) {
             return@launch
         }
         alPage = p
+        mtLoadDefs()   // DEB-3704 — the jellystructure tags' colours and scopes
         vrRemember(p.versionTypes)   // Phase 292 — the household's chip names and colours
         alRender(scope)
         if (openFind) fmOpen(scope)
@@ -309,14 +310,14 @@ private fun alPanel(scope: CoroutineScope) {
     val p = alPage ?: return
     when (alTab) {
         "artwork" -> { el.innerHTML = """<span class="muted tiny">Asking the Cover Art Archive…</span>"""; scope.launch { el.innerHTML = alArtwork(p) } }
-        "genres" -> el.innerHTML = alGenres(p)
+        "genres" -> { el.innerHTML = alGenres(p) + mtAlbumSection(p); muWireMenus(el) }   // DEB-3704 (FR-9) — Jellystructure tags, as drawn
         "nfo" -> { el.innerHTML = """<span class="muted tiny">Loading…</span>"""; scope.launch { el.innerHTML = alNfo(p) } }
         "history" -> { el.innerHTML = """<span class="muted tiny">Loading…</span>"""; scope.launch { el.innerHTML = muHistory(p.album.id) } }
         // Phase 284 (FR-284-5) — the Files tab: read on open, never stored.
         "files" -> { el.innerHTML = """<span class="muted tiny">Reading the files…</span>"""; scope.launch { alFiles = MusicApi.files(p.album.id); alPaintFiles(scope) } }
         else -> {
             el.innerHTML = alTracks(p)
-            muWireMenus(el)   // Phase 305 — *Move to…* under Singles & B-sides
+            muWireMenus(el)   // Phase 305 — *Move to…* under Singles & B-sides; DEB-3704 — the songs' tag menus
             // FR-284-9 — the glyphs land once the files have been read (once per page).
             scope.launch { if (alFiles == null) alFiles = MusicApi.files(p.album.id); alFillGlyphs() }
         }
@@ -333,7 +334,7 @@ private fun alTrackRow(p: MusicAlbumPageDto, t: MusicTrackRow, cols: Int): Strin
     val on = t.id in alSel
     // Phase 305 (FR-305-12, Q4) — the official number in the official order; an extra is unnumbered.
     val num = if (p.official != null) t.number ?: "" else "${t.position ?: ""}"
-    append("""<tr class="${listOfNotNull(if (matched && t.recording == "disagrees") "off" else null, if (on) "vr-on" else null, if (t.extra) "ed-ex" else null).joinToString(" ")}"><td class="n"><span class="vr-num">$num</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.title.esc()}${vrBadges(t.id, t.versions)}""")
+    append("""<tr class="${listOfNotNull(if (matched && t.recording == "disagrees") "off" else null, if (on) "vr-on" else null, if (t.extra) "ed-ex" else null).joinToString(" ")}"><td class="n"><span class="vr-num">$num</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.title.esc()}${vrBadges(t.id, t.versions)}${mtTrackCell(t)}""")
     t.firstOn?.let { append("""<div class="ed-first">first on ${it.esc()}</div>""") }
     if (others.isNotEmpty()) append("""<div class="tiny dim">${others.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }}</div>""")
     if (matched && t.mbTitle != null && !t.mbTitle.equals(t.title, ignoreCase = true)) append("""<div class="tiny dim">MusicBrainz: ${t.mbTitle.esc()}</div>""")
@@ -529,6 +530,7 @@ private fun alClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     }
     val p = alPage ?: return
     val id = p.album.id
+    if (mtAlbumClick(t, ev, scope) { alReload(scope) }) return   // DEB-3704 — add, remove, Apply to all songs in album
     t.closest("#al-tabs [data-tab]")?.let { tab ->
         alTab = tab.getAttribute("data-tab") ?: "tracks"
         Router.updateQuery(mapOf("tab" to alTab, "find" to null))

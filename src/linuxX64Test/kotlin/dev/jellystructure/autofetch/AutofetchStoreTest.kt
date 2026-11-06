@@ -107,6 +107,8 @@ class AutofetchStoreTest {
         raw.execute(null, "DROP TABLE autofetch_site_session", 0)
         // DEB-3637 — 99.sqm creates file_timeline, which runs after 98 here too.
         raw.execute(null, "DROP TABLE IF EXISTS file_timeline", 0)
+        // …and DEB-3704's 100 creates music_js_tag (its index goes with it).
+        raw.execute(null, "DROP TABLE IF EXISTS music_js_tag", 0)
         raw.execute(null, "PRAGMA user_version = $MIGRATION_ROBOTS", 0)
         raw.close()
         val again = AutofetchStore(createDatabase(path))

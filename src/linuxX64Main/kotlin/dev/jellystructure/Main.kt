@@ -317,7 +317,7 @@ fun main() = runBlocking {
     }
     val mediaHistory = MediaHistory(db)
     val musicPipeline = dev.jellystructure.media.MusicPipeline(
-        scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore),
+        scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore, history = mediaHistory),
         store = musicStore,
         // Phase 276 — MusicBrainz at one request a second, AcoustID only with a key.
         matcher = dev.jellystructure.music.MusicMatchService(
