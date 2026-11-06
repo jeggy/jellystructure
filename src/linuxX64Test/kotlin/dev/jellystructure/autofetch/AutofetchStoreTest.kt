@@ -105,6 +105,8 @@ class AutofetchStoreTest {
         raw.execute(null, "ALTER TABLE autofetch_fetcher DROP COLUMN ignore_robots", 0)
         // DEB-3613 — 98.sqm adds the session table, which runs after 97 here, so the simulated database must not have it yet.
         raw.execute(null, "DROP TABLE autofetch_site_session", 0)
+        // DEB-3637 — 99.sqm creates file_timeline, which runs after 98 here too.
+        raw.execute(null, "DROP TABLE IF EXISTS file_timeline", 0)
         raw.execute(null, "PRAGMA user_version = $MIGRATION_ROBOTS", 0)
         raw.close()
         val again = AutofetchStore(createDatabase(path))

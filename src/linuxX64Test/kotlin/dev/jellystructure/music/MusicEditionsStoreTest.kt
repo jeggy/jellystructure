@@ -81,6 +81,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "DROP TABLE IF EXISTS ai_viewer", 0)
         // …and DEB-3100's 92 creates stream_plan (its index goes with it).
         raw.execute(null, "DROP TABLE IF EXISTS stream_plan", 0)
+        // …and DEB-3637's 99 creates file_timeline (its index goes with it).
+        raw.execute(null, "DROP TABLE IF EXISTS file_timeline", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 
