@@ -116,7 +116,8 @@ fun renderSupportTab(panel: Element, scope: CoroutineScope, query: Map<String, S
         SupportApi.summary()?.let { SupportLive.seed(it) }
         if (gen != tkGen) return@launch
         paintSeg()
-        if (tkOpen != null) paintComposer(force = true)
+        // DEB-1508 acc 5 — the thread can answer first; the rail then drew Forward to without Hervør, so it is drawn again with the summary.
+        if (tkOpen != null) { paintComposer(force = true); paintRail() }
     }
     val n = query["ticket"]?.toLongOrNull()?.takeIf { it > 0 }
     if (n != null) openTicket(n, writeUrl = false) else showList()

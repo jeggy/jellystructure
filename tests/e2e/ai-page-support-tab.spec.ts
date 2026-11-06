@@ -56,6 +56,8 @@ class Lane {
   nextId = 100;
   writes: { path: string; body: any }[] = [];
   summaryReads = 0;
+  /** When set, `GET /summary` answers only once this resolves (DEB-3582: the thread answers first). */
+  summaryGate: Promise<void> | null = null;
   /** Every `GET /tickets` query string, in order. */
   listReads: string[] = [];
   tickets = new Map<number, Ticket>();
@@ -139,7 +141,7 @@ async function newPage(ctx: BrowserContext, lane: Lane): Promise<Page> {
     if (lane.delayMs && method === "POST") await new Promise((res) => setTimeout(res, lane.delayMs));
     const body = method === "POST" ? (() => { try { return req.postDataJSON() ?? {}; } catch { return {}; } })() : {};
     let m: RegExpMatchArray | null;
-    if (method === "GET" && path === "/summary") { lane.summaryReads++; return r.fulfill({ json: lane.summary() }); }
+    if (method === "GET" && path === "/summary") { lane.summaryReads++; if (lane.summaryGate) await lane.summaryGate; return r.fulfill({ json: lane.summary() }); }
     if (method === "GET" && path === "/tickets") { lane.listReads.push(url.search); return r.fulfill({ json: { tickets: lane.list(url.searchParams) } }); }
     if (method === "GET" && path === "/log") return r.fulfill({ json: { entries: lane.log } });
     if (method === "GET" && (m = path.match(/^\/tickets\/(\d+)\/transcript$/))) {
@@ -392,6 +394,22 @@ test.describe.serial("AI page — Support as a tab (DEB-1500)", () => {
         await panel(page).locator(".tk-back").click();
         expect(await hash(page)).toBe("#/ai?tab=support");
         await expect(rows(page)).toHaveCount(2);
+      });
+
+      test("4c — Forward to lists Hervør even when the thread answers before the summary read (DEB-1508 acc 5, DEB-3582)", async () => {
+        lane.seat = { issuedAt: NOW - 86_400, issuedBy: "Hallur", lastUsedAt: null };
+        lane.hervor = true;
+        let release!: () => void;
+        lane.summaryGate = new Promise<void>((res) => { release = res; });
+        page = await newPage(ctx, lane);
+        await page.goto("/#/ai?tab=support&ticket=41");
+        const rail = panel(page).locator("#tk-rail");
+        await expect(panel(page).locator(".tk-dh h2")).toHaveText(TITLE_41, { timeout: 15_000 });
+        await expect(rail.locator("[data-tk-fwd]")).toHaveCount(1);   // the summary is still held: Admins only
+        release();
+        await expect(rail.locator("[data-tk-fwd]")).toHaveCount(2);
+        await expect(rail.locator("[data-tk-fwd]", { hasText: "Hervør" })).toBeVisible();
+        await expect(rail.locator("[data-tk-fwd]", { hasText: "Admins" })).toBeVisible();
       });
 
       test("6 — the filters ask the server and count from the summary; narrow, the table stacks (FR-6)", async () => {
