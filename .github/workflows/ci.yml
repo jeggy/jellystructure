@@ -21,7 +21,7 @@ permissions:
 jobs:
   # ── Fast fences (seconds). The two design-sync fences existed only as "run by hand" until 231. ──
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned (DEB-3837): ubuntu-latest became 26.04, whose ffmpeg 8 / mkvtoolnix 97 fail two tests; prod runs ffmpeg 5.1
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
 
   # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
   unit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned (DEB-3837): ubuntu-latest became 26.04, whose ffmpeg 8 / mkvtoolnix 97 fail two tests; prod runs ffmpeg 5.1
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -141,7 +141,7 @@ jobs:
   # The release-only player VerifyError (2026-09-06 to the Play Store, 2026-09-17 to the living-room TV)
   # passes every compile check, every unit test and every debug build. Only these two steps see it.
   android-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned (DEB-3837): ubuntu-latest became 26.04, whose ffmpeg 8 / mkvtoolnix 97 fail two tests; prod runs ffmpeg 5.1
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -218,7 +218,7 @@ jobs:
 
   # ── The full stack against mocks + Playwright (unchanged by 231, only renamed from `test`). ──
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned (DEB-3837): ubuntu-latest became 26.04, whose ffmpeg 8 / mkvtoolnix 97 fail two tests; prod runs ffmpeg 5.1
     # 2026-08-18: on a cold cache, `app` alone spent ~9.5 of its ~10.4 total build minutes locally in
     # the two gradlew RUN steps (linkReleaseExecutableLinuxX64 + wasmJsBrowserDistribution) -- on a
     # warm cache (unchanged source since the last successful run), real CI evidence showed those same
