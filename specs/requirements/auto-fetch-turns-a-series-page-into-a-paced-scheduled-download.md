@@ -190,6 +190,15 @@ found three causes. None of them was the session.
   of the link still works. Upstream has the issue (yt-dlp #17979) and a three-line fix (PR #17980, open). Until the
   image carries a release with it, no DR fetch can download, with or without a session.
 
+**Amended again 2026-11-06 (DEB-3831, owner's answers on card `98e19fc5`):** *Patch our copy of yt-dlp now* and *Only
+when something actually refused*.
+- FR-6.3: the image carries release 2026.10.26 with upstream's PR #17980 applied to its DR extractor, recorded as
+  patch `0013` in the household's patch queue. The patch goes when a release carries the fix.
+- FR-3.6 (*Found, and said*): `needs_sign_in` needs proof. The server accepts it only when a read in this
+  investigation was actually refused: a `401` or `403` on one of the site's hosts, or yt-dlp saying it needs a login
+  or cookies. Text on the page that asks the viewer to sign in is not proof. An answer without proof is refused back
+  to the model as a correction.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -438,6 +447,19 @@ one lane.
      videos play only after signing in. The server accepts it only after the listing has yielded at least two items.
      The server also gives this ending, whatever the model says, when the proof's own media read on one of the site's
      hosts answers `401` or `403`, or yt-dlp reports that it needs a login or cookies.
+   - **Only on proof (amended 2026-11-06, DEB-3831, owner's answer on card `98e19fc5`).** The server keeps, for each
+     investigation, whether any of its reads was refused for a sign-in: a `fetch`, a probe or the proof's media read
+     on one of the site's hosts that answered `401` or `403`, or a yt-dlp run whose error FR-6.3 reads as needing a
+     login or cookies. A `needs_sign_in` answer is accepted only when there is such a read. Otherwise it is refused
+     like any proposal the proof refuses, and it uses one of FR-5.9's correction turns. The refusal reason the model
+     reads is *Nothing this investigation read was refused for a sign-in. Text on a page that asks the viewer to sign
+     in is not proof: find how the videos are served.* After that the investigation ends as it would have without the
+     answer: a recipe, *Videos not found* (FR-5.8) or *Out of steps* (FR-5.10). The prompt says the same in one line.
+     - Why: DR's news page says *Log ind for at afspille* to every signed-out viewer, yet DR serves its videos to an
+       anonymous token, with no DRM. The model read the text, answered `needs_sign_in`, and the owner was asked to
+       paste a session that changed nothing (DEB-3831). A site that really needs a sign-in may now cost one or two
+       more steps before it says so. The owner accepted that.
+     - The ending the server gives *whatever the model says* (above) is unchanged, because it is itself proof.
    - **The words are the server's.** The failed state reads *It didn't work: `<site>` lists `<n>` episodes but plays
      them only to someone signed in. Auto-fetch cannot sign in by itself.* That sentence is fixed text with the site
      and the count filled in. The model's own words are not shown (FR-10.4). The view carries `needsSignIn: true`, and
@@ -1006,6 +1028,12 @@ one lane.
    build fails when it does not match, and runs `yt-dlp --version` once. The sentence *this site needs a reader that is
    not installed yet* is gone. A server without the binary (a development machine) answers *yt-dlp is not installed on
    this server* where it would have run it, and nothing else changes.
+   - **A patched yt-dlp (amended 2026-11-06, DEB-3831, owner's answer on card `98e19fc5`).** Release 2026.10.26's DR
+     extractor answers `400` on every DR episode. The image build therefore applies upstream's PR #17980
+     (`yt_dlp/extractor/drtv.py`) to the zipapp after the SHA-256 check, and fails if the patch does not apply. The
+     household records the patch as `0013` in its patch queue, byte for byte the PR's diff. `yt-dlp --version` still
+     reads `2026.10.26`. When a release carries the fix, the pin moves to it and the patch step goes. Nothing else
+     about yt-dlp changes.
    - **Held to the lane (FR-2).** yt-dlp is a program making its own requests, so the engine holds it to what the lane
      promises. The listing is one paced page request against `source.url` (checked against `robots.txt` for a general
      crawler, stopped and backed off like any other). An item's link is checked against `robots.txt` before yt-dlp
