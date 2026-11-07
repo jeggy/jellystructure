@@ -400,6 +400,24 @@ private fun List<Episode>.sumOfDistinctFiles(): Long? {
     return total
 }
 
+/**
+ * DEB-2837 (FR-1) — a title's rating and the votes behind it, the ONE rule the recommendation engine
+ * (FR-269-5), the `rating` condition and the `rating` row order share: IMDb's `aggregateRating` with its
+ * `voteCount` when the title has an IMDb rating; otherwise TMDB's vote average with its count when that
+ * count is above zero; otherwise `null`. The source is chosen first — a thinly voted IMDb rating does not
+ * fall through to TMDB; [meetsMinVotes] then checks the votes of the source that gave the rating.
+ */
+fun MediaItem.rating(): Pair<Double, Long>? =
+    imdbRating?.let { it.aggregateRating to it.voteCount }
+        ?: tmdbVoteAverage?.takeIf { (tmdbVoteCount ?: 0) > 0 }?.let { it to (tmdbVoteCount ?: 0).toLong() }
+
+/** FR-1 — the title has a rating and the source that gave it has at least [minVotes] votes. */
+fun MediaItem.meetsMinVotes(minVotes: Int): Boolean = rating()?.let { (_, votes) -> votes >= minVotes } == true
+
+/** FR-4 — the rating the `rating` row order sorts by: [rating] when it meets [minVotes] (callers pass the shared
+ *  `DEFAULT_MIN_VOTES`, which lives in `:shared` because this module cannot see it), else `null`. */
+fun MediaItem.ratingScore(minVotes: Int): Double? = rating()?.takeIf { (_, votes) -> votes >= minVotes }?.first
+
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
  *  the admin Library default sort, related-by-genre). Movies sort by their own createdAt; a series
  *  sorts by its most-recently-added EPISODE (max(episode.createdAt)) so a new episode re-floats it —

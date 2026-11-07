@@ -1,6 +1,7 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
@@ -10,13 +11,17 @@ import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.QueryJoin
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
+import dev.jellystructure.shared.tv.firstValueProblem
 import dev.jellystructure.shared.tv.isLive
+import dev.jellystructure.shared.tv.valueProblem
 import dev.jellystructure.shared.tv.maxBlockDepth
 import dev.jellystructure.shared.tv.migrateFlatQuery
 import dev.jellystructure.shared.tv.pruned
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -237,5 +242,85 @@ class ConditionEvaluatorTest {
         val prunedAllDead = allDead.pruned()
         assertTrue(prunedAllDead.children.isEmpty(), "root stays a group even when everything prunes away")
         assertFalse(prunedAllDead.isLive())
+    }
+
+    // ─── DEB-2837: year and rating ──────────────────────────────────────────────
+
+    private fun titled(year: Int?, imdb: Pair<Double, Long>? = null, tmdb: Pair<Double, Int>? = null) = item().copy(
+        year = year,
+        imdbRating = imdb?.let { ImdbRating(it.first, it.second, 0L) },
+        tmdbVoteAverage = tmdb?.first, tmdbVoteCount = tmdb?.second,
+    )
+    private fun one(c: Condition) = ConditionGroup(QueryJoin.AND, children = listOf(ConditionGroup(QueryJoin.OR, children = listOf(c))))
+    private fun year(from: String, to: String) = cond("year", "between", listOf(from, to))
+    private fun rating(vararg v: String) = cond("rating", "at_least", v.toList())
+
+    @Test fun yearRangeIsInclusiveOnBothEndsAndAWinlessTitleMatchesNone() {   // acceptance 2
+        val nineties = one(year("1990", "1999"))
+        assertTrue(eval(titled(1990), nineties)); assertTrue(eval(titled(1999), nineties))
+        assertFalse(eval(titled(1989), nineties)); assertFalse(eval(titled(2000), nineties))
+        val before = one(year("", "1989"))
+        assertTrue(eval(titled(1950), before)); assertFalse(eval(titled(1990), before))
+        assertTrue(eval(titled(2021), one(year("2020", ""))))
+        for (g in listOf(nineties, before, one(year("2020", "")))) assertFalse(eval(titled(null), g), "a title with no year matches no range")
+    }
+
+    @Test fun aBlankYearRangeIsNotLiveAndABlockHoldingOnlyThatMatchesEverything() {   // acceptance 2
+        assertFalse(year("", "").isLive()); assertFalse(cond("year", "between").isLive())
+        assertTrue(year("", "1989").isLive()); assertTrue(year("2020", "").isLive())
+        val g = one(year("", ""))
+        assertTrue(eval(titled(null), g)); assertTrue(eval(titled(1950), g))
+        assertTrue(g.pruned().children.isEmpty(), "pruned() drops it on save")
+    }
+
+    @Test fun notOverAYearRangeIsOutsideTheRangeOrNoYear() {
+        val outside = ConditionGroup(QueryJoin.AND, children = listOf(ConditionGroup(QueryJoin.OR, not = true, children = listOf(year("1990", "1999")))))
+        assertTrue(eval(titled(1989), outside)); assertTrue(eval(titled(null), outside)); assertFalse(eval(titled(1995), outside))
+    }
+
+    @Test fun ratingNeedsTheVotesOfTheSourceThatGaveIt() {   // acceptance 3
+        val g = one(rating("7.5", "200"))
+        assertTrue(eval(titled(2000, imdb = 7.6 to 5000), g))
+        assertFalse(eval(titled(2000, imdb = 7.6 to 150, tmdb = 8.0 to 900), g), "a thin IMDb rating does not fall through to TMDB")
+        assertTrue(eval(titled(2000, tmdb = 7.8 to 300), g))
+        assertFalse(eval(titled(2000, tmdb = 7.8 to 100), g))
+        assertFalse(eval(titled(2000), g), "unrated does not match")
+        assertFalse(eval(titled(2000, imdb = 7.4 to 5000), g)); assertTrue(eval(titled(2000, imdb = 7.5 to 5000), g))
+    }
+
+    @Test fun aBlankOrMissingVoteMinimumBehavesAs200() {   // acceptance 3
+        val thin = titled(2000, imdb = 8.0 to 199); val ok = titled(2000, imdb = 8.0 to 200)
+        for (g in listOf(one(rating("7.5", "")), one(rating("7.5")))) { assertFalse(eval(thin, g)); assertTrue(eval(ok, g)) }
+        assertTrue(eval(thin, one(rating("7.5", "100"))))
+    }
+
+    @Test fun aRatingIsLiveByItsMinimumAlone() {
+        assertTrue(rating("7.5").isLive()); assertTrue(rating("7.5", "").isLive())
+        assertFalse(rating("").isLive()); assertFalse(rating("", "300").isLive()); assertFalse(cond("rating", "at_least").isLive())
+    }
+
+    @Test fun notOverARatingAlsoTakesInTheUnrated() {
+        val below = ConditionGroup(QueryJoin.AND, children = listOf(ConditionGroup(QueryJoin.OR, not = true, children = listOf(rating("7.5")))))
+        assertTrue(eval(titled(2000, imdb = 6.0 to 900), below)); assertTrue(eval(titled(2000), below)); assertFalse(eval(titled(2000, imdb = 8.0 to 900), below))
+    }
+
+    @Test fun yearAndRatingConditionsRoundTripThroughTheSharedSerializer() {   // acceptance 7, second half
+        val json = kotlinx.serialization.json.Json { encodeDefaults = true }
+        val tree = ConditionGroup(QueryJoin.AND, children = listOf(ConditionGroup(QueryJoin.OR, children = listOf(year("1990", "1999"), year("", "1989"), rating("7.5", "200"), rating("7.5", "")))))
+        val wire = json.encodeToString(ConditionGroup.serializer(), tree)
+        assertEquals(tree, json.decodeFromString(ConditionGroup.serializer(), wire))
+        assertEquals(wire, json.encodeToString(ConditionGroup.serializer(), json.decodeFromString(ConditionGroup.serializer(), wire)), "byte for byte")
+        assertTrue(wire.contains("\"values\":[\"1990\",\"1999\"]") && wire.contains("\"values\":[\"7.5\",\"\"]"))
+    }
+
+    @Test fun badYearAndRatingValuesAreNamedForTheValidator() {   // FR-8
+        assertNull(year("1990", "1999").valueProblem()); assertNull(year("", "1989").valueProblem()); assertNull(year("", "").valueProblem())
+        assertNotNull(year("19", "").valueProblem()); assertNotNull(year("1869", "").valueProblem()); assertNotNull(year("", "2101").valueProblem())
+        assertNotNull(year("abc", "").valueProblem()); assertNotNull(year("2000", "1999").valueProblem())
+        assertNull(rating("0").valueProblem()); assertNull(rating("10", "0").valueProblem()); assertNull(rating("7.5", "").valueProblem()); assertNull(rating("7.5").valueProblem())
+        assertNotNull(rating("10.1").valueProblem()); assertNotNull(rating("-1").valueProblem()); assertNotNull(rating("x").valueProblem())
+        assertNotNull(rating("7.5", "-1").valueProblem()); assertNotNull(rating("7.5", "2.5").valueProblem()); assertNotNull(rating("7.5", "many").valueProblem())
+        assertNull(cond("genre", values = listOf("x")).valueProblem())
+        assertNotNull(ConditionGroup(children = listOf(ConditionGroup(children = listOf(year("2000", "1999"))))).firstValueProblem())
     }
 }

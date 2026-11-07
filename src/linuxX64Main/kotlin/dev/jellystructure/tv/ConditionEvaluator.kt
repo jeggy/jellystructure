@@ -3,6 +3,8 @@ package dev.jellystructure.tv
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.meetsMinVotes
+import dev.jellystructure.model.rating
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.ConditionGroup
@@ -13,6 +15,8 @@ import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.effectiveQuery
 import dev.jellystructure.shared.tv.isLive
 import dev.jellystructure.shared.tv.migrateFlatQuery
+import dev.jellystructure.shared.tv.ratingThreshold
+import dev.jellystructure.shared.tv.yearBounds
 
 /**
  * Evaluates a Phase 140 workbench query tree against a [MediaItem] (recursive AND/OR blocks with
@@ -124,6 +128,17 @@ object ConditionEvaluator {
             "age_rating"     -> setMatch(facets.ageRating, vals, c.op)
             "cast_crew"      -> setMatch(facets.castCrew, vals, c.op)
             "metadata_language" -> setMatch(facets.metadataLanguage, vals, c.op)
+            // DEB-2837 (FR-2) — an inclusive year range; a title with no year matches no range.
+            "year" -> {
+                val (from, to) = c.yearBounds()
+                val y = item.year
+                y != null && (from == null || y >= from) && (to == null || y <= to)
+            }
+            // DEB-2837 (FR-3) — at least r, from a source with at least m votes (FR-1's rule).
+            "rating" -> {
+                val (min, votes) = c.ratingThreshold() ?: return false
+                item.meetsMinVotes(votes) && (item.rating()?.first ?: return false) >= min
+            }
             "track_title" -> {
                 val needle = vals.firstOrNull() ?: return c.op == "not_contains"
                 val has = item.tracks.any { it.title?.lowercase()?.contains(needle) == true }

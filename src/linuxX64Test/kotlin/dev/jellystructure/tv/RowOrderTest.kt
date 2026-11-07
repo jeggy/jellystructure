@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.model.ratingScore
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.RowOrder
@@ -63,7 +64,7 @@ class RowOrderTest {
     @Test fun validation() {                          // FR-225-11 + FR-225-7
         assertNull(RowOrder.problem(row()))
         assertNull(RowOrder.problem(row(sort = RowSort("year", false), pinned = listOf("a", "unknown-id"), limit = 5)))
-        assertNotNull(RowOrder.problem(row(sort = RowSort("rating"))))
+        assertNotNull(RowOrder.problem(row(sort = RowSort("popularity"))))   // DEB-2837: "rating" became a key
         assertNotNull(RowOrder.problem(row(limit = 2))); assertNotNull(RowOrder.problem(row(limit = 31)))
         assertNotNull(RowOrder.problem(row(pinned = listOf("a", "b", "c", "d"), limit = 3)))
         assertNotNull(RowOrder.problem(row(kind = RowKind.CONTINUE, limit = 10)))
@@ -77,5 +78,36 @@ class RowOrderTest {
         assertEquals("newest release first", RowOrder.summary(row(sort = RowSort("year", true))))
         assertEquals("3 hand-picked, then newest first", RowOrder.summary(row(pinned = listOf("a", "b", "c"))))
         assertEquals("oldest first · shows 15", RowOrder.summary(row(sort = RowSort("added", false), limit = 15)))
+    }
+
+    // ─── DEB-2837 (FR-4): the rating key ────────────────────────────────────────
+
+    private data class R(val id: String, val title: String, val score: Double?)
+    private fun byRating(desc: Boolean, from: List<R>, pinned: List<String> = emptyList()) =
+        RowOrder.resolve(from, RowSort("rating", desc), pinned, null, id = { it.id }, added = { 0L }, year = { null }, title = { it.title }, sortName = { null }, rating = { it.score }).map { it.id }
+    private val rated = listOf(R("lo", "Beta", 7.4), R("none", "Alpha", null), R("hi", "Gamma", 8.1), R("hi2", "Delta", 8.1))
+
+    @Test fun bestRatedFirstPutsTheUnratedLast() = assertEquals(listOf("hi2", "hi", "lo", "none"), byRating(true, rated))   // acceptance 4; ties by name
+
+    @Test fun lowestRatedFirstStillPutsTheUnratedLast() = assertEquals(listOf("lo", "hi2", "hi", "none"), byRating(false, rated))
+
+    @Test fun handPicksStillComeFirstUnderTheRatingKey() = assertEquals(listOf("none", "hi2", "hi", "lo"), byRating(true, rated, pinned = listOf("none")))
+
+    @Test fun ratingIsAKeyWithItsWordsAndTheOtherKeysAreUnmoved() {
+        assertEquals(listOf("added", "title", "year", "size", "rating"), RowOrder.KEYS)
+        assertEquals("best-rated first", RowOrder.directionWords("rating", true)); assertEquals("lowest-rated first", RowOrder.directionWords("rating", false))
+        assertEquals("best-rated first", RowOrder.summary(row(sort = RowSort("rating", true))))
+        assertNull(RowOrder.problem(row(sort = RowSort("rating", true))))
+    }
+
+    @Test fun theRatingScoreIsNullBelowTheFloorSoAThinTitleSortsAsUnrated() {
+        fun t(imdb: Pair<Double, Long>?, tmdb: Pair<Double, Int>?) = dev.jellystructure.model.MediaItem(
+            id = "x", title = "x", year = null, kind = dev.jellystructure.model.MediaKind.MOVIE, path = "/x", tmdbId = null, originalLanguage = null,
+            posterPath = null, overview = null, tracks = emptyList(), issueCount = 0, scannedAt = 0L,
+            imdbRating = imdb?.let { dev.jellystructure.model.ImdbRating(it.first, it.second, 0L) }, tmdbVoteAverage = tmdb?.first, tmdbVoteCount = tmdb?.second,
+        )
+        val floor = dev.jellystructure.shared.tv.DEFAULT_MIN_VOTES
+        assertEquals(8.1, t(8.1 to 5000, null).ratingScore(floor)); assertEquals(7.8, t(null, 7.8 to 300).ratingScore(floor))
+        assertNull(t(8.1 to 150, 8.0 to 900).ratingScore(floor)); assertNull(t(null, 7.8 to 100).ratingScore(floor)); assertNull(t(null, null).ratingScore(floor))
     }
 }

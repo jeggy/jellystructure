@@ -11,6 +11,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.ops.GateClass
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.ratingScore
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.Channel
@@ -28,6 +29,7 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
+import dev.jellystructure.shared.tv.DEFAULT_MIN_VOTES
 import dev.jellystructure.shared.tv.RowOrder
 import dev.jellystructure.shared.tv.effectiveQuery
 import dev.jellystructure.shared.tv.isLive
@@ -750,6 +752,7 @@ class HomeFeedService(
         items, rowCfg?.sort, rowCfg?.pinned.orEmpty(), rowCfg?.limit,
         id = { it.jellyfinId ?: it.id }, added = { it.recencyKey() }, year = { it.year }, title = { it.title }, sortName = { it.sortName },
         size = { it.sizeBytes() },   // Phase 268
+        rating = { it.ratingScore(DEFAULT_MIN_VOTES) },   // DEB-2837 (FR-4)
     )
 
     /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context).

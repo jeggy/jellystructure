@@ -17,7 +17,10 @@ import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.QueryJoin
 import dev.jellystructure.shared.tv.QueryNode
 import dev.jellystructure.shared.tv.RowConfig
+import dev.jellystructure.shared.tv.DEFAULT_MIN_VOTES
 import dev.jellystructure.shared.tv.isLive
+import dev.jellystructure.shared.tv.ratingThreshold
+import dev.jellystructure.shared.tv.yearBounds
 import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -77,13 +80,29 @@ private fun WbGroup.deepCopy(): WbGroup = toSharedGroup().toWbGroup()
 // ─── Live / summary helpers (also used by RaviloConfig.kt for row/channel subtitles, via .toWb()) ──
 
 internal fun nodeLive(n: WbNode): Boolean = when (n) {
-    is WbCond -> if (n.facet == "content_row") n.rows.isNotEmpty() else n.values.isNotEmpty()
+    is WbCond -> n.toShared().isLive()   // DEB-2837 — the one rule (`isLive()` in QueryTree.kt) knows `year` and `rating`
     is WbGroup -> n.children.any { nodeLive(it) }
 }
 
 private fun facetLabel(facet: String): String = WB_FACET_LABELS[facet] ?: facet
 
 private fun condSummary(c: WbCond): String {
+    when (c.facet) {   // DEB-2837 (FR-2, FR-3) — these two read as a phrase, not "label op values"
+        "year" -> {
+            val (from, to) = c.toShared().let { (it as Condition).yearBounds() }
+            return "Year " + when {
+                from != null && to != null -> if (from == to) "$from" else "$from–$to"
+                to != null -> "up to $to"
+                from != null -> "$from or later"
+                else -> "…"
+            }
+        }
+        "rating" -> {
+            val r = c.values.getOrNull(0)?.trim().orEmpty().ifEmpty { "…" }
+            val m = (c.toShared() as Condition).ratingThreshold()?.second ?: DEFAULT_MIN_VOTES
+            return "Rating $r or higher ($m+ votes)"
+        }
+    }
     val label = facetLabel(c.facet)
     val opLbl = opLabel(c.facet, c.op)
     val valTxt = when (c.facet) {
@@ -118,7 +137,7 @@ internal fun groupSummary(g: WbGroup, top: Boolean): String {
 }
 
 private val WB_GROUPS = listOf(
-    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating", "metadata_language" to "Metadata language"),
+    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating", "metadata_language" to "Metadata language", "year" to "Year", "rating" to "Rating"),
     "Audio track" to listOf("audio_language" to "Audio language", "audio_codec" to "Audio codec", "track_title" to "Audio track title"),
     "People" to listOf("cast_crew" to "Cast or crew"),
     "Ravilo layout" to listOf("hero_item" to "Hero item"),
@@ -128,6 +147,8 @@ private val WB_FACET_LABELS: Map<String, String> = WB_GROUPS.flatMap { it.second
 private fun opsFor(f: String): List<Pair<String, String>> = when (f) {
     "track_title" -> listOf("contains" to "contains", "not_contains" to "does not contain")
     "hero_item" -> listOf("is_any_of" to "is any of")
+    "year" -> listOf("between" to "between")          // DEB-2837 (FR-2)
+    "rating" -> listOf("at_least" to "at least")      // DEB-2837 (FR-3)
     else -> listOf("is_any_of" to "is any of", "is_none_of" to "is none of")
 }
 private fun opLabel(facet: String, op: String) = opsFor(facet).firstOrNull { it.first == op }?.second ?: op
@@ -486,6 +507,19 @@ private fun renderCondRow(c: WbCond, path: List<Int>): String {
                 }
             }
         }
+        // DEB-2837 (FR-2) — a from–to range; "any" = no bound on that side. The quick picks fill both fields.
+        "year" -> {
+            fun field(i: Int, label: String) = """<span class="tiny muted">$label</span><input class="input wb-num" type="number" min="1870" max="2100" step="1" data-path="$p" data-idx="$i" placeholder="any" style="width:90px" value="${(c.values.getOrNull(i) ?: "").esc()}">"""
+            val picks = listOf("Before 1990" to ("" to "1989"), "1990s" to ("1990" to "1999"), "2000s" to ("2000" to "2009"), "2010s" to ("2010" to "2019"), "2020s" to ("2020" to ""))
+            """<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${field(0, "from")}${field(1, "to")}</div>""" +
+                """<div class="wb-vchips" style="margin-top:8px">${picks.joinToString("") { (l, b) -> """<span class="wb-vchip" data-path="$p" data-pick="${b.first},${b.second}">$l</span>""" }}</div>"""
+        }
+        // DEB-2837 (FR-3) — at least r, with at least m votes (blank = 200), and where the number comes from.
+        "rating" -> {
+            """<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="input wb-num" type="number" min="0" max="10" step="0.1" data-path="$p" data-idx="0" placeholder="e.g. 7.5" style="width:90px" value="${(c.values.getOrNull(0) ?: "").esc()}">""" +
+                """<span class="tiny muted">with at least</span><input class="input wb-num" type="number" min="0" step="1" data-path="$p" data-idx="1" placeholder="$DEFAULT_MIN_VOTES" style="width:90px" value="${(c.values.getOrNull(1) ?: "").esc()}"><span class="tiny muted">votes</span></div>""" +
+                """<div class="tiny muted" style="margin-top:6px">IMDb's rating, or TMDB's when IMDb has none.</div>"""
+        }
         "content_row" -> {
             val chips = wbRowsContext.joinToString("") { row ->
                 val on = c.rows.any { it.id == row.id }
@@ -638,7 +672,7 @@ private fun wbWireCondRows() {
                 wbRenderBlocks(); wbRefreshPreview()
             } }
     }
-    document.querySelectorAll("#wb-blocks .wb-vchip:not([data-row])").let { els ->
+    document.querySelectorAll("#wb-blocks .wb-vchip:not([data-row]):not([data-pick])").let { els ->
         for (i in 0 until els.length) { val el = els.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") {
                 val path = parsePath(el.getAttribute("data-path") ?: return@addEventListener)
@@ -656,6 +690,30 @@ private fun wbWireCondRows() {
                 val c = condAt(path) ?: return@addEventListener
                 c.values.clear(); if (el.value.isNotBlank()) c.values.add(el.value)
                 wbRefreshPreview(); wbRenderSummary()
+            } }
+    }
+    // DEB-2837 — the year and rating number fields: values are [first, second], blank when unset; all blank = no values.
+    document.querySelectorAll("#wb-blocks .wb-num").let { els ->
+        for (i in 0 until els.length) { val el = els.item(i) as? HTMLInputElement ?: continue
+            el.addEventListener("input") {
+                val path = parsePath(el.getAttribute("data-path") ?: return@addEventListener)
+                val idx = el.getAttribute("data-idx")?.toIntOrNull() ?: return@addEventListener
+                val c = condAt(path) ?: return@addEventListener
+                while (c.values.size < 2) c.values.add("")
+                c.values[idx] = el.value.trim()
+                if (c.values.all { it.isBlank() }) c.values.clear()
+                wbRefreshPreview(); wbRenderSummary()
+            } }
+    }
+    // DEB-2837 (FR-2) — a year quick pick fills both fields.
+    document.querySelectorAll("#wb-blocks .wb-vchip[data-pick]").let { els ->
+        for (i in 0 until els.length) { val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val path = parsePath(el.getAttribute("data-path") ?: return@addEventListener)
+                val (from, to) = (el.getAttribute("data-pick") ?: return@addEventListener).split(",", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+                val c = condAt(path) ?: return@addEventListener
+                c.values.clear(); c.values.add(from); c.values.add(to)
+                wbRenderBlocks(); wbRefreshPreview()
             } }
     }
     // R87: content_row chips toggle membership in c.rows (by row id), resolved from the rows context.

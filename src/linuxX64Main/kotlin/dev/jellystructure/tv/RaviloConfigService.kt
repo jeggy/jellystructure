@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.BehaviourOverlay
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.firstValueProblem
 import dev.jellystructure.shared.tv.RaviloThemes
 import dev.jellystructure.shared.tv.ResolvedBehaviour
 import dev.jellystructure.shared.tv.ResolvedBehaviourField
@@ -254,6 +255,9 @@ class RaviloConfigService(
             config.channels.flatMap { it.rows?.items.orEmpty() }.mapNotNull { it.query } +
             config.rows.mapNotNull { it.query }
         if (allQueries.any { it.maxBlockDepth() > 3 }) return "A filter is nested too deep (max 3 levels: block, sub-block, one more)."
+        // DEB-2837 (FR-8) — a `year` or `rating` condition with a value that cannot mean anything is a 400 that names its row or collection.
+        config.channels.firstNotNullOfOrNull { ch -> ch.query?.firstValueProblem()?.let { "Collection '${ch.name.ifBlank { ch.id }}': $it" } }?.let { return it }
+        (config.rows + config.channels.flatMap { it.rows?.items.orEmpty() }).firstNotNullOfOrNull { r -> r.query?.firstValueProblem()?.let { "Row '${r.title ?: r.id}': $it" } }?.let { return it }
         // Phase 225 (FR-225-11) — sort key, limit range, pins ≤ limit, and no order at all on a system row.
         (config.rows + config.channels.flatMap { it.rows?.items.orEmpty() }).firstNotNullOfOrNull { dev.jellystructure.shared.tv.RowOrder.problem(it) }?.let { return it }
         return null

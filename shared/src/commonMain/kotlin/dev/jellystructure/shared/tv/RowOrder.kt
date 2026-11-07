@@ -14,7 +14,7 @@ package dev.jellystructure.shared.tv
 object RowOrder {
     const val DEFAULT_LIMIT = 30
     const val MIN_LIMIT = 3
-    val KEYS = listOf("added", "title", "year", "size")   // Phase 268 (FR-268-6) — size
+    val KEYS = listOf("added", "title", "year", "size", "rating")   // Phase 268 (FR-268-6) — size; DEB-2837 (FR-4) — rating
 
     fun effectiveLimit(limit: Int?): Int = limit?.takeIf { it in MIN_LIMIT..DEFAULT_LIMIT } ?: DEFAULT_LIMIT
 
@@ -29,7 +29,8 @@ object RowOrder {
         title: (T) -> String,
         sortName: (T) -> String?,
         size: (T) -> Long? = { null },   // Phase 268 — the title's size on disk (its `sizeBytes()`)
-    ): List<T> = resolveAll(matches, sort, pinned, id, added, year, title, sortName, size).take(effectiveLimit(limit))
+        rating: (T) -> Double? = { null },   // DEB-2837 (FR-4) — the title's `ratingScore()`
+    ): List<T> = resolveAll(matches, sort, pinned, id, added, year, title, sortName, size, rating).take(effectiveLimit(limit))
 
     /** The whole match set in the row's order, UNCAPPED — what the editor previews and picks from, and what
      *  [resolve] takes its first `limit` of. */
@@ -43,6 +44,7 @@ object RowOrder {
         title: (T) -> String,
         sortName: (T) -> String?,
         size: (T) -> Long? = { null },
+        rating: (T) -> Double? = { null },
     ): List<T> {
         val name: (T) -> String = { (sortName(it)?.takeIf { s -> s.isNotBlank() } ?: title(it)).lowercase() }
         val comparator: Comparator<T> = when {
@@ -52,6 +54,10 @@ object RowOrder {
             // Phase 268 (FR-268-6) — unknown sizes last in either direction, then by name.
             sort.by == "size" -> compareBy<T> { size(it) == null }
                 .then(Comparator { a, b -> val x = size(a) ?: 0L; val y = size(b) ?: 0L; if (sort.descending) y.compareTo(x) else x.compareTo(y) })
+                .thenBy { name(it) }
+            // DEB-2837 (FR-4) — unrated (or too thinly voted) titles last in either direction, then by name.
+            sort.by == "rating" -> compareBy<T> { rating(it) == null }
+                .then(Comparator { a, b -> val x = rating(a) ?: 0.0; val y = rating(b) ?: 0.0; if (sort.descending) y.compareTo(x) else x.compareTo(y) })
                 .thenBy { name(it) }
             else -> (if (sort.descending) compareByDescending<T> { added(it) } else compareBy<T> { added(it) }).thenBy { name(it) }
         }
@@ -80,6 +86,7 @@ object RowOrder {
         "title" -> if (descending) "Z → A" else "A → Z"
         "year" -> if (descending) "newest release first" else "oldest release first"
         "size" -> if (descending) "largest first" else "smallest first"
+        "rating" -> if (descending) "best-rated first" else "lowest-rated first"
         else -> if (descending) "newest first" else "oldest first"
     }
 

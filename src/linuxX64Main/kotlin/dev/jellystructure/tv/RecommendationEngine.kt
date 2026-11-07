@@ -5,6 +5,7 @@ import dev.jellystructure.auth.JellyfinPlayItem
 import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.rating
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.util.isoToEpochSeconds
 import kotlin.math.ln
@@ -188,10 +189,8 @@ object RecommendationEngine {
 
     // ─── Quality ──────────────────────────────────────────────────────────────
 
-    /** IMDb first; TMDB's own votes where IMDb has no rating. Null = no rating at all. */
-    private fun rating(item: MediaItem): Pair<Double, Long>? =
-        item.imdbRating?.let { it.aggregateRating to it.voteCount }
-            ?: item.tmdbVoteAverage?.takeIf { (item.tmdbVoteCount ?: 0) > 0 }?.let { it to (item.tmdbVoteCount ?: 0).toLong() }
+    /** IMDb first; TMDB's own votes where IMDb has no rating. Null = no rating at all. DEB-2837 (FR-1) moved the rule to `MediaItem.rating()`. */
+    private fun rating(item: MediaItem): Pair<Double, Long>? = item.rating()
 
     /** FR-269-5's floor. */
     fun belowFloor(item: MediaItem): Boolean =
