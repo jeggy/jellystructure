@@ -813,7 +813,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             // A restream after the start (a subtitle burn-in, a manual audio pick): as before R290.
             player.play()
             isPlaying = true
-            wake()
+            if (loadWakesChrome(s.replacement)) wake()   // DEB-3893 (DEB-3093 FR-6) — a replacement the viewer did not ask for shows no chrome
         } else {
             // R290 (FR-R290-4, dev review item 4) — prepare, resolve, then play: ExoPlayer renders the first frame on READY
             // whether or not it is playing, and the tracks arrive at prepare, so the resolver's verdict and the frame are

@@ -107,4 +107,13 @@ class StreamReplacementTest {
         assertEquals(false, replacementDrawsNothing(10_000L, 10_000L + REPLACEMENT_HOLD_MS + 1))
         assertEquals(false, replacementDrawsNothing(null, 10_000L))
     }
+
+    // ── FR-6 (DEB-3893): no chrome ──
+    @Test fun `a replacement the viewer did not ask for does not raise the chrome`() {
+        assertEquals(false, loadWakesChrome(replacement = true))
+    }
+
+    @Test fun `a restream the viewer asked for still raises the chrome`() {
+        assertEquals(true, loadWakesChrome(replacement = false))
+    }
 }

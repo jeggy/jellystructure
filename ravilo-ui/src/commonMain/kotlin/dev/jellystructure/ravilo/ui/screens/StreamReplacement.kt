@@ -24,6 +24,13 @@ internal const val REPLACEMENT_HOLD_MS = 2_000L
 internal fun replacementDrawsNothing(heldSinceMs: Long?, nowMs: Long): Boolean = heldSinceMs != null && nowMs - heldSinceMs <= REPLACEMENT_HOLD_MS
 
 /**
+ * FR-6 (DEB-3893) — whether handing a restream to the player raises the chrome. The viewer's own restream (a burn-in, an audio pick, a version)
+ * does, as it did before; a [replacement] they did not ask for shows "no black frame, no spinner and no chrome", so it does not. Every player
+ * reaches this through `loadTicket`, so Linux's mpv, the Mac, the web and Android all follow it.
+ */
+internal fun loadWakesChrome(replacement: Boolean): Boolean = !replacement
+
+/**
  * FR-6 — what to do after the [failedAttempts]th failed call (1 for the first): the delay before the next, or null to give up.
  * With picture in the buffer it never gives up (the viewer sees nothing). With the buffer empty it gives up once every retry has run,
  * which is when the error screen is the truth.
