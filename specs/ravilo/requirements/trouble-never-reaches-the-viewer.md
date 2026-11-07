@@ -310,6 +310,32 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
     The web keeps FR-6's 0.5 s. What remains after that fix is the network fetch of segments the warm-up already fetched (item 2
     above), which costs most on a slow link, and the decode from the keyframe. Each is decided on QA's measurement after the fix, not
     before it. Safari plays native HLS and not hls.js, so a custom loader would never reach it.
+- *2026-11-07, DEB-3214 — what the Mac client (AVPlayer) does, and what AVFoundation does not allow.* Mac only; a film on HLS. A live channel
+  keeps AVPlayer's own ABR (DEB-2627). Linux (mpv) is DEB-3215's. The Swift library is unchanged: the signals it already counts
+  (`AVPlayerItemPlaybackStalled`, `AVPlayerItemFailedToPlayToEndTime`) are the whole of what this needs.
+  - **FR-5's stall rule.** `automaticallyWaitsToMinimizeStalling` is true and `preferredForwardBufferDuration` 40 s, and the resume point
+    is AVFoundation's: it is not a setting, and the row accepts it as the 4 s resume. The 2 s draw rule is the shared `PlayerScreen`'s. **The
+    cap:** `MacLadderPeak.onStall` reads the library's stall count every watch tick (1 s) and lowers `preferredPeakBitRate` to the rung below
+    the peak (the start rung when no peak is set yet) at once, and nothing climbs for 2 minutes (`CLIMB_BLOCK_AFTER_RECOVERY_MS`). A stall on the
+    lowest rung caps nothing and blocks nothing. The Mac's climb now also honours `PlayerLadderHints.climbBlockedUntilMs`, which the store
+    sets after its own recoveries and the Mac's peak ignored until now.
+  - **FR-6 is on** for the Mac: `holdsLastFrameAcrossSource()` is true there (and only there), so `unseenReplacements` is true, the store keeps
+    `Ready` (never `Loading`) and fetches the new stream's master and first segments before the player is touched. The held picture is the
+    surface's own: Compose keeps the last frame it drew, and the torn-down item's video output offers none, so the old frame stays until the new
+    item draws one. **The clock** would not: a new `AVPlayerItem` reports position 0 and no duration until its start seek has landed, so
+    `MacHeldFrame` (the web's `WebHeldFrame` rule, DEB-3547) reports the replacement's start and the length the play had from a load made over
+    a picture until the new item's first frame, its failure, or 10 s. A viewer's own pick over a picture opens the same window, and so does a
+    next-episode load in the same player (the old length shows until the new item has read its own, which is before its first frame).
+  - **Not done.** (1) **FR-3 and FR-4.** AVFoundation exposes no request timeout, no retry schedule, no segment-failure callback and no abandon
+    hook for HLS: it retries and falls to another variant on its own. A failed item is terminal (`status = failed`, or
+    `FailedToPlayToEndTime`) and goes the existing way, to the store's restream (FR-6), which is where a failed encoder stream is asked for
+    again. (2) **The old stream does not play on until the new one is in hand.** `ravilo_player_load` pauses the one `AVPlayer` and replaces
+    its item, so the sound stops when the warmed stream is handed over, not when the decision is made; keeping it needs a second `AVPlayer` to
+    ready the new item, and R292 allows one engine. Whether the gap is worth that is QA's measurement, as the web's 0.5 s was. (3) **The
+    warm-up's bytes are dropped** (`WarmedSegments.desktop.kt`): AVPlayer reads the new stream's first segments again; serving them from the
+    cache needs an `AVAssetResourceLoader` delegate. (4) **The 0.5 s bound is not measured** on a Mac. (5) **Nothing here runs on AVPlayer in CI:**
+    `ci / macos` compiles the Swift (unchanged) and the tests are the pure decisions, `MacTroubleTest` (`MacLadderPeak.onStall`, `MacHeldFrame`) and
+    `LadderSteppingTest` (`peakAfterStall`, `nextPeakBps` with a blocked climb).
 
 ## What this does not do yet
 

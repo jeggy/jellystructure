@@ -159,8 +159,18 @@ fun masterBandwidths(master: String): List<Long> =
  * lowered as soon as the buffer runs low ([LadderRules.allowedMaxBps] with the peak as the playing rung). Returns the
  * new peak in the master's units (a variant's `BANDWIDTH`); [peakBps] unchanged when nothing moves.
  */
-fun nextPeakBps(rungsBps: List<Long>, peakBps: Long, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean): Long =
-    LadderRules.allowedMaxBps(rungsBps, peakBps, bufferedMs, lastBufferedMs, oursEncoder) ?: peakBps
+fun nextPeakBps(rungsBps: List<Long>, peakBps: Long, bufferedMs: Long, lastBufferedMs: Long?, oursEncoder: Boolean, climbBlocked: Boolean = false): Long =
+    LadderRules.allowedMaxBps(rungsBps, peakBps, bufferedMs, lastBufferedMs, oursEncoder, climbBlocked) ?: peakBps
+
+/**
+ * DEB-3214 (DEB-3093 FR-5, FR-9) — a stall caps the Mac's peak one rung down at once: the rung below [peakBps], or the lowest when it is
+ * already there (nothing lower to ask for). [startPeakBps] is the peak a play that has not set one yet would hold.
+ */
+fun peakAfterStall(rungsBps: List<Long>, peakBps: Long?, startPeakBps: Long): Long {
+    val sorted = rungsBps.distinct().sorted()
+    val current = peakBps ?: startPeakBps
+    return sorted.lastOrNull { it < current } ?: sorted.firstOrNull() ?: current
+}
 
 /**
  * Phase 309 (FR-309-9) — a player that cannot switch variants itself (mpv on Linux: `hls-bitrate` picks one at open) is

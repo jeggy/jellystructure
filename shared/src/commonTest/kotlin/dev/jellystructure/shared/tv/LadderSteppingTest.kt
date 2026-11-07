@@ -49,6 +49,21 @@ class LadderSteppingTest {
         assertEquals(6_256_000L, nextPeakBps(rungs, 12_256_000L, 12_000, 18_000, oursEncoder = true))
     }
 
+    @Test fun `a stall caps the Macs peak one rung down at once and a blocked climb holds it there`() {
+        val rungs = listOf(2_506_000L, 6_256_000L, 12_256_000L, 18_256_000L)
+        // DEB-3214 (FR-5) — one rung below the peak, however much is buffered.
+        assertEquals(12_256_000L, peakAfterStall(rungs, 18_256_000L, startPeakBps = 6_256_000L))
+        assertEquals(2_506_000L, peakAfterStall(rungs, 6_256_000L, startPeakBps = 6_256_000L))
+        // The lowest rung has nothing below it: the peak stays there.
+        assertEquals(2_506_000L, peakAfterStall(rungs, 2_506_000L, startPeakBps = 6_256_000L))
+        // No peak set yet (a stall before the first tick): the start rung is the one capped, whatever order the master listed.
+        assertEquals(2_506_000L, peakAfterStall(rungs.reversed(), null, startPeakBps = 6_256_000L))
+        assertEquals(1L, peakAfterStall(emptyList(), 1L, startPeakBps = 1L))
+        // The 2 minutes after it nothing climbs, with 40 s buffered on our encoder; afterwards the climb is the ordinary one.
+        assertEquals(12_256_000L, nextPeakBps(rungs, 12_256_000L, 40_000, 39_800, oursEncoder = true, climbBlocked = true))
+        assertEquals(18_256_000L, nextPeakBps(rungs, 12_256_000L, 40_000, 39_800, oursEncoder = true))
+    }
+
     @Test fun `on our encoder the climb is direct and on Jellyfins ladder one rung at a time`() {
         val rungs = listOf(2_506_000L, 6_256_000L, 12_256_000L, 18_256_000L)
         // 10 s buffered on the lowest rung: ours goes to the top, Jellyfin's holds (it wants 30 s) and then takes one.

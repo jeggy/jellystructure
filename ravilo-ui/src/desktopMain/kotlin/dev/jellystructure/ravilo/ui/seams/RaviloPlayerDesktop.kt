@@ -71,6 +71,8 @@ actual class RaviloPlayer actual constructor() {
     private var subJob: Job? = null
     private var watchJob: Job? = null
     private var restoredAfterRecreate = 0
+    /** DEB-3214 (FR-6) — the clock a replacement's held frame keeps (the Mac only: [holdsLastFrameAcrossSource]). */
+    private val held = dev.jellystructure.ravilo.ui.desktop.MacHeldFrame()
     /** When the last [load] happened — see [playbackFailed]. */
     private var loadedAtMs = 0L
     /** FR-R329-1 — when the picture started, so the spike's "over five minutes" is read off the player, not a clock. */
@@ -115,6 +117,12 @@ actual class RaviloPlayer actual constructor() {
         dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.attach(this)
         if (!engine.available) { noEngineFailure = true; return }
         noEngineFailure = false
+        // DEB-3214 (FR-6) — a source swapped in behind a playing picture keeps that picture (the surface holds its last frame), and until the
+        // new item's first frame the position and the length are the play's own. A live channel and a Linux window hold nothing.
+        val now = System.currentTimeMillis()
+        engine.state.let { before ->
+            held.begin(live == null && holdsLastFrameAcrossSource() && before.firstFrame && !before.ended && !before.failed, startPositionMs, before.durationMs.coerceAtLeast(0L), now)
+        }
         println("${DesktopLog.stamp()} [player] load ${streamUrl.substringBefore('?')} start=${startPositionMs}ms text subtitles=${textTracks.size} audio=${audio.size}")
         if (live != null && DesktopEngines.isMpv) engine.setHlsBitrate(rungStepper?.startBitrate)   // null = mpv's `max`; a film leaves the option alone
         engine.load(streamUrl, startMs = startPositionMs)
@@ -177,7 +185,10 @@ actual class RaviloPlayer actual constructor() {
                 // 309 (FR-309-9) — mpv's buffer ahead, for the store's stepping; the Mac's peak, every other second.
                 if (liveLoaded) stepLiveRung(s)
                 else if (DesktopEngines.isMpv) PlayerLadderHints.bufferedAheadMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L)
-                else if (ticks % 2 == 0) macPeak.tick(s)
+                else {
+                    macPeak.onStall(s)   // DEB-3214 (FR-5) — a stall caps one rung down at once
+                    if (ticks % 2 == 0) macPeak.tick(s)
+                }
                 delay(1_000)
             }
             if (awake) MacNative.lib?.ravilo_display_keep_awake(0)
@@ -186,7 +197,7 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun play() = engine.play()
     actual fun pause() = engine.pause()
-    actual fun seekTo(positionMs: Long) = engine.seekTo(positionMs)
+    actual fun seekTo(positionMs: Long) { held.seek(positionMs); engine.seekTo(positionMs) }
     /** R354 (FR-R354-6) — the engine's own output level (AVPlayer / mpv). */
     actual fun setVolume(level: Float) = engine.setVolume(level.coerceIn(0f, 1f))
 
@@ -265,8 +276,8 @@ actual class RaviloPlayer actual constructor() {
     actual fun setSessionActive(active: Boolean) { if (!active) MacNowPlaying.release(nowPlaying) }
     actual fun setSubtitleScale(scale: Float) { captionScale = scale; engine.setSubtitleScale(scale) }
 
-    actual val positionMs: Long get() = engine.state.positionMs
-    actual val durationMs: Long get() = engine.state.durationMs.coerceAtLeast(0L)
+    actual val positionMs: Long get() = held.positionMs(engine.state, System.currentTimeMillis())
+    actual val durationMs: Long get() = held.durationMs(engine.state, System.currentTimeMillis())
     actual val bufferedMs: Long get() = engine.state.bufferedMs
     actual val isPlaying: Boolean get() = engine.state.let { it.wantsPlay && !it.ended && !it.failed }
     actual val isEnded: Boolean get() = engine.state.ended

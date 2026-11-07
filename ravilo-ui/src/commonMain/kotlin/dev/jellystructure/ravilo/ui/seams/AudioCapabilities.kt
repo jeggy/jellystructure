@@ -110,7 +110,7 @@ expect fun reportsDecodeHealth(): Boolean
 /**
  * DEB-3213 (DEB-3093 FR-6, FR-9) — this player keeps the picture on screen across a change of stream without the engine's help, so a
  * replacement the viewer did not ask for can run behind it ([reportsDecodeHealth] already says so for Android's Media3). The web does: the
- * frame is held as the `<video>`'s poster until the new stream's first frame. The desktop's mpv and AVPlayer are FR-9's other rows.
+ * frame is held as the `<video>`'s poster until the new stream's first frame. So does the Mac's AVPlayer (DEB-3214: the surface keeps the last frame it drew); mpv on Linux is DEB-3215's.
  */
 expect fun holdsLastFrameAcrossSource(): Boolean
 

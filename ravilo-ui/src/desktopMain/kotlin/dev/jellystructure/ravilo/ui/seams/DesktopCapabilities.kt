@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.seams
 
 import dev.jellystructure.ravilo.ui.desktop.DesktopEngines
+import dev.jellystructure.ravilo.ui.desktop.DesktopPaths
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import java.net.NetworkInterface
 
@@ -126,7 +127,10 @@ actual fun mergesExternalAudio(): Boolean = false
 /** DEB-2205 — mpv and AVPlayer give no dropped-frame or frozen-picture signal that this app reads. */
 actual fun reportsDecodeHealth(): Boolean = false
 
-/** DEB-3213 — mpv and AVPlayer: FR-9's Linux and Mac rows (DEB-3214, DEB-3215). */
-actual fun holdsLastFrameAcrossSource(): Boolean = false
+/**
+ * DEB-3214 (FR-6, FR-9) — the Mac: the surface keeps the last frame it drew until the new item draws one, so a replacement can run behind
+ * the picture. Linux (mpv draws into a window of its own) is DEB-3215's.
+ */
+actual fun holdsLastFrameAcrossSource(): Boolean = DesktopPaths.isMac
 
 actual fun deviceMemoryClassMb(): Int = 0
