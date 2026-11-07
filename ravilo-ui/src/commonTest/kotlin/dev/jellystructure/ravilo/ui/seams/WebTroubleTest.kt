@@ -189,4 +189,22 @@ class WebTroubleTest {
         // at 0.5 Mb/s it is 96 s.
         assertTrue(a.shouldAbandon(load(key = "8:3", bytes = 0, firstByteAgo = -1, age = 2_000, estimate = 500_000), bufferedMs = 40_000))
     }
+
+    // ── FR-6 — the held frame keeps the play's own position (DEB-3547) ──
+
+    @Test fun `while the held frame is up the position is where the replacement starts, not the element's 0`() {
+        assertEquals(115_000L, WebHeldFrame.positionMs(held = true, startMs = 115_000, elementMs = 0))
+        assertEquals(115_000L, WebHeldFrame.positionMs(held = true, startMs = 115_000, elementMs = 114_000))
+    }
+
+    @Test fun `once the new source has its first frame the position is the element's`() {
+        assertEquals(116_200L, WebHeldFrame.positionMs(held = false, startMs = 115_000, elementMs = 116_200))
+        assertEquals(0L, WebHeldFrame.positionMs(held = false, startMs = 115_000, elementMs = 0))
+    }
+
+    @Test fun `the length does not drop to 0 inside the window, and the new source's own length wins once it has one`() {
+        assertEquals(7_200_000L, WebHeldFrame.durationMs(held = true, heldMs = 7_200_000, elementMs = 0))
+        assertEquals(7_201_000L, WebHeldFrame.durationMs(held = true, heldMs = 7_200_000, elementMs = 7_201_000))
+        assertEquals(0L, WebHeldFrame.durationMs(held = false, heldMs = 7_200_000, elementMs = 0))
+    }
 }

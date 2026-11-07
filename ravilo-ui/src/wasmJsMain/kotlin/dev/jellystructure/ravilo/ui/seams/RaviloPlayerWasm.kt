@@ -126,6 +126,9 @@ actual class RaviloPlayer actual constructor() {
         // R376 (FR-R376-S1) — the element shows again, its unlock bookkeeping stops, and it tries sound again (a film
         // left muted by a gesture-less start must not leave the next one silent with no pill).
         // DEB-3213 (FR-6) — a source swapped in behind a playing picture keeps that picture on screen until its own first frame.
+        // DEB-3547 (FR-6) — and while it is up, the position and the length are the play's own, not the new source's empty ones.
+        heldStartMs = startPositionMs
+        heldDurationMs = elementDurationMs()
         holdLastFrame(video, events.firstFrame && !events.ended && !events.failed)
         prepareForSource(video)
         events.on("loadstart", nowMs())
@@ -190,7 +193,10 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun play() { playVideo(video) }
     actual fun pause() { pauseVideo(video) }
-    actual fun seekTo(positionMs: Long) { video.currentTime = positionMs / 1000.0 }
+    actual fun seekTo(positionMs: Long) {
+        if (frameHeld(video)) heldStartMs = positionMs   // DEB-3547 — a seek inside the window moves where the replacement starts
+        video.currentTime = positionMs / 1000.0
+    }
     /** R354 (FR-R354-6) — the video element's own volume. */
     actual fun setVolume(level: Float) { video.volume = level.coerceIn(0f, 1f).toDouble() }
 
@@ -240,8 +246,16 @@ actual class RaviloPlayer actual constructor() {
     // R192: no OS-level MediaSession/cross-device surfacing on web — nothing to toggle.
     actual fun setSessionActive(active: Boolean) {}
 
-    actual val positionMs: Long get() = (video.currentTime * 1000).toLong()
-    actual val durationMs: Long get() {
+    /**
+     * DEB-3547 (FR-6) — a replacement's held frame (the element's `poster`, [holdLastFrame]) is up from the source change to the new
+     * source's first frame, and the element's `currentTime` is 0 and its `duration` NaN until then. [WebHeldFrame] says what is reported
+     * in that window: where the replacement starts, and the length the play had.
+     */
+    private var heldStartMs = 0L
+    private var heldDurationMs = 0L
+    actual val positionMs: Long get() = WebHeldFrame.positionMs(frameHeld(video), heldStartMs, (video.currentTime * 1000).toLong())
+    actual val durationMs: Long get() = WebHeldFrame.durationMs(frameHeld(video), heldDurationMs, elementDurationMs())
+    private fun elementDurationMs(): Long {
         val d = video.duration
         return if (d.isNaN() || d.isInfinite()) 0L else (d * 1000).toLong()
     }
@@ -408,6 +422,9 @@ private fun holdLastFrame(video: HTMLVideoElement, keep: Boolean): Unit = js(
         } catch (e) { video.removeAttribute('poster'); }
     }"""
 )
+
+/** DEB-3547 (FR-6) — whether a replacement's held frame is up: [holdLastFrame] sets the `poster` and every way it ends removes it. */
+private fun frameHeld(video: HTMLVideoElement): Boolean = js("video.hasAttribute('poster')")
 
 /** R376 (FR-R376-S1) — back to idle: paused, no source, no `<track>`s, nothing queued, the default fit, hidden. */
 private fun resetElement(video: HTMLVideoElement): Unit = js(

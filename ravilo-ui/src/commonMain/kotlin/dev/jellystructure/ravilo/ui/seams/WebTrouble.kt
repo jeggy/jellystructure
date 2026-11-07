@@ -65,6 +65,18 @@ internal object WebHlsPolicy {
 }
 
 /**
+ * FR-6 (DEB-3547) — what the player reports while a replacement's held frame is up. The element has no position of its own until the new
+ * source's first frame (`currentTime` 0, `duration` NaN), and a clock that reads 0:00 for 1.5 s in the middle of a film is chrome the
+ * switch must not show. In that window the position is where the replacement starts and the length is the one the play had (the new
+ * source's, if it has already read it); after it, both are the element's.
+ */
+internal object WebHeldFrame {
+    fun positionMs(held: Boolean, startMs: Long, elementMs: Long): Long = if (held) startMs else elementMs
+
+    fun durationMs(held: Boolean, heldMs: Long, elementMs: Long): Long = if (held && elementMs <= 0L) heldMs else elementMs
+}
+
+/**
  * FR-4 and FR-5 — the ceilings a trouble puts on hls.js's rung (its level index, ascending): a failed load keeps its rung out for 15 s, an
  * abandoned segment keeps the climb below its rung for 30 s, a stall caps one rung down for the 2 minutes Android's cap lasts. Several
  * may hold at once; the lowest ceiling wins, and each is forgotten when its time is up. Nothing is held for the lowest rung (there is no
