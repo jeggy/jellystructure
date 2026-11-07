@@ -485,11 +485,13 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         // for up to TOKEN_CACHE_TTL_MS (5 minutes) after the operator removed it. unpair() already got
         // this right; this one and deleteAllForUser below didn't. Look the token up before the DB row
         // is gone so the cache entry can be dropped too.
-        val row = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId).executeAsOneOrNull()
+        // DEB-2675 (FR-13) — matched on the normalised id: the admin's page passes the stored form, a caller by hand may not.
+        val key = normalizeGuid(jellyfinUserId)
+        val row = db.userRemovalQueries.deviceRowFor(device_id = deviceId, key = key).executeAsOneOrNull()
         row?.let { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
-        db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+        db.userRemovalQueries.deleteDeviceRowFor(device_id = deviceId, key = key)
         dropHistoryIfGone(deviceId)   // Phase 259 (FR-259-5) — one viewer of two keeps it; the last takes it
-        if (row?.kind == "screen") onScreensChanged?.invoke(jellyfinUserId)   // R360 (dev review item 3)
+        if (row?.kind == "screen") onScreensChanged?.invoke(row.jellyfin_user_id)   // R360 (dev review item 3)
     }
 
     /** Phase 143 — every device row across every user, for the Users & Devices admin overview.
@@ -518,17 +520,47 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
             ).also { DeviceIdentityRegistry.remember(it) }
         }
 
-    /** Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into. */
-    fun deleteAllForUser(jellyfinUserId: String) {
+    /**
+     * Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into. DEB-2675 (FR-12) — matched on
+     * the normalised id, so a row stored as dashed uppercase is found by the 32-hex form and the other way round; it used to match the
+     * exact string and report success on a miss. Returns how many rows it removed (`0` is how a caller tells that none matched).
+     */
+    fun deleteAllForUser(jellyfinUserId: String): Int {
         // Security fix (2026-08-02 review, finding M3) — same tokenCache gap as removeSession above:
         // "sign out everywhere" reported success while every signed-out device token kept working for
         // up to 5 more minutes, served straight from the cache.
-        val rows = db.raviloDeviceQueries.getByUser(jellyfin_user_id = jellyfinUserId).executeAsList()
+        val key = normalizeGuid(jellyfinUserId)
+        val rows = db.userRemovalQueries.devicesFor(key).executeAsList()
         rows.forEach { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
-        db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
+        db.userRemovalQueries.deleteDevicesFor(key)
         rows.map { it.device_id }.distinct().forEach { dropHistoryIfGone(it) }   // Phase 259 (FR-259-5)
-        if (rows.any { it.kind == "screen" }) onScreensChanged?.invoke(jellyfinUserId)   // R360 (dev review item 3)
+        rows.filter { it.kind == "screen" }.map { it.jellyfin_user_id }.distinct().forEach { onScreensChanged?.invoke(it) }   // R360 (dev review item 3)
+        return rows.size
     }
+
+    /** DEB-2675 (FR-13) — [jellyfinUserId]'s device rows whichever form their id is stored in, newest first. */
+    fun listByUserAnyForm(jellyfinUserId: String): List<DeviceData> =
+        db.userRemovalQueries.devicesFor(normalizeGuid(jellyfinUserId)).executeAsList().map { row ->
+            DeviceData(
+                deviceId = row.device_id,
+                deviceToken = row.device_token,
+                jellyfinUserId = row.jellyfin_user_id,
+                jellyfinUsername = row.jellyfin_username,
+                jellyfinUserToken = row.jellyfin_user_token,
+                isAdmin = row.is_admin == 1L,
+                isKids = row.is_kids == 1L,
+                displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
+                lastSeen = row.last_seen,
+                createdAt = row.created_at,
+                allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
+                allowedTags = decodeTags(row.allowed_tags),
+                blockedTags = decodeTags(row.blocked_tags),
+                appVersion = row.app_version,
+                platform = row.platform,
+                kind = row.kind,
+                lastPublicAddress = row.last_public_address,
+            )
+        }
 
     /**
      * Phase 185 (FR-185-1) — persists the R216 decode ceiling this device just reported, keyed per

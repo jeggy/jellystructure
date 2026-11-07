@@ -76,9 +76,16 @@ class SessionService(private val db: JellystructureDb) {
         db.sessionQueries.deleteByToken(token)
     }
 
-    /** Phase 143 — "sign out everywhere": every admin web session this Jellyfin user holds. */
-    fun revokeAllForUser(jellyfinUserId: String) {
-        db.sessionQueries.deleteByUser(jellyfinUserId)
+    /**
+     * Phase 143 — "sign out everywhere": every admin web session this Jellyfin user holds. DEB-2675 (FR-12) — matched on the
+     * normalised id and answers how many it revoked; it used to match the exact string and report success on a miss.
+     */
+    fun revokeAllForUser(jellyfinUserId: String): Int {
+        val key = jellyfinUserId.replace("-", "").lowercase()
+        val rows = db.userRemovalQueries.sessionsFor(key).executeAsList()
+        rows.forEach { lastUsedWritten.remove(it.token) }
+        db.userRemovalQueries.deleteSessionsFor(key)
+        return rows.size
     }
 
     /** Phase 143 — every live admin web session, for the Users & Devices overview. */

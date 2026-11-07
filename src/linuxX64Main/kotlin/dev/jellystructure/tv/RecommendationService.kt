@@ -252,6 +252,9 @@ class RecommendationService(
 
     /** One recently seen device per Jellyfin user (dev review item 4): a user not seen in 30 days never
      *  opens a Home to see a list, so none is built for them. */
+    /** DEB-2675 (FR-3) — set by Main: the reconciler's word on which users the last complete `/Users` read lacked. */
+    var presence: UserPresence? = null
+
     /** Phase 270 — how many viewers a full build covers (the AI tab's estimate). */
     fun viewerCount(): Int = viewers().size
 
@@ -260,6 +263,7 @@ class RecommendationService(
         val now = nowSec() * 1000L
         return deviceService.allDevices()
             .filter { now - it.lastSeen < RECENTLY_SEEN_MS }
+            .filter { presence?.isMarked(it.jellyfinUserId) != true }   // DEB-2675 (FR-3) — a user Jellyfin lacks is not asked for their history
             .sortedByDescending { it.lastSeen }
             .distinctBy { it.jellyfinUserId }
             .sortedBy { it.jellyfinUserId }

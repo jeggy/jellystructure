@@ -1,0 +1,98 @@
+-- DEB-2675 (DEB-2672, FR-10, FR-12) — a Jellyfin user who is gone: who is looked at, and what goes.
+-- Every id in every table is matched as `replace(lower(<column>), '-', '') = :key`, so a row stored as 32 hex digits, as dashed
+-- lowercase or as dashed uppercase is the same user. These tables are small and the step is rare, so no index is wanted.
+-- Queries only: the tables are declared in their own files.
+
+-- FR-10 — the ids the pass looks at, each in its normalised form. The revoked-key and redeemed-grant filters are what end it:
+-- FR-4 keeps a revoked key's row, so without them a removed user would be a candidate again on every pass.
+candidateIds:
+SELECT replace(lower(jellyfin_user_id), '-', '') AS id FROM ravilo_device
+UNION SELECT replace(lower(user_id), '-', '') FROM ravilo_behaviour
+UNION SELECT replace(lower(user_id), '-', '') FROM ravilo_config
+UNION SELECT replace(lower(user_id), '-', '') FROM recommendation
+UNION SELECT replace(lower(user_id), '-', '') FROM ai_order
+UNION SELECT replace(lower(user_id), '-', '') FROM suggestion_viewer
+UNION SELECT replace(lower(user_id), '-', '') FROM audiobook_progress
+UNION SELECT replace(lower(user_id), '-', '') FROM audiobook_bookmark
+UNION SELECT replace(lower(jellyfin_user_id), '-', '') FROM dashboard_visit
+UNION SELECT replace(lower(jellyfin_user_id), '-', '') FROM playback_outbox
+UNION SELECT replace(lower(user_id), '-', '') FROM ai_viewer
+UNION SELECT replace(lower(jellyfin_user_id), '-', '') FROM session
+UNION SELECT replace(lower(jellyfin_user_id), '-', '') FROM api_key WHERE revoked = 0
+UNION SELECT replace(lower(jellyfin_user_id), '-', '') FROM cast_handoff WHERE redeemed_at IS NULL
+UNION SELECT replace(lower(jellyfin_user_id), '-', '') FROM ravilo_pairing WHERE jellyfin_user_id IS NOT NULL
+UNION SELECT replace(lower(approved_user_id), '-', '') FROM tv_signin_code WHERE approved_user_id IS NOT NULL;
+
+-- FR-6 — the name of a user with no device row: the first of these that has one.
+sessionNameFor:
+SELECT jellyfin_username FROM session WHERE replace(lower(jellyfin_user_id), '-', '') = :key AND jellyfin_username <> '' LIMIT 1;
+
+apiKeyNameFor:
+SELECT jellyfin_username FROM api_key WHERE replace(lower(jellyfin_user_id), '-', '') = :key AND jellyfin_username <> '' LIMIT 1;
+
+playbackOwnerNameFor:
+SELECT owner_name FROM playback_session WHERE replace(lower(owner_user_id), '-', '') = :key AND owner_name <> '' LIMIT 1;
+
+-- FR-4 — a live key is revoked, never deleted: the admin's key list still shows what existed.
+liveKeyCountFor:
+SELECT COUNT(*) FROM api_key WHERE replace(lower(jellyfin_user_id), '-', '') = :key AND revoked = 0;
+
+revokeKeysFor:
+UPDATE api_key SET revoked = 1 WHERE replace(lower(jellyfin_user_id), '-', '') = :key AND revoked = 0;
+
+-- FR-4 — unredeemed grants that could mint a device for a user who no longer exists.
+deleteUnredeemedHandoffsFor:
+DELETE FROM cast_handoff WHERE replace(lower(jellyfin_user_id), '-', '') = :key AND redeemed_at IS NULL;
+
+deletePairingsFor:
+DELETE FROM ravilo_pairing WHERE replace(lower(jellyfin_user_id), '-', '') = :key;
+
+deleteApprovedSigninCodesFor:
+DELETE FROM tv_signin_code WHERE replace(lower(approved_user_id), '-', '') = :key;
+
+-- FR-5 — the rows that exist only to serve that viewer. (`ai_order`, `ai_viewer` and a queued re-rank are in Ai.sq.)
+deleteBehaviourFor:
+DELETE FROM ravilo_behaviour WHERE replace(lower(user_id), '-', '') = :key;
+
+deleteConfigFor:
+DELETE FROM ravilo_config WHERE replace(lower(user_id), '-', '') = :key;
+
+deleteRecommendationsFor:
+DELETE FROM recommendation WHERE replace(lower(user_id), '-', '') = :key;
+
+deleteSuggestionViewerFor:
+DELETE FROM suggestion_viewer WHERE replace(lower(user_id), '-', '') = :key;
+
+deleteAudiobookProgressFor:
+DELETE FROM audiobook_progress WHERE replace(lower(user_id), '-', '') = :key;
+
+deleteAudiobookBookmarksFor:
+DELETE FROM audiobook_bookmark WHERE replace(lower(user_id), '-', '') = :key;
+
+deleteDashboardVisitFor:
+DELETE FROM dashboard_visit WHERE replace(lower(jellyfin_user_id), '-', '') = :key;
+
+deleteOutboxFor:
+DELETE FROM playback_outbox WHERE replace(lower(jellyfin_user_id), '-', '') = :key;
+
+deleteAiViewerFor:
+DELETE FROM ai_viewer WHERE replace(lower(user_id), '-', '') = :key;
+
+-- Sessions and devices, by the same match (FR-12, FR-13). The exact-match queries beside the originals stay for their callers.
+sessionsFor:
+SELECT * FROM session WHERE replace(lower(jellyfin_user_id), '-', '') = :key;
+
+deleteSessionsFor:
+DELETE FROM session WHERE replace(lower(jellyfin_user_id), '-', '') = :key;
+
+devicesFor:
+SELECT * FROM ravilo_device WHERE replace(lower(jellyfin_user_id), '-', '') = :key ORDER BY last_seen DESC;
+
+deleteDevicesFor:
+DELETE FROM ravilo_device WHERE replace(lower(jellyfin_user_id), '-', '') = :key;
+
+deviceRowFor:
+SELECT * FROM ravilo_device WHERE device_id = :device_id AND replace(lower(jellyfin_user_id), '-', '') = :key;
+
+deleteDeviceRowFor:
+DELETE FROM ravilo_device WHERE device_id = :device_id AND replace(lower(jellyfin_user_id), '-', '') = :key;

@@ -15,6 +15,9 @@ private const val HYDRATE_CHUNK = 100
 // R142: bound the UserData read fan-out (Kotlin/Native CIO select() crashes on FD ≥ 1024).
 private val hydrateGate = Semaphore(4)
 
+/** DEB-2675 (FR-7) — what [fetchPlaystateRead] got: the states read, whether any read failed, and whether one of them was a 404. */
+internal class PlaystateRead(val states: Map<String, CardPlayState>, val failed: Boolean = false, val notFound: Boolean = false)
+
 /**
  * R142 — fetch Jellyfin played/in-progress state for [ids] so poster tiles can show a ✓ / progress sliver.
  * Mirrors DetailService.getPlaystate but lives here so the feed / browse / search / related services can
@@ -27,20 +30,36 @@ internal suspend fun fetchPlaystate(
     token: String,
     userId: String,
     ids: List<String>,
-): Map<String, CardPlayState> = coroutineScope {
+): Map<String, CardPlayState> = fetchPlaystateRead(jellyfinClient, base, token, userId, ids).states
+
+/**
+ * DEB-2675 (FR-7) — [fetchPlaystate] that says when a read failed, and with which status, so the background refresher can count
+ * the user as failed and keep their previous map (R231) rather than merge an empty one over it as a success.
+ */
+internal suspend fun fetchPlaystateRead(
+    jellyfinClient: JellyfinClient,
+    base: String,
+    token: String,
+    userId: String,
+    ids: List<String>,
+): PlaystateRead = coroutineScope {
     val realIds = ids.filterNot { it.startsWith('/') }.distinct()
-    if (realIds.isEmpty()) return@coroutineScope emptyMap()
+    if (realIds.isEmpty()) return@coroutineScope PlaystateRead(emptyMap())
     // Bug fix: chunks used to be fetched one at a time in a plain for-loop, so N chunks cost N sequential
     // Jellyfin round trips even though hydrateGate has room for 4 concurrent holders — the semaphore's
     // capacity was going unused by this, its own primary caller. Fan the chunks out concurrently (still
     // gated by the same semaphore, so overall fan-out across every fetchPlaystate caller stays capped).
     val out = mutableMapOf<String, CardPlayState>()
+    var failed = false
+    var notFound = false
     realIds.chunked(HYDRATE_CHUNK).map { chunk ->
         async {
-            hydrateGate.withPermit { jellyfinClient.getUserDataBulk(base, token, userId, chunk) }
+            hydrateGate.withPermit { jellyfinClient.getUserDataBulkRead(base, token, userId, chunk) }
         }
-    }.awaitAll().forEach { results ->
-        results.forEach { jf ->
+    }.awaitAll().forEach { read ->
+        if (read.failed) failed = true
+        if (read.notFound) notFound = true
+        read.value.forEach { jf ->
             val ud = jf.userData ?: return@forEach
             out[jf.id] = CardPlayState(
                 resumeMs  = ud.playbackPositionTicks / HYDRATE_TICKS_PER_MS,
@@ -53,7 +72,7 @@ internal suspend fun fetchPlaystate(
             )
         }
     }
-    out
+    PlaystateRead(out, failed, notFound)
 }
 
 /**

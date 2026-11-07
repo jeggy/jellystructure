@@ -199,6 +199,8 @@ fun startServer(
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
     // Phase 258 (FR-258-2) — the events-socket connect trigger; null only in tests that build no reconciler.
     devicePolicyReconciler: dev.jellystructure.tv.DevicePolicyReconciler? = null,
+    // DEB-2675 (FR-6, FR-9) — the users removed in the last seven days, for Users & devices; null only in tests that build none.
+    goneUserRemoval: dev.jellystructure.tv.GoneUserRemoval? = null,
     // DEB-2518 (FR-7) — the Dashboard's filter-tag rows; null only in tests that build none.
     filterTagCheck: dev.jellystructure.media.FilterTagCheck? = null,
     // DEB-2518 (FR-12) — the Dashboard's *single-sign-on account with no tag filter* row; null only in tests that build none.
@@ -706,7 +708,7 @@ fun startServer(
                 supportService?.let { supportRoutes(it, configStore) }   // Phase 320 — /api/tv/support/** and /api/support/**
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 channelLogoAdminRoutes(channelLogoStore, dev.jellystructure.tv.ChannelLogoUsage(raviloConfigService, liveTvService, configStore, jellyfinClient))   // DEB-1788
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService, devicePolicyReconciler, goneUserRemoval)
                 tvSignInService?.let { tvSignInRoutes(it) }   // DEB-2233 — its own rate-limit buckets, none of loginRateLimiter's
                 singleSignOnService?.let { singleSignOnApiRoutes(it) }   // DEB-2233 — likewise: start 10/min, claim 40/min (a success refunds)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).

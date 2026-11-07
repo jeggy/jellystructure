@@ -35,6 +35,9 @@ internal const val EPISODE_SWEEP_CYCLES = 15
 // Spread refreshes out rather than firing a household's users at Jellyfin in one instant.
 private const val STAGGER_MS = 500L
 
+/** DEB-2675 (FR-3) — the summary lines' clause for the users a cycle did not ask for; empty when there were none, so the line is as it was. */
+internal fun skippedClause(skipped: Int): String = if (skipped > 0) " · $skipped skipped (not in Jellyfin)" else ""
+
 /**
  * Phase 205 (FR-205-1/FR-205-2) — the ONE per-user whole-catalog playstate map, background-refreshed,
  * shared by every read site that used to fetch it live: `HomeFeedService`'s Home/channel feeds,
@@ -62,6 +65,17 @@ object PlaystateCache {
     private var policyOf: Map<String, Int> = emptyMap()
 
     fun get(userId: String): Map<String, CardPlayState> = data[userId].orEmpty()
+
+    /** DEB-2675 (FR-3, FR-8) — Main sets the reconciler: it says which users the last complete `/Users` read lacked (skipped) and takes a 404's hint. */
+    var presence: UserPresence? = null
+
+    /** DEB-2675 (FR-4) — a user who is gone loses their map, the age of their last cycle and the policy it was built under. [normalisedUserId] matches either stored form. */
+    fun forget(normalisedUserId: String) {
+        fun keep(k: String) = normalizeGuid(k) != normalisedUserId
+        data = data.filterKeys(::keep)
+        lastSuccessAt = lastSuccessAt.filterKeys(::keep)
+        policyOf = policyOf.filterKeys(::keep)
+    }
 
     /** DEB-2518 (FR-8) — a user whose policy changed since their map was merged loses it: the map is merged across
      *  cycles, so an entry for a title the policy has since hidden would otherwise stay answerable by id. The next
@@ -101,7 +115,7 @@ object PlaystateCache {
         }
     }
 
-    private suspend fun refreshAll(
+    internal suspend fun refreshAll(
         deviceService: RaviloDeviceService,
         mediaStore: MediaStore,
         jellyfinClient: JellyfinClient,
@@ -113,9 +127,11 @@ object PlaystateCache {
         // One representative device per Jellyfin user — allowedLibraries/allowedTags are properties of
         // the Jellyfin user's own policy (Phase 142), not of a particular device pairing, so any of a
         // user's recently-seen devices carries the same visibility scope.
-        val users = deviceService.allDevices()
+        val recent = deviceService.allDevices()
             .filter { now - it.lastSeen < RECENTLY_SEEN_WINDOW_MS }
             .distinctBy { it.jellyfinUserId }
+        // DEB-2675 (FR-3) — a user the last complete /Users read lacked is not asked for; they are neither refreshed nor failed.
+        val (absent, users) = recent.partition { presence?.isMarked(it.jellyfinUserId) == true }
         var refreshed = 0
         var failed = 0
         cycleIds = 0
@@ -124,7 +140,7 @@ object PlaystateCache {
             if (refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus, scope = RefreshScope.Cycle(slice))) refreshed++ else failed++
             delay(STAGGER_MS)
         }
-        if (users.isNotEmpty()) Logger.info("Playstate refresh: $refreshed/${users.size} users refreshed, $failed timed out or failed — $cycleIds ids in ${(cycleIds + 99) / 100} requests", "tv")
+        if (recent.isNotEmpty()) Logger.info("Playstate refresh: $refreshed/${users.size} users refreshed, $failed timed out or failed — $cycleIds ids in ${(cycleIds + 99) / 100} requests" + skippedClause(absent.size), "tv")
     }
 
     /** Also called directly by [HomeFeedService.invalidatePlaystate] (FR-205-9) for an immediate,
@@ -159,7 +175,7 @@ object PlaystateCache {
         val ps = dev.jellystructure.ops.boundedOrNull(timeoutMs, "playstate refresh") {
             withContext(recorder) {
                 val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-                fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
+                fetchPlaystateRead(jellyfinClient, base, token, device.jellyfinUserId, ids)
             }
         }
         if (ps == null) {
@@ -170,19 +186,26 @@ object PlaystateCache {
             }
             return false
         }
+        // DEB-2675 (FR-7, FR-8) — a read that failed is a failed refresh, not a user who has watched nothing: the previous map
+        // stays (R231). A 404 asks the reconciler to look; it never marks, skips or removes anyone.
+        if (ps.notFound) presence?.notFoundHint(device.jellyfinUserId)
+        if (ps.failed) return false
         lastSuccessAt = lastSuccessAt + (device.jellyfinUserId to nowMs())
         val previous = data[device.jellyfinUserId]
         // R352 (FR-R352-8) — a series whose own row changed since the last cycle (marked in Jellyfin's own UI, say) is
         // read whole now; the rotation alone took five minutes to reach all its episodes (2 → 8 → 12 → 18 → 20 of 20).
-        val whole = if (scope is RefreshScope.Cycle && previous != null) episodesOfChangedSeries(items, previous, ps, ids.toSet()) else emptyList()
-        val extra = if (whole.isEmpty()) emptyMap() else dev.jellystructure.ops.boundedOrNull(FETCH_TIMEOUT_MS, "playstate refresh") {
+        val whole = if (scope is RefreshScope.Cycle && previous != null) episodesOfChangedSeries(items, previous, ps.states, ids.toSet()) else emptyList()
+        val extraRead = if (whole.isEmpty()) null else dev.jellystructure.ops.boundedOrNull(FETCH_TIMEOUT_MS, "playstate refresh") {
             val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, whole)
-        }.orEmpty()
+            fetchPlaystateRead(jellyfinClient, base, token, device.jellyfinUserId, whole)
+        }
+        if (extraRead?.notFound == true) presence?.notFoundHint(device.jellyfinUserId)
+        if (extraRead?.failed == true) return false
+        val extra = extraRead?.states.orEmpty()
         if (extra.isNotEmpty()) cycleIds += whole.size
         // R343 (FR-R343-13) — a cleared Start over episode reads as the server is about to write it, not as Jellyfin's
         // own session wrote it back a moment ago (watched); neither the cache nor the push may say otherwise.
-        val got = StartOverHolds.overlay(device.jellyfinUserId, ps + extra)
+        val got = StartOverHolds.overlay(device.jellyfinUserId, ps.states + extra)
         // Phase 230 (FR-230-1) — MERGE: a cycle now carries a slice, not the whole catalog.
         data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + got))
         // R176 — patch any already-open Home/Browse/Search screen on another of this user's devices,

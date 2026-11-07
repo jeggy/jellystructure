@@ -755,6 +755,12 @@ fun main() = runBlocking {
     // DEB-2518 (FR-12) — single-sign-on accounts with no tag filter, from the same /Users read; dismissals persist beside the other small JSON stores.
     val unfilteredSsoAccounts = dev.jellystructure.tv.UnfilteredSsoAccounts("$dataDir/sso-unfiltered.json")
     unfilteredSsoAccounts.load()
+    // DEB-2675 (DEB-2672) — a user Jellyfin no longer lists, on two complete reads in a row, is signed out and their data removed.
+    val goneUserRemoval = dev.jellystructure.tv.GoneUserRemoval(
+        db, raviloDeviceService, sessionService,
+        dropCaches = { id -> dev.jellystructure.tv.PlaystateCache.forget(id); homeFeedService.forgetUser(id) },
+        clock = { platform.posix.time(null) * 1000L },
+    )
     val devicePolicyReconciler = dev.jellystructure.tv.DevicePolicyReconciler(
         deviceService = raviloDeviceService,
         fetchUsers = {
@@ -765,7 +771,14 @@ fun main() = runBlocking {
         onPolicyChanged = { userId -> tvEventBus.notifyHomeChanged(userId) },
         onConfigChanged = { userId -> tvEventBus.notifyConfigChanged(userId) },   // DEB-1854
         onUsersRead = { users -> filterTagCheck.noteUsers(users); unfilteredSsoAccounts.noteUsers(users) },   // DEB-2518 (FR-7, FR-12)
+        candidates = { goneUserRemoval.candidateIds() },
+        onUserGone = { id -> goneUserRemoval.remove(id) },
+        nameFromData = { id -> goneUserRemoval.nameFromData(id) },
     )
+    // DEB-2675 (FR-3, FR-8) — the loops that read Jellyfin per user skip a marked user, and a 404 asks for a check.
+    dev.jellystructure.tv.PlaystateCache.presence = devicePolicyReconciler
+    homeFeedService.presence = devicePolicyReconciler
+    recommendationService.presence = devicePolicyReconciler
     rootScope.launch {
         runCatching { devicePolicyReconciler.reconcileAll("start") }
             .onFailure { Logger.warn("Policy refresh (start) failed: ${it.message}", "auth") }
@@ -825,6 +838,7 @@ fun main() = runBlocking {
         tvSignInService = tvSignInService,
         singleSignOnService = singleSignOnService,
         devicePolicyReconciler = devicePolicyReconciler,
+        goneUserRemoval = goneUserRemoval,
         filterTagCheck = filterTagCheck,
         unfilteredSsoAccounts = unfilteredSsoAccounts,
         playPushResolver = playPushResolver,

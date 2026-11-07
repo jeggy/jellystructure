@@ -901,13 +901,24 @@ class HomeFeedService(
         }
     }
 
+    /** DEB-2675 (FR-3, FR-8) — Main sets the reconciler: it says which users the last complete `/Users` read lacked (skipped) and takes a 404's hint. */
+    var presence: UserPresence? = null
+
+    /** DEB-2675 (FR-4) — a user who is gone loses their Continue Watching list and the anchor dates. [normalisedUserId] matches either stored form. */
+    fun forgetUser(normalisedUserId: String) {
+        continueListCache.removeIf { k, _ -> normalizeGuid(k) == normalisedUserId }
+        anchorDateBySeries.removeIf { k, _ -> normalizeGuid(k) == normalisedUserId }
+    }
+
     /** Returns how many recently-seen users still have no list at all (FR-230-4's fast retry). */
-    private suspend fun refreshAllContinueLists(deviceService: RaviloDeviceService): Int {
+    internal suspend fun refreshAllContinueLists(deviceService: RaviloDeviceService): Int {
         if (configStore.current.apiKeys.jellyfinUrl.isBlank()) return 0
         val now = nowMs()
-        val users = deviceService.allDevices()
+        val recent = deviceService.allDevices()
             .filter { now - it.lastSeen < RECENTLY_SEEN_WINDOW_MS }
             .distinctBy { it.jellyfinUserId }
+        // DEB-2675 (FR-3) — a user the last complete /Users read lacked is not asked for; they are neither refreshed nor failed.
+        val (absent, users) = recent.partition { presence?.isMarked(it.jellyfinUserId) == true }
         var refreshed = 0
         var failed = 0
         for (device in users) {
@@ -922,7 +933,7 @@ class HomeFeedService(
         // this phase (an empty list omits the row either way); this is the log-side half FR-205-3 also
         // asks for, since the wire response alone can't carry the distinction beyond "row present/absent."
         val cold = users.count { continueListCache[it.jellyfinUserId] == null }
-        if (users.isNotEmpty()) Logger.info("Continue Watching refresh: $refreshed refreshed, $failed failed, $cold never built", "tv")
+        if (recent.isNotEmpty()) Logger.info("Continue Watching refresh: $refreshed refreshed, $failed failed, $cold never built" + skippedClause(absent.size), "tv")
         return cold
     }
 
@@ -980,10 +991,10 @@ class HomeFeedService(
         val fetched = dev.jellystructure.ops.boundedOrNull(continueTimeoutMs, "Continue Watching build") {
             kotlinx.coroutines.withContext(recorder) {
                 coroutineScope {
-                    val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }
-                    val nextUpDeferred   = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
-                    val finishedDeferred = async { jellyfinClient.getRecentlyPlayedAll(jellyfinUrl, token, device.jellyfinUserId) }
-                    val touchedDeferred  = async { jellyfinClient.getRecentlyTouched(jellyfinUrl, token, device.jellyfinUserId, sinceTouched) }
+                    val resumeDeferred   = async { jellyfinClient.getResumeItemsAllRead(jellyfinUrl, token, device.jellyfinUserId) }
+                    val nextUpDeferred   = async { jellyfinClient.getNextUpRead(jellyfinUrl, token, device.jellyfinUserId) }
+                    val finishedDeferred = async { jellyfinClient.getRecentlyPlayedAllRead(jellyfinUrl, token, device.jellyfinUserId) }
+                    val touchedDeferred  = async { jellyfinClient.getRecentlyTouchedRead(jellyfinUrl, token, device.jellyfinUserId, sinceTouched) }
                     listOf(resumeDeferred.await(), nextUpDeferred.await(), finishedDeferred.await(), touchedDeferred.await())
                 }
             }
@@ -996,7 +1007,11 @@ class HomeFeedService(
             }
             return@coroutineScope null
         }
-        val (resumeItems, nextUpItems, finishedItems, touchedItems) = fetched
+        // DEB-2675 (FR-7, FR-8) — a read that failed makes this build untrustworthy (`null`, so the previous list stays and the
+        // summary counts the user as failed). A 404 also asks the reconciler to look; it never marks, skips or removes anyone.
+        if (fetched.any { it.notFound }) presence?.notFoundHint(device.jellyfinUserId)
+        if (fetched.any { it.failed }) return@coroutineScope null
+        val (resumeItems, nextUpItems, finishedItems, touchedItems) = fetched.map { it.value }
 
         // R219 §2–§4 and R375 (FR-R375-1–3) as pure rules (tv/ContinueTarget.kt): membership, the conflict rule with
         // the next episode in order after the last finished one, and the order. The one place a next episode is chosen.

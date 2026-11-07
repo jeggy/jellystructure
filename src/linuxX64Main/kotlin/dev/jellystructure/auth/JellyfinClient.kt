@@ -1139,24 +1139,30 @@ class JellyfinClient {
      * `EnableImages=false` halves the payload; these images are never shown (jellystructure's own
      * catalog artwork is used instead).
      */
-    suspend fun getResumeItemsAll(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> = runCatching {
-        val acc = mutableListOf<JellyfinPlayItem>()
-        var startIndex = 0
-        while (true) {
-            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
-            val url = baseUrl.trimEnd('/') +
-                "/Items?userId=$userId&Filters=IsResumable&Recursive=true&IsPlayed=false" +
-                "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
-                "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
-                "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getResumeItemsAll") ?: break
-            if (resp.items.isEmpty()) break
-            acc += resp.items
-            startIndex += resp.items.size
-            if (startIndex >= resp.totalRecordCount) break
-        }
-        acc
-    }.warnOnFailureOrDefault("getResumeItemsAll", emptyList())
+    suspend fun getResumeItemsAllRead(baseUrl: String, userToken: String, userId: String): JellyfinRead<List<JellyfinPlayItem>> {
+        var status: Int? = null
+        return runCatching {
+            val acc = mutableListOf<JellyfinPlayItem>()
+            var startIndex = 0
+            while (true) {
+                // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
+                val url = baseUrl.trimEnd('/') +
+                    "/Items?userId=$userId&Filters=IsResumable&Recursive=true&IsPlayed=false" +
+                    "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
+                    "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
+                    "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+                val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getResumeItemsAll") { status = it } ?: break
+                if (resp.items.isEmpty()) break
+                acc += resp.items
+                startIndex += resp.items.size
+                if (startIndex >= resp.totalRecordCount) break
+            }
+            acc
+        }.toRead("getResumeItemsAll", emptyList(), status)
+    }
+
+    suspend fun getResumeItemsAll(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> =
+        getResumeItemsAllRead(baseUrl, userToken, userId).value
 
     /**
      * R219 (FR-R219-2) — [getRecentlyPlayed] in FULL, not one bounded history page. Continue Watching's
@@ -1165,24 +1171,30 @@ class JellyfinClient {
      * (this replaced the `CONTINUE_RECENCY_POOL` constant that violated it). `EnableImages=false` halves
      * the payload (measured live: 1.89 MB → 0.97 MB for 1104 episodes).
      */
-    suspend fun getRecentlyPlayedAll(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> = runCatching {
-        val acc = mutableListOf<JellyfinPlayItem>()
-        var startIndex = 0
-        while (true) {
-            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
-            val url = baseUrl.trimEnd('/') +
-                "/Items?userId=$userId&Filters=IsPlayed&Recursive=true" +
-                "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
-                "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
-                "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayedAll") ?: break
-            if (resp.items.isEmpty()) break
-            acc += resp.items
-            startIndex += resp.items.size
-            if (startIndex >= resp.totalRecordCount) break
-        }
-        acc
-    }.warnOnFailureOrDefault("getRecentlyPlayedAll", emptyList())
+    suspend fun getRecentlyPlayedAllRead(baseUrl: String, userToken: String, userId: String): JellyfinRead<List<JellyfinPlayItem>> {
+        var status: Int? = null
+        return runCatching {
+            val acc = mutableListOf<JellyfinPlayItem>()
+            var startIndex = 0
+            while (true) {
+                // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
+                val url = baseUrl.trimEnd('/') +
+                    "/Items?userId=$userId&Filters=IsPlayed&Recursive=true" +
+                    "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
+                    "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
+                    "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+                val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayedAll") { status = it } ?: break
+                if (resp.items.isEmpty()) break
+                acc += resp.items
+                startIndex += resp.items.size
+                if (startIndex >= resp.totalRecordCount) break
+            }
+            acc
+        }.toRead("getRecentlyPlayedAll", emptyList(), status)
+    }
+
+    suspend fun getRecentlyPlayedAll(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> =
+        getRecentlyPlayedAllRead(baseUrl, userToken, userId).value
 
     /**
      * R219 (FR-R219-3) — membership rule §2(c): an item touched (played at least once) within
@@ -1193,27 +1205,33 @@ class JellyfinClient {
      * meaning everything with real playback data has already been seen) — bounded by the window, not by
      * a row-count guess, per the rule at the top of phase-R219's spec.
      */
-    suspend fun getRecentlyTouched(baseUrl: String, userToken: String, userId: String, sinceEpochSeconds: Long): List<JellyfinPlayItem> = runCatching {
-        val acc = mutableListOf<JellyfinPlayItem>()
-        var startIndex = 0
-        outer@ while (true) {
-            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
-            val url = baseUrl.trimEnd('/') +
-                "/Items?userId=$userId&Recursive=true&IncludeItemTypes=Movie,Episode" +
-                "&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&SortBy=DatePlayed&SortOrder=Descending" +
-                "&EnableImages=false&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyTouched") ?: break
-            if (resp.items.isEmpty()) break
-            for (item in resp.items) {
-                val ts = item.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) }
-                if (ts == null || ts < sinceEpochSeconds) break@outer
-                acc += item
+    suspend fun getRecentlyTouchedRead(baseUrl: String, userToken: String, userId: String, sinceEpochSeconds: Long): JellyfinRead<List<JellyfinPlayItem>> {
+        var status: Int? = null
+        return runCatching {
+            val acc = mutableListOf<JellyfinPlayItem>()
+            var startIndex = 0
+            outer@ while (true) {
+                // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
+                val url = baseUrl.trimEnd('/') +
+                    "/Items?userId=$userId&Recursive=true&IncludeItemTypes=Movie,Episode" +
+                    "&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&SortBy=DatePlayed&SortOrder=Descending" +
+                    "&EnableImages=false&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+                val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyTouched") { status = it } ?: break
+                if (resp.items.isEmpty()) break
+                for (item in resp.items) {
+                    val ts = item.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) }
+                    if (ts == null || ts < sinceEpochSeconds) break@outer
+                    acc += item
+                }
+                startIndex += resp.items.size
+                if (startIndex >= resp.totalRecordCount) break
             }
-            startIndex += resp.items.size
-            if (startIndex >= resp.totalRecordCount) break
-        }
-        acc
-    }.warnOnFailureOrDefault("getRecentlyTouched", emptyList())
+            acc
+        }.toRead("getRecentlyTouched", emptyList(), status)
+    }
+
+    suspend fun getRecentlyTouched(baseUrl: String, userToken: String, userId: String, sinceEpochSeconds: Long): List<JellyfinPlayItem> =
+        getRecentlyTouchedRead(baseUrl, userToken, userId, sinceEpochSeconds).value
 
     suspend fun startPlaybackSession(
         baseUrl: String,
@@ -1722,20 +1740,31 @@ class JellyfinClient {
      * Caller must chunk large id lists (≤100) before calling; chunking is the caller's responsibility
      * so the Semaphore lives at the call site alongside other fan-out controls.
      */
+    suspend fun getUserDataBulkRead(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        jellyfinIds: List<String>,
+    ): JellyfinRead<List<JellyfinUserDataItem>> {
+        var status: Int? = null
+        return runCatching {
+            if (jellyfinIds.isEmpty()) return@runCatching emptyList()
+            val ids = jellyfinIds.joinToString(",")
+            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
+            val url = baseUrl.trimEnd('/') +
+                "/Items?userId=$userId&Ids=$ids&Fields=UserData,RecursiveItemCount&Limit=${jellyfinIds.size}"
+            httpGet(url) { jellyfinAuth(userToken) }
+                .bodyOrNull<JellyfinUserDataItemsResponse>("getUserDataBulk") { status = it }?.items.orEmpty()
+        }.toRead("getUserDataBulk", emptyList(), status)
+    }
+
     suspend fun getUserDataBulk(
         baseUrl: String,
         userToken: String,
         userId: String,
         jellyfinIds: List<String>,
-    ): List<JellyfinUserDataItem> = runCatching {
-        if (jellyfinIds.isEmpty()) return@runCatching emptyList()
-        val ids = jellyfinIds.joinToString(",")
-        // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
-        val url = baseUrl.trimEnd('/') +
-            "/Items?userId=$userId&Ids=$ids&Fields=UserData,RecursiveItemCount&Limit=${jellyfinIds.size}"
-        httpGet(url) { jellyfinAuth(userToken) }
-            .bodyOrNull<JellyfinUserDataItemsResponse>("getUserDataBulk")?.items.orEmpty()
-    }.warnOnFailureOrDefault("getUserDataBulk", emptyList())
+    ): List<JellyfinUserDataItem> =
+        getUserDataBulkRead(baseUrl, userToken, userId, jellyfinIds).value
 
     suspend fun getFavoriteItemIds(
         baseUrl: String,
@@ -1859,21 +1888,27 @@ class JellyfinClient {
      *  original R186 fix: this user's NextUp TotalRecordCount was 54 while a `Limit=20` fetch returned
      *  20, so a series at position 41 was invisible on Home and in every channel row.
      *  `EnableImages=false` halves the payload; these images are never shown. */
-    suspend fun getNextUp(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> = runCatching {
-        val acc = mutableListOf<JellyfinPlayItem>()
-        var startIndex = 0
-        while (true) {
-            val url = baseUrl.trimEnd('/') +
-                "/Shows/NextUp?UserId=$userId&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&EnableImages=false" +
-                "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getNextUp") ?: break
-            if (resp.items.isEmpty()) break
-            acc += resp.items
-            startIndex += resp.items.size
-            if (startIndex >= resp.totalRecordCount) break
-        }
-        acc
-    }.warnOnFailureOrDefault("getNextUp", emptyList())
+    suspend fun getNextUpRead(baseUrl: String, userToken: String, userId: String): JellyfinRead<List<JellyfinPlayItem>> {
+        var status: Int? = null
+        return runCatching {
+            val acc = mutableListOf<JellyfinPlayItem>()
+            var startIndex = 0
+            while (true) {
+                val url = baseUrl.trimEnd('/') +
+                    "/Shows/NextUp?UserId=$userId&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&EnableImages=false" +
+                    "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+                val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getNextUp") { status = it } ?: break
+                if (resp.items.isEmpty()) break
+                acc += resp.items
+                startIndex += resp.items.size
+                if (startIndex >= resp.totalRecordCount) break
+            }
+            acc
+        }.toRead("getNextUp", emptyList(), status)
+    }
+
+    suspend fun getNextUp(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> =
+        getNextUpRead(baseUrl, userToken, userId).value
 }
 
 /**
@@ -2018,8 +2053,12 @@ internal fun HttpRequestBuilder.jellyfinAuth(token: String, identity: JellyfinDe
  * `.body<T>()` can't parse as JSON — it throws `NoTransformationFoundException` (Phase 50). Log the
  * status + a snippet of the error body and return null so callers degrade gracefully instead.
  */
-private suspend inline fun <reified T> HttpResponse.bodyOrNull(context: String): T? {
+private suspend inline fun <reified T> HttpResponse.bodyOrNull(context: String): T? = bodyOrNull(context) { }
+
+/** DEB-2675 (FR-7) — [bodyOrNull] that also hands the HTTP status of a non-2xx answer to [onFailure], so a caller can tell a 404 from a 500. */
+private suspend inline fun <reified T> HttpResponse.bodyOrNull(context: String, onFailure: (Int) -> Unit): T? {
     if (!status.isSuccess()) {
+        onFailure(status.value)
         val detail = runCatching { bodyAsText() }.getOrDefault("")
         Logger.warn("Jellyfin $context failed: ${status.value} ${detail.take(180)}")
         return null
@@ -2047,6 +2086,21 @@ private suspend fun <T> Result<T>.warnOnFailureOrDefault(context: String, defaul
     exceptionOrNull()?.let { if (it is CancellationException) throw it }
     if (isFailure) Logger.warn("Jellyfin $context failed: ${exceptionOrNull()?.message}")
     return getOrDefault(default)
+}
+
+/**
+ * DEB-2675 (FR-7) — what a user-scoped read the refreshers use answered: [value] is what the old signature returns (the pages read
+ * so far, or the default after a throw), [failed] says it did not come back whole, and [status] is the HTTP status of a non-2xx
+ * answer (`null` for a transport error). A failure is logged once, as before.
+ */
+class JellyfinRead<out T>(val value: T, val failed: Boolean = false, val status: Int? = null) {
+    val notFound: Boolean get() = status == 404
+}
+
+private suspend fun <T> Result<T>.toRead(context: String, default: T, status: Int?): JellyfinRead<T> {
+    exceptionOrNull()?.let { if (it is CancellationException) throw it }
+    if (isFailure) Logger.warn("Jellyfin $context failed: ${exceptionOrNull()?.message}")
+    return JellyfinRead(getOrDefault(default), failed = isFailure || status != null, status = status)
 }
 
 private fun String.jsonEscape(): String =

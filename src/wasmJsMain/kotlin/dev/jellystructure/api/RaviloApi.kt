@@ -157,6 +157,16 @@ data class OverviewPolicy(
     @SerialName("stale") val stale: Boolean = false,
     /** Phase 275 (FR-275-7) — `yes` / `no_access`; null when no music library is mapped. */
     @SerialName("music") val music: String? = null,
+    /** DEB-2675 (FR-6, FR-9) — the last complete `/Users` read lacked this user; they are removed at the next check if still absent. */
+    @SerialName("absent") val absent: Boolean = false,
+)
+
+/** DEB-2675 (FR-6, FR-9) — a user the server removed in the last seven days because Jellyfin no longer lists them. */
+@Serializable
+data class RemovedUser(
+    val username: String,
+    @SerialName("removed_at") val removedAt: Long,
+    @SerialName("device_count") val deviceCount: Int,
 )
 
 @Serializable
@@ -277,6 +287,10 @@ object RaviloApi {
     // Phase 143 — Users & Devices Settings tab.
     suspend fun getOverview(): List<OverviewUser> =
         httpClient.get("/api/tv/admin/overview").body()
+
+    /** DEB-2675 (FR-6) — the users removed in the last seven days. */
+    suspend fun getRemovedUsers(): List<RemovedUser> =
+        httpClient.get("/api/tv/admin/removed-users").body()
 
     /** Phase 259 (FR-259-9). */
     suspend fun getRaviloVersionSummary(): RaviloVersionSummary =

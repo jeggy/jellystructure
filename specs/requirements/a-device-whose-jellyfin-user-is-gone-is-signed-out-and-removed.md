@@ -334,3 +334,19 @@ path. There is still no migration and no new dependency: FR-10 to FR-13 add quer
   counts.
 - A new test against a real database (`createDatabase`, as `DevicePolicyReconcilerTest` does) for acceptance 7 and the
   removal half of acceptance 8.
+
+## Amendment 2026-11-07 — where `removed_users` is served (DEB-2675)
+
+> Sjúrður, 2026-11-07 (DEB-2675, the build). FR-9 and FR-6 said `removed_users` *"sits on the overview body"*. That body is
+> a bare JSON array of users (`GET /tv/admin/overview`, parsed as `List<OverviewUser>` by the page), so there is nothing to add a
+> sibling field to without wrapping it in an object, and an installed page — or one left open across the deploy — would then
+> fail to parse it. The wire rule (add, never retype) wins.
+
+- **FR-9, restated.** `OverviewPolicy.absent: Boolean = false` is a field of the overview as FR-9 says. The users removed in
+  the last seven days are served by their own route, `GET /tv/admin/removed-users`, an admin-session-gated JSON array of
+  `{username, removed_at, device_count}`, empty by default. The overview body is unchanged in shape. The page reads both and
+  renders what it gets; nothing is derived in the frontend. Acceptance 3's *"`removed_users` lists the user"* reads that route.
+- **FR-3, the loops found.** The playstate refresh (`PlaystateCache.refreshAll`), the Continue Watching refresh
+  (`HomeFeedService.refreshAllContinueLists`) and the recommendation builder's viewer list (`RecommendationService.viewers`, which
+  reads each viewer's history from Jellyfin) skip a marked user. The session reaper, the cast and playback-target lookups and the
+  admin routes walk `allDevices()` without a user-scoped Jellyfin read and are not changed.

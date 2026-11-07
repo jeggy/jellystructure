@@ -140,6 +140,18 @@ private data class OverviewSession(
     @SerialName("is_current") val isCurrent: Boolean,
 )
 
+/** DEB-2675 (FR-13) — `signout-all`'s answer: what it removed. A class, because a mixed-type `mapOf` answers 500. */
+@Serializable
+private data class SignOutAllResult(val ok: Boolean, val devices: Int, val sessions: Int)
+
+/** DEB-2675 (FR-6, FR-9) — one user removed in the last seven days, for the `tiny muted` line under the Users & devices list. */
+@Serializable
+private data class RemovedUser(
+    val username: String,
+    @SerialName("removed_at") val removedAt: Long,
+    @SerialName("device_count") val deviceCount: Int,
+)
+
 @Serializable
 private data class OverviewPolicy(
     @SerialName("is_admin") val isAdmin: Boolean,
@@ -158,6 +170,8 @@ private data class OverviewPolicy(
     @SerialName("stale") val stale: Boolean = false,
     /** Phase 275 (FR-275-7) — `yes` / `no_access` for the mapped music library; null when none is mapped. */
     @SerialName("music") val music: String? = null,
+    /** DEB-2675 (FR-6, FR-9) — the last complete `/Users` read lacked this user, who is removed at the next check if still absent. */
+    @SerialName("absent") val absent: Boolean = false,
 )
 
 /** Phase 177 §FR-177-5 — one row for the Activity page's "Playback quality" card; device/title are
@@ -339,6 +353,9 @@ fun Route.tvRoutes(
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
     // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow (screen/code, screen/claim).
     screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
+    // DEB-2675 (FR-6, FR-9) — which users the last complete /Users read lacked, and who was removed in the last seven days.
+    userPresence: dev.jellystructure.tv.UserPresence? = null,
+    goneUserRemoval: dev.jellystructure.tv.GoneUserRemoval? = null,
 ) {
     // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
     // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
@@ -1044,7 +1061,7 @@ fun Route.tvRoutes(
             ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@get }
         val userId = call.request.queryParameters["userId"]
             ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
-        val devices = deviceService.listByUser(userId).map { d ->
+        val devices = deviceService.listByUserAnyForm(userId).map { d ->   // DEB-2675 (FR-13) — either stored form
             AdminDeviceSummary(
                 deviceId = d.deviceId,
                 name = d.displayName,
@@ -1111,6 +1128,7 @@ fun Route.tvRoutes(
                     blockedTags = policy?.blockedTags ?: emptyList(),
                     maxRating = policy?.maxParentalRating,
                     known = policy != null,
+                    absent = userPresence?.isMarked(uid) == true,
                     // FR-258-6 — the live policy is what this line shows; name it when a device's own copy
                     // (the one that decides what plays) is behind it. Same comparison the reconciler makes.
                     stale = policy?.let { live -> val p = dev.jellystructure.tv.DevicePolicy.of(live); userDevices.any { dev.jellystructure.tv.policyChanges(it, p).isNotEmpty() } } ?: false,
@@ -1178,6 +1196,14 @@ fun Route.tvRoutes(
         call.respond(ordered)
     }
 
+    // DEB-2675 (FR-6, FR-9) — the users removed in the last seven days. A route of its own and not a field on the overview, because
+    // that body is a bare JSON array that installed pages parse as one; wrapping it in an object would break them.
+    get("/tv/admin/removed-users") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        call.respond(goneUserRemoval?.removedUsers().orEmpty().map { RemovedUser(it.username, it.removedAt, it.deviceCount) })
+    }
+
     // Phase 259 (FR-259-9) — the Users & devices page-bar chip. "Latest" is this backend's own version (the
     // only version the server knows — dev review item 1); a device counts as behind by arithmetic on
     // MAJOR.MINOR, one count per physical device (its most recently seen viewer row), dev builds never.
@@ -1240,9 +1266,10 @@ fun Route.tvRoutes(
         runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
         val userId = call.parameters["userId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-        deviceService.deleteAllForUser(userId)
-        sessionService.revokeAllForUser(userId)
-        call.respond(mapOf("ok" to true))
+        // DEB-2675 (FR-12, FR-13) — both match the id in any stored form and say how many rows they removed; 0 is how a caller tells none matched.
+        val devices = deviceService.deleteAllForUser(userId)
+        val sessions = sessionService.revokeAllForUser(userId)
+        call.respond(SignOutAllResult(ok = true, devices = devices, sessions = sessions))
     }
 
     // Phase 269 (FR-269-9) — "Recommended for {name}": the stored list (the newest build), each with its

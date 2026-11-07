@@ -49,6 +49,7 @@ fun renderRaviloUsers(container: Element, scope: CoroutineScope) {
         <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. A device's <b>version history</b> is dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
         ${playingNowHtml()}
         <div id="users-list"><span class="muted tiny">Loading…</span></div>
+        <div id="users-removed" style="margin-top:10px"></div>
     """.trimIndent()
 
     scope.launch { loadUsersCard(scope) }
@@ -294,6 +295,15 @@ private fun collapsible(kind: String, userId: String, rows: List<String>, noun: 
         """<button class="tiny users-more-toggle" data-kind="$kind" data-user="$userId" data-closed="${closedLabel.esc()}" style="background:none;border:none;color:var(--acc-ink);cursor:pointer;padding:6px 0 0">${if (open) "Show less" else closedLabel.esc()}</button>"""
 }
 
+/** DEB-2675 (FR-6, FR-9) — one `tiny muted` line per user the server removed in the last seven days, as it sent them. */
+private suspend fun refreshRemovedUsers() {
+    val el = document.getElementById("users-removed") as? HTMLElement ?: return
+    val removed = runCatching { dev.jellystructure.api.RaviloApi.getRemovedUsers() }.getOrNull().orEmpty()
+    el.innerHTML = removed.joinToString("") { r ->
+        """<div class="tiny muted">${r.username.esc()} was removed ${usersAgo(r.removedAt)}: no longer in Jellyfin (${r.deviceCount} device${if (r.deviceCount != 1) "s" else ""}).</div>"""
+    }
+}
+
 private suspend fun refreshUsersList(scope: CoroutineScope) {
     val listEl = document.getElementById("users-list") as? HTMLElement ?: return
     val users = runCatching { dev.jellystructure.api.RaviloApi.getOverview() }.getOrNull()
@@ -301,6 +311,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
         listEl.innerHTML = """<span class="tiny" style="color:var(--bad)">Couldn't load users & devices.</span>"""
         return
     }
+    refreshRemovedUsers()
     val deviceCount = users.sumOf { it.devices.size }
     val connectedCount = users.sumOf { u -> u.devices.count { it.connected } }
     (document.getElementById("users-summary") as? HTMLElement)?.textContent =
@@ -331,6 +342,8 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
         // enforces (FR-258-6: one clause, no per-device detail), and must not claim "All libraries" when
         // Jellyfin simply did not answer (dev review item 2).
         val accessLine = when {
+            // DEB-2675 (FR-6) — Jellyfin answered, and the last complete answer lacked this user; the server removes them at the next check.
+            p.absent -> "not in Jellyfin · removed at the next check if still absent"
             !p.known -> "policy unknown · Jellyfin did not answer"
             p.stale -> (listOf(access) + tagBits).joinToString(" · ") + " · a device is still on an older policy"
             else -> (listOf(access) + tagBits).joinToString(" · ")
