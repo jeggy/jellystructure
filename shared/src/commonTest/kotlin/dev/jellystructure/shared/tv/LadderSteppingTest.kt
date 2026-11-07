@@ -111,7 +111,7 @@ class LadderSteppingTest {
         assertNull(s.evaluate(10_000, 10_000, streamVideoBps = 1_500_000))
     }
 
-    @Test fun `a stall caps mpv one rung down at once even inside the 30 s gap, and the climb waits two minutes from it`() {
+    @Test fun `a stall caps mpv one rung down at once even inside the 30 s gap and the climb waits two minutes from it`() {
         val s = RestreamStepper()
         s.evaluate(0, 25_000, streamVideoBps = 12_000_000)
         assertEquals(8_000_000L, s.evaluate(10_000, 18_000, streamVideoBps = 12_000_000)?.capVideoBps)
@@ -124,12 +124,12 @@ class LadderSteppingTest {
         assertEquals(8_000_000L, s.evaluate(146_000, 40_000, null)?.capVideoBps)
     }
 
-    @Test fun `a stall on a play with no cap yet steps from the stream's own rung`() {
+    @Test fun `a stall on a play with no cap yet steps from the streams own rung`() {
         val s = RestreamStepper()
         assertEquals(8_000_000L, s.onStall(5_000, streamVideoBps = 12_000_000)?.capVideoBps)
     }
 
-    @Test fun `a stall on the lowest rung caps nothing, and one right after a step is the replaced stream's`() {
+    @Test fun `a stall on the lowest rung caps nothing and one right after a step is the replaced streams`() {
         val low = RestreamStepper()
         assertNull(low.onStall(5_000, streamVideoBps = 1_500_000))
         val s = RestreamStepper()
