@@ -440,19 +440,27 @@ class Investigator(
             return Proved.Retry(why, step, notASeries)
         }
         // *The same answer the model gave*: the numbers the model said its recipe gives, against what the engine read.
-        fun titled(e: Example) = pr.numbered.firstOrNull { (item, _) ->
+        // DEB-3816 (FR-5.1) — every numbered item the example's title matches: on a daily programme they all share it, and the one the example names is the one that agrees.
+        fun titled(e: Example) = pr.numbered.filter { (item, _) ->
             val t = item.title?.trim()?.lowercase().orEmpty(); val x = e.title.trim().lowercase()
             t.isNotEmpty() && x.isNotEmpty() && (t == x || t.contains(x) || x.contains(t))
         }
         for (e in examples) {
-            val hit = titled(e) ?: continue
-            val (item, se) = hit
+            val hits = titled(e)
+            if (hits.isEmpty()) continue
+            fun agrees(hit: Pair<ListedItem, SeasonEpisode>): Boolean {
+                val (item, se) = hit
+                val read = PageDates.read(recipe.numbering, item)
+                // DEB-3567 — the example carries the date, and under `datetime` the time (`2026-11-03 18:30`), as the model read them.
+                val dateOk = e.date == null || (if (e.date.trim().length > 10) read?.stamp else read?.date) == e.date.trim()
+                // DEB-3567 — under `datetime` the model is not asked to do the arithmetic: only the date it gave is compared.
+                val seOk = mr.numbering == "datetime" || (e.season == null || e.season == se.season) && (e.episode == null || e.episode == se.episode)
+                return dateOk && seOk
+            }
+            if (hits.any(::agrees)) continue
+            val (item, se) = hits.first()
             val read = PageDates.read(recipe.numbering, item)
-            // DEB-3567 — the example carries the date, and under `datetime` the time (`2026-11-03 18:30`), as the model read them.
-            val dateOk = e.date == null || (if (e.date.trim().length > 10) read?.stamp else read?.date) == e.date.trim()
-            // DEB-3567 — under `datetime` the model is not asked to do the arithmetic: only the date it gave is compared.
-            val seOk = mr.numbering == "datetime" || (e.season == null || e.season == se.season) && (e.episode == null || e.episode == se.episode)
-            if (!dateOk || !seOk) return Proved.Retry("on '${e.title}' you said ${listOfNotNull(e.season?.let { "season $it" }, e.episode?.let { "episode $it" }, e.date).joinToString(", ")}, and the engine reads ${Numbering.codeFor(recipe.numbering.kind, se)}${read?.stamp?.let { " ($it)" }.orEmpty()}", STEP_PATTERN)
+            return Proved.Retry("on '${e.title}' you said ${listOfNotNull(e.season?.let { "season $it" }, e.episode?.let { "episode $it" }, e.date).joinToString(", ")}, and the engine reads ${Numbering.codeFor(recipe.numbering.kind, se)}${read?.stamp?.let { " ($it)" }.orEmpty()}", STEP_PATTERN)
         }
 
         val libs = libraries()

@@ -475,6 +475,27 @@ class InvestigationTest {
         assertTrue("on 'Kvøldbók · 3' you said" in toldBack(ai.sent.size - 1))
     }
 
+    // ---- DEB-3816 (FR-5.1): an example whose title every item shares is compared with the item whose date it names ----
+
+    private val sharedTitleExample = """[{"title":"Kvøldbók","date":"2026-11-03 18:30"}]"""
+
+    @Test
+    fun `an example whose title matches several items passes when any of them agrees with its date - DEB-3816`() {
+        kvoldbokTools(); ai.answer(kvoldbokAnswer.replace("""[{"title":"Kvøldbók · 3","season":1,"episode":1,"date":"2026-11-03 18:30"}]""", sharedTitleExample))
+        val (out, _) = run(h.kvoldbokUrl, null, true)
+        assertNotNull(out.view.review, "the example names the third item's stamp, not the newest item's")
+    }
+
+    @Test
+    fun `an example whose title matches several items and whose date none has is still told back - DEB-3816`() {
+        kvoldbokTools()
+        ai.answer(kvoldbokAnswer.replace("""[{"title":"Kvøldbók · 3","season":1,"episode":1,"date":"2026-11-03 18:30"}]""", sharedTitleExample.replace("18:30", "18:35")))
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        run(h.kvoldbokUrl, null, true)
+        val told = toldBack(ai.sent.size - 1)
+        assertTrue("on 'Kvøldbók' you said 2026-11-03 18:35, and the engine reads S" in told, told)
+    }
+
     private fun <T> withActivityLog(body: suspend (ActivityLog) -> T): T = runBlocking {
         val dir = "/tmp/jellystructure-test-inv-log-${platform.posix.getpid()}"
         platform.posix.system("rm -rf '$dir'; mkdir -p '$dir'")
