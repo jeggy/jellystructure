@@ -108,8 +108,8 @@ private fun condSummary(c: WbCond): String {
     val valTxt = when (c.facet) {
         "content_row" -> c.rows.joinToString(", ") { it.title?.takeIf { t -> t.isNotBlank() } ?: "Untitled row" }
         "hero_item" -> c.values.joinToString(", ") { if (it == "featured") "Featured" else "Not featured" }
-        "cast_crew" -> {
-            val names = wbItemsFor("cast_crew").associate { it.value to (it.label ?: it.value) }
+        "cast_crew", "franchise" -> {
+            val names = wbItemsFor(c.facet).associate { it.value to (it.label ?: it.value) }
             c.values.joinToString("\", \"") { names[it] ?: it }.let { if (it.isBlank()) "…" else "\"$it\"" }
         }
         "metadata_language" -> c.values.joinToString("\", \"") { if (it == "automatic") "Automatic" else it.uppercase() }
@@ -137,7 +137,7 @@ internal fun groupSummary(g: WbGroup, top: Boolean): String {
 }
 
 private val WB_GROUPS = listOf(
-    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating", "metadata_language" to "Metadata language", "year" to "Year", "rating" to "Rating"),
+    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating", "metadata_language" to "Metadata language", "year" to "Year", "rating" to "Rating", "franchise" to "Franchise"),
     "Audio track" to listOf("audio_language" to "Audio language", "audio_codec" to "Audio codec", "track_title" to "Audio track title"),
     "People" to listOf("cast_crew" to "Cast or crew"),
     "Ravilo layout" to listOf("hero_item" to "Hero item"),
@@ -337,6 +337,7 @@ private fun wbItemsFor(facet: String): List<TrackFacetItem> {
         "track_title" -> n?.trackTitles ?: wbTrack?.trackTitles ?: emptyList()
         "hero_item" -> listOf(TrackFacetItem("featured", 0), TrackFacetItem("not_featured", 0))
         "cast_crew" -> n?.castCrew ?: wbMeta?.castCrew ?: emptyList()
+        "franchise" -> n?.franchises ?: wbMeta?.franchises ?: emptyList()   // DEB-2837 (FR-5)
         "metadata_language" -> n?.metadataLanguages ?: wbMeta?.metadataLanguages ?: emptyList()
         else -> emptyList()
     }
@@ -471,20 +472,21 @@ private fun renderCondRow(c: WbCond, path: List<Int>): String {
                 }
             }
         }
-        "cast_crew" -> {
+        "cast_crew", "franchise" -> {
+            val noun = if (c.facet == "franchise") "franchises" else "cast or crew"
             fun personChip(t: TrackFacetItem): String {
                 val name = t.label ?: t.value
                 val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
                 return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-path="$p" data-v="${t.value.esc()}" data-search="${name.lowercase().esc()}">${name.esc()}$cnt</span>"""
             }
-            val items = wbItemsFor("cast_crew")
+            val items = wbItemsFor(c.facet)
             buildString {
                 if (items.isEmpty()) {
-                    append("""<span class="muted tiny">No cast/crew in scope</span>""")
+                    append("""<span class="muted tiny">No $noun in scope</span>""")
                 } else {
-                    append("""<input class="input wb-vsearch" placeholder="Search cast or crew…" autocomplete="off">""")
+                    append("""<input class="input wb-vsearch" placeholder="Search $noun…" autocomplete="off">""")
                     append("""<div class="wb-vchips">${items.joinToString("") { personChip(it) }}</div>""")
-                    append("""<div class="wb-vempty muted tiny" style="display:none;">No cast/crew match</div>""")
+                    append("""<div class="wb-vempty muted tiny" style="display:none;">No $noun match</div>""")
                 }
             }
         }
@@ -832,6 +834,7 @@ private fun wbRefreshPreview() {
                 if (pg.items.isEmpty() || all.size >= pg.total) break
                 pageNo++
             }
+            wbOrderSetFilmsPossible(wbEffectiveInclude().let { it != null && it != "series" && it != "musicvideos" })   // DEB-2837 (FR-6.6)
             wbOrderSetMatches(all); return@launch
         }
         val eff = wbEffectiveInclude()

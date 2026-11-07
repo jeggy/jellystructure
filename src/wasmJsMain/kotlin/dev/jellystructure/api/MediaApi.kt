@@ -262,6 +262,7 @@ data class MetaFacets(
     val tags: List<TrackFacetItem> = emptyList(),
     val ageRatings: List<TrackFacetItem> = emptyList(),
     val castCrew: List<TrackFacetItem> = emptyList(),
+    val franchises: List<TrackFacetItem> = emptyList(),   // DEB-2837 (FR-5)
     val metadataLanguages: List<TrackFacetItem> = emptyList(),
 )
 
@@ -277,6 +278,7 @@ data class NarrowedFacets(
     val audioCodecs: List<TrackFacetItem> = emptyList(),
     val trackTitles: List<TrackFacetItem> = emptyList(),
     val castCrew: List<TrackFacetItem> = emptyList(),
+    val franchises: List<TrackFacetItem> = emptyList(),   // DEB-2837 (FR-5)
     val metadataLanguages: List<TrackFacetItem> = emptyList(),
 )
 

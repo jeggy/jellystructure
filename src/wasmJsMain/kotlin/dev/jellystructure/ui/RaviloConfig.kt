@@ -1131,9 +1131,10 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             return@mapIndexed """<div class="cfg-row" style="margin-bottom:6px"><span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-ch-limit=\"$i\"")} &middot; only this collection's titles</div></div><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         }
         val eq = r.effectiveQuery()
-        val condSrc = if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media"
+        val condSrc = (if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media") +
+            dev.jellystructure.shared.tv.RowOrder.summary(r).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()   // DEB-2837 (FR-6.6)
         val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
-        """<div class="cfg-row" style="margin-bottom:6px"><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-ch-edit="$i" style="white-space:nowrap">Edit filter</button><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+        """<div class="cfg-row" style="margin-bottom:6px"><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}${franchiseCountSlot(r)}</div></div><button class="btn sm ghost" data-row-ch-edit="$i" style="white-space:nowrap">Edit filter</button><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
     }.joinToString("")
     val padLogo = c.paddingLogo
     val padText = c.paddingText
@@ -1652,7 +1653,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 val label = query.firstValueOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                 val o = workbenchOrderResult()
-                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query, sort = o.sort, pinned = o.pinned, limit = o.limit)
+                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query, sort = o.sort, pinned = o.pinned, limit = o.limit, splitBy = o.splitBy)
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
@@ -1664,6 +1665,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
 
     // R60: wire edit-filter and delete buttons on each existing channel row
     val chRowItems = currentConfig.channels.getOrNull(idx)?.rows?.items ?: emptyList()
+    fillFranchiseCounts(container, scope, chRowItems, chBaseQuery())   // DEB-2837 (FR-6.6)
     for (ri in chRowItems.indices) {
         container.querySelector("[data-row-ch-edit='$ri']")?.addEventListener("click") { _ ->
             val row = currentConfig.channels.getOrNull(idx)?.rows?.items?.getOrNull(ri) ?: return@addEventListener
@@ -1679,7 +1681,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                     val cur = list[idx]
                     val items = cur.rows?.items?.toMutableList() ?: return@openWorkbench
                     val o = workbenchOrderResult()
-                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind, sort = o.sort, pinned = o.pinned, limit = o.limit)
+                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind, sort = o.sort, pinned = o.pinned, limit = o.limit, splitBy = o.splitBy)
                     list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
                     currentConfig = currentConfig.copy(channels = list)
                     reRenderChannelRows()
@@ -2039,7 +2041,7 @@ private fun renderRows(container: Element) {
             val orderWords = dev.jellystructure.shared.tv.RowOrder.summary(r).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
             val condSrc = (if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media") + orderWords
             val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
-            """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge info" style="flex:none;font-size:.65rem">$badgeLabel</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-edit="$i" style="white-space:nowrap">Edit filter</button>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+            """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge info" style="flex:none;font-size:.65rem">$badgeLabel</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}${franchiseCountSlot(r)}</div></div><button class="btn sm ghost" data-row-edit="$i" style="white-space:nowrap">Edit filter</button>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         }
     }.joinToString("")
 
@@ -2066,6 +2068,7 @@ private fun renderRows(container: Element) {
         </div>
     """.trimIndent()
 
+    rcScope?.let { fillFranchiseCounts(sect, it, currentConfig.rows, null) }
     sect.querySelectorAll("[data-row-toggle]").let { toggles ->
         for (k in 0 until toggles.length) {
             val tog = toggles.item(k) as? HTMLElement ?: continue
@@ -2108,7 +2111,7 @@ private fun renderRows(container: Element) {
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                 structural(container, {
                     currentConfig = currentConfig.copy(rows = currentConfig.rows +
-                        workbenchOrderResult().let { o -> RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query, sort = o.sort, pinned = o.pinned, limit = o.limit) })
+                        workbenchOrderResult().let { o -> RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query, sort = o.sort, pinned = o.pinned, limit = o.limit, splitBy = o.splitBy) })
                 }, ::renderRows)
             })
     }
@@ -2149,7 +2152,7 @@ private fun renderRows(container: Element) {
                     val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                     structural(container, {
                         currentConfig = currentConfig.copy(rows = currentConfig.rows.map {
-                            if (it.id == rowId) workbenchOrderResult().let { o -> it.copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind, sort = o.sort, pinned = o.pinned, limit = o.limit) } else it
+                            if (it.id == rowId) workbenchOrderResult().let { o -> it.copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind, sort = o.sort, pinned = o.pinned, limit = o.limit, splitBy = o.splitBy) } else it
                         })
                     }, ::renderRows)
                 })
@@ -2856,6 +2859,24 @@ private fun renderPortrait(container: Element) {
 }
 
 // ── Live preview (schematic) ───────────────────────────────────────────────────
+
+/** DEB-2837 (FR-6.6) — the empty slot a split row's list line carries; [fillFranchiseCounts] writes ` · N franchises` into it. */
+private fun franchiseCountSlot(r: RowConfig): String =
+    if (r.splitBy == dev.jellystructure.shared.tv.RowOrder.SPLIT_FRANCHISE) """<span data-split-n="${r.id.htmlEsc()}"></span>""" else ""
+
+/** DEB-2837 (FR-6.6) — how many franchises each split row in [rows] would serve, from the narrowed facets of its own
+ *  query (inside [base], the owning collection's, when given): the franchises with two or more films. */
+private fun fillFranchiseCounts(root: Element, scope: CoroutineScope, rows: List<RowConfig>, base: ConditionGroup?) {
+    for (r in rows) {
+        if (r.splitBy != dev.jellystructure.shared.tv.RowOrder.SPLIT_FRANCHISE) continue
+        scope.launch {
+            val own = r.effectiveQuery()
+            val query = if (base != null) ConditionGroup(QueryJoin.AND, children = listOf(base, own)) else own
+            val n = MediaApi.narrowedFacets(query)?.franchises?.count { it.count >= 2 } ?: return@launch
+            root.querySelector("[data-split-n=\"${r.id}\"]")?.textContent = " · $n franchise${if (n == 1) "" else "s"}"
+        }
+    }
+}
 
 private fun defaultRowTitle(kind: RowKind, mediaKind: String? = null) = when (kind) {
     RowKind.CONTINUE    -> "Continue Watching"

@@ -2,6 +2,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.franchisesOf
 import dev.jellystructure.model.ratingScore
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.shared.tv.DEFAULT_MIN_VOTES
@@ -22,7 +23,7 @@ import org.w3c.dom.events.Event
  * what the admin arranges is what the TV shows. Everything is said in words — never "asc"/"desc".
  * State lives here; [Workbench] only opens it, feeds it the row's current matches, and reads the result.
  */
-data class WbOrderResult(val sort: RowSort?, val pinned: List<String>, val limit: Int?)
+data class WbOrderResult(val sort: RowSort?, val pinned: List<String>, val limit: Int?, val splitBy: String? = null)
 
 private var ordActive = false
 private var ordBy = "added"
@@ -34,6 +35,8 @@ private var ordMatches: List<MediaItem> = emptyList()
 private var ordScopeName: String? = null          // the collection this row lives in, for the stale-pin note
 private var ordSearch = ""
 private var ordDragId: String? = null
+private var ordSplit = false                      // DEB-2837 (FR-6.6) — "One row per franchise"
+private var ordFilmsPossible = true               // the row's Include (with the collection's) can hold films
 
 private fun idOf(m: MediaItem) = m.jellyfinId ?: m.id
 private fun words() = RowOrder.directionWords(ordBy, ordDesc)
@@ -47,13 +50,20 @@ internal fun wbOrderOpen(row: RowConfig?, collectionName: String?) {
     ordHand = ordPins.isNotEmpty()
     ordLimit = RowOrder.effectiveLimit(row?.limit)
     ordMatches = emptyList(); ordScopeName = collectionName; ordSearch = ""
+    ordSplit = row?.splitBy == RowOrder.SPLIT_FRANCHISE; ordFilmsPossible = true
 }
+
+/** DEB-2837 (FR-6.6) — the switch is on offer only while the row can contain films; an Include of Series or
+ *  Music videos switches it off, since such a row would serve nothing. */
+internal fun wbOrderSetFilmsPossible(possible: Boolean) { ordFilmsPossible = possible; if (!possible) ordSplit = false }
 
 internal fun wbOrderActive() = ordActive
 
 /** What Apply writes. Absent stays absent (FR-225-11): the default order/count are `null`, and *Hand-picked
  *  first* with nothing picked saves as the plain key. */
 fun workbenchOrderResult(): WbOrderResult {
+    // DEB-2837 (FR-6.4) — a split row is always in release order: no sort and no hand-picks are saved for it.
+    if (ordSplit) return WbOrderResult(null, emptyList(), ordLimit.takeIf { it != RowOrder.DEFAULT_LIMIT }, RowOrder.SPLIT_FRANCHISE)
     val sort = RowSort(ordBy, ordDesc).takeIf { it != RowSort() }
     return WbOrderResult(sort, if (ordHand) ordPins.toList() else emptyList(), ordLimit.takeIf { it != RowOrder.DEFAULT_LIMIT })
 }
@@ -96,7 +106,7 @@ internal fun wbOrderRender() {
         if (!extraHand) append("""<span class="${if (ordHand) "on" else ""}" data-$sel="hand">Hand-picked first</span>""")
         append("</span>")
     }
-    val strip = if (!ordHand) "" else buildString {
+    val strip = if (ordSplit || !ordHand) "" else buildString {
         append("""<div class="wbo-strip" id="wbo-strip"><div class="wbo-zone" data-zone="pins">""")
         ordPins.forEachIndexed { i, id ->
             val m = byId[id]
@@ -121,11 +131,13 @@ internal fun wbOrderRender() {
         append("""<div style="display:flex;gap:10px;align-items:center;margin-top:10px"><span class="tiny muted">Then the rest by</span>${seg("rest", true)}<button class="btn sm ghost" id="wbo-dir2" type="button">${words()}</button></div>""")
         for (id in stale) append("""<div class="note warn" style="margin-top:8px"><span class="tiny">A hand-pick (<span class="mono">${id.take(8).esc()}…</span>) no longer matches this row${ordScopeName?.let { " in <b>${it.esc()}</b>" } ?: ""}. It stays in your list and is skipped on the TV until it matches again, or you release it.</span></div>""")
     }
+    val splitSwitch = if (!ordFilmsPossible) "" else """<label class="wbo-split"><input type="checkbox" id="wbo-split"${if (ordSplit) " checked" else ""}> <b>One row per franchise</b> <span class="tiny muted">Each film series gets its own row, in release order.</span></label>"""
     host.innerHTML = """
       <div class="wbo">
+        $splitSwitch
         <div class="wbo-head"><b>Order</b>
-          ${seg("by", false)}
-          ${if (ordHand) "" else """<button class="btn sm ghost" id="wbo-dir" type="button">${words()}</button>"""}
+          ${if (ordSplit) """<span class="tiny muted">Each franchise in release order, newest franchise first</span>""" else seg("by", false)}
+          ${if (ordHand || ordSplit) "" else """<button class="btn sm ghost" id="wbo-dir" type="button">${words()}</button>"""}
           <span class="spacer"></span>
           <span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap"><span class="tiny muted">Show</span><span class="wbo-step"><b id="wbo-dec" class="${if (ordLimit <= maxOf(RowOrder.MIN_LIMIT, ordPins.size)) "off" else ""}">−</b><span id="wbo-limit">$ordLimit</span><b id="wbo-inc" class="${if (ordLimit >= RowOrder.DEFAULT_LIMIT) "off" else ""}">+</b></span><span class="tiny muted">titles</span></span>
         </div>
@@ -141,6 +153,7 @@ internal fun wbOrderRender() {
  *  dashed edge past the limit; the count line says where the limit falls. */
 private fun wbOrderRenderPreview() {
     val prev = document.getElementById("wb-preview") as? HTMLElement ?: return
+    if (ordSplit) { wbOrderRenderFranchises(prev); return }
     val list = ordered()
     val numbered = ordHand || RowSort(ordBy, ordDesc) != RowSort() || ordLimit != RowOrder.DEFAULT_LIMIT
     prev.innerHTML = list.take(60).mapIndexed { i, m ->
@@ -151,6 +164,17 @@ private fun wbOrderRenderPreview() {
         val total = list.size
         el.innerHTML = "<b>$total title(s) match</b>" + if (total > ordLimit) """<div class="tiny muted" style="margin-top:3px">The TV shows the first $ordLimit in this order, See all shows every one.</div>""" else ""
     }
+}
+
+/** DEB-2837 (FR-6.6) — the Matches panel of a split row: the rows the server would serve (the same [franchisesOf]
+ *  it builds them from): name, film count, then the films in release order. */
+private fun wbOrderRenderFranchises(prev: HTMLElement) {
+    val franchises = franchisesOf(ordMatches)
+    prev.innerHTML = franchises.joinToString("") { f ->
+        """<div class="wbo-fr"><div class="wbo-fr-h"><b>${f.name.esc()}</b> <span class="tiny muted">${f.films.size} films</span></div><div class="wbo-fr-films">${f.films.take(ordLimit).joinToString("") { m -> """<div class="wb-pcard" title="${m.title.esc()}">${thumb(m)}</div>""" }}</div></div>"""
+    }
+    (document.getElementById("wb-count") as? HTMLElement)?.innerHTML =
+        if (franchises.isEmpty()) "<b>No franchise of two or more films</b>" else "<b>${franchises.size} franchise${if (franchises.size == 1) "" else "s"}</b>"
 }
 
 private fun on(sel: String, type: String, handler: (HTMLElement, Event) -> Unit) {
@@ -166,6 +190,10 @@ private fun pin(id: String, at: Int? = null) {
 }
 
 private fun wbOrderWire() {
+    (document.getElementById("wbo-split") as? HTMLInputElement)?.addEventListener("change") { e ->
+        ordSplit = (e.target as? HTMLInputElement)?.checked == true
+        wbOrderRender()
+    }
     on("[data-by]", "click") { el, _ ->
         val v = el.getAttribute("data-by") ?: return@on
         if (v == "hand") ordHand = true
@@ -211,6 +239,9 @@ private fun wbOrderWire() {
 
 internal const val WB_ORDER_CSS = """
         .wbo { margin:14px 0 4px; padding:12px 14px; border:1px solid var(--line); border-radius:10px; }
+        .wbo-split { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; cursor:pointer; }
+        .wbo-fr { margin-bottom:12px; } .wbo-fr-h { margin-bottom:4px; }
+        .wbo-fr-films { display:flex; gap:6px; flex-wrap:wrap; }
         .wbo-head { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
         .wbo-step { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:8px; padding:2px 8px; }
         .wbo-step b { cursor:pointer; user-select:none; padding:0 4px; } .wbo-step b.off { opacity:.3; cursor:default; }

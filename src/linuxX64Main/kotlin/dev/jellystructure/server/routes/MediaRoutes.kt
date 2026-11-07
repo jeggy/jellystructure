@@ -323,6 +323,7 @@ fun Route.mediaRoutes(
                 val tags: List<FacetItem>,
                 val ageRatings: List<FacetItem>,
                 val castCrew: List<FacetItem> = emptyList(),
+                val franchises: List<FacetItem> = emptyList(),
                 val metadataLanguages: List<FacetItem> = emptyList(),
             )
             val f = store.metaFacets()
@@ -333,6 +334,7 @@ fun Route.mediaRoutes(
                 tags     = f.tags.map     { FacetItem(it.value, it.count, it.color) },
                 ageRatings = f.ageRatings.map { FacetItem(it.value, it.count) },
                 castCrew = f.castCrew.map { FacetItem(it.value, it.count, label = it.label) },
+                franchises = f.franchises.map { FacetItem(it.value, it.count, label = it.label) },
                 metadataLanguages = f.metadataLanguages.map { FacetItem(it.value, it.count) },
             ))
         }
@@ -365,6 +367,7 @@ fun Route.mediaRoutes(
                 val ageRatings: List<FItem>,
                 val audioLanguages: List<FItem>, val audioCodecs: List<FItem>, val trackTitles: List<FItem>,
                 val castCrew: List<FItem> = emptyList(),
+                val franchises: List<FItem> = emptyList(),
                 val metadataLanguages: List<FItem> = emptyList(),
             )
             val req = call.receive<FacetReq>()
@@ -380,6 +383,7 @@ fun Route.mediaRoutes(
                 audioCodecs    = track.audioCodecs.map    { FItem(it.value, it.count) },
                 trackTitles    = track.trackTitles.map    { FItem(it.value, it.count) },
                 castCrew = meta.castCrew.map { FItem(it.value, it.count, label = it.label) },
+                franchises = meta.franchises.map { FItem(it.value, it.count, label = it.label) },
                 metadataLanguages = meta.metadataLanguages.map { FItem(it.value, it.count) },
             ))
         }

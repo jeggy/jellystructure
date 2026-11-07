@@ -14,6 +14,7 @@ package dev.jellystructure.shared.tv
 object RowOrder {
     const val DEFAULT_LIMIT = 30
     const val MIN_LIMIT = 3
+    const val SPLIT_FRANCHISE = "franchise"   // DEB-2837 (FR-6.1) — RowConfig.splitBy's only value
     val KEYS = listOf("added", "title", "year", "size", "rating")   // Phase 268 (FR-268-6) — size; DEB-2837 (FR-4) — rating
 
     fun effectiveLimit(limit: Int?): Int = limit?.takeIf { it in MIN_LIMIT..DEFAULT_LIMIT } ?: DEFAULT_LIMIT
@@ -71,6 +72,12 @@ object RowOrder {
 
     /** FR-225-11 — `null` when fine, else the sentence the config route answers 400 with. */
     fun problem(row: RowConfig): String? {
+        // DEB-2837 (FR-6.1, FR-8) — the only split is by franchise, and a system row cannot be split.
+        row.splitBy?.let {
+            val system = row.kind == RowKind.CONTINUE || row.kind == RowKind.NEWLY_ADDED
+            if (it != SPLIT_FRANCHISE || system) return "Row '${row.title ?: row.id}': " +
+                if (system) "a system row cannot be split into one row per franchise." else "split_by must be \"$SPLIT_FRANCHISE\" or absent."
+        }
         val touched = row.sort != null || row.pinned.isNotEmpty() || row.limit != null
         if (!touched) return null
         val label = row.title ?: row.id
@@ -92,6 +99,8 @@ object RowOrder {
 
     /** FR-225-10 — the row-list suffix; empty for the default order and count. */
     fun summary(row: RowConfig): String {
+        // DEB-2837 (FR-6.6) — a split row has no sort or hand-picks to describe; the franchise count is added by the caller.
+        if (row.splitBy == SPLIT_FRANCHISE) return listOf("One row per franchise", row.limit?.takeIf { it != DEFAULT_LIMIT }?.let { "shows $it" }.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
         val sort = row.sort ?: RowSort()
         val pins = row.pinned.distinct().size
         val order = when {

@@ -414,6 +414,54 @@ fun MediaItem.rating(): Pair<Double, Long>? =
 /** FR-1 — the title has a rating and the source that gave it has at least [minVotes] votes. */
 fun MediaItem.meetsMinVotes(minVotes: Int): Boolean = rating()?.let { (_, votes) -> votes >= minVotes } == true
 
+/**
+ * DEB-2837 (FR-6.3) — a franchise's display name: TMDB's `collectionName` with a trailing ` Collection` removed
+ * (case-insensitive, a whole word, together with any space or dash in front of it). `null` when nothing is left
+ * or there is no name at all: such a franchise gets no row and no label.
+ */
+fun franchiseDisplayName(collectionName: String?): String? {
+    val name = collectionName?.trim() ?: return null
+    val word = "collection"
+    val cut = name.length - word.length
+    val stripped = if (name.endsWith(word, ignoreCase = true) && (cut == 0 || !name[cut - 1].isLetterOrDigit())) {
+        name.substring(0, cut).trimEnd { it == ' ' || it == '-' || it == '\u2013' || it == '\u2014' }
+    } else name
+    return stripped.takeIf { it.isNotBlank() }
+}
+
+/** FR-5 — the TMDB collection id a title belongs to, as the string a `franchise` condition carries. TMDB gives a
+ *  collection to films only, so a series (or a music video) has none. */
+fun MediaItem.franchiseId(): String? = if (kind == MediaKind.MOVIE) collectionId?.toString() else null
+
+/** DEB-2837 (FR-6.2) — release order: year ascending (a title with no year last), then release date ascending where
+ *  both titles have one, then name. */
+val RELEASE_ORDER: Comparator<MediaItem> = Comparator { a, b ->
+    val byYear = (a.year ?: Int.MAX_VALUE).compareTo(b.year ?: Int.MAX_VALUE)
+    if (byYear != 0) return@Comparator byYear
+    val da = a.releaseDate?.takeIf { it.isNotBlank() }
+    val db = b.releaseDate?.takeIf { it.isNotBlank() }
+    val byDate = if (da != null && db != null) da.compareTo(db) else 0
+    if (byDate != 0) return@Comparator byDate
+    (a.sortName?.takeIf { it.isNotBlank() } ?: a.title).lowercase().compareTo((b.sortName?.takeIf { it.isNotBlank() } ?: b.title).lowercase())
+}
+
+/** One franchise among a row's matches: the TMDB collection [id], its display name (FR-6.3) and its [films] in
+ *  release order. */
+class Franchise(val id: String, val name: String, val films: List<MediaItem>)
+
+/** DEB-2837 (FR-6.2) — the franchises a split row serves, from the row's matches: films grouped by collection id,
+ *  the ones with at least two films and a display name, the franchise with the most recently added film first
+ *  (ties by name). The server builds the rows from this and the editor's Matches panel lists it. */
+fun franchisesOf(matched: List<MediaItem>): List<Franchise> =
+    matched.mapNotNull { item -> item.franchiseId()?.let { it to item } }
+        .groupBy({ it.first }, { it.second })
+        .mapNotNull { (id, films) ->
+            if (films.size < 2) return@mapNotNull null
+            val name = franchiseDisplayName(films.firstNotNullOfOrNull { it.collectionName }) ?: return@mapNotNull null
+            Franchise(id, name, films.sortedWith(RELEASE_ORDER))
+        }
+        .sortedWith(compareByDescending<Franchise> { f -> f.films.maxOf { it.recencyKey() } }.thenBy { it.name })
+
 /** FR-4 — the rating the `rating` row order sorts by: [rating] when it meets [minVotes] (callers pass the shared
  *  `DEFAULT_MIN_VOTES`, which lives in `:shared` because this module cannot see it), else `null`. */
 fun MediaItem.ratingScore(minVotes: Int): Double? = rating()?.takeIf { (_, votes) -> votes >= minVotes }?.first

@@ -11,6 +11,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.ops.GateClass
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.franchisesOf
 import dev.jellystructure.model.ratingScore
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
@@ -588,9 +589,8 @@ class HomeFeedService(
                 addNewlyAddedRows(result, all, merge = sys.newly.merge)
             }
             for (rowCfg in channelRows.items.filter { it.enabled }.sortedBy { it.order }) {
-                val row = if (rowCfg.kind == RowKind.RECOMMENDED) buildRecommendedRow(rowCfg, device, all, channelFilter)
-                    else buildFilterRow(rowCfg, all, heroIds, channelFilter)
-                row?.let { result.add(it) }
+                if (rowCfg.kind == RowKind.RECOMMENDED) buildRecommendedRow(rowCfg, device, all, channelFilter)?.let { result.add(it) }
+                else result.addAll(buildFilterRows(rowCfg, all, heroIds, channelFilter))
             }
             return result
         }
@@ -633,7 +633,7 @@ class HomeFeedService(
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
                 }
 
-                RowKind.GENRE, RowKind.CUSTOM -> buildFilterRow(rowCfg, all, heroIds, channelFilter)?.let { result.add(it) }
+                RowKind.GENRE, RowKind.CUSTOM -> result.addAll(buildFilterRows(rowCfg, all, heroIds, channelFilter))
                 RowKind.RECOMMENDED -> buildRecommendedRow(rowCfg, device, all, channelFilter)?.let { result.add(it) }
             }
         }
@@ -759,14 +759,14 @@ class HomeFeedService(
      *  R187: also populates [Row.seedQuery]/[Row.seedMediaKind]/[Row.seedTotalCount] for the "→ See all"
      *  browse page — the total is the pre-[ROW_ITEM_LIMIT] match count, not `cards.size`, so a genuinely
      *  truncated row's tile shows the real number, not the 30-item cap. */
-    private fun buildFilterRow(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>, channelFilter: ChannelConfig? = null): Row? = when (rowCfg.kind) {
+    private fun buildFilterRows(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>, channelFilter: ChannelConfig? = null): List<Row> = when (rowCfg.kind) {
         RowKind.GENRE -> {
             val matched = all.filter { matchesConfiguredRow(it, rowCfg, heroIds, configStore.current.metadata.ageRatingCascade) }
             val cards = matched
                 .let { orderRow(it, rowCfg) }
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
-            if (cards.isEmpty()) null else {
+            if (cards.isEmpty()) emptyList() else {
                 // R187 — the row's own substring match (e.g. title term "sci" catching "Science
                 // Fiction") isn't expressible as ConditionEvaluator's exact-match "genre" facet, so
                 // resolve it down to the real genre STRINGS it actually matched in this candidate set
@@ -780,7 +780,8 @@ class HomeFeedService(
                 val seed = withChannelSeed(channelFilter, ConditionGroup(QueryJoin.AND, children = listOf(
                     Condition(facet = "genre", op = "is_any_of", values = matchedGenreValues),
                 )))
-                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind ?: channelFilter?.mediaKind, seedTotalCount = matched.size, sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending)
+                if (rowCfg.splitBy == RowOrder.SPLIT_FRANCHISE) franchiseRows(rowCfg, matched, seed, rowCfg.mediaKind ?: channelFilter?.mediaKind)
+                else listOf(Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind ?: channelFilter?.mediaKind, seedTotalCount = matched.size, sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending))
             }
         }
         RowKind.CUSTOM -> {
@@ -791,17 +792,40 @@ class HomeFeedService(
             // per-item filter below (matchesConfiguredRow's resolvedQuery param), same as before Phase 206.
             val query = rowCfg.effectiveQuery()
             val filtered = all.filter { matchesConfiguredRow(it, rowCfg, heroIds, configStore.current.metadata.ageRatingCascade, resolvedQuery = query) }
-            val cards = filtered
-                .let { orderRow(it, rowCfg) }
-                .mapNotNull { it.toMediaCardOrNull() }
-                .distinctBy { it.id }
-            if (cards.isEmpty()) null else Row(
-                rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards,
-                seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind ?: channelFilter?.mediaKind, seedTotalCount = filtered.size,
-                sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending,   // FR-225-8 — the key, never the pins
+            val seed = withChannelSeed(channelFilter, query)
+            // DEB-2837 (FR-6) — a split template serves one row per franchise instead of itself (and ignores sort and pins, FR-6.4).
+            if (rowCfg.splitBy == RowOrder.SPLIT_FRANCHISE) franchiseRows(rowCfg, filtered, seed, rowCfg.mediaKind ?: channelFilter?.mediaKind)
+            else {
+                val cards = filtered
+                    .let { orderRow(it, rowCfg) }
+                    .mapNotNull { it.toMediaCardOrNull() }
+                    .distinctBy { it.id }
+                if (cards.isEmpty()) emptyList() else listOf(Row(
+                    rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards,
+                    seedQuery = seed, seedMediaKind = rowCfg.mediaKind ?: channelFilter?.mediaKind, seedTotalCount = filtered.size,
+                    sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending,   // FR-225-8 — the key, never the pins
+                ))
+            }
+        }
+        else -> emptyList()
+    }
+
+    /** DEB-2837 (FR-6.2) — the rows a split template serves: its [matched] titles grouped by franchise, one plain
+     *  CUSTOM row for each franchise of at least two titles, the franchise with the most recently added title first
+     *  (ties by display name). Each row's titles are in release order, capped by the template's limit, and its seed
+     *  is the template's [seed] ANDed with that franchise alone, so *See all* on an installed app opens exactly it. */
+    private fun franchiseRows(rowCfg: RowConfig, matched: List<MediaItem>, seed: ConditionGroup, seedMediaKind: String?): List<Row> {
+        val limit = RowOrder.effectiveLimit(rowCfg.limit)
+        return franchisesOf(matched).mapNotNull { f ->
+            val cards = f.films.take(limit).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+            if (cards.isEmpty()) return@mapNotNull null
+            Row(
+                "${rowCfg.id}~franchise-${f.id}", f.name, RowKind.CUSTOM, cards,
+                seedQuery = ConditionGroup(QueryJoin.AND, children = listOf(seed, Condition(facet = "franchise", op = "is_any_of", values = listOf(f.id)))),
+                seedMediaKind = seedMediaKind, seedTotalCount = f.films.size,
+                sortBy = "year", sortDescending = false,
             )
         }
-        else -> null
     }
 
     /** R187 (§G-4) — Continue Watching's own "→ See all" path: Continue Watching isn't expressible as a

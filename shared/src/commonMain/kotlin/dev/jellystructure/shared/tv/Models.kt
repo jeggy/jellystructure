@@ -1343,6 +1343,10 @@ data class RowConfig(
     /** DEB-1264 (FR-1) — read ONLY on a `CONTINUE` row: titles carrying one of these tags (whole name,
      *  case-insensitive) are left out of the row and its See all. Absent from an older config = empty. */
     @SerialName("hide_tags") val hideTags: List<String> = emptyList(),
+    /** DEB-2837 (FR-6.1) — `"franchise"` makes this row a template: the server serves one row per franchise among
+     *  its matches. `null` = the row as it is today. Ignored by every installed client (rows reach it as ordinary
+     *  rows). */
+    @SerialName("split_by") val splitBy: String? = null,
 )
 
 /** Phase 225 — [by] ∈ `added` · `title` · `year`. [descending] = newest first for added/year, Z → A for title. */

@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.franchiseId
 import dev.jellystructure.model.meetsMinVotes
 import dev.jellystructure.model.rating
 import dev.jellystructure.resolver.CertificationResolver
@@ -62,6 +63,8 @@ object ConditionEvaluator {
         val audioCodecs: Set<String>,
         val ageRating: Set<String>,
         val castCrew: Set<String>,
+        // DEB-2837 (FR-5) — the TMDB collection id of a film, as a one-element set; empty for a series.
+        val franchise: Set<String>,
         // Phase 184 (FR-184-8) — a singleton set so the existing setMatch() helper works unchanged;
         // "automatic" is a synthetic value (never a real ISO-639-1 code) standing in for a null
         // metadataLanguage, so `is_any_of [automatic]` finds every title that was never hand-set and
@@ -88,6 +91,7 @@ object ConditionEvaluator {
                     audioCodecs    = audio.mapTo(HashSet()) { it.codec.lowercase() },
                     ageRating      = setOfNotNull(resolvedCode?.lowercase()),
                     castCrew       = (item.cast + item.crew).mapTo(HashSet()) { it.tmdbId.toString() },
+                    franchise      = setOfNotNull(item.franchiseId()),
                     metadataLanguage = setOf(item.metadataLanguage?.lowercase() ?: "automatic"),
                 )
             }
@@ -127,6 +131,7 @@ object ConditionEvaluator {
             "audio_codec"    -> setMatch(facets.audioCodecs, vals, c.op)
             "age_rating"     -> setMatch(facets.ageRating, vals, c.op)
             "cast_crew"      -> setMatch(facets.castCrew, vals, c.op)
+            "franchise"      -> setMatch(facets.franchise, vals, c.op)
             "metadata_language" -> setMatch(facets.metadataLanguage, vals, c.op)
             // DEB-2837 (FR-2) — an inclusive year range; a title with no year matches no range.
             "year" -> {

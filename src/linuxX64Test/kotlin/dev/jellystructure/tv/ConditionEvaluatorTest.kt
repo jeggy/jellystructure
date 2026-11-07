@@ -5,6 +5,7 @@ import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.franchiseDisplayName
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.MatchMode
@@ -322,5 +323,34 @@ class ConditionEvaluatorTest {
         assertNotNull(rating("7.5", "-1").valueProblem()); assertNotNull(rating("7.5", "2.5").valueProblem()); assertNotNull(rating("7.5", "many").valueProblem())
         assertNull(cond("genre", values = listOf("x")).valueProblem())
         assertNotNull(ConditionGroup(children = listOf(ConditionGroup(children = listOf(year("2000", "1999"))))).firstValueProblem())
+    }
+
+    // ─── DEB-2837: franchise and its display name ───────────────────────────────
+
+    private fun inFranchise(id: Int?, kind: MediaKind = MediaKind.MOVIE) = item().copy(kind = kind, collectionId = id, collectionName = id?.let { "Series $it Collection" })
+
+    @Test fun franchiseIsAnyOfMatchesThatFranchisesFilmsAndNoSeries() {   // acceptance 5
+        val g = one(cond("franchise", "is_any_of", listOf("7")))
+        assertTrue(eval(inFranchise(7), g))
+        assertFalse(eval(inFranchise(8), g)); assertFalse(eval(inFranchise(null), g))
+        assertFalse(eval(inFranchise(7, MediaKind.TV_SHOW), g), "a series has no franchise, even with a collection id on its record")
+    }
+
+    @Test fun franchiseIsNoneOfMatchesEverythingElse() {   // acceptance 5
+        val g = one(cond("franchise", "is_none_of", listOf("7")))
+        assertFalse(eval(inFranchise(7), g))
+        assertTrue(eval(inFranchise(8), g)); assertTrue(eval(inFranchise(null), g)); assertTrue(eval(inFranchise(7, MediaKind.TV_SHOW), g))
+        assertTrue(eval(inFranchise(8), one(cond("franchise", "is_any_of", listOf("7", "8")))), "any of several")
+    }
+
+    @Test fun theDisplayNameDropsATrailingCollectionOnly() {   // FR-6.3
+        assertEquals("Alpha", franchiseDisplayName("Alpha Collection"))
+        assertEquals("Alpha", franchiseDisplayName("Alpha collection"))
+        assertEquals("Alpha", franchiseDisplayName("Alpha - Collection"))
+        assertEquals("Alpha", franchiseDisplayName("  Alpha \u2013 COLLECTION  "))
+        assertEquals("Alpha", franchiseDisplayName("Alpha"))
+        assertEquals("Collection of Alpha", franchiseDisplayName("Collection of Alpha"), "only a trailing word")
+        assertEquals("Alphacollection", franchiseDisplayName("Alphacollection"), "a whole word")
+        assertNull(franchiseDisplayName("Collection")); assertNull(franchiseDisplayName(" - Collection")); assertNull(franchiseDisplayName(null)); assertNull(franchiseDisplayName("  "))
     }
 }

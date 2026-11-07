@@ -9,6 +9,8 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.franchiseDisplayName
+import dev.jellystructure.model.franchiseId
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.ops.SpinLock
@@ -1095,6 +1097,10 @@ class MediaStore(
         // sources; the id is the one thing guaranteed stable) — name is whichever credit we saw first.
         val castCrewCounts = mutableMapOf<Int, Int>()
         val castCrewNames = mutableMapOf<Int, String>()
+        // DEB-2837 (FR-5) — keyed by TMDB collection id, labelled with the display name (FR-6.3); a collection
+        // whose name leaves nothing behind has no label and so is not offered.
+        val franchiseCounts = mutableMapOf<String, Int>()
+        val franchiseNames = mutableMapOf<String, String>()
         // Phase 184 (FR-184-8) — "automatic" only shows up here (and so only appears in the picker) when
         // at least one title in the library was actually hand-set; otherwise every item would silently
         // add to it and the facet would be permanently 100% of the library, which is noise, not a filter.
@@ -1114,6 +1120,12 @@ class MediaStore(
             (item.cast + item.crew).distinctBy { it.tmdbId }.forEach { p ->
                 castCrewCounts[p.tmdbId] = (castCrewCounts[p.tmdbId] ?: 0) + 1
                 if (p.tmdbId !in castCrewNames) castCrewNames[p.tmdbId] = p.name
+            }
+            item.franchiseId()?.let { fid ->
+                franchiseDisplayName(item.collectionName)?.let { name ->
+                    franchiseCounts[fid] = (franchiseCounts[fid] ?: 0) + 1
+                    if (fid !in franchiseNames) franchiseNames[fid] = name
+                }
             }
             item.metadataLanguage?.let { lang -> metadataLanguageCounts[lang] = (metadataLanguageCounts[lang] ?: 0) + 1 }
         }
@@ -1139,6 +1151,9 @@ class MediaStore(
             // credited 500 people covers every realistic "build a channel/row around this actor" use.
             castCrew = castCrewCounts.entries.sortedByDescending { it.value }.take(500)
                 .map { TrackFacetItem(it.key.toString(), it.value, label = castCrewNames[it.key]) },
+            franchises = franchiseCounts.entries
+                .sortedWith(compareBy({ -it.value }, { franchiseNames[it.key] }))
+                .map { TrackFacetItem(it.key, it.value, label = franchiseNames[it.key]) },
             // "automatic" sorts first regardless of count — it's the library's default state, not a
             // rare value that happens to be popular; the hand-set languages behind it are what an admin
             // is actually looking for when they open this facet.
@@ -1266,6 +1281,7 @@ data class MetaFacets(
     val tags: List<TrackFacetItem>,
     val ageRatings: List<TrackFacetItem> = emptyList(),
     val castCrew: List<TrackFacetItem> = emptyList(),
+    val franchises: List<TrackFacetItem> = emptyList(),   // DEB-2837 (FR-5) — value = TMDB collection id, label = display name
     // Phase 184 (FR-184-8) — "automatic" (a synthetic value, never a real ISO-639-1 code) stands in for
     // metadataLanguage == null; see ConditionEvaluator's matching doc for why one facet covers both the
     // language-code list and the chosen/automatic distinction the spec asks for.
