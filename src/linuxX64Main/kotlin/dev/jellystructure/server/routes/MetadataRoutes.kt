@@ -323,12 +323,12 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
             val jsTags = tagStore.all().map { jsTag ->
                 // FR-4: a narrowed scope removes nothing; the card says how many items still carry the tag outside it.
                 val outside = if (jsTag.scopes.isEmpty()) emptyList() else allItems.filter { jsTag.name in it.tags && !TagScope.applies(jsTag.scopes, TagScope.groupOf(it.kind)) }
-                val musicOutside = musicTags?.outside(jsTag.name, jsTag.scopes).orEmpty().size
+                val musicOutside = musicTags?.outsideByGroup(jsTag.name, jsTag.scopes).orEmpty()   // DEB-3710: albums and songs under Music, books under Audiobooks
                 JsTagWithCount(
                     // DEB-3704 FR-9: the count includes albums and songs.
                     name = jsTag.name, color = jsTag.color, description = jsTag.description, count = (tagCounts[jsTag.name] ?: 0) + (musicTags?.count(jsTag.name) ?: 0),
-                    scopes = jsTag.scopes, outsideScope = outside.size + musicOutside,
-                    outsideByKind = outsideByKind(outside) + if (musicOutside > 0) mapOf(TagScope.MUSIC to musicOutside) else emptyMap(),
+                    scopes = jsTag.scopes, outsideScope = outside.size + musicOutside.values.sum(),
+                    outsideByKind = outsideByKind(outside) + musicOutside,
                     goneMusic = goneByTag[jsTag.name] ?: 0,
                 )
             }.let { list -> if (sort == "name") list.sortedBy { it.name.lowercase() } else list.sortedByDescending { it.count } }
@@ -462,8 +462,8 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                         ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown scope"))
                 } ?: tag.scopes
                 val outside = itemsOutsideScope(store, name, scopes)
-                val musicOutside = musicTags?.outside(name, scopes).orEmpty().size
-                call.respond(OutsideScopeResponse(outside.size + musicOutside, outsideByKind(outside) + if (musicOutside > 0) mapOf(TagScope.MUSIC to musicOutside) else emptyMap()))
+                val musicOutside = musicTags?.outsideByGroup(name, scopes).orEmpty()
+                call.respond(OutsideScopeResponse(outside.size + musicOutside.values.sum(), outsideByKind(outside) + musicOutside))
             }
             // DEB-3701 FR-4 — *Remove from the n outside its scope*: the owner removing the tag by hand, from exactly
             // the items outside the stored scope. The one explicit removal besides the delete route above and the
@@ -473,7 +473,7 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                 val tag = tagStore.get(name) ?: return@post call.respond(HttpStatusCode.NotFound)
                 val outside = itemsOutsideScope(store, name, tag.scopes)
                 for (item in outside) store.updateOne(item.copy(tags = item.tags - name), respectJsTags = false)
-                // DEB-3704 FR-4/FR-5 writer 3: the same removal, for albums and songs.
+                // DEB-3704 FR-4/FR-5 writer 3: the same removal, for albums and songs (and books, DEB-3710 FR-12).
                 val musicRemoved = musicTags?.removeOutside(name, tag.scopes) ?: 0
                 call.respond(RemoveOutsideScopeResponse(outside.size + musicRemoved))
             }
@@ -491,7 +491,7 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                         store.updateOne(item.copy(tags = item.tags - name), respectJsTags = false)
                     }
                 }
-                // DEB-3704 FR-5 writer 2: the tag goes from albums and songs too (and books, FR-12).
+                // DEB-3704 FR-5 writer 2: the tag goes from albums and songs too, and from books (DEB-3710, FR-12).
                 musicTags?.strip(name)
                 call.respond(HttpStatusCode.NoContent)
             }

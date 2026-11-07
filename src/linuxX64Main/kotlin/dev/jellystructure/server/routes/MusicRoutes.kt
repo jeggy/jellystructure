@@ -95,7 +95,7 @@ internal suspend fun serveFile(call: ApplicationCall, path: String?) {
  */
 fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, publishQueue: dev.jellystructure.publish.PublishQueue? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }, jsTagStore: dev.jellystructure.media.JsTagStore? = null) {
     val matcher = music.matcher
-    val jsTags = jsTagStore?.let { MusicJsTagService(music.store, it) }
+    val jsTags = jsTagStore?.let { MusicJsTagService(music.store, it, music.audiobooks?.store) }
     val noAnswer = mapOf("error" to "MusicBrainz didn't answer — try again in a moment")
 
     route("/music") {

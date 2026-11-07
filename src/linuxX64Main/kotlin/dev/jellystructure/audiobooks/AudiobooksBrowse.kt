@@ -8,6 +8,7 @@ import dev.jellystructure.model.AudiobookSeriesRow
 import dev.jellystructure.model.MusicArt
 import dev.jellystructure.model.MusicFacet
 import dev.jellystructure.model.MusicFacetValue
+import dev.jellystructure.model.TagScope
 
 /**
  * Phase 280 (FR-280-8) — the Audiobooks kind: Books · Authors · Series (the last only when any book has one, M6·3),
@@ -16,8 +17,10 @@ import dev.jellystructure.model.MusicFacetValue
 object AudiobooksBrowse {
     val FACETS = listOf(
         "cover" to "Cover", "narrator" to "Narrator", "description" to "Description", "parts" to "Parts",
-        "needs" to "Needs you", "format" to "Format", "language" to "Language", "lib" to "Library",
+        "needs" to "Needs you", "format" to "Format", "language" to "Language", "tag" to "Tag", "lib" to "Library",
     )
+    /** DEB-3710 (DEB-3701 FR-12) — the facet that matches a book's own jellystructure tags. */
+    const val TAG = "tag"
     private val FIXED = mapOf(
         "cover" to listOf("has" to "has a cover", "missing" to "missing"),
         "narrator" to listOf("has" to "has a narrator", "missing" to "none"),
@@ -38,7 +41,9 @@ object AudiobooksBrowse {
 
     class Result(val total: Int, val facets: List<MusicFacet>, val books: List<AudiobookRow>, val authors: List<AudiobookAuthorRow>, val series: List<AudiobookSeriesRow>)
 
-    fun browse(s: AudiobooksStore.Snapshot, view: String, selected: Map<String, Set<String>>, query: String?, libraryNames: Map<String, String>, finishedBy: (String) -> Int, sort: String? = null, triage: String? = null): Result {
+    fun browse(s: AudiobooksStore.Snapshot, view: String, selected: Map<String, Set<String>>, query: String?, libraryNames: Map<String, String>, finishedBy: (String) -> Int, sort: String? = null, triage: String? = null,
+               /** FR-12 — a book's own jellystructure tags, by book id; and every defined tag with its scope, for the facet's list. */
+               tagsOf: (String) -> List<String> = { emptyList() }, definedTags: Map<String, Collection<String>> = emptyMap()): Result {
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         // Phase 293 (FR-293-2) — a Dashboard row's key narrows the books before the facets; an unknown key narrows nothing.
         val tk = triage?.takeIf { it in dev.jellystructure.music.MusicTriage.AUDIOBOOKS }
@@ -53,6 +58,7 @@ object AudiobooksBrowse {
                 "needs" to setOf(flag(b) ?: "none"),
                 "format" to parts.map { format(it.container) }.toSet(),
                 "language" to setOfNotNull(b.language),
+                TAG to tagsOf(b.id).toSet(),
                 "lib" to setOfNotNull(b.libraryId),
             )
         }
@@ -66,7 +72,7 @@ object AudiobooksBrowse {
             vs.forEach { (_, v) -> val own = v[key].orEmpty(); universe += own; if (passes(v, key)) own.forEach { counts[it] = (counts[it] ?: 0) + 1 } }
             val on = selected[key].orEmpty()
             val vals = FIXED[key]?.map { (v, l) -> MusicFacetValue(v, l, counts[v] ?: 0, v in on) }
-                ?: (universe + on).sorted().map { v -> MusicFacetValue(v, if (key == "lib") libraryNames[v] ?: v else v, counts[v] ?: 0, v in on) }
+                ?: (universe + on + if (key == TAG) definedTags.filter { (_, scopes) -> TagScope.applies(scopes, TagScope.AUDIOBOOKS) }.keys else emptySet()).sorted().map { v -> MusicFacetValue(v, if (key == "lib") libraryNames[v] ?: v else v, counts[v] ?: 0, v in on) }
             MusicFacet(key, label, vals)
         }
         fun row(b: Audiobook) = AudiobookRow(

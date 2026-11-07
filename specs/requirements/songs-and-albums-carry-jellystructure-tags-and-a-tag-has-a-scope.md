@@ -306,3 +306,29 @@ What the build settled where the FRs left room. None of it changes a promise abo
   number counts those pairs.
 - **The counts.** A tag card's count and its *outside its scope* include present albums and songs; a missing row is FR-8's.
 - **Not in this slice:** books (FR-12, slice 3). `kind = book` is accepted by the table and written by nothing yet.
+
+## Build notes — slice 3 (DEB-3710, 2026-11-07)
+
+What the build settled where FR-12 left room. None of it changes a promise above, except the one sentence marked as an amendment.
+
+- **Routes.** `POST /api/audiobooks/{id}/js-tags` (`{tag}`) and `DELETE /api/audiobooks/{id}/js-tags/{tag}`, through `MusicJsTagService` and
+  its `ADMIN` writer. An undefined tag is `400`, a tag whose scope leaves Audiobooks out `409` (*‹tag› is not used for Audiobooks*). A book
+  that is missing or unknown is not tagged. The Audiobooks Library has no selection bar, so there is no bulk *Tag…* / *Untag…* for books;
+  the Tag facet is the whole Library change.
+- **Wire.** `AudiobookPageDto` gains `js_tags`. `/api/tv` is untouched.
+- **The writers (FR-5)** are the same five. The book's carry is `MusicJsTagWriter.CARRY` called from `AudiobooksScanner`, and
+  `MusicJsTagsTest`'s call-site list names it, so a sixth call site still fails the build.
+- **The carry (FR-12)** runs at the end of each books scan, over pairs where a book is new or newly missing in that scan, with the album's
+  rules: copy only, the original `set_at`, two candidates on a rung carry nothing and stop the search. The rungs are the book's folder,
+  then its author and title (case-folded). A book split off a folder shares that folder with its siblings, so its folder key carries the
+  split's suffix (the part of the id after `~`, which a folder rename does not change); the two halves of one folder are not candidates for each other.
+  One History line on the new book: *tags carried from the replaced book: ‹tags›*.
+- **FR-8 for books.** A tagged book that is missing and that no carry took over is listed with its title and author, and *Remove* is the
+  admin's own writer. **Amendment:** the card's sentence reads *‹n› tagged songs, albums or books are no longer in the library* (it read *songs or albums*).
+- **The counts.** A tag card's count and its *outside its scope* include present books. A tag deleted on the page strips books too
+  (the table is one), and *Remove from the ‹n› outside its scope* takes books outside Audiobooks as well. A tag scoped to Audiobooks only
+  opens Library → Audiobooks on its Tag facet from the card.
+- **The Book page** draws the tag row between the banners and the tabs, so it is on every tab. Only tags whose scope covers Audiobooks are offered, and
+  there is no *Apply to songs*. The Tag facet lists those tags and any tag a book still carries, and matches a book's own tags.
+- **Proof** (`AudiobookJsTagsTest`, `linuxX64Test`): a book's tag survives a books scan, an edit, a Save's tag-write stamp, a lock, a re-read and the book going
+  missing and back; the same-folder, renamed-folder, ambiguous and split-half carries; a tag delete and the outside-scope removal on books; `409` for a Music-only tag on a book.

@@ -34,6 +34,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -53,9 +54,12 @@ private fun browserPlays(container: String?): Boolean =
  * Phases 280/281 — the admin's audiobooks: the Audiobooks kind (browse), the Audiobook and Author pages, the editor,
  * suggestions, the part order, chapters, the cover, Save, and the providers card's audiobook rows.
  */
-fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jellyfinClient: dev.jellystructure.auth.JellyfinClient?, userName: (String) -> String?) {
+fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jellyfinClient: dev.jellystructure.auth.JellyfinClient?, jsTagStore: dev.jellystructure.media.JsTagStore? = null, userName: (String) -> String?) {
     val scanner = music.audiobooks ?: return
     val store = scanner.store
+    // DEB-3710 (DEB-3701 FR-12) — a book's jellystructure tags live in `music_js_tag` beside the albums' and songs'.
+    val jsTags = jsTagStore?.let { dev.jellystructure.music.MusicJsTagService(music.store, it, store) }
+    fun bookTags(id: String): List<String> = music.store.snapshot().jsTagsOf(id)
 
     route("/audiobooks") {
         get("/status") {
@@ -77,7 +81,8 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
             val libs = AudiobooksScanner.audiobookLibraries(cfg)
             val finished = HashMap<String, Int>()
             snap.books.keys.forEach { id -> store.progressOfBook(id).count { it.second.finishedAt != null }.takeIf { it > 0 }?.let { finished[id] = it } }
-            val r = AudiobooksBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, { finished[it] ?: 0 }, qp["sort"], triage)
+            val r = AudiobooksBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, { finished[it] ?: 0 }, qp["sort"], triage,
+                tagsOf = ::bookTags, definedTags = jsTagStore?.all()?.associate { it.name to it.scopes }.orEmpty())
             call.respond(AudiobooksBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = scanner.lastScanAt != null || snap.books.isNotEmpty(),
                 health = if (libs.isNotEmpty()) audiobooksHealth(store, scanner) else null,
@@ -140,6 +145,7 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
                 jellyfinUrl = if (b.id.startsWith("f:")) null else jellyfinWebUrl(cfg, b.id),
                 writeTags = cfg.audiobooks.writeTags && media?.taggerAvailable() == true,
                 splitPreview = media?.splitPreview(b).orEmpty(),
+                jsTags = bookTags(b.id),
                 source = b.origins.values.filter { it != dev.jellystructure.model.AudiobookOrigin.FILES && it != dev.jellystructure.model.AudiobookOrigin.TYPED }
                     .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
                     ?: if (b.origins.values.any { it == dev.jellystructure.model.AudiobookOrigin.TYPED }) "Edited here" else "From the files",
@@ -149,6 +155,33 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
                     AudiobooksBrowse.browse(store.snapshot(), "audiobooks", emptyMap(), null, emptyMap(), { 0 }, "title").books.filter { it.id in sibs }
                 },
             ))
+        }
+
+        // ── DEB-3710 (DEB-3701 FR-12): jellystructure tags on a book ──
+        //
+        // Every write goes through MusicJsTagService to one of MusicStore's writers; a scan, a re-read or a Save never
+        // reaches these. An undefined tag is a 400, a tag whose scope leaves Audiobooks out a 409 (FR-3). Nothing is
+        // written into a part's tags or sent to Jellyfin (FR-10).
+        suspend fun io.ktor.server.routing.RoutingContext.tagged(block: suspend (dev.jellystructure.music.MusicJsTagService) -> Unit) {
+            val svc = jsTags ?: return call.respond(HttpStatusCode.ServiceUnavailable)
+            try { block(svc) } catch (e: dev.jellystructure.music.MusicJsTagRefused) { call.respond(HttpStatusCode.fromValue(e.status), mapOf("error" to e.message)) }
+        }
+        route("/{id}/js-tags") {
+            post {
+                tagged { svc ->
+                    val id = call.parameters["id"]!!
+                    if (store.book(id) == null) return@tagged call.respond(HttpStatusCode.NotFound)
+                    val added = svc.add(dev.jellystructure.music.MusicJsTagRow.BOOK, listOf(id), call.receive<dev.jellystructure.model.MusicJsTagRequest>().tag)
+                    call.respond(dev.jellystructure.model.MusicJsTagsDto(bookTags(id), added = added))
+                }
+            }
+            delete("/{tag}") {
+                tagged { svc ->
+                    val id = call.parameters["id"]!!
+                    val removed = svc.remove(dev.jellystructure.music.MusicJsTagRow.BOOK, listOf(id), listOf(call.parameters["tag"]!!))
+                    call.respond(dev.jellystructure.model.MusicJsTagsDto(bookTags(id), removed = removed))
+                }
+            }
         }
 
         put("/{id}/field") {

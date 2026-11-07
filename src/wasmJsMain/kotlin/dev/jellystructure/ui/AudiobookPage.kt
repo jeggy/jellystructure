@@ -63,6 +63,7 @@ fun renderAudiobookPage(container: Element, scope: CoroutineScope, id: String, q
         <div class="pagebar" id="bk-bar"><h1>…</h1></div>
         <div id="bk-head"><span class="muted tiny">Loading…</span></div>
         <div id="bk-banners"></div>
+        <div id="bk-tags"></div>
         <div class="tabs2" id="bk-tabs"></div>
         <div id="bk-panel"></div>
         <audio id="bk-audio" preload="none" style="display:none"></audio>
@@ -114,6 +115,7 @@ private fun bkListOf(b: dev.jellystructure.model.Audiobook, key: String): List<S
 
 private fun bkReload(scope: CoroutineScope) {
     scope.launch {
+        mtLoadDefs()   // DEB-3710 — the jellystructure tags' colours and scopes
         val p = AudiobooksApi.page(bkId)
         if (p == null) {
             (document.getElementById("bk-head") as? HTMLElement)?.innerHTML = """<div class="note red">This audiobook isn't in the library (any more).</div>"""
@@ -133,6 +135,8 @@ private fun bkRender(scope: CoroutineScope) {
     (document.getElementById("bk-bar") as? HTMLElement)?.innerHTML = bkBar(p)
     (document.getElementById("bk-head") as? HTMLElement)?.innerHTML = bkHead(p)
     (document.getElementById("bk-banners") as? HTMLElement)?.innerHTML = bkBanners(p)
+    // DEB-3710 (DEB-3701 FR-12) — the album's tag row, above the tabs; the server's list, drawn as it came.
+    (document.getElementById("bk-tags") as? HTMLElement)?.let { it.innerHTML = mtBookRow(p.book.id, p.jsTags); muWireMenus(it) }
     (document.getElementById("bk-tabs") as? HTMLElement)?.innerHTML = BK_TABS.joinToString("") { (k, l) -> """<span data-tab="$k" class="${if (bkTab == k) "on" else ""}">$l</span>""" }
     document.getElementById("bk-bar")?.let { muWireMenus(it) }
     bkPanel(scope)
@@ -465,6 +469,7 @@ private fun bkPaintFiles(scope: CoroutineScope) {
 private fun bkClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineScope) {
     val p = bkPage ?: return
     val b = p.book
+    if (mtBookClick(t, ev, scope) { bkReload(scope) }) return   // DEB-3710 — add and remove a tag
     t.closest("#bk-tabs [data-tab]")?.let { tab ->
         bkTab = tab.getAttribute("data-tab") ?: "details"
         Router.updateQuery(mapOf("tab" to bkTab))

@@ -1,5 +1,6 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.api.AudiobooksApi
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.MusicApi
@@ -17,7 +18,7 @@ import org.w3c.dom.HTMLElement
 /*
  * DEB-3704 (DEB-3701 FR-6, FR-8, FR-9) — the admin's controls for jellystructure tags on albums and songs: the album page's
  * chip row (Genres tab), the Tracks tab's dots and add menu, the selection bar's Tag… / Untag…, and the tags page's list of
- * gone rows. Every control calls a server route; nothing here derives a tag or keeps one. The page repaints from the
+ * gone rows (and, DEB-3710, the Book page's tag row). Every control calls a server route; nothing here derives a tag or keeps one. The page repaints from the
  * answer, like the rest of the admin. Built from controls the admin already has: `chip`, `tag-dot`, `menu-wrap`, `vr-bk`.
  */
 
@@ -30,18 +31,18 @@ private fun mtColor(tag: String): String = mtDefs.firstOrNull { it.name == tag }
 
 private fun mtDot(tag: String): String = """<span class="tag-dot" style="background:${mtColor(tag).esc()}"></span>"""
 
-/** FR-3 — the tags offered for music: defined, used for Music, and not on the subject yet. */
-private fun mtOffer(have: List<String>): List<JsTag> = mtDefs.filter { TagScope.applies(it.scopes, TagScope.MUSIC) && it.name !in have }
+/** FR-3 — the tags offered for [group] (Music, or Audiobooks for a book): defined, used for it, and not on the subject yet. */
+private fun mtOffer(have: List<String>, group: String = TagScope.MUSIC): List<JsTag> = mtDefs.filter { TagScope.applies(it.scopes, group) && it.name !in have }
 
-private fun mtOutOfScope(tag: String): Boolean = mtDefs.firstOrNull { it.name == tag }?.let { !TagScope.applies(it.scopes, TagScope.MUSIC) } == true
+private fun mtOutOfScope(tag: String, group: String = TagScope.MUSIC): Boolean = mtDefs.firstOrNull { it.name == tag }?.let { !TagScope.applies(it.scopes, group) } == true
 
 private fun mtItem(action: String, kind: String, id: String, tag: String, label: String, dot: Boolean): String =
     """<div class="menu-item" data-jt="$action" data-kind="$kind" data-id="${id.esc()}" data-tag="${tag.esc()}"><span class="mi-ic">${if (dot) mtDot(tag) else "✕"}</span><span>${label.esc()}</span></div>"""
 
-private fun mtAddMenu(kind: String, id: String, have: List<String>, trigger: String, cls: String, css: String): String {
-    val offer = mtOffer(have)
+private fun mtAddMenu(kind: String, id: String, have: List<String>, trigger: String, cls: String, css: String, group: String = TagScope.MUSIC): String {
+    val offer = mtOffer(have, group)
     return """<span class="menu-wrap" style="display:inline-block;vertical-align:middle"><span class="$cls menu-btn" style="$css">$trigger</span><div class="menu">""" +
-        (if (offer.isEmpty()) """<div class="menu-item" style="opacity:.55;cursor:default"><span>${if (mtDefs.none { TagScope.applies(it.scopes, TagScope.MUSIC) }) "No tag is used for Music yet — make one in Metadata → Tags" else "Every tag is on already"}</span></div>"""
+        (if (offer.isEmpty()) """<div class="menu-item" style="opacity:.55;cursor:default"><span>${if (mtDefs.none { TagScope.applies(it.scopes, group) }) "No tag is used for ${TagScope.label(group)} yet — make one in Metadata → Tags" else "Every tag is on already"}</span></div>"""
         else offer.joinToString("") { mtItem("add", kind, id, it.name, it.name, dot = true) }) + "</div></span>"
 }
 
@@ -60,6 +61,36 @@ internal fun mtAlbumSection(p: MusicAlbumPageDto): String = buildString {
     append(mtAddMenu("album", id, p.jsTags, "＋ Add tag", "chip", "border-style:dashed;cursor:pointer"))
     append("</div>")
     append("""<div class="tiny muted" style="margin-top:8px;line-height:1.6;">Kept in jellystructure only — never written into the files or sent to Jellyfin. An album’s tags and its songs’ tags are separate; <i>Apply to all songs in album</i> copies one once.</div>""")
+}
+
+/**
+ * DEB-3710 (DEB-3701 FR-12) — the Book page's tag row, above the tabs: the album's row (`chip` with a `tag-dot`, then
+ * *＋ Add tag*) offering only tags used for Audiobooks. A book's parts carry no tags, so there is no *Apply to songs*.
+ */
+internal fun mtBookRow(id: String, tags: List<String>): String = buildString {
+    append("""<div class="mu-gchips" id="bk-tagrow" style="margin:0 0 14px">""")
+    for (t in tags) {
+        // FR-3: a tag the book already carries outside its tag's scope keeps its chip and its menu.
+        val oos = mtOutOfScope(t, TagScope.AUDIOBOOKS)
+        append("""<span class="menu-wrap" style="display:inline-block"><span class="chip menu-btn" style="cursor:pointer${if (oos) ";border-style:dashed" else ""}"${if (oos) """ title="outside this tag's scope"""" else ""}>${mtDot(t)} ${t.esc()} <span class="caret">▾</span></span><div class="menu">""")
+        append(mtItem("rm", "book", id, t, "Remove", dot = false))
+        append("</div></span>")
+    }
+    append(mtAddMenu("book", id, tags, "＋ Add tag", "chip", "border-style:dashed;cursor:pointer", TagScope.AUDIOBOOKS))
+    append("""<span class="tiny muted" style="margin-left:6px">Kept in jellystructure only — never written into the files or sent to Jellyfin.</span></div>""")
+}
+
+/** The Book page's tag clicks: *add* and *remove*. True when [t] was one; [reload] repaints the page from the server's answer. */
+internal fun mtBookClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineScope, reload: () -> Unit): Boolean {
+    val el = t.closest("[data-jt]") ?: return false
+    ev.preventDefault()
+    val id = el.getAttribute("data-id") ?: return true
+    val tag = el.getAttribute("data-tag") ?: return true
+    when (el.getAttribute("data-jt")) {
+        "add" -> scope.launch { val r = AudiobooksApi.jsTagAdd(id, tag); if (r.ok) reload() else muToast(r.message) }
+        "rm" -> scope.launch { val r = AudiobooksApi.jsTagRemove(id, tag); if (r.ok) reload() else muToast(r.message) }
+    }
+    return true
 }
 
 /** FR-9 — the Tracks tab: the song's own tags as dots after the title, and the add menu (a click on the dots, or on *＋*). */
@@ -166,7 +197,7 @@ internal suspend fun mtOpenGone(scope: CoroutineScope, tag: String, changed: () 
         append("""<p class="tiny muted" style="line-height:1.6">They keep the tag in case the file comes back. Nothing removes it except you.</p>""")
         if (rows.isEmpty()) append("""<div class="muted tiny">Nothing left to list.</div>""")
         for (r in rows) {
-            append("""<div class="row center" style="gap:8px;padding:6px 0;border-top:1px solid var(--line)"><span style="flex:1;min-width:0"><b>${r.title.esc()}</b><div class="tiny muted">${listOfNotNull(r.artist.takeIf { it.isNotBlank() }, r.album, if (r.kind == "album") "album" else null).joinToString(" · ").esc()}</div></span>""")
+            append("""<div class="row center" style="gap:8px;padding:6px 0;border-top:1px solid var(--line)"><span style="flex:1;min-width:0"><b>${r.title.esc()}</b><div class="tiny muted">${listOfNotNull(r.artist.takeIf { it.isNotBlank() }, r.album, if (r.kind == "album") "album" else if (r.kind == "book") "book" else null).joinToString(" · ").esc()}</div></span>""")
             append("""<span class="btn sm ghost" data-gone-rm="${r.id.esc()}" data-kind="${r.kind.esc()}">Remove</span></div>""")
         }
         append("""<div class="row" style="justify-content:flex-end;margin-top:12px"><span class="btn ghost" data-m="no">Close</span></div></div>""")
@@ -177,7 +208,9 @@ internal suspend fun mtOpenGone(scope: CoroutineScope, tag: String, changed: () 
         if (t == m || t.closest("[data-m=no]") != null) { m.remove(); return@addEventListener }
         val rm = t.closest("[data-gone-rm]") ?: return@addEventListener
         scope.launch {
-            val r = MusicApi.jsTagRemove(rm.getAttribute("data-kind") ?: "track", rm.getAttribute("data-gone-rm") ?: return@launch, tag)
+            val kind = rm.getAttribute("data-kind") ?: "track"
+            val id = rm.getAttribute("data-gone-rm") ?: return@launch
+            val r = if (kind == "book") AudiobooksApi.jsTagRemove(id, tag) else MusicApi.jsTagRemove(kind, id, tag)
             muToast(if (r.ok) "Removed" else r.message)
             m.remove(); changed()
         }

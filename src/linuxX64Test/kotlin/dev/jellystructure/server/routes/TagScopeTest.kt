@@ -261,8 +261,10 @@ class TagScopeTest {
         assertEquals("#/library?kind=music&mview=albums&f.tag=Live%20night", tagLibraryHref("Live%20night", listOf("music")))
         assertEquals("#/library?tags=Live%20night", tagLibraryHref("Live%20night", emptyList()))
         assertEquals("#/library?tags=Live%20night", tagLibraryHref("Live%20night", listOf("music", "MOVIE")))
-        assertEquals("1 tagged song or album is no longer in the library", tagGoneText(1))
-        assertEquals("3 tagged songs or albums are no longer in the library", tagGoneText(3))
+        assertEquals("#/library?kind=audiobooks&f.tag=Live%20night", tagLibraryHref("Live%20night", listOf("audiobooks")))
+        assertEquals("#/library?tags=Live%20night", tagLibraryHref("Live%20night", listOf("music", "audiobooks")))
+        assertEquals("1 tagged song, album or book is no longer in the library", tagGoneText(1))
+        assertEquals("3 tagged songs, albums or books are no longer in the library", tagGoneText(3))
         assertEquals("", tagGoneBadgeHtml("x", 0))
         assertTrue(tagGoneBadgeHtml("x", 2).contains("data-gone-tag=\"x\"") && tagGoneBadgeHtml("x", 2).contains("data-stop-click"))
     }

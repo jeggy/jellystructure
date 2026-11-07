@@ -111,6 +111,7 @@ class MusicJsTagsTest {
                 Triple("MusicJsTagService.kt", "removeJsTags", "OUTSIDE_SCOPE"), // 3. FR-4's removal
                 Triple("MusicJsTagService.kt", "addJsTags", "APPLY_TO_SONGS"), // 4. FR-6's apply button
                 Triple("MusicScanner.kt", "addJsTags", "CARRY"),               // 5. FR-7's carry
+                Triple("AudiobooksScanner.kt", "addJsTags", "CARRY"),          // 5. FR-7's carry, for books (DEB-3710, FR-12)
             ),
             found,
         )

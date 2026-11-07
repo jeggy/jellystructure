@@ -109,6 +109,8 @@ data class AudiobookPageDto(
     @SerialName("split_siblings") val splitSiblings: List<AudiobookRow> = emptyList(),
     /** FR-281-1 — the head's source chip: *From the files* · *Edited here* · a provider's name. */
     val source: String = "From the files",
+    /** DEB-3710 (DEB-3701 FR-12) — the book's own jellystructure tags, oldest first. Kept in jellystructure only. */
+    @SerialName("js_tags") val jsTags: List<String> = emptyList(),
 )
 
 @Serializable

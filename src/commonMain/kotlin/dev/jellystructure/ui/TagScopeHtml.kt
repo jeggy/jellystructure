@@ -53,13 +53,17 @@ internal fun tagChipWithScopeHtml(tag: String, color: String?, outOfScope: Boole
  * DEB-3704 (FR-9) — where a tag's *View in library* and its count badge open. A tag used for Music only opens Library →
  * Music on the Albums view filtered by the tag (the Tag facet); any other scope opens the Library as it did.
  */
-internal fun tagLibraryHref(encodedName: String, scopes: List<String>): String =
-    if (scopes == listOf(TagScope.MUSIC)) "#/library?kind=music&mview=albums&f.tag=$encodedName" else "#/library?tags=$encodedName"
+internal fun tagLibraryHref(encodedName: String, scopes: List<String>): String = when (scopes) {
+    listOf(TagScope.MUSIC) -> "#/library?kind=music&mview=albums&f.tag=$encodedName"
+    // DEB-3710 (FR-12) — a tag used for Audiobooks only opens Library → Audiobooks on its Tag facet.
+    listOf(TagScope.AUDIOBOOKS) -> "#/library?kind=audiobooks&f.tag=$encodedName"
+    else -> "#/library?tags=$encodedName"
+}
 
-/** DEB-3704 (FR-8) — the card's line for tagged songs and albums that are gone and that no carry took over. */
+/** DEB-3704 (FR-8) — the card's line for tagged songs, albums and (DEB-3710, FR-12) books that are gone and that no carry took over. */
 internal fun tagGoneBadgeHtml(encodedName: String, gone: Int): String =
     if (gone <= 0) ""
     else """<a href="#" data-stop-click data-gone-tag="$encodedName" class="tiny tag-gone" style="color:var(--warn,var(--ink-soft))">${tagGoneText(gone)}</a>"""
 
 internal fun tagGoneText(gone: Int): String =
-    if (gone == 1) "1 tagged song or album is no longer in the library" else "$gone tagged songs or albums are no longer in the library"
+    if (gone == 1) "1 tagged song, album or book is no longer in the library" else "$gone tagged songs, albums or books are no longer in the library"

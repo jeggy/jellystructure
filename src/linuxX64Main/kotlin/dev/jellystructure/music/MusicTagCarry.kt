@@ -1,5 +1,8 @@
 package dev.jellystructure.music
 
+import dev.jellystructure.audiobooks.AudiobooksIngest
+import dev.jellystructure.audiobooks.AudiobooksStore
+import dev.jellystructure.model.Audiobook
 import dev.jellystructure.model.MusicAlbum
 import dev.jellystructure.model.MusicTrack
 
@@ -13,6 +16,9 @@ import dev.jellystructure.model.MusicTrack
  *
  * The first rung that matches wins. A rung with **two** candidates carries nothing and the search stops there (the
  * ambiguous case belongs to FR-8's list), and so does a rung where **two** missing rows reach one present row.
+ *
+ * DEB-3710 (DEB-3701 FR-12) — books ride the same machinery: [planBooks] and the `books` argument of [gone] apply FR-7's
+ * album rungs to a book's folder, then to its author and title.
  */
 object MusicTagCarry {
     /** One carry: [from]'s tags that [to] does not have yet, as rows for [to]. */
@@ -41,6 +47,32 @@ object MusicTagCarry {
         val missing = snap.albums.values.filter { it.missingSince != null }
         val present = snap.albums.values.filter { it.missingSince == null }
         return resolve(missing, present, ALBUM_RUNGS.map { k -> { a: MusicAlbum -> listOfNotNull(k(a)) } }, ALBUM_RUNGS) { it.id }
+    }
+
+    // ── books (FR-12) ──
+
+    /**
+     * A book's folder. A book split off a folder shares it with its siblings, so the split's tag (the id's suffix, which a
+     * folder rename does not change) rides along: the two halves of one folder are not "two candidates" for each other.
+     */
+    private fun folder(b: Audiobook): String? =
+        b.folderPath?.trimEnd('/')?.takeIf { it.isNotBlank() }?.let { f -> if (AudiobooksIngest.SPLIT in b.id) f + AudiobooksIngest.SPLIT + b.id.substringAfter(AudiobooksIngest.SPLIT) else f }
+
+    private fun authorTitle(b: Audiobook): String? =
+        b.title.trim().lowercase().takeIf { it.isNotEmpty() }?.let { t -> b.authors.joinToString("&") { it.trim().lowercase() } + "|" + t }
+
+    /** Book rungs: the same folder · the same author and title (case-folded). */
+    private val BOOK_RUNGS: List<(Audiobook) -> String?> = listOf({ b -> folder(b) }, { b -> authorTitle(b) })
+    private val BOOK_SOURCE_KEYS: List<(Audiobook) -> List<String>> = BOOK_RUNGS.map { k -> { b: Audiobook -> listOfNotNull(k(b)) } }
+
+    private fun bookPairs(sources: List<Audiobook>, books: AudiobooksStore.Snapshot): Map<String, String> =
+        resolve(sources, books.books.values.filter { it.missingSince == null }, BOOK_SOURCE_KEYS, BOOK_RUNGS) { it.id }
+
+    /** FR-12 — every carry for books: a tagged missing book's tags onto the present book that took its place. */
+    fun planBooks(snap: MusicStore.Snapshot, books: AudiobooksStore.Snapshot, changed: Set<String>? = null): List<Carry> {
+        if (snap.jsTags.isEmpty()) return emptyList()
+        val tagged = books.books.values.filter { it.missingSince != null && snap.jsTags[it.id].orEmpty().isNotEmpty() }
+        return bookPairs(tagged, books).mapNotNull { (from, to) -> carryOf(snap, from, to, MusicJsTagRow.BOOK, changed) }
     }
 
     // ── songs ──
@@ -92,8 +124,11 @@ object MusicTagCarry {
         return if (rows.isEmpty()) null else Carry(from, to, kind, rows)
     }
 
-    /** FR-8 — every tag on a missing album or song that no present row carries on its behalf. */
-    fun gone(snap: MusicStore.Snapshot): List<Gone> {
+    /**
+     * FR-8 — every tag on a missing album or song (and, when [books] is given, a missing book) that no present row carries
+     * on its behalf.
+     */
+    fun gone(snap: MusicStore.Snapshot, books: AudiobooksStore.Snapshot? = null): List<Gone> {
         if (snap.jsTags.isEmpty()) return emptyList()
         val taken = HashMap<String, String>()   // missing subject id → the present row it resolves to
         val succ = albumSuccessors(snap)
@@ -102,12 +137,14 @@ object MusicTagCarry {
         val (sk, tk) = songRungs(succ)
         taken += resolve(snap.tracks.values.filter { it.missingSince != null && snap.jsTags[it.id].orEmpty().isNotEmpty() },
             snap.tracks.values.filter { it.missingSince == null }, sk, tk) { it.id }
+        if (books != null) taken += bookPairs(books.books.values.filter { it.missingSince != null && snap.jsTags[it.id].orEmpty().isNotEmpty() }, books)
         val out = ArrayList<Gone>()
         for ((id, rows) in snap.jsTags) {
             val kind = rows.first().kind
             val missing = when (kind) {
                 MusicJsTagRow.ALBUM -> snap.albums[id]?.missingSince != null
                 MusicJsTagRow.TRACK -> snap.tracks[id]?.missingSince != null
+                MusicJsTagRow.BOOK -> books?.books?.get(id)?.missingSince != null
                 else -> false
             }
             if (!missing) continue

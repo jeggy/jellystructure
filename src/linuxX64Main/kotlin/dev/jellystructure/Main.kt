@@ -335,7 +335,7 @@ fun main() = runBlocking {
             mediaHistory,
         ),
         // Phase 280 — audiobooks: the folder is the book.
-        audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db)),
+        audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db), tags = musicStore, history = mediaHistory),
         versions = dev.jellystructure.music.MusicVersionService(musicStore, mediaHistory),
     )
     // Phase 307 — nothing goes to a public database until someone presses Publish. The queue survives a restart; an

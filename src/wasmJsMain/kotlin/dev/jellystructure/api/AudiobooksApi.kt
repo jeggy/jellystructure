@@ -22,6 +22,7 @@ import dev.jellystructure.model.MusicLockRequest
 import dev.jellystructure.model.MusicStreamDto
 import dev.jellystructure.model.ProviderTestResult
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -34,6 +35,16 @@ import io.ktor.http.isSuccess
 /** Phases 280/281 — the admin's audiobook calls (`/api/audiobooks/…`). Null / false = the call failed (the page says so). */
 object AudiobooksApi {
     private fun id(s: String) = s.encodeURLParameter()
+
+    // ── DEB-3710 (DEB-3701 FR-12): jellystructure tags on a book ──
+
+    suspend fun jsTagAdd(bookId: String, tag: String): MusicApi.JtResult = runCatching {
+        MusicApi.jtResult(httpClient.post("/api/audiobooks/${id(bookId)}/js-tags") { contentType(ContentType.Application.Json); setBody(dev.jellystructure.model.MusicJsTagRequest(tag)) })
+    }.getOrElse { MusicApi.JtResult(false, "The server didn’t answer") }
+
+    suspend fun jsTagRemove(bookId: String, tag: String): MusicApi.JtResult = runCatching {
+        MusicApi.jtResult(httpClient.delete("/api/audiobooks/${id(bookId)}/js-tags/${id(tag)}"))
+    }.getOrElse { MusicApi.JtResult(false, "The server didn’t answer") }
 
     suspend fun status(): AudiobooksHealthDto? = runCatching { httpClient.get("/api/audiobooks/status").body<AudiobooksHealthDto>() }.getOrNull()
 

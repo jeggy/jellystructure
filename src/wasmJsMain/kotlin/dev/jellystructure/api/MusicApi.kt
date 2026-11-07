@@ -288,7 +288,7 @@ object MusicApi {
     /** The server's own sentence, or its refusal (*‹tag› is not used for Music*); never throws. */
     class JtResult(val ok: Boolean, val message: String)
 
-    private suspend fun jtResult(r: io.ktor.client.statement.HttpResponse, okText: (io.ktor.client.statement.HttpResponse) -> String = { "" }): JtResult =
+    internal suspend fun jtResult(r: io.ktor.client.statement.HttpResponse, okText: (io.ktor.client.statement.HttpResponse) -> String = { "" }): JtResult =
         if (r.status.isSuccess()) JtResult(true, okText(r)) else JtResult(false, runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "The server said no")
 
     suspend fun jsTagAdd(kind: String, id: String, tag: String): JtResult = runCatching {
