@@ -193,6 +193,8 @@ class Investigator(
         val seenHosts = LinkedHashSet<String>()
         val marks = HashMap<String, kotlin.time.TimeMark>()
         var drm = false
+        /** DEB-3839 (FR-3.6) — a read of this investigation was refused for want of a sign-in: a `401`/`403` on a read of the site's hosts, or yt-dlp asking for a login. */
+        var signInRefused = false
         var blocked: String? = null
         var variantsText = ""
         var tmdbText: String? = null
@@ -321,6 +323,15 @@ class Investigator(
                     }
                     if (answer.verdict == "not_a_series" || answer.verdict == "videos_not_found") refused(r, answer.reason.ifBlank { "the model could not identify the page as a series" }, text, "not_a_series")
                     if (answer.verdict == "not_a_series" || answer.verdict == "videos_not_found") return fail(answer.reason.ifBlank { "the model could not identify the page as a series" }, STEP_SERIES, notASeries = true, modelWords = true)
+                    if (answer.verdict == "needs_sign_in" && !r.signInRefused) {
+                        // DEB-3839 (FR-3.6, *Only on proof*) — page text asking the viewer to sign in is not proof: some read of this investigation must have been refused for one.
+                        // Refused like any proposal the proof refuses, on one of FR-5.9's correction turns; the listing is not even read.
+                        refused(r, SignIn.NO_PROOF, text, "needs_sign_in")
+                        r.lastRefusal = Triple(SignIn.NO_PROOF, STEP_VIDEOS, r.turns)
+                        if (++repairs > MAX_REPAIRS) return endRefused(SignIn.NO_PROOF, STEP_VIDEOS)
+                        messages += userText("${SignIn.NO_PROOF} Answer `series` with a recipe that works, `videos_not_found` if you cannot find how the videos are served, or `not_a_series`.")
+                        continue
+                    }
                     if (answer.verdict == "needs_sign_in") {
                         // FR-3.6 — accepted only after the listing yields at least two items, counted by this server from the recipe the model gave. The words are the server's.
                         val listed = signInListing(r, settings, answer.recipe)
@@ -382,7 +393,7 @@ class Investigator(
         RecipeValidator.validateListing(recipe).firstOrNull()?.let { return SignInListing(null, it) }
         val lane = lanes.forSite(r.site, r.ignoreRobots, signedIn = true, proving = true)
         return when (val read = ListingFetcher.read(recipe, lane, tools)) {
-            is ListingRead.Blocked -> SignInListing(null, "the listing could not be read: ${describeOutcome(read.outcome)}")
+            is ListingRead.Blocked -> { if (read.outcome.refusedForSignIn) r.signInRefused = true; SignInListing(null, "the listing could not be read: ${describeOutcome(read.outcome)}") }
             is ListingRead.Read -> SignInListing(read.items.size, if (read.items.size >= 2) null else "the listing read gave ${read.items.size} item${if (read.items.size == 1) "" else "s"}")
         }
     }
@@ -427,9 +438,10 @@ class Investigator(
         val recipe = ModelRecipe.toRecipe(mr, r.url, settings.model, today()).let { it.copy(retention = if (r.pageOnly) RetentionSpec("newest", 12, true) else RetentionSpec("all")) }
         RecipeValidator.validate(recipe, r.pageOnly).firstOrNull()?.let { return Proved.Retry(it, STEP_SCRIPT) }
         val lane = lanes.forSite(r.site, r.ignoreRobots, signedIn = true, proving = true)
-        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping).also { r.proof = it; r.robotsRefused = it.robotsRefused }
+        val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane, mapping) { r.signInRefused = true }.also { r.proof = it; r.robotsRefused = it.robotsRefused }
         if (!pr.ok) {
             // FR-3.6 — the proof's own media read was refused for want of a sign-in: the server ends it, whatever the model said. The listing had at least two items.
+            if (pr.needsSignIn) r.signInRefused = true
             if (pr.needsSignIn && pr.items.size >= 2) return Proved.SignIn(pr.items.size)
             pr.blocked?.let { return Proved.End(pr.failure ?: "the site refused the recipe's request", STEP_PAGE) }
             val why = pr.failure ?: "the recipe failed its proof"
@@ -598,7 +610,7 @@ class Investigator(
             is LaneOutcome.Forbidden -> { r.blocked = o.reason; r.robotsRefused = true; ToolAnswer(o.reason, true) }
             is LaneOutcome.Stopped -> { r.blocked = "the site is stopped: ${o.reason}"; ToolAnswer(o.reason, true) }
             is LaneOutcome.BackOff -> { r.blocked = "the site asked us to slow down: ${o.reason}"; ToolAnswer(o.reason, true) }
-            is LaneOutcome.Failed -> ToolAnswer("The request failed: ${o.reason}", true)
+            is LaneOutcome.Failed -> { if (o.refusedForSignIn) r.signInRefused = true; ToolAnswer("The request failed: ${o.reason}", true) }
         }
     }
 
@@ -639,7 +651,7 @@ class Investigator(
             is LaneOutcome.Forbidden -> ToolAnswer(o.reason, true)
             is LaneOutcome.Stopped -> { r.blocked = "the site is stopped: ${o.reason}"; ToolAnswer(o.reason, true) }
             is LaneOutcome.BackOff -> { r.blocked = "the site asked us to slow down: ${o.reason}"; ToolAnswer(o.reason, true) }
-            is LaneOutcome.Failed -> ToolAnswer("The request failed: ${o.reason}", true)
+            is LaneOutcome.Failed -> { if (o.refusedForSignIn) r.signInRefused = true; ToolAnswer("The request failed: ${o.reason}", true) }
         }
     }
 
@@ -735,7 +747,7 @@ Recipe vocabulary:
 - Regexes: a named group is written `(?<value>…)`, never Python's `(?P<value>…)`; at most 200 characters; no nested quantifiers, no quantified alternation, no back-references, no lookaround.
 ${if (pageOnly) "- series: where the PROGRAMME page gives its own name, description and image (name required): the same one-string form (`h1`, `p.about`, `img.poster@src`), read on the series page." else ""}
 
-If the listing IS a series but its videos play only to a signed-in viewer (the player says to log in, or the media host answers 401/403), answer `needs_sign_in` WITH the recipe that reads the listing; never `not_a_series` for that. The engine counts the listing itself and words the result.
+If the listing IS a series but its videos play only to a signed-in viewer, answer `needs_sign_in` WITH the recipe that reads the listing, never `not_a_series`; but only after one of your reads was actually refused (a 401 or 403 from the site or its media host), because page text asking the viewer to sign in is not proof and the engine refuses `needs_sign_in` without one: find how the videos are served. The engine counts the listing itself and words the result.
 
 If the listing IS a series (several dated or numbered episodes under one title) but you could not find how its videos are served, answer `videos_not_found`, with your recipe's listing if you have one; never `not_a_series` for that. The engine counts the listing itself and words the result.
 
@@ -803,6 +815,9 @@ object VideosNotFound {
 
 /** DEB-3613 (FR-3.6) — the words of the *Needs a sign-in* ending: fixed text, the site and the count filled in. The model's own words are never shown. */
 object SignIn {
+    /** DEB-3839 (FR-3.6, *Only on proof*) — what the model reads when it answers `needs_sign_in` and no read of the investigation was refused for a sign-in. */
+    const val NO_PROOF = "Nothing this investigation read was refused for a sign-in. Text on a page that asks the viewer to sign in is not proof: find how the videos are served."
+
     fun sentence(site: String, count: Int): String =
         "It didn't work: $site lists $count episodes but plays them only to someone signed in. Auto-fetch cannot sign in by itself."
 

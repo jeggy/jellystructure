@@ -100,7 +100,10 @@ sealed class LaneOutcome {
     /** `robots.txt` forbids the path: never requested (FR-2.2). */
     data class Forbidden(val reason: String) : LaneOutcome()
     /** Any other failure: the request was made and refused or did not answer. The lane carries on. */
-    data class Failed(val reason: String, val status: Int? = null) : LaneOutcome()
+    data class Failed(val reason: String, val status: Int? = null, val needsLogin: Boolean = false) : LaneOutcome()
+
+    /** DEB-3839 (FR-3.6) — the read was refused for want of a sign-in: a `401`/`403`, or yt-dlp saying it needs a login or cookies. */
+    val refusedForSignIn: Boolean get() = this is Failed && (status == 401 || status == 403 || needsLogin)
 }
 
 /** `robots.txt` for a general crawler (FR-2.2): the `User-agent: *` group only. A rule naming only AI agents does not bind. */
@@ -290,7 +293,7 @@ class SiteLane private constructor(
         if (cookiesUsed && (needsLogin || status == 401 || status == 403)) return sessionRanOut()
         // A run (not a proof) that is told to log in has lost its session, or never had one it needs: the site stops until a new one is pasted.
         if (needsLogin && !proving) return sessionRanOut()
-        return judgeProgram(status).let { if (it == null || it is LaneOutcome.Failed) LaneOutcome.Failed(message, status) else it }
+        return judgeProgram(status).let { if (it == null || it is LaneOutcome.Failed) LaneOutcome.Failed(message, status, needsLogin) else it }
     }
 
     /** FR-3.6 — the session that was sent is no longer taken: the site stops until a new one is pasted. */

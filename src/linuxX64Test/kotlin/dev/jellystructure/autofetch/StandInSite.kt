@@ -159,10 +159,13 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
     /** DEB-3407 — an item's own date answer, by link: a `--print` line of the three fields; the default is none of them. */
     var ytdlpDateOf: (String) -> String? = { null }
     val ytdlpDateReads = ArrayList<String>()
+    /** DEB-3839 — when set, every item date read answers this (a failure, say) instead of [ytdlpDateOf]. */
+    var ytdlpDateOut: YtDlpOutput? = null
 
     override suspend fun ytdlpDate(url: String, cookies: String?): YtDlpOutput {
         ytdlpCookies += cookies
         ytdlpDateReads += url
+        ytdlpDateOut?.let { return it }
         val d = ytdlpDateOf(url)
         return YtDlpOutput(true, body = if (d == null) "{}" else """{"upload_date":"$d"}""")
     }

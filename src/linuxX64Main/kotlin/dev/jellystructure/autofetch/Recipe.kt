@@ -146,7 +146,7 @@ object RecipeValidator {
 
     /**
      * DEB-3715 (DEB-3567, FR-3.6) — the reasons the recipe's *listing* cannot be read: its version, hosts, `list` and the list's fields. Media, numbering and
-     * retention are not looked at; a `needs_sign_in` answer is accepted on a listing alone.
+     * retention are not looked at; a `needs_sign_in` answer is accepted on a listing alone (once a read was refused, DEB-3839).
      */
     fun validateListing(recipe: Recipe): List<String> {
         val errors = ArrayList<String>()

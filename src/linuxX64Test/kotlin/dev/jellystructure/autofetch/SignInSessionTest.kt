@@ -57,6 +57,9 @@ class SignInSessionTest {
 
     private fun gate() { h.site.mediaNeedsCookie = "s=ok"; h.site.listingExtra = """<link rel="preload" href="https://media.example.fo/">""" }
 
+    /** DEB-3839 (FR-3.6, *Only on proof*) — two turns in which the model reads the page, then its own `probe` of the media host is refused `403`: the read that makes `needs_sign_in` admissible. */
+    private fun aRefusedRead() { gate(); ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}"""); ai.tool("probe", """{"url":"https://media.example.fo/DOV7327/master.m3u8"}""") }
+
     // ---- the ending ----
 
     @Test
@@ -106,12 +109,13 @@ class SignInSessionTest {
 
     @Test
     fun `a needs_sign_in with no listing of two items is not accepted and the model is told why`() {
+        aRefusedRead()
         ai.answer("""{"verdict":"needs_sign_in","reason":"login wall"}""")
         ai.answer("""{"verdict":"not_a_series","reason":"one clip"}""")
         val out = run().view
         assertFalse(out.needsSignIn)
         assertTrue(out.notASeries)
-        assertTrue("accepted only when your recipe's listing yields at least two items" in ai.sent[1], "the model is told the rule")
+        assertTrue("accepted only when your recipe's listing yields at least two items" in ai.sent[3], "the model is told the rule")
     }
 
     // DEB-3715 (DEB-3567, DEB-2474 FR-3.6) — the sign-in ending asks for a listing of two items, not a valid recipe: the model cannot see the signed-in media.
@@ -122,7 +126,7 @@ class SignInSessionTest {
     @Test
     fun `a needs_sign_in with a listing of three items ends as Needs a sign-in though its media part is broken`() {
         h.site.dagbokItems = listOf(27 to "2026-10-27", 28 to "2026-10-28", 29 to "2026-10-29")
-        ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""")
+        aRefusedRead()
         ai.answer(brokenMedia())
         val out = run().view
         assertEquals("failed", out.state)
@@ -133,20 +137,96 @@ class SignInSessionTest {
     @Test
     fun `a needs_sign_in whose listing reads one item is refused and the model is told the count`() {
         h.site.dagbokItems = listOf(27 to "2026-10-27")
+        aRefusedRead()
         ai.answer(brokenMedia())
         ai.answer("""{"verdict":"not_a_series","reason":"one clip"}""")
         val out = run().view
         assertFalse(out.needsSignIn)
-        assertTrue("the listing read gave 1 item" in ai.sent[1], "the model is told which check failed")
-        assertTrue("accepted only when your recipe's listing yields at least two items" in ai.sent[1])
+        assertTrue("the listing read gave 1 item" in ai.sent[3], "the model is told which check failed")
+        assertTrue("accepted only when your recipe's listing yields at least two items" in ai.sent[3])
     }
 
     @Test
     fun `a needs_sign_in with a broken listing part is told the validators own listing error`() {
+        aRefusedRead()
         ai.answer(brokenMedia(selector = ""))
         ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
         run()
-        assertTrue("the html list needs an item selector" in ai.sent[1], ai.sent[1])
+        assertTrue("the html list needs an item selector" in ai.sent[3], ai.sent[3])
+    }
+
+    // ---- DEB-3839 (FR-3.6, *Only on proof*): needs_sign_in is accepted only after a read was refused for a sign-in ----
+
+    private val noProof = "Nothing this investigation read was refused for a sign-in. Text on a page that asks the viewer to sign in is not proof: find how the videos are served."
+
+    @Test
+    fun `a needs_sign_in with no read refused is refused with the proof sentence and the next turn can still end as Videos not found`() {
+        ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""")
+        ai.answer(answer("needs_sign_in"))
+        ai.answer(answer("videos_not_found", "no manifest"))
+        val out = run().view
+        assertTrue(noProof in ai.sent[2], "the model reads the sentence: ${ai.sent[2]}")
+        assertEquals(3, ai.sent.size)
+        assertFalse(out.needsSignIn, out.reason); assertFalse(out.notASeries)
+        assertTrue(out.videosNotFound, out.reason)
+        assertTrue(h.site.nonRobots().none { it.contains("master.m3u8") }, "no media read was made: the answer was refused before the listing")
+        assertEquals(2, h.site.nonRobots().count { it.endsWith("/sendingar/dagbok") }, "the model's fetch, and the listing read for the second answer")
+    }
+
+    @Test
+    fun `a needs_sign_in with no read refused three times ends as a refusal and never as Needs a sign-in`() {
+        repeat(3) { ai.answer(answer("needs_sign_in")) }
+        val out = run().view
+        assertEquals("failed", out.state)
+        assertFalse(out.needsSignIn, out.reason)
+        assertEquals(noProof, out.reason)
+    }
+
+    @Test
+    fun `page text asking the viewer to sign in on a read that was answered 200 is not proof`() {
+        gate()
+        ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""")
+        ai.answer(answer("needs_sign_in", "Log ind for at afspille"))
+        ai.answer("""{"verdict":"not_a_series","reason":"x"}""")
+        val out = run().view
+        assertFalse(out.needsSignIn, out.reason)
+        assertTrue(noProof in ai.sent[2])
+    }
+
+    @Test
+    fun `a needs_sign_in after a fetch on a site host answered 403 is accepted`() {
+        ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""") { h.site.listingStatus = 403 }
+        ai.answerFrom { h.site.listingStatus = 200; answer("needs_sign_in") }
+        val out = run().view
+        assertTrue("403" in ai.resultOf(1), ai.resultOf(1))
+        assertTrue(out.needsSignIn, out.reason); assertFalse(out.notASeries)
+        assertEquals(sentence, out.reason)
+        assertEquals(2, ai.sent.size, "accepted on the first answer: no correction turn")
+    }
+
+    @Test
+    fun `a needs_sign_in after a probe of a media host answered 403 is accepted`() {
+        aRefusedRead()
+        ai.answer(answer("needs_sign_in"))
+        val out = run().view
+        assertTrue(out.needsSignIn, out.reason)
+        assertEquals(3, ai.sent.size)
+    }
+
+    @Test
+    fun `a needs_sign_in after a yt-dlp run that asked for a login is accepted`() {
+        val ytdlpList = recipeJson.replace(""""list":{"kind":"html","item_selector":"li.ep","fields":{"title":"a","link":"a@href","published":"time@datetime","description":"p"}}""", """"list":{"kind":"ytdlp"}""")
+        h.tools.ytdlpEntries = (16..27).toList().reversed().map { d -> listOf("N$d", "https://$site/sendingar/dagbok/$d", "Dagbók · $d. oktober", "") }
+        h.tools.ytdlpDateOut = YtDlpOutput(false, message = "yt-dlp: This video is only available for registered users", needsLogin = true)
+        ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""")
+        ai.answer("""{"verdict":"series","reason":"x","recipe":$ytdlpList,"examples":[]}""")
+        ai.answer("""{"verdict":"needs_sign_in","reason":"Log ind","recipe":$ytdlpList,"examples":[]}""")
+        val out = run().view
+        assertTrue(h.tools.ytdlpDateReads.isNotEmpty(), "the proof asked yt-dlp for an item's date")
+        assertTrue(out.needsSignIn, out.reason)
+        assertEquals(sentence, out.reason)
+        assertEquals(3, ai.sent.size, "the first answer was corrected by the engine; the second needs_sign_in was accepted, not refused for want of proof")
+        assertFalse(noProof in ai.sent[2])
     }
 
     // ---- the session ----

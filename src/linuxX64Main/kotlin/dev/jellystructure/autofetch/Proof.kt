@@ -138,8 +138,9 @@ fun itemKeyOf(it: ListedItem): String = it.id?.takeIf { v -> v.isNotBlank() } ?:
 class RecipeProof(private val tools: MediaTools, private val world: AutofetchWorld) {
 
     /** [mapping] is the model's proposed table when the recipe's numbering is `mapped` (FR-4.3); nothing else reads it. */
-    suspend fun prove(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, mapping: List<MapRow> = emptyList()): ProofResult {
+    suspend fun prove(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, mapping: List<MapRow> = emptyList(), onSignInRefused: () -> Unit = {}): ProofResult {
         val read = ListingFetcher.read(recipe, lane, tools)
+        if (read is ListingRead.Blocked && read.outcome.refusedForSignIn) onSignInRefused()
         if (read is ListingRead.Blocked) return fail(describe(read.outcome)).copy(blocked = read.outcome, robotsRefused = read.outcome is LaneOutcome.Forbidden)
         read as ListingRead.Read
         val listed = read.items
@@ -161,6 +162,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             val probeFirst = if (recipe.media.kind == "ytdlp" && recipe.numbering.kind != "mapped") toDate.firstOrNull() else null
             if (probeFirst != null) {
                 val p = probeYtDlp(recipe, probeFirst, lane)
+                if (p.signIn) onSignInRefused()
                 p.failure?.let { return fail(it, listed).copy(blocked = p.blocked, robotsRefused = p.robotsRefused, needsSignIn = p.signIn) }
                 early = p
                 if (p.dateRead) dated[itemKeyOf(probeFirst)] = p.date
@@ -170,14 +172,17 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             for (it in toDate) {
                 when (val r = ItemDates.read(recipe, it, lane, tools)) {
                     is DateRead.NotAsked -> {}
-                    is DateRead.Unread -> if (r.outcome !is LaneOutcome.Failed)
-                        return fail(describe(r.outcome), listed).copy(blocked = r.outcome.takeIf { o -> o is LaneOutcome.Stopped || o is LaneOutcome.BackOff }, robotsRefused = r.outcome is LaneOutcome.Forbidden)
+                    is DateRead.Unread -> {
+                        if (r.outcome.refusedForSignIn) onSignInRefused()
+                        if (r.outcome !is LaneOutcome.Failed)
+                            return fail(describe(r.outcome), listed).copy(blocked = r.outcome.takeIf { o -> o is LaneOutcome.Stopped || o is LaneOutcome.BackOff }, robotsRefused = r.outcome is LaneOutcome.Forbidden)
+                    }
                     is DateRead.Answered -> { dated[itemKeyOf(it)] = r.date; readNow[itemKeyOf(it)] = r.date }
                 }
             }
             items = listed.map { it -> if (ItemDates.undated(it)) readNow[itemKeyOf(it)]?.let { d -> it.copy(published = d) } ?: it else it }
         }
-        if (recipe.numbering.kind == "mapped") return proveMapped(recipe, pageOnly, tmdbId, lane, items, mapping).let { if (it.ok) it.copy(dated = dated) else it }
+        if (recipe.numbering.kind == "mapped") return proveMapped(recipe, pageOnly, tmdbId, lane, items, mapping, onSignInRefused).let { if (it.ok) it.copy(dated = dated) else it }
         val numbered = ArrayList<Pair<ListedItem, SeasonEpisode>>()
         // An item with no date is not held against *every item maps to exactly one identity*: it gets its number on the run that dates it.
         val byDate = recipe.list.kind == "ytdlp" && recipe.numbering.kind == "date"
@@ -208,6 +213,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         if (pageOnly && series?.name.isNullOrBlank()) return fail("the page gives the programme no name", items, numbered)
 
         val probe = early ?: probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
+        if (probe.signIn) onSignInRefused()
         probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn) }
         val facts = probe.facts!!
         if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
@@ -237,7 +243,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
      * TMDB has, and no two items may share one. It is never *proven*: the admin's tick on each row is what approves it, so nothing here
      * decides a number. A listing item the proposal leaves out is simply an item waiting for a number.
      */
-    private suspend fun proveMapped(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, items: List<ListedItem>, mapping: List<MapRow>): ProofResult {
+    private suspend fun proveMapped(recipe: Recipe, pageOnly: Boolean, tmdbId: Int?, lane: SiteLane, items: List<ListedItem>, mapping: List<MapRow>, onSignInRefused: () -> Unit): ProofResult {
         if (pageOnly || tmdbId == null) return fail(RecipeRefusal.MAPPED_PAGE_ONLY, items)
         val tmdb = world.tmdbEpisodes(tmdbId) ?: return fail("TMDB could not be reached to check the numbering", items)
         val has = tmdb.map { it.season to it.episode }.toSet()
@@ -251,6 +257,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         }
         if (numbered.isEmpty()) return fail("the proposal maps no item of the listing to an episode TMDB has", items)
         val probe = probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
+        if (probe.signIn) onSignInRefused()
         probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn) }
         val facts = probe.facts!!
         if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
