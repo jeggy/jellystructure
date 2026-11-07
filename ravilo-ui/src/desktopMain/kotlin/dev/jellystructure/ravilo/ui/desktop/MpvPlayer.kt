@@ -77,6 +77,8 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
         opt("demuxer-max-bytes", "600MiB")
         opt("demuxer-max-back-bytes", "100MiB")
         opt("sid", "no")
+        // DEB-3215 (DEB-3093 FR-3, FR-4, FR-5) — a film waits 20 s for a byte, reconnects a dropped or failed request and resumes after a stall at 4 s buffered.
+        if (!audioOnly) MpvTrouble.filmOptions().forEach { (name, value) -> opt(name, value) }
         if (audioOnly) {
             opt("vid", "no")
             opt("audio-display", "no")

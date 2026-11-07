@@ -128,9 +128,12 @@ actual fun mergesExternalAudio(): Boolean = false
 actual fun reportsDecodeHealth(): Boolean = false
 
 /**
- * DEB-3214 (FR-6, FR-9) — the Mac: the surface keeps the last frame it drew until the new item draws one, so a replacement can run behind
- * the picture. Linux (mpv draws into a window of its own) is DEB-3215's.
+ * DEB-3214 / DEB-3215 (FR-6, FR-9) — the Mac, and Linux on mpv's software renderer: the surface keeps the last frame it drew until the new
+ * source draws one, so a replacement can run behind the picture. mpv in a native window of its own (`-Dravilo.video=gpu`) draws and clears
+ * that window itself, so it holds nothing and a replacement there is shown as a start.
  */
-actual fun holdsLastFrameAcrossSource(): Boolean = DesktopPaths.isMac
+actual fun holdsLastFrameAcrossSource(): Boolean = holdsLastFrame(DesktopPaths.isMac, DesktopEngines.isMpv, System.getProperty("ravilo.video"))
+
+internal fun holdsLastFrame(isMac: Boolean, isMpv: Boolean, videoPath: String?): Boolean = isMac || (isMpv && videoPath != "gpu")
 
 actual fun deviceMemoryClassMb(): Int = 0

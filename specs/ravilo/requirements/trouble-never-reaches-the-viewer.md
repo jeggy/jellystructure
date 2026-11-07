@@ -336,6 +336,40 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
     cache needs an `AVAssetResourceLoader` delegate. (4) **The 0.5 s bound is not measured** on a Mac. (5) **Nothing here runs on AVPlayer in CI:**
     `ci / macos` compiles the Swift (unchanged) and the tests are the pure decisions, `MacTroubleTest` (`MacLadderPeak.onStall`, `MacHeldFrame`) and
     `LadderSteppingTest` (`peakAfterStall`, `nextPeakBps` with a blocked climb).
+- *2026-11-07, DEB-3215 — what the Linux client (mpv) does, and what one mpv does not allow.* Linux only, a film (`MpvTrouble`); a music or
+  radio engine keeps its options. mpv reads one stream at a time, so a rung is the store's restream (FR-309-9) and not a variant mpv picks.
+  - **FR-3 and FR-4, through mpv's options.** `network-timeout=20` (ffmpeg's `rw_timeout`: every request the HLS demuxer makes). `stream-lavf-o`
+    sets ffmpeg's http reconnect: `reconnect`, `reconnect_streamed`, `reconnect_on_network_error`, `reconnect_on_http_error=4xx,5xx` and
+    `reconnect_delay_max=5` (the list's comma makes mpv want the value length-quoted, `%7%4xx,5xx`). ffmpeg doubles the delay from one
+    second and gives up past 5 s, so a failed request is asked again about four times, then mpv ends the stream with its load failure, which goes
+    the existing way (DEB-3400) to the store's restream (FR-6), where a failed encoder stream is asked for again. `hls-bitrate` is left alone for a
+    film: the server hands mpv one variant, and the live ladder's own use of it (DEB-2627) is unchanged. `cache-secs` and
+    `demuxer-readahead-secs` are left alone too: nothing in FR-3 to FR-6 bounds mpv's buffer, and the byte bound it has (600 MiB) is what lets
+    the buffer-driven step-down see a buffer to read.
+  - **FR-5.** `cache-pause-wait=4`: a stalled play resumes at 4 s buffered (mpv's default is 1 s). The 2 s draw rule is the shared
+    `PlayerScreen`'s. **The cap:** the player counts mpv's `paused-for-cache` edges that come after the first picture and more than 3 s after a
+    load or a seek (`MpvStallWatch`: a start's fill and a seek's refill are not stalls) in `PlayerLadderHints.stallCount`, and the store's
+    stepping (`RestreamStepper.onStall`) caps one rung down **at once**, inside the 30 s gap that holds the buffer rule, and nothing climbs for
+    2 minutes. A stall on the lowest rung caps nothing; a stall within 10 s of a step belongs to the stream it replaces and is not answered.
+    The restream is recorded as `step_cap` (no new reason on the wire).
+  - **FR-6 is on** for mpv on its software renderer: `holdsLastFrameAcrossSource()` is true there, so `unseenReplacements` is true and every
+    step of the stepping, and every recovery, runs as on the Mac: `Ready` and never `Loading`, the new stream's master and first segments
+    fetched before mpv is touched. The held picture is the surface's own (Compose keeps the last frame mpv's ring gave it until the new file
+    draws one), and `MacHeldFrame` keeps the play's position and length for the clock until then. mpv in a native window of its own
+    (`-Dravilo.video=gpu`) draws and clears that window itself and holds nothing: a replacement there is shown as a start, as before.
+  - **Not done.** (1) **FR-3's 8 s connect timeout.** ffmpeg's tcp layer connects under the same `rw_timeout` as it reads, so the connect wait is
+    20 s; a separate 8 s would need a protocol option mpv does not pass for HLS. (2) **FR-4's fall to a lower rung on a failed or slow
+    segment, and the abandon rule.** One mpv, one variant: a segment mpv cannot get ends the stream, and the rung below is the store's
+    restream (above), after ffmpeg's few retries and not after "for as long as the buffer holds". A slow segment is not abandoned; the buffer
+    rule (under 20 s and falling) is what steps a slow link down. (3) **That the reconnect options reach the HLS segment requests** is not
+    established here: ffmpeg's HLS demuxer copies a fixed few options (`rw_timeout` among them) from the playlist's connection to its segments,
+    and whether `reconnect*` is one on the ffmpeg a user has is read off a real play. (4) **The old stream does not play on until the new one
+    is in hand.** `loadfile replace` stops it when the warmed stream is handed over, and mpv opens the master, the rung's playlist and its first
+    segment again: the warm-up's bytes are dropped (`WarmedSegments.desktop.kt`), and one engine only (R292). (5) **The 0.5 s bound is not
+    measured** on Linux. (6) **A direct play that stalls does not move to the ladder on Linux:** FR-309-8 reads the stall list of the QoE
+    snapshot, which mpv's snapshot does not fill (R381), so only an already-stepped stream is capped. (7) **Nothing here runs on mpv in CI:** the
+    tests are the pure decisions, `MpvTroubleTest` (`MpvTrouble`, `MpvStallWatch`, `holdsLastFrame`) and `LadderSteppingTest`
+    (`RestreamStepper.onStall`); the playback is the QA row's.
 
 ## What this does not do yet
 

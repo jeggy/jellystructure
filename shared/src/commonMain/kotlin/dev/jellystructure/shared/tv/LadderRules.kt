@@ -220,6 +220,20 @@ class RestreamStepper(private val ladderVideoBps: List<Long> = DEFAULT_LADDER_VI
         return step(nowMs, above, down = false)
     }
 
+    /**
+     * DEB-3215 (DEB-3093 FR-5, FR-9) — a stall of the playing picture caps one rung down **at once**, whatever [MIN_STEP_GAP_MS] says, and the
+     * climb waits [CLEAN_FOR_UP_MS] from here (the step restarts the clean clock). Null when nothing lies below (the lowest rung is left
+     * alone) or when a step was made under [STALL_AFTER_STEP_MS] ago: that replacement is still on its way, and the stall belongs to the
+     * stream it is replacing.
+     */
+    fun onStall(nowMs: Long, streamVideoBps: Long?): Step? {
+        val sorted = ladderVideoBps.distinct().sorted()
+        if (sorted.isEmpty() || nowMs - lastStepAtMs < STALL_AFTER_STEP_MS) return null
+        val current = if (capVideoBps > 0) capVideoBps else streamVideoBps ?: Long.MAX_VALUE
+        val below = sorted.lastOrNull { it < current } ?: return null
+        return step(nowMs, below, down = true)
+    }
+
     private fun step(nowMs: Long, cap: Long, down: Boolean): Step {
         capVideoBps = cap
         lastStepAtMs = nowMs
@@ -233,6 +247,8 @@ class RestreamStepper(private val ladderVideoBps: List<Long> = DEFAULT_LADDER_VI
         val DEFAULT_LADDER_VIDEO_BPS = listOf(1_500_000L, 4_000_000L, 8_000_000L, 12_000_000L)
         const val MIN_STEP_GAP_MS = 30_000L
         const val CLEAN_FOR_UP_MS = 120_000L
+        /** DEB-3215 — a stall this soon after a step is the replaced stream's own. */
+        const val STALL_AFTER_STEP_MS = 10_000L
 
         /** A variant's `BANDWIDTH` (video × 1.5 + audio, FR-313-7) back to its video bits/s, roughly; null when unknown. */
         fun videoBpsOf(bandwidthBps: Long?): Long? =

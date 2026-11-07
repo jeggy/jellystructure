@@ -111,6 +111,33 @@ class LadderSteppingTest {
         assertNull(s.evaluate(10_000, 10_000, streamVideoBps = 1_500_000))
     }
 
+    @Test fun `a stall caps mpv one rung down at once even inside the 30 s gap, and the climb waits two minutes from it`() {
+        val s = RestreamStepper()
+        s.evaluate(0, 25_000, streamVideoBps = 12_000_000)
+        assertEquals(8_000_000L, s.evaluate(10_000, 18_000, streamVideoBps = 12_000_000)?.capVideoBps)
+        // 15 s on, a stall: the buffer rule would hold (inside the gap), the stall rule does not.
+        val stalled = assertNotNull(s.onStall(25_000, streamVideoBps = 12_000_000))
+        assertTrue(stalled.down)
+        assertEquals(4_000_000L, stalled.capVideoBps)
+        // Clean from the stall, not from before it: nothing climbs for 2 minutes whatever is buffered.
+        assertNull(s.evaluate(130_000, 40_000, null))
+        assertEquals(8_000_000L, s.evaluate(146_000, 40_000, null)?.capVideoBps)
+    }
+
+    @Test fun `a stall on a play with no cap yet steps from the stream's own rung`() {
+        val s = RestreamStepper()
+        assertEquals(8_000_000L, s.onStall(5_000, streamVideoBps = 12_000_000)?.capVideoBps)
+    }
+
+    @Test fun `a stall on the lowest rung caps nothing, and one right after a step is the replaced stream's`() {
+        val low = RestreamStepper()
+        assertNull(low.onStall(5_000, streamVideoBps = 1_500_000))
+        val s = RestreamStepper()
+        assertNotNull(s.onStall(5_000, streamVideoBps = 12_000_000))
+        assertNull(s.onStall(10_000, streamVideoBps = 12_000_000))
+        assertEquals(4_000_000L, s.onStall(16_000, streamVideoBps = 12_000_000)?.capVideoBps)
+    }
+
     @Test fun `a variants bandwidth gives back roughly its video bitrate`() {
         assertEquals(8_000_000L, RestreamStepper.videoBpsOf(12_256_000L))
         assertNull(RestreamStepper.videoBpsOf(null))

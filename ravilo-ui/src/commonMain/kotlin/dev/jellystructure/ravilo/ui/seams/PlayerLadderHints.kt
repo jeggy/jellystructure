@@ -34,6 +34,13 @@ object PlayerLadderHints {
     @Volatile var restreamStepping: Boolean = false
 
     /**
+     * DEB-3215 (DEB-3093 FR-5) — how many times the stepped player (mpv) has stalled a playing picture, counted by the player over its whole
+     * life; the store compares it with the last value it answered and caps one rung down at once on a rise. A start, a seek and a replacement's
+     * first fill are not stalls and do not count.
+     */
+    @Volatile var stallCount: Long = 0L
+
+    /**
      * 309 (FR-309-8) — a restream the store started on its own (a direct play that stalled, a stepping restream): when
      * its ticket loads, R181's track resolver runs again, as it does after the viewer's own restreams. Consumed by the
      * player screen's bookkeeping.

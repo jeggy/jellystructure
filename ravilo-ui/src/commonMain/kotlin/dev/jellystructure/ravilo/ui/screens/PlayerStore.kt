@@ -1298,6 +1298,8 @@ class PlayerStore(
     private var ladderSwitchedFor: String? = null
     private var stepper = RestreamStepper()
     private var stepperFor: String? = null
+    /** DEB-3215 (FR-5) — the player's [PlayerLadderHints.stallCount] already answered with a cap. */
+    private var stallsAnswered = 0L
     /** The device's own `max_video_bitrate` before any stepping cap (restored when the cap is lifted). */
     private var stepBaseMaxVideo: Int? = null
 
@@ -1324,11 +1326,18 @@ class PlayerStore(
         if (t.directPlay || t.adaptive) return
         val ahead = PlayerLadderHints.bufferedAheadMs.takeIf { it >= 0 } ?: return
         val caps = lastCapabilities ?: return
-        if (stepperFor != itemId) { stepper = RestreamStepper(); stepperFor = itemId; stepBaseMaxVideo = caps.maxVideoBitrate }
-        val step = stepper.evaluate(kotlin.time.Clock.System.now().toEpochMilliseconds(), ahead, RestreamStepper.videoBpsOf(t.startVariantBps)) ?: return
+        if (stepperFor != itemId) { stepper = RestreamStepper(); stepperFor = itemId; stepBaseMaxVideo = caps.maxVideoBitrate; stallsAnswered = PlayerLadderHints.stallCount }
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        val streamBps = RestreamStepper.videoBpsOf(t.startVariantBps)
+        // DEB-3215 (FR-5) — a stall of the playing picture caps one rung down now; the buffer rule below is judged on the same tick either way.
+        val stallCount = PlayerLadderHints.stallCount
+        val stalled = stallCount > stallsAnswered
+        stallsAnswered = stallCount
+        val stallStep = if (stalled) stepper.onStall(now, streamBps) else null
+        val step = stallStep ?: stepper.evaluate(now, ahead, streamBps) ?: return
         lastCapabilities = caps.copy(maxVideoBitrate = steppedMaxVideo(stepBaseMaxVideo ?: 0, step.capVideoBps))
-        println("309: stepping $itemId ${if (step.down) "down" else "up"} — cap ${step.capVideoBps / 1000} kb/s, ${ahead} ms buffered")
-        replaceUnseen(itemId, t, positionMs, watchProvider?.invoke(), ReplacementReason.STEP_CAP, "the ladder", blocksClimb = false)
+        println("309: stepping $itemId ${if (step.down) "down" else "up"} — cap ${step.capVideoBps / 1000} kb/s, ${ahead} ms buffered${if (stallStep != null) " (a stall)" else ""}")
+        replaceUnseen(itemId, t, positionMs, watchProvider?.invoke(), ReplacementReason.STEP_CAP, "the ladder", blocksClimb = stallStep != null)
     }
 }
 

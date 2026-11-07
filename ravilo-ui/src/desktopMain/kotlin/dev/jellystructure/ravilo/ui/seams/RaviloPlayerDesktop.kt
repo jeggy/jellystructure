@@ -71,8 +71,11 @@ actual class RaviloPlayer actual constructor() {
     private var subJob: Job? = null
     private var watchJob: Job? = null
     private var restoredAfterRecreate = 0
-    /** DEB-3214 (FR-6) — the clock a replacement's held frame keeps (the Mac only: [holdsLastFrameAcrossSource]). */
+    /** DEB-3214 (FR-6) — the clock a replacement's held frame keeps (the Mac, and Linux's software renderer: [holdsLastFrameAcrossSource]). */
     private val held = dev.jellystructure.ravilo.ui.desktop.MacHeldFrame()
+    /** DEB-3215 (FR-5) — which of mpv's cache pauses were a stall of a playing picture, and when the player last started or moved on its own. */
+    private val stallWatch = dev.jellystructure.ravilo.ui.desktop.MpvStallWatch()
+    private var movedAtMs = 0L
     /** When the last [load] happened — see [playbackFailed]. */
     private var loadedAtMs = 0L
     /** FR-R329-1 — when the picture started, so the spike's "over five minutes" is read off the player, not a clock. */
@@ -113,12 +116,14 @@ actual class RaviloPlayer actual constructor() {
         subJob?.cancel()
         cues = emptyList()
         loadedAtMs = System.currentTimeMillis()
+        movedAtMs = loadedAtMs
+        stallWatch.reset()
         firstFrameAtMs = 0L
         dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.attach(this)
         if (!engine.available) { noEngineFailure = true; return }
         noEngineFailure = false
         // DEB-3214 (FR-6) — a source swapped in behind a playing picture keeps that picture (the surface holds its last frame), and until the
-        // new item's first frame the position and the length are the play's own. A live channel and a Linux window hold nothing.
+        // new item's first frame the position and the length are the play's own. A live channel and mpv's own window (DEB-3215) hold nothing.
         val now = System.currentTimeMillis()
         engine.state.let { before ->
             held.begin(live == null && holdsLastFrameAcrossSource() && before.firstFrame && !before.ended && !before.failed, startPositionMs, before.durationMs.coerceAtLeast(0L), now)
@@ -184,7 +189,15 @@ actual class RaviloPlayer actual constructor() {
                 MacNowPlaying.update(nowPlaying, npTitle, npKicker, null, s.durationMs, s.positionMs, 1.0, playing && s.timeControl == 2, video = true)
                 // 309 (FR-309-9) — mpv's buffer ahead, for the store's stepping; the Mac's peak, every other second.
                 if (liveLoaded) stepLiveRung(s)
-                else if (DesktopEngines.isMpv) PlayerLadderHints.bufferedAheadMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L)
+                else if (DesktopEngines.isMpv) {
+                    PlayerLadderHints.bufferedAheadMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L)
+                    // DEB-3215 (FR-5) — a stall of the playing picture is told to the store, which caps one rung down at once.
+                    val stalled = stallWatch.onTick(s.stalls, s.firstFrame, System.currentTimeMillis() - movedAtMs < dev.jellystructure.ravilo.ui.desktop.MpvStallWatch.SETTLE_MS)
+                    if (stalled > 0) {
+                        PlayerLadderHints.stallCount += stalled
+                        println("${DesktopLog.stamp()} [player] DEB-3215 stall → the store caps one rung down (${s.bufferedMs - s.positionMs} ms buffered)")
+                    }
+                }
                 else {
                     macPeak.onStall(s)   // DEB-3214 (FR-5) — a stall caps one rung down at once
                     if (ticks % 2 == 0) macPeak.tick(s)
@@ -197,7 +210,7 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun play() = engine.play()
     actual fun pause() = engine.pause()
-    actual fun seekTo(positionMs: Long) { held.seek(positionMs); engine.seekTo(positionMs) }
+    actual fun seekTo(positionMs: Long) { held.seek(positionMs); movedAtMs = System.currentTimeMillis(); engine.seekTo(positionMs) }
     /** R354 (FR-R354-6) — the engine's own output level (AVPlayer / mpv). */
     actual fun setVolume(level: Float) = engine.setVolume(level.coerceIn(0f, 1f))
 
