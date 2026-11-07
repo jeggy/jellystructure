@@ -3,6 +3,8 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinUser
 import dev.jellystructure.log.Logger
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -63,8 +65,11 @@ class DevicePolicyReconciler(
 
     /** DEB-2675 (FR-8) — a 404 for [userId] is a hint to look, never a verdict: one connect-style pass, behind its freshness rule. */
     override suspend fun notFoundHint(userId: String) {
-        runCatching { kotlinx.coroutines.withTimeoutOrNull(HINT_TIMEOUT_MS) { reconcileOnConnect(userId) } }
-            .exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
+        try {
+            dev.jellystructure.ops.boundedOrNull(HINT_TIMEOUT_MS, "user check") { reconcileOnConnect(userId) }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw e   // only the caller's own
+        }
     }
 
     /** Outcome of one pass, for the log line and the tests: `null` when the fetch failed. */
@@ -172,7 +177,7 @@ class DevicePolicyReconciler(
                 continue
             }
             val removed = runCatching { onUserGone(id) }
-            removed.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
+            removed.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException && !currentCoroutineContext().isActive) throw it }   // only the caller's own
             if (removed.isSuccess) gone += id
             else { newMarks += id; Logger.warn("User check: removing ${nameOf(id, devices)} failed, will retry at the next check: ${removed.exceptionOrNull()?.message}", "auth") }
         }
