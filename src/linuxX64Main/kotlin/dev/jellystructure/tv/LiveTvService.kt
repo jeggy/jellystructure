@@ -106,6 +106,10 @@ class LiveTvService(
     // DEB-3066 — now/next follows the clock. `hasGuide` per channel (a programme on now or starting within [GUIDE_REACH_MS]),
     // when the snapshot above was read, and when a read last tried to refresh it. `nowNextMutex` makes concurrent readers share one re-read.
     private var guideFlags: Map<String, Boolean> = emptyMap()
+
+    // DEB-3561 (FR-8) — what Jellyfin lists after now for each channel, by start, from the same read as `guideFlags`. [lineup] takes
+    // `next_program` from it, so Next follows the clock between re-reads as `current_program` does.
+    private var upcoming: Map<String, List<LiveTvProgramInfo>> = emptyMap()
     private var snapshotAt: Long = 0L
     private var lastNowNextAttempt: Long = 0L
     private val nowNextMutex = Mutex()
@@ -271,7 +275,7 @@ class LiveTvService(
                 isNew = ov.isNew,
                 unavailable = ov.unavailable,
                 currentProgram = current,
-                nextProgram = null,
+                nextProgram = upcoming[ov.channelId]?.firstOrNull { it.startMs >= (current?.endMs ?: now) },
                 kind = ov.kind,
             )
         }
@@ -322,23 +326,32 @@ class LiveTvService(
     private suspend fun applySnapshotLocked(live: List<JellyfinLiveTvChannel>, base: String, token: String) {
         val now = clock()
         val flags = HashMap<String, Boolean>()
-        val bare = ArrayList<String>()
+        val bare = HashSet<String>()
         for (ch in live) {
             val end = ch.currentProgram?.let { p -> p.endDate?.let(::isoToEpochMs) ?: p.startDate?.let(::isoToEpochMs) }
             if (end != null && end > now) flags[ch.id] = true else bare += ch.id
         }
-        if (bare.isNotEmpty()) {
-            val listed = jellyfinClient.getLiveTvProgramsOrNull(base, token, bare, utcIsoMinusHours(0), utcIsoPlusDays(1))
-            for (id in bare) {
-                flags[id] = if (listed == null) guideFlags[id] ?: false
-                else listed.any {
-                    val start = it.startDate?.let(::isoToEpochMs) ?: return@any false
-                    it.channelId == id && (it.endDate?.let(::isoToEpochMs) ?: start) > now && start < now + GUIDE_REACH_MS
-                }
+        // DEB-3561 (FR-8) — one Programs call for every channel: a channel with a programme on now needs its next too, and a bare one its gap.
+        val listed = if (live.isEmpty()) emptyList() else jellyfinClient.getLiveTvProgramsOrNull(base, token, live.map { it.id }, utcIsoMinusHours(0), utcIsoPlusDays(1))
+        for (id in bare) {
+            flags[id] = if (listed == null) guideFlags[id] ?: false
+            else listed.any {
+                val start = it.startDate?.let(::isoToEpochMs) ?: return@any false
+                it.channelId == id && (it.endDate?.let(::isoToEpochMs) ?: start) > now && start < now + GUIDE_REACH_MS
             }
+        }
+        // A Programs call that is not answered leaves what was known; a channel that is gone from the snapshot drops out.
+        val ahead = HashMap<String, List<LiveTvProgramInfo>>()
+        for (ch in live) {
+            ahead[ch.id] = if (listed == null) upcoming[ch.id].orEmpty() else listed.mapNotNull { p ->
+                if (p.channelId != ch.id) return@mapNotNull null
+                val start = p.startDate?.let(::isoToEpochMs) ?: return@mapNotNull null
+                LiveTvProgramInfo(p.name, start, p.endDate?.let(::isoToEpochMs) ?: start, p.isSeries)
+            }.sortedBy { it.startMs }
         }
         lastLiveChannels = live
         guideFlags = flags
+        upcoming = ahead
         snapshotAt = now
     }
 

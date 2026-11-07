@@ -193,5 +193,33 @@ class LiveTvNowNextTest {
         assertEquals(synced, service.overview().lastSyncedAt)
     }
 
+    @Test fun `next_program is the programme listed after the current one and follows the clock`() = harness { fake, service, clock ->
+        fake.current["r1"] = program("First", t0 - 30 * minute, t0 + 30 * minute)
+        fake.programs += "r1" to program("Second", t0 + 30 * minute, t0 + hour, "r1")
+        fake.programs += "r1" to program("Third", t0 + hour, t0 + 2 * hour, "r1")
+        service.sync()
+        assertEquals("Second", service.of("r1").nextProgram?.title())
+        assertEquals(t0 + 30 * minute, service.of("r1").nextProgram?.startMs)
+        // the re-read at the boundary: Second is now, Third is next
+        clock.now = t0 + 31 * minute
+        fake.current["r1"] = program("Second", t0 + 30 * minute, t0 + hour)
+        val ch = service.freshLineup().single()
+        assertEquals("Second", ch.currentProgram?.title())
+        assertEquals("Third", ch.nextProgram?.title())
+    }
+
+    @Test fun `a channel with nothing listed after the current programme has no next and a failed Programs call keeps the last one`() = harness { fake, service, clock ->
+        fake.current["r1"] = program("First", t0 - 30 * minute, t0 + 30 * minute)
+        service.sync()
+        assertNull(service.of("r1").nextProgram)
+        fake.programs += "r1" to program("Second", t0 + 30 * minute, t0 + hour, "r1")
+        service.sync()
+        assertEquals("Second", service.of("r1").nextProgram?.title())
+        fake.programsDown = true
+        clock.now = t0 + 5 * minute
+        service.sync()
+        assertEquals("Second", service.of("r1").nextProgram?.title(), "a Jellyfin that does not answer changes nothing")
+    }
+
     private fun dev.jellystructure.shared.tv.LiveTvProgramInfo.title() = name
 }

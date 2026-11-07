@@ -64,6 +64,10 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     private var channels: List<LiveTvChannel> = emptyList()
     val channelList: List<LiveTvChannel> get() = channels
 
+    /** DEB-3561 (FR-8) — [channelList] as a flow, so the Now/Next overlay left open across a programme's end shows the new one. */
+    private val _lineup = MutableStateFlow<List<LiveTvChannel>>(emptyList())
+    val lineup: StateFlow<List<LiveTvChannel>> = _lineup.asStateFlow()
+
     private var heartbeatJob: Job? = null
     private var openLiveStreamId: String? = null
 
@@ -106,7 +110,7 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     }
 
     suspend fun ensureChannelList(): List<LiveTvChannel> {
-        if (channels.isEmpty()) channels = runCatching { apiClient.getLiveTvChannels() }.getOrDefault(emptyList())
+        if (channels.isEmpty()) { channels = runCatching { apiClient.getLiveTvChannels() }.getOrDefault(emptyList()); _lineup.value = channels }
         return channels
     }
 
@@ -114,6 +118,7 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     suspend fun refreshChannels() {
         val fresh = runCatching { apiClient.getLiveTvChannels() }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return
         channels = fresh
+        _lineup.value = fresh
         val playing = (_state.value as? LiveTvPlayerState.Ready)?.channel?.channelId ?: return
         fresh.firstOrNull { it.channelId == playing }?.let { _channelNow.value = it }
     }

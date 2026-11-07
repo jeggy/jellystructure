@@ -134,6 +134,22 @@ DEB-3026 found a programme still current two hours after its end. Tróndur's dec
     player's *Next* line have never had anything to draw, and this amendment does not fill them.
   - A tile on a page that is left open. It is as fresh as its page's last read, and no client gains a timer for it.
 
+### Amendment 2026-11-07 — `next_program` is filled (DEB-3561)
+The DEB-3067 amendment above leaves `next_program` null, and says so. The radio spec's FR-8 draws a *Next* line under the
+programme on now, and DEB-3030's QA found it never shown on a station that has a next programme in the guide. So the
+server fills it. This supersedes that one *Not changed* bullet; the rest of that amendment stands.
+
+- **`next_program` on `GET /tv/livetv/channels`** is the earliest programme Jellyfin lists that starts at or after the end of
+  `current_program`, or after now when there is none (a gap). It is `null` when Jellyfin lists nothing later within the
+  next 24 hours. The field was already on the wire and nullable; nothing is added, retyped or removed, so an installed
+  client that ignores it is unaffected.
+- **It comes from the same read as `has_guide`.** Every snapshot takes one `/LiveTv/Programs` call for all channels, not only
+  those without a programme on now. It follows the clock as `current_program` does: `lineup()` picks it from what that read
+  listed, and the re-read when a programme ends refreshes it. A Programs call Jellyfin does not answer leaves the last
+  `next_program` as it was.
+- **The client re-reads the lineup at every programme end**, not once: a station left on across several boundaries turns over
+  each time, in the audio layout and in the Now/Next overlay.
+
 ## Scope
 The admin half of Live TV. It is design-authored from `design/app/livetv.html`, and its viewing half is
 [R177](../ravilo/requirements/phase-R177-livetv-viewing.md). Amended by DEB-2628, which adds radio stations to the lineup (A2, B2), and by

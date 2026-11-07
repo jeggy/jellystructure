@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,7 +86,6 @@ private const val NUMBER_ENTRY_COMMIT_MS = 2_500L
 private const val ZAP_BANNER_MS = 3_000L
 private const val LIVE_WATCH_MS = 500L
 /** DEB-2658 (DEB-2628 FR-8) — the longest a station on screen goes without re-reading the lineup for its programme. */
-private const val RADIO_REFRESH_MS = 60_000L
 
 /**
  * Phase R177 §D — full-screen live playback: a LIVE indicator + auto-hiding channel bar (logo ·
@@ -103,6 +103,7 @@ fun LiveTvPlayerScreen(
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val channelNow by store.channelNow.collectAsState()
+    val lineup by store.lineup.collectAsState()
     val player = remember { RaviloPlayer() }
     // R194 — same relative-URL resolution PlayerScreen uses for the OS media session's artwork.
     val serverBaseUrl = LocalServerBaseUrl.current
@@ -218,14 +219,16 @@ fun LiveTvPlayerScreen(
         zapBanner = null
     }
 
-    // DEB-2658 (DEB-2628 FR-8) — a station left on turns over to its next programme: the lineup is re-read when the one on screen
-    // ends (at most every minute), without touching the tune.
-    LaunchedEffect(radio, state is LiveTvPlayerState.Ready, channelNow?.currentProgram?.endMs) {
+    // DEB-2658 (DEB-2628 FR-8), DEB-3561 — a station left on turns over to its next programme, every time one ends: the lineup is
+    // re-read when the one on screen ends (at most every minute), without touching the tune.
+    val channelNowRead by rememberUpdatedState(channelNow)
+    LaunchedEffect(radio, state is LiveTvPlayerState.Ready) {
         if (!radio || state !is LiveTvPlayerState.Ready) return@LaunchedEffect
-        val endMs = channelNow?.currentProgram?.endMs
-        val untilEnd = if (endMs != null) endMs - kotlin.time.Clock.System.now().toEpochMilliseconds() + 2_000L else RADIO_REFRESH_MS
-        delay(untilEnd.coerceIn(5_000L, RADIO_REFRESH_MS))
-        store.refreshChannels()
+        RadioTurnover.run(
+            endMs = { channelNowRead?.currentProgram?.endMs },
+            nowMs = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+            refresh = { store.refreshChannels() },
+        )
     }
     // The dim timer: any key press restarts it (the key handler below), and this sets the dim when it runs out.
     LaunchedEffect(radio, idleRevision) {
@@ -419,7 +422,7 @@ fun LiveTvPlayerScreen(
         }
         if (guideOpen) {
             NowNextOverlay(
-                channels = store.channelList,
+                channels = lineup,
                 onSelect = { ch -> guideOpen = false; scope.launch { store.tune(ch.channelId) } },
                 onDismiss = { guideOpen = false },
             )
