@@ -13,6 +13,10 @@ need Dockerfile '^ARG YTDLP_VERSION=[0-9]{4}\.[0-9]{2}\.[0-9]{2}$' 'yt-dlp must 
 need Dockerfile '^ARG YTDLP_SHA256=[0-9a-f]{64}$' 'yt-dlp needs the pinned SHA-256 of that release (FR-6.3)'
 need Dockerfile 'echo "\$\{YTDLP_SHA256\}  /usr/local/bin/yt-dlp" \| sha256sum -c -' 'the image build must check yt-dlp against the pinned SHA-256 (FR-6.3)'
 need Dockerfile '/usr/local/bin/yt-dlp --version' 'the image build must run yt-dlp once (FR-6.3)'
+# DEB-3838: the DR extractor patch (upstream #17980) is applied after the checksum, and the step stops the build if it did not take.
+need Dockerfile 'ytdlp-apply-patches\.py /usr/local/bin/yt-dlp' 'the image build must apply docker/ytdlp-patches to the pinned yt-dlp (FR-6.3 A patched yt-dlp)'
+need Dockerfile "'season id' in zipfile" 'the image build must check the patched extractor is in the zipapp (FR-6.3 A patched yt-dlp)'
+ls docker/ytdlp-patches/*.patch >/dev/null 2>&1 || { echo "docker/ytdlp-patches: no patch (FR-6.3 A patched yt-dlp)"; fail=1; }
 if grep -nE 'yt-dlp/releases/(latest|download/latest)' Dockerfile; then echo "Dockerfile: yt-dlp must not be fetched from 'latest'"; fail=1; fi
 # The recipe reader keeps yt-dlp inside the lane: never the generic extractor, never a config file.
 need src/linuxX64Main/kotlin/dev/jellystructure/autofetch/YtDlp.kt '--use-extractors default,-generic' 'yt-dlp must run with the generic extractor off (FR-6.3)'

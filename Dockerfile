@@ -156,8 +156,18 @@ RUN case "$TARGETARCH" in \
 # image carries it.
 ARG YTDLP_VERSION=2026.10.26
 ARG YTDLP_SHA256=e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
+# DEB-3838 (DEB-3831, FR-6.3 "A patched yt-dlp"): release 2026.10.26's DR extractor answers 400 on every DR episode (upstream #17979). docker/ytdlp-patches/
+# holds upstream's PR #17980 (the public diff, patch queue 0013); it is applied to the zipapp AFTER the SHA-256 check, `patch` is installed for the
+# step only, and the build fails if a hunk does not apply. `--version` still reads the pin. When a release carries the fix: bump both ARGs and delete
+# this step, the script and the directory.
+COPY scripts/ytdlp-apply-patches.py /tmp/ytdlp-apply-patches.py
+COPY docker/ytdlp-patches /tmp/ytdlp-patches
 RUN wget -q -O /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp" && \
     echo "${YTDLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - && \
+    apt-get update && apt-get install -y --no-install-recommends patch && \
+    python3 -I /tmp/ytdlp-apply-patches.py /usr/local/bin/yt-dlp /tmp/ytdlp-patches && \
+    apt-get purge -y --auto-remove patch && rm -rf /var/lib/apt/lists/* /tmp/ytdlp-apply-patches.py /tmp/ytdlp-patches && \
+    python3 -I -c "import sys,zipfile; sys.exit(0 if 'season id' in zipfile.ZipFile('/usr/local/bin/yt-dlp').read('yt_dlp/extractor/drtv.py').decode() else 1)" && \
     chmod 755 /usr/local/bin/yt-dlp && \
     PYTHONDONTWRITEBYTECODE=1 /usr/local/bin/yt-dlp --version
 
