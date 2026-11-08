@@ -13,7 +13,10 @@ import dev.jellystructure.shared.tv.ChannelButtonPadding
 import dev.jellystructure.shared.tv.RaviloThemes
 import dev.jellystructure.shared.tv.ChannelButtonSpec
 import dev.jellystructure.shared.tv.ChannelConfig
+import dev.jellystructure.shared.tv.CHANNEL_ORDER_CONTINUE
+import dev.jellystructure.shared.tv.CHANNEL_ORDER_NEWLY
 import dev.jellystructure.shared.tv.ChannelRowsConfig
+import dev.jellystructure.shared.tv.resolvedOrder
 import dev.jellystructure.shared.tv.ChannelSystemRows
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.PageHeroConfig
@@ -1125,16 +1128,29 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val contShow = chSys.cont.show
     val newlyShow = chSys.newly.show; val newlyMerge = chSys.newly.merge
     val rowsCustomItems = c.rows?.items ?: emptyList()
-    val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
+    // DEB-2850 (DEB-2848 FR-4) — a Custom collection's rows are ONE list, in the resolved order (FR-3): the two system
+    // rows and every filter row, each with Home's grab handle. `pos` is the place in that list (the drag key); `i` is
+    // the item's index in `rows.items`, which the delete/edit/title handlers below still key on.
+    val grabHtml = """<span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span>"""
+    fun chItemRowHtml(i: Int, r: RowConfig, pos: Int): String {
         if (r.kind == RowKind.RECOMMENDED) {
             val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind)
-            return@mapIndexed """<div class="cfg-row" style="margin-bottom:6px"><span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-ch-limit=\"$i\"")} &middot; only this collection's titles</div></div><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+            return """<div class="cfg-row" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px">$grabHtml<span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-ch-limit=\"$i\"")} &middot; only this collection's titles</div></div><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         }
         val eq = r.effectiveQuery()
         val condSrc = (if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media") +
             dev.jellystructure.shared.tv.RowOrder.summary(r).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()   // DEB-2837 (FR-6.6)
         val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
-        """<div class="cfg-row" style="margin-bottom:6px"><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}${franchiseCountSlot(r)}</div></div><button class="btn sm ghost" data-row-ch-edit="$i" style="white-space:nowrap">Edit filter</button><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+        return """<div class="cfg-row" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px">$grabHtml<div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}${franchiseCountSlot(r)}</div></div><button class="btn sm ghost" data-row-ch-edit="$i" style="white-space:nowrap">Edit filter</button><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+    }
+    val chOrder = (c.rows ?: ChannelRowsConfig(mode = "custom")).resolvedOrder()
+    val chRowsListHtml = chOrder.mapIndexed { pos, token ->
+        val off = " off"
+        when (token) {
+            CHANNEL_ORDER_CONTINUE -> """<div class="cfg-row hascond${if (!contShow) off else ""}" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px;${if (!contShow) "opacity:.5" else ""}">$grabHtml<span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">Continue Watching</div><div class="src">In-progress titles from this collection</div></div><span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>${hideTagsMountHtml("collection-continue")}</div>"""
+            CHANNEL_ORDER_NEWLY -> """<div class="cfg-row hascond${if (!newlyShow) off else ""}" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px;${if (!newlyShow) "opacity:.5" else ""}">$grabHtml<span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">Newly Added</div><div class="src">Newest titles in this collection${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div><span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span><label class="cf-sysmerge" style="flex-basis:100%;display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:.82rem;cursor:pointer"><span class="toggle${if (newlyMerge) " on" else ""}" data-sysmerge style="cursor:pointer;flex:none"></span>Merge movies &amp; series into one Newly Added row</label></div>"""
+            else -> rowsCustomItems.indexOfFirst { it.id == token }.let { i -> if (i < 0) "" else chItemRowHtml(i, rowsCustomItems[i], pos) }
+        }
     }.joinToString("")
     val padLogo = c.paddingLogo
     val padText = c.paddingText
@@ -1260,27 +1276,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             </label>
           </div>
           <div id="ch-rows-custom-body" style="${if (!rowsCustom) "display:none;" else ""}">
-            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this collection. <b>System rows</b> (Continue Watching, Newly Added) sit on top; your filter rows follow below.</p>
-            <!-- R143: per-channel system rows -->
-            <div class="cf-sysrows" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px">
-              <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">System rows</div>
-              <div class="cf-sysrow hascond ${if (!contShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;${if (!contShow) "opacity:.5" else ""}">
-                <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
-                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">In-progress titles from this collection</div></div>
-                <span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>
-                ${hideTagsMountHtml("collection-continue")}
-              </div>
-              <div class="cf-sysrow ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;${if (!newlyShow) "opacity:.5" else ""}">
-                <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
-                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Newly Added</div><div class="tiny muted">Newest titles in this collection${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div>
-                <span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span>
-              </div>
-              <label class="cf-sysmerge ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:.82rem;cursor:pointer;${if (!newlyShow) "opacity:.45" else ""}">
-                <span class="toggle${if (newlyMerge) " on" else ""}" data-sysmerge style="cursor:pointer;flex:none"></span>
-                Merge movies &amp; series into one Newly Added row
-              </label>
-            </div>
-            <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">Filter rows</div>
+            <p class="tiny muted" style="margin:0 0 10px">Drag rows to reorder them. Continue Watching and Newly Added can be hidden and moved, not removed.</p>
             <div id="ch-rows-list" style="margin-bottom:8px">$chRowsListHtml</div>
             <button id="ch-rows-add" class="btn sm ghost">+ Add row</button>
             ${if (rowsCustomItems.none { it.kind == RowKind.RECOMMENDED }) """<button id="ch-rows-add-rec" class="btn sm ghost">+ Recommended for you</button>""" else ""}
@@ -1346,7 +1342,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val channelQuery = cur.editorQuery()
         val gapBlock = ConditionGroup(QueryJoin.AND, children = listOf(Condition("content_row", "is_none_of", rows = existing.items.filter { it.enabled })))
         val catchAllQuery = if (channelQuery.isLive()) ConditionGroup(QueryJoin.AND, children = listOf(channelQuery, gapBlock)) else gapBlock
-        val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles", query = catchAllQuery)
+        val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles", query = catchAllQuery, order = existing.nextItemOrder())
         list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + catchAll))
         currentConfig = currentConfig.copy(channels = list)
         reRenderChannelRows()
@@ -1638,7 +1634,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val list = currentConfig.channels.toMutableList()
         val cur = list[idx]
         val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
-        val newRow = RowConfig(id = genId("row"), kind = RowKind.RECOMMENDED, title = defaultRowTitle(RowKind.RECOMMENDED), limit = RECOMMENDED_DEFAULT_SHOWN)
+        val newRow = RowConfig(id = genId("row"), kind = RowKind.RECOMMENDED, title = defaultRowTitle(RowKind.RECOMMENDED), limit = RECOMMENDED_DEFAULT_SHOWN, order = existing.nextItemOrder())
         list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
         currentConfig = currentConfig.copy(channels = list)
         reRenderChannelRows()
@@ -1657,11 +1653,24 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
-                list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
+                list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow.copy(order = existing.nextItemOrder())))
                 currentConfig = currentConfig.copy(channels = list)
                 reRenderChannelRows()
             })
     }
+
+    // DEB-2850 (FR-5) — a drop writes the WHOLE order and rewrites `items` in the same relative order with order = 0..n, so an
+    // older backend that ignores `rows.order` still shows the filter rows in their new relative order. No drag, no write.
+    wireDragReorder(container, container, "chrow", "ch-rows-list",
+        get = { currentConfig.channels.getOrNull(idx)?.rows?.resolvedOrder() ?: chOrder },
+        set = { tokens ->
+            val list = currentConfig.channels.toMutableList()
+            val cur = list[idx]
+            val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
+            val items = existing.items.sortedBy { tokens.indexOf(it.id) }.mapIndexed { n, r -> r.copy(order = n) }
+            list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = items, order = tokens))
+            currentConfig = currentConfig.copy(channels = list)
+        }, { reRenderChannelRows() }, collect = false)
 
     // R60: wire edit-filter and delete buttons on each existing channel row
     val chRowItems = currentConfig.channels.getOrNull(idx)?.rows?.items ?: emptyList()
@@ -1691,8 +1700,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             val list = currentConfig.channels.toMutableList()
             val cur = list[idx]
             val items = cur.rows?.items?.toMutableList() ?: return@addEventListener
-            items.removeAt(ri)
-            list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
+            val removed = items.removeAt(ri)
+            list[idx] = cur.copy(rows = cur.rows!!.copy(items = items, order = cur.rows!!.order.filter { it != removed.id }))   // DEB-2850 (FR-5)
             currentConfig = currentConfig.copy(channels = list)
             reRenderChannelRows()
         }
@@ -1733,6 +1742,9 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         )
     }
 }
+
+/** DEB-2850 (FR-3.3) — a row added after the list was ordered sorts after every row already in it, on an older backend too. */
+private fun ChannelRowsConfig.nextItemOrder(): Int = (items.maxOfOrNull { it.order } ?: -1) + 1
 
 /** DEB-2847 — the workbench's Include switch ("all" / "movies" / "series" / "musicvideos") and a stored
  *  `media_kind` ("MOVIE" / "SERIES" / "MUSIC_VIDEO" / null), mapped both ways for a collection. */
@@ -2467,6 +2479,7 @@ private fun <T> wireDragReorder(
     get: () -> List<T>,
     set: (List<T>) -> Unit,
     rerender: (Element) -> Unit,
+    collect: Boolean = true,   // false = the page keeps its edits in currentConfig and has no DOM for collectConfig to read (the collection editor)
 ) {
     val listEl = sect.querySelector("#$listContainerId") as? HTMLElement ?: return
     var dragFromIdx = -1
@@ -2499,12 +2512,13 @@ private fun <T> wireDragReorder(
         val fromIdx = dragFromIdx
         dragFromIdx = -1
         if (fromIdx < 0 || fromIdx == toIdx) return@addEventListener
-        structural(container, {
+        val reorder = {
             val list = get().toMutableList()
             val item = list.removeAt(fromIdx)
             list.add(toIdx, item)
             set(list)
-        }, rerender)
+        }
+        if (collect) structural(container, reorder, rerender) else { reorder(); rerender(container) }
     }
 }
 

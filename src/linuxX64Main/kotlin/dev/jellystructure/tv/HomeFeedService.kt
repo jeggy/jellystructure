@@ -15,6 +15,9 @@ import dev.jellystructure.model.franchisesOf
 import dev.jellystructure.model.ratingScore
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
+import dev.jellystructure.shared.tv.CHANNEL_ORDER_CONTINUE
+import dev.jellystructure.shared.tv.CHANNEL_ORDER_NEWLY
+import dev.jellystructure.shared.tv.resolvedOrder
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.Condition
@@ -570,27 +573,31 @@ class HomeFeedService(
         val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
 
-        // ── R143/R233: custom channel — emit the configured system rows (Continue, Newly Added) ABOVE
-        // the filter rows, each honouring its show/merge setting. R233: a system row always shows what
-        // is available on the page it's rendered on — never configurable, in either row-list mode (see
-        // the phase's "The rule"). `scope` is retired; Continue is unconditionally filtered to this
-        // channel, and Newly Added already receives the channel-filtered `all`.
+        // ── R143/R233/DEB-2850: custom channel — the configured system rows (Continue, Newly Added) and the
+        // filter rows, walked in the collection's resolved order (ChannelRowsConfig.resolvedOrder: an empty
+        // `order` is system rows on top, then the items in stored sequence), each honouring its show/enabled
+        // setting. R233: a system row always shows what is available on the page it's rendered on — never
+        // configurable, in either row-list mode (see the phase's "The rule"). `scope` is retired; Continue is
+        // unconditionally filtered to this channel, and Newly Added already receives the channel-filtered `all`.
         if (channelRows?.mode == "custom") {
             val sys = channelRows.system
-            if (sys.cont.show) {
-                // R219 (FR-R219-6): the row and continueWatchingAll's See-all must apply this exact same
-                // filter, or the two silently disagree about membership — see the model note in the spec.
-                val canonical = canonicalContinueList(device)
-                // DEB-1264 (FR-4): tag filter after the channel filter, before the cap; Home's list does not apply here (FR-3).
-                val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) && !it.mediaItem.hiddenBy(sys.cont.hideTags) }.capped()
-                if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
-            }
-            if (sys.newly.show) {
-                addNewlyAddedRows(result, all, merge = sys.newly.merge)
-            }
-            for (rowCfg in channelRows.items.filter { it.enabled }.sortedBy { it.order }) {
-                if (rowCfg.kind == RowKind.RECOMMENDED) buildRecommendedRow(rowCfg, device, all, channelFilter)?.let { result.add(it) }
-                else result.addAll(buildFilterRows(rowCfg, all, heroIds, channelFilter))
+            val enabledItems = channelRows.items.filter { it.enabled }.sortedBy { it.order }
+            for (token in channelRows.resolvedOrder()) {
+                when (token) {
+                    CHANNEL_ORDER_CONTINUE -> if (sys.cont.show) {
+                        // R219 (FR-R219-6): the row and continueWatchingAll's See-all must apply this exact same
+                        // filter, or the two silently disagree about membership — see the model note in the spec.
+                        val canonical = canonicalContinueList(device)
+                        // DEB-1264 (FR-4): tag filter after the channel filter, before the cap; Home's list does not apply here (FR-3).
+                        val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) && !it.mediaItem.hiddenBy(sys.cont.hideTags) }.capped()
+                        if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
+                    }
+                    CHANNEL_ORDER_NEWLY -> if (sys.newly.show) addNewlyAddedRows(result, all, merge = sys.newly.merge)
+                    else -> for (rowCfg in enabledItems.filter { it.id == token }) {
+                        if (rowCfg.kind == RowKind.RECOMMENDED) buildRecommendedRow(rowCfg, device, all, channelFilter)?.let { result.add(it) }
+                        else result.addAll(buildFilterRows(rowCfg, all, heroIds, channelFilter))
+                    }
+                }
             }
             return result
         }

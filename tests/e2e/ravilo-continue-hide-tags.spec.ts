@@ -2,7 +2,7 @@ import { test, expect, Page, Browser } from "@playwright/test";
 
 /**
  * DEB-1264 slice 3 (FR-7..FR-10) — the admin's *Hide titles tagged* sub-row and picker under a Continue Watching
- * system row: Layout → Content rows (global) and Edit collection → Custom → System rows.
+ * system row: Layout → Content rows (global) and Edit collection → Custom → Rows.
  *
  * The tag catalogue is stubbed, not produced: this stack's library is a handful of fixture files with no tags, and
  * the picker's behaviour is entirely about what it draws over the list `GET /api/metadata/tags` hands it. A second
@@ -242,7 +242,7 @@ test.describe.serial("Continue Watching — Hide titles tagged (editor)", () => 
 test.describe.serial("Continue Watching — Hide titles tagged (a Custom collection)", () => {
   let page: Page;
   const CH = "ch-hide-tags-fixture";
-  const sub = () => page.locator(".cf-sysrow.hascond .cw-cond");
+  const sub = () => page.locator("#ch-rows-list .cfg-row.hascond .cw-cond");   // DEB-2850: the system rows are entries of the one Rows list
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
     page = await browser.newPage();
@@ -277,7 +277,7 @@ test.describe.serial("Continue Watching — Hide titles tagged (a Custom collect
   // FR-7 — the toggle hides it (the page's own `off` class) and the tags stay.
   test("switching the collection's Continue row off hides the sub-row", async () => {
     await page.locator('[data-systog="continue"]').click();
-    await expect(page.locator(".cf-sysrow.hascond")).toHaveClass(/\boff\b/);
+    await expect(page.locator('#ch-rows-list .cfg-row:has([data-systog="continue"])')).toHaveClass(/\boff\b/);
     await expect(sub()).toBeHidden();
     await page.locator('[data-systog="continue"]').click();
     await expect(sub().locator(".cw-chip .nm")).toHaveText(["cartoons"]);

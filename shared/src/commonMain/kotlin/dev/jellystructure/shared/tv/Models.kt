@@ -1198,7 +1198,32 @@ data class ChannelRowsConfig(
     // channel per R233 (a system row always shows what is available on the page it's rendered on — not
     // configurable, in either row-list mode; R59's own inherit/custom meaning is otherwise untouched).
     val system: ChannelSystemRows = ChannelSystemRows(),
+    /** DEB-2850 (DEB-2848 FR-1) — the order of this Custom collection's rows. Entries are `system:continue`,
+     *  `system:newly`, or a filter row's [RowConfig.id]. Empty = the default order (system rows on top, then
+     *  [items] in stored sequence). Read only in Custom mode. */
+    val order: List<String> = emptyList(),
 )
+
+/** DEB-2850 (FR-1) — the [ChannelRowsConfig.order] tokens for the two system rows. The `system:` prefix keeps them
+ *  from colliding with a filter row id (the admin mints `row-NNNNNN`). */
+const val CHANNEL_ORDER_CONTINUE = "system:continue"
+const val CHANNEL_ORDER_NEWLY = "system:newly"
+
+/**
+ * DEB-2850 (FR-3) — the resolved order of a Custom collection's rows: the entries of [ChannelRowsConfig.order] that
+ * name a system row or an item (a stale id is skipped, a repeat is used once); a system token missing from a
+ * non-empty list goes to the head in default order; an item the list does not name is appended in stored sequence
+ * ([ChannelRowsConfig.items] sorted by [RowConfig.order], stable). An empty list gives today's order: Continue,
+ * Newly Added, then the items. Shared so the editor draws exactly what the server serves.
+ */
+fun ChannelRowsConfig.resolvedOrder(): List<String> {
+    val stored = items.sortedBy { it.order }.map { it.id }.distinct()
+    if (order.isEmpty()) return listOf(CHANNEL_ORDER_CONTINUE, CHANNEL_ORDER_NEWLY) + stored
+    val known = stored.toSet() + CHANNEL_ORDER_CONTINUE + CHANNEL_ORDER_NEWLY
+    val named = order.filter { it in known }.distinct()
+    val missingSystem = listOf(CHANNEL_ORDER_CONTINUE, CHANNEL_ORDER_NEWLY).filter { it !in named }
+    return missingSystem + named + stored.filter { it !in named }
+}
 
 /**
  * R143 — per-channel system-row settings. Both rows shown by default. R233 retired `scope`: a system
