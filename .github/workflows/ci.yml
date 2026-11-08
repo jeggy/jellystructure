@@ -215,6 +215,22 @@ jobs:
           name: ravilo-release-apk
           path: ravilo-android/build/outputs/apk/release/*.apk
           retention-days: 7
+      # DEB-3858: the artefact above is the plain Play id, so a device that has the Play build can only be
+      # given it by replacing that build, which throws the pairing away. The same R8 build under the
+      # `.debug` id installs beside it. Throwaway-signed, so a later run's APK needs the previous `.debug`
+      # install removed first (never the Play build).
+      - name: The same R8 release build under the .debug id, for a device that has the Play build
+        if: success()
+        run: |
+          rm -rf ravilo-android/build/outputs/apk/release
+          ./gradlew :ravilo-android:assembleRelease -Pravilo.releaseAsDebugId --no-daemon
+      - name: Upload the .debug-id release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-release-debugid-apk
+          path: ravilo-android/build/outputs/apk/release/*.apk
+          retention-days: 7
 
   # ── The full stack against mocks + Playwright (unchanged by 231, only renamed from `test`). ──
   e2e:
