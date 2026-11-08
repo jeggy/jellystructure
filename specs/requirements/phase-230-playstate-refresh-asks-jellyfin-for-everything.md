@@ -6,13 +6,12 @@
 > refresher fetches user data for **every item and every episode** — 9 369 ids, 94 requests, 14 MB of
 > JSON — **per user, every 20 s**, inside a 5 s budget that a quiet Jellyfin already uses 3.4 s of.
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-17 — written the same day from production measurements, not dev-reviewed, **not deployed**; `linuxX64Test` 342/0 (+4 in `PlaystateCacheTest`). Acceptance 1–3 are production observations still owed. Backend-only
-(`PlaystateCache.kt`, `HomeFeedService.kt`, `PlaybackService.kt`, `Main.kt`). No wire change.
-Amends **205** FR-205-2 (the refresh cadence) and **211** (the id set) without undoing either.
-
-**Numbering:** verified against `STATUS.md` 2026-09-17 — admin taken through **229**.
+Backend-only (`PlaystateCache.kt`, `HomeFeedService.kt`, `PlaybackService.kt`, `Main.kt`). No wire
+change. Amends **205** FR-205-2 (the refresh cadence) and **211** (the id set) without undoing either.
+Written from production measurements on 2026-09-17. The 2026-11-08 amendment (DEB-3955, below) adds
+FR-230-7 to FR-230-9 and touches `TvRoutes.kt` too.
 
 ## Measured (production, 2026-09-17 ~15:45, no playback running)
 
@@ -75,3 +74,61 @@ segments lane against playback is 213's territory. `ionice` being inert on this 
    with no scan running; the cycle line shows ~12 requests per user.
 2. After a restart every recently-seen user has a Continue list within the first minute.
 3. A stop's `home_changed` push follows the stop by well under 2 s on an idle Jellyfin.
+
+## Amendment (2026-11-08, DEB-3955) — a tick made in Ravilo stays ticked
+
+**What the owner saw.** On the TV he marked five episodes watched by hand, and they came unticked again.
+
+**Why.** FR-230-1 says changes made inside Ravilo never wait on the rotation. FR-230-2 kept that
+promise only for a stop. `PUT /tv/played` and `POST /tv/mark` both call `invalidatePlaystate(device)`
+with no id, so FR-230-2's "callers without an id get top-level only" applied to them. The refresh
+then re-read the series' own row, but never the episode that had just been written.
+`setPlayed` returns the right answer to the client, but writes nothing into `PlaystateCache`.
+
+The route then pushes `home_changed`. The open series page re-reads its playstate on that push
+(R343 FR-R343-12, R351 FR-R351-7), and `GET /tv/playstate` answers from the cache. So the tick shows
+for about a second, then drops. Each further mark sends another `home_changed`, and each one drops every
+tick made so far. The ticks come back one by one, as the 15-slice rotation reaches each episode, over
+up to 5 minutes.
+
+R352's FR-R352-8 safety net does not help either: it reads a series whole when the series' own row
+changed between cycles. The titles-only refresh has already put the new series row in the cache, so
+the next cycle sees no change. A film is a top-level id and is re-read, which is why only episodes
+were affected.
+
+- **FR-230-7 — a mark is the cache's word at once.** `PUT /tv/played` writes the state it read back
+  from Jellyfin (`setPlayed`'s return: the item and every affected episode) into `PlaystateCache`
+  with `patch`. It does this before `invalidatePlaystate` runs and before any push. `POST /tv/mark`
+  does the same with the state it wrote: `played = watched` and `resumeMs = 0`. Its other fields
+  stay as the cache already had them. This is R343 FR-R343-11's pattern, applied to the viewer's own
+  ticks.
+- **FR-230-8 — a mark refreshes what it touched.** Both routes call `invalidatePlaystate(device, itemId)`
+  with the id they wrote, so FR-230-2's targeted set (the top-level ids plus that title's episodes)
+  is re-read. For a season set (`episodeIds`), the id passed is the first episode's. "Callers without
+  an id" now means only the `/tv/playback/*` fallbacks, as FR-230-2 originally intended.
+- **FR-230-9 — an older read never undoes a newer mark.** A background cycle or targeted refresh
+  that began reading Jellyfin before a viewer's mark landed does not merge that id's value over
+  the mark. It also does not push that id in its `playstate_changed` patch. The record of the mark
+  is kept per user and id, like the one phase 312 already keeps (`noteViewerMarked`), and is stamped
+  **once the write has landed** at Jellyfin. 312's stamp is taken before the write, so it is too early
+  for this rule. A read that **began** after the landed stamp is Jellyfin's word and is taken as it is.
+
+**Unchanged:** the rotation, its budgets and its log line; R176's push; the wire. The series page
+still replaces its overlay with what `GET /tv/playstate` answers (R343 FR-R343-12): once the cache is
+right, the server's answer is the right one to show.
+
+**Restored, not amended.** A multi-episode card's toggle marks only the episode it would play.
+R179 §C.1 says the toggle covers every episode in the file. The same build passes the group's ids
+as `episodeIds` and restores that.
+
+**Acceptance (amendment).**
+
+4. `linuxX64Test`. Before the fix: `PUT /tv/played` for an episode, then `GET /tv/playstate` for
+   that episode, read the old value. After the fix the same pair reads the new value, with no
+   background cycle between them. The same holds for `POST /tv/mark`.
+5. `linuxX64Test`. A cycle whose read began before a mark of episode E, and returns E's old value,
+   leaves E as marked in the cache and leaves E out of its push. A read that began after the mark
+   replaces the value.
+6. On a TV: mark five episodes of one season watched in a row. Leave the page, come back, switch
+   seasons and back again. All five stay ticked the whole time. Untick two and the same holds. Mark
+   a multi-episode card and every episode in it is ticked.
