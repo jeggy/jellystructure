@@ -146,6 +146,18 @@ and a Danish sidecar `.srt` added later.
 > 19.55 Mbps play moved to 720p 7.5 s after its first frame. A hand-over that the buffer did not confirm writes no
 > `stalled_bps`, because that record is what then holds the device low and bars the file on its next play.
 
+> *Amendment 2026-11-08 (DEB-3093, the field read after v1.62):* **the end of the file is not a shortfall.** Once the
+> buffer holds the rest of the file (position + buffered ahead within 1 s of the file's duration), the buffer can only
+> fall, because there is nothing left to load. Neither reason fires while that holds, and no `stalled_bps` is written. A
+> seek back that leaves the end unbuffered makes the rule live again. A play whose duration the player does not know
+> (unset, or a stream that is still growing) keeps the rule as written. Measured on prod, 3–8 Nov, the two household TVs
+> on 1.62 and 1.63: 20 of 59 direct plays moved to the ladder. 6 of the 7 that left a `recovery` entry moved 1.9–2.2 s
+> before the end of their file, which is H = position + buffered − 2 s fired by the falling rule in the last 15 s. The 13
+> that left no entry were watched to their end and show the same encoder footprint (21–38 segments, against 600 for the
+> one mid-play hand-over), so they are very probably the same. Each wrote the file's bitrate as `stalled_bps`, and the
+> next play started on our encoder every time (19 of 19, 6 of them on the lowest rung), so a run of episodes
+> alternated between the file and the ladder.
+
 - A direct play watches its buffer in **seconds ahead**. It is sized in seconds rather than bytes:
   - Media3's `DefaultLoadControl` gets `setPrioritizeTimeOverSizeThresholds(true)`;
   - a target buffer of **≥ 30 s**, bounded by the device's memory class (`ActivityManager.getMemoryClass()` × 0.25
@@ -371,6 +383,10 @@ This applies to an HLS play, ours or Jellyfin's.
    Ravilo back: it resumes at the other client's position.
 7. **Evidence survives a retry.** Two plays of one title leave two QoE rows. A play served by our encoder has an
    `encoder_summary`.
+8. **The end of a file stays on the file** (2026-11-08). A direct play watched to its end on an uncapped link leaves
+   its QoE row with `encoder = 'direct'` and no `recovery` entry, writes no `stalled_bps`, and the next episode starts
+   on the file. On prod after the release carrying it: direct plays on the household TVs that move to a ladder fall
+   from 20 of 59 (3–8 Nov) to the few that a real shortfall explains.
 
 ## Non-goals
 
