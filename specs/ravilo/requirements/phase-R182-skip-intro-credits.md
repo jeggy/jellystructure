@@ -190,3 +190,60 @@ credits*, no *Watch credits*, no *End of episode* — and no autoplay. The episo
 back to the series page. *Skip Intro* (FR-RV-SKIP1-1) is unchanged. Owner, 2026-10-29: *"when nearing the end where the
 usual skip credits/autoplay would happen, we would also skip that, so there is no next episode."* Every other series is
 unchanged.
+
+### Amendment (2026-11-08, DEB-3950) — a title with nothing after it closes the player when it ends
+
+Owner, 2026-11-08: *"when a movie is finished playing on a tv and the show credits is up, but nothing is actually
+left. Then i have to click back 3 times to get out of the movie."* He chose option A on DEB-3950's card the same day:
+*the player closes at the end and goes back to the film's page; after the end, one Back always leaves.*
+
+**What was wrong.** FR-RV-SKIP1-2 says "the plain skip-credits case simply waits for input". With no trusted marker
+the card rises 1 s before the end (R384 FR-R384-2), and the film finishes under it. Back then walks *Watch credits*
+(card down, controls up), then the controls, then the player: three presses with nothing left to watch. Skip Credits
+**Off** (R230 FR-R230-2), a newest-first episode (the amendment above), the Cast receiver and the receiver-only TV app
+already close at the end. The app's player was the only place a finished title kept a card on screen.
+
+In this amendment, **nothing follows** means `advanceNext`'s own test: there is no next episode, or no host that can
+navigate to it. That covers a film, a series' last episode and a stinger film. A next episode with *Autoplay next
+episode* off is **not** nothing follows: its card waiting at the end is an offer, and FR-3 covers it.
+
+- **FR-1 — The end closes the player.** When the file reaches its real end (`player.isEnded`) and nothing follows,
+  the player does what `skipCredits()` does: it marks the title watched when R347's `playbackFinished` says so, and
+  leaves to the page it was opened from. This applies whether or not a card is on screen and whether or not the viewer
+  pressed *Watch credits*. The `nextUpDismissed` latch does not hold it open. It holds in every Skip Credits mode:
+  Off already does this (R230 FR-R230-2), and Prompt and Auto now match it. No countdown, no hold on the last frame.
+- **FR-2 — No card in the last second when nothing follows.** With no trusted marker, R384's 1 s trigger raises
+  only a *Next Episode* card. It no longer raises *Skip credits* or *Skip to scene*, because both offer a jump past
+  credits that are already over. With a trusted marker, the card still rises at the credits as before (*Skip
+  credits* / *Skip to scene* plus *Watch credits*). Left alone, or after *Watch credits*, the credits play out and
+  FR-1 closes the player at the end. *Skip to scene* seeks as before, the scene plays, and FR-1 closes the player at
+  the end.
+- **FR-3 — After the end, one Back leaves.** Once the file has ended, Back leaves the player in one press, whatever
+  is on screen. *Watch credits* and the controls are not steps in between. This applies to an *Up next* card waiting
+  at 0 with autoplay off, and to a countdown still running over the finished picture (R384). Back leaves; it does
+  not advance. Before the end, Back is unchanged: with a card up it is *Watch credits* (R111), then the controls
+  (R112), then the player.
+- **FR-4 — Unchanged.** Everything else stays as it is:
+  - a next episode with autoplay on still counts down over the finished picture and advances (R384 FR-R384-2);
+  - Skip Credits Off;
+  - newest-first;
+  - the Cast receiver and `ravilo-screen`, which already end this way;
+  - R372 FR-R372-10's end-of-play stop. It still runs once, and the close follows it.
+
+  No wire change, no new string, no migration.
+
+**Where.** `ravilo-ui` `PlayerScreenState`, which every app shares (TV, phone, Mac, Linux, web):
+- the natural-end branch of the poll loop;
+- the early trigger's no-marker case;
+- `playerBack`.
+
+**Acceptance (on the TV app; the shared player makes the phone the same):**
+1. A film with a trusted credits marker, left alone: the card rises at the credits and the credits play out. At the
+   end the player is on the film's page, and the film is ticked.
+2. The same film, *Watch credits* pressed: no card returns, and at the end the player closes the same way.
+3. A film with no credits marker: no card appears in the last second. At the end the player closes to the film's page,
+   ticked.
+4. A series' last episode: the same as 1 and 3, closing to the series page.
+5. An episode with a next one and autoplay off, played to the end: the *Up next* card waits. One Back returns to the
+   series page.
+6. An episode with a next one and autoplay on: the countdown and the advance are unchanged.

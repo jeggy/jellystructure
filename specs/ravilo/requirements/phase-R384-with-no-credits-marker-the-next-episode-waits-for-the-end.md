@@ -65,6 +65,12 @@ does not change, and use `NEXT_UP_NO_MARKER_MS` for the no-marker case.)
   This is one trigger for the card, not two. A guessed 20 s *Skip credits* offer on a title with unknown credits is
   the same mistake.
 
+**Amendment 2026-11-08 (DEB-3950, owner's option A).** The last bullet above is withdrawn. With no trusted marker
+the 1 s trigger raises only a *Next Episode* card. A title that nothing follows (a film, a last episode, a stinger
+film) raises no card in its last second and closes the player at its end. Once the file has ended, one Back leaves.
+The rule lives in [R182's 2026-11-08 amendment](phase-R182-skip-intro-credits.md) (FR-1 to FR-3). The countdown over
+the finished picture for a next episode with autoplay on is unchanged.
+
 ### FR-R384-3 — The Cast receiver (`ravilo-cast`)
 
 - The card goes up at `nextUpStartMs` (FR-R384-1). The log line (`nextup at …`) is unchanged.
