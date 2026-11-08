@@ -156,7 +156,9 @@ and a Danish sidecar `.srt` added later.
 > that left no entry were watched to their end and show the same encoder footprint (21–38 segments, against 600 for the
 > one mid-play hand-over), so they are very probably the same. Each wrote the file's bitrate as `stalled_bps`, and the
 > next play started on our encoder every time (19 of 19, 6 of them on the lowest rung), so a run of episodes
-> alternated between the file and the ladder.
+> alternated between the file and the ladder. **This corrects the 2026-10-31 amendment's evidence:** its 41 of 202 moves
+> were mostly this too, not the estimate. On the same two TVs in that week, 33 of 35 moves had our encoder make 1 or 2
+> segments, which is the file's last seconds. The estimate rule stands on the uncapped stue TV play it cites.
 
 - A direct play watches its buffer in **seconds ahead**. It is sized in seconds rather than bytes:
   - Media3's `DefaultLoadControl` gets `setPrioritizeTimeOverSizeThresholds(true)`;
