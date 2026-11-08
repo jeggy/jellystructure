@@ -113,6 +113,59 @@ class DirectPlayHandoverTest {
         assertTrue(bufferThen > HANDOVER_IMMEDIATE_UNDER_MS, "still ahead of time at $bufferThen")
     }
 
+    // ── FR-4 (2026-11-08) — the end of the file is not a shortfall (DEB-3956) ──
+
+    private val fileMs = 438_000L
+
+    /** A 438 s file played from 421 s: position +500 ms and buffer −500 ms per look, so position + buffer stays at the end. */
+    private fun endOfFile(r: DirectPlayHandover, durationMs: Long, estimate: Long? = null, from: Long = 0L): Pair<Long, HandoverDecision?> {
+        var pos = 421_000L; var ahead = 17_000L; var t = from
+        while (ahead > 2_000L) {
+            t += 500; pos += 500; ahead -= 500
+            r.observe(t, pos, ahead, estimate, playing = true, durationMs = durationMs)?.let { return t to it }
+        }
+        return t to null
+    }
+
+    @Test fun `a falling buffer that holds the rest of the file does not hand over`() {
+        assertNull(endOfFile(rule(), fileMs).second)
+    }
+
+    @Test fun `the same samples with an unknown duration hand over as before`() {
+        val ahead = assertIs<HandoverDecision.Ahead>(endOfFile(rule(), durationMs = 0L).second)
+        assertEquals("falling", ahead.reason)
+    }
+
+    @Test fun `a falling buffer whose end is not buffered hands over`() {
+        // The file is 3 s longer than position + buffered: the end is not in the buffer.
+        assertIs<HandoverDecision.Ahead>(endOfFile(rule(), fileMs + 3_000L).second)
+    }
+
+    @Test fun `the estimate reason at the end of the file does not hand over either`() {
+        val r = rule()
+        // 25 s buffered, flat, estimate 50 Mbps × 0.8 under the 71 Mbps file; the end is buffered: position + 25 s = the duration.
+        var t = 0L
+        repeat(40) {
+            t += 500
+            assertNull(r.observe(t, 10_000 + t, 25_000, 50_000_000, playing = true, durationMs = 10_000 + t + 25_000))
+        }
+    }
+
+    @Test fun `a seek back that leaves the end unbuffered makes the rule live again`() {
+        val r = rule()
+        val (at, none) = endOfFile(r, fileMs)
+        assertNull(none)
+        // Seek back to 300 s: the playing flag drops for the seek, then the buffer (20 s, end far off) falls for three seconds.
+        var t = at + 500
+        assertNull(r.observe(t, 300_000, 0, null, playing = false, durationMs = fileMs))
+        var pos = 300_000L; var ahead = 20_000L; var decision: HandoverDecision? = null
+        repeat(14) {
+            t += 500; pos += 500; ahead -= 500
+            if (decision == null) decision = r.observe(t, pos, ahead, null, playing = true, durationMs = fileMs)
+        }
+        assertEquals("falling", assertIs<HandoverDecision.Ahead>(decision).reason)
+    }
+
     @Test fun `it never lets the buffer run dry before the switch`() {
         // Whatever the drain rate, H is two seconds inside what is buffered, so reaching H leaves the buffer non-empty.
         for (loss in listOf(250L, 500L, 1_000L, 2_000L)) {

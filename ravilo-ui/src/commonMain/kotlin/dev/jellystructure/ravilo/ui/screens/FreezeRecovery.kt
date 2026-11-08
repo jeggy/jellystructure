@@ -21,6 +21,8 @@ data class PlayerWatch(
     /** R220's video-output recovery ladder is running (its rung 2 seeks by 1 ms and waits for the player): its own wait is
      *  not the viewer's and does not end a freeze, or the ladder would restart the 5 s every time it ran. */
     val recovering: Boolean = false,
+    /** The file's length, 0 where the player does not know it (DEB-3956: FR-4 reads it to tell the end of the file from a shortfall). */
+    val durationMs: Long = 0L,
 )
 
 /** FR-1 — a stop is a position that does not move for this long while the player intends to play. */

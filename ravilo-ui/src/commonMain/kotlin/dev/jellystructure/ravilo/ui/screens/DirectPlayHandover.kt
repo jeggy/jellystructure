@@ -73,6 +73,9 @@ internal const val HANDOVER_NO_GAIN_UNDER_MS = 500L
 /** FR-4 (2026-10-31) — at or above this share of the target buffer a flat buffer is load control at rest, not a path that fell short. */
 internal const val HANDOVER_FULL_SHARE = 0.9
 
+/** FR-4 (2026-11-08) — position + buffered within this of the file's duration: the buffer holds the rest of the file. */
+internal const val HANDOVER_END_BUFFERED_WITHIN_MS = 1_000L
+
 /** FR-4 — under this much buffered the restream happens at once. */
 internal const val HANDOVER_IMMEDIATE_UNDER_MS = 4_000L
 /** FR-4 — H = position + buffered − this: the stream is left while there is still picture in the buffer. */
@@ -135,9 +138,12 @@ internal class DirectPlayHandover(private val streamBps: Long, private val scale
 
     /**
      * [playing]: first frame out, the viewer wants it playing, not seeking. [estimateBps]: the player's bandwidth estimate where it
-     * rests on enough transfers (see [HANDOVER_ESTIMATE_MIN_SAMPLES]); null where it is still guessing.
+     * rests on enough transfers (see [HANDOVER_ESTIMATE_MIN_SAMPLES]); null where it is still guessing. [durationMs]: the file's
+     * length, 0 where the player does not know it (DEB-3956, FR-4 2026-11-08: the end of the file is not a shortfall).
      */
-    fun observe(nowMs: Long, positionMs: Long, bufferAheadMs: Long, estimateBps: Long?, playing: Boolean): HandoverDecision? {
+    fun observe(
+        nowMs: Long, positionMs: Long, bufferAheadMs: Long, estimateBps: Long?, playing: Boolean, durationMs: Long = 0L,
+    ): HandoverDecision? {
         if (fired || streamBps <= 0) return null
         if (!playing || bufferAheadMs < 0) { ahead.clear(); ahead6.clear(); return null }
         ahead.addLast(Sample(nowMs, bufferAheadMs))
@@ -150,6 +156,9 @@ internal class DirectPlayHandover(private val streamBps: Long, private val scale
                 noGain(bufferAheadMs, nowMs) -> "estimate"
             else -> null
         } ?: return null
+        // DEB-3956 (FR-4, 2026-11-08) — the buffer holds the rest of the file: it can only fall, there is nothing left to load.
+        // `fired` stays false, so a seek back that leaves the end unbuffered makes the rule live again.
+        if (durationMs > 0 && positionMs + bufferAheadMs >= durationMs - HANDOVER_END_BUFFERED_WITHIN_MS) return null
         fired = true
         if (bufferAheadMs < HANDOVER_IMMEDIATE_UNDER_MS * scale) return HandoverDecision.Immediate(reason)
         val margin = min(HANDOVER_MARGIN_MS.toDouble(), bufferAheadMs / 2.0).toLong()
