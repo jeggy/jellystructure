@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo TV — Slim header · Directions</title>
+<style>
+  :root { --ink: #12141b; --ink2: #262a35; --line: #c8ccd6; --paper: #f3f4f7; --rec: #0b5e3a;
+          --recbg: #cdebdd; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e9eaee; color: var(--ink);
+         font: 15px/1.6 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 28px 96px; }
+  h1 { font-size: 30px; line-height: 1.15; letter-spacing: -.5px; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 44px 0 10px; letter-spacing: -.2px;
+       border-top: 1px solid var(--line); padding-top: 18px; }
+  h3 { font-size: 16px; margin: 24px 0 6px; }
+  p, li { color: var(--ink2); }
+  p { margin: 0 0 12px; }
+  .lede { font-size: 17px; color: var(--ink); }
+  code { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: .92em;
+         background: #dcdfe6; border-radius: 4px; padding: 1px 5px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px; background: var(--paper); }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; font-size: 14px;
+           vertical-align: top; }
+  th { background: #dfe2e9; color: var(--ink); font-weight: 600; }
+  td.n { font-family: ui-monospace, "JetBrains Mono", monospace; white-space: nowrap; }
+  .chg { color: var(--rec); font-weight: 700; }
+  .tag { display: inline-block; font-family: ui-monospace, monospace; font-size: 11px;
+         font-weight: 700; letter-spacing: .3px; background: #d3d6de; border: 1px solid #b9bdc8;
+         border-radius: 5px; padding: 1px 6px; margin-right: 6px; }
+  .tag.rec { background: var(--recbg); border-color: #8fc9ad; color: var(--rec); }
+  figure { margin: 0 0 22px; }
+  figure img { display: block; width: 100%; border: 1px solid var(--line); background: #000; }
+  figcaption { font-size: 13px; color: var(--ink2); padding-top: 6px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  ul { margin: 0 0 14px; padding-left: 20px; }
+  .note { background: var(--paper); border-left: 3px solid #8fa0c8; padding: 10px 14px;
+          margin: 0 0 16px; font-size: 14px; }
+  .warn { border-left-color: #c08a3e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>A Slim TV header, at 90 % screen scale, with two small browse ideas</h1>
+<p class="lede">The Ravilo TV layout only, 960 × 540 dp, drawn at Content size <b>COMPACT</b> because
+that is what prod is set to. Three things to decide: the Slim geometry, and whether idea A and idea
+B come with it.</p>
+
+<h2>What is fixed before anything is drawn</h2>
+<ul>
+  <li><b>Every number comes from the Kotlin, not from the mockup.</b>
+      <code>design/ravilo/ravilo.css</code>'s <code>.appbar</code> is 92 px (46 dp) and drifted from
+      the shipped 60 dp years ago. Drawing Standard from it would have made this round's own
+      baseline wrong by 14 dp.</li>
+  <li><b>Every element in the bar stays reachable Left/Right, and the focused one is visible at
+      three metres</b> (constitution). Nothing in the bar is added to or removed from the D-pad
+      path, and the focus order is unchanged: nav → Surprise me → search → avatar.</li>
+  <li><b>Nothing a viewer reads drops below 10 sp at 100 %.</b> The smallest type Slim introduces is
+      the avatar's initials at 12 sp; at 85 % screen scale that renders at 11.1 sp. Still clear.</li>
+  <li><b>The bar stays always visible and keeps R62's transparent-to-solid behaviour.</b></li>
+  <li><b>Smaller, not tighter.</b> No change to row spacing relative to tile size.</li>
+</ul>
+
+<h2>The directions</h2>
+
+<h3><span class="tag rec">RECOMMENDED</span>Slim at 48 dp</h3>
+<p>The bar drops from 60 dp to 48 dp and every part in it is resized in proportion. The 12 dp it
+saves goes straight back to the content, because everything that offsets by the bar reads
+<code>RaviloDimens.appBarHeight</code> rather than a literal.</p>
+
+<h3><span class="tag">ALTERNATIVE</span>Slim at 44 dp</h3>
+<p>Drawn so the 44-vs-48 decision can be made on a picture. It works, and it is 4 dp tighter than I
+would ship — see "What decides 44 vs 48" below.</p>
+
+<figure>
+  <img src="png/tv-slim-header-bar-geometry.png" alt="The three bars drawn at 1:1 and measured">
+  <figcaption>All three bars at 1:1 with every part measured. Green is a change from today.</figcaption>
+</figure>
+
+<h2>The recommended geometry, as numbers</h2>
+<table>
+  <tr><th>Part</th><th>Standard (today)</th><th>Slim 48 <span class="tag rec">REC</span></th><th>Slim 44</th></tr>
+  <tr><td>Bar height</td><td class="n">60 dp</td><td class="n chg">48 dp</td><td class="n">44 dp</td></tr>
+  <tr><td>Brand mark</td><td class="n">26 dp</td><td class="n chg">20 dp</td><td class="n">18 dp</td></tr>
+  <tr><td>Wordmark</td><td class="n">22 sp / −1 sp</td><td class="n chg">17 sp / −0.8 sp</td><td class="n">16 sp / −0.8 sp</td></tr>
+  <tr><td>Brand gap</td><td class="n">8 dp</td><td class="n chg">7 dp</td><td class="n">6 dp</td></tr>
+  <tr><td>Nav pill type</td><td class="n">15 sp</td><td class="n chg">14 sp</td><td class="n">13 sp</td></tr>
+  <tr><td>Nav pill padding</td><td class="n">12 × 6 dp</td><td class="n chg">11 × 5 dp</td><td class="n">10 × 4 dp</td></tr>
+  <tr><td>Nav pill corner</td><td class="n">11 dp</td><td class="n chg">9 dp</td><td class="n">8 dp</td></tr>
+  <tr><td>Row gap (all top-level items)</td><td class="n">18 dp</td><td class="n chg">14 dp</td><td class="n">12 dp</td></tr>
+  <tr><td>Search / avatar circle</td><td class="n">40 dp</td><td class="n chg">32 dp</td><td class="n">30 dp</td></tr>
+  <tr><td>Search glyph</td><td class="n">22 dp</td><td class="n chg">18 dp</td><td class="n">17 dp</td></tr>
+  <tr><td>Focus ring</td><td class="n">2 dp, flush</td><td class="n chg">2 dp, 2 dp clear</td><td class="n">2 dp, 2 dp clear</td></tr>
+  <tr><td>Avatar initials</td><td class="n">14 sp</td><td class="n chg">12 sp</td><td class="n">11 sp</td></tr>
+  <tr><td>Clock</td><td class="n">15 sp</td><td class="n chg">13 sp</td><td class="n">12 sp</td></tr>
+  <tr><td>Side gutter</td><td class="n">48 dp</td><td class="n">48 dp</td><td class="n">48 dp</td></tr>
+</table>
+<p>The side gutter does not change. It is overscan safety, not height, and R205/R250 bought it the
+hard way.</p>
+
+<h2>What decides 44 vs 48</h2>
+<p>Not the type — the <b>circles</b>. Search and the avatar each carry a focus ring drawn outside
+them, so what has to fit between the bar's edges is the whole focusable disc:</p>
+<table>
+  <tr><th></th><th>Circle</th><th>Ring + clearance</th><th>Focusable disc</th><th>Clear above and below</th></tr>
+  <tr><td>Standard 60</td><td class="n">40 dp</td><td class="n">2 + 0</td><td class="n">44 dp</td><td class="n">8 dp</td></tr>
+  <tr><td><b>Slim 48</b></td><td class="n">32 dp</td><td class="n">2 + 2</td><td class="n">40 dp</td><td class="n chg">4 dp</td></tr>
+  <tr><td>Slim 44</td><td class="n">30 dp</td><td class="n">2 + 2</td><td class="n">38 dp</td><td class="n">3 dp</td></tr>
+</table>
+<p>At 48 dp the ring has 4 dp of page either side of it. At 44 it has 3, and at 85 % screen scale
+that 3 dp is 2.55 dp of real screen — a ring that close to a solid bar's edge stops reading as a
+ring. <b>48.</b></p>
+
+<h2>Standard beside Slim, in both bar states</h2>
+<div class="two">
+  <figure><img src="png/tv-slim-header-standard-home-hero.png" alt="Standard over the hero">
+    <figcaption>Standard, transparent over the hero, Home focused.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-slim48-home-hero.png" alt="Slim over the hero">
+    <figcaption>Slim 48, same frame.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-standard-home-scrolled.png" alt="Standard scrolled">
+    <figcaption>Standard, solid once scrolled.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-slim48-home-scrolled.png" alt="Slim scrolled">
+    <figcaption>Slim 48 — the row sits 12 dp higher and more of the next one shows.</figcaption></figure>
+</div>
+
+<h2>Focus, in a lower bar</h2>
+<div class="two">
+  <figure><img src="png/tv-slim-header-slim48-focus-search.png" alt="Slim with search focused">
+    <figcaption>Search focused: accent fill, 2 dp ring held 2 dp clear.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-slim48-focus-avatar.png" alt="Slim with the avatar focused">
+    <figcaption>Avatar focused, same treatment.</figcaption></figure>
+</div>
+<div class="note warn"><b>One change I am proposing, not just a resize.</b> Today the ring is drawn
+hard against the fill, and <code>--ring</code> <code>#8e82ff</code> on <code>--accent</code>
+<code>#7b6ef0</code> is a 4 % difference — at 1× it reads as a slightly darker hairline and at three
+metres it does not read at all. Holding it 2 dp clear of the fill makes it a ring, and it is the
+treatment <code>RaviloButton</code> already uses (<code>focusRing(…, outset = 5.dp)</code>). This is
+a pre-existing defect in the Standard bar, not something Slim causes; Standard is drawn above
+exactly as it ships so the two can be compared.</div>
+
+<h2>Screen scale — the picture to judge the feel from</h2>
+<figure>
+  <img src="png/tv-slim-header-scale-100-standard-vs-90-slim.png" alt="100 % Standard above, 90 % Slim below">
+  <figcaption>Today at 100 % with Standard, above; Slim at 90 % below. Seven posters across
+  instead of six, the second row's art visible rather than guessed at, and the gaps in the same
+  proportion to the tiles.</figcaption>
+</figure>
+
+<h2>Discover, under a Slim bar</h2>
+<div class="two">
+  <figure><img src="png/tv-slim-header-standard-discover.png" alt="Discover with the Standard bar">
+    <figcaption>Standard.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-slim48-discover.png" alt="Discover with the Slim bar">
+    <figcaption>Slim 48. The title block is unchanged — see below.</figcaption></figure>
+</div>
+<p><b>I would not tighten the title block.</b> The brief's lean was to leave it and ask; having drawn
+it, leaving it is right. <code>Discover</code> already starts at
+<code>appBarHeight + 24 dp</code>, so Slim moves the whole block up 12 dp on its own. Taking more
+out of the 24 dp gap would close the page's one piece of breathing room at the very moment the bar
+above it got quieter, and the title at 22 sp over a 13 sp subtitle is the page's only hierarchy.</p>
+
+<h2>Idea A — "Surprise me"</h2>
+<p>An entry in the right cluster, beside search, that opens the detail page of a title the viewer
+has not watched. It sits in the right cluster deliberately: that is where the bar keeps its
+<i>actions</i>, so it cannot be mistaken for a fifth tab.</p>
+
+<h3><span class="tag rec">RECOMMENDED</span>A1 — a labelled pill</h3>
+<div class="two">
+  <figure><img src="png/tv-slim-header-A1-bar-at-rest.png" alt="The Surprise me pill at rest">
+    <figcaption>At rest: a hairline pill, visibly not one of the borderless nav tabs.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-A1-bar-surprise-focused.png" alt="The Surprise me pill focused">
+    <figcaption>Focused: the inverted fill the nav items and chips already use.</figcaption></figure>
+</div>
+<h3><span class="tag">ALTERNATIVE</span>A2 — a glyph alone</h3>
+<figure><img src="png/tv-slim-header-A2-bar-surprise-focused.png" alt="The Surprise me icon, focused">
+  <figcaption>A2: the same circle search uses. Cheaper in width, and it says nothing. A sparkle does
+  not tell a viewer "open one title I have not seen" — the words do.</figcaption></figure>
+<p>The glyph is a <b>sparkle, not two crossing arrows</b>. <code>detail.shuffle</code> / <i>Blanda</i>
+already owns the shuffle glyph on a series page, and "play these in a random order" is a different
+promise from "open one title". Reusing it would have been a real confusion.</p>
+
+<h3>Where it lands</h3>
+<div class="two">
+  <figure><img src="png/tv-slim-header-A1-detail-brotsjor.png" alt="The detail page Surprise me lands on">
+    <figcaption>Brotsjór, arriving — Play focused, as any detail page arrives.</figcaption></figure>
+  <figure><img src="png/tv-slim-header-A1-detail-another-focused.png" alt="Another one, focused">
+    <figcaption><b>Another one</b> focused: the shipped ghost treatment, a 2 dp accent border and
+    the ring outside it.</figcaption></figure>
+</div>
+<p><b>"Another one" is drawn at the shipped button size, not smaller.</b> The brief said "a small
+button"; a ghost button below <code>heightIn(min = 44.dp)</code> would break the actions row's
+rhythm and put a D-pad target under the 10-foot rule. It is already the quiet one — ghost beside a
+filled Play says "secondary" without shrinking.</p>
+<p>A <b>SURPRISE</b> kicker replaces the usual tagline, so the page says why the viewer is looking
+at it. It is a new string; drop it and the page still works.</p>
+
+<h2>Idea B — a quieter row heading</h2>
+<figure>
+  <img src="png/tv-slim-header-B-heading-compare.png" alt="Today's row heading beside idea B, at 1:1">
+  <figcaption>At 1:1. 18 sp + <b>See All</b> today; 16 sp + the count in idea B.</figcaption>
+</figure>
+<figure>
+  <img src="png/tv-slim-header-B-home-scrolled.png" alt="Home with the quieter headings">
+  <figcaption>On the page, with a poster focused. The headings stop competing with the artwork.</figcaption>
+</figure>
+<p>Two things worth knowing before this is adopted:</p>
+<ul>
+  <li><b>13 sp is not a new type size.</b> <code>ContentRow</code> already has a
+      <code>trailingInfo</code> slot at 13 sp in <code>--ink-dim</code> — it is simply
+      <i>end</i>-aligned today. B moves that same text next to the title.</li>
+  <li><b>B drops See All from the row.</b> That is a real loss and it is not mine to decide: See All
+      is the only way into the full list from a row. If it has to stay, the count goes beside the
+      title and See All keeps its place, and the row heading is then busier than it is today.</li>
+</ul>
+
+<h2>All of it together</h2>
+<figure>
+  <img src="png/tv-slim-header-slim48-scale90-with-A-and-B.png" alt="Slim at 90 % with both ideas">
+  <figcaption>Slim 48 at 90 % screen scale with A1 and B both on.</figcaption>
+</figure>
+
+<h2>The states this round drew, and the ones it did not</h2>
+<table>
+  <tr><th>State</th><th>Drawn</th></tr>
+  <tr><td>10-foot focus, every focusable thing in the bar</td><td>Yes — nav pill, search, avatar, Surprise me, and a Discover chip</td></tr>
+  <tr><td>Danish and Faroese</td><td>Yes — <code>slim48-home-scrolled-da</code>, <code>slim48-discover-fo</code></td></tr>
+  <tr><td>The longest string</td><td>Yes — Faroese <code>Sjónvarpsrásir</code> in the Discover chip bar; it fits with room</td></tr>
+  <tr><td>The TV skins</td><td>Yes — noir and midnight, beside the default aurora</td></tr>
+  <tr><td>Loading, empty, error, offline</td><td><b>No.</b> The bar does not change in any of them — it draws the same four nav items whatever the page under it is doing</td></tr>
+  <tr><td>Phone, desktop, web, cast, Tizen</td><td><b>No.</b> Out of scope: FR-3 applies the scale on a TV platform only, and the handset bar is a different <code>AppBar</code> branch</td></tr>
+</table>
+
+<h2>New strings</h2>
+<table>
+  <tr><th>Key</th><th>English</th><th>Danish</th><th>Faroese</th></tr>
+  <tr><td class="n">nav.surprise</td><td>Surprise me</td><td>Overrask mig</td><td>Yvirraska meg</td></tr>
+  <tr><td class="n">detail.another</td><td>Another one</td><td>En mere</td><td>Eitt annað</td></tr>
+  <tr><td class="n">detail.kicker_surprise</td><td>SURPRISE</td><td>OVERRASKELSE</td><td>YVIRRASKAN</td></tr>
+</table>
+<p>The Faroese is a draft and wants a native read — <i>Vel eitt fyri mig</i> ("pick one for me") may
+be the more natural phrasing for the first of them. Every other string in every frame is the shipped
+value from <code>i18n/*.json</code>.</p>
+
+<h2>Open, for the owner</h2>
+<ul>
+  <li><b>Slim height: 48</b> (my recommendation) or 44.</li>
+  <li><b>The clock stays</b> in Slim, at 13 sp. It is the only clock in the room on a TV.</li>
+  <li><b>The wordmark stays</b>, at 17 sp. The mark alone saves 76 dp of a 960 dp bar that has room
+      to spare, and costs the one place the product says its own name.</li>
+  <li><b>A: worth it</b>, as A1 — the pill with the words.</li>
+  <li><b>B: worth it</b>, provided dropping See All from the row is acceptable.</li>
+</ul>
+
+</div>
+</body>
+</html>
