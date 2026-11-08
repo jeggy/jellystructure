@@ -105,15 +105,19 @@ class AutofetchRuntime(
 
     /**
      * DEB-2477 (FR-2.5) — the Dashboard's rows: one per stopped site, whatever the fetchers on it are doing. A stop is never retried, so the
-     * row stays until the admin presses *Resume site* on the Fetchers tab, which is where the row opens.
+     * row stays until the admin presses *Resume site* on the Fetchers tab. When the tab is hidden, the row opens Settings ▸ AI
+     * so the admin can switch Auto-fetch back on first (DEB-3566, FR-1.3).
      */
-    fun dashboardRows(): List<DashboardRow> {
+    fun dashboardRows(tabShown: Boolean): List<DashboardRow> {
         val fetchers = store.fetchers()
         return store.sites().filter { it.stopped }.map { st ->
             DashboardRow(
                 id = "autofetch_site:${st.site}", domain = "autofetch", severity = "warning", label = "${st.site} has stopped us",
                 sentence = "${st.stoppedReason.orEmpty().replaceFirstChar { it.uppercase() }}. Nothing runs on this site, for any fetcher, until you resume it — a stop is never retried on a timer.",
-                count = fetchers.count { it.site == st.site }, unit = "fetcher", fix = "open", action = "Fetchers", href = "/ai?tab=fetchers", path = "AI ▸ Fetchers › ${st.site}",
+                count = fetchers.count { it.site == st.site }, unit = "fetcher", fix = "open",
+                action = if (tabShown) "Fetchers" else "Settings",
+                href = if (tabShown) "/ai?tab=fetchers" else "/settings?tab=ai",
+                path = if (tabShown) "AI ▸ Fetchers › ${st.site}" else "Settings ▸ AI › Auto-fetch",
             )
         }
     }

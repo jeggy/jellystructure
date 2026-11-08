@@ -11,20 +11,24 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class AiPageDto(val tabs: List<String>)
 
+/** DEB-3566 (FR-1.1) — a new fetcher can be set up while all four config gates are on. */
+fun fetchersTabShown(config: AppConfig): Boolean = config.ai.apiKey.isNotBlank() && config.ai.enabled &&
+    config.ai.autofetch.enabled && config.autofetch.enabled
+
 /**
  * DEB-1253 (FR-1, FR-2) + DEB-1500 (FR-1) — which tabs the AI page has: Support · Fetchers · Suggestions. Empty when
  * `[ai] api_key` is blank. The key test is "non-blank" (320 FR-320-1), not `ai.enabled`: switching AI off, a revoked key
  * or a spent limit leave the page where it is. **Support is there whenever the key is**, whether `[support] enabled` is
  * true or false: the lane's switch lives inside the tab, and a closed lane still has tickets an admin can read. With a key
  * set the page therefore exists without Seerr; Suggestions (Seerr connected, FR-274-1) is the only tab that waits for it.
- * **Fetchers is there whenever the key is** (DEB-2477, auto-fetch FR-1.1): a switched-off AI, a revoked key or a spent limit does not
- * remove it and does not stop a saved fetcher (FR-1.2), and `[autofetch] enabled` is a state the tab shows, not a reason to hide it.
+ * **Fetchers is shown only while a new fetcher can be set up** (DEB-3566, auto-fetch FR-1.1): the key is set, AI is on,
+ * the Auto-fetch job is on, and `[autofetch] enabled` is on. A refused key or spent limit keeps the tab (FR-1.2).
  */
 fun aiPageTabs(config: AppConfig, suggestionsAvailable: Boolean): List<String> {
     if (config.ai.apiKey.isBlank()) return emptyList()
     return buildList {
         add("support")
-        add("fetchers")
+        if (fetchersTabShown(config)) add("fetchers")
         if (suggestionsAvailable) add("suggestions")
     }
 }

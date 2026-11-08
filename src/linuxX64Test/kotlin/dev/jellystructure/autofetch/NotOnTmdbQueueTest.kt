@@ -256,13 +256,29 @@ class NotOnTmdbQueueTest {
     fun `a stopped site is one Dashboard row however many fetchers it stops and none while it runs`() = runBlocking<Unit> {
         val a = h.saveDagbok()
         val runtime = AutofetchRuntime(h.store, h.engine, h.service, h.lanes, h.world, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default))
-        assertTrue(runtime.dashboardRows().isEmpty())
+        assertTrue(runtime.dashboardRows(tabShown = true).isEmpty())
         h.site.listingStatus = 403
         h.engine.run(a.id, RunTrigger.MANUAL)
-        val row = runtime.dashboardRows().single()
+        val row = runtime.dashboardRows(tabShown = true).single()
         assertEquals("autofetch", row.domain); assertEquals("warning", row.severity); assertEquals("varpid.example.fo has stopped us", row.label)
         assertEquals(1, row.count); assertEquals("fetcher", row.unit); assertEquals("open", row.fix); assertEquals("/ai?tab=fetchers", row.href)
         assertTrue("never retried on a timer" in row.sentence && "403" in row.sentence, row.sentence)
+        assertEquals("Fetchers", row.action); assertEquals("AI ▸ Fetchers › varpid.example.fo", row.path)
         assertTrue(dev.jellystructure.server.routes.DashboardService.DOMAINS.any { it == ("autofetch" to "Auto-fetch") }, "its own domain chip")
+    }
+
+    @Test
+    fun `a stopped site's Dashboard row opens Settings when Fetchers is hidden`() = runBlocking<Unit> {
+        val a = h.saveDagbok()
+        val runtime = AutofetchRuntime(h.store, h.engine, h.service, h.lanes, h.world, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default))
+        h.site.listingStatus = 403
+        h.engine.run(a.id, RunTrigger.MANUAL)
+        val visible = runtime.dashboardRows(tabShown = true).single()
+        val hidden = runtime.dashboardRows(tabShown = false).single()
+        assertEquals("/settings?tab=ai", hidden.href)
+        assertEquals("Settings", hidden.action)
+        assertEquals("Settings ▸ AI › Auto-fetch", hidden.path)
+        assertEquals(visible.sentence, hidden.sentence)
+        assertEquals(visible.count, hidden.count)
     }
 }

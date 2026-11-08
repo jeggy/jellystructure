@@ -1,6 +1,8 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.config.AiAutofetchConfig
 import dev.jellystructure.config.AiConfig
+import dev.jellystructure.config.AutofetchConfig
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.SupportConfig
 import io.ktor.client.request.get
@@ -23,6 +25,11 @@ import kotlin.test.assertEquals
  * with the lane open or closed (DEB-1500), so a key with no Seerr is no longer a 404.
  */
 class AiPageRoutesTest {
+    private fun fetchersOn() = AppConfig(
+        ai = AiConfig(enabled = true, apiKey = "sk-test", autofetch = AiAutofetchConfig(enabled = true)),
+        autofetch = AutofetchConfig(enabled = true),
+    )
+
     private fun answer(cfg: AppConfig, seerr: Boolean): Pair<HttpStatusCode, String> {
         var out: Pair<HttpStatusCode, String>? = null
         testApplication {
@@ -41,32 +48,47 @@ class AiPageRoutesTest {
     @Test fun noAiBlockIs404() = assertEquals(HttpStatusCode.NotFound, answer(AppConfig(), seerr = true).first)
 
     @Test fun aBlankKeyIs404() {
-        assertEquals(HttpStatusCode.NotFound, answer(AppConfig(ai = AiConfig(apiKey = "")), seerr = true).first)
-        assertEquals(HttpStatusCode.NotFound, answer(AppConfig(ai = AiConfig(apiKey = "  ")), seerr = true).first)
+        val on = fetchersOn()
+        for (key in listOf("", "  ")) {
+            val cfg = on.copy(ai = on.ai.copy(apiKey = key))
+            assertEquals(HttpStatusCode.NotFound, answer(cfg, seerr = true).first)
+        }
     }
 
-    @Test fun aKeyWithoutSeerrHasTheSupportTabAlone() {
-        val (status, body) = answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = false)
+    @Test fun aKeyWithoutSeerrHasSupportAndFetchers() {
+        val (status, body) = answer(fetchersOn(), seerr = false)
         assertEquals(HttpStatusCode.OK, status)
         assertEquals("""{"tabs":["support","fetchers"]}""", body)
     }
 
-    @Test fun aKeyWithSeerrNamesSupportThenSuggestions() {
-        val (status, body) = answer(AppConfig(ai = AiConfig(apiKey = "sk-test")), seerr = true)
+    @Test fun aKeyWithSeerrNamesSupportFetchersThenSuggestions() {
+        val (status, body) = answer(fetchersOn(), seerr = true)
         assertEquals(HttpStatusCode.OK, status)
         assertEquals("""{"tabs":["support","fetchers","suggestions"]}""", body)
     }
 
     @Test fun supportIsThereWithTheLaneClosedAndWithItOpen() {
         for (open in listOf(false, true)) {
-            val cfg = AppConfig(ai = AiConfig(apiKey = "sk-test"), support = SupportConfig(enabled = open))
+            val cfg = fetchersOn().copy(support = SupportConfig(enabled = open))
             assertEquals("""{"tabs":["support","fetchers"]}""", answer(cfg, seerr = false).second, "enabled = $open")
         }
     }
 
     @Test fun switchingAiOffWithAKeyStillAnswers200() {
-        val (status, body) = answer(AppConfig(ai = AiConfig(enabled = false, apiKey = "sk-test")), seerr = true)
+        val cfg = fetchersOn().copy(ai = fetchersOn().ai.copy(enabled = false))
+        val (status, body) = answer(cfg, seerr = true)
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals("""{"tabs":["support","fetchers","suggestions"]}""", body)
+        assertEquals("""{"tabs":["support","suggestions"]}""", body)
+    }
+
+    @Test fun switchingTheAutoFetchJobOffHidesFetchers() {
+        val on = fetchersOn()
+        val cfg = on.copy(ai = on.ai.copy(autofetch = AiAutofetchConfig(enabled = false)))
+        assertEquals("""{"tabs":["support","suggestions"]}""", answer(cfg, seerr = true).second)
+    }
+
+    @Test fun switchingAutoFetchOffHidesFetchers() {
+        val cfg = fetchersOn().copy(autofetch = AutofetchConfig(enabled = false))
+        assertEquals("""{"tabs":["support"]}""", answer(cfg, seerr = false).second)
     }
 }

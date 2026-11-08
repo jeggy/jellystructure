@@ -232,7 +232,7 @@ class DashboardService(
         unfilteredSso?.row()?.let { rows += it }
 
         // DEB-2477 (FR-2.5) — a site that has stopped Auto-fetch stays stopped until the admin resumes it, so it is a row until then.
-        autofetch?.let { rt -> rows += runCatching { rt.dashboardRows() }.getOrDefault(emptyList()) }
+        autofetch?.let { rt -> rows += runCatching { rt.dashboardRows(tabShown = fetchersTabShown(cfg)) }.getOrDefault(emptyList()) }
 
         // DEB-2233 (FR-9) — the identity provider would return viewers somewhere that is not this server.
         dev.jellystructure.tv.SsoSetupFlag.dashboardRow(configStore)?.let { rows += it }
