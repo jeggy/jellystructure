@@ -2125,6 +2125,12 @@ class PlaybackService(
         } else {
             jellyfinClient.markUnplayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         }
+        // DEB-3955 (FR-230-7, FR-230-9) — the state just written is the cache's answer now, and a refresh whose read began
+        // before this write landed may not put the old one back.
+        val uid = device.jellyfinUserId
+        val was = PlaystateCache.get(uid)[jellyfinId] ?: dev.jellystructure.shared.tv.CardPlayState()
+        PlaystateCache.patch(uid, mapOf(jellyfinId to was.copy(played = watched, resumeMs = 0, playedPct = if (watched) 1f else 0f)))
+        PlaystateCache.noteMarkLanded(uid, listOf(jellyfinId))
     }
 
     /**
@@ -2171,6 +2177,7 @@ class PlaybackService(
                 }
             }.awaitAll()
         }
+        PlaystateCache.noteMarkLanded(uid, targets + itemId)   // DEB-3955 (FR-230-9) — after the writes, not before
 
         // Re-read authoritative state for the parent item + every affected episode.
         val readIds = (listOf(itemId) + targets).filterNot { it.startsWith('/') }.distinct()
@@ -2189,6 +2196,7 @@ class PlaybackService(
                 }
             }
         }
+        PlaystateCache.patch(uid, out)   // DEB-3955 (FR-230-7) — before invalidatePlaystate and any push
         return out
     }
 

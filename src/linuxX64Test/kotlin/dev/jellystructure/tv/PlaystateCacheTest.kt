@@ -128,6 +128,19 @@ class PlaystateCacheTest {
         assertEquals(true, now.getValue("e2").played)
     }
 
+    /** DEB-3955 (FR-230-9) — a read that began before a mark landed carries the pre-mark value: not merged, not pushed. */
+    @Test
+    fun `a read that began before a mark landed is dropped for that id and a later read is taken`() {
+        val old = mapOf("e1" to st(false), "e2" to st(false))
+        PlaystateCache.noteMarkLanded("u-9", listOf("e1"), at = 1_000L)
+        val early = PlaystateCache.withoutPreMarkReads("u-9", old, began = 900L)
+        assertEquals(setOf("e2"), early.keys)
+        val late = PlaystateCache.withoutPreMarkReads("u-9", old, began = 1_001L)
+        assertEquals(setOf("e1", "e2"), late.keys)
+        // another user's mark of the same id is not this user's
+        assertEquals(setOf("e1", "e2"), PlaystateCache.withoutPreMarkReads("u-other", old, began = 900L).keys)
+    }
+
     private fun viewer(allowedTags: Set<String> = emptySet()) =
         dev.jellystructure.auth.DeviceData("d", "tok", "u-policy", "viewer", "", isAdmin = false, allowedTags = allowedTags)
 

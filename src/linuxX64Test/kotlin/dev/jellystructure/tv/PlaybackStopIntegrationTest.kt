@@ -77,6 +77,16 @@ class PlaybackStopIntegrationTest {
         val server = embeddedServer(CIO, port = 0, host = "127.0.0.1") {
             routing {
                 get("/Users/{id}") { call.respondText("{}", ContentType.Application.Json) }
+                // DEB-3955 — the bulk user-data read setPlayed ends with.
+                get("/Items") {
+                    val ids = (call.request.queryParameters["Ids"] ?: call.request.queryParameters["ids"]).orEmpty().split(',').filter { it.isNotBlank() }
+                    val snap = fake.lock.withLock { ids.associateWith { (fake.position[it] ?: 0L) to (fake.played[it] ?: false) } }
+                    val rows = ids.joinToString(",") { id ->
+                        val (pos, pl) = snap.getValue(id)
+                        """{"Id":"$id","Type":"Episode","UserData":{"PlaybackPositionTicks":$pos,"Played":$pl}}"""
+                    }
+                    call.respondText("""{"Items":[$rows],"TotalRecordCount":${ids.size}}""", ContentType.Application.Json)
+                }
                 get("/Items/{id}") {
                     val id = call.parameters["id"]!!
                     val (pos, pl) = fake.lock.withLock { (fake.position[id] ?: 0L) to (fake.played[id] ?: false) }
@@ -113,6 +123,11 @@ class PlaybackStopIntegrationTest {
                 post("/UserPlayedItems/{id}") {
                     val id = call.parameters["id"]!!
                     fake.lock.withLock { fake.played[id] = true; fake.position[id] = 0L; fake.markedPlayed += id }
+                    call.respondText("{}", ContentType.Application.Json)
+                }
+                delete("/UserPlayedItems/{id}") {
+                    val id = call.parameters["id"]!!
+                    fake.lock.withLock { fake.played[id] = false }
                     call.respondText("{}", ContentType.Application.Json)
                 }
                 delete("/Videos/ActiveEncodings") {
@@ -160,6 +175,20 @@ class PlaybackStopIntegrationTest {
             assertEquals(1, w.size, "one user-data write, no read-back correction needed: $w")
             assertTrue("\"Played\":false" in w.single().second && "\"PlaybackPositionTicks\":11170140000" in w.single().second, w.single().second)
         }
+    }
+
+    /** DEB-3955 (FR-230-7, FR-230-9) — a tick made in Ravilo is the cache's answer at once, with no cycle between. */
+    @Test
+    fun `a mark and a played write put their state in the playstate cache at once`() = rig("cache-mark") {
+        val tv = device("phone-cache-mark")
+        service.mark(tv, "film-a", true)
+        assertEquals(true, PlaystateCache.get(tv.jellyfinUserId)["film-a"]?.played)
+        assertEquals(0L, PlaystateCache.get(tv.jellyfinUserId)["film-a"]?.resumeMs)
+        service.setPlayed(tv, "film-b", true, listOf("film-c", "film-d"))
+        val cached = PlaystateCache.get(tv.jellyfinUserId)
+        assertEquals(listOf(true, true), listOf("film-c", "film-d").map { cached[it]?.played })   // the parent row is Jellyfin's roll-up, not written here
+        service.setPlayed(tv, "film-c", false, listOf("film-c"))
+        assertEquals(false, PlaystateCache.get(tv.jellyfinUserId)["film-c"]?.played)
     }
 
     @Test

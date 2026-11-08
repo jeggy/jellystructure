@@ -921,7 +921,7 @@ fun Route.tvRoutes(
         val req = call.receive<MarkRequest>()
         playbackService.mark(device, req.itemId, req.watched)
         call.respond(mapOf("status" to "ok"))
-        homeFeedService.invalidatePlaystate(device)  // see /tv/playback/stop
+        homeFeedService.invalidatePlaystate(device, req.itemId)  // see /tv/playback/stop; DEB-3955 (FR-230-8) — the title it touched
     }
 
     // R142 — played/unplayed write-through (movie / episode / season / series). Returns the authoritative
@@ -931,7 +931,7 @@ fun Route.tvRoutes(
         val req = call.receive<PlayedRequest>()
         call.respond(playbackService.setPlayed(device, req.itemId, req.played, req.episodeIds))
         // A finished episode must leave (and its successor enter) the Continue row now, not in 5 minutes.
-        homeFeedService.invalidatePlaystate(device)  // see /tv/playback/stop
+        homeFeedService.invalidatePlaystate(device, req.episodeIds.firstOrNull() ?: req.itemId)  // see /tv/playback/stop; DEB-3955 (FR-230-8)
     }
 
     // Bug fix — "My List" write-through: the detail screens' "+ My List" button had no backend call

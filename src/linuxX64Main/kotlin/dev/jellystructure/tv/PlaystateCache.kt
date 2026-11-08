@@ -94,6 +94,24 @@ object PlaystateCache {
         data = data + (userId to (data[userId].orEmpty() + entries))
     }
 
+    // DEB-3955 (FR-230-9) — when each (user, id) viewer mark LANDED at Jellyfin. A refresh whose read began before that
+    // moment may carry the pre-mark value; it is not merged over the mark and not pushed.
+    private var landed: Map<Pair<String, String>, Long> = emptyMap()
+    private const val LANDED_KEEP_MS = 60_000L
+
+    /** DEB-3955 (FR-230-9) — call AFTER the write to Jellyfin has completed. */
+    fun noteMarkLanded(userId: String, ids: Collection<String>, at: Long = nowMs()) {
+        if (ids.isEmpty()) return
+        landed = (landed + ids.associate { (userId to it) to at }).filterValues { at - it < LANDED_KEEP_MS }
+    }
+
+    /** DEB-3955 (FR-230-9) — [read] less the ids a viewer mark landed on after the read [began]. A read that began
+     *  after the stamp is taken as it is. */
+    internal fun withoutPreMarkReads(userId: String, read: Map<String, CardPlayState>, began: Long): Map<String, CardPlayState> {
+        if (landed.isEmpty()) return read
+        return read.filterKeys { id -> (landed[userId to id] ?: Long.MIN_VALUE) <= began }
+    }
+
     /** Test seam: one user's map, as a refresh would have left it. */
     internal fun replaceForTest(userId: String, map: Map<String, CardPlayState>) { data = data + (userId to map) }
 
@@ -172,6 +190,7 @@ object PlaystateCache {
         // Phase 219 (FR-219-4) — time the permit wait and the Jellyfin round trip separately, so a cycle
         // skipped for want of a permit is INFO ("pool busy") and only a real Jellyfin timeout stays WARN.
         val recorder = dev.jellystructure.ops.GateWaitRecorder()
+        val readBegan = nowMs()   // DEB-3955 (FR-230-9)
         val ps = dev.jellystructure.ops.boundedOrNull(timeoutMs, "playstate refresh") {
             withContext(recorder) {
                 val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
@@ -195,6 +214,7 @@ object PlaystateCache {
         // R352 (FR-R352-8) — a series whose own row changed since the last cycle (marked in Jellyfin's own UI, say) is
         // read whole now; the rotation alone took five minutes to reach all its episodes (2 → 8 → 12 → 18 → 20 of 20).
         val whole = if (scope is RefreshScope.Cycle && previous != null) episodesOfChangedSeries(items, previous, ps.states, ids.toSet()) else emptyList()
+        val extraBegan = nowMs()
         val extraRead = if (whole.isEmpty()) null else dev.jellystructure.ops.boundedOrNull(FETCH_TIMEOUT_MS, "playstate refresh") {
             val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
             fetchPlaystateRead(jellyfinClient, base, token, device.jellyfinUserId, whole)
@@ -205,7 +225,11 @@ object PlaystateCache {
         if (extra.isNotEmpty()) cycleIds += whole.size
         // R343 (FR-R343-13) — a cleared Start over episode reads as the server is about to write it, not as Jellyfin's
         // own session wrote it back a moment ago (watched); neither the cache nor the push may say otherwise.
-        val got = StartOverHolds.overlay(device.jellyfinUserId, ps.states + extra)
+        // DEB-3955 (FR-230-9) — and a read that began before a viewer's mark landed never carries that id over the mark.
+        val got = StartOverHolds.overlay(
+            device.jellyfinUserId,
+            withoutPreMarkReads(device.jellyfinUserId, ps.states, readBegan) + withoutPreMarkReads(device.jellyfinUserId, extra, extraBegan),
+        )
         // Phase 230 (FR-230-1) — MERGE: a cycle now carries a slice, not the whole catalog.
         data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + got))
         // R176 — patch any already-open Home/Browse/Search screen on another of this user's devices,
