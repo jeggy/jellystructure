@@ -203,9 +203,9 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     }
 
     /** R142: toggle one episode's played state; patch the overlay from the server result. */
-    fun setEpisodePlayed(episodeId: String, played: Boolean) {
+    fun setEpisodePlayed(episodeId: String, played: Boolean, episodeIds: List<String> = emptyList()) {
         scope.launch {
-            runCatching { apiClient.setPlayed(episodeId, played) }.getOrNull()?.let {
+            runCatching { apiClient.setPlayed(episodeId, played, episodeIds) }.getOrNull()?.let {
                 _playstateOverlay.value += it
                 WatchedBus.publish(it)  // R147: also flips the series tile if this completes/uncompletes it
             }

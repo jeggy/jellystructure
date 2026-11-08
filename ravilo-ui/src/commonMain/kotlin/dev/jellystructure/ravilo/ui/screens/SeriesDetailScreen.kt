@@ -155,6 +155,7 @@ fun SeriesDetailScreen(
                 onBack = onBack,
                 onPlay = onPlay,
                 onMarkEpisode = { epId, played -> store.setEpisodePlayed(epId, played) },
+                onMarkGroup = { epId, played, ids -> store.setEpisodePlayed(epId, played, ids) },
                 onMarkFavorite = { favorite -> store.setFavorite(favorite) },
                 onRelatedSelect = onRelatedSelect,
                 onCastSelect = onCastSelect,
@@ -238,6 +239,10 @@ internal fun episodeGroups(episodes: List<Episode>): List<List<Episode>> =
     // R309: one id, one FILE — the parts of a multi-episode file share its one Jellyfin id on purpose,
     // and a per-entry dedupe had kept only part 1 (every such file drew as one 7-minute episode).
     episodes.groupedByFile()
+
+/** R179 §C.1 — the toggle on a multi-episode card writes every episode in the file, not only the entry point. */
+internal fun markGroup(group: List<Episode>, entry: Episode, played: Boolean, onMark: (String, Boolean, List<String>) -> Unit) =
+    onMark(entry.id, played, group.map { it.id })
 
 /** Picks the group's natural entry point: in-progress, else first unwatched, else the first episode. */
 private fun groupEntryPoint(group: List<Episode>, overlay: Map<String, CardPlayState>): Episode =
@@ -341,6 +346,8 @@ internal fun SeriesDetailLoaded(
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onMarkEpisode: (String, Boolean) -> Unit,
+    /** R179 §C.1 — a multi-episode card's toggle: the entry episode and every id in the card's group. */
+    onMarkGroup: (String, Boolean, List<String>) -> Unit = { id, played, _ -> onMarkEpisode(id, played) },
     onMarkFavorite: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
@@ -996,7 +1003,7 @@ internal fun SeriesDetailLoaded(
                                         )
                                     }
                                     Spacer(Modifier.height(6.dp))
-                                    EpisodeWatchToggle(watched = groupWatched, onToggle = { onMarkEpisode(targetEp.id, !groupWatched) }, tag = SeriesDetailTags.toggle(group.first().id))
+                                    EpisodeWatchToggle(watched = groupWatched, onToggle = { markGroup(group, targetEp, !groupWatched, onMarkGroup) }, tag = SeriesDetailTags.toggle(group.first().id))
                                 }
                             } else {
                                 val ep = group.first()
