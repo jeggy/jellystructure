@@ -118,3 +118,93 @@ like everything else).
    draws the first frame at the saved scale.
 6. A playing title, Live TV and the remote screen are unchanged at every scale.
 7. An app built before this spec, talking to a server after it, draws as it does today.
+
+## Amendment 2026-11-08 — the round is adopted, and two small browse changes join
+
+The design round (DEB-3965, `design/incoming/2026-11-08-tv-slim-header/`, commit `c36de5d9`) came back,
+and the owner picked on card `1dd5e02d`: **Slim at 48 dp**, **Surprise me as a labelled pill**, **quieter
+row headings that keep See All**, and **the focus ring fixed on both bars**. Every pick was the
+recommended one. FR-9 is now buildable, and FR-11 to FR-14 are new.
+
+**FR-9 (completed) · The Slim geometry.** With `header_style = slim` the TV `AppBar` is drawn with these
+numbers. Standard keeps today's, which are listed for comparison.
+
+| Part | Standard | Slim |
+|---|---|---|
+| Bar height (`RaviloDimens.appBarHeight` for the style) | 60 dp | **48 dp** |
+| Brand mark | 26 dp | **20 dp** |
+| Wordmark | 22 sp, −1 sp tracking | **17 sp, −0.8 sp** |
+| Brand mark ↔ wordmark gap | 8 dp | **7 dp** |
+| Nav pill type | 15 sp | **14 sp** |
+| Nav pill padding | 12 × 6 dp | **11 × 5 dp** |
+| Nav pill corner | 11 dp | **9 dp** |
+| Gap between top-level items | 18 dp | **14 dp** |
+| Search / avatar circle | 40 dp | **32 dp** |
+| Search glyph | 22 dp | **18 dp** |
+| Avatar initials | 14 sp | **12 sp** |
+| Clock | 15 sp | **13 sp** |
+| Side gutter | 48 dp | 48 dp (unchanged) |
+
+Discover's title block is not changed. `DiscoverScreen` already starts at `appBarHeight + 24.dp`, so a
+Slim bar lifts it by 12 dp on its own.
+
+**FR-11 · The focus ring on the round buttons stands clear of the fill, on both bars.** The search and
+avatar circles draw their 2 dp focus ring **2 dp outside** the circle instead of flush against it. That
+is the treatment `RaviloButton` already uses (`focusRing(…, outset = …)`). Today the ring (`#8e82ff`) sits
+directly on the accent fill (`#7b6ef0`), a 4 % difference that can't be seen from the sofa. This applies
+to Standard and Slim alike (owner, 2026-11-08). It is a fix to today's bar, not part of the Slim setting.
+
+**FR-12 · Surprise me, a labelled pill in the bar.** On the TV bar (both styles), in the right-hand cluster
+before search, a pill with a sparkle glyph and the label `nav.surprise` ("Surprise me"). The glyph is
+deliberately not the shuffle arrows, which `detail.shuffle` already owns. It sits in the bar's focus
+order between the last nav tab and search. Pressing it:
+
+- calls a new route `GET /api/tv/surprise?exclude=<id,…>`, which answers `{"id": "…", "kind": "MOVIE" |
+  "SERIES"}`. The server picks uniformly at random from what the viewer can see in their libraries:
+  **movies they have never played**, and **series where they have played no episode**. Ids in `exclude`
+  are left out. When nothing is left, the route answers `204`;
+- opens that title's normal detail page, with a small `detail.kicker_surprise` ("SURPRISE") kicker above
+  the title and an **Another one** (`detail.another`) ghost button beside Play, at the shipped button
+  size;
+- **Another one** asks the route again, with every id shown in this run of surprises in `exclude`, and
+  *replaces* the detail page rather than stacking on it. One Back always returns to where Surprise me was
+  pressed;
+- on a `204` the viewer stays where they are and sees a short note `surprise.none` ("You've seen
+  everything here"). From the detail page, Another one gets the same note and the page stays.
+
+**FR-13 · Surprise me is gated, so an older server never shows a dead pill.** `RaviloConfig` gains
+`@SerialName("surprise_me") surpriseMe: Boolean = false`. A server with FR-12's route always sends `true`.
+An older server never sends it, so the pill stays hidden. (An absent `/api` route answers `200 text/html`,
+not 404, so the app cannot discover the route by probing.) This is a capability field only. It has no
+admin control.
+
+**FR-14 · Quieter row headings, See All kept.** On the TV layout a content row's heading drops from
+18 sp to **16 sp**. Beside it, after a ` · ` separator, sits the row's count at **13 sp in the dim ink**
+(the same style as `ContentRow`'s existing `trailingInfo`). The count is `seedTotalCount ?: items.size`,
+so it needs no new wire field. **See All stays where it is, unchanged**, at the row's right end. A row
+with no meaningful count (one item or fewer) shows no count. This applies at every header style and
+screen scale. The phone and the desktop keep their headings.
+
+**Strings (FR-12).** Four new keys go in `i18n/en.json`, `da.json` and `fo.json`:
+
+| Key | en | da | fo |
+|---|---|---|---|
+| `nav.surprise` | Surprise me | Overrask mig | Yvirraska meg |
+| `detail.another` | Another one | En mere | Eitt annað |
+| `detail.kicker_surprise` | SURPRISE | OVERRASKELSE | YVIRRASKAN |
+| `surprise.none` | You've seen everything here | Du har set det hele | Tú hevur sæð alt her |
+
+The Faroese strings (the round's draft, and `surprise.none` mine) need a native read before release (*Vel eitt fyri mig*
+was offered as an alternative for `nav.surprise`).
+
+**Wire.** A new route (FR-12) and one optional field (FR-13), both additive. Nothing is removed or
+retyped.
+
+**Acceptance, added.**
+8. With Slim, the scrolled bar measures 48 dp at 100 % and the content starts 12 dp higher than with
+   Standard. Focus order and the transparent-to-solid behaviour are unchanged.
+9. The search and avatar focus ring is visible from the sofa on both bars.
+10. Surprise me never opens a movie the viewer has played or a series they have started. Another one
+    never repeats a title within one run. Back returns to the page where the pill was pressed.
+11. Against a server without FR-12, the pill is absent.
+12. Home rows read `Heading · N` at 16 sp, and every row that showed See All before still shows it.
