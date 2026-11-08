@@ -97,6 +97,24 @@ internal fun endOfFileShowsCard(
     else -> true
 }
 
+/**
+ * DEB-3950 (R182 amendment FR-1) — at the real end of the file with nothing to advance to (`advanceNext`'s own test: no next
+ * episode, or no host that can navigate to it), the player closes: it marks watched and leaves, card or no card, *Watch
+ * credits* latch or not, in every Skip Credits mode.
+ */
+internal fun endClosesPlayer(ended: Boolean, canAdvance: Boolean): Boolean = ended && !canAdvance
+
+/**
+ * DEB-3950 (R182 amendment FR-2) — may the early card rise now? With a trusted credits marker nothing changes. With none,
+ * R384's last-second trigger raises only a Next Episode card that can actually advance: never Skip credits or Skip to scene,
+ * both of which offer a jump past credits that are already over.
+ */
+internal fun earlyCardAllowed(trustedMarker: Boolean, mode: CreditsCardMode, canAdvance: Boolean): Boolean =
+    trustedMarker || (mode == CreditsCardMode.NEXT_EPISODE && canAdvance)
+
+/** DEB-3950 (R182 amendment FR-3) — once the file has ended, Back leaves in one press, whatever is on screen. */
+internal fun backLeavesAtEnd(ended: Boolean): Boolean = ended
+
 internal class PlayerScreenState(initial: PlayerScreenInputs) {
     var inputs by mutableStateOf(initial)
 
@@ -119,6 +137,9 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
      * control, MediaKey.NEXT) agrees on whether a next episode exists.
      */
     val resolvedNextEpisodeId: String? get() = inputs.nextEpisodeId?.takeIf { it != inputs.itemId }
+
+    /** `advanceNext`'s own test, live: a next episode and a host that can navigate to it. */
+    private val canAdvance: Boolean get() = resolvedNextEpisodeId != null && inputs.onNavigateToEpisode != null
 
     // ─── Objects the screen owns ─────────────────────────────────────────────
     val player = RaviloPlayer()
@@ -944,7 +965,9 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // file (below) becomes the only trigger point in that mode.
         if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
             !nextUpVisible && !nextUpDismissed && !player.isEnded &&
-            creditsCardEarly(bk.skipCreditsMode, inputs.nothingFollows)) {
+            creditsCardEarly(bk.skipCreditsMode, inputs.nothingFollows) &&
+            // DEB-3950 (R182 amendment FR-2) — no trusted marker: only a Next Episode card, never Skip credits / Skip to scene.
+            earlyCardAllowed(creditsStart != null, creditsCardMode, canAdvance)) {
             nextUpVisible = true
             nuFocus = nextUpStartsOn(bk.viewerSeek)   // R363 (FR-R363-6)
         }
@@ -976,7 +999,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // the file, per the owner's decision that Off must not disable Autoplay); anything else — no next episode, or
         // Autoplay off — exits silently via the same fallback skipCredits() already uses, with no card ever shown.
         if (playerLoadedForCurrentItem && player.isEnded && !advanceAlreadyRequested &&
-            !nextUpVisible && !nextUpDismissed) {
+            !nextUpVisible && !nextUpDismissed && !endClosesPlayer(true, canAdvance)) {
             if (endOfFileShowsCard(bk.skipCreditsMode, inputs.nothingFollows, resolvedNextEpisodeId != null, bk.autoplayNextEnabled)) {
                 nextUpVisible = true; nuFocus = NuFocus.PLAY
             } else {
@@ -999,6 +1022,15 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             )
         ) {
             store.endOfPlay(positionMs, durationMs)
+        }
+
+        // DEB-3950 (R182 amendment FR-1) — the end with nothing to advance to closes the player, after R372's stop above
+        // (which still runs once). Deliberately not guarded on `nextUpVisible` or `nextUpDismissed`: a card up from the early
+        // trigger, or *Watch credits* pressed, must not hold a finished title open. Latched per item so the poll closes once.
+        if (playerLoadedForCurrentItem && bk.endCloseRequestedForItemId != itemId &&
+            endClosesPlayer(player.isEnded, canAdvance)) {
+            bk.endCloseRequestedForItemId = itemId
+            skipCredits()
         }
 
         // R182 (FR-RV-SKIP1-1) — Skip Intro pill. Entering [introStartMs, introEndMs) for the first time this episode arms
@@ -1215,6 +1247,9 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         when {
             // R290 (FR-R290-5) — Back while nothing is playing yet (negotiating, or the start screen) leaves at once.
             startPhaseNow != StartPhase.PLAYING || sessionState !is PlayerSessionState.Ready || displayedBufferMoment == PlBufferMoment.COLD -> onBack()
+            // DEB-3950 (R182 amendment FR-3) — after the end one Back leaves, whatever is up (a card, the controls, a running
+            // countdown). It leaves; it never advances.
+            backLeavesAtEnd(player.isEnded) -> onBack()
             // R295 (FR-R295-2) — a phone's sheet sits over the chrome it was opened from; Back out of it goes back to the
             // picture, not to the chrome (which cost a fourth Back to leave from the versions list). The TV keeps its focus on
             // Audio & Subs, as before.

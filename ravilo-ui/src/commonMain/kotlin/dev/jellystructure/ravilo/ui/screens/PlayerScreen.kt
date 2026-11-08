@@ -369,6 +369,8 @@ internal class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var loadedForItemId by mutableStateOf<String?>(null)
     var positionKnownForItemId by mutableStateOf<String?>(null)
     var advanceRequestedForItemId by mutableStateOf<String?>(null)
+    /** DEB-3950 (R182 amendment FR-1) — the item whose end already closed the player, so the close runs once per item. */
+    var endCloseRequestedForItemId: String? = null
     /** R381 — the item whose next episode was prepared and prefetched (at most once per item). */
     var prefetchedForItemId: String? = null
     /** R372 (FR-R372-10) — the end-of-play decision, latched per item (see [EndOfPlayWatch]). */
