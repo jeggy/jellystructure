@@ -336,6 +336,13 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
     cache needs an `AVAssetResourceLoader` delegate. (4) **The 0.5 s bound is not measured** on a Mac. (5) **Nothing here runs on AVPlayer in CI:**
     `ci / macos` compiles the Swift (unchanged) and the tests are the pure decisions, `MacTroubleTest` (`MacLadderPeak.onStall`, `MacHeldFrame`) and
     `LadderSteppingTest` (`peakAfterStall`, `nextPeakBps` with a blocked climb).
+- *2026-11-08, DEB-4023 — the Mac stall count includes AVFoundation’s access log.* QA found a playing film
+  waiting for over 56 s with `AVPlayerWaitingToMinimizeStallsReason` and `accessLog` showing one stall, while
+  `AVPlayerItemPlaybackStalled` had not incremented the exported count. For FR-5, the existing `stalls` field in
+  `ravilo_player_state` reports the greater of the notification count and the access log’s nonnegative stall totals
+  for the current item. The one-second watch tick caps on the first increase and holds the climb for 120 s. The
+  field’s position and shape stay the same; a new item resets both sources. AVPlayer behavior on a Mac still needs
+  QA proof, since CI compiles the Swift library and tests the Kotlin decision but does not run a network-starved player.
 - *2026-11-07, DEB-3215 — what the Linux client (mpv) does, and what one mpv does not allow.* Linux only, a film (`MpvTrouble`); a music or
   radio engine keeps its options. mpv reads one stream at a time, so a rung is the store's restream (FR-309-9) and not a variant mpv picks.
   - **FR-3 and FR-4, through mpv's options.** `network-timeout=20` (ffmpeg's `rw_timeout`: every request the HLS demuxer makes). `stream-lavf-o`

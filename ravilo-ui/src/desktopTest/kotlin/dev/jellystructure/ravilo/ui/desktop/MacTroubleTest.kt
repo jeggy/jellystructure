@@ -71,6 +71,21 @@ class MacTroubleTest {
     }
 
     @Test
+    fun `a stall reported while AVPlayer waits caps once and blocks a buffered climb`() {
+        val engine = RecordingEngine(); val p = peak(engine)
+        p.tick(state(buffered = 10_000), nowMs = 1_000)
+        // The native state now includes access-log stalls even when PlaybackStalled was not posted.
+        val waiting = state(stalls = 1, buffered = 40_000).copy(timeControl = 1)
+        p.onStall(waiting, nowMs = 50_000)
+        p.tick(waiting, nowMs = 50_000)
+        p.onStall(waiting, nowMs = 51_000)
+        p.tick(waiting, nowMs = 51_000)
+        assertEquals(listOf(18_256_000L * MacLadderPeak.PEAK_HEADROOM,
+            12_256_000L * MacLadderPeak.PEAK_HEADROOM), engine.peaks)
+        assertEquals(50_000 + CLIMB_BLOCK_AFTER_RECOVERY_MS, PlayerLadderHints.climbBlockedUntilMs)
+    }
+
+    @Test
     fun `the same stall is answered once and the next one caps again`() {
         val engine = RecordingEngine(); val p = peak(engine)
         p.onStall(state(stalls = 1), nowMs = 1_000)   // before any tick: the start rung is the one capped

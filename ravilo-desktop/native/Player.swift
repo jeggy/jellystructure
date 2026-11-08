@@ -298,6 +298,7 @@ public func ravilo_player_state(_ h: Int64, _ out: UnsafeMutablePointer<Int64>, 
     func ms(_ t: CMTime) -> Int64 { t.isValid && t.isNumeric ? Int64(t.seconds * 1000) : 0 }
     let flags = b.locked { (b.ready, b.failedReason != nil, b.ended, b.firstFrame, b.stalls, b.seeking) }
     out[0] = ms(b.player.currentTime())
+    var accessStalls: Int64 = 0
     if let it = b.item {
         let d = it.duration
         out[1] = (d.isValid && d.isNumeric && !d.isIndefinite) ? ms(d) : -1
@@ -308,6 +309,9 @@ public func ravilo_player_state(_ h: Int64, _ out: UnsafeMutablePointer<Int64>, 
         }
         if let events = it.accessLog()?.events {
             out[9] = Int64(events.reduce(0) { $0 + max(0, $1.numberOfDroppedVideoFrames) })
+            // DEB-4023 (FR-5) — AVPlayer may count a stall here without posting PlaybackStalled while it
+            // waits to minimize stalls. Each access-log event counts its own stalls; ignore unknown (-1).
+            accessStalls = events.reduce(0) { $0 + Int64(max(0, $1.numberOfStalls)) }
             if let last = events.last, last.observedBitrate > 0 { out[12] = Int64(last.observedBitrate) }
         }
         out[7] = Int64(it.presentationSize.width)
@@ -324,7 +328,7 @@ public func ravilo_player_state(_ h: Int64, _ out: UnsafeMutablePointer<Int64>, 
     out[4] = flags.1 ? 2 : (flags.0 ? 1 : 0)
     out[5] = flags.2 ? 1 : 0
     out[6] = flags.3 ? 1 : 0
-    out[10] = flags.4
+    out[10] = max(flags.4, accessStalls)
     out[11] = flags.5 ? 1 : 0
     out[13] = b.wantPlay ? 1 : 0
 }

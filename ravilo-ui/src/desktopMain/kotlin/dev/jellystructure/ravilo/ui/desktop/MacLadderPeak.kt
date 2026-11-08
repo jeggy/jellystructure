@@ -18,7 +18,7 @@ import kotlin.concurrent.Volatile
  * enough is buffered and drops as soon as the buffer runs low ([nextPeakBps], the same rule as Android's track selection
  * and the Cast receiver's Shaka). Only for a ladder (`adaptive` ticket) on the Mac; mpv is stepped by the store instead.
  *
- * DEB-3214 (DEB-3093 FR-5, FR-9) — a stall (`AVPlayerItemPlaybackStalled`, counted by the library) caps the peak one rung down at once and
+ * DEB-3214 (DEB-3093 FR-5, FR-9) — a stall (the library’s notification or AVPlayer access-log count) caps the peak one rung down at once and
  * nothing climbs for [CLIMB_BLOCK_AFTER_RECOVERY_MS], as Android's in-place cap does ([onStall]); a recovery's climb block (the store's) holds the climb too.
  *
  * [start] runs on the player's thread at each load; the master is read once off that thread; [tick] (every couple of
