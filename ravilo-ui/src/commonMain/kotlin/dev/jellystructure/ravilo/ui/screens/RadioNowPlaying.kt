@@ -41,7 +41,7 @@ import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.platform.LocalDensity
-import dev.jellystructure.ravilo.ui.components.RadioGlyph
+import dev.jellystructure.ravilo.ui.components.RadioMarkPlate
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -175,9 +175,14 @@ private fun LiveChip(k: Float) {
     }
 }
 
-/** The station's logo, large, on a plate that carries the radio mark in its bottom-right corner (`.rd-plate .rd-pmark`). */
+/** The station's logo, large, on a plate that carries the radio mark in its bottom-right corner (FR-8, amended by DEB-3113). */
 @Composable
-private fun StationPlate(channel: LiveTvChannel, size: androidx.compose.ui.unit.Dp, k: Float) {
+internal fun StationPlate(
+    channel: LiveTvChannel,
+    size: androidx.compose.ui.unit.Dp,
+    k: Float,
+    logoImage: @Composable (String, Modifier) -> Unit = { url, m -> RemoteImage(url, channel.name, m, contentScale = ContentScale.Fit) },
+) {
     val colors = RaviloTheme.colors
     val shape = RoundedCornerShape((32 * k).dp)
     val hue = remember(channel.name) { (channel.name.hashCode().toLong() and 0xFFFFFFFFL) % 360L }
@@ -189,10 +194,10 @@ private fun StationPlate(channel: LiveTvChannel, size: androidx.compose.ui.unit.
         val logo = channel.logoUrl
         if (!logo.isNullOrBlank()) {
             // DEB-3051 (FR-8) — the logo is a server-relative `/api/tv/image/…` path: RemoteImage resolves it against the server base, as the Home tiles do; a bare AsyncImage cannot.
-            RemoteImage(logo, channel.name, Modifier.fillMaxSize().padding((28 * k).dp), contentScale = ContentScale.Fit)
+            logoImage(logo, Modifier.fillMaxSize().padding((28 * k).dp))
         } else {
             Text(channel.name.take(2).uppercase(), color = Color.White, fontSize = (92 * k).sp, fontWeight = FontWeight.Bold)
         }
-        RadioGlyph(Color.White.copy(alpha = 0.9f), (44 * k).dp, Modifier.align(Alignment.BottomEnd).padding(end = (22 * k).dp, bottom = (20 * k).dp), description = str("radio.label"))
+        RadioMarkPlate(Modifier.align(Alignment.BottomEnd).padding(end = (22 * k).dp, bottom = (20 * k).dp), plateSize = (68 * k).dp, glyphSize = (44 * k).dp, cornerRadius = (18 * k).dp)
     }
 }

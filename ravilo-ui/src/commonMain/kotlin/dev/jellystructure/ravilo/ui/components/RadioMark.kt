@@ -19,8 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
  * It carries the accessible label *Radio*. Its place is the caller's: the one corner a channel tile leaves empty.
  */
 @Composable
-fun RadioMarkPlate(modifier: Modifier = Modifier, plateSize: Dp = 34.dp, glyphSize: Dp = 22.dp) {
-    val shape = RoundedCornerShape(9.dp)
+fun RadioMarkPlate(modifier: Modifier = Modifier, plateSize: Dp = 34.dp, glyphSize: Dp = 22.dp, cornerRadius: Dp = 9.dp) {
+    val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier.size(plateSize)
             .background(Color(0xC2080A10), shape)
