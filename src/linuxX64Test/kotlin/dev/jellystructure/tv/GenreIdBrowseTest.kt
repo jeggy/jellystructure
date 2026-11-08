@@ -114,6 +114,20 @@ class GenreIdBrowseTest {
     }
 
     @Test
+    fun `a browse card carries rating_score when the title meets the vote minimum and none otherwise`() = runBlocking {
+        // DEB-2837 (FR-7): IMDb first, else TMDB with votes; under DEFAULT_MIN_VOTES or unrated ⇒ absent.
+        mediaStore.addOrUpdate(item("imdb", listOf("Drama"), "en").copy(imdbRating = dev.jellystructure.model.ImdbRating(8.1, 5000, 0L)))
+        mediaStore.addOrUpdate(item("tmdb", listOf("Drama"), "en").copy(tmdbVoteAverage = 7.4, tmdbVoteCount = 300))
+        mediaStore.addOrUpdate(item("thin", listOf("Drama"), "en").copy(tmdbVoteAverage = 9.0, tmdbVoteCount = 12))
+        mediaStore.addOrUpdate(item("none", listOf("Drama"), "en"))
+        val cards = service.browseByQuery(device, null, null).items.associateBy { it.card.id }
+        assertEquals(8.1, cards.getValue("imdb").ratingScore)
+        assertEquals(7.4, cards.getValue("tmdb").ratingScore)
+        assertNull(cards.getValue("thin").ratingScore)
+        assertNull(cards.getValue("none").ratingScore)
+    }
+
+    @Test
     fun `Home's English cards are relabelled per viewer after the cache`() {
         val card = MediaCard(id = "c", kind = dev.jellystructure.shared.tv.MediaKind.MOVIE, title = "c", year = 2020, genre = "Comedy", rating = null, posterUrl = null, backdropUrl = null)
         assertEquals("Komedie", card.withGenreLabels("da").genre)

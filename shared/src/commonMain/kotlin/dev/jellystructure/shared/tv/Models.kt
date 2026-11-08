@@ -622,6 +622,9 @@ data class BrowseCard(
     /** R325 (FR-R325-4) — the TMDB ids of this title's cast and crew (capped), for the *Cast or crew* facet; the
      *  names ride [SeededBrowseResponse.people]. Browse-only, like [imdbRating]. */
     val people: List<Int> = emptyList(),
+    /** DEB-2837 (FR-7) — the title's rating (IMDb, else TMDB) when it meets `DEFAULT_MIN_VOTES`, for the *IMDb* sort
+     *  so a title only TMDB rates sorts where the row put it. Browse-only, like [imdbRating]; absent when unrated. */
+    @SerialName("rating_score") val ratingScore: Double? = null,
 )
 
 /** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the
