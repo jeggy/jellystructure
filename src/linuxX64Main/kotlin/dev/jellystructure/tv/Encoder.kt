@@ -72,7 +72,11 @@ class Encoder(
                         /** DEB-3100 (FR-2) — a job has been handed this stream before (or it was restored from the store): the next start is a restart. */
                         var started: Boolean = false,
                         /** When the store last heard of a read (a write at most once a minute per stream). */
-                        var persistedAtMs: Long = 0)
+                        var persistedAtMs: Long = 0,
+                        /** DEB-4062 (DEB-3995 FR-6) — a download stream, not a play: [downloadOwner] is the phone that holds it, [lastReadMs] its last segment request. */
+                        var downloadOwner: String? = null, var lastReadMs: Long = 0) {
+        val download: Boolean get() = downloadOwner != null
+    }
 
     /** DEB-3100 (FR-2) — what the store keeps of an [Entry] (the stream id is the row's key, the expiry its own column). */
     @Serializable
@@ -111,10 +115,15 @@ class Encoder(
     private var cardsCache: Pair<Long, List<EncoderCard>>? = null
 
     val ffmpegPath: String get() = "${cfg.ffmpegDir}/ffmpeg"
-    fun ffmpegReady(): Boolean = ffmpegOverride?.invoke() ?: (access(ffmpegPath, X_OK) == 0)
+    fun ffmpegReady(): Boolean = testFfmpeg ?: ffmpegOverride?.invoke() ?: (access(ffmpegPath, X_OK) == 0)
+
+    /** Tests only: the cards and the binary check of an encoder a [PlaybackService] built (its constructor takes neither). */
+    internal var testCards: List<EncoderCard>? = null
+    internal var testFfmpeg: Boolean? = null
 
     /** FR-313-11 — the cards the container can see (none without a GPU), cached 5 s. Their order is PCI bus order. */
     suspend fun cards(): List<EncoderCard> {
+        testCards?.let { return it }
         cardsOverride?.let { return it() }
         cardsCache?.let { (at, c) -> if (clock() - at < 5_000) return c }
         val out = withContext(Dispatchers.IO) { run("nvidia-smi --query-gpu=index,name,encoder.stats.sessionCount --format=csv,noheader 2>/dev/null") }
@@ -148,21 +157,7 @@ class Encoder(
         /** DEB-3642 (FR-2) — the file's streams that hold no packet (its current packet timeline): none of them is mapped, offered or carried. */
         emptyStreams: Set<Int> = emptySet(),
     ): Pair<EncoderPlan?, String> {
-        // DEB-3642 (FR-2) — the plan's picture is always a stream with packets: the first video stream that has any, else (every one
-        // empty, or no timeline) the first as before. `0:v:N` counts every video stream of the input, empty ones included.
-        val videos = tracks.filter { it.kind == TrackKind.VIDEO }.sortedBy { it.streamIndex }
-        val video = if (emptyStreams.isEmpty()) tracks.firstOrNull { it.kind == TrackKind.VIDEO } else videos.firstOrNull { it.streamIndex !in emptyStreams } ?: videos.firstOrNull()
-        val videoOrder = if (emptyStreams.isEmpty()) 0 else videos.indexOf(video).coerceAtLeast(0)
-        val range = sourceVideoRange.orEmpty()
-        val source = video?.let {
-            EncoderSource(
-                path = path, durationMs = durationMs ?: 0L, videoCodec = it.codec, width = it.width ?: 0, height = it.height ?: 0,
-                videoBps = it.videoBitrate?.toLong(),
-                hdr = it.videoRange.equals("HDR", true) || range.contains("HDR", true) || range.contains("HLG", true) || range.startsWith("DOVI", true),
-                hlg = range.contains("HLG", true),
-                dolbyVisionProfile5 = range.equals("DOVI", true), videoOrder = videoOrder,
-            )
-        }
+        val source = encoderSourceOf(path, durationMs, tracks, sourceVideoRange, emptyStreams)
         val cards = if (cfg.enabled) cards() else emptyList()
         encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind, castReceivers = cfg.castReceivers)?.let { return null to it }
         source!!
@@ -320,6 +315,58 @@ class Encoder(
     /** 309 — the viewer left the detail page without pressing Play: the prewarm stops at once (owner). */
     suspend fun cancelPrewarm(deviceId: String, itemId: String): Int = stopFor(prewarmKey(deviceId, itemId))
 
+    // ── DEB-4062 (DEB-3995 FR-6) — a download stream: a copy a phone saves, which is no play and yields to every play ──────────────
+
+    /** A download stream as the policy ([DownloadStreams]) reads it. */
+    class DownloadInfo(val id: String, val ownerDeviceId: String, val itemId: String, val lastReadMs: Long)
+
+    /**
+     * Registers [plan] as a download stream for [ownerDeviceId]'s [itemId]; its job starts when the phone reads a segment (at the first
+     * one it asks for, [startSegment] for the init). It has no play session, so no play's stop ends it ([stopFor]), no QoE row, no
+     * encoder summary and no server-fault note (its entry names no device); it is memory only. At most one exists: one the same device
+     * holds is replaced (a resume, or its next download), and one another device holds answers null.
+     */
+    suspend fun registerDownload(plan: EncoderPlan, ownerDeviceId: String, itemId: String, expiresAt: Long, startSegment: Int = 0): String? {
+        val id = DOWNLOAD_PREFIX + secureHexId()
+        val replaced = mutableListOf<String>()
+        val ok = mutex.withLock {
+            val now = clock()
+            entries.entries.removeAll { it.value.expiresAt < now }
+            val held = entries.filter { it.value.download }
+            if (held.any { it.value.downloadOwner != ownerDeviceId }) return@withLock false
+            held.keys.forEach { entries.remove(it); replaced += it }
+            entries[id] = Entry(plan, id, expiresAt, itemId = itemId,
+                startMs = encoderSeekSegment(plan.source.durationMs, startSegment * ENCODER_SEGMENT_MS) * ENCODER_SEGMENT_MS,
+                downloadOwner = ownerDeviceId, lastReadMs = now)
+            true
+        }
+        replaced.forEach { jobs.stop(it, "the same phone asked for a new download stream") }
+        if (!ok) return null
+        Logger.info("encoder: download stream $id item=$itemId ${plan.codec} ${plan.rungs[0].height}p@${plan.rungs[0].videoBps / 1000}k from segment $startSegment (DEB-4062)", "tv")
+        return id
+    }
+
+    suspend fun downloadStreams(): List<DownloadInfo> = mutex.withLock {
+        entries.filter { it.value.download }.map { (id, e) -> DownloadInfo(id, e.downloadOwner.orEmpty(), e.itemId, e.lastReadMs) }
+    }
+
+    /** Ends download stream [id]: its job is killed (nothing is awaited: the signal is sent now and the files go afterwards). False when it is not one. */
+    suspend fun endDownload(id: String, why: String): Boolean {
+        val was = mutex.withLock { if (entries[id]?.download == true) { entries.remove(id); true } else false }
+        if (was) jobs.stop(id, why)
+        return was
+    }
+
+    /** Whether a job of a PLAY (not a download stream) is running: it holds the GPU and reads the disk. */
+    suspend fun playJobsRunning(): Boolean = running().any { !isDownloadStreamId(it.streamId) }
+
+    /** DEB-4062 — null when this encoder would serve [source] for a device of [deviceKind], else why not (the rule a play plans under). */
+    internal suspend fun reasonNotServed(source: EncoderSource, deviceKind: String): String? {
+        val cards = if (cfg.enabled) cards() else emptyList()
+        return encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind, castReceivers = cfg.castReceivers)
+            ?: refused.reason(source.path, clock())
+    }
+
     /** FR-313-8 — a prewarm never holds a slot a play needs: every prewarm is stopped. Returns how many. */
     private suspend fun stopPrewarms(why: String): Int {
         val keys = mutex.withLock { entries.values.filter { it.prewarmSegment != null }.map { prewarmKey(it.deviceId, it.itemId) }.distinct() }
@@ -352,6 +399,7 @@ class Encoder(
     private suspend fun renew(id: String, e: Entry, now: Long) {
         if (e.prewarmSegment != null) return
         e.expiresAt = maxOf(e.expiresAt, now + StreamPlanStore.RENEW_MS)
+        if (e.download) return   // DEB-4062 — a download stream is memory only: a restart ends it, and the phone asks `start` again
         if (plans != null && now - e.persistedAtMs >= StreamPlanStore.TOUCH_EVERY_MS) { e.persistedAtMs = now; plans.touch(id, e.expiresAt, now) }
     }
 
@@ -423,7 +471,7 @@ class Encoder(
 
     suspend fun owns(id: String): Boolean = entry(id) != null
 
-    suspend fun master(id: String): String? = entry(id)?.let { encoderMaster(it.plan, it.startMs) }
+    suspend fun master(id: String): String? = entry(id)?.let { encoderMaster(it.plan, if (it.download) 0 else it.startMs) }   // a download's master says no start: the phone saves the whole file
 
     /** 313 (found live 2026-10-09) — ffmpeg refused this stream's plan: its URLs answer 410 so the player gives up on
      *  it (and the client's watch restreams, which the server now answers from Jellyfin) instead of retrying a 404. */
@@ -440,7 +488,8 @@ class Encoder(
         val e = entry(id) ?: return null
         val v = variantOf(e.plan, kind, index) ?: return null
         if (k < 0 || k >= encoderSegmentCount(e.plan.source.durationMs)) return null
-        return jobs.segment(id, e.plan, ffmpegPath, v, k, restartFor(id, e))?.also { onSegmentServed?.invoke(e.jellyfinPlaySessionId) }
+        if (e.download) e.lastReadMs = clock()
+        return jobs.segment(id, e.plan, ffmpegPath, v, k, restartFor(id, e))?.also { if (!e.download) onSegmentServed?.invoke(e.jellyfinPlaySessionId) }
     }
 
     /** What an unanswered request for [id]'s variant means (the route's status). [k] is the segment asked for, null for the init. */
@@ -476,6 +525,7 @@ class Encoder(
         val e = entry(id) ?: return null
         if (e.plan.mux != EncoderMux.FMP4) return null
         val v = variantOf(e.plan, kind, index) ?: return null
+        if (e.download) e.lastReadMs = clock()
         // 313 (found live 2026-10-09) — a player reads the init before its first segment: the job starts where the play
         // starts, not at 0:00 (a resumed play on the Mac and in Safari encoded from 0 first, then again at the seek).
         return jobs.init(id, e.plan, ffmpegPath, v, encoderSeekSegment(e.plan.source.durationMs, (nearSegment?.toLong() ?: (e.startMs / ENCODER_SEGMENT_MS)) * ENCODER_SEGMENT_MS), restartFor(id, e))   // DEB-3642 (FR-7) — never a segment past the last real one
@@ -573,6 +623,8 @@ class Encoder(
         const val TIMELINE_HEAD_BYTES = 2048
         private const val KIND = "encoder"
         private const val PREWARM_PREFIX = "prewarm:"
+        /** DEB-4062 — a download stream's id starts with this; the routes answer an unknown one "waiting", never 404. */
+        const val DOWNLOAD_PREFIX = "dl-"
         /** Pinned (FR-313-11): the same build Jellyfin's own container runs (8.1.2), portable GPL, verified by SHA-256. */
         const val JELLYFIN_FFMPEG_VERSION = "8.1.2-5"
         private const val JELLYFIN_FFMPEG_BASE = "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v$JELLYFIN_FFMPEG_VERSION/jellyfin-ffmpeg_${JELLYFIN_FFMPEG_VERSION}_portable"
@@ -598,3 +650,27 @@ internal fun restartPlan(plan: EncoderPlan, placement: EncoderPlacement?): Encod
     val keptIdx = kept.map { plan.rungs.indexOf(it) }
     return EncoderJobs.Restart(plan.copy(rungs = kept, startRung = kept.indexOf(plan.rungs[plan.startRung]).coerceAtLeast(0), cudaDevice = placement.card), plan.rungs.size, keptIdx)
 }
+
+/**
+ * The picture a job reads, from our scan (no probe). DEB-3642 (FR-2) — the plan's picture is always a stream with packets: the first
+ * video stream that has any, else (every one empty, or no timeline) the first as before. `0:v:N` counts every video stream of the
+ * input, empty ones included. Null when the file has no video stream.
+ */
+internal fun encoderSourceOf(path: String, durationMs: Long?, tracks: List<Track>, sourceVideoRange: String?, emptyStreams: Set<Int> = emptySet()): EncoderSource? {
+    val videos = tracks.filter { it.kind == TrackKind.VIDEO }.sortedBy { it.streamIndex }
+    val video = if (emptyStreams.isEmpty()) tracks.firstOrNull { it.kind == TrackKind.VIDEO } else videos.firstOrNull { it.streamIndex !in emptyStreams } ?: videos.firstOrNull()
+    val videoOrder = if (emptyStreams.isEmpty()) 0 else videos.indexOf(video).coerceAtLeast(0)
+    val range = sourceVideoRange.orEmpty()
+    return video?.let {
+        EncoderSource(
+            path = path, durationMs = durationMs ?: 0L, videoCodec = it.codec, width = it.width ?: 0, height = it.height ?: 0,
+            videoBps = it.videoBitrate?.toLong(),
+            hdr = it.videoRange.equals("HDR", true) || range.contains("HDR", true) || range.contains("HLG", true) || range.startsWith("DOVI", true),
+            hlg = range.contains("HLG", true),
+            dolbyVisionProfile5 = range.equals("DOVI", true), videoOrder = videoOrder,
+        )
+    }
+}
+
+/** DEB-4062 (DEB-3995 FR-6) — whether [id] names a download stream (live or not). */
+internal fun isDownloadStreamId(id: String): Boolean = id.startsWith(Encoder.DOWNLOAD_PREFIX)

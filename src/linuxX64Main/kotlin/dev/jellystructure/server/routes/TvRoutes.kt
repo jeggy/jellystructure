@@ -1497,6 +1497,7 @@ fun Route.tvRoutes(
     // R291 (FR-R291-2) — every audio track as an HLS rendition; public, the id is the capability (see AuthPlugin).
     get("/tv/stream/{id}/master.m3u8") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        if (playbackService.downloads.holds(id)) return@get call.respondDownloadWaiting()   // DEB-4062 (FR-6) — a download stream a play pushed aside
         // Phase 313 — a stream our own encoder serves. One ffmpeg refused answers 410 (found live 2026-10-09: a 404 here
         // was retried every second by AVPlayer, forever; 410 is final, and the player's watch restreams from Jellyfin).
         if (playbackService.encoder.refusedStream(id)) return@get call.respond(HttpStatusCode.Gone)
@@ -1587,6 +1588,7 @@ fun Route.tvRoutes(
         get("/tv/stream/{id}/$kind/{i}/main.m3u8") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+            if (playbackService.downloads.holds(id)) return@get call.respondDownloadWaiting()   // DEB-4062 (FR-6)
             if (playbackService.encoder.refusedStream(id)) return@get call.respond(HttpStatusCode.Gone)   // 313 — see master.m3u8
             val text = playbackService.encoder.playlist(id, kind, i) ?: return@get call.respond(HttpStatusCode.NotFound)
             call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
@@ -1595,6 +1597,8 @@ fun Route.tvRoutes(
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
             val file = call.parameters["file"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            // DEB-4062 (FR-6) — checked before the encoder is asked: a held download stream must never start a job.
+            if (playbackService.downloads.holds(id)) return@get call.respondDownloadWaiting()
             val startedAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
             val segment = if (file.endsWith(".m4s") || file.endsWith(".ts")) file.substringBefore('.').toIntOrNull() else null
             val path = when {
@@ -1605,6 +1609,8 @@ fun Route.tvRoutes(
             if (path == null) {
                 // DEB-3100 (trouble-never-reaches-the-viewer FR-3) — only a stream that does not exist is a 404. A segment not ready after the
                 // wait, or a job that died after its first start, is a 503 the player asks again for: a 404 would exclude the rung for a minute.
+                // DEB-4062 (FR-6) — a play that ended this download stream while the segment was being made: waiting, not a final answer.
+                if (playbackService.downloads.holds(id)) return@get call.respondDownloadWaiting()
                 val miss = if (file == "init.mp4" || segment != null) playbackService.encoder.miss(id, kind, i, segment) else Encoder.Miss.UNKNOWN
                 call.respondEncoderMiss(miss)
                 if (miss == Encoder.Miss.RETRY && segment != null) playbackService.encoder.recordResponse(id, kotlin.time.Clock.System.now().toEpochMilliseconds() - startedAtMs, true)
@@ -1795,5 +1801,17 @@ private suspend inline fun <reified T : Any> io.ktor.server.application.Applicat
         dev.jellystructure.tv.DownloadOutcome.NotFound -> respond(outcome.httpStatus(), mapOf("error" to "Not found"))
         is dev.jellystructure.tv.DownloadOutcome.Refused -> respond(outcome.httpStatus(), mapOf("error" to outcome.reason))
         is dev.jellystructure.tv.DownloadOutcome.Unavailable -> respond(outcome.httpStatus(), mapOf("error" to outcome.reason))
+        is dev.jellystructure.tv.DownloadOutcome.Waiting -> respondDownloadWaiting(outcome.reason)
     }
+}
+
+/**
+ * DEB-4062 (DEB-3995 FR-6) — a smaller copy is not being made now: `503` with `Retry-After` and `X-Download-State: waiting`. It is the whole of
+ * "Waiting for the server": the phone keeps what it has, shows `download.waiting_server`, and asks `start` again from the segment it reached.
+ * Never a 404 or a 410, which a downloader treats as final.
+ */
+internal suspend fun io.ktor.server.application.ApplicationCall.respondDownloadWaiting(reason: String = "waiting for the server") {
+    response.headers.append("Retry-After", dev.jellystructure.tv.DownloadStreams.RETRY_AFTER_SECONDS.toString())
+    response.headers.append("X-Download-State", "waiting")
+    respondText("""{"error":"${reason.replace("\\", "").replace("\"", "'")}"}""", ContentType.Application.Json, HttpStatusCode.ServiceUnavailable)
 }

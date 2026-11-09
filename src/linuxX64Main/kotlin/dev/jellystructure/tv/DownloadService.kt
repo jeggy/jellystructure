@@ -35,6 +35,8 @@ sealed interface DownloadOutcome<out T> {
     data class Refused(val reason: String) : DownloadOutcome<Nothing>
     /** Jellyfin could not be asked right now: `503`. */
     data class Unavailable(val reason: String) : DownloadOutcome<Nothing>
+    /** DEB-4062 (FR-6) — a smaller copy cannot begin now (a play is live, another phone holds the one download stream): `503` *waiting*; the phone asks again. */
+    data class Waiting(val reason: String) : DownloadOutcome<Nothing>
 }
 
 /** The one status each reason answers with (the body, on success, is the answer itself). */
@@ -44,16 +46,18 @@ internal fun DownloadOutcome<*>.httpStatus(): io.ktor.http.HttpStatusCode = when
     DownloadOutcome.NotFound -> io.ktor.http.HttpStatusCode.NotFound
     is DownloadOutcome.Refused -> io.ktor.http.HttpStatusCode.BadRequest
     is DownloadOutcome.Unavailable -> io.ktor.http.HttpStatusCode.ServiceUnavailable
+    is DownloadOutcome.Waiting -> io.ktor.http.HttpStatusCode.ServiceUnavailable
 }
 
 private const val DOWNLOAD_TICKET_TTL_MS = 4 * 60 * 60 * 1000L   // a ticket lives 4 h, as a play's does
 private const val POLICY_TTL_MS = 60_000L
 
 /**
- * DEB-4061 (DEB-3995 FR-2, FR-4) — what the phone may download. The original file only: a smaller copy is a later slice.
+ * DEB-4061 (DEB-3995 FR-2, FR-4) — what the phone may download: the original file, and (DEB-4062) smaller copies of it.
  *
- * A `start` is never a play. It reports nothing to Jellyfin (no `/Sessions/Playing`), opens no R368 session, no tracker, no
- * encode and no QoE row; it only builds the URL a phone's downloader fetches and the metadata it saves beside the file.
+ * A `start` is never a play. It reports nothing to Jellyfin (no `/Sessions/Playing`), opens no R368 session, no tracker and no QoE row;
+ * it only builds the URL a phone's downloader fetches and the metadata it saves beside the file. A smaller copy's URL is a download
+ * stream of our encoder ([DownloadStreams]): one at a time, and it yields to every play.
  */
 class DownloadService(
     private val mediaStore: MediaStore,
@@ -88,13 +92,17 @@ class DownloadService(
     /** FR-4 — `GET /api/tv/download/options`. [capabilities] is what the phone declared with the request, if it did. */
     suspend fun options(device: DeviceData, itemId: String, mediaSourceId: String?, capabilities: ClientCapabilities?): DownloadOutcome<DownloadOptions> {
         val title = resolve(device, itemId, mediaSourceId, capabilities) { return it }
-        return DownloadOutcome.Ok(DownloadOptions(listOfNotNull(title.original())))
+        val original = title.original()
+        val copies = playbackService.downloadCopies(device, title.detail, title.source?.id, itemId, title.capabilities ?: ClientCapabilities(), title.source?.size?.takeIf { it > 0 })
+        return DownloadOutcome.Ok(DownloadOptions(listOfNotNull(original) + copies))
     }
 
-    /** FR-4 — `POST /api/tv/download/start`: a fresh ticket for the original. Asking again mints another. */
+    /** FR-4 — `POST /api/tv/download/start`: a fresh ticket for the original, or a download stream for a smaller copy. Asking again mints another. */
     suspend fun start(device: DeviceData, req: DownloadStartRequest): DownloadOutcome<DownloadTicket> {
-        if (!req.quality.equals(ORIGINAL, ignoreCase = true)) return DownloadOutcome.Refused("quality ${req.quality} is not offered")
+        val copy = DOWNLOAD_COPIES.firstOrNull { it.first.equals(req.quality, ignoreCase = true) }
+        if (copy == null && !req.quality.equals(ORIGINAL, ignoreCase = true)) return DownloadOutcome.Refused("quality ${req.quality} is not offered")
         val title = resolve(device, req.itemId, req.mediaSourceId, req.capabilities) { return it }
+        if (copy != null) return startCopy(device, req, title, copy.first, copy.second)
         val original = title.original() ?: return DownloadOutcome.Refused("the original is not offered for this title")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         val sourceId = title.source?.id ?: req.itemId
@@ -104,22 +112,38 @@ class DownloadService(
             "${title.base}/Videos/${req.itemId}/stream?Static=true&MediaSourceId=$sourceId&DeviceId=${identity.deviceId}&ticket=${Random.nextLong().toULong().toString(16)}",
             title.token,
         )
+        return DownloadOutcome.Ok(ticket(title, req, kind = "file", quality = ORIGINAL, url = url, bytes = original.bytes, expiresAt = clock() + DOWNLOAD_TICKET_TTL_MS))
+    }
+
+    /**
+     * DEB-4062 (FR-4, FR-6) — a smaller copy: the plan is made as a play's is (one rung, one audio) and registered as the one download
+     * stream; the ticket's URL is its master. Waiting (503) when a play is live or another phone holds the stream, or when no card has a slot.
+     */
+    private suspend fun startCopy(device: DeviceData, req: DownloadStartRequest, title: Title, quality: String, box: Int): DownloadOutcome<DownloadTicket> {
+        val caps = title.capabilities ?: ClientCapabilities()
+        val offered = playbackService.downloadCopies(device, title.detail, title.source?.id, req.itemId, caps, title.source?.size?.takeIf { it > 0 })
+            .firstOrNull { it.quality == quality } ?: return DownloadOutcome.Refused("quality $quality is not offered for this title")
+        // Before any planning: a play is live, so nothing is started (and the phone shows *Waiting for the server*).
+        if (playbackService.downloads.playLive()) return DownloadOutcome.Waiting("a play is using the server")
+        val (plan, why) = playbackService.downloadPlanFor(device, title.detail, title.source?.id, req.itemId, caps, box, req.audioLanguage, req.audioVariant)
+        if (plan == null) return if (why.startsWith("no encoder slot free")) DownloadOutcome.Waiting(why) else DownloadOutcome.Unavailable(why)
+        val expiresAt = clock() + DOWNLOAD_TICKET_TTL_MS
+        val id = when (val opened = playbackService.downloads.open(plan, device.deviceId, req.itemId, expiresAt, (req.fromSegment ?: 0).coerceAtLeast(0))) {
+            is DownloadStreams.Opened.Ok -> opened.id
+            is DownloadStreams.Opened.Waiting -> return DownloadOutcome.Waiting(opened.reason)
+        }
+        return DownloadOutcome.Ok(ticket(title, req, kind = "hls", quality = quality, url = "/api/tv/stream/$id/master.m3u8", bytes = offered.bytes, expiresAt = expiresAt))
+    }
+
+    private suspend fun ticket(title: Title, req: DownloadStartRequest, kind: String, quality: String, url: String, bytes: Long, expiresAt: Long): DownloadTicket {
         val subtitles = playbackService.textSubtitleTracks(title.detail, req.itemId, title.base, title.token).map {
             DownloadSubtitle(index = it.index, language = it.language, label = it.label, forced = it.forced, isDefault = it.isDefault, url = it.url!!)
         }
-        return DownloadOutcome.Ok(DownloadTicket(
-            kind = "file",
-            quality = ORIGINAL,
-            url = url,
-            bytes = original.bytes,
-            expiresAt = clock() + DOWNLOAD_TICKET_TTL_MS,
-            mediaSourceId = title.source?.id,
-            subtitles = subtitles,
-            artwork = title.artwork,
-            itemKind = title.kind,
-            seriesId = title.seriesJellyfinId,
-            item = title.page,
-        ))
+        return DownloadTicket(
+            kind = kind, quality = quality, url = url, bytes = bytes, expiresAt = expiresAt,
+            mediaSourceId = title.source?.id, subtitles = subtitles, artwork = title.artwork,
+            itemKind = title.kind, seriesId = title.seriesJellyfinId, item = title.page,
+        )
     }
 
     private class Title(

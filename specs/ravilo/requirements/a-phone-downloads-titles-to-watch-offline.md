@@ -383,3 +383,35 @@ Slice 1 builds FR-2 and FR-4's `original`. FR-4 left the JSON shapes open; these
   this device, or a series; `400` for a version, quality or codec the server does not offer; `503` when Jellyfin cannot be asked.
 - **The switch is read live** from the viewer's Jellyfin account and kept for a minute, so a change reaches the routes within
   a minute and the phone's config on its next fetch.
+
+## Amendment 2026-11-09: slice 2's smaller copies and the download stream (DEB-4062)
+
+Slice 2 builds FR-4's `high` / `medium` / `small` and FR-6. FR-4 and FR-6 left the wire open; nothing here changes what
+they promise.
+
+- **Options.** `GET /api/tv/download/options` also lists `high` (1080p), `medium` (720p) and `small` (480p): our encoder's rung of
+  that picture box for the phone's codec family (the HEVC or H.264 rule a play uses), at the video bitrate that rung gets (capped
+  by the file's own and by the phone's declared decode ceiling).
+  - A copy is listed only when the encoder can serve this file (the encoder is on, ffmpeg and a GPU are there, the codec is one the
+    GPU decodes) **and** the file is at least that tall (a 720p file offers no `high`) **and** its estimate is under 80 % of the
+    original's size (the ladder's "clearly lower" rule). A file whose size Jellyfin does not give offers no copy.
+  - `bytes` is (video + audio bitrate) × runtime, `exact: false`; `height` is the rung's. Options never wait on, or hide because of,
+    what is playing now.
+- **Start.** `POST /api/tv/download/start` with `quality` `high|medium|small` answers `kind: "hls"`, `url` the server-relative
+  `/api/tv/stream/dl-<id>/master.m3u8` (public; the id is the capability, as a play's), `bytes` the estimate, and the same
+  `subtitles`, `artwork`, `item` as slice 1. The master lists the one rung and the one audio the phone's play would pick (the
+  remembered `audio_language` / `audio_variant` the request may carry, else the file's default). The request gains the optional
+  `from_segment` (the 2 s segment the phone reached; absent = 0) so a resumed download's first job starts there, not at 0:00.
+- **The download stream (FR-6).** Its id starts `dl-`. It is an encoder stream with no play behind it: it is in no play session's
+  list, so no play's stop ends it, and it has no tracker entry, no QoE row, no encoder summary and no server-fault note.
+  - **One at a time, server-wide.** A `start` from the device that holds it replaces it (a resume, or the next in the phone's
+    queue). A `start` from another device answers `503`.
+  - **Yields to every play.** A play's start (a film or an episode, direct or encoded) ends the download stream before it plans
+    anything, and the process is killed at once, with nothing awaited, so the play's start does not wait for it. While a play is
+    live (or within the tracker's 120 s grace after it) a `start` answers `503` and no download job runs.
+  - **Waiting.** A `503` with `Retry-After: 5` and `X-Download-State: waiting` is the whole "Waiting for the server" answer: `start`
+    when it cannot begin, and every playlist, init and segment request of a `dl-` stream that is not running (preempted, reaped,
+    the server restarted). It is never a `404` and never a `410`. The phone shows `download.waiting_server` and asks `start` again
+    with `from_segment`.
+  - **Reaped.** A download stream with no segment fetched for 10 minutes ends and its files are removed.
+- **Not built here.** Subtitles in the HLS (they are VTT files, as slice 1), a copy of an image-subtitle track, and any phone code.

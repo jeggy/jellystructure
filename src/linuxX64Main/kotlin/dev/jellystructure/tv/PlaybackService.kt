@@ -580,6 +580,15 @@ class PlaybackService(
         }
     }
 
+    /**
+     * DEB-4062 (DEB-3995 FR-6) — the smaller copies a phone saves are download streams: no play, one at a time, and every play's start
+     * ends the one running (see [DownloadStreams]). Live while the tracker has a play (with its grace).
+     */
+    val downloads = DownloadStreams(encoder, playing = { playingProbe() }).also { d -> backgroundScope?.let { d.startReaper(it) } }
+
+    /** Is a play live (the process-wide tracker's, with its grace)? Tests replace it: that tracker is shared by every test of the binary. */
+    internal var playingProbe: () -> Boolean = { playbackTracker.anyActive() }
+
     /** Phase 180 + R291 — releases the encode AND this server's audio rendition jobs for it. */
     private suspend fun releaseEncodes(jellyfinBase: String, token: String, identity: JellyfinDeviceIdentity, jellyfinPlaySessionId: String) {
         // Phase 313 (dev review item 13) — a play our encoder serves has no Jellyfin job: stop ours. Jellyfin's stop is
@@ -952,7 +961,7 @@ class PlaybackService(
     /** R291 — the file on this server's disk behind a Jellyfin id (a movie, or one series' episode), and its
      *  length; the same top-level-or-episode lookup [requireVisible] does. */
     /** The file on this server's disk for [jellyfinId]: its path, length and our scan's tracks (R382 maps by them). */
-    private data class LocalFile(val first: String, val second: Long?, val tracks: List<dev.jellystructure.model.Track>, val contentEndMs: Long? = null) {
+    internal data class LocalFile(val first: String, val second: Long?, val tracks: List<dev.jellystructure.model.Track>, val contentEndMs: Long? = null) {
         /** DEB-3642 (FR-7) — the length our encoder's playlist has: where the content ends when the header claims more. */
         val encoderMs: Long? get() = contentLimited(second, contentEndMs)
     }
@@ -996,7 +1005,7 @@ class PlaybackService(
         Logger.info("playback: $path has no current deep check — its verify job goes first (DEB-3642 FR-5)", "tv")
     }
 
-    private suspend fun localFileOf(jellyfinId: String): LocalFile? {
+    internal suspend fun localFileOf(jellyfinId: String): LocalFile? {
         mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return LocalFile(it.path, it.tracks.fileDurationMs(), it.tracks, contentEndOf(it.path)) }
         val ep = mediaStore.allItems().firstNotNullOfOrNull { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId } } ?: return null
         return LocalFile(ep.path, ep.tracks.fileDurationMs(), ep.tracks, contentEndOf(ep.path))
@@ -1242,6 +1251,7 @@ class PlaybackService(
         shuffle: Boolean = false,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
+        downloads.preempt("a play starts")   // DEB-4062 (DEB-3995 FR-6) — before anything is planned: a download stream never costs a play its start
         rememberCapabilities(device, capabilities)   // 309 (FR-309-6) — a phone can prewarm for this device later
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
         // (CastCeilingException → Server.kt StatusPages), never a spinner forever. A TV is never gated.
@@ -1512,6 +1522,59 @@ class PlaybackService(
     internal suspend fun textSubtitleTracks(itemDetail: JellyfinItemDetail?, jellyfinId: String, jellyfinBase: String, token: String): List<SubTrack> =
         buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false, hlsSubtitles = false)
             .filter { it.deliveryMethod == "external" && it.url != null }
+
+    /**
+     * DEB-4062 (DEB-3995 FR-4) — the smaller copies of [jellyfinId] this server offers a phone that declared [caps]: the encoder's 1080p /
+     * 720p / 480p rung for its codec family, each only when the encoder would serve the file, the file is that tall and the estimate is
+     * under [CLEARLY_SMALLER] of [originalBytes] (null: Jellyfin gave no size, nothing to compare, nothing offered). Asks nobody and
+     * places nothing: what is playing now never hides a choice.
+     */
+    internal suspend fun downloadCopies(
+        device: DeviceData, itemDetail: JellyfinItemDetail?, mediaSourceId: String?, jellyfinId: String, caps: ClientCapabilities, originalBytes: Long?,
+    ): List<dev.jellystructure.shared.tv.DownloadOption> {
+        originalBytes ?: return emptyList()
+        val file = localFileOf(jellyfinId) ?: return emptyList()
+        val durationMs = file.encoderMs?.takeIf { it > 0 } ?: return emptyList()
+        val ghosts = ghostFactsOf(jellyfinId)
+        val range = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType
+        val source = encoderSourceOf(file.first, durationMs, file.tracks, range, ghosts.empty) ?: return emptyList()
+        if (encoder.reasonNotServed(source, device.kind) != null) return emptyList()
+        // The one audio a copy carries: the file's default real track, in the family a play would give it.
+        val real = buildAudioTracks(itemDetail, mediaSourceId).filter { it.index !in ghosts.empty }
+        val carried = real.firstOrNull { it.isDefault } ?: real.firstOrNull()
+        val audioBps = carried?.let {
+            audioBitrate(audioRenditionFor(0, 0, audioFamilyFor(it.codec, caps.platformAudioDecoders), it.codec, it.channels, caps.maxAudioChannels,
+                audioBitratesOf(itemDetail, mediaSourceId)[it.index], it.language, it.label, true))
+        } ?: 0L
+        return DOWNLOAD_COPIES.mapNotNull { (quality, box) ->
+            val (_, rung) = downloadRung(caps, source, box) ?: return@mapNotNull null
+            val bytes = downloadEstimateBytes(rung.videoBps, audioBps, durationMs)
+            if (bytes >= originalBytes * CLEARLY_SMALLER) null else dev.jellystructure.shared.tv.DownloadOption(quality = quality, height = rung.height, bytes = bytes, exact = false)
+        }
+    }
+
+    /**
+     * DEB-4062 (DEB-3995 FR-4, FR-6) — the plan of one smaller copy: [box]'s rung and one audio, the one a play would pick (the viewer's
+     * remembered [audioLanguage] / [audioVariant], else the file's default), placed on a card like a play's. Null with the reason when the
+     * encoder cannot make it now (`no encoder slot free…` is a wait, anything else a refusal).
+     */
+    internal suspend fun downloadPlanFor(
+        device: DeviceData, itemDetail: JellyfinItemDetail?, mediaSourceId: String?, jellyfinId: String, caps: ClientCapabilities, box: Int,
+        audioLanguage: String?, audioVariant: String?,
+    ): Pair<EncoderPlan?, String> {
+        val file = localFileOf(jellyfinId) ?: return null to "file not on this server's disk"
+        val audio = buildAudioTracks(itemDetail, mediaSourceId)
+        val wanted = audioLanguage?.let { lang ->
+            dev.jellystructure.shared.tv.resolveAudioChoice(lang, audioVariant, audio.map { dev.jellystructure.shared.tv.VersionInput(it.language, it.label, forced = false, isDefault = it.isDefault) })
+                ?.let { audio[it].index }
+        }
+        val ghosts = ghostFactsOf(jellyfinId)
+        val asked = realAudioFor(jellyfinId, ghosts, wanted) { audio }
+        val range = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType
+        return encoder.planFor(downloadCaps(caps), device.kind, file.first, file.encoderMs, file.tracks, audio, asked,
+            takeBps = null, noRecord = false, sourceVideoRange = range, platform = device.platform,
+            audioBps = audioBitratesOf(itemDetail, mediaSourceId), boxLimit = box, emptyStreams = ghosts.empty)
+    }
 
     private fun rememberCapabilities(device: DeviceData, caps: ClientCapabilities) {
         while (true) {
@@ -2392,6 +2455,7 @@ class PlaybackService(
         /** DEB-2205 (FR-4) — a hand-over ahead of time: the playhead position the player will switch at (null: restream at [positionMs] now). */
         handoverAtMs: Long? = null,
     ): StreamTicket {
+        downloads.preempt("a play restreams")   // DEB-4062 (DEB-3995 FR-6)
         if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps, handoverAtMs)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')

@@ -33,6 +33,11 @@ data class DownloadStartRequest(
     @SerialName("media_source_id") val mediaSourceId: String? = null,
     val quality: String = "original",
     val capabilities: ClientCapabilities? = null,
+    /** DEB-4062 (FR-6) — a smaller copy only: the 2 s segment a resumed download reached, so the stream's first job starts there. Absent = 0. */
+    @SerialName("from_segment") val fromSegment: Int? = null,
+    /** DEB-4062 — a smaller copy carries one audio: the viewer's remembered choice (see `resolveAudioChoice`), else the file's default. */
+    @SerialName("audio_language") val audioLanguage: String? = null,
+    @SerialName("audio_variant") val audioVariant: String? = null,
 )
 
 /**
@@ -44,7 +49,7 @@ data class DownloadStartRequest(
  */
 @Serializable
 data class DownloadTicket(
-    /** `file` for the original; `hls` for a smaller copy (a later slice). */
+    /** `file` for the original; `hls` for a smaller copy: [url] is a master playlist of one rung and one audio. */
     val kind: String,
     val quality: String,
     val url: String,
