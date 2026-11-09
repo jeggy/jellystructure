@@ -524,3 +524,9 @@ window". QA measured otherwise on the live server. No code changes; the page was
 - **What holds.** A viewer has FR-9's ten minutes. The plugin only drops a state older than a minute when a **later** start reaches it (`Invalidate()`, read from its source for the investigation
   on DEB-2233). So someone who takes more than a minute can also get *took too long* if anyone else starts a sign-in on that server meanwhile.
 - **That second path is read, not measured.** Either result is one the viewer can act on: they are signed in, or the page tells them to try again.
+
+**Amendment 2026-11-09 (DEB-2328, DEB-2329) — acceptance 1 runs on the BRAVIAs.** The owner said on DEB-799 (comment `e2181a25`, 2026-11-09) that the Google TV Streamer
+won't be available, and to move its legs to another device. No code changes.
+
+- **Acceptance 1 is met on the Sony BRAVIA alone.** Both household BRAVIAs run the same Android TV app as the Streamer, so either one stands in for it. Nothing in FR-5 differs between them.
+- **The QA rows changed with it.** DEB-2328's and DEB-2329's TV steps run on either BRAVIA, and DEB-2329 no longer carries the Ravilo Web code-typing step, which DEB-3088 already passed on a BRAVIA.
