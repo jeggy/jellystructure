@@ -186,6 +186,15 @@ There is one glyph for a **Ravilo collection** and another for a **Jellyfin coll
 - **Owner's pick** (DEB-4032 card `a32fe8e0`, 2026-11-09), from the DEB-4076 round: *"For 'Sagaer' it should be C but
   for 'Film club' it should be some movie icon instead."* So a Ravilo collection takes direction C's **wall** (the
   tile grid), and a Jellyfin collection takes a **filled movie glyph**, drawn in a follow-up to that round.
+- **The glyphs** (owner's card `7647b013`, 2026-11-09): **the wall** for a Ravilo collection and **the clapperboard** for a
+  Jellyfin collection. Both are drawn in `design/incoming/2026-11-09-collection-glyphs/` (`b00238f9`, the wall) and
+  `design/incoming/2026-11-09-collection-glyph-movie/` (`1e2415da`, the clapperboard).
+- **Build notes from the round:**
+  - each glyph is 18 dp square on a 24-unit grid, filled, with no stroke;
+  - it sits in its own fixed 18 dp slot after the check slot, 8 dp before the name;
+  - its ink is `colors.text`, resting and focused;
+  - the row height and the focus ring are unchanged;
+  - `facetPopoverWidth` gives `CHANNEL` the same 28 dp allowance it already gives `AUDIO`.
 - The glyphs are drawn in a design round (Rannvá). They join the hand-drawn glyph set the app already has
   (`DeskIcons.kt`, `MusicGlyphs.kt`).
 - The round fixes the glyphs' size, ink, focus-state ink and position. The build follows the round.
