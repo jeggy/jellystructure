@@ -1,0 +1,634 @@
+/* phone-downloads.css — the round's own rules, on top of the shipped phone stylesheet.
+
+   Round slug `phone-downloads`, 2026-11-09. Surface: the Ravilo Android phone, 412x915 dp
+   portrait, only. No TV, desktop, web, admin or cast frame is drawn — those surfaces get no
+   download control at all (spec FR-1).
+
+   Loaded AFTER design/ravilo/mobile/ravilo-phone.css, so every token, colour, radius and font
+   in these pictures is the shipped one: --bg, --bg-2, --card, --ink, --ink-soft, --ink-dim,
+   --line, --line-2, --accent, --accent-2, --grad, --good, --ease. Nothing here redefines one.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes
+   it — so these rules are a specification of intent for the Compose port, which is why every
+   hex, px, weight, radius and easing is written out rather than left to the implementer.
+
+   Canvas rules held: dark ink on the light-gray backdrop for any text on the canvas itself,
+   no content-visibility, no backdrop-filter, no large blur, no infinite animation. The
+   shipped .hbadge and .dback ARE backdrop-filter in ravilo-phone.css; this round draws neither
+   with a blur — the detail frames use a flat .pd-back and the report says so.
+
+   Touch targets: every control below is at least 48 px on its smaller axis unless it is
+   stated otherwise in REPORT.md. Nothing is smaller than the phone's 13 px body floor
+   (R234/R244) except the shipped .bn label at 11.5 px, which this round does not touch.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. The render runs with no
+   network, so these blocks make the picture identical with or without one. No file copied:
+   the url points at the repo's own woff2. ------------------------------------------------ */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ================================================================================================= */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+.pd-frames { padding: 0; margin: 0; }
+.pd-frames * { box-sizing: border-box; }
+
+/* The phone: Pixel 9, 412x915 portrait, the shipped size. Screenshot-able on its own, so the
+   bezel is left off — the renderer crops to the screen and the bezel is not the design. */
+.pd-ph { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+/* The status bar is always drawn, and always on top: a sheet's scrim dims the page beneath it
+   and Android keeps the clock legible above it. Its own opaque fill is dropped on a frame whose
+   hero art runs to the top edge (`.art`), exactly as the shipped .detail does. */
+.pd-ph > .pd-sb { position: relative; z-index: 90; }
+.pd-ph.art > .pd-sb { background: transparent; box-shadow: none; }
+
+/* A `tall` frame renders the WHOLE page rather than the 915 dp a viewer sees first: these pages
+   scroll on a phone, and a reviewer cannot judge a list from its first six rows. Both are
+   rendered for every list state — the phone-height frame is what the viewer meets, the tall one
+   is the page. Same markup, same builders, one class. */
+.pd-ph.tall { height: auto; }
+.pd-ph.tall .pd-page { position: static; top: auto; bottom: auto; }
+.pd-ph.tall .pd-body { overflow: visible; padding-bottom: 20px; }
+.pd-ph.tall .pd-nav { position: static; }
+.pd-ph.tall .pd-detail { position: static; }
+
+/* A strip of phones rendered as one PNG, so five states are compared rather than remembered.
+   Each cell is also rendered alone. */
+.pd-strip { display: flex; gap: 20px; background: #e9eaee; width: max-content; padding: 0; }
+.pd-strip .pd-cell { width: 412px; flex: none; }
+/* The cell caption, in DARK ink because the canvas backdrop is light gray. */
+.pd-strip .pd-scap { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .07em;
+  text-transform: uppercase; color: #262a35; padding: 0 0 10px; }
+
+/* The magnified study frame: the mark at 3x beside the badges it must not fight. Scaled with
+   transform, never filter/zoom, so the render stays sharp and the canvas rules hold. */
+/* The study's own wrapper shrinks to the drawing, so the renderer's element screenshot is the
+   drawing and not the viewport's width of empty canvas beside it. */
+.pd-study-wrap { display: inline-block; }
+.pd-study { background: #e9eaee; padding: 26px 30px; width: 900px; font-family: 'Sora', sans-serif; }
+.pd-study h4 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;
+  color: #12141b; margin: 0 0 4px; }
+.pd-study p { font-size: 13px; line-height: 1.55; color: #262a35; margin: 0 0 22px; max-width: 760px; }
+.pd-study .pd-zrow { display: flex; gap: 46px; align-items: flex-start; }
+.pd-study .pd-zc { }
+.pd-study .pd-zc b { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: .06em; text-transform: uppercase; color: #262a35; margin: 0 0 12px; font-weight: 500; }
+/* A 3x box: the child is scaled from its top-left and the box reserves the scaled size, so
+   nothing overlaps the next column. */
+.pd-z3 { position: relative; }
+.pd-z3 > .pd-zin { position: absolute; top: 0; left: 0; transform: scale(3); transform-origin: top left; }
+.pd-z3.poster3 { width: 354px; height: 531px; }
+.pd-z3.thumb3 { width: 312px; height: 177px; }
+.pd-study .pd-dim { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.7;
+  color: #12141b; margin-top: 14px; white-space: pre-line; }
+
+/* =================================================================================================
+   SHARED PHONE CHROME this round needs beyond the shipped file.
+   ================================================================================================= */
+
+/* The status bar. The shipped .statusbar is a flex child of .screen; the round's frames are a
+   plain 412x915 box, so it is drawn here at the same 34 px height, type and padding. */
+.pd-sb { height: 34px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px 0 26px; font-size: 13px; font-weight: 600; color: var(--ink); background: var(--bg); }
+.pd-sb .pd-ic { display: flex; gap: 5px; align-items: center; opacity: .95; font-size: 11px;
+  letter-spacing: .08em; }
+
+/* The page body under the status bar, above the bottom bar. */
+.pd-page { position: absolute; left: 0; right: 0; top: 34px; bottom: 0; display: flex;
+  flex-direction: column; background: var(--bg); overflow: hidden; }
+.pd-body { flex: 1; overflow: hidden; padding: 0 18px; }
+.pd-body.nopad { padding: 0; }
+
+/* A pushed screen's bar: back, title, and the one overflow control. 52 px, as .acct-bar. */
+.pd-bar { display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 8px; flex: none;
+  background: var(--bg); }
+.pd-bar .pd-back, .pd-bar .pd-kebab { width: 44px; height: 44px; border-radius: 50%; border: 0;
+  background: none; color: var(--ink); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex: none; }
+.pd-bar .pd-kebab { margin-left: auto; }
+.pd-bar h2 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;
+  letter-spacing: -.01em; }
+.pd-bar .pd-btot { font-size: 12.5px; color: var(--ink-dim); margin-left: 8px; }
+/* The selecting bar: a count, Cancel, and the destructive action. */
+.pd-bar.sel h2 { font-size: 17px; }
+.pd-bar .pd-txtbtn { min-height: 44px; padding: 0 12px; border: 0; background: none;
+  font: 600 14.5px 'Sora', sans-serif; color: var(--accent-2); cursor: pointer; }
+.pd-bar .pd-txtbtn.danger { color: #f5667a; }
+.pd-bar .pd-txtbtn[disabled] { color: var(--ink-dim); }
+
+/* Icons. One stroke weight for every icon in the round, so nothing reads as a different family.
+   The 18 px default is load-bearing, not tidiness: an inline SVG with no width is sized by its
+   container, and the first render of the quality sheet put a 170 px warning triangle across the
+   whole no-room row. Every place that wants another size still says so. */
+.pd-ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; display: block; }
+
+/* The bottom bar, shipped shape (R267 direction B, R274's 74 dp + 22 safe area). Five slots:
+   Home · Library · Search · Discover · Profile. This round adds NO sixth slot — Downloads is
+   reached from Profile (brief; invariant 4 as read on DEB-3997). */
+.pd-nav { position: absolute; left: 0; right: 0; bottom: 0; z-index: 36; padding-top: 10px;
+  background: var(--bg-2); border-top: 1px solid var(--line); }
+.pd-nav .pd-nrow { position: relative; display: flex; align-items: flex-end; }
+.pd-nav .pd-nind { position: absolute; top: 0; width: 56px; height: 36px; border-radius: 18px;
+  background: var(--grad); pointer-events: none; }
+.pd-nav .pd-n { flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; background: none; border: 0; padding: 0 0 8px;
+  color: var(--ink-dim); font-family: 'Sora', sans-serif; position: relative; }
+.pd-nav .pd-n .p { width: 56px; height: 36px; display: flex; align-items: center; justify-content: center; }
+.pd-nav .pd-n svg { width: 28px; height: 28px; }
+.pd-nav .pd-n b { font-size: 11.5px; line-height: 16px; font-weight: 600; letter-spacing: .01em; }
+.pd-nav .pd-n.on { color: #fff; }
+.pd-nav .pd-n.on b { color: var(--ink); }
+.pd-nav .pd-nsafe { height: 22px; }
+.pd-nav .pd-av { width: 28px; height: 28px; border-radius: 50%; background: var(--grad);
+  display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 11px; color: #fff; }
+.pd-nav .pd-n.on .pd-av { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 3.5px #fff; }
+
+/* =================================================================================================
+   THE DOWNLOADED MARK (FR-8) — the round's one new piece of iconography.
+
+   Geometry, fixed: a 20x20 dp rounded square, radius 7, inset 7 dp from the poster's
+   BOTTOM-LEFT corner. The two corners already spoken for are left alone — the quality badge
+   (.pb, 4K/HDR) owns top-right at 7 dp, and the episode thumb's watched tick (.mwk) owns
+   bottom-right at 5 dp. A poster's Continue progress bar is 3 dp at the bottom edge, so a
+   7 dp inset clears it by 4 dp.
+
+   It is deliberately NOT a green circle: that shape and that colour already mean "watched"
+   (--good #2dd49a, .mwk). This is a white chip with dark ink and an arrow-to-a-line glyph —
+   "the bytes are on this device" — so an episode can carry both marks at once and read
+   correctly, which `mark-geometry` draws.
+   ================================================================================================= */
+.pd-mark { position: absolute; left: 7px; bottom: 7px; width: 20px; height: 20px; border-radius: 7px;
+  background: #f3f4fb; color: #0a0c13; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .45); }
+.pd-mark svg { width: 12px; height: 12px; stroke-width: 2.4; }
+/* On a 16:9 episode thumb the inset is 5 dp, matching the watched tick it sits beside, and the
+   chip drops to 18x18 so the two are the same visual weight. */
+/* The alternative treatment, drawn beside it in the study so the owner picks from pictures: the
+   same chip in the quality badge's own dark glass (.pb, rgba(8,10,16,.66) + white ink) instead of
+   white-on-dark. It is quieter and matches 4K exactly — which is also the argument against it,
+   since "downloaded" and "this file is 4K" then look like the same kind of fact. */
+.pd-mark.glass { background: rgba(8, 10, 16, .72); color: #fff; box-shadow: none;
+  outline: 1px solid rgba(255, 255, 255, .14); outline-offset: -1px; }
+.pd-mark.sm { left: 5px; bottom: 5px; width: 18px; height: 18px; border-radius: 6px; }
+.pd-mark.sm svg { width: 11px; height: 11px; }
+/* The same chip inline, in a list row or a meta line. */
+.pd-markin { display: inline-flex; align-items: center; justify-content: center; width: 17px;
+  height: 17px; border-radius: 6px; background: #f3f4fb; color: #0a0c13; flex: none; }
+.pd-markin svg { width: 10px; height: 10px; stroke-width: 2.5; }
+
+/* The shipped watched tick, drawn here because this round's rows are its own markup. Same
+   18 px, same --good, same glyph as .mwk / .mdone .ck in ravilo-phone.css. */
+.pd-wk { position: absolute; right: 5px; bottom: 5px; width: 18px; height: 18px; border-radius: 50%;
+  background: #2dd49a; color: #06281c; font-size: 10px; font-weight: 800; display: flex;
+  align-items: center; justify-content: center; }
+
+/* =================================================================================================
+   THE FILM / SEASON PAGE and the download control's five states (FR-8).
+   ================================================================================================= */
+.pd-detail { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column;
+  overflow: hidden; }
+.pd-dhero { height: 340px; position: relative; flex: none; background-size: cover; background-position: center; }
+.pd-dhero .pd-scrim { position: absolute; inset: 0;
+  background: linear-gradient(0deg, var(--bg) 3%, rgba(var(--bg-rgb), .5) 45%, rgba(var(--bg-rgb), .1) 100%); }
+/* The shipped .dback is a blurred glass circle; a canvas cannot carry backdrop-filter, so this
+   is the same 38 px circle at a flat 55 % tint. Reported, not hidden. */
+.pd-back2 { position: absolute; top: 48px; left: 14px; width: 38px; height: 38px; border-radius: 50%;
+  background: rgba(8, 10, 16, .55); display: flex; align-items: center; justify-content: center;
+  color: #fff; border: 0; }
+.pd-dbody { padding: 0 20px 30px; margin-top: -58px; position: relative; }
+.pd-dtitle { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 27px; line-height: 1.05; }
+.pd-dmeta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 9px;
+  font-size: 12.5px; color: var(--ink-soft); }
+.pd-dmeta .pg { border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 11px; }
+.pd-dsyn { margin-top: 16px; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+
+/* The shipped action row: Play and My List, 44 px, 10 px gap, both flex: 1. */
+.pd-dbtns { display: flex; gap: 10px; margin-top: 16px; }
+.pd-btn { flex: 1; height: 44px; border-radius: 12px; display: flex; align-items: center;
+  justify-content: center; gap: 7px; font-weight: 600; font-size: 15px; border: 0;
+  font-family: 'Sora', sans-serif; cursor: pointer; }
+.pd-btn.play { background: var(--ink); color: #0a0c13; }
+.pd-btn.ghost { background: rgba(var(--fg), .13); color: var(--ink); }
+.pd-btn svg { width: 17px; height: 17px; flex: none; }
+
+/* ---- Direction A — "beside Play". The control is a third item in the shipped action row,
+   which costs My List its label: three labelled 44 px controls do not fit 372 dp. ---------- */
+.pd-dbtns.a .pd-btn.play { flex: 1 1 auto; min-width: 0; }
+/* `position: relative` is NOT decorative: the n % fill inside is absolutely positioned, and
+   without it the first render laid the fill against .pd-dbody instead — a translucent purple
+   slab over the title, the meta line and half the synopsis. Only the picture showed it. */
+.pd-dbtns.a .pd-dl { isolation: isolate; position: relative; flex: none; height: 44px; padding: 0 14px; border-radius: 12px;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  font: 600 15px 'Sora', sans-serif; border: 1px solid var(--line-2);
+  background: rgba(var(--fg), .07); color: var(--ink); overflow: hidden; }
+.pd-dbtns.a .pd-mylist-ico { flex: none; width: 44px; height: 44px; border-radius: 12px;
+  background: rgba(var(--fg), .13); color: var(--ink); display: flex; align-items: center;
+  justify-content: center; border: 0; font-size: 19px; }
+
+/* ---- Direction B — "under Play". A full-width secondary control on its own row. The shipped
+   Play + My List row is untouched. 46 px tall, radius 12, 12 px above the row it follows. ---- */
+/* `isolation: isolate` is load-bearing. The label and the fill inside carry z-index 1 and 2 so
+   the words sit over the progress; without a stacking context of its own, an auto-z-index
+   positioned ancestor does not contain them and those z-indexes compete at the SCREEN's level —
+   the first render painted the word "Download", undimmed, on top of the quality sheet that had
+   just covered it. This is PROCESS.md's round-11 trap, found again by looking at the picture. */
+.pd-dlfull { isolation: isolate; position: relative; display: flex; align-items: center; justify-content: center;
+  gap: 8px; width: 100%; height: 46px; margin-top: 12px; border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--line-2); background: rgba(var(--fg), .07); color: var(--ink);
+  font: 600 15px 'Sora', sans-serif; cursor: pointer; }
+.pd-dlfull svg { width: 17px; height: 17px; flex: none; }
+.pd-dlfull .pd-lbl { position: relative; z-index: 2; display: inline-flex; align-items: center; gap: 8px; }
+/* n % — the progress is the control's own fill, left to right, behind its label. A secondary
+   surface can carry this; a 131 px icon button beside Play cannot. */
+.pd-dlfull .pd-fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
+  background: color-mix(in oklch, var(--accent) 38%, transparent); }
+/* Queued and Downloaded are quieter than Download; Failed is the one warn-coloured state. The
+   state is carried by the icon AND the words in every case, never by colour alone. */
+.pd-dlfull.queued { color: var(--ink-soft); }
+.pd-dlfull.done { border-color: color-mix(in oklch, var(--good) 52%, transparent);
+  background: rgba(45, 212, 154, .12); color: #7fe4c0; }
+.pd-dlfull.failed { border-color: rgba(245, 181, 66, .55); background: rgba(245, 181, 66, .12);
+  color: #f0c07a; }
+.pd-dbtns.a .pd-dl.queued { color: var(--ink-soft); }
+.pd-dbtns.a .pd-dl.done { border-color: color-mix(in oklch, var(--good) 52%, transparent);
+  background: rgba(45, 212, 154, .12); color: #7fe4c0; }
+.pd-dbtns.a .pd-dl.failed { border-color: rgba(245, 181, 66, .55); background: rgba(245, 181, 66, .12);
+  color: #f0c07a; }
+/* The A-row progress fill, same idea in a much narrower box. */
+.pd-dbtns.a .pd-dl .pd-fill { position: absolute; left: 0; top: 0; bottom: 0;
+  background: color-mix(in oklch, var(--accent) 38%, transparent); }
+.pd-dbtns.a .pd-dl .pd-lbl { position: relative; z-index: 2; display: inline-flex; align-items: center; gap: 7px; }
+
+/* The season page's Episodes header, shipped .seclbl.mrow shape, with Download season where
+   Shuffle sits (R343). 36 px pill, 48 px-wide tap area by its padding. */
+.pd-seclbl { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600;
+  margin: 22px 0 11px; display: flex; align-items: center; gap: 8px; }
+.pd-seasonbtn { margin-left: auto; height: 36px; padding: 0 14px; border-radius: 18px;
+  display: inline-flex; align-items: center; gap: 7px; font: 600 13px 'Sora', sans-serif;
+  background: rgba(var(--fg), .12); color: var(--ink); border: 0; white-space: nowrap; }
+.pd-seasonbtn svg { width: 15px; height: 15px; stroke-width: 2.3; }
+
+/* An episode row on a season page — the shipped .merow-single, with the mark and the two
+   download states this round adds. */
+.pd-eprow { display: flex; gap: 11px; align-items: center; padding: 11px 13px;
+  border: 1px solid var(--line); border-radius: 14px; margin-bottom: 10px; }
+.pd-epthumb { width: 104px; height: 59px; border-radius: 8px; flex: none; position: relative;
+  overflow: hidden; }
+.pd-epthumb .pd-mn { position: absolute; left: 7px; top: 3px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 16px; color: #fff; text-shadow: 0 1px 5px rgba(0, 0, 0, .7); }
+.pd-epmeta { flex: 1; min-width: 0; }
+.pd-epmeta .t { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.pd-epmeta .d { font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; }
+.pd-epmeta .st { font-size: 11.5px; margin-top: 5px; display: flex; align-items: center; gap: 6px;
+  color: var(--ink-soft); }
+.pd-epmeta .st svg { width: 13px; height: 13px; flex: none; }
+.pd-epmeta .st.run { color: var(--accent-2); }
+/* The episode row's own progress line — 3 px, full row width, under the status words. */
+.pd-epbar { height: 3px; border-radius: 2px; background: rgba(var(--fg), .14); margin-top: 6px;
+  overflow: hidden; }
+.pd-epbar i { display: block; height: 100%; background: var(--accent); }
+
+/* =================================================================================================
+   THE QUALITY SHEET (FR-3, FR-5).
+   ================================================================================================= */
+/* Every overlay declares its own layer rather than relying on DOM order: a sheet covering the
+   control it was opened from is the one thing a reader must never see half of. */
+.pd-scrim2 { position: absolute; inset: 0; z-index: 70; background: rgba(6, 8, 14, .62); }
+.pd-sheet { position: absolute; z-index: 71; left: 0; right: 0; bottom: 0; background: var(--bg-2);
+  border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; padding: 8px 0 18px; }
+.pd-sheet .pd-grab { width: 38px; height: 4px; border-radius: 4px; background: rgba(var(--fg), .22);
+  margin: 6px auto 14px; }
+.pd-sheet h4 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700;
+  padding: 0 20px; letter-spacing: -.01em; }
+.pd-sheet .pd-ssub { font-size: 12.5px; color: var(--ink-dim); padding: 4px 20px 0; }
+.pd-sheet .pd-srows { padding: 14px 20px 0; }
+/* A quality row. 60 px, so the radio, two lines of type and the size all sit inside one target. */
+.pd-qrow { display: flex; align-items: center; gap: 13px; min-height: 60px; padding: 8px 13px;
+  border: 1px solid var(--line); border-radius: 13px; background: rgba(var(--fg), .04);
+  margin-bottom: 9px; }
+.pd-qrow .pd-radio { width: 22px; height: 22px; border-radius: 50%; flex: none;
+  border: 2px solid var(--line-2); position: relative; }
+.pd-qrow.on { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, transparent); }
+.pd-qrow.on .pd-radio { border-color: var(--accent); }
+.pd-qrow.on .pd-radio::after { content: ''; position: absolute; inset: 3px; border-radius: 50%;
+  background: var(--accent); }
+.pd-qrow .pd-qn { flex: 1; min-width: 0; }
+.pd-qrow .pd-qn b { display: block; font-size: 15px; font-weight: 600; }
+.pd-qrow .pd-qn span { display: block; font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; }
+.pd-qrow .pd-qs { font-size: 14.5px; font-weight: 600; white-space: nowrap; text-align: right; }
+.pd-qrow .pd-qs.est { color: var(--ink-soft); font-weight: 500; }
+/* A choice with no room: shown and disabled, never hidden — the viewer is told why, in the
+   same row, and the reason carries the number that would make it possible. */
+.pd-qrow.noroom { opacity: .5; }
+.pd-qrow.noroom .pd-radio { border-style: dashed; }
+.pd-qnoroom { display: flex; gap: 8px; align-items: flex-start; margin: -3px 2px 11px;
+  padding-left: 8px; border-left: 3px solid #f5b542; font-size: 11.5px; line-height: 1.45;
+  color: var(--ink-soft); }
+.pd-qnoroom svg { width: 14px; height: 14px; margin-top: 1px; color: #f0c07a; }
+.pd-qnoroom b { color: #f0c07a; font-weight: 600; }
+.pd-sfree { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-dim);
+  padding: 2px 20px 0; }
+.pd-sfree svg { width: 14px; height: 14px; flex: none; }
+.pd-shave { font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); padding: 8px 20px 0; }
+.pd-sgo { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 40px);
+  margin: 16px 20px 0; min-height: 52px; border-radius: 14px; border: 0; background: var(--grad);
+  color: #fff; font: 600 15.5px 'Sora', sans-serif; cursor: pointer; }
+.pd-sgo svg { width: 17px; height: 17px; }
+/* Loading: the sheet opens at once and the rows arrive. Three skeleton rows, no spinner. */
+.pd-qskel { height: 60px; border-radius: 13px; background: rgba(var(--fg), .055);
+  border: 1px solid var(--line); margin-bottom: 9px; }
+.pd-sload { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink-dim);
+  padding: 4px 20px 0; }
+
+/* A bottom sheet of plain choices — the Downloaded control's Play / Delete (FR-8), and the
+   page overflow's Select / Delete watched / Delete all. Shipped .psheet shape. */
+.pd-msheet { position: absolute; z-index: 71; left: 0; right: 0; bottom: 0; background: var(--bg-2);
+  border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; padding: 8px 0 18px; }
+.pd-msheet .pd-grab { width: 38px; height: 4px; border-radius: 4px; background: rgba(var(--fg), .22);
+  margin: 6px auto 10px; }
+.pd-msheet .pd-mhead { padding: 4px 20px 12px; }
+.pd-msheet .pd-mhead b { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 700; }
+.pd-msheet .pd-mhead span { display: block; font-size: 12.5px; color: var(--ink-dim); margin-top: 3px; }
+.pd-mrow { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 54px;
+  padding: 0 20px; border: 0; background: none; color: var(--ink); font: 400 15px 'Sora', sans-serif;
+  text-align: left; cursor: pointer; }
+.pd-mrow svg { width: 20px; height: 20px; flex: none; color: var(--ink-soft); }
+.pd-mrow.danger, .pd-mrow.danger svg { color: #f5667a; }
+.pd-mrow .pd-mr { margin-left: auto; font-size: 12.5px; color: var(--ink-dim); }
+
+/* The Delete all confirm — shipped .psheet .so shape. The sentence carries the number. */
+.pd-confirm { padding: 2px 20px 8px; }
+.pd-confirm h4 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; margin: 0 0 8px; }
+.pd-confirm p { font-size: 14px; line-height: 1.55; color: var(--ink-soft); margin: 0 0 18px; }
+.pd-confirm .pd-acts { display: grid; gap: 10px; }
+.pd-confirm button { min-height: 52px; border-radius: 14px; font: 600 15px 'Sora', sans-serif;
+  cursor: pointer; }
+.pd-confirm .go { background: #f5667a; color: #1a0509; border: 0; }
+.pd-confirm .no { background: none; color: var(--ink); border: 1px solid var(--line-2); }
+
+/* =================================================================================================
+   THE DOWNLOADS PAGE (FR-9 to FR-12).
+   ================================================================================================= */
+
+/* The offline line. Quiet, at the top, above the storage bar — it tells the viewer why this
+   page is the one they are looking at, and it never looks like an error. */
+.pd-offline { display: flex; align-items: center; gap: 9px; margin: 0 0 16px; padding: 10px 12px;
+  border-radius: 11px; background: rgba(var(--fg), .055); border: 1px solid var(--line);
+  font-size: 12.5px; line-height: 1.4; color: var(--ink-soft); }
+.pd-offline svg { width: 16px; height: 16px; flex: none; color: var(--ink-dim); }
+
+/* ---- the storage bar, direction "one bar + inline legend" (recommended) ------------------
+   One 14 px bar, radius 7, three segments sized by flex-grow from the GB themselves, so the
+   picture cannot disagree with the numbers under it. The legend is inline, each item a dot in
+   the segment's own colour: Ravilo is the brand gradient, other apps a neutral fill, free the
+   page's own surface with a hairline so "free" reads as empty rather than as a fourth thing. */
+.pd-space { margin: 0 0 6px; }
+.pd-space .pd-sptitle { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600;
+  margin: 0 0 11px; }
+.pd-bar3 { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line); }
+.pd-bar3 i { display: block; height: 100%; }
+.pd-bar3 i.rav { background: var(--grad); }
+.pd-bar3 i.oth { background: rgba(var(--fg), .22); }
+.pd-bar3 i.fre { background: transparent; }
+.pd-leg { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 11px; }
+.pd-leg .pd-li { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;
+  color: var(--ink-soft); }
+.pd-leg .pd-li b { color: var(--ink); font-weight: 600; }
+.pd-leg .pd-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+/* The swatch colours are shared by the inline legend and the legend LIST alternative — scoped to
+   .pd-leg alone, the list's three dots painted nothing and the alternative read as three unlabelled
+   rows. Only the picture showed it. */
+.pd-dot.rav { background: var(--grad); }
+.pd-dot.oth { background: rgba(var(--fg), .22); }
+.pd-dot.fre { background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+
+/* ---- the alternative: a bar plus a legend LIST. Same bar, three rows beneath it. --------- */
+.pd-leglist { margin-top: 12px; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+.pd-leglist .pd-lr { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 0 13px;
+  border-top: 1px solid var(--line); font-size: 13.5px; color: var(--ink); }
+.pd-leglist .pd-lr:first-child { border-top: 0; }
+.pd-leglist .pd-lr .pd-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.pd-leglist .pd-lr .pd-lv { margin-left: auto; font-weight: 600; }
+
+/* FR-12's other-profiles line. A size and a Delete, and no titles — ever. */
+.pd-others { display: flex; align-items: center; gap: 11px; min-height: 56px; margin-top: 12px;
+  padding: 0 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(var(--fg), .04); }
+.pd-others .pd-on { flex: 1; min-width: 0; font-size: 13.5px; }
+.pd-others .pd-on span { display: block; font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+.pd-others .pd-odel { min-height: 44px; padding: 0 14px; border-radius: 11px;
+  border: 1px solid rgba(245, 102, 122, .38); background: rgba(245, 102, 122, .06); color: #f5667a;
+  font: 600 13.5px 'Sora', sans-serif; cursor: pointer; }
+
+/* A section head over the list: Films / Series, with the group's own total. */
+.pd-sec { display: flex; align-items: baseline; gap: 8px; margin: 22px 0 10px; }
+.pd-sec b { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600; }
+.pd-sec span { margin-left: auto; font-size: 12.5px; color: var(--ink-dim); }
+
+/* ---- an entry. 48 dp+ by its own height; the swipe and the long-press are the only two
+   gestures and both are drawn. ------------------------------------------------------------ */
+.pd-entry { position: relative; overflow: hidden; border-radius: 13px; margin-bottom: 9px; }
+.pd-erow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 76px;
+  border: 1px solid var(--line); border-radius: 13px; background: rgba(var(--fg), .035);
+  position: relative; z-index: 2; background-color: #14182400; }
+/* The swipe state: the row is translated and the delete panel behind it is revealed. 88 px, a
+   whole thumb wide, so the gesture cannot be half-committed by accident. */
+.pd-entry.swiped .pd-erow { transform: translateX(-88px); }
+.pd-edel { position: absolute; right: 0; top: 0; bottom: 0; width: 88px; z-index: 1;
+  border-radius: 13px; background: #f5667a; color: #1a0509; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px; font: 600 12px 'Sora', sans-serif; }
+.pd-edel svg { width: 19px; height: 19px; stroke-width: 2.2; }
+.pd-eposter { width: 48px; height: 72px; border-radius: 8px; flex: none; position: relative;
+  overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.pd-eposter .ini { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px;
+  color: rgba(var(--fg), .9); }
+.pd-ethumb { width: 86px; height: 49px; border-radius: 7px; flex: none; position: relative;
+  overflow: hidden; }
+.pd-ethumb .pd-mn { position: absolute; left: 6px; top: 2px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 13px; color: #fff; text-shadow: 0 1px 5px rgba(0, 0, 0, .7); }
+.pd-emeta { flex: 1; min-width: 0; }
+.pd-emeta .pd-et { font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+.pd-emeta .pd-em { font-size: 12px; color: var(--ink-dim); margin-top: 3px; display: flex;
+  align-items: center; gap: 7px; flex-wrap: wrap; }
+.pd-emeta .pd-em .q { color: var(--ink-soft); font-weight: 600; }
+/* Watched is the shipped green tick and the shipped word, inline. */
+.pd-emeta .pd-ew { display: inline-flex; align-items: center; gap: 5px; color: #2dd49a; }
+.pd-emeta .pd-ew i { width: 14px; height: 14px; border-radius: 50%; background: #2dd49a;
+  color: #06281c; font-size: 8px; font-weight: 800; display: inline-flex; align-items: center;
+  justify-content: center; font-style: normal; }
+/* FR-13's download.gone. Warn, never bad: the title still plays. */
+.pd-egone { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 2px 8px;
+  border-radius: 7px; background: rgba(245, 181, 66, .13); border: 1px solid rgba(245, 181, 66, .4);
+  font-size: 11.5px; color: #f0c07a; }
+.pd-egone svg { width: 13px; height: 13px; }
+/* Watched progress on an entry (FR-9 "its progress when watched"). */
+.pd-epr { height: 3px; border-radius: 2px; background: rgba(var(--fg), .14); margin-top: 8px;
+  overflow: hidden; width: 136px; }
+.pd-epr i { display: block; height: 100%; background: var(--accent); }
+/* A running download's own progress + its two controls. */
+.pd-run { margin-top: 7px; }
+.pd-run .pd-rl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent-2); }
+.pd-run .pd-rb { height: 4px; border-radius: 2px; background: rgba(var(--fg), .14); margin-top: 6px;
+  overflow: hidden; }
+.pd-run .pd-rb i { display: block; height: 100%; background: var(--grad); }
+.pd-ectl { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.pd-ectl button { width: 44px; height: 44px; border-radius: 11px; border: 1px solid var(--line-2);
+  background: rgba(var(--fg), .06); color: var(--ink); display: flex; align-items: center;
+  justify-content: center; }
+.pd-ectl button svg { width: 17px; height: 17px; }
+/* Waiting — for Wi-Fi or for the server. The words, plus a dim icon; no colour of its own. */
+.pd-ewait { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 12px;
+  color: var(--ink-dim); }
+.pd-ewait svg { width: 14px; height: 14px; flex: none; }
+
+/* A series group: the header deletes the whole series (FR-10), the episodes sit inside it. */
+.pd-group { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 11px;
+  background: rgba(var(--fg), .025); }
+.pd-group .pd-ghead { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 72px; }
+.pd-group .pd-gseason { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-dim); padding: 2px 12px 8px; }
+.pd-group .pd-entry { margin: 0 8px 8px; }
+.pd-group .pd-erow { background: rgba(var(--fg), .05); }
+
+/* The selecting state: a 24 px check leads every row, and a chosen row is tinted. */
+.pd-pick { width: 24px; height: 24px; border-radius: 50%; flex: none; border: 2px solid var(--line-2);
+  display: flex; align-items: center; justify-content: center; color: transparent; }
+.pd-erow.picked { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 14%, transparent); }
+.pd-erow.picked .pd-pick { border-color: var(--accent); background: var(--accent); color: #fff; }
+.pd-pick svg { width: 13px; height: 13px; stroke-width: 3; }
+
+/* The overflow menu, anchored under the bar's kebab. Shipped .libmenu shape. */
+.pd-menu { position: absolute; z-index: 71; right: 10px; top: 76px; min-width: 212px; padding: 6px;
+  border-radius: 14px; background: var(--bg-2); border: 1px solid var(--line);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55); }
+.pd-menu button { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 48px;
+  padding: 0 12px; border: 0; border-radius: 10px; background: none; color: var(--ink);
+  font: 400 14.5px 'Sora', sans-serif; text-align: left; cursor: pointer; }
+.pd-menu button svg { width: 18px; height: 18px; flex: none; color: var(--ink-soft); }
+.pd-menu button.danger, .pd-menu button.danger svg { color: #f5667a; }
+
+/* ---- the alternative: Delete watched as a button at the top of the page ------------------ */
+.pd-topacts { display: flex; gap: 9px; margin: 14px 0 4px; }
+.pd-topacts button { flex: 1; min-height: 44px; border-radius: 12px; border: 1px solid var(--line-2);
+  background: rgba(var(--fg), .06); color: var(--ink); font: 600 13.5px 'Sora', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 7px; }
+.pd-topacts button svg { width: 15px; height: 15px; }
+.pd-topacts button.danger { color: #f5667a; border-color: rgba(245, 102, 122, .38);
+  background: rgba(245, 102, 122, .06); }
+
+/* ---- empty (FR-9). An invitation, never an apology. -------------------------------------- */
+.pd-empty { display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 72px 10px 0; }
+.pd-empty .pd-eico { width: 64px; height: 64px; border-radius: 20px; background: rgba(var(--fg), .06);
+  border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+  color: var(--ink-dim); margin-bottom: 20px; }
+.pd-empty .pd-eico svg { width: 30px; height: 30px; stroke-width: 1.8; }
+.pd-empty h3 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;
+  letter-spacing: -.01em; }
+.pd-empty p { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin-top: 9px;
+  max-width: 300px; }
+
+/* =================================================================================================
+   PROFILE, HOME-UNREACHABLE, SETTINGS and the card rows that carry the mark.
+   ================================================================================================= */
+
+/* Profile's Account card — the shipped .pft-grp / .pft-row, with the Downloads row added. */
+.pd-pid { display: flex; align-items: center; gap: 16px; padding: 18px 0 4px; }
+.pd-pav { width: 76px; height: 76px; border-radius: 50%; flex: none; background: var(--grad);
+  display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 26px; color: #fff; }
+.pd-pnm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 25px;
+  letter-spacing: -.01em; line-height: 1.1; }
+.pd-psub { font-size: 13px; color: var(--ink-dim); margin-top: 5px; }
+.pd-grp { border: 1px solid var(--line); border-radius: 14px; background: rgba(var(--fg), .04);
+  overflow: hidden; }
+.pd-prow { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 58px;
+  padding: 8px 14px; background: none; border: 0; border-top: 1px solid var(--line);
+  color: var(--ink); font: 400 15px 'Sora', sans-serif; text-align: left; }
+.pd-prow:first-child { border-top: 0; }
+.pd-prow .ic { width: 22px; height: 22px; flex: none; color: var(--ink-soft); }
+.pd-prow .pd-pr { flex: 1; min-width: 0; }
+.pd-prow .pd-pr span { display: block; font-size: 12.5px; color: var(--ink-dim); margin-top: 2px; }
+.pd-prow .pd-pv { font-size: 13.5px; color: var(--ink-soft); font-weight: 600; }
+.pd-prow .chev { width: 18px; height: 18px; flex: none; color: var(--ink-dim); }
+.pd-acsec { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-dim); margin: 22px 0 10px; }
+/* The shipped phone switch, 44x26 with a 20 px knob. */
+.pd-sw { margin-left: auto; width: 44px; height: 26px; border-radius: 13px; flex: none;
+  background: rgba(var(--fg), .18); position: relative; }
+.pd-sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: #fff; }
+.pd-sw.on { background: var(--accent); }
+.pd-sw.on::after { transform: translateX(18px); }
+
+/* Home's unreachable state (FR-11). The one action that works with no server is the primary. */
+.pd-unreach { display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 150px 12px 0; }
+.pd-unreach .pd-uico { width: 64px; height: 64px; border-radius: 20px; background: rgba(var(--fg), .06);
+  border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+  color: var(--ink-dim); margin-bottom: 20px; }
+.pd-unreach .pd-uico svg { width: 30px; height: 30px; stroke-width: 1.8; }
+.pd-unreach h3 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700;
+  letter-spacing: -.01em; }
+.pd-unreach p { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin-top: 9px;
+  max-width: 300px; }
+.pd-unreach .pd-uacts { width: 100%; display: grid; gap: 10px; margin-top: 24px; }
+.pd-unreach .pd-uacts button { min-height: 52px; border-radius: 14px; font: 600 15px 'Sora', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; }
+.pd-unreach .pd-uacts .go { border: 0; background: var(--grad); color: #fff; }
+.pd-unreach .pd-uacts .no { border: 1px solid var(--line-2); background: none; color: var(--ink); }
+.pd-unreach .pd-uacts svg { width: 17px; height: 17px; }
+
+/* A Home row / a Library grid of cards, so the mark is seen where a viewer meets it. Shipped
+   .row / .track / .tile / .poster geometry: 118x177, radius 12, 11 px gaps, 18 px gutters. */
+.pd-row { margin-top: 20px; }
+.pd-row h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600;
+  padding: 0 18px 11px; display: flex; align-items: center; gap: 7px; }
+.pd-row h3 .more { margin-left: auto; font: 500 12px 'Sora', sans-serif; color: var(--ink-dim); }
+.pd-track { display: flex; gap: 11px; padding: 0 18px 2px; }
+.pd-tile { flex: none; width: 118px; }
+.pd-poster { width: 118px; height: 177px; border-radius: 12px; overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center; }
+.pd-poster .ini { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px;
+  color: rgba(var(--fg), .9); }
+/* The shipped quality badge: top-right, 7 px inset. 4K / HDR only (owner 2026-09-28). */
+.pd-poster .pb { position: absolute; top: 7px; right: 7px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 9.5px; padding: 2px 6px; border-radius: 5px;
+  background: rgba(8, 10, 16, .66); color: #fff; }
+/* The Continue progress bar: 3 px at the bottom edge, which the mark's 7 px inset clears. */
+.pd-poster .pbar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: rgba(8, 10, 16, .55); }
+.pd-poster .pbar i { display: block; height: 100%; background: var(--accent); }
+.pd-tlabel { font-size: 12.5px; font-weight: 500; margin-top: 7px; line-height: 1.25; }
+.pd-tsub { font-size: 11px; color: var(--ink-dim); margin-top: 1px; }
+.pd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px 11px; padding: 0 18px; }
+.pd-grid .pd-tile { width: auto; }
+.pd-grid .pd-poster { width: 100%; height: auto; aspect-ratio: 2/3; }
+.pd-libbar { display: flex; gap: 8px; padding: 2px 18px 12px; }
+.pd-libf { height: 36px; padding: 0 13px; border-radius: 18px; border: 1px solid var(--line);
+  background: rgba(var(--fg), .05); color: var(--ink); font: 500 13px 'Sora', sans-serif;
+  display: flex; align-items: center; gap: 5px; }
+.pd-libf .lb { color: var(--ink-dim); }
+
+/* The app bar on a tab page: the wordmark and the avatar, shipped shape. */
+.pd-appbar { display: flex; align-items: center; gap: 14px; padding: 8px 18px 10px; flex: none; }
+.pd-appbar .pd-wm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px;
+  letter-spacing: -.02em; }
+.pd-appbar .sp { flex: 1; }
+.pd-appbar .pd-ib { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; background: rgba(var(--fg), .07); color: var(--ink); border: 0; }
+.pd-appbar .pd-ib svg { width: 19px; height: 19px; }
+.pd-appbar .pd-av { width: 34px; height: 34px; border-radius: 50%; background: var(--grad);
+  display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 13px; color: #fff; }

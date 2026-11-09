@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phone downloads — frames</title>
+<!--
+  frames.html — every frame this round renders, built from pd-data.js through pd-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=control | sheet | season | page | mark | shell | study
+      &lang=en|da|fo
+
+  The surface is the Ravilo Android PHONE only (412 x 915 dp portrait), so there is exactly one
+  shipped stylesheet to load — design/ravilo/mobile/ravilo-phone.css. It is LINKED, not copied,
+  so every token, radius, weight and font in these pictures is the production one. The round's
+  own stylesheet comes last, so it extends the shipped system and never precedes it.
+
+  No TV, desktop, web, admin or cast frame exists in this round: those surfaces get no download
+  control at all (spec FR-1), so ravilo.css, ravilo-desktop.css and ravilo-music.css are not
+  loaded — a file that could answer for the phone's tokens is not in the document.
+
+  ravilo-data.js is loaded for ONE reason: RAVILO.grad(), RAVILO.initials() and
+  RAVILO.episodesFor() are the shipped corpus's own functions, so every poster colour, every set
+  of initials and every episode title in these pictures is the same stand-in the TV and phone
+  mockups already draw. Nothing is invented here and nothing drifts per round.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it; scripts/render-design.sh
+  drives it over the parameter combinations and screenshots one element per frame.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var set = q.get('set') || 'control';
+    var lang = q.get('lang') || 'en';
+    document.documentElement.lang = lang;
+    /* The phone's own token file. The phone frames carry no [data-skin]: aurora is the default
+       and this round draws no skin variant — the report says which skins are untested. */
+    document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+    document.write('<link rel="stylesheet" href="phone-downloads.css">');
+    window.PDOPT = { set: set, lang: lang };
+  })();
+</script>
+</head>
+<body>
+<div class="pd-frames" id="frames"></div>
+
+<script src="../../ravilo/ravilo-data.js"></script>
+<script src="pd-data.js"></script>
+<script src="pd-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var set = window.PDOPT.set, lang = window.PDOPT.lang;
+  var K = window.PDKit, D = window.PD;
+  K.setLang(lang);
+  var root = document.getElementById('frames');
+  var sfx = lang === 'en' ? '' : '-' + lang;
+
+  /* `pd-frame` is the renderer's handle and carries no style of its own: --all targets it, so a
+     phone nested INSIDE a strip is never mistaken for a frame in its own right. */
+  function frame(id, cls, html) {
+    var d = document.createElement('div');
+    d.id = id; d.className = 'pd-frame ' + cls; d.innerHTML = html;
+    root.appendChild(d);
+    return d;
+  }
+  /* A phone frame: the 412 x 915 screen with the status bar on top of whatever the body is. */
+  function ph(id, html, extra) {
+    return frame(id, 'pd-ph' + (extra ? ' ' + extra : ''), K.sb() + html);
+  }
+  /* A strip: several phones in a row as one PNG, so the states are compared rather than
+     remembered. Every cell is also rendered on its own. */
+  function strip(id, cells) {
+    return frame(id, 'pd-strip', cells.map(function (c) {
+      return '<div class="pd-cell"><div class="pd-scap">' + K.esc(c[0]) + '</div>'
+        + '<div class="pd-ph ' + (c[2] || '') + '">' + K.sb() + c[1] + '</div></div>';
+    }).join(''));
+  }
+
+  var STATES = [
+    ['download', 'dl'], ['queued', 'queued'], ['42 %', 'pct'],
+    ['downloaded', 'done'], ['failed — retry', 'failed']
+  ];
+
+  /* =====================================================================================
+     SET `control` — open decision 1. The download control on the film page: direction A
+     "beside Play" (the brief's lean) against direction B "under Play".
+     ===================================================================================== */
+  if (set === 'control') {
+    ph('a-film-download' + sfx, K.filmPage({ dir: 'a', state: 'dl' }), 'art');
+    ph('b-film-download' + sfx, K.filmPage({ dir: 'b', state: 'dl' }), 'art');
+
+    /* All five states of FR-8, in both directions. This is the frame that decides the
+       question: three of the five states are WORDS, and in Danish and Faroese they are long
+       words. */
+    strip('a-film-states' + sfx, STATES.map(function (s) {
+      return [s[0], K.filmPage({ dir: 'a', state: s[1], pct: 42 }), 'art'];
+    }));
+    strip('b-film-states' + sfx, STATES.map(function (s) {
+      return [s[0], K.filmPage({ dir: 'b', state: s[1], pct: 42 }), 'art'];
+    }));
+
+    /* The Downloaded control's Play / Delete choice (FR-8). */
+    ph('b-film-downloaded-menu' + sfx, K.filmPage({ dir: 'b', state: 'done' })
+      + '<div class="pd-scrim2"></div><div class="pd-msheet"><div class="pd-grab"></div>'
+      + '<div class="pd-mhead"><b>' + K.esc(D.FILMPAGE.title) + '</b><span>'
+      + K.esc(K.t('download.downloaded')) + ' · ' + K.esc(D.QLABEL.high) + ' · '
+      + K.esc(D.size(D.SHEETS.glasberget.rows[1].mb)) + '</span></div>'
+      + '<button class="pd-mrow">' + K.ic('play') + K.esc(K.t('action.play')) + '</button>'
+      + '<button class="pd-mrow danger">' + K.ic('trash') + K.esc(K.t('download.delete'))
+      + '<span class="pd-mr">' + K.esc(D.size(D.SHEETS.glasberget.rows[1].mb)) + '</span></button>'
+      + '</div>', 'art');
+  }
+
+  /* =====================================================================================
+     SET `sheet` — FR-3 and FR-5. The choice, with its size, before anything starts.
+     ===================================================================================== */
+  if (set === 'sheet') {
+    ph('b-sheet-4k' + sfx, K.filmPage({ dir: 'b', state: 'dl' }) + K.sheet('glasberget'), 'art');
+    ph('b-sheet-1080p' + sfx,
+      K.filmPage({ dir: 'b', state: 'dl' }) + K.sheet('heimferd'), 'art');
+    ph('b-sheet-season' + sfx, K.seasonPage() + K.sheet('nordvestS1'), 'art');
+    /* The sheet opens at once and the server's answer arrives into it — FR-4 is a round trip,
+       so the loading case is a real state and not a spinner frame. */
+    ph('b-sheet-loading' + sfx,
+      K.filmPage({ dir: 'b', state: 'dl' }) + K.sheet('glasberget', { loading: true }), 'art');
+    /* The 4K sheet with Original selected rather than preselected 1080p: the disabled row is
+       the one a viewer taps first, so what it does when tapped has to be drawn. */
+    ph('b-sheet-4k-original-blocked' + sfx,
+      K.filmPage({ dir: 'b', state: 'dl' }) + K.sheet('glasberget', { sel: 'small' }), 'art');
+  }
+
+  /* =====================================================================================
+     SET `season` — FR-5, FR-8. Download season, and the episode rows that carry the mark.
+     ===================================================================================== */
+  if (set === 'season') {
+    ph('b-season-page' + sfx, K.seasonPage(), 'art');
+    ph('b-season-page-tall' + sfx, K.seasonPage(), 'art tall');
+  }
+
+  /* =====================================================================================
+     SET `page` — FR-9 to FR-12. The Downloads page in every state the brief names, plus the
+     two alternatives for open decisions 2 and 3.
+     ===================================================================================== */
+  if (set === 'page') {
+    ph('b-downloads-full' + sfx, K.downloadsPage('full'));
+    ph('b-downloads-full-tall' + sfx, K.downloadsPage('full'), 'tall');
+    ph('b-downloads-running' + sfx, K.downloadsPage('running'));
+    ph('b-downloads-running-tall' + sfx, K.downloadsPage('running'), 'tall');
+    /* The same page scrolled to the queue, because the running download — the state this frame
+       is named for — lives below the storage block and the four films. */
+    ph('b-downloads-running-scrolled' + sfx, K.downloadsPage('running', { scroll: 620 }));
+    ph('b-downloads-empty' + sfx, K.downloadsPage('empty'));
+    ph('b-downloads-offline' + sfx, K.downloadsPage('full', { offline: true }));
+    ph('b-downloads-selecting' + sfx, K.downloadsPage('selecting'));
+    ph('b-downloads-swipe' + sfx, K.downloadsPage('full', { swipe: 1 }));
+    /* A series' episode rows carry the same swipe, and a series HEADER deletes the whole
+       series (FR-10) — drawn scrolled to the Nordvest group. */
+    ph('b-downloads-series-scrolled' + sfx, K.downloadsPage('full', { scroll: 560 }));
+    ph('b-downloads-overflow' + sfx, K.downloadsPage('overflow'));
+    ph('b-delete-all-confirm' + sfx, K.downloadsPage('confirm'));
+    /* FR-11's launch: unreachable at start with downloads, the app opens here. Identical to
+       the offline page by design — the viewer is not shown a different screen for the same
+       state — which is why both ids exist and the report says they are the same picture. */
+    ph('b-offline-launch' + sfx, K.downloadsPage('full', { offline: true }));
+
+    /* Open decision 2, the alternative: a bar PLUS a legend list. */
+    ph('alt-downloads-legend-list' + sfx, K.downloadsPage('full', { legendList: true }));
+    /* Open decision 3, the alternative: Delete watched as a button at the top of the page. */
+    ph('alt-downloads-actions-top' + sfx, K.downloadsPage('full', { topacts: true }));
+  }
+
+  /* =====================================================================================
+     SET `mark` — FR-8. The downloaded mark where a viewer actually meets it.
+     ===================================================================================== */
+  if (set === 'mark') {
+    ph('b-mark-home-row' + sfx, K.homeRow());
+    ph('b-mark-library-grid' + sfx, K.libraryGrid());
+  }
+
+  /* =====================================================================================
+     SET `shell` — FR-8's Profile row, FR-11's Home, FR-17's Settings.
+     ===================================================================================== */
+  if (set === 'shell') {
+    ph('b-profile-account' + sfx, K.profilePage());
+    ph('b-offline-home' + sfx, K.homeUnreachable());
+    ph('b-settings-downloads' + sfx, K.settingsPage());
+  }
+
+  /* =====================================================================================
+     SET `study` — the magnified geometry of the mark. English only: it is a measurement
+     drawing, and it carries no viewer string.
+     ===================================================================================== */
+  if (set === 'study') {
+    frame('b-mark-geometry', 'pd-study-wrap', K.markStudy());
+  }
+})();
+</script>
+</body>
+</html>

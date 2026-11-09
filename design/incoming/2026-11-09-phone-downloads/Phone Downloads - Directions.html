@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phone Downloads — Directions</title>
+<!--
+  The round's directions document: what is fixed, the named directions, how they compare, the
+  states the recommended direction holds, the decided rows, and the new strings in three
+  languages. Self-contained on purpose — it is read on its own, away from the frames.
+
+  Shape taken from design/ravilo/Mobile Player - Directions.html. No network reference, no
+  hosted font: the three faces are the repo's own woff2, same as every other file in this round.
+-->
+<style>
+  @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+  @font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/sora.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+  :root { --ink: #12141b; --ink-2: #262a35; --line: #c9ccd6; --bg: #e9eaee; --card: #fff;
+    --acc: #5b4ee0; --warn: #a06a05; --good: #0d7a55; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; font-size: 15px;
+    line-height: 1.6; padding: 44px 32px 90px; }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700;
+    letter-spacing: -.015em; line-height: 1.12; }
+  .sub { color: var(--ink-2); margin-top: 8px; font-size: 15.5px; }
+  h2 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700;
+    letter-spacing: -.01em; margin: 44px 0 14px; padding-top: 18px; border-top: 1px solid var(--line); }
+  h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; margin: 24px 0 8px; }
+  p { color: var(--ink-2); margin: 10px 0; }
+  ul { margin: 10px 0 10px 20px; color: var(--ink-2); }
+  li { margin: 5px 0; }
+  b, strong { color: var(--ink); font-weight: 600; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 13px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--ink-2); vertical-align: top; }
+  th { background: #dfe1e8; color: var(--ink); font-weight: 600; font-size: 12px;
+    letter-spacing: .06em; text-transform: uppercase; border-top: 0; }
+  td b { color: var(--ink); }
+  .pick { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--acc);
+    border-radius: 12px; padding: 14px 16px; margin: 14px 0; }
+  .pick .k { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--acc); }
+  .warnbox { background: #fff6e2; border: 1px solid #e3c892; border-left: 4px solid #d79a16;
+    border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
+  .warnbox .k { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--warn); }
+  .fig { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin: 12px 0; white-space: pre-line; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Phone downloads</h1>
+<div class="sub">A viewer downloads a film or an episode to the Android phone, sees what is on it,
+and gets the space back. Drawn 2026-11-09 · Ravilo Android phone, 412 × 915 dp portrait, only.</div>
+
+<h2>What is fixed before a direction exists</h2>
+<ul>
+  <li><b>This surface and no other.</b> The TV, Tizen, the Chromecast receiver, Ravilo Web and the
+    desktops get no download control at all. No frame in this round draws one.</li>
+  <li><b>The bottom bar keeps its five slots</b> — Home · Library · Search · Discover · Profile.
+    Downloads is reached from Profile's Account card. There is no Downloads row on Home or in any
+    feed.</li>
+  <li><b>No viewer string names Jellyfin, LDAP, Quick Connect, a plugin or a status code.</b>
+    Every string this round introduces is listed below and none of them does.</li>
+  <li><b>A poster tile badges picture quality only</b> — 4K and HDR, owner 2026-09-28. The
+    downloaded mark is therefore not a badge in that corner and does not become one.</li>
+  <li><b>48 dp touch targets, and nothing below the phone's 13 px body floor.</b></li>
+  <li><b>Every number in every picture is computed from one array</b> (<code>pd-data.js</code>).
+    The storage bar's segments, the entry totals, the Delete-all sentence and the shortfall in the
+    sheet are the same arithmetic, so a reviewer can add them up rather than trust them.</li>
+</ul>
+
+<h2>The directions</h2>
+
+<h3>The question the round exists to answer</h3>
+<p>Only the download <b>control on the film page</b> was drawn as two competing directions, because
+it is the only place where two genuinely different shapes were on the table. Everything else is one
+direction, with the brief's two other open decisions drawn as single alternative frames beside it.</p>
+
+<table>
+  <tr><th>Direction</th><th>What it is</th><th>What it gives</th><th>What it costs</th></tr>
+  <tr>
+    <td><b>A · beside Play</b><br><span class="mono">a-film-*</span></td>
+    <td>A third control in the shipped action row: Play · Download · ＋</td>
+    <td>Play stays the one primary action, and the page gains no vertical height.</td>
+    <td>My List loses its label — three labelled 44 dp controls do not fit 372 dp — and the
+      control's width changes with its own state.</td>
+  </tr>
+  <tr>
+    <td><b>B · under Play</b> — recommended<br><span class="mono">b-film-*</span></td>
+    <td>The shipped Play + My List row untouched, with a full-width secondary control on its own
+      row beneath.</td>
+    <td>All five states fit in all three languages; Play never moves; the <i>n %</i> state becomes
+      the control's own fill, which no narrow button can carry.</td>
+    <td>46 dp of vertical height on the film and episode pages.</td>
+  </tr>
+</table>
+
+<div class="pick">
+  <div class="k">Recommendation · open decision 1</div>
+  <p style="margin-top:6px"><b>Direction B, against the brief's lean.</b> The brief leans to
+  icon-with-label beside Play, and in English with the word <i>Download</i> that is the nicer
+  picture. It does not survive its own state machine. Three of FR-8's five states are words, and
+  two of those words are long: Danish <i>Mislykkedes&nbsp;— prøv igen</i> and Faroese
+  <i>Miseydnaðist&nbsp;— royn aftur</i>. In direction A the Danish failed state squeezes Play down
+  to about 82 dp — <b>the secondary control becomes wider than the primary one</b> — and across the
+  five states Play's width swings from about 217 dp down to about 82 dp, so the page's one primary action moves and
+  resizes while a download runs. Direction B holds every state at a fixed geometry in all three
+  languages. Compare <span class="mono">a-film-states-da</span> against
+  <span class="mono">b-film-states-da</span>; the pictures make the argument on their own.</p>
+</div>
+
+<div class="pick">
+  <div class="k">Recommendation · open decision 2</div>
+  <p style="margin-top:6px"><b>One segmented bar with an inline legend</b>, as the brief leans.
+  The alternative (<span class="mono">alt-downloads-legend-list</span>) is not wrong, it is just
+  expensive: three list rows cost about 100 dp more than the inline legend and push the first
+  download entry below the fold on a 915 dp screen. The bar is the summary; the list below it is
+  the detail, and the page should reach the detail fast.</p>
+</div>
+
+<div class="pick">
+  <div class="k">Recommendation · open decision 3</div>
+  <p style="margin-top:6px"><b>Delete watched in the overflow</b>, as the brief leans — and with a
+  bonus the alternative cannot have. In the overflow each destructive row has room to carry
+  <i>what it frees</i>: <i>Delete watched · 7.5 GB</i>, <i>Delete all · 26.9 GB</i>. As three
+  buttons across the top (<span class="mono">alt-downloads-actions-top</span>) there is no room for
+  a number, and a destructive control that does not name its own number is exactly what the owner
+  asked not to have.</p>
+</div>
+
+<h2>The downloaded mark</h2>
+<p>A <b>20 × 20 dp rounded square, radius 7, inset 7 dp from the poster's bottom-left corner</b>,
+white (<code>#f3f4fb</code>) with dark ink (<code>#0a0c13</code>) and an arrow-into-a-line glyph at
+12 × 12, stroke 2.4. On a 16:9 episode thumb it is 18 × 18, radius 6, inset 5 dp, bottom-left.</p>
+<div class="fig">top-right    ·  .pb quality badge (4K / HDR)   — shipped, untouched
+bottom-right ·  .mwk watched tick, 18 dp, #2dd49a — shipped, untouched
+bottom edge  ·  Continue progress bar, 3 dp       — shipped, untouched
+bottom-left  ·  the downloaded mark, inset 7 dp   — new, clears the bar by 4 dp</div>
+<p>It is deliberately <b>not</b> a green circle with a check: that shape and that colour already
+mean <i>watched</i> on this surface, and an episode can be downloaded and watched at the same time.
+A second meaning on the same shape would make the commonest case the ambiguous one. An alternative
+in the quality badge's own dark glass is drawn beside it in
+<span class="mono">b-mark-geometry</span>; it is quieter, and it is not the recommendation because
+it then reads as the same <i>kind</i> of fact as 4K, which it is not.</p>
+
+<h2>The quality sheet, as numbers</h2>
+<div class="fig">sheet          bottom sheet, radius 20 top, --bg-2, grab handle 38 × 4
+heading        'Choose a quality', Space Grotesk 20/700, 20 dp gutter
+sub            '{title} · {source}', 12.5 px, --ink-dim
+quality row    60 dp min · radius 13 · 1 px --line · 9 dp gap
+               radio 22 dp · name 15/600 · source 11.5 px · size 14.5/600, right
+selected       --accent border + 16 % accent tint (the shipped .ph-skins .on treatment)
+no room        row at 50 % opacity, dashed radio, reason beneath on a 3 dp #f5b542 rule
+free space     12.5 px --ink-dim, disk icon, above the button
+action         52 dp · radius 14 · --grad · 'Download · about 7.9 GB'</div>
+<p>The action names <b>what pressing it downloads</b>, not what the selected row says. For a season
+those differ: the rows show the season's total per quality (FR-5), and only the episodes not already
+on the phone are queued — so <i>Original 18.6 GB</i> and <i>720p about 5.2 GB</i> in the rows, with
+<i>Download · about 2.6 GB</i> on the button and the sentence that explains it directly above.</p>
+
+<h2>The storage bar, as numbers</h2>
+<div class="fig">bar            14 dp tall · radius 7 · inset hairline --line · three flex segments
+               Ravilo --grad · other apps rgba(fg,.22) · free transparent
+legend         inline, wrapping, 12.5 px · 9 dp swatch, radius 3 · value in --ink 600
+other profiles 56 dp row, radius 13, size beneath the label, Delete at 44 dp
+
+Ravilo      36.3 GB   ← everything Ravilo holds on this phone
+  of which   9.4 GB   ← other profiles, named on its own row, never by title
+  yours     26.9 GB   ← the Profile row, and what Delete all frees
+other apps  48.6 GB
+free        41.2 GB</div>
+
+<h2>The states direction B holds</h2>
+<table>
+  <tr><th>State</th><th>Frame</th></tr>
+  <tr><td>Download · Queued · n % · Downloaded · Failed — Retry, all three languages</td>
+      <td class="mono">b-film-states, -da, -fo</td></tr>
+  <tr><td>Downloaded → Play / Delete</td><td class="mono">b-film-downloaded-menu</td></tr>
+  <tr><td>Quality sheet: 4K film, 1080p film, season, loading, Original blocked for room</td>
+      <td class="mono">b-sheet-*</td></tr>
+  <tr><td>Season page with Download season, the mark, one running, one queued</td>
+      <td class="mono">b-season-page, -tall</td></tr>
+  <tr><td>Downloads: full, running, empty, offline, selecting, swipe, overflow, delete-all confirm</td>
+      <td class="mono">b-downloads-*, b-delete-all-confirm</td></tr>
+  <tr><td>The mark on a Home row, in a Library grid, and magnified at 3×</td>
+      <td class="mono">b-mark-*</td></tr>
+  <tr><td>Profile's Downloads row · Home unreachable · Settings</td>
+      <td class="mono">b-profile-account, b-offline-home, b-settings-downloads</td></tr>
+  <tr><td><b>Not drawn:</b> loading (the Downloads page reads a local disk and has none), the
+      hidden-control case for a viewer the operator switched off (FR-2 draws nothing), TV skins
+      (aurora only), the iPhone bezel, landscape.</td><td>—</td></tr>
+</table>
+
+<h2>New strings</h2>
+<p>English source, with Danish and Faroese drafts. Keys are the spec's own; the ones marked
+<b>new</b> are keys this round found it needed and the spec's list does not carry.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+  <tr><td class="mono">download.action</td><td>Download</td><td>Hent</td><td>Tak niður</td></tr>
+  <tr><td class="mono">download.queued</td><td>Queued</td><td>I kø</td><td>Í bíðirøð</td></tr>
+  <tr><td class="mono">download.downloaded</td><td>Downloaded</td><td>Hentet</td><td>Tikið niður</td></tr>
+  <tr><td class="mono">download.failed_retry</td><td>Failed — Retry</td><td>Mislykkedes — prøv igen</td><td>Miseydnaðist — royn aftur</td></tr>
+  <tr><td class="mono">download.sheet_title</td><td>Choose a quality</td><td>Vælg en kvalitet</td><td>Vel eina kvalitet</td></tr>
+  <tr><td class="mono">download.original</td><td>Original</td><td>Original</td><td>Original</td></tr>
+  <tr><td class="mono">download.about_size</td><td>about {size}</td><td>ca. {size}</td><td>umleið {size}</td></tr>
+  <tr><td class="mono">download.free_space</td><td>{size} free on this phone</td><td>{size} fri på denne telefon</td><td>{size} tøkt á hesi telefonini</td></tr>
+  <tr><td class="mono">download.no_room</td><td>Not enough space — free {size} or delete a download</td><td>Ikke plads nok — frigør {size} eller slet en download</td><td>Ikki nóg mikið pláss — fríger {size} ella strika eitt niðurtak</td></tr>
+  <tr><td class="mono">download.not_allowed</td><td>Downloading isn't switched on for your account.</td><td>Download er ikke slået til for din konto.</td><td>Niðurtak er ikki tendrað fyri tína kontu.</td></tr>
+  <tr><td class="mono">download.waiting_wifi</td><td>Waiting for Wi-Fi</td><td>Venter på Wi-Fi</td><td>Bíðar eftir Wi-Fi</td></tr>
+  <tr><td class="mono">download.waiting_server</td><td>Waiting for the server</td><td>Venter på serveren</td><td>Bíðar eftir ambætaranum</td></tr>
+  <tr><td class="mono">download.page_title</td><td>Downloads</td><td>Downloads</td><td>Niðurtøk</td></tr>
+  <tr><td class="mono">download.empty_title</td><td><b>new</b> · Nothing on this phone yet</td><td>Der er intet på denne telefon endnu</td><td>Einki er á hesi telefonini enn</td></tr>
+  <tr><td class="mono">download.empty</td><td>Tap Download on a film or an episode and it plays with no connection — on a plane, or anywhere the server cannot be reached.</td><td>Tryk Hent på en film eller et afsnit, så kan du se det uden forbindelse — i flyet, eller hvor serveren ikke kan nås.</td><td>Trýst Tak niður á einum filmi ella parti, so spælir tað uttan samband — í flogfari, ella har ambætarin ikki fæst.</td></tr>
+  <tr><td class="mono">download.offline</td><td>You're offline — these play without a connection</td><td>Du er offline — disse kan ses uden forbindelse</td><td>Tú ert uttan samband — hesi spæla uttan samband</td></tr>
+  <tr><td class="mono">download.gone</td><td>No longer in the library</td><td>Ikke længere i biblioteket</td><td>Ikki longur í savninum</td></tr>
+  <tr><td class="mono">download.delete</td><td>Delete</td><td>Slet</td><td>Strika</td></tr>
+  <tr><td class="mono">download.delete_watched</td><td>Delete watched</td><td>Slet set</td><td>Strika sædd</td></tr>
+  <tr><td class="mono">download.delete_all</td><td>Delete all</td><td>Slet alle</td><td>Strika alt</td></tr>
+  <tr><td class="mono">download.delete_all_title</td><td><b>new</b> · Delete all downloads?</td><td>Slet alle downloads?</td><td>Strika øll niðurtøk?</td></tr>
+  <tr><td class="mono">download.delete_all_confirm</td><td>This frees {size}.</td><td>Det frigør {size}.</td><td>Tað frígerð {size}.</td></tr>
+  <tr><td class="mono">download.other_profiles</td><td>Other profiles on this phone</td><td>Andre profiler på denne telefon</td><td>Aðrir vangar á hesi telefonini</td></tr>
+  <tr><td class="mono">download.season</td><td>Download season</td><td>Hent sæson</td><td>Tak røðina niður</td></tr>
+  <tr><td class="mono">download.watch_downloads</td><td>Watch your downloads</td><td>Se dine downloads</td><td>Hygg at tínum niðurtøkum</td></tr>
+  <tr><td class="mono">download.space_title</td><td><b>new</b> · Space on this phone</td><td>Plads på denne telefon</td><td>Pláss á hesi telefonini</td></tr>
+  <tr><td class="mono">download.seg_ravilo / _other / _free</td><td><b>new</b> · Ravilo / Other apps / Free</td><td>Ravilo / Andre apps / Fri</td><td>Ravilo / Aðrar appir / Tøkt</td></tr>
+  <tr><td class="mono">download.select</td><td><b>new</b> · Select</td><td>Vælg</td><td>Vel</td></tr>
+  <tr><td class="mono">download.n_selected</td><td><b>new</b> · {n} selected</td><td>{n} valgt</td><td>{n} vald</td></tr>
+  <tr><td class="mono">download.sheet_button</td><td><b>new</b> · Download · {size}</td><td>Hent · {size}</td><td>Tak niður · {size}</td></tr>
+  <tr><td class="mono">download.season_have</td><td><b>new</b> · {have} of {all} episodes are already on this phone · {size} to download</td><td>{have} af {all} afsnit er allerede på denne telefon · {size} at hente</td><td>{have} av {all} pørtum eru longu á hesi telefonini · {size} at taka niður</td></tr>
+  <tr><td class="mono">download.loading</td><td><b>new</b> · Asking the server what it can send…</td><td>Spørger serveren, hvad den kan sende…</td><td>Spyr ambætaran, hvat hann kann senda…</td></tr>
+  <tr><td class="mono">download.pause / .resume</td><td><b>new</b> · Pause / Resume</td><td>Pause / Fortsæt</td><td>Steðga / Halt fram</td></tr>
+  <tr><td class="mono">settings.downloads</td><td>Downloads</td><td>Downloads</td><td>Niðurtøk</td></tr>
+  <tr><td class="mono">settings.wifi_only</td><td>Wi-Fi only</td><td>Kun Wi-Fi</td><td>Bert Wi-Fi</td></tr>
+  <tr><td class="mono">settings.wifi_only_sub</td><td><b>new</b> · Only download while this phone is on Wi-Fi.</td><td>Hent kun, når denne telefon er på Wi-Fi.</td><td>Tak bert niður, tá hendan telefonin er á Wi-Fi.</td></tr>
+</table>
+<p>Two shipped keys are reused unchanged and should not be duplicated:
+<code>error.play.unreachable.title</code> / <code>.body</code> on Home's unreachable state, and
+<code>action.play</code> / <code>action.cancel</code> / <code>action.retry</code> /
+<code>action.watched</code> everywhere they appear.</p>
+
+<h2>What this round leaves open</h2>
+<p>The full list, with the reasoning, is in <code>REPORT.md</code>. In short: the brief's
+<b>37.8 GB</b> cannot be reconciled with the brief's own per-entry sizes, and every total in these
+pictures is derived from the entries instead; a swipe that deletes 7.9 GB with no undo is the one
+gesture in the round that can lose real bytes by accident; and FR-9's film-then-series order puts a
+running download about 700 dp down its own page.</p>
+
+</div>
+</body>
+</html>
