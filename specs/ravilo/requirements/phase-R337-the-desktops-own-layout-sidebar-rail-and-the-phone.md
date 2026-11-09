@@ -666,3 +666,84 @@ FR-R322-10) and replaced the whole stack with Playing. That left nothing below i
 - **An audiobook's** *Playing* door on its own page (R323).
 - **One remote, slice 3** (DEB-2225, `one-remote-for-every-playback.md` FR-4) does not make this moot. It changes what
   the Playing page draws, not how the bar opens and leaves it.
+
+## Amendment 2026-11-09 — Space always plays or pauses; Return presses what has focus (DEB-4132)
+
+Owner, 2026-11-09, on DEB-4132: *"Space on Ravilo Music on mac doesn't flip the pause/play state. It depends on what
+is currently in focus (even though you can't see what's in focus). I would like it to always switch between
+play/pause when clicking on space, no matter what. And then the Enter key can be clicking on whatever was last in
+focus, like it is now."*
+
+**Today (`main` `4a746470`).** FR-R337-10 lists *play/pause Space* and the shortcuts window shows *Play or pause ·
+Space*, but no key handler plays or pauses on Space. Compose's `clickable` takes Space as a press, so Space presses
+whatever control has focus. That is the bar's ⏯ only when the ⏯ is what has focus. After a click the focus ring is
+hidden (FR-R350-17), so the viewer cannot see what Space is about to press. A song row starts that song, ♥ likes it,
+and *Shuffle* reshuffles. The window's key handler only notes the key, so that DEB-3034's `pause_by` can call the
+press that follows `keyboard`.
+
+**FR-R337-10 is amended. In the desktop family (macOS and GNOME, at every width, the phone layout in a window
+included), Space is a window key:**
+- **Space plays or pauses, whatever has focus.**
+  - In a film's player (FR-R337-9) it is the film's play/pause, as today (FR-R329-6).
+  - Everywhere else it does what the bar's ⏯ does, by the same route as a click on it. That covers a song, the radio
+    or a book this computer plays or holds, here or on a speaker or TV, and a session bar's play/pause (R368
+    FR-R368-8) when that bar is the one showing.
+  - In films mode, the bar shows while music plays (Q10), so Space pauses the music there.
+  - With no bar and no film player, Space does nothing.
+- **Space never presses the focused control.** A button, row, tile, chip or menu item is pressed by Return, keypad
+  Enter or a click. This holds with a menu or a dialog open as well.
+- **A text field keeps Space.** While any text field has focus, Space types a space and nothing plays or pauses. The
+  fields include the sidebar's search, music search, the playlist name, the book's field, sign-in, server setup,
+  Seerr search and the support chat.
+- **Only the bare key.** With ⌘, Ctrl, ⌥ or Shift held, Space is not this key. ⌘Space belongs to the system.
+- **A held Space toggles once.** Key repeat never flutters the music; the next toggle takes a new press.
+- **Return and keypad Enter press what has focus**, as FR-R328-5 already says. The owner asked for no change there.
+- **`pause_by` is `keyboard`** (`a-song-that-waits-says-so.md` FR-7) for a pause sent by Space. The key itself sends
+  that value; it is no longer worked out from the press that follows the key.
+- The shortcuts window's *Play or pause · Space* row is unchanged, and is now true.
+
+**This replaces "Enter or Space"** in R388's amended FR-R388-9 (*Play all* and its ▾) and in
+`an-artist-plays-in-release-order.md` FR-7 on the desktop. Those controls are pressed by Enter there. Both files carry a
+note.
+
+**Unchanged:**
+- **The TV family**, including the web app at a desk width (*The three view families*). A remote has no Space, and the
+  owner asked about the Mac.
+- **The phone**, the Cast receiver and Tizen.
+- **The film player's other keys** (FR-R329-6, FR-R337-9).
+
+There is no design round. Nothing is drawn, and the shortcuts row already says Space.
+
+**Acceptance** (a Mac and GNOME, music on this computer unless a line says otherwise):
+1. **A clicked row.** While a song plays, click a song row on an album page, then press Space. The music pauses, the
+   clicked row's song does not start, and no ring appears. Space again resumes the music.
+2. **A focused control.** Tab to ♥ on the Playing page so the ring shows, then press Space. The music pauses and ♥ is
+   unchanged. Return then toggles ♥.
+3. **Play all.** Tab to *Play all* on an album and press Space: the music pauses or resumes and the album does not
+   start. Return starts it.
+4. **A text field.** Focus music search and type a letter, a space and another letter. The field reads all three and
+   the music never pauses. Do the same in the sidebar's search.
+5. **Elsewhere.** With the song on a speaker, Space pauses the speaker. In films mode with music playing, Space pauses
+   the music. In a film's player, Space pauses the film.
+6. **Held.** Hold Space for two seconds: the music toggles exactly once.
+7. **Nothing playing.** With no bar showing, press Space: nothing plays, and the focused control is not pressed.
+8. **The timeline.** A pause made with Space shows `pause_by` `keyboard` on the session timeline (DEB-3034 FR-7).
+
+**Build notes** (`main` `4a746470`):
+- **The key.** In `desktopKeys` (`ravilo-desktop/…/Main.kt:234`), take a bare Space `KeyDown` and send a new
+  `AppCommand.PLAY_PAUSE`. Return `true` so the focused `clickable` never sees it. Handle the command beside
+  `NEXT_SONG` at `RaviloApp.kt:1719`, calling what the bar's ⏯ calls, with `PauseSource.KEYBOARD`. The enum is the
+  app's own and is not on the wire.
+- **The film player.** While `DesktopWindow.playerActive`, either leave Space to the player root's `onMediaKey`
+  (`PlayerScreen.kt:479`), which is today's working path, or route the command to it. Either way, check that no
+  control in the player's chrome swallows Space first.
+- **Text fields.** The window's preview handler runs before the field does, so it needs to know a field has focus.
+  The `reportTextFieldFocus()` seam already exists, but its desktop actual is a no-op
+  (`DesktopWindowSeams.kt:122`). Six files that draw a field do not call it yet: `DesktopNav.kt`, `OkToEdit.kt`,
+  `SearchScreen.kt`, `SeerrSearchScreen.kt`, `ServerSetupScreen.kt` and `SupportScreens.kt`. A generic test of the
+  focused node is better if Compose Desktop offers one, because a field added later must still type a space.
+- **Key repeat.** Count one toggle per press. Hold the key down until its `KeyUp`.
+- **`PauseSource.noteSpaceBar()`** and the timing window lose their Space job. Keep or drop them as the code reads
+  best.
+- **The test.** Put the decision in one pure function (key, modifiers, text field focused, player active, repeat) and
+  give it a desktop test (`:ravilo-ui:desktopTest`).

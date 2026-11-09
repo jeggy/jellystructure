@@ -304,3 +304,10 @@ the build draws it, as the row the control shares:
   `music.albums_n`. `music.albums_n` and `music.songs_n` are reused.
 - **The 44 dp tap target** is real layout in Compose, not an overhang as on the web: the control's row measures 44 dp
   (the pill is still 28 dp or 38 dp tall, centred in it). QA's acceptance 10 reads the pill's size, not the row's.
+
+## Amendment (2026-11-09): on the desktop, Enter presses *Play all*, and Space plays or pauses (DEB-4132)
+
+In FR-R388-9, amended, *"Enter or Space on ① plays"* and *"Enter or Space on ② opens the menu"* become **Enter** on the
+desktop. Space is now a window key there: it plays or pauses whatever has focus and never presses the focused control.
+The owner asked for this on DEB-4132, and the rule is R337's amendment of the same date. The Tab order, the menu and
+the focus ring are unchanged.

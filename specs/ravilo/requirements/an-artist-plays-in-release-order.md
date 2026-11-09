@@ -213,3 +213,10 @@ in the artist's folded song list (`songsBy`, folded, which the *Songs* list draw
 **Acceptance 10, added to.** The fixture gains an album R373 matched with one extra, a single under it with one B-side,
 and a same-year compilation holding that extra and that B-side. The extra and the B-side play in the album's run and
 not in the compilation's, in both sorts. A second extra that no other release holds is in the order.
+
+## Amendment (2026-11-09): on the desktop, Enter presses *Play all*, and Space plays or pauses (DEB-4132)
+
+In FR-7, *"Enter or Space on Play all"* and *"Enter or Space on ▾"* become **Enter** on the desktop. Space is now a
+window key there: it plays or pauses whatever has focus and never presses the focused control. The owner asked for
+this on DEB-4132, and the rule is R337's amendment of the same date (`phase-R337-…`). The Tab order, the menu and the
+focus ring are unchanged.
