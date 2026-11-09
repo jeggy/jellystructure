@@ -121,6 +121,9 @@ val DESK_RAIL_MAC = 84.dp
  * Ravilo draws the content: the switch at the head (absent without music, R321), the search field, the mode's pages,
  * the viewer at the foot.
  */
+/** DEB-4091 FR-7 — retain the mode switch on a Music cold start until the probe answers. */
+fun desktopMusicToggleVisible(available: Boolean?, inMusic: Boolean): Boolean = available == true || (available == null && inMusic)
+
 @Composable
 fun DesktopNav(
     rail: Boolean,

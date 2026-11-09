@@ -6,6 +6,7 @@ import dev.jellystructure.ravilo.ui.theme.isDesktopLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -78,23 +79,32 @@ fun MusicListenScreen(
     // R388 (FR-R388-1, amended) — there while Listen loads, gone once it resolves to nothing (an empty library, a failed load).
     val playAllShown = playAll != null && when (val s = state) { Load.Loading -> true; is Load.Ready -> s.value.rows.isNotEmpty(); Load.Failed -> false }
     Box(Modifier.fillMaxSize().background(colors.background)) {
-        // DEB-2349 (FR-5) — the rows (or the failure) fade in once where the empty loading view was; the app bar below does not.
-        Box(Modifier.fillMaxSize().fadeInOnLoad(loading = state is Load.Loading)) {
-            when (val s = state) {
-                is Load.Ready -> if (s.value.rows.isEmpty() && books == null) EmptyLine(str("mhome.empty")) else LazyColumn(
-                    state = list,
-                    contentPadding = PaddingValues(top = if (isDesktopLayout) 52.dp else RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
-                ) {
-                    if (desk) item(key = "title") { DeskPageTitle(listenTitle) { if (playAllShown) PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) } }
-                    if (books != null) continueListeningRow(books, onResumeBook)
-                    items(s.value.rows.filter(::listenRowShown), key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val pageHeight = maxHeight
+            // DEB-4091 FR-7 — the title is part of the first frame, independent of the network answer.
+            LazyColumn(
+                state = list,
+                contentPadding = PaddingValues(top = if (desk) 52.dp else RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
+            ) {
+                if (desk) item(key = "title") { DeskPageTitle(listenTitle) { if (playAllShown) PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) } }
+                when (val s = state) {
+                    is Load.Ready -> {
+                        if (books != null) continueListeningRow(books, onResumeBook)
+                        if (s.value.rows.isEmpty() && books == null) item(key = "empty") { Box(Modifier.fillMaxWidth().height(pageHeight)) { EmptyLine(str("mhome.empty")) } }
+                        items(s.value.rows.filter(::listenRowShown), key = { it.key + ":" + it.title }) { row ->
+                            Box(Modifier.fadeInOnLoad(loading = false)) { ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
+                        }
+                    }
+                    Load.Failed -> item(key = "failed") {
+                        Box(Modifier.fillMaxWidth().height(pageHeight)) {
+                            dev.jellystructure.ravilo.ui.components.LoadErrorState(
+                                dev.jellystructure.ravilo.ui.components.loadErrorKindOf(loader.lastFailure),
+                                onRetry = loader::load,
+                            )
+                        }
+                    }
+                    Load.Loading -> item(key = "loading") { MusicListenLoading(pageHeight, desk) }
                 }
-                // R345 — a failed load is not "no music": it says why (most often, the server could not be reached).
-                Load.Failed -> dev.jellystructure.ravilo.ui.components.LoadErrorState(
-                    dev.jellystructure.ravilo.ui.components.loadErrorKindOf(loader.lastFailure),
-                    onRetry = { loader.load() },
-                )
-                Load.Loading -> Unit
             }
         }
         AppBar(

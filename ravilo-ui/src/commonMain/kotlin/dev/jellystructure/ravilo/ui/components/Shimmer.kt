@@ -32,6 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -42,9 +45,13 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
  * brush is created each recomposition but Brush creation is lightweight and using
  * remember(progress) would allocate a new wrapper object every frame instead.
  */
+/** The app's one window visibility signal, shared by every skeleton. */
+val LocalShimmerOnScreen = staticCompositionLocalOf { true }
+
 @Composable
 fun rememberShimmerBrush(): Brush {
     val colors = RaviloTheme.colors
+    if (LocalReducedMotion.current || !LocalShimmerOnScreen.current) return SolidColor(colors.surface)
     val transition = rememberInfiniteTransition(label = "shimmer")
     val progress by transition.animateFloat(
         initialValue = -1.5f,
@@ -66,7 +73,7 @@ fun rememberShimmerBrush(): Brush {
 }
 
 @Composable
-private fun ShimmerBox(
+fun ShimmerBox(
     modifier: Modifier = Modifier,
     brush: Brush = rememberShimmerBrush(),
     radius: Float = 10f,

@@ -87,12 +87,14 @@ class MusicLoader<T>(private val fetch: suspend () -> T) {
     /** DEB-2254 — a write's answer is the page's new list: shown now, and what Back finds. */
     fun put(value: T) { lastFailure = null; _state.value = Load.Ready(value) }
     fun load() {
+        if (_state.value is Load.Failed) _state.value = Load.Loading
         scope.launch {
             runCatching { fetch() }
                 .onSuccess { lastFailure = null; _state.value = Load.Ready(it) }
                 .onFailure { lastFailure = it; if (_state.value !is Load.Ready) _state.value = Load.Failed }
         }
     }
+    fun reloadIfFailed() { if (_state.value is Load.Failed) load() }
 }
 
 // ── words ──

@@ -3,6 +3,8 @@ package dev.jellystructure.ravilo.ui.music
 import dev.jellystructure.ravilo.ui.components.rememberFadeInOnLoad
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.components.FadeInOnLoadState
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -95,14 +97,20 @@ class MusicPagedList(private val fetch: suspend (Int) -> MusicList) {
     val state: StateFlow<Load<MusicList>> = _state
     private var page = 0
     private var busy = false
+    var lastFailure: Throwable? = null
+        private set
     fun load() {
         if (busy) return
         busy = true
+        if (_state.value is Load.Failed) _state.value = Load.Loading
         scope.launch {
-            runCatching { fetch(0) }.onSuccess { page = 0; _state.value = Load.Ready(it) }.onFailure { if (_state.value !is Load.Ready) _state.value = Load.Failed }
+            val answer = runCatching { fetch(0) }
             busy = false
+            answer.onSuccess { lastFailure = null; page = 0; _state.value = Load.Ready(it) }
+                .onFailure { lastFailure = it; if (_state.value !is Load.Ready) _state.value = Load.Failed }
         }
     }
+    fun reloadIfFailed() { if (_state.value is Load.Failed) load() }
     fun more() {
         val cur = (_state.value as? Load.Ready)?.value ?: return
         val have = cur.albums.size + cur.artists.size + cur.tracks.size
@@ -116,6 +124,23 @@ class MusicPagedList(private val fetch: suspend (Int) -> MusicList) {
             busy = false
         }
     }
+}
+
+/** DEB-4091 FR-4 — called by RaviloApp's single socket-open collector for retained stores. */
+internal fun recoverMusicEntryStores(registry: Map<String, Any>) {
+    registry.forEach { (key, store) ->
+        when {
+            store is MusicBrowseStore -> store.reloadFailed()
+            key.startsWith("mlisten:") && store is MusicLoader<*> -> store.reloadIfFailed()
+        }
+    }
+}
+
+/** DEB-4091 FR-4 — reload only failed lists, genres and playlists; Ready data stays on screen. */
+internal fun reloadFailedBrowseLoaders(lists: Collection<MusicPagedList>, genres: MusicLoader<*>, playlists: MusicLoader<*>) {
+    lists.forEach { it.reloadIfFailed() }
+    genres.reloadIfFailed()
+    playlists.reloadIfFailed()
 }
 
 /** R321 (FR-R321-6) — Browse = the library + search: lists per chip and sort, the genre drill-in, and the query. */
@@ -132,6 +157,7 @@ class MusicBrowseStore(private val api: TvApiClient) {
     val playAll = PlayAll(api)
     val genres = MusicLoader { api.getMusicGenres() }
     val playlists = MusicLoader { api.getMusicPlaylists() }
+    fun reloadFailed() = reloadFailedBrowseLoaders(lists.values, genres, playlists)
 
     val query = MutableStateFlow("")
     private val _results = MutableStateFlow<Load<MusicSearch>?>(null)
@@ -246,12 +272,12 @@ fun MusicBrowseScreen(
                 }
                 when (chip) {
                     "audiobooks" -> if (books != null) audiobookShelf(books, bookSort, bookView, onResumeBook, onOpenBook, onOpenBookAuthor) else Unit
-                    "genres" -> if (genre == null) genresChip(store) { store.genre.value = it; onChip("albums") } else Unit
-                    "playlists" -> playlistsChip(store, onOpenPlaylist)
+                    "genres" -> if (genre == null) genresChip(store, maxHeight, gridWidth) { store.genre.value = it; onChip("albums") } else Unit
+                    "playlists" -> playlistsChip(store, maxHeight, onOpenPlaylist)
                     else -> {
                         val sort = sorts[chip] ?: "added"
                         val g = if (chip == "albums") genre else null
-                        listChip(store.list(chip, sort, g), pagedState, gridWidth, deskFamily, chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore,
+                        listChip(store.list(chip, sort, g), pagedState, gridWidth, maxHeight, deskFamily, chip, g, { store.genre.value = null; onChip("genres") }, onOpenAlbum, onOpenArtist, onTrackMore,
                             // R388 — the phone's count line and ‹ Genres line carry the control; the desktop's page head does.
                             trailing = if (playAllShown && !deskFamily) ({ PlayAllAt(PLAY_ALL_LINE_HEIGHT) }) else null, fade = listFade)
                     }
@@ -415,6 +441,7 @@ internal fun LazyListScope.listChip(
     paged: MusicPagedList,
     state: Load<MusicList>,
     gridWidth: Dp,
+    minHeight: Dp,
     desk: Boolean,
     chip: String,
     genre: String?,
@@ -459,7 +486,12 @@ internal fun LazyListScope.listChip(
     // `more()` pulled the next page in at once. Now only the visible rows compose, and `more()` fires near the end.
     val l = (state as? Load.Ready)?.value
     when {
-        l == null -> item(key = "list-$chip-$genre") { Box(Modifier.fillMaxWidth().height(120.dp)) }
+        state is Load.Failed -> item(key = "list-$chip-$genre") {
+            Box(Modifier.fillMaxWidth().height(minHeight)) {
+                LoadErrorState(loadErrorKindOf(paged.lastFailure), onRetry = paged::load)
+            }
+        }
+        l == null -> item(key = "list-$chip-$genre") { MusicBrowseLoading(chip, gridWidth, desk, minHeight) }
         chip == "albums" -> gridRows(l.albums, gridWidth, desk, 2, 12.dp, "$chip-$genre", { paged.more() }, fade) { a, w -> AlbumCardView(a, w, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
         chip == "artists" -> gridRows(l.artists, gridWidth, desk, 3, 12.dp, "$chip-$genre", { paged.more() }, fade) { a, w -> ArtistCardView(a, w) { onOpenArtist(a.id) } }
         else -> itemsIndexed(l.tracks, key = { i, t -> "t-$i-${t.id}" }) { i, t ->
@@ -508,11 +540,19 @@ internal fun <T> Grid(items: List<T>, columns: Int, gap: Dp, onEnd: () -> Unit, 
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-private fun LazyListScope.genresChip(store: MusicBrowseStore, onGenre: (String) -> Unit) {
+private fun LazyListScope.genresChip(store: MusicBrowseStore, minHeight: Dp, gridWidth: Dp, onGenre: (String) -> Unit) {
     item(key = "genres") {
         LaunchedEffect(Unit) { store.genres.load() }
         val state by store.genres.state.collectAsState()
         val g: List<MusicGenreCount> = (state as? Load.Ready)?.value.orEmpty()
+        if (state is Load.Failed) {
+            Box(Modifier.fillMaxWidth().height(minHeight)) { LoadErrorState(loadErrorKindOf(store.genres.lastFailure), onRetry = store.genres::load) }
+            return@item
+        }
+        if (state is Load.Loading) {
+            MusicGenresLoading(minHeight, gridWidth)
+            return@item
+        }
         val colors = RaviloTheme.colors
         FlowRow(Modifier.padding(horizontal = raviloHPad, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             g.forEach { genre ->
@@ -526,7 +566,7 @@ private fun LazyListScope.genresChip(store: MusicBrowseStore, onGenre: (String) 
     }
 }
 
-private fun LazyListScope.playlistsChip(store: MusicBrowseStore, onOpen: (MusicPlaylist) -> Unit) {
+private fun LazyListScope.playlistsChip(store: MusicBrowseStore, minHeight: Dp, onOpen: (MusicPlaylist) -> Unit) {
     item(key = "playlists") {
         // DEB-2254 (FR-14) — read again whenever a write has changed the lists; the page keeps no copy of its own.
         val version by PlaylistFlow.version.collectAsState()
@@ -535,9 +575,21 @@ private fun LazyListScope.playlistsChip(store: MusicBrowseStore, onOpen: (MusicP
         val colors = RaviloTheme.colors
         val pl = (state as? Load.Ready)?.value
         Column(Modifier.padding(horizontal = raviloHPad)) {
+            // DEB-4091 FR-1 — the action stays above the list, including its loading and failure views.
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 50.dp).clip(RoundedCornerShape(14.dp)).dashedBorder(colors.fg.copy(0.22f), 14.dp)
+                    .tap { PlaylistFlow.nameIt(PlaylistNameRequest(PlaylistSource.NOTHING, emptyList(), onCreated = onOpen)) }.testTag("playlists-new"),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
+                MusicGlyph(MusicIcon.PLUS, colors.text, 17.dp)
+                Text(str("music.new_playlist"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+            }
+            Spacer(Modifier.height(12.dp))
             when {
-                pl == null -> Box(Modifier.height(80.dp))
-                // FR-R321-10 (J7 lean: two states).
+                state is Load.Failed -> Box(Modifier.fillMaxWidth().height(minHeight)) {
+                    LoadErrorState(loadErrorKindOf(store.playlists.lastFailure), onRetry = store.playlists::load)
+                }
+                pl == null -> MusicPlaylistsLoading(minHeight)
                 pl.isEmpty() -> Column(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(14.dp)).padding(16.dp)) {
                     Text(str("music.no_playlists"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Spacer(Modifier.height(4.dp))
@@ -553,16 +605,6 @@ private fun LazyListScope.playlistsChip(store: MusicBrowseStore, onOpen: (MusicP
                         }
                     }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
-            // DEB-2254 (FR-3) — *New playlist* makes an empty playlist through the one name sheet, and opens it.
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 50.dp).clip(RoundedCornerShape(14.dp)).dashedBorder(colors.fg.copy(0.22f), 14.dp)
-                    .tap { PlaylistFlow.nameIt(PlaylistNameRequest(PlaylistSource.NOTHING, emptyList(), onCreated = onOpen)) }.testTag("playlists-new"),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            ) {
-                MusicGlyph(MusicIcon.PLUS, colors.text, 17.dp)
-                Text(str("music.new_playlist"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
             }
         }
     }

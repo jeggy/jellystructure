@@ -876,6 +876,12 @@ fun RaviloApp(
                 }
             }
         }
+        // DEB-4091 FR-4 — one socket-open collector recovers every retained music entry loader, including hidden Browse chips.
+        LaunchedEffect(Unit) {
+            serverOpens.drop(1).collect {
+                dev.jellystructure.ravilo.ui.music.recoverMusicEntryStores(storeRegistry)
+            }
+        }
         // R352 (FR-R352-8) — a `playstate_changed` patch reaches a series page in the stack too, not only the tiles.
         LaunchedEffect(Unit) {
             WatchedBus.patches.collect { patch ->
@@ -2111,7 +2117,7 @@ fun RaviloApp(
             replaceTop(Dest.Remote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, dev.jellystructure.ravilo.ui.components.LocalShimmerOnScreen provides appOnScreen, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 signedOutNotice = false   // DEB-1933 — this is the 401 route, not the event's
                 configScope.launch {
@@ -2227,7 +2233,7 @@ fun RaviloApp(
         if (deskNavShows(dest)) dev.jellystructure.ravilo.ui.components.DesktopNav(
             rail = deskMedium,
             inMusic = inMusic,
-            musicAvailable = musicAvailable == true,
+            musicAvailable = dev.jellystructure.ravilo.ui.components.desktopMusicToggleVisible(musicAvailable, inMusic),
             booksAvailable = booksAvailable,
             lit = deskLit(),
             queueOpen = queueOpen,
@@ -3103,10 +3109,6 @@ fun RaviloApp(
             // ─── R321/R322 — music mode ───
             is Dest.MusicListen -> {
                 val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicHome(radio = true).also { dev.jellystructure.ravilo.ui.music.MusicVersions.learn(it.versionTypes) } } }
-                // R345 (acceptance 2) — the server answers again: a Listen page that failed loads without a relaunch.
-                LaunchedEffect(loader) {
-                    serverOpens.drop(1).collect { if (loader.state.value is dev.jellystructure.ravilo.ui.music.Load.Failed) loader.load() }
-                }
                 dev.jellystructure.ravilo.ui.music.MusicListenScreen(
                     loader = loader,
                     onProfile = { openProfile() },
