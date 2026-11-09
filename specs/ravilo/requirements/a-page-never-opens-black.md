@@ -41,8 +41,8 @@ it in the background.
 
 **The screenshot shows more than the empty box.** On the desktop, Music Browse always draws its page title
 (*Albums*, 30 sp) and the sort pill above the list, whether the list has loaded or not. The screenshot has no title.
-So something blanked the whole page panel, not only the list. That cause is not found in the code. It is open
-question 1, and QA reproduces it before the build is called done.
+So something blanked the whole page panel, not only the list. QA found it (DEB-4095): it is the first second of a
+cold start in Music mode, and FR-7 covers it.
 
 ## Prior art
 
@@ -136,6 +136,21 @@ from a saved copy and refreshed quietly behind it. This is R212's idea, applied 
   absent and never breaks the page.
 - **No fade on a seeded page**, as DEB-2204 FR-5 already says for R212's Home.
 
+**FR-7 — A cold start in Music draws its frame at once** (added 2026-11-09, from QA DEB-4095). On the Mac, QA
+reproduced the owner's picture 3 times out of 3 on a cold start in Music mode. For about a second, until the first answers
+arrive, the sidebar has no *Films & series | Music* toggle and the page panel is empty, title included. It did not
+reproduce on a running app. Two things in the code cause it:
+
+- **Listen draws its title only once loaded.** `MusicListenScreen` puts `DeskPageTitle` inside the `Load.Ready`
+  branch and draws nothing for `Load.Loading`. Listen's desktop title, and its Play all control once the state
+  allows it, are drawn in every load state. FR-1's skeleton sits under the title, as on every other page.
+- **The toggle waits for the music probe.** `DesktopSidebar` gets `musicAvailable == true`, so while R345's probe
+  is unanswered (`null`) the toggle is absent. When it appears, the search field and the page list below it shift down.
+  While the answer is unknown, the toggle is drawn when the app is showing Music (`inMusic`, which already requires
+  that the answer is not *no*). A definite *no* removes it, as FR-R321-2 and FR-R345-2 already say. Nothing changes
+  for a viewer in Films mode: there the toggle still appears only on a *yes*, because showing it before the answer
+  would offer music to a viewer who may have none.
+
 **FR-6 — Not reached.** The Tizen screen app and the Chromecast receiver do not compile `ravilo-ui`. Nothing in them
 changes.
 
@@ -169,17 +184,12 @@ changes.
    force-stop.
 4. **Sign-out.** After signing a user out, that user's saved music copy is gone.
 5. **Reduced motion.** With reduced motion on, the skeleton shows and does not sweep.
-6. **The owner's screenshot.** QA's reproduction of the whole-panel blank (open question 1) no longer reproduces, or
-   it has its own task.
+6. **The owner's screenshot.** A cold start of the Mac app in Music mode shows the sidebar's toggle and Listen's
+   title in its first frame, with the skeleton under the title (FR-7). This is DEB-4095's step (a), repeated.
 
 ## Open questions
 
-1. **Why the screenshot has no page title.** The desktop page draws *Albums* and the sort pill above the list in
-   every load state, and the sidebar shows Albums selected with the rail search closed, so the title should have been
-   there. Candidates are a screen transition caught mid-fade, a long main-thread stall while the page composes, or a
-   window that came back from sleep without a redraw. A QA reproduction on the Mac decides which, using the test
-   driver's screen read (R383 FR-R383-6) and `-Dravilo.debug.frames`. If the cause is outside this spec, it becomes
-   its own task. It does not block FR-1 to FR-5.
+None open. Question 1 (why the screenshot has no page title) is answered below.
 
 ## Scope
 
