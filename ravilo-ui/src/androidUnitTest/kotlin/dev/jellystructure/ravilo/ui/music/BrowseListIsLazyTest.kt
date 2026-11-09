@@ -42,7 +42,7 @@ class BrowseListIsLazyTest {
         rule.setContent {
             val state by paged.state.collectAsState()
             LazyColumn(Modifier.fillMaxSize()) {
-                listChip(paged, state, 880.dp, true, "songs", null, {}, {}, {}, {})
+                listChip(paged, state, 880.dp, 540.dp, true, "songs", null, {}, {}, {}, {})
             }
         }
         rule.waitUntil(30_000) { rule.onAllNodes(hasText("Stand-in song 0")).fetchSemanticsNodes().isNotEmpty() }
