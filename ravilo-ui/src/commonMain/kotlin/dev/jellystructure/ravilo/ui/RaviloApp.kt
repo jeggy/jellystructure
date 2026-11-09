@@ -519,6 +519,8 @@ fun RaviloApp(
     remember { installDeviceLanguageStore() }
     var lang by remember { mutableStateOf(resolveAndRememberLanguage(initialSnapshot?.uiLanguage)) }
     var tileScale by remember { mutableStateOf(initialSnapshot?.tileScale ?: 1f) }
+    // DEB-3966 (FR-6) — Screen scale, seeded from the snapshot so a cold start draws its first frame at the saved scale.
+    var uiScalePct by remember { mutableStateOf(initialSnapshot?.uiScalePct ?: 100) }
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
     var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
     var portraitGridColumns by remember { mutableStateOf(initialSnapshot?.portraitGridColumns ?: 2) }
@@ -562,6 +564,7 @@ fun RaviloApp(
                 lang = resolveAndRememberLanguage(cfg.uiLanguage)
                 themeState.apply(cfg)   // R338 — the viewer's theme settings (or, from an older server, the skin)
                 tileScale = cfg.uiDensity.tileScale()
+                uiScalePct = cfg.uiScalePct   // DEB-3966 (FR-6) — live on the next config rev
                 gridColumns = cfg.gridColumns
                 portraitGridColumns = cfg.portrait?.gridColumns ?: 2
             }
@@ -2302,6 +2305,10 @@ fun RaviloApp(
                     // R337 (FR-R337-2) — the phone layout on a computer: a 32 dp strip at the top for the window's controls.
                     .padding(top = if (handset && isDesktopPlatform) 32.dp else 0.dp),
             ) {
+            // DEB-3966 (FR-2/3/4) — Screen scale: a TV draws everything but the playing destinations at the admin's scale.
+            // Inside the Box, so the safe-area padding above reads the base density, and inside `handset` / `compact` /
+            // `family`, which were computed from it before this call.
+            ScreenScale(pct = uiScalePct, enabled = isTvPlatform && !playingFullscreen) {
             // R337 — what the desktop's toolbar needs from the frame: a Back to offer, and room for the traffic lights.
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.jellystructure.ravilo.ui.components.LocalDesktopBack provides (if (stack.size > 1) ({ pop() }) else null),
@@ -2398,7 +2405,7 @@ fun RaviloApp(
                 // fresh content, so the next cold start can seed instantly instead of a bare shimmer.
                 // Always an exact copy of what's already on screen — never computed/derived.
                 val homeState by store.state.collectAsState()
-                LaunchedEffect(homeState, lang, themeState.skin, themeState.settings, tileScale, gridColumns, portraitGridColumns) {
+                LaunchedEffect(homeState, lang, themeState.skin, themeState.settings, tileScale, uiScalePct, gridColumns, portraitGridColumns) {
                     val loaded = homeState as? HomeState.Loaded ?: return@LaunchedEffect
                     val uid = activeUserId ?: return@LaunchedEffect
                     HomeSnapshotCache.save(uid, HomeSnapshot(
@@ -2406,6 +2413,7 @@ fun RaviloApp(
                         uiLanguage = lang,
                         skin = themeState.skin,
                         tileScale = tileScale,
+                        uiScalePct = uiScalePct,
                         gridColumns = gridColumns,
                         portraitGridColumns = portraitGridColumns,
                         savedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
@@ -3300,7 +3308,7 @@ fun RaviloApp(
                 },
             )
             }
-        } } } } // CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
+        } } } } } // ScreenScale (DEB-3966) / CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
         // R337 (FR-R337-6) — the desktop's player bar at the content's foot.
         if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
             medium = deskMedium,

@@ -40,7 +40,9 @@ import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.TileShape
+import dev.jellystructure.shared.tv.UI_SCALE_PCT_OPTIONS
 import dev.jellystructure.shared.tv.UiDensity
+import dev.jellystructure.shared.tv.snapUiScalePct
 import dev.jellystructure.shared.tv.ViewerSettingsRequest
 import kotlin.js.JsString
 import kotlinx.browser.document
@@ -2526,6 +2528,8 @@ private fun <T> wireDragReorder(
 
 private val TILE_SHAPE_LABELS = mapOf(TileShape.POSTER to "Standard poster", TileShape.LANDSCAPE to "Wide landscape", TileShape.SQUARE to "Square")
 private val DENSITY_LABELS = mapOf(UiDensity.COMPACT to "Compact (smaller)", UiDensity.COZY to "Cozy", UiDensity.COMFORTABLE to "Comfortable (default)")
+// DEB-3966 (FR-7) — Screen scale options, labelled as the spec words them.
+private fun uiScaleLabel(pct: Int) = when (pct) { 100 -> "100 % (default)"; 85 -> "85 % (smallest)"; else -> "$pct %" }
 // R182 — Skip Intro / Skip Credits behaviour.
 private val SKIP_MODE_LABELS = mapOf(SkipMode.OFF to "Off", SkipMode.PROMPT to "Prompt", SkipMode.AUTO to "Auto")
 private val SKIP_SECS_CHOICES = listOf(4, 6, 8)
@@ -2573,6 +2577,10 @@ private fun renderBehaviourGlobal(sect: Element) {
     val densityOptions = UiDensity.entries.joinToString("") { d ->
         val sel = if (d == currentConfig.uiDensity) " selected" else ""
         """<option value="${d.name}"$sel>${DENSITY_LABELS[d] ?: d.name}</option>"""
+    }
+    val uiScaleOptions = UI_SCALE_PCT_OPTIONS.joinToString("") { pct ->
+        val sel = if (pct == snapUiScalePct(currentConfig.uiScalePct)) " selected" else ""
+        """<option value="$pct"$sel>${uiScaleLabel(pct)}</option>"""
     }
     // R338 — the theme defaults (FR-R338-5): one pick, follow the system, the light pick and the dark pick.
     fun themeOptions(ids: List<String>, current: String) = ids.joinToString("") { id ->
@@ -2643,6 +2651,10 @@ private fun renderBehaviourGlobal(sect: Element) {
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Content size <span class="tiny muted">· grid/row tiles on the TV</span></span>
               <select id="beh-density" class="input" style="width:180px;font-size:.85rem">$densityOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Screen scale <span class="tiny muted">· whole TV screen</span></span>
+              <select id="beh-ui-scale" class="input" style="width:180px;font-size:.85rem">$uiScaleOptions</select>
             </label>
             <div>
               <label style="display:block;font-size:.9rem">Items per row on grids <span class="mono" id="beh-grid-cols-val">${currentConfig.gridColumns}</span> <span class="tiny muted">· all-movies/series &amp; search, on TV/landscape</span></label>
@@ -3040,6 +3052,9 @@ private fun collectConfig(container: Element) {
     }
     val uiDensity    = runCatching { UiDensity.valueOf((container.querySelector("#beh-density") as? HTMLSelectElement)?.value ?: "COMFORTABLE") }
         .getOrDefault(UiDensity.COMFORTABLE)
+    // DEB-3966 (FR-7) — global scope only; per-user scope keeps the stored value, as it does for gridColumns.
+    val uiScalePct = (container.querySelector("#beh-ui-scale") as? HTMLSelectElement)?.value?.toIntOrNull()
+        ?.let { snapUiScalePct(it) } ?: currentConfig.uiScalePct
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
     val autoplayNext  = (container.querySelector("#beh-autoplay") as? HTMLInputElement)?.checked ?: currentConfig.autoplayNext
@@ -3102,6 +3117,7 @@ private fun collectConfig(container: Element) {
         showContinueProgress = showProgress,
         tileShape = tileShape,
         uiDensity = uiDensity,
+        uiScalePct = uiScalePct,
         uiLanguage = uiLanguage,
         heroHeightPct = heroHeight,
         autoAdvanceSeconds = autoAdvance,

@@ -27,6 +27,9 @@ data class HomeSnapshot(
     val themeFollow: Boolean? = null,
     val themeLight: String? = null,
     val themeDark: String? = null,
+    // DEB-3966 (FR-6) — Screen scale as last drawn, so a cold start draws its first frame at the saved scale (a snapshot
+    // from an older build has none and draws at 100).
+    val uiScalePct: Int = 100,
 )
 
 /** R338 — the theme settings a snapshot carries, or null from a build before R338. */

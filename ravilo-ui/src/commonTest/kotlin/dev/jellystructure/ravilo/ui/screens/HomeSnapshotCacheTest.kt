@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.screens
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.Skin
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -55,5 +56,21 @@ class HomeSnapshotCacheTest {
     fun jsonOverTheCapIsRejected() {
         val oversized = "x".repeat((HOME_SNAPSHOT_MAX_BYTES + 1).toInt())
         assertTrue(exceedsSnapshotSizeCap(oversized))
+    }
+
+    // DEB-3966 (FR-6) — Screen scale rides the snapshot so a cold start draws its first frame at the saved scale.
+    @Test
+    fun screenScaleSurvivesASnapshotRoundTrip() {
+        val saved = snapshot(savedAtEpochMs = 5L).copy(uiScalePct = 90)
+        val back = homeSnapshotJson.decodeFromString(HomeSnapshot.serializer(), homeSnapshotJson.encodeToString(HomeSnapshot.serializer(), saved))
+        assertEquals(90, back.uiScalePct)
+    }
+
+    @Test
+    fun aSnapshotFromBeforeScreenScaleDrawsAt100() {
+        val old = homeSnapshotJson.encodeToString(HomeSnapshot.serializer(), snapshot(savedAtEpochMs = 5L))
+            .replace(Regex(",?\"uiScalePct\":\\d+"), "")
+        assertFalse(old.contains("uiScalePct"), old)
+        assertEquals(100, homeSnapshotJson.decodeFromString(HomeSnapshot.serializer(), old).uiScalePct)
     }
 }

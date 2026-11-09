@@ -33,6 +33,12 @@ fun UiDensity.tileScale(): Float = when (this) {
     UiDensity.COMFORTABLE -> 1f
 }
 
+/** DEB-3966 (FR-1) — the Screen scale options an admin can pick, largest first. */
+val UI_SCALE_PCT_OPTIONS: List<Int> = listOf(100, 95, 90, 85)
+
+/** DEB-3966 (FR-1) — snaps a stray value to the nearest of [UI_SCALE_PCT_OPTIONS]; above 100 → 100, below 85 → 85. */
+fun snapUiScalePct(v: Int): Int = v.coerceIn(85, 100).let { c -> UI_SCALE_PCT_OPTIONS.minByOrNull { kotlin.math.abs(it - c) } ?: 100 }
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 /** Phase 141/R175 — posted to `POST /api/tv/login`. [deviceId] is the device's own stable id
@@ -1416,6 +1422,9 @@ data class RaviloConfig(
     @SerialName("skip_secs") val skipSecs: Int = 6, // 4/6/8
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_density") val uiDensity: UiDensity = UiDensity.COMFORTABLE,
+    // DEB-3966 (FR-1) — the whole TV screen drawn at 100 / 95 / 90 / 85 %; global only. An app that does not know
+    // the field ignores it, a server that does not send it means 100. [snapUiScalePct] is the one place it is snapped.
+    @SerialName("ui_scale_pct") val uiScalePct: Int = 100,
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (40..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)
