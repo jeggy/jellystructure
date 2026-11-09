@@ -83,6 +83,9 @@ socket instead of polling where it exists.
 The app's own diagnostics (Settings ▸ About, and the device's QoE/health report) carry CPU %, memory and wakeups, so the
 admin sees a heavy client without someone opening Activity Monitor.
 
+*Amended 2026-11-09 (DEB-4089): the About window can be opened, closed and read through the test driver, so QA checks
+these figures over SSH. See the amendment at the end of this file.*
+
 ### FR-R383-7 — Tests
 
 A long-running desktop test (JVM, headless where possible) that plays a fake 100-song queue through the cast engine and
@@ -319,3 +322,43 @@ wall clock between them into CPU % (of one core, so two busy cores read 200, as 
 *Idle wakeups*. Without the library (Linux, a `gradle run` without Xcode) the three lines are absent and the window is as before.
 Tests: `AppResourcesTest` (`:ravilo-desktop:desktopTest`) pins the arithmetic and the formatting. **Not proved on a Mac**; `ci / macos`
 is the Swift compile check. The QA row opens About beside Activity Monitor and compares the three figures. da/fo copy is draft.
+
+## Amendment (2026-11-09, DEB-4089) — the About figures, read over the test driver (FR-R383-6)
+
+Ordered by Tróndur on DEB-4089. The owner asked on DEB-1801 that QA check the About window without his hands, over SSH. The
+test driver (`TestDriver.kt`, R329) cannot do that today: it has no About command, and `w2` reaches only the Settings
+window. This amendment adds the QA surface for FR-R383-6. It changes nothing a viewer sees, and the admin half stays out as
+before.
+
+**What the driver promises.** These commands are added to the driver's command set, and the driver's doc comment lists them:
+
+1. **`about open`** opens the About window **by the app's existing route**, `DesktopWindow.showAbout()`. That is the
+   `aboutHandler` that `Main.kt` points at the same `aboutOpen` state as *Ravilo ▸ About Ravilo* and the app menu's About.
+   There is no second way to open the window. If it is already open, `about open` does nothing and answers `ok`.
+2. **`about close`** closes it **by the window's own close**, the `onClose` that Esc and the window's close button
+   already call. If it is already closed, it answers `ok`.
+3. **`about`**, with no argument, answers **one line with what the window shows**:
+   - `ok closed` when the window is not open.
+   - `ok open | Memory 632 MB | CPU 13.2 % | Idle wakeups 2.1/s` when it is open. Each line is **the string the window
+     renders**: the same `t(key, lang, …)` call, in the window's language, with the same `AppResources.format*` value. A
+     rate the window still shows as `—` is answered as `—` too.
+   - `ok open (no figures)` when the window is open and draws none of the three lines (no Swift library: Linux, or a
+     `gradle run` without Xcode). The log line about the absent library already explains why.
+   - The answer is the state the window drew last. Asking does **not** read the kernel again and does not start a timer.
+     While the window is closed nothing reads, as FR-R383-5 already requires.
+4. **The input guard stays as it is.** `about open` and `about close` count as input, like `cmd`: they are refused while
+   the person at the computer used the app in the last minute, and `force` overrides. Plain `about` only reads, so it is
+   never refused.
+5. **Off unless `RAVILO_TESTDRIVER` is set**, as the whole driver is. No wire change, no schema, no Swift export, and no ABI
+   bump: the figures are the ones DEB-1785 already reads.
+
+**Not in it:** a `shot` of the About window. The QA check compares numbers with Activity Monitor and
+`scripts/check-mac-resources.sh`, and the text answer gives exactly the numbers the window draws. A picture would need the
+driver to target a `ComposeDialog`, and `w2` takes only a `ComposeWindow` today. That is more code and gives no more
+evidence. If a picture of About is ever wanted, it gets its own task.
+
+**Proof.** The reply line and the guard classification (`about` free, `about open` / `about close` guarded) are pure
+functions, pinned by a test in `:ravilo-desktop:desktopTest`:
+`JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-desktop:desktopTest --console=plain`. CI has no display, so opening the
+window is proved on a Mac by the QA row DEB-1801: claim a ticked Mac, `about open`, read `about` several times over a minute
+next to `scripts/check-mac-resources.sh` on the same pid, `about close`, then `about` must answer `ok closed`.
