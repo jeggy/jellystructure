@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- DEB-4070 (DEB-3995 FR-7) — phone downloads run in a dataSync foreground service with a progress notification; Media3's PlatformScheduler
+         restarts it when the network returns (Wi-Fi only) or the phone reboots mid-queue. POST_NOTIFICATIONS above is asked for at the first download. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- R224 — universal app: neither feature is required, so Play distributes this one listing to
@@ -63,6 +67,21 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- DEB-4070 (FR-7) — the phone's download service (ravilo-ui androidMain): one download at a time, files under filesDir. -->
+        <service
+            android:name="dev.jellystructure.ravilo.ui.downloads.RaviloDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+        <service
+            android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- TV entry point — leanback/D-pad UI, full-screen immersive. Only the TV launcher sees this
              (LEANBACK_LAUNCHER); the phone launcher uses the separate activity below instead. -->

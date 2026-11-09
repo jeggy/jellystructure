@@ -283,6 +283,34 @@ class TvApiClient(
         return json.decodeFromString<MovieDetail>(r.bodyAsText())
     }
 
+    /**
+     * DEB-4070 (DEB-3995 FR-4) — `GET /api/tv/download/options`: what this phone may download of one title. A viewer the operator
+     * switched off gets `403` ([TvApiError.Http]); a title that is not there, `404`.
+     */
+    suspend fun getDownloadOptions(itemId: String, mediaSourceId: String? = null): DownloadOptions {
+        val r = client.get("$baseUrl/api/tv/download/options") {
+            auth()
+            parameter("item_id", itemId)
+            if (mediaSourceId != null) parameter("media_source_id", mediaSourceId)
+        }
+        r.assertSuccess()
+        return json.decodeFromString<DownloadOptions>(r.bodyAsText())
+    }
+
+    /**
+     * DEB-4070 (FR-4, FR-6) — `POST /api/tv/download/start`: a ticket for one title at one quality. Never a play. A paused or
+     * expired download calls this again for a fresh URL; a smaller copy passes `from_segment`. `503` is the server's "waiting"
+     * answer ([TvApiError.Http.retryAfterSeconds] carries its `Retry-After`).
+     */
+    suspend fun startDownload(request: DownloadStartRequest): DownloadTicket {
+        val r = client.post("$baseUrl/api/tv/download/start") {
+            auth()
+            jsonBody(json.encodeToString(DownloadStartRequest.serializer(), request))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<DownloadTicket>(r.bodyAsText())
+    }
+
     suspend fun getSeries(id: String): SeriesDetail {
         val r = client.get("$baseUrl/api/tv/series/$id") { auth() }
         r.assertSuccess()
