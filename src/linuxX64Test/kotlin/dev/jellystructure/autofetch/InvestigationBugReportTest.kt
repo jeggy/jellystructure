@@ -3,7 +3,11 @@ package dev.jellystructure.autofetch
 import dev.jellystructure.ServerVersion
 import dev.jellystructure.ui.AF_BUG_REPORT_LINK_MAX
 import dev.jellystructure.ui.afBugReportLink
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -179,6 +183,27 @@ class InvestigationBugReportTest {
         ai.script += { throw RuntimeException("connect to $s.example.net:443 failed: $s") }
         val body = clean(run(), "page", 0)
         assertEquals("Anthropic could not be reached: <message left out>", reasonOf(body))
+    }
+
+    @Test
+    fun `an unexpected failure keeps the report and leaves the exception text out`() = runBlocking {
+        val failingAi = object : InvestigationAi by ai {
+            override fun spentMicroUsd(): Long = throw IllegalStateException("boom https://sentinel.example/SENTINEL-path")
+        }
+        val investigator = Investigator(
+            failingAi, h.lanes, h.tools, h.world, RecipeProof(h.tools, h.world),
+            libraries = { listOf(LibraryChoice(h.lib, "TV")) }, existing = { h.engine.existingCodes(it) }, today = { "2026-11-02" },
+        )
+        val investigations = Investigations(failingAi, investigator, h.service, h.store, h.world, CoroutineScope(Dispatchers.Default)) { "inv1" }
+        investigations.start(InvestigateRequest(h.dagbokUrl, pageOnly = true))
+        val view = withTimeout(5_000) { investigations.current.first { it?.state == "failed" } }!!
+        assertEquals("failed", view.state)
+        val report = assertNotNull(view.report)
+        assertTrue(report.title.startsWith("Auto-fetch: could not set up varpid.example.fo"), report.title)
+        assertTrue("the investigation failed unexpectedly" in report.body, report.body)
+        for (text in listOf(report.title, report.body)) {
+            assertFalse("SENTINEL" in text || "boom" in text, text)
+        }
     }
 
     @Test

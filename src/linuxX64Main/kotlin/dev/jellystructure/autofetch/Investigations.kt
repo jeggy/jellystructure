@@ -109,7 +109,19 @@ class Investigations(
             }
             val now = current.value
             if (now?.id != id || now.state != "running") return@launch   // stopped, or replaced
-            if (outcome == null) { current.value = now.copy(state = "failed", reason = "the investigation failed unexpectedly; nothing was written") ; return@launch }
+            if (outcome == null) {
+                val reason = "the investigation failed unexpectedly; nothing was written"
+                current.value = now.copy(
+                    state = "failed", reason = reason,
+                    report = BugReport.build(ReportInput(
+                        id = now.id, host = now.host, pageOnly = now.pageOnly, ended = "failed", reason = reason,
+                        reasonIsModelWords = false, model = null, effort = "", turns = now.turns, requests = now.requests,
+                        spentMicroUsd = now.spentMicroUsd, steps = now.steps, recipe = null, proof = null, refusals = emptyList(),
+                        ignoreRobots = now.ignoreRobots,
+                    )),
+                )
+                return@launch
+            }
             held = outcome.held
             current.value = outcome.view
         }
