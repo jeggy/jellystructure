@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +56,19 @@ internal object AppImages {
 /** How often the About window reads the app's own figures; Activity Monitor's default is 5 s. */
 private const val RESOURCE_READ_MS = 2_000L
 
+/** The last three strings committed by the About composition; the driver never samples resources itself. */
+internal object AboutWindowText {
+    @Volatile var lines: List<String> = emptyList()
+}
+
+internal fun aboutFigureLines(figures: AppResources.Figures?, lang: String): List<String> = figures?.let { f ->
+    listOf(
+        "mac.about_memory" to AppResources.formatMemory(f.footprintBytes),
+        "mac.about_cpu" to AppResources.formatCpu(f.cpuPercent),
+        "mac.about_wakeups" to AppResources.formatWakeups(f.wakeupsPerSecond),
+    ).map { (key, value) -> t(key, lang, mapOf("value" to value)) }
+} ?: emptyList()
+
 /**
  * FR-R328-5 — About shows the mark, the version and *Signed in to {server}*. FR-R383-6 — and, on a Mac with the Swift
  * library, the app's own memory, CPU % and idle wakeups, read while the window is open (rates need two reads, so they
@@ -63,6 +78,8 @@ private const val RESOURCE_READ_MS = 2_000L
 internal fun AboutWindow(lang: String, onClose: () -> Unit) {
     val server = remember { raviloBaseUrl().takeIf { it.isNotBlank() }?.let { runCatching { URI(it).host }.getOrNull() ?: it } }
     var figures by remember { mutableStateOf<AppResources.Figures?>(null) }
+    val figureLines = aboutFigureLines(figures, lang)
+    DisposableEffect(Unit) { onDispose { AboutWindowText.lines = emptyList() } }
     LaunchedEffect(Unit) {
         var previous: AppResources.Sample? = null
         while (true) {
@@ -80,6 +97,7 @@ internal fun AboutWindow(lang: String, onClose: () -> Unit) {
         icon = AppImages.icon,
         onPreviewKeyEvent = { ev -> (ev.type == KeyEventType.KeyDown && ev.key == Key.Escape).also { if (it) onClose() } },
     ) {
+        SideEffect { AboutWindowText.lines = figureLines }
         Column(
             modifier = Modifier.fillMaxSize().background(Color(0xFF000B25)).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -94,14 +112,10 @@ internal fun AboutWindow(lang: String, onClose: () -> Unit) {
                 Spacer(Modifier.height(4.dp))
                 Text(t("mac.about_signed_in", lang, mapOf("server" to server)), color = Color(0xFFB8BCD0), fontSize = 14.sp, textAlign = TextAlign.Center)
             }
-            figures?.let { f ->
+            if (figureLines.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                for ((key, value) in listOf(
-                    "mac.about_memory" to AppResources.formatMemory(f.footprintBytes),
-                    "mac.about_cpu" to AppResources.formatCpu(f.cpuPercent),
-                    "mac.about_wakeups" to AppResources.formatWakeups(f.wakeupsPerSecond),
-                )) {
-                    Text(t(key, lang, mapOf("value" to value)), color = Color(0xFF8A8FA8), fontSize = 13.sp, textAlign = TextAlign.Center)
+                for (line in figureLines) {
+                    Text(line, color = Color(0xFF8A8FA8), fontSize = 13.sp, textAlign = TextAlign.Center)
                 }
             }
         }

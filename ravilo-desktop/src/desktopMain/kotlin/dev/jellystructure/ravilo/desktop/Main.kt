@@ -88,6 +88,7 @@ fun main(args: Array<String>) {
 private fun ApplicationScope.RaviloDesktopApp() {
     var shown by remember { mutableStateOf(true) }
     var aboutOpen by remember { mutableStateOf(false) }
+    fun closeAbout() { aboutOpen = false; AboutWindowText.lines = emptyList() }
     // R383 (FR-R383-3) — the Mac hid the whole app (⌘H): the window is as good as closed, so it stops drawing.
     // …or launched hidden (`open -g -j`), which raises no event: AppKit is asked, here for the first frame and again
     // while the app starts (AppHidden).
@@ -157,7 +158,6 @@ private fun ApplicationScope.RaviloDesktopApp() {
         LaunchedEffect(Unit) {
             window.minimumSize = Dimension(360, 600)   // R337 FR-R337-11 (was 960 × 600): a window can reach the phone layout
             DesktopWindow.awtWindow = window
-            TestDriver.start(window)   // off unless RAVILO_TESTDRIVER names a directory
             FrameCounter.install(window)   // R383 — off unless -Dravilo.debug.frames: frames drawn per minute, to the log
             DesktopWindow.setFullScreenHandler = ::setFullScreen
             // R337 — what the frame the app draws asks of the window.
@@ -167,6 +167,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
             }
             DesktopWindow.minimizeHandler = { state.isMinimized = true }
             DesktopWindow.aboutHandler = { aboutOpen = true }
+            TestDriver.start(window, isAboutOpen = { aboutOpen }, closeAbout = ::closeAbout)   // off unless RAVILO_TESTDRIVER names a directory
             dev.jellystructure.ravilo.ui.desktop.SingleInstance.onShowRequest { SwingUtilities.invokeLater { shown = true; window.toFront() } }
             // R337 (FR-R337-5, dev review 10) — the Mac: a transparent, full-size-content title bar, so the traffic lights
             // sit in the sidebar and the page runs up under them.
@@ -209,7 +210,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
         }
     }
 
-    if (aboutOpen) AboutWindow(lang = lang, onClose = { aboutOpen = false })
+    if (aboutOpen) AboutWindow(lang = lang, onClose = ::closeAbout)
 }
 
 /**

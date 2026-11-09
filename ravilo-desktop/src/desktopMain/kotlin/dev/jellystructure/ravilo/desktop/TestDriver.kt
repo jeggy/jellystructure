@@ -4,6 +4,7 @@ import androidx.compose.ui.awt.ComposeWindow
 import dev.jellystructure.ravilo.ui.components.AppCommand
 import dev.jellystructure.ravilo.ui.components.AppCommands
 import dev.jellystructure.ravilo.ui.desktop.DesktopLog
+import dev.jellystructure.ravilo.ui.desktop.DesktopWindow
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
@@ -41,6 +42,8 @@ import javax.swing.SwingUtilities
  * - `cursor <x> <y>` — moves there and answers with the pointer the app asks for (`Hand Cursor`, `Default Cursor`, …).
  * - `key <name> [meta+shift+…]` — a key by its `KeyEvent.VK_` name (`key ESCAPE`, `key COMMA meta`); `type <text>`.
  * - `cmd <AppCommand>` — what a menu item sends (`cmd MODE_MUSIC`): macOS's menu bar cannot be reached from here.
+ * - `about open` / `about close` — the About window's own open and close handlers; `about` reads its last drawn
+ *   Memory, CPU and Idle wakeups lines, or `closed` / `open (no figures)`.
  * - `update <state>` — R386's Software update block in one of its states, on a build that shows none (`update ready`,
  *   `update handover`; `update off` takes it away): what is drawn changes, nothing is checked or installed.
  * - `quiet` (`quiet off`) — the app plays at nothing; the volume the person set stays shown and remembered.
@@ -57,13 +60,25 @@ import javax.swing.SwingUtilities
  * Events go to the window's own canvas, so they arrive whether or not the app is in front; keys reach the focused
  * element only while the window has the focus (`front`).
  */
+private val TEST_DRIVER_INPUT = setOf("click", "dclick", "move", "cursor", "scroll", "key", "type", "size", "cmd")
+
+internal fun testDriverInput(parts: List<String>): Boolean =
+    parts.firstOrNull() in TEST_DRIVER_INPUT || (parts.firstOrNull() == "about" && parts.getOrNull(1) in setOf("open", "close"))
+
+internal fun testDriverRefusesInput(parts: List<String>, forced: Boolean, idleSeconds: Long): Boolean =
+    !forced && testDriverInput(parts) && idleSeconds < 60
+
+internal fun aboutReply(open: Boolean, lines: List<String>): String = when {
+    !open -> "ok closed"
+    lines.isEmpty() -> "ok open (no figures)"
+    else -> "ok open | ${lines.joinToString(" | ")}"
+}
+
 internal object TestDriver {
     private val dir: File? = (System.getProperty("ravilo.testdriver") ?: System.getenv("RAVILO_TESTDRIVER"))
         ?.trim()?.ifBlank { null }?.let(::File)
     @Volatile private var started = false
-    private val INPUT = setOf("click", "dclick", "move", "cursor", "scroll", "key", "type", "size", "cmd")
-
-    fun start(window: ComposeWindow) {
+    fun start(window: ComposeWindow, isAboutOpen: () -> Boolean, closeAbout: () -> Unit) {
         val d = dir ?: return
         if (started) return
         started = true
@@ -79,7 +94,7 @@ internal object TestDriver {
                     runCatching {
                         client.use { ch ->
                             val line = Channels.newReader(ch, Charsets.UTF_8).buffered().readLine().orEmpty().trim()
-                            val reply = runCatching { handle(window, d, line) }.getOrElse { "err ${it::class.simpleName}: ${it.message}" }
+                            val reply = runCatching { handle(window, d, line, isAboutOpen, closeAbout) }.getOrElse { "err ${it::class.simpleName}: ${it.message}" }
                             Channels.newWriter(ch, Charsets.UTF_8).run { write(reply + "\n"); flush() }
                         }
                     }
@@ -116,7 +131,7 @@ internal object TestDriver {
     }
 
     @Suppress("NAME_SHADOWING")
-    private fun handle(window: ComposeWindow, dir: File, line: String): String {
+    private fun handle(window: ComposeWindow, dir: File, line: String, isAboutOpen: () -> Boolean, closeAbout: () -> Unit): String {
         val words = line.split(' ').filter { it.isNotEmpty() }
         val prefixes = words.takeWhile { it == "force" || it == "w2" }
         val forced = "force" in prefixes
@@ -124,7 +139,14 @@ internal object TestDriver {
         val window = if ("w2" !in prefixes) window
             else dev.jellystructure.ravilo.ui.desktop.DesktopWindow.secondWindow as? ComposeWindow ?: return "err no second window"
         val verb = parts.firstOrNull() ?: return "err empty"
-        if (!forced && verb in INPUT && idleSeconds() < 60) return "err in use: real input ${idleSeconds()} s ago (wait, or prefix with force)"
+        val idle = idleSeconds()
+        if (testDriverRefusesInput(parts, forced, idle)) return "err in use: real input $idle s ago (wait, or prefix with force)"
+        if (verb == "about") return when (parts.getOrNull(1)) {
+            null -> onEdt { aboutReply(isAboutOpen(), AboutWindowText.lines) }
+            "open" -> onEdt { DesktopWindow.showAbout(); "ok" }
+            "close" -> onEdt { closeAbout(); "ok" }
+            else -> "err unknown about command '${parts[1]}'"
+        }
         val layer = onEdt { layerOf(window) } ?: return "err no canvas yet"
         val target = layer.canvas
         fun int(i: Int) = parts[i].toInt()
