@@ -88,6 +88,10 @@ Two layers, both small:
    the Node distribution. It also helps developers and the runner-side `unit`/`android-release` jobs for free.
    Check the exact property names and the backoff growth against the Gradle 9.2.1 source before relying on
    them.
+   *2026-11-09, measured:* in Gradle 9.2.1 the attempt-count property is `org.gradle.internal.repository.max.tentatives`
+   (total attempts, not `max.retries`; that name is silently ignored), and the pause doubles from
+   `initial.backoff` (ms). Against a server that answers every request 503, 6 attempts from 4000 ms made 6
+   requests over 124 s.
 2. **Make the warm-up a real, retried fetch step.** Replace each Dockerfile's
    `dependencies … 2>/dev/null || true` with one script, the same for all three. It runs the fetch tasks
    (FR-3) in a loop of three attempts with 30 s and 90 s pauses, prints FR-4's line on each retry, and exits

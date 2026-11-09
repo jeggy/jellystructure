@@ -17,9 +17,9 @@ WORKDIR /app
 # Same Node.js setup as ravilo-web/Dockerfile — :ravilo-screen is Kotlin/JS (IR) too, and its
 # jsBrowserProductionWebpack step needs it. No brotli here: precompression (FR-235-2) is a ravilo-web/
 # R263 thing this module has no equivalent task for.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libatomic1 && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
+RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends curl ca-certificates libatomic1 && \
+    curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
 COPY gradlew ./
@@ -47,10 +47,13 @@ COPY web-static-server ./web-static-server
 COPY ravilo-castv2 ./ravilo-castv2
 COPY ravilo-desktop ./ravilo-desktop
 COPY design ./design
+# DEB-4106 FR-3 — every download the compile steps below would make happens HERE, retried on a transient upstream
+# error and with its errors shown. The compile steps then find it all in the cache mounts and download nothing.
+COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle ./scripts/
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./gradlew :ravilo-screen:dependencies --no-daemon 2>/dev/null || true
+    ./scripts/fetch-dependencies.sh
 
 COPY src ./src
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
@@ -61,7 +64,7 @@ RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
 FROM debian:bookworm-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
 RUN adduser --system --uid 1000 webstatic
 
 COPY --from=builder --chmod=755 --chown=webstatic \

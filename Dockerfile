@@ -20,9 +20,9 @@ WORKDIR /app
 #     .br siblings when it's on PATH, silently skipping them otherwise — this Dockerfile also builds
 #     (bare, unprefixed) wasmJsBrowserDistribution, which Gradle runs in every project that declares it,
 #     ravilo-web included, whether or not this image's own COPY layer below ends up shipping that output.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libsqlite3-dev libatomic1 brotli && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
+RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends curl ca-certificates libsqlite3-dev libatomic1 brotli && \
+    curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
 COPY gradlew ./
@@ -65,10 +65,13 @@ COPY design ./design
 # ravilo-web/Dockerfile concurrently doesn't collide on the same shared BuildKit cache storage: two
 # Gradle processes writing the same unnamed /root/.gradle cache hit Gradle's own file lock
 # (journal-1.lock) and one build fails outright. Confirmed live building both images at once.
+# DEB-4106 FR-3 — every download the compile steps below would make happens HERE, retried on a transient upstream
+# error and with its errors shown. The compile steps then find it all in the cache mounts and download nothing.
+COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle ./scripts/
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./gradlew dependencies --no-daemon 2>/dev/null || true
+    ./scripts/fetch-dependencies.sh
 
 COPY src ./src
 # R245 — the Chromecast receiver bundle (Kotlin/JS), dropped next to cast-receiver/index.html.

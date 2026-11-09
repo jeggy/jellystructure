@@ -1,0 +1,23 @@
+// DEB-4106 FR-3 — `fetchDependencies`: resolve every resolvable configuration of every project, so each Maven/Ivy
+// artifact the later compile tasks need lands in the Gradle cache before they run. Compiles nothing.
+//
+// A configuration that cannot resolve for a reason that is not the network (no matching variant, a project
+// artifact that is not built yet) is reported and skipped: the compile would not have resolved it either. A
+// transient upstream error is rethrown, so scripts/retry-transient.sh sees it and retries.
+allprojects {
+    tasks.register('fetchDependencies') {
+        doLast {
+            def transientError = ~/(?s).*(status code 5\d\d|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated|Premature end of Content-Length|Unexpected end of file).*/
+            configurations.findAll { it.canBeResolved }.each { c ->
+                try {
+                    c.incoming.files.files.size()
+                } catch (Throwable t) {
+                    def messages = []
+                    for (Throwable e = t; e != null; e = e.cause) { messages << String.valueOf(e.message) }
+                    if (messages.any { it ==~ transientError }) { throw t }
+                    logger.lifecycle("fetchDependencies: skipped ${project.path}:${c.name} (${messages.first().readLines().first()})")
+                }
+            }
+        }
+    }
+}
