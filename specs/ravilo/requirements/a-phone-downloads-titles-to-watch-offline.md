@@ -415,3 +415,35 @@ they promise.
     with `from_segment`.
   - **Reaped.** A download stream with no segment fetched for 10 minutes ends and its files are removed.
 - **Not built here.** Subtitles in the HLS (they are VTT files, as slice 1), a copy of an image-subtitle track, and any phone code.
+
+## Amendment 2026-11-10: slice 4's page, deletes and mark (DEB-4071)
+
+Slice 4 builds FR-8's mark and Profile row, FR-9, FR-10 and FR-12's other-profiles line. Nothing above changes what it promises; the
+points below settle what the round's pictures and the code left open.
+
+- **The mark and the picture badge.** The round drew the quality badge top-right. The shipped tile draws it **bottom-start**
+  (R325, FR-R325-3), the corner the mark owns. So on a title that is both downloaded and badged, the badge **stands on the mark**,
+  4 dp clear of it, and a title that is not downloaded keeps the badge exactly where it was. On an episode card the mark stands on
+  the *UP NEXT* or *NEW* ribbon when one owns that corner. It never covers the watched tick (bottom-end).
+- **Where the mark shows.** On every poster tile and episode card of an Android phone whose config says `downloads`: Home, channels,
+  Library, Search, My List, a title's related row and a season's episodes. A *series* card never carries it: a series is not a
+  download, an episode is. Nowhere on a TV, the web or the desktops.
+- **Watched on the page.** The page's *Watched* and *Delete watched* follow what the server last said, read from the pages the viewer
+  opens (a film's page, a series' page); the phone writes nothing. A download whose title the viewer has not opened since it was
+  saved shows no *Watched* until slice 5's reconnect refresh (FR-13) sets it. `download.gone` is likewise set by that refresh and is
+  only drawn here.
+- **Totals.** The title bar, Profile's *Downloads · {size}* and *Delete all* name what **this profile's** downloads hold on the disk
+  (a running download's part included, as the round's 27.2 GB against 26.9 GB shows). The storage bar's *Ravilo* part adds the other
+  profiles' bytes. What is neither Ravilo's nor free is *Other apps*.
+- **Order.** Films are listed by title; a series by title, its seasons ascending, its episodes by number. The *Downloading* block is in
+  the order the downloads were asked for.
+- **Headings.** *Films* and *Series* read the shipped `nav.movies` and `nav.series` (Movies, Series; Film, Serier; Filmar, Seriur):
+  the shipped copy is the source of truth over the round's `row.films`. A series line reads `detail.season`, `detail.episode` and
+  `detail.episodes`. No new string.
+- **Confirms.** A single delete and a series header read `download.delete_one_confirm`. Multi-select reads `download.n_selected` with
+  `download.delete_all_confirm`; *Delete watched* reads its own label with the same sentence; *Delete all* reads
+  `download.delete_all_title`; *Other profiles* reads `download.other_profiles` with the sentence. Cancel changes nothing, the
+  selection included. A running download's *cancel* is not a delete of a title on the phone and does not confirm.
+- **Offline.** The page draws `download.offline` when it is told it is offline. Telling it so, and opening on it, is FR-11 and slice 5's.
+- **Artwork.** The page shows the server's poster while online and a title's colour and initials otherwise; the saved artwork reads
+  offline in slice 5 (FR-13, FR-16).

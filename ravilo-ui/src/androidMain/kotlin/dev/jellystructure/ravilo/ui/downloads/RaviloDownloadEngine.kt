@@ -157,6 +157,8 @@ class RaviloDownloadEngine(private val ctx: Context, private val prefs: Download
 
     override fun freeBytes(): Long = runCatching { StatFs(RaviloDownloadStack.root(ctx).path).availableBytes }.getOrDefault(0L)
 
+    override fun totalBytes(): Long = runCatching { StatFs(RaviloDownloadStack.root(ctx).path).totalBytes }.getOrDefault(0L)
+
     override fun busy(): Boolean = busyNow
 
     private companion object {

@@ -53,6 +53,7 @@ class DownloadsControllerTest {
         override fun resume(id: String) { p.value = p.value + (id to DownloadPhase.Running(0)) }
         override fun remove(id: String) { removed += id; p.value = p.value - id }
         override fun freeBytes() = 50_000_000_000L
+        override fun totalBytes() = 128_000_000_000L
         override fun busy() = p.value.values.any { it is DownloadPhase.Running || it == DownloadPhase.Queued || it == DownloadPhase.WaitingServer }
         fun set(id: String, phase: DownloadPhase) { p.value = p.value + (id to phase) }
     }

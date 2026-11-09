@@ -37,6 +37,8 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
+import dev.jellystructure.ravilo.ui.downloads.DownloadedMark
+import dev.jellystructure.ravilo.ui.downloads.MarkSize
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -60,6 +62,8 @@ fun EpisodeCard(
     airLabel: String? = null,
     /** DEB-2938 (FR-12) — the *NEW* ribbon of a newest-first series' newest episode, in the *UP NEXT* ribbon's place. */
     newRibbon: Boolean = false,
+    /** DEB-4071 (DEB-3995 FR-8) — true only for an episode fully on this phone: the white chip, 18 dp at 5 dp, bottom-start. */
+    downloaded: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -174,6 +178,12 @@ fun EpisodeCard(
             }
 
             if (newRibbon) NewEpisodeRibbon(Modifier.align(Alignment.BottomStart))
+
+            // FR-8 — beside the watched circle, never over it; stands on the ribbon when a ribbon owns the corner.
+            if (downloaded) DownloadedMark(
+                MarkSize.EPISODE,
+                Modifier.align(Alignment.BottomStart).padding(start = MarkSize.EPISODE.inset, bottom = MarkSize.EPISODE.inset + if (isResumeEpisode || newRibbon) 24.dp else 0.dp),
+            )
 
             // Watched circle (bottom-end)
             if (isWatched) {

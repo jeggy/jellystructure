@@ -27,6 +27,10 @@ data class DownloadRecord(
     /** Queue order: a download runs after every one asked for before it. */
     val queuedAt: Long = 0L,
     val state: RecordState = RecordState.QUEUED,
+    /** DEB-4071 (FR-9, FR-10) — watched as the server last said it (a page the viewer opened online, or slice 5's reconnect refresh). Drives *Delete watched*. */
+    val watched: Boolean = false,
+    /** DEB-4071 (FR-13) — the server no longer offers it to this viewer: the entry says `download.gone`, and it plays until deleted. */
+    val gone: Boolean = false,
 )
 
 enum class RecordState {
@@ -83,8 +87,14 @@ class DownloadLibrary(
     fun nextQueued(userId: String): DownloadRecord? =
         records(userId).filter { it.state == RecordState.QUEUED }.minByOrNull { it.queuedAt }
 
-    /** What this viewer's downloads take, by the sizes the sheet showed (the Downloads page, slice 4, reads the disk). */
+    /** What this viewer's downloads take, by the sizes the sheet showed. */
     fun bytes(userId: String): Long = records(userId).sumOf { it.bytes }
+
+    /** Every user id with an index on this phone, this viewer's included. */
+    fun users(): List<String> = storage.users()
+
+    /** FR-12 — forget every record of one viewer (the media goes with the engine). */
+    fun removeAll(userId: String) = storage.delete(userId)
 
     /** FR-12 — what every other profile on this phone holds: a number, never a title. */
     fun otherUsersBytes(userId: String): Long = storage.users().filter { it != userId }.sumOf { bytes(it) }

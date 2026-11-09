@@ -479,6 +479,7 @@ fun SearchScreen(
                         upcomingLabel = card.upcomingEpisode,
                         upcomingAirUtc = card.upcomingAirUtc,
                         qualityBadge = card.qualityBadge,   // R325
+                        downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
                         focusRequester = if (i == returnIndex) returnFR else null,
                         onFocused = { focusedGridIdx = i; inGrid = true },
                         onSelect = { store.returnTarget.remember(visit, card.id, i); onItemSelect(card) },

@@ -728,6 +728,7 @@ private fun ContentRowItem(
             upcomingLabel = card.upcomingEpisode,
             upcomingAirUtc = card.upcomingAirUtc,
             qualityBadge = card.qualityBadge,   // R325
+            downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
             focusRequester = fr,  // R139 restore target only — the hero-down bridge is row-level now (R236)
             // Phase R240 — the tile that's actually open right now grows in place (FR-R240-7); every
             // other tile in every other row is untouched.

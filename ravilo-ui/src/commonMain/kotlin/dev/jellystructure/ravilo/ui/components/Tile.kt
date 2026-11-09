@@ -46,6 +46,8 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
+import dev.jellystructure.ravilo.ui.downloads.DownloadedMark
+import dev.jellystructure.ravilo.ui.downloads.MarkSize
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.accentGradient
@@ -142,6 +144,8 @@ fun Tile(
     upcomingAirUtc: String? = null,  // DEB-1482 (FR-3)
     /** R325 (FR-R325-3) — `4K` · `HDR` · `4K HDR`, bottom-start; null (a 1080p or SD title) draws nothing. */
     qualityBadge: String? = null,
+    /** DEB-4071 (DEB-3995 FR-8) — true only for a title fully on this phone: the white chip, bottom-start. False everywhere else, so a poster looks as it always did. */
+    downloaded: Boolean = false,
     /** DEB-2658 (DEB-2628 FR-6) — a radio station's tile: the broadcast glyph in a dark plate, top-end, the one corner a channel tile leaves empty. */
     radioMark: Boolean = false,
     /** Phase R240 (FR-R240-3/7) — true for the one tile J has opened. Grows the tile's actual layout
@@ -331,10 +335,12 @@ fun Tile(
             qualityBadge?.let { q ->
                 Text(
                     q, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 10.dp)
+                    // FR-8 — a downloaded title's chip owns the bottom-start corner (20 dp at 7 dp); the badge stands on it, 4 dp clear.
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = if (downloaded) MarkSize.POSTER.inset + MarkSize.POSTER.box + 4.dp else 10.dp)
                         .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
+            if (downloaded) DownloadedMark(MarkSize.POSTER, Modifier.align(Alignment.BottomStart).padding(MarkSize.POSTER.inset))
             }
         }
 

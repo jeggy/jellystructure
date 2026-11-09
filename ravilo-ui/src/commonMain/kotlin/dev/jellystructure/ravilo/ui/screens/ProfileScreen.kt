@@ -57,6 +57,7 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
+import dev.jellystructure.ravilo.ui.downloads.formatBytes
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.raviloVersion
@@ -107,6 +108,8 @@ fun ProfileScreen(
     /** R321 (FR-R321-3) — the listening mode card under the photo and name; null (absent, never greyed) for a viewer
      *  without the music library, on a TV, or where this build has no music player (FR-R321-2). */
     modeCard: (@Composable () -> Unit)? = null,
+    /** DEB-4071 (DEB-3995 FR-8) — the Account card's *Downloads · {size}* row: this profile's total, opening the Downloads page. Null (no row at all) off an Android phone and on a server whose config does not say `downloads`. */
+    downloads: ProfileDownloads? = null,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
@@ -241,6 +244,7 @@ fun ProfileScreen(
                 val langName = SUPPORTED_LANGUAGES.firstOrNull { it.code == currentLang }?.name ?: currentLang
                 ProfileRow(str("profile.app_language"), langName, onAppLanguage)
                 RowDivider()
+                if (downloads != null) { ProfileRow(str("settings.downloads"), null, downloads.onOpen, trailing = formatBytes(downloads.bytes), modifier = Modifier.testTag(PROFILE_DOWNLOADS_TAG)); RowDivider() }
                 // DEB-1854 (FR-6) — the link row opens the page; the sentence is a row of its own, not a control.
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 when (passwordRow) {
@@ -349,7 +353,7 @@ fun AppLanguageScreen(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false, modifier: Modifier = Modifier) {
+private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false, modifier: Modifier = Modifier, trailing: String? = null) {
     val colors = RaviloTheme.colors
     Row(
         modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -361,6 +365,8 @@ private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: 
             Text(label, color = colors.text, fontSize = 15.sp, fontFamily = Sora)
             if (value != null) Text(value, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
         }
+        // DEB-4071 (DEB-3995 FR-8) — Downloads' size, bold, at the row's end before the chevron.
+        if (trailing != null) { Text(trailing, color = colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora); Spacer(Modifier.width(12.dp)) }
         if (dot) { dev.jellystructure.ravilo.ui.components.UpdateDot(ring = colors.surface); Spacer(Modifier.width(12.dp)) }
         if (external) ExternalLinkGlyph(colors.textDim, 16.dp) else Text("›", color = colors.textDim, fontSize = 20.sp)
     }
@@ -385,6 +391,12 @@ private val DANGER = Color(0xFFF5667A)
 private val AVATAR = 76.dp
 private val TILE_WIDTH = 112.dp
 private const val MY_LIST_ROW_SIZE = 12
+
+/** DEB-4071 (FR-8) — what the Profile page needs to draw its Downloads row. */
+class ProfileDownloads(val bytes: Long, val onOpen: () -> Unit)
+
+/** The Downloads row of the Account card. */
+internal const val PROFILE_DOWNLOADS_TAG = "profile-downloads"
 
 /** The *Account* heading — what FR-R304-7's test reads to see whether anything above it moved. */
 internal const val PROFILE_ACCOUNT_TAG = "profile-account"
@@ -446,7 +458,7 @@ internal fun MyListRow(
             }
         } else {
             items(cards, key = { it.id }) { card ->
-                Box(Modifier.width(tileWidth)) { Tile(title = card.title, posterUrl = card.posterUrl, onSelect = { onItemSelect(card) }) }
+                Box(Modifier.width(tileWidth)) { Tile(title = card.title, posterUrl = card.posterUrl, downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id), onSelect = { onItemSelect(card) }) }
             }
         }
     }

@@ -52,10 +52,10 @@ import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 
 /** FR-8 — the round's amber for a failure, and its green for *Downloaded*. */
-private val Amber = Color(0xFFF0C07A)
+internal val Amber = Color(0xFFF0C07A)
 private val AmberLine = Color(0x8CF5B542)
 private val AmberFill = Color(0x1FF5B542)
-private val Good = Color(0xFF7FE4C0)
+internal val Good = Color(0xFF7FE4C0)
 private val GoodFill = Color(0x1F2DD49A)
 private val GoodLine = Color(0x852DD49A)
 
@@ -84,7 +84,7 @@ fun rememberDownloadControlWidth(): Dp {
 
 /** The glyphs of the round: an arrow into a line, a clock and a warning triangle. Drawn, so they take the label's colour. */
 @Composable
-private fun DownloadGlyph(kind: ControlState, tint: Color, size: Dp = 17.dp) {
+internal fun DownloadGlyph(kind: ControlState, tint: Color, size: Dp = 17.dp) {
     when (kind) {
         ControlState.DOWNLOADED -> CheckGlyph(tint, size)
         ControlState.PERCENT -> Unit
@@ -275,11 +275,12 @@ fun QualitySheet(
 data class DownloadAction(val label: String, val destructive: Boolean = false, val run: () -> Unit)
 
 @Composable
-fun DownloadActionSheet(visible: Boolean, title: String?, actions: List<DownloadAction>, onDismiss: () -> Unit) {
+fun DownloadActionSheet(visible: Boolean, title: String?, actions: List<DownloadAction>, onDismiss: () -> Unit, body: String? = null) {
     val colors = RaviloTheme.colors
     HandsetSheet(visible = visible, onDismiss = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             if (title != null) Text(title, color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            if (body != null) Text(body, color = colors.textSecondary, fontSize = 13.5.sp, fontFamily = Sora)
             actions.forEach { a ->
                 Box(
                     Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(13.dp)).background(colors.fg.copy(alpha = 0.06f))

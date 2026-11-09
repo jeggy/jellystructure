@@ -178,6 +178,9 @@ private fun MovieDetailLoaded(
         onPlay = { onPlay(detail) },
     ) else null
     val downloadWidth = if (downloadPanel != null) dev.jellystructure.ravilo.ui.downloads.rememberDownloadControlWidth() else null
+    // DEB-4071 (FR-9, FR-10) — the Downloads page keeps *Watched* true to the server's word, read from this page (never a write).
+    val playedHere = overlay[detail.card.id]?.played
+    LaunchedEffect(downloads, detail.card.id, playedHere) { if (playedHere != null) downloads?.observe(detail.card.id, playedHere) }
 
     val playFR = remember { FocusRequester() }
     val genreFR = remember { FocusRequester() }   // R221 — first (lead) genre chip
@@ -481,6 +484,7 @@ private fun MovieDetailLoaded(
                                 upcomingLabel = card.upcomingEpisode,
                                 upcomingAirUtc = card.upcomingAirUtc,
                                 qualityBadge = card.qualityBadge,   // R325
+                                downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

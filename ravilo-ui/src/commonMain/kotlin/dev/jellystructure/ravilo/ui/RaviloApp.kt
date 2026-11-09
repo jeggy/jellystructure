@@ -404,6 +404,8 @@ internal sealed class Dest {
     data class AudiobookAuthor(val id: String, val displayName: String) : Dest()
     // DEB-1501 — the viewer's support lane, reached from Profile (phone, web, Mac, Linux; never a TV). [SupportThread.number]
     // null is the first message of a ticket not yet filed; [seed] is the thread the 201 that filed it returned.
+    /** DEB-4071 (DEB-3995 FR-9) — the phone's Downloads page, reached from Profile's Account card. Draws nothing on a device with no download controller. */
+    data class Downloads(val displayName: String) : Dest()
     data class SupportList(val displayName: String) : Dest()
     data class SupportThread(val displayName: String, val number: Long?, val seed: dev.jellystructure.shared.tv.SupportThread? = null) : Dest()
 
@@ -442,6 +444,7 @@ internal sealed class Dest {
         is PlaylistDetail -> "/music/playlist/$id"
         is AudiobookDetail -> "/music/audiobook/$id"
         is AudiobookAuthor -> "/music/audiobook-author/$id"
+        is Downloads      -> "/downloads"   // DEB-4071
         is SupportList    -> "/support"
         is SupportThread  -> if (number == null) "/support/new" else "/support/$number"
     }
@@ -467,6 +470,7 @@ internal fun routeToDest(route: String, displayName: String): Dest? {
             "livetv-guide" -> Dest.LiveTvGuide(displayName)
             "settings" -> Dest.Settings(displayName)
             "profile" -> Dest.Profile(displayName)
+            "downloads" -> Dest.Downloads(displayName)   // DEB-4071
             "support" -> Dest.SupportList(displayName)
             else -> null
         }
@@ -558,6 +562,15 @@ fun RaviloApp(
     // operator's per-user switch, false from an older server) decides whether this viewer sees any of it.
     val downloadsController = remember(apiClient) { dev.jellystructure.ravilo.ui.downloads.platformDownloads(apiClient) }
     var downloadsEnabled by remember { mutableStateOf(false) }
+    // DEB-4071 (FR-8) — what is fully on this phone, for the mark on cards and episode thumbs. Empty wherever there is no download surface.
+    val downloadPhases = downloadsController?.phases?.collectAsState()?.value.orEmpty()
+    val downloadedIdSet = remember(downloadPhases, downloadsEnabled) {
+        if (downloadsEnabled) dev.jellystructure.ravilo.ui.downloads.downloadedIds(downloadPhases) else emptySet()
+    }
+    val downloadRecords = downloadsController?.records?.collectAsState()?.value.orEmpty()
+    val profileDownloadBytes = remember(downloadRecords, downloadPhases) {
+        dev.jellystructure.ravilo.ui.downloads.buildDownloadsPage(downloadRecords, downloadPhases).profileBytes
+    }
     // DEB-1738 — false until the first config answer; see the Support lane's close-on-off effect.
     var configAnswered by remember { mutableStateOf(false) }
     // DEB-1854 (FR-6, FR-7) — server-resolved per viewer, so it rides the same config read; the form until it says otherwise.
@@ -1074,6 +1087,7 @@ fun RaviloApp(
             is Dest.PlaylistDetail -> d.displayName
             is Dest.AudiobookDetail -> d.displayName; is Dest.AudiobookAuthor -> d.displayName   // R323
             is Dest.SupportList -> d.displayName; is Dest.SupportThread -> d.displayName   // DEB-1501
+            is Dest.Downloads -> d.displayName   // DEB-4071
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -1386,7 +1400,7 @@ fun RaviloApp(
             d is Dest.Browse && d.kind != BrowseKind.MY_LIST -> BottomNavItem.LIBRARY
             d is Dest.Search -> BottomNavItem.SEARCH
             d is Dest.Discover -> BottomNavItem.DISCOVER
-            d is Dest.Profile -> BottomNavItem.PROFILE   // R304 (FR-R304-1) — a page, so it takes the pill
+            d is Dest.Profile || d is Dest.Downloads -> BottomNavItem.PROFILE   // R304 (FR-R304-1) — a page, so it takes the pill; DEB-4071: Downloads is Profile's child
             d is Dest.MusicListen -> BottomNavItem.LISTEN   // R321 (FR-R321-4)
             d is Dest.MusicBrowse -> BottomNavItem.BROWSE
             d is Dest.MusicPlaying -> BottomNavItem.PLAYING
@@ -2143,6 +2157,7 @@ fun RaviloApp(
             // R380 (FR-R380-6) — the TV app bar's now-playing pill opens Now playing.
             // DEB-3984 (FR-12/13) — the bar's Surprise me pill: a TV, on a server that sends `surprise_me`.
             dev.jellystructure.ravilo.ui.downloads.LocalDownloads provides (if (downloadsEnabled) downloadsController else null),
+            dev.jellystructure.ravilo.ui.downloads.LocalDownloadedIds provides downloadedIdSet,   // DEB-4071 (FR-8)
             dev.jellystructure.ravilo.ui.components.LocalSurpriseMe provides (if (isTvPlatform && surpriseMe) { -> askSurprise(emptyList(), replace = false) } else null),
             dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying provides (if (isTvPlatform) { -> if (dest !is Dest.TvNowPlaying) push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty())) } else null),
             LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
@@ -3148,6 +3163,13 @@ fun RaviloApp(
                     passwordRow = passwordRow,
                     onSignInTv = { push(Dest.SignInTv(dest.displayName)) },   // DEB-2233 (FR-6)
                     onSettings = { push(Dest.Settings(dest.displayName)) },
+                    // DEB-4071 (FR-8) — *Downloads · {size}* in the Account card: this profile's total, opening the page. Only where downloads are on.
+                    downloads = downloadsController?.takeIf { downloadsEnabled }?.let { dc ->
+                        dev.jellystructure.ravilo.ui.screens.ProfileDownloads(
+                            bytes = profileDownloadBytes,
+                            onOpen = { push(Dest.Downloads(dest.displayName)) },
+                        )
+                    },
                     // DEB-1501 (FR-1) — the Support row, after Settings, while the flag is on.
                     onSupport = if (supportLaneOpen) ({ push(Dest.SupportList(dest.displayName)) }) else null,
                     // R191's shape: this one profile is revoked/forgotten; another cached profile goes to
@@ -3301,6 +3323,13 @@ fun RaviloApp(
                     // FR-5 — a 404 goes back to My tickets; the lane going closed is FR-1's pop, from the flag.
                     onGone = { pop() },
                 )
+            }
+
+            // DEB-4071 (DEB-3995 FR-9, FR-10, FR-12) — the Downloads page. A device with no download surface has nothing to show: back to Profile.
+            is Dest.Downloads -> {
+                val dc = downloadsController?.takeIf { downloadsEnabled }
+                if (dc == null) LaunchedEffect(Unit) { replaceTop(Dest.Profile(dest.displayName)) }
+                else dev.jellystructure.ravilo.ui.downloads.DownloadsScreen(controller = dc, onBack = { pop() })
             }
 
             is Dest.Settings -> {

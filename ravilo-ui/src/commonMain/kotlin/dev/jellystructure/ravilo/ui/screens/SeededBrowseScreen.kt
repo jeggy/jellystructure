@@ -1179,6 +1179,7 @@ private fun BrowseCardGrid(
                     upcomingLabel = card.upcomingEpisode,
                     upcomingAirUtc = card.upcomingAirUtc,
                     qualityBadge = card.qualityBadge,   // R325
+                    downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
                     // R55 / R257 — the first cell's own requester, always on it (R362 review item 2: it used to
                     // step aside for a restore target and leave Down from the facet bar with nothing to reach).
                     focusRequester = if (i == 0) firstCellFR else null,

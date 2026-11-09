@@ -328,6 +328,7 @@ fun ChannelScreen(
                                             upcomingLabel = card.upcomingEpisode,
                                             upcomingAirUtc = card.upcomingAirUtc,
                                             qualityBadge = card.qualityBadge,   // R325
+                                            downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
                                             focusRequester = fr ?: if (ri == 0 && idx == 0) firstTileFR else null,  // R139
                                             onSelect = { store.rememberReturn(row.id, card.id, ri, idx); onItemSelect(card) },  // R139 / R361
                                         )

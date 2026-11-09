@@ -41,6 +41,8 @@ interface DownloadEngine {
     fun remove(id: String)
     /** Bytes free on the volume `filesDir` is on. */
     fun freeBytes(): Long
+    /** Size of that volume: the storage bar's whole (FR-9). 0 when it cannot be read. */
+    fun totalBytes(): Long
     /** The ids the engine is running or has queued (not paused, not finished). */
     fun busy(): Boolean
 }

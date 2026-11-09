@@ -419,6 +419,9 @@ internal fun SeriesDetailLoaded(
         },
     ) else null
 
+    // DEB-4071 (FR-9, FR-10) — the Downloads page keeps each episode's *Watched* true to the server's word, read from this page (never a write).
+    LaunchedEffect(downloads, overlay) { if (downloads != null) overlay.forEach { (id, ps) -> downloads.observe(id, ps.played) } }
+
     // R84: derive all progress values from the phase-2 overlay (empty map = not yet loaded)
     val allEps = remember(detail) { detail.seasons.flatMap { it.episodes } }
     // R346 (FR-R346-1/4) — the watched counts, finished and Shuffle's set are the episodes that count:
@@ -1047,6 +1050,7 @@ internal fun SeriesDetailLoaded(
                                             isResumeEpisode = overlayLoaded && !nf && ep.id == resumeEpId,   // DEB-2938 (FR-11) — no UP NEXT on a newest-first series
                                             airLabel = if (nf) airDateLabel(ep.airDate) else null,   // DEB-2938 (FR-9)
                                             newRibbon = newRibbon && ep.id == newest?.id,   // DEB-2938 (FR-12)
+                                            downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(ep.id),   // DEB-4071 (FR-8)
                                             playstateOverride = overlay[ep.id],
                                             seasonNumber = currentSeason?.index,   // R350 (FR-R350-10) — S01E05 on the card
                                             onSelect = { playCard(ep.id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay, lang)) },
@@ -1109,6 +1113,7 @@ internal fun SeriesDetailLoaded(
                                 upcomingLabel = card.upcomingEpisode,
                                 upcomingAirUtc = card.upcomingAirUtc,
                                 qualityBadge = card.qualityBadge,   // R325
+                                downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

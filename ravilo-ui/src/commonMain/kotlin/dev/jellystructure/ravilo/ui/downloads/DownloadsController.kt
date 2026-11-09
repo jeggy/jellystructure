@@ -69,6 +69,14 @@ class DownloadsController(
     /** This viewer's downloads by item id. */
     val phases: StateFlow<Map<String, DownloadPhase>> = _phases.asStateFlow()
 
+    private val _records = MutableStateFlow<List<DownloadRecord>>(emptyList())
+    /** DEB-4071 — this viewer's records (what the Downloads page lists), re-read whenever [refresh] runs. */
+    val records: StateFlow<List<DownloadRecord>> = _records.asStateFlow()
+
+    private val _otherBytes = MutableStateFlow(0L)
+    /** FR-12 — what every other profile on this phone holds on the disk: a number, never a title. */
+    val otherBytes: StateFlow<Long> = _otherBytes.asStateFlow()
+
     private val pumpLock = Mutex()
     private val renewals = HashMap<String, Int>()
     private val lastPercent = HashMap<String, Int>()
@@ -80,6 +88,7 @@ class DownloadsController(
     fun setWifiOnly(on: Boolean) { prefs.wifiOnly = on }
     fun lastQuality(kind: String): String? = prefs.lastQuality(kind)
     fun freeBytes(): Long = engine.freeBytes()
+    fun totalBytes(): Long = engine.totalBytes()
     /** What a delete of this title frees, by the size the sheet showed (FR-10's confirm names it). */
     fun recordBytes(itemId: String): Long = userId()?.let { library.get(it, itemId)?.bytes } ?: 0L
     fun resetAllowed() { _allowed.value = true }
@@ -156,7 +165,9 @@ class DownloadsController(
     /** Re-read this viewer's downloads: the app calls it when the signed-in profile changes. */
     fun refresh() {
         val u = userId()
-        if (u == null) { _phases.value = emptyMap(); return }
+        if (u == null) { _phases.value = emptyMap(); _records.value = emptyList(); _otherBytes.value = 0L; return }
+        _records.value = library.records(u)
+        _otherBytes.value = otherHeldBytes(u)
         val out = HashMap<String, DownloadPhase>()
         library.records(u).filter { it.state == RecordState.QUEUED }.forEach { out[it.itemId] = DownloadPhase.Queued }
         engine.phases.value.forEach { (id, p) ->
@@ -165,6 +176,60 @@ class DownloadsController(
         // A `start` the server refused for good (the title is gone, the quality is not offered) is a failure the viewer can retry or delete.
         startFailures.forEach { (id, status) -> if (downloadUserId(id) == u) out[downloadItemId(id)] = DownloadPhase.Failed(status) }
         _phases.value = out
+    }
+
+    /** What the other profiles hold on the disk now: a finished one's whole size, a running one's part. Counts; never names. */
+    private fun otherHeldBytes(u: String): Long {
+        val phases = engine.phases.value
+        return library.users().filter { it != u }.sumOf { other ->
+            library.records(other).sumOf { r ->
+                heldBytes(r, phases[downloadId(other, r.itemId)] ?: DownloadPhase.None)
+            }
+        }
+    }
+
+    /**
+     * FR-9, FR-10 — what the page can do with the viewer's own downloads. Every one of these frees the space at once: the engine drops the
+     * media, the record goes, and [refresh] puts the new totals on the page before the call returns.
+     */
+    fun deleteMany(itemIds: Collection<String>) {
+        val u = userId() ?: return
+        itemIds.toSet().forEach { id ->
+            engine.remove(downloadId(u, id))
+            library.remove(u, id)
+            val key = downloadId(u, id)
+            renewals.remove(key); startFailures.remove(key); lastPercent.remove(key); renewedAt.remove(key)
+        }
+        refresh()
+        scope.launch { pump() }
+    }
+
+    /** *Delete watched* (FR-10): every download on the phone marked watched. A running one is not "watched". */
+    fun deleteWatched() = deleteMany(
+        buildDownloadsPage(_records.value, _phases.value).downloaded.filter { it.watched }.map { it.itemId },
+    )
+
+    /** *Delete all* (FR-10): everything of this profile, running entries included. */
+    fun deleteAll() = deleteMany(_records.value.map { it.itemId })
+
+    /** FR-12 — *Other profiles on this phone · Delete*: their media and records go, and their titles are never shown. */
+    fun deleteOtherProfiles() {
+        val u = userId() ?: return
+        engine.phases.value.keys.filter { downloadUserId(it) != u }.forEach { engine.remove(it) }
+        library.users().filter { it != u }.forEach { library.removeAll(it) }
+        refresh()
+    }
+
+    /**
+     * FR-9, FR-10 — the server's word on one title, read from a page the viewer opened (never a write): the page keeps *Watched* and *Delete
+     * watched* true to it. Slice 5's reconnect refresh sets the same fields for every download at once. Unknown ids are ignored.
+     */
+    fun observe(itemId: String, watched: Boolean) {
+        val u = userId() ?: return
+        val r = library.get(u, itemId) ?: return
+        if (r.watched == watched) return
+        library.upsert(u, r.copy(watched = watched))
+        refresh()
     }
 
     private suspend fun onEngineChanged(all: Map<String, DownloadPhase>) {

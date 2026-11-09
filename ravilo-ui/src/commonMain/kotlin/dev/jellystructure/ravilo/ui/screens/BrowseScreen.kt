@@ -523,6 +523,7 @@ private fun BrowseGrid(
                     upcomingLabel = card.upcomingEpisode,
                     upcomingAirUtc = card.upcomingAirUtc,
                     qualityBadge = card.qualityBadge,   // R325
+                    downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
                     // R55: the first cell is the back-to-top landing target (always: R362 review item 2).
                     focusRequester = if (i == 0) firstCellFR else null,
                     onSelect = { onItemSelect(card) },
