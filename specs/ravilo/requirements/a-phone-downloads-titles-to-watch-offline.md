@@ -291,3 +291,75 @@ changed or removed.
    none of them and can delete them only as *Other profiles on this phone*.
 7. A viewer switched off by the operator sees no Download control, and the routes answer `403`.
 8. A TV, the web and the desktop show no download control.
+
+## Amendment 2026-11-09: the design round is adopted
+
+The round `design/incoming/2026-11-09-phone-downloads/` (commit `78228352`) settles the geometry that
+"Design round first" above left open. Its `Phone Downloads - Directions.html` is the reference the
+Compose port is built from: exact sizes, colours and the three-language string table. The owner picked
+from the pictures on card `7c8bec51`. The changes are below, and every FR not named here stands as
+written.
+
+**FR-8, amended: the control sits beside Play** (owner: *beside Play*). On the film and episode pages
+the action row is **Play · Download · My List**:
+- My List becomes a 44 dp icon-only button. Its label stays as the accessibility description.
+- **Play must not move.** The round showed that a control which resizes with its state squeezes Play to
+  about 82 dp in Danish. So the Download control has **one fixed width per language**, taken from the
+  widest of its short labels, and Play takes the rest of the row. Neither changes width while a download
+  runs.
+- The short labels are *Download*, *Queued*, *n %* (the progress fills the control), *Downloaded*
+  (green, as drawn), and, for a failure, a warning glyph with `download.retry` ("Retry"). Tapping *Retry*
+  restarts the download. The reason it failed shows in a short message, never inside the control.
+- The *Downloaded* control's Play / Delete choice is as drawn in `b-film-downloaded-menu`.
+
+**FR-8, amended: the mark** (owner: *"White chip bottom left. But only shown when it has been downloaded
+and for non downloaded things it should show nothing on the poster, like now"*).
+- The mark is a **white chip** (`#f3f4fb`, `#0a0c13` arrow-into-a-line glyph 12 × 12, stroke 2.4):
+  - on a poster: **20 × 20 dp, radius 7, inset 7 dp from the bottom-left corner**;
+  - on a 16:9 episode thumb: **18 × 18 dp, radius 6, inset 5 dp**.
+- It appears **only on a title that is fully on this phone**. A title that is not downloaded, or is still
+  queued, downloading or failed, shows **nothing new on its card**: posters look exactly as today.
+- The mark clears the Continue progress bar by 4 dp and leaves the quality badge (top-right) and the
+  watched tick (bottom-right) untouched. An episode that is both downloaded and watched shows both.
+
+**FR-10, amended: every swipe confirms** (owner: *a confirm on every swipe*). A swipe or a single
+*Delete* opens a confirm naming the title and what it frees: `download.delete_one_confirm` ("Delete
+{title}? This frees {size}."), with Delete and Cancel. Cancel puts the entry back exactly as it was.
+Multi-select's *Delete · {size}*, a series header's delete, Delete watched and Delete all confirm the
+same way, each naming its size. Delete watched and Delete all live in the page's ⋮ menu, each showing
+the space it frees (*Delete watched · 7.5 GB*), beside **Select**.
+
+**FR-9, amended: a Downloading block at the top** (owner: *a Downloading block at the top of the
+page*).
+- **The block:** above Films sits a **Downloading** block (`download.downloading`). It holds every entry
+  that is running, queued, waiting for Wi-Fi, waiting for the server, paused or failed, in queue order.
+  Each entry shows its progress or its waiting line, and pause/resume and cancel. The block disappears
+  when it is empty.
+- **The lists below:** Films and Series list only titles that are fully on the phone. An entry moves
+  from the block into its list when it finishes.
+- **The storage bar:** one bar with an inline legend (Ravilo · Other apps · Free). Its *Ravilo* segment
+  is everything Ravilo holds on the phone, **including other profiles'**, because that is the space the
+  app uses. FR-12's *Other profiles on this phone · {size}* row sits directly beneath it. The title bar,
+  Profile's Downloads row and Delete all name **this profile's** total.
+
+**FR-5, as drawn.** A season sheet's rows show the season's total per quality. Its button names what
+pressing it downloads, counting only episodes not yet on the phone. The `download.season_have` line
+between them says how many are already there.
+
+**Strings, amended.**
+- `download.sheet_title` reads "Choose a quality".
+- `download.empty` is the round's invitation, naming the flight-mode case.
+- `settings.wifi_only` gains the sub-line `settings.wifi_only_sub`.
+- The round adds, in its table: `download.empty_title`, `download.delete_all_title`,
+  `download.space_title`, `download.seg_ravilo`, `download.seg_other`, `download.seg_free`,
+  `download.select`, `download.n_selected`, `download.sheet_button`, `download.season_have`,
+  `download.loading`, `download.pause`, `download.resume`.
+- This amendment adds `download.retry`, `download.delete_one_confirm` and `download.downloading`, to be
+  translated alongside the others.
+- None names Jellyfin.
+
+**Acceptance, added.**
+- **9.** In Danish and Faroese, Play keeps the same width through all five download states.
+- **10.** A poster for a title that is not downloaded looks exactly as it does today.
+- **11.** A swipe on an entry asks before deleting, and Cancel restores it.
+- **12.** A running download shows at the top of the Downloads page.
