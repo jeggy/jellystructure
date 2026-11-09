@@ -154,3 +154,25 @@ colour, is what keeps the bottom of steps 4 and 5 on screen if the title bar sit
 is not known without a Mac: acceptance 1 gains a measurement — *on the Mac under test, are steps 4 and 5 whole, and
 is the bottom edge of the window the drawn background?* If the title bar is outside the bounds the strip shows as
 28 pt of the same dark colour under the drawing, and nothing else changes.
+
+## Amendment (2026-11-09): the page's five-step section is withdrawn; the `.dmg` window stays (DEB-4129)
+
+> Owner, 2026-11-09 (DEB-4129): *"Not high priority. "Opening Ravilo on a Mac" section on the
+> jellystructure.jebster.net website is pointless, lets remove it."*
+
+**FR-3 is withdrawn**, both the original and its 2026-10-22 replacement. The download page goes back to the cards alone:
+
+- **The `#open-on-mac` section is removed** from `ravilo.html`: its heading, FR-2's lead sentence, the five steps and
+  the FR-6 line about work-managed Macs. Its five pictures (`assets/img/mac-open-anyway-step-{1..5}-*.png`) and its
+  `.oa-*` CSS rules are removed with it, so the page ships nothing it no longer shows.
+- **The Mac card's `dl-note` stops pointing below.** It becomes one line that is still true, with no link:
+  *"Not notarised. macOS asks twice on every download: each time, choose **Open Anyway** in System Settings ▸ Privacy &
+  Security."* It does not say "the first time" (FR-2's rule still holds on the one line that is left).
+- *Download .dmg* stays the card's primary action, where it is. The Android and Linux cards are untouched.
+
+**Unchanged:** FR-1's sequence and FR-5's drawn-not-screenshot rule, for what the `.dmg` window shows; **FR-4**, the
+window itself with steps 4 and 5; FR-6, for the window; FR-7. Nothing in the app or the `.dmg` changes.
+
+**Acceptance 4 is replaced:** the served `ravilo.html` has no `open-on-mac` id and no `mac-open-anyway-step` reference,
+the five pictures are no longer served, the Mac card's note is the one line above, and `the first time` reads 0 on the
+page. Acceptance 2 now covers the `.dmg` window's steps only; steps 1 and 2 are left to the card's line.
