@@ -168,6 +168,17 @@ private fun MovieDetailLoaded(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
+    // DEB-4070 (DEB-3995 FR-1, FR-2, FR-8) — the phone's Download control, beside Play. Null on a TV, the web and the desktops, and on a
+    // server whose config does not say `downloads`: the page then draws exactly what it drew before.
+    val downloads = dev.jellystructure.ravilo.ui.downloads.LocalDownloads.current
+    val downloadsAllowed = downloads?.allowed?.collectAsState()?.value != false
+    val downloadPanel = if (downloads != null) dev.jellystructure.ravilo.ui.downloads.rememberTitleDownloadPanel(
+        downloads,
+        dev.jellystructure.ravilo.ui.downloads.DownloadTarget(itemId = detail.card.id, kind = "movie", title = detail.card.title, runtimeMinutes = detail.runtime),
+        onPlay = { onPlay(detail) },
+    ) else null
+    val downloadWidth = if (downloadPanel != null) dev.jellystructure.ravilo.ui.downloads.rememberDownloadControlWidth() else null
+
     val playFR = remember { FocusRequester() }
     val genreFR = remember { FocusRequester() }   // R221 — first (lead) genre chip
     val synopsisFR = remember { FocusRequester() }   // R135
@@ -372,6 +383,8 @@ private fun MovieDetailLoaded(
                             modifier = Modifier.widthIn(min = 200.dp),
                             onSelect = { onPlay(detail) },
                         )
+                        // DEB-4070 (FR-8, amended) — Play · Download · My List: the control has one fixed width per language, so Play never moves.
+                        if (downloadPanel != null && downloadWidth != null && downloadsAllowed) downloadPanel.Control(downloadWidth)
                         // DEB-3984 (FR-12) — Surprise me's next title; this page is replaced, so one Back still leaves the run.
                         if (onAnother != null) RaviloButton(
                             label = str("detail.another"),
@@ -390,7 +403,10 @@ private fun MovieDetailLoaded(
                         // read path existed, for the My List browse grid's own filter). Now a real
                         // write-through toggle, same pattern as Mark Watched just above.
                         val favorite = ps?.favorite == true
-                        RaviloButton(
+                        if (downloadPanel != null) {
+                            // FR-8 (amended) — My List becomes a 44 dp icon; its label stays as the accessibility description.
+                            dev.jellystructure.ravilo.ui.downloads.MyListIconButton(favorite, str("nav.my_list"), onClick = { onMarkFavorite(!favorite) })
+                        } else RaviloButton(
                             label = if (favorite) "− ${str("nav.my_list")}" else "+ ${str("nav.my_list")}",
                             style = ButtonStyle.GHOST,
                             onSelect = { onMarkFavorite(!favorite) },
@@ -408,6 +424,11 @@ private fun MovieDetailLoaded(
                                 onSelect = { showTrailer = true },
                             )
                         }
+                    }
+                    // DEB-4070 — why a download is waiting or failed (FR-6, FR-7), or that this viewer may not download (FR-2).
+                    if (downloadPanel != null) {
+                        if (!downloadsAllowed) Text(str("download.not_allowed"), color = colors.textSecondary, fontSize = 12.5.sp, modifier = Modifier.padding(horizontal = raviloHPad).padding(top = 8.dp))
+                        else downloadPanel.StatusLine(Modifier.padding(horizontal = raviloHPad).padding(top = 8.dp))
                     }
                 }
             }
@@ -487,6 +508,9 @@ private fun MovieDetailLoaded(
             onSearch = onSearch,
             scrolled = appBarScrolled,
         )
+
+        // DEB-4070 — the quality sheet, the control's menu and the delete confirm: page-level overlays, over the AppBar too.
+        downloadPanel?.Overlays()
 
         // R163: fullscreen embedded trailer, last child so it paints over the AppBar too.
         // Cross-module `val` properties (detail.trailer is declared in :shared) aren't smart-cast —

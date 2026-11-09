@@ -80,6 +80,8 @@ class DownloadsController(
     fun setWifiOnly(on: Boolean) { prefs.wifiOnly = on }
     fun lastQuality(kind: String): String? = prefs.lastQuality(kind)
     fun freeBytes(): Long = engine.freeBytes()
+    /** What a delete of this title frees, by the size the sheet showed (FR-10's confirm names it). */
+    fun recordBytes(itemId: String): Long = userId()?.let { library.get(it, itemId)?.bytes } ?: 0L
     fun resetAllowed() { _allowed.value = true }
 
     init {
@@ -100,11 +102,14 @@ class DownloadsController(
         throw e
     }
 
-    /** FR-3, FR-5 — queue [targets] at [option], in the order given; the last quality picked is remembered (FR-17). */
-    fun download(targets: List<DownloadTarget>, option: DownloadOption) {
+    /** FR-3 — queue [targets] at [option], in the order given; the last quality picked is remembered (FR-17). */
+    fun download(targets: List<DownloadTarget>, option: DownloadOption) = downloadEach(targets.map { it to option })
+
+    /** FR-5 — a season: each episode at the quality's own size for that episode, in the order given. */
+    fun downloadEach(items: List<Pair<DownloadTarget, DownloadOption>>) {
         val u = userId() ?: return
-        if (targets.isEmpty()) return
-        targets.forEach { t ->
+        if (items.isEmpty()) return
+        items.forEach { (t, option) ->
             library.upsert(
                 u,
                 DownloadRecord(
@@ -114,8 +119,9 @@ class DownloadsController(
                     queuedAt = now() * 1000 + (tick++ % 1000), state = RecordState.QUEUED,
                 ),
             )
+            startFailures.remove(downloadId(u, t.itemId))
         }
-        prefs.setLastQuality(targets.first().kind, option.quality)
+        prefs.setLastQuality(items.first().first.kind, items.first().second.quality)
         refresh()
         scope.launch { pump() }
     }

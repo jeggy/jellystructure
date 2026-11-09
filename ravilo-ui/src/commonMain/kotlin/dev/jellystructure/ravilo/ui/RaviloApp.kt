@@ -554,6 +554,10 @@ fun RaviloApp(
     var configRefreshes by remember { mutableStateOf(0) }
     // R324 (dev review 12) — `RaviloConfig.cast.music`: the receiver on this server plays music queues (286).
     var castMusic by remember { mutableStateOf(false) }
+    // DEB-4070 (DEB-3995 FR-1, FR-2) — the phone's downloads. The controller exists only on an Android phone; the config's `downloads` (the
+    // operator's per-user switch, false from an older server) decides whether this viewer sees any of it.
+    val downloadsController = remember(apiClient) { dev.jellystructure.ravilo.ui.downloads.platformDownloads(apiClient) }
+    var downloadsEnabled by remember { mutableStateOf(false) }
     // DEB-1738 — false until the first config answer; see the Support lane's close-on-off effect.
     var configAnswered by remember { mutableStateOf(false) }
     // DEB-1854 (FR-6, FR-7) — server-resolved per viewer, so it rides the same config read; the form until it says otherwise.
@@ -578,6 +582,8 @@ fun RaviloApp(
                 uiScalePct = cfg.uiScalePct   // DEB-3966 (FR-6) — live on the next config rev
                 headerStyle = cfg.headerStyle // DEB-3967 (FR-8) — likewise
                 surpriseMe = cfg.surpriseMe   // DEB-3984 (FR-13) — absent from an older server, so false
+                downloadsEnabled = cfg.downloads   // DEB-4070 (FR-2) — absent from an older server, so false: the control stays hidden
+                downloadsController?.let { it.resetAllowed(); it.refresh() }   // a new read of the switch; and the profile may have changed
                 gridColumns = cfg.gridColumns
                 portraitGridColumns = cfg.portrait?.gridColumns ?: 2
             }
@@ -2136,6 +2142,7 @@ fun RaviloApp(
         CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive,
             // R380 (FR-R380-6) — the TV app bar's now-playing pill opens Now playing.
             // DEB-3984 (FR-12/13) — the bar's Surprise me pill: a TV, on a server that sends `surprise_me`.
+            dev.jellystructure.ravilo.ui.downloads.LocalDownloads provides (if (downloadsEnabled) downloadsController else null),
             dev.jellystructure.ravilo.ui.components.LocalSurpriseMe provides (if (isTvPlatform && surpriseMe) { -> askSurprise(emptyList(), replace = false) } else null),
             dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying provides (if (isTvPlatform) { -> if (dest !is Dest.TvNowPlaying) push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty())) } else null),
             LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->

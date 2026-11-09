@@ -1163,6 +1163,22 @@ private fun SettingsContent(
         Spacer(Modifier.height(6.dp))
         Text(str("ab.sleep_fade_sub"), color = colors.textSecondary, fontSize = 13.sp)
     }
+    // DEB-4070 (DEB-3995 FR-17) — Downloads: *Wi-Fi only*, on this phone only. Device-local (it depends on this phone's network, not on the
+    // viewer): never synced and never in the server config. Drawn only where the phone has downloads at all.
+    dev.jellystructure.ravilo.ui.downloads.LocalDownloads.current?.let { downloads ->
+        Spacer(Modifier.height(32.dp))
+        SectionHeader(str("settings.downloads"))
+        Spacer(Modifier.height(12.dp))
+        var wifiOnly by remember { mutableStateOf(downloads.wifiOnly) }
+        ToggleRow(
+            label = str("settings.wifi_only"),
+            checked = wifiOnly,
+            focusRequester = remember { FocusRequester() },
+            onToggle = { wifiOnly = !wifiOnly; downloads.setWifiOnly(wifiOnly) },
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(str("settings.wifi_only_sub"), color = colors.textSecondary, fontSize = 13.sp)
+    }
     // R350 re-test (FR-R350-16) — no focus grab here any more: this put the Playback toggle under the viewer's OK on
     // arrival. SettingsScreen keeps focus on ‹ Back, at the top.
 

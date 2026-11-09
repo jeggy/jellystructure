@@ -9,6 +9,8 @@ data class QualityRow(
     val selected: Boolean,
     /** How much must be freed for this row to fit; 0 when it does. Feeds `download.no_room`'s `{size}`. */
     val shortfallBytes: Long,
+    /** What pressing the button downloads at this row: the row's size for a title; for a season, only the episodes not already on the phone. */
+    val downloadBytes: Long = option.bytes,
 )
 
 /**
@@ -40,7 +42,7 @@ private fun rowsFor(options: List<DownloadOption>, freeBytes: Long, lastPick: St
         ?: sorted.firstOrNull { fits(it.bytes, freeBytes) }
     return sorted.map { o ->
         val ok = fits(o.bytes, freeBytes)
-        QualityRow(o, enabled = ok, selected = o === pick, shortfallBytes = if (ok) 0L else o.bytes - (freeBytes - DOWNLOAD_RESERVE_BYTES))
+        QualityRow(o, enabled = ok, selected = o === pick, shortfallBytes = if (ok) 0L else o.bytes - (freeBytes - DOWNLOAD_RESERVE_BYTES), downloadBytes = o.bytes)
     }
 }
 
@@ -81,7 +83,7 @@ fun buildSeasonSheet(episodes: List<SeasonEpisode>, freeBytes: Long, lastPick: S
     val rows = sorted.map { o ->
         val need = fetchBytes(o.quality)
         val ok = fits(need, freeBytes)
-        QualityRow(o, enabled = ok, selected = o === pick, shortfallBytes = if (ok) 0L else need - (freeBytes - DOWNLOAD_RESERVE_BYTES))
+        QualityRow(o, enabled = ok, selected = o === pick, shortfallBytes = if (ok) 0L else need - (freeBytes - DOWNLOAD_RESERVE_BYTES), downloadBytes = need)
     }
     return QualitySheetModel(
         rows = rows,

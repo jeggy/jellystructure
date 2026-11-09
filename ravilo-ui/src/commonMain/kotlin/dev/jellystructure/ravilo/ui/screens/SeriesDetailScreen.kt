@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -404,6 +405,19 @@ internal fun SeriesDetailLoaded(
     }
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
     val episodes: List<Episode> = currentSeason?.episodes ?: emptyList()
+    // DEB-4070 (DEB-3995 FR-5) — *Download season* on the phone: the season's episodes, in episode order, each a download of its own.
+    // Null on a TV, the web and the desktops, and on a server whose config does not say `downloads`.
+    val downloads = dev.jellystructure.ravilo.ui.downloads.LocalDownloads.current
+    val downloadsAllowed = downloads?.allowed?.collectAsState()?.value != false
+    val seasonPanel = if (downloads != null) dev.jellystructure.ravilo.ui.downloads.rememberSeasonDownloadPanel(
+        downloads,
+        episodes.sortedBy { it.episodeNumber }.map { e ->
+            dev.jellystructure.ravilo.ui.downloads.DownloadTarget(
+                itemId = e.id, kind = "episode", title = e.title, seriesId = detail.card.id, seriesTitle = detail.card.title,
+                season = currentSeason?.index, episode = e.episodeNumber, runtimeMinutes = e.runtime,
+            )
+        },
+    ) else null
 
     // R84: derive all progress values from the phase-2 overlay (empty map = not yet loaded)
     val allEps = remember(detail) { detail.seasons.flatMap { it.episodes } }
@@ -913,6 +927,8 @@ internal fun SeriesDetailLoaded(
                     shuffleLabel = if (canShuffle && compact) str("detail.shuffle") else null,
                     onShuffle = startShuffle,
                     shuffleFocusRequester = shuffleFR,
+                    downloadLabel = if (seasonPanel != null && downloadsAllowed) str("download.season") else null,
+                    onDownload = { seasonPanel?.open("${detail.card.title} · ${currentSeason?.name.orEmpty()}") },
                 )
             }
 
@@ -1121,6 +1137,9 @@ internal fun SeriesDetailLoaded(
             scrolled = appBarScrolled,
         )
 
+        // DEB-4070 — the season's quality sheet, over the AppBar too.
+        seasonPanel?.Overlays()
+
         // R163: fullscreen embedded trailer, last child so it paints over the AppBar too.
         // Cross-module `val` properties (detail.trailer is declared in :shared) aren't smart-cast —
         // bind to a local val first.
@@ -1141,11 +1160,15 @@ internal fun SeriesDetailLoaded(
  * holds nothing focusable — Shuffle is the pill row's last pill there.
  */
 @Composable
-private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuffle: () -> Unit, shuffleFocusRequester: FocusRequester? = null) {
+private fun EpisodesHeader(
+    watchedLabel: String?, shuffleLabel: String?, onShuffle: () -> Unit, shuffleFocusRequester: FocusRequester? = null,
+    // DEB-4070 (FR-5) — the phone's *Download season* chip, left of Shuffle; touch only.
+    downloadLabel: String? = null, onDownload: () -> Unit = {},
+) {
     val colors = RaviloTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = raviloHPad)
-            .then(if (shuffleLabel != null) Modifier.heightIn(min = 44.dp) else Modifier),
+            .then(if (shuffleLabel != null || downloadLabel != null) Modifier.heightIn(min = 44.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -1157,8 +1180,20 @@ private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuff
             Spacer(Modifier.width(12.dp))
             Text(watchedLabel, color = colors.textSecondary, fontSize = 13.sp)
         }
-        if (shuffleLabel != null) {
+        if (downloadLabel != null) {
             Spacer(Modifier.weight(1f))
+            Row(
+                modifier = Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(colors.surfaceVariant)
+                    .clickable(onClick = onDownload).padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(downloadLabel, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, softWrap = false)
+            }
+            if (shuffleLabel != null) Spacer(Modifier.width(8.dp))
+        } else if (shuffleLabel != null) {
+            Spacer(Modifier.weight(1f))
+        }
+        if (shuffleLabel != null) {
             val shape = RoundedCornerShape(18.dp)
             var focused by rememberFocusVisual()
             Row(
