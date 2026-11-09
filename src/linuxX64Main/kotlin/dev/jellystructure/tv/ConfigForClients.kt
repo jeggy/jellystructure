@@ -21,6 +21,7 @@ import dev.jellystructure.shared.tv.RowKind
  * keeps the real kind, or the editor would save the row back as CUSTOM.
  */
 fun RaviloConfig.forClients(): RaviloConfig = copy(
+    surpriseMe = true,   // DEB-3984 (FR-13) — this server has GET /api/tv/surprise
     rows = rows.map { it.forClients() },
     channels = channels.map { it.forClients() },
 )

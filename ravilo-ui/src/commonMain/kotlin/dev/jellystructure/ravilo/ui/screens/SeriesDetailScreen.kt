@@ -131,6 +131,9 @@ fun SeriesDetailScreen(
     onSearch: (() -> Unit)? = null,
     // R343 (FR-R343-5) — Shuffle pressed: the whole shuffled order (see buildShufflePlan).
     onShuffle: (List<EpisodePlayContext>) -> Unit = {},
+    // DEB-3984 (FR-12) — set only on a page Surprise me opened: the SURPRISE kicker above the title, and *Another one* beside
+    // Play asking for the next title (the caller replaces this page with it). Null = an ordinary detail page.
+    onAnother: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
@@ -165,6 +168,7 @@ fun SeriesDetailScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 onShuffle = onShuffle,
+                onAnother = onAnother,
                 returnTarget = store.returnTarget,
             )
         }
@@ -357,6 +361,8 @@ internal fun SeriesDetailLoaded(
     onProfile: (() -> Unit)?,
     onSearch: (() -> Unit)?,
     onShuffle: (List<EpisodePlayContext>) -> Unit = {},
+    // DEB-3984 (FR-12) — see [SeriesDetailScreen].
+    onAnother: (() -> Unit)? = null,
     // R350 (FR-R350-2) — the store's, so it outlives this page; null = nothing to come back to.
     returnTarget: SeriesReturnTarget? = null,
 ) {
@@ -605,6 +611,7 @@ internal fun SeriesDetailLoaded(
                             .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
                             .padding(start = raviloHPad, end = raviloHPad),
                     ) {
+                        if (onAnother != null) dev.jellystructure.ravilo.ui.components.SurpriseKicker()
                         // R130: clearlogo when it loads, else the title as readable text.
                         TitleLogoOrText(
                             logoUrl = detail.logoUrl, logoInk = detail.logoInk,
@@ -859,6 +866,13 @@ internal fun SeriesDetailLoaded(
                                     onPlay(buildEpisodeContext(detail, sIdx, seasonEps, epId, overlay, lang).copy(startOver = startOverNow))
                                 }
                             },
+                        )
+                        // DEB-3984 (FR-12) — Surprise me's next title; this page is replaced, so one Back still leaves the run.
+                        if (onAnother != null) RaviloButton(
+                            label = str("detail.another"),
+                            style = ButtonStyle.GHOST,
+                            modifier = Modifier.widthIn(min = 150.dp),
+                            onSelect = onAnother,
                         )
                         // Bug fix: this button had no `onSelect` at all -- pressing OK did nothing, and
                         // there was no backend call anywhere to add/remove a Jellyfin favorite (only a

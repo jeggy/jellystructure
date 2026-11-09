@@ -35,7 +35,9 @@ import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
+import dev.jellystructure.tv.PlaystateCache
 import dev.jellystructure.tv.RaviloArtworkService
+import dev.jellystructure.tv.SurprisePicker
 import dev.jellystructure.tv.RaviloImageUrl
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
@@ -950,6 +952,16 @@ fun Route.tvRoutes(
         // DEB-2518 (FR-5) — a hero the device cannot see leaves its copy, display fields included.
         val config = raviloConfigService.getConfig(device.jellyfinUserId).forClients()
         call.respond(mediaStore?.let { config.withoutHeroesHiddenFrom(device, it.allItems()) } ?: config)
+    }
+
+    // DEB-3984 (FR-12) — Surprise me: one unplayed movie or unstarted series from what this device can see, or a 204 when
+    // nothing is left. `exclude` is the run's already-shown ids. No body and no Jellyfin call; the playstate is the cache's.
+    get("/tv/surprise") {
+        val device = call.attributes[DeviceKey]
+        val exclude = call.request.queryParameters["exclude"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val items = mediaStore?.liveItems(device).orEmpty()
+        val answer = SurprisePicker.pick(items, PlaystateCache.get(device.jellyfinUserId), exclude)
+        if (answer == null) call.respond(HttpStatusCode.NoContent) else call.respond(answer)
     }
 
     // R141: degrade-to-poll fallback — client polls this when the WS is down (or as a safety net).

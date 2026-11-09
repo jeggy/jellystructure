@@ -172,6 +172,10 @@ order between the last nav tab and search. Pressing it:
 - on a `204` the viewer stays where they are and sees a short note `surprise.none` ("You've seen
   everything here"). From the detail page, Another one gets the same note and the page stays.
 
+*Clarified 2026-11-09 (DEB-3984).* "Played" for the pick is **marked played or carrying a resume position**: a film left half-watched
+is not offered, and nor is a series whose own row or any episode is played or in progress. An id the server cannot read a state for
+counts as unplayed. A failed ask (network, 5xx) leaves the viewer where they are, with no note: `surprise.none` is for a `204` only.
+
 **FR-13 · Surprise me is gated, so an older server never shows a dead pill.** `RaviloConfig` gains
 `@SerialName("surprise_me") surpriseMe: Boolean = false`. A server with FR-12's route always sends `true`.
 An older server never sends it, so the pill stays hidden. (An absent `/api` route answers `200 text/html`,

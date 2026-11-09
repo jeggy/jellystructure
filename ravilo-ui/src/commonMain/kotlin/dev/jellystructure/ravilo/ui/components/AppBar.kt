@@ -173,6 +173,10 @@ fun AppBar(
     val pillShown = openNowPlaying != null && musicNow.active
     val pillFR = remember { FocusRequester() }
     var pillFocused by remember { mutableStateOf(false) }
+    // DEB-3984 (FR-12) — Surprise me, between the last tab (or the now-playing pill) and Search. The frame provides the action
+    // only on a TV whose server sends `surprise_me`; null draws nothing, and the focus walk skips it.
+    val onSurprise = LocalSurpriseMe.current
+    val surpriseFR = remember { FocusRequester() }
 
     // Bug fix: on a narrow/portrait screen the nav items + search + clock + avatar don't all fit and
     // used to just clip off the edge. horizontalScroll can't coexist with the weight(1f) spacer below
@@ -311,6 +315,7 @@ fun AppBar(
                                 // R52: rightmost nav item → search icon → avatar.
                                 if (i < items.lastIndex) allFRs[i + 1].requestFocus()
                                 else if (pillShown) pillFR.requestFocus()
+                                else if (onSurprise != null) surpriseFR.requestFocus()
                                 else if (onSearch != null) searchFR.requestFocus()
                                 else if (onProfile != null) avatarFR.requestFocus()
                             },
@@ -335,17 +340,26 @@ fun AppBar(
                             focusRequester = pillFR,
                             onFocused = { pillFocused = true },
                             onLeft = { allFRs.last().requestFocus() },
-                            onRight = { if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
+                            onRight = { if (onSurprise != null) surpriseFR.requestFocus() else if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
                             onDown = onDown,
                             onSelect = openNowPlaying,
                         ),
+                )
+            }
+            if (onSurprise != null) {
+                SurprisePill(
+                    focusRequester = surpriseFR,
+                    onLeft = { if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
+                    onRight = { if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
+                    onDown = onDown,
+                    onSelect = onSurprise,
                 )
             }
             // R52 right cluster: search icon · clock · avatar (gaps from the Row's spacedBy).
             if (onSearch != null) {
                 SearchIcon(
                     focusRequester = searchFR,
-                    onLeft = { if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
+                    onLeft = { if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onRight = { if (onProfile != null) avatarFR.requestFocus() },
                     onDown = onDown,
                     onSelect = onSearch,
@@ -356,7 +370,7 @@ fun AppBar(
                 ProfileAvatar(
                     initials = userInitials.ifEmpty { "?" },
                     focusRequester = avatarFR,
-                    onLeft = { if (onSearch != null) searchFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
+                    onLeft = { if (onSearch != null) searchFR.requestFocus() else if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onDown = onDown,
                     onSelect = onProfile,
                 )

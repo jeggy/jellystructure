@@ -10,6 +10,7 @@
   "nav.discover": "Discover",
   "nav.my_list": "My List",
   "nav.search": "Search",
+  "nav.surprise": "Surprise me",
   "nav.settings": "Settings",
   "nav.library": {
     "text": "Library",
@@ -181,6 +182,9 @@
   "detail.episode": "Episode",
   "detail.episodes": "Episodes",
   "detail.cast": "Cast & Crew",
+  "detail.another": "Another one",
+  "detail.kicker_surprise": "SURPRISE",
+  "surprise.none": "You've seen everything here",
   "detail.director": "Director",
   "detail.genre": "Genre",
   "detail.genres": "Genres",

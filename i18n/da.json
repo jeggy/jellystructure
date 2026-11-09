@@ -10,6 +10,7 @@
   "nav.discover": "Opdag",
   "nav.my_list": "Min liste",
   "nav.search": "Søg",
+  "nav.surprise": "Overrask mig",
   "nav.settings": "Indstillinger",
   "nav.library": {
     "text": "Bibliotek",
@@ -175,6 +176,9 @@
   "detail.episode": "Episode",
   "detail.episodes": "Episoder",
   "detail.cast": "Medvirkende",
+  "detail.another": "En mere",
+  "detail.kicker_surprise": "OVERRASKELSE",
+  "surprise.none": "Du har set det hele",
   "detail.director": "Instruktør",
   "detail.genre": "Genre",
   "detail.genres": "Genrer",

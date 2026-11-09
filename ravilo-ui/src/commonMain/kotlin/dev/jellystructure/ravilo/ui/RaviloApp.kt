@@ -243,6 +243,11 @@ private var searchVisitCounter = 0L
 /** R295 — see [Dest.Search.visit]. Main-thread only, like every navigation call. */
 private fun nextSearchVisit(): Long = ++searchVisitCounter
 
+/** DEB-3984 (FR-12) — the detail page the server's answer opens: the right kind, carrying the run so far plus this title. */
+internal fun surpriseDest(answer: dev.jellystructure.shared.tv.SurpriseAnswer, shown: List<String>, displayName: String): Dest =
+    if (answer.kind == MediaKind.SERIES) Dest.SeriesDetail(answer.id, displayName, shown + answer.id)
+    else Dest.MovieDetail(answer.id, displayName, shown + answer.id)
+
 internal sealed class Dest {
     data object Login : Dest()
     data object ProfilePicker : Dest()
@@ -301,8 +306,10 @@ internal sealed class Dest {
     // library `Dest.Search` above (different result type/action: request tiles, not play tiles).
     data class SeerrSearch(val displayName: String) : Dest()
     data class UpcomingDetail(val id: String, val displayName: String) : Dest()
-    data class MovieDetail(val itemId: String, val displayName: String) : Dest()
-    data class SeriesDetail(val itemId: String, val displayName: String) : Dest()
+    // DEB-3984 (FR-12) — [surpriseShown] is every id Surprise me has shown in this run, this page's own last; empty on an
+    // ordinary detail page. It is what makes the SURPRISE kicker and *Another one* appear, and what Another one excludes.
+    data class MovieDetail(val itemId: String, val displayName: String, val surpriseShown: List<String> = emptyList()) : Dest()
+    data class SeriesDetail(val itemId: String, val displayName: String, val surpriseShown: List<String> = emptyList()) : Dest()
     data class Player(
         val itemId: String,
         val title: String,
@@ -523,6 +530,8 @@ fun RaviloApp(
     var uiScalePct by remember { mutableStateOf(initialSnapshot?.uiScalePct ?: 100) }
     // DEB-3967 (FR-8) — Header style, seeded the same way so a cold start draws the bar at its saved height.
     var headerStyle by remember { mutableStateOf(initialSnapshot?.headerStyle ?: "standard") }
+    // DEB-3984 (FR-13) — the server has GET /api/tv/surprise. Not in the snapshot: until the first config answer there is no pill.
+    var surpriseMe by remember { mutableStateOf(false) }
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
     var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
     var portraitGridColumns by remember { mutableStateOf(initialSnapshot?.portraitGridColumns ?: 2) }
@@ -568,6 +577,7 @@ fun RaviloApp(
                 tileScale = cfg.uiDensity.tileScale()
                 uiScalePct = cfg.uiScalePct   // DEB-3966 (FR-6) — live on the next config rev
                 headerStyle = cfg.headerStyle // DEB-3967 (FR-8) — likewise
+                surpriseMe = cfg.surpriseMe   // DEB-3984 (FR-13) — absent from an older server, so false
                 gridColumns = cfg.gridColumns
                 portraitGridColumns = cfg.portrait?.gridColumns ?: 2
             }
@@ -1060,6 +1070,29 @@ fun RaviloApp(
             is Dest.SupportList -> d.displayName; is Dest.SupportThread -> d.displayName   // DEB-1501
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
+
+        // DEB-3984 (FR-12) — Surprise me. [shown] is the run so far (empty from the bar's pill); the server answers one title
+        // outside it. [replace] is Another one: it swaps the page it was pressed on, so one Back still returns to where the
+        // pill was pressed. A 204 says so and stays put; so does any failure, quietly. One ask at a time.
+        val surpriseNone = str("surprise.none")
+        var surpriseAsking by remember { mutableStateOf(false) }
+        val surpriseScope = androidx.compose.runtime.rememberCoroutineScope()
+        fun askSurprise(shown: List<String>, replace: Boolean) {
+            if (surpriseAsking) return
+            surpriseAsking = true
+            val from = stack.lastOrNull()
+            surpriseScope.launch {
+                val answer = runCatching { apiClient.surprise(shown) }
+                surpriseAsking = false
+                val a = answer.getOrNull() ?: run {
+                    if (answer.isSuccess) dev.jellystructure.ravilo.ui.music.MusicToasts.show(surpriseNone)
+                    return@launch
+                }
+                if (replace && stack.lastOrNull() !== from) return@launch   // the viewer already left the page
+                val next = surpriseDest(a, shown, destDisplayName(stack.lastOrNull()))
+                if (replace) replaceTop(next) else push(next)
+            }
+        }
 
         // R155 — remote-control play (Phase 111 / Home Assistant, or the Jellyfin dashboard cast menu
         // via the Phase 110 bridge). Profile guard: only act while a profile is active — a command
@@ -2102,6 +2135,8 @@ fun RaviloApp(
         // household with no way to move a playing title to the TV).
         CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive,
             // R380 (FR-R380-6) — the TV app bar's now-playing pill opens Now playing.
+            // DEB-3984 (FR-12/13) — the bar's Surprise me pill: a TV, on a server that sends `surprise_me`.
+            dev.jellystructure.ravilo.ui.components.LocalSurpriseMe provides (if (isTvPlatform && surpriseMe) { -> askSurprise(emptyList(), replace = false) } else null),
             dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying provides (if (isTvPlatform) { -> if (dest !is Dest.TvNowPlaying) push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty())) } else null),
             LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
             val d = dest as Dest.Player
@@ -2827,6 +2862,7 @@ fun RaviloApp(
                     },
                     onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
+                    onAnother = if (dest.surpriseShown.isEmpty()) null else { { askSurprise(dest.surpriseShown, replace = true) } },
                 )
             }
 
@@ -2878,6 +2914,7 @@ fun RaviloApp(
                     },
                     onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
+                    onAnother = if (dest.surpriseShown.isEmpty()) null else { { askSurprise(dest.surpriseShown, replace = true) } },
                 )
             }
 
@@ -3606,6 +3643,12 @@ fun RaviloApp(
         }
         // DEB-2254 — the song's ⋯ sheet, the playlist picker and name sheet, and the toast that answers them, on a computer
         // as well: they were drawn on the phone layout only, so a song's ⋯ opened nothing on the desktop.
+        // DEB-3984 (FR-12) — the TV answers Surprise me's 204 with the same toast, so it needs the host too (it drew none).
+        if (!handset && !desktop && isTvPlatform) {
+            Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false)) {
+                dev.jellystructure.ravilo.ui.music.MusicToastHost(40.dp)
+            }
+        }
         if (handset || desktop) {
             Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false)) {
                 dev.jellystructure.ravilo.ui.music.MusicToastHost(

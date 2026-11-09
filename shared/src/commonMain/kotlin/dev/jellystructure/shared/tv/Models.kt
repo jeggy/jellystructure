@@ -1393,6 +1393,10 @@ data class RowConfig(
 @Serializable
 data class RowSort(val by: String = "added", val descending: Boolean = true)
 
+/** DEB-3984 (FR-12) — `GET /api/tv/surprise`: the one title picked. A `204` carries no body: nothing is left to show. */
+@Serializable
+data class SurpriseAnswer(val id: String, val kind: MediaKind)
+
 @Serializable
 data class RaviloConfig(
     val heroes: List<HeroConfig> = emptyList(),
@@ -1434,6 +1438,9 @@ data class RaviloConfig(
     // DEB-3967 (FR-8) — the TV app bar: "standard" (60 dp) or "slim" (48 dp); global only. A string, so an unknown value
     // (a style a newer server knows) draws as standard. [snapHeaderStyle] is the one place it is mapped.
     @SerialName("header_style") val headerStyle: String = "standard",
+    // DEB-3984 (FR-13) — a server that has `GET /api/tv/surprise` sends true; an older one never sends the field, so the
+    // TV bar's Surprise me pill stays hidden. A capability field only: no admin control, and the server forces it on.
+    @SerialName("surprise_me") val surpriseMe: Boolean = false,
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (40..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)

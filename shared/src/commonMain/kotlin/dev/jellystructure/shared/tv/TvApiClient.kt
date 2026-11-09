@@ -1010,6 +1010,20 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    // ─── Surprise me (DEB-3984, FR-12) ───────────────────────────────────────
+
+    /** One title the viewer has not seen, not among [exclude] (every id already shown in this run). `null` is the server's
+     *  `204`: nothing is left. Throws on any other failure, so a caller keeps the viewer where they are. */
+    suspend fun surprise(exclude: Collection<String> = emptyList()): SurpriseAnswer? {
+        val r = client.get("$baseUrl/api/tv/surprise") {
+            auth()
+            if (exclude.isNotEmpty()) parameter("exclude", exclude.joinToString(","))
+        }
+        if (r.status == HttpStatusCode.NoContent) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     // ─── Upcoming calendar (R160) ────────────────────────────────────────────
 
     suspend fun getUpcoming(): UpcomingFeed {

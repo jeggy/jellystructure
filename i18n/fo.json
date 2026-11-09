@@ -10,6 +10,7 @@
   "nav.discover": "Uppdaga",
   "nav.my_list": "Mín listi",
   "nav.search": "Leita",
+  "nav.surprise": "Yvirraska meg",
   "nav.settings": "Stillingar",
   "nav.library": {
     "text": "Savn",
@@ -175,6 +176,9 @@
   "detail.episode": "Partur",
   "detail.episodes": "Partar",
   "detail.cast": "Leikarar og framleiðsla",
+  "detail.another": "Eitt annað",
+  "detail.kicker_surprise": "YVIRRASKAN",
+  "surprise.none": "Tú hevur sæð alt her",
   "detail.director": "Leikstjóri",
   "detail.genre": "Sjangra",
   "detail.genres": "Sjangrur",
