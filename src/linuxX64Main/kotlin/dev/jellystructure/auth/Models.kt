@@ -75,6 +75,8 @@ data class JellyfinPolicy(
     // DEB-1854 (FR-2) — who checks this account's password. Nullable: an absent field and Jellyfin's own provider
     // both read as local (see [passwordManagedElsewhere]), so a server that does not send it changes nothing.
     @SerialName("AuthenticationProviderId") val authenticationProviderId: String? = null,
+    // DEB-4061 (DEB-3995 FR-2) — the operator's per-user *allow media downloading* switch. Absent reads as on (Jellyfin's own default).
+    @SerialName("EnableContentDownloading") val enableContentDownloading: Boolean = true,
 ) {
     /** DEB-1854 (FR-2) — the password is kept by a provider other than Jellyfin's own. Names no plugin: any other id counts. */
     val passwordManagedElsewhere: Boolean
@@ -336,6 +338,8 @@ data class JellyfinMediaSourceInfo(
     @SerialName("SupportsTranscoding") val supportsTranscoding: Boolean = false,
     @SerialName("TranscodingUrl") val transcodingUrl: String? = null,
     @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStream> = emptyList(),
+    // DEB-4061 (DEB-3995 FR-4) — the file's exact size in bytes, which a download's `original` is offered at. Null when Jellyfin does not know it.
+    @SerialName("Size") val size: Long? = null,
     // Phase 147 — Live TV's MediaSource carries these; a VOD MediaSource never sets them (defaults are
     // the VOD case). `RequiresOpening`/`RequiresClosing` gate the LiveStreams/Open+Close lifecycle
     // (dev-review addendum D — Live TV is NOT a branch of the VOD PlaybackInfo→stream flow).

@@ -363,3 +363,23 @@ between them says how many are already there.
 - **10.** A poster for a title that is not downloaded looks exactly as it does today.
 - **11.** A swipe on an entry asks before deleting, and Cancel restores it.
 - **12.** A running download shows at the top of the Downloads page.
+
+## Amendment 2026-11-09: slice 1's wire shapes (DEB-4061)
+
+Slice 1 builds FR-2 and FR-4's `original`. FR-4 left the JSON shapes open; these are what the server sends, in
+`:shared` `DownloadModels.kt`. Nothing here changes what FR-2 or FR-4 promise.
+
+- **`GET /api/tv/download/options?item_id=&media_source_id=`** answers `{"options":[{quality, height, bytes, exact}]}`.
+  - Slice 1 lists `original` only, with Jellyfin's exact `Size`. A file whose size Jellyfin does not give is not offered.
+  - The phone's decoders come from an optional `capabilities` query parameter (the JSON of `ClientCapabilities`). Absent, the
+    server uses what the device declared at its last play. A phone that has declared no video decoders is not refused.
+- **`POST /api/tv/download/start`** takes `{item_id, media_source_id?, quality, capabilities?}` and answers a `DownloadTicket`:
+  `kind` (`file`), `quality`, `url`, `bytes`, `expires_at`, `media_source_id`, `subtitles[]` (`index`, `language`, `label`,
+  `forced`, `is_default`, `url`), `artwork` (`poster_url`, `backdrop_url`, `still_url`), `item_kind`, `series_id` and `item`.
+  - `item` is the page route's own body, kept as raw JSON. For a film (`item_kind: "movie"`) it is `GET /api/tv/movie/{id}`'s;
+    for an episode (`"episode"`) it is `GET /api/tv/series/{series_id}`'s, the page that lists the episode.
+  - Every `start` carries a per-ticket value in the URL's query, so a second call for the same item is a different URL.
+- **Status codes:** `403` for a viewer the operator switched off (FR-2); `404` for a title that is not there, not visible to
+  this device, or a series; `400` for a version, quality or codec the server does not offer; `503` when Jellyfin cannot be asked.
+- **The switch is read live** from the viewer's Jellyfin account and kept for a minute, so a change reaches the routes within
+  a minute and the phone's config on its next fetch.

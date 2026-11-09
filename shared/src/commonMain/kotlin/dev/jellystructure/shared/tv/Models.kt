@@ -1495,6 +1495,10 @@ data class RaviloConfig(
     @SerialName("password_managed_elsewhere") val passwordManagedElsewhere: Boolean = false,
     // The installation's password page, sent only while [passwordManagedElsewhere] is true and only when it is an https URL.
     @SerialName("password_change_url") val passwordChangeUrl: String? = null,
+    // DEB-4061 (DEB-3995 FR-2) — server-resolved per viewer, never stored, omitted at its default like [supportEnabled]. True
+    // when the server has the download routes AND the operator has not switched this viewer's *allow media downloading* off.
+    // An older server never sends it, so the phone's Download control stays hidden.
+    @SerialName("downloads") val downloads: Boolean = false,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin

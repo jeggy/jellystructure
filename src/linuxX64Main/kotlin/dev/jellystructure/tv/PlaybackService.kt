@@ -1502,6 +1502,17 @@ class PlaybackService(
     /** 309 (FR-309-6) — each device's capabilities from its last start, so a phone can prewarm for its Cast receiver. */
     private val lastCapabilities = kotlin.concurrent.AtomicReference<Map<String, ClientCapabilities>>(emptyMap())
 
+    /** DEB-4061 (DEB-3995 FR-4) — what this device declared at its last start, for the download options. Null before any. */
+    internal fun capabilitiesOf(device: DeviceData): ClientCapabilities? = lastCapabilities.value[device.deviceId]
+
+    /**
+     * DEB-4061 (DEB-3995 FR-4) — a title's text subtitle tracks as WebVTT URLs, the ones a start would sideload (the same offer
+     * filter, the same extraction of an embedded track), for a download to save. Nothing is reported to anyone.
+     */
+    internal suspend fun textSubtitleTracks(itemDetail: JellyfinItemDetail?, jellyfinId: String, jellyfinBase: String, token: String): List<SubTrack> =
+        buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false, hlsSubtitles = false)
+            .filter { it.deliveryMethod == "external" && it.url != null }
+
     private fun rememberCapabilities(device: DeviceData, caps: ClientCapabilities) {
         while (true) {
             val old = lastCapabilities.value

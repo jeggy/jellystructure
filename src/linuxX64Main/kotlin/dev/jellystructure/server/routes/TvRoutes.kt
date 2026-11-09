@@ -47,6 +47,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
+import kotlinx.serialization.json.Json
+import dev.jellystructure.tv.httpStatus
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondBytes
@@ -358,6 +360,8 @@ fun Route.tvRoutes(
     // DEB-2675 (FR-6, FR-9) — which users the last complete /Users read lacked, and who was removed in the last seven days.
     userPresence: dev.jellystructure.tv.UserPresence? = null,
     goneUserRemoval: dev.jellystructure.tv.GoneUserRemoval? = null,
+    // DEB-4061 (DEB-3995 FR-2, FR-4) — the phone's downloads; null (tests) registers no download route and sends `downloads: false`.
+    downloadService: dev.jellystructure.tv.DownloadService? = null,
 ) {
     // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
     // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
@@ -950,7 +954,8 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         // Phase 269 (FR-269-2) — a Recommended row goes out as CUSTOM: installed apps decode RowKind strictly.
         // DEB-2518 (FR-5) — a hero the device cannot see leaves its copy, display fields included.
-        val config = raviloConfigService.getConfig(device.jellyfinUserId).forClients()
+        // DEB-4061 (FR-2) — the viewer's own *allow media downloading* value; an unreadable policy sends false (the control stays hidden).
+        val config = raviloConfigService.getConfig(device.jellyfinUserId).forClients().copy(downloads = downloadService?.allowed(device) ?: false)
         call.respond(mediaStore?.let { config.withoutHeroesHiddenFrom(device, it.allItems()) } ?: config)
     }
 
@@ -962,6 +967,30 @@ fun Route.tvRoutes(
         val items = mediaStore?.liveItems(device).orEmpty()
         val answer = SurprisePicker.pick(items, PlaystateCache.get(device.jellyfinUserId), exclude)
         if (answer == null) call.respond(HttpStatusCode.NoContent) else call.respond(answer)
+    }
+
+    // DEB-4061 (DEB-3995 FR-4) — what a phone may download of one title, and the ticket that starts it. Neither is a play: no session,
+    // no *Playing now*, no QoE row. A viewer the operator has switched off gets 403 from both (FR-2).
+    if (downloadService != null) {
+        get("/tv/download/options") {
+            val device = call.attributes[DeviceKey]
+            val itemId = call.request.queryParameters["item_id"]?.takeIf { it.isNotBlank() } ?: run {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item_id required")); return@get
+            }
+            // The phone may declare its decoders with the request (JSON in `capabilities`); else its last play's are used.
+            val declared = call.request.queryParameters["capabilities"]?.let { raw ->
+                runCatching { Json { ignoreUnknownKeys = true }.decodeFromString(dev.jellystructure.shared.tv.ClientCapabilities.serializer(), raw) }.getOrNull()
+            }
+            call.respondDownload(downloadService.options(device, itemId, call.request.queryParameters["media_source_id"]?.takeIf { it.isNotBlank() }, declared))
+        }
+
+        post("/tv/download/start") {
+            val device = call.attributes[DeviceKey]
+            val req = runCatching { call.receive<dev.jellystructure.shared.tv.DownloadStartRequest>() }.getOrElse {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request")); return@post
+            }
+            call.respondDownload(downloadService.start(device, req))
+        }
     }
 
     // R141: degrade-to-poll fallback — client polls this when the WS is down (or as a safety net).
@@ -1756,4 +1785,15 @@ internal fun withContinueEpisodes(
     val out = playstate.toMutableMap()
     for ((id, ep) in hits) out[id] = (out[id] ?: CardPlayState()).copy(continueEpisodeId = ep)
     return out
+}
+
+/** DEB-4061 — one status per reason a download route has no answer ([httpStatus]); the body is the answer itself on success. */
+private suspend inline fun <reified T : Any> io.ktor.server.application.ApplicationCall.respondDownload(outcome: dev.jellystructure.tv.DownloadOutcome<T>) {
+    when (outcome) {
+        is dev.jellystructure.tv.DownloadOutcome.Ok -> respond(outcome.value)
+        dev.jellystructure.tv.DownloadOutcome.NotAllowed -> respond(outcome.httpStatus(), mapOf("error" to "Downloading is not switched on for this account"))
+        dev.jellystructure.tv.DownloadOutcome.NotFound -> respond(outcome.httpStatus(), mapOf("error" to "Not found"))
+        is dev.jellystructure.tv.DownloadOutcome.Refused -> respond(outcome.httpStatus(), mapOf("error" to outcome.reason))
+        is dev.jellystructure.tv.DownloadOutcome.Unavailable -> respond(outcome.httpStatus(), mapOf("error" to outcome.reason))
+    }
 }
