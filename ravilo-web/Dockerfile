@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY gradlew ./
 COPY gradle ./gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
+# Use the committed Kotlin/JS and Wasm lockfiles before any Gradle task installs packages.
+COPY kotlin-js-store ./kotlin-js-store
 # settings.gradle.kts configures the whole project graph before running any task (see the main
 # Dockerfile's identical comment) — every included module's directory must exist even though this build
 # only ever runs :ravilo-web and :web-static-server tasks.

@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY gradlew ./
 COPY gradle ./gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
+# Use the committed Kotlin/JS and Wasm lockfiles before any Gradle task installs packages.
+COPY kotlin-js-store ./kotlin-js-store
 # Every module settings.gradle.kts includes must have a directory present for Gradle to configure the
 # graph at all, regardless of which task actually runs — see ravilo-web/Dockerfile's identical comment.
 COPY shared ./shared

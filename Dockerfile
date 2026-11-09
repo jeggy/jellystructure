@@ -28,6 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY gradlew ./
 COPY gradle ./gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
+# Use the committed Kotlin/JS and Wasm lockfiles before any Gradle task installs packages.
+COPY kotlin-js-store ./kotlin-js-store
 # settings.gradle.kts unconditionally includes :shared, :ravilo-ui, :ravilo-web, :ravilo-screen,
 # :ravilo-receiver-core, and (FR-167-5) :web-static-server (the Android-only modules stay out since no
 # Android SDK is present here) -- Gradle configures the WHOLE project graph before running any task, so
