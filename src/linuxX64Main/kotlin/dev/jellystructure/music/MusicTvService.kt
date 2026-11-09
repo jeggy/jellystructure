@@ -361,6 +361,14 @@ class MusicTvService(
         return MusicOfficial.layout(a, held, v.fill).let { l -> if (l.official != null) l.rows.map { it.second } else held }
     }
 
+    /** DEB-3744 (FR-3.2) — the album page's *Play album + extras* queue, only for artist release order. */
+    private fun releaseSongsOf(v: View, a: MusicAlbum): List<MusicTrack> {
+        val held = v.tracksByAlbum[a.id].orEmpty()
+        val layout = MusicOfficial.layout(a, held, v.fill)
+        val albumSongs = if (layout.official != null) layout.rows.map { it.second } + layout.extras else held
+        return albumSongs + v.editions.bsides(a.id).map { it.second }.filter { it.id in v.tracks }
+    }
+
     /** Albums the artist is credited on without being its artist — the page's *Appears on* group. */
     private fun appearsOn(v: View, r: MusicArtist): List<MusicAlbum> =
         v.tracks.values.filter { t -> t.artists.any { it.artistId == r.id } }.mapNotNull { it.albumId?.let { a -> v.albums[a] } }
@@ -370,13 +378,13 @@ class MusicTvService(
      * DEB-3619 (FR-3) — every song of [r], release by release, one copy of each. The releases are every album the artist
      * page draws in a group (a single or EP homed under an album is in none, its album holds it), ordered by
      * [originalDate] with a missing month or day read as 01, ties by group order then title, undated last in both orders.
-     * An own release plays as *Play album*; an *Appears on* album only the artist's songs on it. An album-type release
+     * An own release plays as *Play album + extras*; an *Appears on* album only the artist's songs on it. An album-type release
      * keeps its whole tracklist; every other release adds only songs no album in the order has. Each entry is the file on
      * the release it plays in, not the shown copy, which only decides which songs are the same.
      */
     private fun releaseOrder(v: View, r: MusicArtist, newest: Boolean): List<MusicTrack> {
         class Release(val album: MusicAlbum, val type: String, val songs: List<MusicTrack>)
-        val own = v.ownAlbums(r.id).filter { v.homedUnder(it.id) == null }.map { Release(it, MusicBrowse.albumType(it), albumSongsOf(v, it)) }
+        val own = v.ownAlbums(r.id).filter { v.homedUnder(it.id) == null }.map { Release(it, MusicBrowse.albumType(it), releaseSongsOf(v, it)) }
         val mine = v.songsBy(r.id)
         val guest = appearsOn(v, r).map { a -> Release(a, "appears_on", mine.filter { it.albumId == a.id }.sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() }))) }
         fun key(a: MusicAlbum): String? = a.originalDate()?.split('-')?.let { p -> "${p[0]}-${p.getOrElse(1) { "01" }}-${p.getOrElse(2) { "01" }}" }

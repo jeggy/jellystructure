@@ -5,6 +5,8 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.model.MusicArtist
+import dev.jellystructure.model.MusicOfficialList
+import dev.jellystructure.model.MusicOfficialSong
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.music.EditionsFixture.HL
 import dev.jellystructure.music.EditionsFixture.LIB
@@ -92,13 +94,54 @@ class MusicArtistReleaseOrderTest {
         // Hidden Room (2012, other room) leads; Odds and Ends (2010) adds only its new song; Third Tide (2005-03) before
         // Second Wind (2005 = 2005-01-01); the guest spot (2003); First Light before its same-day EP (group order); Lead Out
         // adds nothing (its song is on First Light); the undated album is last.
-        assertEquals(listOf("hid-1", "cp-2", "al3-1", "al2-1", "al2-2", "gu-1", "al1-1", "al1-2", "al1-3", "ep1-1", "un-1"), order("newest"))
+        assertEquals(listOf("hid-1", "cp-2", "al3-1", "al2-1", "al2-2", "hs-2", "gu-1", "al1-1", "al1-2", "al1-3", "ep1-1", "un-1"), order("newest"))
     }
 
     @Test
     fun oldest_first_is_the_same_releases_reversed_with_tracks_and_ties_kept_and_the_undated_still_last() = runBlocking<Unit> {
         // Lead Out is the oldest release, but its song plays at its place in First Light, and First Light plays whole.
-        assertEquals(listOf("al1-1", "al1-2", "al1-3", "ep1-1", "gu-1", "al2-1", "al2-2", "al3-1", "cp-2", "hid-1", "un-1"), order("oldest"))
+        assertEquals(listOf("al1-1", "al1-2", "al1-3", "ep1-1", "gu-1", "al2-1", "al2-2", "hs-2", "al3-1", "cp-2", "hid-1", "un-1"), order("oldest"))
+    }
+
+    @Test
+    fun matched_album_extras_and_homed_bsides_play_in_its_run_in_both_sorts() = runBlocking<Unit> {
+        runCatching { platform.posix.remove("$base.db") }
+        store = MusicStore(createDatabase("$base.db"))
+        val official = MusicOfficialList(
+            listOf(MusicOfficialSong("official-r", "Harbour Bell", 240_000, 1, 1)),
+            "bell-release", "Harbour Bell", 1, 1, "rg-bell", "Harbour Bell",
+        )
+        store.replaceLibrary(MusicLibraryRows(LIB, listOf(MusicArtist(id = "hl", libraryId = LIB, name = "Harbour Lights", path = "/m/hl")),
+            listOf(
+                EditionsFixture.album("bell", "Harbour Bell", 2003, official = official).copy(firstReleaseDate = "2003-06-01"),
+                EditionsFixture.album("single", "Bell Signal", 2003, primary = "Single", singleFrom = "rg-bell"),
+                EditionsFixture.album("comp", "Collected Tides", 2003, secondary = listOf("Compilation")).copy(firstReleaseDate = "2003-06-01"),
+            ),
+            listOf(
+                track("bell-official", "bell", 1, "official-r"),
+                track("bell-extra", "bell", 2, "extra-r"),
+                track("bell-only", "bell", 3, "only-r"),
+                track("single-a", "single", 1, "official-r", bitrate = 256_000),
+                track("single-b", "single", 2, "bside-r", bitrate = 256_000),
+                track("comp-extra", "comp", 1, "extra-r", bitrate = 192_000),
+                track("comp-bside", "comp", 2, "bside-r", bitrate = 192_000),
+                track("comp-own", "comp", 3, "comp-r", bitrate = 192_000),
+            )))
+        // The editions index sees the whole snapshot; this single's B-side must stay outside a LIB-only viewer's queue.
+        store.replaceLibrary(MusicLibraryRows("lib-b", emptyList(),
+            listOf(EditionsFixture.album("hidden-single", "Bell Echo", 2003, primary = "Single", singleFrom = "rg-bell").copy(libraryId = "lib-b")),
+            listOf(track("hidden-a", "hidden-single", 1, "official-r", lib = "lib-b"),
+                track("hidden-b", "hidden-single", 2, "hidden-r", lib = "lib-b"))))
+        svc = newService()
+        assertTrue("hidden-b" in order("newest"), "the unrestricted queue must see the hidden B-side")
+        val expected = listOf("bell-official", "bell-extra", "bell-only", "single-b", "comp-own")
+        for (sort in listOf("newest", "oldest")) {
+            val selected = svc.selection(onlyLib, "artist", sort, null, null, false, "hl")!!.tracks
+            assertEquals(expected, selected.map { it.id }, sort)
+            assertEquals(listOf("bell", "bell", "bell", "single", "comp"), selected.map { it.albumId }, sort)
+            assertEquals(1, selected.count { it.id == "bell-only" }, sort)
+            assertEquals(0, selected.count { it.id == "comp-extra" || it.id == "comp-bside" }, sort)
+        }
     }
 
     @Test
@@ -173,9 +216,9 @@ class MusicArtistReleaseOrderTest {
 
     @Test
     fun songs_with_the_same_play_count_follow_the_newest_first_order() = runBlocking<Unit> {
-        // FR-6 — nothing played, so every count ties: the page's Songs list is the newest-first order; a song on no release
-        // in it (the B-side of the single homed under an album) goes after them.
-        assertEquals(order("newest") + "hs-2", svc.artist(open, "hl", null)!!.topTracks.map { it.id })
-        assertEquals(order("newest").filter { it != "hid-1" } + "hs-2", svc.artist(onlyLib, "hl", null)!!.topTracks.map { it.id })
+        // FR-6 — nothing played, so every count ties: the page's Songs list follows newest-first release order,
+        // including the B-side in its parent album's run.
+        assertEquals(order("newest"), svc.artist(open, "hl", null)!!.topTracks.map { it.id })
+        assertEquals(order("newest").filter { it != "hid-1" }, svc.artist(onlyLib, "hl", null)!!.topTracks.map { it.id })
     }
 }
