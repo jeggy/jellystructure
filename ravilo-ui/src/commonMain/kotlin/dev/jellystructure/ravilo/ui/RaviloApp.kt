@@ -521,6 +521,8 @@ fun RaviloApp(
     var tileScale by remember { mutableStateOf(initialSnapshot?.tileScale ?: 1f) }
     // DEB-3966 (FR-6) — Screen scale, seeded from the snapshot so a cold start draws its first frame at the saved scale.
     var uiScalePct by remember { mutableStateOf(initialSnapshot?.uiScalePct ?: 100) }
+    // DEB-3967 (FR-8) — Header style, seeded the same way so a cold start draws the bar at its saved height.
+    var headerStyle by remember { mutableStateOf(initialSnapshot?.headerStyle ?: "standard") }
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
     var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
     var portraitGridColumns by remember { mutableStateOf(initialSnapshot?.portraitGridColumns ?: 2) }
@@ -565,6 +567,7 @@ fun RaviloApp(
                 themeState.apply(cfg)   // R338 — the viewer's theme settings (or, from an older server, the skin)
                 tileScale = cfg.uiDensity.tileScale()
                 uiScalePct = cfg.uiScalePct   // DEB-3966 (FR-6) — live on the next config rev
+                headerStyle = cfg.headerStyle // DEB-3967 (FR-8) — likewise
                 gridColumns = cfg.gridColumns
                 portraitGridColumns = cfg.portrait?.gridColumns ?: 2
             }
@@ -2315,6 +2318,13 @@ fun RaviloApp(
             // Inside the Box, so the safe-area padding above reads the base density, and inside `handset` / `compact` /
             // `family`, which were computed from it before this call.
             ScreenScale(pct = uiScalePct, enabled = isTvPlatform && !playingFullscreen) {
+            // DEB-3967 (FR-8/FR-9) — the TV bar's style, for the bar and for everything that offsets content by it. A TV
+            // platform only, like Screen scale: the phone, the desktop and the web app keep the standard bar. Inside
+            // ScreenScale, so FR-10 holds: the Slim geometry's dp are scaled with everything else.
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.jellystructure.ravilo.ui.theme.LocalHeaderStyle provides
+                    (if (isTvPlatform) dev.jellystructure.ravilo.ui.theme.HeaderStyle.of(headerStyle) else dev.jellystructure.ravilo.ui.theme.HeaderStyle.STANDARD),
+            ) {
             // R337 — what the desktop's toolbar needs from the frame: a Back to offer, and room for the traffic lights.
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.jellystructure.ravilo.ui.components.LocalDesktopBack provides (if (stack.size > 1) ({ pop() }) else null),
@@ -2411,7 +2421,7 @@ fun RaviloApp(
                 // fresh content, so the next cold start can seed instantly instead of a bare shimmer.
                 // Always an exact copy of what's already on screen — never computed/derived.
                 val homeState by store.state.collectAsState()
-                LaunchedEffect(homeState, lang, themeState.skin, themeState.settings, tileScale, uiScalePct, gridColumns, portraitGridColumns) {
+                LaunchedEffect(homeState, lang, themeState.skin, themeState.settings, tileScale, uiScalePct, headerStyle, gridColumns, portraitGridColumns) {
                     val loaded = homeState as? HomeState.Loaded ?: return@LaunchedEffect
                     val uid = activeUserId ?: return@LaunchedEffect
                     HomeSnapshotCache.save(uid, HomeSnapshot(
@@ -2420,6 +2430,7 @@ fun RaviloApp(
                         skin = themeState.skin,
                         tileScale = tileScale,
                         uiScalePct = uiScalePct,
+                        headerStyle = headerStyle,
                         gridColumns = gridColumns,
                         portraitGridColumns = portraitGridColumns,
                         savedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
@@ -3310,7 +3321,7 @@ fun RaviloApp(
                 },
             )
             }
-        } } } } } // ScreenScale (DEB-3966) / CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
+        } } } } } } // LocalHeaderStyle (DEB-3967) / ScreenScale (DEB-3966) / CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
         // R337 (FR-R337-6) — the desktop's player bar at the content's foot.
         if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
             medium = deskMedium,

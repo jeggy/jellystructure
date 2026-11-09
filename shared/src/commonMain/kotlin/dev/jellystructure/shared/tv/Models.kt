@@ -39,6 +39,12 @@ val UI_SCALE_PCT_OPTIONS: List<Int> = listOf(100, 95, 90, 85)
 /** DEB-3966 (FR-1) — snaps a stray value to the nearest of [UI_SCALE_PCT_OPTIONS]; above 100 → 100, below 85 → 85. */
 fun snapUiScalePct(v: Int): Int = v.coerceIn(85, 100).let { c -> UI_SCALE_PCT_OPTIONS.minByOrNull { kotlin.math.abs(it - c) } ?: 100 }
 
+/** DEB-3967 (FR-8) — the header styles an admin can pick. A string on the wire so a future style never breaks an installed app. */
+val HEADER_STYLE_OPTIONS: List<String> = listOf("standard", "slim")
+
+/** DEB-3967 (FR-8) — anything but `standard` / `slim` is `standard`: the one place an unknown value is mapped. */
+fun snapHeaderStyle(v: String?): String = if (v != null && v in HEADER_STYLE_OPTIONS) v else "standard"
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 /** Phase 141/R175 — posted to `POST /api/tv/login`. [deviceId] is the device's own stable id
@@ -1425,6 +1431,9 @@ data class RaviloConfig(
     // DEB-3966 (FR-1) — the whole TV screen drawn at 100 / 95 / 90 / 85 %; global only. An app that does not know
     // the field ignores it, a server that does not send it means 100. [snapUiScalePct] is the one place it is snapped.
     @SerialName("ui_scale_pct") val uiScalePct: Int = 100,
+    // DEB-3967 (FR-8) — the TV app bar: "standard" (60 dp) or "slim" (48 dp); global only. A string, so an unknown value
+    // (a style a newer server knows) draws as standard. [snapHeaderStyle] is the one place it is mapped.
+    @SerialName("header_style") val headerStyle: String = "standard",
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (40..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)

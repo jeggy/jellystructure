@@ -639,6 +639,7 @@ private fun ContentRowItem(
     var rowTopPx by remember(row.id) { mutableStateOf(0f) }
     var rowFootPx by remember(row.id) { mutableStateOf(0f) }
     val density = LocalDensity.current
+    val appBarHeight = RaviloDimens.appBarHeight   // DEB-3967 — the active header style's, read where it can be
     val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
     val scope = rememberCoroutineScope()
     LaunchedEffect(rowHasOpen) {
@@ -655,7 +656,7 @@ private fun ContentRowItem(
                 // R257 (FR-R257-5) — the row ABOVE may still be giving back its held height (its collapse
                 // cleanup runs ROW_OPEN_TWEEN_MS + 60 after focus left it); measure once that is done.
                 kotlinx.coroutines.delay(90L)
-                val minTopPx = with(density) { (RaviloDimens.appBarHeight + 16.dp).toPx() }
+                val minTopPx = with(density) { (appBarHeight + 16.dp).toPx() }
                 val up = dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenHeadingDelta(rowTopPx, rowFootPx, screenHeightPx, minTopPx, footMarginPx)
                 if (up < 0f) scope.launch { runCatching { listState.animateScrollBy(up) } }
             }
@@ -757,6 +758,7 @@ private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.Laz
     var topPx by remember { mutableStateOf(0f) }
     var footPx by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
+    val appBarHeight = RaviloDimens.appBarHeight   // DEB-3967 — the active header style's, read where it can be
     val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
     LaunchedEffect(hasFocus) {
         if (!hasFocus) return@LaunchedEffect
@@ -764,7 +766,7 @@ private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.Laz
         kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 160L)
         val up = dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenHeadingDelta(
             topPx, footPx, screenHeightPx,
-            minTopPx = with(density) { (RaviloDimens.appBarHeight + 16.dp).toPx() }, footMarginPx = with(density) { 40.dp.toPx() },
+            minTopPx = with(density) { (appBarHeight + 16.dp).toPx() }, footMarginPx = with(density) { 40.dp.toPx() },
         )
         if (up < 0f) runCatching { listState.animateScrollBy(up) }
     }

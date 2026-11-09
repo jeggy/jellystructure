@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.BehaviourOverlay
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.snapHeaderStyle
 import dev.jellystructure.shared.tv.snapUiScalePct
 import dev.jellystructure.shared.tv.firstValueProblem
 import dev.jellystructure.shared.tv.RaviloThemes
@@ -219,6 +220,8 @@ class RaviloConfigService(
         gridColumns = config.gridColumns.coerceIn(2, 10),
         // DEB-3966 (FR-1) — Screen scale is one of exactly four values; a stray one snaps to the nearest.
         uiScalePct = snapUiScalePct(config.uiScalePct),
+        // DEB-3967 (FR-8) — Header style is "standard" or "slim"; anything else is standard.
+        headerStyle = snapHeaderStyle(config.headerStyle),
         // R159 — portrait can go smaller than landscape's 40 floor (a phone hero at 40% is still huge).
         portrait = config.portrait?.let { p ->
             p.copy(

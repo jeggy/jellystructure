@@ -61,6 +61,7 @@ import dev.jellystructure.ravilo.ui.seams.windowDragArea
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloAppBar
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -184,11 +185,13 @@ fun AppBar(
     // breakpoint: a phone in landscape is still a phone, and a narrow `ravilo-web` window is not one.
     // When false, everything below is exactly what shipped.
     val handset = LocalHandset.current
+    // DEB-3967 (FR-9) — the TV bar's numbers for the header style in force; the handset row below keeps its own.
+    val g = raviloAppBar
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(RaviloDimens.appBarHeight)
+            .height(g.height)
             .background(solidBg)         // R62: solid layer (transparent when at top)
             .background(barGradient),    // gradient vignette on top
     ) {
@@ -237,21 +240,21 @@ fun AppBar(
                 .matchParentSize()
                 .then(if (compact) Modifier.horizontalScroll(navScrollState) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),   // R52: denser (was 28)
+            horizontalArrangement = Arrangement.spacedBy(g.itemGap),   // R52: denser (was 28); DEB-3967 — 14 dp on Slim
         ) {
             // Brand lockup (R51): gradient jellyfish mark + ink wordmark (not accent-purple text).
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(g.brandGap),
             ) {
-                BrandMark(size = 26.dp)
+                BrandMark(size = g.brandMark)
                 Text(
                     text = "Ravilo",
                     color = colors.text,
-                    fontSize = 22.sp,
+                    fontSize = g.wordmark,
                     fontWeight = FontWeight.Bold,
                     fontFamily = spaceGrotesk,
-                    letterSpacing = (-1).sp,
+                    letterSpacing = g.wordmarkTracking,
                 )
             }
 
@@ -289,7 +292,7 @@ fun AppBar(
                 Text(
                     text = label,
                     color = textColor,
-                    fontSize = 15.sp,                                   // R52: compacter (was 16)
+                    fontSize = g.navType,                               // R52: compacter (was 16)
                     fontWeight = if (isFocused || isActive) FontWeight.SemiBold else FontWeight.Normal,
                     fontFamily = sora,
                     modifier = Modifier
@@ -298,8 +301,8 @@ fun AppBar(
                                          else if (focusedIdx == i) -1
                                          else focusedIdx
                         }
-                        .background(bgColor, RoundedCornerShape(11.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)  // R52: compacter (was 14×6)
+                        .background(bgColor, RoundedCornerShape(g.navCorner))
+                        .padding(horizontal = g.navPadH, vertical = g.navPadV)  // R52: compacter (was 14×6)
                         .dpadFocusable(
                             focusRequester = allFRs[i],
                             onFocused  = { focusedIdx = i },
@@ -318,7 +321,7 @@ fun AppBar(
             }
 
             // Wide: push the right cluster to the far edge. Compact: no bounded width to weight
-            // against (see above) — the Row's own spacedBy(18.dp) gap is enough; items just scroll.
+            // against (see above) — the Row's own spacedBy(g.itemGap) gap is enough; items just scroll.
             if (!compact) Box(modifier = Modifier.weight(1f))
             // R245 (FR-R245-1) — the cast button, present only when the server says Chromecast is set up
             // and this platform has a sender (CastButton renders nothing otherwise — never greyed).
@@ -497,13 +500,14 @@ private fun ProfileAvatar(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val g = raviloAppBar
     var focused by rememberFocusVisual()
     val avatarUrl = LocalUserAvatarUrl.current
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(g.circle)
             .background(if (focused) colors.accent else colors.surfaceVariant, CircleShape)
-            .focusRing(focused, CircleShape, colors.focusRing, 2.dp)
+            .focusRing(focused, CircleShape, colors.focusRing, 2.dp, outset = BAR_RING_OUTSET, over = false)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -521,7 +525,7 @@ private fun ProfileAvatar(
             Text(
                 text = initials,
                 color = if (focused) colors.onAccent else colors.text,
-                fontSize = 14.sp,
+                fontSize = g.initials,
                 fontWeight = FontWeight.Bold,
                 fontFamily = Sora,
             )
@@ -547,12 +551,13 @@ private fun SearchIcon(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val g = raviloAppBar
     var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(g.circle)
             .background(if (focused) colors.accent else Color.Transparent, CircleShape)
-            .focusRing(focused, CircleShape, colors.focusRing, 2.dp)
+            .focusRing(focused, CircleShape, colors.focusRing, 2.dp, outset = BAR_RING_OUTSET, over = false)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -565,7 +570,7 @@ private fun SearchIcon(
         contentAlignment = Alignment.Center,
     ) {
         val glyph = if (focused) colors.onAccent else colors.text
-        Canvas(modifier = Modifier.size(22.dp)) {
+        Canvas(modifier = Modifier.size(g.searchGlyph)) {
             val s = size.minDimension / 24f          // glyph authored in a 24×24 viewBox
             drawCircle(
                 color = glyph,
@@ -592,6 +597,7 @@ private fun ClockDisplay() {
     if (LocalHandset.current) return
     val colors = RaviloTheme.colors
     val sora = Sora
+    val g = raviloAppBar
     var timeStr by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -605,11 +611,18 @@ private fun ClockDisplay() {
     Text(
         text = timeStr,
         color = colors.textSecondary,
-        fontSize = 15.sp,
+        fontSize = g.clock,
         fontFamily = sora,
         textAlign = TextAlign.End,
     )
 }
+
+/**
+ * DEB-3967 (FR-11) — the search and avatar circles' focus ring: its 2 dp stroke held 2 dp clear of the fill (the outer
+ * edge 4 dp out), as `RaviloButton` holds its own. Flush against the accent fill the ring (`#8e82ff` on `#7b6ef0`) was a
+ * 4 % difference nobody could see from the sofa. Both bars.
+ */
+internal val BAR_RING_OUTSET = 4.dp
 
 /** R364 / R365 — the app bar's avatar, by tag for the focus tests. */
 const val APP_BAR_AVATAR_TAG = "app-bar-avatar"

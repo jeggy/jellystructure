@@ -5,7 +5,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.jellystructure.shared.tv.snapHeaderStyle
 
 // R145: true on a handset-width screen (the phone target). Provided once by RaviloApp from the window
 // width. Drives a tighter horizontal gutter + full-width detail content so the TV-tuned 48dp margins
@@ -69,8 +72,73 @@ val raviloItemSpacing: Dp
 val raviloRowHeadPadB: Dp
     @Composable get() = if (isDesktopLayout) 8.dp else RaviloDimens.rowHeadPadB
 
+/**
+ * DEB-3967 (FR-8/FR-9) — the TV app bar's two styles. The wire carries a string (`header_style`); [of] maps an
+ * unknown one to [STANDARD], so a style a newer server knows never breaks an installed app.
+ */
+enum class HeaderStyle {
+    STANDARD, SLIM;
+
+    companion object {
+        fun of(wire: String?): HeaderStyle = if (snapHeaderStyle(wire) == "slim") SLIM else STANDARD
+    }
+}
+
+/**
+ * DEB-3967 (FR-9) — every number the TV app bar is drawn with, for one [HeaderStyle]
+ * (tv-screen-scale-and-slim-header.md, "The Slim geometry"). The bar and everything that offsets content by it read
+ * from here; nothing repeats a literal.
+ */
+data class AppBarGeometry(
+    val height: Dp,
+    val brandMark: Dp,
+    val wordmark: TextUnit,
+    val wordmarkTracking: TextUnit,
+    val brandGap: Dp,
+    val navType: TextUnit,
+    val navPadH: Dp,
+    val navPadV: Dp,
+    val navCorner: Dp,
+    val itemGap: Dp,
+    val circle: Dp,
+    val searchGlyph: Dp,
+    val initials: TextUnit,
+    val clock: TextUnit,
+) {
+    companion object {
+        val Standard = AppBarGeometry(
+            height = 60.dp, brandMark = 26.dp, wordmark = 22.sp, wordmarkTracking = (-1).sp, brandGap = 8.dp,
+            navType = 15.sp, navPadH = 12.dp, navPadV = 6.dp, navCorner = 11.dp, itemGap = 18.dp,
+            circle = 40.dp, searchGlyph = 22.dp, initials = 14.sp, clock = 15.sp,
+        )
+        val Slim = AppBarGeometry(
+            height = 48.dp, brandMark = 20.dp, wordmark = 17.sp, wordmarkTracking = (-0.8).sp, brandGap = 7.dp,
+            navType = 14.sp, navPadH = 11.dp, navPadV = 5.dp, navCorner = 9.dp, itemGap = 14.dp,
+            circle = 32.dp, searchGlyph = 18.dp, initials = 12.sp, clock = 13.sp,
+        )
+
+        fun of(style: HeaderStyle): AppBarGeometry = if (style == HeaderStyle.SLIM) Slim else Standard
+    }
+}
+
+/**
+ * DEB-3967 (FR-8) — the header style in force. Provided by RaviloApp on a TV platform only (the phone, the desktop and
+ * the web app in a desktop browser keep the standard bar); [HeaderStyle.STANDARD] everywhere else.
+ */
+val LocalHeaderStyle = staticCompositionLocalOf { HeaderStyle.STANDARD }
+
+/** DEB-3967 (FR-9) — the geometry of the bar as it is drawn in this composition. */
+val raviloAppBar: AppBarGeometry
+    @Composable get() = AppBarGeometry.of(LocalHeaderStyle.current)
+
 object RaviloDimens {
-    val appBarHeight  = 60.dp   // overlay nav bar height (R65 tokenized)
+    /**
+     * Overlay nav bar height (R65 tokenized) — **for the active header style** (DEB-3967, FR-9): 60 dp Standard,
+     * 48 dp Slim. Everything that offsets content by the bar reads this, so a Slim bar moves the content up by
+     * exactly what it saves. Outside a composition, read [AppBarGeometry] directly.
+     */
+    val appBarHeight: Dp
+        @Composable get() = raviloAppBar.height
     /**
      * R267 (FR-R267-12) — the phone's bottom navigation bar, **from one place**.
      *

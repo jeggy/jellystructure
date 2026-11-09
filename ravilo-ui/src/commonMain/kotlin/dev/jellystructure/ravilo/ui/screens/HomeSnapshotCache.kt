@@ -30,6 +30,8 @@ data class HomeSnapshot(
     // DEB-3966 (FR-6) — Screen scale as last drawn, so a cold start draws its first frame at the saved scale (a snapshot
     // from an older build has none and draws at 100).
     val uiScalePct: Int = 100,
+    // DEB-3967 (FR-8) — the header style as last drawn; a snapshot from an older build has none and draws standard.
+    val headerStyle: String = "standard",
 )
 
 /** R338 — the theme settings a snapshot carries, or null from a build before R338. */
