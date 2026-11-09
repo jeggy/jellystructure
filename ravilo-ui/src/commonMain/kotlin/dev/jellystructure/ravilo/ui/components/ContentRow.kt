@@ -49,6 +49,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
@@ -58,12 +59,23 @@ import dev.jellystructure.ravilo.ui.focus.scrollThenFocus
 import dev.jellystructure.ravilo.ui.focus.focusDetailPanelAvailableWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailPanelClampedWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenTargetScrollDelta
+import dev.jellystructure.ravilo.ui.theme.LayoutFamily
+import dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.launch
+
+/**
+ * DEB-3983 (FR-14) — the count that sits beside a content row's heading on the TV: the seed's true total when the
+ * server sent one, else the items the row holds. A row of one item or fewer has no meaningful count, so none shows.
+ */
+fun rowHeadingCount(seedTotalCount: Int?, itemCount: Int): Int? = (seedTotalCount ?: itemCount).takeIf { it > 1 }
+
+/** DEB-3983 (FR-14) — the TV's quieter row heading is 16 sp; the phone and the desktop keep 18. */
+fun rowHeadingSize(family: LayoutFamily): TextUnit = if (family == LayoutFamily.TV) 16.sp else 18.sp
 
 /**
  * A titled horizontal rail: the caller supplies the item composables directly.
@@ -122,6 +134,9 @@ fun <T> StaticContentRow(
      *  aren't (they're mutually exclusive with this: a row has an action link OR an info caption,
      *  never a visual double-up). e.g. Home On Now's "5 channels". */
     trailingInfo: String? = null,
+    /** DEB-3983 (FR-14) — the row's count, from [rowHeadingCount]; drawn beside the heading as ` · N` on the TV
+     *  only (null ⇒ none). It is independent of [seeAllLabel]/[trailingInfo] at the header's end. */
+    headingCount: Int? = null,
     /** R361 (FR-R361-3) — the focused tile left this row in a refresh and nothing is left to focus here (the row
      *  is now empty): the caller resolves "the row now in its place". */
     onEmptiedWhileFocused: () -> Unit = {},
@@ -164,6 +179,7 @@ fun <T> StaticContentRow(
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
+    val layoutFamily = LocalLayoutFamily.current
 
     // R42/R45: reveal off-screen tiles minimally; never move a fully-visible one; reveal a
     // start-clipped tile at the row's left inset (trackPadH) so item 0 keeps its padding.
@@ -296,7 +312,7 @@ fun <T> StaticContentRow(
                     Text(
                         text = title,
                         color = colors.text,
-                        fontSize = 18.sp,
+                        fontSize = rowHeadingSize(layoutFamily),
                         fontWeight = FontWeight.SemiBold,
                         // R250 (FR-R250-2) — the heading's own local backing: a halo in the page's own
                         // background colour. Invisible on plain `--bg` (same colour), a dark ground
@@ -305,6 +321,10 @@ fun <T> StaticContentRow(
                         fontFamily = spaceGrotesk,
                         letterSpacing = (-0.3).sp,
                     )
+                    if (headingCount != null && layoutFamily == LayoutFamily.TV) {
+                        // DEB-3983 (FR-14) — `Heading · N`: the same 13 sp dim style as [trailingInfo].
+                        Text(text = " · $headingCount", color = colors.textDim, fontSize = 13.sp, fontFamily = spaceGrotesk)
+                    }
                 }
                 if (seeAllLabel != null && onSeeAll != null) {
                     // Bug fix: this Text had no clickable/dpadFocusable modifier at all — onSeeAll was

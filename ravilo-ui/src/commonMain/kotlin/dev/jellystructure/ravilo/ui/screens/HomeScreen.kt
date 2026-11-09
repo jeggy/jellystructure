@@ -73,6 +73,7 @@ import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
+import dev.jellystructure.ravilo.ui.components.rowHeadingCount
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.effectiveFocusDetailMode
@@ -666,6 +667,7 @@ private fun ContentRowItem(
     StaticContentRow(
         title = row.title,
         items = row.items,
+        headingCount = rowHeadingCount(row.seedTotalCount, row.items.size),  // DEB-3983 FR-14
         modifier = Modifier.onGloballyPositioned { coords ->
             rowTopPx = coords.positionInWindow().y
             rowFootPx = rowTopPx + coords.size.height

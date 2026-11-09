@@ -46,6 +46,7 @@ import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
+import dev.jellystructure.ravilo.ui.components.rowHeadingCount
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
@@ -305,6 +306,7 @@ fun ChannelScreen(
                                     StaticContentRow(
                                         title = row.title,
                                         items = row.items,
+                                        headingCount = rowHeadingCount(row.seedTotalCount, row.items.size),  // DEB-3983 FR-14
                                         trailingItem = if (canSeeAll) ({
                                             SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
                                         }) else null,
