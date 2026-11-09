@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Collection popover glyphs · Directions</title>
+<style>
+  :root { --ink: #12141b; --ink2: #262a35; --line: rgba(18,20,27,.12); --bg: #eceef3; --plate: #fff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 'Sora', system-ui, sans-serif; padding: 48px 40px 90px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 40px; line-height: 1.1; letter-spacing: -.015em; margin: 0 0 6px; font-weight: 700; }
+  .sub { color: var(--ink2); font-size: 17px; margin: 0 0 40px; }
+  h2 { font-size: 25px; letter-spacing: -.01em; margin: 48px 0 12px; font-weight: 700;
+    padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 18px; margin: 26px 0 8px; font-weight: 600; }
+  p, li { color: var(--ink2); }
+  p { margin: 0 0 12px; }
+  ul { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 20px; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--line);
+    vertical-align: top; }
+  th { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  td { color: var(--ink2); }
+  code, .m { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13.5px; color: var(--ink); }
+  img { display: block; max-width: 100%; border-radius: 12px; border: 1px solid var(--line); margin: 8px 0 6px; }
+  .cap { font-size: 13.5px; color: var(--ink2); margin: 0 0 24px; }
+  .rec { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; background: #1f6f4d; color: #fff; padding: 3px 9px; border-radius: 20px;
+    vertical-align: middle; margin-left: 8px; }
+  .card { background: var(--plate); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px 22px; margin: 0 0 18px; }
+  .lead { font-size: 17px; color: var(--ink); }
+  .q { border-left: 3px solid #5b4ee0; padding-left: 16px; margin: 0 0 20px; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Collection popover glyphs</h1>
+<p class="sub">Two glyphs for Ravilo's browse <em>Collection</em> popover — one for a Ravilo collection,
+one for a hand-picked one. Three directions; the round recommends A. Drawn 2026-11-09.</p>
+
+<div class="q">
+“It should not be ‘Channel’ it should be ‘Collection’ and let's add some icons on the options there,
+so when it's a big jellystructure collection, then it has one small icon beside it and when it's a
+normal collection stored in jellyfin etc, then it has another small icon beside it.”
+</div>
+
+<h2>What is fixed before a line is drawn</h2>
+<ul>
+  <li><strong>The row is shipped and stays shipped.</strong> An 18 dp check slot holding a 14 dp
+    <code>CheckGlyph</code> in <code>colors.accent</code>, the name at 14 sp Sora in
+    <code>colors.text</code>, the count at 13 sp in <code>colors.textSecondary</code>, 10 dp / 8 dp
+    padding, an 8 dp corner. The glyph joins that row; it does not rearrange it.</li>
+  <li><strong>One focus target per row.</strong> A glyph is never focusable and never changes the
+    count of things the D-pad can land on.</li>
+  <li><strong>Compose Canvas, no font icons, no platform icon set.</strong> Tizen and the Chromecast
+    receiver draw the same paths. Both glyphs are plain filled primitives on the set's 24-unit grid —
+    no gradient, no paint server, nothing an eleven-year-old engine cannot fill.</li>
+  <li><strong>The viewer never reads the word <em>Jellyfin</em></strong> — on screen or to a screen
+    reader. The two labels are <em>Ravilo collection</em> and <em>Hand-picked collection</em>.</li>
+  <li><strong>3 m on a TV is the binding constraint</strong>, not the 1× phone view. Everything below
+    is decided by what survives at the apparent size in frame <code>cg-three-metre</code>.</li>
+</ul>
+
+<h2>The three directions</h2>
+<p>The three are a factorial, not three unrelated ideas: <strong>A</strong> is the recommendation,
+<strong>B</strong> changes only the hand-picked glyph, <strong>C</strong> changes only the Ravilo
+glyph. So a pick can be “A, but the other one” without a second round.</p>
+
+<img src="png/cg-directions-compare.png" alt="The three directions in the row they live in">
+<p class="cap">The three pairs in the row they live in, at TV size, plus the two options drawn and dropped.</p>
+
+<h3>A — Stack / Tag <span class="rec">recommended</span></h3>
+<p>A Ravilo collection is <strong>three plates of equal height, widening downward</strong>: a pile.
+A hand-picked one is <strong>a filled label pointing right, with its hole</strong>: a tag someone
+wrote. The two differ in how the ink is <em>distributed</em> — three strata lying flat against one
+solid mass — which is the only kind of difference that survives being four pixels of apparent detail.</p>
+<p><strong>Costs.</strong> A right-pointing filled pentagon is also the direction a filled triangle
+points. Nothing in this popover draws a play triangle, so the clash is theoretical — but it is the
+one thing in A that is a judgement rather than a measurement.</p>
+
+<h3>B — Stack / Pin</h3>
+<p>The same stack; the hand-picked glyph becomes a head on a stem. <em>Pinned by hand</em> is the
+closer word for what the collection actually is, and the silhouette is the most distinct of the six.</p>
+<p><strong>Costs.</strong> It carries 96 grid units of ink against the stack's 182, so the column
+reads unevenly — visible in the 3 m frame, where the pin rows go faint while the stack rows hold.
+And a round head over a tapering stem is read as a map pin: <em>place</em>, not <em>choice</em>.</p>
+
+<h3>C — Wall / Tag</h3>
+<p>The same tag; the Ravilo glyph becomes six plates. The literal picture of a big category.</p>
+<p><strong>Costs.</strong> Two, and both are visible rather than argued. The six tiles fuse into one
+block by the 55 % column and are a smudge by 38 %. And a tile grid already means <em>Browse</em> or
+<em>Genres</em> in this app — <code>DeskIcon.GENRES</code>, <code>MusicIcon.BROWSE</code>,
+<code>GridGlyph</code>.</p>
+
+<h3>Drawn and dropped</h3>
+<table>
+  <tr><th>Star</th><td><code>StarGlyph</code> is the IMDb rating star (<code>ImdbChip.kt</code>).
+    A star beside a collection name in a list ordered by count reads as a score.</td></tr>
+  <tr><th>Bookmark</th><td>A ribbon is already saved-for-later: <code>DeskIcon.BOOKMARK</code> and
+    <code>MusicIcon.BOOKMARK</code>. Its notch against the tag's point is a two-unit difference, which
+    is nothing at 3 m.</td></tr>
+  <tr><th>A tick in a card</th><td>The row already carries a tick, in the accent, 18 dp to the left.
+    Two ticks in one row is one too many.</td></tr>
+  <tr><th>A folder</th><td><code>DeskIcon.FOLDER</code> is a directory on disc. A collection is not a
+    place on disc and should not borrow the picture of one.</td></tr>
+</table>
+
+<h2>The 3 m test, with its arithmetic</h2>
+<p>A 55-inch 16:9 panel is 1218 mm wide; at 1920 px that is 0.634 mm per pixel, and at 3 m one pixel
+subtends <span class="m">0.634 / 3000 = 0.211 mrad</span>. A 27-inch 2560-wide monitor has 0.233 mm
+pixels; at 600 mm one subtends <span class="m">0.388 mrad</span>. <span class="m">0.211 / 0.388 =
+0.55</span>, so the 1920 frame shown at <strong>55 % of its pixels</strong> is the 3 m set. 38 % is a
+40-inch panel at the same distance.</p>
+<img src="png/cg-three-metre.png" alt="The three pairs at 100 %, 55 % and 38 %">
+<p class="cap">At 38 % — a 40-inch set at 3 m — A still separates, B's pin has gone faint, and C's wall
+has become a block.</p>
+
+<h2>What the round fixes</h2>
+<img src="png/cg-row-anatomy.png" alt="The row's anatomy in dp">
+<table>
+  <tr><th>Size</th><td><strong>18 dp</strong> square, a 24-unit grid inside it. 36 px on the TV at
+    density 2, 18 px on the phone at density 1. Larger than the 14 dp check beside it and than the
+    name's cap height, because it is the one thing in the row that must read at distance.</td></tr>
+  <tr><th>Construction</th><td><strong>Filled silhouettes, no stroke.</strong> A 1.8-unit stroke — the
+    desk set's — is 2.7 px of a 36 px glyph and is gone by the 55 % column. The set already fills
+    where it must: <code>DeskIcon.PLAY/PAUSE/NEXT/PREVIOUS</code>, <code>MusicIcon.MORE</code>.</td></tr>
+  <tr><th>Position</th><td><strong>After the 18 dp check slot</strong>, in its own fixed-width 18 dp
+    slot, then <strong>8 dp</strong> before the name. Fixed width so the names stay on one left edge
+    down a mixed list. This is the pattern the AUDIO flag already uses in this exact row.</td></tr>
+  <tr><th>Ink, resting</th><td><code>colors.text</code> — the same ink as the name.</td></tr>
+  <tr><th>Ink, focused</th><td><code>colors.text</code>. <strong>Focus changes nothing about the
+    glyph</strong>; the row's plate is the whole cue, as it already is for the name and the count.</td></tr>
+  <tr><th>Row height</th><td>Unchanged at 36 dp. The 18 dp glyph is shorter than the 20 dp text line,
+    so it adds nothing.</td></tr>
+  <tr><th>Popover width</th><td>The one change. <code>facetPopoverWidth</code> gives AUDIO a 28 dp
+    allowance for its flag; CHANNEL needs the same 28 for its glyph (the glyph and its gap cost 26).
+    Without it a long collection name would overflow the clamp it currently fits inside.</td></tr>
+</table>
+
+<h3>Why focus does not tint the glyph</h3>
+<img src="png/cg-ink-alternatives.png" alt="Three focus-ink treatments">
+<p>Two alternatives were drawn. <strong>Dim at rest, bright on focus</strong> is calmer, but only one
+row is ever focused, so it dims the glyph in every row the viewer is actually scanning — and the
+glyph is the thing that was asked for. <strong>Accent on focus</strong> is the brightest cue
+available and is the worst of the three: <code>colors.accent</code> is the <em>selection</em> colour
+in this very row, so a focused row would look ticked. The third column shows it.</p>
+
+<h2>Every state the recommended direction holds</h2>
+<table>
+  <tr><th>Drawn</th><td>TV focused on a Ravilo row · TV focused on a hand-picked row · phone 412 ·
+    chip bar closed, three languages · the pair alone at 1× and TV size in all five themes · 10-foot
+    focus · the longest string, both sides of the 420 dp clamp · the 3 m test at two distances.</td></tr>
+  <tr><th>Not drawn, and why</th><td><strong>Loading, empty, error, offline</strong> — the popover
+    has none of its own. It is built from facet values already in hand, it is not opened when a facet
+    has no values, and it holds no socket and no player. <strong>Desktop and the cast receiver</strong>
+    — the desktop draws the same Compose row at the same dp (only the chip above it changes density),
+    and the receiver has no browse page. <strong>Tizen</strong> — same paths, same fills, nothing in
+    either glyph that Chromium 47 cannot fill.</td></tr>
+</table>
+
+<img src="png/cg-tv-a-sagaer-focused.png" alt="TV, Movies, Sagaer focused">
+<p class="cap">TV 1920 × 1080, Movies, <em>Sagaer</em> focused and <em>Film club</em> ticked.</p>
+<img src="png/cg-tv-a-christmas-focused.png" alt="TV, Movies, Christmas films focused">
+<p class="cap">The same popover with <em>Christmas films</em> focused — the glyph is the same ink in
+both states, so the only thing that moves is the plate.</p>
+<img src="png/cg-phone-a-popover.png" alt="Phone 412, Library">
+<p class="cap">Phone 412 dp, Library. The glyph is 18 px here, and the facet bar is drawn carried to
+the Collection chip, as a scrolled <code>LazyRow</code> leaves it.</p>
+<img src="png/cg-glyphs-themes.png" alt="The pair in five themes">
+<p class="cap">The pair alone, 1× and TV size, in all five shipped themes. Noir inverts the accent to
+amber and Daylight is light; the glyph takes <code>colors.text</code> in each and needs no per-theme
+rule.</p>
+<img src="png/cg-longest-string.png" alt="The longest string">
+<p class="cap">Both sides of the clamp. 58 characters ellipsises; 40 fits.</p>
+<img src="png/cg-chipbar-closed.png" alt="The chip bar closed, three languages">
+<p class="cap">The chip bar closed, in the three languages.</p>
+
+<h2>Decided in this round</h2>
+<table>
+  <tr><th>The pair must differ in silhouette, not detail</th>
+    <td>The 3 m frame is the reason. Any pair that differs by a notch, a stroke weight or a small
+      feature is the same pair at the distance this is actually used from.</td></tr>
+  <tr><th>Filled, not stroked</th>
+    <td>Consistency with the desk set's 1.8 stroke was the alternative and it loses the glyph at
+      distance. The set already fills where it must.</td></tr>
+  <tr><th>18 dp, not 16</th>
+    <td>16 dp is <code>DeskIcon</code>'s default and is a pointer-distance size. The AUDIO flag in
+      this same row is already 20 × 14 dp.</td></tr>
+  <tr><th>Focus does not tint it</th>
+    <td>The accent is taken by selection in this row.</td></tr>
+  <tr><th>The glyph appears in every row of this popover and no other</th>
+    <td>Both kinds have a glyph, so the slot is never empty here; the other eight facets keep the row
+      they have.</td></tr>
+</table>
+
+<h2>Strings</h2>
+<p>Two new, both screen-reader only. Danish and Faroese are drafts.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+  <tr><td><code>browse.collection.ravilo</code></td><td>Ravilo collection</td><td>Ravilo-samling</td><td>Ravilo-savn</td></tr>
+  <tr><td><code>browse.collection.picked</code></td><td>Hand-picked collection</td><td>Håndplukket samling</td><td>Handplukkað savn</td></tr>
+</table>
+<p>The row then announces the label, then the name, then the count — “Ravilo collection, Sagaer, 38”.</p>
+
+<h3>And one string that is already right</h3>
+<p><code>browse.facet.channel</code> ships as <strong>Channel / Kanal / Savn</strong>. The spec's
+rename is <em>Collection / Samling / Savn</em>, so <strong>Faroese already says the word and does not
+change</strong>; only English and Danish do. <code>i18n/fo.json</code> carries a note on that key's
+neighbour warning that <em>rás</em> (a live-TV channel), <em>sjónvarpsrás</em> (a broadcaster),
+<em>Studio</em> and <em>Savn</em> are four concepts and must not be merged — which is why the two
+labels above qualify <em>savn</em> rather than reusing it bare.</p>
+
+<h2>The states this round did not invent</h2>
+<p>The popover's rows are <strong>operator data</strong>: a collection is named once, by the person
+who made it, and Ravilo shows that name in every language. So there is no Danish popover and no
+Faroese one — only a Danish and a Faroese chip above it, and two translated labels nobody sees.</p>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,106 @@
+/* Collection popover glyphs — the round's own stylesheet.
+   Every class is cg-prefixed: round 9 lost an afternoon to two wf.css collisions, and linking the
+   shipped stylesheet (which this page does, for the three self-hosted families and the production
+   tokens) means every unprefixed name is a collision waiting to happen.
+
+   Canvas rules (PROCESS.md / SKILL-house): dark ink on the light-gray backdrop; no
+   content-visibility, no backdrop-filter, no large filter: blur, no infinite animation. Colours
+   inside a dark frame come from cg-data.js's palettes, set inline by cg-kit.js — never from here,
+   so no picture can disagree with the array. */
+
+html, body { background: #eceef3; margin: 0; padding: 0; height: auto; overflow: visible; }
+body { font-family: 'Sora', sans-serif; color: #12141b; }
+
+#sheet { display: flex; flex-direction: column; align-items: flex-start; gap: 40px; padding: 40px; }
+
+.frame { position: relative; }
+
+/* ------------------------------------------------------------------ the TV stage, 1920 x 1080 */
+.cg-tv {
+  width: 1920px; height: 1080px; overflow: hidden;
+  font-family: 'Sora', sans-serif;
+}
+.cg-appbar { display: flex; align-items: center; gap: 56px; }
+.cg-mark { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 40px; letter-spacing: .06em; }
+.cg-nav { display: flex; gap: 48px; font-size: 28px; font-weight: 500; }
+.cg-navi.on { font-weight: 600; }
+.cg-av { margin-left: auto; width: 68px; height: 68px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px; }
+.cg-h1 { font-family: 'Space Grotesk', sans-serif; font-size: 76px; font-weight: 700; letter-spacing: -.01em; }
+.cg-h1p { font-size: 34px; }
+
+.cg-barwrap { position: relative; }
+.cg-chips { display: flex; align-items: center; }
+.cg-chip { white-space: nowrap; font-family: 'Sora', sans-serif; line-height: 1.15; }
+
+.cg-grid { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.cg-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); }
+.cg-poster { position: relative; flex: none; overflow: hidden; }
+.cg-barscroll { overflow: hidden; }
+.cg-pini { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: rgba(255,255,255,.26); }
+
+/* ------------------------------------------------------------------ the popover */
+.cg-pop { box-shadow: 0 24px 60px -16px rgba(0,0,0,.72); }
+.cg-pop-abs { position: absolute; z-index: 5; }
+.cg-list { overflow: hidden; }
+
+.cg-row { display: flex; align-items: center; }
+.cg-slot { flex: none; display: flex; align-items: center; justify-content: flex-start; }
+.cg-gslot { justify-content: center; }
+.cg-g { display: block; }
+.cg-name { flex: 1 1 auto; min-width: 0; font-family: 'Sora', sans-serif; font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cg-count { flex: none; font-family: 'Sora', sans-serif; padding-left: 12px; }
+
+/* ------------------------------------------------------------------ the phone frame */
+.cg-phone { overflow: hidden; font-family: 'Sora', sans-serif; }
+.cg-status { display: flex; justify-content: space-between; padding: 12px 20px 2px; font-size: 12px; }
+.cg-bnav { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; }
+.cg-bni { flex: 1; text-align: center; font-size: 11.5px; }
+.cg-bni.on { font-weight: 600; }
+
+/* ------------------------------------------------------------------ canvas panels */
+.cg-panel { background: #eceef3; padding: 28px 32px 34px; border-radius: 18px; max-width: 1860px;
+  border: 1px solid rgba(18,20,27,.10); }
+.cg-pt { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700; color: #12141b;
+  letter-spacing: -.01em; margin: 0 0 8px; }
+.cg-ps { font-size: 16px; line-height: 1.5; color: #262a35; margin: 0 0 22px; max-width: 1180px; }
+.cg-ps2 { margin: 20px 0 0; }
+
+.cg-striprow { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+.cg-strip { border-radius: 12px; overflow: hidden; position: relative; flex: 1 1 auto; min-width: 0; }
+.cg-strip-lab { flex: none; width: 36px; font-size: 13px; font-weight: 700;
+  letter-spacing: .10em; color: #262a35; }
+
+.cg-band { display: flex; align-items: center; gap: 56px; padding: 20px 28px; border-radius: 14px;
+  margin-bottom: 12px; }
+.cg-band-nm { width: 120px; flex: none; font-size: 15px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; }
+.cg-cell { display: flex; align-items: center; gap: 22px; }
+.cg-gbox { flex: none; display: flex; align-items: center; justify-content: center; }
+.cg-cell-lb { font-size: 16px; font-weight: 500; }
+
+.cg-dcol { display: inline-block; vertical-align: top; width: 560px; margin: 0 24px 24px 0; }
+.cg-dwide { width: 880px; }
+.cg-dhd { font-size: 17px; font-weight: 600; color: #12141b; margin-bottom: 10px; }
+.cg-dbox { }
+.cg-dnote { font-size: 14.5px; line-height: 1.5; color: #262a35; margin-top: 10px; }
+.cg-dcost { color: #4a3b1e; }
+.cg-rej { width: 100%; }
+.cg-rejrow { display: flex; align-items: flex-start; gap: 20px; padding: 10px 6px; }
+.cg-rejtx { font-size: 15px; line-height: 1.5; color: #d8d4cc; padding-top: 6px; }
+
+.cg-trow { display: flex; align-items: flex-start; gap: 36px; margin-bottom: 26px; }
+.cg-tlab { width: 170px; flex: none; font-size: 16px; font-weight: 600; padding-top: 14px; }
+.cg-tcell { display: flex; flex-direction: column; align-items: flex-start; }
+.cg-shrink { transform-origin: top left; }
+.cg-tcap { font-size: 13px; font-weight: 600; color: #262a35; margin-top: 8px; letter-spacing: .04em; }
+
+.cg-awrap { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
+.cg-tbl { border-collapse: collapse; font-size: 14.5px; max-width: 1180px; }
+.cg-tbl th { text-align: left; font-weight: 600; color: #12141b; padding: 7px 22px 7px 0;
+  vertical-align: top; white-space: nowrap; }
+.cg-tdv { color: #12141b; padding: 7px 22px 7px 0; vertical-align: top; font-weight: 500; }
+.cg-tdn { color: #262a35; padding: 7px 0; vertical-align: top; }
