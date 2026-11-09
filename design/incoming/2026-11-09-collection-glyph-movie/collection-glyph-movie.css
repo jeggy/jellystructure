@@ -1,0 +1,85 @@
+/* Collection popover — the movie glyph. The round's own stylesheet.
+   Every class is cgm-prefixed: this page links the shipped ravilo.css for the three self-hosted
+   families and the production tokens, so an unprefixed name is a collision waiting to happen.
+
+   Canvas rules: dark ink on the light-gray backdrop; no content-visibility, no backdrop-filter,
+   no large filter: blur, no infinite animation. Colours inside a dark frame come from cgm-data.js's
+   palettes, set inline by cgm-kit.js — never from here, so no picture can disagree with the array. */
+
+html, body { background: #eceef3; margin: 0; padding: 0; height: auto; overflow: visible; }
+body { font-family: 'Sora', sans-serif; color: #12141b; }
+
+#sheet { display: flex; flex-direction: column; align-items: flex-start; gap: 40px; padding: 40px; }
+.frame { position: relative; }
+
+/* ------------------------------------------------------------------ the TV stage, 1920 x 1080 */
+.cgm-tv { width: 1920px; height: 1080px; overflow: hidden; font-family: 'Sora', sans-serif; }
+.cgm-appbar { display: flex; align-items: center; gap: 56px; }
+.cgm-mark { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 40px; letter-spacing: .06em; }
+.cgm-nav { display: flex; gap: 48px; font-size: 28px; font-weight: 500; }
+.cgm-navi.on { font-weight: 600; }
+.cgm-av { margin-left: auto; width: 68px; height: 68px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px; }
+.cgm-h1 { font-family: 'Space Grotesk', sans-serif; font-size: 76px; font-weight: 700; letter-spacing: -.01em; }
+.cgm-h1p { font-size: 34px; }
+
+.cgm-barwrap { position: relative; }
+.cgm-barscroll { overflow: hidden; }
+.cgm-chips { display: flex; align-items: center; }
+.cgm-chip { white-space: nowrap; font-family: 'Sora', sans-serif; line-height: 1.15; }
+
+.cgm-grid { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.cgm-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); }
+.cgm-poster { position: relative; flex: none; overflow: hidden; }
+.cgm-pini { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: rgba(255,255,255,.26); }
+
+/* ------------------------------------------------------------------ the popover */
+.cgm-pop { box-shadow: 0 24px 60px -16px rgba(0,0,0,.72); }
+.cgm-pop-abs { position: absolute; z-index: 5; }
+.cgm-list { overflow: hidden; }
+.cgm-row { display: flex; align-items: center; }
+.cgm-slot { flex: none; display: flex; align-items: center; justify-content: flex-start; }
+.cgm-gslot { justify-content: center; }
+.cgm-g { display: block; }
+.cgm-name { flex: 1 1 auto; min-width: 0; font-family: 'Sora', sans-serif; font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cgm-count { flex: none; font-family: 'Sora', sans-serif; padding-left: 12px; }
+
+/* ------------------------------------------------------------------ the phone frame */
+.cgm-phone { overflow: hidden; font-family: 'Sora', sans-serif; }
+.cgm-status { display: flex; justify-content: space-between; padding: 12px 20px 2px; font-size: 12px; }
+.cgm-bnav { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; }
+.cgm-bni { flex: 1; text-align: center; font-size: 11.5px; }
+.cgm-bni.on { font-weight: 600; }
+
+/* ------------------------------------------------------------------ canvas panels */
+.cgm-panel { background: #eceef3; padding: 28px 32px 34px; border-radius: 18px; max-width: 1860px;
+  border: 1px solid rgba(18,20,27,.10); }
+.cgm-pt { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700; color: #12141b;
+  letter-spacing: -.01em; margin: 0 0 8px; }
+.cgm-ps { font-size: 16px; line-height: 1.5; color: #262a35; margin: 0 0 22px; max-width: 1180px; }
+.cgm-ps2 { margin: 20px 0 0; }
+
+.cgm-band { display: flex; align-items: center; gap: 56px; padding: 20px 28px; border-radius: 14px;
+  margin-bottom: 12px; }
+.cgm-band-nm { width: 120px; flex: none; font-size: 15px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; }
+.cgm-cell { display: flex; align-items: center; gap: 22px; }
+.cgm-gbox { flex: none; display: flex; align-items: center; justify-content: center; }
+.cgm-cell-lb { font-size: 16px; font-weight: 500; }
+
+.cgm-dcol { display: inline-block; vertical-align: top; width: 560px; margin: 0 24px 24px 0; }
+.cgm-dhd { font-size: 17px; font-weight: 600; color: #12141b; margin-bottom: 10px; }
+.cgm-dnote { font-size: 14.5px; line-height: 1.5; color: #262a35; margin-top: 10px; }
+.cgm-dcost { color: #4a3b1e; }
+
+.cgm-trow { display: flex; align-items: flex-start; gap: 36px; margin-bottom: 26px; }
+.cgm-tlab { width: 210px; flex: none; font-size: 16px; font-weight: 600; padding-top: 14px; }
+.cgm-tcell { display: flex; flex-direction: column; align-items: flex-start; }
+.cgm-shrink { transform-origin: top left; }
+.cgm-tcap { font-size: 13px; font-weight: 600; color: #262a35; margin-top: 8px; letter-spacing: .04em; }
+
+.cgm-wstrip { display: flex; align-items: flex-start; gap: 30px; }
+.cgm-wband { padding: 16px; border-radius: 12px; display: inline-flex; }
