@@ -183,6 +183,9 @@ The browse page's `BrowseFacetKey.CHANNEL` chip becomes the **Collection** chip:
 Every row in the Collection popover, on the TV, phone, browser and desktop, carries a small glyph before its name.
 There is one glyph for a **Ravilo collection** and another for a **Jellyfin collection**.
 
+- **Owner's pick** (DEB-4032 card `a32fe8e0`, 2026-11-09), from the DEB-4076 round: *"For 'Sagaer' it should be C but
+  for 'Film club' it should be some movie icon instead."* So a Ravilo collection takes direction C's **wall** (the
+  tile grid), and a Jellyfin collection takes a **filled movie glyph**, drawn in a follow-up to that round.
 - The glyphs are drawn in a design round (Rannvá). They join the hand-drawn glyph set the app already has
   (`DeskIcons.kt`, `MusicGlyphs.kt`).
 - The round fixes the glyphs' size, ink, focus-state ink and position. The build follows the round.
