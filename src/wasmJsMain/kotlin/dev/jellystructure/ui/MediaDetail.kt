@@ -21,6 +21,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
+import dev.jellystructure.model.RaviloLink
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TagScope
 import dev.jellystructure.model.TrackKind
@@ -66,10 +67,11 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
         val config = ConfigApi.get()
         val fallbackLang = config?.config?.languageRules?.fallbackLanguage ?: "en"
         val jellyfinUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+        val raviloUrl = config?.config?.raviloWebUrl ?: ""
         val ageRatingCascade = config?.config?.metadata?.ageRatingCascade ?: emptyList()
         val tmdbLangs = if (item.tmdbId != null) MediaApi.getTmdbLanguages(item.id) else null
         val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags, initialTab = initialTab, ageRatingCascade = ageRatingCascade)
+        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags, initialTab = initialTab, ageRatingCascade = ageRatingCascade, raviloWebUrl = raviloUrl)
     }
 }
 
@@ -389,7 +391,7 @@ private fun buildTimestampsCard(item: MediaItem): String {
     </div>"""
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList(), initialTab: String? = null, ageRatingCascade: List<String> = emptyList()) {
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList(), initialTab: String? = null, ageRatingCascade: List<String> = emptyList(), raviloWebUrl: String = "") {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -629,6 +631,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val jellyfinItemUrl: String? =
         if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) "$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" else null
 
+    val raviloItemUrl = RaviloLink.titleUrl(raviloWebUrl, item.kind, item.jellyfinId)
+
     // Left-rail cards (poster / series-language / identity). For TV shows these are lifted out of
     // the overview panel so they persist across every tab (design series.html).
     val leftRailHtml = """
@@ -813,11 +817,12 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           ${run {
               val imdbUrl = item.imdbId?.takeIf { it.isNotBlank() }?.let { "https://www.imdb.com/title/$it/" }
               val tvdbUrl = if (item.kind == MediaKind.TV_SHOW) item.tvdbId?.let { "https://www.thetvdb.com/?id=$it&tab=series" } else null
-              if (jellyfinItemUrl != null || tmdbUrl != null || imdbUrl != null || tvdbUrl != null) """
+              if (jellyfinItemUrl != null || raviloItemUrl != null || tmdbUrl != null || imdbUrl != null || tvdbUrl != null) """
           <span class="menu-wrap" id="links-menu">
             <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
             <div class="menu">
               ${if (jellyfinItemUrl != null) """<a class="menu-item" href="$jellyfinItemUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Library item in the Jellyfin web UI</span></span></a>""" else ""}
+              ${if (raviloItemUrl != null) """<a class="menu-item" href="$raviloItemUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Ravilo<span class="mi-sub">Title page in Ravilo Web</span></span></a>""" else ""}
               ${if (tmdbUrl != null) """<a class="menu-item" href="$tmdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TMDB<span class="mi-sub">themoviedb.org</span></span></a>""" else ""}
               ${if (imdbUrl != null) """<a class="menu-item" href="$imdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on IMDb<span class="mi-sub">imdb.com</span></span></a>""" else ""}
               ${if (tvdbUrl != null) """<a class="menu-item" href="$tvdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TheTVDB<span class="mi-sub">thetvdb.com</span></span></a>""" else ""}
@@ -919,10 +924,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 val config = ConfigApi.get()
                 val fallback = config?.config?.languageRules?.fallbackLanguage ?: "en"
                 val jellyfinUrl2 = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+                val raviloUrl = config?.config?.raviloWebUrl ?: ""
                 val ageRatingCascade2 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                 val tmdbLangs2 = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
                 val jsTags2 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, tmdbLangs2, jsTags = jsTags2, ageRatingCascade = ageRatingCascade2)
+                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, tmdbLangs2, jsTags = jsTags2, ageRatingCascade = ageRatingCascade2, raviloWebUrl = raviloUrl)
             }
         }
     }
@@ -943,10 +949,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 val config = ConfigApi.get()
                 val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
                 val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                val raviloUrl = config?.config?.raviloWebUrl ?: ""
                 val ageRatingCascade5 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                 val langs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
                 val jsTags5 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags5, ageRatingCascade = ageRatingCascade5)
+                renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags5, ageRatingCascade = ageRatingCascade5, raviloWebUrl = raviloUrl)
                 showDetailMsg("Back to automatic.", true)
             } else {
                 showDetailMsg("Failed — try again.", false)
@@ -974,9 +981,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 val config = ConfigApi.get()
                 val fallback = config?.config?.languageRules?.fallbackLanguage ?: "en"
                 val jellyfinUrl2 = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+                val raviloUrl = config?.config?.raviloWebUrl ?: ""
                 val ageRatingCascade2 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                 val jsTags2 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, null, jsTags = jsTags2, ageRatingCascade = ageRatingCascade2)
+                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, null, jsTags = jsTags2, ageRatingCascade = ageRatingCascade2, raviloWebUrl = raviloUrl)
                 showDetailMsg("TMDB match cleared.", true)
             }
         }
@@ -2341,10 +2349,11 @@ private fun showTmdbMatchModal(
                         val config = ConfigApi.get()
                         val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
                         val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                        val raviloUrl = config?.config?.raviloWebUrl ?: ""
                         val ageRatingCascade3 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                         val langs = MediaApi.getTmdbLanguages(updated.id)
                         val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                        renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags, ageRatingCascade = ageRatingCascade3)
+                        renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags, ageRatingCascade = ageRatingCascade3, raviloWebUrl = raviloUrl)
                     } else {
                         statusEl?.innerHTML = """<span style="color:var(--bad);" class="tiny">Save failed — try again.</span>"""
                         renderResults(results)
@@ -2427,10 +2436,11 @@ private fun showMetadataLanguageModal(
                 val config = ConfigApi.get()
                 val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
                 val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                val raviloUrl = config?.config?.raviloWebUrl ?: ""
                 val ageRatingCascade = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                 val langs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
                 val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags, ageRatingCascade = ageRatingCascade)
+                renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags, ageRatingCascade = ageRatingCascade, raviloWebUrl = raviloUrl)
                 showDetailMsg(if (code != null) "Metadata language set to $code." else "Back to automatic.", true)
             } else {
                 resultsEl?.innerHTML = """<span style="color:var(--bad);" class="tiny">Save failed — try again.</span>"""
@@ -3017,8 +3027,10 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
         // Re-fetch languages in case the TMDB match changed
         val tmdbLangs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else prevTmdbLangs
         // Certifications were just re-pulled (Phase 106) — re-fetch the cascade so the badge/trace update.
-        val ageRatingCascade4 = ConfigApi.get()?.config?.metadata?.ageRatingCascade ?: emptyList()
-        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs, ageRatingCascade = ageRatingCascade4)
+        val config = ConfigApi.get()
+        val ageRatingCascade4 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
+        val raviloUrl = config?.config?.raviloWebUrl ?: ""
+        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs, ageRatingCascade = ageRatingCascade4, raviloWebUrl = raviloUrl)
     } else {
         showDetailMsg("Re-pull failed — no TMDB match found.", false)
     }
