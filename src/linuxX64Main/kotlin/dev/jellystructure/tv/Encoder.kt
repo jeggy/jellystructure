@@ -156,6 +156,8 @@ class Encoder(
         boxLimit: Int? = null,
         /** DEB-3642 (FR-2) — the file's streams that hold no packet (its current packet timeline): none of them is mapped, offered or carried. */
         emptyStreams: Set<Int> = emptySet(),
+        /** DEB-4256 (DEB-3995 FR-6) — a download stream's plan: the cards are tried in the reverse of a play's order, so the card plays prefer keeps its room. */
+        cardsLastFirst: Boolean = false,
     ): Pair<EncoderPlan?, String> {
         val source = encoderSourceOf(path, durationMs, tracks, sourceVideoRange, emptyStreams)
         val cards = if (cfg.enabled) cards() else emptyList()
@@ -196,8 +198,9 @@ class Encoder(
         val plannedStart = start
         // Dev review item 8 / owner Q1 — a player that does not adapt (Ravilo 1.50) gets one quality: the start rung.
         if (!caps.hlsAdaptive) { rungs = listOf(rungs[start]); start = 0 }
-        var placement = place(cards, codec, rungs)
-        if (placement == null && stopPrewarms("a play needs the slot") > 0) placement = place(cards, codec, rungs)
+        val tryOrder = if (cardsLastFirst) cards.reversed() else cards
+        var placement = place(tryOrder, codec, rungs)
+        if (placement == null && stopPrewarms(if (cardsLastFirst) "a download stream needs the slot" else "a play needs the slot") > 0) placement = place(tryOrder, codec, rungs)
         placement ?: return null to "no encoder slot free on any card"
         if (placement.rungs < rungs.size) {
             val kept = trimRungs(rungs, start, placement.rungs)
@@ -315,35 +318,47 @@ class Encoder(
     /** 309 — the viewer left the detail page without pressing Play: the prewarm stops at once (owner). */
     suspend fun cancelPrewarm(deviceId: String, itemId: String): Int = stopFor(prewarmKey(deviceId, itemId))
 
-    // ── DEB-4062 (DEB-3995 FR-6) — a download stream: a copy a phone saves, which is no play and yields to every play ──────────────
+    // ── DEB-4062 / DEB-4256 (DEB-3995 FR-6) — a download stream: a copy a phone saves, which is no play but is admitted as one ──────
 
     /** A download stream as the policy ([DownloadStreams]) reads it. */
     class DownloadInfo(val id: String, val ownerDeviceId: String, val itemId: String, val lastReadMs: Long)
 
     /**
-     * Registers [plan] as a download stream for [ownerDeviceId]'s [itemId]; its job starts when the phone reads a segment (at the first
+     * Registers [plan] as [ownerDeviceId]'s download stream for [itemId]; its job starts when the phone reads a segment (at the first
      * one it asks for, [startSegment] for the init). It has no play session, so no play's stop ends it ([stopFor]), no QoE row, no
-     * encoder summary and no server-fault note (its entry names no device); it is memory only. At most one exists: one the same device
-     * holds is replaced (a resume, or its next download), and one another device holds answers null.
+     * encoder summary and no server-fault note (its entry names no device); it is memory only. One per phone (DEB-4256): the one the
+     * same device holds is replaced (a resume, or its next download); other phones' streams are not touched, and there is no limit
+     * server-wide — [planFor]'s budget is the only one.
      */
-    suspend fun registerDownload(plan: EncoderPlan, ownerDeviceId: String, itemId: String, expiresAt: Long, startSegment: Int = 0): String? {
+    suspend fun registerDownload(plan: EncoderPlan, ownerDeviceId: String, itemId: String, expiresAt: Long, startSegment: Int = 0): String {
         val id = DOWNLOAD_PREFIX + secureHexId()
         val replaced = mutableListOf<String>()
-        val ok = mutex.withLock {
+        mutex.withLock {
             val now = clock()
             entries.entries.removeAll { it.value.expiresAt < now }
-            val held = entries.filter { it.value.download }
-            if (held.any { it.value.downloadOwner != ownerDeviceId }) return@withLock false
-            held.keys.forEach { entries.remove(it); replaced += it }
+            entries.filter { it.value.download && it.value.downloadOwner == ownerDeviceId }.keys.forEach { entries.remove(it); replaced += it }
             entries[id] = Entry(plan, id, expiresAt, itemId = itemId,
                 startMs = encoderSeekSegment(plan.source.durationMs, startSegment * ENCODER_SEGMENT_MS) * ENCODER_SEGMENT_MS,
                 downloadOwner = ownerDeviceId, lastReadMs = now)
-            true
         }
         replaced.forEach { jobs.stop(it, "the same phone asked for a new download stream") }
-        if (!ok) return null
         Logger.info("encoder: download stream $id item=$itemId ${plan.codec} ${plan.rungs[0].height}p@${plan.rungs[0].videoBps / 1000}k from segment $startSegment (DEB-4062)", "tv")
         return id
+    }
+
+    /**
+     * DEB-4256 (DEB-3995 FR-6) — the `streams` of a waiting `start`: how many jobs the encoder is running at this moment for plays and
+     * for other phones' download streams. A prewarm is not one (it is stopped for a job that needs its slot), and neither is a stream
+     * of [exceptDownloadOwner]'s own (its `start` replaces it).
+     */
+    suspend fun streamsBusy(exceptDownloadOwner: String): Int {
+        val jobs = running()
+        return mutex.withLock {
+            jobs.count { j ->
+                val e = entries[j.streamId]
+                e == null || (e.prewarmSegment == null && e.downloadOwner != exceptDownloadOwner)
+            }
+        }
     }
 
     suspend fun downloadStreams(): List<DownloadInfo> = mutex.withLock {
@@ -356,9 +371,6 @@ class Encoder(
         if (was) jobs.stop(id, why)
         return was
     }
-
-    /** Whether a job of a PLAY (not a download stream) is running: it holds the GPU and reads the disk. */
-    suspend fun playJobsRunning(): Boolean = running().any { !isDownloadStreamId(it.streamId) }
 
     /** DEB-4062 — null when this encoder would serve [source] for a device of [deviceKind], else why not (the rule a play plans under). */
     internal suspend fun reasonNotServed(source: EncoderSource, deviceKind: String): String? {

@@ -36,14 +36,19 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * DEB-4062 (DEB-3995 FR-4, FR-6) — a smaller copy is a download stream of our encoder: its options per source size and codec family, one rung
- * and one audio in its master, at most one stream server-wide, no play session behind it, ended by a play's start (and answered "waiting"
- * after), and reaped when nobody fetches a segment of it.
+ * DEB-4062 / DEB-4256 (DEB-3995 FR-4, FR-6) — a smaller copy is a download stream of our encoder: its options per source size and codec
+ * family, one rung and one audio in its master, no play session behind it, and reaped when nobody fetches a segment of it. Since DEB-4256
+ * it has a play's priority: admitted by a play's budget on the card plays use last, one per phone with no server-wide limit, ended by no
+ * play; it waits only when every card is full (`encoder_full`, with the count of streams) or the copy cannot be made (`unavailable`).
  */
 class DownloadStreamTest {
     private val hevcPhone = ClientCapabilities(hlsHevcCapable = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, maxAudioChannels = 6)
     private val h264Phone = ClientCapabilities(videoCodecs = listOf("h264"), maxAudioChannels = 6)
     private val cards = listOf(EncoderCard(0, "Quadro P4000", null, 0))
+    /** Two cards in a play's order: a play goes to card 0 first, a download stream to card 1 first. */
+    private val twoCards = listOf(EncoderCard(0, "Quadro P4000", null, 0), EncoderCard(1, "Quadro P2000", null, 0))
+    /** A GeForce with every NVENC session taken: no card can take one more rung. */
+    private val fullCards = listOf(EncoderCard(0, "GeForce GTX 1070", 8, 8))
 
     private fun track(codec: String, w: Int, h: Int, bps: Int) =
         Track(0, "v:0", TrackKind.VIDEO, codec, null, null, true, false, width = w, height = h, videoRange = "SDR", videoBitrate = bps, durationMs = 6_000_000)
@@ -53,12 +58,15 @@ class DownloadStreamTest {
     // ── the policy, against the encoder directly (no ffmpeg runs) ────────────────────────────────────────────────
 
     private var now = 1_000_000L
-    private fun encoder() = Encoder({ EncoderConfig(enabled = true, workDir = "/tmp/js-test-4062-${getpid()}", ffmpegDir = "/nonexistent") },
+    private fun encoder(cards: List<EncoderCard> = this.cards) = Encoder({ EncoderConfig(enabled = true, workDir = "/tmp/js-test-4062-${getpid()}", ffmpegDir = "/nonexistent") },
         cardsOverride = { cards }, ffmpegOverride = { true }, clock = { now })
 
-    private suspend fun planOf(enc: Encoder, box: Int = 720): EncoderPlan =
+    /** A download stream's plan, as [PlaybackService.downloadPlanFor] asks for it: one rung in [box], the cards tried last first. */
+    private suspend fun downloadPlan(enc: Encoder, box: Int = 720): Pair<EncoderPlan?, String> =
         enc.planFor(downloadCaps(hevcPhone), "phone", "/m/film.mkv", 6_000_000, tracksOf(track("hevc", 3840, 2160, 40_000_000)), audio, 1,
-            takeBps = null, noRecord = false, sourceVideoRange = null, boxLimit = box).first!!
+            takeBps = null, noRecord = false, sourceVideoRange = null, boxLimit = box, cardsLastFirst = true)
+
+    private suspend fun planOf(enc: Encoder, box: Int = 720): EncoderPlan = downloadPlan(enc, box).first!!
 
     @Test fun `a copy's plan is one rung of its box with one audio and no subtitles and its master says so`() = runBlocking {
         val enc = encoder()
@@ -69,7 +77,7 @@ class DownloadStreamTest {
         assertTrue(plan.subtitles.isEmpty())
         val rung = downloadRung(hevcPhone, plan.source, 720)!!.second
         assertEquals(rung, plan.rungs[0], "the options estimate the rung start encodes")
-        val id = enc.registerDownload(plan, "phone-a", "film", now + 4 * 3_600_000L)!!
+        val id = enc.registerDownload(plan, "phone-a", "film", now + 4 * 3_600_000L)
         assertTrue(id.startsWith("dl-"))
         val master = enc.master(id)!!
         assertEquals(1, master.lines().count { it.startsWith("#EXT-X-STREAM-INF:") })
@@ -97,28 +105,29 @@ class DownloadStreamTest {
         assertEquals(3_600_000L, downloadRung(hevcPhone.copy(maxHevcBitrate = 4_000_000), src(3840, 2160, 40_000_000), 1080)!!.second.videoBps)
     }
 
-    @Test fun `at most one download stream server-wide — the same phone replaces it another phone waits`() = runBlocking {
+    @Test fun `one download stream per phone — the same phone replaces its own and another phone gets its own beside it`() = runBlocking {
         val enc = encoder()
-        val streams = DownloadStreams(enc, playing = { false }, clock = { now })
+        val streams = DownloadStreams(enc, clock = { now })
         val plan = planOf(enc)
-        val a = (streams.open(plan, "phone-a", "film", now + 1000, 0) as DownloadStreams.Opened.Ok).id
+        val a = streams.open(plan, "phone-a", "film", now + 1000, 0)
         assertEquals(listOf(a), enc.downloadStreams().map { it.id })
-        // Another phone: not now.
-        val other = streams.open(plan, "phone-b", "film-2", now + 1000, 0)
-        assertTrue(other is DownloadStreams.Opened.Waiting, other.toString())
-        assertEquals(listOf(a), enc.downloadStreams().map { it.id })
-        // The same phone asking again (a resume, or its next download): the old stream goes, a fresh one is there.
-        val a2 = (streams.open(plan, "phone-a", "film", now + 1000, 150) as DownloadStreams.Opened.Ok).id
+        // Another phone (DEB-4256): its own stream, beside the first — there is no server-wide limit.
+        val b = streams.open(plan, "phone-b", "film-2", now + 1000, 0)
+        assertNotEquals(a, b)
+        assertEquals(setOf(a, b), enc.downloadStreams().map { it.id }.toSet())
+        // The same phone asking again (a resume, or its next download): its old stream goes, a fresh one is there, the other phone's stays.
+        val a2 = streams.open(plan, "phone-a", "film", now + 1000, 150)
         assertNotEquals(a, a2)
-        assertEquals(listOf(a2), enc.downloadStreams().map { it.id })
+        assertEquals(setOf(a2, b), enc.downloadStreams().map { it.id }.toSet())
         assertTrue(streams.holds(a), "the replaced one answers waiting, not 404")
         assertFalse(streams.holds(a2))
+        assertFalse(streams.holds(b))
     }
 
     @Test fun `a download stream is no play — no play's stop ends it it has no session and no device`() = runBlocking {
         val enc = encoder()
-        val streams = DownloadStreams(enc, playing = { false }, clock = { now })
-        val id = (streams.open(planOf(enc), "phone-a", "film", now + 1000, 0) as DownloadStreams.Opened.Ok).id
+        val streams = DownloadStreams(enc, clock = { now })
+        val id = streams.open(planOf(enc), "phone-a", "film", now + 1000, 0)
         assertEquals(0, enc.stopFor("phone-a-film"), "the play session id of the same phone and item")
         assertEquals(0, enc.stopFor(id))
         assertEquals(0, enc.stopFor("download:$id"))
@@ -127,40 +136,41 @@ class DownloadStreamTest {
         assertNull(enc.running().firstOrNull { !isDownloadStreamId(it.streamId) })
     }
 
-    @Test fun `a play's start ends the download stream and its segments then answer waiting never 404`() = runBlocking {
+    @Test fun `a dl- stream that is not running answers waiting never 404 and a play's stream is none of its business`() = runBlocking {
         val enc = encoder()
-        val streams = DownloadStreams(enc, playing = { false }, clock = { now })
-        val id = (streams.open(planOf(enc), "phone-a", "film", now + 1000, 0) as DownloadStreams.Opened.Ok).id
-        assertFalse(streams.holds(id))
-        assertEquals(1, streams.preempt("a play starts"))
-        assertTrue(enc.downloadStreams().isEmpty())
+        val streams = DownloadStreams(enc, clock = { now })
+        val id = streams.open(planOf(enc), "phone-a", "film", now + 1000, 0)
+        assertFalse(streams.holds(id), "running: served")
+        assertTrue(enc.endDownload(id, "test"))
         assertTrue(streams.holds(id), "ended: waiting")
         assertTrue(streams.holds("dl-never-existed"), "lost to a restart: waiting")
         assertFalse(streams.holds("a-play-stream-id"), "a play's own stream is none of its business")
-        assertEquals(0, streams.preempt("nothing running"))
     }
 
-    @Test fun `none starts while a play is live and a request finding one live ends it`() = runBlocking {
-        val enc = encoder()
-        var playing = true
-        val streams = DownloadStreams(enc, playing = { playing }, clock = { now })
-        val plan = planOf(enc)
-        assertTrue(streams.open(plan, "phone-a", "film", now + 1000, 0) is DownloadStreams.Opened.Waiting)
-        assertTrue(enc.downloadStreams().isEmpty())
-        playing = false
-        val id = (streams.open(plan, "phone-a", "film", now + 1000, 0) as DownloadStreams.Opened.Ok).id
-        assertFalse(streams.holds(id))
-        // A play began without a start (a progress report made the tracker's entry): the next request ends the stream.
-        playing = true
-        assertTrue(streams.holds(id))
-        assertTrue(enc.downloadStreams().isEmpty())
+    @Test fun `the card plays use last — a download's plan goes to the last card a play's to the first`() = runBlocking {
+        val enc = encoder(twoCards)
+        assertEquals(1, planOf(enc).cudaDevice, "a download stream tries the cards in the reverse of a play's order")
+        val play = enc.planFor(hevcPhone, "tv", "/m/film.mkv", 6_000_000, tracksOf(track("hevc", 3840, 2160, 40_000_000)), audio, 1,
+            takeBps = null, noRecord = false, sourceVideoRange = null).first!!
+        assertEquals(0, play.cudaDevice, "a play's order is the cards' own")
+    }
+
+    @Test fun `every card full — a download's plan says no slot is free and the count is what the encoder runs for others`() = runBlocking {
+        val enc = encoder(fullCards)
+        val (plan, why) = downloadPlan(enc)
+        assertNull(plan)
+        assertTrue(why.startsWith("no encoder slot free"), why)
+        assertEquals(0, enc.streamsBusy(exceptDownloadOwner = "phone-a"), "nothing runs here (no ffmpeg): the count is honest")
+        // Room on a card: the same plan is admitted, whether or not anyone plays — nothing asks.
+        assertNotNull(downloadPlan(encoder()).first, "a card with room admits the plan")
+        Unit
     }
 
     @Test fun `the reaper ends a stream nobody fetched a segment of and a fetch keeps it`() = runBlocking {
         val enc = encoder()
-        val streams = DownloadStreams(enc, playing = { false }, abandonedMs = 10 * 60_000L, clock = { now })
+        val streams = DownloadStreams(enc, abandonedMs = 10 * 60_000L, clock = { now })
         val plan = planOf(enc)
-        val id = (streams.open(plan, "phone-a", "film", now + 4 * 3_600_000L, 0) as DownloadStreams.Opened.Ok).id
+        val id = streams.open(plan, "phone-a", "film", now + 4 * 3_600_000L, 0)
         now += 9 * 60_000L
         assertEquals(0, streams.reap())
         // A segment request (the job cannot start here: there is no ffmpeg) still counts as a read.
@@ -185,7 +195,7 @@ class DownloadStreamTest {
         "film-vc1" to Spec("vc1", 1920, 1080, 20_000_000, 20_000_000_000L),
     )
 
-    private class Rig(val service: DownloadService, val playback: PlaybackService, val qoe: PlaybackQoeStore, val on: DeviceData, val other: DeviceData)
+    private class Rig(val service: DownloadService, val playback: PlaybackService, val qoe: PlaybackQoeStore, val config: ConfigStore, val on: DeviceData, val other: DeviceData)
 
     private fun rig(name: String, block: suspend (Rig) -> Unit) = runBlocking {
         val run = "${getpid()}-$name"
@@ -227,10 +237,9 @@ class DownloadStreamTest {
         val playback = PlaybackService(mediaStore, JellyfinClient(), configStore, qoe, PlaybackStartSampleStore(db), RaviloDeviceService(db))
         playback.encoder.testCards = cards
         playback.encoder.testFfmpeg = true
-        playback.playingProbe = { false }   // the process-wide tracker is every test's: only a test that wants a live play says so
         val service = DownloadService(mediaStore, JellyfinClient(), configStore, detail, playback)
         try {
-            block(Rig(service, playback, qoe, device("on"), device("on2")))
+            block(Rig(service, playback, qoe, configStore, device("on"), device("on2")))
         } finally {
             server.stop(100, 500)
             for (s in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$s") }
@@ -265,10 +274,20 @@ class DownloadStreamTest {
         assertEquals(emptyList(), qualities("film-vc1", hevcPhone))
     }
 
-    @Test fun `no copy is offered when the encoder is off or has no GPU`() = rig("no-gpu") { r ->
+    @Test fun `no copy is offered when the encoder is off or has no GPU and a start for one is unavailable not refused`() = rig("no-gpu") { r ->
         r.playback.encoder.testCards = emptyList()
         assertEquals(listOf("original"), r.service.options(r.on, "film-4k", null, hevcPhone).ok().options.map { it.quality })
-        assertEquals(HttpStatusCode.BadRequest, r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "medium", capabilities = hevcPhone)).httpStatus())
+        // DEB-4256 — a copy that cannot be made right now is the `unavailable` wait (503), which the phone keeps asking; it was a 400 before.
+        val noGpu = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "medium", capabilities = hevcPhone))
+        assertTrue(noGpu is DownloadOutcome.Unavailable, noGpu.toString())
+        assertEquals(HttpStatusCode.ServiceUnavailable, noGpu.httpStatus())
+        r.playback.encoder.testCards = cards
+        r.config.update(r.config.current.copy(encoder = r.config.current.encoder.copy(enabled = false)))
+        val off = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "medium", capabilities = hevcPhone))
+        assertTrue(off is DownloadOutcome.Unavailable, off.toString())
+        assertEquals("encoder off", (off as DownloadOutcome.Unavailable).reason)
+        // A quality the server never offers is still refused outright (400): the phone does not ask again for it.
+        assertEquals(HttpStatusCode.BadRequest, r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "tiny", capabilities = hevcPhone)).httpStatus())
     }
 
     @Test fun `start answers an hls ticket whose master has one rung and one audio and it is no play`() = rig("start") { r ->
@@ -290,43 +309,57 @@ class DownloadStreamTest {
         assertEquals(1, r.playback.encoder.downloadStreams().size)
     }
 
-    @Test fun `a second start by the same phone replaces the stream another phone waits with a 503 an offered copy only`() = rig("one") { r ->
+    @Test fun `a second start by the same phone replaces its stream and two phones hold a stream each — an offered copy only`() = rig("one") { r ->
         val a = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone)).ok()
         val again = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone, fromSegment = 150)).ok()
         assertNotEquals(a.url, again.url)
         assertEquals(1, r.playback.encoder.downloadStreams().size)
         assertTrue(r.playback.downloads.holds(a.url.removePrefix("/api/tv/stream/").substringBefore('/')))
-        val other = r.service.start(r.other, DownloadStartRequest(itemId = "film-low", quality = "small", capabilities = hevcPhone))
-        assertTrue(other is DownloadOutcome.Waiting, other.toString())
-        assertEquals(HttpStatusCode.ServiceUnavailable, other.httpStatus())
+        // DEB-4256 — another phone's copy starts beside it: 200, two streams, one per phone.
+        val other = r.service.start(r.other, DownloadStartRequest(itemId = "film-low", quality = "small", capabilities = hevcPhone)).ok()
+        assertTrue(other.url.startsWith("/api/tv/stream/dl-"), other.url)
+        assertEquals(2, r.playback.encoder.downloadStreams().size)
+        assertEquals(setOf(r.on.deviceId, r.other.deviceId), r.playback.encoder.downloadStreams().map { it.ownerDeviceId }.toSet())
         // A quality the file is not clearly smaller at is refused, not queued.
         assertEquals(HttpStatusCode.BadRequest, r.service.start(r.on, DownloadStartRequest(itemId = "film-720", quality = "high", capabilities = hevcPhone)).httpStatus())
     }
 
-    @Test fun `a play's start ends the download stream before anything else and a start is then refused while the play is live`() = rig("preempt") { r ->
+    @Test fun `a play's start a live play and a restream leave the download stream running and a start during a play answers 200`() = rig("priority") { r ->
         val t = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone)).ok()
         val id = t.url.removePrefix("/api/tv/stream/").substringBefore('/')
         assertEquals(1, r.playback.encoder.downloadStreams().size)
-        // A play's start (the fake Jellyfin answers it as a direct play): it makes room first.
+        // DEB-4256 (FR-6) — a play's start (the fake Jellyfin answers it as a direct play) ends nothing.
         r.playback.startPlayback(r.other, "film-720", hevcPhone)
-        assertTrue(r.playback.encoder.downloadStreams().isEmpty(), "the play's start ended the download stream")
-        assertTrue(r.playback.downloads.holds(id), "its segments now answer waiting")
-        // While that play is live no download stream starts: a start answers waiting (503).
+        assertEquals(listOf(id), r.playback.encoder.downloadStreams().map { it.id }, "the play's start left the download stream running")
+        assertFalse(r.playback.downloads.holds(id), "its segments are served")
+        // A play live on the tracker (a progress report, a paused play): nothing asks, so a start during it is admitted when a card has room.
         r.playback.playingProbe = { true }
-        val during = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone))
-        assertTrue(during is DownloadOutcome.Waiting, during.toString())
-        assertEquals(HttpStatusCode.ServiceUnavailable, during.httpStatus())
-        assertTrue(r.playback.encoder.downloadStreams().isEmpty())
-        // The play ends: the phone asks again from the segment it reached and gets a fresh stream.
-        r.playback.playingProbe = { false }
-        val resumed = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone, fromSegment = 150)).ok()
-        assertNotEquals(t.url, resumed.url)
-        assertEquals(1, r.playback.encoder.downloadStreams().size)
+        val during = r.service.start(r.other, DownloadStartRequest(itemId = "film-low", quality = "small", capabilities = hevcPhone)).ok()
+        assertTrue(during.url.startsWith("/api/tv/stream/dl-"), during.url)
+        assertEquals(2, r.playback.encoder.downloadStreams().size)
+        assertFalse(r.playback.downloads.holds(id), "a request finding a play live ends nothing")
+        // A play's restream ends nothing either.
+        runCatching { r.playback.restream(r.other, "film-720", -1, 0L, hevcPhone) }
+        assertEquals(2, r.playback.encoder.downloadStreams().size)
     }
 
-    @Test fun `a restream is a play too and ends the download stream`() = rig("restream") { r ->
-        r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone)).ok()
-        runCatching { r.playback.restream(r.other, "film-720", -1, 0L, hevcPhone) }
-        assertTrue(r.playback.encoder.downloadStreams().isEmpty())
+    @Test fun `every card full answers waiting with encoder_full's count and the encoder off unavailable — neither names the title or the file`() = rig("full") { r ->
+        r.playback.encoder.testCards = fullCards
+        val full = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone))
+        assertTrue(full is DownloadOutcome.Waiting, full.toString())
+        assertEquals(HttpStatusCode.ServiceUnavailable, full.httpStatus())
+        assertEquals(0, (full as DownloadOutcome.Waiting).streams, "no job runs here (no ffmpeg)")
+        assertTrue(r.playback.encoder.downloadStreams().isEmpty(), "a wait registers nothing")
+        r.playback.encoder.testCards = emptyList()
+        val off = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone))
+        assertTrue(off is DownloadOutcome.Unavailable, off.toString())
+        // Acceptance 24 — no reason names what someone owns: not the item, not its file, not its path, not the viewer or the device.
+        for (reason in listOf(full.reason, (off as DownloadOutcome.Unavailable).reason)) {
+            for (name in listOf("film-4k", "/tmp", ".mkv", "Title", r.on.deviceId, r.on.jellyfinUsername)) assertFalse(name in reason, "'$name' in '$reason'")
+        }
+        // A card with room again: the same start is admitted at once, from the segment the phone reached.
+        r.playback.encoder.testCards = cards
+        val resumed = r.service.start(r.on, DownloadStartRequest(itemId = "film-4k", quality = "small", capabilities = hevcPhone, fromSegment = 150)).ok()
+        assertTrue(resumed.url.startsWith("/api/tv/stream/dl-"), resumed.url)
     }
 }

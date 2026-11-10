@@ -8,58 +8,31 @@ import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
 /**
- * DEB-4062 (DEB-3995 FR-6) — the policy over the encoder's download streams: a smaller copy a phone saves is made by the same encoder a
- * play uses, but it is **no play** and it **yields to every play**.
+ * DEB-4062 / DEB-4256 (DEB-3995 FR-6) — the policy over the encoder's download streams: a smaller copy a phone saves is made by the
+ * same encoder a play uses. It is **no play** (no tracker entry, no QoE row, not in *Playing now*), but since DEB-4256 (owner,
+ * 2026-11-10) it has **a play's priority**:
  *
- * - at most one runs, server-wide ([Encoder.registerDownload]);
- * - none is started while a play is live, and one running is ended the moment a play starts ([preempt]) — the process is killed at
- *   once and nothing is awaited, so the play's start does not wait for it;
- * - one that is not running answers "waiting" ([holds]), never 404, so the phone can show *Waiting for the server* and ask `start` again;
+ * - it is admitted by the budget a play's job is admitted by ([Encoder.planFor]), on the card plays use last; whether anyone is
+ *   playing is not asked, and no play's start or restream ends it;
+ * - one per phone ([Encoder.registerDownload]): the same phone's `start` replaces its own; there is no limit server-wide;
+ * - one that is not running (reaped, lost to a restart) answers "waiting" ([holds]), never 404, so the phone keeps what it has and asks
+ *   `start` again;
  * - one nobody reads for [abandonedMs] is reaped with its files ([reap]).
  */
 class DownloadStreams(
     private val encoder: Encoder,
-    /** Is a play live (the tracker's, with its grace)? Read at every `start` and every segment; a play's own start calls [preempt]. */
-    private val playing: () -> Boolean,
     private val abandonedMs: Long = ABANDONED_MS,
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
-    sealed interface Opened {
-        data class Ok(val id: String) : Opened
-        /** Not now: [reason] says why (a play is live, another phone holds the one stream). The route answers `503` "waiting". */
-        data class Waiting(val reason: String) : Opened
-    }
-
-    /** Whether anything that is not a download stream holds the encoder, the GPU or the source disk now. */
-    suspend fun playLive(): Boolean = playing() || encoder.playJobsRunning()
-
-    /** Registers [plan] as the one download stream, or says why it cannot be one now. */
-    suspend fun open(plan: EncoderPlan, ownerDeviceId: String, itemId: String, expiresAt: Long, startSegment: Int): Opened {
-        if (playLive()) return Opened.Waiting("a play is using the server")
-        val id = encoder.registerDownload(plan, ownerDeviceId, itemId, expiresAt, startSegment)
-            ?: return Opened.Waiting("another download is running")
-        return Opened.Ok(id)
-    }
-
-    /** A play needs the encoder, the GPU or the source disk: ends the download stream, if any. Returns how many it ended. */
-    suspend fun preempt(why: String): Int {
-        val ended = encoder.downloadStreams().count { encoder.endDownload(it.id, "yielded: $why") }
-        if (ended > 0) Logger.info("download: stream ended — $why (DEB-4062 FR-6)", "tv")
-        return ended
-    }
+    /** Registers [plan] as [ownerDeviceId]'s download stream and returns its id. Admission was [Encoder.planFor]'s: nothing waits here. */
+    suspend fun open(plan: EncoderPlan, ownerDeviceId: String, itemId: String, expiresAt: Long, startSegment: Int): String =
+        encoder.registerDownload(plan, ownerDeviceId, itemId, expiresAt, startSegment)
 
     /**
-     * Must a request for stream [id] be answered "waiting" (503) instead of served? True for a `dl-` stream that is not running: ended by
-     * a play, reaped, or lost to a restart. And for a running one when a play is live (it is ended there and then: a play that did not
-     * come through a start, such as a progress report, still wins).
+     * Must a request for stream [id] be answered "waiting" (503) instead of served? True for a `dl-` stream that is not running: reaped,
+     * replaced by its phone's next `start`, or lost to a restart. Never for a play's stream, and (DEB-4256) never because a play is live.
      */
-    suspend fun holds(id: String): Boolean {
-        if (!isDownloadStreamId(id)) return false
-        if (encoder.downloadStreams().none { it.id == id }) return true
-        if (!playLive()) return false
-        preempt("a play is live")
-        return true
-    }
+    suspend fun holds(id: String): Boolean = isDownloadStreamId(id) && encoder.downloadStreams().none { it.id == id }
 
     /** Ends every download stream nobody has fetched a segment of for [abandonedMs]; its files are removed with its job. Returns how many. */
     suspend fun reap(): Int {

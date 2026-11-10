@@ -222,7 +222,11 @@ class DownloadServiceTest {
         assertEquals(HttpStatusCode.NotFound, service.start(on, DownloadStartRequest(itemId = "nope")).httpStatus())
         assertEquals(HttpStatusCode.NotFound, service.start(on, DownloadStartRequest(itemId = "series-jf")).httpStatus())
         assertEquals(HttpStatusCode.BadRequest, service.start(on, DownloadStartRequest(itemId = "film-jf", mediaSourceId = "other")).httpStatus())
-        assertEquals(HttpStatusCode.BadRequest, service.start(on, DownloadStartRequest(itemId = "film-jf", quality = "medium")).httpStatus())
+        // A quality nobody offers is refused for good; a copy this server has no GPU to make is `unavailable` (503, DEB-4256 FR-6), which the phone keeps asking — it was a 400 before.
+        assertEquals(HttpStatusCode.BadRequest, service.start(on, DownloadStartRequest(itemId = "film-jf", quality = "tiny")).httpStatus())
+        val copy = service.start(on, DownloadStartRequest(itemId = "film-jf", quality = "medium"))
+        assertTrue(copy is DownloadOutcome.Unavailable, copy.toString())
+        assertEquals(HttpStatusCode.ServiceUnavailable, copy.httpStatus())
     }
 
     @Test

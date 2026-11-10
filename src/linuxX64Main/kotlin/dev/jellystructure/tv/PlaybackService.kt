@@ -581,12 +581,12 @@ class PlaybackService(
     }
 
     /**
-     * DEB-4062 (DEB-3995 FR-6) — the smaller copies a phone saves are download streams: no play, one at a time, and every play's start
-     * ends the one running (see [DownloadStreams]). Live while the tracker has a play (with its grace).
+     * DEB-4062 / DEB-4256 (DEB-3995 FR-6) — the smaller copies a phone saves are download streams: no play, but admitted by the budget a
+     * play is, one per phone, and ended by no play (see [DownloadStreams]). Whether anyone is playing is not asked.
      */
-    val downloads = DownloadStreams(encoder, playing = { playingProbe() }).also { d -> backgroundScope?.let { d.startReaper(it) } }
+    val downloads = DownloadStreams(encoder).also { d -> backgroundScope?.let { d.startReaper(it) } }
 
-    /** Is a play live (the process-wide tracker's, with its grace)? Tests replace it: that tracker is shared by every test of the binary. */
+    /** Is a play live (the process-wide tracker's, with its grace)? Without a reader since DEB-4256: a download stream no longer asks. */
     internal var playingProbe: () -> Boolean = { playbackTracker.anyActive() }
 
     /** Phase 180 + R291 — releases the encode AND this server's audio rendition jobs for it. */
@@ -1251,7 +1251,6 @@ class PlaybackService(
         shuffle: Boolean = false,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
-        downloads.preempt("a play starts")   // DEB-4062 (DEB-3995 FR-6) — before anything is planned: a download stream never costs a play its start
         rememberCapabilities(device, capabilities)   // 309 (FR-309-6) — a phone can prewarm for this device later
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
         // (CastCeilingException → Server.kt StatusPages), never a spinner forever. A TV is never gated.
@@ -1554,9 +1553,10 @@ class PlaybackService(
     }
 
     /**
-     * DEB-4062 (DEB-3995 FR-4, FR-6) — the plan of one smaller copy: [box]'s rung and one audio, the one a play would pick (the viewer's
-     * remembered [audioLanguage] / [audioVariant], else the file's default), placed on a card like a play's. Null with the reason when the
-     * encoder cannot make it now (`no encoder slot free…` is a wait, anything else a refusal).
+     * DEB-4062 / DEB-4256 (DEB-3995 FR-4, FR-6) — the plan of one smaller copy: [box]'s rung and one audio, the one a play would pick (the
+     * viewer's remembered [audioLanguage] / [audioVariant], else the file's default), placed on a card by a play's budget, the cards tried
+     * in the reverse of a play's order. Null with the reason when the encoder cannot make it now (`no encoder slot free…` is the
+     * `encoder_full` wait, anything else `unavailable`).
      */
     internal suspend fun downloadPlanFor(
         device: DeviceData, itemDetail: JellyfinItemDetail?, mediaSourceId: String?, jellyfinId: String, caps: ClientCapabilities, box: Int,
@@ -1573,7 +1573,7 @@ class PlaybackService(
         val range = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType
         return encoder.planFor(downloadCaps(caps), device.kind, file.first, file.encoderMs, file.tracks, audio, asked,
             takeBps = null, noRecord = false, sourceVideoRange = range, platform = device.platform,
-            audioBps = audioBitratesOf(itemDetail, mediaSourceId), boxLimit = box, emptyStreams = ghosts.empty)
+            audioBps = audioBitratesOf(itemDetail, mediaSourceId), boxLimit = box, emptyStreams = ghosts.empty, cardsLastFirst = true)
     }
 
     private fun rememberCapabilities(device: DeviceData, caps: ClientCapabilities) {
@@ -2455,7 +2455,6 @@ class PlaybackService(
         /** DEB-2205 (FR-4) — a hand-over ahead of time: the playhead position the player will switch at (null: restream at [positionMs] now). */
         handoverAtMs: Long? = null,
     ): StreamTicket {
-        downloads.preempt("a play restreams")   // DEB-4062 (DEB-3995 FR-6)
         if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps, handoverAtMs)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
