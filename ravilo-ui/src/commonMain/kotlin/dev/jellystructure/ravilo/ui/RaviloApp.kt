@@ -3250,14 +3250,14 @@ fun RaviloApp(
 
             // ─── R321/R322 — music mode ───
             is Dest.MusicListen -> {
-                val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicHome(radio = true).also { dev.jellystructure.ravilo.ui.music.MusicVersions.learn(it.versionTypes) } } }
+                val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.musicListenLoader(activeUserId?.let { dev.jellystructure.ravilo.ui.music.UserMusicSnapshots(it) }) { apiClient.getMusicHome(radio = true).also { dev.jellystructure.ravilo.ui.music.MusicVersions.learn(it.versionTypes) } } }
                 dev.jellystructure.ravilo.ui.music.MusicListenScreen(
                     loader = loader,
                     onProfile = { openProfile() },
                     onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
                     onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
                     onSeeAllPlayed = {
-                        keptStore("mbrowse:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicBrowseStore(apiClient) }.setSort("songs", "played")
+                        keptStore("mbrowse:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicBrowseStore(apiClient, activeUserId?.let { dev.jellystructure.ravilo.ui.music.UserMusicSnapshots(it) }) }.setSort("songs", "played")
                         resetTo(Dest.MusicBrowse(dest.displayName, chip = "songs"))
                     },
                     onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
@@ -3268,7 +3268,7 @@ fun RaviloApp(
                 )
             }
             is Dest.MusicBrowse -> {
-                val store = keptStore("mbrowse:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicBrowseStore(apiClient) }
+                val store = keptStore("mbrowse:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicBrowseStore(apiClient, activeUserId?.let { dev.jellystructure.ravilo.ui.music.UserMusicSnapshots(it) }) }
                 dev.jellystructure.ravilo.ui.music.MusicBrowseScreen(
                     store = store,
                     chip = dest.chip,

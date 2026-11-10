@@ -91,11 +91,19 @@ val MUSIC_CHIPS = listOf("artists", "albums", "songs", "genres", "playlists")
 private val SORTS = listOf("added" to "music.sort_added", "title" to "music.sort_az", "year" to "music.sort_year", "played" to "music.sort_played")
 
 /** A browse list that grows a page at a time as the viewer scrolls to its end. */
-class MusicPagedList(private val fetch: suspend (Int) -> MusicList) {
+class MusicPagedList(
+    /** DEB-4091 (FR-5) — the saved first page for this sort: the list starts `Ready(seed)` and [load] refreshes it quietly. */
+    seed: MusicList? = null,
+    /** DEB-4091 (FR-5) — called with each successful *first-page* answer, to save it; [more] never calls it. */
+    private val onFirstPage: (suspend (MusicList) -> Unit)? = null,
+    private val fetch: suspend (Int) -> MusicList,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _state = MutableStateFlow<Load<MusicList>>(Load.Loading)
+    private val _state = MutableStateFlow<Load<MusicList>>(if (seed != null) Load.Ready(seed) else Load.Loading)
     val state: StateFlow<Load<MusicList>> = _state
     private var page = 0
+    /** False while the list still shows only its saved copy: paging restarts from the fresh page 0, never the old one. */
+    private var refreshed = seed == null
     private var busy = false
     var lastFailure: Throwable? = null
         private set
@@ -106,13 +114,15 @@ class MusicPagedList(private val fetch: suspend (Int) -> MusicList) {
         scope.launch {
             val answer = runCatching { fetch(0) }
             busy = false
-            answer.onSuccess { lastFailure = null; page = 0; _state.value = Load.Ready(it) }
+            answer.onSuccess { lastFailure = null; page = 0; refreshed = true; _state.value = Load.Ready(it) }
                 .onFailure { lastFailure = it; if (_state.value !is Load.Ready) _state.value = Load.Failed }
+            answer.getOrNull()?.let { first -> if (onFirstPage != null) runCatching { onFirstPage.invoke(first) } }
         }
     }
     fun reloadIfFailed() { if (_state.value is Load.Failed) load() }
     fun more() {
         val cur = (_state.value as? Load.Ready)?.value ?: return
+        if (!refreshed) { load(); return }   // FR-5 — a saved copy has no page 1 to continue from; try the refresh again
         val have = cur.albums.size + cur.artists.size + cur.tracks.size
         if (busy || have >= cur.total) return
         busy = true
@@ -147,19 +157,24 @@ internal fun reloadFailedBrowseLoaders(lists: Collection<MusicPagedList>, genres
 }
 
 /** R321 (FR-R321-6) — Browse = the library + search: lists per chip and sort, the genre drill-in, and the query. */
-class MusicBrowseStore(private val api: TvApiClient) {
+class MusicBrowseStore(private val api: TvApiClient, private val snapshots: UserMusicSnapshots? = null) {
+    /** DEB-4091 (FR-5) — read once, when the store is created on a cold start; each list seeds from it only on a matching sort. */
+    private val saved = snapshots?.load()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val sorts = MutableStateFlow(mapOf("albums" to "added", "artists" to "title", "songs" to "added"))
     val genre = MutableStateFlow<String?>(null)
     private val lists = HashMap<String, MusicPagedList>()
     fun list(chip: String, sort: String, genre: String?): MusicPagedList = lists.getOrPut("$chip|$sort|$genre") {
         val what = if (chip == "songs") "tracks" else chip
-        MusicPagedList { p -> api.browseMusic(what, sort, p, genre) }
+        // FR-5 — the genre drill-in is not saved, only the chip's own list for the sort it was loaded with.
+        val seed = if (genre == null) saved?.listFor(chip, sort) else null
+        val save: (suspend (MusicList) -> Unit)? = if (genre == null && snapshots != null) ({ l -> snapshots.saveList(chip, sort, l) }) else null
+        MusicPagedList(seed, save) { p -> api.browseMusic(what, sort, p, genre) }
     }
     /** R388 — *Play all* / *Shuffle all* for whatever this page lists; one press in flight at a time across the page. */
     val playAll = PlayAll(api)
-    val genres = MusicLoader { api.getMusicGenres() }
-    val playlists = MusicLoader { api.getMusicPlaylists() }
+    val genres = MusicLoader(saved?.genres?.value, snapshots?.let { s -> { g: List<MusicGenreCount> -> s.saveGenres(g) } }) { api.getMusicGenres() }
+    val playlists = MusicLoader(saved?.playlists?.value, snapshots?.let { s -> { p: List<MusicPlaylist> -> s.savePlaylists(p) } }) { api.getMusicPlaylists() }
     fun reloadFailed() = reloadFailedBrowseLoaders(lists.values, genres, playlists)
 
     val query = MutableStateFlow("")

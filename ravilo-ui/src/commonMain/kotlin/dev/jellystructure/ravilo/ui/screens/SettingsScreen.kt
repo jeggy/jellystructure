@@ -180,6 +180,7 @@ suspend fun unpairAllSessions(apiClient: TvApiClient) {
     sessions.forEach {
         PlaybackPrefsStore.clearProfile(it.userId)   // R181 — local playback memory
         HomeSnapshotCache.clear(it.userId)           // R212 — cached Home snapshot
+        dev.jellystructure.ravilo.ui.music.MusicSnapshots.device.clear(it.userId)   // DEB-4091 (FR-5) — and the music copy
     }
     dev.jellystructure.ravilo.ui.music.forgetListening()   // R340 — as signOutActiveSession does; the next viewer starts in video mode
 }
@@ -199,6 +200,7 @@ suspend fun signOutActiveSession(apiClient: TvApiClient): Boolean {
     MultiTokenStore.remove(active.userId)
     PlaybackPrefsStore.clearProfile(active.userId)   // R181 — local playback memory doesn't outlive the profile
     HomeSnapshotCache.clear(active.userId)           // R212 — cached Home snapshot doesn't outlive the profile either
+    dev.jellystructure.ravilo.ui.music.MusicSnapshots.device.clear(active.userId)   // DEB-4091 (FR-5) — nor does the music copy
     dev.jellystructure.ravilo.ui.music.forgetListening()   // R321 (FR-R321-1) — the next viewer starts in video mode
     return MultiTokenStore.getAll().isNotEmpty()
 }

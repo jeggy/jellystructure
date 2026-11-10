@@ -77,9 +77,15 @@ sealed interface Load<out T> {
 }
 
 /** One fetch, kept across navigation (R40's retained-store idiom): Back shows what was there and refreshes quietly. */
-class MusicLoader<T>(private val fetch: suspend () -> T) {
+class MusicLoader<T>(
+    /** DEB-4091 (FR-5) — the saved copy of the last answer: the store starts `Ready(seed)` and [load] refreshes it quietly. */
+    seed: T? = null,
+    /** DEB-4091 (FR-5) — called with each successful answer, to save it; a failure here never reaches the page. */
+    private val onLoaded: (suspend (T) -> Unit)? = null,
+    private val fetch: suspend () -> T,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _state = MutableStateFlow<Load<T>>(Load.Loading)
+    private val _state = MutableStateFlow<Load<T>>(if (seed != null) Load.Ready(seed) else Load.Loading)
     val state: StateFlow<Load<T>> = _state
     /** R345 — why the last fetch failed, so a failed page can say *couldn't reach the server* rather than *no music*. */
     var lastFailure: Throwable? = null
@@ -89,9 +95,10 @@ class MusicLoader<T>(private val fetch: suspend () -> T) {
     fun load() {
         if (_state.value is Load.Failed) _state.value = Load.Loading
         scope.launch {
-            runCatching { fetch() }
-                .onSuccess { lastFailure = null; _state.value = Load.Ready(it) }
+            val answer = runCatching { fetch() }
+            answer.onSuccess { lastFailure = null; _state.value = Load.Ready(it) }
                 .onFailure { lastFailure = it; if (_state.value !is Load.Ready) _state.value = Load.Failed }
+            answer.getOrNull()?.let { value -> if (onLoaded != null) runCatching { onLoaded.invoke(value) } }
         }
     }
     fun reloadIfFailed() { if (_state.value is Load.Failed) load() }

@@ -43,6 +43,7 @@ fun forgetStoredProfile(userId: String) {
     MultiTokenStore.remove(userId)
     PlaybackPrefsStore.clearProfile(userId)
     HomeSnapshotCache.clear(userId)
+    dev.jellystructure.ravilo.ui.music.MusicSnapshots.device.clear(userId)   // DEB-4091 (FR-5)
 }
 
 /** The real [applySignedOut]: the device's own store and [apiClient]'s sign-out. */

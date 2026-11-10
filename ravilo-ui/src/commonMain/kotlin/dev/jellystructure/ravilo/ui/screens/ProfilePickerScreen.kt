@@ -92,6 +92,7 @@ class ProfilePickerStore {
         MultiTokenStore.remove(userId)
         PlaybackPrefsStore.clearProfile(userId)   // R181 — local playback memory doesn't outlive the profile
         HomeSnapshotCache.clear(userId)           // R212 — cached Home snapshot doesn't outlive the profile either
+        dev.jellystructure.ravilo.ui.music.MusicSnapshots.device.clear(userId)   // DEB-4091 (FR-5) — nor does the music copy
         _state.value = ProfilePickerState.Picking(MultiTokenStore.getAll())
     }
 }
