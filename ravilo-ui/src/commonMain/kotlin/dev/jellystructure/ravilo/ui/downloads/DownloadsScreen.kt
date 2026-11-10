@@ -168,6 +168,7 @@ private fun DownloadsTitleBar(
     onBack: () -> Unit, onOverflow: () -> Unit, onCancelSelect: () -> Unit, onDeleteSelected: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val backLabel = str("action.back")
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (selecting) {
             Text(
@@ -181,7 +182,7 @@ private fun DownloadsTitleBar(
                 modifier = Modifier.heightIn(min = 44.dp).clickable(enabled = can, onClick = onDeleteSelected).padding(horizontal = 12.dp).wrapCentre(),
             )
         } else {
-            Box(Modifier.size(44.dp).clickable(onClick = onBack).semantics { contentDescription = "Back" }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(44.dp).clickable(onClick = onBack).semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
                 ChevronGlyph(GlyphDirection.LEFT, colors.text, 22.dp)
             }
             Text(str("download.page_title"), color = colors.text, fontSize = 19.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.padding(start = 4.dp))
