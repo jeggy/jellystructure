@@ -109,7 +109,12 @@ class DownloadsController(
     private val lastPercent = HashMap<String, Int>()
     private val renewedAt = HashMap<String, Int>()
     private val startFailures = HashMap<String, Int>()
+    /** Downloads whose own `start` was answered 503 (a play is live, another phone holds the stream): they read *Waiting for the server* while they wait their turn. */
+    private val startWaiting = HashSet<String>()
     private var tick = 0L
+    /** The last thing a `start` threw that was neither an HTTP answer nor a cancel, so a stall that reads *Queued* has a reason a test or a log can see. */
+    var lastStartError: Throwable? = null
+        private set
 
     val wifiOnly: Boolean get() = prefs.wifiOnly
     fun setWifiOnly(on: Boolean) { prefs.wifiOnly = on }
@@ -170,6 +175,7 @@ class DownloadsController(
         renewals.remove(downloadId(u, itemId))
         renewedAt.remove(downloadId(u, itemId))
         startFailures.remove(downloadId(u, itemId))
+        startWaiting.remove(downloadId(u, itemId))
         refresh()
         scope.launch { pump() }
     }
@@ -184,6 +190,7 @@ class DownloadsController(
         library.remove(u, itemId)
         renewals.remove(downloadId(u, itemId))
         startFailures.remove(downloadId(u, itemId))
+        startWaiting.remove(downloadId(u, itemId))
         lastPercent.remove(downloadId(u, itemId))
         refresh()
         scope.launch { pump() }
@@ -329,6 +336,8 @@ class DownloadsController(
         }
         // A `start` the server refused for good (the title is gone, the quality is not offered) is a failure the viewer can retry or delete.
         startFailures.forEach { (id, status) -> if (downloadUserId(id) == u) out[downloadItemId(id)] = DownloadPhase.Failed(status) }
+        // FR-6: a `start` the server answered 503 waits, and says so, instead of reading as a plain queue place.
+        startWaiting.forEach { id -> if (downloadUserId(id) == u && out[downloadItemId(id)] == DownloadPhase.Queued) out[downloadItemId(id)] = DownloadPhase.WaitingServer }
         _phases.value = out
     }
 
@@ -352,7 +361,7 @@ class DownloadsController(
             engine.remove(downloadId(u, id))
             library.remove(u, id)
             val key = downloadId(u, id)
-            renewals.remove(key); startFailures.remove(key); lastPercent.remove(key); renewedAt.remove(key)
+            renewals.remove(key); startFailures.remove(key); startWaiting.remove(key); lastPercent.remove(key); renewedAt.remove(key)
         }
         refresh()
         scope.launch { pump() }
@@ -432,6 +441,7 @@ class DownloadsController(
                 ),
             )
         }
+        startWaiting.remove(downloadId(u, record.itemId))
         engine.enqueue(DownloadJob(downloadId(u, record.itemId), record, ticket, baseUrl()))
         // FR-15 — we are online right now: take the server's play state as the base an offline play's queued write is compared to later.
         val base = sync?.let { runCatching { it.playstate(listOf(record.itemId))[record.itemId].toServerPlay() }.getOrNull() }
@@ -455,6 +465,8 @@ class DownloadsController(
         } catch (e: TvApiError.Http) {
             if (e.status == 503) {
                 // The server is busy or Jellyfin cannot be asked: stays queued and shows "waiting"; try again shortly.
+                startWaiting.add(downloadId(u, next.itemId))
+                refresh()
                 scope.launch { delay(e.retryAfterSeconds?.times(1000L) ?: waitingRetryMs); pump() }
             } else {
                 // 404 / 400: the title is gone or the quality is not offered any more; a failure the viewer can retry or delete.
@@ -462,8 +474,11 @@ class DownloadsController(
                 startFailures[downloadId(u, next.itemId)] = e.status
                 refresh()
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            // Offline right now: stays queued, the next engine change or pump tries again.
+            // Offline right now (or a reply this phone could not read): stays queued, the next engine change or pump tries again.
+            lastStartError = e
         }
     }
 }

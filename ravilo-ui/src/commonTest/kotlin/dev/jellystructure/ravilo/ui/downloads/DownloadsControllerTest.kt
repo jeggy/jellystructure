@@ -29,11 +29,13 @@ class DownloadsControllerTest {
         var optionsStatus: Int? = null
         var startStatus: Int? = null
         var retryAfter: Int? = null
+        var startThrows: Throwable? = null
         override suspend fun options(itemId: String, mediaSourceId: String?): DownloadOptions {
             optionsStatus?.let { throw TvApiError.Http(it, "no") }
             return DownloadOptions(listOf(DownloadOption("original", 2160, 5_000_000_000L, exact = true)))
         }
         override suspend fun start(request: DownloadStartRequest): DownloadTicket {
+            startThrows?.let { throw it }
             startStatus?.let { throw TvApiError.Http(it, "no", retryAfterSeconds = retryAfter) }
             starts += request
             return DownloadTicket(
@@ -158,11 +160,20 @@ class DownloadsControllerTest {
         val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5
         // The server keeps answering busy, so the retry never goes idle: step virtual time instead of waiting for it.
         r.controller.download(listOf(target("m1")), medium); runCurrent()
-        assertEquals(DownloadPhase.Queued, r.controller.phases.value["m1"])
+        // FR-6: the refused start says why it waits (DEB-4140: it read plain Queued, with nothing running, for as long as a play was live).
+        assertEquals(DownloadPhase.WaitingServer, r.controller.phases.value["m1"])
         assertEquals(0, r.engine.jobs.size)
         r.api.startStatus = null
         advanceTimeBy(5_001); runCurrent()
         assertEquals(1, r.engine.jobs.size)
+        assertEquals(DownloadPhase.Running(0), r.controller.phases.value["m1"])
+    }
+
+    @Test fun `a start this phone could not read stays queued and keeps the reason`() = runTest {
+        val r = rig(); r.api.startThrows = IllegalStateException("unreadable ticket")
+        r.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertEquals(DownloadPhase.Queued, r.controller.phases.value["m1"])
+        assertEquals("unreadable ticket", r.controller.lastStartError?.message)
     }
 
     @Test fun `a title the server no longer has is a failure the viewer can retry`() = runTest {
