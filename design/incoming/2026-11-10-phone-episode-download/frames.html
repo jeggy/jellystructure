@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phone episode download — frames</title>
+<!--
+  frames.html — every frame this round renders, built from ed-data.js through ed-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=page | rail | sheet | multi | season | study
+      &lang=en|da|fo
+
+  The surface is the Ravilo ANDROID PHONE's series page only (412 x 915 dp portrait), so there
+  is exactly one shipped stylesheet to load — design/ravilo/mobile/ravilo-phone.css. It is
+  LINKED, not copied, so every token, radius, weight and font in these pictures is the
+  production one. The round's own stylesheet comes last, so it extends the shipped system and
+  never precedes it.
+
+  No TV, desktop, web, admin or cast frame exists in this round: no other surface has a download
+  control at all (spec FR-1), so ravilo.css, ravilo-desktop.css and ravilo-music.css are not
+  loaded — a file that could answer for the phone's tokens is not in the document.
+
+  ravilo-data.js is loaded for ONE reason: RAVILO.episodesFor() and RAVILO.grad() are the
+  shipped corpus's own functions, so every episode title, synopsis, air date and poster colour
+  in these pictures is the same stand-in the TV and phone mockups already draw. Nordvest
+  Season 1 is hand-written in that file, not generated, so the generated-title collision the
+  2026-11-09 round hit cannot arise here.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it;
+  scripts/render-design.sh drives it over the parameter combinations and screenshots one element
+  per frame, naming each PNG after the element's id.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var set = q.get('set') || 'page';
+    var lang = q.get('lang') || 'en';
+    document.documentElement.lang = lang;
+    /* The phone's own token file. No [data-skin] is set: aurora is the default and this round
+       draws no skin variant — the report says which skins are untested. */
+    document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+    document.write('<link rel="stylesheet" href="episode-download.css">');
+    window.EDOPT = { set: set, lang: lang };
+  })();
+</script>
+</head>
+<body>
+<div class="ed-frames" id="frames"></div>
+
+<script src="../../ravilo/ravilo-data.js"></script>
+<script src="ed-data.js"></script>
+<script src="ed-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var set = window.EDOPT.set, lang = window.EDOPT.lang;
+  var K = window.EDKit, D = window.ED;
+  K.setLang(lang);
+  var root = document.getElementById('frames');
+  /* The language suffix. English frames carry none, so `-a-rail` is the English picture and
+     `-a-rail-da` is the Danish one — the file name says what it is without opening it. */
+  var sfx = lang === 'en' ? '' : '-' + lang;
+
+  /* `ed-frame` is the renderer's handle and carries no style of its own beyond shrinking to its
+     content: --all targets it, so a phone nested INSIDE a strip is never mistaken for a frame in
+     its own right. */
+  function frame(id, cls, html) {
+    var d = document.createElement('div');
+    d.id = id; d.className = 'ed-frame ' + cls; d.innerHTML = html;
+    root.appendChild(d);
+    return d;
+  }
+  function ph(id, html, extra) {
+    return frame(id, 'ed-ph' + (extra ? ' ' + extra : ''), K.sb() + html);
+  }
+
+  var EPS = K.episodes();
+
+  /* The state each card is in, as a label for the rail strip's captions. Derived from the data,
+     never typed twice. */
+  function stateLabel(e) {
+    switch (e.state) {
+      case 'none': return 'not downloaded';
+      case 'queued': return 'queued';
+      case 'running': return e.pct + ' %';
+      case 'paused': return 'paused · ' + e.pct + ' %';
+      case 'waitingWifi': return 'waiting · wi-fi';
+      case 'waitingNetwork': return 'waiting · no network';
+      case 'waitingServer': return 'waiting · server';
+      case 'downloaded': return e.watched ? 'downloaded · watched' : 'downloaded';
+      case 'failed': return 'failed → retry';
+    }
+    return e.state;
+  }
+
+  /* ---- THE RAIL STRIP ----------------------------------------------------------------------
+     The brief's state 1: the rail un-clipped, every state side by side, each card captioned
+     with the phase it is in. A phone shows one card and a peek — the `page` set shows that — so
+     this frame is the comparison the brief asks for and is deliberately not phone-shaped. */
+  function railStrip(id, dir, list, opts) {
+    var eps = K.episodes(list);
+    var cells = eps.map(function (e) {
+      return '<div>' + K.slot(e, dir, {
+        resume: opts && opts.resumeOn === e.n,
+        icononly: opts && opts.icononly,
+        watchPct: opts && opts.watchPct && opts.watchPct.n === e.n ? opts.watchPct.pct : 0
+      }) + '<div class="ed-slab">' + K.esc(stateLabel(e)) + '</div></div>';
+    }).join('');
+    return frame(id, 'ed-railstrip',
+      '<div class="ed-rshead">' + K.esc(D.SERIES.title + ' · ' + K.t('detail.season') + ' '
+        + D.SERIES.seasonIndex + ' — direction ' + dir.toUpperCase() + ' — ' + lang) + '</div>'
+      + '<div class="ed-rail">' + cells + '</div>');
+  }
+
+  if (set === 'rail') {
+    /* The brief's stand-in exactly: E01/E02 downloaded and watched, E03 downloaded, E04 at
+       42 %, E05 queued, E06 failed, E07/E08 not downloaded. E03 is the first unwatched episode,
+       so it owns the UP NEXT ribbon AND carries the mark — the 24 dp lift is in the picture. */
+    railStrip('a-rail' + sfx, 'a', null, { resumeOn: 3 });
+    railStrip('b-rail' + sfx, 'b', null, { resumeOn: 3 });
+
+    /* The waits and the pause. Four phases that the brief groups as "one waiting": all three
+       waits map to the clock, and a pause keeps its number with the fill drained. One strip, so
+       whether they are distinguishable here is a question the picture answers. */
+    if (lang === 'en') {
+      /* eslint-disable-next-line no-unused-vars */
+      var waits = D.WAIT_VARIANTS.map(function (w) {
+        return { n: w.on, state: w.key, watched: false, rung: 'medium', mb: 650, pct: w.pct };
+      });
+      railStrip('a-rail-waits', 'a', waits);
+
+      /* The same rail where the running episode is also part-watched: the shipped 4 dp watch bar
+         on the still at 28 % and the download control at 42 % below it, so "two progress
+         readings on one card" is a picture and not a worry. */
+      railStrip('a-rail-progress', 'a', null, { resumeOn: 3, watchPct: { n: 4, pct: 28 } });
+
+      /* The brief's lean drawn literally: the control alone, with no status line, so every card
+         that is not at rest says nothing but a clock, a number or a triangle. Beside a-rail this
+         is the comparison the open decision needs. */
+      railStrip('a-rail-icononly', 'a', null, { resumeOn: 3, icononly: true });
+      railStrip('a-rail-waits-icononly', 'a', D.WAIT_VARIANTS.map(function (w) {
+        return { n: w.on, state: w.key, watched: false, rung: 'medium', mb: 650, pct: w.pct };
+      }), { icononly: true });
+    }
+  }
+
+  /* ---- THE PAGE ----------------------------------------------------------------------------
+     What a viewer actually meets: the series page at 412 dp, the rail clipped at the screen's
+     edge. The brief's state 4 is here too — the rail beside the *Download season* chip with
+     some episodes already on the phone, which is the stand-in's own case. */
+  if (set === 'page') {
+    ph('a-page' + sfx, K.seriesPage('a', { resumeOn: 3 }));
+    ph('b-page' + sfx, K.seriesPage('b', { resumeOn: 3 }));
+    /* 360 dp — the brief's narrow tier. The card is a fixed 320 dp and the gutter a fixed 20 dp,
+       so this is where the round can break. */
+    ph('a-page-360' + sfx, K.seriesPage('a', { resumeOn: 3 }), 'w360');
+    ph('b-page-360' + sfx, K.seriesPage('b', { resumeOn: 3 }), 'w360');
+    /* The Episodes header as it is arranged TODAY — the count beside the word on one line —
+       so the overflow is a picture and not a sentence. Faroese at 360 dp is the break. */
+    ph('a-header-today' + sfx, K.seriesPage('a', { resumeOn: 3, oneRow: true }));
+    ph('a-header-today-360' + sfx, K.seriesPage('a', { resumeOn: 3, oneRow: true }), 'w360');
+    /* The second arrangement that was drawn and failed: the count stacked under the word, chips
+       still beside it. Good at 412 dp, still colliding at 360 dp in English. */
+    ph('a-header-stackcount-360' + sfx, K.seriesPage('a', { resumeOn: 3, lhs2: true }), 'w360');
+
+    /* The whole page rather than the 915 dp a viewer sees first. */
+    if (lang === 'en') {
+      ph('a-page-tall', K.seriesPage('a', { resumeOn: 3 }), 'tall');
+      ph('b-page-tall', K.seriesPage('b', { resumeOn: 3 }), 'tall');
+    }
+  }
+
+  /* ---- THE SHEETS --------------------------------------------------------------------------
+     The brief's state 3. A tap on a *Downloaded* control offers Play and Delete; Delete then
+     confirms, naming the title and what it frees. The running control's own sheet is drawn
+     beside them because FR-8 does not give one and a 42 % control with no second target is a
+     download a viewer cannot stop from the page they started it on. */
+  if (set === 'sheet') {
+    var e3 = EPS[2], e4 = EPS[3];
+    ph('a-menu' + sfx, K.seriesPage('a', { resumeOn: 3, sheet: K.downloadedMenu(e3) }));
+    ph('a-confirm' + sfx, K.seriesPage('a', { resumeOn: 3, sheet: K.deleteConfirm(e3) }));
+    ph('a-running-menu' + sfx, K.seriesPage('a', { resumeOn: 3, sheet: K.runningMenu(e4) }));
+  }
+
+  /* ---- THE MULTI-EPISODE CARD --------------------------------------------------------------
+     The brief's state 5. Two episodes in one physical file are one rail slot and therefore one
+     download: ONE control, drawn mid-download so the single number is visibly the file's. */
+  if (set === 'multi') {
+    frame('a-multi' + sfx, 'ed-railstrip',
+      '<div class="ed-rshead">' + K.esc('one file, two episodes — direction A — ' + lang) + '</div>'
+      + '<div class="ed-rail">' + K.multiSlot('a') + K.slot(EPS[6], 'a', {}) + '</div>');
+    frame('b-multi' + sfx, 'ed-railstrip',
+      '<div class="ed-rshead">' + K.esc('one file, two episodes — direction B — ' + lang) + '</div>'
+      + '<div class="ed-rail">' + K.multiSlot('b') + K.slot(EPS[6], 'b', {}) + '</div>');
+  }
+
+  /* ---- THE SEASON'S OWN EDGES --------------------------------------------------------------
+     Two frames the brief's state 4 implies but does not name: a season every episode of which is
+     already on the phone — what is the *Download season* chip for then? — and a viewer who may
+     not download at all, where none of this is drawn. */
+  if (set === 'season' && lang === 'en') {
+    ph('a-season-all', K.seriesPage('a', { list: D.ALL_DOWNLOADED, resumeOn: 3 }));
+    ph('a-season-all-spent', K.seriesPage('a', { list: D.ALL_DOWNLOADED, resumeOn: 3, spentChip: true }));
+    /* FR-2: the operator's switch is off for this viewer, or this phone's config has no
+       downloads. No chip, no control, no mark — the page is exactly today's. */
+    ph('a-not-allowed', K.seriesPage('a', {
+      resumeOn: 3, notAllowed: true,
+      list: D.EPISODES.map(function (e) { return { n: e.n, state: 'none', watched: e.watched }; })
+    }));
+  }
+
+  /* ---- THE STUDY ---------------------------------------------------------------------------
+     The control at 3x, every state, and the under-card line at 3x, with the numbers written
+     beside them. PROCESS.md: a direction cannot be read off a 1x thumbnail, and round 11 found
+     a defect only at 6x. */
+  if (set === 'study' && lang === 'en') {
+    var states = [
+      { k: 'not downloaded', e: { n: 7, state: 'none' } },
+      { k: 'queued / waiting', e: { n: 5, state: 'queued' } },
+      { k: 'running 42 %', e: { n: 4, state: 'running', pct: 42 } },
+      { k: 'running 100 %', e: { n: 4, state: 'running', pct: 100 } },
+      { k: 'paused 42 %', e: { n: 4, state: 'paused', pct: 42 } },
+      { k: 'downloaded', e: { n: 3, state: 'downloaded' } },
+      { k: 'downloaded (green alt)', e: { n: 3, state: 'downloaded', green: true } },
+      { k: 'failed', e: { n: 6, state: 'failed' } }
+    ];
+    var cols = states.map(function (s) {
+      return '<div class="ed-zc"><b>' + K.esc(s.k) + '</b>'
+        + '<div class="ed-z3 ctl3"><div class="ed-zin">' + K.ctl(s.e) + '</div></div></div>';
+    }).join('');
+    var lines = ['en', 'da', 'fo'].map(function (l) {
+      K.setLang(l);
+      var h = '<div class="ed-zc"><b>' + l + ' · unwatched + 42 %</b>'
+        + '<div class="ed-z3 line3"><div class="ed-zin">'
+        + '<div class="ed-line">' + K.tog(false) + '<span class="sp"></span>'
+        + K.ctl({ n: 4, state: 'running', pct: 42 }) + '</div></div></div></div>';
+      return h;
+    }).join('');
+    K.setLang('en');
+
+    frame('a-study-control', 'ed-study-wrap',
+      '<div class="ed-study"><h4>The download control, 3&times;</h4>'
+      + '<p>52 &times; 44 dp, radius 12, border 1 px. Icon-only in five of its seven phases, so the '
+      + 'control is the same width in English, Danish and Faroese: no state of it carries a word. '
+      + 'The percentage is 13 px Sora 600 over the film control’s own accent fill at 38 %; a '
+      + 'paused download keeps the number and loses the accent.</p>'
+      + '<div class="ed-zrow">' + cols + '</div>'
+      + '<div class="ed-dim" style="padding-top:26px">'
+      + 'control <i>52 &times; 44 dp · radius 12 · border 1 px rgba(255,255,255,.16) · fill rgba(255,255,255,.07)</i><br>'
+      + 'glyph <i>17 dp, stroke 2.1, currentColor</i><br>'
+      + 'percentage <i>13 px Sora 600, tracking -.01em</i><br>'
+      + 'fill <i>rgba(123,110,240,.38) — the film control’s accent at 38 %</i><br>'
+      + 'downloaded <i>#7fe4c0 on rgba(45,212,154,.12), border rgba(45,212,154,.52)</i><br>'
+      + 'failed <i>#f0c07a on rgba(245,181,66,.12), border rgba(245,181,66,.55)</i><br>'
+      + 'paused <i>--ink-soft on rgba(255,255,255,.20)</i>'
+      + '</div></div>');
+
+    frame('a-study-line', 'ed-study-wrap',
+      '<div class="ed-study" style="width:1120px"><h4>The under-card line, 3&times;, three languages</h4>'
+      + '<p>320 dp wide, 44 dp tall, 6 dp under the card. The Watched toggle keeps its shipped look '
+      + '(radius 8, padding 10 / 5, a 13 dp drawn glyph, 12 px label) and gains a 44 dp row to sit '
+      + 'in; the control is at the end. The longest label is Danish <i>Marker som set</i> and the '
+      + 'line keeps at least 140 dp of slack in all three languages.</p>'
+      + '<div class="ed-zrow" style="flex-direction:column;gap:6px">' + lines + '</div>'
+      + '<div class="ed-dim" style="padding-top:26px">'
+      + 'line <i>320 &times; 44 dp · margin-top 6 dp (the shipped Spacer)</i><br>'
+      + 'toggle <i>radius 8 · padding 10 / 5 · glyph 13 dp · gap 5 dp · label 12 px</i><br>'
+      + 'gap <i>the slack between them; the control is flush with the card’s right edge</i>'
+      + '</div></div>');
+  }
+})();
+</script>
+</body>
+</html>

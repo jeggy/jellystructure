@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phone episode download — directions</title>
+<!--
+  The directions document. Self-contained on purpose: it is the reference the Compose port is
+  built from, so every hex, px, weight and radius is written out here rather than left to be
+  read off a picture. The frames themselves link the shipped phone stylesheet; this document
+  does not, because a reference that depends on another file is a reference that can silently
+  change under its reader.
+
+  Surface: the Ravilo Android phone's series page, 412 x 915 dp portrait. Nothing else.
+-->
+<style>
+  @font-face { font-family: 'Space Grotesk'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+  @font-face { font-family: 'Sora'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/sora.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #e9eaee; color: #12141b; font-family: 'Sora', sans-serif; font-size: 15px;
+    line-height: 1.6; padding: 46px 40px 90px; }
+  .w { max-width: 980px; margin: 0 auto; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700;
+    letter-spacing: -.02em; line-height: 1.12; }
+  h2 { font-family: 'Space Grotesk', sans-serif; font-size: 23px; font-weight: 700;
+    letter-spacing: -.01em; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid #c9ccd6; }
+  h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 700; margin: 26px 0 6px; }
+  p, li { color: #262a35; }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 14px 22px; }
+  li { margin: 0 0 5px; }
+  .lede { font-size: 17px; color: #262a35; margin: 10px 0 0; }
+  code, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #3b4152; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #d3d6de; vertical-align: top; color: #262a35; }
+  th { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .07em;
+    text-transform: uppercase; color: #5a6072; font-weight: 500; border-bottom-color: #b9bdc9; }
+  td.k { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #3b4152; white-space: nowrap; }
+  .pick { background: #12141b; color: #f3f4fb; border-radius: 10px; padding: 3px 11px;
+    font-size: 11px; font-family: 'JetBrains Mono', monospace; letter-spacing: .06em;
+    text-transform: uppercase; display: inline-block; vertical-align: middle; margin-left: 10px; }
+  .alt { background: #d3d6de; color: #3b4152; }
+  .note { border-left: 3px solid #12141b; padding: 2px 0 2px 16px; margin: 16px 0; }
+  .sw { display: inline-block; width: 13px; height: 13px; border-radius: 3px; vertical-align: -2px;
+    margin-right: 7px; border: 1px solid rgba(0,0,0,.18); }
+</style>
+</head>
+<body>
+<div class="w">
+
+<h1>Downloading one episode on the phone’s series page</h1>
+<p class="lede">The control on the episode rail and its states. Drawn 2026-11-10 for the Ravilo
+<b>Android phone only</b>, 412 × 915 dp portrait, against the shipped
+<code>design/ravilo/mobile/ravilo-phone.css</code>. No TV, desktop, web or cast frame exists in
+this round: no other surface has a download control at all (FR-1).</p>
+
+<h2>What is fixed before a line is drawn</h2>
+<ul>
+  <li><b>The rail is what is shipped.</b> The phone has no episode page. A season is a sideways
+    rail of 320 dp cards (<code>SeriesDetailScreen</code> → <code>EpisodeCard</code>), a tap on a
+    card plays, and a <i>Watched</i> toggle sits under each card. The 2026-11-09 round drew a
+    vertical list; that is not this surface and nothing here reuses it.</li>
+  <li><b>Nothing new is drawn on the picture.</b> Owner: <i>“for non downloaded things it should
+    show nothing on the poster, like now”</i>. The 18 dp white mark stays exactly as it is, and the
+    control lives <b>beside or under</b> the card, never on the thumbnail.</li>
+  <li><b>The tap on the card still plays.</b> The control is its own target, at least 44 dp.</li>
+  <li><b>The Watched toggle stays and stays reachable.</b></li>
+  <li><b>Three languages</b>, nothing smaller than today’s smallest phone text (12 px, the
+    toggle’s own label). <b>No string names Jellyfin or a status code</b> (invariant 12).</li>
+  <li><b>A viewer who may not download sees none of it</b>, and neither does a phone whose config
+    has no downloads (FR-2) — no chip, no control, no mark.</li>
+  <li><b>The five control states and their mapping are already shipped</b>
+    (<code>DownloadPhase.controlState()</code>). This round did not invent them and does not
+    change them: every wait is <i>Queued</i>, and a pause keeps its percentage.</li>
+</ul>
+
+<h2>The two directions</h2>
+
+<h3>A · Under the card <span class="pick">recommended</span></h3>
+<p>The under-card line becomes 320 × 44 dp: the Watched toggle at the start, the download control
+at the end, flush with the card’s right edge. The toggle keeps its shipped look and gains a 44 dp
+row to sit in. The card itself is untouched.</p>
+<p class="mono">frames: a-rail · a-page · a-page-360 · a-page-tall, each in en / da / fo</p>
+
+<h3>B · In the card body <span class="pick alt">alternative</span></h3>
+<p>The card’s text area becomes a row: the text column, a 1 px divider, then the same control,
+vertically centred inside the card. The under-card line keeps only the Watched toggle, centred,
+exactly as today. No vertical height is added to the rail at all.</p>
+<p class="mono">frames: b-rail · b-page · b-page-360 · b-page-tall, each in en / da / fo</p>
+
+<h3>How they compare</h3>
+<table>
+  <tr><th>&nbsp;</th><th>A · under the card</th><th>B · in the card body</th></tr>
+  <tr><td class="k">rail height</td><td>+44 dp per rail (the line grows from 28 to 44)</td><td>unchanged</td></tr>
+  <tr><td class="k">title / synopsis</td><td>full 292 dp text column, unchanged</td><td>228 dp — every synopsis clips a word earlier, visible in <span class="mono">b-rail-da</span> and <span class="mono">b-rail-fo</span> on all eight cards</td></tr>
+  <tr><td class="k">a watched episode</td><td>the control is outside the card and keeps full contrast</td><td>the control inherits the card’s 62 % watched dimming and goes grey — the signal is weakest on exactly the cards that have it (<span class="mono">b-page-tall</span>)</td></tr>
+  <tr><td class="k">accidental tap</td><td>outside the card’s own tap area by construction</td><td>a 44 dp target inside the box whose tap plays; it has to consume the tap, and the divider is the only thing saying so</td></tr>
+  <tr><td class="k">status line</td><td>sits in the air date’s place, full width</td><td>sits in the air date’s place, 228 dp — <i>Niðurtakið gjørdist ikki liðugt</i> fills it</td></tr>
+  <tr><td class="k">the three controls in a row</td><td>reads as a control strip under the rail</td><td>reads as part of each card, which is also why it is dimmed with it</td></tr>
+</table>
+<p><b>A, for the watched-card contrast and the tap target.</b> B’s 44 dp saving is real and is the
+only argument for it; it is paid for on every card, in every language, by a narrower synopsis and
+a control that fades exactly where it is most useful.</p>
+
+<h2>The control</h2>
+<p><b>58 × 44 dp, radius 12, 1 px border.</b> <b>No state carries a word</b>, so the control is
+the same width in English, Danish and Faroese — the fixed-width problem that squeezed Play to
+82 dp on the film page cannot arise here. 58 dp is the width at which “100 %” keeps real padding;
+52 dp was drawn first and the 3× study showed the number touching both edges.</p>
+
+<table>
+  <tr><th>phase</th><th>control</th><th>colour</th></tr>
+  <tr><td class="k">None</td><td>the arrow-into-a-line glyph, 17 dp</td><td><span class="sw" style="background:#f3f4fb"></span><code>--ink</code> on <code>rgba(255,255,255,.07)</code>, border <code>rgba(255,255,255,.16)</code></td></tr>
+  <tr><td class="k">Queued · WaitingWifi · WaitingNetwork · WaitingServer</td><td>the clock glyph, 17 dp — one picture for all four</td><td><span class="sw" style="background:#aeb4cb"></span><code>--ink-soft</code> on the resting fill</td></tr>
+  <tr><td class="k">Running</td><td>“42 %”, 13 px Sora 600, over a fill that is the control’s own width</td><td><span class="sw" style="background:#6b63c8"></span>fill <code>rgba(123,110,240,.38)</code>, number <code>--ink</code></td></tr>
+  <tr><td class="k">Paused</td><td>the same number; the fill is drained of its accent</td><td><span class="sw" style="background:#4a4c55"></span>fill <code>rgba(255,255,255,.20)</code>, number <code>--ink</code></td></tr>
+  <tr><td class="k">Downloaded</td><td>the arrow-into-a-line on a <b>solid</b> chip</td><td><span class="sw" style="background:#f3f4fb"></span><code>#0a0c13</code> on a solid <code>#f3f4fb</code>, no border</td></tr>
+  <tr><td class="k">Failed</td><td>the warning triangle, 17 dp; tapping retries</td><td><span class="sw" style="background:#f0c07a"></span><code>#f0c07a</code> on <code>rgba(245,181,66,.12)</code>, border <code>rgba(245,181,66,.55)</code></td></tr>
+</table>
+
+<div class="note">
+<p><b>Why <i>Downloaded</i> is the only filled state.</b> Two earlier attempts are in the round’s
+history and both failed in the picture: a <b>green check</b> collided with the Watched toggle’s
+green check, 240 dp away on the same line; a <b>green outlined arrow</b> collided with the
+<i>Download</i> control’s white outlined arrow, making “on the phone” and “not on the phone” the
+same shape in two tints. Filled against outlined survives both, and it is the shipped
+<code>DownloadedMark</code>’s own logic — the control is that mark at control size, so a viewer
+learns one symbol and reads it in two places on the same card. The <code>--good</code> green
+variant is drawn beside it at 3× in <span class="mono">a-study-control</span>; the white is louder
+and that is the only argument against it.</p>
+</div>
+
+<h2>The status line</h2>
+<p>While a download is <b>not at rest</b> — queued, waiting for Wi-Fi, waiting for a connection,
+waiting for the server, paused or failed — the card’s <b>air date line is replaced</b> by the word
+for where it is. Never a new line, never on the picture, never any extra height. A resting card
+(nothing asked for, or fully downloaded) keeps its air date and is exactly today’s card.</p>
+<p>Compare <span class="mono">a-rail</span> with <span class="mono">a-rail-icononly</span>, and
+<span class="mono">a-rail-waits</span> with <span class="mono">a-rail-waits-icononly</span>:
+without it, <b>all three waits are one clock glyph</b> and a failed episode is distinguishable only
+by a small amber triangle 180 dp below the picture. The brief’s lean — the reason lives on the
+Downloads page — is what the icon-only frames show, and it asks a viewer to go to another page to
+find out why nothing is happening on this one.</p>
+<p>13 px, one line, ellipsised: <code>--ink-soft</code> for a wait, <code>#f0c07a</code> for a
+failure.</p>
+
+<h2>The Episodes header</h2>
+<p>Three arrangements were drawn. Only the third holds in every language at every phone width.</p>
+<table>
+  <tr><th>arrangement</th><th>result</th></tr>
+  <tr><td class="k">one row<br><span class="mono">a-header-today*</span></td><td><b>Shipped today, and it already overflows.</b> <i>Episodes</i> + the count + both chips is 438 dp of content. At 412 dp it breaks in English (<i>Episodes</i> clipped at the left edge, the count running under the chip) and in Faroese; Danish just fits. At 360 dp it breaks in all three.</td></tr>
+  <tr><td class="k">count stacked<br><span class="mono">a-header-stackcount-360*</span></td><td>Fixes 412 dp. Still collides at 360 dp in <b>English</b>, where the two chips alone are 234 dp.</td></tr>
+  <tr><td class="k">chips on their own row<br><span class="mono">a-page*</span> <span class="pick">recommended</span></td><td><i>Episodes · 2 / 8 watched</i>, then a 44 dp row with <i>Download season</i> and <i>Shuffle</i>. One rule, no width threshold, no truncation; a third chip later still fits. Costs 44 dp once per series page, on a page that scrolls.</td></tr>
+</table>
+<p>This is a defect in the shipped page that the round found rather than created — the chip and
+Shuffle have shared that row since the season chip was added — but the round cannot draw “the rail beside the
+Download season chip” without resolving it.</p>
+
+<h2>Every state the recommended direction holds</h2>
+<table>
+  <tr><th>state</th><th>frame</th></tr>
+  <tr><td>the rail, every phase side by side</td><td class="k">a-rail · a-rail-da · a-rail-fo</td></tr>
+  <tr><td>the three waits and a pause</td><td class="k">a-rail-waits</td></tr>
+  <tr><td>the same, with no status line (the brief’s lean)</td><td class="k">a-rail-icononly · a-rail-waits-icononly</td></tr>
+  <tr><td>a card that is 28 % watched and 42 % downloaded</td><td class="k">a-rail-progress</td></tr>
+  <tr><td>the page a viewer meets, 412 dp</td><td class="k">a-page · -da · -fo · a-page-tall</td></tr>
+  <tr><td>the page at 360 dp</td><td class="k">a-page-360 · -da · -fo</td></tr>
+  <tr><td>a tap on <i>Downloaded</i>: Play / Delete</td><td class="k">a-menu · -da · -fo</td></tr>
+  <tr><td>the delete confirm, naming what it frees</td><td class="k">a-confirm · -da · -fo</td></tr>
+  <tr><td>a tap on a running control (proposed, not in FR-8)</td><td class="k">a-running-menu · -da · -fo</td></tr>
+  <tr><td>one file, two episodes, one control</td><td class="k">a-multi · -da · -fo</td></tr>
+  <tr><td>a season entirely on the phone</td><td class="k">a-season-all · a-season-all-spent</td></tr>
+  <tr><td>a viewer who may not download</td><td class="k">a-not-allowed</td></tr>
+  <tr><td>the control and the line at 3×</td><td class="k">a-study-control · a-study-line</td></tr>
+</table>
+
+<h2>Decided rows</h2>
+<table>
+  <tr><th>question</th><th>answer</th></tr>
+  <tr><td>Where the control sits</td><td><b>Under the card, on the Watched toggle’s line</b> — toggle at the start, control at the end. The brief’s lean, and B is drawn against it.</td></tr>
+  <tr><td>Label or icon</td><td><b>Icon-only</b>, the brief’s lean, and more strongly than the brief argues it: with no word in any state the control has one width in all three languages, so the film page’s fixed-width rule is not needed here at all.</td></tr>
+  <tr><td>The waiting states</td><td><b>The control shows the clock for every wait</b> (the shipped mapping), <b>and the card says which wait it is</b> in the air date’s place. Half the brief’s lean: the glyph does not distinguish them, the words do, and they cost nothing.</td></tr>
+  <tr><td>A paused download</td><td>Keeps its number (the shipped mapping) with the fill drained of accent, and says <i>Paused</i> on the status line. On the film page a status line disambiguates a pause; the rail had nothing, and a paused control with an accent fill is indistinguishable from a moving one in a still frame.</td></tr>
+  <tr><td>A multi-episode card</td><td><b>One control for the card.</b> Two episodes in one file are one physical download — one size, one progress, one queue entry. Two controls would be drawing two downloads of one file.</td></tr>
+  <tr><td>What the delete confirm names</td><td><b>The series and the code</b> — <i>Nordvest · S01E03</i> — never the episode’s own title. <i>Grindadráp</i> alone does not say what is being deleted.</td></tr>
+  <tr><td>A season already fully on the phone</td><td><b>The chip is unchanged</b> (<span class="mono">a-season-all</span>): FR-5’s <code>download.season_have</code> already lets its sheet say 8 of 8 are there, so no new rule is needed. The chip-as-statement alternative is drawn (<span class="mono">a-season-all-spent</span>) and now fits, since the chips have their own row.</td></tr>
+</table>
+
+<h2>Strings</h2>
+<p>The shipped <code>i18n/*.json</code> wins wherever a string already exists, and every shipped
+key this round draws is taken from it verbatim. <b>New</b> means there is no entry in
+<code>i18n</code> today.</p>
+<table>
+  <tr><th>key</th><th>en</th><th>da</th><th>fo</th></tr>
+  <tr><td class="k">download.waiting_wifi</td><td>Waiting for Wi-Fi</td><td>Venter på Wi-Fi</td><td>Bíðar eftir Wi-Fi</td></tr>
+  <tr><td class="k">download.waiting_server</td><td>Waiting for the server</td><td>Venter på serveren</td><td>Bíðar eftir ambætaranum</td></tr>
+  <tr><td class="k">download.waiting_network<br><i>specified 2026-11-09,<br>not yet in i18n</i></td><td>Waiting for a connection</td><td>Venter på forbindelse</td><td>Bíðar eftir sambandi</td></tr>
+  <tr><td class="k">download.queued</td><td>Queued</td><td>I kø</td><td>Í bíðirøð</td></tr>
+  <tr><td class="k">download.failed</td><td>The download didn’t finish</td><td>Hentningen blev ikke færdig</td><td>Niðurtakið gjørdist ikki liðugt</td></tr>
+  <tr><td class="k">download.paused <b>new</b></td><td>Paused</td><td>På pause</td><td>Á steðgi</td></tr>
+  <tr><td class="k">download.episode_a11y <b>new</b></td><td>Download {code}</td><td>Hent {code}</td><td>Tak {code} niður</td></tr>
+  <tr><td class="k">download.cancel_dl <b>new</b><br><i>only if the running sheet is adopted</i></td><td>Cancel download</td><td>Afbryd hentningen</td><td>Strika niðurtakið</td></tr>
+  <tr><td class="k">download.season_all <b>new</b><br><i>only if the chip-as-statement is adopted</i></td><td>Every episode is on this phone</td><td>Alle episoder er på denne telefon</td><td>Øll pløg eru á hesi telefonini</td></tr>
+</table>
+<p><b>Why <code>download.paused</code> is needed.</b> <code>DownloadPhase.statusKey()</code> returns
+<code>null</code> for a pause today, so nothing anywhere says the word — but FR-7’s acceptance 15
+requires that a paused copy “still reads <i>Paused</i> five minutes later”. The key the rail needs
+is the one that acceptance already assumes exists.</p>
+<p><b>Why not <code>action.cancel</code> on the running sheet.</b> In a confirm that word means
+“do not do it”; on a running download it means “stop this and throw the 273 MB away”. One word
+cannot be both, which is why the Faroese row is <i>Strika niðurtakið</i> and not a second
+<i>Steðga</i>.</p>
+
+<h2>The geometry, as numbers</h2>
+<table>
+  <tr><th>&nbsp;</th><th>value</th><th>source</th></tr>
+  <tr><td class="k">card</td><td>320 dp wide, radius 12, 16:9 still, body padding 14 / 12</td><td>shipped <code>EpisodeCard</code></td></tr>
+  <tr><td class="k">card body</td><td><b>min-height 106 dp</b></td><td>new — without it the under-card line follows each card’s own body and a one-line synopsis lifts that card’s control 18 dp above its neighbours’</td></tr>
+  <tr><td class="k">rail</td><td>gutter 20 dp, item spacing 12 dp</td><td>shipped <code>raviloHPad</code> (compact), <code>RaviloDimens.itemSpacing</code></td></tr>
+  <tr><td class="k">card → line</td><td>6 dp</td><td>shipped <code>Spacer</code></td></tr>
+  <tr><td class="k">the line</td><td><b>320 × 44 dp</b>, toggle at the start, control at the end</td><td>new</td></tr>
+  <tr><td class="k">toggle</td><td>radius 8, padding 10 / 5, glyph 13 dp, gap 5, label 12 px</td><td>shipped <code>EpisodeWatchToggle</code>, unchanged</td></tr>
+  <tr><td class="k">the control</td><td><b>58 × 44 dp</b>, radius 12, border 1 px, glyph 17 dp stroke 2.1, percentage 13 px Sora 600 tracking −.01em</td><td>new; height, radius and border match the film page’s control</td></tr>
+  <tr><td class="k">slack on the line</td><td>at least 140 dp in all three languages (Danish <i>Marker som set</i> is the longest at 121 dp)</td><td>measured in <span class="mono">a-study-line</span></td></tr>
+  <tr><td class="k">the mark</td><td>18 dp box, radius 6, inset 5 dp, lifted 24 dp over a ribbon</td><td>shipped <code>MarkSize.EPISODE</code>, unchanged</td></tr>
+  <tr><td class="k">header chip row</td><td>44 dp, 8 dp between the chips, under the title line</td><td>new</td></tr>
+  <tr><td class="k">status line</td><td>13 px, one line, in the air date’s place</td><td>new</td></tr>
+</table>
+
+<h2>What the round did not draw</h2>
+<ul>
+  <li><b>Skins</b> — aurora only. Nothing here introduces a colour that is not either a shipped
+    token or a colour the 2026-11-09 round already landed, so midnight, noir, graphite and daylight
+    should follow; they are untested and that is a fact, not a claim.</li>
+  <li><b>The hero’s action row and the page below the rail</b> — Play / My List and the About, cast
+    and related rows. The action row was settled by the 2026-11-09 round and this round must not
+    redraw it; the rows below the rail are unaffected by anything here. The page frames carry the
+    hero, the synopsis, the Episodes header and the rail, and stop.</li>
+  <li><b>The hero at its shipped 340 dp</b> — the frames use 230 dp so the rail is in the picture.
+    On the device the rail starts below the first screen.</li>
+  <li><b>10-foot focus</b> — no TV surface in this round. The phone is touch; the rail’s D-pad
+    focus order is unchanged because the control is a new stop at the end of each slot’s line.</li>
+  <li><b>The iPhone bezel and landscape</b> — the surface is Android phone portrait (FR-1).</li>
+  <li><b>Loading and empty</b> — the rail reads the phone’s own disk for its phases and the
+    episodes come with the page; neither state exists on this surface.</li>
+</ul>
+
+</div>
+</body>
+</html>

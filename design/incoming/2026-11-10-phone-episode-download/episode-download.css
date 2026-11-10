@@ -1,0 +1,322 @@
+/* episode-download.css — the round's own rules, on top of the shipped phone stylesheet.
+
+   Round slug `phone-episode-download`, 2026-11-10. Surface: the Ravilo ANDROID PHONE's series
+   page, 412 x 915 dp portrait, only. No TV, desktop, web, admin or cast frame is drawn — no
+   other surface has a download control at all (spec FR-1).
+
+   Loaded AFTER design/ravilo/mobile/ravilo-phone.css, so every token, colour, radius and font
+   in these pictures is the shipped one: --bg, --bg-2, --card, --card-2, --ink, --ink-soft,
+   --ink-dim, --line, --line-2, --accent, --accent-2, --grad, --good, --ease, --fg. Nothing here
+   redefines one.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it
+   — so these rules are a specification of intent for the Compose port, which is why every hex,
+   px, weight, radius and easing is written out rather than left to the implementer. The shipped
+   phone stylesheet has no episode-RAIL component at all: its series page is the older vertical
+   `.merow-single` list, while the shipped Compose draws a sideways rail of 320 dp cards. The
+   brief says draw on what is shipped, so the rail below is authored here.
+
+   Canvas rules held: dark ink (#12141b / #262a35) for any text on the light-gray backdrop, no
+   content-visibility, no backdrop-filter, no large blur, no infinite animation. The shipped
+   .dback IS backdrop-filter in ravilo-phone.css; this round draws it as a flat 55 % tint and the
+   report says so — the live app keeps its glass.
+
+   Touch targets: the download control and the episode rail's under-card line are 44 dp on their
+   smaller axis, which is the brief's floor. No text is below 12 px, the phone's smallest shipped
+   size (the Watched toggle's own label, EpisodeWatchToggle).
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. The render runs with no network,
+   so these blocks make the picture identical with or without one. No file is copied: the url
+   points at the repo's own woff2. ---------------------------------------------------------- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ================================================================================================= */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+.ed-frames { padding: 0; margin: 0; }
+.ed-frames * { box-sizing: border-box; }
+.ed-frame { width: max-content; }
+
+/* The phone: Pixel 9, 412x915 portrait, the shipped size. The bezel is left off — the renderer
+   crops to the screen, and the bezel is not the design. `.w360` is the brief's narrow tier: the
+   SAME markup at 360 dp, because a card fixed at 320 dp and a gutter fixed at 20 dp is where
+   this round can break. */
+.ed-ph { width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+.ed-ph.w360 { width: 360px; }
+.ed-ph > .ed-sb { position: relative; z-index: 90; }
+.ed-ph.art > .ed-sb { background: transparent; box-shadow: none; }
+
+/* A `tall` frame renders the whole page rather than the 915 dp a viewer meets first. Both are
+   rendered for the series page: the phone-height frame is what the viewer sees, the tall one is
+   the page the rail sits in. */
+.ed-ph.tall { height: auto; }
+.ed-ph.tall .ed-detail { position: static; }
+.ed-ph.tall .ed-dscroll { overflow: visible; }
+
+/* A strip: several phones side by side as one PNG, so states are compared rather than
+   remembered. Every cell is rendered on its own as well. */
+.ed-strip { display: flex; gap: 20px; background: #e9eaee; width: max-content; }
+.ed-strip .ed-cell { flex: none; }
+.ed-strip .ed-scap { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .07em;
+  text-transform: uppercase; color: #262a35; padding: 0 0 10px; }
+
+/* THE RAIL STRIP — the brief's state 1. The rail un-clipped, every state side by side, so the
+   six controls are compared in one picture. This is a canvas device and not a phone: a phone
+   shows one card and a peek, which the page frames show instead. The strip keeps the shipped
+   dark page behind it, because a control's fill is a tint of the page. */
+.ed-railstrip { background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+  padding: 22px 0 26px; width: max-content; }
+.ed-railstrip .ed-rshead { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-dim); padding: 0 20px 14px; }
+/* The per-card caption that names the state. Canvas furniture, not product chrome — it is on
+   the dark page, so it is LIGHT ink, which is the canvas rule's "inside a dark frame" case. */
+.ed-railstrip .ed-slab { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--accent-2); padding: 12px 0 0; width: 320px; }
+
+/* The magnified study: the control at 3x. Scaled with transform, never filter or zoom, so the
+   render stays sharp. The wrapper shrinks to the drawing so the element screenshot is the
+   drawing and not a viewport of empty canvas beside it. */
+.ed-study-wrap { display: inline-block; }
+.ed-study { background: #e9eaee; padding: 26px 30px; width: 1180px; font-family: 'Sora', sans-serif; }
+.ed-study h4 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700; color: #12141b; margin: 0 0 4px; }
+.ed-study p { font-size: 13px; line-height: 1.55; color: #262a35; margin: 0 0 22px; max-width: 900px; }
+.ed-study .ed-zrow { display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; row-gap: 30px; }
+.ed-study .ed-zc b { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: .06em; text-transform: uppercase; color: #262a35; margin: 0 0 12px; font-weight: 500; }
+.ed-z3 { position: relative; }
+.ed-z3 > .ed-zin { position: absolute; top: 0; left: 0; transform: scale(3); transform-origin: top left;
+  background: var(--bg); padding: 6px; }
+.ed-z3.ctl3 { width: 192px; height: 168px; }
+/* 200, not 168: the line is 44 dp PLUS its 6 dp top margin plus the zoom box's own padding,
+   and at 3x that overflow painted over the caption of the row beneath it. */
+.ed-z3.line3 { width: 996px; height: 200px; }
+.ed-study .ed-dim { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.7; color: #262a35; }
+.ed-study .ed-dim i { color: #5a6072; font-style: normal; }
+
+/* =================================================================================================
+   THE PHONE'S OWN CHROME — status bar and the series page, as the shipped phone draws them.
+   ================================================================================================= */
+
+.ed-sb { height: 34px; flex: none; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px 0 26px; font-size: 13px; font-weight: 600; color: var(--ink); background: var(--bg);
+  box-shadow: 0 1px 0 0 var(--bg); }
+.ed-sb .ed-sbi { display: flex; gap: 5px; align-items: center; opacity: .95; }
+.ed-sb svg { display: block; }
+
+.ed-detail { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.ed-dscroll { flex: 1; overflow: hidden; }
+/* `isolation: isolate` is load-bearing, not tidiness. The hero's scrim is a z-index: 1 child of
+   a position: relative box whose own z-index is AUTO — so that 1 does not stay inside the hero,
+   it competes at the page's level against .ed-dbody's auto, wins, and paints the scrim over the
+   series title and the meta line. This is the round-11 trap PROCESS.md names, and it cost two
+   renders here. Every positioned box in this file that holds a layered child isolates. */
+.ed-dhero { height: 230px; position: relative; isolation: isolate; }
+/* The hero's own scrim is `ed-hscrim`, NOT `ed-scrim`. The first render had both the hero's
+   fade and the sheet's dimmer on one class name, so the hero inherited the sheet's z-index: 70
+   and painted over the series title, the meta line and the top of the body — invisible in the
+   markup, and the only way to see it was to look at the picture. Every overlay in this round now
+   declares its own layer and its own name. */
+.ed-dhero .ed-hscrim { position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(0deg, var(--bg) 42%, rgba(var(--bg-rgb), .55) 72%, rgba(var(--bg-rgb), .1) 100%); }
+/* The shipped .dback is a blurred glass circle. A canvas cannot carry backdrop-filter, so this
+   is the same 38 dp circle as a FLAT 55 % tint. The live app keeps its blur. */
+.ed-back { position: absolute; top: 48px; left: 14px; z-index: 5; width: 38px; height: 38px; border-radius: 50%;
+  background: rgba(8, 10, 16, .55); display: flex; align-items: center; justify-content: center;
+  color: #fff; border: none; }
+.ed-dbody { padding: 0 20px 30px; margin-top: -58px; position: relative; }
+.ed-dtitle { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 27px; line-height: 1.05; }
+.ed-dmeta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 9px; font-size: 12.5px; color: var(--ink-soft); }
+.ed-dmeta .pg { border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 11px; }
+.ed-dsyn { margin-top: 14px; font-size: 14px; line-height: 1.55; color: var(--ink-soft);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* The Episodes header, as EpisodesHeader() draws it on a phone: the title, the season's watched
+   count, then — pushed to the end — the *Download season* chip and Shuffle. Both chips are the
+   shipped 36 dp pill; the row is at least 44 dp because a chip is in it. */
+.ed-ephead { display: flex; align-items: center; min-height: 44px; margin: 22px 0 0; gap: 12px; }
+/* THE HEADER'S ARRANGEMENT. Three were drawn and only the third survives every language at
+   every phone width:
+     `.onerow`  — SHIPPED today: Episodes, the count, then both chips on one row. 438 dp of
+                  content on a 412 dp screen, so *Episodes* is clipped at the left edge and the
+                  count runs under the chip — in English at 412 dp, not only in Faroese.
+     `.lhs2`    — the count stacked under the word, chips still beside it. Fixes 412 dp, and
+                  still collides at 360 dp in English, because the two chips alone are 234 dp.
+     default    — the chips take their own 44 dp row under the title. One rule, no width
+                  threshold, no truncation, and a third chip later still fits. 44 dp once per
+                  series page, on a page that scrolls.
+   Each is a frame, so the choice is made from pictures. */
+.ed-ephead { flex-direction: column; align-items: stretch; gap: 10px; }
+.ed-ephead .lhs { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.ed-ephead .chips { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.ed-ephead .chips .sp { flex: 1; }
+.ed-ephead.onerow, .ed-ephead.lhs2 { flex-direction: row; align-items: center; gap: 12px; }
+.ed-ephead.onerow .chips, .ed-ephead.lhs2 .chips { display: contents; }
+.ed-ephead.lhs2 .lhs { flex-direction: column; justify-content: center; }
+.ed-ephead .h { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -.5px; }
+.ed-ephead .wc { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
+.ed-ephead .sp { flex: 1; }
+.ed-chip { height: 36px; padding: 0 14px; border-radius: 18px; display: inline-flex; align-items: center; gap: 7px;
+  font: 600 13px 'Sora', sans-serif; background: rgba(var(--fg), .12); color: var(--ink); border: none; white-space: nowrap; }
+.ed-chip svg { width: 15px; height: 15px; flex: none; }
+/* The season chip with nothing left to download. Drawn for the open question in the report; not
+   a recommendation until it is answered. */
+.ed-chip.spent { color: var(--ink-dim); background: rgba(var(--fg), .06); }
+
+/* =================================================================================================
+   THE EPISODE RAIL — a sideways row of 320 dp cards (SeriesDetailScreen + EpisodeCard).
+   ================================================================================================= */
+
+/* The rail's gutter is 20 dp (raviloHPad in compact) and its item spacing 12 dp
+   (RaviloDimens.itemSpacing). Inside a phone frame the rail is CLIPPED at the screen's edge,
+   which is what a viewer meets: one card and a 60 dp peek of the next. */
+.ed-rail { display: flex; gap: 12px; padding: 0 20px; margin-top: 11px; }
+.ed-ph .ed-rail { width: max-content; }
+
+/* One rail slot: the card, then 6 dp, then the under-card line. */
+.ed-slot { width: 320px; flex: none; }
+
+/* The card. Radius 12, on --card, and 62 % opacity once the episode is watched — all shipped
+   (EpisodeCard: alpha .62f on isWatched). */
+.ed-card { width: 320px; border-radius: 12px; overflow: hidden; background: var(--card); }
+.ed-card.seen { opacity: .62; }
+.ed-still { position: relative; aspect-ratio: 16 / 9; background: var(--bg-2); }
+.ed-still .num { position: absolute; top: 12px; left: 12px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 30px; line-height: 1; color: rgba(255, 255, 255, .85); }
+.ed-still .dur { position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, .55); border-radius: 4px;
+  padding: 3px 7px; font-size: 12px; font-weight: 600; color: #fff; }
+.ed-still .upnext { position: absolute; left: 0; bottom: 0; background: var(--grad);
+  border-radius: 0 8px 0 0; padding: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #fff; }
+.ed-still .seen-tick { position: absolute; right: 8px; bottom: 8px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--good); display: flex; align-items: center; justify-content: center; }
+/* FR-8 (amended), the shipped geometry: an 18 dp white chip, radius 6, inset 5 dp, bottom-start,
+   lifted 24 dp when a ribbon owns that corner. Nothing is drawn here for any other phase — a
+   queued, running, waiting or failed episode's picture is exactly today's. */
+.ed-mark { position: absolute; left: 5px; bottom: 5px; width: 18px; height: 18px; border-radius: 6px;
+  background: #f3f4fb; display: flex; align-items: center; justify-content: center; }
+.ed-mark.lift { bottom: 29px; }
+.ed-mark svg { width: 12px; height: 12px; }
+/* The watch-progress bar, 4 dp, shipped. Drawn so "the mark must not fight the progress bar" is
+   a claim with a picture behind it. */
+.ed-pbar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(var(--fg), .22); }
+.ed-pbar i { display: block; height: 4px; background: var(--accent); }
+
+/* A minimum body height, so every slot's under-card line sits on ONE baseline. Without it the
+   line follows each card's own body — a one-line synopsis lifts that card's control 18 dp above
+   its neighbours', and a row of controls at four heights is what the first render showed. */
+.ed-cbody { padding: 12px 14px; min-height: 106px; }
+.ed-cbody .t { font-size: 17px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-card.focusish .ed-cbody .t { color: var(--ink); }
+.ed-cbody .a { font-size: 13px; color: var(--ink-dim); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The status line. It takes the AIR DATE's place — never a new line, never on the picture —
+   and only while the download is not at rest: queued, any of the three waits, paused or failed.
+   This is what gives the clock a reason; without it all three waits are one glyph. */
+.ed-cbody .s { font-size: 13px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-cbody .s.wait { color: var(--ink-soft); }
+.ed-cbody .s.bad { color: #f0c07a; }
+.ed-cbody .o { font-size: 13px; color: var(--ink-dim); margin-top: 4px; line-height: 1.38;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---- DIRECTION A: the under-card line -------------------------------------------------------
+   320 dp wide, 44 dp tall, 6 dp under the card: the Watched toggle at the start and the download
+   control at the end. The line's height is the control's, so the toggle — 28 dp tall as shipped —
+   gains a 44 dp row to sit in without changing its own look. */
+.ed-line { width: 320px; height: 44px; margin-top: 6px; display: flex; align-items: center; }
+.ed-line .sp { flex: 1; }
+
+/* The Watched toggle, exactly as EpisodeWatchToggle draws it: radius 8, padding 10 / 5, a 13 dp
+   drawn glyph, 5 dp gap, 12 px label. Unwatched sits on --card-2 (surfaceVariant); watched on a
+   16 % tint of the green that already means watched. */
+.ed-tog { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 8px;
+  background: var(--card-2); color: var(--ink); font-size: 12px; border: none; white-space: nowrap; }
+.ed-tog.on { background: rgba(45, 212, 154, .16); }
+.ed-tog svg { width: 13px; height: 13px; flex: none; }
+
+/* THE DOWNLOAD CONTROL. 52 x 44 dp, radius 12, 1 px border — the film page's control height,
+   radius and border, at the one width that holds "100 %". Icon-only in four of its six states,
+   so the control's width is the SAME IN ALL THREE LANGUAGES: the round-1 problem that squeezed
+   Play to 82 dp in Danish cannot arise here, because no state of this control carries a word.
+   `isolation: isolate` is deliberate — the percentage label sits above the progress fill, and a
+   positive z-index on a child of an auto-z-index box competed at the screen's level in the
+   2026-11-09 round and painted a label over a sheet. */
+.ed-ctl { width: 58px; height: 44px; flex: none; position: relative; isolation: isolate; overflow: hidden;
+  border-radius: 12px; border: 1px solid rgba(var(--fg), .16); background: rgba(var(--fg), .07);
+  color: var(--ink); display: flex; align-items: center; justify-content: center; padding: 0; }
+.ed-ctl svg { width: 17px; height: 17px; flex: none; position: relative; z-index: 2; }
+.ed-ctl .pct { position: relative; z-index: 2; font: 600 13px 'Sora', sans-serif; letter-spacing: -.01em; }
+/* The progress fill is the control's own width, left to right, behind the number — the film
+   control's accent at 38 %. */
+.ed-ctl .fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 1; background: rgba(123, 110, 240, .38); }
+
+/* Queued and every wait: the clock glyph in --ink-soft, on the resting fill. One picture for all
+   three waits, which is the open decision this round answers. */
+.ed-ctl.queued { color: var(--ink-soft); }
+/* Running: the number in full ink over an accent fill. */
+.ed-ctl.running { color: var(--ink); }
+/* Paused: the SAME number, and the fill drained of its accent. Nothing new is said and nothing
+   is a word, but a stopped download no longer looks identical to a moving one. The number stays
+   in full ink: at --ink-soft on the grey fill the 3x study showed it going muddy. */
+.ed-ctl.paused { color: var(--ink); }
+.ed-ctl.paused .fill { background: rgba(var(--fg), .20); }
+/* Downloaded: a FILLED chip, #f3f4fb with a #0a0c13 arrow — the shipped DownloadedMark at
+   control size, so "this episode is on your phone" is ONE symbol a viewer learns once and then
+   reads in two places on the same card. Two earlier attempts are why:
+     - a green check collided with the Watched toggle's green check, 240 dp away on the same line;
+     - a green OUTLINED arrow collided with the *Download* control's white outlined arrow, which
+       made "on the phone" and "not on the phone" the same shape in two tints.
+   Filled against outlined is the one difference that survives both. `.donegreen` is the same
+   control in --good, drawn beside it in the study so the loudness is a pick from pictures. */
+.ed-ctl.done { color: #0a0c13; background: #f3f4fb; border-color: transparent; }
+.ed-ctl.donegreen { color: #06281c; background: #2dd49a; border-color: transparent; }
+/* Failed: the round's amber, #f0c07a, and a warning triangle. The reason is never inside the
+   control — on the film page it is a line under the row; in the rail there is no such line, which
+   is an open question in the report. */
+.ed-ctl.fail { color: #f0c07a; background: rgba(245, 181, 66, .12); border-color: rgba(245, 181, 66, .55); }
+
+/* ---- DIRECTION B: the control inside the card's body ----------------------------------------
+   The body becomes a row: the text column, a 1 px divider, then the same 52 x 44 control,
+   vertically centred. No vertical height is added to the rail at all, and the under-card line
+   keeps only the Watched toggle, centred, exactly as today. The cost is the text column's width:
+   228 dp instead of 292. */
+.ed-card.dirb .ed-cbody { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; }
+.ed-card.dirb .ed-ctext { flex: 1; min-width: 0; }
+.ed-card.dirb .ed-cdiv { width: 1px; align-self: stretch; background: var(--line); flex: none; }
+.ed-line.bline { justify-content: center; }
+
+/* =================================================================================================
+   THE SHEETS — the Downloaded control's Play / Delete choice, and the delete confirm.
+   ================================================================================================= */
+
+.ed-scrim { position: absolute; inset: 0; z-index: 70; background: rgba(6, 8, 14, .62); }
+.ed-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 71; background: var(--bg-2);
+  border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; padding: 8px 0 14px; }
+.ed-sheet .grab { width: 38px; height: 4px; border-radius: 4px; background: rgba(var(--fg), .22); margin: 6px auto 14px; }
+.ed-sheet .sh { padding: 0 20px 4px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; }
+.ed-sheet .ss { padding: 0 20px 12px; font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+/* A confirm has no heading: the sentence IS the question, and a sheet titled *Delete* above a
+   button labelled *Delete* says the word twice and the thing never. */
+.ed-sheet .ask { padding: 2px 20px 16px; font-size: 17px; line-height: 1.45; color: var(--ink); }
+.ed-sheet .row { display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 0 20px; font-size: 15.5px;
+  color: var(--ink); background: none; border: none; width: 100%; text-align: left; }
+.ed-sheet .row svg { width: 20px; height: 20px; flex: none; color: var(--ink-soft); }
+.ed-sheet .row .sz { margin-left: auto; font-size: 13px; color: var(--ink-dim); }
+.ed-sheet .row.danger { color: #f5667a; }
+.ed-sheet .row.danger svg { color: #f5667a; }
+.ed-sheet .acts { display: flex; gap: 10px; padding: 8px 20px 2px; }
+.ed-btn { flex: 1; height: 48px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(var(--fg), .06);
+  color: var(--ink); font: 600 15px 'Sora', sans-serif; }
+.ed-btn.danger { background: #f5667a; border-color: transparent; color: #26080d; }
+
+/* =================================================================================================
+   THE SWITCHED-OFF VIEWER — nothing is drawn. The frame exists so "none of it" is a picture.
+   ================================================================================================= */
+.ed-noteline { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: #262a35; padding: 0 0 10px; }
