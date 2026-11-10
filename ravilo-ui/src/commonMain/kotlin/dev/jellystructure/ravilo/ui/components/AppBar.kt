@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
+import dev.jellystructure.ravilo.ui.LocalUserProfile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -85,7 +86,6 @@ fun AppBar(
     onNavSelect: (Int) -> Unit = {},
     navFR: FocusRequester = remember { FocusRequester() },
     onDown: () -> Unit = {},
-    userInitials: String = "",
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     scrolled: Boolean = false,
@@ -368,7 +368,6 @@ fun AppBar(
             ClockDisplay()
             if (onProfile != null) {
                 ProfileAvatar(
-                    initials = userInitials.ifEmpty { "?" },
                     focusRequester = avatarFR,
                     onLeft = { if (onSearch != null) searchFR.requestFocus() else if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onDown = onDown,
@@ -507,7 +506,6 @@ private fun NavScrollIndicator(scrollState: ScrollState, modifier: Modifier = Mo
 
 @Composable
 private fun ProfileAvatar(
-    initials: String,
     focusRequester: FocusRequester,
     onLeft: () -> Unit,
     onDown: () -> Unit,
@@ -517,10 +515,10 @@ private fun ProfileAvatar(
     val g = raviloAppBar
     var focused by rememberFocusVisual()
     val avatarUrl = LocalUserAvatarUrl.current
+    val profile = LocalUserProfile.current
     Box(
         modifier = Modifier
             .size(g.circle)
-            .background(if (focused) colors.accent else colors.surfaceVariant, CircleShape)
             .focusRing(focused, CircleShape, colors.focusRing, 2.dp, outset = BAR_RING_OUTSET, over = false)
             .dpadFocusable(
                 focusRequester = focusRequester,
@@ -533,17 +531,8 @@ private fun ProfileAvatar(
             .testTag(APP_BAR_AVATAR_TAG),
         contentAlignment = Alignment.Center,
     ) {
-        if (avatarUrl != null) {
-            RemoteImage(avatarUrl, null, Modifier.fillMaxSize().clip(CircleShape))
-        } else {
-            Text(
-                text = initials,
-                color = if (focused) colors.onAccent else colors.text,
-                fontSize = g.initials,
-                fontWeight = FontWeight.Bold,
-                fontFamily = Sora,
-            )
-        }
+        // DEB-2597 (FR-2) — focus shows the ring only; the face keeps the viewer's own colour.
+        ProfileFace(profile.userId, profile.displayName, avatarUrl, g.circle)
         // DEB-1501 (FR-2) — the web's avatar button: an unread support reply, read from the server and never counted here.
         if (dev.jellystructure.ravilo.ui.support.supportUnreadShows()) {
             UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp), size = 10.dp, ring = colors.background)

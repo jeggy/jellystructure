@@ -392,7 +392,6 @@ fun BrowseScreen(
                     ?.let { kind != BrowseKind.MY_LIST && it.facets.genres.isNotEmpty() } ?: false
                 requestFocusRetryingOrMoveNative(scope, if (chipsShown) firstChipFR else firstCellFR, screenFocusManager, FocusDirection.Down)
             },
-            userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
             avatarFocusRequester = avatarFR,

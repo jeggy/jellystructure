@@ -353,7 +353,6 @@ fun LiveTvGuideScreen(
             activeNav = -1,   // the guide isn't one of the section tabs → no tab highlighted
             onNavSelect = onNavSelect,
             navFR = navBarFR,
-            userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = true,

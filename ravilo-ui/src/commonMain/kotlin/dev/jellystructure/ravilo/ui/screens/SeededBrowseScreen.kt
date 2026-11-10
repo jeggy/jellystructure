@@ -702,7 +702,6 @@ fun SeededBrowseScreen(
                 // R362 (FR-R362-1) — always into the page: a visible chip, else the grid's first visible tile.
                 if (showFacetBar) focusFacetBar() else focusGridTop(FocusDirection.Down)
             },
-            userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
             handsetTopSlot = handsetTopSlot,

@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
+import dev.jellystructure.ravilo.ui.LocalUserProfile
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -88,7 +89,6 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 fun RaviloBottomNav(
     selected: BottomNavItem?,
     onSelect: (BottomNavItem) -> Unit,
-    userInitials: String,
     modifier: Modifier = Modifier,
     /** R321 (FR-R321-4, dev review 1) — the bar's declared item list: [VIDEO_BAR], or [MUSIC_BAR] in music mode. */
     items: List<BottomNavItem> = VIDEO_BAR,
@@ -143,7 +143,6 @@ fun RaviloBottomNav(
                     BottomNavCell(
                         item = item,
                         isSelected = item == selected,
-                        userInitials = userInitials,
                         onClick = { onSelect(item) },
                         modifier = Modifier.weight(1f),
                         // R339 (FR-R339-2) — music mode's Profile keeps the pill and drops the ring round the photo.
@@ -187,7 +186,6 @@ fun OnReselect(tick: Int, onReselect: suspend () -> Unit) {
 private fun BottomNavCell(
     item: BottomNavItem,
     isSelected: Boolean,
-    userInitials: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     profileRing: Boolean = true,
@@ -219,7 +217,7 @@ private fun BottomNavCell(
                 // FR-R267-5d — the profile item's icon is the viewer's own avatar: the photo when
                 // there is one, initials when there is not.
                 BottomNavItem.PROFILE -> Box {
-                    ProfileDot(userInitials, isSelected, ring = isSelected && profileRing)
+                    ProfileDot(isSelected, ring = isSelected && profileRing)
                     // R386 (FR-R386-8, D11) — one dot that means "your Profile page has something"; the page's first row says
                     // what. An update that is ready is one reason today; the support lane's unread reply will be another.
                     // DEB-1501 (FR-2) — and so is a support reply nobody has read: the Support row on the page says which.
@@ -250,28 +248,19 @@ private fun BottomNavCell(
 }
 
 @Composable
-private fun ProfileDot(initials: String, selected: Boolean, ring: Boolean = selected) {
+private fun ProfileDot(selected: Boolean, ring: Boolean = selected) {
     val colors = RaviloTheme.colors
     val avatarUrl = LocalUserAvatarUrl.current
+    val profile = LocalUserProfile.current
     // R304 (FR-R304-1) — the ring only while lit: a 1.5 dp white ring with a 2 dp gap around the avatar,
     // so the photo never sits on the pill's gradient unreadably. R339 (FR-R339-2) — not in music mode, where
     // the owner wants the pill alone; the gap stays, so the photo is the same size either way.
     val ringMod = if (ring) Modifier.border(RING_WIDTH, Color.White, CircleShape).padding(RING_WIDTH + RING_GAP) else Modifier.padding(RING_WIDTH + RING_GAP)
     Box(
-        Modifier.size(GLYPH_BOX + (RING_WIDTH + RING_GAP) * 2).then(ringMod).background(colors.surfaceVariant, CircleShape),
+        Modifier.size(GLYPH_BOX + (RING_WIDTH + RING_GAP) * 2).then(ringMod),
         contentAlignment = Alignment.Center,
     ) {
-        if (avatarUrl != null) {
-            RemoteImage(avatarUrl, null, Modifier.fillMaxSize().clip(CircleShape))
-        } else {
-            Text(
-                text = initials.ifEmpty { "?" },
-                color = colors.text,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = Sora,
-            )
-        }
+        ProfileFace(profile.userId, profile.displayName, avatarUrl, GLYPH_BOX)
     }
 }
 

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.ProfileFace
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.GearGlyph
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -234,21 +235,11 @@ private fun ProfileTile(
             onSelect = onSelect,
         ),
     ) {
-        val initials = session.displayName.split(' ').take(2).joinToString("") { it.firstOrNull()?.uppercase() ?: "" }
         val avatarUrl = session.avatarUrl
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .background(if (focused) colors.accent else colors.surfaceVariant, CircleShape)
-                .focusRing(focused, CircleShape, colors.focusRing, 3.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (avatarUrl != null) {
-                RemoteImage(avatarUrl, session.displayName, Modifier.fillMaxWidth().clip(CircleShape))
-            } else {
-                Text(initials.ifEmpty { "?" }, color = if (focused) colors.onAccent else colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            }
-        }
+        ProfileFace(
+            session.userId, session.displayName, avatarUrl, 96.dp,
+            Modifier.focusRing(focused, CircleShape, colors.focusRing, 3.dp),
+        )
         Spacer(Modifier.height(12.dp))
         Text(session.displayName, color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp)
         if (session.isAdmin) {

@@ -507,7 +507,6 @@ private fun MovieDetailLoaded(
             // root cause + fix as HomeScreen's AppBar.onDown. Scroll to the top first so the hero is
             // back in composition before focusing it.
             onDown = { scope.launch { runCatching { listState.scrollToItem(0) }; runCatching { playFR.requestFocus() } } },
-            userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = appBarScrolled,

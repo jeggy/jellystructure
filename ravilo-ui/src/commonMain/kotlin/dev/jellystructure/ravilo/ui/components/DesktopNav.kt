@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
+import dev.jellystructure.ravilo.ui.LocalUserProfile
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.isMacPlatform
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -404,13 +405,11 @@ private fun ViewerFoot(rail: Boolean, name: String, onViewer: () -> Unit, onSett
     // DEB-1501 (FR-2) — an unread support reply: the dot sits on the viewer's photo, which opens Profile and its Support row.
     val supportDot = dev.jellystructure.ravilo.ui.support.supportUnreadShows()
     val avatar = LocalUserAvatarUrl.current
+    val profile = LocalUserProfile.current
     @Composable
     fun photo(size: Dp) {
         Box {
-            Box(Modifier.size(size).clip(CircleShape).background(colors.accentGradient).handCursor().clickable(onClick = onViewer), contentAlignment = Alignment.Center) {
-                if (avatar != null) RemoteImage(avatar, name, Modifier.fillMaxSize())
-                else Text(name.take(1).uppercase().ifEmpty { "?" }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
-            }
+            ProfileFace(profile.userId, name, avatar, size, Modifier.handCursor().clickable(onClick = onViewer))
             // R386 (FR-R386-8) — on the rail the dot sits on the viewer's photo: Settings is behind it.
             if ((rail && updateDot) || supportDot) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp))
         }

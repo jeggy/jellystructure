@@ -1136,7 +1136,6 @@ internal fun SeriesDetailLoaded(
             // nothing). Same root cause + fix as HomeScreen's AppBar.onDown. Scroll to the top first so
             // the hero is back in composition before focusing it.
             onDown = { focusPlay() },   // R343 (FR-R343-9) — the one scroll-then-focus helper
-            userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = appBarScrolled,

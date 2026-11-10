@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
+import dev.jellystructure.ravilo.ui.LocalUserProfile
+import dev.jellystructure.ravilo.ui.components.ProfileFace
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -199,9 +202,7 @@ private fun Confirm(
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.textDim.copy(alpha = 0.18f)))
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(32.dp).clip(CircleShape).background(colors.accentGradient), contentAlignment = Alignment.Center) {
-                Text(displayName.take(2).uppercase(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
-            }
+            ProfileFace(LocalUserProfile.current.userId, displayName, LocalUserAvatarUrl.current, 32.dp)
             Text(displayName, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f).padding(start = 10.dp))
             Text(
                 str("tvcode.not_you"), color = colors.accentSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,

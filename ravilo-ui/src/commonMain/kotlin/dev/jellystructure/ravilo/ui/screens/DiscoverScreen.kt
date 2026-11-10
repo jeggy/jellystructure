@@ -238,9 +238,6 @@ fun DiscoverScreen(
                 }
             }
 
-            val initials = remember(displayName) {
-                displayName.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
-            }
             val appBarScrolled by remember(activeListState) { derivedStateOf {
                 activeListState.firstVisibleItemIndex > 0 || activeListState.firstVisibleItemScrollOffset > 0
             } }
@@ -255,7 +252,6 @@ fun DiscoverScreen(
                     val toTabs = segments.isNotEmpty() && segment != null && runCatching { segmentFR.requestFocus() }.getOrDefault(false)
                     if (!toTabs) runCatching { activeColumnFR.requestFocus() }
                 },
-                userInitials = initials,
                 onProfile = onProfile,
                 onSearch = onSearch,
                 scrolled = appBarScrolled,

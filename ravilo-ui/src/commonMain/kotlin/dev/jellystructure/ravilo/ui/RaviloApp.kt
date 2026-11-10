@@ -233,6 +233,10 @@ val LocalServerBaseUrl = staticCompositionLocalOf { "" }
 /** R65 — active user's Jellyfin avatar URL; null if the user has no profile picture. */
 val LocalUserAvatarUrl = staticCompositionLocalOf<String?> { null }
 
+/** DEB-2597 (FR-2) — the active viewer's id and name; every avatar draws `ProfileFace` from these and [LocalUserAvatarUrl]. */
+data class UserProfile(val userId: String, val displayName: String)
+val LocalUserProfile = staticCompositionLocalOf { UserProfile("", "") }
+
 // ─── Navigation direction (drives AnimatedContent transitionSpec) ─────────────
 
 private enum class NavDir { Forward, Back, Reset }
@@ -649,6 +653,7 @@ fun RaviloApp(
     val serverOpens = remember { MutableStateFlow(0) }
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
     var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
+    var activeDisplayName by remember { mutableStateOf(MultiTokenStore.getActive()?.displayName) }
 
     // R293 (FR-R293-1/2) — an app that is off screen holds no connection open: the events socket, R141's
     // poll and Home's Live TV poll are all keyed on this, so leaving the foreground cancels their effects
@@ -1235,6 +1240,7 @@ fun RaviloApp(
                         MultiTokenStore.setActive(session.userId)
                         activeUserId = session.userId
                         activeAvatarUrl = session.avatarUrl
+                        activeDisplayName = session.displayName
                         refreshConfig()
                         resetTo(Dest.Home(session.displayName))
                     }
@@ -1285,6 +1291,7 @@ fun RaviloApp(
             MultiTokenStore.setActive(session.userId)
             activeUserId = session.userId
             activeAvatarUrl = session.avatarUrl
+            activeDisplayName = session.displayName
             refreshConfig()
             resetTo(Dest.Home(session.displayName))
         }
@@ -1296,6 +1303,7 @@ fun RaviloApp(
                 signedOutNotice = true
                 activeUserId = null
                 activeAvatarUrl = null
+                activeDisplayName = null
                 resetTo(if (route == dev.jellystructure.ravilo.ui.screens.SignedOutRoute.PICKER) Dest.ProfilePicker else Dest.Login)
             }
         }
@@ -2228,7 +2236,7 @@ fun RaviloApp(
             replaceTop(Dest.Remote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, dev.jellystructure.ravilo.ui.components.LocalShimmerOnScreen provides appOnScreen, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, dev.jellystructure.ravilo.ui.components.LocalShimmerOnScreen provides appOnScreen, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl, LocalUserProfile provides UserProfile(activeUserId ?: "", activeDisplayName ?: ""),
             LocalReauthRequired provides {
                 signedOutNotice = false   // DEB-1933 — this is the 401 route, not the event's
                 configScope.launch {
@@ -2460,6 +2468,7 @@ fun RaviloApp(
                         signedOutNotice = false
                         activeUserId = session.userId
                         activeAvatarUrl = session.avatarUrl
+                        activeDisplayName = session.displayName
                         refreshConfig()
                         push(Dest.Home(session.displayName))
                         openHeldPage(session.displayName)   // DEB-1738 (FR-4)
@@ -2478,6 +2487,7 @@ fun RaviloApp(
                     val active = MultiTokenStore.getActive()
                     activeUserId = active?.userId
                     activeAvatarUrl = active?.avatarUrl
+                    activeDisplayName = active?.displayName
                     refreshConfig()
                     // Reset the stack so Back from Home doesn't return to the login screen,
                     // and carry the freshly-signed-in user's display name.
@@ -3582,8 +3592,6 @@ fun RaviloApp(
                     // R321 (FR-R321-4) — music mode's bar: Listen · Browse · Playing · Queue · Profile.
                     items = if (inMusic) dev.jellystructure.ravilo.ui.components.MUSIC_BAR else dev.jellystructure.ravilo.ui.components.VIDEO_BAR,
                     selected = litItem,
-                    // Same derivation every other AppBar call site uses (ChannelScreen, HomeScreen, …).
-                    userInitials = destDisplayName(dest).take(2).uppercase(),
                     // DEB-2686 (FR-6) — under TalkBack a double tap is "activate", so the switch is an action instead.
                     profileModeAction = if (modeSwitchOffered) {
                         str(if (musicMode) "mode.switch_video" else "mode.switch_music") to { switchListeningMode(!musicMode) }

@@ -482,10 +482,6 @@ private fun HomeLoaded(
     }
 
     // AppBar overlay (transparent gradient over hero)
-    val initials = remember(displayName) {
-        displayName.split(' ').filter { it.isNotBlank() }.take(2)
-            .joinToString("") { it.first().uppercase() }
-    }
     val navItems = raviloNavItems()
     val appBarScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
@@ -510,7 +506,6 @@ private fun HomeLoaded(
                 requestFocusRetryingOrMoveNative(scope, firstRowFR, focusManager, FocusDirection.Down)
             }
         },
-        userInitials = initials,
         onProfile = onProfile,
         onSearch = onSearch,
         scrolled = appBarScrolled,

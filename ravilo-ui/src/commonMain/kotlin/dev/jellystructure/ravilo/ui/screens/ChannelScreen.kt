@@ -360,7 +360,6 @@ fun ChannelScreen(
                                 runCatching { firstTileFR.requestFocus() }
                             }
                         },
-                        userInitials = displayName.take(2).uppercase(),
                         onProfile = onProfile,
                         onSearch = onSearch,
                         scrolled = barScrolled,
@@ -378,7 +377,6 @@ fun ChannelScreen(
                 onNavSelect = onNavSelect,
                 navFR = channelBarFR,
                 onDown = {},
-                userInitials = displayName.take(2).uppercase(),
                 onProfile = onProfile,
                 onSearch = onSearch,
                 scrolled = false,

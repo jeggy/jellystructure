@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.LocalUserProfile
+import dev.jellystructure.ravilo.ui.components.ProfileFace
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
@@ -404,16 +406,7 @@ fun YourProfileScreen(
             AccountScreenHeader(str("account.profile_title"), onBack)
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(88.dp).clip(CircleShape).background(colors.surfaceVariant, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (avatarUrl != null) {
-                        RemoteImage(avatarUrl!!, displayName, Modifier.fillMaxSize().clip(CircleShape))
-                    } else {
-                        Text(displayName.take(1).uppercase(), color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+                ProfileFace(LocalUserProfile.current.userId, displayName, avatarUrl, 88.dp)
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(str("account.photo_title"), color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)

@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.LocalUserProfile
+import dev.jellystructure.ravilo.ui.components.ProfileFace
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.components.CheckGlyph
 import dev.jellystructure.ravilo.ui.components.PencilGlyph
@@ -142,10 +144,7 @@ fun ProfileScreen(
             val hPad = dev.jellystructure.ravilo.ui.theme.raviloHPad
             Row(Modifier.padding(horizontal = hPad).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Box(Modifier.size(132.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPhoto)) {
-                    Box(Modifier.fillMaxSize().clip(CircleShape).background(colors.accentGradient), contentAlignment = Alignment.Center) {
-                        if (avatarUrl != null) RemoteImage(avatarUrl, displayName, Modifier.fillMaxSize())
-                        else Text(displayName.take(2).uppercase(), color = colors.onAccent, fontSize = 44.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
-                    }
+                    ProfileFace(LocalUserProfile.current.userId, displayName, avatarUrl, 132.dp)
                     Box(
                         Modifier.align(Alignment.BottomEnd).padding(4.dp).size(30.dp).background(colors.surface, CircleShape).border(2.dp, colors.background, CircleShape),
                         contentAlignment = Alignment.Center,
@@ -199,10 +198,7 @@ fun ProfileScreen(
                     Modifier.size(AVATAR)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPhoto),
                 ) {
-                    Box(Modifier.fillMaxSize().clip(CircleShape).background(colors.accentGradient), contentAlignment = Alignment.Center) {
-                        if (avatarUrl != null) RemoteImage(avatarUrl, displayName, Modifier.fillMaxSize())
-                        else Text(displayName.take(2).uppercase(), color = colors.onAccent, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
-                    }
+                    ProfileFace(LocalUserProfile.current.userId, displayName, avatarUrl, AVATAR)
                     // the edit badge — the one hint that the photo is a control
                     Box(
                         Modifier.align(Alignment.BottomEnd).size(26.dp).background(colors.surface, CircleShape).border(2.dp, colors.background, CircleShape),
