@@ -486,3 +486,66 @@ FRs left open.
 
 **Not provable in CI, so QA:** playing a downloaded original with every audio track, and a copy, in flight mode; the launch in flight mode opening on
 the Downloads page; reconnecting after an offline watch marking the title watched on another device. These need the Pixel (spec Acceptance 2 and 3).
+
+## Amendment 2026-11-10: Wi-Fi only is off by default, and what the first Pixel passes settled (DEB-3995)
+
+The owner, on DEB-4140 (2026-11-10): *"Wi-Fi Only" should be off by default*. The Pixel passes on slices 3 and 4 (DEB-4140, DEB-4153) also
+found places where the FRs and the round left a rule open. This amendment changes FR-7 and FR-17's default, and FR-4's listing rule; the rest
+settles what was open. Every FR not named here stands as written.
+
+**FR-7 and FR-17, amended: Wi-Fi only is off by default** (owner). FR-7's heading and its *"on by default"* no longer hold.
+- With the switch off, a download runs on any connection the phone has, Wi-Fi or mobile data. With it on, FR-7 is as written: the queue
+  waits with `download.waiting_wifi`.
+- The switch, its place in Settings and its sub-line are unchanged. It is off until the viewer turns it on. No release carried the old
+  default, so nothing is migrated.
+- **No connection at all.** With the switch off and no network (flight mode), a waiting entry does not say *Waiting for Wi-Fi*: mobile data
+  would start it too. It reads the new `download.waiting_network`: "Waiting for a connection" · "Venter på forbindelse" · "Bíðar eftir
+  sambandi". The Download control on a title's page shows *Queued*, as it does for the other waits.
+
+**FR-7, clarified: a wait does not hold the queue.** The queue stays one at a time, oldest first, and two downloads never run at once.
+- A smaller copy the server answers *waiting* for (FR-6) keeps its place in the list and its `download.waiting_server` line, whether it
+  had started or not. It does **not** hold what is behind it: the phone starts the oldest queued download that can start now. An Original
+  needs no download stream, so it always can.
+- While a copy waits, the phone asks the server for the **oldest** waiting copy only, every `Retry-After`, and only when nothing is
+  running. A second copy behind it is not asked for: the server makes one at a time and would answer the same.
+- **Paused holds.** An entry the viewer paused stays paused until the viewer resumes it, whatever it was doing: running, queued or
+  waiting. No retry, launch or restart of the phone starts it again. A paused entry does not hold the queue either.
+- Waiting for Wi-Fi or for a connection is the phone's own state and holds every download alike.
+
+**FR-8, clarified: the order and the widths of the action row.** The round drew three controls on a film's page, and the page has more.
+- On a phone whose config says `downloads`, the row starts **Play · Download · My List**, in that order, and those three fit the screen's
+  width together, at 360 dp and wider, in all three languages. Download keeps its one width per language, My List its 44 dp, and
+  **Play takes exactly what is left**: there is no minimum that pushes My List off the screen.
+- Play's width follows the screen and the language only. It is the same for *Play* and *Resume*, and through every download state. Where
+  *Resume · n min left* does not fit that width on one line, Play reads `action.resume` alone; it never wraps and never cuts a word.
+- *Mark watched*, *Trailer* and Surprise me's *Another* come after My List, in that order, in the same row, reached by scrolling it
+  sideways as today.
+- A phone without `downloads`, and every other device, keeps the row it has.
+
+**FR-4, amended: the copies listed.**
+- **Each copy is clearly smaller than the choice above it.** Going down from the original, a copy is listed only when its estimate is
+  under 80 % of the last choice listed. A file with a low bitrate, whose three rungs would all be made at the file's own bitrate, offers
+  the tallest of them and not three copies of one size.
+- **A copy is named by its rung:** 1080p, 720p, 480p, whatever the picture's own height. A wide film's 1080p copy is 1920 × 1036 and
+  still reads 1080p, in the sheet and on the Downloads page. The options' `height` for a copy is the rung's box (1080, 720, 480), and
+  the phone names a copy from `quality`, so a download saved before this change reads right as well. The original keeps the file's height.
+
+**FR-10, restated where the build differs.** No amendment: these are what FR-10 and acceptance 11 already say.
+- The red Delete tile shows **only** while a swipe has uncovered it. A row at rest shows none of it, in the lists and in select mode,
+  and a tap on a row at rest plays the title.
+- *"Every delete frees the space at once, and the storage bar updates"* covers all three parts of the bar: after a delete, Free grows
+  and Other apps does not, without leaving the page.
+
+**Strings.** One added: `download.waiting_network`, in every Ravilo language, as above. It does not name Jellyfin.
+
+**Acceptance, added.**
+- **13.** A fresh install shows Wi-Fi only **off**, and a download starts on mobile data. With it turned on and no Wi-Fi, the entry reads
+  *Waiting for Wi-Fi*; with it off in flight mode, *Waiting for a connection*.
+- **14.** With someone playing on another device, a smaller copy reads *Waiting for the server* and an Original queued after it starts
+  and finishes. The copy starts once the play has ended, and the two never run together.
+- **15.** A waiting copy that is paused still reads *Paused* five minutes later and after the app is closed and opened.
+- **16.** In English at 412 dp, Play, Download and My List are all on screen without scrolling, in that order, for an unstarted film
+  and for one with a resume point.
+- **17.** A wide film's sheet reads 1080p, 720p and 480p. A small, low-bitrate film's sheet lists no two copies of the same size.
+- **18.** No row of the Downloads page shows the Delete tile at rest. After a delete the bar's Free figure has grown by about the size
+  freed before the page is left.
