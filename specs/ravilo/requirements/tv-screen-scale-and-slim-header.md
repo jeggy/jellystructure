@@ -212,3 +212,158 @@ retyped.
     never repeats a title within one run. Back returns to the page where the pill was pressed.
 11. Against a server without FR-12, the pill is absent.
 12. Home rows read `Heading · N` at 16 sp, and every row that showed See All before still shows it.
+
+## Amendment 2026-11-11 — Surprise me leaves the bar and ends Home (DEB-4269)
+
+The owner tried the pill on the stue TV (DEB-799, 2026-11-10 23:32Z): *"I do not like the "Surprise me" button on
+the top. Let's rather move it to the bottom of the home screen, so it's after all the content rows."* FR-12's first
+paragraph and FR-13's "pill" are replaced as below. What pressing it does (the route, the page it opens, the SURPRISE
+kicker, Another one, the `204` note, the 2026-11-09 clarification of "played") is **unchanged**, and so is the server.
+
+**FR-12 (amended) · Surprise me is the last thing on Home.**
+
+- **The bar no longer has it**, on any page, in either header style. The bar's focus walk is back to what it was
+  before DEB-3984: Right from the last tab (or the now-playing pill) goes to search, and Left from search comes back.
+- **Home ends with one Surprise me button**, after every row Home draws: after the last content row, or after On now
+  when On now is the last row. Its top sits one `raviloRowGap` below that row, and its left edge is at the rows' side
+  gutter (`RaviloDimens.screenPadH`), the same line the row headings start on. There is no heading above it.
+- **Its look is the shipped ghost button**, not a tile, so it never reads as a title: `RaviloButton`'s `GHOST` style
+  at its TV size (44 dp, 18 dp side padding, 15 sp, the ghost hairline at rest, the accent border, outset ring, scale
+  and lift on focus), with FR-12's sparkle glyph (about 17 dp, in the label's colour) 8 dp before the label
+  `nav.surprise`. If `RaviloButton` grows a leading-glyph slot for this, the slot defaults to none, so that every
+  existing button stays unchanged. No new string, no new design round: the parts are the shipped button and the
+  shipped glyph.
+- **Focus.** D-pad Down from any tile of the last row lands on the button, whichever column it is in. Up from the
+  button returns to the tile of that row the viewer came down from, or to the row's first tile if that tile is gone.
+  Left, Right and Down on the button do nothing. Back on the button is Home's Back, the same as from any row (R55):
+  to the top. Focusing the button clears the focus line and backdrop (R240, R242), as focusing On now or the channel
+  rail does. Bringing it into view uses Home's existing bring-into-view band and bottom padding, so the last row's
+  tiles stay in view above it.
+- **The return.** FR-12's "one Back always returns to where Surprise me was pressed" now means: Back from the page it
+  opened (after any number of Another one) lands on Home with the button focused (R139's return rule, with the
+  button as the remembered place).
+- **When Home has no rows**, the button is still drawn whenever Home has loaded. It sits below the hero, or at the top
+  of the content under the bar when there is no hero either, and Down from the hero or the bar lands on it, as it
+  would land on a first row. A library with nothing left to pick answers `204`, and FR-12's note covers it. Home's
+  loading and error states draw no button.
+- **Only Home has it.** Movies, Shows, Discover, Music and every other page have no Surprise me. The pages it opens
+  keep the kicker and Another one.
+- **TV platforms only**, as before (`isTvPlatform`: Android TV, Tizen). The phone, the desktop and the web app in a
+  desktop browser are unchanged. The button is inside the scaled tree, so FR-2 applies to it.
+
+**FR-13 (amended) · the gate now hides the button.** Unchanged in substance: without `surprise_me: true` from the
+server, Home draws no button and leaves no gap where it would be. The gate is still not in the Home snapshot, so on a
+cold start the button can appear only after the first config answer. That is harmless now, because it is below every
+row and off screen when Home opens.
+
+**Wire.** None. The route, the field and the strings are as shipped.
+
+**Acceptance, amended.** 10 now ends "…Back returns to Home with Surprise me focused." 11 now reads "Against a server
+without FR-12, Home has no Surprise me button." Added:
+
+13. No page's top bar has Surprise me, in either header style. Right from the last tab reaches search.
+14. On the stue TV, Down from any tile of Home's last row focuses Surprise me, Up returns to the same tile, and the
+    button's label and glyph read from the sofa at 100 % and 85 %.
+15. A Home with no rows still shows Surprise me, and Down from the hero (or the bar, with no hero) reaches it.
+
+## Amendment 2026-11-11 — no Header setting: the bar is Standard at the top and Slim once the page has scrolled
+
+Task: DEB-4270. The owner tried the `.debug` build on the stue TV (DEB-799, 2026-11-10): *"I also do not like our
+"Header · the TV's top bar" "standard" vs "slim" setting. Let's make it standard by default, but as soon as we have
+scrolled a bit down it switches to the slim, and back to standard when on the top again."* The Header setting goes.
+Its two geometries stay as FR-9's table draws them, and the page's scroll position chooses between them. Screen scale
+(FR-1 to FR-7) and FR-11 to FR-14 are unchanged.
+
+**Supersedes:** FR-8's admin control and its meaning, FR-9's "a Slim bar moves the content up by exactly what it
+saves", FR-10's wording and acceptance 8. FR-9's table is kept. Its *Slim* column is now the **collapsed** bar.
+
+**FR-8 (replaced) · The Header setting goes, and its field stays on the wire.**
+- *Admin.* The **Header** select (`#beh-header-style`) is removed from Ravilo config → Behaviour & preferences, and
+  `collectConfig` stops reading it.
+- *Server.* `RaviloConfig.headerStyle` (`header_style`) stays in the model, so a client that sends it, and a stored
+  config that carries it, still decode. The server accepts any value, and `normalize()` writes `standard` whatever
+  arrives. A config already stored as `slim` therefore reads back as `standard` on its next load. The payload keeps
+  sending `"header_style":"standard"`.
+- *Old clients.* A build from DEB-3967 to now, which reads the field, draws the Standard bar always, as every build
+  did before DEB-3967. An app older than DEB-3967 never read the field.
+- *New clients.* Nothing reads the field. The app does not provide a style from config, and `HomeSnapshotCache`
+  stops writing or reading `headerStyle`. The cache decodes with `RaviloWireJson`, which ignores unknown keys, so
+  deleting the property is safe. The property in `shared/…/Models.kt` is marked deprecated; removing it is a later
+  release's call.
+
+**FR-15 · The bar collapses while the page is scrolled.** On a TV platform (`isTvPlatform`), the `AppBar` is drawn
+**collapsed** (FR-9's Slim column, 48 dp) when both of these hold, and **Standard** (60 dp) otherwise:
+- the page has scrolled past the threshold below, and
+- focus is not inside the bar. Moving focus up into the bar means the viewer is at the top in the owner's sense, so
+  the bar opens to Standard and its tabs are full size while the viewer uses them.
+
+*Threshold.* The page counts as scrolled once its list or grid is past **24 dp**: `firstVisibleItemIndex > 0`, or
+`firstVisibleItemScrollOffset` over 24 dp in px. That 24 dp is the gap every page already leaves between the bar and
+its first content (`appBarHeight + 24.dp`), so the bar collapses at the moment content would start to pass under the
+Standard bar. Within 24 dp of the top, the bar is Standard. The same 24 dp is used in both directions. A D-pad step
+scrolls in discrete jumps, so it crosses the line once and the bar cannot flap. The predicate is a `derivedStateOf`
+boolean, like R109's `appBarScrolled`, so a page is not recomposed on every scroll frame. R62's transparent-to-solid
+switch keeps its own predicate (any scroll at all) and is not changed. Between 0 and 24 dp the bar is solid and
+Standard, which is how it looks today.
+
+**FR-16 · The content never moves for the bar.** The bar overlays the page, as it already does over the hero (R62).
+Every resting offset and every scroll target that reads `RaviloDimens.appBarHeight` reads the **Standard 60 dp again,
+always**. The resting offsets are the `appBarHeight + 24.dp` paddings and spacers, `HeroScrims`, `StaleContentBanner`
+and the music lists' top padding. The scroll targets are Home's `minTopPx` (FR-R240-9 / R257) and `SeriesDetailScreen`'s
+`belowBarPx`. So at every scroll position the page lays out exactly as today's Standard build does, and the focused
+tile stays where it is when the bar changes. A collapsed bar uncovers 12 dp of whatever has scrolled under it, and
+nothing else changes. `LocalHeaderStyle` and the style-dependent `raviloAppBar` go. The bar reads its live geometry
+from its own state, and nothing outside the bar can read it.
+
+**FR-17 · The transition.**
+- *Timing.* One `animateFloatAsState` fraction runs 0 → 1 (Standard → collapsed) as a `tween(180)`, the same
+  duration as R62's colour change, so the two move together when they coincide.
+- *What it drives.* Every number in FR-9's table is linearly interpolated from that one fraction: height, brand mark,
+  wordmark size and tracking, gaps, pill type, padding and corner, circle, glyph, initials and clock.
+- *Where it is read.* The fraction is read only inside `AppBar`, so the transition recomposes the bar and nothing
+  under it.
+- *Anchoring.* The bar is anchored to the top of the screen, so its bottom edge rises 12 dp and its parts stay
+  vertically centred within it. The 48 dp side gutter does not change.
+- *Focus ring.* A focus ring inside the bar follows the item it rings. FR-15 means the bar never collapses while it
+  holds focus.
+
+**FR-18 · Which pages.** The bar collapses on the TV pages whose bar sits over their own scrolling list or grid:
+- Home, the movie page, the series page, Discover, the seeded See All grid and the channel page. Each already
+  derives `appBarScrolled` / `barScrolled` from its list state.
+- The Movies / Series / My List grid (`BrowseScreen`, which passes no `scrolled` today). It gains the same predicate
+  from its grid state, so switching tabs never shows a different bar on a page that looks the same.
+- Music browse and music listen, which also derive `scrolled` from their list.
+
+A TV page with no scroll position of its own keeps the Standard bar always: the Live TV guide and the music player
+screens, which pass `scrolled = true`, and every caller that passes nothing. The phone (its handset row), the desktop
+(`DesktopToolbar`) and the web app in a desktop browser are untouched. They never drew Slim. The playing destinations
+draw no bar.
+
+**FR-10 (reworded) · Collapse and scale compose.** At Screen scale `s`, both ends of the transition are FR-9's
+numbers × `s` (FR-2 applies to the bar like everything else). At 90 %, the bar runs from 54 to 43.2 dp of today's
+screen.
+
+**Non-goals, added.**
+- No per-viewer or per-page choice, and no admin control for the threshold or the collapsed height.
+- The bar still never hides or scrolls away. It only shortens.
+- No change to R62's solid/transparent rule, R250's opaque bar, the bar's focus order or any D-pad path.
+
+**Wire.** Nothing is added, removed or retyped. `header_style` is still accepted and still sent, now always as
+`standard`.
+
+**Acceptance 8 (replaced) and added.**
+8. On Home, the movie page, the series page and the Movies grid on the stue TV, the bar measures 60 dp at the top of
+   the page. It measures 48 dp after the first D-pad step that moves the content more than 24 dp, and it is back to
+   60 dp once the page returns to its top. Pressing Up into the bar on a scrolled page opens it to 60 dp.
+13. Across the collapse and the expand, the focused tile's on-screen position does not change. To check, take
+    screenshots one frame before the transition and once it has settled, and compare the focused tile's top edge:
+    0 px difference. A row heading never sits under the bar.
+14. Frame timing on the stue TV, with the frame-timing profile installed. Over 10 collapse/expand cycles on Home, the
+    transition frames are compared against a control: the same number of D-pad steps further down the same page, a
+    scrolled-to-scrolled move with no transition. The janky-frame share in the transition must not be higher than
+    the control's.
+15. The admin has no Header control. A config saved with `header_style: "slim"`, by an old admin or straight to the
+    API, is accepted and reads back as `standard`. A build from before this amendment, against a server after it,
+    draws the Standard bar and never collapses.
+16. The Live TV guide and the music player keep the 60 dp bar. The phone, the desktop app and the web app in a
+    desktop browser are unchanged.
