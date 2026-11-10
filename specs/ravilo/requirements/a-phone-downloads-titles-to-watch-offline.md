@@ -549,3 +549,117 @@ settles what was open. Every FR not named here stands as written.
 - **17.** A wide film's sheet reads 1080p, 720p and 480p. A small, low-bitrate film's sheet lists no two copies of the same size.
 - **18.** No row of the Downloads page shows the Delete tile at rest. After a delete the bar's Free figure has grown by about the size
   freed before the page is left.
+
+## Amendment 2026-11-10: a download has the same priority as a play, and a real wait says why (DEB-4256)
+
+The owner, on DEB-799 (2026-11-10), with a smaller copy reading *Waiting for the server* while one of the two encoder cards stood idle:
+*"a client wanting to download something should have the same priority as someone playing something. So it should not wait for nothing like
+this"*. And of the line itself: *"This should atleast provide some information on what it's waiting for whenever this takes longer than
+10seconds. Just showing no progress is real bad. We want to know what's going on"*.
+
+This amendment replaces FR-6's rule, and with it the 2026-11-09 amendment's *One at a time, server-wide* and *Yields to every play*. It
+replaces acceptance 4 and 14 and one sentence of the amendment above. Every FR not named here stands as written.
+
+**FR-6, amended: a download has the same priority as a play** (owner). FR-6's heading, its third and fourth points and its *"A stopped or
+waiting download…"* sentence no longer hold.
+- **Admitted as a play is.** A download stream gets its place in the encoder from the budget a play's job gets it from (Phase 313,
+  FR-313-8): a card whose load and whose session count take one more rung. A prewarm is stopped for it, as for a play. It is counted as
+  a job that encodes without a pause, which is what it is.
+- **A play neither holds it nor ends it.** Whether anyone is playing is not asked: not a film, an episode or music, not a paused play, not
+  one that has just ended. A play's start and a play's restream end no download stream.
+- **The card plays use last.** A download stream tries the cards in the reverse of a play's order, so the card plays prefer keeps its room
+  for plays as long as the other has any.
+- **One per phone.** A phone has one download stream at a time, as its queue is one at a time (FR-7). A `start` from a phone that has one
+  replaces it: a resume, or the next in its queue. There is no server-wide limit and none per viewer. The budget is the only limit phones
+  share, and the operator decides who downloads at all (FR-2).
+- **Still not a play.** FR-6's first two points stand: it is not in *Playing now* and it writes no QoE or session rows. It has no tracker
+  entry, so background work that waits for plays to end does not wait for a download.
+
+**FR-6, added: a download makes no play worse.**
+- A play that is running keeps its card, its rungs and its speed. The budget's shares are what a card carries while every job on it stays
+  faster than real time, and a download stream is counted at its full share, so the cards stay ahead of every playhead while downloads run.
+- A download stream nobody reads (paused, cancelled, the phone gone) gives its share back within a minute. It is reaped after 10 minutes,
+  as before.
+- **When every card is full**, a new play is treated exactly as it is when plays alone fill them: fewer rungs first, and with no room for
+  one rung, Jellyfin's transcoder (FR-313-8). A running download is not ended to make room: that is what the same priority means. A new
+  download has no second way to be made, so it is the one that waits.
+
+**The only waits, and the wire.** `POST /api/tv/download/start` answers the waiting `503` of the 2026-11-09 amendment (`Retry-After: 5`,
+`X-Download-State: waiting`) in two cases only, and its JSON body now says which. The fields are added beside `error`. Nothing is removed
+or retyped.
+- `"reason": "encoder_full"`: no card can take one more rung now. With it `"streams"`: how many streams the encoder is making at this
+  moment, for plays and for other phones' downloads together, as a bare number.
+- `"reason": "unavailable"`: this copy cannot be made right now. The encoder is switched off, no card answers, the encoder has refused the
+  file, the file is not on the server's disk, or Jellyfin cannot be asked. These answered a bare `503`; they gain the two headers, so
+  every `503` of `start` reads the same way. An original's `start` that cannot ask Jellyfin answers it too.
+- **No names.** Nothing in the answer names a viewer, a title, a device, a file or a path. `streams` is a count; `error` is a sentence
+  about the server, never about what someone is watching.
+- A `dl-` stream that is not running (reaped, the server restarted) answers its playlist, init and segment requests as before, with no
+  reason. The phone's next `start` carries one if it has to wait. Nothing is *preempted* any more.
+- An installed phone ignores the new fields and reads *Waiting for the server*, as today. It starts sooner, because the server waits less.
+
+**FR-7 and FR-9, amended: a waiting copy says why.**
+- The line of a copy that waits for the server reads the reason its own latest `start` answer gave, in place of `download.waiting_server`,
+  from the first answer that carries one. The phone asks every 5 s, so that is well inside the owner's 10 seconds.
+- The line follows every answer. The number changes when the count does, the line changes when the reason does, and the download starts
+  with no tap when the server says yes.
+- An answer with no reason, or one this phone does not know (an older server, a newer one), keeps `download.waiting_server` for the first
+  10 seconds of the wait and reads `download.wait_busy` from then on.
+- **Where.** The entry's row in the Downloads page's *Downloading* block, and the short line under the action row on the title's page
+  (FR-8, amended: never inside the control, which keeps reading *Queued*). The line wraps to the lines it needs, on whole words, and is
+  never cut or ellipsised; the row grows with it.
+- **The queue.** `encoder_full` is true for every copy alike, so the phone keeps asking for the oldest waiting copy only. The amendment
+  above gives *"the server makes one at a time and would answer the same"* as the reason; the reason is now this one. `unavailable` is about
+  one copy, so on its next turn the phone asks for the next waiting copy and comes round again: one title's file does not hold the copies
+  behind it.
+- A queued download on a phone that cannot reach the server at all is not this wait. The page's `download.offline` line already says so.
+
+**FR-7, added: a waiting copy offers the original.** An original needs no encoder, so it can start while a copy waits.
+- A copy that waits for the server offers `download.get_original` when `GET /api/tv/download/options` lists `original` for this phone and
+  it fits by FR-3's rule, with what the copy already holds on the phone counted as free. The phone asks `options` when the wait begins.
+- **Where.** On the Downloads page, a text action under the entry's waiting line. On the title's page, the first line of the sheet the
+  *Queued* control already opens, above Pause and Cancel. Both are type and a sheet line the app already has, so no design round draws them.
+- **One tap, no confirm.** The entry becomes the original and keeps its place in the queue. What the copy had saved is freed at once and
+  the storage bar follows. It starts as any queued original does.
+- The quality preselected in the next sheet (FR-3) does not change: this was not a pick in the sheet.
+- **Not offered** when the original is not listed for this phone (FR-4) or does not fit, on an entry that is itself an original, on a
+  paused entry, and while the phone waits for Wi-Fi or for a connection, where an original would wait as well.
+- Pause and Cancel stay as FR-7 has them.
+
+**Strings.** Five added, in every Ravilo language. `{n}` is `streams`; `download.wait_full_one` is its form for one, and an answer with
+no count reads `download.wait_busy`. None names Jellyfin, a person, a title or a device.
+
+| Key | en | da | fo |
+|---|---|---|---|
+| `download.wait_full_one` | The server is busy with one other title — this starts on its own when that is done | Serveren er travl med én anden titel — starter automatisk, når den er færdig | Ambætarin hevur eitt annað heiti at gera — byrjar sjálvvirkandi, tá ið tað er liðugt |
+| `download.wait_full` | The server is busy with {n} other titles — this starts on its own when one is done | Serveren er travl med {n} andre titler — starter automatisk, når en af dem er færdig | Ambætarin hevur {n} onnur heiti at gera — byrjar sjálvvirkandi, tá ið eitt teirra er liðugt |
+| `download.wait_busy` | The server is busy — this starts on its own as soon as it can | Serveren er travl — starter automatisk, så snart den kan | Ambætarin hevur mikið at gera — byrjar sjálvvirkandi, so skjótt sum gjørligt |
+| `download.wait_unavailable` | The server can't get this ready right now — it keeps trying | Serveren kan ikke gøre den klar lige nu — den prøver igen | Ambætarin fær ikki gjørt hetta klárt nú — roynir aftur |
+| `download.get_original` | Download the original instead · {size} | Hent originalen i stedet · {size} | Tak Original niður í staðin · {size} |
+
+**Acceptance, replaced.**
+- **4.** While a 720p download stream runs, starting a film on the TV does not stop it: the download's percentage keeps rising through
+  the play's start and after. The TV's play starts no later than on a server with no download running, and shows no stall while the
+  download runs.
+- **14.** With plays live on other devices, music among them, and a card with room, a smaller copy starts within seconds of being asked
+  for and never reads *Waiting for the server*. Two phones' copies run at the same time.
+
+**Acceptance, added.**
+- **19.** With no card able to take one more rung, `start` answers `503` with `reason: encoder_full` and `streams`, and within 10 s the
+  phone's row reads *The server is busy with {n} other titles…*. The number follows the server's. When a stream ends, the copy starts
+  without a tap.
+- **20.** With the encoder switched off after a copy was queued, the row reads *The server can't get this ready right now…*, and a second
+  title's copy queued behind it is asked for in turn. Switching the encoder on starts both, one after the other.
+- **21.** A waiting copy whose original fits offers *Download the original instead · {size}* on its row and in the *Queued* control's
+  sheet. One tap: the row reads Original, it starts, and the storage bar has the copy's part back. A copy whose original is larger than
+  the free space minus 1 GB offers nothing, and neither does a paused one.
+- **22.** A phone installed before this change, against a server with it: a copy starts while a play is live elsewhere, and where it does
+  wait the row reads *Waiting for the server* and starts on its own.
+- **23.** In Danish and in Faroese at 360 dp, each of the four waiting lines shows whole on the Downloads page and under the title's
+  action row, wrapped on whole words. The Download control keeps its width and reads its *Queued* label.
+- **24.** No `503` body of `start`, under either reason, contains a viewer's name, a title, a device's name, a filename or a path.
+
+**Not provable in CI, so QA:** acceptance 4 and 14 need the cards, a TV and a second player. **Proven in CI, not on a live server:**
+acceptance 19 and 20 need every card full, or the encoder off, and on a server with viewers either one sends their next plays to Jellyfin's
+transcoder. The route's test fills the cards and the phone's controller test reads the answers; a pass on a live server is for an hour
+with nobody watching.
