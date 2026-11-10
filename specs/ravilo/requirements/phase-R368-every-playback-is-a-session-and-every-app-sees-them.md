@@ -850,3 +850,84 @@ for the owner. FR-R380-15 adds one more way in, not the only one.
   above); `book_id` NULL projects the position it has; a `film` and a `music` row project exactly as before.
 - The admin projection asserts the pair it publishes, so `SessionPublisher`'s raw `s.positionMs` cannot come back.
 - `WireCompatTest` green with nothing added: no field is added, removed or retyped by this amendment.
+
+## Amendment 2026-11-10 — the bar and the count are the viewer's own; other people's playing stays in the sheet (DEB-4200)
+
+Reported by the owner on DEB-4200. A QA throwaway account signed in on the household's Android phone while the owner
+cast music from his Mac to a speaker. The phone's mini bar sat above the bottom navigation the whole time, showing the
+owner's song with its place, as if the phone's own viewer were playing it on that speaker. The cast glyph read **2**.
+The code did what this phase says. FR-R368-6 lists every household member's playing, FR-R368-7 counts **every**
+session that is not on this device, and FR-R368-8 lets the bar pick any of them. The owner's ruling: *"It should only
+be displayed there if it's the same user … The number should only be the count for that specific user and not
+everyone."* Someone else's playing is still to be seen, *"if she clicks on the cast icon … that the gæsteværelse is in
+use, and maybe show what it's playing"*.
+
+"The viewer's own" means `mine` on the `SessionView`, which the server already sets per socket as
+`owner_user_id == the viewer device's Jellyfin user` (`SessionPublisher.viewOf`). It means the same **account**, not the
+same device and not the same household. Two of the owner's own devices still see each other's playing on the bar.
+That is FR-R356's phone-stays-the-remote case, and it is untouched.
+
+**FR-R368-7, the count, amended.** The glyph's count is the number of the **viewer's own** live sessions that are
+**not** on this device. It is still absent at 0. Someone else's session never counts, whether its title is visible or
+hidden. This withdraws owner decision 1's *"It still counts on the glyph"* for a hidden-title row. The rest of
+FR-R368-7 stands:
+- *Playing everywhere* still lists other people's sessions, below the viewer's own. Each row has its person line
+  (*{person} is listening / watching*), its place, its state and, where FR-R368-6's visibility allows, its title,
+  artwork and progress.
+- The glyph's presence rule still counts such a row (R360 as amended above). A household where only someone else is
+  playing sees the glyph with **no** number. Tapping it shows who is playing where.
+- R370's place list still puts a place with someone else's session under *Playing now* (FR-R370-2), with
+  FR-R370-4's ask on a tap.
+
+**FR-R368-8, the bar, amended.** When nothing plays on this device, the phone's mini bar, the Mac capsule and the
+GNOME docked bar show a session elsewhere **only if it is the viewer's own**. Someone else's session is never on the
+bar. This holds when the viewer has touched it from the sheet, and when 304's household switch lets them control it.
+The switch widens what the sheet's row and the remote may do, not what the bar shows. The rest of FR-R368-8 and its
+2026-10-05 amendment hold unchanged, but only among the viewer's own sessions:
+- the touched-last pick;
+- the most recently started `playing` session before any touch;
+- music and books before a film in music mode, and music and books only in films mode;
+- the music-bar hand-over.
+
+The bar's **+N** chip counts the viewer's own other sessions elsewhere. It opens the sheet as before, and the sheet
+still shows everyone's.
+
+**Consequences elsewhere, recorded so nobody restores them:**
+- R369's test *"the bar shows play-pause and next for a controllable session and none for someone else's with the
+  switch off"* loses its second half. Someone else's session no longer reaches the bar, switch on or off.
+  FR-R369-5 (*the bar is a remote*) is otherwise unchanged.
+- `one-remote-for-every-playback.md`'s *"Which playback it shows is R368 FR-R368-8's rule"* now reads this amended
+  rule. Nothing in that file changes.
+- The TV has no bar and no count, so it is untouched. So are the admin's session page (304) and the server's list.
+
+**No wire change, and no server change.** `mine` has been on `SessionView` since this phase shipped. The fix is in the
+three client rules that every bar and the glyph read: `sessionsElsewhereCount`, `pickBarSession` and `barMoreCount`
+in `ravilo-ui/…/sessions/PlaybackSessions.kt`. `touchedTakesBar` follows through `pickBarSession`. An installed
+older app keeps today's behaviour until it updates. Nothing it reads changes.
+
+### Acceptance (this amendment)
+
+1. **Two accounts, one household.** Account A casts a song from the Mac to a speaker. On the phone, signed in as
+   account B with nothing playing: no mini bar above the bottom navigation on any page, and no number on the cast
+   glyph. Tapping the glyph shows *Playing everywhere* with A's row (*{A} is listening*, the song, the speaker). The
+   speaker is under *Playing now* in the place list.
+2. **The same account, two devices.** The phone is signed in as account A. The mini bar shows the Mac's cast with the
+   speaker's name. The glyph reads **1**.
+3. **Mixed.** Account A has one session elsewhere and account B has two. A's phone glyph reads **1**, and its bar
+   shows A's session with no +N chip. A's sheet lists all three, A's first.
+4. **The desktop.** The same as 1 on the Mac or Linux app, signed in as B while A plays on a speaker. There is no
+   capsule or docked bar for A's session, and no number on the toolbar glyph.
+
+### Tests (this amendment)
+
+- `ravilo-ui` `sessions/PlaybackSessionsTest` (`:ravilo-ui:desktopTest`):
+  - `sessionsElsewhereCount` counts `mine` rows that are not `here` and leaves out `mine = false`. A list of only
+    other people's sessions gives `null`, so the count is absent.
+  - `pickBarSession` returns `null` when the only live sessions elsewhere are other people's. This holds when one of
+    them is the touched id and when it is `controllable`. Among a mix, it picks only from `mine`, by the same rules
+    as before.
+  - `barMoreCount` counts only `mine`.
+  - The existing count assertion that counted a `mine = false` row is changed to match. No other existing case
+    changes meaning.
+- `castIconShown` is unchanged. Its test gains a case: a list with only someone else's live row (`mine = false`)
+  still shows the glyph.
