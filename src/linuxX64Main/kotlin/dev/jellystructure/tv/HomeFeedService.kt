@@ -138,6 +138,8 @@ class HomeFeedService(
     private val continueListCache = dev.jellystructure.ops.LockedMap<String, ContinueListEntry>()
     /** Phase 219 (FR-219-4) — the age of each user's last successful Continue Watching build, for /api/health. */
     fun continueRefreshAges(): Map<String, Long> { val now = nowMs(); return continueListCache.snapshot().mapValues { now - it.value.builtAt } }
+    /** DEB-4152 test seam — the stored entry itself, so a test asks "did a build store?" by identity (a store always replaces it) instead of by elapsed wall-clock time. */
+    internal fun continueEntryForTest(userId: String): Any? = continueListCache[userId]
 
     // Phase 206 (FR-206-3) — the channel rail cached once per user, same shape/signal as [feedCache],
     // shared by every entry point that needs it ([buildHomeFeed], [getChannels], [getChannelFeed]) so

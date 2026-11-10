@@ -23,7 +23,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import platform.posix.getpid
 import kotlin.test.AfterTest
@@ -31,6 +30,9 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -195,19 +197,18 @@ class GoneUserRefreshersTest {
         val presence = FakePresence()
         home.presence = presence
         home.refreshContinueListFor(d)   // a good build: the list is stored
-        val stored = home.continueRefreshAges().getValue(d.jellyfinUserId)
-        delay(150)
+        val stored = home.continueEntryForTest(d.jellyfinUserId)
+        assertNotNull(stored, "a good build stores a list")
         itemsStatus = HttpStatusCode.InternalServerError
         home.refreshContinueListFor(d)
-        assertTrue(home.continueRefreshAges().getValue(d.jellyfinUserId) >= stored + 100, "a failed build stores nothing")
+        assertSame(stored, home.continueEntryForTest(d.jellyfinUserId), "a failed build stores nothing")
         assertEquals(emptyList(), presence.hints)
-        delay(100)
         itemsStatus = HttpStatusCode.NotFound
         home.refreshContinueListFor(d)
-        assertTrue(home.continueRefreshAges().getValue(d.jellyfinUserId) >= 200, "a 404 build stores nothing either")
+        assertSame(stored, home.continueEntryForTest(d.jellyfinUserId), "a 404 build stores nothing either")
         assertEquals(listOf(d.jellyfinUserId), presence.hints.distinct())
         itemsStatus = HttpStatusCode.OK
         home.refreshContinueListFor(d)
-        assertTrue(home.continueRefreshAges().getValue(d.jellyfinUserId) < 200, "a good build stores again")
+        assertNotSame(stored, home.continueEntryForTest(d.jellyfinUserId), "a good build stores again")
     }
 }
