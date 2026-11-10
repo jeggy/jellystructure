@@ -29,12 +29,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.DeskIcon
 import dev.jellystructure.ravilo.ui.components.placeIcon
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.remote.VolumeSliderRow
 import dev.jellystructure.ravilo.ui.seams.volumeRows
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -55,23 +55,16 @@ fun SessionVolumePanel(d: SessionDetail, onMoveToRoom: ((castDeviceId: String) -
     val roomsReachable = "room_volume" in d.ops
     val rows = volumeRows(d.volume, d.muted, v.target.name, v.rooms, roomsReachable)
     Column(Modifier.fillMaxWidth().padding(top = 16.dp).testTag("session-volume")) {
-        rows.forEachIndexed { i, row ->
+        rows.forEach { row ->
             val master = row.castDeviceId == null
-            Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).alpha(if (row.enabled) 1f else 0.5f), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (master && rows.size > 1) str("cast.volume") else row.name, color = colors.text, fontSize = 14.sp,
-                    fontWeight = if (master) FontWeight.SemiBold else FontWeight.Normal, fontFamily = Sora,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(110.dp).padding(start = if (master) 0.dp else 12.dp))
-                var drag by remember(row.castDeviceId, row.level) { mutableStateOf<Float?>(null) }
-                if (row.level != null) androidx.compose.material3.Slider(
-                    value = drag ?: (row.level / 100f), enabled = row.enabled, onValueChange = { drag = it },
-                    onValueChangeFinished = {
-                        drag?.let { f -> SessionRemote.command(v.id, SessionCommandRequest(op = "set_volume", level = (f * 100).toInt(), castDeviceId = row.castDeviceId)) }
-                        drag = null
-                    },
-                    modifier = Modifier.weight(1f).testTag("session-vol-${row.castDeviceId ?: "master"}"),
-                    colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = colors.fg, activeTrackColor = colors.accentSecondary, inactiveTrackColor = colors.fg.copy(0.2f)),
-                ) else Text("—", color = colors.textDim, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-                if (!master && row.enabled) {
+            // DEB-2185 (FR-10, FR-11, FR-12; R371's amendment of 2026-10-23) — every slider here is the one slider: it opens
+            // at the reported level (never 0), holds the viewer's own request while it is in flight, returns 3 s after one
+            // the place did not take, and follows a change from elsewhere live. One hold per row, keyed by the room.
+            VolumeSliderRow(
+                label = if (master) str("cast.volume") else row.name, placeName = row.name, reported = row.level, enabled = row.enabled,
+                send = { level -> SessionRemote.command(v.id, SessionCommandRequest(op = "set_volume", level = level, castDeviceId = row.castDeviceId)) },
+                tag = "session-vol-${row.castDeviceId ?: "master"}", glyph = master, bold = master, startPadding = if (master) 0.dp else 12.dp,
+                trailing = if (!master && row.enabled) ({
                     // Found on the Pixel 9 Pro (2026-10-05): both room buttons had no name for a screen reader (or a test).
                     val muteLabel = str(if (row.muted) "volume.unmute_room" else "volume.mute_room", mapOf("place" to row.name))
                     Box(Modifier.size(40.dp).clip(CircleShape).clickable {
@@ -89,10 +82,8 @@ fun SessionVolumePanel(d: SessionDetail, onMoveToRoom: ((castDeviceId: String) -
                             dev.jellystructure.ravilo.ui.seams.RoomRemoval.Stop -> SessionRemote.command(v.id, SessionCommandRequest(op = "stop"))
                         }
                     }.semantics { contentDescription = removeLabel }.testTag("session-room-remove-${row.castDeviceId}"), contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.CLOSE, colors.textDim, 16.dp) }
-                }
-            }
-            if (!row.enabled && (row.level == null)) Text(str("volume.no_report", mapOf("place" to row.name)), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora,
-                modifier = Modifier.padding(start = if (i == 0) 0.dp else 12.dp))
+                }) else null,
+            )
         }
         if (v.kind == "music") AddSpeakerRows(d)
     }

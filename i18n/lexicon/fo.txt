@@ -228,6 +228,7 @@ heintar
 heiti
 heitir
 heitið
+helt
 henda
 hendan
 hendir

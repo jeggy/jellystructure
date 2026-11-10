@@ -43,6 +43,14 @@ object RemoteControl {
     val videoVolume = RemoteVolume()
     val musicVolume = RemoteVolume()
 
+    /**
+     * DEB-2185 (FR-12.2; R357 FR-R357-5 as amended 2026-10-23) — the Android TV app's media stream, installed only on a
+     * television. With it, a session's level is the stream's, every volume command moves the stream rather than the
+     * player's own gain, and a fixed stream (volume handed over HDMI-CEC) reports no level. Null on every other platform,
+     * where R357's player levels stand.
+     */
+    var streamVolume: StreamVolume? = null
+
     /** Seams for the tests; the app keeps the defaults. */
     var musicPlayer: RemotePlayer = MusicRemotePlayer
     var musicActive: () -> Boolean = { MusicPlayback.state.value.active }
@@ -65,18 +73,35 @@ object RemoteControl {
         volumeChanged.filter { it == target }.collectLatest { delay(VOLUME_SETTLE_MS); report() }
     }
 
-    /** R357 (FR-R357-3) — what the film player reports: the level the dashboard's commands move (R354's, kept across films). */
-    fun videoVolumeReport(): VolumeReport = videoVolume.report()
+    /**
+     * R357 (FR-R357-3) — what the film player reports: the level the dashboard's commands move (R354's, kept across films).
+     * On a television (DEB-2185 FR-12.2) the media stream's level, and null while the stream is fixed.
+     */
+    fun videoVolumeReport(): VolumeReport? {
+        val stream = streamVolume
+        return if (stream != null) stream.report() else videoVolume.report()
+    }
 
     /**
      * R357 (FR-R357-3) — what the music player playing on this device reports: on a desktop the bar's level and the mute
      * R354 applies, on a phone the player's output level for the session (never the system stream its keys move,
-     * FR-R357-5). Null while the music is cast to a speaker: then the progress is the receiver's to report.
+     * FR-R357-5), on a television the media stream's (DEB-2185 FR-12.2). Null while the music is cast to a speaker:
+     * then the progress is the receiver's to report.
      */
     fun musicVolumeReport(): VolumeReport? {
         if (musicCasting()) return null
+        streamVolume?.let { return it.report() }
         syncMusicVolume(musicVolume)
         return musicVolume.report()
+    }
+
+    /**
+     * DEB-2185 (FR-12.2) — the television's stream moved (its own remote, a command, anything): whichever player holds
+     * the session reports at once through [onVolumeSettled], the same path a dashboard command takes.
+     */
+    fun streamVolumeChanged() {
+        val target = remoteTargetFor(video != null, musicActive())
+        if (target != RemoteTarget.NONE) _volumeChanged.tryEmit(target)
     }
 
     /** R357 (FR-R357-4) — the desktop bar's slider moved: the level is the viewer's and the music is audible again. */
@@ -95,10 +120,13 @@ object RemoteControl {
     fun dispatch(cmd: RemoteCommand): RemoteTarget {
         val v = video
         val target = remoteTargetFor(v != null, musicActive())
-        when (target) {
-            RemoteTarget.VIDEO -> cmd.applyTo(v!!, videoVolume)
-            RemoteTarget.MUSIC -> { syncMusicVolume(musicVolume); cmd.applyTo(musicPlayer, musicVolume) }
-            RemoteTarget.NONE -> Unit
+        val stream = streamVolume
+        when {
+            target == RemoteTarget.NONE -> Unit
+            // DEB-2185 (FR-12.2) — on a television a volume command sets the media stream; the player's own gain stays put.
+            stream != null && cmd.movesVolume -> stream.apply(cmd)
+            target == RemoteTarget.VIDEO -> cmd.applyTo(v!!, videoVolume)
+            else -> { syncMusicVolume(musicVolume); cmd.applyTo(musicPlayer, musicVolume) }
         }
         if (target != RemoteTarget.NONE && cmd.movesVolume) _volumeChanged.tryEmit(target)   // R357 (FR-R357-4)
         return target
@@ -107,6 +135,30 @@ object RemoteControl {
 
 private val RemoteCommand.movesVolume: Boolean
     get() = this is RemoteCommand.SetVolume || this is RemoteCommand.VolumeStep || this is RemoteCommand.Mute
+
+/**
+ * DEB-2185 (FR-12.2; R357 FR-R357-5 as amended) — a television's media stream (`STREAM_MUSIC` on Android TV) as a
+ * session's volume. [report] is null while the platform says the stream is fixed (volume handed to a soundbar or a
+ * receiver over HDMI-CEC): then the app sends no level and every remote shows *—*.
+ */
+interface StreamVolume {
+    fun report(): VolumeReport?
+    /** `set_volume`: 0–100 of the stream's own range. */
+    fun set(percent: Int)
+    fun step(deltaPercent: Int)
+    /** null toggles. */
+    fun mute(muted: Boolean?)
+}
+
+/** Drives the stream with a volume command; anything else is left alone. */
+fun StreamVolume.apply(cmd: RemoteCommand) {
+    when (cmd) {
+        is RemoteCommand.SetVolume -> set(cmd.percent.coerceIn(0, 100))
+        is RemoteCommand.VolumeStep -> step(cmd.deltaPercent)
+        is RemoteCommand.Mute -> mute(cmd.muted)
+        else -> Unit
+    }
+}
 
 /**
  * R354 (FR-R354-4) — the music player as a remote command sees it: [MusicPlayback], the door every music screen uses,

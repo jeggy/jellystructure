@@ -461,6 +461,10 @@
   "group.add_failed": "Couldn't add {room}",
   "session.ended": "Stopped on {place}",
   "volume.no_report": "{place} doesn't report its volume",
+  "volume.kept": {
+    "text": "{place} kept {n} %",
+    "note": "Under the remote's volume slider for 3 s after a level the place did not take: {place} is the place or room, {n} the level it reports (one-remote-for-every-playback.md FR-11.5)."
+  },
   "volume.mute_room": "Mute {place}",
   "volume.unmute_room": "Unmute {place}",
   "volume.remove_room": "Remove {place}",

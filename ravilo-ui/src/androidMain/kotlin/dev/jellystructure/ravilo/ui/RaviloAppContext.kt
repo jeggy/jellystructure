@@ -30,6 +30,8 @@ object RaviloAppContext {
 
     fun init(context: Context) {
         ctx = context.applicationContext
+        // DEB-2185 (FR-12.2) — a television reports and sets its media stream as the session's volume; a phone never does.
+        runCatching { dev.jellystructure.ravilo.ui.seams.installTvStreamVolume(context.applicationContext, isTelevision) }
         // R63: memory + disk cache, crossfade, SVG decoder.
         SingletonImageLoader.setSafe { c ->
             ImageLoader.Builder(c)

@@ -212,4 +212,69 @@ class RemoteControlTest {
         assertEquals(VolumeReport(60, false), RemoteControl.musicVolumeReport())
         RemoteControl.musicVolume.apply(RemoteCommand.SetVolume(100))
     }
+
+    /** DEB-2185 (FR-12.2) — a television's media stream as a test sees it: a level, a mute, a fixed switch. */
+    private class FakeStream(var percent: Int = 50, var fixed: Boolean = false) : StreamVolume {
+        var muted = false
+        val sets = mutableListOf<String>()
+        override fun report(): VolumeReport? = if (fixed) null else VolumeReport(percent, muted)
+        override fun set(percent: Int) { this.percent = percent; sets += "set $percent" }
+        override fun step(deltaPercent: Int) { percent = (percent + deltaPercent).coerceIn(0, 100); sets += "step $deltaPercent" }
+        override fun mute(muted: Boolean?) { this.muted = muted ?: !this.muted; sets += "mute $muted" }
+    }
+
+    @Test
+    fun onATelevisionTheStreamIsTheSessionsVolume() {
+        // DEB-2185 (FR-12.2; R357 FR-R357-5 as amended) — a set_volume sets the stream, not the player's gain; the film
+        // reports the stream's level; each command still reports at once.
+        val stream = FakeStream(percent = 50)
+        RemoteControl.streamVolume = stream
+        try {
+            val detach = RemoteControl.attachVideo(Recorder("film", log))
+            val changes = changesDuring {
+                RemoteControl.dispatch(RemoteCommand.SetVolume(37))
+                assertEquals(VolumeReport(37, false), RemoteControl.videoVolumeReport())
+                RemoteControl.dispatch(RemoteCommand.VolumeStep(10))
+                assertEquals(VolumeReport(47, false), RemoteControl.videoVolumeReport())
+                RemoteControl.dispatch(RemoteCommand.Mute(true))
+                assertEquals(VolumeReport(47, true), RemoteControl.videoVolumeReport())
+                RemoteControl.dispatch(ps("Pause"))
+            }
+            detach()
+            assertEquals(listOf("set 37", "step 10", "mute true"), stream.sets)
+            assertEquals(listOf("film pause"), log, "the player's own gain was never touched")
+            assertEquals(listOf(RemoteTarget.VIDEO, RemoteTarget.VIDEO, RemoteTarget.VIDEO), changes)
+            assertEquals(100, RemoteControl.videoVolume.percent, "R354's remembered level stays at full on a television")
+            // The music player on the television reports the same stream.
+            musicHolds = true
+            assertEquals(VolumeReport(47, true), RemoteControl.musicVolumeReport())
+        } finally { RemoteControl.streamVolume = null; musicHolds = false }
+    }
+
+    @Test
+    fun aFixedStreamReportsNoLevel() {
+        // FR-12.2 — volume handed to a soundbar over HDMI-CEC: the TV says nothing, and every remote shows a dash.
+        RemoteControl.streamVolume = FakeStream(percent = 80, fixed = true)
+        try {
+            assertNull(RemoteControl.videoVolumeReport())
+            musicHolds = true
+            assertNull(RemoteControl.musicVolumeReport())
+        } finally { RemoteControl.streamVolume = null; musicHolds = false }
+    }
+
+    @Test
+    fun theTvsOwnRemoteReportsAtOnceThroughWhoeverHoldsTheSession() {
+        // FR-12.2 — a change of the stream from outside the app (the TV's remote) reports at once, on the film while one
+        // is open, on the music otherwise, and on nobody when nothing plays.
+        RemoteControl.streamVolume = FakeStream()
+        try {
+            val detach = RemoteControl.attachVideo(Recorder("film", log))
+            assertEquals(listOf(RemoteTarget.VIDEO), changesDuring { RemoteControl.streamVolumeChanged() })
+            detach()
+            musicHolds = true
+            assertEquals(listOf(RemoteTarget.MUSIC), changesDuring { RemoteControl.streamVolumeChanged() })
+            musicHolds = false
+            assertEquals(emptyList(), changesDuring { RemoteControl.streamVolumeChanged() })
+        } finally { RemoteControl.streamVolume = null }
+    }
 }

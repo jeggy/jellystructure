@@ -149,6 +149,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     /** R353 (FR-R353-4) — the device's volume as the session reports it (the speaker's own, 0.0–1.0); null while unlinked. */
     private val _volume = MutableStateFlow<Double?>(null)
     override val volume: StateFlow<Double?> = _volume
+    /** DEB-2185 (FR-12.3) — the Cast session's volume is the device's own, and the SDK reports every change of it. */
+    override val setsVolume: Boolean = true
     private val castListener = object : com.google.android.gms.cast.Cast.Listener() {
         override fun onVolumeChanged() { _volume.value = runCatching { session?.volume }.getOrNull() }
         // R355 — a speaker added in Android's output panel renames the session ("Gæsteværelse + 1").

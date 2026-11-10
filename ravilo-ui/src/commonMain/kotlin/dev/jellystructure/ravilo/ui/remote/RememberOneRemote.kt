@@ -78,8 +78,9 @@ fun rememberOneRemote(
         val linkDetail = view?.let { lv -> detail?.takeIf { it.session.id == lv.id } }
         return linkRemote(
             LinkActions(cast), castStatus ?: CastRemoteStatus(), unreachable, deviceName.orEmpty(), view, linkDetail, extras,
-            // DEB-2660 (FR-11) — a station's group level is on every platform's remote (a song's rooms come from its session).
-            linkVolume = if ((desktop || castStatus?.radio == true) && !unreachable) { m -> dev.jellystructure.ravilo.ui.screens.RemoteVolume(cast, m) } else null,
+            // DEB-2185 (FR-10, FR-11, FR-12) — the one slider on every platform's remote, read off the link where it has a
+            // volume of its own and off the session otherwise (a song's rooms come from its session, DEB-2611).
+            linkVolume = if (!unreachable) { m -> LinkVolumeRow(cast, deviceName.orEmpty(), linkDetail, m) } else null,
             radioRooms = { RadioRoomsPanel(cast) },
         )
     }

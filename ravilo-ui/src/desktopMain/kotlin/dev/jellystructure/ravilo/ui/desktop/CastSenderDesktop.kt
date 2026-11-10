@@ -441,7 +441,9 @@ internal object CastSenderDesktop : CastSender {
         }
     }
 
-    override fun setVolume(level: Double) { scope.launch { _volume.value = level.coerceIn(0.0, 1.0); session?.setVolume(level) } }
+    /** DEB-2185 (FR-11.6) — no local echo: [volume] moves when the receiver's status says so, and the remote holds its own request meanwhile. */
+    override fun setVolume(level: Double) { scope.launch { session?.setVolume(level.coerceIn(0.0, 1.0)) } }
+    override val setsVolume: Boolean = true
 
     private fun command(type: String, index: Int) =
         session?.sendCustom(json.encodeToString(CastCommand.serializer(), CastCommand(type, index = index)))

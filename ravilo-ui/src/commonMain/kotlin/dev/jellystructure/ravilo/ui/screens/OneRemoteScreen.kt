@@ -345,7 +345,7 @@ fun OneRemoteScreen(
                             }
                         }
                     }
-                    // The volume, as each driver has it today (the volume slice replaces both with one slider).
+                    // DEB-2185 (FR-10) — the volume row: one slider over the link, or R371's master and rooms through the server.
                     if (!unreachable) {
                         remote.linkVolume?.let { vol -> Spacer(Modifier.height(gap(18.dp))); vol(Modifier.widthIn(max = 360.dp).fillMaxWidth()) }
                         remote.sessionVolume?.invoke()
@@ -429,47 +429,6 @@ private fun MoveToSheet(remote: OneRemote, onClose: () -> Unit) {
                 ) { Text(remote.extras.playHereLabel ?: str("cast.play_here"), color = colors.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
             }
             Spacer(Modifier.height(12.dp))
-        }
-    }
-}
-
-/**
- * The device's volume on a computer: what it last reported ([CastSender.volume]), else the level set here last; a
- * click or a drag sets it ([CastSender.setVolume]). A speaker glyph, then the line. (R351 FR-R351-6, until the volume
- * slice gives every remote the same slider.)
- */
-@Composable
-internal fun RemoteVolume(cast: CastController, modifier: Modifier = Modifier) {
-    val colors = RaviloTheme.colors
-    val reported by cast.sender.volume.collectAsState()
-    var local by remember { mutableStateOf<Float?>(null) }
-    val level = (reported?.toFloat() ?: local ?: 0.5f).coerceIn(0f, 1f)
-    var held by remember { mutableStateOf(false) }
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.size(18.dp)) {
-            val w = size.width; val h = size.height
-            val body = Path().apply {
-                moveTo(w * 0.08f, h * 0.36f); lineTo(w * 0.30f, h * 0.36f); lineTo(w * 0.56f, h * 0.12f)
-                lineTo(w * 0.56f, h * 0.88f); lineTo(w * 0.30f, h * 0.64f); lineTo(w * 0.08f, h * 0.64f); close()
-            }
-            drawPath(body, colors.textSecondary)
-            drawArc(colors.textSecondary, -45f, 90f, false, topLeft = Offset(w * 0.40f, h * 0.24f), size = Size(w * 0.44f, h * 0.52f), style = Stroke(1.6.dp.toPx(), cap = StrokeCap.Round))
-        }
-        Spacer(Modifier.width(12.dp))
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).height(24.dp)) {
-            val wPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-            fun set(x: Float) { val v = (x / wPx).coerceIn(0f, 1f); local = v; cast.sender.setVolume(v.toDouble()) }
-            Canvas(
-                Modifier.fillMaxSize()
-                    .pointerInput(Unit) { detectDragGestures(onDragStart = { o -> held = true; set(o.x) }, onDragEnd = { held = false }, onDragCancel = { held = false }) { ch, _ -> set(ch.position.x) } }
-                    .pointerInput(Unit) { detectTapGestures { o -> set(o.x) } },
-            ) {
-                val y = size.height / 2
-                val th = 4.dp.toPx()
-                drawRoundRect(colors.textDim.copy(alpha = 0.35f), Offset(0f, y - th / 2), Size(size.width, th), CornerRadius(th / 2, th / 2))
-                drawRoundRect(colors.text, Offset(0f, y - th / 2), Size(size.width * level, th), CornerRadius(th / 2, th / 2))
-                drawCircle(colors.text, (if (held) 7.dp else 6.dp).toPx(), Offset(size.width * level, y))
-            }
         }
     }
 }

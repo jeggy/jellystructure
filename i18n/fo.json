@@ -443,6 +443,7 @@
   "group.add_failed": "Fekk ikki lagt {room} afturat",
   "session.ended": "Steðgað á {place}",
   "volume.no_report": "{place} sigur ikki ljóðstyrkina",
+  "volume.kept": "{place} helt {n} %",
   "volume.mute_room": "Doyv ljóðið í {place}",
   "volume.unmute_room": "Tendra ljóðið í {place}",
   "volume.remove_room": "Tak {place} burtur",

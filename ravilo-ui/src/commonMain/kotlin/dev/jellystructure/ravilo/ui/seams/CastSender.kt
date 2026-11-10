@@ -96,6 +96,12 @@ interface CastSender {
     /** R337 — the device's own volume as it last reported it, 0.0–1.0; null where the platform does not say. */
     val volume: StateFlow<Double?> get() = UNKNOWN_VOLUME
     /**
+     * DEB-2185 (FR-5.2, FR-12.3) — this link carries a volume of its own: [setVolume] reaches the device and [volume] is
+     * what it reports. False for a screen driven through the server, whose level is the session's (`SessionDetail.volume`)
+     * and whose `set_volume` goes through the server.
+     */
+    val setsVolume: Boolean get() = false
+    /**
      * R355 (FR-R355-1) — the speakers the session plays on when the platform grouped them (Android's output panel ⊕
      * adds a speaker to a music session: a Cast *dynamic group*). Empty when it plays on one device, on a group made in
      * Google Home (one route), and on every platform that cannot say.
