@@ -526,6 +526,15 @@ private fun PlayerScreenEffects(s: PlayerScreenState) {
         next = { if (s.resolvedNextEpisodeId != null) s.advanceNext() },
         previous = { s.previousEpisode() },
     )
+    // DEB-4133 (R337 FR-R337-10, amendment 2026-11-09) — the desktop's Space reaches the player as a command, not as a
+    // key: the window consumes the key before the focused control sees it, so a chrome button the last click left
+    // focused cannot swallow it. While this player is on screen the command is the film's play/pause (FR-R329-6); the
+    // bars' handler in RaviloApp has no bar to drive here. Nothing sends the command on the other platforms.
+    LaunchedEffect(Unit) {
+        dev.jellystructure.ravilo.ui.components.AppCommands.requests.collect {
+            if (it == dev.jellystructure.ravilo.ui.components.AppCommand.PLAY_PAUSE) s.onMediaKey(MediaKey.PLAY_PAUSE)
+        }
+    }
     // R380 (FR-R380-7) — a cast remote's view of this player (TV only).
     if (isTvPlatform) SideEffect { s.bindCastSource() }
     CastChannelVideoHost(itemId, s.castSource)

@@ -15,6 +15,11 @@ enum class AppCommand {
     // R337 — the desktop's View menu and keys
     MODE_VIDEO, MODE_MUSIC, SEARCH, TOGGLE_SIDEBAR, TOGGLE_QUEUE, SHOW_LYRICS, SHORTCUTS,
     NEXT_SONG, PREVIOUS_SONG, VOLUME_UP, VOLUME_DOWN, SIGN_OUT,
+    /**
+     * DEB-4133 (FR-R337-10, amendment 2026-11-09) — the desktop's Space: plays or pauses whatever has focus. A film's
+     * player on screen takes it as the film's; otherwise it is what the bar's ⏯ does; with no bar it is nothing.
+     */
+    PLAY_PAUSE,
 }
 
 object AppCommands {

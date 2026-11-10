@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.isTvPlatform
+import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 
@@ -147,6 +148,7 @@ fun ServerSetupScreen(
                     // TV only: a touch screen or a mouse goes straight into the field, as before (a tap on a field that
                     // can't take focus would do nothing).
                     .focusProperties { canFocus = editing || !isTvPlatform }
+                    .reportTextFieldFocus()
                     .testTag(ServerSetupTags.ADDRESS_FIELD)
                     // R349 (FR-R349-3) — a focused text field moves its cursor on Down; with the keyboard closed
                     // Down must reach Connect.

@@ -1,7 +1,5 @@
 package dev.jellystructure.ravilo.ui.music
 
-import kotlin.time.TimeSource
-
 /**
  * DEB-3034 (a-song-that-waits-says-so.md FR-7) — what sent a pause. The music engine reports it as `pause_by` on the
  * report that first says the song is paused, and the server writes it as the detail of the session timeline's `paused`
@@ -10,7 +8,10 @@ import kotlin.time.TimeSource
 object PauseSource {
     /** An on-screen control. */
     const val SCREEN = "screen"
-    /** The space bar (a focused button the key pressed). */
+    /**
+     * The desktop's Space (DEB-4133, R337 FR-R337-10 amended 2026-11-09). The key sends this value itself; until then it
+     * was worked out from a press that followed the key within a window, because Space pressed the focused control.
+     */
     const val KEYBOARD = "keyboard"
     /** The Dock menu (macOS). */
     const val DOCK = "dock"
@@ -30,17 +31,4 @@ object PauseSource {
 
     /** The wire value for [by]: itself when it is one of [known], else null (the field is left out). */
     fun wire(by: String?): String? = by?.takeIf { it in known }
-
-    /** A click that follows the space bar within this long was the key's. */
-    internal const val SPACE_PRESS_WINDOW_MS = 400L
-
-    private val origin = TimeSource.Monotonic.markNow()
-    internal var nowMs: () -> Long = { origin.elapsedNow().inWholeMilliseconds }
-    private var spaceAtMs: Long? = null
-
-    /** The window's key handler saw the space bar go down. */
-    fun noteSpaceBar() { spaceAtMs = nowMs() }
-
-    /** A press on one of the player's own controls: [KEYBOARD] when the space bar went down a moment ago, else [SCREEN]. */
-    fun fromControl(): String = if (spaceAtMs?.let { nowMs() - it in 0..SPACE_PRESS_WINDOW_MS } == true) KEYBOARD else SCREEN
 }

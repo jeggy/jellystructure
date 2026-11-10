@@ -7,10 +7,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
@@ -118,8 +122,38 @@ private val reducedMotion: Boolean by lazy {
 actual fun Modifier.safeAreaPadding(includeIme: Boolean, plusBottom: Dp): Modifier =
     if (plusBottom > 0.dp) this.padding(bottom = plusBottom) else this
 
-/** The web's hidden-input bridge has no desktop counterpart: the system keyboard types into the field directly. */
-actual fun Modifier.reportTextFieldFocus(): Modifier = this
+/**
+ * DEB-4133 (FR-R337-10) — the desktop reads this for its Space key: while a text field has focus, Space types into it
+ * instead of playing or pausing. The system keyboard types into the field directly, so nothing else is bridged. A field
+ * disposed while focused never gets a final blur, so the dispose releases what it counted (as the web's actual does).
+ */
+actual fun Modifier.reportTextFieldFocus(): Modifier = composed {
+    val wasFocused = remember { booleanArrayOf(false) }
+    DisposableEffect(Unit) { onDispose { if (wasFocused[0]) DesktopWindow.textFieldFocusReported(false) } }
+    this.onFocusChanged { state ->
+        if (state.isFocused == wasFocused[0]) return@onFocusChanged
+        wasFocused[0] = state.isFocused
+        DesktopWindow.textFieldFocusReported(state.isFocused)
+    }
+}
+
+/**
+ * DEB-4133 (FR-R337-10) — the generic half of "a text field has focus": every text field that takes input opens a
+ * platform text-input session for as long as it has focus (Compose's legacy `BasicTextField` included, through its
+ * skiko adapter), and this interceptor counts the sessions in [DesktopWindow.textFieldFocused]. Wrapped around the
+ * app's root by `:ravilo-desktop`, so a field added later keeps Space without being told to.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun DesktopTextInputWatch(content: @Composable () -> Unit) {
+    val interceptor = remember {
+        PlatformTextInputInterceptor { request, next ->
+            DesktopWindow.textInputSessionStarted()
+            try { next.startInputMethod(request) } finally { DesktopWindow.textInputSessionEnded() }
+        }
+    }
+    InterceptPlatformTextInput(interceptor, content)
+}
 
 /** R244 — the handset's swipes are a phone's; the Mac's volume keys stay the Mac's (R330 D3). */
 @Composable

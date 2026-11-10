@@ -49,6 +49,7 @@ import dev.jellystructure.ravilo.ui.LocalUserProfile
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.isMacPlatform
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SystemUiFont
@@ -319,7 +320,7 @@ private fun SearchField(placeholder: String, query: String, onQuery: (String) ->
         androidx.compose.foundation.text.BasicTextField(
             value = query,
             onValueChange = onQuery,
-            modifier = Modifier.weight(1f).focusRequester(fr).onPreviewKeyEvent { ev ->
+            modifier = Modifier.weight(1f).focusRequester(fr).reportTextFieldFocus().onPreviewKeyEvent { ev ->
                 if (ev.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && ev.key == androidx.compose.ui.input.key.Key.Escape && query.isNotEmpty()) { onQuery(""); true } else false
             },
             singleLine = true,

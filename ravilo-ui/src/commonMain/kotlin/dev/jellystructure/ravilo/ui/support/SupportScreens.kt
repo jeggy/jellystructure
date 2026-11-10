@@ -63,6 +63,7 @@ import dev.jellystructure.ravilo.ui.components.CheckGlyph
 import dev.jellystructure.ravilo.ui.deviceDisplayName
 import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -587,7 +588,7 @@ private fun Composer(draft: String, onDraft: (String) -> Unit, phase: SendPhase,
             ) {
                 BasicTextField(
                     value = draft, onValueChange = onDraft, enabled = !sending, readOnly = sending,
-                    modifier = Modifier.fillMaxWidth().testTag(SupportTags.COMPOSER + "-field"),
+                    modifier = Modifier.fillMaxWidth().reportTextFieldFocus().testTag(SupportTags.COMPOSER + "-field"),
                     textStyle = TextStyle(color = colors.text, fontSize = 15.sp, fontFamily = Sora),
                     cursorBrush = SolidColor(colors.accent),
                     maxLines = 6,

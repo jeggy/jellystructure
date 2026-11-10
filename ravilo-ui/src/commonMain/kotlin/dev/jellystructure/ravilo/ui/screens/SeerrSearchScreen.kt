@@ -59,6 +59,7 @@ import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -165,6 +166,7 @@ fun SeerrSearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(textFieldFR)
+                    .reportTextFieldFocus()
                     .okToEdit(edit, keyboardController)
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

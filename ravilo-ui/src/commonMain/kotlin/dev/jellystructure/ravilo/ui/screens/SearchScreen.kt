@@ -75,6 +75,7 @@ import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -371,6 +372,7 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(textFieldFR)
+                    .reportTextFieldFocus()
                     .testTag(SearchTags.FIELD)
                     // R350 (FR-R350-4/13) — on a TV, OK on the field is what makes it editable and raises the keyboard.
                     .okToEdit(edit, keyboardController)

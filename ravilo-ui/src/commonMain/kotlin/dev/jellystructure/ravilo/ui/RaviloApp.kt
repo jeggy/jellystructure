@@ -1803,6 +1803,7 @@ fun RaviloApp(
                     dev.jellystructure.ravilo.ui.components.AppCommand.SIGN_OUT -> if (activeUserId != null) deskSignOutAsk = true
                     dev.jellystructure.ravilo.ui.components.AppCommand.OPEN_SETTINGS -> Unit   // handled above, where it always was
                     dev.jellystructure.ravilo.ui.components.AppCommand.UPDATE_CHECK -> Unit   // R386 — handled above, with Settings
+                    dev.jellystructure.ravilo.ui.components.AppCommand.PLAY_PAUSE -> Unit   // DEB-4133 — handled below, once the bars and the cast controller are known
                 }
             }
         }
@@ -1825,6 +1826,29 @@ fun RaviloApp(
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
         SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId; castController.musicEnabled = castMusic }
+        // DEB-4133 (FR-R337-10, amendment 2026-11-09) — the desktop's Space. It does what the bar's ⏯ does, by the same
+        // route: the session bar's play/pause when that bar is the one showing, else this computer's music (a song, the
+        // radio, a book — here or cast), as `keyboard` for `pause_by` (a-song-that-waits-says-so.md FR-7). The phone layout
+        // in a window counts its mini bars and the Playing and queue pages. A film's player takes the command itself
+        // (PlayerScreenEffects); with no bar and no player, nothing. Read through rememberUpdatedState: the collector
+        // below lives for the whole composition and must see this composition's bars, not the first one's.
+        val playPauseByKey by rememberUpdatedState<() -> Unit> {
+            val top = stack.lastOrNull() ?: return@rememberUpdatedState
+            val sessionBarShowing = barSession != null && (deskSessionBarShows(top) || sessionBarOver(top))
+            val musicBarShowing = deskBarShows(top) || musicMiniOver(top) ||
+                (handset && musicState.active && !sessionOverMusic && (top is Dest.MusicPlaying || top is Dest.MusicQueue))
+            when {
+                sessionBarShowing -> { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touch(barSession!!.id); castController.sessionPlayPause(barSession) }
+                musicBarShowing -> {
+                    dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()
+                    dev.jellystructure.ravilo.ui.music.MusicPlayback.togglePlay(dev.jellystructure.ravilo.ui.music.PauseSource.KEYBOARD)
+                }
+                else -> Unit
+            }
+        }
+        LaunchedEffect(Unit) {
+            dev.jellystructure.ravilo.ui.components.AppCommands.requests.collect { if (it == dev.jellystructure.ravilo.ui.components.AppCommand.PLAY_PAUSE) playPauseByKey() }
+        }
         LaunchedEffect(castController, screensPaired, configRefreshes) { castController.screensPaired = screensPaired }
         // R368 (amends FR-R360-1) — a *Playing everywhere* row counts toward the glyph like a device.
         LaunchedEffect(castController) {

@@ -428,7 +428,7 @@ object MusicPlayback {
      */
     fun togglePlay(shownPlaying: Boolean) {
         dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()   // only the player's own buttons call this
-        if (!casting) { togglePlay(PauseSource.fromControl()); return }
+        if (!casting) { togglePlay(PauseSource.SCREEN); return }
         // Re-measured the same day: the Mac's click landed ~250 ms after the Pixel's pause had already turned its glyph
         // into ▶, so "what it showed" was play and the speaker resumed. Nobody reacts to a glyph that fast: a press within
         // [GLYPH_REACTION] of a flip this device did not cause is meant for the glyph that was there before it.
@@ -442,15 +442,15 @@ object MusicPlayback {
     @kotlin.concurrent.Volatile private var glyphBefore = false
     @kotlin.concurrent.Volatile private var glyphFlippedAt: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
     @kotlin.concurrent.Volatile private var ownPressAt: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
-    /** [by] — DEB-3034 (FR-7): what pressed it. The player's own controls (the default) are the screen or, a moment after the space bar, the keyboard. */
-    fun togglePlay(by: String? = PauseSource.fromControl()) {
+    /** [by] — DEB-3034 (FR-7): what pressed it. The player's own controls (the default) are the screen; the desktop's Space passes [PauseSource.KEYBOARD] (DEB-4133). */
+    fun togglePlay(by: String? = PauseSource.SCREEN) {
         if (casting) { if (_state.value.playing) pause(by) else play() }
         else if (!MusicEngine.state.value.playing && MusicCast.resumeOnDevice()) Unit
         else MusicEngine.togglePlay(by)
     }
     /** FR-R353-5 — still connected after the device stopped (the dashboard's Stop): Play starts the song there again. */
     fun play() { if (casting) MusicCast.controller?.sender?.play() else if (!MusicCast.resumeOnDevice()) MusicEngine.play() }
-    fun pause(by: String? = PauseSource.fromControl()) { if (casting) MusicCast.controller?.sender?.pause() else MusicEngine.pause(by) }
+    fun pause(by: String? = PauseSource.SCREEN) { if (casting) MusicCast.controller?.sender?.pause() else MusicEngine.pause(by) }
     fun next() { if (casting) MusicCast.command("next") else MusicEngine.next() }
     fun previous() { if (casting) MusicCast.command("prev") else MusicEngine.previous() }
     fun seekTo(positionMs: Long) { if (casting) MusicCast.controller?.sender?.seekTo(positionMs) else MusicEngine.seekTo(positionMs) }

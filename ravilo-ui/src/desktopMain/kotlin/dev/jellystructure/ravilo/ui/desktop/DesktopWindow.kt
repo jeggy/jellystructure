@@ -84,9 +84,23 @@ object DesktopWindow {
         _shown.value = shown
         _minimised.value = minimised
         _focused.value = focused
+        if (!focused) SpaceKey.reset()   // DEB-4133 — a Space whose KeyUp went elsewhere is not held
         if (!fullScreen) fullScreenByPlayer = false
         _fullScreen.value = fullScreen
     }
+
+    /**
+     * DEB-4133 (FR-R337-10) — a text field has focus, so Space is the field's and not the play/pause key. Two sources,
+     * either suffices: the platform text-input session a focused field opens (generic — a field added later counts
+     * without being told to), and `reportTextFieldFocus()` on the field (explicit, for the one that opens no session).
+     * Counters, not flags: two fields can briefly overlap during a focus jump.
+     */
+    private val textInputSessions = java.util.concurrent.atomic.AtomicInteger(0)
+    private val fieldFocusReports = java.util.concurrent.atomic.AtomicInteger(0)
+    val textFieldFocused: Boolean get() = textInputSessions.get() > 0 || fieldFocusReports.get() > 0
+    fun textInputSessionStarted() { textInputSessions.incrementAndGet() }
+    fun textInputSessionEnded() { textInputSessions.updateAndGet { (it - 1).coerceAtLeast(0) } }
+    fun textFieldFocusReported(focused: Boolean) { if (focused) fieldFocusReports.incrementAndGet() else fieldFocusReports.updateAndGet { (it - 1).coerceAtLeast(0) } }
 
     /** The player's F key and double-click. */
     fun togglePlayerFullScreen() {

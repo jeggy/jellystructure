@@ -38,6 +38,7 @@ import dev.jellystructure.ravilo.ui.desktop.DesktopLog
 import dev.jellystructure.ravilo.ui.desktop.DesktopShutdown
 import dev.jellystructure.ravilo.ui.desktop.DesktopWindow
 import dev.jellystructure.ravilo.ui.desktop.SelfTest
+import dev.jellystructure.ravilo.ui.desktop.SpaceKey
 import dev.jellystructure.ravilo.ui.desktop.UpdateCheck
 import dev.jellystructure.ravilo.ui.music.MusicEngine
 import kotlinx.coroutines.CoroutineScope
@@ -202,7 +203,8 @@ private fun ApplicationScope.RaviloDesktopApp() {
             onMinimise = { state.isMinimized = true },
             onClose = ::close,
         )
-        if (!quitting) {
+        // DEB-4133 (FR-R337-10) — the watch counts the text-input sessions focused fields open, so Space knows to type.
+        if (!quitting) dev.jellystructure.ravilo.ui.seams.DesktopTextInputWatch {
             if (DesktopWindow.drawsOwnFrame) Box(
                 Modifier.fillMaxSize().clip(RoundedCornerShape(if (filled) 0.dp else dev.jellystructure.ravilo.ui.seams.WINDOW_CORNER)),
             ) { RaviloRoot() }
@@ -232,11 +234,24 @@ private fun playerWindowKeys(ev: KeyEvent): Boolean {
  * Esc = Back is the app's own (R328), and the mode keys work in the phone layout too.
  */
 private fun desktopKeys(ev: KeyEvent, quit: () -> Unit): Boolean {
+    fun send(c: AppCommand): Boolean { AppCommands.send(c); return true }
+    // DEB-4133 (FR-R337-10, amendment 2026-11-09) — a bare Space plays or pauses whatever has focus, and is consumed here
+    // so the focused `clickable` never presses on it; a text field keeps it; a held Space toggles once (SpaceKey).
+    if (ev.type == KeyEventType.KeyDown || ev.type == KeyEventType.KeyUp) {
+        val verdict = SpaceKey.onKey(
+            space = ev.key == Key.Spacebar,
+            down = ev.type == KeyEventType.KeyDown,
+            modified = ev.isMetaPressed || ev.isCtrlPressed || ev.isAltPressed || ev.isShiftPressed,
+        )
+        when (verdict) {
+            SpaceKey.Verdict.TOGGLE -> return send(AppCommand.PLAY_PAUSE)
+            SpaceKey.Verdict.SWALLOW -> return true
+            SpaceKey.Verdict.PASS -> Unit
+        }
+    }
     if (ev.type != KeyEventType.KeyDown) return false
-    if (ev.key == Key.Spacebar) dev.jellystructure.ravilo.ui.music.PauseSource.noteSpaceBar()   // DEB-3034 (FR-7) — a click right after is the key's
     val mac = dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac
     val cmd = if (mac) ev.isMetaPressed else ev.isCtrlPressed
-    fun send(c: AppCommand): Boolean { AppCommands.send(c); return true }
     if (!mac && ev.key == Key.F11) { DesktopWindow.setFullScreenHandler(!DesktopWindow.fullScreen.value); return true }
     if (!cmd) return false
     return when {
