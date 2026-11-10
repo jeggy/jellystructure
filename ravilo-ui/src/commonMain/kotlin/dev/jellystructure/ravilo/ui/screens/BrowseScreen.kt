@@ -307,8 +307,11 @@ fun BrowseScreen(
         // DEB-2349 (FR-5) — the grid (or the error) fades in once over the loading line; a list kept by the store does not.
         Column(modifier = Modifier.fillMaxSize().padding(top = RaviloDimens.appBarHeight + 24.dp).fadeInOnLoad(loading = state is BrowseState.Loading)) {
             when (val s = state) {
-                is BrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
+                // DEB-4091 FR-1 — poster shimmers in the loaded grid's columns, not a centred line.
+                is BrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f)) {
+                    dev.jellystructure.ravilo.ui.components.TileShimmerGrid(
+                        if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current,
+                    )
                 }
                 is BrowseState.Error -> Box(Modifier.weight(1f)) {
                     LoadErrorState(s.kind, onRetry = { store.load(kind) }, onBack = onBack)

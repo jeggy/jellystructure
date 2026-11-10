@@ -271,7 +271,8 @@ fun MusicAlbumScreen(
                         }
                     }
                 }
-            } else if (state is Load.Failed) EmptyLine(str("mhome.empty"))
+            } else if (state is Load.Failed) MusicLoadFailed(loader.lastFailure, loader::load)
+            else MusicDetailLoading(dev.jellystructure.ravilo.ui.theme.isDesktopLayout)   // DEB-4091 FR-1, FR-3 — the skeleton while it loads, Retry when it failed; "no music" is for an answer of nothing
         }
         DetailBack(onBack, title = d?.album?.title)
     }
@@ -591,7 +592,8 @@ fun MusicArtistScreen(
                         }
                     }
                 }
-            } else if (state is Load.Failed) EmptyLine(str("mhome.empty"))
+            } else if (state is Load.Failed) MusicLoadFailed(loader.lastFailure, loader::load)
+            else MusicDetailLoading(dev.jellystructure.ravilo.ui.theme.isDesktopLayout, round = true)   // DEB-4091 FR-1, FR-3
         }
         DetailBack(onBack, title = d?.artist?.name)
     }

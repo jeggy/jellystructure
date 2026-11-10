@@ -126,12 +126,15 @@ class MusicPagedList(private val fetch: suspend (Int) -> MusicList) {
     }
 }
 
+private val MUSIC_RECOVERABLE_PREFIXES = listOf("mlisten:", "malbum:", "martist:", "mplaylist:")
+
 /** DEB-4091 FR-4 — called by RaviloApp's single socket-open collector for retained stores. */
 internal fun recoverMusicEntryStores(registry: Map<String, Any>) {
     registry.forEach { (key, store) ->
         when {
             store is MusicBrowseStore -> store.reloadFailed()
-            key.startsWith("mlisten:") && store is MusicLoader<*> -> store.reloadIfFailed()
+            // DEB-4091 FR-4 — the album, artist and playlist pages' kept loaders too, so Back finds them loaded.
+            store is MusicLoader<*> && MUSIC_RECOVERABLE_PREFIXES.any { key.startsWith(it) } -> store.reloadIfFailed()
         }
     }
 }

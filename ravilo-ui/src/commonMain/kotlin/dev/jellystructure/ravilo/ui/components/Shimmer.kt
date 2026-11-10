@@ -17,7 +17,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.draw.clipToBounds
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -98,6 +102,38 @@ fun TileShimmer(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(8.dp))
         ShimmerBox(modifier = Modifier.width(150.dp).height(18.dp), brush = brush)
+    }
+}
+
+/**
+ * DEB-4091 FR-1 — the film grids' loading view: poster shimmers in the loaded grid's [columns], as many rows as fill
+ * the page. Replaces the centred *Loading* line on the desktop Library and the phone's seeded grids.
+ */
+@Composable
+fun TileShimmerGrid(columns: Int, modifier: Modifier = Modifier) {
+    val brush = rememberShimmerBrush()
+    val colors = RaviloTheme.colors
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize().clipToBounds()) {
+        val cols = columns.coerceAtLeast(1)
+        val width = (maxWidth - raviloHPad * 2 - raviloItemSpacing * (cols - 1)) / cols
+        val rowHeight = width * 1.5f + 26.dp + raviloRowGap
+        val rows = maxOf(1, (maxHeight / rowHeight).toInt() + 1)
+        Column(
+            Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top, unbounded = true).padding(horizontal = raviloHPad, vertical = raviloTrackPadV),
+            verticalArrangement = Arrangement.spacedBy(raviloRowGap),
+        ) {
+            repeat(rows) {
+                Row(horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing)) {
+                    repeat(cols) {
+                        Column(Modifier.width(width)) {
+                            ShimmerBox(Modifier.width(width).height(width * 1.5f), brush, colors.tileRadius.value)
+                            Spacer(Modifier.height(8.dp))
+                            ShimmerBox(Modifier.width(width * 0.7f).height(18.dp), brush)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

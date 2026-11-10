@@ -175,6 +175,9 @@ fun MusicPlaylistScreen(
             }
             // FR-8 — an empty playlist of the viewer's own says so, and where songs come from.
             if (mine && empty) item(key = "empty") { EmptyOwnPlaylist() }
+            // DEB-4091 FR-1, FR-3 — under the header: rows while it loads, Retry when it failed.
+            if (state is Load.Failed) item(key = "failed") { MusicLoadFailed(loader.lastFailure, loader::load, Modifier.height(360.dp)) }
+            else if (l == null) item(key = "loading") { MusicPlaylistRowsLoading() }
             if (l != null) itemsIndexed(tracks, key = { i, t -> t.entryId ?: "$i-" + t.id }) { i, t ->
                 if (editOn) EditRow(
                     t = t, index = i, count = tracks.size, desk = deskWide,

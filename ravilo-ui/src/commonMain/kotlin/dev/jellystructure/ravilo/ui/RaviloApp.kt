@@ -1579,6 +1579,8 @@ fun RaviloApp(
         val musicBarHidden by dev.jellystructure.ravilo.ui.music.MusicCast.barHidden.collectAsState()
         // R323 — the viewer's shelf and book pages, kept across navigation; commands to the engine run on the main thread.
         val bookStore = remember(activeUserId) { dev.jellystructure.ravilo.ui.music.AudiobookStore(apiClient) }
+        // DEB-4091 FR-4 — the shelf and the book and author pages are not in storeRegistry; the same socket-open tick reloads the failed ones.
+        LaunchedEffect(bookStore) { serverOpens.drop(1).collect { bookStore.reloadFailed() } }
         val uiScope = androidx.compose.runtime.rememberCoroutineScope()
         // FR-R322-12 — a video taking the screen stops the song (the queue stays, paused where it was).
         LaunchedEffect(stack.lastOrNull()) {

@@ -94,6 +94,26 @@ class MusicEntryRecoveryTest {
         assertEquals(1, playlistCalls)
     }
 
+    @Test fun `socket recovery reloads Failed album, artist and playlist pages and leaves Ready ones alone`() = runBlocking {
+        val answer = CompletableDeferred<String>()
+        val calls = mutableMapOf("malbum:a" to 0, "martist:r:en" to 0, "mplaylist:p" to 0, "malbum:ok" to 0)
+        fun loader(key: String, fails: Boolean) = MusicLoader {
+            val n = calls.getValue(key) + 1
+            calls[key] = n
+            if (fails && n == 1) error("down") else if (fails) answer.await() else "ok"
+        }
+        val failed = listOf("malbum:a", "martist:r:en", "mplaylist:p").associateWith { loader(it, true) }
+        val ready = loader("malbum:ok", false)
+        (failed.values + ready).forEach { it.load() }
+        failed.values.forEach { withTimeout(3_000) { it.state.first { s -> s is Load.Failed } } }
+        withTimeout(3_000) { ready.state.first { it is Load.Ready } }
+        recoverMusicEntryStores(failed + ("malbum:ok" to ready))
+        failed.values.forEach { assertIs<Load.Loading>(it.state.value) }
+        answer.complete("back")
+        failed.values.forEach { withTimeout(3_000) { it.state.first { s -> s is Load.Ready } } }
+        assertEquals(listOf(2, 2, 2, 1), listOf("malbum:a", "martist:r:en", "mplaylist:p", "malbum:ok").map { calls.getValue(it) })
+    }
+
     @Test fun `unknown availability shows the desktop toggle only in Music`() {
         assertTrue(desktopMusicToggleVisible(null, true))
         assertFalse(desktopMusicToggleVisible(null, false))

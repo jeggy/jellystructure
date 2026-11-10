@@ -600,8 +600,11 @@ fun SeededBrowseScreen(
             // DEB-2349 (FR-5) — the grid (or the error) fades in once over the loading line; the title above it does not.
             Column(Modifier.fillMaxWidth().weight(1f).fadeInOnLoad(loading = state is SeededBrowseState.Loading)) {
                 when (val s = state) {
-                    is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
+                    // DEB-4091 FR-1 — poster shimmers in the loaded grid's columns, not a centred line.
+                    is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f)) {
+                        dev.jellystructure.ravilo.ui.components.TileShimmerGrid(
+                            if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current,
+                        )
                     }
                     is SeededBrowseState.Error -> Box(Modifier.fillMaxWidth().weight(1f)) {
                         LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)

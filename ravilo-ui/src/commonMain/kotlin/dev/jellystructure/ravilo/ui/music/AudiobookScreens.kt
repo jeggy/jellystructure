@@ -87,6 +87,12 @@ class AudiobookStore(private val api: TvApiClient) {
     fun detail(id: String): MusicLoader<AudiobookDetail> = details.getOrPut(id) { MusicLoader { api.getAudiobook(id) } }
     private val authors = HashMap<String, MusicLoader<AudiobookAuthorDetail>>()
     fun author(id: String): MusicLoader<AudiobookAuthorDetail> = authors.getOrPut(id) { MusicLoader { api.getAudiobookAuthor(id) } }
+    /** DEB-4091 FR-4 — the server answers again: every shelf, book and author page that failed loads again; a Ready one stays as it is. */
+    fun reloadFailed() {
+        shelves.values.forEach { it.reloadIfFailed() }
+        details.values.forEach { it.reloadIfFailed() }
+        authors.values.forEach { it.reloadIfFailed() }
+    }
     /** A place moved (a play, *Start over*, *Mark as finished*): what shows it is read again, quietly. */
     fun refresh(bookId: String? = null) {
         shelves.values.forEach { it.load() }
@@ -207,7 +213,9 @@ internal fun LazyListScope.audiobookShelf(
         // DEB-2349 (FR-5) — the shelf fades in once over the empty loading box; a shelf already loaded (the viewer comes back to it) does not.
         Box(Modifier.fadeInOnLoad(loading = state is Load.Loading)) {
             when {
-                state is Load.Loading -> Box(Modifier.fillMaxWidth().height(120.dp))
+                // DEB-4091 FR-1, FR-3 — the shelf's own cover grid while it loads, Retry when it failed; "no audiobooks" is for an answer of nothing.
+                state is Load.Loading -> AudiobookShelfLoading(640.dp)
+                state is Load.Failed -> MusicLoadFailed(loader.lastFailure, loader::load, Modifier.height(360.dp))
                 s == null || s.books.isEmpty() -> Box(Modifier.fillMaxWidth().height(200.dp)) { EmptyLine(str("ab.empty")) }
                 else -> Column {
                     if (s.continueListening.isNotEmpty()) {
@@ -289,7 +297,11 @@ fun AudiobookDetailScreen(
     LaunchedEffect(st.book?.part, st.playing, st.book?.finished) { if (st.book?.id == id) loader.load() }
     Box(Modifier.fillMaxSize().background(playingGround())) {
         val d = (state as? Load.Ready)?.value
-        if (d == null) { if (state is Load.Failed) EmptyLine(str("ab.empty")); DetailBack(onBack); return@Box }
+        if (d == null) {
+            // DEB-4091 FR-1, FR-3 — the header and rows while it loads, Retry when it failed.
+            if (state is Load.Failed) MusicLoadFailed(loader.lastFailure, loader::load) else MusicDetailLoading(dev.jellystructure.ravilo.ui.theme.isDesktopLayout)
+            DetailBack(onBack); return@Box
+        }
         val here = st.book?.takeIf { it.id == id }
         val bookPos = if (here != null) BookMath.bookPosition(here.detail, here.part, rememberLivePosition()) else d.position?.bookPositionMs ?: 0L
         val started = d.position != null && (d.position!!.bookPositionMs > 0 || d.position!!.finished) || here != null
@@ -497,7 +509,8 @@ fun AudiobookAuthorScreen(store: AudiobookStore, id: String, onBack: () -> Unit,
                 Spacer(Modifier.height(18.dp))
             }
             item(key = "books") { Grid(a.books, 2, 12.dp, {}) { c, w -> BookCell(c, w) { onOpenBook(c.id) } } }
-        } else if (state is Load.Failed) EmptyLine(str("ab.empty"))
+        } else if (state is Load.Failed) MusicLoadFailed(loader.lastFailure, loader::load)
+        else MusicDetailLoading(deskWide, round = true)   // DEB-4091 FR-1, FR-3
         DetailBack(onBack, title = a?.name)
     }
 }
