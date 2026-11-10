@@ -282,8 +282,8 @@ saves", FR-10's wording and acceptance 8. FR-9's table is kept. Its *Slim* colum
   `collectConfig` stops reading it.
 - *Server.* `RaviloConfig.headerStyle` (`header_style`) stays in the model, so a client that sends it, and a stored
   config that carries it, still decode. The server accepts any value, and `normalize()` writes `standard` whatever
-  arrives. A config already stored as `slim` therefore reads back as `standard` on its next load. The payload keeps
-  sending `"header_style":"standard"`.
+  arrives. The payload sends `"header_style":"standard"` whatever is stored, so a config saved as `slim` before
+  this amendment is never served as `slim`.
 - *Old clients.* A build from DEB-3967 to now, which reads the field, draws the Standard bar always, as every build
   did before DEB-3967. An app older than DEB-3967 never read the field.
 - *New clients.* Nothing reads the field. The app does not provide a style from config, and `HomeSnapshotCache`
