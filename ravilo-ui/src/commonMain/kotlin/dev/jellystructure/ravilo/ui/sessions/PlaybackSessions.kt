@@ -50,8 +50,11 @@ fun orderSessionRows(rows: List<SessionView>): List<SessionView> =
 /** A row that still plays somewhere (not the 60 s fade of an ended one). */
 fun SessionView.isLive(): Boolean = state != "ended"
 
-/** FR-R368-7 — the glyph's count: sessions NOT on this device; null (absent) at 0. */
-fun sessionsElsewhereCount(rows: List<SessionView>): Int? = rows.count { !it.here && it.isLive() }.takeIf { it > 0 }
+/**
+ * FR-R368-7 — the glyph's count: the viewer's own sessions NOT on this device; null (absent) at 0. Amended 2026-11-10
+ * (DEB-4200): someone else's session never counts, whether its title is visible or hidden.
+ */
+fun sessionsElsewhereCount(rows: List<SessionView>): Int? = rows.count { it.mine && !it.here && it.isLive() }.takeIf { it > 0 }
 
 /** R360 amended by R368 — the glyph shows for a device or a row, and not for neither. */
 fun castIconShown(hasDevices: Boolean, rows: List<SessionView>): Boolean = hasDevices || rows.any { it.isLive() }
@@ -59,10 +62,11 @@ fun castIconShown(hasDevices: Boolean, rows: List<SessionView>): Boolean = hasDe
 /**
  * FR-R368-8 (owner, 2026-10-04) — which session the bar shows when nothing plays on this device: always the one this
  * app touched last while it lives; before any touch (or once it ended), the most recently started one that is
- * playing. In films mode only music and audiobooks from elsewhere (R337's rule). Never this device's own.
+ * playing. In films mode only music and audiobooks from elsewhere (R337's rule). Never this device's own. Amended
+ * 2026-11-10 (DEB-4200): only the viewer's own — someone else's session is never on the bar, touched or not.
  */
 fun pickBarSession(rows: List<SessionView>, touchedId: String?, filmsMode: Boolean): SessionView? {
-    val elsewhere = rows.filter { !it.here && it.isLive() && (!filmsMode || it.kind == "music" || it.kind == "audiobook") }
+    val elsewhere = rows.filter { it.mine && !it.here && it.isLive() && (!filmsMode || it.kind == "music" || it.kind == "audiobook") }
     elsewhere.firstOrNull { it.id == touchedId }?.let { return it }
     val playing = elsewhere.filter { it.state == "playing" }
     // 2026-10-05 — in music mode, music and books before a film: an untouched phone's music bar showed an episode
@@ -81,9 +85,9 @@ fun touchedTakesBar(rows: List<SessionView>, touchedId: String?, filmsMode: Bool
     return shown.id == touchedId && shown.target.name != linkedPlace
 }
 
-/** FR-R368-8 — the bar's **+N**: the other sessions elsewhere besides the one it shows. */
+/** FR-R368-8 — the bar's **+N**: the viewer's own other sessions elsewhere besides the one it shows (amended 2026-11-10, DEB-4200). */
 fun barMoreCount(rows: List<SessionView>, shown: SessionView?): Int =
-    rows.count { !it.here && it.isLive() && it.id != shown?.id }
+    rows.count { it.mine && !it.here && it.isLive() && it.id != shown?.id }
 
 /**
  * Review item 9 — where to draw a row's position: the stored position plus the server time since it was reported,

@@ -76,12 +76,34 @@ class PlaybackSessionsTest {
     @Test fun `the count leaves out this device and is absent at zero`() {
         assertNull(sessionsElsewhereCount(listOf(v("here", here = true))))
         assertNull(sessionsElsewhereCount(emptyList()))
-        assertEquals(2, sessionsElsewhereCount(listOf(v("here", here = true), v("a"), v("b", mine = false), v("gone", state = "ended"))))
+        // DEB-4200 — someone else's session never counts.
+        assertEquals(1, sessionsElsewhereCount(listOf(v("here", here = true), v("a"), v("b", mine = false), v("gone", state = "ended"))))
+        assertNull(sessionsElsewhereCount(listOf(v("b", mine = false), v("c", mine = false, state = "paused"))))
+    }
+
+    @Test fun `the bar never shows someone else's session, touched or not`() {
+        val theirs = listOf(v("b", mine = false, created = 5), v("c", mine = false, created = 6))
+        assertNull(pickBarSession(theirs, null, filmsMode = false))
+        assertNull(pickBarSession(theirs, "b", filmsMode = false))
+        assertEquals(false, touchedTakesBar(theirs, "b", filmsMode = false, linkedPlace = null))
+        val mixed = listOf(v("mine", created = 1), v("theirs", mine = false, created = 99))
+        assertEquals("mine", pickBarSession(mixed, null, filmsMode = false)?.id)
+        assertEquals("mine", pickBarSession(mixed, "theirs", filmsMode = false)?.id)
+    }
+
+    @Test fun `the bar's more count ignores other people's sessions`() {
+        val rows = listOf(v("a", created = 2), v("b", created = 1), v("x", mine = false, created = 9), v("y", mine = false, created = 8))
+        val shown = pickBarSession(rows, null, filmsMode = false)
+        assertEquals("a", shown?.id)
+        assertEquals(1, barMoreCount(rows, shown))
+        assertEquals(0, barMoreCount(listOf(v("x", mine = false)), null))
     }
 
     @Test fun `the glyph shows for a device or a row and not for neither`() {
         assertTrue(castIconShown(true, emptyList()))
         assertTrue(castIconShown(false, listOf(v("a"))))
+        // DEB-4200 — the sheet still lists other people's playing, so the glyph still opens it.
+        assertTrue(castIconShown(false, listOf(v("a", mine = false))))
         assertFalse(castIconShown(false, emptyList()))
         assertFalse(castIconShown(false, listOf(v("a", state = "ended"))))
     }
