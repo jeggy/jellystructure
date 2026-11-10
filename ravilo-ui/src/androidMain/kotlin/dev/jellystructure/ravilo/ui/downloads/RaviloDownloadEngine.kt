@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
+import android.util.Log
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
@@ -47,6 +48,9 @@ class RaviloDownloadEngine(private val ctx: Context, private val prefs: Download
 
     init {
         applyRequirements()
+        // A new manager starts with its downloads *paused*, and only the service's onCreate resumes them. A service that does not start
+        // (the fallback in [enqueue]) would leave every download Queued for ever, so the manager is resumed here, whoever runs it.
+        dm.resumeDownloads()
         runCatching { dm.downloadIndex.getDownloads().use { c -> while (c.moveToNext()) c.download.let { downloads[it.request.id] = it } } }
         dm.addListener(object : DownloadManager.Listener {
             override fun onDownloadChanged(downloadManager: DownloadManager, download: Download, finalException: Exception?) {
@@ -68,6 +72,7 @@ class RaviloDownloadEngine(private val ctx: Context, private val prefs: Download
         // A phone restarted (or a service stopped by the daily dataSync limit) with downloads still in the index: run them again.
         if (downloads.values.any { it.state == Download.STATE_QUEUED || it.state == Download.STATE_DOWNLOADING || it.state == Download.STATE_RESTARTING }) {
             runCatching { DownloadService.start(ctx, RaviloDownloadService::class.java) }
+                .onFailure { Log.w(TAG, "the download service would not start at launch; the manager runs in this process", it) }
         }
         poll()
     }
@@ -133,7 +138,10 @@ class RaviloDownloadEngine(private val ctx: Context, private val prefs: Download
         io.launch { DownloadSidecars.save(downloadUserId(job.id), downloadItemId(job.id), ticket, job.baseUrl) }
         // The service keeps the process in the foreground; if Android will not let it start from here, the manager still runs while we live.
         runCatching { DownloadService.sendAddDownload(ctx, RaviloDownloadService::class.java, request, true) }
-            .onFailure { dm.addDownload(request) }
+            .onFailure {
+                Log.w(TAG, "the download service would not start; the manager runs ${job.id} in this process", it)
+                dm.addDownload(request)
+            }
         publish()
     }
 
@@ -162,6 +170,7 @@ class RaviloDownloadEngine(private val ctx: Context, private val prefs: Download
     override fun busy(): Boolean = busyNow
 
     private companion object {
+        const val TAG = "RaviloDownloads"
         const val PAUSED = 1
     }
 }
