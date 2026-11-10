@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.downloads
 
 import dev.jellystructure.shared.tv.DownloadOption
 import dev.jellystructure.shared.tv.DownloadStartRequest
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -25,6 +26,25 @@ data class DownloadTarget(
     val episode: Int? = null,
     val runtimeMinutes: Int = 0,
 )
+
+/** DEB-4072 — what the app must do after [DownloadsController.onReachable]. */
+enum class Reconnect { OK, REJECTED, UNREACHABLE }
+
+/** DEB-4072 — what the reconnect refresh asks the server (FR-13, FR-15): the outbox's three calls plus a title's page, as raw JSON. */
+interface DownloadSyncApi : OutboxSink {
+    /** The title's page route body: a film's `GET /api/tv/movie/{id}`, an episode's `GET /api/tv/series/{seriesId}`. 404 / 403 = no longer offered. */
+    suspend fun title(kind: String, itemId: String, seriesId: String?): String
+}
+
+/**
+ * FR-16 — the episode that follows [cur], **only if it is on the phone**: the next number in its season. Nothing is offered across a season
+ * boundary or over a gap: whether episode 5 exists is the server's to say, and offline the phone cannot know that this one was the season's last.
+ */
+fun nextEpisodeOf(cur: DownloadRecord, downloaded: List<DownloadRecord>): DownloadRecord? {
+    val s = cur.season ?: return null
+    val e = cur.episode ?: return null
+    return downloaded.firstOrNull { it.season == s && it.episode == e + 1 }
+}
 
 /** The server said no for this viewer (FR-2, `403`): the control hides and `download.not_allowed` shows. */
 class DownloadNotAllowed : Exception("downloading is switched off for this viewer")
@@ -60,6 +80,13 @@ class DownloadsController(
     private val now: () -> Long,
     private val waitingRetryMs: Long = 5_000L,
     private val maxRenewals: Int = 3,
+    /** DEB-4072 — what reaches the server after a spell offline (FR-13, FR-15). Null on a platform with no outbox. */
+    private val sync: DownloadSyncApi? = null,
+    private val outbox: ProgressOutbox? = null,
+    /** DEB-4072 (FR-13) — writes a title's refreshed `item` payload verbatim beside its media: (user id, item id, JSON text). */
+    private val saveItem: (String, String, String) -> Unit = { _, _, _ -> },
+    /** DEB-4072 (FR-16) — what is saved beside each download, for an offline play. Null on a platform that cannot play one. */
+    private val media: LocalMediaSource? = null,
 ) {
     private val _allowed = MutableStateFlow(true)
     /** False after a `403` (FR-2): the control hides and `download.not_allowed` shows. Reset by [resetAllowed] on the next config read. */
@@ -160,6 +187,133 @@ class DownloadsController(
         lastPercent.remove(downloadId(u, itemId))
         refresh()
         scope.launch { pump() }
+    }
+
+    // ─── DEB-4072: offline play, the outbox and the reconnect refresh ───
+
+    /** FR-11 — whether this viewer has anything that plays with no connection: a download fully on the phone. */
+    fun hasPlayableDownloads(): Boolean {
+        val u = userId() ?: return false
+        val phases = engine.phases.value
+        return library.records(u).any { phases[downloadId(u, it.itemId)] == DownloadPhase.Downloaded }
+    }
+
+    /** FR-16 — the record of a download that is fully on this phone, or null (an offline play needs the media to be there). */
+    fun playable(itemId: String): DownloadRecord? {
+        val u = userId() ?: return null
+        val r = library.get(u, itemId) ?: return null
+        return r.takeIf { engine.phases.value[downloadId(u, itemId)] == DownloadPhase.Downloaded }
+    }
+
+    /** FR-16 — the episode after [itemId] **if it is also on the phone**: the next-episode offer appears only then. */
+    fun nextDownloadedEpisode(itemId: String): DownloadRecord? {
+        val u = userId() ?: return null
+        val cur = library.get(u, itemId) ?: return null
+        val sid = cur.seriesId ?: return null
+        val phases = engine.phases.value
+        val downloaded = library.records(u).filter { it.seriesId == sid && phases[downloadId(u, it.itemId)] == DownloadPhase.Downloaded }
+        return nextEpisodeOf(cur, downloaded)
+    }
+
+    /**
+     * FR-16 — the play of a download that is fully on the phone, or null. It plays in the normal player from local storage; its progress
+     * and finish are queued writes (FR-15). The resume point is the position recorded offline, else the server's last word.
+     */
+    fun localPlay(itemId: String): LocalPlay? {
+        val u = userId() ?: return null
+        val source = media ?: return null
+        if (playable(itemId) == null) return null
+        return object : LocalPlay {
+            override val itemId: String = itemId
+            override suspend fun ticket(startPositionMs: Long?): dev.jellystructure.shared.tv.StreamTicket {
+                val saved = source.read(u, itemId) ?: error("nothing saved for this download")
+                val from = startPositionMs ?: offlineResumeMs(itemId) ?: library.get(u, itemId)?.serverResumeMs ?: 0L
+                return buildLocalTicket(itemId, saved, from)
+            }
+            override fun recordProgress(positionMs: Long) = recordOfflineProgress(itemId, positionMs)
+            override fun recordWatched() = recordOfflineWatched(itemId)
+        }
+    }
+
+    /** FR-13, FR-16 — the saved picture of one of this viewer's downloads (`poster`, `backdrop`, `still`), for the page while offline. */
+    fun savedArtwork(itemId: String, type: String): String? {
+        val u = userId() ?: return null
+        return media?.artwork(u, itemId, type)
+    }
+
+    /** FR-15 — what the server last said about this title, the base the outbox's conflict rule compares to. */
+    private fun serverPlayOf(u: String, itemId: String): ServerPlay =
+        library.get(u, itemId)?.let { ServerPlay(it.serverResumeMs, it.watched) } ?: ServerPlay()
+
+    /** FR-15 — a play from a download records where it reached. Never the server's truth: it is a queued write. */
+    fun recordOfflineProgress(itemId: String, positionMs: Long) {
+        val u = userId() ?: return
+        if (positionMs <= 0L) return   // a play that never moved leaves nothing to send, and must not reset the server's resume point
+        outbox?.recordProgress(u, itemId, positionMs, now(), serverPlayOf(u, itemId))
+    }
+
+    /** FR-15 — a play from a download reached its finish. */
+    fun recordOfflineWatched(itemId: String) {
+        val u = userId() ?: return
+        outbox?.recordWatched(u, itemId, now(), serverPlayOf(u, itemId))
+    }
+
+    /** FR-15 — the position recorded offline, for the downloaded copy while offline only; null online and for a finished title. */
+    fun offlineResumeMs(itemId: String): Long? {
+        val u = userId() ?: return null
+        return outbox?.offlineResumeMs(u, itemId)
+    }
+
+    private val reachLock = Mutex()
+
+    /**
+     * DEB-4072 (FR-12, FR-13, FR-15) — the server answered after a spell offline. In this order: **send the outbox** (against the play
+     * state the phone last knew, so a later play elsewhere wins), then **refresh every download** from the server. Returns what the app
+     * must do: [Reconnect.REJECTED] on a 401 sends this profile to sign-in with its downloads kept; [Reconnect.UNREACHABLE] means the server
+     * went away again part-way and nothing was lost.
+     */
+    suspend fun onReachable(): Reconnect = reachLock.withLock {
+        val u = userId() ?: return@withLock Reconnect.OK
+        val api = sync ?: return@withLock Reconnect.OK
+        val drained = outbox?.drain(u, api)
+        if (drained?.rejected == true) return@withLock Reconnect.REJECTED
+        if (drained?.unreachable == true) return@withLock Reconnect.UNREACHABLE
+        refreshFromServer(u, api)
+    }
+
+    private suspend fun refreshFromServer(u: String, api: DownloadSyncApi): Reconnect {
+        val records = library.records(u)
+        if (records.isEmpty()) return Reconnect.OK
+        val play = try {
+            api.playstate(records.map { it.itemId })
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            return if (e is TvApiError.Http && e.status == 401) Reconnect.REJECTED else Reconnect.UNREACHABLE
+        }
+        for (r in records) {
+            val fresh = library.get(u, r.itemId) ?: continue   // deleted meanwhile
+            val state = play[r.itemId].toServerPlay()
+            var gone = fresh.gone
+            try {
+                val text = api.title(fresh.kind, fresh.itemId, fresh.seriesId)
+                saveItem(u, fresh.itemId, text)   // verbatim, never merged (FR-13)
+                gone = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (e is TvApiError.Http) {
+                    when (e.status) {
+                        401 -> return Reconnect.REJECTED
+                        404, 403 -> gone = true   // FR-13: kept and playable until deleted, marked `download.gone`
+                        else -> {}
+                    }
+                } else return Reconnect.UNREACHABLE
+            }
+            library.get(u, r.itemId)?.let { library.upsert(u, it.copy(watched = state.played, serverResumeMs = state.resumeMs, gone = gone)) }
+        }
+        refresh()
+        return Reconnect.OK
     }
 
     /** Re-read this viewer's downloads: the app calls it when the signed-in profile changes. */
@@ -279,7 +433,11 @@ class DownloadsController(
             )
         }
         engine.enqueue(DownloadJob(downloadId(u, record.itemId), record, ticket, baseUrl()))
-        library.upsert(u, record.copy(state = RecordState.STARTED))
+        // FR-15 — we are online right now: take the server's play state as the base an offline play's queued write is compared to later.
+        val base = sync?.let { runCatching { it.playstate(listOf(record.itemId))[record.itemId].toServerPlay() }.getOrNull() }
+        library.upsert(u, (library.get(u, record.itemId) ?: record).let { r ->
+            r.copy(state = RecordState.STARTED, watched = base?.played ?: r.watched, serverResumeMs = base?.resumeMs ?: r.serverResumeMs)
+        })
         refresh()
     }
 

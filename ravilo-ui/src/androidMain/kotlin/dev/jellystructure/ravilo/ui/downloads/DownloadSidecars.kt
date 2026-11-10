@@ -27,6 +27,13 @@ object DownloadSidecars {
         d.parentFile?.takeIf { it.isDirectory && it.list().isNullOrEmpty() }?.delete()
     }
 
+    /** DEB-4072 (FR-13) — a refreshed `item` payload replaces the saved one, verbatim. A title with no folder (deleted meanwhile) is not recreated. */
+    fun saveItem(userId: String, itemId: String, text: String) {
+        val d = dir(userId, itemId)
+        if (!d.isDirectory) return
+        runCatching { File(d, "item.json").writeText(text) }
+    }
+
     private fun resolve(base: String, url: String) = if (url.startsWith("/")) base.trimEnd('/') + url else url
 
     /** Blocking (call on IO). A failure on any one file is skipped: a missing poster or subtitle must never fail a download. */

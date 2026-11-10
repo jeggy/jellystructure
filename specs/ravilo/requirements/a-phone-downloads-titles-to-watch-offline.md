@@ -447,3 +447,42 @@ points below settle what the round's pictures and the code left open.
 - **Offline.** The page draws `download.offline` when it is told it is offline. Telling it so, and opening on it, is FR-11 and slice 5's.
 - **Artwork.** The page shows the server's poster while online and a title's colour and initials otherwise; the saved artwork reads
   offline in slice 5 (FR-13, FR-16).
+
+## Amendment 2026-11-10: slice 5's offline launch, play, outbox and refresh (DEB-4072)
+
+Slice 5 builds FR-11, FR-12's 401, FR-13's refresh, FR-15 and FR-16. Nothing above changes what it promises; the points below settle what the
+FRs left open.
+
+- **"Unreachable" and the launch (FR-11).** The server is unreachable when a call gets no answer at all, or a gateway answer (502 to 504). Any
+  other status is an answer, so the server is there. The launch's first config read decides, **once per launch**, and only while the viewer is
+  still on the launch Home: a viewer who already moved on stays, and a server that comes back later moves nobody. Home draws first (its snapshot
+  or loading shell) and the page replaces it when the read fails; the app does not wait for the read before drawing. Offline, the Downloads page and
+  its play do not wait on the config's `downloads` flag, because that flag needs the server.
+- **Reconnect (FR-12, FR-13, FR-15).** Offline, the app asks the server every 8 s whether it is back; once per launch it also runs the same steps at
+  start. The steps, in this order: **send the outbox**, then **refresh every download**. A 401 on either sends the profile to sign-in with its
+  downloads and outbox kept; the server going away again part-way goes back to asking and loses nothing.
+- **The conflict rule (FR-15).** The wire has no per-play timestamp, so "the server already holds a later play" is read from the play state it
+  already sends: the resume position and the watched flag (`/api/tv/playstate`). Each download keeps the pair the server last gave (read when the
+  download starts and at every refresh), and the outbox copies it from the title's **first** entry. At sending time, if the server's pair differs
+  from that one, the title was played elsewhere meanwhile and **all its queued entries are dropped**. A title the server holds no user data for reads
+  as never played, not as gone. The read is strict: a failed chunk stops the drain instead of being skipped, because a missing answer would otherwise
+  read as "never played".
+- **What the outbox sends (FR-15).** A title keeps one progress entry (the latest position replaces the earlier) and, if it finished, one watched
+  entry after it. Titles go oldest first. The position is sent through `/api/tv/playback/progress` as **paused**, so a position handed over after the
+  fact never shows as *Playing now*; the finish is `/api/tv/mark`. A 403 or 404 on a title drops its entries; any other failure stops the drain.
+  A position of 0 is never queued.
+- **Offline resume (FR-15).** A play from a download starts at the position recorded offline, else at the server's last word. It is shown nowhere
+  else, and is gone once the outbox has been sent.
+- **The play (FR-16).** Opening a downloaded entry on the Downloads page plays it from local storage, online or off. Nothing reaches the server
+  from that play: no start, heartbeat, stop, QoE row, restream or prefetch. The player reads the download's own cache with no network behind it.
+  The cast button is absent. The next-episode offer is the next number in the same season, and only when that episode is on the phone; it is not
+  offered across a season or over a gap, because offline the phone cannot know that an episode was a season's last.
+- **The refresh (FR-13).** Each download's page route body (a film's `GET /api/tv/movie/{id}`, an episode's `GET /api/tv/series/{id}`) is read again
+  and saved verbatim. A 404 or 403 marks the entry `download.gone`, and a title that answers again clears the mark. The server's watched flag and
+  resume position replace what the phone held, so *Delete watched* follows the server.
+- **Artwork.** While the server is unreachable the Downloads page draws a title's saved poster (and an episode's saved still); online it draws the
+  server's.
+- **Strings.** None added: `download.offline`, `download.watch_downloads` and `download.gone` already shipped with slice 4.
+
+**Not provable in CI, so QA:** playing a downloaded original with every audio track, and a copy, in flight mode; the launch in flight mode opening on
+the Downloads page; reconnecting after an offline watch marking the title watched on another device. These need the Pixel (spec Acceptance 2 and 3).

@@ -31,6 +31,8 @@ data class DownloadRecord(
     val watched: Boolean = false,
     /** DEB-4071 (FR-13) — the server no longer offers it to this viewer: the entry says `download.gone`, and it plays until deleted. */
     val gone: Boolean = false,
+    /** DEB-4072 (FR-15) — the resume position the server last reported for this title; with [watched] it is the base the outbox's conflict rule compares to. */
+    val serverResumeMs: Long = 0L,
 )
 
 enum class RecordState {

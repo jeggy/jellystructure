@@ -167,6 +167,8 @@ fun LoadErrorState(
      * the primary button's Down to [secondary], and the caller wires its own Up back to [primary].
      */
     extraAction: (@Composable (primary: FocusRequester, secondary: FocusRequester) -> Unit)? = null,
+    /** DEB-4072 (DEB-3995 FR-11) — *Watch your downloads*, above Retry, on an unreachable server: only where the viewer has downloads. Null draws today's surface. */
+    onWatchDownloads: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val title = loadErrorTitleKey(kind)
@@ -203,9 +205,16 @@ fun LoadErrorState(
             }
             // FR-R385-4 — the Mac's Retry is the second button, so Open Settings leads and the chain closes onto it.
             val macRetry = onOpenSettings != null && showRetry
+    // DEB-4072 (FR-11) — Watch your downloads leads and Retry follows it, the same two-button chain as the Mac's.
+    val watchDownloads = onWatchDownloads != null && kind == LoadErrorKind.UNREACHABLE
+    val watchThenRetry = watchDownloads && showRetry
             if (showRetry || showSignIn || showBack || onQuit != null || onOpenSettings != null) {
                 Spacer(Modifier.height(24.dp))
                 when {
+                    watchDownloads -> RaviloButton(
+                        str("download.watch_downloads"), focusRequester = primaryFR, onSelect = onWatchDownloads,
+                        onDown = if (watchThenRetry) ({ runCatching { macRetryFR.requestFocus() }; Unit }) else onDown,
+                    )
                     showSignIn -> RaviloButton(str("action.sign_in"), focusRequester = primaryFR, onDown = onDown, onSelect = onSignIn)
                     onQuit != null -> RaviloButton(str("mac.menu_quit"), focusRequester = primaryFR, onDown = onDown, onSelect = onQuit)
                     onOpenSettings != null -> RaviloButton(
@@ -215,7 +224,7 @@ fun LoadErrorState(
                     showRetry -> RaviloButton(str("action.retry"), focusRequester = primaryFR, onDown = onDown, onSelect = onRetry)
                     else -> RaviloButton(str("action.back"), focusRequester = primaryFR, onDown = onDown, onSelect = onBack)
                 }
-                if (macRetry) {
+                if (macRetry || watchThenRetry) {
                     Spacer(Modifier.height(12.dp))
                     RaviloButton(
                         str("action.retry"), focusRequester = macRetryFR, onSelect = onRetry, onDown = onDown,

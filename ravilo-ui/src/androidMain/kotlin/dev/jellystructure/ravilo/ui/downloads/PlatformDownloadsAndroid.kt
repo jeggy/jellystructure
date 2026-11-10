@@ -29,6 +29,17 @@ private object RaviloDownloads {
             requireNotNull(client) { "no api" }.startDownload(request)
     }
 
+    /** DEB-4072 (FR-13, FR-15) — the outbox's three calls and a title's page, on whatever client is current. */
+    private val sync = object : DownloadSyncApi {
+        override suspend fun playstate(ids: List<String>) = requireNotNull(client) { "no api" }.getPlaystateStrict(ids)
+        override suspend fun progress(itemId: String, positionMs: Long) =
+            // Paused: a position being handed over is not a play happening now, so it must not show as *Playing now*.
+            requireNotNull(client) { "no api" }.reportProgress(itemId, positionMs, isPaused = true)
+        override suspend fun mark(itemId: String, watched: Boolean) = requireNotNull(client) { "no api" }.markPlayed(itemId, watched)
+        override suspend fun title(kind: String, itemId: String, seriesId: String?) =
+            requireNotNull(client) { "no api" }.getTitleJson(kind, itemId, seriesId)
+    }
+
     fun controller(api0: TvApiClient): DownloadsController {
         client = api0
         controller?.let { return it }
@@ -45,6 +56,10 @@ private object RaviloDownloads {
             baseUrl = { client?.baseUrl.orEmpty() },
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
             now = { System.currentTimeMillis() },
+            sync = sync,
+            outbox = ProgressOutbox(AndroidDownloadIndexStorage("outbox")),
+            saveItem = { u, id, text -> DownloadSidecars.saveItem(u, id, text) },
+            media = AndroidLocalMedia(),
         ).also { controller = it }
     }
 }

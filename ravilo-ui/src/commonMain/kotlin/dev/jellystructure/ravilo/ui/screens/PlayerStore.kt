@@ -256,6 +256,11 @@ class PlayerStore(
     /** DEB-3630 (FR-R218-7) — the two bounds; a test shortens them. */
     private val startMoveMs: Long = START_MOVE_MS,
     private val startEndMs: Long = START_END_MS,
+    /**
+     * DEB-4072 (DEB-3995 FR-15, FR-16) — this play is from a download: the stream is the file on the phone, and **nothing here reaches the
+     * server** — no start, no heartbeat, no stop, no QoE, no restream, no prefetch. Progress and the finish are queued writes in the outbox.
+     */
+    private val local: dev.jellystructure.ravilo.ui.downloads.LocalPlay? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -388,6 +393,21 @@ class PlayerStore(
         qoeTicksSinceReport = 0
         _state.value = PlayerSessionState.Loading()
         scope.launch {
+            // DEB-4072 (FR-16) — a download plays from local storage: the ticket is built on the phone and the server is never asked.
+            if (local != null) {
+                val startAt = startPositionMs ?: (if (startOver || shuffle) 0L else null)
+                runCatching { local.ticket(startAt) }
+                    .onSuccess { ticket ->
+                        qoeDirectPlay = ticket.directPlay; qoeStartVariantBps = null
+                        reportedStalls = 0; reportedFirstFrame = false
+                        startHeartbeat(itemId, positionProvider, isPausedProvider)
+                        _state.value = PlayerSessionState.Ready(ticket.onThisServer())
+                        armStartBound = false   // nothing to move to: there is no other route for a file on the phone
+                        startFailureWatch()
+                    }
+                    .onFailure { _state.value = PlayerSessionState.Error(it.message ?: "The download could not be opened", LoadErrorKind.GENERIC) }
+                return@launch
+            }
             // Bug fix: a failed startPlayback (e.g. a transient network blip during an auto-advance to
             // the next episode) used to surface as PlayerSessionState.Error with no code anywhere
             // reading that state — the player just sat frozen on the outgoing episode's last frame
@@ -513,6 +533,7 @@ class PlayerStore(
      * changes nothing (the next episode then starts as it always did). With autoplay on or off alike (owner).
      */
     fun prepareNext(nextItemId: String) {
+        if (local != null) return   // DEB-4072 — the next downloaded episode is on the phone already; nothing to prefetch
         val caps = lastCapabilities ?: return
         scope.launch {
             val prepared = apiClient.preparePlayback(nextItemId, caps) ?: return@launch
@@ -547,6 +568,7 @@ class PlayerStore(
         replacement: PendingRecovery? = null,
         oldStreamDead: Boolean = false,
     ) {
+        if (local != null) return   // DEB-4072 (FR-16) — a download has no other stream to ask for: absent offline, never broken
         // R376 (FR-R376-3) — an audio pick on a player that cannot switch tracks inside one file asks for HLS, where
         // every track is a rendition; the item stays on HLS for its later restreams.
         lastCapabilities?.let { caps ->
@@ -680,6 +702,14 @@ class PlayerStore(
         failureWatchJob = null
         val itemId = currentItemId ?: return
         currentItemId = null
+        // DEB-4072 (FR-15) — a play from a download ends in the outbox: where it reached, and its finish by the same rule as online.
+        if (local != null) {
+            local.recordProgress(positionMs)
+            if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, creditsStartMs) && markedWatched.add(itemId)) local.recordWatched()
+            qoeSnapshotProvider = null; startupMsProvider = null
+            _state.value = PlayerSessionState.Idle
+            return
+        }
         // R216 (FR-R216-4) — "posted once at session end". Reads the snapshot before the provider is
         // cleared below, same ordering as positionProvider/durationProvider's own final-read use in close().
         postQoeNow(itemId)
@@ -757,6 +787,7 @@ class PlayerStore(
      * on [exitScope], same as every other QoE write — a failed report must never affect playback.
      */
     private fun reportStartFailure(itemId: String, status: Int?) {
+        if (local != null) return
         exitScope.launch {
             runCatching {
                 apiClient.postPlaybackQoe(
@@ -774,6 +805,7 @@ class PlayerStore(
 
     /** Posts this play's QoE now; the returned job ends when the post has (309: a ladder switch waits for it). */
     private fun postQoeNow(itemId: String): Job? {
+        if (local != null) return null   // DEB-4072 — a play from the phone's own storage is not a server play: no QoE row
         val snapshot = qoeSnapshotProvider?.invoke() ?: return null
         // DEB-2205 (FR-3, FR-4) — said once, with the post that precedes the hand-over: the server writes it to the device's record.
         val decodeFailed = decodeFailedToReport.also { decodeFailedToReport = null }
@@ -869,6 +901,7 @@ class PlayerStore(
 
     fun markWatched(itemId: String) {
         if (!markedWatched.add(itemId)) return
+        if (local != null) { local.recordWatched(); return }   // DEB-4072 (FR-15) — queued, and the server's value is what the screens show
         exitScope.launch {
             runCatching { apiClient.markPlayed(itemId, watched = true) }
             WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
@@ -884,6 +917,22 @@ class PlayerStore(
     private fun startFailureWatch() {
         failureWatchJob?.cancel()
         val failed = failedProvider
+        if (local != null) {
+            // DEB-4072 (FR-16) — only a fatal player error is acted on: there is no encoder to restream from, no other route to move to,
+            // and no ladder. The viewer gets R237's error with Retry and Back.
+            armStartBound = false
+            failureWatchJob = scope.launch {
+                val latch = FailureLatch()
+                while (isActive && _state.value is PlayerSessionState.Ready) {
+                    delay(FAILURE_POLL_MS)
+                    if (latch.observe(failed())) {
+                        endOnError(PlayerSessionState.Error("The player failed after the stream started", LoadErrorKind.GENERIC), positionProvider?.invoke())
+                        break
+                    }
+                }
+            }
+            return
+        }
         decodeMonitor.reset(); handoverRule = null   // a new stream is its own window (DEB-2205 FR-3/-4)
         // DEB-3630 (FR-R218-7) — the clock starts when the player is handed the stream, here; null = nothing to bound (a replacement
         // behind the picture, a player that reports no first frame, or the first frame already seen).
@@ -1252,6 +1301,14 @@ class PlayerStore(
     ) {
         progressJob?.cancel()
         progressJob = scope.launch {
+            // DEB-4072 (FR-15) — a play from a download only writes the outbox, every tick: if the app is killed mid-film the position survives.
+            if (local != null) {
+                while (isActive) {
+                    delay(PROGRESS_INTERVAL_MS)
+                    local.recordProgress(positionProvider())
+                }
+                return@launch
+            }
             // R357 (FR-R357-3/-4) — every report says the player's level and mute (the ones the dashboard's commands
             // move), and a change to them reports once at once rather than at the next tick.
             launch {

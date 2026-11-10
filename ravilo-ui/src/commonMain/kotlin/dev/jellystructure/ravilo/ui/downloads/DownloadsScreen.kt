@@ -83,10 +83,13 @@ private val RevealWidth = 88.dp
  * top while anything is on its way, then Films and Series (grouped by season) fully on the phone. Swipe or long-press to delete, ⋮ for Select,
  * *Delete watched* and *Delete all*, and **every delete confirms** with what it frees. Device state only; it renders what the phone holds.
  *
- * [offline] draws FR-9's quiet line at the top; it is the launch path's to set (a later slice), and false means nothing is said.
+ * [offline] draws FR-9's quiet line at the top (FR-11: set by the launch path, and while the server is out of reach); false says nothing. [onPlay] opens a downloaded entry in the player (FR-16).
  */
+/** DEB-4072 (FR-13, FR-16) — the saved picture of a title (`poster`, `still`) while the server is out of reach; null says nothing is saved, or the server is there. */
+private val LocalSavedArtwork = androidx.compose.runtime.staticCompositionLocalOf<(String, String) -> String?> { { _, _ -> null } }
+
 @Composable
-fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline: Boolean = false) {
+fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline: Boolean = false, onPlay: (DownloadRecord) -> Unit = {}) {
     val colors = RaviloTheme.colors
     val state = remember(controller) { DownloadsPageState(controller) }
     val records by controller.records.collectAsState()
@@ -101,6 +104,9 @@ fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline
     // The viewer went to another profile, or the last download went: nothing to select any more.
     LaunchedEffect(page.isEmpty) { if (page.isEmpty) state.stopSelecting() }
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalSavedArtwork provides (if (offline) controller::savedArtwork else { _, _ -> null }),
+    ) {
     Box(Modifier.fillMaxSize().background(colors.background).testTag(DownloadsTags.PAGE)) {
         Column(Modifier.fillMaxSize()) {
             DownloadsTitleBar(
@@ -115,8 +121,8 @@ fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline
                 if (other > 0L) item { OtherProfilesRow(other, onDelete = state::askOtherProfiles) }
                 if (page.isEmpty) item { EmptyDownloads(offline = false, modifier = Modifier.padding(top = 24.dp)) }
                 downloadingBlock(page, controller)
-                filmsBlock(page, state, controller)
-                seriesBlock(page, state)
+                filmsBlock(page, state, controller, onPlay)
+                seriesBlock(page, state, onPlay)
             }
         }
 
@@ -141,6 +147,7 @@ fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline
             ),
             onDismiss = { state.cancel() },
         )
+    }
     }
 }
 
@@ -315,21 +322,21 @@ private fun LazyListScope.downloadingBlock(page: DownloadsPageModel, controller:
     items(page.downloading.size, key = { "dl-" + page.downloading[it].itemId }) { i -> DownloadingEntry(page.downloading[i], controller) }
 }
 
-private fun LazyListScope.filmsBlock(page: DownloadsPageModel, state: DownloadsPageState, controller: DownloadsController) {
+private fun LazyListScope.filmsBlock(page: DownloadsPageModel, state: DownloadsPageState, controller: DownloadsController, onPlay: (DownloadRecord) -> Unit) {
     if (page.films.isEmpty()) return
     item(key = "films-heading") { SectionHeading(str("nav.movies"), page.filmsBytes) }
     items(page.films.size, key = { "film-" + page.films[it].itemId }) { i ->
         val row = page.films[i]
         SwipeDeleteRow(row.itemId, state, onAsk = { state.askOne(row) }) {
-            DownloadedEntry(row, state, thumb = { Thumb(row.itemId, row.record.title, poster = true) }, title = row.record.title, subtitle = null)
+            DownloadedEntry(row, state, thumb = { Thumb(row.itemId, row.record.title, poster = true) }, title = row.record.title, subtitle = null, onPlay = onPlay)
         }
     }
 }
 
-private fun LazyListScope.seriesBlock(page: DownloadsPageModel, state: DownloadsPageState) {
+private fun LazyListScope.seriesBlock(page: DownloadsPageModel, state: DownloadsPageState, onPlay: (DownloadRecord) -> Unit) {
     if (page.series.isEmpty()) return
     item(key = "series-heading") { SectionHeading(str("nav.series"), page.seriesBytes) }
-    items(page.series.size, key = { "series-" + page.series[it].seriesId }) { i -> SeriesCard(page.series[i], state) }
+    items(page.series.size, key = { "series-" + page.series[it].seriesId }) { i -> SeriesCard(page.series[i], state, onPlay) }
 }
 
 // ─── entries ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -348,7 +355,7 @@ private fun cardModifier(selected: Boolean) = RaviloTheme.colors.let { c ->
 }
 
 @Composable
-private fun Thumb(itemId: String, title: String, poster: Boolean, number: Int? = null) {
+private fun Thumb(itemId: String, title: String, poster: Boolean, number: Int? = null, artworkId: String = itemId) {
     val hue = remember(title) { (title.hashCode().toLong() and 0xFFFFFFFFL) % 360L }
     val shape = RoundedCornerShape(if (poster) 10.dp else 8.dp)
     Box(
@@ -356,9 +363,13 @@ private fun Thumb(itemId: String, title: String, poster: Boolean, number: Int? =
             .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.hsl(hue.toFloat(), 0.38f, 0.26f), Color.hsl(hue.toFloat(), 0.30f, 0.14f)))),
     ) {
         // Online the poster is the server's; offline the saved copy is a later slice's, and the gradient and initials stand in.
+        val saved = LocalSavedArtwork.current
         if (poster) {
             Text(title.take(2).uppercase(), color = Color.White.copy(alpha = 0.75f), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, modifier = Modifier.align(Alignment.Center))
-            RemoteImage(url = "/api/tv/image/$itemId/poster", contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, requestedWidth = 160)
+            // Offline the saved picture stands in for the server's (FR-13); online the server's is what is drawn.
+            RemoteImage(url = saved(artworkId, "poster") ?: "/api/tv/image/$itemId/poster", contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, requestedWidth = 160)
+        } else saved(artworkId, "still")?.let {
+            RemoteImage(url = it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
         if (number != null) Text(number.toString().padStart(2, '0'), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.align(Alignment.TopStart).padding(6.dp))
     }
@@ -385,12 +396,12 @@ private fun Meta(r: DownloadRecord, bytesText: String, watched: Boolean, gone: B
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DownloadedEntry(row: DownloadRow, state: DownloadsPageState, thumb: @Composable () -> Unit, title: String, subtitle: String?) {
+private fun DownloadedEntry(row: DownloadRow, state: DownloadsPageState, thumb: @Composable () -> Unit, title: String, subtitle: String?, onPlay: (DownloadRecord) -> Unit = {}) {
     val colors = RaviloTheme.colors
     val picked = row.itemId in state.selected
     Row(
         cardModifier(picked).testTag(DownloadsTags.row(row.itemId))
-            .combinedClickable(onClick = { if (state.selecting) state.toggle(row.itemId) }, onLongClick = { if (!state.selecting) state.startSelecting(row.itemId) })
+            .combinedClickable(onClick = { if (state.selecting) state.toggle(row.itemId) else onPlay(row.record) }, onLongClick = { if (!state.selecting) state.startSelecting(row.itemId) })
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -521,7 +532,7 @@ private fun RoundButton(glyph: String, description: String, onClick: () -> Unit)
 }
 
 @Composable
-private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState) {
+private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState, onPlay: (DownloadRecord) -> Unit) {
     val colors = RaviloTheme.colors
     val ids = group.episodes.map { it.itemId }
     val allPicked = state.selecting && state.selected.containsAll(ids)
@@ -531,7 +542,7 @@ private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState) {
     Column(cardModifier(allPicked).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth().clickable(enabled = state.selecting) { state.toggleAll(ids) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.selecting) SelectDot(allPicked)
-            Thumb(group.seriesId, group.title, poster = true)
+            Thumb(group.seriesId, group.title, poster = true, artworkId = group.episodes.first().itemId)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(group.title, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -555,7 +566,7 @@ private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState) {
                 SwipeDeleteRow(row.itemId, state, onAsk = { state.askOne(row) }) {
                     DownloadedEntry(
                         row, state, thumb = { Thumb(row.itemId, group.title, poster = false, number = r.episode) },
-                        title = "${cardEpisodeCode(r.season, r.episode ?: 0)} · ${r.title}", subtitle = null,
+                        title = "${cardEpisodeCode(r.season, r.episode ?: 0)} · ${r.title}", subtitle = null, onPlay = onPlay,
                     )
                 }
             }

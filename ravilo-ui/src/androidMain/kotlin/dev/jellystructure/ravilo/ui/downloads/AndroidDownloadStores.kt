@@ -16,9 +16,9 @@ class AndroidDownloadPrefs(private val ctx: Context, private val onWifiOnlyChang
     override fun setLastQuality(kind: String, quality: String) { p.edit().putString("last_quality_$kind", quality).apply() }
 }
 
-/** FR-7, FR-12 — one index file per viewer under `filesDir/downloads/index` (never `cacheDir`). Signing out touches none of them. */
-class AndroidDownloadIndexStorage : DownloadIndexStorage {
-    private fun dir() = File(File(RaviloAppContext.get().filesDir, "downloads"), "index").also { it.mkdirs() }
+/** FR-7, FR-12 — one index file per viewer under `filesDir/downloads/index` (DEB-4072: the progress outbox is `outbox`, beside it) (never `cacheDir`). Signing out touches none of them. */
+class AndroidDownloadIndexStorage(private val folder: String = "index") : DownloadIndexStorage {
+    private fun dir() = File(File(RaviloAppContext.get().filesDir, "downloads"), folder).also { it.mkdirs() }
     private fun file(userId: String) = File(dir(), userId.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".json")
 
     override fun read(userId: String): String? = runCatching { file(userId).takeIf { it.isFile }?.readText() }.getOrNull()

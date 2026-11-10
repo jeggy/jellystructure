@@ -20,6 +20,16 @@ internal class OkHttpSubtitleSource(
     private val bearerFor: (String) -> String? = { null },
 ) : SubtitleSource {
     override fun newCall(url: String): SubtitleCall {
+        // DEB-4072 (FR-16) — a download's saved subtitle is a file on the phone: read it, never the network.
+        if (url.startsWith("file:", ignoreCase = true)) return object : SubtitleCall {
+            override fun execute(): SubtitleFetch = try {
+                val f = java.io.File(java.net.URI(url))
+                if (f.length() > MAX_BYTES) SubtitleFetch.Failed("too large") else SubtitleFetch.Body(f.readText())
+            } catch (e: Exception) {
+                SubtitleFetch.Failed(e.javaClass.simpleName)
+            }
+            override fun cancel() = Unit
+        }
         val request = try {
             Request.Builder().url(url).apply { bearerFor(url)?.let { header("Authorization", "Bearer $it") } }.build()
         } catch (e: IllegalArgumentException) {

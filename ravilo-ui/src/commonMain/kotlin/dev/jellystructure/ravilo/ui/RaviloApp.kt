@@ -361,6 +361,8 @@ internal sealed class Dest {
         /** DEB-2939 (FR-13) — nothing follows this episode (a newest-first series): no next, no credits card, and a
          *  rail pick plays on to nothing either; a cast of it sends this episode alone (FR-14). */
         val nothingFollows: Boolean = false,
+        /** DEB-4072 (DEB-3995 FR-16) — played from the phone's own storage (the Downloads page): no server start, heartbeat, stop or restream; progress is queued. */
+        val fromDownload: Boolean = false,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -562,6 +564,10 @@ fun RaviloApp(
     // operator's per-user switch, false from an older server) decides whether this viewer sees any of it.
     val downloadsController = remember(apiClient) { dev.jellystructure.ravilo.ui.downloads.platformDownloads(apiClient) }
     var downloadsEnabled by remember { mutableStateOf(false) }
+    // DEB-4072 (FR-11) — the last config read found no server at all (no answer, or a bad gateway). Offline, the phone's own downloads are the
+    // only page that works, so the Downloads page and its play do not wait on the config's `downloads` flag. [firstConfigRead] is the launch's.
+    var serverOffline by remember { mutableStateOf(false) }
+    var firstConfigRead by remember { mutableStateOf(false) }
     // DEB-4071 (FR-8) — what is fully on this phone, for the mark on cards and episode thumbs. Empty wherever there is no download surface.
     val downloadPhases = downloadsController?.phases?.collectAsState()?.value.orEmpty()
     val downloadedIdSet = remember(downloadPhases, downloadsEnabled) {
@@ -577,7 +583,11 @@ fun RaviloApp(
     var passwordRow by remember { mutableStateOf<dev.jellystructure.ravilo.ui.screens.PasswordRow>(dev.jellystructure.ravilo.ui.screens.PasswordRow.Form) }
     fun refreshConfig() {
         configScope.launch {
-            runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
+            val read = runCatching { apiClient.getConfig() }
+            if (read.isSuccess) serverOffline = false
+            else if (dev.jellystructure.ravilo.ui.downloads.isServerUnreachable(read.exceptionOrNull())) serverOffline = true
+            firstConfigRead = true   // after serverOffline, so the launch check below reads this read's answer
+            read.getOrNull()?.let { cfg ->
                 castAppId = cfg.cast?.appId
                 castMusic = cfg.cast?.music == true   // R324 (dev review 12)
                 // DEB-1501 (FR-1) — an app that reads no flag draws nothing; a TV never does, even with the flag on.
@@ -991,6 +1001,45 @@ fun RaviloApp(
             navDir = NavDir.Forward
             stack = if (stack.isEmpty()) listOf(dest) else stack.dropLast(1) + dest
             if (!fromHistory.flag) replaceRoute(dest.toRoute())
+        }
+        // DEB-4072 (DEB-3995 FR-11) — an unreachable launch with downloads opens the Downloads page with the offline line, not Home's
+        // unreachable state. Decided once, on the launch's first config read, and only while the viewer is still on the launch Home: a viewer who
+        // moved on stays, and a server that comes back later moves nobody.
+        LaunchedEffect(firstConfigRead) {
+            if (!firstConfigRead) return@LaunchedEffect
+            val dc = downloadsController
+            dc?.refresh()   // offline no config answer re-reads the library, so the page opens on what the phone holds
+            val home = stack.singleOrNull() as? Dest.Home
+            if (dev.jellystructure.ravilo.ui.downloads.launchTarget(
+                    downloadsSurface = dc != null, serverUnreachable = serverOffline,
+                    hasDownloads = dc?.hasPlayableDownloads() == true, onHome = home != null,
+                ) == dev.jellystructure.ravilo.ui.downloads.LaunchTarget.DOWNLOADS_OFFLINE && home != null
+            ) resetTo(Dest.Downloads(home.displayName))
+        }
+        // DEB-4072 (FR-12, FR-13, FR-15) — offline, ask the server every few seconds whether it is back. Reachable, send the outbox and refresh
+        // every download (once per spell, and once at launch). A 401 sends this profile to sign-in with its downloads kept, as at sign-out;
+        // a server that goes away again part-way goes back to asking.
+        LaunchedEffect(downloadsController, activeUserId, serverOffline, firstConfigRead) {
+            val dc = downloadsController ?: return@LaunchedEffect
+            if (activeUserId == null || !firstConfigRead) return@LaunchedEffect
+            if (serverOffline) {
+                while (true) {
+                    delay(8_000L)
+                    val t = runCatching { apiClient.getConfig() }.exceptionOrNull()
+                    if (!dev.jellystructure.ravilo.ui.downloads.isServerUnreachable(t)) { serverOffline = false; refreshConfig(); return@LaunchedEffect }
+                }
+            }
+            when (dc.onReachable()) {
+                dev.jellystructure.ravilo.ui.downloads.Reconnect.OK -> {}
+                dev.jellystructure.ravilo.ui.downloads.Reconnect.UNREACHABLE -> serverOffline = true
+                dev.jellystructure.ravilo.ui.downloads.Reconnect.REJECTED -> {
+                    signedOutNotice = false
+                    configScope.launch {
+                        signOutActiveSession(apiClient)
+                        resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                    }
+                }
+            }
         }
         // DEB-1501 (FR-1, FR-2, FR-7) — the support lane. The unread count is read when the flag turns on, on every
         // `support_changed` and after a reconnect, and never counted here. When the flag goes, an open Support screen
@@ -2503,6 +2552,8 @@ fun RaviloApp(
                     displayName = dest.displayName,
                     onProfile = { openProfile() },
                     onSignOut = { resetTo(Dest.Login) },
+                    // DEB-4072 (FR-11) — Home's unreachable state offers the downloads whenever the viewer has any on this phone.
+                    onWatchDownloads = downloadsController?.takeIf { it.hasPlayableDownloads() }?.let { dc -> { dc.refresh(); push(Dest.Downloads(dest.displayName)) } },
                     onNavSelect = { idx ->
                         when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> {} // already home
@@ -2951,7 +3002,14 @@ fun RaviloApp(
                 // R347 — the stop's "finished" rule needs this episode's credits marker; R343 — Start over and a
                 // shuffled entry are this store's start flags (from 0:00; the server clears / restores).
                 val store = remember(dest.itemId) {
-                    PlayerStore(apiClient, creditsStartMs = dest.segments.creditsStartMs, startOver = dest.startOver, shuffle = dest.shuffled)
+                    PlayerStore(
+                        apiClient, creditsStartMs = dest.segments.creditsStartMs, startOver = dest.startOver, shuffle = dest.shuffled,
+                        local = if (dest.fromDownload) downloadsController?.localPlay(dest.itemId) else null,   // DEB-4072 (FR-16)
+                    )
+                }
+                // DEB-4072 (FR-15) — a play from a download queued its progress; when the server is reachable the outbox goes out as the player closes.
+                if (dest.fromDownload) DisposableEffect(dest.itemId) {
+                    onDispose { downloadsController?.let { dc -> configScope.launch { if (!serverOffline) dc.onReachable() } } }
                 }
                 DisposableEffect(store) { onDispose { store.close() } }
                 // R370 (FR-R370-7, DEB-781) — while this player is a handed-over queue's place, its queue report
@@ -2967,7 +3025,9 @@ fun RaviloApp(
                 }
                 // R343 (FR-R343-5) — the next-up card says *UP NEXT · SHUFFLED* while a shuffle has a next entry.
                 CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp),
-                    dev.jellystructure.ravilo.ui.screens.LocalNothingFollows provides dest.nothingFollows) {
+                    dev.jellystructure.ravilo.ui.screens.LocalNothingFollows provides dest.nothingFollows,
+                    // DEB-4072 (FR-16) — casting needs the server; from a download the cast button is absent, never broken.
+                    LocalCast provides (if (dest.fromDownload) null else LocalCast.current)) {
                 PlayerScreen(
                     itemId           = dest.itemId,
                     itemTitle        = dest.title,
@@ -3041,13 +3101,16 @@ fun RaviloApp(
                         val newEp = if (newIdx >= 0) eps?.get(newIdx) else null
                         // DEB-2939 (FR-13) — a pick in a newest-first series' rail plays that episode and nothing after it.
                         val nextEp = if (newIdx >= 0 && !dest.nothingFollows) eps?.getOrNull(newIdx + 1) else null
+                        // DEB-4072 (FR-16) — from a download, the one after it is offered only if it is on the phone too.
+                        val nextDl = if (dest.fromDownload) downloadsController?.nextDownloadedEpisode(nextId) else null
                         if (nextId != dest.itemId) replaceTop(Dest.Player(
                             itemId         = nextId,
                             title          = newEp?.title ?: dest.nextEpTitle ?: dest.title,
                             kicker         = newEp?.kicker ?: dest.nextEpLabel,
-                            nextEpId       = nextEp?.id,
-                            nextEpLabel    = nextEp?.kicker,
-                            nextEpTitle    = nextEp?.title,
+                            nextEpId       = nextEp?.id ?: nextDl?.itemId,
+                            nextEpLabel    = nextEp?.kicker ?: nextDl?.let { dev.jellystructure.ravilo.ui.downloads.downloadKicker(it) },
+                            nextEpTitle    = nextEp?.title ?: nextDl?.title,
+                            fromDownload   = dest.fromDownload,
                             displayName    = dest.displayName,
                             episodes       = eps,
                             currentEpIndex = newIdx.coerceAtLeast(0),
@@ -3327,9 +3390,21 @@ fun RaviloApp(
 
             // DEB-4071 (DEB-3995 FR-9, FR-10, FR-12) — the Downloads page. A device with no download surface has nothing to show: back to Profile.
             is Dest.Downloads -> {
-                val dc = downloadsController?.takeIf { downloadsEnabled }
+                // DEB-4072 (FR-11) — offline, the phone's own downloads are reachable whatever the config last said.
+                val dc = downloadsController?.takeIf { downloadsEnabled || (serverOffline && it.hasPlayableDownloads()) }
                 if (dc == null) LaunchedEffect(Unit) { replaceTop(Dest.Profile(dest.displayName)) }
-                else dev.jellystructure.ravilo.ui.downloads.DownloadsScreen(controller = dc, onBack = { pop() })
+                else dev.jellystructure.ravilo.ui.downloads.DownloadsScreen(
+                    controller = dc, onBack = { pop() }, offline = serverOffline,
+                    // DEB-4072 (FR-16) — a download plays in the normal player, from local storage.
+                    onPlay = { r ->
+                        val next = dc.nextDownloadedEpisode(r.itemId)
+                        push(Dest.Player(
+                            itemId = r.itemId, title = r.title, kicker = dev.jellystructure.ravilo.ui.downloads.downloadKicker(r),
+                            nextEpId = next?.itemId, nextEpLabel = next?.let { dev.jellystructure.ravilo.ui.downloads.downloadKicker(it) }, nextEpTitle = next?.title,
+                            displayName = dest.displayName, seriesId = r.seriesId ?: r.itemId, seriesName = r.seriesTitle, fromDownload = true,
+                        ))
+                    },
+                )
             }
 
             is Dest.Settings -> {

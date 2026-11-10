@@ -311,6 +311,18 @@ class TvApiClient(
         return json.decodeFromString<DownloadTicket>(r.bodyAsText())
     }
 
+    /**
+     * DEB-4072 (DEB-3995 FR-13) — the body of the page route that lists a downloaded title, **verbatim**: a film's `GET /api/tv/movie/{id}`,
+     * an episode's `GET /api/tv/series/{seriesId}`. The phone saves it beside the media and never merges or edits it. A title the server no
+     * longer offers this viewer answers 404 or 403 ([TvApiError.Http]).
+     */
+    suspend fun getTitleJson(kind: String, itemId: String, seriesId: String?): String {
+        val path = if (kind == "episode" && seriesId != null) "series/$seriesId" else "movie/$itemId"
+        val r = client.get("$baseUrl/api/tv/$path") { auth() }
+        r.assertSuccess()
+        return r.bodyAsText()
+    }
+
     suspend fun getSeries(id: String): SeriesDetail {
         val r = client.get("$baseUrl/api/tv/series/$id") { auth() }
         r.assertSuccess()
@@ -334,6 +346,21 @@ class TvApiClient(
             if (!r.status.isSuccess()) continue
             runCatching { json.decodeFromString<Map<String, CardPlayState>>(r.bodyAsText()) }
                 .getOrNull()?.let { out.putAll(it) }
+        }
+        return out
+    }
+
+    /**
+     * DEB-4072 (DEB-3995 FR-15) — [getPlaystate] that **throws** on any failure instead of skipping the chunk. The offline outbox compares the
+     * server's play state with the one the phone knew; a chunk that silently went missing would read as "never played" and could send a queued
+     * write over a later play, or drop one wrongly. A title the server holds no user data for is simply absent from the map (never played).
+     */
+    suspend fun getPlaystateStrict(ids: List<String>): Map<String, CardPlayState> {
+        val out = mutableMapOf<String, CardPlayState>()
+        for (chunk in ids.chunked(PLAYSTATE_ID_BATCH)) {
+            val r = client.get("$baseUrl/api/tv/playstate") { auth(); parameter("ids", chunk.joinToString(",")) }
+            r.assertSuccess()
+            out.putAll(json.decodeFromString<Map<String, CardPlayState>>(r.bodyAsText()))
         }
         return out
     }

@@ -130,6 +130,8 @@ fun HomeScreen(
     // Phase R177 — selecting an "On now" tile tunes straight into the live player (never a top-nav tab).
     onLiveTvChannelSelect: (LiveTvChannel) -> Unit = {},
     onOpenLiveTvGuide: () -> Unit = {},
+    // DEB-4072 (DEB-3995 FR-11) — non-null only when this viewer has downloads on this phone: Home's unreachable state offers them.
+    onWatchDownloads: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -146,6 +148,7 @@ fun HomeScreen(
                 apiClient = apiClient,
                 onRetry = { store.refresh() },
                 onSignOut = onSignOut,
+                onWatchDownloads = onWatchDownloads,
             )
             is HomeState.Loaded  -> HomeLoaded(
                 feed = s.feed,
@@ -913,6 +916,7 @@ private fun HomeErrorState(
     apiClient: TvApiClient,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
+    onWatchDownloads: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
@@ -924,6 +928,7 @@ private fun HomeErrorState(
         kind,
         onRetry = onRetry,
         onSignIn = onSignOut,
+        onWatchDownloads = onWatchDownloads,
         extraAction = { primaryFR, signOutFR ->
             Box(
                 modifier = Modifier

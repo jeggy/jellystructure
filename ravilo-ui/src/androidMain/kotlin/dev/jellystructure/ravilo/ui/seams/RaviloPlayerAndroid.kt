@@ -540,7 +540,21 @@ actual class RaviloPlayer actual constructor() {
             androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(playbackDataSourceFactory())
                 .createMediaSource(MediaItem.fromUri(url))
         }
-        if (prefetchKey != null) {
+        // DEB-4072 (DEB-3995 FR-16) — a download plays from the phone's own storage: the download cache, read only, under the
+        // download's stable key, with NO upstream, so a play in flight mode cannot reach for the network (a missing piece is an error, not a wait).
+        val downloadId = dev.jellystructure.ravilo.ui.downloads.DownloadedPlays.idFor(streamUrl)
+        if (downloadId != null) {
+            val hls = streamUrl.substringBefore('?').endsWith(".m3u8")
+            val localItem = mediaItem.buildUpon()
+                .apply { if (hls) setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8) else setCustomCacheKey(downloadId) }
+                .build()
+            val fromDisk = androidx.media3.datasource.cache.CacheDataSource.Factory()
+                .setCache(dev.jellystructure.ravilo.ui.downloads.RaviloDownloadStack.cache(ctx))
+                .setCacheKeyFactory(dev.jellystructure.ravilo.ui.downloads.RaviloDownloadStack.cacheKeyFactoryFor(downloadId))
+                .setCacheWriteDataSinkFactory(null)
+            p.setMediaSource(mediaSourceFactory(fromDisk).createMediaSource(localItem))
+            android.util.Log.i("DEB-4072", "load: a download, read from the phone's storage ($downloadId, ${if (hls) "copy" else "original"})")
+        } else if (prefetchKey != null) {
             val cached = androidx.media3.datasource.cache.CacheDataSource.Factory()
                 .setCache(NextPrefetch.cache)
                 .setUpstreamDataSourceFactory(playbackDataSourceFactory())
