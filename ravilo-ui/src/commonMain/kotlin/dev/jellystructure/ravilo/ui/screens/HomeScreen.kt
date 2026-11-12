@@ -859,18 +859,26 @@ private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester?
     var focused by rememberFocusVisual()
     val scale by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, label = "guideTileScale")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
-    Column(
+    // DEB-4271 — the focus target is the unscaled 180 dp box and only the card inside grows. Compose's 2-D focus
+    // search measures a target's bounds through its graphicsLayer, so a scaled guide tile reached 4 dp above the
+    // row and the taller channel tile beside it (title and time line under the square) counted as "below" it:
+    // Down moved right instead of leaving the row.
+    Box(
         modifier = Modifier
             .width(180.dp).height(180.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .background(colors.surfaceVariant, tileShape)
-            .focusRing(focused, tileShape, colors.focusRing, 2.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
                 onBlurred = { focused = false },
                 onSelect = onClick,
-            )
+            ),
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .background(colors.surfaceVariant, tileShape)
+            .focusRing(focused, tileShape, colors.focusRing, 2.dp)
             .padding(16.dp),
         verticalArrangement = Arrangement.Center,
     ) {
@@ -892,6 +900,7 @@ private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester?
             str("livetv.guide_subtitle"), color = colors.textSecondary, fontSize = 12.sp,
             maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
+    }
     }
 }
 
