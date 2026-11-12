@@ -238,6 +238,19 @@ object ScheduleEvaluator {
     }
 }
 
+private val RUN_DAYS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+/**
+ * DEB-4402 (FR-3.8, FR-4.2) — one fire as the picker's *Next five runs* shows it, `Mon 16 Nov 2026 · 04:00`, in the schedule
+ * zone and never the browser's. The admin works out no times itself, so the server words them. The ` · ` is the one divider.
+ */
+fun runLabel(epochSec: Long, zone: TimeZone): String {
+    val t = Instant.fromEpochSeconds(epochSec).toLocalDateTime(zone)
+    val day = RUN_DAYS[t.date.dayOfWeek.isoDayNumber - 1]
+    val month = ScheduleNames.MONTHS[t.date.month.ordinal].take(3)
+    return "$day ${t.date.day} $month ${t.date.year} · ${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}"
+}
+
 /** Validation outcome for a schedule string (FR-2.2) — shared by every save route (422) and `validate-schedule`, so they cannot disagree. */
 sealed interface ScheduleCheck {
     data class Ok(val schedule: Schedule, val sentence: String, val canonical: String, val nextRuns: List<Long>) : ScheduleCheck {

@@ -164,6 +164,10 @@ release-age re-check tiers. FR-5.1 and FR-5.2 below say how. They are build piec
 
 1. `POST /api/config/validate-schedule` takes `{ schedule, floorMinutes? }` and answers with the fields it answers
    today plus `sentence` and `zone`. Fields are only added. It accepts both forms.
+   *Amendment, 2026-11-13 (DEB-4402):* it also answers `nextRunLabels`, the same fires as `nextRuns` worded in the
+   schedule zone as `Mon 16 Nov 2026 · 04:00`. The picker's *Next five runs* (FR-3.8) shows these and nothing else:
+   `nextRuns` is epoch seconds, and putting them into words in the browser would use the browser's zone, which FR-4.2
+   rules out.
 2. Each setting's existing save route accepts both forms, and refuses with 422 what FR-2.2 refuses.
 3. Every view that shows a next run (the Dashboard, the Processing rows, the fetcher cards, *Activity ▸ Schedule*)
    gets it from the one evaluator.

@@ -267,4 +267,14 @@ class ScheduleTest {
         ScheduleZone.resolve("Not/AZone")
         assertNull(runCatching { TimeZone.of("Not/AZone") }.getOrNull())
     }
+
+    // DEB-4402 (FR-3.8, FR-4.2) — the picker's runs are worded by the server, in the schedule zone, never the browser's.
+    @Test
+    fun aRunIsWordedInTheScheduleZone() {
+        val sec = at(faroe, 2026, 11, 16, 4, 0)
+        assertEquals("Mon 16 Nov 2026 · 04:00", runLabel(sec, faroe))
+        assertEquals("Mon 16 Nov 2026 · 04:00", runLabel(at(utc, 2026, 11, 16, 4, 0), utc))
+        // the same instant, read in the other zone's wall clock (Faroe is UTC+0 in November, +1 in summer)
+        assertEquals("Wed 1 Jul 2026 · 05:00", runLabel(at(utc, 2026, 7, 1, 4, 0), faroe))
+    }
 }

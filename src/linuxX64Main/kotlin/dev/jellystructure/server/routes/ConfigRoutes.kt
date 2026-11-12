@@ -43,6 +43,8 @@ data class ScheduleCheckResponse(
     val sentence: String? = null,
     val zone: String? = null,
     val canonical: String? = null,
+    /** DEB-4402 — [nextRuns] worded in the schedule zone (`Mon 16 Nov 2026 · 04:00`), for the picker's *Next five runs*. Additive. */
+    val nextRunLabels: List<String> = emptyList(),
 )
 
 @Serializable
@@ -432,7 +434,7 @@ fun Route.configureConfigRoutes(
         val floor = body.floorMinutes ?: dev.jellystructure.cron.SCHEDULE_FLOOR_MINUTES
         when (val check = dev.jellystructure.cron.validateSchedule(text, dev.jellystructure.nowEpochSec(), zone, floor)) {
             is dev.jellystructure.cron.ScheduleCheck.Ok ->
-                call.respond(ScheduleCheckResponse(valid = true, description = check.sentence, nextRuns = check.nextRuns, sentence = check.sentence, zone = zone.id, canonical = check.canonical))
+                call.respond(ScheduleCheckResponse(valid = true, description = check.sentence, nextRuns = check.nextRuns, sentence = check.sentence, zone = zone.id, canonical = check.canonical, nextRunLabels = check.nextRuns.map { dev.jellystructure.cron.runLabel(it, zone) }))
             is dev.jellystructure.cron.ScheduleCheck.Invalid ->
                 call.respond(ScheduleCheckResponse(valid = false, error = check.message, zone = zone.id))
         }
