@@ -1,28 +1,23 @@
 {
-  "version": "1.64",
-  "tag": "v1.64",
-  "published_at": "2026-11-08T23:03:12Z",
-  "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.64",
+  "version": "1.65",
+  "tag": "v1.65",
+  "published_at": "2026-11-12T07:03:39Z",
+  "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.65",
   "assets": {
     "android": {
-      "name": "ravilo-android-1.64.apk",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.64/ravilo-android-1.64.apk",
-      "size": 13564991
+      "name": "ravilo-android-1.65.apk",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.65/ravilo-android-1.65.apk",
+      "size": 13702595
     },
     "linux": {
-      "name": "ravilo-linux-1.64.flatpak",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.64/ravilo-linux-1.64.flatpak",
-      "size": 72460016
-    },
-    "mac": {
-      "name": "ravilo-mac-1.64.dmg",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.64/ravilo-mac-1.64.dmg",
-      "size": 93714522
+      "name": "ravilo-linux-1.65.flatpak",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.65/ravilo-linux-1.65.flatpak",
+      "size": 73089928
     },
     "tizen": {
-      "name": "ravilo-tizen-1.64.wgt",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.64/ravilo-tizen-1.64.wgt",
-      "size": 331576
+      "name": "ravilo-tizen-1.65.wgt",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.65/ravilo-tizen-1.65.wgt",
+      "size": 333748
     }
   }
 }
