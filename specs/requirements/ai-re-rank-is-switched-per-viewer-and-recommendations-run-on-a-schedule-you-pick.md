@@ -247,3 +247,9 @@ the transcripts.
      summary;
    - the toast.
 4. **Admin** (FR-1.1, FR-2.1, FR-3.1, FR-4.1–4.4, FR-5.1), built on the round's pictures.
+
+## Amendment 2026-11-12 — the picker is the shared one (DEB-4387)
+
+FR-3.1's picker is the shared control of [`one-schedule-picker-for-every-recurring-job.md`](one-schedule-picker-for-every-recurring-job.md) FR-3, not a copy of the *Find* picker. *Monthly on* is no longer
+limited to days 1–28: the shared control offers *Last day*, and it skips a month that lacks the chosen day. The
+keys, the carry-over, the due rule and the rollback write in FR-3.2–3.5 are unchanged.

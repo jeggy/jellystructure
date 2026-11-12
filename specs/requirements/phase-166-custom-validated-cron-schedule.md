@@ -5,7 +5,11 @@
 > easily say every 1 or 3 hours etc. Now that it's possible to enter own cron rules, we should also make
 > sure to validate anything entered here, so it will also in fact work when user clicks save."*
 
-**Status:** Planned — dev-authored, not yet built.
+## Scope
+
+The scheduled scan's cron: any expression, parsed by one shared parser and validated before it can be saved.
+The 2026-10-23 amendment moved it to *Find new & changed*, and the 2026-11-12 amendment widened it into the shared
+schedule type.
 
 ## 1. What's there now
 
@@ -188,3 +192,11 @@ the custom string as typed.
 ## Amendment 2026-10-23 — processing runs as nine features (DEB-1664)
 
 The validated cron no longer schedules "the pipeline". It is the interval of the feature *Find new & changed*, offered as *every N hours*, *daily at*, *weekly on* or *Custom*; Custom is this phase's cron, still validated before it can be saved (FR-3.2 there). A saved expression that matches a preset shows as that preset. The other features have intervals of their own. See [`processing-runs-as-nine-features.md`](processing-runs-as-nine-features.md).
+
+## Amendment 2026-11-12 — the cron is one form of a shared schedule (DEB-4387)
+
+A schedule is now a cron **or** a recurrence (`every:FREQ=…`), and one evaluator handles both
+([`one-schedule-picker-for-every-recurring-job.md`](one-schedule-picker-for-every-recurring-job.md) FR-1, FR-2).
+FR-166-4's 1500-day horizon becomes "fires at least once within 100 years", so *every 10 years* is valid. The
+15-minute floor stays. The parser's accepted cron syntax is unchanged. Fires are computed in the configured
+schedule zone, no longer in the server process's zone.

@@ -2055,3 +2055,10 @@ is lost for good.
 lines (`autofetch/Investigation.kt`, `Investigations.kt`, `Proof.kt`). *Acceptance* 25. No route, DTO, screen or
 migration. Any one of the three would likely have rescued the owner's run. Together they mean a re-investigation of a
 fetcher that still works starts from what works, and a right recipe is never thrown away unproved.
+
+## Amendment 2026-11-12 — the *Check* picker is the shared one (DEB-4387)
+
+FR-6.2's *Every 6 h* · *Daily at* · *Weekly on* becomes the shared control of [`one-schedule-picker-for-every-recurring-job.md`](one-schedule-picker-for-every-recurring-job.md) FR-3: any set of weekdays, every N
+days, weeks, months or years, and a cron. The column keeps its name. `every6h`, `daily@` and `weekly@` stay
+readable for good and are rewritten in the new form at the fetcher's next save. FR-2.3's floor still holds (never
+more often than every 6 hours), and so does its minute spread.

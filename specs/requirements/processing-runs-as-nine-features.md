@@ -592,3 +592,11 @@ The full rules are in
 [`ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md`](ai-re-rank-is-switched-per-viewer-and-recommendations-run-on-a-schedule-you-pick.md)
 FR-2, FR-3 and FR-4.
 
+
+## Amendment 2026-11-12 — one shared schedule picker (DEB-4387)
+
+FR-3.2's four *Find* modes, the 2026-10-29 amendment's per-part picker with *Monthly on*, and the Music and Audiobooks
+`interval` select all become the one shared control of [`one-schedule-picker-for-every-recurring-job.md`](one-schedule-picker-for-every-recurring-job.md) FR-3. That control adds weekday sets, *every N*
+days/weeks/months/years, ordinal weekdays and *last day of the month*. Music and Audiobooks gain a `schedule` key,
+carried over once from `interval` (FR-5 there). Every feature is due by that spec's FR-2.3 rule, so a *Find* fire
+missed while the backend was down runs once when it comes back.
