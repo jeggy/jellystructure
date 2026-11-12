@@ -6,6 +6,7 @@ import dev.jellystructure.shared.tv.DownloadWaitReason
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -133,6 +134,7 @@ class DownloadsController(
     private var tick = 0L
     private var waitCounter = 0L
     private var pumpRetry: kotlinx.coroutines.Job? = null
+    private var storageWatch: Job? = null
     private var inRetry = false
     /** The last thing a `start` threw that was neither an HTTP answer nor a cancel, so a stall that reads *Queued* has a reason a test or a log can see. */
     var lastStartError: Throwable? = null
@@ -390,7 +392,6 @@ class DownloadsController(
      */
     fun deleteMany(itemIds: Collection<String>) {
         val u = userId() ?: return
-        val freeBefore = engine.freeBytes()
         itemIds.toSet().forEach { id ->
             engine.remove(downloadId(u, id))
             library.remove(u, id)
@@ -398,7 +399,7 @@ class DownloadsController(
             renewals.remove(key); startFailures.remove(key); endWait(key); lastPercent.remove(key); renewedAt.remove(key)
         }
         refresh()
-        if (itemIds.isNotEmpty()) watchFreedSpace(freeBefore)
+        if (itemIds.isNotEmpty()) watchFreedSpace()
         pumpRetry?.cancel(); scope.launch { pump() }
     }
 
@@ -413,17 +414,17 @@ class DownloadsController(
     /** FR-12 — *Other profiles on this phone · Delete*: their media and records go, and their titles are never shown. */
     fun deleteOtherProfiles() {
         val u = userId() ?: return
-        val freeBefore = engine.freeBytes()
         engine.phases.value.keys.filter { downloadUserId(it) != u }.forEach { engine.remove(it) }
         library.users().filter { it != u }.forEach { library.removeAll(it) }
         refresh()
-        watchFreedSpace(freeBefore)
+        watchFreedSpace()
     }
 
-    private fun watchFreedSpace(freeBefore: Long) {
-        if (_storageFreeBytes.value != freeBefore) return
-        // Media3 removes cached bytes after sendRemoveDownload returns. Keep reading through a batch's final removal.
-        scope.launch { repeat(50) { delay(100); _storageFreeBytes.value = engine.freeBytes() } }
+    private fun watchFreedSpace() {
+        storageWatch?.cancel()
+        // The index can free a few bytes before Media3 releases the media, so an early change is not completion.
+        // On a phone the cache can take more than five seconds to release; read through the batch's final removal.
+        storageWatch = scope.launch { repeat(120) { delay(250); _storageFreeBytes.value = engine.freeBytes() } }
     }
 
     /**
@@ -543,13 +544,12 @@ class DownloadsController(
         val r = library.get(u, itemId) ?: return
         val option = _originalOffers.value[itemId] ?: return
         val id = downloadId(u, itemId)
-        val freeBefore = engine.freeBytes()
         if ((engine.phases.value[id] ?: DownloadPhase.None) != DownloadPhase.None) engine.remove(id)
         library.upsert(u, r.copy(quality = "original", height = null, bytes = option.bytes, state = RecordState.QUEUED))
         renewals.remove(id); renewedAt.remove(id); lastPercent.remove(id); startFailures.remove(id)
         endWait(id)
         refresh()
-        watchFreedSpace(freeBefore)
+        watchFreedSpace()
         pumpRetry?.cancel(); scope.launch { pump() }
     }
 

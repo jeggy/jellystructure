@@ -60,11 +60,13 @@ class DownloadsControllerTest {
         override val phases: StateFlow<Map<String, DownloadPhase>> = p.asStateFlow()
         val jobs = mutableListOf<DownloadJob>()
         val removed = mutableListOf<String>()
+        var free = 50_000_000_000L
+        var freedOnRemove = 0L
         override fun enqueue(job: DownloadJob) { jobs += job; p.value = p.value + (job.id to DownloadPhase.Running(0)) }
         override fun pause(id: String) { p.value = p.value + (id to DownloadPhase.Paused(0)) }
         override fun resume(id: String) { p.value = p.value + (id to DownloadPhase.Running(0)) }
-        override fun remove(id: String) { removed += id; p.value = p.value - id }
-        override fun freeBytes() = 50_000_000_000L
+        override fun remove(id: String) { removed += id; free += freedOnRemove; p.value = p.value - id }
+        override fun freeBytes() = free
         override fun totalBytes() = 128_000_000_000L
         override fun busy() = p.value.values.any { it is DownloadPhase.Running || it == DownloadPhase.Queued || it == DownloadPhase.WaitingServer }
         fun set(id: String, phase: DownloadPhase) { p.value = p.value + (id to phase) }
@@ -370,6 +372,21 @@ class DownloadsControllerTest {
         assertEquals(listOf(downloadId("alice", "m1")), r.engine.removed)
         assertTrue(r.library.records("alice").isEmpty())
         assertEquals(null, r.controller.phases.value["m1"])
+    }
+
+    @Test fun `free space catches a Media3 removal that finishes after five seconds`() = runTest {
+        val r = rig()
+        r.controller.download(listOf(target("m1")), original); advanceUntilIdle()
+        r.engine.freedOnRemove = 4_096L // The index goes first; the media's blocks are still held.
+        r.controller.delete("m1"); runCurrent()
+        assertEquals(50_000_004_096L, r.controller.storageFreeBytes.value)
+
+        // The removal command has returned, but Android still holds the blocks beyond the old five-second watch.
+        advanceTimeBy(5_500); runCurrent()
+        assertEquals(50_000_004_096L, r.controller.storageFreeBytes.value)
+        r.engine.free = 55_000_000_000L
+        advanceTimeBy(500); runCurrent()
+        assertEquals(55_000_000_000L, r.controller.storageFreeBytes.value)
     }
 
     @Test fun `another profile's downloads are never in this viewer's phases`() = runTest {
