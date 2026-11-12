@@ -75,6 +75,15 @@ fun Modifier.focusRing(
     over: Boolean = true,
 ): Modifier = this then FocusRingElement(focused, shape, color, width, resting, restingWidth, outset, fillFocused, fillResting, over)
 
+/**
+ * DEB-4276 — the ring of a chip that can be the selected one. A selected chip is filled with the accent, and
+ * [focusRing]'s colour is the accent's own family (identical in Graphite and Daylight), so a ring in it vanishes on
+ * the fill: a selected chip takes [onAccent], the ink it already uses on that fill, and an unselected one the
+ * theme's ring. The modifier is always in the chain and never moves (R338).
+ */
+fun Modifier.chipFocusRing(focused: Boolean, selected: Boolean, shape: Shape, ring: Color, onAccent: Color): Modifier =
+    focusRing(focused, shape, if (selected) onAccent else ring, 2.dp)
+
 private data class FocusRingElement(
     val focused: Boolean,
     val shape: Shape,

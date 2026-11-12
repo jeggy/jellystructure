@@ -1,7 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
-import dev.jellystructure.ravilo.ui.focus.focusRing
+import dev.jellystructure.ravilo.ui.focus.chipFocusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
@@ -431,7 +431,7 @@ private fun GenreChips(
                         if (isActive) colors.accent else colors.surfaceVariant,
                         chipShape,
                     )
-                    .focusRing(focused && !isActive, chipShape, colors.focusRing, 2.dp)
+                    .chipFocusRing(focused, isActive, chipShape, colors.focusRing, colors.onAccent)
                     .dpadFocusable(
                         focusRequester = if (i == 0) firstChipFR else null,
                         onFocused = { focused = true },

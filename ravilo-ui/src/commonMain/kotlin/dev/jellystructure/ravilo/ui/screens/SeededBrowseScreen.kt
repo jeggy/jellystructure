@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
+import dev.jellystructure.ravilo.ui.focus.chipFocusRing
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.focus.GridFocus
@@ -762,7 +763,7 @@ private fun FacetBar(
             Box(
                 Modifier
                     .background(chipBg, chipShape)
-                    .focusRing(focused && !active, chipShape, colors.focusRing, 2.dp)
+                    .chipFocusRing(focused, active, chipShape, colors.focusRing, colors.onAccent)
                     .onGloballyPositioned { store.chipX[key.name] = it.positionInRoot().x }
                     .dpadFocusable(
                         focusRequester = facetChipFRs[key],

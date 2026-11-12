@@ -1,6 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
-import dev.jellystructure.ravilo.ui.focus.focusRing
+import dev.jellystructure.ravilo.ui.focus.chipFocusRing
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -280,7 +280,7 @@ private fun FilterChips(active: UpcomingFilter, onFilterChange: (UpcomingFilter)
                     // Bug fix: the active chip's solid accent background hid focus entirely (only the
                     // inactive branch above got a focus treatment) — a border shows regardless of active
                     // state, so you can always tell which chip has D-pad focus.
-                    .focusRing(focused, RoundedCornerShape(20.dp), colors.focusRing, 2.dp)
+                    .chipFocusRing(focused, isActive, RoundedCornerShape(20.dp), colors.focusRing, colors.onAccent)
                     .dpadFocusable(
                         focusRequester = frs[i],
                         onFocused = { focused = true },

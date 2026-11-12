@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.chipFocusRing
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.keepsFocusInside
 import dev.jellystructure.ravilo.ui.components.PageTitle
@@ -1039,7 +1040,7 @@ private fun SettingsContent(
                             if (isActive) colors.accent else colors.surfaceVariant,
                             RoundedCornerShape(10.dp),
                         )
-                        .focusRing(focused && !isActive, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
+                        .chipFocusRing(focused, isActive, RoundedCornerShape(10.dp), colors.focusRing, colors.onAccent)
                         .dpadFocusable(
                             focusRequester = skinFRs!![i],
                             onFocused = { focused = true },
@@ -1079,7 +1080,7 @@ private fun SettingsContent(
             Box(
                 modifier = Modifier
                     .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
-                    .focusRing(focused && !isActive, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
+                    .chipFocusRing(focused, isActive, RoundedCornerShape(10.dp), colors.focusRing, colors.onAccent)
                     .dpadFocusable(
                         focusRequester = langFRs[i],
                         onFocused = { focused = true },
@@ -1515,7 +1516,7 @@ private fun ThemePill(
             // Always a border, clear when there is no ring to draw. A modifier that comes and goes ahead of the focus
             // target re-creates it: the pill a D-pad had just picked became the active one, lost its ring's modifier
             // and with it the focus — no ring anywhere on the TV until the next key press (bedroom TV, 2026-09-30).
-            .focusRing(focused && !active, RoundedCornerShape(10.dp), colors.focusRing, 2.dp)
+            .chipFocusRing(focused, active, RoundedCornerShape(10.dp), colors.focusRing, colors.onAccent)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },

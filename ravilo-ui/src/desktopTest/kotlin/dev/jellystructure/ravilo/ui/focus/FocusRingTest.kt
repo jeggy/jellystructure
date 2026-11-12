@@ -122,4 +122,27 @@ class FocusRingTest {
         mainClock.advanceTimeBy(RaviloMotion.FOCUS_RING_MS + 50L)
         assertEquals(1f, onNodeWithTag(tag).captureToImage().toPixelMap().let { it[4, 20] }.green, 0.01f)
     }
+
+    /** DEB-4276 — a selected chip is accent-filled and the theme's ring is that accent's family: it must still show. */
+    @Test fun `a selected focused chip draws the on-accent ring over its accent fill`() = runComposeUiTest {
+        val accent = Color(0xFF4F8EF0)
+        mainClock.autoAdvance = false
+        setContent {
+            Box(Modifier.testTag(tag).size(40.dp).background(accent).chipFocusRing(true, true, RectangleShape, accent, Color.White))
+        }
+        mainClock.advanceTimeByFrame()
+        val ring = onNodeWithTag(tag).captureToImage().toPixelMap().let { it[1, 20] }
+        assertEquals(1f, ring.red, 0.01f)   // white, not the 0.31 red of the accent fill
+        assertEquals(1f, ring.green, 0.01f)
+    }
+
+    @Test fun `an unselected focused chip keeps the theme ring`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            Box(Modifier.testTag(tag).size(40.dp).background(Color.Black).chipFocusRing(true, false, RectangleShape, Color.Red, Color.White))
+        }
+        mainClock.advanceTimeByFrame()
+        val ring = onNodeWithTag(tag).captureToImage().toPixelMap().let { it[1, 20] }
+        assertEquals(1f, ring.red, 0.01f); assertEquals(0f, ring.green, 0.01f)
+    }
 }
