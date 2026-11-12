@@ -1,0 +1,258 @@
+/* ============================================================================
+   schedule-picker.css — round `schedule-picker`, revision 1.
+
+   Two kinds of rule, and they are kept apart on purpose:
+
+   1. THE CANVAS (`html/body.canvas`, `.canvas-head`, `.cap`, `.shot`, `.frame`,
+      `.sch-shape*`, `.sch-verdict*`, `.sch-long*`, `.sch-menushot`,
+      `.sch-rule`). A frame is a picture of a page; app.css is the real shell.
+      None of this is ever promoted.
+
+   2. THE CONTROL (`.sch`, `.sch-line`, `.sch-lead`, `.sch-n`, `.sch-unit`,
+      `.sch-days`, `.sch-at`, `.sch-min`, `.sch-from`, `.sch-cron`, `.sch-zone`,
+      `.sch-mshape`, `.sch-mday`, `.sch-ord`, `.sch-ordday`, `.sch-month`,
+      `.sch-dom`, `.sch-foot`, `.sch-says`, `.sch-err`, `.sch-next`,
+      `.sch-next-h`, `.sch-runs`, `.sch-none`, `.sch-look`, `.sch-held`,
+      `.sch-menu`, `.sch-mi-*`). These are the promotion.
+
+   WHERE THE CONTROL BELONGS: `wf.css`. It is used by two different page
+   surfaces — the auto-fetcher panel (`ai.css`, `.afx`) and the Processing
+   feature row (`processing.css`, `.pfx`) — and FR-5 adds four more settings on
+   two further pages. A component that two page files need is the shared
+   system's, which is the argument wf.css's own `.badge.flat` comment already
+   makes. So these rules are written WITHOUT a wrapper class and the names were
+   checked against wf.css, app.css, processing.css, ai.css, dashboard.css,
+   suggestions.css, music.css, support.css, versions.css, editions.css,
+   detail.css, metadata.css, seeding.css and segments.css: no `.sch-*` exists in
+   any of them. `processing.css` owns 23 rules on `.sched`, which is a different
+   class and no selector here can reach it.
+
+   NOT PROMOTED, on purpose: `--blur: none` on `.frame` is a canvas
+   substitution for the screenshot tool only (wf.css gives every `.card`
+   `backdrop-filter: var(--blur)`, and the canvas rule in PROCESS.md forbids
+   it). The live admin keeps its glass.
+
+   `--ink-dim` is used nowhere in this file. It is .32 alpha on dark and .25 on
+   light — about 2:1 on a light card — and round 9 found three live strings
+   drawn in it that could not be read. Secondary text here is `--ink-soft`.
+   ============================================================================ */
+
+/* ══════════════════════════════ 1 · the canvas ══════════════════════════════ */
+
+html, body { margin: 0; }
+body.canvas {
+  background: #e8eaef;
+  font-family: 'Sora', system-ui, sans-serif;
+  padding-bottom: 40px;
+}
+.canvas-head { padding: 28px 28px 4px; max-width: 1180px; }
+.canvas-head h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; margin: 0 0 .35em; color: #12141b; }
+.canvas-head p { color: #262a35; margin: 0 0 .6em; font-size: .95rem; line-height: 1.55; }
+.canvas-head .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .86em; color: #12141b; }
+.cap { padding: 26px 28px 8px; max-width: 1180px; }
+.cap h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.02rem; margin: 0 0 .2em; color: #12141b; }
+.cap .mono-id { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #262a35; }
+.cap p { color: #262a35; font-size: .88rem; margin: .3em 0 0; line-height: 1.5; }
+.shot { padding: 0 28px 10px; }
+
+/* A frame is a slice of the admin: the real tokens, the real background, and
+   the aurora wash approximated flat because the canvas forbids a blur. */
+.frame {
+  position: relative;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid rgba(0, 0, 0, .35);
+  border-radius: 14px;
+  padding: 20px;
+  overflow: hidden;
+  display: inline-block;
+  --blur: none;
+}
+.frame::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(760px 300px at 12% -8%, rgba(177, 92, 208, .13), transparent 60%),
+    radial-gradient(680px 300px at 88% 0%, rgba(0, 164, 220, .11), transparent 62%);
+  pointer-events: none;
+}
+.frame > * { position: relative; z-index: 1; }
+.frame.wide { width: 1140px; display: block; }
+.frame.narrow { width: 320px; }
+
+/* the three-shape comparison */
+.sch-shapes { display: flex; gap: 22px; align-items: flex-start; }
+.sch-shape { width: 280px; flex: none; }
+.sch-shape-h {
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+  color: var(--ink-soft); margin-bottom: 9px;
+}
+.sch-verdicts { display: flex; gap: 22px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.sch-verdict { width: 280px; flex: none; }
+.sch-verdict h4 { font-size: .9rem; margin: 0 0 .5em; display: flex; align-items: center; gap: 8px; }
+.sch-verdict p { font-size: .78rem; line-height: 1.5; color: var(--ink-soft); margin: 0 0 .5em; }
+.sch-verdict p b { color: var(--ink); font-weight: 600; }
+.sch-verdict.dropped { opacity: .92; }  /* .82 was faint on the light canvas, and a
+   comparison the reader has to squint at is not a fair one */
+
+/* the length frames */
+.sch-long + .sch-long { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.sch-long-h { font-size: .9rem; font-weight: 600; margin-bottom: 3px; }
+.sch-long-why { font-size: .78rem; color: var(--ink-soft); line-height: 1.45; margin-bottom: 11px; max-width: 760px; }
+.sch-long-box { max-width: 100%; }
+
+.sch-menushot { padding-bottom: 210px; }
+.sch-menunote { font-size: .8rem; color: var(--ink-soft); line-height: 1.5; margin-top: 14px; max-width: 460px; }
+.sch-menunote b { color: var(--ink); font-weight: 600; }
+.sch-rule { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+
+/* the panel home's chrome, which the real page already has */
+.sch-panel { width: 280px; }
+.sch-panel .af-h { margin-top: 0; }
+.sch-cfg { margin-top: 0; }
+.sch-go { margin-top: 12px; }
+
+/* the row home's chrome */
+.sch-rowhost .card { padding: 4px 18px; }
+
+/* ══════════════════════════════ 2 · the control ═════════════════════════════ */
+
+/* `.sch` is a column of two parts: the LINES (one decision each) and the FOOT
+   (the server's sentence and the next five runs). The foot is not optional and
+   not collapsible — FR-3.8 says "always", and round 9's lesson is that a slot
+   which disappears makes the control jump under the hand that is using it. */
+.sch { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* The lines wrap. This is the whole reason there is one markup and no second
+   narrow face to build: in the 280 px panel each line takes a row of its own
+   because the next one cannot fit beside it, and in a 1100 px feature row three
+   or four sit side by side. Nothing chooses that — the width does. */
+.sch-lines { display: flex; flex-wrap: wrap; gap: 9px 16px; align-items: center; }
+.sch-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.sch-line-wide { flex: 1 1 100%; }
+
+/* The lead word. Not a `.field label`: those are uppercase column heads for a
+   whole field, and these are words inside a sentence the controls complete. */
+.sch-lead { font-size: .82rem; color: var(--ink-soft); white-space: nowrap; flex: none; }
+
+.sch .input, .sch .select { min-height: 36px; padding: 7px 11px; font-size: .86rem; }
+.sch-n { width: 52px; justify-content: center; text-align: center; }
+/* Sized from the longest entry in the menu, `Custom (cron)` — see sp-data.js,
+   which asserts that no entry is longer than the one the width was set from. */
+.sch-unit { min-width: 116px; }
+.sch-unit-wrap { display: inline-flex; position: relative; }
+/* 138 px, not the shipped 112/100. Chromium renders `type="time"` in a 12-hour
+   locale as `08:00 PM` plus a picker button — about 134 px — so the shipped
+   width cuts the value and the button in half. Live defect; see REPORT.md. */
+.sch-at { width: 138px; justify-content: center; }
+.sch-min { width: 72px; justify-content: center; }
+.sch-from { width: 148px; }
+.sch-cron { width: 100%; }
+.sch-mday, .sch-dom { min-width: 92px; }
+.sch-ord { min-width: 104px; }
+.sch-ordday, .sch-month { min-width: 128px; }
+.sch-zone { font-size: .8rem; color: var(--ink-soft); white-space: nowrap; }
+
+/* The weekday toggles. Built on `.seg`'s look — same border, radius, fill and
+   `.on` treatment — but MULTI-select, which `.seg` has never been. That is a
+   new behaviour for a shipped appearance and it is called out in the report.
+   Two letters, Monday first (FR-3.2). */
+.sch-days {
+  display: inline-flex; flex: none;
+  border: 1px solid var(--line-2); border-radius: var(--radius-s);
+  overflow: hidden; background: var(--fill-2);
+}
+.sch-days span {
+  min-width: 32px; padding: 8px 0; text-align: center;
+  font-size: .8rem; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+  border-right: 1px solid var(--line);
+  transition: background .2s ease, color .2s ease;
+}
+.sch-days span:last-child { border-right: 0; }
+.sch-days span:hover { color: var(--ink); }
+.sch-days span.on { background: var(--hi-soft); color: var(--acc-ink); }
+/* A `.seg` divider is `--line`, which disappears into `--hi-soft`. In a
+   single-select seg that never shows, because only one cell is ever on; in a
+   MULTI-select one it is the whole difference between "Monday and Tuesday" and
+   one wide cell. Found at 4× on the dark render, where Mo+Tu had merged into a
+   single block. `--line-2` is themed, so this holds in both. */
+.sch-days span.on { border-right-color: var(--line-2); }
+
+/* a refused schedule: the control is outlined, and the field that is wrong is
+   outlined inside it. Never colour alone — the badge in the foot carries the
+   server's words. */
+.sch.bad > .sch-lines { position: relative; }
+.sch .input.bad, .sch .select.bad { border-color: var(--bad); }
+
+/* ---------- the foot ---------- */
+.sch-foot {
+  flex: 1 1 100%;
+  border-top: 1px solid var(--line);
+  padding-top: 11px;
+  display: flex; flex-wrap: wrap; gap: 10px 28px;
+}
+.sch-says { flex: 1 1 100%; font-size: .84rem; line-height: 1.5; color: var(--ink); min-width: 0; }
+/* The server's refusal is a SENTENCE, so it is not a `.badge`. Drawn as one
+   first, and the render showed why not: every `.badge` in wf.css is
+   `white-space: nowrap`, and forcing it to wrap gives each line fragment its
+   own border and fill — at 280 px the 92-character refusal came out as two
+   separate red boxes with a gap, which reads as two problems. This is the
+   shape processing.css already uses for a sentence that is a problem
+   (`.pf-note.warn`): one block, a 3 px `--bad` edge, and the text in `--ink`
+   so it needs no light twin and cannot be the thin unreadable tint round 9
+   found. Never colour alone — the words say what is wrong. */
+.sch-err {
+  display: block; white-space: normal;
+  font-size: .82rem; line-height: 1.5; color: var(--ink);
+  background: var(--bad-soft); border: 0; border-left: 3px solid var(--bad);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  padding: 8px 12px;
+}
+.sch-next { flex: 1 1 100%; min-width: 0; }
+.sch-next-h {
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 700;
+  color: var(--ink-soft); margin-bottom: 6px;
+}
+/* The runs wrap too, for the same reason the lines do: a column of five in the
+   panel, a row of five in the feature row. */
+.sch-runs {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 4px 20px;
+}
+.sch-runs li { display: flex; gap: 8px; align-items: baseline; font-size: .82rem; white-space: nowrap; }
+.sch-runs li .d { color: var(--ink); }
+.sch-runs li .t { color: var(--ink-soft); font-size: .78rem; }
+.sch-none { font-size: .82rem; color: var(--ink-soft); }
+/* The look-ahead note, for a schedule whose first run is a long way off. Its
+   colour is a left border and the text stays in `--ink`, so it needs no light
+   twin and cannot become unreadable in either theme. */
+.sch-look {
+  font-size: .78rem; line-height: 1.45; color: var(--ink);
+  border-left: 3px solid var(--warn); background: var(--fill-2);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  padding: 7px 11px; margin-top: 9px;
+}
+.sch-held { margin-top: 8px; }
+
+/* ---------- the unit menu ---------- */
+/* The shipped `.menu`, narrowed to the select it belongs to and kept on
+   wf.css's own `right: 0`. It was drawn `left: 0` first and the render showed
+   why that is wrong here: the unit select sits at the right-hand end of its
+   line, so a menu growing rightwards ran off a 280 px panel and cut `Custom
+   (cron)` — the one entry that frame exists to show — in half. */
+.sch-menu { min-width: 164px; top: calc(100% + 5px); }
+.sch-mi-on { background: var(--hi-soft); color: var(--acc-ink); }
+/* `Custom (cron)` is the one entry that is not a unit, so it sits under a rule
+   rather than just last in a list of seven look-alikes. */
+.sch-mi-last { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; border-radius: 0 0 8px 8px; }
+
+/* ---------- the two shapes that were drawn and dropped ---------- */
+/* Canvas only. Neither is promoted; they exist so the comparison is a picture
+   rather than a claim. */
+.sch-sent .sch-flow { font-size: .84rem; line-height: 2.6; color: var(--ink-soft); }
+.sch-sent .sch-flow .input, .sch-sent .sch-flow .select { display: inline-flex; vertical-align: middle; }
+.sch-sent .sch-flow .sch-days { vertical-align: middle; }
+.sch-sum { gap: 10px; }
+.sch-sumline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sch-nextone { font-size: .82rem; color: var(--ink-soft); }
+.sch-nextone b { color: var(--ink); font-weight: 600; }

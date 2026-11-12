@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>One schedule picker, in both of its homes — frames</title>
+<!-- The production admin system, LINKED rather than copied. `wf.css` carries the tokens, the
+     components and the three self-hosted woff2 (its @font-face URLs resolve next to the CSS file,
+     so the fonts come from design/app/fonts/ with no copy and no network reference). `app.css` is
+     the shell. `processing.css` is production and owns the Settings ▸ Processing feature row under
+     its `.pfx` wrapper; `ai.css` is production and owns the auto-fetcher's open panel under `.afx`.
+     Both homes in this round are therefore drawn in the shipped files that already own them, and
+     what is left in this round's own stylesheet is the canvas and the one control this round adds. -->
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../app/processing.css">
+<link rel="stylesheet" href="../../app/ai.css">
+<link rel="stylesheet" href="schedule-picker.css">
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>One schedule picker · the auto-fetcher panel and a Processing row</h1>
+  <p>Round <span class="mono-id">schedule-picker</span>, <b>revision 1 · 2026-11-12</b>. The admin
+    only, on a desktop browser: no Ravilo client, no TV, no remote. One control, built once, shown
+    in its <b>two homes</b> — the auto-fetcher side panel at 280 px and a Settings ▸ Processing
+    feature row at 1100 px — across the brief's <b>seven states</b>.</p>
+  <p>Every frame links <span class="mono-id">wf.css</span>, <span class="mono-id">app.css</span>,
+    <span class="mono-id">processing.css</span> and <span class="mono-id">ai.css</span>, so every
+    token, card, button, badge, toggle, select, input, menu, feature row and panel in these pictures
+    is the shipped one. The control's new classes are in
+    <span class="mono-id">schedule-picker.css</span>, all under the
+    <span class="mono-id">sch-*</span> prefix, which exists in none of the fourteen admin
+    stylesheets. Every number, weekday, month, date and sentence comes out of
+    <span class="mono-id">sp-data.js</span>, which refuses to load if two pictures would disagree
+    with each other or with the brief.</p>
+  <p>The clock every picture is taken at is <b>Thu 12 Nov 2026 · 14:20</b>, and the schedule zone is
+    <b>Atlantic/Faroe</b>. "Next five runs" in every frame is five fires after that one instant, in
+    that zone — and each is a literal the <i>server</i> would have answered, because the admin
+    renders server-pushed state and derives no time of its own.</p>
+</div>
+<div id="frames"></div>
+
+<script src="sp-data.js"></script>
+<script src="sp-build.js"></script>
+<script>
+(function () {
+  const B = window.SPB, D = window.SPD;
+  const Q = new URLSearchParams(location.search);
+  const light = Q.get('theme') === 'light';
+
+  const FRAMES = [
+    ['shapes', 'wide', 'The three shapes, each at the 280 px the panel really gives',
+     'The round’s one real question, drawn rather than argued. <b>Lines</b> gives each decision a row of its own in a fixed order; it is the shape kept, and every other frame is drawn in it. <b>Sentence</b> reads as the thing it means and is the shortest at full width, but at 280 px it wraps mid-phrase and <i>where</i> it wraps changes with the chosen unit — and the weekday toggles cannot sit inside running text without becoming the line anyway. <b>Summary and a sheet</b> keeps the panel to three lines, and pays for it by putting the sentence and the next five runs — which are the whole of FR-3.8 — behind a click, so they are not on the page while the choice is being made. All three show the same state, so the comparison is fair.',
+     () => B.shapes()],
+
+    ['panel-weeks', 'narrow', 'The auto-fetcher panel · Weeks, Monday and Tuesday, 04:00',
+     'The brief’s state 1 in the home the owner’s screenshot came from. The whole control in 280 px: four lines, then the server’s sentence and its five runs. What this replaces is <i>Weekly on ▾ · Wed ▾ · 04.00</i> — three controls that could say one weekday and nothing else. <b>Monday first</b> (FR-3.2), two letters per toggle, and any number of them on. The zone sits beside the time (FR-4.2), so the hour on the page is the hour the job runs at, which today it is not.',
+     () => B.panel(D.state('weeks'))],
+
+    ['panel-floor', 'narrow', 'The auto-fetcher panel · Hours, refused under the 6-hour floor',
+     'The brief’s state 7. <b>Every 1 hours</b> is a schedule this fetcher may not have, and three things say so at once: the number is outlined, the server’s sentence sits in the foot where the good sentence would have been, and <b>Save is held</b> with the reason under it. The thing to look at is the <b>next-five slot</b>: it says <i>No next runs while the schedule is refused</i> rather than keeping the last valid schedule’s times. Stale times under a refused schedule are a lie about what the job will do, and they are what an implementation gets wrong by doing the easy thing.',
+     () => B.panel(D.state('floor'))],
+
+    ['panel-off', 'narrow', 'The auto-fetcher panel · Off',
+     'The brief’s state 6. <b>Off</b> heads the unit menu where a setting can be off (FR-3.10), and the stored form is the empty string (FR-1.3). The lines collapse to one, because there is nothing else to choose — but <b>the foot stays</b>, both halves of it: the sentence says what off means in words a person can act on (<i>runs only when you start it by hand</i>) and the next-five slot says <i>Nothing scheduled</i>. Neither half is ever removed; a control that changes height as its own mode is chosen moves under the hand using it.',
+     () => B.panel(D.state('off'))],
+
+    ['panel-cron', 'narrow', 'The auto-fetcher panel · Custom (cron), accepted and refused',
+     'The brief’s state 5, both faces, one above the other at the width they really get. Choosing <i>Custom (cron)</i> drops the <b>N</b> box — there is no interval to give — and the lead word becomes <i>Repeat</i>, so the menu is the only control on that line. The cron box takes the full width and is mono, because it is a syntax. Below, the same box refused: the green sentence and the five runs are <b>replaced</b>, not joined, by the server’s reason. Live-validated means the foot follows the typing, and it is the only thing that does.',
+     () => B.panel(D.state('cron-ok')) + '<hr class="sch-rule">' + B.panel(D.state('cron-bad'))],
+
+    ['panel-menu', 'narrow', 'The unit menu, open',
+     'FR-3.1 and FR-3.10 fix this menu’s order and the picture is the only way to check it: <b>Off</b> first, the five units in ascending size, <b>Custom (cron)</b> last. Custom sits under a rule rather than simply seventh, because it is the one entry that is not a unit of time — picking it changes the shape of the control rather than the size of the step. The shipped <span class="mono-id">.menu</span> component, opened leftwards under the select instead of rightwards from a button.',
+     () => B.menu()],
+
+    ['row-weeks', 'wide', 'A Processing feature row · the same control at 1100 px',
+     'The same state as <span class="mono-id">panel-weeks</span>, the same markup, the same builder — and this is the frame that earns the shape. The lines <b>sit side by side</b> because there is room, and the five runs become a row instead of a column. Nothing chose that: <span class="mono-id">.sch-lines</span> and <span class="mono-id">.sch-runs</span> wrap, and the width decides. So there is <b>one control and no narrow face to build</b>, which is the thing <span class="mono-id">processing.css</span>’s own header comment says it could not do for the Scan dialog or the Schedule table.',
+     () => B.row(D.state('weeks'))],
+
+    ['row-fortnight', 'wide', 'A Processing feature row · every 2 weeks on Wednesday, starting 18 Nov 2026',
+     'The brief’s state 2, and the first state that cannot be a cron at all — a five-field cron has no memory of when it started. <b>An N above 1 brings in <i>starting</i></b> (FR-3.6), and the anchor is what makes the preview legible: 18 Nov, then 2 Dec, <b>not 25 Nov</b>. That skipped week is the whole difference between this and <i>every Wednesday</i>, and the five runs are the only place it is visible. <span class="mono-id">sp-data.js</span> asserts 25 Nov is absent rather than trusting me to have typed it right.',
+     () => B.row(D.state('fortnight'))],
+
+    ['row-lastfri', 'wide', 'A Processing feature row · Months, the last Friday',
+     'The brief’s state 3. Months ask one question first — <b>on a day, or on a weekday</b> — because the two answers need different controls and offering both at once would be four selects for one choice. Here it is the weekday half: <i>the</i> <b>last</b> <b>Friday</b>. <i>last</i> is an ordinal in the same menu as <i>first</i>…<i>fourth</i>, which is what lets the one control say the thing cron cannot. The preview is 27 Nov and 25 Dec, which is the spec’s own acceptance case, and the assertions check every run really is a Friday.',
+     () => B.row(D.state('lastfri'))],
+
+    ['row-decade', 'wide', 'A Processing feature row · every 10 years on 1 March, starting 2026',
+     'The brief’s state 4, and the frame that found something. The owner asked for <i>every 10 years</i>; the control says it, the sentence says it, and the five runs say <b>2036, 2046, 2056, 2066, 2076</b>. The <b>2026 the person just typed is not in the list</b>, because 1 Mar 2026 is eight months behind the clock — the anchor is where counting starts, not when running starts. That is correct and it is also the one place in the round where the control could be read as having ignored an instruction, so the picture carries <b>a note saying it in words</b>. See the report: what the note should be is a decision, not mine.',
+     () => B.row(D.state('decade'))],
+
+    ['row-cron', 'wide', 'A Processing feature row · Custom (cron), accepted and refused',
+     'State 5 again, at the other width, because the refusal is a different problem here: in 1100 px the server’s reason has room to be a sentence and the badge does not have to wrap. Both faces, so the <b>replacement</b> is visible — one foot, two contents, never both. Save is held in the second (FR-3.8).',
+     () => B.row(D.state('cron-ok'), { feature: D.FEATURES.find }) + '<hr class="sch-rule">' + B.row(D.state('cron-bad'), { feature: D.FEATURES.find })],
+
+    ['row-off', 'wide', 'A Processing feature row · Off, and what the row above it says',
+     'Off in the wide home, and the reason it gets its own frame: the <b>row’s own summary line</b> has to say something true while the control under it says <i>Off</i>. It reads <i>Off · started by hand only</i> in the dimmed treatment <span class="mono-id">processing.css</span> already gives a switched-off feature, instead of a <i>Next …</i> that does not exist. The feature here is <i>Music</i>, which is one of the four settings FR-5 moves onto this control and today has only a three-entry select.',
+     () => B.row(D.state('off'), { feature: D.FEATURES.music })],
+
+    ['longest-narrow', 'narrow', 'The longest strings, at 280 px',
+     'Three places length actually breaks this control, each at the width that breaks it. <b>The longest sentence</b> is seven weekdays named in full plus an interval, a time, a zone and an anchor — about 130 characters, and the sentence is the one thing in the control that can be that long. <b>The longest refusal</b> is 92 characters inside a <span class="mono-id">.badge</span>, and every badge in <span class="mono-id">wf.css</span> is <span class="mono-id">white-space: nowrap</span>: unfixed, it runs straight off the panel and cuts mid-word. This round lets that one badge wrap. <b>The longest zone name</b> is the longest IANA name there is, beside the time field — the household’s is Atlantic/Faroe, but the control has to hold the other one.',
+     () => B.longest(true)],
+
+    ['longest-wide', 'wide', 'The longest strings, at 1100 px',
+     'The same three where there is room. The sentence takes two lines rather than five, the refusal fits on one, and the zone name stops being the widest thing on its line. This frame is here to prove the fix for the narrow one is not a width-specific hack: the same rules hold both, which they have to, because there is one control.',
+     () => B.longest(false)],
+  ];
+
+  document.getElementById('frames').innerHTML = FRAMES.map(([id, w, title, note, build]) => {
+    const name = id + (light ? '-light' : '');
+    return `
+  <div class="cap"><h2>${title}</h2><div class="mono-id">${name}.png</div><p>${note}</p></div>
+  <div class="shot"><div class="frame ${w}" id="${name}"${light ? ' data-theme="light"' : ''}>${build()}</div></div>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>

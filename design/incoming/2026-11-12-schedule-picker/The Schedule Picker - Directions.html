@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>One schedule picker — directions</title>
+<link rel="stylesheet" href="../../app/wf.css">
+<link rel="stylesheet" href="../../app/app.css">
+<link rel="stylesheet" href="../../app/processing.css">
+<link rel="stylesheet" href="../../app/ai.css">
+<link rel="stylesheet" href="schedule-picker.css">
+<style>
+  body.canvas { padding-bottom: 60px; }
+  .doc { max-width: 1180px; padding: 0 28px; }
+  .doc h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.22rem; color: #12141b;
+    margin: 36px 0 .4em; padding-top: 18px; border-top: 1px solid #c9cdd8; }
+  .doc h3 { font-family: 'Space Grotesk', sans-serif; font-size: .98rem; color: #12141b; margin: 22px 0 .35em; }
+  .doc p, .doc li { color: #262a35; font-size: .9rem; line-height: 1.6; }
+  .doc code { font-family: 'JetBrains Mono', monospace; font-size: .85em; color: #12141b; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 12px 0 4px; }
+  .doc th, .doc td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0;
+    border-bottom: 1px solid #c9cdd8; font-size: .86rem; color: #262a35; line-height: 1.5; }
+  .doc th { color: #12141b; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; }
+  .doc td b, .doc li b, .doc p b { color: #12141b; }
+  .doc .keep { color: #12141b; font-weight: 700; }
+  .doc .drop { color: #6a7080; }
+</style>
+</head>
+<body class="canvas">
+<div class="canvas-head">
+  <h1>One schedule picker, for every recurring job</h1>
+  <p>Round <span class="mono-id">schedule-picker</span>, <b>revision 1 · 2026-11-12</b>. Admin only,
+    desktop browser. One control, built once, in two homes: the <b>auto-fetcher side panel</b> and a
+    <b>Settings ▸ Processing feature row</b>. Pictures in <span class="mono-id">png/</span>, built
+    by <span class="mono-id">frames.html</span>.</p>
+</div>
+
+<div class="doc">
+
+<h2>What is fixed before a line is drawn</h2>
+<ul>
+  <li>The <b>unit menu's order</b>: <i>Off</i> first where a setting can be off, then hours, days,
+    weeks, months, years, and <i>Custom (cron)</i> last. N runs 1–100.</li>
+  <li><b>Weeks</b> are seven weekday toggles, <b>Monday first</b>, any number on, at least one.</li>
+  <li><b>Hours</b> take a minute past the hour; every other unit takes a time, with <b>the zone
+    named beside it</b>.</li>
+  <li><b>Months</b> are a day (1–31 or <i>Last day</i>) <i>or</i> an ordinal weekday.
+    <b>Years</b> are a month and a day.</li>
+  <li>An <b>N above 1</b> on days, weeks, months or years brings in <b>starting [date]</b>.</li>
+  <li><b>Under the control always</b>: the server's sentence and the next five runs. <b>Save is held
+    while the server says the schedule is invalid.</b></li>
+  <li>The admin renders <b>server-pushed state only</b>, so the sentence and every date in these
+    pictures is the server's answer — nothing here is worked out in the browser.</li>
+  <li>Type, tokens, radii and the component vocabulary are the shipped admin system. The control
+    reuses <code>.input</code>, <code>.select</code>, <code>.seg</code>, <code>.menu</code>,
+    <code>.btn</code>, <code>.field</code> and <code>.toggle</code> and invents one thing.</li>
+</ul>
+
+<h2>The three shapes, and the one kept</h2>
+<p>All three were drawn at the <b>280 px</b> the auto-fetcher panel really gives, in the same state,
+  so the comparison is fair. The picture is <span class="mono-id">sp-shapes.png</span>.</p>
+<table>
+  <tr><th>Shape</th><th>What it gives</th><th>What it costs</th><th></th></tr>
+  <tr>
+    <td class="keep">Lines</td>
+    <td>One decision per line, in the same order at every width. The lines <b>wrap</b>: they sit side
+      by side in a 1100 px feature row and stack in a 280 px panel, so there is <b>one markup and no
+      narrow face to build</b>.</td>
+    <td>Taller than the other two in the panel — six lines where the sentence shape takes three.</td>
+    <td class="keep">kept</td>
+  </tr>
+  <tr>
+    <td class="drop">Sentence</td>
+    <td>Reads as the thing it means: one wrapping sentence with the controls inside it. Shortest of
+      the three at full width.</td>
+    <td>At 280 px it wraps mid-phrase, and <b>where</b> it wraps changes with the chosen unit. The
+      weekday toggles and the ordinal row cannot sit in running text without becoming the line
+      anyway, so the shape only holds for the two simplest modes.</td>
+    <td class="drop">dropped</td>
+  </tr>
+  <tr>
+    <td class="drop">Summary and a sheet</td>
+    <td>The panel shows the sentence and <i>Change…</i> only, so a schedule costs three lines
+      wherever it appears.</td>
+    <td>The sentence and the next five runs are the whole point of the requirement, and behind a
+      sheet they are <b>not on the page while the choice is being made</b>. It is also a second
+      surface to build and a second place for state to live.</td>
+    <td class="drop">dropped</td>
+  </tr>
+</table>
+
+<h2>The kept direction, line by line</h2>
+<p>The control is two parts: the <b>lines</b>, one decision each, and the <b>foot</b>, which is the
+  server's sentence and the next five runs and is never removed.</p>
+<table>
+  <tr><th>Line</th><th>Shown when</th><th>Reads</th></tr>
+  <tr><td>Repeat every <b>N</b> <b>unit</b></td><td>always; N is dropped for <i>Off</i> and
+    <i>Custom (cron)</i>, and the lead word becomes <i>Repeat</i></td>
+    <td><code>Repeat every 2 weeks</code></td></tr>
+  <tr><td>on <b>weekday toggles</b></td><td>unit is weeks</td><td><code>on Mo Tu</code></td></tr>
+  <tr><td>on <b>a day | a weekday</b></td><td>unit is months</td>
+    <td>a two-cell <code>.seg</code>, because the two answers need different controls</td></tr>
+  <tr><td>day <b>1–31 | Last day</b> &nbsp;·&nbsp; the <b>ordinal</b> <b>weekday</b></td>
+    <td>whichever half of the month choice is on</td><td><code>the last Friday</code></td></tr>
+  <tr><td>on <b>month</b> <b>day</b></td><td>unit is years</td><td><code>on March 1</code></td></tr>
+  <tr><td>at <b>HH:MM</b> <b>zone</b> &nbsp;·&nbsp; at minute <b>MM</b></td>
+    <td>every unit; the minute form for hours</td><td><code>at 04:00 Atlantic/Faroe</code></td></tr>
+  <tr><td><b>cron</b></td><td>unit is Custom (cron)</td><td>full-width, mono, live-validated</td></tr>
+  <tr><td>starting <b>date</b></td><td>N above 1 on days, weeks, months or years</td>
+    <td><code>starting 18 Nov 2026</code></td></tr>
+  <tr><td><b>the foot</b></td><td><b>always</b>, both halves</td>
+    <td>the sentence, then the next five runs — or, where there are none, a line saying why</td></tr>
+</table>
+
+<h3>The one thing invented</h3>
+<p><code>.sch-days</code>, the weekday toggles: <code>.seg</code>'s exact look — same border, radius,
+  fill and <code>.on</code> treatment — but <b>multi-select</b>, which <code>.seg</code> has never
+  been. It needed one change that <code>.seg</code> does not have: a <b>visible divider between two
+  adjacent on-cells</b>. A shipped <code>.seg</code> divider is <code>--line</code>, which disappears
+  into <code>--hi-soft</code>; in a single-select seg that never shows, because only one cell is ever
+  on. Here it is the difference between <i>Monday and Tuesday</i> and one wide cell, and it was found
+  at 4× on the dark render.</p>
+
+<h2>Every state the round holds</h2>
+<table>
+  <tr><th>State</th><th>Stored as</th><th>Picture</th></tr>
+  <tr><td>Weeks · Monday and Tuesday · 04:00</td><td>a cron, <code>0 4 * * 1,2</code></td>
+    <td><span class="mono-id">panel-weeks</span> · <span class="mono-id">row-weeks</span></td></tr>
+  <tr><td>Every 2 weeks · Wednesday · starting 18 Nov 2026</td>
+    <td>a recurrence — an interval above 1 is cron-unsayable</td>
+    <td><span class="mono-id">row-fortnight</span></td></tr>
+  <tr><td>Months · the last Friday</td><td>a recurrence — an ordinal weekday is cron-unsayable</td>
+    <td><span class="mono-id">row-lastfri</span></td></tr>
+  <tr><td>Every 10 years · 1 March · starting 2026</td>
+    <td>a recurrence — a five-field cron has no year field</td>
+    <td><span class="mono-id">row-decade</span></td></tr>
+  <tr><td>Custom (cron), accepted and refused</td><td>the cron, exactly as typed</td>
+    <td><span class="mono-id">panel-cron</span> · <span class="mono-id">row-cron</span></td></tr>
+  <tr><td>Off</td><td>the empty string</td>
+    <td><span class="mono-id">panel-off</span> · <span class="mono-id">row-off</span></td></tr>
+  <tr><td>Hours, refused under the auto-fetcher's 6-hour floor</td><td>not saved</td>
+    <td><span class="mono-id">panel-floor</span></td></tr>
+  <tr><td>The unit menu, open</td><td>—</td><td><span class="mono-id">panel-menu</span></td></tr>
+  <tr><td>The longest sentence, refusal and zone name</td><td>—</td>
+    <td><span class="mono-id">longest-narrow</span> · <span class="mono-id">longest-wide</span></td></tr>
+</table>
+<p>Every frame exists in both themes; the light twin carries <span class="mono-id">-light</span>.</p>
+
+<h2>Decided, with the reason</h2>
+<table>
+  <tr><th>Row</th><th>Decided</th></tr>
+  <tr><td><b>The foot never collapses.</b></td>
+    <td>Both halves are drawn in every state, including <i>Off</i> and both refusals. A control that
+      changes height as its own mode is chosen moves under the hand using it.</td></tr>
+  <tr><td><b>A refused schedule shows no runs at all.</b></td>
+    <td>Not the last valid schedule's times. Stale times under a refusal are a lie about what the job
+      will do, and they are what an implementation gets wrong by doing the easy thing.</td></tr>
+  <tr><td><b>The server's refusal is a note, not a badge.</b></td>
+    <td>Every <code>.badge</code> in <code>wf.css</code> is <code>white-space: nowrap</code>; forced
+      to wrap it gives each line fragment its own border, and the 92-character refusal came out of
+      the first render as two separate red boxes. It is now the shape
+      <code>processing.css</code> already uses for a sentence that is a problem.</td></tr>
+  <tr><td><b>The unit word follows N.</b></td>
+    <td><i>every 1 week</i>, <i>every 2 weeks</i> — in the closed select <b>and</b> the open menu, so
+      the two can never disagree. The first render read <i>every 1 weeks</i> in three frames.</td></tr>
+  <tr><td><b>The next-runs heading does not promise five when there are none.</b></td>
+    <td><i>Next five runs</i> over a list of five; <i>Next runs</i> over the line that explains there
+      are none. The slot itself always stays.</td></tr>
+  <tr><td><b>Months ask "a day or a weekday" first.</b></td>
+    <td>The two answers need different controls, and offering both at once is four selects for one
+      choice.</td></tr>
+  <tr><td><b>The time field is 138 px.</b></td>
+    <td>The shipped widths are 112 and 100. Chromium draws <code>type="time"</code> in a 12-hour
+      locale as <code>08:00 PM</code> plus a picker button — about 134 px. A live defect in both
+      homes; see the report.</td></tr>
+  <tr><td><b>The classes go in <code>wf.css</code>.</b></td>
+    <td>Two page files need the control today and four more settings join it. A component two page
+      files need is the shared system's.</td></tr>
+</table>
+
+<h2>New strings</h2>
+<p>English only. The admin ships no <code>i18n</code> for this surface, which is why there are no
+  Danish and Faroese drafts here — named as a skipped state rather than left out quietly.</p>
+<table>
+  <tr><th>String</th><th>Where</th></tr>
+  <tr><td><i>Repeat</i> · <i>Repeat every</i></td><td>the first line's lead word</td></tr>
+  <tr><td><i>on</i> · <i>at</i> · <i>at minute</i> · <i>the</i> · <i>day</i> · <i>starting</i></td>
+    <td>the lead words of the other lines</td></tr>
+  <tr><td><i>Off</i> · <i>hour(s)</i> · <i>day(s)</i> · <i>week(s)</i> · <i>month(s)</i> ·
+    <i>year(s)</i> · <i>Custom (cron)</i></td><td>the unit menu</td></tr>
+  <tr><td><i>a day</i> · <i>a weekday</i></td><td>the month shape choice</td></tr>
+  <tr><td><i>first</i> · <i>second</i> · <i>third</i> · <i>fourth</i> · <i>last</i> ·
+    <i>Last day</i></td><td>the ordinal and month-day menus</td></tr>
+  <tr><td><i>Mo Tu We Th Fr Sa Su</i></td><td>the weekday toggles, Monday first</td></tr>
+  <tr><td><i>Next five runs</i> · <i>Next runs</i></td><td>the foot's second half</td></tr>
+  <tr><td><i>Nothing scheduled.</i></td><td>the next-runs slot when the schedule is off</td></tr>
+  <tr><td><i>No next runs while the schedule is refused.</i></td>
+    <td>the next-runs slot when the server refuses</td></tr>
+  <tr><td><i>Save is held until the schedule is one the server accepts.</i></td>
+    <td>under a held Save</td></tr>
+  <tr><td><i>This job runs only when you start it by hand.</i></td>
+    <td>the sentence for <i>Off</i> — the server's, drawn here as a draft</td></tr>
+  <tr><td><i>The anchor it counts from, 1 Mar 2026, is in the past, so the first run it can offer is
+    2036.</i></td><td>the look-ahead note; see the report's open question</td></tr>
+  <tr><td><i>Off · started by hand only</i></td><td>a Processing row's own summary line when the
+    schedule under it is off</td></tr>
+</table>
+
+</div>
+</body>
+</html>
