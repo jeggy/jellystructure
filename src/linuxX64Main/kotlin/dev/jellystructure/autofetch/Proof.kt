@@ -130,6 +130,8 @@ data class ProofResult(
     val whys: Map<String, String> = emptyMap(),
     /** DEB-3407 (FR-4.1) — the items the proof dated from their own yt-dlp answer, by item id: the date, or null for *no date*. A save stores these. */
     val dated: Map<String, String?> = emptyMap(),
+    /** DEB-4341 (FR-5.12) — the proof failed on the media: the manifest could not be read or probed. The listing and the numbering had held. */
+    val onMedia: Boolean = false,
 )
 
 /** The id an item is kept under: its `id` field, else its link (the same key the store and a run use). */
@@ -163,7 +165,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             if (probeFirst != null) {
                 val p = probeYtDlp(recipe, probeFirst, lane)
                 if (p.signIn) onSignInRefused()
-                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked, robotsRefused = p.robotsRefused, needsSignIn = p.signIn) }
+                p.failure?.let { return fail(it, listed).copy(blocked = p.blocked, robotsRefused = p.robotsRefused, needsSignIn = p.signIn, onMedia = true) }
                 early = p
                 if (p.dateRead) dated[itemKeyOf(probeFirst)] = p.date
                 toDate.remove(probeFirst)
@@ -212,11 +214,11 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val series = if (pageOnly) readSeries(recipe, read) else null
         if (pageOnly && series?.name.isNullOrBlank()) return fail("the page gives the programme no name", items, numbered)
 
-        val probe = early ?: probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
+        val probe = early ?: probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered).copy(onMedia = true)
         if (probe.signIn) onSignInRefused()
-        probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn) }
+        probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn, onMedia = true) }
         val facts = probe.facts!!
-        if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
+        if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered).copy(onMedia = true)
 
         if (pageOnly || tmdbId == null) {
             return ProofResult(true, items = items, numbered = numbered, series = series, probe = facts, dated = dated)
@@ -256,11 +258,11 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
             return fail("${group.size} items both map to ${Numbering.code(se)}; every item needs a number of its own", items, numbered)
         }
         if (numbered.isEmpty()) return fail("the proposal maps no item of the listing to an episode TMDB has", items)
-        val probe = probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered)
+        val probe = probeOne(recipe, numbered.first().first, lane) ?: return fail("no manifest could be probed", items, numbered).copy(onMedia = true)
         if (probe.signIn) onSignInRefused()
-        probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn) }
+        probe.failure?.let { return fail(it, items, numbered).copy(blocked = probe.blocked, needsSignIn = probe.signIn, onMedia = true) }
         val facts = probe.facts!!
-        if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered)
+        if (!facts.hasVideo || facts.durationSec == null || facts.durationSec <= 0.0) return fail("the manifest has no video variant ffprobe can read, with a duration", items, numbered).copy(onMedia = true)
         return ProofResult(true, items = items, numbered = numbered, proven = false, probe = facts, mapped = true, whys = resolved.associate { (item, row) -> itemKeyOf(item) to row.why })
     }
 

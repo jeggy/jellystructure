@@ -36,6 +36,8 @@ class StandInSite(private val clock: FakeClock) : Transport {
     var listingExtra = ""
     /** DEB-3643 — markup inside each Dagbók item page's `<html>`, after its `var media` script (the site's own player script, and another site's). */
     var itemExtra = ""
+    /** DEB-4341 — characters of comment lines before each Dagbók item page's `var media` inside its one inline script, so the id sits past the 1.5 kB cut. */
+    var itemPadding = 0
     var robots = "User-agent: *\nDisallow: /private\n"
     /** Royndin: year-seasons with a title like `Royndin 2026 · 1. partur`. */
     var royndinParts: List<Int> = listOf(1, 2, 3)
@@ -110,7 +112,7 @@ high.m3u8
             path.startsWith("/sendingar/dagbok/") -> {
                 val d = path.substringAfterLast('/').toInt()
                 val media = if (d in badMedia) "../etc/passwd" else "DOV73$d"
-                HttpReply(200, emptyMap(), "<html><script>var media = '$media';</script>$itemExtra</html>")
+                HttpReply(200, emptyMap(), "<html><script>${"// filler filler filler filler filler filler filler filler\n".repeat(itemPadding / 56)}var media = '$media';\n// end</script>$itemExtra</html>")
             }
             path == "/js/player.js" -> HttpReply(200, mapOf("Content-Type" to "application/javascript"), "function url(media){ return 'https://media.example.fo/' + media + '/master.m3u8'; } <p>not html</p>" + "x".repeat(70_000))
             path.endsWith("/master.m3u8") -> HttpReply(200, emptyMap(), if (drm) master + "#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT=\"com.apple.streamingkeydelivery\",URI=\"skd://x\"\n" else master, masterEdge?.let { "https://$it/video/x.smil/playlist.m3u8" })

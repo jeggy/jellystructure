@@ -659,7 +659,7 @@ class InvestigationTest {
     fun `not_a_series after a listing of three items ends as Videos not found in the servers words`() {
         ai.tool("fetch", """{"url":"https://varpid.example.fo/sendingar/dagbok"}""")
         h.site.days = listOf(27, 26, 25)
-        ai.answer(dagbokAnswer.replace("\"verdict\":\"series\"", "\"verdict\":\"not_a_series\"").replace("A daily programme with a dated listing.", "no manifest"))
+        ai.answer(dagbokAnswer.replace("\"verdict\":\"series\"", "\"verdict\":\"not_a_series\"").replace("A daily programme with a dated listing.", "no manifest").replace("\"manifest\":\"https://media.example.fo/{value}/master.m3u8\",", "\"manifest\":\"\","))
         val (out, _) = run(h.dagbokUrl, null, true)
         val v = out.view
         assertEquals("failed", v.state)
@@ -677,7 +677,7 @@ class InvestigationTest {
         val (out, _) = run(h.dagbokUrl, null, true)
         assertTrue(out.view.notASeries); assertFalse(out.view.videosNotFound)
         val ai2 = FakeAi(); h.site.days = listOf(27, 26)
-        ai2.answer(dagbokAnswer.replace("\"verdict\":\"series\"", "\"verdict\":\"videos_not_found\""))
+        ai2.answer(dagbokAnswer.replace("\"verdict\":\"series\"", "\"verdict\":\"videos_not_found\"").replace("\"manifest\":\"https://media.example.fo/{value}/master.m3u8\",", "\"manifest\":\"\","))
         val o2 = runBlocking { Investigator(ai2, h.lanes, h.tools, h.world, RecipeProof(h.tools, h.world), libraries = { listOf(LibraryChoice(h.lib, "TV")) }, existing = { h.engine.existingCodes(it) }, today = { "2026-11-02" }).run("inv2", h.dagbokUrl, null, true, null) {} }
         assertTrue(o2.view.videosNotFound, o2.view.reason); assertFalse(o2.view.notASeries)
         assertTrue("lists 2 episodes" in o2.view.reason!!)

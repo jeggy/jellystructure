@@ -163,7 +163,8 @@ class SignInSessionTest {
     fun `a needs_sign_in with no read refused is refused with the proof sentence and the next turn can still end as Videos not found`() {
         ai.tool("fetch", """{"url":"https://$site/sendingar/dagbok"}""")
         ai.answer(answer("needs_sign_in"))
-        ai.answer(answer("videos_not_found", "no manifest"))
+        // DEB-4341 (FR-5.12) — a give-up answer whose recipe has a `media` part is proved; this one says it found none.
+        ai.answer(answer("videos_not_found", "no manifest").replace("\"manifest\":\"https://media.example.fo/{value}/master.m3u8\",", "\"manifest\":\"\","))
         val out = run().view
         assertTrue(noProof in ai.sent[2], "the model reads the sentence: ${ai.sent[2]}")
         assertEquals(3, ai.sent.size)

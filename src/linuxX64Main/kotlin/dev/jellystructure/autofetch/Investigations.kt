@@ -101,7 +101,7 @@ class Investigations(
         current.value = first
         job = scope.launch(GateClass.BACKGROUND) {
             val outcome = try {
-                investigator.run(id, url, tmdbId, pageOnly, fetcher?.id, ignoreRobots) { v -> if (current.value?.id == id && current.value?.state == "running") current.value = v }
+                investigator.run(id, url, tmdbId, pageOnly, fetcher?.id, ignoreRobots, fetcher?.recipeJson) { v -> if (current.value?.id == id && current.value?.state == "running") current.value = v }
             } catch (e: Throwable) {
                 if (e is CancellationException && !currentCoroutineContext().isActive) throw e
                 Logger.warn("auto-fetch: the investigation failed: ${e.message}", "autofetch")
