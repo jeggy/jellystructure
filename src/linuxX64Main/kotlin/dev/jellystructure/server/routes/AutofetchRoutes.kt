@@ -146,7 +146,14 @@ fun Route.autofetchRoutes(configStore: ConfigStore, runtime: AutofetchRuntime?) 
         val p = runCatching { call.receive<SettingsPatch>() }.getOrNull() ?: return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a valid settings change"))
         val problem = rt.service.update(id, p.retention, p.schedule, p.enabled, p.ignoreRobots)
         if (problem == null) call.respond(rt.view(rt.store.fetcher(id)!!))
-        else call.respond(if (problem == "no such fetcher") HttpStatusCode.NotFound else HttpStatusCode.BadRequest, mapOf("error" to problem))
+        else call.respond(
+            when {
+                problem == "no such fetcher" -> HttpStatusCode.NotFound
+                problem.startsWith(dev.jellystructure.autofetch.FetchSchedule.REFUSAL_PREFIX) -> HttpStatusCode.UnprocessableEntity   // DEB-4387 (FR-6.2)
+                else -> HttpStatusCode.BadRequest
+            },
+            mapOf("error" to problem),
+        )
     }
 
     delete("/autofetch/{id}") {

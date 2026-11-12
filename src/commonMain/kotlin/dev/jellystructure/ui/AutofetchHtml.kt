@@ -41,22 +41,37 @@ internal fun afMono(reason: String): String {
 
 private val DAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
+private val CRON_DAILY = Regex("""^(\d{1,2}) (\d{1,2}) \* \* \*$""")
+private val CRON_WEEKLY = Regex("""^(\d{1,2}) (\d{1,2}) \* \* ([0-6])$""")
+
+/**
+ * DEB-4387 (FR-5) — the server stores a fetcher's Check in the shared form (`weekly@3@04:00` is `0 4 * * 3`). Until the shared
+ * control replaces this select, the three shapes it can say are read back into its own words; anything else is left as it is.
+ */
+internal fun afLegacyWords(s: String): String {
+    if (s == "0 */6 * * *") return "every6h"
+    CRON_DAILY.find(s)?.let { return "daily@${it.groupValues[2].padStart(2, '0')}:${it.groupValues[1].padStart(2, '0')}" }
+    CRON_WEEKLY.find(s)?.let { return "weekly@${it.groupValues[3]}@${it.groupValues[2].padStart(2, '0')}:${it.groupValues[1].padStart(2, '0')}" }
+    return s
+}
+
 /** `every6h` · `daily@04:00` · `weekly@1@04:00`, as the list row and the select say them. */
-internal fun afScheduleWords(s: String): String {
+internal fun afScheduleWords(stored: String): String {
+    val s = afLegacyWords(stored)
     if (s == "every6h") return "Every 6 h"
     val p = s.split('@')
     return when {
         p.firstOrNull() == "daily" && p.size == 2 -> "Daily · ${p[1]}"
         p.firstOrNull() == "weekly" && p.size == 3 -> "Weekly · ${DAYS.getOrElse(p[1].toIntOrNull() ?: -1) { p[1] }} ${p[2]}"
-        else -> s
+        else -> (dev.jellystructure.cron.parseSchedule(s) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule?.sentence ?: s
     }
 }
 
 /** The schedule's three parts: kind (`every6h` · `daily` · `weekly`), the weekday (0 = Sunday) and the time. */
 internal data class AfScheduleParts(val kind: String, val day: Int, val time: String)
 
-internal fun afScheduleParts(s: String): AfScheduleParts {
-    val p = s.split('@')
+internal fun afScheduleParts(stored: String): AfScheduleParts {
+    val p = afLegacyWords(stored).split('@')
     return when {
         p.firstOrNull() == "daily" && p.size == 2 -> AfScheduleParts("daily", 1, p[1])
         p.firstOrNull() == "weekly" && p.size == 3 -> AfScheduleParts("weekly", p[1].toIntOrNull() ?: 1, p[2])

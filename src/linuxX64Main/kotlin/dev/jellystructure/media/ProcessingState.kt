@@ -3,13 +3,13 @@ package dev.jellystructure.media
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.FileCheckSteps
 import dev.jellystructure.config.MusicSteps
+import dev.jellystructure.config.ProcessingCarryOver
 import dev.jellystructure.config.ProcessingConfig
 import dev.jellystructure.config.ProcessingFeatures
 import dev.jellystructure.config.RecommendationsStep
 import dev.jellystructure.config.SuggestionsStep
 import dev.jellystructure.config.featureOn
 import dev.jellystructure.config.isWholeLibraryStep
-import dev.jellystructure.config.intervalSeconds
 import dev.jellystructure.config.partOn
 import dev.jellystructure.config.processingOrDerived
 import dev.jellystructure.db.JellystructureDb
@@ -31,9 +31,6 @@ class ProcessingRuns(private val db: JellystructureDb) {
 }
 
 object ProcessingSchedule {
-    /** A run at the same time each period is not "not due" by a few minutes. */
-    private const val SLACK_SEC = 300L
-
     /**
      * FR-3.3 — the whole-library features that are due on their own interval: Music and Audiobooks by `interval`, measured from
      * their last run (or never run), Recommendations & suggestions when a part's own cadence has passed since it was built.
@@ -41,23 +38,39 @@ object ProcessingSchedule {
      */
     fun dueFeatures(cfg: AppConfig, nowSec: Long, lastRan: (String) -> Long?, lastBuilt: (String) -> Long?): Set<String> {
         val p = cfg.processingOrDerived()
+        val zone = dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone)
         val due = mutableSetOf<String>()
-        fun byInterval(id: String, word: String) {
-            val last = lastRan(id)
-            if (last == null || nowSec - last >= intervalSeconds(word) - SLACK_SEC) due += id
-        }
-        if (p.music.enabled) byInterval(ProcessingFeatures.MUSIC, p.music.interval)
-        if (p.audiobooks.enabled) byInterval(ProcessingFeatures.AUDIOBOOKS, p.audiobooks.interval)
+        // DEB-4387 (FR-2.3, FR-5) — one rule for all four: due when the schedule's first fire after the last run has passed, and
+        // fires missed in a row are one run. A blank schedule is *only by hand*; a feature never run is due.
+        fun scheduleDue(id: String, last: Long?): Boolean = scheduleOf(p, id, zone, last)
+            ?.let { dev.jellystructure.cron.ScheduleEvaluator.isDue(it, zone, last, nowSec) } == true
+        if (p.music.enabled && scheduleDue(ProcessingFeatures.MUSIC, lastRan(ProcessingFeatures.MUSIC))) due += ProcessingFeatures.MUSIC
+        if (p.audiobooks.enabled && scheduleDue(ProcessingFeatures.AUDIOBOOKS, lastRan(ProcessingFeatures.AUDIOBOOKS))) due += ProcessingFeatures.AUDIOBOOKS
         if (p.suggestions.enabled) {
-            fun cadenceDue(step: String, every: String, table: Map<String, Long>): Boolean {
-                val secs = table[every] ?: table.getValue(RecommendationsStep.DEFAULT_CADENCE)
-                return !RecommendationsStep.notDue(lastBuilt(step), nowSec, secs, byHand = false)
-            }
-            if (p.partOn(RecommendationsStep.STEP) && cadenceDue(RecommendationsStep.STEP, p.suggestions.recommendationsEvery, RecommendationsStep.CADENCES)) due += ProcessingFeatures.SUGGESTIONS
-            if (p.partOn(SuggestionsStep.STEP) && seerrConnected(cfg) && cadenceDue(SuggestionsStep.STEP, p.suggestions.suggestionsEvery, SuggestionsStep.CADENCES)) due += ProcessingFeatures.SUGGESTIONS
+            if (p.partOn(RecommendationsStep.STEP) && scheduleDue(RecommendationsStep.STEP, lastBuilt(RecommendationsStep.STEP))) due += ProcessingFeatures.SUGGESTIONS
+            if (p.partOn(SuggestionsStep.STEP) && seerrConnected(cfg) && scheduleDue(SuggestionsStep.STEP, lastBuilt(SuggestionsStep.STEP))) due += ProcessingFeatures.SUGGESTIONS
         }
         return due
     }
+
+    /** The parsed schedule a feature or Suggestions part runs on, or null for *only by hand* (blank) or one that does not parse. */
+    fun scheduleOf(p: ProcessingConfig, id: String, zone: kotlinx.datetime.TimeZone, last: Long?): dev.jellystructure.cron.Schedule? =
+        (dev.jellystructure.cron.parseSchedule(ProcessingCarryOver.effective(p, id, zone, last)) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule
+
+    /**
+     * DEB-4387 (FR-2.3) — whether a Suggestions part (a step id) is due, for the step itself: a run that took it checks again, so
+     * a Find run that fires between two of the part's own fires does not rebuild it early. A run started by hand is always due.
+     */
+    fun partDue(cfg: AppConfig, step: String, last: Long?, nowSec: Long, byHand: Boolean): Boolean {
+        if (byHand || last == null) return true
+        val zone = dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone)
+        val s = scheduleOf(cfg.processingOrDerived(), step, zone, last) ?: return false
+        return dev.jellystructure.cron.ScheduleEvaluator.isDue(s, zone, last, nowSec)
+    }
+
+    /** A feature's schedule in words (the shared sentence), or *Only when you scan* for a blank one. */
+    fun describeFeature(p: ProcessingConfig, id: String, zone: kotlinx.datetime.TimeZone, last: Long?): String =
+        describeSchedule(ProcessingCarryOver.effective(p, id, zone, last))
 
     /**
      * The steps an automatic run (scheduled or at start-up) takes: a whole-library step whose feature is not due on its own
@@ -225,7 +238,7 @@ object ProcessingViews {
                     unmapped -> unmappedReason(f.id)
                     else -> null
                 },
-                interval = intervalWords(p, f.id),
+                interval = intervalWords(cfg, p, f.id, inp),
                 lastRanAt = lastAt, lastRan = ProcessingSchedule.agoText(lastAt, inp.nowSec),
                 nextAt = nextAt, next = if (!locked && !on) "Off" else ProcessingSchedule.inText(nextAt, inp.nowSec),
                 waiting = waiting,
@@ -265,22 +278,20 @@ object ProcessingViews {
         else -> "No audiobook library is mapped. Map one in Settings ▸ Libraries and this starts on its own."
     }
 
-    private fun intervalWords(p: ProcessingConfig, id: String): String = when (id) {
+    private fun intervalWords(cfg: AppConfig, p: ProcessingConfig, id: String, inp: ProcessingInputs): String = when (id) {
         ProcessingFeatures.FIND -> ProcessingSchedule.describeSchedule(p.find.schedule)
         ProcessingFeatures.METADATA -> if (p.metadata.tiers.recheckUnchanged)
             "Unchanged titles by release age: ${tier(p.metadata.tiers.thisYear)} · ${tier(p.metadata.tiers.oneToFiveYears)} · ${tier(p.metadata.tiers.older)}"
         else "With every look"
         ProcessingFeatures.SEGMENTS, ProcessingFeatures.HEALTH, ProcessingFeatures.SUBTITLES -> "Queued with every look, what is due"
-        ProcessingFeatures.SUGGESTIONS -> "Recommendations ${p.suggestions.recommendationsEvery} · suggestions ${p.suggestions.suggestionsEvery}"
-        ProcessingFeatures.MUSIC -> intervalWord(p.music.interval)
-        ProcessingFeatures.AUDIOBOOKS -> intervalWord(p.audiobooks.interval)
+        ProcessingFeatures.SUGGESTIONS -> {
+            val zone = dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone)
+            "Recommendations: ${ProcessingSchedule.describeFeature(p, RecommendationsStep.STEP, zone, inp.lastBuilt[RecommendationsStep.STEP])} · " +
+                "suggestions: ${ProcessingSchedule.describeFeature(p, SuggestionsStep.STEP, zone, inp.lastBuilt[SuggestionsStep.STEP])}"
+        }
+        ProcessingFeatures.MUSIC, ProcessingFeatures.AUDIOBOOKS ->
+            ProcessingSchedule.describeFeature(p, id, dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone), inp.lastRan[id])
         else -> "Every minute, for the kinds that are on"
-    }
-
-    private fun intervalWord(w: String) = when (w) {
-        ProcessingFeatures.HOURLY -> "Every hour"
-        ProcessingFeatures.WEEKLY -> "Weekly"
-        else -> "Daily"
     }
 
     private fun tier(w: String) = when (w) {
@@ -291,13 +302,18 @@ object ProcessingViews {
     private fun nextOf(cfg: AppConfig, p: ProcessingConfig, id: String, on: Boolean, lastAt: Long?, findNext: Long?, inp: ProcessingInputs): Long? = when {
         id == ProcessingFeatures.FIND -> findNext
         !on -> null
-        id == ProcessingFeatures.MUSIC -> lastAt?.plus(intervalSeconds(p.music.interval)) ?: inp.nowSec
-        id == ProcessingFeatures.AUDIOBOOKS -> lastAt?.plus(intervalSeconds(p.audiobooks.interval)) ?: inp.nowSec
+        // DEB-4387 (FR-6.3) — every next run comes from the one evaluator: now when due already, else the first fire after the last run.
+        id == ProcessingFeatures.MUSIC || id == ProcessingFeatures.AUDIOBOOKS -> nextRun(p, id, cfg, lastAt, inp.nowSec)
         id == ProcessingFeatures.SUGGESTIONS -> listOfNotNull(
-            RecommendationsStep.STEP.takeIf { p.partOn(it) }?.let { s -> (inp.lastBuilt[s])?.plus(RecommendationsStep.CADENCES[p.suggestions.recommendationsEvery] ?: 0L) ?: inp.nowSec },
-            SuggestionsStep.STEP.takeIf { p.partOn(it) && ProcessingSchedule.seerrConnected(cfg) }?.let { s -> (inp.lastBuilt[s])?.plus(SuggestionsStep.CADENCES[p.suggestions.suggestionsEvery] ?: 0L) ?: inp.nowSec },
+            RecommendationsStep.STEP.takeIf { p.partOn(it) }?.let { nextRun(p, it, cfg, inp.lastBuilt[it], inp.nowSec) },
+            SuggestionsStep.STEP.takeIf { p.partOn(it) && ProcessingSchedule.seerrConnected(cfg) }?.let { nextRun(p, it, cfg, inp.lastBuilt[it], inp.nowSec) },
         ).minOrNull()
         id == ProcessingFeatures.DIRECT_PLAY -> inp.nowSec + 60
         else -> findNext   // per-title features are looked at with the next look
+    }
+
+    private fun nextRun(p: ProcessingConfig, id: String, cfg: AppConfig, last: Long?, nowSec: Long): Long? {
+        val zone = dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone)
+        return ProcessingSchedule.scheduleOf(p, id, zone, last)?.let { dev.jellystructure.cron.ScheduleEvaluator.nextDue(it, zone, last, nowSec) }
     }
 }

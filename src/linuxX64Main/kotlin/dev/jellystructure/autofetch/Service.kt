@@ -59,8 +59,8 @@ class AutofetchService(
         val withUrl = recipe0.copy(source = recipe0.source.copy(url = req.url, hosts = (recipe0.source.hosts + listOfNotNull(Urls.host(req.url))).distinct()))
         val retention = req.retention ?: if (req.pageOnly) RetentionSpec("newest", 12, true) else RetentionSpec("all")
         val recipe = withUrl.copy(retention = retention)
-        val schedule = req.schedule ?: "daily@04:00"
-        if (!FetchSchedule.valid(schedule)) return SaveResult.Refused(400, "the schedule must be every6h, daily@HH:MM or weekly@D@HH:MM; no custom schedule below 6 hours")
+        val schedule = FetchSchedule.canonical(req.schedule ?: "daily@04:00")
+        FetchSchedule.refusal(schedule, world.nowSec(), world.scheduleZone())?.let { return SaveResult.Refused(422, it) }
         RecipeValidator.validate(recipe, req.pageOnly).firstOrNull()?.let { return SaveResult.Refused(422, it) }
 
         // FR-3.1 — a series only.
@@ -202,8 +202,11 @@ class AutofetchService(
             if (it.mode != "all" && it.mode != "newest") return "retention must be all or newest"
             if (it.mode == "newest" && it.keep !in 1..999) return "Keep the newest N takes a number from 1 to 999"
         }
-        if (schedule != null && !FetchSchedule.valid(schedule)) return "the schedule must be every6h, daily@HH:MM or weekly@D@HH:MM; no custom schedule below 6 hours"
-        store.updateSettings(id, retention ?: f.retention, schedule ?: f.schedule, enabled ?: f.enabled)
+        // DEB-4387 (FR-5) — a schedule sent here is stored in the new form; one that is not sent (the old words included) stays as it is
+        // until the fetcher is saved with one.
+        val written = schedule?.let { FetchSchedule.canonical(it) }
+        written?.let { w -> FetchSchedule.refusal(w, world.nowSec(), world.scheduleZone())?.let { return it } }
+        store.updateSettings(id, retention ?: f.retention, written ?: f.schedule, enabled ?: f.enabled)
         if (ignoreRobots != null) store.setIgnoreRobots(id, ignoreRobots)
         return null
     }

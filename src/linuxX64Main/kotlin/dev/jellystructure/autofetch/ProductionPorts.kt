@@ -285,6 +285,7 @@ class ProductionWorld(
     override fun enabled() = configStore.current.autofetch.enabled
     override fun libraries(): List<LibraryMapping> = configStore.current.libraries
     override fun nowSec() = nowEpochSec()
+    override fun scheduleZone() = dev.jellystructure.cron.ScheduleZone.resolve(configStore.current.general.timezone)
     override fun waitForViewers() = waitForViewers.invoke()
 
     override suspend fun episodePlaying(path: String): Boolean {

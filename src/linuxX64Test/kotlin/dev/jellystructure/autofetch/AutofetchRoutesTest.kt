@@ -67,8 +67,8 @@ class AutofetchRoutesTest {
 
         val patched = client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"retention":{"mode":"newest","keep":8,"leaves_page":false},"schedule":"every6h"}""") }
         assertEquals(HttpStatusCode.OK, patched.status)
-        assertEquals(RetentionSpec("newest", 8, false), h.store.fetcher(id)!!.retention); assertEquals("every6h", h.store.fetcher(id)!!.schedule)
-        assertEquals(HttpStatusCode.BadRequest, client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"schedule":"every1h"}""") }.status)
+        assertEquals(RetentionSpec("newest", 8, false), h.store.fetcher(id)!!.retention); assertEquals("0 */6 * * *", h.store.fetcher(id)!!.schedule, "DEB-4387 (FR-5): written in the new form at the save")
+        assertEquals(HttpStatusCode.UnprocessableEntity, client.patch("/api/autofetch/$id") { contentType(ContentType.Application.Json); setBody("""{"schedule":"every1h"}""") }.status)
         assertEquals(HttpStatusCode.NotFound, client.patch("/api/autofetch/nope") { contentType(ContentType.Application.Json); setBody("""{"enabled":false}""") }.status)
 
         assertEquals(HttpStatusCode.NoContent, client.delete("/api/autofetch/$id").status)

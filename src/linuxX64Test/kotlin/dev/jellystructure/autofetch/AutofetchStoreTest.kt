@@ -71,8 +71,11 @@ class AutofetchStoreTest {
 
     @Test
     fun `schedule presets are valid and never sooner than six hours`() {
-        assertTrue(FetchSchedule.valid("every6h")); assertTrue(FetchSchedule.valid("daily@04:00")); assertTrue(FetchSchedule.valid("weekly@1@04:00"))
-        assertFalse(FetchSchedule.valid("every1h")); assertFalse(FetchSchedule.valid("daily@25:00")); assertFalse(FetchSchedule.valid("* * * * *"))
+        val zone = kotlinx.datetime.TimeZone.UTC
+        fun refused(s: String) = FetchSchedule.refusal(s, 1_700_000_000L, zone) != null
+        assertFalse(refused("every6h")); assertFalse(refused("daily@04:00")); assertFalse(refused("weekly@1@04:00"))
+        assertTrue(refused("every1h")); assertTrue(refused("daily@25:00")); assertTrue(refused("* * * * *")); assertTrue(refused(""))
+        assertTrue(refused("0 */1 * * *"), "DEB-4387: the 6 h floor holds for the new forms too")
         assertEquals(1000L, FetchSchedule.nextDue("every6h", "a", null, 1000L))
         assertEquals(500L + 6 * 3600, FetchSchedule.nextDue("every6h", "a", 500L, 600L))
         val last = 1_700_000_000L
@@ -119,6 +122,34 @@ class AutofetchStoreTest {
         again.putSession("x.example", "c", 5, null)
         assertEquals(5L, again.session("x.example")!!.savedAt)
         again.deleteSession("x.example"); assertNull(again.session("x.example"))
+    }
+    @Test
+    fun `the old words are read for good and written in the new form`() {
+        assertEquals("0 4 * * 3", FetchSchedule.canonical("weekly@3@04:00"))
+        assertEquals("30 4 * * *", FetchSchedule.canonical("daily@04:30"))
+        assertEquals("0 */6 * * *", FetchSchedule.canonical("every6h"))
+        assertEquals("0 4 * * 1,2", FetchSchedule.canonical("0 4 * * 1,2"))
+        val zone = kotlinx.datetime.TimeZone.UTC
+        assertEquals(null, FetchSchedule.refusal("weekly@3@04:00", 1_700_000_000L, zone))
+        assertEquals(null, FetchSchedule.refusal("0 4 * * 1,2", 1_700_000_000L, zone))
+        assertEquals(null, FetchSchedule.refusal("every:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;AT=04:00;FROM=2026-11-18", 1_700_000_000L, zone))
+        // Read as the old word or as its cron, the fetcher is due at the same time.
+        val last = 1_700_000_000L
+        assertEquals(FetchSchedule.nextDue("weekly@3@04:00", "a", last, last), FetchSchedule.nextDue("0 4 * * 3", "a", last, last))
+    }
+
+    @Test
+    fun `the spread moves the fire later by the fetchers own minutes and the schedule zone is the configured one`() {
+        val id = "fetcher-aaaa"
+        val spread = FetchSchedule.spreadMinutes(id) * 60L
+        val last = 1_700_000_000L - 3 * 3600L   // 2023-11-14 19:13 UTC: the 6 h floor (01:13) is not what decides
+        val utc = FetchSchedule.nextDue("0 4 * * *", id, last, last, kotlinx.datetime.TimeZone.UTC)
+        assertEquals(4 * 3600L + spread, utc % 86_400L)
+        val faroeWinter = FetchSchedule.nextDue("0 4 * * *", id, last, last, kotlinx.datetime.TimeZone.of("Atlantic/Faroe"))
+        assertEquals(4 * 3600L + spread, faroeWinter % 86_400L, "04:00 Faroe is 04:00 UTC in November (WET)")
+        val july = 1_720_000_000L
+        val faroeSummer = FetchSchedule.nextDue("0 4 * * *", id, july, july, kotlinx.datetime.TimeZone.of("Atlantic/Faroe"))
+        assertEquals(3 * 3600L + spread, faroeSummer % 86_400L, "04:00 Faroe is 03:00 UTC in July (WEST)")
     }
 }
 

@@ -1,5 +1,9 @@
 package dev.jellystructure.config
 
+import dev.jellystructure.cron.ScheduleCarry
+import dev.jellystructure.cron.ScheduleZone
+import dev.jellystructure.nowEpochSec
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -95,6 +99,9 @@ data class SuggestionsProcessing(
     @SerialName("recommendations_every") val recommendationsEvery: String = RecommendationsStep.DEFAULT_CADENCE,
     val suggestions: Boolean = true,
     @SerialName("suggestions_every") val suggestionsEvery: String = SuggestionsStep.DEFAULT_CADENCE,
+    /** DEB-4387 (FR-5, DEB-2823 FR-3.2) — each part's schedule, cron or `every:`. Null = not carried over yet; blank = only by hand. [recommendationsEvery]/[suggestionsEvery] are still written for one release. */
+    @SerialName("recommendations_schedule") val recommendationsSchedule: String? = null,
+    @SerialName("suggestions_schedule") val suggestionsSchedule: String? = null,
 )
 
 /** Feature 7. [interval] is `hourly` | `daily` | `weekly`; the provider switches stay on `[musicbrainz]` and `[music]` (FR-2.2). */
@@ -102,6 +109,8 @@ data class SuggestionsProcessing(
 data class MusicProcessing(
     val enabled: Boolean = true,
     val interval: String = ProcessingFeatures.DAILY,
+    /** DEB-4387 (FR-5) — cron or `every:`; null = not carried over from [interval] yet; blank = only by hand. [interval] is still written for one release. */
+    val schedule: String? = null,
     val read: Boolean = true,
     val match: Boolean = true,
     @SerialName("match_scope") val matchScope: String = "missing",
@@ -119,6 +128,8 @@ data class MusicProcessing(
 data class AudiobooksProcessing(
     val enabled: Boolean = true,
     val interval: String = ProcessingFeatures.DAILY,
+    /** DEB-4387 (FR-5) — as [MusicProcessing.schedule]. */
+    val schedule: String? = null,
 )
 
 private fun PipelineStep.tiers() = AgeTiers(recheckUnchanged, refreshThisYear, refresh1To5y, refreshOlder)
@@ -379,16 +390,63 @@ object ProcessingCarryOver {
             suggestions = SuggestionsProcessing(
                 enabled = recs || sugg, recommendations = recs, recommendationsEvery = step(RecommendationsStep.STEP)?.rebuildEvery ?: RecommendationsStep.DEFAULT_CADENCE,
                 suggestions = sugg, suggestionsEvery = step(SuggestionsStep.STEP)?.rebuildEvery ?: SuggestionsStep.DEFAULT_CADENCE,
+                recommendationsSchedule = keep?.suggestions?.recommendationsSchedule, suggestionsSchedule = keep?.suggestions?.suggestionsSchedule,
             ),
             music = MusicProcessing(
-                enabled = musicParts.any { it }, interval = keep?.music?.interval ?: everyRun,
+                enabled = musicParts.any { it }, interval = keep?.music?.interval ?: everyRun, schedule = keep?.music?.schedule,
                 read = musicParts[0], match = musicParts[1], matchScope = step(MusicSteps.MATCH)?.scope ?: "missing",
                 compare = musicParts[2], artwork = musicParts[3], artworkScope = step(MusicSteps.ARTWORK)?.scope ?: "missing",
                 lyrics = musicParts[4], lyricsScope = step(MusicSteps.LYRICS)?.scope ?: "missing", nfo = musicParts[5], tags = musicParts[6],
             ),
-            audiobooks = AudiobooksProcessing(enabled = on(MusicSteps.AUDIOBOOKS), interval = keep?.audiobooks?.interval ?: everyRun),
+            audiobooks = AudiobooksProcessing(enabled = on(MusicSteps.AUDIOBOOKS), interval = keep?.audiobooks?.interval ?: everyRun, schedule = keep?.audiobooks?.schedule),
         )
     }
+
+    /**
+     * DEB-4387 (FR-5) — the once-only carry-over: a feature whose `schedule` key is absent gets it from its old interval word and
+     * its last run ([lastRan], by feature id for Music and Audiobooks and by step id for the two Suggestions parts). A key that is
+     * there — even a blank one, which is *only by hand* — is never touched. Returns [cfg] itself when nothing was absent.
+     */
+    fun carrySchedules(cfg: AppConfig, lastRan: (String) -> Long?): AppConfig {
+        val p = cfg.processing ?: return cfg
+        val zone = ScheduleZone.resolve(cfg.general.timezone)
+        val next = p.copy(
+            music = p.music.copy(schedule = p.music.schedule ?: ScheduleCarry.fromWord(p.music.interval, lastRan(ProcessingFeatures.MUSIC), zone)),
+            audiobooks = p.audiobooks.copy(schedule = p.audiobooks.schedule ?: ScheduleCarry.fromWord(p.audiobooks.interval, lastRan(ProcessingFeatures.AUDIOBOOKS), zone)),
+            suggestions = p.suggestions.copy(
+                recommendationsSchedule = p.suggestions.recommendationsSchedule ?: ScheduleCarry.fromWord(p.suggestions.recommendationsEvery, lastRan(RecommendationsStep.STEP), zone),
+                suggestionsSchedule = p.suggestions.suggestionsSchedule ?: ScheduleCarry.fromWord(p.suggestions.suggestionsEvery, lastRan(SuggestionsStep.STEP), zone),
+            ),
+        )
+        return if (next == p) cfg else cfg.copy(processing = next)
+    }
+
+    /** True while any of the four `schedule` keys is still to be carried over. */
+    fun schedulesPending(cfg: AppConfig): Boolean = cfg.processing?.let {
+        it.music.schedule == null || it.audiobooks.schedule == null || it.suggestions.recommendationsSchedule == null || it.suggestions.suggestionsSchedule == null
+    } == true
+
+    /**
+     * The schedule a feature actually runs on: its key when set, else what the carry-over will write (so nothing waits for the
+     * write). [id] is a feature id (Music, Audiobooks) or a step id (the Suggestions parts); blank means only by hand.
+     */
+    fun effective(p: ProcessingConfig, id: String, zone: TimeZone, lastRan: Long?): String = when (id) {
+        ProcessingFeatures.MUSIC -> p.music.schedule ?: ScheduleCarry.fromWord(p.music.interval, lastRan, zone)
+        ProcessingFeatures.AUDIOBOOKS -> p.audiobooks.schedule ?: ScheduleCarry.fromWord(p.audiobooks.interval, lastRan, zone)
+        RecommendationsStep.STEP -> p.suggestions.recommendationsSchedule ?: ScheduleCarry.fromWord(p.suggestions.recommendationsEvery, lastRan, zone)
+        SuggestionsStep.STEP -> p.suggestions.suggestionsSchedule ?: ScheduleCarry.fromWord(p.suggestions.suggestionsEvery, lastRan, zone)
+        else -> ""
+    }
+
+    /** The old words, derived from the schedules, for a rolled-back image (written on every save for one release). */
+    private fun ProcessingConfig.withLegacyWords(zone: TimeZone, nowSec: Long) = copy(
+        music = music.copy(interval = ScheduleCarry.legacyWord(music.schedule, zone, nowSec, allowHourly = true) ?: music.interval),
+        audiobooks = audiobooks.copy(interval = ScheduleCarry.legacyWord(audiobooks.schedule, zone, nowSec, allowHourly = true) ?: audiobooks.interval),
+        suggestions = suggestions.copy(
+            recommendationsEvery = ScheduleCarry.legacyWord(suggestions.recommendationsSchedule, zone, nowSec, allowHourly = false) ?: suggestions.recommendationsEvery,
+            suggestionsEvery = ScheduleCarry.legacyWord(suggestions.suggestionsSchedule, zone, nowSec, allowHourly = false) ?: suggestions.suggestionsEvery,
+        ),
+    )
 
     /** The step ids in the saved pipeline that are none of the features' (FR-2.3: logged once, then dropped). */
     fun unknownSteps(cfg: AppConfig): List<String> = cfg.scan.pipeline.map { it.step }.distinct().filterNot { ProcessingFeatures.knows(it) }
@@ -404,7 +462,7 @@ object ProcessingCarryOver {
      */
     fun settle(cfg: AppConfig): AppConfig {
         val first = cfg.processing == null
-        val processing = cfg.processing ?: derive(cfg)
+        val processing = (cfg.processing ?: derive(cfg)).withLegacyWords(ScheduleZone.resolve(cfg.general.timezone), nowEpochSec())
         var out = cfg.copy(processing = processing)
         if (first && notifyWasOn(cfg) && !cfg.behavior.notifyOnScanDone) out = out.copy(behavior = out.behavior.copy(notifyOnScanDone = true))
         return out.copy(
@@ -428,10 +486,27 @@ object ProcessingCarryOver {
         val sent = received.processing
         val legacyMoved = received.scan.pipeline != stored.scan.pipeline || received.scanSchedule != stored.scanSchedule
         val processingMoved = sent != null && sent != stored.processing
-        return if ((sent == null || !processingMoved) && legacyMoved) {
+        val merged = if ((sent == null || !processingMoved) && legacyMoved) {
             received.copy(processing = derive(received, keep = stored.processing ?: sent))
                 .let { r -> if (notifyWasOn(received) && !stored.scan.pipeline.any { it.step == "notify" && it.enabled }) r.copy(behavior = r.behavior.copy(notifyOnScanDone = true)) else r }
         } else received.copy(processing = sent ?: stored.processing)
+        return merged.copy(processing = merged.processing?.adoptChangedWords(stored.processing))
+    }
+
+    /**
+     * DEB-4387 (FR-5) — a sender that still edits the old interval word (the select that piece 4 replaces) and leaves the
+     * schedule it was sent as it was: the word wins, and the schedule is cleared so the carry-over writes it again from the word.
+     */
+    private fun ProcessingConfig.adoptChangedWords(was: ProcessingConfig?): ProcessingConfig {
+        if (was == null) return this
+        return copy(
+            music = if (music.interval != was.music.interval && music.schedule == was.music.schedule) music.copy(schedule = null) else music,
+            audiobooks = if (audiobooks.interval != was.audiobooks.interval && audiobooks.schedule == was.audiobooks.schedule) audiobooks.copy(schedule = null) else audiobooks,
+            suggestions = suggestions.copy(
+                recommendationsSchedule = if (suggestions.recommendationsEvery != was.suggestions.recommendationsEvery && suggestions.recommendationsSchedule == was.suggestions.recommendationsSchedule) null else suggestions.recommendationsSchedule,
+                suggestionsSchedule = if (suggestions.suggestionsEvery != was.suggestions.suggestionsEvery && suggestions.suggestionsSchedule == was.suggestions.suggestionsSchedule) null else suggestions.suggestionsSchedule,
+            ),
+        )
     }
 }
 

@@ -755,7 +755,7 @@ class InvestigationTest {
 
         val saved = r.save(id, InvestigationSave(name = "Dagbók", retention = RetentionSpec("newest", 8, true), schedule = "daily@05:00", runFirst = false)) as InvestigationSaveResult.Saved
         assertEquals("Dagbók", saved.fetcher.name); assertTrue(saved.fetcher.pageOnly)
-        assertEquals(RetentionSpec("newest", 8, true), saved.fetcher.retention); assertEquals("daily@05:00", saved.fetcher.schedule)
+        assertEquals(RetentionSpec("newest", 8, true), saved.fetcher.retention); assertEquals("0 5 * * *", saved.fetcher.schedule, "DEB-4387 (FR-5): saved in the new form")
         assertEquals("claude-opus-5", saved.fetcher.recipe!!.writtenBy)
         assertEquals(1, h.store.fetchers().size)
         assertNull(r.view())

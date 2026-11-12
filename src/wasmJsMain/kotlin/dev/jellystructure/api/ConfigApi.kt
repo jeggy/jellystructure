@@ -200,12 +200,16 @@ data class SuggestionsProcessing(
     @SerialName("recommendations_every") val recommendationsEvery: String = "weekly",
     val suggestions: Boolean = true,
     @SerialName("suggestions_every") val suggestionsEvery: String = "weekly",
+    // DEB-4387 (FR-5) — carried so a save sends back what the server holds (null = not carried over yet on the server).
+    @SerialName("recommendations_schedule") val recommendationsSchedule: String? = null,
+    @SerialName("suggestions_schedule") val suggestionsSchedule: String? = null,
 )
 
 @Serializable
 data class MusicProcessing(
     val enabled: Boolean = true,
     val interval: String = "daily",
+    val schedule: String? = null,
     val read: Boolean = true,
     val match: Boolean = true,
     @SerialName("match_scope") val matchScope: String = "missing",
@@ -222,6 +226,7 @@ data class MusicProcessing(
 data class AudiobooksProcessing(
     val enabled: Boolean = true,
     val interval: String = "daily",
+    val schedule: String? = null,
 )
 
 @Serializable

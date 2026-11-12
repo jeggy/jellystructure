@@ -873,6 +873,19 @@ fun main() = runBlocking {
     rootScope.launch {
         var lastLaunched: Long? = null
         while (shutdownRequested.value == 0) {
+            // DEB-4387 (FR-5) — the once-only carry-over of Music, Audiobooks, Recommendations and Suggestions from their old interval
+            // words, written as soon as the recommendation service is up to say when it last built. Until then every reader derives
+            // the same schedule on the fly, so nothing waits for this write.
+            if (dev.jellystructure.config.ProcessingCarryOver.schedulesPending(configStore.current) && dev.jellystructure.tv.RecommendationService.current != null) {
+                val carried = dev.jellystructure.config.ProcessingCarryOver.carrySchedules(configStore.current) { id ->
+                    when (id) {
+                        dev.jellystructure.config.RecommendationsStep.STEP -> dev.jellystructure.tv.RecommendationService.current?.lastBuiltAt()
+                        dev.jellystructure.config.SuggestionsStep.STEP -> dev.jellystructure.suggestions.SuggestionService.current?.lastBuiltAt()
+                        else -> processingRuns.all()[id]
+                    }
+                }
+                if (configStore.update(carried)) Logger.info("Config: Music, Audiobooks, Recommendations and Suggestions schedules carried over from their intervals", "config")
+            }
             val cfg = configStore.current
             // DEB-1664 (FR-3.2) — Find new & changed's own interval; the legacy `scan_interval_hours` was carried over into it at load.
             val schedule = cfg.processingOrDerived().find.schedule

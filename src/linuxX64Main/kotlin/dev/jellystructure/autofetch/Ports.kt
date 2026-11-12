@@ -74,6 +74,8 @@ interface AutofetchWorld {
     fun enabled(): Boolean
     fun libraries(): List<LibraryMapping>
     fun nowSec(): Long
+    /** DEB-4387 (FR-4) — the zone every schedule fires in, `[general] timezone`. */
+    fun scheduleZone(): kotlinx.datetime.TimeZone = dev.jellystructure.cron.ScheduleZone.resolve("")
     /** Someone is watching and the household switch says to wait (FR-262-1). */
     fun waitForViewers(): Boolean
     /** [path] is open in a playback session on any device (FR-16.6). */

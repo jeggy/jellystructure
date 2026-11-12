@@ -782,13 +782,12 @@ suspend fun runPipeline(
                 scanTracker.setActiveStep(step.step)
                 broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
                 val service = dev.jellystructure.tv.RecommendationService.current
-                val every = dev.jellystructure.config.RecommendationsStep.CADENCES[step.rebuildEvery]
-                    ?: dev.jellystructure.config.RecommendationsStep.CADENCES.getValue(dev.jellystructure.config.RecommendationsStep.DEFAULT_CADENCE)
                 val last = service?.lastBuiltAt()
                 val now = dev.jellystructure.tv.RecommendationService.nowSec()
+                // DEB-4387 (FR-2.3, FR-5) — due by the part's own schedule, the one rule every setting uses.
                 val summary = when {
                     service == null -> "not available"
-                    dev.jellystructure.config.RecommendationsStep.notDue(last, now, every, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, rebuilt ${step.rebuildEvery}"
+                    !ProcessingSchedule.partDue(configStore.current, step.step, last, now, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, next by schedule"
                     byHand -> runCatching { "rebuilt (started by hand): " + service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND, askAi = step.step in askAi) }
                         .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                     else -> runCatching { "rebuilt: " + service.buildAll() }
@@ -802,13 +801,11 @@ suspend fun runPipeline(
                 scanTracker.setActiveStep(step.step)
                 broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
                 val service = dev.jellystructure.suggestions.SuggestionService.current
-                val every = dev.jellystructure.config.SuggestionsStep.CADENCES[step.rebuildEvery]
-                    ?: dev.jellystructure.config.SuggestionsStep.CADENCES.getValue(dev.jellystructure.config.SuggestionsStep.DEFAULT_CADENCE)
                 val last = service?.lastBuiltAt()
                 val now = dev.jellystructure.suggestions.SuggestionService.nowSec()
                 val summary = when {
                     service == null -> "not available"
-                    dev.jellystructure.config.SuggestionsStep.notDue(last, now, every, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, rebuilt ${step.rebuildEvery}"
+                    !ProcessingSchedule.partDue(configStore.current, step.step, last, now, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, next by schedule"
                     else -> runCatching { "built: " + service.build(if (byHand) dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND else dev.jellystructure.suggestions.SuggestionService.REASON_WEEKLY, askAi = !byHand || step.step in askAi) }
                         .getOrElse { Logger.warn("build_suggestions failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                 }

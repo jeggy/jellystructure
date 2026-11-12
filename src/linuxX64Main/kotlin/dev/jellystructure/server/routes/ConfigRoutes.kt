@@ -354,6 +354,26 @@ fun Route.configureConfigRoutes(
                 return@put
             }
         }
+        // DEB-4387 (FR-5, FR-6.2) — the four other settings that run on the shared schedule take both forms and are refused by the
+        // same rule (parses, fires within 100 years, never closer than 15 minutes). Blank is *only by hand*; absent is carried over at load.
+        config.processing?.let { p ->
+            val zone = dev.jellystructure.cron.ScheduleZone.resolve(config.general.timezone)
+            val now = dev.jellystructure.nowEpochSec()
+            val keyed = listOf(
+                "processing.music.schedule" to p.music.schedule,
+                "processing.audiobooks.schedule" to p.audiobooks.schedule,
+                "processing.suggestions.recommendations_schedule" to p.suggestions.recommendationsSchedule,
+                "processing.suggestions.suggestions_schedule" to p.suggestions.suggestionsSchedule,
+            )
+            for ((field, text) in keyed) {
+                if (text.isNullOrBlank()) continue
+                val check = dev.jellystructure.cron.validateSchedule(text, now, zone)
+                if (check is dev.jellystructure.cron.ScheduleCheck.Invalid) {
+                    call.respond(HttpStatusCode.UnprocessableEntity, mapOf("field" to field, "error" to check.message))
+                    return@put
+                }
+            }
+        }
 
         // Bug fix (live report, 2026-08-14) — configStore.update()'s write-to-disk result is now
         // checked; a failed persist used to still respond 204, so a Settings "Saved ✓" could be a lie

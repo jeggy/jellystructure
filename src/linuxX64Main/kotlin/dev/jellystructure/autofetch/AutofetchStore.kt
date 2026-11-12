@@ -1,10 +1,13 @@
 package dev.jellystructure.autofetch
 
+import dev.jellystructure.cron.ScheduleCheck
 import dev.jellystructure.cron.ScheduleEvaluator
 import dev.jellystructure.cron.ScheduleParse
 import dev.jellystructure.cron.ScheduleZone
 import dev.jellystructure.cron.parseSchedule
+import dev.jellystructure.cron.validateSchedule
 import dev.jellystructure.db.JellystructureDb
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -270,36 +273,65 @@ class AutofetchStore(private val db: JellystructureDb) : SiteStore, SessionStore
 }
 
 /**
- * The schedule presets of `processing-runs-as-nine-features.md` FR-3.2, no custom below 6 hours (FR-2.3): `every6h` ·
- * `daily@HH:MM` · `weekly@D@HH:MM` (D = 0 Sunday … 6). The minute is spread by the fetcher's id so two fetchers on
+ * DEB-4387 (FR-5) — an auto-fetcher's *Check* is the shared schedule (a cron or an `every:` recurrence), refused below
+ * [FLOOR_MINUTES] (6 h, FR-2.3) and spread by the fetcher's id. The three words the column held before —
+ * `every6h` · `daily@HH:MM` · `weekly@D@HH:MM` (D = 0 Sunday … 6) — keep being read for good, with no migration, and a fetcher is
+ * written in the new form at its next save ([canonical]). The minute is spread by the fetcher's id so two fetchers on
  * *Daily · 04:00* do not start on the same second.
  */
 object FetchSchedule {
     private val DAILY = Regex("""^daily@(\d{1,2}):(\d{2})$""")
     private val WEEKLY = Regex("""^weekly@([0-6])@(\d{1,2}):(\d{2})$""")
 
-    fun valid(s: String): Boolean = s == "every6h" || DAILY.matches(s) && inClock(DAILY.find(s)!!) || WEEKLY.matches(s) && inClock(WEEKLY.find(s)!!, 2)
+    /** FR-2.3 of the auto-fetch spec: no check more often than every six hours. */
+    const val FLOOR_MINUTES = 360
+
+    /** Every refusal starts with this, so a route can tell a schedule's 422 from any other problem. */
+    const val REFUSAL_PREFIX = "the schedule"
 
     private fun inClock(m: MatchResult, at: Int = 1): Boolean = m.groupValues[at].toInt() in 0..23 && m.groupValues[at + 1].toInt() in 0..59
 
-    /** The spread: 0..14 minutes after the hour's minute, from the id. */
-    fun spreadMinutes(id: String): Int = (id.fold(0) { a, c -> (a * 31 + c.code) and 0x7fffffff }) % 15
-
-    private fun cron(s: String, id: String): String? {
-        val spread = spreadMinutes(id)
-        DAILY.find(s)?.let { return "${(it.groupValues[2].toInt() + spread) % 60} ${it.groupValues[1].toInt()} * * *" }
-        WEEKLY.find(s)?.let { return "${(it.groupValues[3].toInt() + spread) % 60} ${it.groupValues[2].toInt()} * * ${it.groupValues[1]}" }
+    /** The old words as the shared schedule's cron, or null when [s] is not one of them (or names an hour that does not exist). */
+    private fun legacyCron(s: String): String? {
+        if (s == "every6h") return "0 */6 * * *"
+        DAILY.find(s)?.takeIf { inClock(it) }?.let { return "${it.groupValues[2].toInt()} ${it.groupValues[1].toInt()} * * *" }
+        WEEKLY.find(s)?.takeIf { inClock(it, 2) }?.let { return "${it.groupValues[3].toInt()} ${it.groupValues[2].toInt()} * * ${it.groupValues[1]}" }
         return null
     }
 
-    /** The next time this fetcher is due after [lastRunAt] (null = never ran: due now). Never sooner than the 6 h floor. */
-    fun nextDue(schedule: String, id: String, lastRunAt: Long?, now: Long): Long {
+    /** Null when [s] is a schedule a fetcher may have; else why not. A blank one is refused: a fetcher always has a Check. */
+    fun refusal(s: String, nowSec: Long, zone: TimeZone): String? {
+        if (legacyCron(s) != null) return null
+        return when (val check = validateSchedule(s, nowSec, zone, FLOOR_MINUTES)) {
+            is ScheduleCheck.Ok -> null
+            is ScheduleCheck.Invalid -> "$REFUSAL_PREFIX: ${check.message}"
+        }
+    }
+
+    /** The string to store: the old words become their cron (`weekly@3@04:00` is `0 4 * * 3`), anything else its canonical form. */
+    fun canonical(s: String): String {
+        legacyCron(s)?.let { return it }
+        return (parseSchedule(s) as? ScheduleParse.Ok)?.schedule?.canonical ?: s
+    }
+
+    /** The spread: 0..14 minutes after the schedule's own minute, from the id. */
+    fun spreadMinutes(id: String): Int = (id.fold(0) { a, c -> (a * 31 + c.code) and 0x7fffffff }) % 15
+
+    /** The schedule in the plain words of the shared sentence, for a view. */
+    fun sentence(s: String): String = (parseSchedule(legacyCron(s) ?: s) as? ScheduleParse.Ok)?.schedule?.sentence ?: s
+
+    /**
+     * The next time this fetcher is due after [lastRunAt] (null = never ran: due now), from the one evaluator: the first fire after
+     * the last run, moved by the fetcher's spread, and never sooner than the 6 h floor after the last run.
+     */
+    fun nextDue(schedule: String, id: String, lastRunAt: Long?, now: Long, zone: TimeZone = ScheduleZone.resolve("")): Long {
         if (lastRunAt == null) return now
         val floor = lastRunAt + LaneRules.RUN_FLOOR_SEC
         if (schedule == "every6h") return floor
-        val parsed = (parseSchedule(cron(schedule, id) ?: return floor) as? ScheduleParse.Ok)?.schedule ?: return floor
-        // The server's own zone (`TZ`, else UTC), as the old local-time walk had; DEB-4387 piece 2 moves this onto `[general] timezone`.
-        val slot = ScheduleEvaluator.nextFire(parsed, ScheduleZone.resolve(""), lastRunAt) ?: return floor
+        val parsed = (parseSchedule(legacyCron(schedule) ?: schedule) as? ScheduleParse.Ok)?.schedule ?: return floor
+        val spread = spreadMinutes(id) * 60L
+        // Looking from the last run less the spread finds the fire whose spread-shifted moment is the first one after the run.
+        val slot = (ScheduleEvaluator.nextFire(parsed, zone, lastRunAt - spread) ?: return floor) + spread
         return maxOf(slot, floor)
     }
 }

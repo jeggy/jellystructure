@@ -62,7 +62,7 @@ class AutofetchRuntime(
      */
     suspend fun due(now: Long): List<Fetcher> = store.fetchers().filter { f ->
         f.enabled && f.state == "ok" && !engine.isRunning(f.id) &&
-            FetchSchedule.nextDue(f.schedule, f.id, f.lastRunAt ?: f.createdAt, now) <= now && !lanes.forSite(f.site).state().stopped
+            FetchSchedule.nextDue(f.schedule, f.id, f.lastRunAt ?: f.createdAt, now, world.scheduleZone()) <= now && !lanes.forSite(f.site).state().stopped
     }
 
     fun view(f: Fetcher): FetcherView {
@@ -76,7 +76,7 @@ class AutofetchRuntime(
             proven = f.proven, schedule = f.schedule, enabled = f.enabled, retention = f.retention, state = f.state, stateReason = f.stateReason,
             siteStopped = site.stopped, siteStoppedReason = site.stoppedReason, siteStoppedAt = site.stoppedAt,
             numbering = recipe?.numbering?.kind.orEmpty(), running = engine.isRunning(f.id), lastRunAt = f.lastRunAt,
-            nextRunAt = if (f.enabled) FetchSchedule.nextDue(f.schedule, f.id, f.lastRunAt ?: f.createdAt, world.nowSec()) else null,
+            nextRunAt = if (f.enabled) FetchSchedule.nextDue(f.schedule, f.id, f.lastRunAt ?: f.createdAt, world.nowSec(), world.scheduleZone()) else null,
             lastRun = last?.let { RunView(it.startedAt, it.finishedAt, it.trigger, it.status, it.summary, it.lines) },
             placed = items.count { it.placedPath != null },
             runs = runs.map { RunView(it.startedAt, it.finishedAt, it.trigger, it.status, it.summary, it.lines) },

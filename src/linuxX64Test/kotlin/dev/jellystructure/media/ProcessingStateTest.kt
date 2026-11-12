@@ -69,7 +69,7 @@ class ProcessingStateTest {
         fun due(last: Long?) = ProcessingSchedule.dueFeatures(c, now, { if (it == ProcessingFeatures.MUSIC) last else null }, { null })
         assertTrue(ProcessingFeatures.MUSIC in due(null))
         assertTrue(ProcessingFeatures.MUSIC in due(now - 86_400L))
-        assertTrue(ProcessingFeatures.MUSIC in due(now - 86_400L + 200L), "a few minutes early is still the same time each day")
+        assertFalse(ProcessingFeatures.MUSIC in due(now - 86_400L + 200L), "DEB-4387 (FR-2.3): due is exact — the first fire after the last run, not a few minutes early")
         assertFalse(ProcessingFeatures.MUSIC in due(now - 3_600L))
         assertFalse(ProcessingFeatures.AUDIOBOOKS in due(null), "a feature that is off is never due")
     }
@@ -180,7 +180,7 @@ class ProcessingStateTest {
         val v = view(inp = inp)
         assertEquals("Ran 10 min ago", v[ProcessingFeatures.MUSIC]!!.lastRan)
         assertEquals("Ran 2 h ago", v[ProcessingFeatures.FIND]!!.lastRan)
-        assertEquals(now + 86_400L - 600L, v[ProcessingFeatures.MUSIC]!!.nextAt)
+        assertEquals((now - 600L) / 60 * 60 + 86_400L, v[ProcessingFeatures.MUSIC]!!.nextAt, "DEB-4387: carried over to daily at the last run's minute, so the next fire is that minute tomorrow")
         assertEquals(2, v[ProcessingFeatures.HEALTH]!!.waiting)
         assertEquals("2 waiting", v[ProcessingFeatures.HEALTH]!!.waitingText)
         assertEquals("waiting", v[ProcessingFeatures.HEALTH]!!.state, "queued work held for a TV")
