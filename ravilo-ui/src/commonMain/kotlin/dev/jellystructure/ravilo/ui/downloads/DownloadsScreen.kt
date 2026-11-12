@@ -71,6 +71,9 @@ object DownloadsTags {
     const val DOWNLOADING = "downloads-block"
     const val OVERFLOW = "downloads-overflow"
     fun row(itemId: String) = "downloads-row-$itemId"
+    /** DEB-4258 — the waiting line of a copy that waits for the server, and the text action under it. */
+    fun waitLine(itemId: String) = "downloads-wait-$itemId"
+    fun getOriginal(itemId: String) = "downloads-original-$itemId"
 }
 
 private val Danger = Color(0xFFF5667A)
@@ -465,6 +468,8 @@ private fun DownloadingEntry(row: DownloadRow, controller: DownloadsController) 
     val r = row.record
     val p = row.phase
     val episode = r.kind == "episode"
+    val waits by controller.waits.collectAsState()
+    val offers by controller.originalOffers.collectAsState()
     Row(cardModifier(false).testTag(DownloadsTags.row(row.itemId)).padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (episode) Thumb(row.itemId, r.seriesTitle ?: r.title, poster = false, number = r.episode)
         else Thumb(row.itemId, r.title, poster = true)
@@ -488,7 +493,18 @@ private fun DownloadingEntry(row: DownloadRow, controller: DownloadsController) 
                 }
                 DownloadPhase.Queued -> Waiting(str("download.queued"))
                 DownloadPhase.WaitingWifi -> Waiting(str("download.waiting_wifi"))
-                DownloadPhase.WaitingServer -> Waiting(str("download.waiting_server"))
+                DownloadPhase.WaitingServer -> {
+                    val line = waitLine(waits[row.itemId])
+                    Waiting(str(line.key, line.args), Modifier.testTag(DownloadsTags.waitLine(row.itemId)))
+                    // FR-7 — an original needs no encoder, so a copy that waits offers it: one tap, no confirm.
+                    offers[row.itemId]?.let { original ->
+                        Text(
+                            str("download.get_original", mapOf("size" to formatBytes(original.bytes))),
+                            color = colors.accent, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+                            modifier = Modifier.testTag(DownloadsTags.getOriginal(row.itemId)).heightIn(min = 32.dp).clickable { controller.getOriginal(row.itemId) },
+                        )
+                    }
+                }
                 is DownloadPhase.Failed -> Text(str("download.failed"), color = Amber, fontSize = 12.sp, fontFamily = Sora)
                 else -> Unit
             }
@@ -506,11 +522,12 @@ private fun DownloadingEntry(row: DownloadRow, controller: DownloadsController) 
 }
 
 @Composable
-private fun Waiting(text: String) {
+private fun Waiting(text: String, modifier: Modifier = Modifier) {
     val colors = RaviloTheme.colors
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        DownloadGlyph(ControlState.QUEUED, colors.textSecondary, 13.dp)
-        Text(text, color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
+    // A reason's line wraps to the lines it needs, on whole words, and is never cut: the row grows with it (DEB-4256 FR-7).
+    Row(modifier, verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.padding(top = 1.dp)) { DownloadGlyph(ControlState.QUEUED, colors.textSecondary, 13.dp) }
+        Text(text, color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
     }
 }
 

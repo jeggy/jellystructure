@@ -77,7 +77,8 @@ class TitleDownloadPanel internal constructor(
     @Composable
     fun StatusLine(modifier: Modifier = Modifier) {
         val phases by controller.phases.collectAsState()
-        DownloadStatusLine(phases[target().itemId] ?: DownloadPhase.None, modifier)
+        val waits by controller.waits.collectAsState()
+        DownloadStatusLine(phases[target().itemId] ?: DownloadPhase.None, modifier, waits[target().itemId])
     }
 
     /** The sheets: draw once, at the page's root. */
@@ -95,12 +96,17 @@ class TitleDownloadPanel internal constructor(
             onDismiss = { sheet = Sheet.None },
         )
         val p = phaseAtTap
+        val offers by controller.originalOffers.collectAsState()
         val actions = when (p.controlState()) {
             ControlState.DOWNLOADED -> listOf(
                 DownloadAction(str("action.play")) { onPlay() },
                 DownloadAction(str("download.delete"), destructive = true) { sheet = Sheet.ConfirmDelete },
             )
-            else -> listOf(
+            else -> listOfNotNull(
+                // FR-7 — a copy that waits for the server offers its original, first, above Pause and Cancel.
+                offers[t.itemId]?.takeIf { p == DownloadPhase.WaitingServer }?.let { original ->
+                    DownloadAction(str("download.get_original", mapOf("size" to formatBytes(original.bytes)))) { controller.getOriginal(t.itemId) }
+                },
                 if (p is DownloadPhase.Paused) DownloadAction(str("download.resume")) { controller.resume(t.itemId) }
                 else DownloadAction(str("download.pause")) { controller.pause(t.itemId) },
                 DownloadAction(str("action.cancel"), destructive = true) { controller.delete(t.itemId) },

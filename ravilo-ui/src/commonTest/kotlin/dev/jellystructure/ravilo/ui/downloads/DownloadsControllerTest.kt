@@ -30,13 +30,23 @@ class DownloadsControllerTest {
         var startStatus: Int? = null
         var retryAfter: Int? = null
         var startThrows: Throwable? = null
+        /** DEB-4258 — the waiting 503's JSON body (`reason`, `streams`); the default is a bare answer with neither. */
+        var startBody: String = "no"
+        /** Items whose `start` is answered with their own body (a copy that cannot be made while the others can). */
+        val startBodies = mutableMapOf<String, String>()
+        /** Every item a `start` was asked for, in order, answered or not. */
+        val asked = mutableListOf<String>()
+        var originalBytes = 5_000_000_000L
+        var optionsCalls = 0
         override suspend fun options(itemId: String, mediaSourceId: String?): DownloadOptions {
+            optionsCalls++
             optionsStatus?.let { throw TvApiError.Http(it, "no") }
-            return DownloadOptions(listOf(DownloadOption("original", 2160, 5_000_000_000L, exact = true)))
+            return DownloadOptions(listOf(DownloadOption("original", 2160, originalBytes, exact = true)))
         }
         override suspend fun start(request: DownloadStartRequest): DownloadTicket {
+            asked += request.itemId
             startThrows?.let { throw it }
-            startStatus?.let { throw TvApiError.Http(it, "no", retryAfterSeconds = retryAfter) }
+            startStatus?.let { throw TvApiError.Http(it, startBodies[request.itemId] ?: startBody, retryAfterSeconds = retryAfter) }
             starts += request
             return DownloadTicket(
                 kind = if (request.quality == "original") "file" else "hls", quality = request.quality, url = "/u/${request.itemId}/${starts.size}",
@@ -75,7 +85,13 @@ class DownloadsControllerTest {
     private val original = DownloadOption("original", 2160, 5_000_000_000L, exact = true)
     private val medium = DownloadOption("medium", 720, 1_000_000_000L)
 
-    private fun TestScope.rig(user: String? = "alice") = Rig(CoroutineScopeOf(this), user)
+    private val openRigs = mutableListOf<Rig>()
+    private fun TestScope.rig(user: String? = "alice") = Rig(CoroutineScopeOf(this), user).also { openRigs += it }
+
+    /** A test that leaves the server answering 503 would retry for ever when runTest drains the scheduler: the server says yes as the body ends. */
+    private fun runWait(body: suspend TestScope.() -> Unit) = runTest {
+        try { body() } finally { openRigs.forEach { it.api.startStatus = null; it.api.startBodies.clear() }; openRigs.clear() }
+    }
     @Suppress("FunctionName") private fun CoroutineScopeOf(s: TestScope) = kotlinx.coroutines.CoroutineScope(StandardTestDispatcher(s.testScheduler))
 
     @Test fun `a 403 hides the control and throws not allowed`() = runTest {
@@ -167,6 +183,161 @@ class DownloadsControllerTest {
         advanceTimeBy(5_001); runCurrent()
         assertEquals(1, r.engine.jobs.size)
         assertEquals(DownloadPhase.Running(0), r.controller.phases.value["m1"])
+    }
+
+    private val full2 = """{"error":"busy","reason":"encoder_full","streams":2}"""
+    private val unavailable = """{"error":"cannot","reason":"unavailable"}"""
+
+    // ─── DEB-4258 (DEB-4256 FR-7): a waiting copy says why, follows every answer, and the queue goes round ───
+
+    @Test fun `a waiting copy keeps the reason of its latest answer and the line follows it`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = full2
+        r.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertEquals(DownloadPhase.WaitingServer, r.controller.phases.value["m1"])
+        assertEquals(WaitLine("download.wait_full", mapOf("n" to "2")), waitLine(r.controller.waits.value["m1"]))
+        r.api.startBody = """{"reason":"encoder_full","streams":1}"""
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals(WaitLine("download.wait_full_one"), waitLine(r.controller.waits.value["m1"]))
+        r.api.startBody = unavailable
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals(WaitLine("download.wait_unavailable"), waitLine(r.controller.waits.value["m1"]))
+        // The server says yes: it starts with no tap, and nothing of the wait is left.
+        r.api.startStatus = null
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals(DownloadPhase.Running(0), r.controller.phases.value["m1"])
+        assertTrue(r.controller.waits.value.isEmpty())
+    }
+
+    @Test fun `an answer with no reason reads waiting for the server for 10 seconds and then the busy line`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5   // body "no": an older server, or one this phone cannot read
+        r.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertEquals("download.waiting_server", waitLine(r.controller.waits.value["m1"]).key)
+        advanceTimeBy(9_000); runCurrent()
+        assertEquals("download.waiting_server", waitLine(r.controller.waits.value["m1"]).key)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals("download.wait_busy", waitLine(r.controller.waits.value["m1"]).key)
+        // An unknown reason from a newer server, and a count-less encoder_full, are the same generic wait.
+        r.api.startBody = """{"reason":"something_new"}"""
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals("download.wait_busy", waitLine(r.controller.waits.value["m1"]).key)
+        assertEquals("download.wait_busy", waitLine(WaitInfo(dev.jellystructure.shared.tv.DownloadWaitReason.EncoderFull(null))).key)
+    }
+
+    @Test fun `a reason shows from the first answer, inside the first 10 seconds`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = unavailable
+        r.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertEquals("download.wait_unavailable", waitLine(r.controller.waits.value["m1"]).key)
+    }
+
+    @Test fun `a segment's 503 reads waiting for the server until the next start answer gives it a reason`() = runWait {
+        val r = rig()
+        r.controller.download(listOf(target("m1")), medium); advanceUntilIdle()
+        val id = downloadId("alice", "m1")
+        r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = full2
+        r.engine.set(id, DownloadPhase.WaitingServer); runCurrent()
+        assertEquals("download.waiting_server", waitLine(r.controller.waits.value["m1"]).key)
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals("download.wait_full", waitLine(r.controller.waits.value["m1"]).key)
+        // It keeps asking every Retry-After while it waits, and the line follows.
+        r.api.startBody = unavailable
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals("download.wait_unavailable", waitLine(r.controller.waits.value["m1"]).key)
+    }
+
+    @Test fun `encoder_full keeps asking for the oldest waiting copy only`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = full2
+        r.controller.download(listOf(target("m1"), target("m2")), medium); runCurrent()
+        advanceTimeBy(5_001); runCurrent(); advanceTimeBy(5_001); runCurrent()
+        assertEquals(listOf("m1", "m1", "m1"), r.api.asked)
+        assertEquals(DownloadPhase.Queued, r.controller.phases.value["m2"])
+    }
+
+    @Test fun `unavailable moves on to the next waiting copy and comes round again`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = unavailable
+        r.controller.download(listOf(target("m1"), target("m2")), medium); runCurrent()
+        repeat(3) { advanceTimeBy(5_001); runCurrent() }
+        assertEquals(listOf("m1", "m2", "m1", "m2"), r.api.asked)
+        assertEquals(DownloadPhase.WaitingServer, r.controller.phases.value["m2"])
+        // The encoder comes back: both start, one after the other.
+        r.api.startStatus = null
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals(listOf("m1"), r.engine.jobs.map { downloadItemId(it.id) })
+        r.engine.set(downloadId("alice", "m1"), DownloadPhase.Downloaded); advanceUntilIdle()
+        assertEquals(listOf("m1", "m2"), r.engine.jobs.map { downloadItemId(it.id) })
+    }
+
+    @Test fun `one copy that cannot be made does not hold the copy behind it`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBodies["m1"] = unavailable
+        r.controller.download(listOf(target("m1"), target("m2")), medium); runCurrent()
+        r.api.startStatus = null; r.api.startBodies.clear()
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals(listOf("m1", "m2"), r.api.asked)   // m1 answered unavailable; the next turn went to m2, which started
+        assertEquals(DownloadPhase.Running(0), r.controller.phases.value["m2"])
+    }
+
+    @Test fun `a waiting copy offers its original when it is listed and fits, and the offer asks options once`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = full2
+        r.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertEquals(5_000_000_000L, r.controller.originalOffers.value["m1"]?.bytes)
+        advanceTimeBy(5_001); runCurrent(); advanceTimeBy(5_001); runCurrent()
+        assertEquals(1, r.api.optionsCalls)
+    }
+
+    @Test fun `no offer when the original does not fit, when it is the original already, or when the copy is paused`() = runWait {
+        // 50 GB free (the rig's engine); 1 GB is kept back (FR-3), so a 49.5 GB original does not fit.
+        val big = rig(); big.api.startStatus = 503; big.api.retryAfter = 5; big.api.originalBytes = 49_500_000_000L
+        big.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertTrue(big.controller.originalOffers.value.isEmpty())
+
+        val orig = rig(); orig.api.startStatus = 503; orig.api.retryAfter = 5
+        orig.controller.download(listOf(target("m1")), original); runCurrent()
+        assertEquals(DownloadPhase.WaitingServer, orig.controller.phases.value["m1"])
+        assertTrue(orig.controller.originalOffers.value.isEmpty())
+        assertEquals(0, orig.api.optionsCalls)
+
+        val paused = rig(); paused.api.startStatus = 503; paused.api.retryAfter = 5
+        paused.controller.download(listOf(target("m1")), medium); runCurrent()
+        assertEquals(setOf("m1"), paused.controller.originalOffers.value.keys)
+        paused.engine.set(downloadId("alice", "m1"), DownloadPhase.Paused(0)); runCurrent()
+        assertTrue(paused.controller.originalOffers.value.isEmpty())
+    }
+
+    @Test fun `what the copy already holds counts as free for the offer`() = runWait {
+        val r = rig(); r.api.originalBytes = 49_800_000_000L
+        r.controller.download(listOf(target("m1")), medium.copy(bytes = 10_000_000_000L)); advanceUntilIdle()
+        val id = downloadId("alice", "m1")
+        r.engine.set(id, DownloadPhase.Running(50)); advanceUntilIdle()
+        r.api.startStatus = 503; r.api.retryAfter = 5
+        r.engine.set(id, DownloadPhase.WaitingServer); runCurrent(); advanceTimeBy(5_001); runCurrent()
+        // 50 GB free + 5 GB held (50 % of 10 GB) − 1 GB kept back = 54 GB: 49.8 GB fits.
+        assertEquals(setOf("m1"), r.controller.originalOffers.value.keys)
+    }
+
+    @Test fun `one tap switches the entry to the original in the same place, frees the copy and leaves the remembered quality`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5; r.api.startBody = full2
+        r.controller.download(listOf(target("m1"), target("m2")), medium); runCurrent()
+        val queuedAt = r.library.get("alice", "m1")!!.queuedAt
+        r.engine.set(downloadId("alice", "m1"), DownloadPhase.WaitingServer)   // the copy had been running and was ended for room
+        r.controller.getOriginal("m1")
+        val rec = r.library.get("alice", "m1")!!
+        assertEquals("original", rec.quality); assertEquals(5_000_000_000L, rec.bytes); assertEquals(queuedAt, rec.queuedAt)
+        assertEquals(RecordState.QUEUED, rec.state)
+        assertEquals(listOf(downloadId("alice", "m1")), r.engine.removed)   // what the copy had saved is freed at once
+        assertEquals("medium", r.controller.lastQuality("movie"))
+        assertTrue(r.controller.originalOffers.value.isEmpty())
+        // It starts as any queued original does: an original needs no encoder, so the server says yes.
+        r.api.startStatus = null
+        runCurrent(); advanceTimeBy(5_001); runCurrent()
+        assertEquals("original", r.engine.jobs.first { it.id == downloadId("alice", "m1") }.record.quality)
+        assertEquals(DownloadPhase.Running(0), r.controller.phases.value["m1"])
+    }
+
+    @Test fun `a waiting copy that never started has nothing to free when it becomes the original`() = runWait {
+        val r = rig(); r.api.startStatus = 503; r.api.retryAfter = 5
+        r.controller.download(listOf(target("m1")), medium); runCurrent()
+        r.controller.getOriginal("m1")
+        assertTrue(r.engine.removed.isEmpty())
+        assertEquals("original", r.library.get("alice", "m1")!!.quality)
     }
 
     @Test fun `a start this phone could not read stays queued and keeps the reason`() = runTest {

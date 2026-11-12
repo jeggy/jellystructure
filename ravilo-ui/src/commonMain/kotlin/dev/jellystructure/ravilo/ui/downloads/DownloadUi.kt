@@ -166,9 +166,10 @@ fun MyListIconButton(inList: Boolean, label: String, onClick: () -> Unit, modifi
 
 /** The short message under the row when a download is waiting or failed (FR-6, FR-7, FR-8); nothing otherwise. */
 @Composable
-fun DownloadStatusLine(phase: DownloadPhase, modifier: Modifier = Modifier) {
-    val key = phase.statusKey() ?: return
-    Text(str(key), color = if (phase is DownloadPhase.Failed) Amber else RaviloTheme.colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, modifier = modifier)
+fun DownloadStatusLine(phase: DownloadPhase, modifier: Modifier = Modifier, wait: WaitInfo? = null) {
+    // DEB-4256 FR-7 — a copy that waits for the server reads why; the line wraps on whole words and is never cut.
+    val (key, args) = if (phase == DownloadPhase.WaitingServer) waitLine(wait).let { it.key to it.args } else (phase.statusKey() ?: return) to emptyMap()
+    Text(str(key, args), color = if (phase is DownloadPhase.Failed) Amber else RaviloTheme.colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, modifier = modifier)
 }
 
 // ─── The quality sheet (FR-3, FR-5) ──────────────────────────────────────────────────────────────────────────────

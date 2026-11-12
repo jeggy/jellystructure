@@ -81,3 +81,39 @@ data class DownloadArtwork(
     @SerialName("backdrop_url") val backdropUrl: String? = null,
     @SerialName("still_url") val stillUrl: String? = null,
 )
+
+/**
+ * DEB-4258 (DEB-4256 FR-6, FR-7) — the JSON body of `POST /api/tv/download/start`'s waiting `503`. [reason] is `encoder_full` (no card can take
+ * one more rung; [streams] is how many streams the encoder is making, plays and other phones' downloads together) or `unavailable` (this copy
+ * cannot be made right now). Both fields are additive: an older server sends neither, a newer one may send a reason this phone does not know,
+ * and both read as the generic wait. Nothing in it names a title, a viewer, a device or a file.
+ */
+@Serializable
+data class DownloadWaitBody(
+    val error: String? = null,
+    val reason: String? = null,
+    val streams: Int? = null,
+)
+
+/** The reason a waiting `start` answered, as the phone reads it. [Unknown] is an absent, unreadable or newer reason. */
+sealed interface DownloadWaitReason {
+    /** [streams] is null when the answer carried no count. */
+    data class EncoderFull(val streams: Int?) : DownloadWaitReason
+    data object Unavailable : DownloadWaitReason
+    data object Unknown : DownloadWaitReason
+
+    companion object {
+        private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+
+        /** Reads the `503`'s body ([TvApiError.Http.message]); anything that is not the JSON above is [Unknown]. */
+        fun parse(body: String?): DownloadWaitReason {
+            val b = body?.takeIf { it.isNotBlank() }?.let { runCatching { json.decodeFromString(DownloadWaitBody.serializer(), it) }.getOrNull() }
+                ?: return Unknown
+            return when (b.reason) {
+                "encoder_full" -> EncoderFull(b.streams?.takeIf { it >= 1 })
+                "unavailable" -> Unavailable
+                else -> Unknown
+            }
+        }
+    }
+}

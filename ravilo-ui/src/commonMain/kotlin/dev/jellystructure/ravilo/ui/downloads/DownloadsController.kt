@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.downloads
 
 import dev.jellystructure.shared.tv.DownloadOption
 import dev.jellystructure.shared.tv.DownloadStartRequest
+import dev.jellystructure.shared.tv.DownloadWaitReason
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CoroutineScope
@@ -66,8 +67,8 @@ fun isExpiredTicket(status: Int?): Boolean = status == 401 || status == 403 || s
 
 /**
  * DEB-4070 (DEB-3995 FR-2, FR-3, FR-5, FR-7) — what the pages talk to. It owns the queue: downloads run **one at a time in the order
- * asked for**, and a download takes its ticket only when its turn comes, because the server runs one download stream at a time and a
- * `start` from this phone replaces the one it holds (FR-6). Nothing here writes Jellyfin or invents catalog rows.
+ * asked for**, and a download takes its ticket only when its turn comes, because a phone has one download stream and a `start` from it
+ * replaces the one it holds (FR-6, DEB-4256). Nothing here writes Jellyfin or invents catalog rows.
  */
 class DownloadsController(
     private val userId: () -> String?,
@@ -108,14 +109,31 @@ class DownloadsController(
     /** Device-reported free space; refreshed after file removal, including Media3's asynchronous removal. */
     val storageFreeBytes: StateFlow<Long> = _storageFreeBytes.asStateFlow()
 
+    private val _waits = MutableStateFlow<Map<String, WaitInfo>>(emptyMap())
+    /** DEB-4258 (FR-7) — what each copy that waits for the server last heard from it, by item id. The line reads it through [waitLine]. */
+    val waits: StateFlow<Map<String, WaitInfo>> = _waits.asStateFlow()
+
+    private val _originalOffers = MutableStateFlow<Map<String, DownloadOption>>(emptyMap())
+    /** DEB-4258 (FR-7) — a waiting copy's original, by item id, when it is listed for this phone and fits: the row offers `download.get_original`. */
+    val originalOffers: StateFlow<Map<String, DownloadOption>> = _originalOffers.asStateFlow()
+
     private val pumpLock = Mutex()
     private val renewals = HashMap<String, Int>()
     private val lastPercent = HashMap<String, Int>()
     private val renewedAt = HashMap<String, Int>()
     private val startFailures = HashMap<String, Int>()
-    /** Downloads whose own `start` was answered 503 (a play is live, another phone holds the stream): they read *Waiting for the server* while they wait their turn. */
+    /** Downloads whose own `start` was answered 503 (every card is full, or the copy cannot be made right now): they read *Waiting for the server* while they wait their turn. */
     private val startWaiting = HashSet<String>()
+    /** Each wait's start, so the timer that ends the generic first 10 s belongs to its own wait and never to a later one. */
+    private val waitEpochs = HashMap<String, Long>()
+    /** The original `GET download/options` listed for a copy that waits, asked once when its wait began. */
+    private val originals = HashMap<String, DownloadOption>()
+    /** Copies whose last `start` answered `unavailable` since the queue last came round: the next turn asks for the next waiting copy (FR-7). */
+    private val unavailableRound = LinkedHashSet<String>()
     private var tick = 0L
+    private var waitCounter = 0L
+    private var pumpRetry: kotlinx.coroutines.Job? = null
+    private var inRetry = false
     /** The last thing a `start` threw that was neither an HTTP answer nor a cancel, so a stall that reads *Queued* has a reason a test or a log can see. */
     var lastStartError: Throwable? = null
         private set
@@ -179,9 +197,9 @@ class DownloadsController(
         renewals.remove(downloadId(u, itemId))
         renewedAt.remove(downloadId(u, itemId))
         startFailures.remove(downloadId(u, itemId))
-        startWaiting.remove(downloadId(u, itemId))
+        endWait(downloadId(u, itemId))
         refresh()
-        scope.launch { pump() }
+        pumpRetry?.cancel(); scope.launch { pump() }
     }
 
     fun pause(itemId: String) { userId()?.let { engine.pause(downloadId(it, itemId)) } }
@@ -334,6 +352,26 @@ class DownloadsController(
         // FR-6: a `start` the server answered 503 waits, and says so, instead of reading as a plain queue place.
         startWaiting.forEach { id -> if (downloadUserId(id) == u && out[downloadItemId(id)] == DownloadPhase.Queued) out[downloadItemId(id)] = DownloadPhase.WaitingServer }
         _phases.value = out
+        _originalOffers.value = originalOffersFor(u, out)
+    }
+
+    /**
+     * FR-7 — a copy that waits for the server offers its original when `options` listed one for this phone and it fits by FR-3's rule, with
+     * what the copy already holds counted as free. Not an original itself, not paused, not waiting for Wi-Fi or a connection (those are other phases).
+     */
+    private fun originalOffersFor(u: String, phases: Map<String, DownloadPhase>): Map<String, DownloadOption> {
+        if (originals.isEmpty()) return emptyMap()
+        val free = engine.freeBytes()
+        val out = HashMap<String, DownloadOption>()
+        for ((item, phase) in phases) {
+            if (phase != DownloadPhase.WaitingServer) continue
+            val option = originals[item] ?: continue
+            val r = library.get(u, item) ?: continue
+            if (r.quality == "original") continue
+            val held = r.bytes * (lastPercent[downloadId(u, item)] ?: 0).coerceIn(0, 100) / 100
+            if (fits(option.bytes, free + held)) out[item] = option
+        }
+        return out
     }
 
     /** What the other profiles hold on the disk now: a finished one's whole size, a running one's part. Counts; never names. */
@@ -357,11 +395,11 @@ class DownloadsController(
             engine.remove(downloadId(u, id))
             library.remove(u, id)
             val key = downloadId(u, id)
-            renewals.remove(key); startFailures.remove(key); startWaiting.remove(key); lastPercent.remove(key); renewedAt.remove(key)
+            renewals.remove(key); startFailures.remove(key); endWait(key); lastPercent.remove(key); renewedAt.remove(key)
         }
         refresh()
         if (itemIds.isNotEmpty()) watchFreedSpace(freeBefore)
-        scope.launch { pump() }
+        pumpRetry?.cancel(); scope.launch { pump() }
     }
 
     /** *Delete watched* (FR-10): every download on the phone marked watched. A running one is not "watched". */
@@ -416,7 +454,11 @@ class DownloadsController(
                 p == DownloadPhase.Downloaded -> { renewals.remove(id); renewedAt.remove(id) }
                 p is DownloadPhase.Running && p.percent > (renewedAt[id] ?: -1) && renewedAt.containsKey(id) -> { renewals.remove(id); renewedAt.remove(id) }
                 p is DownloadPhase.Failed && isExpiredTicket(p.httpStatus) -> renew(id, p)
-                p == DownloadPhase.WaitingServer -> scope.launch { delay(waitingRetryMs); renewIfStillWaiting(id) }
+                // A segment's 503 (or a copy the server ended for room) carries no reason; the first renewal's answer gives it one.
+                p == DownloadPhase.WaitingServer && _waits.value[downloadItemId(id)] == null -> {
+                    library.get(u, downloadItemId(id))?.let { beginWait(id, it, DownloadWaitReason.Unknown) }
+                    scope.launch { delay(waitingRetryMs); renewIfStillWaiting(id) }
+                }
             }
         }
         pump()
@@ -435,7 +477,80 @@ class DownloadsController(
         renewals[id] = n
         val percent = lastPercent[id] ?: 0
         renewedAt[id] = percent
-        runCatching { start(u, record, fromSegment = if (record.quality == "original") null else fromSegmentFor(percent, record.runtimeMinutes)) }
+        try {
+            start(u, record, fromSegment = if (record.quality == "original") null else fromSegmentFor(percent, record.runtimeMinutes))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: TvApiError.Http) {
+            // FR-7: a copy that waits keeps asking every Retry-After, and its line follows each answer.
+            if (e.status == 503 && from == DownloadPhase.WaitingServer) {
+                noteWait(u, record, e)
+                refresh()
+                scope.launch { delay(e.retryAfterSeconds?.times(1000L) ?: waitingRetryMs); renewIfStillWaiting(id) }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** FR-7 — the latest waiting answer of one copy: its reason (an `unavailable` one also sends the queue on to the next copy), and the start of the wait if it is new. */
+    private fun noteWait(u: String, record: DownloadRecord, e: TvApiError.Http) {
+        val id = downloadId(u, record.itemId)
+        val reason = DownloadWaitReason.parse(e.message)
+        if (reason == DownloadWaitReason.Unavailable) unavailableRound.add(id) else unavailableRound.remove(id)
+        startWaiting.add(id)
+        beginWait(id, record, reason)
+    }
+
+    private fun beginWait(id: String, record: DownloadRecord, reason: DownloadWaitReason) {
+        val item = downloadItemId(id)
+        val old = _waits.value[item]
+        if (old == null) {
+            val epoch = ++waitCounter
+            waitEpochs[id] = epoch
+            scope.launch {
+                delay(WAIT_GENERIC_MS)
+                if (waitEpochs[id] == epoch) _waits.value[item]?.let { _waits.value = _waits.value + (item to it.copy(long = true)) }
+            }
+            if (record.quality != "original") scope.launch { askForOriginal(id, item, record) }
+        }
+        _waits.value = _waits.value + (item to WaitInfo(reason, long = old?.long ?: false))
+    }
+
+    /** FR-7 — "The phone asks `options` when the wait begins": a failed ask just means no offer. */
+    private suspend fun askForOriginal(id: String, item: String, record: DownloadRecord) {
+        val original = try {
+            api.options(item, record.mediaSourceId).options.firstOrNull { it.quality == "original" }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) { null } ?: return
+        if (_waits.value[item] == null) return   // the wait ended while the answer was on its way
+        originals[item] = original
+        refresh()
+    }
+
+    private fun endWait(id: String) {
+        val item = downloadItemId(id)
+        startWaiting.remove(id); waitEpochs.remove(id); unavailableRound.remove(id); originals.remove(item)
+        if (item in _waits.value) _waits.value = _waits.value - item
+    }
+
+    /**
+     * FR-7 — **Download the original instead**. The entry becomes the original and keeps its place in the queue; what the copy had saved is freed
+     * at once, and it starts as any queued original does. The remembered quality ([prefs]) is not touched: this was not a pick in the sheet.
+     */
+    fun getOriginal(itemId: String) {
+        val u = userId() ?: return
+        val r = library.get(u, itemId) ?: return
+        val option = _originalOffers.value[itemId] ?: return
+        val id = downloadId(u, itemId)
+        val freeBefore = engine.freeBytes()
+        if ((engine.phases.value[id] ?: DownloadPhase.None) != DownloadPhase.None) engine.remove(id)
+        library.upsert(u, r.copy(quality = "original", height = null, bytes = option.bytes, state = RecordState.QUEUED))
+        renewals.remove(id); renewedAt.remove(id); lastPercent.remove(id); startFailures.remove(id)
+        endWait(id)
+        refresh()
+        watchFreedSpace(freeBefore)
+        pumpRetry?.cancel(); scope.launch { pump() }
     }
 
     private suspend fun start(u: String, record: DownloadRecord, fromSegment: Int?) {
@@ -446,7 +561,7 @@ class DownloadsController(
                 ),
             )
         }
-        startWaiting.remove(downloadId(u, record.itemId))
+        endWait(downloadId(u, record.itemId))
         engine.enqueue(DownloadJob(downloadId(u, record.itemId), record, ticket, baseUrl()))
         // FR-15 — we are online right now: take the server's play state as the base an offline play's queued write is compared to later.
         val base = sync?.let { runCatching { it.playstate(listOf(record.itemId))[record.itemId].toServerPlay() }.getOrNull() }
@@ -460,7 +575,16 @@ class DownloadsController(
     suspend fun pump(): Unit = pumpLock.withLock {
         val u = userId() ?: return@withLock
         if (engine.busy()) return@withLock
-        val next = library.nextQueued(u) ?: return@withLock
+        // A start the server answered 503 is asked again on its Retry-After, once: the engine's first emission, a queued sibling or the page
+        // reaching here meanwhile must not ask a second copy in the same turn (FR-7: `encoder_full` asks the oldest only). A delete, a retry
+        // and the switch to the original cancel the wait first, so they act at once.
+        if (pumpRetry?.isActive == true && !inRetry) return@withLock
+        // FR-7: `encoder_full` is true for every copy, so the oldest keeps being asked for; `unavailable` is about one copy, so the next waiting
+        // copy gets the turn, and when every one has had it the queue comes round to the oldest again.
+        val queued = library.queued(u)
+        val next = queued.firstOrNull { downloadId(u, it.itemId) !in unavailableRound }
+            ?: run { unavailableRound.clear(); queued.firstOrNull() }
+            ?: return@withLock
         try {
             start(u, next, fromSegment = null)
         } catch (e: DownloadNotAllowed) {
@@ -470,9 +594,11 @@ class DownloadsController(
         } catch (e: TvApiError.Http) {
             if (e.status == 503) {
                 // The server is busy or Jellyfin cannot be asked: stays queued and shows "waiting"; try again shortly.
-                startWaiting.add(downloadId(u, next.itemId))
+                noteWait(u, next, e)
                 refresh()
-                scope.launch { delay(e.retryAfterSeconds?.times(1000L) ?: waitingRetryMs); pump() }
+                // One retry at a time: the engine's first emission and the page's own call can both reach here, and two chains would ask twice per turn.
+                pumpRetry?.cancel()
+                pumpRetry = scope.launch { delay(e.retryAfterSeconds?.times(1000L) ?: waitingRetryMs); inRetry = true; try { pump() } finally { inRetry = false } }
             } else {
                 // 404 / 400: the title is gone or the quality is not offered any more; a failure the viewer can retry or delete.
                 library.upsert(u, next.copy(state = RecordState.STARTED))

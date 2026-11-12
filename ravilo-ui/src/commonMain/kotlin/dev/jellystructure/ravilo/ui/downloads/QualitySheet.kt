@@ -31,7 +31,7 @@ data class QualitySheetModel(
     val isSeason: Boolean get() = allEpisodes > 0
 }
 
-private fun fits(bytes: Long, freeBytes: Long) = bytes <= freeBytes - DOWNLOAD_RESERVE_BYTES
+internal fun fits(bytes: Long, freeBytes: Long) = bytes <= freeBytes - DOWNLOAD_RESERVE_BYTES
 
 private fun rowsFor(options: List<DownloadOption>, freeBytes: Long, lastPick: String?): List<QualityRow> {
     // Original first, then the smaller copies from the largest down: the order the server lists them in, normalised.

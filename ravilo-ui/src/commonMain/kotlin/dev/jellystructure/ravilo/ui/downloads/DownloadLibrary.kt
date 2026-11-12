@@ -86,8 +86,11 @@ class DownloadLibrary(
     }
 
     /** The oldest download still waiting for its ticket, or null. */
-    fun nextQueued(userId: String): DownloadRecord? =
-        records(userId).filter { it.state == RecordState.QUEUED }.minByOrNull { it.queuedAt }
+    fun nextQueued(userId: String): DownloadRecord? = queued(userId).firstOrNull()
+
+    /** Every download still waiting for its ticket, oldest first. */
+    fun queued(userId: String): List<DownloadRecord> =
+        records(userId).filter { it.state == RecordState.QUEUED }.sortedBy { it.queuedAt }
 
     /** What this viewer's downloads take, by the sizes the sheet showed. */
     fun bytes(userId: String): Long = records(userId).sumOf { it.bytes }

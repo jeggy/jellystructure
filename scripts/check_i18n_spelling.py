@@ -27,6 +27,9 @@ EXCLUDED_KEYS |= {"migrate.before", "migrate.othersH", "migrate.unkBody", "migra
 # The string round wrote it with the accent on purpose: without it `i en besked` reads as "in a message", not "in ONE
 # message". Different words that differ only by the accent; the spec table gives it character for character (FR-11a).
 EXCLUDED_KEYS |= {"support.too_long"}
+# DEB-4258 — the same pair: `én anden titel` ("ONE other title", download.wait_full_one) against the article `en`. The count is the
+# point of the line (`{n} andre titler` is its plural), and the spec table gives it with the accent (DEB-4256, FR-7).
+EXCLUDED_KEYS |= {"download.wait_full_one"}
 
 # R288 — unit abbreviations are not words in any language, so they are exempt from folding against
 # words that happen to look like them. `min` is minutes in all three files; Faroese `mín` is "my".

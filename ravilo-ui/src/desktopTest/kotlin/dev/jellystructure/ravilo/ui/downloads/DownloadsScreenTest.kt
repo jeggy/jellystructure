@@ -12,6 +12,12 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeLeft
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
+import dev.jellystructure.shared.tv.DownloadOption
+import dev.jellystructure.shared.tv.TvApiError
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -128,5 +134,70 @@ class DownloadsScreenTest {
         onNodeWithText("Cancel").performClick()
         waitForIdle()
         assertTrue(r.engine.removed.isEmpty() && r.controller.records.value.size == 3)
+    }
+
+    // ─── DEB-4258 (DEB-4256 FR-7; acceptance 20, 21, 23): the waiting line and the original offer ───
+
+    /** A copy of 720p that the server ended for room: one record, the engine's `WaitingServer`, and an original of 4 GB listed for this phone. */
+    private fun waitingRig(body: String? = null, retryMs: Long = 100L, listed: Boolean = true) = PageRig(waitingRetryMs = retryMs).apply {
+        if (listed) api.original = DownloadOption("original", 2160, 4_000_000_000L, exact = true)
+        body?.let { api.startError = TvApiError.Http(503, it, retryAfterSeconds = null) }
+        add("alice", "w", DownloadPhase.WaitingServer, 1_000_000_000L, title = "Waiting Film", quality = "medium", height = 720)
+    }
+
+    @Test fun `a waiting copy reads its reason on its row and offers the original under it`() = runComposeUiTest {
+        val r = waitingRig("""{"reason":"encoder_full","streams":2}""")
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        waitUntil(timeoutMillis = 3_000) { r.controller.waits.value["w"]?.reason is dev.jellystructure.shared.tv.DownloadWaitReason.EncoderFull }
+        onNodeWithText("The server is busy with 2 other titles — this starts on its own when one is done").assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.getOriginal("w")).assertIsDisplayed()
+        onNodeWithText("Download the original instead · 4.0 GB").assertIsDisplayed()
+    }
+
+    @Test fun `one tap on the offer makes the row an original`() = runComposeUiTest {
+        val r = waitingRig("""{"reason":"unavailable"}""")
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        waitUntil(timeoutMillis = 3_000) { r.controller.originalOffers.value.containsKey("w") }
+        onNodeWithTag(DownloadsTags.getOriginal("w")).performClick()
+        waitForIdle()
+        assertEquals("original", r.library.get("alice", "w")?.quality)
+        assertEquals(listOf(downloadId("alice", "w")), r.engine.removed)
+        onNodeWithTag(DownloadsTags.getOriginal("w")).assertDoesNotExist()
+    }
+
+    @Test fun `a copy with no listed original offers nothing`() = runComposeUiTest {
+        val r = waitingRig("""{"reason":"unavailable"}""", listed = false)
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        waitUntil(timeoutMillis = 3_000) { r.controller.waits.value["w"]?.reason == dev.jellystructure.shared.tv.DownloadWaitReason.Unavailable }
+        onNodeWithTag(DownloadsTags.getOriginal("w")).assertDoesNotExist()
+    }
+
+    @Test fun `a paused copy offers nothing`() = runComposeUiTest {
+        val r = waitingRig("""{"reason":"unavailable"}""")
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        waitUntil(timeoutMillis = 3_000) { r.controller.originalOffers.value.containsKey("w") }
+        r.engine.set(downloadId("alice", "w"), DownloadPhase.Paused(0))
+        waitForIdle()
+        onNodeWithTag(DownloadsTags.getOriginal("w")).assertDoesNotExist()
+    }
+
+    @Test fun `in Danish and Faroese at 360 dp each waiting line shows whole under the title's row, inside the width`() {
+        val reasons = listOf(
+            dev.jellystructure.shared.tv.DownloadWaitReason.EncoderFull(1), dev.jellystructure.shared.tv.DownloadWaitReason.EncoderFull(12),
+            dev.jellystructure.shared.tv.DownloadWaitReason.EncoderFull(null), dev.jellystructure.shared.tv.DownloadWaitReason.Unavailable,
+        )
+        for (lang in listOf("da", "fo")) for (reason in reasons) runComposeUiTest {
+            var expected = ""
+            setContent {
+                WithLocale(lang) {
+                    val line = waitLine(WaitInfo(reason)); expected = dev.jellystructure.ravilo.ui.i18n.str(line.key, line.args)
+                    DownloadStatusLine(DownloadPhase.WaitingServer, Modifier.width(360.dp).testTag("line"), WaitInfo(reason))
+                }
+            }
+            assertTrue(expected.isNotBlank() && !expected.contains("{"), "$lang $reason resolved to '$expected'")
+            onNodeWithText(expected).assertIsDisplayed()   // the whole sentence is one node: nothing cut, nothing ellipsised
+            val b = onNodeWithTag("line").fetchSemanticsNode().boundsInRoot
+            assertTrue(b.width <= density.run { 360.dp.toPx() } + 1f, "$lang $reason is ${b.width} px wide")
+        }
     }
 }

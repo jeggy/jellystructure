@@ -1,8 +1,10 @@
 package dev.jellystructure.ravilo.ui.downloads
 
+import dev.jellystructure.shared.tv.DownloadOption
 import dev.jellystructure.shared.tv.DownloadOptions
 import dev.jellystructure.shared.tv.DownloadStartRequest
 import dev.jellystructure.shared.tv.DownloadTicket
+import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +16,7 @@ import kotlinx.serialization.json.JsonNull
  * DEB-4071 — a [DownloadsController] over in-memory fakes, for the Downloads page's tests (common and desktop). [add] puts a download of a
  * viewer on the phone in the phase it should be in; the engine records what the page asked it to remove.
  */
-internal class PageRig(var user: String? = "alice") {
+internal class PageRig(var user: String? = "alice", waitingRetryMs: Long = 5_000L) {
     class Engine : DownloadEngine {
         private val p = MutableStateFlow<Map<String, DownloadPhase>>(emptyMap())
         override val phases: StateFlow<Map<String, DownloadPhase>> = p.asStateFlow()
@@ -32,17 +34,25 @@ internal class PageRig(var user: String? = "alice") {
     }
 
     class Api : DownloadApi {
-        override suspend fun options(itemId: String, mediaSourceId: String?) = DownloadOptions(emptyList())
-        override suspend fun start(request: DownloadStartRequest) = DownloadTicket(
-            kind = "file", quality = request.quality, url = "/u/${request.itemId}", bytes = 1L, expiresAt = 0L, itemKind = "movie", item = JsonNull,
-        )
+        /** DEB-4258 — the original `options` lists for every title, or none. */
+        var original: DownloadOption? = null
+        /** DEB-4258 — when set, every `start` is answered with it (a waiting 503 and its JSON body). */
+        var startError: TvApiError.Http? = null
+        override suspend fun options(itemId: String, mediaSourceId: String?) = DownloadOptions(listOfNotNull(original))
+        override suspend fun start(request: DownloadStartRequest): DownloadTicket {
+            startError?.let { throw it }
+            return DownloadTicket(
+                kind = "file", quality = request.quality, url = "/u/${request.itemId}", bytes = 1L, expiresAt = 0L, itemKind = "movie", item = JsonNull,
+            )
+        }
     }
 
     val engine = Engine()
+    val api = Api()
     val library = DownloadLibrary(InMemoryDownloadIndexStorage())
     val controller = DownloadsController(
-        userId = { user }, api = Api(), engine = engine, library = library, prefs = InMemoryDownloadPrefs(), baseUrl = { "https://srv" },
-        scope = CoroutineScope(Dispatchers.Unconfined), now = { 1L },
+        userId = { user }, api = api, engine = engine, library = library, prefs = InMemoryDownloadPrefs(), baseUrl = { "https://srv" },
+        scope = CoroutineScope(Dispatchers.Unconfined), now = { 1L }, waitingRetryMs = waitingRetryMs,
     )
     private var order = 0L
 
