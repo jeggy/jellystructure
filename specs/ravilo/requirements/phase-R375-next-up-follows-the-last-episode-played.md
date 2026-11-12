@@ -469,3 +469,44 @@ other R375 test stands (their next episodes are unwatched in the fixtures). Serv
 
 A newest-first series (the DEB-2916 amendment above) keeps its own rule. It already offers nothing when its newest
 episode is watched.
+
+### Amendment (2026-11-12, DEB-4424) — the player's next episode crosses into the next season
+
+> Owner, 2026-11-12, on DEB-4424: *"whenever a episode is the last one of that season, then no auto-play is provided
+> even though if there is a next season available. When there is no next season, then this is ofc correct."*
+
+**What goes wrong.** The *Dev notes* above left *"the player's next-up card and auto-advance (already in order within a
+season)"* untouched. Within a season is all they ever were: a play started from the series page builds its next episode
+from that one season's list (`SeriesDetailScreen.kt` `buildEpisodeContext`, `groups.getOrNull(groupIdx + 1)`), and the
+player's advance looks the next one up in the same list (`RaviloApp.kt`, `eps?.getOrNull(newIdx + 1)`). So a season's last
+episode has no *Up next* card, no credits card and no autoplay, although the server's own order (`nextEpisodeAfter`, the
+one the cast hand-over and Continue Watching use) goes on to the next season.
+
+**FR-R375-8 — the player follows the same order across seasons.** In every Ravilo player that plays from the series
+page (TV, phone, desktop, browser, Mac — they share the composable), and in the cast receiver's queue as the sender
+hands it over, the episode after a season's last episode is the **first counted episode of the next season that has
+one**, in `nextEpisodeAfter`'s order: season 1 or later (specials never), catalog-only rows never, a multi-episode file
+once (its entry point, as within a season). The *Up next* card, the credits card, autoplay, the remote's *Next* and the
+transport's next button all treat it exactly as they treat a next episode within a season; its kicker names its own
+season (`S02E01`, not `S01E01`).
+
+**FR-R375-9 — the binge keeps going.** After the player has moved into the next season, the episode after *that* one is
+known too, so a run continues through the new season and on into the one after, instead of stopping after one hand-over.
+The player's episode rail shows the season of the episode now playing.
+
+**Unchanged.** The series' last counted episode still has no next. Playing a special (season 0) still has no next. A
+newest-first series still has nothing after an episode (DEB-2939 FR-13). A shuffle still follows its plan (R343). Offline
+playback of downloads keeps its own rule — nothing across a season boundary
+([`a-phone-downloads-titles-to-watch-offline.md`](a-phone-downloads-titles-to-watch-offline.md) FR-16). No server change,
+no DTO, no route: `SeriesDetail.seasons` already carries every season's episodes.
+
+**Acceptance.**
+- 8a. Play the last episode of Season 1 of a two-season series from its series page and let the credits come: the *Up
+  next* card offers **S02E01**, and autoplay starts it.
+- 8b. Let S02E01 end: S02E02 is offered.
+- 8c. A season whose next season has a missing (catalog-only) first episode: the first episode that can play is offered.
+- 8d. The series' last episode, a special, and an episode of a newest-first series: no *Up next*, no autoplay.
+
+**Tests** (`ravilo-ui` common tests, run by `:ravilo-ui:desktopTest`): `buildEpisodeContext` on a season's last episode
+names the next season's first counted episode, skips a catalog-only one and a season 0, and gives none on the series'
+last episode and for a newest-first series; the advance from that episode carries the next episode after it.
