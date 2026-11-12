@@ -324,6 +324,8 @@ internal sealed class Dest {
         val displayName: String,
         val episodes: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisodeEntry>? = null,
         val currentEpIndex: Int = 0,
+        /** FR-R375-8/9 — the counted series order; [episodes] remains the current season's rail. */
+        val seriesEpisodes: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisodeEntry> = emptyList(),
         /** R181 — the series' own item id (or, for a movie, the movie's own id — it's its own bucket)
          *  for per-series remembered audio/subtitle choices. */
         val seriesId: String? = null,
@@ -2987,9 +2989,11 @@ fun RaviloApp(
                     onBack = { pop() },
                     onPlay = { ctx -> playOrAsk("episode", ctx.episodeId, ctx.episodeTitle) {
                         if (castActive?.connectedForVideo == true) {
-                            // R245 (FR-R245-4/14) — the receiver gets the whole season so it can advance by itself;
+                            // R245 (FR-R245-4/14) — the receiver gets the counted series order so it can advance by itself;
                             // DEB-2939 (FR-14) — an episode with nothing after it (newest first) goes alone.
-                            val queue = castQueueFor(ctx.episodes, ctx.currentEpIndex, ctx.nothingFollows)
+                            val castAt = ctx.seriesEpisodes.indexOfFirst { it.id == ctx.episodes.getOrNull(ctx.currentEpIndex)?.id }
+                            val queue = if (castAt >= 0) castQueueFor(ctx.seriesEpisodes, castAt, ctx.nothingFollows)
+                                else castQueueFor(ctx.episodes, ctx.currentEpIndex, ctx.nothingFollows)
                             castActive.cast(
                                 itemId = ctx.episodeId, title = ctx.episodeTitle, kicker = ctx.kicker,
                                 artUrl = resolveCastArt(apiClient.baseUrl, ctx.episodes.getOrNull(ctx.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),
@@ -3138,11 +3142,14 @@ fun RaviloApp(
                         // in the list falls back to the outgoing card's own next-episode labels and
                         // simply carries no further next-episode target (so the binge stops cleanly at
                         // that episode) instead of trapping playback in a retry loop.
-                        val eps = dest.episodes
-                        val newIdx = eps?.indexOfFirst { it.id == nextId } ?: -1
-                        val newEp = if (newIdx >= 0) eps?.get(newIdx) else null
+                        val advanced = if (dest.fromDownload) null else dev.jellystructure.ravilo.ui.screens.advanceSeriesEpisode(
+                            dest.seriesEpisodes, nextId, dest.nothingFollows,
+                        )
+                        val eps = advanced?.seasonEpisodes ?: dest.episodes
+                        val newIdx = advanced?.seasonIndex ?: (eps?.indexOfFirst { it.id == nextId } ?: -1)
+                        val newEp = advanced?.episode ?: if (newIdx >= 0) eps?.get(newIdx) else null
                         // DEB-2939 (FR-13) — a pick in a newest-first series' rail plays that episode and nothing after it.
-                        val nextEp = if (newIdx >= 0 && !dest.nothingFollows) eps?.getOrNull(newIdx + 1) else null
+                        val nextEp = if (advanced != null) advanced.next else if (newIdx >= 0 && !dest.nothingFollows) eps?.getOrNull(newIdx + 1) else null
                         // DEB-4072 (FR-16) — from a download, the one after it is offered only if it is on the phone too.
                         val nextDl = if (dest.fromDownload) downloadsController?.nextDownloadedEpisode(nextId) else null
                         if (nextId != dest.itemId) replaceTop(Dest.Player(
@@ -3156,6 +3163,7 @@ fun RaviloApp(
                             displayName    = dest.displayName,
                             episodes       = eps,
                             currentEpIndex = newIdx.coerceAtLeast(0),
+                            seriesEpisodes = dest.seriesEpisodes,
                             // R181 — same series, same original language, for the whole binge.
                             seriesId         = dest.seriesId,
                             originalLanguage = dest.originalLanguage,
@@ -3900,6 +3908,7 @@ private fun playerDestFor(
     displayName   = displayName,
     episodes      = ctx.episodes,
     currentEpIndex = ctx.currentEpIndex,
+    seriesEpisodes = ctx.seriesEpisodes,
     seriesId      = ctx.seriesId,
     logoUrl = ctx.logoUrl, logoInk = ctx.logoInk, seriesName = ctx.seriesName,  // R303 — the SERIES' logo, never an episode's
     originalLanguage = ctx.originalLanguage,

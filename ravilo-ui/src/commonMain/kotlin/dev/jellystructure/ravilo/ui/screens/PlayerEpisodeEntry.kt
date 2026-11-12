@@ -55,6 +55,8 @@ data class EpisodePlayContext(
     val nextEpTitle: String?,
     val episodes: List<PlayerEpisodeEntry>,
     val currentEpIndex: Int,
+    /** FR-R375-8/9 — counted episodes in series order, for cross-season advance and cast. */
+    val seriesEpisodes: List<PlayerEpisodeEntry> = emptyList(),
     /** R181 — the series' own item id, for per-series remembered audio/subtitle choices. */
     val seriesId: String? = null,
     /** R181/R180 — the series' original-audio language, for the player's "Dubbed" audio badge. */
@@ -75,6 +77,31 @@ data class EpisodePlayContext(
      *  *Up next*, no credits card and no autoplay, and a rail pick leads nowhere either. */
     val nothingFollows: Boolean = false,
 )
+
+/** FR-R375-9 — move the player's rail with the episode while keeping the next entry in series order. */
+internal data class SeriesEpisodeAdvance(
+    val episode: PlayerEpisodeEntry,
+    val seasonEpisodes: List<PlayerEpisodeEntry>,
+    val seasonIndex: Int,
+    val next: PlayerEpisodeEntry?,
+)
+
+internal fun advanceSeriesEpisode(
+    order: List<PlayerEpisodeEntry>,
+    episodeId: String,
+    nothingFollows: Boolean,
+): SeriesEpisodeAdvance? {
+    val orderIndex = order.indexOfFirst { it.id == episodeId }
+    if (orderIndex < 0) return null
+    val episode = order[orderIndex]
+    val seasonEpisodes = order.filter { it.seasonNumber == episode.seasonNumber }
+    return SeriesEpisodeAdvance(
+        episode = episode,
+        seasonEpisodes = seasonEpisodes,
+        seasonIndex = seasonEpisodes.indexOfFirst { it.id == episodeId },
+        next = if (nothingFollows) null else order.getOrNull(orderIndex + 1),
+    )
+}
 
 /**
  * R343 (FR-R343-5) — the next-up card is announcing the next entry of a shuffle, not the next episode in

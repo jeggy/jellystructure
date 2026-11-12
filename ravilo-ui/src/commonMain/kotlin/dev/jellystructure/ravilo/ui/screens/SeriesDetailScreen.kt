@@ -257,9 +257,41 @@ internal fun markGroup(group: List<Episode>, entry: Episode, played: Boolean, on
 
 /** Picks the group's natural entry point: in-progress, else first unwatched, else the first episode. */
 private fun groupEntryPoint(group: List<Episode>, overlay: Map<String, CardPlayState>): Episode =
-    group.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
-        ?: group.firstOrNull { ep -> overlay[ep.id]?.played != true }
-        ?: group.first()
+    group.filterNot { it.isCatalogOnly() }.ifEmpty { group }.let { playable ->
+        playable.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
+            ?: playable.firstOrNull { ep -> overlay[ep.id]?.played != true }
+            ?: playable.first()
+    }
+
+/** One season for the rail. The same entries also form the series-wide play and cast order. */
+private fun playerEntriesForSeason(
+    season: dev.jellystructure.shared.tv.Season,
+    episodes: List<Episode>,
+    overlay: Map<String, CardPlayState>,
+    lang: String,
+    newestFirst: Boolean,
+): List<PlayerEpisodeEntry> {
+    val sNum = season.index
+    return episodeGroups(episodes).filter { group -> season.index == 0 || group.any { !it.isCatalogOnly() } }.map { g ->
+        val rep = groupEntryPoint(g, overlay)
+        val ps = overlay[rep.id]
+        val totalRuntime = g.sumOf { it.runtime }
+        val groupWatched = g.all { overlay[it.id]?.played ?: it.playback?.watched ?: false }
+        PlayerEpisodeEntry(
+            id = rep.id,
+            numberLabel = if (g.size > 1) null else rep.episodeNumber.toString(),
+            title = episodeDisplayTitle(rep, episodes, lang),
+            kicker = episodeLabel(newestFirst, sNum, rep, episodes, lang),
+            durationLabel = if (totalRuntime > 0) "${totalRuntime}m" else "",
+            progressPct = ps?.playedPct ?: rep.playback?.pct ?: 0f,
+            watched = groupWatched,
+            stillUrls = g.take(3).map { it.stillUrl },
+            segments = g.last().segments,
+            seasonPosterUrl = season.posterUrl,
+            seasonNumber = sNum, seasonName = season.name,
+        )
+    }
+}
 
 internal fun buildEpisodeContext(
     detail: SeriesDetail,
@@ -271,53 +303,34 @@ internal fun buildEpisodeContext(
 ): EpisodePlayContext {
     val season = detail.seasons.getOrNull(seasonIdx)
     val sNum = season?.index ?: (seasonIdx + 1)
-    val groups = episodeGroups(episodes)
+    val groups = episodeGroups(episodes).filter { g -> sNum == 0 || g.any { !it.isCatalogOnly() } }
     val groupIdx = groups.indexOfFirst { g -> g.any { it.id == epId } }.coerceAtLeast(0)
     val group = groups.getOrElse(groupIdx) { groups.firstOrNull() ?: episodes.take(1) }
     val ep = group.firstOrNull { it.id == epId } ?: group.firstOrNull() ?: episodes.first()
     val nf = detail.newestFirst   // DEB-2938 (FR-9) — the player's title line names a dated episode by its date
+    val entries = season?.let { playerEntriesForSeason(it, episodes, overlay, lang, nf) }.orEmpty()
+    val seriesEntries = if (sNum == 0) entries else detail.seasons
+        .filter { it.index >= 1 }.sortedBy { it.index }
+        .flatMap { playerEntriesForSeason(it, it.episodes, overlay, lang, nf) }
+    val orderIndex = entries.getOrNull(groupIdx)?.id?.let { id -> seriesEntries.indexOfFirst { it.id == id } } ?: -1
     // DEB-2939 (FR-13) — nothing follows an episode of a newest-first series, even one not yet seen.
-    val nextGroup = if (nf) null else groups.getOrNull(groupIdx + 1)
-    val nextEp = nextGroup?.let { groupEntryPoint(it, overlay) }
+    val nextEp = if (nf || sNum == 0 || orderIndex < 0) null else seriesEntries.getOrNull(orderIndex + 1)
     return EpisodePlayContext(
         episodeId    = epId,
         episodeTitle = episodeDisplayTitle(ep, episodes, lang),
         kicker       = episodeLabel(nf, sNum, ep, episodes, lang),
         nextEpId     = nextEp?.id,
-        nextEpLabel  = nextEp?.let { episodeLabel(nf, sNum, it, episodes, lang) },
-        nextEpTitle  = nextEp?.let { episodeDisplayTitle(it, episodes, lang) },
-        episodes     = groups.map { g ->
-            val rep = groupEntryPoint(g, overlay)
-            // R84: prefer overlay playstate; fall back to 0f/false (catalog carries null from R83)
-            val ps = overlay[rep.id]
-            val totalRuntime = g.sumOf { it.runtime }
-            val groupWatched = g.all { overlay[it.id]?.played ?: it.playback?.watched ?: false }
-            PlayerEpisodeEntry(
-                id            = rep.id,
-                numberLabel   = if (g.size > 1) null else rep.episodeNumber.toString(),
-                title         = episodeDisplayTitle(rep, episodes, lang),
-                kicker        = episodeLabel(nf, sNum, rep, episodes, lang),
-                durationLabel = if (totalRuntime > 0) "${totalRuntime}m" else "",
-                progressPct   = ps?.playedPct ?: rep.playback?.pct ?: 0f,
-                watched       = groupWatched,
-                stillUrls     = g.take(3).map { it.stillUrl },
-                // Phase 150: a multi-episode-file group's credits belong to its LAST contained episode
-                // (the shared file's own end) — g.last(), not the group's rep(resentative) entry point,
-                // which can be any episode in the group. Detection itself currently skips these groups
-                // entirely (PipelineStepOps.detectSegments), so this is empty/default in practice today —
-                // forward-compatible for whenever that scope limitation is lifted.
-                segments      = g.last().segments,
-                seasonPosterUrl = season?.posterUrl,  // R194
-                seasonNumber = sNum, seasonName = season?.name,  // R350 (FR-R350-6) — the rail's header
-            )
-        },
+        nextEpLabel  = nextEp?.kicker,
+        nextEpTitle  = nextEp?.title,
+        episodes     = entries,
         currentEpIndex = groupIdx,
+        seriesEpisodes = seriesEntries,
         seriesId = detail.card.id,
         originalLanguage = detail.originalLanguage,
         segments = ep.segments,  // Phase 150 — the CURRENTLY PLAYING episode's own segments
         seriesPosterUrl = detail.card.posterUrl,  // R194
         logoUrl = detail.logoUrl, logoInk = detail.logoInk, seriesName = detail.card.title,  // R303 (FR-R303-2)
-        nothingFollows = nf,
+        nothingFollows = nf || sNum == 0,
     )
 }
 
