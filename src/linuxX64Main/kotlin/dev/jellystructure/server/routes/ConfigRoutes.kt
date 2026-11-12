@@ -28,9 +28,11 @@ data class ConfigResponse(
     val effectiveScanThreads: Int,
 )
 
-// Phase 166 (FR-166-5) — request/response shape for the Settings Custom cron field's live validation.
+// Phase 166 (FR-166-5) — request/response shape for the Settings Custom cron field's live validation. DEB-4387 (FR-6.1):
+// the request takes `schedule` (cron or `every:`) and `floorMinutes`; `cron` is still read, for a client that sends it. The
+// response only gains fields: `sentence` (plain words, in the schedule zone), `zone`, and `canonical` (the string to store).
 @Serializable
-data class ScheduleCheckRequest(val cron: String)
+data class ScheduleCheckRequest(val cron: String = "", val schedule: String? = null, val floorMinutes: Int? = null)
 
 @Serializable
 data class ScheduleCheckResponse(
@@ -38,6 +40,9 @@ data class ScheduleCheckResponse(
     val description: String? = null,
     val error: String? = null,
     val nextRuns: List<Long> = emptyList(),
+    val sentence: String? = null,
+    val zone: String? = null,
+    val canonical: String? = null,
 )
 
 @Serializable
@@ -272,6 +277,8 @@ fun Route.configureConfigRoutes(
         // DEB-2476 (FR-13) — `[autofetch]` is config-file-only: the frontend model has no `autofetch`, so without this line every
         // Settings save wrote AutofetchConfig()'s `enabled = false` over the owner's switch and stopped every fetcher, silently.
         config = config.copy(autofetch = stored.autofetch)
+        // DEB-4387 (FR-4) — `[general]` is config-file-only until the Settings zone field lands; the frontend model has no `general`.
+        config = config.copy(general = stored.general)
         // Phase 321 (FR-321-1/4/8) — the Support card on the AI tab carries the job's four fields; the three bounds
         // (`max_input_chars`, `requests_per_viewer_per_day`, `turns_per_ticket`) are config-file-only, so a save keeps them.
         config = config.copy(ai = config.ai.copy(support = config.ai.support.copy(
@@ -341,7 +348,7 @@ fun Route.configureConfigRoutes(
         config = dev.jellystructure.config.ProcessingCarryOver.reconcile(stored, config)
         val findSchedule = config.processing?.find?.schedule ?: config.scanSchedule
         if (findSchedule.isNotBlank()) {
-            val check = dev.jellystructure.cron.validateSchedule(findSchedule, dev.jellystructure.nowEpochSec())
+            val check = dev.jellystructure.cron.validateSchedule(findSchedule, dev.jellystructure.nowEpochSec(), dev.jellystructure.cron.ScheduleZone.resolve(config.general.timezone))
             if (check is dev.jellystructure.cron.ScheduleCheck.Invalid) {
                 call.respond(HttpStatusCode.UnprocessableEntity, mapOf("field" to "scan_schedule", "error" to check.message))
                 return@put
@@ -396,15 +403,18 @@ fun Route.configureConfigRoutes(
     post("/config/validate-schedule") {
         val body = runCatching { call.receive<ScheduleCheckRequest>() }.getOrNull()
             ?: return@post call.respond(HttpStatusCode.BadRequest)
-        if (body.cron.isBlank()) {
-            call.respond(ScheduleCheckResponse(valid = true, description = "Scheduling is off."))
+        val text = body.schedule ?: body.cron
+        val zone = dev.jellystructure.cron.ScheduleZone.resolve(configStore.current.general.timezone)
+        if (text.isBlank()) {
+            call.respond(ScheduleCheckResponse(valid = true, description = "Scheduling is off.", sentence = dev.jellystructure.cron.ScheduleWords.OFF, zone = zone.id, canonical = ""))
             return@post
         }
-        when (val check = dev.jellystructure.cron.validateSchedule(body.cron, dev.jellystructure.nowEpochSec())) {
+        val floor = body.floorMinutes ?: dev.jellystructure.cron.SCHEDULE_FLOOR_MINUTES
+        when (val check = dev.jellystructure.cron.validateSchedule(text, dev.jellystructure.nowEpochSec(), zone, floor)) {
             is dev.jellystructure.cron.ScheduleCheck.Ok ->
-                call.respond(ScheduleCheckResponse(valid = true, description = check.description, nextRuns = check.nextRuns))
+                call.respond(ScheduleCheckResponse(valid = true, description = check.sentence, nextRuns = check.nextRuns, sentence = check.sentence, zone = zone.id, canonical = check.canonical))
             is dev.jellystructure.cron.ScheduleCheck.Invalid ->
-                call.respond(ScheduleCheckResponse(valid = false, error = check.message))
+                call.respond(ScheduleCheckResponse(valid = false, error = check.message, zone = zone.id))
         }
     }
     post("/config/test-qbittorrent") {

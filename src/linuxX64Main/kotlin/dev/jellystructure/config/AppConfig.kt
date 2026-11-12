@@ -70,6 +70,15 @@ data class AppConfig(
     @SerialName("file_fix") val fileFix: FileFixConfig = FileFixConfig(),
     // Phase 320 — the support lane. Off by default; available only while it is on AND an AI key is set (FR-320-1).
     val support: SupportConfig = SupportConfig(),
+    /** DEB-4387 (FR-4) — `[general]`: the one zone every schedule fires in. Config-file-only until the Settings picker lands
+     *  (DEB-4387 piece 4); a Settings save keeps it (ConfigRoutes). */
+    val general: GeneralConfig = GeneralConfig(),
+)
+
+/** DEB-4387 (FR-4.1) — an IANA zone name (`Atlantic/Faroe`). Blank = the server's `TZ`, else UTC. See `ScheduleZone.resolve`. */
+@Serializable
+data class GeneralConfig(
+    val timezone: String = "",
 )
 
 /**

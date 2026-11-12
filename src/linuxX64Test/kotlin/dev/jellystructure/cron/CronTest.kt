@@ -1,14 +1,8 @@
 package dev.jellystructure.cron
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.convert
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
-import platform.posix.localtime_r
-import platform.posix.time_tVar
-import platform.posix.tm
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -16,13 +10,9 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Phase 166 — regression tests for the shared cron parser and its backend evaluator. All the fixed
- * "now" instants below are computed against the host's real local timezone (this deployment always
- * runs in Europe/Copenhagen — verified against the live host while writing this test), matching
- * `nextFireEpochSec`'s own local-wall-clock contract; a run in a different timezone would need
- * different fixture values, same as any other localtime-dependent test in this codebase.
+ * Phase 166 — regression tests for the shared cron parser and the evaluator behind it. DEB-4387: the evaluator takes a zone
+ * (the schedule zone, FR-4), so the fixtures below name Europe/Copenhagen outright instead of leaning on the host's `TZ`.
  */
-@OptIn(ExperimentalForeignApi::class)
 class CronTest {
 
     private fun ok(text: String): CronExpr = when (val p = parseCron(text)) {
@@ -35,12 +25,13 @@ class CronTest {
         is CronParse.Invalid -> p
     }
 
-    private fun localHourMinute(epochSec: Long): Pair<Int, Int> = memScoped {
-        val v = alloc<time_tVar>().apply { value = epochSec.convert() }
-        val tm = alloc<tm>()
-        localtime_r(v.ptr, tm.ptr)
-        tm.tm_hour to tm.tm_min
-    }
+    private val copenhagen = TimeZone.of("Europe/Copenhagen")
+
+    private fun localHourMinute(epochSec: Long): Pair<Int, Int> =
+        Instant.fromEpochSeconds(epochSec).toLocalDateTime(copenhagen).let { it.hour to it.minute }
+
+    private fun nextFireEpochSec(e: CronExpr, after: Long): Long? =
+        ScheduleEvaluator.nextFire(CronSchedule("test", e), copenhagen, after)
 
     // ── parseCron: field forms ──────────────────────────────────────────────
 
@@ -172,11 +163,11 @@ class CronTest {
     @Test
     fun dstSpringForwardResolvesToTheShiftedTime() {
         // Europe/Copenhagen springs forward on 2027-03-28 (02:00 -> 03:00 local); 02:30 that day doesn't
-        // exist. A daily 02:30 schedule must resolve to the DST-shifted 03:30, not silently skip the day
-        // or crash — matching the existing tm_isdst=-1 convention this evaluator inherited.
+        // exist. A daily 02:30 schedule runs at the first minute after the gap, 03:00 (DEB-4387 FR-4.3) — it does not skip the
+        // day and does not crash. (Phase 166 resolved it to the shifted 03:30.)
         val e = ok("30 2 * * *")
         val dayBefore = 1_806_138_000L // 2027-03-27 10:00 local (CET)
-        assertEquals(1_806_197_400L, nextFireEpochSec(e, dayBefore)) // 2027-03-28 03:30 local (CEST)
+        assertEquals(1_806_195_600L, nextFireEpochSec(e, dayBefore)) // 2027-03-28 03:00 local (CEST) — the first minute after the gap (DEB-4387 FR-4.3)
     }
 
     // ── validateSchedule: the save-path / live-preview backstop ─────────────

@@ -12,8 +12,6 @@ import dev.jellystructure.config.isWholeLibraryStep
 import dev.jellystructure.config.intervalSeconds
 import dev.jellystructure.config.partOn
 import dev.jellystructure.config.processingOrDerived
-import dev.jellystructure.cron.CronParse
-import dev.jellystructure.cron.parseCron
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.nowEpochSec
 import kotlinx.serialization.Serializable
@@ -78,30 +76,17 @@ object ProcessingSchedule {
 
     fun seerrConnected(cfg: AppConfig): Boolean = cfg.seerr?.let { it.enabled && it.url.isNotBlank() } == true
 
-    private val WEEKDAYS = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-
-    /** The Find schedule in words: the presets the Settings picker emits are named, anything else is *Custom* with its expression (FR-3.2). */
-    fun describeFind(cron: String): String {
-        val c = cron.trim()
-        if (c.isEmpty()) return "Not on a schedule — it looks when you ask it to"
-        fun time(h: String, m: String) = h.padStart(2, '0') + ":" + m.padStart(2, '0')
-        Regex("""(\d+) \*/(\d+) \* \* \*""").matchEntire(c)?.let { m ->
-            val n = m.groupValues[2].toIntOrNull() ?: return@let
-            val at = m.groupValues[1].toIntOrNull()?.takeIf { it != 0 }?.let { " at :" + it.toString().padStart(2, '0') } ?: ""
-            return (if (n == 1) "Every hour" else "Every $n hours") + at
-        }
-        Regex("""(\d+) (\d+) \* \* ([0-6])""").matchEntire(c)?.let {
-            return "Weekly on ${WEEKDAYS[it.groupValues[3].toInt()]} at " + time(it.groupValues[2], it.groupValues[1])
-        }
-        Regex("""(\d+) (\d+) \* \* \*""").matchEntire(c)?.let { return "Daily at " + time(it.groupValues[2], it.groupValues[1]) }
-        return "Custom · $c"
+    /** The Find schedule in words (FR-3.2), from the one schedule type: the shapes the picker writes are named, anything else is *Custom* with its text. */
+    fun describeSchedule(text: String): String = when (val p = dev.jellystructure.cron.parseSchedule(text)) {
+        dev.jellystructure.cron.ScheduleParse.Off -> dev.jellystructure.cron.ScheduleWords.OFF
+        is dev.jellystructure.cron.ScheduleParse.Ok -> p.schedule.sentence
+        is dev.jellystructure.cron.ScheduleParse.Invalid -> "Custom · ${text.trim()}"
     }
 
-    /** Epoch seconds of the next fire of [cron], or null for a blank or unusable one. */
-    fun nextFind(cron: String, nowSec: Long): Long? {
-        if (cron.isBlank()) return null
-        val parsed = parseCron(cron) as? CronParse.Ok ?: return null
-        return dev.jellystructure.cron.nextFireEpochSec(parsed.expr, nowSec)
+    /** Epoch seconds of the next fire of [schedule] in [zone], or null for a blank or unusable one. */
+    fun nextFind(schedule: String, nowSec: Long, zone: kotlinx.datetime.TimeZone): Long? {
+        val parsed = (dev.jellystructure.cron.parseSchedule(schedule) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule ?: return null
+        return dev.jellystructure.cron.ScheduleEvaluator.nextFire(parsed, zone, nowSec)
     }
 
     fun agoText(thenSec: Long?, nowSec: Long): String {
@@ -194,7 +179,7 @@ object ProcessingViews {
 
     fun build(cfg: AppConfig, inp: ProcessingInputs): ProcessingView {
         val p = cfg.processingOrDerived()
-        val findNext = ProcessingSchedule.nextFind(p.find.schedule, inp.nowSec)
+        val findNext = ProcessingSchedule.nextFind(p.find.schedule, inp.nowSec, dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone))
         val features = ProcessingFeatures.ALL.map { f ->
             val on = if (f.id == ProcessingFeatures.DIRECT_PLAY) inp.directPlay.any { it.second } else p.featureOn(f.id)
             val locked = f.id == ProcessingFeatures.FIND
@@ -281,7 +266,7 @@ object ProcessingViews {
     }
 
     private fun intervalWords(p: ProcessingConfig, id: String): String = when (id) {
-        ProcessingFeatures.FIND -> ProcessingSchedule.describeFind(p.find.schedule)
+        ProcessingFeatures.FIND -> ProcessingSchedule.describeSchedule(p.find.schedule)
         ProcessingFeatures.METADATA -> if (p.metadata.tiers.recheckUnchanged)
             "Unchanged titles by release age: ${tier(p.metadata.tiers.thisYear)} · ${tier(p.metadata.tiers.oneToFiveYears)} · ${tier(p.metadata.tiers.older)}"
         else "With every look"

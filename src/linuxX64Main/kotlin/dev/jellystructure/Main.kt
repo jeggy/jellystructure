@@ -871,15 +871,23 @@ fun main() = runBlocking {
     // (the cron the Settings schedule UI emits), not "interval since boot". Re-reads config every poll
     // chunk so edits apply within a minute, and publishes the next-run time for the admin indicator.
     rootScope.launch {
+        var lastLaunched: Long? = null
         while (shutdownRequested.value == 0) {
             val cfg = configStore.current
             // DEB-1664 (FR-3.2) — Find new & changed's own interval; the legacy `scan_interval_hours` was carried over into it at load.
             val schedule = cfg.processingOrDerived().find.schedule
             val nowSec = nowEpochSec()
 
-            // ms until the next due run (null = nothing scheduled / schedule not understood).
+            // ms until the next due run (null = nothing scheduled / schedule not understood). DEB-4387 (FR-2.3) — a look is due
+            // when the first fire after its last run has passed, so a fire missed while the backend was down runs once on return.
+            // [lastLaunched] stands in for a run that ended without recording (cancelled, failed): it waits for the next fire.
+            val zone = dev.jellystructure.cron.ScheduleZone.resolve(cfg.general.timezone)
             val dueInMs: Long? = when {
-                schedule.isNotBlank() -> nextRunDelayMs(schedule, nowSec)
+                schedule.isNotBlank() -> (dev.jellystructure.cron.parseSchedule(schedule) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule
+                    ?.let { s ->
+                        val lastRan = listOfNotNull(processingRuns.all()[dev.jellystructure.config.ProcessingFeatures.FIND], lastLaunched).maxOrNull()
+                        dev.jellystructure.cron.ScheduleEvaluator.nextDue(s, zone, lastRan, nowSec)?.let { (it - nowSec) * 1_000L }
+                    }
                     ?: run { Logger.warn("Find new & changed's schedule '$schedule' not understood — scheduler idle until it's fixed"); null }
                 else -> null
             }
@@ -908,12 +916,13 @@ fun main() = runBlocking {
 
             delay(dueInMs.coerceAtLeast(0L))
             if (shutdownRequested.value != 0) break
-            if (scanTracker.running) { Logger.info("Scheduled run skipped — a scan is already running"); delay(60_000L); continue }
+            if (scanTracker.running) { delay(60_000L); continue }   // still due once it ends, unless that run recorded itself
 
             // Phase 175 (follow-up) — launchScanRun() is the ONE place every trigger (this scheduler,
             // every manual button, resume, SCAN_ON_START) launches a run; no bespoke step list or
             // descriptor logic lives here anymore.
             val jobId = scanTracker.startNew()
+            lastLaunched = nowEpochSec()
             launchScanRun(jobId, "scheduled", scanTracker, rootScope, configStore, pipelineDeps)
         }
     }
@@ -1001,19 +1010,15 @@ fun env(name: String, default: String): String =
 @OptIn(ExperimentalForeignApi::class)
 fun nowEpochSec(): Long = time(null)
 
-/** ms until the next LOCAL wall-clock occurrence of the schedule, or null if it isn't understood or
- *  never fires. Phase 166: thin wrapper over the shared `dev.jellystructure.cron` parser/evaluator
- *  (replacing this function's old hand-rolled three-shapes-only matcher — see the phase spec for the
- *  defects that motivated it), computed against the host's local timezone (the same clock the admin
- *  reads). Signature kept exactly as-is so both existing call sites (the scheduler loop below and
- *  `MediaRoutes.kt`'s `/scan/status`) are untouched. */
 /** DEB-1664 (FR-3.3) — a whole-library feature due on its own interval waits for Find new & changed's next look when that is this close. */
 private const val FEATURE_RIDES_LOOK_MS = 15 * 60_000L
 
-fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? {
-    val parsed = dev.jellystructure.cron.parseCron(cron)
-    if (parsed !is dev.jellystructure.cron.CronParse.Ok) return null
-    val next = dev.jellystructure.cron.nextFireEpochSec(parsed.expr, nowEpochSec) ?: return null
+/** ms until the next occurrence of the schedule in the schedule zone, or null if it isn't understood or never fires.
+ *  DEB-4387: both forms (cron or `every:`), evaluated by the one `ScheduleEvaluator` in [zone] (`[general] timezone`, else
+ *  the server's `TZ`, else UTC). Used by `/scan/status` for the Dashboard's next-run indicator. */
+fun nextRunDelayMs(schedule: String, nowEpochSec: Long, zone: kotlinx.datetime.TimeZone): Long? {
+    val parsed = (dev.jellystructure.cron.parseSchedule(schedule) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule ?: return null
+    val next = dev.jellystructure.cron.ScheduleEvaluator.nextFire(parsed, zone, nowEpochSec) ?: return null
     return (next - nowEpochSec) * 1_000L
 }
 

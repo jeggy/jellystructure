@@ -6,9 +6,10 @@ package dev.jellystructure.cron
  * can never disagree about whether a schedule is valid. This file is parsing/description only —
  * standard `*`, a literal, a range `A-B`, a step `*&#47;S` or `A-B/S`, and comma-separated lists of any
  * of those, per field. Evaluating a parsed [CronExpr] against wall-clock time (next-fire computation) needs
- * real POSIX `mktime`/DST handling and lives backend-side only (`dev.jellystructure.cron.CronEvaluator`
- * in linuxX64Main); the frontend gets next-run previews from the backend rather than re-implementing
- * that arithmetic a second time in JS, so there is exactly one evaluator to ever be wrong.
+ * a zone and DST handling and lives backend-side only (`dev.jellystructure.cron.ScheduleEvaluator` in
+ * linuxX64Main, DEB-4387); the frontend gets next-run previews from the backend rather than re-implementing
+ * that arithmetic a second time in JS, so there is exactly one evaluator to ever be wrong. The plain-words
+ * sentence is `ScheduleWords` (Schedule.kt), shared with the `every:` recurrence form.
  *
  * Deliberately rejected, with a field-specific message: Quartz/extended syntax (`L`, `W`, `#`, `?`), a
  * seconds field (6 fields), named months/days (`JAN`, `MON`), and `@reboot`. Silently mis-evaluating one
@@ -66,7 +67,7 @@ private fun parseField(raw: String, min: Int, max: Int, name: String): FieldResu
 
     // Not sortedSetOf() — that's JVM-only (java.util.TreeSet), unavailable in common Kotlin stdlib for
     // the wasmJs/linuxX64 targets this file compiles to. Ordering isn't needed on the Set itself; every
-    // consumer that cares about order calls .sorted() explicitly (see CronEvaluator's sortedHours/Minutes).
+    // consumer that cares about order calls .sorted() explicitly (see the evaluator's sorted hours/minutes).
     val values = mutableSetOf<Int>()
     for (part in raw.split(",")) {
         if (part.isEmpty()) return FieldResult.Err("The $name field has an empty entry between commas.")
@@ -135,49 +136,5 @@ fun parseCron(text: String): CronParse {
         minutes = parsed[0], hours = parsed[1], daysOfMonth = parsed[2], months = parsed[3], daysOfWeek = dows,
         domIsWildcard = fields[2].trim() == "*", dowIsWildcard = fields[4].trim() == "*",
     )
-    return CronParse.Ok(expr, describeCron(fields, expr))
-}
-
-private val DOW_NAMES = listOf("Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays")
-
-private fun Int.pad2() = toString().padStart(2, '0')
-
-/** Plain-English rendering for the Settings UI. Covers the shapes this app's own presets emit plus the
- *  common hand-written custom ones; anything more exotic falls back to a generic line — the next-runs
- *  preview (computed server-side, see the phase spec) is the actual source of truth for what a schedule
- *  does, this is just a hint while typing. */
-private fun describeCron(fields: List<String>, expr: CronExpr): String {
-    val (minF, hourF, domF, monF, dowF) = fields
-
-    if (domF != "*" && dowF != "*") {
-        return "On day $domF of the month, and on day-of-week $dowF — cron's OR rule: either match fires it."
-    }
-    if (domF != "*" || monF != "*") {
-        return "Runs on the schedule shown in the preview below."
-    }
-
-    if (hourF.startsWith("*/") && minF.toIntOrNull() != null && dowF == "*") {
-        val n = hourF.removePrefix("*/").toIntOrNull()
-        if (n != null) {
-            val m = minF.toInt()
-            return if (m == 0) "Every $n hours, on the hour." else "Every $n hours, at minute ${m.pad2()}."
-        }
-    }
-    if (minF.startsWith("*/") && hourF == "*" && dowF == "*") {
-        val n = minF.removePrefix("*/").toIntOrNull()
-        if (n != null) return "Every $n minutes."
-    }
-    val hour = hourF.toIntOrNull()
-    val minute = minF.toIntOrNull()
-    if (hour != null && minute != null) {
-        val time = "${hour.pad2()}:${minute.pad2()}"
-        return when {
-            dowF == "*" -> "At $time, every day."
-            expr.daysOfWeek == setOf(1, 2, 3, 4, 5) -> "At $time, Monday to Friday."
-            expr.daysOfWeek == setOf(0, 6) -> "At $time, on weekends."
-            expr.daysOfWeek.size == 1 -> "At $time, on ${DOW_NAMES[expr.daysOfWeek.first()]}."
-            else -> "At $time, on ${expr.daysOfWeek.sorted().joinToString(", ") { DOW_NAMES[it] }}."
-        }
-    }
-    return "Runs on the schedule shown in the preview below."
+    return CronParse.Ok(expr, ScheduleWords.cron(trimmed, expr))
 }

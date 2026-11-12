@@ -105,14 +105,15 @@ class ProcessingStateTest {
 
     @Test
     fun `a saved cron that matches a preset shows as that preset and anything else as Custom`() {
-        assertEquals("Every hour at :30", ProcessingSchedule.describeFind("30 */1 * * *"))
-        assertEquals("Every hour", ProcessingSchedule.describeFind("0 */1 * * *"))
-        assertEquals("Every 6 hours", ProcessingSchedule.describeFind("0 */6 * * *"))
-        assertEquals("Daily at 03:00", ProcessingSchedule.describeFind("0 3 * * *"))
-        assertEquals("Weekly on Sunday at 04:00", ProcessingSchedule.describeFind("0 4 * * 0"))
-        assertEquals("Weekly on Wednesday at 04:30", ProcessingSchedule.describeFind("30 4 * * 3"))
-        assertEquals("Custom · 15 2 1 * *", ProcessingSchedule.describeFind("15 2 1 * *"))
-        assertTrue(ProcessingSchedule.describeFind("").startsWith("Not on a schedule"))
+        assertEquals("Every hour at :30", ProcessingSchedule.describeSchedule("30 */1 * * *"))
+        assertEquals("Every hour", ProcessingSchedule.describeSchedule("0 */1 * * *"))
+        assertEquals("Every 6 hours", ProcessingSchedule.describeSchedule("0 */6 * * *"))
+        assertEquals("Daily at 03:00", ProcessingSchedule.describeSchedule("0 3 * * *"))
+        assertEquals("Weekly on Sunday at 04:00", ProcessingSchedule.describeSchedule("0 4 * * 0"))
+        assertEquals("Weekly on Wednesday at 04:30", ProcessingSchedule.describeSchedule("30 4 * * 3"))
+        assertEquals("Monthly on day 1 at 02:15", ProcessingSchedule.describeSchedule("15 2 1 * *"))
+        assertEquals("Custom · 15 2 1,15 * *", ProcessingSchedule.describeSchedule("15 2 1,15 * *"))
+        assertTrue(ProcessingSchedule.describeSchedule("").startsWith("Not on a schedule"))
     }
 
     @Test

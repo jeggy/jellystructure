@@ -2197,7 +2197,7 @@ fun Route.mediaRoutes(
         // 93e: compute the next scheduled run FRESH from the current config so the indicator updates
         // the instant the admin saves a new schedule (no waiting for the scheduler loop to recompute).
         val sched = configStore.current.processingOrDerived().find.schedule
-        val next = if (sched.isNotBlank()) nextRunDelayMs(sched, nowEpochSec())?.let { nowEpochSec() + it / 1000L } else null
+        val next = if (sched.isNotBlank()) nextRunDelayMs(sched, nowEpochSec(), dev.jellystructure.cron.ScheduleZone.resolve(configStore.current.general.timezone))?.let { nowEpochSec() + it / 1000L } else null
         call.respond(scanTracker.status().copy(nextScheduledRun = next))
     }
 

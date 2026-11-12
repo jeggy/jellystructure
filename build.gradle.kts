@@ -425,6 +425,7 @@ tasks.named("wasmJsBrowserDistribution") {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.io.core)
+                implementation(libs.kotlinx.datetime)   // DEB-4387 — the schedule evaluator's zones
                 implementation(libs.ktoml.core)
             }
         }

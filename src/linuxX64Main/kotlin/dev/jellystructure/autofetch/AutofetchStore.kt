@@ -1,8 +1,9 @@
 package dev.jellystructure.autofetch
 
-import dev.jellystructure.cron.CronParse
-import dev.jellystructure.cron.nextFireEpochSec
-import dev.jellystructure.cron.parseCron
+import dev.jellystructure.cron.ScheduleEvaluator
+import dev.jellystructure.cron.ScheduleParse
+import dev.jellystructure.cron.ScheduleZone
+import dev.jellystructure.cron.parseSchedule
 import dev.jellystructure.db.JellystructureDb
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -296,8 +297,9 @@ object FetchSchedule {
         if (lastRunAt == null) return now
         val floor = lastRunAt + LaneRules.RUN_FLOOR_SEC
         if (schedule == "every6h") return floor
-        val expr = (parseCron(cron(schedule, id) ?: return floor) as? CronParse.Ok)?.expr ?: return floor
-        val slot = nextFireEpochSec(expr, lastRunAt) ?: return floor
+        val parsed = (parseSchedule(cron(schedule, id) ?: return floor) as? ScheduleParse.Ok)?.schedule ?: return floor
+        // The server's own zone (`TZ`, else UTC), as the old local-time walk had; DEB-4387 piece 2 moves this onto `[general] timezone`.
+        val slot = ScheduleEvaluator.nextFire(parsed, ScheduleZone.resolve(""), lastRunAt) ?: return floor
         return maxOf(slot, floor)
     }
 }
