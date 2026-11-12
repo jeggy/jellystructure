@@ -11,11 +11,13 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.shared.tv.MusicList
 import dev.jellystructure.shared.tv.MusicTrackItem
+import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -34,8 +36,11 @@ class BrowseListIsLazyTest {
     @Test fun `a long songs page composes the visible rows and pages in only on reaching the end`() {
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         val fetches = AtomicInteger()
+        // Its own thread, not the JVM-wide Dispatchers.Default pool the ~1 800 tests of this fork share and can starve (DEB-4346).
+        val pool = Executors.newSingleThreadExecutor()
+        val fetchThread = pool.asCoroutineDispatcher()
         val total = 6_000
-        val paged = MusicPagedList { page ->
+        val paged = MusicPagedList(dispatcher = fetchThread) { page ->
             fetches.incrementAndGet()
             MusicList(tracks = (page * 100 until minOf(total, page * 100 + 100)).map { MusicTrackItem(id = "t$it", title = "Stand-in song $it") }, total = total, page = page, pageSize = 100)
         }
@@ -48,6 +53,7 @@ class BrowseListIsLazyTest {
         rule.waitUntil(30_000) { rule.onAllNodes(hasText("Stand-in song 0")).fetchSemanticsNodes().isNotEmpty() }
         rule.waitForIdle()
         val composed = (0 until total).count { rule.onAllNodes(hasText("Stand-in song $it")).fetchSemanticsNodes().isNotEmpty() }
+        pool.shutdown()
         assertTrue(composed in 1..40, "only the visible rows compose; $composed of $total did")
         assertEquals(1, fetches.get(), "no page beyond the first was asked for before the viewer scrolled")
     }

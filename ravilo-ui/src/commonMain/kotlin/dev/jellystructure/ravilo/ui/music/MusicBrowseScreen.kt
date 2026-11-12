@@ -76,6 +76,7 @@ import dev.jellystructure.shared.tv.MusicPlaylist
 import dev.jellystructure.shared.tv.MusicSearch
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.TvApiClient
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,9 +97,11 @@ class MusicPagedList(
     seed: MusicList? = null,
     /** DEB-4091 (FR-5) — called with each successful *first-page* answer, to save it; [more] never calls it. */
     private val onFirstPage: (suspend (MusicList) -> Unit)? = null,
+    /** DEB-4346 — where the fetches run. A test passes its own thread, so it never waits on the JVM-wide default pool. */
+    dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val fetch: suspend (Int) -> MusicList,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val _state = MutableStateFlow<Load<MusicList>>(if (seed != null) Load.Ready(seed) else Load.Loading)
     val state: StateFlow<Load<MusicList>> = _state
     private var page = 0
