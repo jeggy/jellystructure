@@ -199,6 +199,28 @@ when something actually refused*.
   or cookies. Text on the page that asks the viewer to sign in is not proof. An answer without proof is refused back
   to the model as a correction.
 
+**Amended 2026-11-12 (DEB-4341, owner on DEB-4341):** *"Still fails. It should be straight forward for a page like
+that. This is only for the "Re-investigate page" feature on the already existing auto-fetcher."* The owner pressed
+*Re-investigate page* on the household's kvf.fo fetcher. It ended *Videos not found* on turn 12 after 339 s: 120 items
+listed, series confirmed. That fetcher's saved recipe still runs every day, and its `media` part is exactly what was
+needed: `item_page` reads `var media = '…'` and the template is on `vod.kringvarp.fo`. Prod's log (investigation
+`78bfb1f1`) shows two of our own gaps. Neither is the model's.
+- **Re-investigate starts from nothing.** It passes the fetcher's URL, TMDB id, mode and `ignoreRobots`, and nothing
+  else. The model never sees the saved recipe that already works, so it has to find the site again from scratch.
+- **`fetch` cut the media id away.** On a kvf.fo item page, `var media = '…'` is at character 6,126 of a 6,354-character
+  inline script. FR-5.1 keeps an inline script's first 1.5 kB. The model's own answer says so: the media id *"sits in
+  an inline script whose body my read truncated"*. Its node-id guesses answered `404`.
+- **A good recipe was thrown away.** The model's `videos_not_found` answer still carried a full recipe. Its `media`
+  part had the right template and an `item_page` pattern that matches the page. The engine never proved it. The proof
+  reads the item page's whole source, not the trimmed text, so it would have passed.
+- **The changes:**
+  - FR-5.11 (new): *Re-investigate page* proves the saved recipe against today's page before the first turn, and the
+    first turn carries the saved recipe and that proof's result.
+  - FR-5.12 (new): an answer of `videos_not_found` or `not_a_series` that carries a recipe with a `media` part is
+    proved first. If the proof passes, the investigation goes to the review.
+  - FR-5.1 and FR-5.7: an inline script past the 1.5 kB cut also keeps each line that assigns a short quoted string.
+  - *Acceptance* 25 says the same. No route, DTO, screen or migration is added.
+
 ### What the household does by hand today
 
 The household fetches broadcaster series with hand-run scripts kept outside this repository, one per title, plus an
@@ -930,6 +952,11 @@ one lane.
      (FR-2's registrable domain, a relative `src` included) as `<script src="…"></script>`, with the address resolved
      against the page. Nothing else from the tag is kept. An external script on any other site is removed, address and
      all, as before. Inline scripts keep their first 1.5 kB (DEB-2478).
+   - **A value set deep in an inline script (2026-11-12, DEB-4341).** Past the 1.5 kB cut, an inline script also keeps
+     each line that assigns a quoted string of at most 200 characters to a name: `var`, `let` or `const`, or a plain
+     `name = '…'`. These lines are kept in order, under one `/* … */` that marks the cut, and at most 20 are kept from
+     each script. KVF sets `var media = '…'` 6 kB into a 6.3 kB script, and the 1.5 kB cut alone dropped it. The
+     60 kB answer limit still applies to the whole page.
    - **The model may read it.** A script is fetched like any other address on the page's own site: one request in
      FR-2's lane, paced, checked against `robots.txt` (or not, under FR-2.8), counted in FR-5.1's 20 reads, with the
      answer cut at 60 kB. A script's text is passed through as text. The HTML reduction does not run on it.
@@ -1009,6 +1036,43 @@ one lane.
    - Rejected: the limit on `config.toml` only. The owner asked for a setting, and the AI job's other limits are on
      its card. Rejected: no upper bound. Each step is a full-price call, and FR-5.4's check before every turn is the
      only brake, so a typo of 120 would let one investigation spend most of a month's limit.
+11. **Re-investigate starts from the saved recipe (2026-11-12, DEB-4341).** *Re-investigate page* is pressed on a
+   fetcher that has a recipe. Until now the investigation threw that recipe away and started blind.
+   - **Proved first, with no model call.** When the investigation has a `fetcherId`, the engine runs FR-4.2's proof on
+     the fetcher's saved recipe against today's page before turn 1. The reads are the proof's own, in FR-2's lane and
+     inside FR-2.3's 25. They are not counted in FR-5.1's 20 reads, and no turn is spent. *Read the page* is marked
+     with the proof's listing read.
+   - **Handed to the model.** The first user message carries the saved recipe as JSON, without `mapping`, and one
+     line with the proof's result. That line is either *the saved recipe still proves: N items, the media probe
+     answered* or the failing check with its reason, as a correction turn would say it (FR-5.1). The prompt adds one
+     line: *keep every part of the saved recipe that still proves and change only what fails. If it all proves,
+     answer it unchanged unless the page shows something it misses.* The approved numbers of a mapped fetcher stay on
+     its items, as today (FR-4.3). The model writes `mapping` afresh.
+   - **What leaves the house.** The recipe is selectors, a URL template and host names read from this page. Nothing in
+     it is new to the model, because the page is what it reads anyway (FR-5.2). The bug report (FR-10.4) does not gain
+     the saved recipe.
+   - **The rest is unchanged.** The admin still saves or discards what comes back, and the old recipe runs until then
+     (FR-4.4). If the saved recipe does not parse under today's schema, the line says *the saved recipe could not be
+     read* and the investigation runs as a new one.
+   - Rejected: skipping the model when the saved recipe proves. The admin presses the button because something looks
+     wrong, such as numbering, a field, or the page's series text. That is a judgement a proof cannot make. The model's
+     turn costs what one investigation turn costs, and FR-5.4 checks it.
+12. **A recipe in a give-up answer is proved first (2026-11-12, DEB-4341).** The model may answer `videos_not_found`,
+   or `not_a_series` after the listing yielded two items (FR-5.8), with a recipe whose `media` part is filled in: a
+   `manifest` template, a `manifest_field`, or `ytdlp`. The engine then runs FR-4.2's proof on that recipe before it
+   accepts the ending.
+   - **It proves.** The investigation goes to the review exactly as if the model had answered with the recipe. The
+     review carries nothing that says the model doubted it. The proof is the check.
+   - **It fails on the media.** When FR-5.1 still has a correction left, the proof's reason goes back to the model as
+     a correction, as for any refused recipe. Without one, the investigation ends *Videos not found* (FR-5.8), never
+     *Out of steps*: the model did answer.
+   - **It fails earlier, on the listing or the series.** The model's own ending stands, under FR-5.8 and FR-5.10 as
+     today. No correction is spent.
+   - An answer of `not_a_series` with no listing of two items, or a recipe with an empty `media` part, is not proved.
+     It ends as it does today.
+   - Why: the proof reads an item page's whole source (FR-4.1's `item_page`), while the model reads `fetch`'s trimmed
+     text. A model that wrote the right pattern but could not see it match had every reason to give up. The engine
+     can see what the model could not.
 
 ### FR-6 — A run
 
@@ -1850,6 +1914,27 @@ Added 2026-11-04 (DEB-3591):
     - The failed state shows *Out of steps*, *Try again* before *Dismiss*, and the bug-report link after them as a
       plain link. *Try again* posts the same URL, TMDB id or page-only, and `ignoreRobots`.
     - A fake model that answers `not_a_series` with no listing still reads *Not a series*, as before.
+25. **Re-investigate from the saved recipe, and a give-up answer's recipe proved (FR-5.11, FR-5.12, FR-5.7;
+    DEB-4341).** The fixture site of *Acceptance* 22, whose item pages set `var media = 'ABC123'` 5 kB into a 6 kB
+    inline script.
+    - `PageText.reduce` of an item page keeps the script's first 1.5 kB, then `/* … */`, then the line
+      `var media = 'ABC123';`. A script with 30 such lines keeps 20. A line assigning a 300-character string is not
+      kept.
+    - *Re-investigate page* on a saved fetcher whose recipe proves: before the fake model's first turn, the proof's
+      reads are in the site's lane and none is counted in the 20. The first user message holds the saved recipe
+      without `mapping` and *the saved recipe still proves*. A fake model that answers that recipe unchanged reaches
+      the review.
+    - The same, with the fixture's media host renamed so the saved recipe's probe fails: the first message carries the
+      media check's reason.
+    - A saved recipe that no longer parses: the first message says *the saved recipe could not be read*, and the
+      investigation runs on.
+    - A new investigation (no `fetcherId`) sends no saved-recipe line.
+    - A fake model that answers `videos_not_found` with the right recipe reaches the review. With a wrong `manifest`
+      template and corrections left, the proof's reason comes back as a correction. With none left, it ends
+      *Videos not found*, `outOfSteps: false`.
+    - A fake model that answers `videos_not_found` with an empty `media` part ends *Videos not found* with no proof run.
+    - On prod, after the build is deployed, *Re-investigate page* on the household's kvf.fo fetcher reaches the review.
+      This step is QA's, not a unit test, and nothing is saved.
 
 ## Non-goals
 
@@ -1965,3 +2050,8 @@ is lost for good.
    answer be corrected.
 3. **Backend + admin: the step limit** (FR-5.10, FR-10.10, FR-13, added later that day). *Acceptance* 24. It builds on
    piece 2's FR-5.9: `MAX_TURNS` becomes the setting read when the investigation starts.
+
+**Where the 2026-11-12 amendment lands (DEB-4341).** One backend piece: FR-5.11, FR-5.12 and FR-5.7's inline-script
+lines (`autofetch/Investigation.kt`, `Investigations.kt`, `Proof.kt`). *Acceptance* 25. No route, DTO, screen or
+migration. Any one of the three would likely have rescued the owner's run. Together they mean a re-investigation of a
+fetcher that still works starts from what works, and a right recipe is never thrown away unproved.
