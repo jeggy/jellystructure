@@ -132,11 +132,33 @@ FR-5. The structure follows a calendar's *custom recurrence* editor:
 
 Every row above starts using the FR-2.3 due rule.
 
-**Pending owner decision (card on DEB-4387):** whether the Live TV guide refresh and the release-age re-check tiers
-(*Metadata*, *Verify*, *Track lengths* and so on; `2years`, `5years`, `never` today) also take part. The
-recommendation: the guide refresh takes the picker with a 15-minute floor. The tiers keep being ages, not calendar
-times ("re-check when the last check is older than…"), but their select becomes the picker's *every [N] [unit]*
-half, so *10 years* is possible there too.
+**Owner, 2026-11-12 (card on DEB-4387): both take part.** He ticked both the Live TV guide refresh and the
+release-age re-check tiers. FR-5.1 and FR-5.2 below say how. They are build piece 5, after the admin control.
+
+#### FR-5.1 — The Live TV guide refresh
+
+1. It takes the full picker, with a **15-minute** floor and no *Off*, because the guide page needs a guide. It is
+   stored as `epg_schedule` in the Live TV settings, and it is due by the FR-2.3 rule instead of by cache age.
+2. The carry-over happens once, at load, from `epg_cadence_minutes`: `15` becomes `*/15 * * * *`, `60` becomes
+   `0 * * * *`, `360` becomes `0 */6 * * *`, and `1440` becomes *daily at* the hour and minute of the last sync
+   (04:00 with no sync yet). Any other stored value rounds down to the nearest of those four.
+3. `epg_cadence_minutes` is still written for one release, as the whole minutes between the schedule's next two
+   fires, clamped to 15–1440. A backend rolled back one release therefore keeps refreshing.
+
+#### FR-5.2 — The release-age re-check tiers
+
+1. The tiers stay **ages, not calendar times**: *re-check when the last check is older than…*. They do not show the
+   time, weekday, month-day, *starting*, sentence or next-runs parts of the picker. Their select becomes the
+   picker's **[N] [days | weeks | months | years]** half, with N from 1 to 100, and *Never* at the head of the unit
+   menu in place of *Off*.
+2. A tier value is one of today's words (`daily`, `weekly`, `monthly`, `6months`, `yearly`, `2years`, `5years`,
+   `never`), or `<N>days`, `<N>weeks`, `<N>months` or `<N>years`. **Today's word is written whenever the choice is
+   one.** The `<N><unit>` form is written only for an age no word says, such as *10 years*. `cadenceMs` reads both,
+   and stays the one place an age becomes a duration. A month is 30 days and a year 365, as now.
+3. A backend rolled back past this piece reads an unknown tier as *monthly* (`cadenceMs`'s fallback). For a file
+   check that is a 200–300 GB read every month. Because today's word is written whenever there is one, only a tier
+   set to an age no word says is exposed. The release note for this piece says so, so that a rollback resets those
+   tiers first.
 
 ### FR-6 — Routes
 
@@ -158,8 +180,9 @@ For pictures and tests: the processing features as they are named in the admin, 
 - *Weeks · Mon + Tue · 04:00* saves as `0 4 * * 1,2`, and its next five runs are Mondays and Tuesdays at 04:00 in
   the schedule zone.
 - *Every 2 weeks · Wed* from 2026-11-18 fires on 18 Nov and 2 Dec, not on 25 Nov.
-- *Every 10 years · 1 March · 04:00* from 2026 validates, previews 2026, 2036, 2046 and so on, and its sentence says
-  so.
+- *Every 10 years · 1 March · 04:00* from 2026-03-01 validates, and its sentence says *starting 1 March 2026*.
+  Against a clock of 2026-02-01 its next five runs are 2026, 2036, 2046, 2056 and 2066. Against a clock of
+  2026-11-12 they start at 2036. The test pins the clock; it never reads the wall clock.
 - *Months · last Friday* fires on 27 Nov 2026 and 25 Dec 2026.
 - *Months · day 31* skips November. *Last day* does not.
 - An auto-fetcher stored as `weekly@3@04:00` opens as *Weeks · Wed · 04:00*. Saved unchanged, it is written as
@@ -170,6 +193,9 @@ For pictures and tests: the processing features as they are named in the admin, 
   DST change, and the preview shows 04:00.
 - There is one schedule control in the admin source. `SettingsProcessing.kt`'s and `AutofetchHtml.kt`'s own pickers
   and the duplicated weekday arrays are gone.
+- A Live TV guide on `60` minutes loads as *every 1 hour at minute 00* and still writes `epg_cadence_minutes = 60`.
+- A *Verify* tier on `5years` opens as *5 years* and is saved as `5years`. *10 years* is saved as `10years`, and
+  `cadenceMs("10years")` is ten times `cadenceMs("yearly")`.
 
 ## Non-goals
 
@@ -200,6 +226,39 @@ The states to draw:
 Each state shows the sentence and the next five runs. It is an admin surface on a desktop browser, with no TV or
 remote constraints. The styling goes into `wf.css`.
 
+### The round, 2026-11-12 (DEB-4401, `417b79b2`)
+
+Rannvá drew round `schedule-picker` in both homes, in all seven states and both themes. Its sources are in
+`design/incoming/2026-11-12-schedule-picker/`. It drew three shapes: **Lines**, *Sentence* and *Summary and a sheet*.
+Lines is the recommendation, and the owner's card is on DEB-4387. Lines puts one decision on each line, in a fixed
+order, and the lines wrap, so the same markup gives three lines in a Processing row and six in the panel. The
+sentence shape breaks mid-phrase at 280 px. The sheet hides the sentence and the runs that FR-3.8 asks for. Unless
+the owner says otherwise, piece 4 builds Lines.
+
+What the round settles, and what piece 4 builds:
+
+1. **The foot never collapses.** The sentence and the next-runs slot are present in every state, including *Off*
+   and a refusal. Where nothing will run, the heading reads *Next runs* and the slot says so.
+2. **A refused schedule shows no runs.** It never shows the last valid schedule's times. The refusal is one block
+   note with a `--bad` edge, not a `.badge`.
+3. **Months ask *a day* or *a weekday* first**, then show the controls for that answer (FR-3.4).
+4. **The unit word follows N**, in the closed select and in the open menu alike: *every 1 week*, *every 2 weeks*.
+   This amends FR-3.1's literal *[hours ▾ | days | …]*.
+5. **The weekday toggles are a multi-select `.seg`.** Each on-day has its own visible edge, so that *Monday and
+   Tuesday* never reads as one wide cell.
+6. **The time field is at least 138 px wide.** A 12-hour locale renders `08:00 PM` and its picker button at about
+   134 px. Both of today's fields clip it (`AutofetchHtml.kt` at 100 px, `SettingsProcessing.kt` at 112 px).
+   `check-mobile-css.sh` gains a line for it when the classes land.
+7. **The classes go in `wf.css`**, not in a page file. `ai.css` and `processing.css` both need the control, and
+   FR-5.1 adds the Live TV page.
+8. **The panel's floor is 280 px.** `ai.css` makes the real lane depend on the window, and it is usually wider. The
+   control must work at 280 px and is drawn there.
+9. **The admin writes no words about the anchor.** The round drew a note under *every 10 years, starting 2026*
+   explaining why 2026 is not in the runs. That note is not built. The server's sentence already says *starting
+   1 March 2026*, and the admin renders server words only. FR-3.6 stands: *starting* defaults to the next date that
+   matches, so a schedule set up today lists its first run.
+10. *Last day* and *day 31* need no picture. They are entries in the month-day menu of state 3.
+
 ## Build order
 
 One engineer, in order, each piece blocked by the one before:
@@ -209,7 +268,9 @@ One engineer, in order, each piece blocked by the one before:
 2. **Backend: the other settings move onto it** (FR-5, FR-6.2–6.3). This includes the Music/Audiobooks carry-over
    and the auto-fetcher's old forms. It folds DEB-2827's backend piece in, rather than building it a second time.
 3. **Design round** (Rannvá). It runs in parallel with pieces 1 and 2.
-4. **Admin: the shared control** (FR-3) in every setting of FR-5, built on the round's pictures. The two old
-   pickers are removed. It replaces DEB-2830's two pickers.
+4. **Admin: the shared control** (FR-3) in every setting of FR-5's table, built on the round's pictures. The two
+   old pickers are removed. It replaces DEB-2830's two pickers.
+5. **The guide refresh and the tiers** (FR-5.1, FR-5.2), backend and admin together, on piece 4's control. This
+   piece was added on 2026-11-12, after the owner's answer.
 
 Each piece files its own QA row when built, with a written plan and no named seat.
