@@ -288,3 +288,15 @@ down six rows and back) still passes in `BrowseFocusTest`.
   state. That removes both the double invalidation and the frame wait that only existed to attach `targetFR`.
 - Keep `bringIndexIn` for R361's restore. If a press ever does find its target uncomposed, use `animateScrollBy`.
 - One system trace on a TV, before and after, shows whether the 90–250 ms frame was the jump.
+
+## Amendment 2026-11-12 — Right at the last column stays on the grid (DEB-4277)
+
+Found in DEB-4272's Stue TV sweep: Right on the last column of the Movies grid jumped focus up to the profile avatar,
+because no tile lies to the right and the native 2-D search picked the nearest focusable, the app bar's avatar. A
+following OK opened the profile menu and the viewer lost their place.
+
+**FR-R362-5 (amended again) — Right at the grid's right edge does nothing.** "Left/Right unchanged" holds everywhere
+except one case: Right from a tile in the last column, or from the last tile of a shorter last row, is consumed by
+the grid's key handler (`gridColumnKeys`), so focus stays on that tile. Right from any other tile stays the native
+move. Left is not changed here. Same grids as above: the Movies / Series / seeded browse grid and My List.
+`gridRightEdge(index, cols, count)` is the pure test of this; the grid's handler applies it.

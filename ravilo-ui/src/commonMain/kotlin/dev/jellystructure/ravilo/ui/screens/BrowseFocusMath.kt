@@ -15,6 +15,14 @@ fun gridVerticalTarget(index: Int, cols: Int, count: Int, down: Boolean): Int? {
 }
 
 /**
+ * DEB-4277 (R362 FR-R362-5, amended 2026-11-12) — whether Right from the tile at [index] has no tile to go to: it is in
+ * the last column, or it is the last tile of a shorter last row. The grid consumes that key, so the native 2-D search
+ * cannot pick the nearest focusable to the right, which is the app bar's avatar.
+ */
+fun gridRightEdge(index: Int, cols: Int, count: Int): Boolean =
+    cols > 0 && index in 0 until count && ((index + 1) % cols == 0 || index == count - 1)
+
+/**
  * R362 (FR-R362-1/2) — where Down from the app bar (and Up from the grid's first row) lands in the facet bar: the chip
  * last focused there if it is still fully on screen, else `null` = scroll the bar to its start and focus Genre.
  */

@@ -22,6 +22,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import dev.jellystructure.ravilo.ui.screens.gridRightEdge
 import dev.jellystructure.ravilo.ui.screens.gridVerticalTarget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -137,12 +138,14 @@ fun Modifier.gridColumnKeys(
     onFirstRowUp: (() -> Unit)? = null,
 ): Modifier = onPreviewKeyEvent { ev ->
     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+    val idx = gridFocus.focusedIndex
+    // DEB-4277 — Right at the right edge stays put; the native search would jump up to the app bar's avatar.
+    if (ev.key == Key.DirectionRight) return@onPreviewKeyEvent gridRightEdge(idx, cols, keys().size)
     val down = when (ev.key) {
         Key.DirectionDown -> true
         Key.DirectionUp -> false
         else -> return@onPreviewKeyEvent false
     }
-    val idx = gridFocus.focusedIndex
     if (idx < 0) return@onPreviewKeyEvent false
     if (!down && idx < cols && onFirstRowUp != null) { onFirstRowUp(); return@onPreviewKeyEvent true }
     val ks = keys()

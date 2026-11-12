@@ -113,6 +113,18 @@ class BrowseFocusTest {
         focusedWith("Genre")                         // its first chip (nothing focused there before)
     }
 
+    @Test fun `DEB-4277 — Right on the last column stays on that tile, not the app bar's avatar`() {
+        render()
+        repeat(5) { press(Key.DirectionRight) }
+        focusedExactly("Stand-in 6")
+        press(Key.DirectionRight)
+        focusedExactly("Stand-in 6")
+        press(Key.DirectionDown); press(Key.DirectionDown)
+        focusedExactly("Stand-in 18")
+        press(Key.DirectionRight)
+        focusedExactly("Stand-in 18")
+    }
+
     @Test fun `Up from the first tile lands on the facet bar, and Down returns to the grid`() {
         render()
         press(Key.DirectionUp)
