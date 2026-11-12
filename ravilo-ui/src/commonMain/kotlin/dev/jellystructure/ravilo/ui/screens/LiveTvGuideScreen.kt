@@ -353,6 +353,10 @@ fun LiveTvGuideScreen(
             activeNav = -1,   // the guide isn't one of the section tabs → no tab highlighted
             onNavSelect = onNavSelect,
             navFR = navBarFR,
+            // DEB-4284 — Down from the bar goes back into the guide, onto the first channel row, as it does on
+            // Movies, Series and Discover. No onDown left the key with nowhere to go: focus sat on the tab.
+            // Loading/Error have no grid, so the request throws and focus stays on the bar (Back still works).
+            onDown = { runCatching { firstChannelFR.requestFocus() } },
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = true,
