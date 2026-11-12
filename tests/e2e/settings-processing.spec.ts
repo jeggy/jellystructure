@@ -117,17 +117,73 @@ test.describe.serial("Settings ▸ Processing (DEB-1664, FR-4)", () => {
     await save(page);
   });
 
-  test("Find new & changed's picker is validated before it can be saved (phase 166)", async () => {
+  test("Find new & changed's picker is validated before it can be saved (phase 166, DEB-4402 FR-3.8)", async () => {
     await openProcessing(page);
     await openRow(page, "Find new & changed");
-    await page.selectOption('[data-find="mode"]', "custom");
-    await page.fill('[data-find="cron"]', "not a cron");
-    await expect(page.locator("#pf-find-check .badge.bad")).toBeVisible({ timeout: 5_000 });
+    const find = page.locator('[data-sch-key="pf:find"]');
+    await find.locator('[data-sch="unit"]').selectOption("cron");
+    await find.locator('[data-sch="cron"]').fill("not a cron");
+    // a refusal is one block note, shows no runs, and holds Save
+    await expect(find.locator(".sch-err")).toBeVisible({ timeout: 5_000 });
+    await expect(find.locator(".sch-runs")).toHaveCount(0);
+    await expect(find.locator(".sch-next-h")).toHaveText("Next runs");
     await expect(page.locator("#save-settings")).toBeDisabled();
-    await page.fill('[data-find="cron"]', "0 */1 * * *");
-    await expect(page.locator("#pf-find-check .badge.ok")).toBeVisible({ timeout: 5_000 });
+    await find.locator('[data-sch="cron"]').fill("0 */1 * * *");
+    // the sentence and the five runs are the server's, and Save comes back
+    await expect(find.locator(".sch-runs li")).toHaveCount(5, { timeout: 5_000 });
+    await expect(find.locator(".sch-says")).not.toBeEmpty();
+    await expect(find.locator(".sch-err")).toHaveCount(0);
     await expect(page.locator("#save-settings")).toBeEnabled();
     await page.reload();
+  });
+
+  test("DEB-4402 — Monday and Tuesday at 04:00 is saved as the cron and previews Mondays and Tuesdays in the server's zone", async () => {
+    await openProcessing(page);
+    await openRow(page, "Find new & changed");
+    const find = page.locator('[data-sch-key="pf:find"]');
+    await find.locator('[data-sch="unit"]').selectOption("weeks");
+    // weekdays are a multi-select: every on-day keeps its own mark, and the last one cannot be switched off
+    const days = find.locator("[data-sch-day]");
+    await expect(days).toHaveCount(7);
+    await expect(days.first()).toHaveText("Mo");
+    for (const d of ["1", "2"]) {
+      const on = await find.locator(`[data-sch-day="${d}"]`).evaluate((el) => el.classList.contains("on"));
+      if (!on) await find.locator(`[data-sch-day="${d}"]`).click();
+    }
+    for (const d of ["0", "3", "4", "5", "6"]) {
+      if (await find.locator(`[data-sch-day="${d}"]`).evaluate((el) => el.classList.contains("on"))) await find.locator(`[data-sch-day="${d}"]`).click();
+    }
+    await expect(find.locator("[data-sch-day].on")).toHaveCount(2);
+    await find.locator('[data-sch="at"]').fill("04:00");
+    await expect(find.locator(".sch-runs li")).toHaveCount(5, { timeout: 5_000 });
+    const runs = await find.locator(".sch-runs li .d").allTextContents();
+    for (const r of runs) expect(r).toMatch(/^(Mon|Tue) /);
+    await expect(find.locator(".sch-runs li .t").first()).toHaveText("04:00");
+    // the unit word follows N, and *starting* appears only for an N above 1
+    await expect(find.locator('[data-sch="unit"] option[value="weeks"]')).toHaveText("week");
+    await expect(find.locator('[data-sch="from"]')).toHaveCount(0);
+    await find.locator('[data-sch="n"]').fill("2");
+    await expect(find.locator('[data-sch="unit"] option[value="weeks"]')).toHaveText("weeks");
+    await expect(find.locator('[data-sch="from"]')).toHaveCount(1);
+    await expect(find.locator(".sch-says")).toContainText("2 weeks", { timeout: 5_000 });
+    await page.reload();
+  });
+
+  test("DEB-4402 — Music, Audiobooks, Recommendations and Suggestions use the same control", async () => {
+    await openProcessing(page);
+    await openRow(page, "Music");
+    await expect(page.locator('[data-sch-key="pf:music"] .sch-lines')).toBeVisible();
+    await expect(page.locator('[data-sch-key="pf:music"] [data-sch="unit"] option[value="off"]')).toHaveCount(0);
+    await openRow(page, "Audiobooks");
+    await expect(page.locator('[data-sch-key="pf:audiobooks"] .sch-lines')).toBeVisible();
+    await openRow(page, "Suggestions");
+    await expect(page.locator('[data-sch-key="pf:recommendations"] .sch-lines')).toBeVisible();
+    await expect(page.locator('[data-sch-key="pf:suggestions"] .sch-lines')).toBeVisible();
+    // Find, which can be off, is the one that offers Off
+    await openRow(page, "Find new & changed");
+    await expect(page.locator('[data-sch-key="pf:find"] [data-sch="unit"] option[value="off"]')).toHaveCount(1);
+    // the old pickers are gone
+    await expect(page.locator('#sect-processing [data-find], #sect-processing [data-choice="music.interval"]')).toHaveCount(0);
   });
 
   for (const theme of ["dark", "light"]) {

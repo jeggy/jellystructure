@@ -555,6 +555,17 @@ check "$AICSS" "…and a run's own lines lose the dot column's indent there" \
 # wf.css's share of the same promotion.
 check "$WF" "the settled-neutral badge, needed by two page stylesheets (.badge.flat)" \
   ".badge.flat{ background: var(--fill-3); border-color: var(--line-2); color: var(--ink-soft); }"
+# DEB-4402 (DEB-4387 FR-3) — the shared schedule control, written once in wf.css because the auto-fetcher panel, Settings ▸ Processing and the
+# Live TV page all need it. The time field is 138 px: Chromium draws a 12-hour locale as `08:00 PM` plus its picker button (~134 px), and the two
+# old fields (100 px and 112 px) cut both in half. A refusal is one block with one --bad edge, never a .badge (a wrapped .badge draws two boxes).
+check "$WF" "schedule control: the time field is 138 px wide, for a 12-hour locale (.sch-at)" \
+  ".sch-at { width: 138px; }"
+check "$WF" "schedule control: a refusal is one block with a single --bad edge (.sch-err)" \
+  "border-left: 3px solid var(--bad); border-radius: 0 var(--radius-s) var(--radius-s) 0; padding: 8px 12px; }"
+check "$WF" "schedule control: each on-weekday keeps its own edge (.sch-days span.on)" \
+  ".sch-days span.on { background: var(--hi-soft); color: var(--acc-ink); border-right-color: var(--line-2); }"
+check "$WF" "schedule control: the lines wrap, one markup for a 280 px panel and a feature row (.sch-lines)" \
+  ".sch-lines { display: flex; flex-wrap: wrap;"
 # Three things that must never come back into ai.css, each one a decision rather than a tidy-up.
 AICODE=$(perl -0777 -pe 's{/\*.*?\*/}{}gs' "$AICSS")
 if printf '%s' "$AICODE" | grep -qF "af-spin"; then

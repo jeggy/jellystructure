@@ -95,7 +95,7 @@ test.describe.serial("AI page — the Fetchers tab (DEB-2477)", () => {
         expect(await panel.locator(".af-tbl").evaluate((el) => getComputedStyle(el).borderCollapse)).toBe("collapse");
         await expect(panel.locator("tr.af-row")).toHaveCount(2);
         await expect(panel.locator("tr.af-row").first()).toContainText("Dagbók");
-        await expect(panel.locator("tr.af-row").first()).toContainText("Daily · 04:00");
+        await expect(panel.locator("tr.af-row").first()).toContainText("Daily at 04:00");
         await expect(panel.locator("tr.af-row").first().locator(".sched .keep")).toHaveText("keeps newest 12");
         await expect(panel.locator("tr.af-row").nth(1).locator(".sched .keep")).toHaveCount(0);
         await expect(panel.locator("tr.af-row .badge.ok").first()).toHaveText("Up to date");
@@ -120,6 +120,35 @@ test.describe.serial("AI page — the Fetchers tab (DEB-2477)", () => {
         await det.locator("[data-af-save]").click();
         await expect.poll(() => st.patches.length).toBe(1);
         expect(st.patches[0]).toEqual({ retention: { mode: "newest", keep: 8, leaves_page: true } });
+      });
+
+      test("2b — DEB-4402: the Check is the shared schedule control — Mon + Tue is saved as the cron, and the 6 h floor holds Save", async () => {
+        await open();
+        await page.locator("tr.af-row").first().click();
+        const det = page.locator("tr.af-det");
+        const sch = det.locator('[data-sch-key="af:f-dagbok"]');
+        // the old words open in the simple modes; a Check is never off
+        await expect(sch.locator('[data-sch="unit"]')).toHaveValue("days");
+        await expect(sch.locator('[data-sch="at"]')).toHaveValue("04:00");
+        await expect(sch.locator('option[value="off"]')).toHaveCount(0);
+        await expect(sch.locator(".sch-runs li")).toHaveCount(5, { timeout: 5_000 });
+        await expect(det.locator("[data-af-save]")).toHaveClass(/af-dis/);
+        // under the floor the server refuses, shows no runs, and Save is held with the reason
+        await sch.locator('[data-sch="unit"]').selectOption("hours");
+        await expect(sch.locator(".sch-err")).toContainText("6 hours", { timeout: 5_000 });
+        await expect(sch.locator(".sch-runs")).toHaveCount(0);
+        await expect(det.locator("[data-af-save]")).toHaveClass(/af-dis/);
+        await expect(det.locator("[data-sch-held]")).toBeVisible();
+        // Monday and Tuesday at 04:00
+        await sch.locator('[data-sch="unit"]').selectOption("weeks");
+        await sch.locator('[data-sch-day="2"]').click();
+        await expect(sch.locator("[data-sch-day].on")).toHaveCount(2);
+        await expect(sch.locator(".sch-runs li")).toHaveCount(5, { timeout: 5_000 });
+        await expect(det.locator("[data-sch-held]")).toBeHidden();
+        await expect(det.locator("[data-af-save]")).not.toHaveClass(/af-dis/);
+        await det.locator("[data-af-save]").click();
+        await expect.poll(() => st.patches.length).toBe(1);
+        expect(st.patches[0]).toEqual({ schedule: "0 4 * * 1,2" });
       });
 
       test("3 — All episodes says nothing is ever deleted and shows no leaves-the-page tick", async () => {

@@ -576,7 +576,7 @@ data class LibraryPathDiag(
 data class SaveConfigResult(val ok: Boolean, val field: String? = null, val error: String? = null)
 
 @Serializable
-private data class ScheduleCheckRequest(val cron: String)
+private data class ScheduleCheckRequest(val schedule: String, val floorMinutes: Int? = null)
 
 @Serializable
 private data class ConfigErrorBody(val field: String? = null, val error: String? = null)
@@ -587,6 +587,11 @@ data class ScheduleCheckResponse(
     val description: String? = null,
     val error: String? = null,
     val nextRuns: List<Long> = emptyList(),
+    // DEB-4402 (FR-3.8, FR-6.1) — the picker's foot, in the server's words and the schedule zone; the admin works out no times itself.
+    val sentence: String? = null,
+    val zone: String? = null,
+    val canonical: String? = null,
+    val nextRunLabels: List<String> = emptyList(),
 )
 
 object ConfigApi {
@@ -612,10 +617,10 @@ object ConfigApi {
 
     /** Live validation + next-5-runs preview for the Settings Custom cron field, computed by the exact
      *  backend code [save] itself will validate against — see ScheduleCheckResponse's doc. */
-    suspend fun validateSchedule(cron: String): ScheduleCheckResponse? = runCatching {
+    suspend fun validateSchedule(schedule: String, floorMinutes: Int? = null): ScheduleCheckResponse? = runCatching {
         httpClient.post("/api/config/validate-schedule") {
             contentType(ContentType.Application.Json)
-            setBody(ScheduleCheckRequest(cron))
+            setBody(ScheduleCheckRequest(schedule, floorMinutes))
         }.body<ScheduleCheckResponse>()
     }.getOrNull()
 

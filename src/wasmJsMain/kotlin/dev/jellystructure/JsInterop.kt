@@ -115,3 +115,9 @@ internal fun formatWeekdayClock(epochSecStr: String): String = js("""(function()
     if(Math.abs(diff)<7) return d.toLocaleDateString([],{weekday:'long'})+' '+t;
     return d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 })()""")
+
+// DEB-4402 (FR-3.6) — today's date on the browser's clock, `YYYY-MM-DD`: the one date the schedule control works out, as the default for *starting*.
+internal fun todayIsoDate(): String = js("""(function(){
+    var d=new Date(), p=function(n){return (n<10?'0':'')+n;};
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+})()""")

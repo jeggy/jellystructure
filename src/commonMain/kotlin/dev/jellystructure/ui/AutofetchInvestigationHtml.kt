@@ -26,6 +26,8 @@ data class AfReviewDraft(
     val showAll: Boolean = false,
     /** FR-4.3 — a `mapped` review: the ids of the rows the admin has ticked. All start unticked. */
     val accept: Set<String> = emptySet(),
+    /** The shared schedule control's state for the review's Check (DEB-4402), given by the page at each draw. */
+    val sched: SchedView? = null,
 )
 
 /**
@@ -178,7 +180,7 @@ private fun reviewHtml(inv: AfInvestigation, r: AfReview, d: AfReviewDraft): Str
     val robots = if (inv.ignoreRobots) """<div class="af-why" style="margin-bottom:10px">Ignores this site's robots.txt</div>""" else ""
     val settings = robots + if (replacing) """<div class="af-why" style="margin-bottom:10px">The fetcher keeps its name, schedule and Keep. Saving replaces its recipe; the old one runs until you do.</div>""" else
         """<div class="field"><label>Name</label><input class="input" data-rv-name value="${afEsc(d.name)}"></div>$libs
-        ${scheduleControl(d.schedule)}${afKeepControl(d.retention, d.preview)}
+        ${afScheduleField(afSchedKey(null), d.schedule, d.sched)}${afKeepControl(d.retention, d.preview)}
         <div class="af-why" style="margin:-2px 0 10px">Nothing is deleted when you save: retention only ever removes episodes this fetcher has placed itself, and it has placed none yet.</div>
         <div class="field"><label>Run the first time</label><span class="seg"><span data-rv-first="now"${if (d.runFirst) " class=\"on\"" else ""}>Now</span><span data-rv-first="later"${if (d.runFirst) "" else " class=\"on\""}>At next check</span></span></div>"""
     return """<div class="af-review" data-rv="${afEsc(inv.id)}"><div>
@@ -190,7 +192,7 @@ private fun reviewHtml(inv: AfInvestigation, r: AfReview, d: AfReviewDraft): Str
         <span class="k">Proof</span><span class="v">${proofHtml(r)}</span>
       </div>${if (r.numbering == "mapped") mappedRows(r, d) else mapRows(r, d.showAll)}</div>
       <div class="box flat" style="padding:14px 15px;align-self:start;">$settings
-        <div class="row center" style="gap:8px;margin-top:4px;"><span class="btn primary${if (d.saving) " af-dis" else ""}" data-rv-save>${if (d.saving) "Saving…" else if (replacing) "Save the new recipe" else "Save auto-fetcher"}</span><span class="btn sm ghost" data-rv-discard>Discard</span></div></div></div>"""
+        <div class="row center" style="gap:8px;margin-top:4px;"><span class="btn primary${if (d.saving || d.sched?.refused == true) " af-dis" else ""}" data-rv-save>${if (d.saving) "Saving…" else if (replacing) "Save the new recipe" else "Save auto-fetcher"}</span><span class="btn sm ghost" data-rv-discard>Discard</span></div></div></div>"""
 }
 
 /** The whole *New auto-fetcher* card. */

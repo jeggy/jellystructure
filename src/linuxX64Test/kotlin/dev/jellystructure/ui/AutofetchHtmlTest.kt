@@ -38,14 +38,12 @@ class AutofetchHtmlTest {
     // ---- words -------------------------------------------------------------------------------------------------------------
 
     @Test
-    fun `schedules read as the presets and round trip through their parts`() {
-        assertEquals("Every 6 h", afScheduleWords("every6h"))
-        assertEquals("Daily · 04:00", afScheduleWords("daily@04:00"))
-        assertEquals("Weekly · Mon 04:30", afScheduleWords("weekly@1@04:30"))
-        for (s in listOf("every6h", "daily@04:00", "weekly@5@23:15")) {
-            val p = afScheduleParts(s)
-            assertEquals(s, afScheduleOf(p.kind, p.day, p.time))
-        }
+    fun `a Check reads in the shared sentence and the old words are still read`() {
+        assertEquals("Every 6 hours", afScheduleWords("every6h"))
+        assertEquals("Daily at 04:00", afScheduleWords("daily@04:00"))
+        assertEquals("Weekly on Monday at 04:30", afScheduleWords("weekly@1@04:30"))
+        assertEquals("Weekly on Wednesday at 04:00", afScheduleWords("0 4 * * 3"))
+        assertEquals("Every 2 weeks on Wednesday at 04:00, starting 18 November 2026", afScheduleWords("every:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;AT=04:00;FROM=2026-11-18"))
     }
 
     @Test
@@ -80,7 +78,7 @@ class AutofetchHtmlTest {
     fun `a row shows keeps newest under the schedule and its state in one slot`() {
         val html = panel(overview(fetcher(retention = AfRetention("newest", 12, true))))
         assertTrue("""<div class="keep">keeps newest 12</div>""" in html, html)
-        assertTrue("Daily · 04:00" in html && """<span class="badge ok">Up to date</span>""" in html && "no new episodes · 04:00" in html)
+        assertTrue("Daily at 04:00" in html && """<span class="badge ok">Up to date</span>""" in html && "no new episodes · 04:00" in html)
         assertFalse("keeps newest" in panel(overview(fetcher())))
     }
 

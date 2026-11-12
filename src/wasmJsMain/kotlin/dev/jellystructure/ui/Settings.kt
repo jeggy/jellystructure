@@ -1288,7 +1288,7 @@ private fun attachListeners(scope: CoroutineScope) {
                 (document.getElementById(hintId) as? HTMLElement)?.innerHTML =
                     """<span style="color:var(--bad)">${(result.error ?: "That does not look like a web address").esc()}</span>"""
             }
-            if (result.field == "scan_schedule") showFindScheduleError(result.error ?: "Invalid schedule")
+            showProcessingScheduleError(result.field, result.error ?: "Invalid schedule")
             if (ok) {
                 renderPathCheckInline(ConfigApi.pathCheck())
                 // The server derives the legacy pipeline and schedule from `[processing]` on every save (FR-2.4): take them

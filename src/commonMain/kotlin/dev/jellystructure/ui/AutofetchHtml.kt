@@ -22,7 +22,11 @@ interface AfClock {
 }
 
 /** What the admin has typed into one open row and not saved yet — the form, not the server's state. */
-data class AfDraft(val schedule: String, val retention: AfRetention, val preview: AfPreview? = null, val saving: Boolean = false, val ignoreRobots: Boolean = false)
+data class AfDraft(
+    val schedule: String, val retention: AfRetention, val preview: AfPreview? = null, val saving: Boolean = false, val ignoreRobots: Boolean = false,
+    /** The shared schedule control's state for this row (DEB-4402), given by the page at each draw; null draws it from [schedule] with no answer yet. */
+    val sched: SchedView? = null,
+)
 
 internal fun afEsc(s: String): String = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
@@ -39,51 +43,24 @@ internal fun afMono(reason: String): String {
     return out.append(afEsc(reason.substring(last))).toString()
 }
 
-private val DAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+/** The Check's use of the shared schedule control: never off, and never closer than 6 hours (auto-fetch FR-2.3). */
+val AF_SCHED = SchedOptions(canOff = false, floorMinutes = 360, label = "Check")
 
-private val CRON_DAILY = Regex("""^(\d{1,2}) (\d{1,2}) \* \* \*$""")
-private val CRON_WEEKLY = Regex("""^(\d{1,2}) (\d{1,2}) \* \* ([0-6])$""")
+/** The shared control's key for the open fetcher's Check and for the review's. */
+fun afSchedKey(fetcherId: String?): String = if (fetcherId == null) "af:review" else "af:$fetcherId"
 
 /**
- * DEB-4387 (FR-5) — the server stores a fetcher's Check in the shared form (`weekly@3@04:00` is `0 4 * * 3`). Until the shared
- * control replaces this select, the three shapes it can say are read back into its own words; anything else is left as it is.
+ * The list row's words for a Check: the shared sentence (DEB-4387 FR-1.5). The three words a fetcher stored before the shared schedule
+ * (`every6h` · `daily@04:00` · `weekly@1@04:00`) are read here too, for good (auto-fetch FR-2.3).
  */
-internal fun afLegacyWords(s: String): String {
-    if (s == "0 */6 * * *") return "every6h"
-    CRON_DAILY.find(s)?.let { return "daily@${it.groupValues[2].padStart(2, '0')}:${it.groupValues[1].padStart(2, '0')}" }
-    CRON_WEEKLY.find(s)?.let { return "weekly@${it.groupValues[3]}@${it.groupValues[2].padStart(2, '0')}:${it.groupValues[1].padStart(2, '0')}" }
-    return s
-}
-
-/** `every6h` · `daily@04:00` · `weekly@1@04:00`, as the list row and the select say them. */
 internal fun afScheduleWords(stored: String): String {
-    val s = afLegacyWords(stored)
-    if (s == "every6h") return "Every 6 h"
-    val p = s.split('@')
-    return when {
-        p.firstOrNull() == "daily" && p.size == 2 -> "Daily · ${p[1]}"
-        p.firstOrNull() == "weekly" && p.size == 3 -> "Weekly · ${DAYS.getOrElse(p[1].toIntOrNull() ?: -1) { p[1] }} ${p[2]}"
-        else -> (dev.jellystructure.cron.parseSchedule(s) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule?.sentence ?: s
-    }
+    val legacy = stored == "every6h" || stored.startsWith("daily@") || stored.startsWith("weekly@")
+    val text = if (legacy) SchedForm.of(stored, AF_SCHED).schedule(dev.jellystructure.cron.IsoDate(2026, 1, 1)) else stored
+    return (dev.jellystructure.cron.parseSchedule(text) as? dev.jellystructure.cron.ScheduleParse.Ok)?.schedule?.sentence ?: stored
 }
 
-/** The schedule's three parts: kind (`every6h` · `daily` · `weekly`), the weekday (0 = Sunday) and the time. */
-internal data class AfScheduleParts(val kind: String, val day: Int, val time: String)
-
-internal fun afScheduleParts(stored: String): AfScheduleParts {
-    val p = afLegacyWords(stored).split('@')
-    return when {
-        p.firstOrNull() == "daily" && p.size == 2 -> AfScheduleParts("daily", 1, p[1])
-        p.firstOrNull() == "weekly" && p.size == 3 -> AfScheduleParts("weekly", p[1].toIntOrNull() ?: 1, p[2])
-        else -> AfScheduleParts("every6h", 1, "04:00")
-    }
-}
-
-internal fun afScheduleOf(kind: String, day: Int, time: String): String = when (kind) {
-    "daily" -> "daily@$time"
-    "weekly" -> "weekly@$day@$time"
-    else -> "every6h"
-}
+/** The fetcher's draft differs from what is saved. */
+internal fun afDirty(f: AfFetcher, d: AfDraft): Boolean = d.schedule != f.schedule || d.retention != f.retention || d.ignoreRobots != f.ignoreRobots
 
 /** The list row's note under the schedule (FR-10.6): *keeps newest 12*. */
 internal fun afKeepsNote(r: AfRetention): String? = if (r.newest) "keeps newest ${r.keep}" else null
@@ -226,16 +203,10 @@ internal fun afStopBand(f: AfFetcher, c: AfClock, resuming: Boolean): String {
       <div class="no-timer">A stop is never retried on a timer: a site that has blocked a client and sees it come back on a schedule usually blocks it for good.</div></div>"""
 }
 
-private val SCHEDULE_KINDS = listOf("every6h" to "Every 6 h", "daily" to "Daily at", "weekly" to "Weekly on")
-
-internal fun scheduleControl(schedule: String): String {
-    val p = afScheduleParts(schedule)
-    val kinds = SCHEDULE_KINDS.joinToString("") { (k, w) -> """<option value="$k"${if (k == p.kind) " selected" else ""}>$w</option>""" }
-    val days = DAYS.withIndex().joinToString("") { (i, d) -> """<option value="$i"${if (i == p.day) " selected" else ""}>$d</option>""" }
-    return """<div class="field"><label>Check</label><div class="row center" style="gap:6px;flex-wrap:wrap">
-      <select class="input" data-af-sched-kind style="width:120px">$kinds</select>
-      <select class="input" data-af-sched-day style="width:80px${if (p.kind == "weekly") "" else ";display:none"}">$days</select>
-      <input class="input mono" type="time" data-af-sched-time value="${afEsc(p.time)}" style="width:100px${if (p.kind == "every6h") ";display:none" else ""}"></div></div>"""
+/** The Check's field: the shared control, with the line under Save that says why Save is held (DEB-4402, FR-3.8). */
+internal fun afScheduleField(key: String, schedule: String, view: SchedView?): String {
+    val v = view ?: SchedView(SchedForm.of(schedule, AF_SCHED))
+    return schedulePickerField(key, v, AF_SCHED) + """<div class="af-why sch-held" data-sch-held${if (v.refused) "" else " hidden"}>${afEsc(SCHED_HELD)}</div>"""
 }
 
 /** The open row: the stop band when the site is stopped, the recipe and its settings, and the last runs (FR-10.6). */
@@ -251,14 +222,14 @@ internal fun afSessionLine(site: String, s: AfSession, c: AfClock, sd: AfSession
 }
 
 internal fun afOpenRow(f: AfFetcher, d: AfDraft, c: AfClock, resuming: Boolean, gate: AfGate = AfGate(true), session: AfSession? = null, sd: AfSessionDraft? = null): String {
-    val dirty = d.schedule != f.schedule || d.retention != f.retention || d.ignoreRobots != f.ignoreRobots
+    val dirty = afDirty(f, d) && d.sched?.refused != true
     // DEB-2478 (FR-1.2, FR-4.4) — *Re-investigate page* writes a new recipe beside this one; shown disabled, with the reason, when a new investigation cannot start.
     val reinv = """<span class="btn sm ghost${if (gate.allowed && !f.siteStopped) "" else " af-dis"}" data-af-reinv>Re-investigate page</span>"""
     val reinvWhy = if (!gate.allowed && gate.reason != null) """<div class="af-why" style="margin-top:6px">${afEsc(gate.reason)}</div>""" else ""
     return """<tr class="af-det"><td colspan="7"><div class="af-open" data-fid="${afEsc(f.id)}">${if (f.siteStopped) afStopBand(f, c, resuming) else ""}
       ${if (session != null) afSessionLine(f.site, session, c, sd) else ""}${afWaitingBand(f, gate)}
       <div class="af-det-in"><div><div class="af-h">Recipe</div><pre class="af-script">${afRecipe(f)}</pre>
-        <div class="af-cfg">${scheduleControl(d.schedule)}${afKeepControl(d.retention, d.preview)}
+        <div class="af-cfg">${afScheduleField(afSchedKey(f.id), d.schedule, d.sched)}${afKeepControl(d.retention, d.preview)}
           <div class="field">${afRobotsTick("data-af-robots-row", d.ignoreRobots, false)}</div>
           <div class="af-cfg-go"><span class="btn sm${if (dirty && !d.saving) "" else " af-dis"}" data-af-save>${if (d.saving) "Saving…" else "Save"}</span>$reinv<span class="spacer"></span>
             <span class="btn sm ghost" style="color:var(--bad)" data-af-delete>Delete</span></div>$reinvWhy</div></div>

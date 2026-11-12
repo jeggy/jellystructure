@@ -10,6 +10,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
+import org.w3c.dom.events.KeyboardEvent
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
@@ -164,8 +165,44 @@ private fun repaintReview(scope: CoroutineScope) {
 private fun paint() {
     val panel = afPanel ?: return
     val o = afOverview ?: return
+    syncSchedViews(o)
     val note = afNote?.let { """<div class="af-prev" style="margin-bottom:12px"><span class="bi">!</span><span>${afEsc(it)}</span><span class="spacer"></span><span class="btn sm ghost" data-af-dismiss>OK</span></div>""" }.orEmpty()
     panel.innerHTML = note + afPanelHtml(o, afOpenFetcher, afOpenQueue, afDrafts, afResuming, afPicked, nowSec(), AfClockJs, afForm, afReview, afSession)
+}
+
+/** DEB-4402 — the shared schedule control's state for the open fetcher's Check and the review's, handed to the markup at every draw (the state itself lives in [SchedPickers]). */
+private fun syncSchedViews(o: AfOverview) {
+    afOpenFetcher?.let { id ->
+        val f = o.fetchers.firstOrNull { it.id == id } ?: return@let
+        val d = draft(f)
+        afDrafts[f.id] = d.copy(sched = SchedPickers.view(afSchedKey(f.id), d.schedule, AF_SCHED,
+            onChange = { s -> afDrafts[f.id]?.let { afDrafts[f.id] = it.copy(schedule = s) }; syncSave() }, onChecked = { syncSave() }))
+    }
+    afReview?.let { r ->
+        afReview = r.copy(sched = SchedPickers.view(afSchedKey(null), r.schedule, AF_SCHED,
+            onChange = { s -> afReview = afReview?.copy(schedule = s); syncSave() }, onChecked = { syncSave() }))
+    }
+}
+
+private fun setDis(el: Element?, off: Boolean) = el?.classList?.let { if (off) it.add("af-dis") else it.remove("af-dis") }
+
+private fun setHeld(el: Element?, held: Boolean) { if (held) el?.removeAttribute("hidden") else el?.setAttribute("hidden", "") }
+
+/** The Save buttons and the line that says why one is held follow the schedule control without a repaint, so a field being typed in keeps its caret. */
+private fun syncSave() {
+    val panel = afPanel ?: return
+    afOpenFetcher?.let { id ->
+        val f = afOverview?.fetchers?.firstOrNull { it.id == id } ?: return@let
+        val d = draft(f)
+        val valid = SchedPickers.valid(afSchedKey(f.id))
+        setDis(panel.querySelector(".af-open [data-af-save]"), !(afDirty(f, d) && !d.saving && valid))
+        setHeld(panel.querySelector(".af-open [data-sch-held]"), !valid)
+    }
+    afReview?.let { r ->
+        val valid = SchedPickers.valid(afSchedKey(null))
+        setDis(panel.querySelector("[data-rv] [data-rv-save]"), r.saving || !valid)
+        setHeld(panel.querySelector("[data-rv] [data-sch-held]"), !valid)
+    }
 }
 
 private fun fetcherOf(el: Element): AfFetcher? {
@@ -179,6 +216,7 @@ private fun bind(panel: Element, scope: CoroutineScope) {
     panel.setAttribute("data-af-bound", "1")
     panel.addEventListener("click", { ev ->
         val t = ev.target as? Element ?: return@addEventListener
+        if (SchedPickers.onEvent(t, "click")) return@addEventListener   // DEB-4402 — the schedule control deals with its own presses
         if (t.closest("[data-copy]") != null || t.closest("[data-stop-click]") != null) return@addEventListener   // the document-level handler / a plain link
         t.closest("[data-rv-showall]")?.let { ev.preventDefault(); afReview = afReview?.let { d -> d.copy(showAll = !d.showAll) }; paint(); return@addEventListener }
         if (t.closest("input,select,a") != null) return@addEventListener   // a field being used is not a click on the row around it
@@ -375,7 +413,13 @@ private fun bind(panel: Element, scope: CoroutineScope) {
 
     // The open row's schedule, and the number in Keep: the form, sent only by Save.
     // The form's two fields are kept as typed; nothing repaints under the caret (the poll skips a panel being edited).
+    panel.addEventListener("keydown", { ev ->
+        val k = ev as? KeyboardEvent ?: return@addEventListener
+        val t = k.target as? Element ?: return@addEventListener
+        if (SchedPickers.onKey(t, k.key)) k.preventDefault()
+    })
     panel.addEventListener("input", { ev ->
+        (ev.target as? Element)?.let { if (SchedPickers.onEvent(it, "input")) return@addEventListener }
         // The paste is kept as typed so a repaint cannot lose it; the button's state follows it without a repaint, so the caret stays.
         (ev.target as? HTMLTextAreaElement)?.takeIf { it.hasAttribute("data-af-session-text") }?.let { ta ->
             afSession = afSession?.copy(text = ta.value, error = null)
@@ -400,6 +444,7 @@ private fun bind(panel: Element, scope: CoroutineScope) {
 
     panel.addEventListener("change", { ev ->
         val t = ev.target as? Element ?: return@addEventListener
+        if (SchedPickers.onEvent(t, "change")) return@addEventListener
         // DEB-2478 — the review's settings are a draft of their own, sent only by *Save auto-fetcher*.
         t.closest("[data-rv]")?.let { host ->
             val d = afReview ?: return@addEventListener
@@ -409,12 +454,6 @@ private fun bind(panel: Element, scope: CoroutineScope) {
                     val n = (t as? HTMLInputElement)?.value?.trim()?.toIntOrNull()
                     if (n == null || n !in 1..999) { afNote = "Keep the newest N takes a number from 1 to 999."; paint(); return@addEventListener }
                     afReview = d.copy(retention = d.retention.copy(mode = "newest", keep = n), preview = null); repaintReview(scope)
-                }
-                t.hasAttribute("data-af-sched-kind") || t.hasAttribute("data-af-sched-day") || t.hasAttribute("data-af-sched-time") -> {
-                    val kind = (host.querySelector("[data-af-sched-kind]") as? HTMLSelectElement)?.value ?: "every6h"
-                    val day = (host.querySelector("[data-af-sched-day]") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 1
-                    val time = (host.querySelector("[data-af-sched-time]") as? HTMLInputElement)?.value?.ifBlank { null } ?: "04:00"
-                    afReview = d.copy(schedule = afScheduleOf(kind, day, time)); paint()
                 }
             }
             return@addEventListener
@@ -428,13 +467,6 @@ private fun bind(panel: Element, scope: CoroutineScope) {
                 if (n == null || n !in 1..999) { afNote = "Keep the newest N takes a number from 1 to 999."; paint(); return@addEventListener }
                 afDrafts[f.id] = d.copy(retention = d.retention.copy(mode = "newest", keep = n), preview = null)
                 repaintOpenRow(scope, f)
-            }
-            t.hasAttribute("data-af-sched-kind") || t.hasAttribute("data-af-sched-day") || t.hasAttribute("data-af-sched-time") -> {
-                val kind = (host.querySelector("[data-af-sched-kind]") as? HTMLSelectElement)?.value ?: "every6h"
-                val day = (host.querySelector("[data-af-sched-day]") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 1
-                val time = (host.querySelector("[data-af-sched-time]") as? HTMLInputElement)?.value?.ifBlank { null } ?: "04:00"
-                afDrafts[f.id] = d.copy(schedule = afScheduleOf(kind, day, time))
-                paint()
             }
         }
     })

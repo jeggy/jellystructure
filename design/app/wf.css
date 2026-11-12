@@ -1035,3 +1035,65 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
    cascade on order alone; `tr.off.new` wins on specificity wherever it is loaded from.
    Fenced by scripts/check-mobile-css.sh. */
 .lineup tr.off.new td { opacity: 1; }
+
+/* ============================================================================================================
+   The schedule control (DEB-4402, DEB-4387 FR-3) — round `schedule-picker`, shape *Lines*
+   (design/incoming/2026-11-12-schedule-picker/schedule-picker.css, the control half). Built once in
+   commonMain (`SchedulePickerHtml.kt`) and used by the auto-fetcher panel (ai.css, `.afx`), Settings ▸
+   Processing (processing.css, `.pfx`) and, next, the Live TV page — so it is written WITHOUT a wrapper class,
+   here, as a component two page files need (the argument `.badge.flat` makes above).
+
+   `.sch` is the LINES (one decision each) and the FOOT (the server's sentence and its next five runs). The lines
+   wrap: three side by side in a feature row, six stacked in a 280 px panel, and nothing chooses but the width.
+   The foot is never collapsed — a slot that disappears makes the control jump under the hand using it.
+   The real controls are native <select> and <input>, drawn with `.select` / `.input`; the weekday toggles and the
+   month shape are spans, as `.seg` is.
+   ============================================================================================================ */
+.sch { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sch-lines { display: flex; flex-wrap: wrap; gap: 9px 16px; align-items: center; }
+.sch-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.sch-line-wide { flex: 1 1 100%; }
+.sch-lead { font-size: .82rem; color: var(--ink-soft); white-space: nowrap; flex: none; }
+.sch .input, .sch .select { min-height: 36px; padding: 7px 11px; font-size: .86rem; }
+.sch-n { width: 48px; padding-left: 4px; padding-right: 4px; text-align: center; }
+/* sized from the longest entry in the menu, `Custom (cron)`, and no wider: `Repeat every [N] [unit]` has to hold one line at the 280 px floor. */
+.sch .select.sch-unit { width: 124px; padding-left: 10px; padding-right: 6px; }
+/* with no N beside it (Off, Custom) the line has the room, and `Custom (cron)` is shown whole */
+.sch .select.sch-unit.wide { width: 150px; }
+/* 138 px, not the shipped 112 / 100: Chromium draws type="time" in a 12-hour locale as `08:00 PM` plus its picker
+   button — about 134 px — and the old widths cut the value and the button in half. Fenced by check-mobile-css.sh. */
+.sch-at { width: 138px; }
+.sch-min { width: 72px; text-align: center; }
+.sch-from { width: 148px; }
+.sch-cron { width: 100%; }
+.sch-mday, .sch-dom { min-width: 92px; }
+.sch-ord { min-width: 104px; }
+.sch-ordday, .sch-month { min-width: 128px; }
+.sch-zone { font-size: .8rem; color: var(--ink-soft); white-space: nowrap; }
+.sch-zone:empty { display: none; }
+.sch input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+.sch input[type=number]::-webkit-inner-spin-button, .sch input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* The weekday toggles: `.seg`'s look, MULTI-select. Each on-day keeps its own visible edge (`--line-2`, themed): a `.seg`
+   divider is `--line`, which disappears into `--hi-soft`, and then Monday + Tuesday reads as one wide cell. */
+.sch-days { display: inline-flex; flex: none; border: 1px solid var(--line-2); border-radius: var(--radius-s); overflow: hidden; background: var(--fill-2); }
+.sch-days span { min-width: 32px; padding: 8px 0; text-align: center; font-size: .8rem; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+  border-right: 1px solid var(--line); transition: background .2s ease, color .2s ease; user-select: none; }
+.sch-days span:last-child { border-right: 0; }
+.sch-days span:hover { color: var(--ink); }
+.sch-days span.on { background: var(--hi-soft); color: var(--acc-ink); border-right-color: var(--line-2); }
+.sch .input.bad, .sch .select.bad { border-color: var(--bad); }
+/* the foot */
+.sch-foot { flex: 1 1 100%; border-top: 1px solid var(--line); padding-top: 11px; display: flex; flex-wrap: wrap; gap: 10px 28px; }
+.sch-says { flex: 1 1 100%; font-size: .84rem; line-height: 1.5; color: var(--ink); min-width: 0; }
+/* A refusal is a SENTENCE, so it is not a `.badge`: every .badge is nowrap and a wrapped one draws each line fragment
+   as its own red box. One block, one 3 px `--bad` edge, the text in `--ink` so it needs no light twin. */
+.sch-err { display: block; white-space: normal; font-size: .82rem; line-height: 1.5; color: var(--ink); background: var(--bad-soft);
+  border-left: 3px solid var(--bad); border-radius: 0 var(--radius-s) var(--radius-s) 0; padding: 8px 12px; }
+.sch-next { flex: 1 1 100%; min-width: 0; }
+.sch-next.sch-stale { opacity: .55; }
+.sch-next-h { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 700; color: var(--ink-soft); margin-bottom: 6px; }
+.sch-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.sch-runs li { display: flex; gap: 8px; align-items: baseline; font-size: .82rem; white-space: nowrap; }
+.sch-runs li .d { color: var(--ink); }
+.sch-runs li .t { color: var(--ink-soft); font-size: .78rem; }
+.sch-none { font-size: .82rem; color: var(--ink-soft); }
