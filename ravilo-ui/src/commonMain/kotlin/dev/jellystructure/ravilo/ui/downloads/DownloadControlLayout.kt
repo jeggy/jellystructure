@@ -31,4 +31,8 @@ object DownloadControlLayout {
 
     /** Play's width in a row of [rowDp]: everything the other two controls and the two gaps leave. */
     fun playWidthDp(rowDp: Float, controlDp: Float): Float = rowDp - controlDp - MY_LIST_DP - 2 * GAP_DP
+
+    /** A resume estimate only appears when its whole label fits inside Play's 18 dp side padding. */
+    fun resumeLabel(full: String, short: String, playDp: Float, measureDp: (String) -> Float): String =
+        if (measureDp(full) + 36f <= playDp) full else short
 }

@@ -20,10 +20,11 @@ internal class PageRig(var user: String? = "alice") {
         override val phases: StateFlow<Map<String, DownloadPhase>> = p.asStateFlow()
         val removed = mutableListOf<String>()
         var free = 41_200_000_000L
+        var freedPerRemove = 0L
         override fun enqueue(job: DownloadJob) { p.value = p.value + (job.id to DownloadPhase.Running(0)) }
         override fun pause(id: String) { p.value = p.value + (id to DownloadPhase.Paused(0)) }
         override fun resume(id: String) { p.value = p.value + (id to DownloadPhase.Running(0)) }
-        override fun remove(id: String) { removed += id; p.value = p.value - id }
+        override fun remove(id: String) { removed += id; free += freedPerRemove; p.value = p.value - id }
         override fun freeBytes() = free
         override fun totalBytes() = 128_000_000_000L
         override fun busy() = p.value.values.any { it is DownloadPhase.Running || it == DownloadPhase.Queued || it == DownloadPhase.WaitingServer }

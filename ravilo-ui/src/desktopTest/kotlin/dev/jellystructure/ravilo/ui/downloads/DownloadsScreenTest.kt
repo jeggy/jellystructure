@@ -13,6 +13,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.swipeLeft
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -44,6 +45,44 @@ class DownloadsScreenTest {
         val r = PageRig().apply { add("alice", "f1", done, 1_000_000_000L, title = "Alpha Film") }
         setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
         onNodeWithTag(DownloadsTags.DOWNLOADING).assertDoesNotExist()
+    }
+
+    @Test fun `Delete stays hidden at rest for films and episodes including select mode and a resting tap plays`() = runComposeUiTest {
+        val r = rig().apply {
+            add("alice", "ep", done, 1_000_000_000L, title = "The Crossing", kind = "episode", seriesId = "s", seriesTitle = "Nordvest", season = 1, episode = 4)
+        }
+        var played: String? = null
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}, onPlay = { played = it.itemId }) } }
+        onNodeWithTag(DownloadsTags.row("f1")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.row("ep")).assertIsDisplayed()
+        onNodeWithText("Delete").assertDoesNotExist()
+        onNodeWithTag(DownloadsTags.row("f1")).performClick()
+        assertEquals("f1", played)
+        onNodeWithTag(DownloadsTags.OVERFLOW).performClick()
+        onNodeWithText("Select").performClick()
+        onNodeWithText("Delete").assertDoesNotExist()
+        onNodeWithTag(DownloadsTags.row("ep")).assertIsDisplayed()
+    }
+
+    @Test fun `after a delete the storage bar reads the engine's freed bytes on the open page`() = runComposeUiTest {
+        val r = rig()
+        r.engine.freedPerRemove = 7_900_000_000L
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        onNodeWithText("41.2 GB").assertIsDisplayed()
+        onNodeWithText("72.4 GB").assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.row("f2")).performTouchInput { swipeLeft() }
+        waitForIdle()
+        onAllNodesWithText("Delete").onLast().performClick()
+        waitForIdle()
+        onNodeWithText("49.1 GB").assertIsDisplayed()
+        onNodeWithText("72.4 GB").assertIsDisplayed()
+    }
+
+    @Test fun `saved wide copy shows its encoder rung`() = runComposeUiTest {
+        val r = PageRig().apply { add("alice", "f1", done, 1_000_000_000L, title = "Alpha Film", quality = "high", height = 1036) }
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        onNodeWithText("1080p").assertIsDisplayed()
+        onNodeWithText("1036p").assertDoesNotExist()
     }
 
     @Test fun `the empty page says how to download`() = runComposeUiTest {

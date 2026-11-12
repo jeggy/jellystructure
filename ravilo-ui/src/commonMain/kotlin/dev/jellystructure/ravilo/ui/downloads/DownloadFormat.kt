@@ -19,13 +19,15 @@ fun formatBytes(bytes: Long): String {
     return "$mb MB"
 }
 
-/** The rung's picture height when the server did not say: 1080p / 720p / 480p are the encoder's rungs (FR-4). */
-fun optionHeight(option: DownloadOption): Int? = option.height ?: when (option.quality) {
+/** A copy is named by its encoder rung, while Original keeps the file's actual height. */
+fun rungHeight(quality: String, fileHeight: Int?): Int? = when (quality) {
     "high" -> 1080
     "medium" -> 720
     "small" -> 480
-    else -> null
+    else -> fileHeight
 }
+
+fun optionHeight(option: DownloadOption): Int? = rungHeight(option.quality, option.height)
 
 /** `1080p` / `720p` / `480p`, or null for the original, which the sheet names with `download.original`. */
 fun resolutionLabel(option: DownloadOption): String? =

@@ -40,6 +40,11 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +57,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.launch
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.DetailMetaFlow
@@ -79,6 +83,10 @@ import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.components.DetailHeroScrims
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
+import dev.jellystructure.ravilo.ui.theme.LocalWindowWidth
+import dev.jellystructure.ravilo.ui.theme.Sora
+import dev.jellystructure.ravilo.ui.downloads.DownloadControlLayout
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.CardPlayState
@@ -318,6 +326,11 @@ private fun MovieDetailLoaded(
                         // 309 (FR-309-10) — R222's "slow to start" line is gone: every play starts at once.
                     }
                     Spacer(Modifier.height(18.dp))
+                    val phoneDownloadsRow = LocalHandset.current && downloadPanel != null && downloadWidth != null && downloadsAllowed
+                    val phonePlayWidth = if (phoneDownloadsRow) DownloadControlLayout.playWidthDp(
+                        (LocalWindowWidth.current - raviloHPad * 2).value, downloadWidth.value,
+                    ).coerceAtLeast(0f).dp else 0.dp
+                    val playTextMeasurer = rememberTextMeasurer()
                     Row(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
                         // focusing Play/Resume reliably reframes the full backdrop.
@@ -351,7 +364,7 @@ private fun MovieDetailLoaded(
                                     true
                                 } else false
                             },
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (phoneDownloadsRow) DownloadControlLayout.GAP_DP.dp else 12.dp),
                     ) {
                         // R84: phase-2 overlay drives Play/Resume label; safe to press before it arrives
                         val ps = overlay[detail.card.id]
@@ -377,19 +390,31 @@ private fun MovieDetailLoaded(
                             isResume -> str("action.resume")
                             else -> str("action.play")
                         }
+                        val shortResume = str("action.resume")
+                        val playFont = Sora
+                        val playDensity = LocalDensity.current
+                        val shownPlayLabel = if (phoneDownloadsRow && isResume && castDevice == null && !played) DownloadControlLayout.resumeLabel(
+                            playLabel, shortResume, phonePlayWidth.value,
+                        ) { label -> with(playDensity) {
+                            playTextMeasurer.measure(label, TextStyle(fontFamily = playFont, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)).size.width.toDp().value
+                        } } else playLabel
                         // Fixed min-width: sized for the longest "Resume · NN min left" label so
                         // swapping Play→Resume never shifts the adjacent buttons (no-flicker rule).
                         RaviloButton(
-                            label = playLabel,
+                            label = shownPlayLabel,
                             focusRequester = playFR,
                             style = ButtonStyle.PRIMARY,
-                            modifier = Modifier.widthIn(min = 200.dp),
+                            modifier = (if (phoneDownloadsRow) Modifier.width(phonePlayWidth) else Modifier.widthIn(min = 200.dp)).testTag("movie-play"),
                             onSelect = { onPlay(detail) },
                         )
                         // DEB-4070 (FR-8, amended) — Play · Download · My List: the control has one fixed width per language, so Play never moves.
-                        if (downloadPanel != null && downloadWidth != null && downloadsAllowed) downloadPanel.Control(downloadWidth)
+                        if (downloadPanel != null && downloadWidth != null && downloadsAllowed) downloadPanel.Control(downloadWidth, Modifier.testTag("movie-download"))
+                        val favorite = ps?.favorite == true
+                        if (phoneDownloadsRow) dev.jellystructure.ravilo.ui.downloads.MyListIconButton(
+                            favorite, str("nav.my_list"), onClick = { onMarkFavorite(!favorite) }, modifier = Modifier.testTag("movie-my-list"),
+                        )
                         // DEB-3984 (FR-12) — Surprise me's next title; this page is replaced, so one Back still leaves the run.
-                        if (onAnother != null) RaviloButton(
+                        if (!phoneDownloadsRow && onAnother != null) RaviloButton(
                             label = str("detail.another"),
                             style = ButtonStyle.GHOST,
                             modifier = Modifier.widthIn(min = 150.dp),
@@ -405,11 +430,10 @@ private fun MovieDetailLoaded(
                         // there was no backend call anywhere to add/remove a Jellyfin favorite (only a
                         // read path existed, for the My List browse grid's own filter). Now a real
                         // write-through toggle, same pattern as Mark Watched just above.
-                        val favorite = ps?.favorite == true
-                        if (downloadPanel != null) {
+                        if (!phoneDownloadsRow && downloadPanel != null) {
                             // FR-8 (amended) — My List becomes a 44 dp icon; its label stays as the accessibility description.
                             dev.jellystructure.ravilo.ui.downloads.MyListIconButton(favorite, str("nav.my_list"), onClick = { onMarkFavorite(!favorite) })
-                        } else RaviloButton(
+                        } else if (!phoneDownloadsRow) RaviloButton(
                             label = if (favorite) "− ${str("nav.my_list")}" else "+ ${str("nav.my_list")}",
                             style = ButtonStyle.GHOST,
                             onSelect = { onMarkFavorite(!favorite) },
@@ -427,6 +451,12 @@ private fun MovieDetailLoaded(
                                 onSelect = { showTrailer = true },
                             )
                         }
+                        if (phoneDownloadsRow && onAnother != null) RaviloButton(
+                            label = str("detail.another"),
+                            style = ButtonStyle.GHOST,
+                            modifier = Modifier.widthIn(min = 150.dp),
+                            onSelect = onAnother,
+                        )
                     }
                     // DEB-4070 — why a download is waiting or failed (FR-6, FR-7), or that this viewer may not download (FR-2).
                     if (downloadPanel != null) {

@@ -104,6 +104,10 @@ class DownloadsController(
     /** FR-12 — what every other profile on this phone holds on the disk: a number, never a title. */
     val otherBytes: StateFlow<Long> = _otherBytes.asStateFlow()
 
+    private val _storageFreeBytes = MutableStateFlow(engine.freeBytes())
+    /** Device-reported free space; refreshed after file removal, including Media3's asynchronous removal. */
+    val storageFreeBytes: StateFlow<Long> = _storageFreeBytes.asStateFlow()
+
     private val pumpLock = Mutex()
     private val renewals = HashMap<String, Int>()
     private val lastPercent = HashMap<String, Int>()
@@ -184,17 +188,7 @@ class DownloadsController(
     fun resume(itemId: String) { userId()?.let { engine.resume(downloadId(it, itemId)) } }
 
     /** Cancel or delete: the space comes back at once, and the record goes with the media. */
-    fun delete(itemId: String) {
-        val u = userId() ?: return
-        engine.remove(downloadId(u, itemId))
-        library.remove(u, itemId)
-        renewals.remove(downloadId(u, itemId))
-        startFailures.remove(downloadId(u, itemId))
-        startWaiting.remove(downloadId(u, itemId))
-        lastPercent.remove(downloadId(u, itemId))
-        refresh()
-        scope.launch { pump() }
-    }
+    fun delete(itemId: String) = deleteMany(listOf(itemId))
 
     // ─── DEB-4072: offline play, the outbox and the reconnect refresh ───
 
@@ -325,6 +319,7 @@ class DownloadsController(
 
     /** Re-read this viewer's downloads: the app calls it when the signed-in profile changes. */
     fun refresh() {
+        _storageFreeBytes.value = engine.freeBytes()
         val u = userId()
         if (u == null) { _phases.value = emptyMap(); _records.value = emptyList(); _otherBytes.value = 0L; return }
         _records.value = library.records(u)
@@ -357,6 +352,7 @@ class DownloadsController(
      */
     fun deleteMany(itemIds: Collection<String>) {
         val u = userId() ?: return
+        val freeBefore = engine.freeBytes()
         itemIds.toSet().forEach { id ->
             engine.remove(downloadId(u, id))
             library.remove(u, id)
@@ -364,6 +360,7 @@ class DownloadsController(
             renewals.remove(key); startFailures.remove(key); startWaiting.remove(key); lastPercent.remove(key); renewedAt.remove(key)
         }
         refresh()
+        if (itemIds.isNotEmpty()) watchFreedSpace(freeBefore)
         scope.launch { pump() }
     }
 
@@ -378,9 +375,17 @@ class DownloadsController(
     /** FR-12 — *Other profiles on this phone · Delete*: their media and records go, and their titles are never shown. */
     fun deleteOtherProfiles() {
         val u = userId() ?: return
+        val freeBefore = engine.freeBytes()
         engine.phases.value.keys.filter { downloadUserId(it) != u }.forEach { engine.remove(it) }
         library.users().filter { it != u }.forEach { library.removeAll(it) }
         refresh()
+        watchFreedSpace(freeBefore)
+    }
+
+    private fun watchFreedSpace(freeBefore: Long) {
+        if (_storageFreeBytes.value != freeBefore) return
+        // Media3 removes cached bytes after sendRemoveDownload returns. Keep reading through a batch's final removal.
+        scope.launch { repeat(50) { delay(100); _storageFreeBytes.value = engine.freeBytes() } }
     }
 
     /**

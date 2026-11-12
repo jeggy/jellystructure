@@ -16,6 +16,8 @@ class DownloadFormatTest {
 
     @Test fun `the rung names its resolution and the original names none`() {
         assertEquals("1080p", resolutionLabel(DownloadOption("high", 1080, 1)))
+        assertEquals("1080p", resolutionLabel(DownloadOption("high", 1036, 1)))
+        assertEquals(2160, optionHeight(DownloadOption("original", 2160, 1, exact = true)))
         assertEquals("720p", resolutionLabel(DownloadOption("medium", null, 1)))
         assertEquals("480p", resolutionLabel(DownloadOption("small", null, 1)))
         assertNull(resolutionLabel(DownloadOption("original", 2160, 1, exact = true)))

@@ -21,6 +21,11 @@ class QualitySheetTest {
         assertTrue(m.rows.drop(1).none { it.option.exact })
     }
 
+    @Test fun `wide frame copy retains the encoder rung in the sheet`() {
+        val m = buildQualitySheet(listOf(DownloadOption("high", 1036, 7 * gb)), freeBytes = 100 * gb, lastPick = null)
+        assertEquals("1080p", resolutionLabel(m.rows.single().option))
+    }
+
     @Test fun `a choice larger than the free space minus 1 GB is disabled and says how much to free`() {
         val m = buildQualitySheet(listOf(orig(18 * gb), medium(3 * gb)), freeBytes = 10 * gb, lastPick = null)
         val o = m.rows[0]; val c = m.rows[1]

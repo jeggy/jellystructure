@@ -96,7 +96,8 @@ fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline
     val phases by controller.phases.collectAsState()
     val other by controller.otherBytes.collectAsState()
     val page = remember(records, phases) { buildDownloadsPage(records, phases) }
-    val bar = remember(page, other) { storageBar(page.profileBytes + other, controller.freeBytes(), controller.totalBytes()) }
+    val freeBytes by controller.storageFreeBytes.collectAsState()
+    val bar = remember(page, other, freeBytes) { storageBar(page.profileBytes + other, freeBytes, controller.totalBytes()) }
     var menuOpen by remember { mutableStateOf(false) }
 
     // Back leaves a selection before it leaves the page, and closes the menu before either.
@@ -341,10 +342,10 @@ private fun LazyListScope.seriesBlock(page: DownloadsPageModel, state: Downloads
 
 // ─── entries ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** `Original` for the file, the rung's picture height for a copy (FR-9). */
+/** `Original` for the file, the encoder rung for a copy (FR-4). */
 @Composable
 private fun qualityLabel(r: DownloadRecord): String =
-    if (r.quality == "original") str("download.original") else (r.height ?: when (r.quality) { "high" -> 1080; "medium" -> 720; "small" -> 480; else -> null })?.let { "${it}p" } ?: r.quality
+    if (r.quality == "original") str("download.original") else rungHeight(r.quality, r.height)?.let { "${it}p" } ?: r.quality
 
 @Composable
 private fun cardModifier(selected: Boolean) = RaviloTheme.colors.let { c ->
@@ -434,7 +435,7 @@ private fun SwipeDeleteRow(itemId: String, state: DownloadsPageState, onAsk: () 
     // The confirm closed without a delete: the row slides back (FR-10 amended, acceptance 11).
     LaunchedEffect(asking) { if (!asking && offset.value != 0f) offset.animateTo(0f) }
     Box(Modifier.fillMaxWidth()) {
-        Box(Modifier.matchParentSize(), contentAlignment = Alignment.CenterEnd) {
+        if (offset.value < -0.5f) Box(Modifier.matchParentSize(), contentAlignment = Alignment.CenterEnd) {
             Column(
                 Modifier.width(RevealWidth).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Danger).clickable(onClick = onAsk),
                 verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
