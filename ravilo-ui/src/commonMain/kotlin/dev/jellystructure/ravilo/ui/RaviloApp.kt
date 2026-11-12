@@ -1150,6 +1150,8 @@ fun RaviloApp(
         // pill was pressed. A 204 says so and stays put; so does any failure, quietly. One ask at a time.
         val surpriseNone = str("surprise.none")
         var surpriseAsking by remember { mutableStateOf(false) }
+        // DEB-4280 — the page Another one just opened opens with focus on Another one (the detail screen spends the mark).
+        var anotherEntryFor by remember { mutableStateOf<Dest?>(null) }
         val surpriseScope = androidx.compose.runtime.rememberCoroutineScope()
         fun askSurprise(shown: List<String>, replace: Boolean) {
             if (surpriseAsking) return
@@ -1164,7 +1166,7 @@ fun RaviloApp(
                 }
                 if (replace && stack.lastOrNull() !== from) return@launch   // the viewer already left the page
                 val next = surpriseDest(a, shown, destDisplayName(stack.lastOrNull()))
-                if (replace) replaceTop(next) else push(next)
+                if (replace) { anotherEntryFor = next; replaceTop(next) } else push(next)
             }
         }
 
@@ -2972,6 +2974,8 @@ fun RaviloApp(
                     onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     onAnother = if (dest.surpriseShown.isEmpty()) null else { { askSurprise(dest.surpriseShown, replace = true) } },
+                    anotherEntryFocus = anotherEntryFor === dest,
+                    onAnotherFocused = { anotherEntryFor = null },
                 )
             }
 
@@ -3024,6 +3028,8 @@ fun RaviloApp(
                     onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     onAnother = if (dest.surpriseShown.isEmpty()) null else { { askSurprise(dest.surpriseShown, replace = true) } },
+                    anotherEntryFocus = anotherEntryFor === dest,
+                    onAnotherFocused = { anotherEntryFor = null },
                 )
             }
 

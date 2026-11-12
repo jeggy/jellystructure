@@ -33,6 +33,7 @@ import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.SeriesDetail
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -540,5 +541,30 @@ class SeriesDetailFocusTest {
         renderLeavingForThePlayer(d, watched(d, upToSeason = 0), target)
         focusedInside(SeriesDetailTags.card("s2e5"))
         rule.onNodeWithTag(SeasonPickerTags.pill(2), useUnmergedTree = true).assertExists()
+    }
+
+    private fun renderSurprisePage(detail: SeriesDetail, anotherEntryFocus: Boolean, onSpent: () -> Unit = {}) {
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        rule.setContent {
+            SeriesDetailLoaded(
+                wireDetail = detail, overlay = mapOf(detail.card.id to CardPlayState()), onBack = {}, onPlay = {}, onMarkEpisode = { _, _ -> },
+                onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
+                displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
+                onAnother = {}, anotherEntryFocus = anotherEntryFocus, onAnotherFocused = onSpent,
+            )
+        }
+        rule.waitForIdle()
+    }
+
+    @Test fun `DEB-4280 — the page Another one opened has focus on Another one, so the next OK rolls again, and spends the mark`() {
+        var spent = 0
+        renderSurprisePage(series(1, 3, shuffle = false), anotherEntryFocus = true) { spent++ }
+        rule.onNodeWithTag(SeriesDetailTags.ANOTHER, useUnmergedTree = true).assertIsFocused()
+        assertEquals(1, spent)
+    }
+
+    @Test fun `DEB-4280 — the page the pill opened still starts on Play`() {
+        renderSurprisePage(series(1, 3, shuffle = false), anotherEntryFocus = false)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
     }
 }

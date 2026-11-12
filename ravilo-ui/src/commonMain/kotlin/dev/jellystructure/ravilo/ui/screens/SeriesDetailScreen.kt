@@ -135,6 +135,9 @@ fun SeriesDetailScreen(
     // DEB-3984 (FR-12) — set only on a page Surprise me opened: the SURPRISE kicker above the title, and *Another one* beside
     // Play asking for the next title (the caller replaces this page with it). Null = an ordinary detail page.
     onAnother: (() -> Unit)? = null,
+    // DEB-4280 — see [MovieDetailScreen].
+    anotherEntryFocus: Boolean = false,
+    onAnotherFocused: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
@@ -170,6 +173,8 @@ fun SeriesDetailScreen(
                 onSearch = onSearch,
                 onShuffle = onShuffle,
                 onAnother = onAnother,
+                anotherEntryFocus = anotherEntryFocus,
+                onAnotherFocused = onAnotherFocused,
                 returnTarget = store.returnTarget,
             )
         }
@@ -179,6 +184,7 @@ fun SeriesDetailScreen(
 /** R343 (FR-R343-9) — the tags `SeriesDetailFocusTest` walks the page's D-pad path by. */
 internal object SeriesDetailTags {
     const val PLAY = "series-play"
+    const val ANOTHER = "series-another"   // DEB-4280
     const val RAIL = "series-rail"
     const val SHUFFLE_CHIP = "series-shuffle-chip"
     fun card(id: String) = "series-card-$id"
@@ -364,6 +370,8 @@ internal fun SeriesDetailLoaded(
     onShuffle: (List<EpisodePlayContext>) -> Unit = {},
     // DEB-3984 (FR-12) — see [SeriesDetailScreen].
     onAnother: (() -> Unit)? = null,
+    anotherEntryFocus: Boolean = false,
+    onAnotherFocused: () -> Unit = {},
     // R350 (FR-R350-2) — the store's, so it outlives this page; null = nothing to come back to.
     returnTarget: SeriesReturnTarget? = null,
 ) {
@@ -502,6 +510,7 @@ internal fun SeriesDetailLoaded(
     }
 
     val playFR = remember { FocusRequester() }
+    val anotherFR = remember { FocusRequester() }   // DEB-4280
     val genreFR = remember { FocusRequester() }   // R221 — first (lead) genre chip
     val synopsisFR = remember { FocusRequester() }   // R135
     val seasonFirstFR = remember { FocusRequester() }   // R138
@@ -532,6 +541,12 @@ internal fun SeriesDetailLoaded(
     // view below the app bar. An episode card is focused once the rail has opened on it (railOpeningIndex anchors
     // it), through the same scroll-then-focus sequence; a card the season no longer holds falls back to Play.
     LaunchedEffect(Unit) {
+        // DEB-4280 — Another one just replaced the page the viewer pressed it on: keep focus on that button (once).
+        if (anotherEntryFocus && onAnother != null && returnFocus == null) {
+            onAnotherFocused()
+            focusInList(0, anotherFR, 0)
+            return@LaunchedEffect
+        }
         when (returnFocus) {
             is SeriesReturnFocus.Shuffle -> if (canShuffle) focusInList(1, shuffleFR, -belowBarPx) else focusPlay()
             is SeriesReturnFocus.Episode -> {
@@ -887,8 +902,9 @@ internal fun SeriesDetailLoaded(
                         // DEB-3984 (FR-12) — Surprise me's next title; this page is replaced, so one Back still leaves the run.
                         if (onAnother != null) RaviloButton(
                             label = str("detail.another"),
+                            focusRequester = anotherFR,
                             style = ButtonStyle.GHOST,
-                            modifier = Modifier.widthIn(min = 150.dp),
+                            modifier = Modifier.widthIn(min = 150.dp).testTag(SeriesDetailTags.ANOTHER),
                             onSelect = onAnother,
                         )
                         // Bug fix: this button had no `onSelect` at all -- pressing OK did nothing, and

@@ -115,6 +115,10 @@ fun MovieDetailScreen(
     // DEB-3984 (FR-12) — set only on a page Surprise me opened: the SURPRISE kicker above the title, and *Another one* beside
     // Play asking for the next title (the caller replaces this page with it). Null = an ordinary detail page.
     onAnother: (() -> Unit)? = null,
+    // DEB-4280 — true only for the page Another one just opened: the viewer was on that button, so it opens there (once —
+    // [onAnotherFocused] spends the mark), and the next OK rolls again instead of starting the film. Otherwise Play.
+    anotherEntryFocus: Boolean = false,
+    onAnotherFocused: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
@@ -146,6 +150,8 @@ fun MovieDetailScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 onAnother = onAnother,
+                anotherEntryFocus = anotherEntryFocus,
+                onAnotherFocused = onAnotherFocused,
             )
         }
     }
@@ -167,6 +173,8 @@ private fun MovieDetailLoaded(
     onProfile: (() -> Unit)?,
     onSearch: (() -> Unit)?,
     onAnother: (() -> Unit)?,
+    anotherEntryFocus: Boolean = false,
+    onAnotherFocused: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -196,7 +204,13 @@ private fun MovieDetailLoaded(
     val navBarFR = remember { FocusRequester() }
     val trailerFR = remember { FocusRequester() }   // R163
     var showTrailer by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
+    val anotherFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        if (anotherEntryFocus && onAnother != null) {
+            onAnotherFocused()
+            runCatching { anotherFR.requestFocus() }.onFailure { runCatching { playFR.requestFocus() } }
+        } else runCatching { playFR.requestFocus() }
+    }
 
     // R223 FR-2: every path that sends focus to the nav bar from inside the hero must also guarantee the
     // list is at item 0 — never a bare navBarFR.requestFocus() that assumes it's already there. Bug fix
@@ -416,6 +430,7 @@ private fun MovieDetailLoaded(
                         // DEB-3984 (FR-12) — Surprise me's next title; this page is replaced, so one Back still leaves the run.
                         if (!phoneDownloadsRow && onAnother != null) RaviloButton(
                             label = str("detail.another"),
+                            focusRequester = anotherFR,
                             style = ButtonStyle.GHOST,
                             modifier = Modifier.widthIn(min = 150.dp),
                             onSelect = onAnother,
@@ -453,6 +468,7 @@ private fun MovieDetailLoaded(
                         }
                         if (phoneDownloadsRow && onAnother != null) RaviloButton(
                             label = str("detail.another"),
+                            focusRequester = anotherFR,
                             style = ButtonStyle.GHOST,
                             modifier = Modifier.widthIn(min = 150.dp),
                             onSelect = onAnother,
