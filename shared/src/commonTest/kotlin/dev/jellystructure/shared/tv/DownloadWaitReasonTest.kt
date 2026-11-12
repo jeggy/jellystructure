@@ -15,7 +15,7 @@ class DownloadWaitReasonTest {
         assertEquals(DownloadWaitReason.EncoderFull(null), DownloadWaitReason.parse("""{"reason":"encoder_full","streams":0}"""))
     }
 
-    @Test fun `no reason, an unknown one, other fields and text that is not JSON are the generic wait`() {
+    @Test fun `no reason or an unknown one or other fields or text that is not JSON are the generic wait`() {
         assertEquals(DownloadWaitReason.Unknown, DownloadWaitReason.parse("""{"error":"busy"}"""))
         assertEquals(DownloadWaitReason.Unknown, DownloadWaitReason.parse("""{"reason":"something_new","streams":9,"extra":true}"""))
         assertEquals(DownloadWaitReason.Unknown, DownloadWaitReason.parse("Service Unavailable"))
