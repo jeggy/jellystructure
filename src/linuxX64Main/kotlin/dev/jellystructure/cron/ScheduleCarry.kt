@@ -27,6 +27,26 @@ object ScheduleCarry {
         return if (word == "weekly") "$minute $hour * * ${last?.let { it.date.dayOfWeek.isoDayNumber % 7 } ?: MONDAY}" else "$minute $hour * * *"
     }
 
+    /**
+     * DEB-4387 (FR-5.1.2) — the Live TV guide's `epg_cadence_minutes` as a schedule, once at load: `15` is every 15 minutes, `60` is on the hour,
+     * `360` is every 6 hours (`0` past), `1440` is *daily at* the hour and minute of the last sync (04:00 with none). Any other value rounds down to the
+     * nearest of the four, and under 15 is 15.
+     */
+    fun fromGuideMinutes(minutes: Int, lastSyncEpochSec: Long?, zone: TimeZone): String = when {
+        minutes >= 1440 -> fromWord("daily", lastSyncEpochSec, zone)
+        minutes >= 360 -> "0 */6 * * *"
+        minutes >= 60 -> "0 * * * *"
+        else -> "*/15 * * * *"
+    }
+
+    /** FR-5.1.3 — `epg_cadence_minutes` as written for one release: the whole minutes between the schedule's next two fires, 15–1440. Null for an unusable schedule. */
+    fun guideMinutes(schedule: String?, zone: TimeZone, nowEpochSec: Long): Int? {
+        val parsed = (parseSchedule(schedule.orEmpty()) as? ScheduleParse.Ok)?.schedule ?: return null
+        val fires = ScheduleEvaluator.nextFires(parsed, zone, nowEpochSec, 2)
+        if (fires.size < 2) return 1440
+        return ((fires[1] - fires[0]) / 60L).toInt().coerceIn(15, 1440)
+    }
+
     /** `hourly` when the fires are at most 90 minutes apart (and [allowHourly]), `daily` up to 36 hours, `weekly` beyond. Null for a blank or unusable schedule: the caller keeps the word it has. */
     fun legacyWord(schedule: String?, zone: TimeZone, nowEpochSec: Long, allowHourly: Boolean): String? {
         val parsed = (parseSchedule(schedule.orEmpty()) as? ScheduleParse.Ok)?.schedule ?: return null

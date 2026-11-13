@@ -8,6 +8,8 @@ import dev.jellystructure.api.ProcessingPartView
 import dev.jellystructure.api.ProcessingView
 import dev.jellystructure.api.SubtitleCheckApi
 import dev.jellystructure.api.SubtitleCheckSettings
+import dev.jellystructure.cron.AgeUnit
+import dev.jellystructure.cron.ReleaseAge
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -27,9 +29,6 @@ import org.w3c.dom.events.KeyboardEvent
 private const val AGE_THIS_YEAR = "this_year"
 private const val AGE_1_5 = "one_to_five_years"
 private const val AGE_OLDER = "older"
-
-private val CAD_VALUES = listOf("daily", "weekly", "monthly", "6months", "yearly", "2years", "5years", "never")
-private val CAD_WORDS = listOf("Every day", "Every week", "Every month", "Every 6 months", "Every year", "Every 2 years", "Every 5 years", "Never")
 
 private var draft = ProcessingConfig()
 private var saved = ProcessingConfig()
@@ -331,8 +330,10 @@ private fun onClick(t: HTMLElement, scope: CoroutineScope) {
 }
 
 private fun onChange(t: HTMLElement, scope: CoroutineScope) {
-    t.getAttribute("data-tier")?.let { key ->
-        setChoice("tier:$key", (t as HTMLSelectElement).value)
+    t.closest("[data-tier]")?.let { ctl ->
+        val key = ctl.getAttribute("data-tier") ?: return@let
+        if (t is HTMLInputElement) t.value = t.value.toIntOrNull()?.coerceIn(ReleaseAge.MIN_N, ReleaseAge.MAX_N)?.toString() ?: "1"   // a blank or out-of-range N is read as the nearest
+        ageWord(ctl as HTMLElement)?.let { setChoice("tier:$key", it) }
         refreshDirty()
         return
     }
@@ -360,6 +361,11 @@ private fun onChange(t: HTMLElement, scope: CoroutineScope) {
 }
 
 private fun onInput(t: HTMLElement) {
+    t.closest("[data-tier]")?.let { ctl ->
+        val key = ctl.getAttribute("data-tier") ?: return@let
+        ageWord(ctl as HTMLElement)?.let { setChoice("tier:$key", it); refreshDirty() }   // typed: saved as it is valid, a half-typed N waits
+        return
+    }
     SchedPickers.onEvent(t, "input")
 }
 
@@ -494,15 +500,43 @@ private fun seg(key: String, options: List<Pair<String, String>>): String =
 
 private val SCOPE = listOf("missing" to "Missing only", "all" to "All items")
 
-private fun cadSelect(attrs: String, value: String, disabled: Boolean): String =
-    """<select class="select" $attrs${if (disabled) " disabled" else ""}>""" +
-        CAD_VALUES.mapIndexed { i, v -> """<option value="$v"${if (v == value) " selected" else ""}>${CAD_WORDS[i]}</option>""" }.joinToString("") + "</select>"
+/**
+ * DEB-4387 (FR-5.2) — one release-age tier: the schedule control's *[N] [days | weeks | months | years]* half and nothing else (an age, not a calendar
+ * time), with *Never* at the head of the unit menu in place of *Off*. The stored word is today's whenever one fits (`6months`), else `<N><unit>`
+ * (`10years`); [ReleaseAge] says which. An unreadable stored tier shows as *1 month*, which is how `cadenceMs` reads it.
+ */
+private fun ageControl(attrs: String, value: String, disabled: Boolean): String {
+    val never = value.trim().lowercase() == ReleaseAge.NEVER
+    val age = ReleaseAge.parse(value) ?: ReleaseAge(1, AgeUnit.MONTHS)
+    val dis = if (disabled) " disabled" else ""
+    fun opt(key: String, label: String, on: Boolean) = """<option value="$key"${if (on) " selected" else ""}>$label</option>"""
+    val units = opt("never", "Never", never) + AgeUnit.entries.joinToString("") { u -> opt(u.key, ageUnitWord(u, age.n), !never && age.unit == u) }
+    return """<span class="pf-agectl" $attrs data-age="ctl"><input class="input sch-n" type="number" min="${ReleaseAge.MIN_N}" max="${ReleaseAge.MAX_N}" data-age="n" value="${age.n}"${if (never) " hidden" else ""}$dis aria-label="Number"><select class="select" data-age="unit"$dis aria-label="Unit">$units</select></span>"""
+}
+
+private fun ageUnitWord(u: AgeUnit, n: Int): String = schedUnitWord(
+    when (u) { AgeUnit.DAYS -> SchedMode.DAYS; AgeUnit.WEEKS -> SchedMode.WEEKS; AgeUnit.MONTHS -> SchedMode.MONTHS; AgeUnit.YEARS -> SchedMode.YEARS }, n)
+
+/** The word a tier control holds (null while its number is not one the server takes — a half-typed field), and its unit menu follows N. */
+private fun ageWord(ctl: HTMLElement): String? {
+    val unit = (ctl.querySelector("[data-age='unit']") as? HTMLSelectElement)?.value ?: return null
+    val box = ctl.querySelector("[data-age='n']") as? HTMLInputElement
+    box?.hidden = unit == "never"
+    if (unit == "never") return ReleaseAge.NEVER
+    val n = box?.value?.toIntOrNull()?.takeIf { it in ReleaseAge.MIN_N..ReleaseAge.MAX_N } ?: return null
+    val sel = ctl.querySelector("[data-age='unit']") as HTMLSelectElement
+    for (i in 0 until sel.options.length) {
+        val opt = sel.options.item(i) ?: continue
+        AgeUnit.of(opt.getAttribute("value").orEmpty())?.let { opt.textContent = ageUnitWord(it, n) }
+    }
+    return AgeUnit.of(unit)?.let { ReleaseAge(n, it).word }
+}
 
 /** The release-age rule for unchanged titles: one switch and the three intervals (FR-3.3). */
 private fun agesHtml(group: String, head: String, help: String): String {
     val t = tiersOf(group)
     fun age(label: String, field: String, value: String) =
-        """<label class="pf-age"><span>$label</span>${cadSelect("""data-tier="$group:$field"""", value, disabled = !t.recheckUnchanged)}</label>"""
+        """<label class="pf-age"><span>$label</span>${ageControl("""data-tier="$group:$field"""", value, disabled = !t.recheckUnchanged)}</label>"""
     return """<div class="pf-part" style="grid-template-columns:44px minmax(0,1fr)"><div>${sw(t.recheckUnchanged, """data-opt="recheck:$group"""")}</div><div>
         <div class="pn">${head.esc()}</div><div class="ph-line">${help.esc()}</div>
         <div class="pf-ages" style="margin-top:11px">${age("Released this year", AGE_THIS_YEAR, t.thisYear)}${age("1–5 years old", AGE_1_5, t.oneToFiveYears)}${age("Older", AGE_OLDER, t.older)}</div>

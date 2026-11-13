@@ -11,7 +11,9 @@ import io.ktor.client.request.post
 import io.ktor.client.request.get
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.serialization.Serializable
 
 /** Phase 147 — admin API client for the Live TV connection/lineup/settings page. */
 object LiveTvApi {
@@ -37,9 +39,27 @@ object LiveTvApi {
 
     suspend fun removeMissing(): List<LiveTvChannel> = httpClient.post("/api/tv/admin/livetv/bulk/remove-missing").body()
 
-    suspend fun updateSettings(enabled: Boolean? = null, epgCadenceMinutes: Int? = null): LiveTvOverview =
+    suspend fun updateSettings(enabled: Boolean? = null): LiveTvOverview =
         httpClient.put("/api/tv/admin/livetv/settings") {
             contentType(ContentType.Application.Json)
-            setBody(LiveTvSettingsUpdate(enabled, epgCadenceMinutes))
+            setBody(LiveTvSettingsUpdate(enabled))
         }.body()
+
+    /** DEB-4387 (FR-5.1) — the guide refresh's schedule. A refusal (422) carries the server's sentence of what is wrong; [overview] is null then. */
+    suspend fun saveGuideSchedule(schedule: String): GuideScheduleSave = runCatching {
+        val response = httpClient.put("/api/tv/admin/livetv/settings") {
+            contentType(ContentType.Application.Json)
+            setBody(LiveTvSettingsUpdate(epgSchedule = schedule))
+        }
+        when (response.status) {
+            HttpStatusCode.OK -> GuideScheduleSave(response.body<LiveTvOverview>(), null)
+            HttpStatusCode.UnprocessableEntity -> GuideScheduleSave(null, runCatching { response.body<GuideScheduleError>().error }.getOrNull() ?: "Invalid schedule")
+            else -> GuideScheduleSave(null, "Couldn't save")
+        }
+    }.getOrDefault(GuideScheduleSave(null, "Couldn't save"))
 }
+
+class GuideScheduleSave(val overview: LiveTvOverview?, val error: String?)
+
+@Serializable
+private data class GuideScheduleError(val error: String? = null)

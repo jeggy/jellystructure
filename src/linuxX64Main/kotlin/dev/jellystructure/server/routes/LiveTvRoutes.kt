@@ -98,7 +98,12 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         val req = runCatching { call.receive<LiveTvSettingsUpdate>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request")); return@put
         }
-        liveTvService.updateSettings(req.enabled, req.epgCadenceMinutes)
+        // DEB-4387 (FR-5.1) — the guide's schedule is refused with 422 and the sentence of what is wrong, as every setting on the shared schedule is.
+        val refused = liveTvService.updateSettings(req.enabled, req.epgCadenceMinutes, req.epgSchedule)
+        if (refused != null) {
+            call.respond(HttpStatusCode.UnprocessableEntity, mapOf("field" to "epg_schedule", "error" to refused))
+            return@put
+        }
         call.respond(liveTvService.overview())
     }
 

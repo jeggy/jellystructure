@@ -6,6 +6,13 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.auth.JellyfinLiveTvChannel
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.cron.ScheduleCarry
+import dev.jellystructure.cron.ScheduleCheck
+import dev.jellystructure.cron.ScheduleEvaluator
+import dev.jellystructure.cron.ScheduleParse
+import dev.jellystructure.cron.ScheduleZone
+import dev.jellystructure.cron.parseSchedule
+import dev.jellystructure.cron.validateSchedule
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.ops.boundedOrNull
@@ -43,6 +50,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.TimeZone
 import kotlin.concurrent.AtomicInt
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -58,6 +66,19 @@ import platform.posix.time
 import platform.posix.time_tVar
 import platform.posix.timespec
 import platform.posix.tm
+
+/** DEB-4387 (FR-5.1.1) — the guide refresh is never more often than every 15 minutes. */
+private const val GUIDE_FLOOR_MINUTES = 15
+
+/**
+ * DEB-4387 (FR-5.1.1) — whether the shared guide is due for a re-read: by the FR-2.3 rule, the schedule's first fire after the last read has
+ * passed (missed fires are one read), not by the age of the cache. A schedule that does not parse (a hand-edited file) falls back to the hourly
+ * the guide has always had, so a typo never freezes it.
+ */
+internal fun guideDue(schedule: String, zone: TimeZone, fetchedAtMs: Long, nowMs: Long): Boolean {
+    val parsed = (parseSchedule(schedule) as? ScheduleParse.Ok)?.schedule ?: return nowMs - fetchedAtMs > 60 * 60_000L
+    return ScheduleEvaluator.isDue(parsed, zone, fetchedAtMs.takeIf { it > 0 }?.div(1000), nowMs / 1000)
+}
 
 private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L
 
@@ -227,6 +248,7 @@ class LiveTvService(
             newCount = overrides.count { it.isNew },
             unavailableCount = overrides.count { it.unavailable },
             epgCadenceMinutes = settings.epgCadenceMinutes,
+            epgSchedule = guideSchedule(),
             lastSyncedAt = settings.lastSyncedAt,
         )
     }
@@ -441,14 +463,49 @@ class LiveTvService(
         eventBus?.notifyGlobalConfigChanged()
     }
 
-    fun updateSettings(enabled: Boolean? = null, epgCadenceMinutes: Int? = null) {
+    private fun scheduleZone() = ScheduleZone.resolve(configStore.current.general.timezone)
+
+    /**
+     * DEB-4387 (FR-5.1.2) — the guide's schedule: the stored `epg_schedule`, else the one `epg_cadence_minutes` carries over to (15, 60, 360 and
+     * 1440 mapped, anything else rounded down; daily at the hour and minute of the last sync, 04:00 with none).
+     */
+    fun guideSchedule(): String {
+        val s = store.settings()
+        return s.epgSchedule ?: ScheduleCarry.fromGuideMinutes(s.epgCadenceMinutes, s.lastSyncedAt.takeIf { it > 0 }?.div(1000), scheduleZone())
+    }
+
+    /** The carry-over, once, at load: written to the store so the next load finds it and `daily` keeps the hour it was made at. A no-op when `epg_schedule` is there. */
+    fun carryOver() {
+        if (store.settings().epgSchedule != null) return
+        writeSchedule(guideSchedule())
+    }
+
+    private fun writeSchedule(schedule: String) {
+        val zone = scheduleZone()
         store.updateSettings {
-            it.copy(
-                enabled = enabled ?: it.enabled,
-                epgCadenceMinutes = (epgCadenceMinutes ?: it.epgCadenceMinutes).coerceIn(15, 1440),
-            )
+            it.copy(epgSchedule = schedule, epgCadenceMinutes = ScheduleCarry.guideMinutes(schedule, zone, nowMs() / 1000) ?: it.epgCadenceMinutes)
         }
+    }
+
+    /**
+     * [epgSchedule] (cron or `every:`, FR-5.1.1) wins over the old [epgCadenceMinutes], which an admin of the last release still sends. Returns the
+     * refusal (a blank schedule — there is no *Off* — one that does not parse, or one more often than every 15 minutes), else null; nothing is
+     * written for a refused schedule.
+     */
+    fun updateSettings(enabled: Boolean? = null, epgCadenceMinutes: Int? = null, epgSchedule: String? = null): String? {
+        var schedule: String? = null
+        if (epgSchedule != null) {
+            val text = epgSchedule.trim()
+            val check = validateSchedule(text, nowMs() / 1000, scheduleZone(), GUIDE_FLOOR_MINUTES)
+            if (check is ScheduleCheck.Invalid) return check.message
+            schedule = text
+        } else if (epgCadenceMinutes != null) {
+            schedule = ScheduleCarry.fromGuideMinutes(epgCadenceMinutes.coerceIn(15, 1440), store.settings().lastSyncedAt.takeIf { it > 0 }?.div(1000), scheduleZone())
+        }
+        store.updateSettings { it.copy(enabled = enabled ?: it.enabled) }
+        if (schedule != null) writeSchedule(schedule)
         eventBus?.notifyGlobalConfigChanged()
+        return null
     }
 
     /**
@@ -470,9 +527,8 @@ class LiveTvService(
     }
 
     private suspend fun sharedGuide(days: Int, hoursBack: Int): List<LiveTvGuideProgram> {
-        val cadenceMs = store.settings().epgCadenceMinutes.coerceAtLeast(1) * 60_000L
         val now = nowMs()
-        if (guideCache.isEmpty() || now - guideCacheFetchedAt > cadenceMs) {
+        if (guideCache.isEmpty() || guideDue(guideSchedule(), scheduleZone(), guideCacheFetchedAt, now)) {
             val base = jellyfinBase(); val token = jellyfinToken()
             val channelIds = store.overridesByChannelId().values.filter { it.shown && !it.unavailable }.map { it.channelId }
             if (base.isNotBlank() && token.isNotBlank() && channelIds.isNotEmpty()) {

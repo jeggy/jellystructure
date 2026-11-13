@@ -38,6 +38,9 @@ val CHANNEL_KINDS = setOf("tv", "radio")
 @Serializable
 data class LiveTvSettings(
     val enabled: Boolean = false,
+    // DEB-4387 (FR-5.1) — the guide refresh on the shared schedule; null until [LiveTvService.carryOver] has made it from `epg_cadence_minutes`,
+    // which is still written for one release (the whole minutes between its next two fires) so a rolled-back backend keeps refreshing.
+    @SerialName("epg_schedule") val epgSchedule: String? = null,
     @SerialName("epg_cadence_minutes") val epgCadenceMinutes: Int = 60,
     @SerialName("last_synced_at") val lastSyncedAt: Long = 0L,
 )

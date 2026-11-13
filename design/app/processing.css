@@ -85,6 +85,9 @@
 /* the label above a re-check interval, NOT a .select — round 1 had `.pf-age span` uppercasing the
    shipped .select's own text, which is why this is `> span:first-child` and not `span`. */
 .pfx .pf-age .select { min-width: 118px; font-size: .8rem; padding: 6px 10px; }
+/* DEB-4387 (FR-5.2) — a tier is the schedule control's [N] [unit] half: the number (the picker's `.sch-n`) and the unit menu, side by side. */
+.pfx .pf-age .pf-agectl { display: flex; align-items: center; gap: 6px; }
+.pfx .pf-age .pf-agectl .sch-n { font-size: .8rem; padding-top: 6px; padding-bottom: 6px; }
 
 /* the note a row explains itself with. `.q` is the queues-work note (info), `.warn` the full-rescan
    warning, `.flat` the neutral one the dialog's off-pane uses. */

@@ -46,6 +46,8 @@ data class LiveTvOverview(
     @SerialName("unavailable_count") val unavailableCount: Int,
     @SerialName("epg_cadence_minutes") val epgCadenceMinutes: Int,
     @SerialName("last_synced_at") val lastSyncedAt: Long,
+    /** DEB-4387 (FR-5.1) — the guide refresh's schedule (cron or `every:`). Added; `epg_cadence_minutes` is still sent for one release. */
+    @SerialName("epg_schedule") val epgSchedule: String = "",
 )
 
 @Serializable
@@ -63,6 +65,8 @@ data class LiveTvChannelUpdate(
 data class LiveTvSettingsUpdate(
     val enabled: Boolean? = null,
     @SerialName("epg_cadence_minutes") val epgCadenceMinutes: Int? = null,
+    /** DEB-4387 (FR-5.1) — wins over [epgCadenceMinutes] when both come. Refused with 422 when blank, unparsable or under the 15-minute floor. */
+    @SerialName("epg_schedule") val epgSchedule: String? = null,
 )
 
 @Serializable

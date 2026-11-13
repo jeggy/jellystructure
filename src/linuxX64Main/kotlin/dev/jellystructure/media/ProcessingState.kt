@@ -296,7 +296,9 @@ object ProcessingViews {
 
     private fun tier(w: String) = when (w) {
         "daily" -> "daily"; "weekly" -> "weekly"; "monthly" -> "monthly"; "6months" -> "every 6 months"; "yearly" -> "yearly"
-        "2years" -> "every 2 years"; "5years" -> "every 5 years"; "never" -> "never"; else -> w
+        "2years" -> "every 2 years"; "5years" -> "every 5 years"; "never" -> "never"
+        // DEB-4387 (FR-5.2) — an age no word says: `10years` is "every 10 years", `1days` never reaches here (it is written `daily`).
+        else -> dev.jellystructure.cron.ReleaseAge.parse(w)?.let { "every ${it.n} ${if (it.n == 1) it.unit.key.removeSuffix("s") else it.unit.key}" } ?: w
     }
 
     private fun nextOf(cfg: AppConfig, p: ProcessingConfig, id: String, on: Boolean, lastAt: Long?, findNext: Long?, inp: ProcessingInputs): Long? = when {

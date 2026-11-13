@@ -2,21 +2,19 @@ package dev.jellystructure.media
 
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.PipelineStep
+import dev.jellystructure.cron.AgeUnit
+import dev.jellystructure.cron.ReleaseAge
 import dev.jellystructure.log.Logger
 
 /** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "2years",
  *  "5years", "never". Phase 261 (FR-261-5) added the last two — a whole-file read of the library is
- *  200–300 GB, so the file checks want cadences no metadata step ever did. */
-fun cadenceMs(cadence: String): Long? = when (cadence.trim().lowercase()) {
-    "daily"   -> 24 * 3_600_000L
-    "weekly"  -> 7  * 24 * 3_600_000L
-    "monthly" -> 30 * 24 * 3_600_000L
-    "6months" -> 180 * 24 * 3_600_000L
-    "yearly"  -> 365 * 24 * 3_600_000L
-    "2years"  -> 2 * 365 * 24 * 3_600_000L
-    "5years"  -> 5 * 365 * 24 * 3_600_000L
-    "never"   -> null  // never recheck
-    else      -> 30 * 24 * 3_600_000L  // default monthly
+ *  200–300 GB, so the file checks want cadences no metadata step ever did. DEB-4387 (FR-5.2) adds `<N>days|weeks|months|years`
+ *  (N 1–100) for an age no word says (`10years`); [ReleaseAge] holds the grammar, this stays the one place an age becomes a duration.
+ *  An unreadable tier is monthly. */
+fun cadenceMs(cadence: String): Long? {
+    if (cadence.trim().lowercase() == ReleaseAge.NEVER) return null  // never recheck
+    val age = ReleaseAge.parse(cadence) ?: ReleaseAge(1, AgeUnit.MONTHS)  // default monthly
+    return age.days * 24 * 3_600_000L
 }
 
 /** Approximate current calendar year from epoch ms (leap-year-agnostic, ±1 day error OK). */

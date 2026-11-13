@@ -729,6 +729,7 @@ fun main() = runBlocking {
     val liveTvStore = dev.jellystructure.tv.LiveTvStore("$dataDir/livetv.json")
     liveTvStore.load()
     val liveTvService = dev.jellystructure.tv.LiveTvService(dataDir, liveTvStore, jellyfinClient, configStore, tvEventBus)
+    liveTvService.carryOver()  // DEB-4387 (FR-5.1.2) — epg_cadence_minutes becomes epg_schedule, once
     // Bug fix: channel names/logos/current-program only ever lived in an in-memory cache populated by
     // sync(), which was only called from admin routes — after every restart, Live TV showed placeholder
     // "Channel N" text (previously the raw Jellyfin id) until an admin happened to open Live TV settings.

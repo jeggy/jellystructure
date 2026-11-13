@@ -11,6 +11,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.events.KeyboardEvent
 
 // Phase 147 — the Live TV admin page (design/app/livetv.html): connection/status, guide cadence, the
 // new/unavailable lineup-change banner, and the channel lineup table (show/hide · number · order ·
@@ -21,6 +22,30 @@ private var ltvOverview: LiveTvOverview? = null
 private var ltvChannels: List<LiveTvChannel> = emptyList()
 private var ltvFilter: String = "all"
 private var ltvSearch: String = ""
+
+/** What the guide's schedule control holds (null until it has been touched: then it shows the saved one). */
+private var ltvGuideDraft: String? = null
+private const val LTV_GUIDE = "ltv:guide"
+
+/** DEB-4387 (FR-5.1) — a 15-minute floor and no *Off*: the guide page needs a guide. */
+private val GUIDE_SCHED = SchedOptions(canOff = false, floorMinutes = 15, label = "Refresh the guide")
+
+private fun guideScheduleField(scope: CoroutineScope): String {
+    val stored = ltvGuideDraft ?: ltvOverview?.epgSchedule?.takeIf { it.isNotBlank() } ?: "0 * * * *"
+    return SchedPickers.field(LTV_GUIDE, stored, GUIDE_SCHED,
+        onChange = { ltvGuideDraft = it },
+        onChecked = { ok -> if (ok) saveGuideSchedule(scope) })
+}
+
+private fun saveGuideSchedule(scope: CoroutineScope) {
+    val draft = ltvGuideDraft ?: return
+    if (draft == ltvOverview?.epgSchedule) return
+    scope.launch {
+        val saved = LiveTvApi.saveGuideSchedule(draft)
+        if (saved.overview != null) ltvOverview = saved.overview
+        else SchedPickers.refuse(LTV_GUIDE, saved.error ?: "Invalid schedule")   // the backstop behind the live check
+    }
+}
 
 /** DEB-2628 (FR-12) — the broadcast glyph, a dot between an arc pair either side. The class and the stroke treatment are
  *  `wf.css`'s `.radiomark`; the page emits the five paths and nothing else. Its accessible label is *Radio*. Shared with
@@ -33,6 +58,7 @@ fun renderLiveTv(container: Element, scope: CoroutineScope) {
         ltvOverview = LiveTvApi.sync()  // cheap (one Jellyfin GET) — always re-diff on page open, see LiveTvService.sync
         ltvChannels = LiveTvApi.channels()
         ltvFilter = "all"; ltvSearch = ""
+        ltvGuideDraft = null; SchedPickers.forget(LTV_GUIDE)
         renderLiveTvFull(container, scope)
     }
 }
@@ -94,16 +120,8 @@ private fun renderLiveTvFull(container: Element, scope: CoroutineScope) {
       </div>
       <div class="card" style="width:340px">
         <h3 style="margin:0 0 4px;font-size:1.05rem">Guide</h3>
-        <div class="field" style="margin-top:12px">
-          <label>Refresh the guide every</label>
-          <select class="select" id="ltv-cadence">
-            <option value="15"${if (ov?.epgCadenceMinutes == 15) " selected" else ""}>15 minutes</option>
-            <option value="60"${if (ov?.epgCadenceMinutes == 60 || ov == null) " selected" else ""}>1 hour</option>
-            <option value="360"${if (ov?.epgCadenceMinutes == 360) " selected" else ""}>6 hours</option>
-            <option value="1440"${if (ov?.epgCadenceMinutes == 1440) " selected" else ""}>Daily</option>
-          </select>
-          <span class="hint">How often jellystructure re-pulls now/next + the full schedule from Jellyfin's own guide.</span>
-        </div>
+        <div id="ltv-guide" style="margin-top:12px">${guideScheduleField(scope)}</div>
+        <span class="hint">How often jellystructure re-pulls now/next + the full schedule from Jellyfin's own guide.</span>
       </div>
     </div>
 
@@ -229,10 +247,15 @@ private fun wireLiveTv(container: Element, scope: CoroutineScope) {
             renderLiveTvFull(container, scope)
         }
     }
-    (document.getElementById("ltv-cadence") as? HTMLSelectElement)?.addEventListener("change") { _ ->
-        val sel = document.getElementById("ltv-cadence") as? HTMLSelectElement ?: return@addEventListener
-        val minutes = sel.value.toIntOrNull() ?: return@addEventListener
-        scope.launch { ltvOverview = LiveTvApi.updateSettings(epgCadenceMinutes = minutes) }
+    // DEB-4387 (FR-5.1) — the guide refresh is the shared schedule control; it saves once the server has called what it holds valid.
+    (document.getElementById("ltv-guide") as? HTMLElement)?.let { guide ->
+        guide.addEventListener("click") { ev -> (ev.target as? Element)?.let { SchedPickers.onEvent(it, "click") } }
+        guide.addEventListener("input") { ev -> (ev.target as? Element)?.let { SchedPickers.onEvent(it, "input") } }
+        guide.addEventListener("change") { ev -> (ev.target as? Element)?.let { SchedPickers.onEvent(it, "change") } }
+        guide.addEventListener("keydown") { ev ->
+            val k = ev as? KeyboardEvent ?: return@addEventListener
+            if (SchedPickers.onKey(k.target as? Element ?: return@addEventListener, k.key)) k.preventDefault()
+        }
     }
     document.getElementById("ltv-show-new")?.addEventListener("click") { _ ->
         scope.launch {
