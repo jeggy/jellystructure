@@ -304,6 +304,8 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
   min-height: 38px; display: flex; align-items: center; gap: 8px;
   transition: border-color .2s ease, box-shadow .2s ease;
 }
+/* `display: flex` above outranks the UA `[hidden]` rule, so say it again (DEB-4466, DEB-4387 FR-5.2.1). */
+.input[hidden], .select[hidden] { display: none; }
 .input:hover, .select:hover { border-color: var(--line-2); }
 .input.ph { color: var(--ink-soft); cursor: text; }
 .select { justify-content: space-between; cursor: pointer; }
