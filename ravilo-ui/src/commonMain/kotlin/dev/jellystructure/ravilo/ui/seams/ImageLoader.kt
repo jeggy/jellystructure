@@ -156,3 +156,60 @@ fun PrefetchLazyRowEffect(listState: LazyListState, urls: List<String>, lookahea
 @Composable
 fun PrefetchLazyGridEffect(gridState: LazyGridState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) =
     PrefetchEffect(gridState, urls, lookahead) { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+
+// ─── DEB-4290: vertical (row-ahead) prefetch ─────────────────────────────────
+
+/** How many rows below the last visible one get their first tiles warmed. */
+const val ROW_PREFETCH_LOOKAHEAD_ROWS = 3
+
+/** How many tiles from the start of each such row — about what a TV row shows before it scrolls sideways. */
+const val ROW_PREFETCH_TILES_PER_ROW = 8
+
+/**
+ * DEB-4290 — the rows to warm now: the [lookaheadRows] below [lastVisibleRow] that [warmedThrough] has not
+ * already covered (a high-water mark, like R99's — scrolling back up, or Down within a row, enqueues
+ * nothing). Empty when nothing is visible yet (`lastVisibleRow < 0`) or the page ends first.
+ */
+fun rowsToPrefetch(lastVisibleRow: Int, rowCount: Int, warmedThrough: Int, lookaheadRows: Int = ROW_PREFETCH_LOOKAHEAD_ROWS): IntRange {
+    if (lastVisibleRow < 0) return IntRange.EMPTY
+    val start = maxOf(lastVisibleRow + 1, warmedThrough + 1)
+    val end = minOf(lastVisibleRow + lookaheadRows, rowCount - 1)
+    return if (start > end) IntRange.EMPTY else start..end
+}
+
+/**
+ * DEB-4290 — a vertical page's rows are composed only as they scroll in, so a row's first posters were
+ * first requested the frame the row appeared (decode + a crossfade on the UI-thread-adjacent path: ~17 %
+ * janky frames on the first fast scroll down TV Home). [rows] is the page's rows in LazyColumn order as
+ * (item key, tile URLs, empty for a row with no images to warm); as the last visible item advances, the
+ * first [tilesPerRow] URLs of the next [ROW_PREFETCH_LOOKAHEAD_ROWS] rows are enqueued, so they are
+ * memory-cache hits by the time focus gets there. The URLs must be the ones the tiles request (same
+ * `?w=`), or the prefetch warms an entry nobody reads.
+ */
+@Composable
+fun PrefetchLazyColumnRowsEffect(
+    listState: LazyListState,
+    rows: List<Pair<Any, List<String>>>,
+    tilesPerRow: Int = ROW_PREFETCH_TILES_PER_ROW,
+) {
+    val ctx = LocalPlatformContext.current
+    val baseUrl = LocalServerBaseUrl.current
+    LaunchedEffect(rows, baseUrl) {
+        val indexByKey = HashMap<Any, Int>(rows.size).also { m -> rows.forEachIndexed { i, (k, _) -> m[k] = i } }
+        var warmedThrough = -1
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull { it.key in indexByKey }?.key }
+            .distinctUntilChanged()
+            .collect { key ->
+                val last = key?.let { indexByKey[it] } ?: return@collect
+                val window = rowsToPrefetch(last, rows.size, warmedThrough)
+                if (window.isEmpty()) return@collect
+                val loader = SingletonImageLoader.get(ctx)
+                for (r in window) {
+                    for (url in rows[r].second.take(tilesPerRow)) {
+                        if (url.isNotBlank()) loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
+                    }
+                }
+                warmedThrough = window.last
+            }
+    }
+}

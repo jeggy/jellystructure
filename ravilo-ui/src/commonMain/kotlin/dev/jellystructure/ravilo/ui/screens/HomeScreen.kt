@@ -82,6 +82,7 @@ import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.TileVariant
+import dev.jellystructure.ravilo.ui.seams.PrefetchLazyColumnRowsEffect
 import dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion
 import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
@@ -282,6 +283,22 @@ private fun HomeLoaded(
     var lastFocus by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var contentFocused by remember { mutableStateOf(false) }
     val rowsHadFocusAtSwap = contentFocused
+
+    // DEB-4290 — the rows below the last visible one get their first tiles warmed as focus nears them, so a fast
+    // scroll down meets cached posters instead of a decode per new row. Keys are the LazyColumn's own item keys.
+    val rowPrefetch = remember(feed, hasChannels, liveTvChannels.isNotEmpty(), clampedOnNowIndex) {
+        buildList<Pair<Any, List<String>>> {
+            if (hasChannels) add("channels" to emptyList())
+            fun content(r: Row) {
+                val variant = if (r.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
+                add(r.id to r.items.mapNotNull { homeTileImageUrl(it, variant) })
+            }
+            feed.rows.take(clampedOnNowIndex).forEach(::content)
+            if (liveTvChannels.isNotEmpty()) add("on_now" to emptyList())
+            feed.rows.drop(clampedOnNowIndex).forEach(::content)
+        }
+    }
+    PrefetchLazyColumnRowsEffect(listState, rowPrefetch)
 
     // R361 — a resolved row that the LazyColumn has not composed (rare: the row below usually slid up into view)
     // is scrolled in first, so its restore can run; a restore that never fires is dropped rather than left armed.
@@ -556,6 +573,14 @@ private fun StaleContentBanner(modifier: Modifier = Modifier) {
     }
 }
 
+/** The image a Home tile of [variant] requests — what the row's own prefetch and the page's row-ahead prefetch (DEB-4290) warm. */
+private fun homeTileImageUrl(card: MediaCard, variant: TileVariant): String? {
+    val u = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
+    // R96 fix: prefetch the SAME ?w= URL the Tile will request (else prefetch warms the
+    // full-size image and the tile cache-misses → double download).
+    return u?.let { sizedProxyUrl(it, tileRequestedWidth(variant)) }
+}
+
 @Composable
 private fun ContentRowItem(
     row: Row,
@@ -681,12 +706,7 @@ private fun ContentRowItem(
             }
         }) else null,
         itemKey = { card -> card.id },
-        urlResolver = { card ->
-            val u = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
-            // R96 fix: prefetch the SAME ?w= URL the Tile will request (else prefetch warms the
-            // full-size image and the tile cache-misses → double download).
-            u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
-        },
+        urlResolver = { card -> homeTileImageUrl(card, rowVariant) },
         bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
         restoreItemKey = returnTo.restoreItemKey,  // R139 / R361 — resolved by HomeLoaded
         // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
