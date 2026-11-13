@@ -62,7 +62,10 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.MediaCard
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.transformLatest
 
 /** R338 (FR-R338-2) — the hero sits on artwork, so it keeps dark tokens in a light theme ([KeepDark]). */
 @Composable
@@ -75,6 +78,8 @@ fun HeroCarousel(
     onUp: (() -> Unit)? = null,
     onDown: (() -> Unit)? = null,
     driftEnabled: () -> Boolean = { true },
+    /** DEB-4283 — false while the hero is scrolled out of sight: the auto-advance holds (no slide change, no crossfade). */
+    inView: () -> Boolean = { true },
     /** R337 — a computer's hero carries *Play* beside *More Info* (the TV's is button-less: OK opens the title). */
     onPlay: ((MediaCard) -> Unit)? = null,
     /** R365 (FR-R365-10) — the slide to start on (a hero id) and where the showing slide is reported. */
@@ -84,7 +89,7 @@ fun HeroCarousel(
     // The layout is read here, outside KeepDark (which only swaps the colours).
     val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
     dev.jellystructure.ravilo.ui.theme.KeepDark {
-        HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled, desk, onPlay,
+        HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled, inView, desk, onPlay,
             initialHeroId, onActiveChanged)
     }
 }
@@ -101,6 +106,7 @@ private fun HeroCarouselContent(
     /** R101: Ken Burns drifts only while this is true (false ⇒ frozen). HomeScreen passes
      *  `!isScrollInProgress` so the hero stops its per-frame scaled redraw during a scroll gesture. */
     driftEnabled: () -> Boolean = { true },
+    inView: () -> Boolean = { true },
     desk: Boolean = false,
     onPlay: ((MediaCard) -> Unit)? = null,
     /** R365 (FR-R365-10) — the slide to start on (a hero's id, kept by the page's store across the detail page and
@@ -180,7 +186,9 @@ private fun HeroCarouselContent(
     // Auto-advance; resets when the user manually changes slide. 0 seconds = off.
     if (autoAdvanceSeconds > 0 && items.size > 1) {
         LaunchedEffect(resetTick, autoAdvanceSeconds) {
-            delay(autoAdvanceSeconds * 1_000L)
+            // DEB-4283 (FR-R383-3) — the interval runs only while the hero can be seen: a slide change off screen is a
+            // crossfade, a backdrop decode and ~35 frames drawn for nobody (Stue TV, Home rows 3-5).
+            awaitHeroAdvance(autoAdvanceSeconds * 1_000L, inView)
             activeIndex = (activeIndex + 1) % items.size
             resetTick++
         }
@@ -396,6 +404,17 @@ private fun HeroCarouselContent(
 /** R365 (FR-R365-10) — the slide the hero starts on: the saved hero's index, else (gone, or none saved) the first. */
 fun heroStartIndex(heroIds: List<String>, savedId: String?): Int =
     savedId?.let { heroIds.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+
+/**
+ * DEB-4283 — returns once [inView] has held true for [intervalMs] without a break. A hero that leaves view mid-interval
+ * drops the wait; coming back starts the interval again, so a viewer scrolling up always gets a full slide to read.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal suspend fun awaitHeroAdvance(intervalMs: Long, inView: () -> Boolean) {
+    snapshotFlow(inView)
+        .transformLatest { visible -> if (visible) { delay(intervalMs); emit(Unit) } }   // a false cancels the wait in flight
+        .first()
+}
 
 /** R383 — the Ken Burns drift's step: about 15 a second (0.5 px a step). */
 private const val HERO_DRIFT_STEP_MS = 66L

@@ -403,6 +403,8 @@ private fun HomeLoaded(
                         // R383: …and while the hero is scrolled out of sight (DEB-1536: a stepper left running off screen
                         // still dirtied a layer ~28 times a second, so Home drew with nothing to see).
                         driftEnabled = { !listState.isScrollInProgress && listState.firstVisibleItemIndex == 0 },
+                        // DEB-4283: …and the slide interval, so no crossfade runs for a hero nobody can see.
+                        inView = { listState.firstVisibleItemIndex == 0 },
                         onDown = { requestFocusRetryingOrMoveNative(scope, firstRowFR, focusManager, FocusDirection.Down) },
                         initialHeroId = store.heroId,                 // R365 (FR-R365-10)
                         onActiveChanged = { store.heroId = it },
