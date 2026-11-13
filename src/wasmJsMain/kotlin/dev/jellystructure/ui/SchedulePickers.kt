@@ -163,12 +163,14 @@ internal object SchedPickers {
 
     private fun ask(key: String, slot: Slot, immediately: Boolean) {
         slot.job?.cancel()
-        val text = slot.form.schedule(today())
+        val asked = slot.form
+        val text = asked.schedule(today())
         slot.job = scope.launch {
             if (!immediately) delay(300)
             // a Custom box left empty in a setting that cannot be off is refused here; the server would call it *off*
             val r = if (text.isBlank() && !slot.opts.canOff) null else ConfigApi.validateSchedule(text, slot.opts.floorMinutes)
-            if (slots[key] !== slot || slot.emitted != text) return@launch
+            // the form, not the string: a stored string the control would write differently (`daily@04:00`) is still the one asked about
+            if (slots[key] !== slot || slot.form != asked) return@launch
             slot.foot = when {
                 text.isBlank() && !slot.opts.canOff -> SchedFoot.Refused("This needs a schedule.")
                 r == null -> SchedFoot.Unreachable
