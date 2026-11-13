@@ -2315,7 +2315,7 @@ fun RaviloApp(
             // FR-R275-4 — one order, stated once, first match wins. backToTop sits above the stack: a
             // scrolled pushed screen goes to its top before it pops, exactly as it does on the TV.
             when {
-                profileMenuOpen -> profileMenuOpen = false
+                profileMenuOpen -> { profileMenuOpen = false; avatarReturnTo = stack.last() }   // DEB-4278
                 trackSheet != null -> trackSheet = null   // R322 — Back with the ⋯ sheet up closes the sheet
                 dev.jellystructure.ravilo.ui.music.PlaylistEditBack.consume() -> Unit   // DEB-2254 (FR-10) — Back leaves a playlist's edit mode
                 backToTop.consumeBack() -> Unit
@@ -3722,7 +3722,8 @@ fun RaviloApp(
             Box(Modifier.fillMaxSize().safeAreaPadding()) {
             ProfileMenu(
                 apiClient = apiClient,
-                onClose = { profileMenuOpen = false },
+                // DEB-4278 — Back closes the menu onto the page it was opened from: the avatar gets focus, as on the way back from Settings.
+                onClose = { profileMenuOpen = false; avatarReturnTo = stack.last() },
                 onMyList = { profileMenuOpen = false; val under = stack.last(); push(Dest.Browse(BrowseKind.MY_LIST, currentDisplayName)); avatarReturnTo = under },
                 onSettings = { profileMenuOpen = false; val under = stack.last(); push(Dest.Settings(currentDisplayName)); if (!isDesktopPlatform) avatarReturnTo = under },
                 onSwitchProfile = { profileMenuOpen = false; push(Dest.ProfilePicker) },
