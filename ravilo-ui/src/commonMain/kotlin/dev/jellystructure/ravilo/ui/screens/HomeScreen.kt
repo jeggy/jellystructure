@@ -363,7 +363,9 @@ private fun HomeLoaded(
     val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.HOME)
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
-    LazyColumn(
+    // DEB-4287 — the app bar draws first; the hero and the rows compose in the next frame (a Back-return keeps its tile at once).
+    // The arrival focus below already awaits the hero for up to 30 frames.
+    if (dev.jellystructure.ravilo.ui.components.rememberPastFirstFrame(skip = pendingRestore != null)) LazyColumn(
         state = listState,
         // R140: generous bottom padding so the LAST row can still scroll up to the same comfortable height
         // as the others (never stranded at the very bottom of the screen).

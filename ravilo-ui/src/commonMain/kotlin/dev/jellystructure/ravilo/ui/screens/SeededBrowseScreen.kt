@@ -563,6 +563,9 @@ fun SeededBrowseScreen(
     // something must, or Back bypasses Compose); then the first cell takes it — unless the viewer has
     // already moved off the bar themselves.
     val freshEntry = !returning
+    // DEB-4287 — the bar and the title draw first; the facet strip and the grid compose in the next frame (a Back-return
+    // keeps its tile at once), and a swap of the store (Movies to Series) takes the old grid down a frame before the new one.
+    val pastFirstFrame = dev.jellystructure.ravilo.ui.components.rememberPastFirstFrame(key = store, skip = returning)
     var movedOffBar by remember { mutableStateOf(false) }
     val barScrolled by remember { derivedStateOf {
         gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
@@ -600,7 +603,7 @@ fun SeededBrowseScreen(
 
             // DEB-2349 (FR-5) — the grid (or the error) fades in once over the loading line; the title above it does not.
             Column(Modifier.fillMaxWidth().weight(1f).fadeInOnLoad(loading = state is SeededBrowseState.Loading)) {
-                when (val s = state) {
+                if (pastFirstFrame) when (val s = state) {
                     // DEB-4091 FR-1 — poster shimmers in the loaded grid's columns, not a centred line.
                     is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f)) {
                         dev.jellystructure.ravilo.ui.components.TileShimmerGrid(

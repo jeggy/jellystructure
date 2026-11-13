@@ -165,8 +165,11 @@ fun DiscoverScreen(
                     )
                 }
                 // FR-R262-2 — loading/error are content-region states; the frame above never changes.
+                // DEB-4287 — the bar, the title and the tabs draw first; the segment's content composes in the next frame
+                // (a Back-return to a tile keeps it at once).
+                val pastFirstFrame = dev.jellystructure.ravilo.ui.components.rememberPastFirstFrame(skip = activeHasPendingRestore)
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    when (segment) {
+                    if (pastFirstFrame) when (segment) {
                         // R310 (FR-R310-5) — nothing to discover for this household: one sentence, no chips.
                         null -> Text(
                             str("tx.empty"), color = colors.textSecondary, fontSize = 16.sp,
