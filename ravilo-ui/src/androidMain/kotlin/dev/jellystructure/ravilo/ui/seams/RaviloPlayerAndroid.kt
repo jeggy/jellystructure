@@ -91,6 +91,11 @@ actual class RaviloPlayer actual constructor() {
         // enlarging buffer SIZE needs FR-R216-4's telemetry to validate first, not a blind bump here.
         // 308 (FR-308-3) — the app-wide meter, seeded per stream with what this device measured on its recent plays.
         builder.setBandwidthMeter(bandwidthMeter)
+        // DEB-4285 — release() blocks the CALLING (main) thread until the playback thread has let go of the codec and the audio track:
+        // 150-250 ms on the Stue TV, one frozen frame as the player closes. Media3 finishes the release in the background once the
+        // wait runs out, so the wait is bounded to what a frame can spare. NOT the surface-detach timeout: that one raises a real
+        // playback error when it runs out, and R220's surface recreation detaches mid-playback.
+        builder.setReleaseTimeoutMs(RELEASE_WAIT_MS)
         // 308 (FR-308-2) — step down early. Media3's default only steps down once less than 25 s is buffered, and a
         // lower variant is a NEW Jellyfin encode that took ~17 s to deliver its first segment (Pixel 9 Pro,
         // 2026-10-06: a 5 Mbps throttle drove a 52 s buffer down to 5 s before the 1.5 Mbps rung arrived). Stepping
@@ -331,8 +336,8 @@ actual class RaviloPlayer actual constructor() {
         override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: androidx.media3.common.PlaybackException) {
             // R379 (FR-R379-2) — a platform decoder failed: once, restart the item on an engine that prefers FFmpeg
             // instead of reporting the failure. Posted, so the failed engine is released outside its own callback.
-            val failed = engine
-            if (!preferExtensions && failed != null &&
+            val failed = engine ?: return   // DEB-4285 — a released engine's late error (the release wait timing out) is no failure of this load
+            if (!preferExtensions &&
                 error.cause is androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException
             ) {
                 preferExtensions = true
@@ -978,6 +983,9 @@ actual class RaviloPlayer actual constructor() {
  *  real cushion instead of re-stalling seconds later; see this file's `setBufferDurationsMs` call site.
  *  DEB-3102 (FR-5) — 4 s: the in-place cap one rung down at the stall's start is what keeps one stall from becoming a train. */
 private const val QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 4_000
+
+/** DEB-4285 — how long the main thread waits for the playback thread on a release (Media3's stock: 500 ms). */
+private const val RELEASE_WAIT_MS = 10L
 
 /** DEB-3102 (FR-3) — the player's connect and read timeouts; the read outlasts the server's 15 s wait for a segment. */
 private const val PLAYER_CONNECT_TIMEOUT_MS = 8_000
