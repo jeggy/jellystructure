@@ -56,11 +56,13 @@ class BrowseFocusTest {
     private var shown by mutableStateOf(true)
     private var opened: MediaCard? = null
     private lateinit var store: SeededBrowseStore
+    private var shownStore by mutableStateOf<SeededBrowseStore?>(null)
+    private lateinit var api: dev.jellystructure.shared.tv.TvApiClient
 
     private fun render(initial: List<BrowseCard> = cards) {
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         served = initial
-        val api = fakeTvApiClient { path ->
+        api = fakeTvApiClient { path ->
             when (path) {
                 "/api/tv/browse/seeded" -> gate?.let { entered.incrementAndGet(); it.await(10, TimeUnit.SECONDS) }.let { RaviloWireJson.encodeToString(SeededBrowseResponse.serializer(), SeededBrowseResponse(items = served, total = served.size)) }
                 "/api/tv/channels" -> "[]"
@@ -68,9 +70,10 @@ class BrowseFocusTest {
             }
         }
         store = SeededBrowseStore(api, seedQuery = null, seedMediaKind = "MOVIE", continueWatching = false)
+        shownStore = store
         rule.setContent {
             if (shown) SeededBrowseScreen(
-                store = store, title = "Movies", breadcrumb = null, subtitle = null, showTypeFacet = false,
+                store = shownStore ?: store, title = "Movies", breadcrumb = null, subtitle = null, showTypeFacet = false,
                 showFacetBar = true, displayName = "Olivar", activeNav = 1, onBack = {}, onItemSelect = { opened = it; shown = false },
             )
         }
@@ -123,6 +126,28 @@ class BrowseFocusTest {
         focusedExactly("Stand-in 18")
         press(Key.DirectionRight)
         focusedExactly("Stand-in 18")
+    }
+
+    // DEB-4291 — Movies to Series swaps the store under one screen; the arrival focus must not depend on what the
+    // viewer did on the first store (Down off the app bar), nor on the second store being loaded already.
+    @Test fun `DEB-4291 — a swapped-in store takes focus on its first tile after Down was pressed on the first`() {
+        render()
+        focusedWith("Stand-in")
+        press(Key.DirectionUp); press(Key.DirectionUp)        // facet bar, then the app bar
+        press(Key.DirectionDown)                              // the app bar's Down: the viewer has moved off the bar
+        val second = SeededBrowseStore(api, seedQuery = null, seedMediaKind = "SERIES", continueWatching = false)
+        second.load()                                         // cached: its grid draws at once
+        val deadline = System.currentTimeMillis() + 5_000
+        while (second.state.value !is SeededBrowseState.Loaded) {
+            check(System.currentTimeMillis() < deadline) { "the second store never loaded" }
+            Thread.sleep(10)
+        }
+        // Back to the app bar's tab, as when the Series tab is pressed.
+        shownStore = second
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
+        rule.waitForIdle()
+        focusedWith("Stand-in")
     }
 
     @Test fun `Up from the first tile lands on the facet bar, and Down returns to the grid`() {

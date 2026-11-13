@@ -553,7 +553,7 @@ fun SeededBrowseScreen(
     // by focus; the bar's own pill carries it.
     val handsetLayout = LocalHandset.current
     // R361 — whether this arrival is a Back-return to an opened tile (read once: the grid spends the key).
-    val returning = remember { store.focusItemKey != null }
+    val returning = remember(store) { store.focusItemKey != null }
     LaunchedEffect(Unit) {
         if (!handsetLayout && !returning) navBarFR.tryRequestFocus()
     }
@@ -566,7 +566,9 @@ fun SeededBrowseScreen(
     // DEB-4287 — the bar and the title draw first; the facet strip and the grid compose in the next frame (a Back-return
     // keeps its tile at once), and a swap of the store (Movies to Series) takes the old grid down a frame before the new one.
     val pastFirstFrame = dev.jellystructure.ravilo.ui.components.rememberPastFirstFrame(key = store, skip = returning)
-    var movedOffBar by remember { mutableStateOf(false) }
+    // DEB-4291 — per store: the screen outlives a swap of the store (Movies to Series), and a Down pressed on the first
+    // must not turn the second's arrival focus off.
+    var movedOffBar by remember(store) { mutableStateOf(false) }
     val barScrolled by remember { derivedStateOf {
         gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
     } }
@@ -1145,12 +1147,16 @@ private fun BrowseCardGrid(
     )
     // R361 (FR-R361-3 for grids) — a refresh that drops the focused tile: the tile now at its position.
     FollowGridRefresh(gridFocus, keys, onEmpty = onEmpty)
-    var firstFocusDone by remember { mutableStateOf(false) }
-    LaunchedEffect(items.isNotEmpty()) {
+    // DEB-4291 — per grid state (a swap of the store, Movies to Series, brings a new one), so the second store's first
+    // load is a first load too.
+    var firstFocusDone by remember(gridFocus) { mutableStateOf(false) }
+    LaunchedEffect(items.isNotEmpty(), gridFocus) {
         if (focusFirstOnLoad && !firstFocusDone && items.isNotEmpty()) {
             firstFocusDone = true
-            // The cell's requester attaches on the grid's first layout pass, one frame after this effect.
-            repeat(10) { if (firstCellFR.tryRequestFocus()) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
+            // The cell's requester attaches on the grid's first layout pass, one frame after this effect. Counted in
+            // frames, not milliseconds: a 60-120 ms first composition on a TV spent the old 10 x 16 ms retry before
+            // the cell had attached, so a grid that was already cached left focus on the tab.
+            firstCellFR.requestFocusAwaiting()
         }
     }
     val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
