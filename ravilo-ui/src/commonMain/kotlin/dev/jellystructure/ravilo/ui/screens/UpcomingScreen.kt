@@ -82,6 +82,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 sealed class UpcomingState {
     data object Loading : UpcomingState()
@@ -564,23 +565,28 @@ private fun releaseTypeLabel(item: UpcomingItem): String? =
 @Composable
 private fun dayLabel(dateStr: String): String {
     val date = runCatching { LocalDate.parse(dateStr) }.getOrNull() ?: return dateStr
-    val today = todayUtc()
-    return when (today.daysUntil(date)) {
-        0 -> str("up.day_today")
-        1 -> str("up.day_tomorrow")
-        -1 -> str("up.day_yesterday")
-        else -> str(
-            "date.weekday_day_month",
-            mapOf(
-                "weekday" to weekdayAbbrev(date.dayOfWeek),
-                "day" to date.day.toString(),
-                "month" to monthAbbrev(date.month),
-            ),
-        )
-    }
+    val relativeKey = relativeDayKey(date, todayOn(TimeZone.currentSystemDefault(), Clock.System.now()))
+    if (relativeKey != null) return str(relativeKey)
+    return str(
+        "date.weekday_day_month",
+        mapOf(
+            "weekday" to weekdayAbbrev(date.dayOfWeek),
+            "day" to date.day.toString(),
+            "month" to monthAbbrev(date.month),
+        ),
+    )
 }
 
-private fun todayUtc(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.UTC).date
+/** The viewer's calendar date in [zone] — what a day label is measured against, not the UTC date (DEB-4289). */
+internal fun todayOn(zone: TimeZone, now: Instant): LocalDate = now.toLocalDateTime(zone).date
+
+/** The string key for a day row that is yesterday, today or tomorrow relative to [today]; null for any other day. */
+internal fun relativeDayKey(date: LocalDate, today: LocalDate): String? = when (today.daysUntil(date)) {
+    0 -> "up.day_today"
+    1 -> "up.day_tomorrow"
+    -1 -> "up.day_yesterday"
+    else -> null
+}
 
 /**
  * R279 — was seven English literals. The calendar rail draws these upper-cased, which is a
