@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
@@ -262,17 +263,10 @@ fun AppBar(
                 )
             }
 
-            // R136: page context (channel name) between the brand and the nav tabs.
-            if (title != null) {
-                Text(
-                    text = "· $title",
-                    color = colors.textSecondary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = sora,
-                    maxLines = 1,
-                )
-            }
+            // R136: page context (channel / collection name). Wide: it sits in the flexible slot after the tabs, so it
+            // never moves them — the tabs are where the viewer pressed Left to find them on every other page (DEB-4288).
+            // Compact has no flexible slot (the row scrolls), so there it stays between the brand and the tabs.
+            if (title != null && compact) PageContextLabel(title)
 
             items.forEachIndexed { i, label ->
                 val isFocused = focusedIdx == i
@@ -327,7 +321,7 @@ fun AppBar(
 
             // Wide: push the right cluster to the far edge. Compact: no bounded width to weight
             // against (see above) — the Row's own spacedBy(g.itemGap) gap is enough; items just scroll.
-            if (!compact) Box(modifier = Modifier.weight(1f))
+            if (!compact) Box(modifier = Modifier.weight(1f)) { if (title != null) PageContextLabel(title) }
             // R245 (FR-R245-1) — the cast button, present only when the server says Chromecast is set up
             // and this platform has a sender (CastButton renders nothing otherwise — never greyed).
             CastButton()
@@ -383,6 +377,20 @@ fun AppBar(
             NavScrollIndicator(navScrollState, Modifier.align(Alignment.BottomCenter))
         }
     }
+}
+
+/** R136 — `· {name}`, the page the bar is over (a channel, a collection). One line, ellipsised when the slot is short. */
+@Composable
+internal fun PageContextLabel(title: String) {
+    Text(
+        text = "· $title",
+        color = RaviloTheme.colors.textSecondary,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = Sora,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** R337 — whether this page has somewhere to go back to (the stack is deeper than one), provided by the frame. */
