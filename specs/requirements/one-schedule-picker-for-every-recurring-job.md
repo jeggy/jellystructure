@@ -105,6 +105,14 @@ FR-5. The structure follows a calendar's *custom recurrence* editor:
 6. An N above 1 on days, weeks, months or years shows **starting [date]**. It defaults to the next date that
    matches, and sets `FROM`.
 7. **Custom (cron)** is the cron text box with live validation, as now.
+
+   *Amendment, 2026-11-13 (DEB-4467):* **choosing *Custom (cron)* changes nothing.** The box opens holding the
+   schedule the control held a moment before, written as the string it stores: *every 6 hours* opens as
+   `0 */6 * * *`, and a choice cron cannot say opens as its `every:` text, as FR-3.9 already shows one. The stored
+   string is the same before and after the switch, so the switch alone saves nothing and marks nothing changed. The
+   schedule changes only when the admin edits the text. From *Off* the box opens empty, which is still *off*
+   (FR-1.3). Built in DEB-4402, the switch seeded `0 4 * * *` whenever the box was empty, and that turned an
+   *every 6 hours* setting into *daily at 04:00* as soon as the admin chose *Custom*.
 8. Under the control, always: the **sentence** and the **next five runs**, both from the server
    (`POST /api/config/validate-schedule`, FR-6). Save is held while the server says the schedule is invalid. The
    admin derives no times itself, so it renders server-pushed state only.
