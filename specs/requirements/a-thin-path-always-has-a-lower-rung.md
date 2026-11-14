@@ -124,6 +124,23 @@ lowest rung already), the receiver asks for a restream at its position through D
 The encoder summary's `held_by` (DEB-3093 FR-7) gains `floor_rungs` when FR-2 added them, and the admin's *Playing now*
 shows a play that FR-1 moved to our encoder as `encoder=ours`, as any other. Nothing new is drawn.
 
+### FR-6 — A cast that never reaches a picture says so
+
+*Added 2026-11-14, DEB-4569.* From 10-31 to 11-14, every cast with more than one rung in its master failed before its first
+frame. The receiver's Shaka request timeout was set to 20, which Shaka reads as 20 ms, not 20 s (DEB-3093 FR-3, restored on
+its own task). The server never learned of it. The receiver reports a failed load only as a `note` on the log channel, which
+only the Mac sender reads. Its QoE row for that item is a row of zeros with no `start_failure_status`, and the backend logs
+nothing. Nine starts failed that way one morning. The only trace was a `playback stop … at 0ms` that reads like a viewer
+stopping.
+
+- When the receiver ends an item that never reached a first frame (CAF's `ERROR` with the player idle, which today goes to
+  `stopSession()` and `failed()`), its final QoE report for that item sets `startFailureStatus` (FR-R237-6). The value is the
+  HTTP status of the failed request when the error carries one, and `-1` otherwise, the same meaning FR-R218-7 gives it. The
+  field already exists. No wire change.
+- The backend logs one line for every QoE report that carries `startFailureStatus`, from any device:
+  `playback: start failed device=<id> item=<id> status=<n> segments=<bandwidthSamples> (DEB-4569 FR-6)`. A failed start is
+  then as easy to find in the log as a stall.
+
 ## Acceptance
 
 By a QA seat on a Chromecast from the board, after the build is on prod, with a server-side `tc` cap on the receiver
@@ -141,6 +158,9 @@ answers for the receiver with a video copy (`no ladder: … reencodes=false` in 
 5. **Field read, 14 days after the release:** cast plays from outside the house show fewer stalls per play than this
    spec's baseline, and the share of Jellyfin-served plays that stall falls from 8.4 %. A count going the wrong way is a
    finding against FR-1 or FR-2.
+6. **FR-6, a start that cannot succeed:** a `tc` drop of all traffic to the receiver from the `LOAD` until the receiver gives
+   up. The receiver's QoE row for that item has `start_failure_status = -1`, and the log has one `playback: start failed …`
+   line for it.
 
 ## What this does not do
 
@@ -160,3 +180,6 @@ answers for the receiver with a video copy (`no ladder: … reencodes=false` in 
   rungs gains 360p as its fourth.
 - `CastRecoveryTest` (pure decisions): the stall-to-ladder trigger (two stalls in 2 minutes, one of 4 s, not again after
   a same-stream answer), and the report's `per_item` counts resetting at a `LOAD`.
+- FR-6: `CastRecoveryTest` covers the receiver's failure status (an error that carries a status gives that status, and one
+  that carries none gives `-1`, only when no first frame was seen). A `PlaybackService` test checks that a report with
+  `startFailureStatus` logs the line.
