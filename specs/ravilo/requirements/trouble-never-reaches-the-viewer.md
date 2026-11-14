@@ -259,6 +259,11 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
   - **Not done:** FR-4's fall to a lower rung on a failed or abandoned segment, and FR-5's cap one rung down at once on a stall.
     FR-9 names Shaka's retry parameters as the whole of FR-4 here; the receiver registers no segment-failure hook, and `ReceiverAbr`
     sees buffer levels only. None of this is verified on a Chromecast; the tests are the pure decisions in `CastRecoveryTest`.
+- *2026-11-14, DEB-4541 — the receiver reports per item and asks for a ladder when it has no rung to fall to.* Its QoE
+  report is per item and lists every wait of 1 s or more, posted when the wait ends, so 309's record and FR-7's hold learn
+  from a cast. A stall on a stream with no lower rung asks for a restream through the recovery above, with the reason
+  `stall_to_ladder`. See FR-3 and FR-4 of
+  [`a-thin-path-always-has-a-lower-rung.md`](../../requirements/a-thin-path-always-has-a-lower-rung.md).
 - *2026-11-04, DEB-3213 — what the web client (hls.js 1.7.3) does, and what a browser does not allow.* Web only; a film on hls.js. A live
   channel keeps hls.js's own ABR (DEB-2627) and gets the load policies below but none of the holds. Native HLS (Safari, and an iPhone
   that takes it) is not hls.js and keeps what it had.

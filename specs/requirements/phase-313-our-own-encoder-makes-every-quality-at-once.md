@@ -71,6 +71,10 @@ From `specs/research-reports/ravilo-streaming-evidence-2026-10-08.md` and `…-a
 
 ### FR-313-3 — The ladder
 
+> *Amendment 2026-11-14 (DEB-4541):* the table gains 360p and 240p floor rungs, and on a path not known to be fast they
+> are kept ahead of the rungs just under the top. See FR-2 of
+> [`a-thin-path-always-has-a-lower-rung.md`](a-thin-path-always-has-a-lower-rung.md).
+
 - 308's table stays the one table (`VideoLadder.kt`): top, 1080p 12, 1080p 8, 720p 4, 480p 1.5 Mbps; rungs above the
   device's decode ceiling or not clearly below the one above are left out.
 - **The top rung is capped by its own output resolution**, not the source's bitrate: about 20 Mbps for 2160p HEVC,
@@ -146,6 +150,10 @@ From `specs/research-reports/ravilo-streaming-evidence-2026-10-08.md` and `…-a
 - Everything a job wrote is deleted when it stops; a sweep at start deletes leftovers from a crash.
 
 ### FR-313-10 — The Jellyfin side
+
+> *Amendment 2026-11-14 (DEB-4541):* "transcode" includes Jellyfin's video copy. A copy to a player that adapts comes to
+> our encoder unless the device's record proves the path carries twice the copy's bitrate. See FR-1 of
+> [`a-thin-path-always-has-a-lower-rung.md`](a-thin-path-always-has-a-lower-rung.md).
 
 - **No Jellyfin transcode job and no Jellyfin stream URL** for a play our encoder serves. So no `PlaySessionId`
   variants, no Jellyfin ping timer, and no second session that could send 312's stray stop.
