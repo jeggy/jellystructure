@@ -1416,23 +1416,27 @@ private class Receiver {
             // Shaka keeps only 10 s ahead by default, so on Stue TV (2026-10-06) a step up to a rung whose encode had not
             // started yet stalled 2.7 s. 40 s ahead covers that start; 10 s behind (not 30) pays for it in memory, and
             // Shaka lowers the goal itself when the device's buffer quota is hit.
+            val sc: dynamic = js("({ streaming: {}, manifest: {} })")
             if (t.adaptive) {
-                val sc: dynamic = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 }, streaming: { bufferingGoal: 40, bufferBehind: 10 } })")
+                sc.abr = js("({ bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 })")
+                sc.streaming.bufferingGoal = 40
+                sc.streaming.bufferBehind = 10
                 // 309 (FR-309-4/-5) — Shaka chooses within the ladder rule: one rung up at a time, down before the buffer
                 // runs dry (ReceiverAbr; Shaka's own manager if this framework build won't take the factory).
                 ReceiverAbr.oursEncoder = t.encoder == "ours"
                 runCatching { sc.abrFactory = ReceiverAbr.factory { line: String -> note(line) } }
-                // DEB-3105 (DEB-3093 FR-9) — FR-3, FR-4 and FR-5 through Shaka's own settings: a request gives up at the player's 20 s,
-                // a failed segment or manifest is tried five times at 0.5, 1, 2 and 4 s, and a play (re)starts at 4 s buffered.
-                val retry: dynamic = js("({})")
-                retry.maxAttempts = CastRecovery.RETRY_ATTEMPTS; retry.baseDelay = CastRecovery.RETRY_BASE_DELAY_MS
-                retry.backoffFactor = CastRecovery.RETRY_BACKOFF; retry.fuzzFactor = CastRecovery.RETRY_FUZZ; retry.timeout = CastRecovery.REQUEST_TIMEOUT_SEC
-                sc.streaming.retryParameters = retry
+                // DEB-3105 (FR-5) — an adaptive play (re)starts at 4 s buffered.
                 sc.streaming.rebufferingGoal = CastRecovery.RESUME_BUFFER_SEC
-                sc.manifest = js("({})")
-                sc.manifest.retryParameters = retry
-                cfg.shakaConfig = sc
             }
+            // DEB-3105 (DEB-3093 FR-3/FR-4) — every HLS load gets the same Shaka request policy,
+            // including a single-stream load. Shaka reads timeout and baseDelay in milliseconds.
+            val policy = CastRecovery.shakaRetryParameters
+            val retry: dynamic = js("({})")
+            retry.maxAttempts = policy.maxAttempts; retry.baseDelay = policy.baseDelayMs
+            retry.backoffFactor = policy.backoffFactor; retry.fuzzFactor = policy.fuzzFactor; retry.timeout = policy.timeoutMs
+            sc.streaming.retryParameters = retry
+            sc.manifest.retryParameters = retry
+            cfg.shakaConfig = sc
             // 309 (FR-309-13) — count segment fetches: an estimate resting on fewer than 3 is Shaka's own guess.
             cfg.segmentRequestHandler = { _: dynamic -> qoeSegments++ }
             playerManager.setPlaybackConfig(cfg)

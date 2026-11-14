@@ -40,11 +40,14 @@ class CastRecoveryTest {
 
     @Test fun `shaka retries follow FR-4 and its timeout FR-3`() {
         // 0.5, 1, 2, 4 s between five attempts; a request gives up at the player's own 20 s.
-        val delays = (0 until CastRecovery.RETRY_ATTEMPTS - 1).map { (CastRecovery.RETRY_BASE_DELAY_MS * Math.pow2(it)).toLong() }
+        val retry = CastRecovery.shakaRetryParameters
+        val delays = (0 until retry.maxAttempts - 1).map { (retry.baseDelayMs * Math.pow2(it, retry.backoffFactor)).toLong() }
         assertEquals(listOf(500L, 1_000L, 2_000L, 4_000L), delays)
-        assertEquals(2.0, CastRecovery.RETRY_BACKOFF)
-        assertEquals(20, CastRecovery.REQUEST_TIMEOUT_SEC)
+        assertEquals(5, retry.maxAttempts)
+        assertEquals(500, retry.baseDelayMs)
+        assertEquals(2.0, retry.backoffFactor)
+        assertEquals(20_000, retry.timeoutMs)
     }
 
-    private object Math { fun pow2(n: Int): Double { var r = 1.0; repeat(n) { r *= CastRecovery.RETRY_BACKOFF }; return r } }
+    private object Math { fun pow2(n: Int, base: Double): Double { var r = 1.0; repeat(n) { r *= base }; return r } }
 }

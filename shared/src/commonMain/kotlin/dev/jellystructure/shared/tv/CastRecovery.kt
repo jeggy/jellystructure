@@ -6,6 +6,14 @@ package dev.jellystructure.shared.tv
  * is the part Android's `PlayerStore` does around that: ask the server for the stream again, fetch its start before loading it, and
  * put the stream the encoder cannot give behind Jellyfin's. This file is the decisions; `Receiver` carries them out.
  */
+data class CastShakaRetryParameters(
+    val maxAttempts: Int,
+    val baseDelayMs: Int,
+    val backoffFactor: Double,
+    val fuzzFactor: Double,
+    val timeoutMs: Int,
+)
+
 object CastRecovery {
     /** FR-6 — a failed restream call or warm-up is asked again after these delays (the same four as Android's `REPLACEMENT_RETRY_MS`). */
     val RETRY_MS: List<Long> = listOf(1_000L, 2_000L, 4_000L, 8_000L)
@@ -16,14 +24,14 @@ object CastRecovery {
     /** FR-5 — Shaka resumes (and starts) once this many seconds are buffered. */
     const val RESUME_BUFFER_SEC = 4
 
-    /** FR-3 — Shaka's request timeout in seconds, the same 20 s Android's read timeout is. */
-    const val REQUEST_TIMEOUT_SEC = 20
-
-    /** FR-4 — Shaka's retry delays are `baseDelay × backoffFactor^n`: 0.5, 1, 2, 4 s between five attempts. */
-    const val RETRY_ATTEMPTS = 5
-    const val RETRY_BASE_DELAY_MS = 500
-    const val RETRY_BACKOFF = 2.0
-    const val RETRY_FUZZ = 0.2
+    /** FR-3 and FR-4 — values passed to Shaka, in its units (milliseconds for timeout and base delay). */
+    val shakaRetryParameters = CastShakaRetryParameters(
+        maxAttempts = 5,
+        baseDelayMs = 500,
+        backoffFactor = 2.0,
+        fuzzFactor = 0.2,
+        timeoutMs = 20_000,
+    )
 }
 
 /** What to do with a stream that has failed (FR-6: our encoder is asked again first, Jellyfin's stream is the second try). */
