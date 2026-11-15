@@ -15,6 +15,15 @@ package dev.jellystructure.ravilo.screen
 @JsName("tizen")
 external object TizenGlobal {
     val tvinputdevice: TvInputDevice
+    val application: TizenApplication
+}
+
+external interface TizenApplication {
+    fun getCurrentApplication(): TizenCurrentApplication
+}
+
+external interface TizenCurrentApplication {
+    fun exit()
 }
 
 external interface TvInputDevice {

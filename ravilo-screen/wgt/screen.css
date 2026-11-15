@@ -1,0 +1,107 @@
+    :root { --ink: #fff; --ink-soft: rgba(255,255,255,.72); --ink-dim: rgba(255,255,255,.45); --accent: #7b6ef0; --accent2: #00a4dc; --accent-2: #3fb6f5; --bg: #0a0c13; --ring: #8e82ff; }
+    html, body { margin: 0; height: 100%; background: #000; color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #video { position: fixed; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; background: #000; object-fit: contain; z-index: 0; }
+    .screen { position: fixed; top: 0; right: 0; bottom: 0; left: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; z-index: 1; }
+    .screen.on { display: flex; }
+    #idle, #loading, #noserver, #busy { background: #000; }
+    .mark { width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, #AA5CC3, #00A4DC); box-shadow: 0 0 48px rgba(0,164,220,.35); margin-bottom: 26px; }
+    .sentence { font-size: 30px; color: var(--ink-soft); font-weight: 500; }
+    .kicker { font-size: 18px; letter-spacing: 3px; color: var(--accent2); font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
+    .title { font-size: 44px; font-weight: 700; letter-spacing: -.8px; }
+    .sub { font-size: 22px; color: var(--ink-dim); margin-top: 14px; }
+    .pulse { display: flex;  margin-bottom: 34px; }
+    .pulse i { width: 16px; height: 16px; border-radius: 50%; background: var(--ink); animation: pulse 1.2s infinite ease-in-out; }
+    .pulse i:nth-child(2) { animation-delay: .2s; } .pulse i:nth-child(3) { animation-delay: .4s; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: .25; transform: scale(.85); } 40% { opacity: 1; transform: scale(1); } }
+    .sweep { width: 280px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); overflow: hidden; margin-top: 34px; }
+    .sweep i { display: block; width: 40%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); animation: sweep 1.6s infinite linear; }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    #idle-code { font-variant-numeric: tabular-nums; font-size: 64px; font-weight: 700; letter-spacing: 8px; margin-top: 22px; color: var(--ink); }
+    #idle-code:empty { display: none; }
+    #idle-server { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 15px; color: var(--ink-dim); margin-top: 14px; }
+    /* R269 — the receiver's one exception to no-navigation: server setup, shown only with no address stored. */
+    #setup input { font-size: 26px; padding: 14px 18px; width: 480px; max-width: 80vw; border-radius: 10px; border: 2px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: var(--ink); text-align: center; outline: none; }
+    #setup input:focus { border-color: var(--accent2); }
+    #setup button { margin-top: 22px; font-size: 20px; font-weight: 700; padding: 14px 40px; border-radius: 999px; border: none; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; cursor: pointer; }
+    #setupHint { font-size: 16px; color: var(--ink-dim); margin-top: 16px; max-width: 480px; }
+    /* paused / seeked overlay */
+    /* R285 (FR-R285-3) — drawn text subtitles. Above the video, BELOW the chrome (#overlay, z 2) and
+       every full screen, so chrome-up never fights a caption. White on a black outline: R110's caption
+       look, the one the Compose player and ravilo-web already share. Sizes are R244's S/M/L. */
+    #cues { position: fixed; left: 8%; right: 8%; bottom: 7%; z-index: 1; display: none; text-align: center;
+            white-space: pre-line; color: #fff; font-weight: 600; line-height: 1.25; font-size: 46px; pointer-events: none;
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 8px rgba(0,0,0,.9); }
+    #cues.on { display: block; }
+    #cues.size-s { font-size: 36px; }
+    #cues.size-l { font-size: 58px; }
+    #overlay { position: fixed; left: 0; right: 0; bottom: 0; padding: 40px 64px 48px; background: linear-gradient(transparent, rgba(0,0,0,.78)); display: none; z-index: 2; }
+    #overlay.on { display: block; }
+    #overlay .row { display: flex; align-items: center;  }
+    #overlay .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 18px 0 10px; }
+    #overlay .bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    #overlay .time { color: var(--ink-dim); font-size: 20px; }
+    /* R303 — what is playing, top right; it lives inside #overlay so it rides the same show/hide. */
+    #ov-ident { position: fixed; top: 40px; right: 64px; display: none; align-items: center; justify-content: flex-end; max-width: 440px; }
+    #ov-ident.logo, #ov-ident.name { display: flex; }
+    #ov-logo { display: none; max-width: 400px; max-height: 84px; width: auto; height: auto; object-fit: contain; filter: drop-shadow(0 2px 14px rgba(0,0,0,.55)); }
+    #ov-ident.logo #ov-logo { display: block; }
+    #ov-ident.plate { padding: 12px 20px; border-radius: 14px; background: rgba(244,246,250,.92); box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+    #ov-ident.plate #ov-logo { max-height: 64px; max-width: 360px; filter: none; }
+    #ov-showname { display: none; font-weight: 700; font-size: 32px; line-height: 1.08; letter-spacing: -.4px; color: var(--ink); text-align: right; text-shadow: 0 2px 14px rgba(0,0,0,.6); overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    #ov-ident.name #ov-showname { display: -webkit-box; }
+    /* buffering: the frozen frame stays; a spinner and nothing else */
+    #buffering { background: rgba(0,0,0,.38); }
+    .spinner { width: 56px; height: 56px; border: 5px solid rgba(255,255,255,.2); border-top-color: var(--ink); border-radius: 50%; animation: spin .9s infinite linear; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .wait { font-size: 20px; color: var(--ink-dim); margin-top: 10px; }
+    /* R264 (FR-R264-3/4) — a whole player driven by the TV remote: play/pause on the chrome, a hint for
+       the picker, Skip Intro, the next-up card, the two-level picker and one plain failure sentence.
+       Layout follows design/ravilo/Ravilo Receiver App.html. */
+    #overlay .row { justify-content: space-between; }
+    #ov-hint { font-size: 20px; color: var(--ink-dim); white-space: nowrap; }
+    #ov-pz { width: 64px; height: 64px; border-radius: 50%; flex: none; background: var(--ink); color: #0a0c13; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; }
+    #skip { position: fixed; right: 64px; bottom: 150px; z-index: 3; display: none; padding: 18px 34px; border-radius: 999px; background: var(--ink); color: #0a0c13; font-size: 24px; font-weight: 700; }
+    #skip.on { display: block; }
+    #nextup { position: fixed; right: 64px; bottom: 150px; z-index: 3; display: none; width: 480px; border-radius: 16px; background: rgba(10,12,19,.94); border: 1px solid rgba(255,255,255,.16); padding: 22px 26px 24px; text-align: left; }
+    #nextup.on { display: block; }
+    #nextup .k { font-size: 16px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent2); }
+    #nextup .t { font-size: 28px; font-weight: 700; margin-top: 8px; }
+    #nextup .c { font-size: 20px; color: var(--ink-soft); margin-top: 10px; }
+    #picker { position: fixed; right: 64px; top: 64px; bottom: 64px; width: 560px; z-index: 4; display: none; flex-direction: column; border-radius: 20px; background: rgba(10,12,19,.95); border: 1px solid rgba(255,255,255,.16); overflow: hidden; }
+    #picker.on { display: flex; }
+    #pk-head { padding: 26px 28px 8px; font-size: 30px; font-weight: 700; }
+    #pk-tabs { display: flex;  padding: 8px 28px 14px; }
+    #pk-tabs b { padding: 9px 20px; border-radius: 999px; font-size: 20px; background: rgba(255,255,255,.07); color: var(--ink-soft); }
+    #pk-tabs b.on { background: var(--ink); color: #0a0c13; }
+    #pk-rows { flex: 1; overflow: hidden; }
+    .pkr { display: flex; align-items: center;  padding: 16px 28px; border-top: 1px solid rgba(255,255,255,.08); font-size: 24px; }
+    .pkr .l { display: flex; flex-direction: column; min-width: 0; }
+    .pkr .l i { font-style: normal; font-size: 17px; color: var(--ink-dim); margin-top: 4px; }
+    .pkr .rt { margin-left: auto; font-size: 20px; color: var(--ink-dim); white-space: nowrap; }
+    .pkr.sel .rt::before { content: "✓ "; }
+    .pkr.foc { background: var(--ink); color: #0a0c13; border-radius: 12px; }
+    .pkr.foc .l i, .pkr.foc .rt { color: rgba(10,12,19,.6); }
+    .pksz b { width: 54px; height: 44px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); font-size: 20px; font-weight: 700; margin-left: 8px; }
+    .pksz b.on { background: linear-gradient(120deg, var(--accent), var(--accent2)); color: #fff; }
+    #failed { background: rgba(4,5,9,.94); }
+
+    /* DEB-4656 FR-4 — the full app shell shares Ravilo TV's ink, accent and ring. */
+    #shell { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 5; display: none; background: var(--bg); color: var(--ink); }
+    #shell.on { display: block; }
+    .shell-bar { height: 92px; display: flex; align-items: center; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.55), transparent); }
+    .shell-brand { font-size: 30px; font-weight: 700; margin-right: 48px; }
+    .shell-nav { display: flex; align-items: center; }
+    .shell-target { outline: none; cursor: pointer; }
+    .shell-nav .shell-target { padding: 9px 20px; border-radius: 11px; color: var(--ink-soft); font-size: 21px; margin-right: 8px; }
+    .shell-nav .shell-target.cur { color: var(--ink); font-weight: 600; }
+    .shell-nav .shell-target.focused { background: var(--ink); color: #0a0c13; }
+    #nav-profile { margin-left: auto; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(120deg, var(--accent), var(--accent-2)); color: #fff; text-align: center; line-height: 44px; font-size: 0; }
+    #nav-profile::first-letter { font-size: 22px; }
+    #nav-profile.focused { box-shadow: 0 0 0 4px var(--ring); }
+    #shell-body { padding: 90px 72px; }
+    .shell-placeholder { font-size: 48px; font-weight: 700; display: inline-block; padding: 16px 24px; border-radius: 14px; }
+    .shell-placeholder.focused { box-shadow: 0 0 0 4px var(--ring); }
+    .pulse i + i { margin-left: 14px; }
+    #overlay .row > * + * { margin-left: 22px; }
+    #pk-tabs b + b { margin-left: 10px; }
+    .pkr > * + * { margin-left: 14px; }

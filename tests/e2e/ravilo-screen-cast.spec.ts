@@ -163,6 +163,10 @@ test.describe("Phase 248 — casting to a screen, driven through the real bundle
     expect(stopRes.status()).toBe(202);
     await waitForAvplayCall(page, "close", callsSoFar);
     await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    // DEB-4656 FR-4 — the push-driven player is a route over the new shell. Stopping it reveals
+    // the route and its focused target without changing the receiver's stop/status round trip.
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#shell .shell-target.focused")).toHaveAttribute("id", "shell-page-target");
 
     expect(pageErrors).toEqual([]);
   });

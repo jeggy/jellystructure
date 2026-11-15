@@ -56,18 +56,15 @@ import org.w3c.dom.events.KeyboardEvent
 import kotlin.random.Random
 
 /**
- * R264 — the receiver-only TV app: no navigation, one more media player driven entirely by the backend
- * (Phase 236). Unlike [dev.jellystructure.ravilo.cast.Receiver] (which owns a local episode queue because
- * CAF requires one), this receiver never decides what plays next by itself — it plays exactly the item
- * named in the most recent `play_item` event and reports `ended` when it finishes; whichever autoplay
- * logic exists lives on the phone/backend and arrives as the next `play_item`.
+ * R264's push-driven player and DEB-4656's shell entry point. The player still follows `play_item`
+ * events and reports `ended`; [ScreenShell] owns browsing routes and restores them after playback.
  */
 private val json = Json { ignoreUnknownKeys = true }
 
 private const val DEVICE_ID_KEY = "ravilo.screen.deviceId"
 private const val TOKENS_KEY = "ravilo.screen.tokens"
-private const val SERVER_URL_KEY = "ravilo.screen.serverUrl"
-private const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
+internal const val SERVER_URL_KEY = "ravilo.screen.serverUrl"
+internal const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
 private const val PROGRESS_EVERY_MS = 10_000L
 private const val STATUS_EVERY_MS = 5_000L
 private const val PAIR_POLL_MS = 3_000L
@@ -80,6 +77,7 @@ private const val PICKER_ROWS = 9
 
 private class Screen(private val serverUrl: String) {
     private val backend = detectMediaBackend()
+    private val shell = ScreenShell()
     private val deviceId = loadOrCreateDeviceId()
     // FR-236-4 — a screen can hold one device token PER PAIRED USER (a device token is always
     // per (device, user) in this codebase); `activeUserId` picks which one authenticates outbound calls,
@@ -165,6 +163,7 @@ private class Screen(private val serverUrl: String) {
             override fun onError(detail: String) { console.error("Ravilo screen: backend error: $detail"); failPlay(null) }
         })
         idle()
+        if (activeUserId != null) shell.showHome()
         // R279 — idle already drew in the remembered language (ReceiverStrings seeds itself from it),
         // so the pairing screen is never English in a Danish house just because nothing has loaded
         // yet. If this set is already enrolled, the active viewer's own setting supersedes it.
@@ -187,6 +186,7 @@ private class Screen(private val serverUrl: String) {
         // a TV is pointed at a server that has since moved.
         document.getElementById("idle-server")?.textContent = serverUrl.removePrefix("https://").removePrefix("http://")
         show("idle")
+        shell.returnFromPlayer()
     }
 
     // ── pairing: mints a code and polls it while idle. Per the dev review, this keeps running on idle
@@ -220,6 +220,7 @@ private class Screen(private val serverUrl: String) {
         if (activeUserId == null) activeUserId = pr.session.userId
         saveTokens()
         GlobalScope.launch { adoptLanguageOfActiveUser() }
+        shell.showHome()
     }
 
     /**
@@ -299,6 +300,7 @@ private class Screen(private val serverUrl: String) {
         el("loading-title").textContent = env.title.orEmpty()
         el("loading-kicker").textContent = env.kicker.orEmpty()
         el("loading-label").textContent = ReceiverStrings.t("loading")
+        shell.showPlayer()
         show("loading")
         // R237 (FR-R237-5) — one "Still trying…" line if the start runs past ~5 s, nothing else.
         val generation = ++loadGeneration
@@ -695,6 +697,7 @@ private class Screen(private val serverUrl: String) {
     // ── remote control: Tizen's registered keys arrive as ordinary keydown events (same names as
     // TizenKeys.REQUIRED) alongside a normal D-pad's KeyboardEvent.key vocabulary. ──
     private fun onKey(e: KeyboardEvent) {
+        if (!loaded && shell.handleKey(e)) return
         // R269 (FR-R269-7) — the only way back to server setup: hold Back on IDLE for three seconds.
         // Tracked outside the `!loaded` guard below since idle is exactly where loaded is false, and
         // outside the `when` since it needs the key-repeat/-up pair, not a single keydown.
@@ -733,8 +736,7 @@ private class Screen(private val serverUrl: String) {
 
     /** A remote's Back arrives under several names: `XF86Back` (key code 10009) on a Tizen set, `Escape`/
      *  `Backspace` on a desktop browser, `Exit` for the Exit key this app registers. */
-    private fun isBack(e: KeyboardEvent): Boolean =
-        e.key == "Backspace" || e.key == "Escape" || e.key == "Exit" || e.key == "XF86Back" || e.key == "GoBack" || e.keyCode == 10009
+    private fun isBack(e: KeyboardEvent): Boolean = isBackKey(e)
 
     /** R269 (FR-R269-7) — no live teardown of this running instance: store the current address as the
      *  setup screen's prefill, drop the stored one, and reload — `main()`'s normal "no address stored"
@@ -903,54 +905,6 @@ private fun randomHex(length: Int): String {
     return buildString { repeat(length) { append(chars[Random.nextInt(chars.length)]) } }
 }
 
-/**
- * R269 — the one exception to this app's no-navigation rule: reached only when the TV holds no server
- * address at all (FR-R269-1). Probes `GET /api/health` — already unauthenticated, already returns
- * `{"status":"ok",…}` (see the phase's dev review: no backend change was needed, the endpoint already
- * existed for an unrelated reason) — and stores the address only once that succeeds, so a half-typed
- * address can never brick the boot path (the dev notes' own requirement). Scheme inference matches what
- * R226's `ServerSetupScreen` actually ships (verified against that code, not the FR's own — since
- * corrected — description of it): `https://` unless the household types a scheme themselves.
- */
-private suspend fun runServerSetup(): String {
-    val root = document.getElementById("setup") as HTMLElement
-    val input = document.getElementById("setupHost") as HTMLInputElement
-    val hint = document.getElementById("setupHint") as HTMLElement
-    val button = document.getElementById("setupConnect") as HTMLElement
-    document.getElementById("setupTitle")?.textContent = ReceiverStrings.t("receiver.setup_title")
-    button.textContent = ReceiverStrings.t("receiver.setup_connect")
-    hint.textContent = ReceiverStrings.t("receiver.setup_hint")
-    // FR-R269-7 — a hold-Back reopen prefills the address that was just working, never a blank field.
-    localStorage.getItem(SETUP_PREFILL_KEY)?.let { input.value = it.removePrefix("https://").removePrefix("http://") }
-    localStorage.removeItem(SETUP_PREFILL_KEY)
-    // The idle screen is `on` in the static markup (so a set with a server never flashes black); with
-    // no server yet it would sit under setup, both "on" at once (seen in the emulator's DOM).
-    document.getElementById("idle")?.classList?.remove("on")
-    root.classList.add("on")
-
-    val probeClient = HttpClient(Js)
-    val resolved = CompletableDeferred<String>()
-
-    suspend fun tryConnect() {
-        val host = input.value.trim()
-        if (host.isBlank()) return
-        val hasScheme = host.startsWith("http://", ignoreCase = true) || host.startsWith("https://", ignoreCase = true)
-        val url = (if (hasScheme) host else "https://$host").trimEnd('/')
-        hint.textContent = ReceiverStrings.t("receiver.setup_trying")
-        val ok = runCatching {
-            val r = probeClient.get("$url/api/health")
-            r.status.isSuccess() && r.bodyAsText().contains("\"status\":\"ok\"")
-        }.getOrDefault(false)
-        if (ok) resolved.complete(url) else hint.textContent = ReceiverStrings.t("receiver.setup_not_found")
-    }
-    button.addEventListener("click", { GlobalScope.launch { tryConnect() } })
-    input.addEventListener("keydown", { e -> if ((e as KeyboardEvent).key == "Enter") GlobalScope.launch { tryConnect() } })
-
-    val url = resolved.await()
-    localStorage.setItem(SERVER_URL_KEY, url)
-    root.classList.remove("on")
-    return url
-}
 
 fun main() {
     // R279 + FR-R269-9 — the ladder for a set with no user signed in: what this set last drew in,
