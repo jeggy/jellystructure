@@ -1,14 +1,11 @@
 # Phase 247 — A sideloaded screen has no origin the CORS policy can name
 
-## Status
+## Scope
 
-**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
-emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: FR-247-3 is built and ships in v1.40; what Tizen 5.0 sends on a WebSocket handshake is the one open question.
-The status below is the state it was paused in.
-
-`✓ Built` 2026-09-19 (FR-247-1, FR-247-2); **FR-247-3 built 2026-09-25** for the one route that needed
-it, measured on the Tizen 10.0 TV emulator and against the real binary, not dev-reviewed, not yet on a real
-Samsung TV.
+Backend CORS for the sideloaded Tizen widget (`ravilo-screen`), plus the e2e tests that pin it. FR-247-1 and
+FR-247-2 built 2026-09-19; FR-247-3 built 2026-09-25 for the one route that needed it, measured on the
+Tizen 10.0 TV emulator and against the real binary. **Amended by DEB-4654** — see *Amendment 2026-11-15* at
+the foot.
 
 **Open question 1 answered 2026-09-25 on the Tizen 10.0 TV emulator — in two halves, and the first answer
 was half wrong.** The widget runs at `file://`. Once its `config.xml` declares
@@ -189,3 +186,18 @@ stays closed.** Built 2026-09-25.
    only, leaving the cookie-authenticated admin API on today's stricter policy untouched), or does
    `install(CORS)` only apply application-wide in the Ktor version this project is on? Decides whether
    FR-247-3's eventual fix is a small, scoped addition or needs a custom intercept ahead of routing.
+
+## Amendment 2026-11-15 (DEB-4654) — the full Tizen app needs nothing more
+
+The Tizen app becomes a full app (`specs/ravilo/requirements/ravilo-on-a-samsung-tv-is-a-full-app.md`). It
+makes more REST calls (Home, browse, search, detail, played state, My List) and loads artwork with `<img>`,
+but it opens no other socket, so **this phase's FRs and non-goals stand unchanged**:
+
+- REST from the widget needs no exception (open question 1). The artwork routes (`/api/tv/image/`,
+  `/api/tv/channel-logos/`) are open and an `<img>` is not CORS-checked.
+- `/api/tv/events` stays the only socket. A build piece that needs another socket, `/api/remote/events` or
+  `/ws`, stops and amends this phase first. The cookie-authenticated `/ws` never admits `file://`.
+- **Open question 1 stays open for Tizen 5.0 and is carried to the owner's real-TV test** (the full app's
+  FR-16). If the set sends `Origin: null` on the handshake, the events route needs a different answer.
+  Browsing and playing from the TV would still work; a phone sending to it would not.
+

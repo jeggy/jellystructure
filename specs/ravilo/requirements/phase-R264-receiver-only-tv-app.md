@@ -9,103 +9,56 @@
 > phone-driven, no-navigation Ravilo device, and `ravilo-tizen` has the Kotlin/JS + AVPlay player layer
 > old Samsung sets need. This phase joins them.
 
-## Status
+## Scope
 
-**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
-emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: The player is built and was installed and driven on the Tizen 10.0 TV emulator; it has never run on a real Samsung TV, and open question 1 (HTML chrome over AVPlay on the UE55RU7440's Tizen 5.0) is unanswered. The phone → Samsung TV path needs phase 247's FR-247-3, which ships in v1.40.
-The status below is the state it was paused in.
+Client only: a new `ravilo-screen` module (Kotlin/JS, DOM, no WebAssembly), packaged for **Tizen first**;
+webOS is the same bundle in an `.ipk`, listed as a follow-on package, not a second app. Depends on
+**236**; sibling **R265**. Written 2026-09-18 from the owner's decisions, the research report
+`ravilo-web-pwa-player-cast-2026-09-18.md` (§12) and a read of `ravilo-cast/…/Receiver.kt` and
+`ravilo-tizen/`; dev-reviewed against `main` `140f6aba` (§Dev review at the bottom). R269 amends
+FR-R264-2/6.
 
-`⚠ Partial` — written 2026-09-18 from the owner's decisions, the research report
-`ravilo-web-pwa-player-cast-2026-09-18.md` (§12) and a read of `ravilo-cast/…/Receiver.kt` (419 lines,
-11 CAF touchpoints) and `ravilo-tizen/` (`config.xml` `required_version="2.4"`, AVPlay in
-`PlayerScreen.kt`/`TizenPlatform.kt`/`LiveTvPlayerScreen.kt`). **Dev-reviewed 2026-09-18 against `main`
-`140f6aba`** (see §Dev review at the bottom: 218's code is minted by a phone, so this app pairs through
-236's new `screen/code` + `screen/claim`; it stores one device token per paired user; the core
-extraction is its own no-behaviour-change commit; R269 amends FR-R264-2/6).
+**Supersedes R189** (the full Samsung Tizen client) — owner decision 2026-09-18: *"we already have a Tizen
+app which has never been tested; these specs scratch that and this receiver app takes over instead."*
+`ravilo-tizen` (2 405 lines, never run on a TV) was removed by this phase (FR-R264-10); its AVPlay wrapper is
+the one thing carried over. **This phase is in turn amended by DEB-4654** — see *Amendment 2026-11-15* below.
 
-**Built 2026-09-19**, compile-clean, **not yet installed/verified on real hardware**. The core extraction
-landed first as its own no-behaviour-change commit: `ravilo-receiver-core` (Kotlin/JS) carries
-`ReceiverStrings`/`nowMs`/`hms`/`subtitleTracksOf`/`audioTracksOf`, extracted verbatim out of
-`ravilo-cast/Receiver.kt`, which now depends on it instead of duplicating them. `ravilo-screen` is a new
-Kotlin/JS module: `MediaBackend`/`AvPlayBackend`/`HtmlVideoBackend`/`detectMediaBackend()` (the backend
-choice from FR-R264-8), `TizenPlatform.kt` (moved from `ravilo-tizen`), and `Screen.kt` — the pairing loop
-(`screenCode`/`screenClaim`, one device token per paired user, kept minting/polling while idle so a second
-household member can pair), the events-socket connection with reconnect/backoff, `play_item` negotiation
-via `startPlayback` (busy/no-server handling matches `ravilo-cast`'s own), `playstate_command`/
-`player_command`/`navigate` handling, both-remotes key handling, and `ScreenStatus` reporting on every
-change and at least every 5 s while loaded (FR-236-5). Unlike `ravilo-cast`, this receiver owns no local
-episode queue — it plays exactly what the latest `play_item` names and reports `ended`; autoplay-next is
-decided phone/backend-side, arriving as the next `play_item`. `config.xml`/`index.html`/`icon.png` live at
-`ravilo-screen/wgt/` (the `.wgt` project root); `package="RaviloScrn"` is exactly 10 characters (the
-empirically-found Samsung installer constraint this phase's dev notes describe). `:ravilo-screen:
-compileKotlinJs` and `:ravilo-screen:syncScreenReceiver` (full production webpack) both clean.
+**What was built** (2026-09-19 and 2026-09-25):
+- The core extraction landed first as its own no-behaviour-change commit: `ravilo-receiver-core` carries
+  `ReceiverStrings`/`nowMs`/`hms`/`subtitleTracksOf`/`audioTracksOf`, out of `ravilo-cast/Receiver.kt`, which
+  depends on it instead of duplicating them.
+- `ravilo-screen`: `MediaBackend`/`AvPlayBackend`/`HtmlVideoBackend`/`detectMediaBackend()` (FR-R264-8's
+  backend choice), `TizenPlatform.kt` (moved from `ravilo-tizen`) and `Screen.kt` — the pairing loop
+  (`screenCode`/`screenClaim`, one device token per paired user, minting kept running while idle), the events
+  socket with reconnect/backoff, `play_item` negotiation via `startPlayback`, `playstate_command`/
+  `player_command`/`navigate`, both-remotes key handling, `ScreenStatus` on every change and at least every 5 s.
+  Unlike `ravilo-cast` it owns no local episode queue: it plays exactly what the latest `play_item` names.
+  `config.xml`/`index.html`/`icon.png` live at `ravilo-screen/wgt/`; `package="RaviloScrn"` is exactly 10
+  characters (the Samsung installer constraint the dev notes describe).
+- **FR-R264-3 as a whole player:** **← / →** seek −10 s / +30 s, **OK** plays/pauses, **↓** opens R180/R195's
+  two-level picker on the TV (Subtitles · Audio, `:shared`'s `groupVersions`, the Subtitle size row; a pick
+  closes it, R197); **Skip Intro** inside the intro window; the **next-up card** at the credits (or the last
+  20 s with no marker) with R245's countdown; the phone's `next` and `cancel_next_up`; Back as R112's two
+  steps; R237's *Still trying…* at 5 s.
+- **Segments and "next" come from the play push.** The receiver fetches nothing: `play_item` carries the
+  title's intro/credits markers (`DetailService.segmentsFor`, so the TV and the phone cannot disagree) and the
+  next episode (season then episode order, never a special, never the same multi-episode file twice).
+  Auto-advance asks `POST /api/remote/play` to play the next episode on itself, so the push that comes back is
+  complete. `PlayPushResolverTest` covers the ordering and the lookup key.
+- **One sentence per cause (R237):** 401, 403, 404/410 and no answer each say why; anything else *"That didn't
+  start · Try again from your phone."*
+- **FR-R264-8's asset** is R272's: every GitHub Release builds, signs and attaches the `.wgt`.
 
-**Not done in this pass, tracked here rather than guessed:** (1) open question 1 — whether HTML can draw
-over AVPlay's video plane on the target hardware — is still unanswered; a throwaway probe app was built
-and packaged during this session's emulator/certificate setup but never actually installed to observe the
-result, so subtitle-overlay rendering is unimplemented (container-track *selection* is wired via
-`MediaBackend.selectAudioTrack`/`selectSubtitleTrack`, rendering of a sideloaded VTT track is not); (2) no
-on-screen server-address setup — `index.html` sets `window.RAVILO_SERVER_URL` at package time, a
-sideload-only stopgap until a real config screen exists (out of this phase's scope); (3) never installed
-on the `ravilo-screen-tv` Tizen 10.0 emulator or the target UE55RU7440 — a real Samsung certificate
-profile now exists (created this session) but signing/installing/on-device verification hasn't happened
-yet; (4) no CI `.wgt` packaging (FR-R264-8's asset) yet. Client:
-a new `ravilo-screen` module (Kotlin/JS, DOM, no WebAssembly) packaged for **Tizen first**; webOS is the
-same bundle in an `.ipk` and is listed as a follow-on package, not a second app. Depends on **236**.
-Sibling **R265**. **Supersedes R189** (the full Samsung Tizen client): owner decision 2026-09-18 — "we
-already have a Tizen app which has never been tested; these specs scratch that and this receiver app
-takes over instead." `ravilo-tizen` (2 405 lines, M1+M2 build-verified, never run on a TV) is **removed**
-by this phase (FR-R264-10, done in the same commit as the build above); its AVPlay wrapper is the one
-thing carried over.
-
-**Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
-**R263**, admin through **235**. Admin pair: **236**.
-
-### Built 2026-09-25 — the player, and the first install on a Tizen TV
-
-The owner asked for every ⚠ Partial phase to be finished. Built, e2e-covered, and installed on the
-`ravilo-screen-tv` emulator (Tizen 10.0 TV); the UE55RU7440 itself is not available.
-
-- **FR-R264-3 — a whole player, which it was not.** The receiver paired, played, drew text subtitles and
-  reported status; the TV remote could only play/pause, ±seek and stop, and there was no picker, no
-  Skip Intro, no next-up and one failure sentence for everything. Now: the chrome shows play/pause and
-  a *↓ Audio & Subs* hint; **← / →** seek −10 s / +30 s, **OK** plays/pauses, **↓** opens R180/R195's
-  two-level picker **on the TV** (Subtitles · Audio tabs, one row per language from `:shared`'s
-  `groupVersions` — the same grouping the phone and the TV app use — a language with several versions
-  opening level 2 with R195's one-line descriptions, and the Subtitle size row), a pick closes it (R197).
-  **Skip Intro** appears inside the intro window and OK (or the phone's `skip_segment`) skips to its end;
-  the **next-up card** appears at the credits (or the last 20 s with no credits marker, never before a
-  post-credits scene) with R245's countdown, OK plays the next episode now, Back cancels. The phone's
-  *Next episode* and next-up buttons (`next`, `cancel_next_up`) were accepted by the backend and fell
-  to `else` here — nothing happened; they work now. Back is R112's two steps (close what is up, then
-  stop). The loading screen adds R237's one *Still trying…* line at 5 s.
-- **Where segments and "next" come from:** the play push. The receiver fetches nothing, so the backend's
-  `play_item` now carries the title's intro/credits markers (the detail payloads' own lookup,
-  `DetailService.segmentsFor`, so the TV and the phone can never disagree about where an intro ends) and
-  the next episode (season then episode order, never a special, never the same multi-episode file
-  twice). Auto-advance goes back through the backend: the set asks `POST /api/remote/play` to play the
-  next episode on itself, so the push that comes back is complete — its own segments and its own next.
-  `PlayPushResolverTest` covers the ordering and the lookup key.
-- **One sentence per cause (R237):** a refused start now says *why* — this set's sign-in (401), the
-  profile (403), a title that is gone (404/410), the network (no answer) — in R237's own words, and
-  anything else (the player failing) *"That didn't start · Try again from your phone."* (two new strings
-  × en/da/fo from the mockup's drafts). It used to say *"Can't reach the server"* for all of them. Back
-  to idle after 10 s.
-- **Back on a Samsung remote** arrives as `XF86Back` (key code 10009); the app listened for `Backspace`
-  and `Exit` only, so on a real set Back may never have stopped anything. All the names are accepted.
-- **FR-R264-8** was already done by R272: every GitHub Release builds, signs and attaches the `.wgt`.
-
-**Found by installing it — the app could reach no server at all.** `config.xml` declared the internet
-privilege but no `<access>` element, and Tizen's web runtime refuses every request to another origin
-without one: `fetch("https://…")` failed with `net::ERR_UNKNOWN_URL_SCHEME` inside the widget. With
-`<access origin="*" subdomains="true">` the same request returns 200 with a readable body, although the
-server sends no `Access-Control-Allow-Origin` — **the packaged widget does not enforce CORS** (phase
-247's open question 1 and R269's, answered on the emulator; a preflighted JSON POST reached the server
-directly). **But its events WebSocket was refused** — a handshake carries `Origin: file://` (a WebSocket
-is not governed by the widget's CORS, so the runtime sends the origin regardless) and the server's CORS
-answered 403, so a paired TV could never receive `play_item`. Fixed by phase 247's FR-247-3: that one
-route admits exactly `file://`. Also: with no server stored, the setup screen was drawn over the idle
-screen (both `on`).
+**Findings that hold** (installed on the Tizen 10.0 TV emulator, 2026-09-25):
+- **Back on a Samsung remote** arrives as `XF86Back` (key code 10009), not `Backspace`/`Exit`. All three are
+  accepted.
+- **`config.xml` needs `<access origin="*" subdomains="true">`.** Without it Tizen's web runtime refuses every
+  request to another origin (`net::ERR_UNKNOWN_URL_SCHEME`). With it, the packaged widget does not enforce CORS
+  on HTTP.
+- **The events WebSocket sends `Origin: file://`** on the handshake, and the server's CORS answered 403, so a
+  paired TV could never receive `play_item`. Fixed by phase 247's FR-247-3.
+- Subtitle-overlay rendering of a sideloaded VTT track over AVPlay is unbuilt pending open question 1;
+  container-track *selection* is wired (`MediaBackend.selectAudioTrack`/`selectSubtitleTrack`).
 
 ## The target device, concretely
 
@@ -285,3 +238,28 @@ gets its identity.
    any chrome is written.
 
 **Build order:** 236 (with its new pairing flow) → the core extraction → this app → R265.
+
+## Amendment 2026-11-15 (DEB-4654) — the receiver becomes a full app
+
+The owner resumed Tizen on DEB-799, 2026-11-15, and asked for a full app driven by the TV remote, with no
+casting and no Discover tab. `specs/ravilo/requirements/ravilo-on-a-samsung-tv-is-a-full-app.md` is that
+app. It is built inside this module, under the same package. Against this phase:
+
+- **FR-R264-2 and the first non-goal (*no navigation*) are superseded.** The app has Home, Movies, Series,
+  Search, a title's page, My List, profiles and Settings (that spec's FR-4 to FR-8 and FR-11).
+- **FR-R264-1's enrolment is superseded.** The TV signs in as a viewer (DEB-2233 FR-5's code, or a password)
+  instead of pairing to a phone through `screen/code` + `screen/claim`, and the idle code screen goes.
+  `screen`-kind tokens left on an upgraded set are dropped. The rest of FR-R264-1 stands: the events socket,
+  the negotiation, the progress and status reports.
+- **FR-R264-3 to FR-R264-7 stand** as the full app's player requirements. Back from the player returns to the
+  page it was started from, and a refused start started from the TV does not say *from your phone*.
+- **FR-R264-5 narrows to commands for a signed-in profile.** The input surface is the TV remote plus
+  `play_item`/`playstate_command`/`player_command`, which still act as written here (subject to the owner's
+  answer on the full app's FR-10).
+- **FR-R264-9's strings move to `ravilo-i18n`** (the full app's FR-12). `ReceiverStrings` keeps only what the
+  Chromecast receiver shows.
+- **Open question 1 is unanswered and is carried to the owner's real-TV test** (the full app's FR-16). Its
+  answer still decides who draws the subtitles. The Tizen 10.0 emulator cannot answer it for Tizen 5.0.
+- **The target set** is now the owner's UE55RU7445 (2019, RU7400, Tizen 5.0), the same family as the
+  UE55RU7440 above.
+

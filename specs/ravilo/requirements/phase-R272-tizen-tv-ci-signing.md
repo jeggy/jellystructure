@@ -11,13 +11,12 @@
 > CI builds and Samsung-signs the `.wgt` and attaches it to the GitHub Release; the Seller Office upload
 > itself stays a manual, few-minutes step per release.
 
-## Status
+## Scope — what was built and proven
 
-**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
-emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: The release workflow still builds, signs and attaches the `.wgt` to every GitHub Release; nothing else is being done with it. The Samsung Seller Office submission started the same day is paused with it (nothing was created or uploaded there).
-The status below is the state it was paused in.
+`.github/workflows/deploy-tizen-tv.yml`, called from `publish.yml` as the `tizen-tv` job. **Amended by
+DEB-4654** — see *Amendment 2026-11-15* at the foot.
 
-`✓ Built` — built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
+Built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
 `b397f5e6`; all 6 actionable findings applied same day — see below). `.github/workflows/deploy-tizen-tv.yml`
 wired into `publish.yml` as a new `tizen-tv` job (same `needs: [version, ci, publish]` /
 `if: github.event_name == 'release'` shape as the existing `play-store` job). The exact `tz` CLI +
@@ -58,7 +57,7 @@ file-based `openssl -passin file:` method (bypassing shell quoting of `^`/`%` en
 — not an empty/placeholder file) is attached to the `v1.29` GitHub Release via `gh release upload`. This
 is the first fully successful end-to-end run of the pipeline against the real production certificate.
 
-**Scope now fully delivered**: every release from here on will have a signed `.wgt` waiting on its GitHub
+**What it delivers:** every release has a signed `.wgt` waiting on its GitHub
 Release page, ready for the owner to hand-upload to Samsung's TV Seller Office (which, per §1, has no
 submission API — that upload step is and remains manual). Nothing left to build in this phase; the six
 real CI runs above are the acceptance record.
@@ -226,3 +225,17 @@ own comment now states the manual-bump rule explicitly (item 5); §3/§4/the wor
 re-stamped (item 6, folded into the rewritten §Status above). Doing so surfaced item 4's real value
 immediately: it's how the RC2/`-legacy` finding above got isolated to one step's output instead of buried
 in the SDK/Gradle log preceding it.
+
+## Amendment 2026-11-15 (DEB-4654) — the full app ships in the same asset
+
+The Tizen app becomes a full app (`specs/ravilo/requirements/ravilo-on-a-samsung-tv-is-a-full-app.md`), built
+inside `ravilo-screen` under the same `package="RaviloScrn"`. **This workflow does not change.** It builds the
+same module and signs it with the same certificate. The asset has been named `ravilo-tizen-<version>.wgt`
+since `7504455f`; §Scope's `ravilo-screen-1.29.wgt` is the name it had on the first green run.
+
+- **Installing on the owner's TV needs a distributor certificate that carries that set's DUID.** The
+  certificate behind the four secrets predates the set. It is re-issued once, at the owner's real-TV test
+  (DEB-799, the full app's FR-16). It needs his Samsung sign-in, and after it the two `DIST` secrets are
+  re-pasted by the §3 method. Until then, emulator installs use the existing certificate.
+- The Seller Office submission stays out of scope (§5).
+

@@ -7,58 +7,30 @@
 > until the app can reach a server, and nothing in the phase says where that address comes from. This
 > phase adds the one screen that answers it, and the ordering rule it implies: **server → code → pair**.
 
-## Status
+## Scope
 
-**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
-emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: Setup is verified on the Tizen 10.0 emulator; Tizen 5.0 (the UE55RU7440) is unverified.
-The status below is the state it was paused in.
+Client only (`ravilo-screen`); no backend, route, DTO or config change. Extends **R264** and supersedes two
+of its clauses (FR-R264-2's *always shows its code*, FR-R264-6's single no-server sentence). Dev-reviewed
+2026-09-19 (§Dev review below). **Amended by DEB-4654** — see *Amendment 2026-11-15* at the foot.
 
+**What was built:** `Screen.kt`'s `main()` checks `localStorage` for a stored address before anything else;
+absent, it shows the setup screen (`index.html`'s `#setup` section — mark, title, a plain `<input>` relying
+on Tizen's own system IME rather than R175's Compose keyboard, a Connect button, a hint/error line), probes
+`GET {url}/api/health` for `"status":"ok"`, and only stores the address on success — a failed probe keeps the
+typed text and shows the *not found* sentence (FR-R269-3). Idle shows the configured address (FR-R269-6); a
+stored-but-unreachable server reuses the `noserver` screen with a retry loop (FR-R269-5). Holding Back on
+idle for three seconds (FR-R269-7) reloads the page with the current address prefilled via a `localStorage`
+hand-off key. Three strings × en/da/fo in `ravilo-receiver-core`'s `ReceiverStrings`. `TizenPlatform`'s
+key handling runs the hold detection independent of the `!loaded` guard. A Playwright/Chromium run against
+the built bundle and a mock `/api/health` covers fresh load, a bad host and a reachable one.
 
-**2026-09-25 — the CORS question is answered, on the Tizen 10.0 TV emulator.** Installed and driven over
-DevTools: the widget's origin is `file://`; with the `<access origin="*">` element it lacked (without it,
-*every* request failed with `net::ERR_UNKNOWN_URL_SCHEME` — the setup probe could never have succeeded on
-a TV), `GET /api/health` on the production server returns 200 with a readable body and no
-`Access-Control-Allow-Origin` header, and a preflighted JSON POST reaches the server directly. A packaged
-Tizen widget does not enforce CORS on HTTP. **Correction, the same afternoon:** its events WebSocket sends
-`Origin: file://` on the handshake and was refused with a 403 — REST needed no exception, the socket did
-(phase 247 FR-247-3, `/api/tv/events` only). The RU7440's Tizen 5.0 is older and unverified. Also fixed: with no server stored, setup was drawn over the idle screen.
-`✓ Built` — written 2026-09-18. **Dev-reviewed and built 2026-09-19 against `main`
-(post-R264/R272/R265 build)** — see §Dev review below: FR-R269-3's premise (the TV client already probes
-the server) is wrong, but the fix is good news — `GET /api/health` already exists, unauthenticated, and
-answers Open Question 1 outright with zero backend change; FR-R269-2's LAN-http-fallback claim describes
-behavior R226 never actually shipped, corrected to match what R226 really does. Client only
-(`ravilo-screen`); no backend, route, DTO or config change, confirming the spec's own claim. Extends
-**R264** and supersedes two of its clauses (FR-R264-2's *always shows its code*, FR-R264-6's single
-no-server sentence).
-
-**Built**: `Screen.kt`'s `main()` now checks `localStorage` for a stored address before anything else;
-absent, it shows the setup screen (`index.html`'s new `#setup` section — mark, title, a plain `<input>`
-relying on Tizen's own system IME rather than R175's Compose keyboard, a Connect button, a hint/error
-line), probes `GET {url}/api/health` for `"status":"ok"`, and only stores the address on success — a
-failed probe keeps the typed text and shows the *not found* sentence (FR-R269-3). Idle now shows the
-configured address (FR-R269-6) and a stored-but-unreachable server reuses the existing `noserver` screen
-with a retry loop (FR-R269-5) instead of silently doing nothing. Holding Back on idle for three seconds
-(FR-R269-7) reloads the page with the current address prefilled via a `localStorage` handoff key — no
-live teardown of the running instance, the simplest correct implementation of a rare action. Three new
-strings × en/da/fo added to `ravilo-receiver-core`'s `ReceiverStrings` (shared with `ravilo-cast`, which
-never reads the new keys). `TizenPlatform`'s `KeyboardEvent`-based key handling was restructured so the
-hold-detection runs independent of the existing `!loaded` guard.
-
-**Verified**: `:ravilo-receiver-core:compileKotlinJs`/`:ravilo-screen:compileKotlinJs`/
-`:ravilo-cast:compileKotlinJs` all clean; the full production webpack bundle
-(`:ravilo-screen:syncScreenReceiver`) builds. **Real browser verification performed** (Playwright/Chromium
-against the actual built bundle, a tiny local mock `/api/health`): fresh load shows setup; a bad/unreachable
-host shows the *not found* sentence and keeps the typed text; a reachable mock succeeds. This is
-real, but limited — see finding 6 below for what it does NOT prove.
-
-**Not done / found, tracked here rather than guessed:**
-- **A real, previously-unconsidered risk found by this verification**: the backend's CORS policy is
-  deliberately restrictive (an allowlist, no wildcard — see finding 6), and a sideloaded `.wgt` has no
-  origin `allowHost()` can represent. Whether a packaged Tizen widget's networking bypasses browser CORS
-  the way other privileged app runtimes do is **unconfirmed** — this can only be resolved by installing
-  the actual `.wgt` on the Tizen emulator/hardware and watching whether its calls succeed, which is also
-  R264's own still-open verification step.
-- No hardware verification at all — same standing caveat as R264/R265/R272 tonight.
+**The CORS question, answered on the Tizen 10.0 TV emulator (2026-09-25).** The widget's origin is `file://`.
+With the `<access origin="*">` element it lacked (without it, *every* request failed with
+`net::ERR_UNKNOWN_URL_SCHEME`), `GET /api/health` returns 200 with a readable body and no
+`Access-Control-Allow-Origin`, and a preflighted JSON POST reaches the server directly: a packaged Tizen
+widget does not enforce CORS on HTTP. Its events WebSocket does send `Origin: file://` and was refused —
+phase 247 FR-247-3 admits it on `/api/tv/events` only. Tizen 5.0 is older and has not been measured. Also
+fixed then: with no server stored, setup was drawn over the idle screen.
 
 ### Dev review (2026-09-19, against `main` post-R264/R272/R265)
 
@@ -120,10 +92,6 @@ unaffected.
    `Server.kt`). This can only be resolved by installing the actual signed `.wgt` on the Tizen emulator or
    real hardware and watching whether its network calls succeed — the one verification step still open
    from R264 itself (its own open question 1, plus this one, are both blocked on the same missing step).
-
-**Numbering:** verified against `main` and `STATUS.md` on 2026-09-18 — Ravilo taken through **R265**
-(with **R266 · R267 · R268** ours, written the same day), admin through **236** (with **237** ours).
-Ravilo-only, no admin pair. Next free: **238 / R270**.
 
 Design: `design/ravilo/Play on a TV - Directions.html` §C0 (four TV frames: first boot, typing with the
 scheme inferred, trying, wrong address) and §C1c (idle naming its server). **Built into
@@ -260,3 +228,19 @@ match — they are recorded here so a dev review can see they were chosen, not a
 - The owner also **scratched R264's open question 2** (dimming idle to 20 % after ten minutes) the same
   day: the idle screen stays at full brightness. It holds no artwork, and a code you have to wake with a
   remote you may not be holding is worse than a lit mark. Recorded here because R264 is dev-authored.
+
+## Amendment 2026-11-15 (DEB-4654) — setup comes before sign-in, and Settings can reopen it
+
+The Tizen app becomes a full app (`specs/ravilo/requirements/ravilo-on-a-samsung-tv-is-a-full-app.md`). This
+phase's setup screen, probe, copy and storage are unchanged and still run first. Against it:
+
+- **FR-R269-4 becomes *then, and only then, sign-in*.** With an address stored, the app opens on the sign-in
+  screen (the full app's FR-2), not R264's idle code screen, which goes. The ordering requirement stands: no
+  sign-in code exists before a server answers.
+- **FR-R269-1's *only while there is no server* gains one exception: Settings ▸ Change server** opens this
+  screen with the address prefilled (the full app's FR-11). A changed address signs every profile out.
+- **FR-R269-5's table** reads *sign-in screen* where it says *idle with the code*. The *Address stored, server
+  not answering* row now applies to the sign-in screen and to a signed-in Home that cannot load.
+- **FR-R269-7's hold on Back stays**, as the way out of a sign-in screen pointed at a server that has gone.
+- **The IME assumption** (dev review item 5) is carried to the owner's real-TV test (the full app's FR-16).
+
