@@ -21,6 +21,9 @@ config.module.rules.push({
 });
 // Webpack's own bootstrap must obey the same syntax floor as its input modules.
 config.output = config.output || {};
+// The default UMD wrapper passes globalThis before application code runs. Chromium 63
+// has self but not globalThis, so use the browser global for webpack's bootstrap.
+config.output.globalObject = 'self';
 config.output.environment = Object.assign({}, config.output.environment, {
     arrowFunction: true,
     asyncFunction: true,

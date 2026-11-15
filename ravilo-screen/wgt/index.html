@@ -117,6 +117,10 @@
   <div id="nextup"><div id="nu-k" class="k"></div><div id="nu-t" class="t"></div><div id="nu-c" class="c"></div></div>
   <div id="picker"><div id="pk-head"></div><div id="pk-tabs"></div><div id="pk-rows"></div></div>
 
+  <script>
+    // Kotlin/JS and its dependencies use globalThis at runtime. Chromium 63 predates it.
+    if (typeof globalThis === 'undefined') window.globalThis = window;
+  </script>
   <script src="ravilo-screen.js"></script>
 </body>
 </html>

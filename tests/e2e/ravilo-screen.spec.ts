@@ -21,6 +21,23 @@ const APP_URL_FROM_SCREEN = process.env.APP_URL_FROM_SCREEN ?? "http://app:9505"
 // local run, which Screen.kt's main() strips to "en" with no server yet to override it (R269 FR-R269-9).
 const SETUP_NOT_FOUND_EN = "There’s no Ravilo server at that address";
 
+test("the Tizen receiver starts without globalThis (FR-13)", async ({ page }) => {
+  test.setTimeout(30_000);
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => pageErrors.push(err.message));
+  await page.addInitScript(() => {
+    if (!Reflect.deleteProperty(window, "globalThis")) {
+      throw new Error("Could not simulate Chromium 63 without globalThis");
+    }
+  });
+
+  await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+  await expect(page.locator("#setupTitle")).toHaveText("Where is Ravilo?");
+  expect(pageErrors).toEqual([]);
+});
+
 test("a sideloaded screen pointed at the real backend gets stuck on setup (phase 247)", async ({ page }) => {
   test.setTimeout(30_000); // hard backstop — this must never hang the job (see ravilo-web.spec.ts)
 
