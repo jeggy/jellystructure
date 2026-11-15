@@ -2,9 +2,19 @@
 
 package dev.jellystructure.ravilo.ui.seams
 
+import dev.jellystructure.ravilo.ui.createTvApiClient
+import dev.jellystructure.ravilo.ui.raviloBaseUrl
+import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
+import dev.jellystructure.ravilo.ui.TokenStore
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
+import dev.jellystructure.shared.tv.TicketSubtitles
+import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.browser.document
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLVideoElement
 
 /**
@@ -113,6 +123,8 @@ actual class RaviloPlayer actual constructor() {
 
     private var loadedSubtitles: List<SubTrack> = emptyList()
     private var subtitleSlots: List<SubtitleSlot> = emptyList()
+    /** DEB-4692 — the parent of this load's subtitle fetches: the next load, or [release], cancels them. */
+    private var subtitleFetches: Job? = null
     private var loadedAudio: List<AudioTrack> = emptyList()
 
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?, live: LiveLoad?) {
@@ -164,6 +176,7 @@ actual class RaviloPlayer actual constructor() {
         // in manifest order — which is stream order, the order the ticket lists them in.
         val elementTracks = loadedSubtitles.count { s -> s.url?.let { !it.endsWith(".ass", true) && !it.endsWith(".ssa", true) } == true }
         var manifestTracks = 0
+        val fetches = Job().also { subtitleFetches?.cancel(); subtitleFetches = it }
         loadedSubtitles.forEach { sub ->
             val url = sub.url ?: run {
                 slots += SubtitleSlot(textTrack = elementTracks + manifestTracks++, assUrl = null)
@@ -185,8 +198,15 @@ actual class RaviloPlayer actual constructor() {
             // already honours isDefault), and a second, browser-run chooser could re-show a track the
             // resolver just turned off — the web's own version of "two deciders".
             video.appendChild(trackEl)
-            // R68: fetch VTT, strip ASS/SSA override tags, attach as blob: URL
-            fetchAndCleanVtt(url) { cleanUrl -> trackEl.setAttribute("src", cleanUrl) }
+            // R68: fetch VTT, strip ASS/SSA override tags, attach as blob: URL.
+            // DEB-4692 (DEB-2205 FR-6) — through the API client: our own subtitle path is sent with the device token (a bare
+            // fetch() got a 401, and the error body became the track), and a 202 is asked again until the track arrives.
+            // Anything else that never comes falls back to the original URL, as R68 did.
+            GlobalScope.launch(fetches) {
+                val api = subtitleApi()
+                val vtt = TicketSubtitles.fetch({ api.subtitleAttempt(url) }, { nowMs().toLong() }) { delay(it) }?.text
+                trackEl.setAttribute("src", if (vtt != null) cleanVttBlobUrl(vtt) else url)
+            }
         }
         subtitleSlots = slots
     }
@@ -229,6 +249,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
+        subtitleFetches?.cancel(); subtitleFetches = null   // DEB-4692 — nothing arrives for a player that is gone
         // R376 (FR-R376-S1) — a player that no longer holds the element (the next screen's player took it over) leaves
         // it alone; the holder resets it — no source, no tracks, nothing queued, hidden — and the element stays in the
         // page, keeping the sound Safari gave it.
@@ -835,27 +856,31 @@ private fun installCueStyle(): Unit = js(
 )
 
 /**
- * R68 — fetch a VTT subtitle URL, strip ASS/SSA override tags from every cue, and return a
- * blob: URL pointing at the cleaned VTT so the browser <track> renders clean text.
- * The callback receives the cleaned URL (blob: or the original on fetch failure).
+ * DEB-4692 — the one ticket-subtitle client the web player keeps: our own paths need the device token, so they are
+ * fetched through [TvApiClient.subtitleAttempt] on the server the app talks to, with the signed-in profile's token.
  */
-private fun fetchAndCleanVtt(url: String, callback: (String) -> Unit): Unit = js(
-    """{
-        fetch(url)
-            .then(function(r){ return r.text(); })
-            .then(function(vtt){
-                // Strip {\...} ASS override blocks and normalize \N/\h escape sequences.
-                var cleaned = vtt
-                    .replace(/\{\\[^}]*\}/g, '')
-                    .replace(/\\N/g, '\n')
-                    .replace(/\\n/g, '\n')
-                    .replace(/\\h/g, ' ');
-                var blob = new Blob([cleaned], {type: 'text/vtt'});
-                var blobUrl = URL.createObjectURL(blob);
-                callback(blobUrl);
-            })
-            .catch(function(){ callback(url); }); // fall back to original on error
-    }"""
+private var webSubtitleApi: TvApiClient? = null
+
+private fun subtitleApi(): TvApiClient {
+    val base = raviloBaseUrl().trimEnd('/')
+    return webSubtitleApi?.takeIf { it.baseUrl == base }
+        ?: createTvApiClient(base) { MultiTokenStore.getActive()?.deviceToken ?: TokenStore.get() }.also { webSubtitleApi = it }
+}
+
+/**
+ * R68 — strip ASS/SSA override tags from every cue of a fetched VTT, and return a
+ * blob: URL pointing at the cleaned VTT so the browser <track> renders clean text.
+ */
+private fun cleanVttBlobUrl(vtt: String): String = js(
+    """(function(){
+        // Strip {\...} ASS override blocks and normalize \N/\h escape sequences.
+        var cleaned = vtt
+            .replace(/\{\\[^}]*\}/g, '')
+            .replace(/\\N/g, '\n')
+            .replace(/\\n/g, '\n')
+            .replace(/\\h/g, ' ');
+        return URL.createObjectURL(new Blob([cleaned], {type: 'text/vtt'}));
+    })()"""
 )
 
 /**
