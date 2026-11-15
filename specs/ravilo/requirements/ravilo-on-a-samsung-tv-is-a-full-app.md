@@ -206,15 +206,17 @@ carries a table of its own.
 **FR-13 · The engine floor is Chromium 63.**
 
 - **The bundle:**
-  - Kotlin/JS IR compiles to its default ES5 output, with no polyfill bundle.
+  - The built `ravilo-screen.js` parses and runs on Chromium 63 (see the amendment below). Kotlin 2.3's
+    output and the bundled libraries both contain newer syntax, so the build transpiles the bundle.
   - The app's own code calls no web API newer than Chromium 63. Two to avoid: `AbortController` (66) and
     `ResizeObserver` (64).
 - **The CSS** uses no feature newer than Chromium 63: no `gap` on flex containers (84), no
   `aspect-ratio` (88), no `inset` (87), no `:focus-visible` (86), no `backdrop-filter` (76).
 - **A guard enforces the CSS rule.** `scripts/check-tizen-engine.sh` greps the module's CSS and fails on
   any of the properties above. It is wired into CI's script checks.
-- The JS half cannot be checked from Linux. It is the first thing the real-TV test looks at, together
-  with the user agent string (FR-16).
+- **A second guard checks the built bundle.** CI parses the production `ravilo-screen.js` as ES2017
+  (`acorn --ecma2017`, or the equivalent) and fails on any syntax newer than that. The web APIs the app
+  calls are checked on the Tizen 5.0 emulator (FR-16), not by this guard.
 
 **FR-14 · Light enough for a 2019 set.**
 
@@ -245,14 +247,15 @@ carries a table of its own.
 
   D-pad navigation is driven with keyboard events in Playwright.
 - **On the emulator.** The `tizen-emulator` row (DEB-4653) covers what CI cannot: AVPlay, the real key
-  codes, the IME, and the widget's `file://` origin. Each piece's QA ticket names that row.
+  codes, the IME, and the widget's `file://` origin. It runs **Tizen 5.0** (`ravilo-tv-5`, the owner's
+  set's platform) as well as 10.0. Every piece's QA runs on 5.0 first. Each piece's QA ticket names that row.
 - **On the owner's TV, once the app is in good shape.** This is the only place the following can be
   answered. They are carried there, not guessed at:
   - R264's open question 1: can HTML chrome and subtitle text draw over AVPlay on Tizen 5.0?
   - 247's open question 1: what `Origin` does Tizen 5.0 send on the events handshake? If it sends
     `null`, the socket is refused. Browsing and playing from the TV still work, but FR-10 does not, and
     247 needs a different answer.
-  - FR-13's JS floor and the set's real user agent.
+  - The set's real user agent. FR-13's floor is first checked on the 5.0 emulator; the TV confirms it.
   - FR-14's budgets.
   - R269's IME assumption.
   - The distributor certificate for the TV's DUID, which waits until this test (DEB-799).
@@ -308,3 +311,21 @@ After 8: QA's full pass on the emulator, then the owner's real-TV test (FR-16).
    *No casting* is read as *the TV casts to nothing*.
 3. **A fixed feature list, not parity?** Recommended: yes. Tizen gets only what this spec lists, plus
    explicit amendments, so a TV change does not double in cost.
+
+## Amendment 2026-11-15 (DEB-4653's measurement) — the bundle must parse on Chromium 63
+
+Claude Top installed v1.67's `ravilo-tizen-1.67.wgt` on a Tizen 5.0 TV emulator (`ravilo-tv-5`, DEB-4653). It
+installs and launches, then stays black: `Uncaught SyntaxError: Unexpected token ?` at column 150777 of
+`ravilo-screen.js`. The bundle holds 201 `??` operators (ES2020) from Kotlin 2.3's output, so no Kotlin code
+runs at all. The same build reaches the setup screen on the 10.0 emulator. **The receiver as shipped has
+therefore never been able to start on the owner's TV.** FR-13 changes:
+
+- The bundle is transpiled to Chromium 63 at build time. For example, a `babel-loader` with
+  `@babel/preset-env` targeting `chrome 63`, added through `ravilo-screen/webpack.config.d/`. The exact means
+  is the build piece's choice; the outcome is the requirement. This is a new build dependency and stays
+  with Sjúrður.
+- The second guard (FR-13) parses the built bundle as ES2017 in CI, so the regression cannot come back
+  unseen.
+- Both land in build piece 1 (DEB-4656), **before** any screen. The same fix makes today's receiver start on
+  Tizen 5.0, so it is worth having even if the owner's card stops the full app.
+

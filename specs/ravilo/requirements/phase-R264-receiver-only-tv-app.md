@@ -262,4 +262,8 @@ app. It is built inside this module, under the same package. Against this phase:
   answer still decides who draws the subtitles. The Tizen 10.0 emulator cannot answer it for Tizen 5.0.
 - **The target set** is now the owner's UE55RU7445 (2019, RU7400, Tizen 5.0), the same family as the
   UE55RU7440 above.
+- **Measured the same day on a Tizen 5.0 TV emulator (DEB-4653): the shipped receiver never starts there.**
+  `ravilo-screen.js` holds ES2020 `??` operators, which Chromium 63 cannot parse, so the set shows a black
+  screen. FR-R264-7's *"a 2019 Samsung"* was therefore never met. The fix and its guard are the full app's
+  FR-13 and its amendment, built first in DEB-4656.
 
