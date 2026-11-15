@@ -27,6 +27,10 @@ kotlin {
                 implementation(libs.ktor.client.websockets)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
+                // DEB-4674 FR-13: Babel runs in this module's webpack build, never in the widget.
+                implementation(devNpm("babel-loader", "9.2.1"))
+                implementation(devNpm("@babel/core", "7.28.5"))
+                implementation(devNpm("@babel/preset-env", "7.28.5"))
             }
         }
     }

@@ -319,6 +319,11 @@ jobs:
           docker compose -f docker-compose.test.yml build ravilo-web
           docker buildx prune -f --filter 'type!=exec.cachemount'
           docker compose -f docker-compose.test.yml build ravilo-screen
+          # DEB-4674 FR-13: inspect the exact bundle in the image Playwright will serve.
+          docker compose -f docker-compose.test.yml create ravilo-screen
+          bundle_container=$(docker compose -f docker-compose.test.yml ps -aq ravilo-screen)
+          docker cp "$bundle_container:/srv/ravilo-screen.js" /tmp/ravilo-screen.js
+          ./scripts/check-tizen-bundle.sh /tmp/ravilo-screen.js
           docker buildx prune -f
           echo "Disk space before starting stack:"
           df -h /
