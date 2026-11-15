@@ -17,6 +17,7 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.ScreenStatus
 import dev.jellystructure.shared.tv.ScreenTrack
 import dev.jellystructure.shared.tv.StreamTicket
+import dev.jellystructure.shared.tv.TicketSubtitles
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import dev.jellystructure.shared.tv.TvSegmentMarkers
@@ -31,9 +32,6 @@ import dev.jellystructure.shared.tv.receiverSubtitles
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import io.ktor.client.plugins.websocket.WebSockets
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.isSuccess
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
@@ -112,7 +110,7 @@ private class Screen(private val serverUrl: String) {
     private var ticket: StreamTicket? = null
     // R285 (FR-R285-3) — the cues of the text subtitle being drawn (empty = none), and a generation
     // counter so a slow VTT fetch that finishes after the viewer picked something else is discarded.
-    private val http = HttpClient(Js)   // subtitle files only; the API has its own client
+    private var subtitleJob: Job? = null   // DEB-4692 — the fetch of the subtitle being drawn
     private var cues: List<VttCue> = emptyList()
     private var cueGeneration = 0
     private var shownCue: String? = null
@@ -818,9 +816,12 @@ private class Screen(private val serverUrl: String) {
         cues = emptyList()
         val generation = ++cueGeneration
         applySubSize()
+        subtitleJob?.cancel(); subtitleJob = null
         if (url == null) return
-        GlobalScope.launch {
-            val body = runCatching { http.get(url).takeIf { it.status.isSuccess() }?.bodyAsText() }.getOrNull() ?: return@launch
+        // DEB-4692 (DEB-2205 FR-6) — through the API client: our own subtitle path is resolved on the server and sent with the
+        // device token (it was a bare GET: a 401, or this widget's own origin), and a 202 is asked again until the track arrives.
+        subtitleJob = GlobalScope.launch {
+            val body = TicketSubtitles.fetch({ api.subtitleAttempt(url) }, { nowMs() }) { delay(it) }?.text ?: return@launch
             if (generation == cueGeneration) cues = parseVtt(body)
         }
     }
