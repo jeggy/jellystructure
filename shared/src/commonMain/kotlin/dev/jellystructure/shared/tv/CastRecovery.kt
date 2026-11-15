@@ -65,3 +65,29 @@ fun castRecoveryRetryMs(failedCalls: Int): Long? = CastRecovery.RETRY_MS.getOrNu
 
 /** FR-5 — whether the receiver's buffering view should be on screen: only after the wait has lasted [CastRecovery.DRAW_AFTER_MS]. */
 fun castDrawsBuffering(bufferingForMs: Long): Boolean = bufferingForMs >= CastRecovery.DRAW_AFTER_MS
+
+/** DEB-4637 (DEB-2205 FR-5) — the receiver's frozen-picture watch, sampled once a second. */
+enum class CastFrozenAction { NONE, COUNT_FROZEN, RECOVER_FROZEN, RECOVER_STUCK }
+
+fun castFrozenAction(
+    positionMs: Long, lastPositionMs: Long, lastMoveAtMs: Long, nowMs: Long, bufferedAheadMs: Long,
+    wantsPlay: Boolean, seeking: Boolean, recovering: Boolean, firstFrameSeen: Boolean,
+): CastFrozenAction {
+    if (!wantsPlay || seeking || recovering || !firstFrameSeen || positionMs != lastPositionMs) return CastFrozenAction.NONE
+    val stillMs = (nowMs - lastMoveAtMs).coerceAtLeast(0)
+    if (stillMs >= 30_000L) return CastFrozenAction.RECOVER_STUCK
+    if (bufferedAheadMs < 3_000L) return CastFrozenAction.NONE
+    return when {
+        stillMs >= 5_000L -> CastFrozenAction.RECOVER_FROZEN
+        stillMs >= 1_000L -> CastFrozenAction.COUNT_FROZEN
+        else -> CastFrozenAction.NONE
+    }
+}
+
+/** Master BANDWIDTH includes audio and overhead; the restream cap is video bits/s. */
+fun castFrozenVideoCap(rungsBps: List<Long>, frozenBps: Long?, deviceMaxVideo: Int): Int {
+    val frozen = frozenBps?.takeIf { it > 0 } ?: return deviceMaxVideo
+    val target = rungsBps.filter { it > 0 }.distinct().sorted().lastOrNull { it < frozen } ?: frozen
+    val video = RestreamStepper.videoBpsOf(target)?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: return deviceMaxVideo
+    return if (deviceMaxVideo > 0) minOf(deviceMaxVideo, video) else video
+}

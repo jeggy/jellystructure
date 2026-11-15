@@ -20,6 +20,22 @@ import dev.jellystructure.shared.tv.LadderRules
  * own manager runs exactly as before — the wrapper can make nothing worse than today.
  */
 internal object ReceiverAbr {
+    /** The same video element and buffered range that the ABR wrapper's ahead() reads. */
+    fun bufferedAheadMs(): Long {
+        val read: dynamic = js("""(function () {
+          var p = document.querySelector('cast-media-player');
+          var v = (p && p.shadowRoot) ? p.shadowRoot.querySelector('video') : null;
+          v = v || document.querySelector('video');
+          if (!v || !v.buffered) return -1;
+          var t = v.currentTime;
+          for (var i = 0; i < v.buffered.length; i++) {
+            if (v.buffered.start(i) <= t + 0.5 && v.buffered.end(i) >= t) return (v.buffered.end(i) - t) * 1000;
+          }
+          return 0;
+        })""")
+        return ((read() as? Number)?.toDouble() ?: -1.0).toLong()
+    }
+
     /** Set from each ticket: on our own encoder every rung is running, so a climb needs only the stock buffer. */
     var oursEncoder: Boolean = false
 

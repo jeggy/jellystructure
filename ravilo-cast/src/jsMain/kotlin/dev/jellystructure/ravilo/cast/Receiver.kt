@@ -14,6 +14,9 @@ import dev.jellystructure.shared.tv.castChannelStep
 import dev.jellystructure.shared.tv.CastDecodeProbe
 import dev.jellystructure.shared.tv.CastRecovery
 import dev.jellystructure.shared.tv.CastRecoveryStep
+import dev.jellystructure.shared.tv.CastFrozenAction
+import dev.jellystructure.shared.tv.castFrozenAction
+import dev.jellystructure.shared.tv.castFrozenVideoCap
 import dev.jellystructure.shared.tv.castDrawsBuffering
 import dev.jellystructure.shared.tv.castRecoveryRetryMs
 import dev.jellystructure.shared.tv.castRecoveryStep
@@ -146,6 +149,16 @@ private class Receiver {
     private var qoeRebuffers = 0
     private var qoeRebufferMs = 0L
     private var qoeRebufferFrom = -1L
+    private var qoeFrozenCount = 0
+    private var qoeFrozenMs = 0L
+    private var qoeFrozenFrom = -1L
+    private var qoeFrozenPosition = 0L
+    private var qoeFrozenAhead = 0L
+    private var qoeFrozenRung: Pair<Int?, Long?> = null to null
+    private var frozenLastPosition = 0L
+    private var frozenLastMoveAt = 0L
+    private var frozenMasterRungs = emptyList<Long>()
+    private var frozenCapVideo: Int? = null
     private var qoeVariantBps: Long? = null
     private var qoeLoadAt = 0L                       // 309a0 — when this item's load began
     private var qoeFirstFrameMs: Long? = null
@@ -309,6 +322,9 @@ private class Receiver {
         val et = cast.framework.events.EventType
         // 312/313 (2026-10-09) — an update with no media time (CAF sends one once the player stops) no longer reads as 0.
         playerManager.addEventListener(et.TIME_UPDATE) { ev: dynamic -> onTime((ev.currentMediaTime as Double?)?.times(1000)) }
+        // DEB-4637 — TIME_UPDATE can stop entirely with a frozen picture; use a separate wall-clock watch.
+        GlobalScope.launch { while (true) { delay(1_000L); runCatching { watchFrozenPicture() }
+            .onFailure { console.warn("ravilo-cast: frozen watch: ${it.message}") } } }
         // R245 amendment (2026-09-18) — there is no `PLAYER_STATE_CHANGED` in CAF's EventType (checked
         // against the live framework): the constant was `undefined`, `addEventListener(undefined)`
         // throws, and the whole receiver died in start() before `context.start()` — so a TV that had
@@ -1398,13 +1414,20 @@ private class Receiver {
      * its player's ABR); with nothing measured the player's own default stands.
      */
     private fun startQoe(itemId: String, t: StreamTicket) {
+        finishFrozen(nowMs())
         // A restream of the same film (R285: a subtitle or audio change) keeps the session's counts.
         if (qoeItem != itemId) {
             if (qoeItem != null) postQoe()
             qoeRebuffers = 0; qoeRebufferMs = 0L; qoeDown = 0; qoeUp = 0
             qoeStalls.clear(); recoveryFrom = -1L
+            qoeFrozenCount = 0; qoeFrozenMs = 0L; qoeFrozenFrom = -1L; frozenCapVideo = null
         }
         qoeItem = itemId; qoeDirect = t.directPlay; qoePlayed = false; qoeSeeking = false; qoeRebufferFrom = -1L; qoeVariantBps = null
+        frozenLastPosition = positionMs; frozenLastMoveAt = nowMs(); frozenMasterRungs = emptyList()
+        absolute(t.hlsUrl)?.let { url -> GlobalScope.launch {
+            val rungs = runCatching { api?.hlsRungBandwidths(url) }.getOrNull().orEmpty()
+            if (ticket === t) frozenMasterRungs = rungs
+        } }
         // 309a0 — this item's start time (load → first frame) and the segment fetches the estimate rests on.
         qoeLoadAt = nowMs(); qoeFirstFrameMs = null; qoeSegments = 0
         runCatching {
@@ -1452,6 +1475,58 @@ private class Receiver {
         }
     }
 
+    /** DEB-4637 (DEB-2205 FR-1, FR-5) — wall-clock watch independent of CAF's TIME_UPDATE. */
+    private fun watchFrozenPicture() {
+        if (current == null || music || radio != null || qoeItem == null || loading > 0) return
+        val now = nowMs()
+        val sampled = runCatching { ((playerManager.getCurrentTimeSec() as Number).toDouble() * 1_000).toLong() }.getOrNull()
+            ?: return
+        val pos = dev.jellystructure.shared.tv.castPositionAfterUpdate(positionMs, sampled)
+        positionMs = pos
+        val state = playerManager.getPlayerState() as String?
+        val wantsPlay = !paused && state != "PAUSED" && state != "IDLE"
+        val recovering = recoverJob?.isActive == true || recoveryFrom >= 0
+        if (pos != frozenLastPosition || !wantsPlay || qoeSeeking || recovering || !qoePlayed) {
+            finishFrozen(now)
+            frozenLastPosition = pos; frozenLastMoveAt = now
+            return
+        }
+        val ahead = ReceiverAbr.bufferedAheadMs()
+        val action = castFrozenAction(pos, frozenLastPosition, frozenLastMoveAt, now, ahead, wantsPlay, qoeSeeking, recovering, qoePlayed)
+        if (action == CastFrozenAction.NONE) { finishFrozen(now); return }
+        if (action == CastFrozenAction.COUNT_FROZEN || action == CastFrozenAction.RECOVER_FROZEN) {
+            if (qoeFrozenFrom < 0) {
+                val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
+                qoeFrozenFrom = frozenLastMoveAt; qoeFrozenPosition = pos; qoeFrozenAhead = ahead
+                qoeFrozenRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to
+                    (qoeVariantBps ?: (stats?.streamBandwidth as? Number)?.toLong())
+                qoeFrozenCount++
+                qoeRebufferFrom = -1L  // a picture with buffer is not a delivery rebuffer
+            }
+        }
+        if (action == CastFrozenAction.RECOVER_FROZEN || action == CastFrozenAction.RECOVER_STUCK) {
+            finishFrozen(now)
+            if (!recover(if (action == CastFrozenAction.RECOVER_FROZEN) "frozen" else "encoder_stuck")) {
+                stopSession(); failed()
+            }
+        }
+    }
+
+    private fun finishFrozen(now: Long) {
+        if (qoeFrozenFrom < 0) return
+        val duration = (now - qoeFrozenFrom).coerceAtLeast(1_000L)
+        qoeFrozenMs += duration
+        val after = (qoeFrozenFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
+        qoeStalls += QoeStall(
+            afterFirstFrameMs = after, positionMs = qoeFrozenPosition, bufferedMs = qoeFrozenAhead,
+            durationMs = duration, phase = if (after < 10_000L) "start" else "mid", cause = QoeStallCause.FROZEN_WITH_BUFFER,
+            bufferAheadMs = qoeFrozenAhead, variantBps = qoeFrozenRung.second,
+            rungHeight = qoeFrozenRung.first, rungBps = qoeFrozenRung.second,
+        )
+        qoeFrozenFrom = -1L
+        postQoe()
+    }
+
     /**
      * DEB-3105 (DEB-3093 FR-9, FR-6) — the stream failed after its first picture: ask the server for it again at the place it stopped,
      * fetch the start of the new one, and only then LOAD it. Our encoder is asked first (FR-2 restarts its job), Jellyfin's stream second;
@@ -1459,7 +1534,7 @@ private class Receiver {
      * old stream playing behind the picture: the failed stream has nothing left to keep, and the view shows nothing for the first 2 s
      * (FR-5). True = a recovery is under way (or was started by the event that came first), so the caller does not end the cast.
      */
-    private fun recover(): Boolean {
+    private fun recover(reason: String = "encoder_failed"): Boolean {
         if (recoverJob?.isActive == true) return true
         val d = current ?: return false
         val t = ticket ?: return false
@@ -1470,11 +1545,16 @@ private class Receiver {
         if (step == CastRecoveryStep.JELLYFIN) { jellyfinAskedFor = d.itemId; notOursFor = d.itemId } else oursAskedAgainFor = d.itemId
         val at = positionMs
         val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
-        recoveryFrom = nowMs(); recoveryReason = "encoder_failed"
+        recoveryFrom = nowMs(); recoveryReason = reason
         recoveryRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to qoeVariantBps
+        if (reason == "frozen" || reason == "encoder_stuck") {
+            val cap = castFrozenVideoCap(frozenMasterRungs, recoveryRung.second ?: t.startVariantBps, capabilities().maxVideoBitrate)
+            frozenCapVideo = frozenCapVideo?.let { minOf(it, cap) } ?: cap
+        }
         recoveryKeptFirstFrame = qoeFirstFrameMs
         recoveryAfterFirstFrameMs = (recoveryFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
-        note("DEB-3105 FR-9: the stream failed at ${at}ms — asking ${if (step == CastRecoveryStep.JELLYFIN) "Jellyfin" else "our encoder"} for it again")
+        note("DEB-4637 FR-5: recovery $reason at ${at}ms — asking ${if (step == CastRecoveryStep.JELLYFIN) "Jellyfin" else "our encoder"} for it again")
+        postQoe()
         val sub = t.burnedSubtitleIndex ?: -1
         val audio = t.audioStreamIndex
         val then = activeTextPosition()
@@ -1483,7 +1563,8 @@ private class Receiver {
             var misses = 0
             while (true) {
                 val got = try {
-                    val nt = a.restream(d.itemId, sub, at, capabilities(), audio, notOurEncoder = d.itemId == notOursFor)
+                    val caps = capabilities().let { c -> frozenCapVideo?.let { c.copy(maxVideoBitrate = it) } ?: c }
+                    val nt = a.restream(d.itemId, sub, at, caps, audio, notOurEncoder = d.itemId == notOursFor)
                     if (!nt.directPlay) absolute(nt.hlsUrl)?.let { a.warmHlsStart(it, nt.startVariantBps, at) }
                     nt
                 } catch (e: CancellationException) { throw e } catch (e: Throwable) { note("DEB-3105 FR-9: the replacement failed (${e.message})"); null }
@@ -1559,6 +1640,8 @@ private class Receiver {
             droppedFrames = num(stats?.droppedFrames)?.toInt() ?: 0,
             rebufferCount = qoeRebuffers,
             rebufferMs = qoeRebufferMs,
+            frozenCount = qoeFrozenCount,
+            frozenMs = qoeFrozenMs,
             // 309 (FR-309-13) — no estimate until it rests on 3 segment fetches (before that it is Shaka's default).
             bandwidthEstimateBps = num(stats?.estimatedBandwidth)?.toLong()?.takeIf { qoeSegments >= 3 },
             bandwidthSamples = qoeSegments,
@@ -1692,6 +1775,7 @@ private class Receiver {
         val a = api ?: return
         val pos = positionMs
         sessionOpen = false
+        finishFrozen(nowMs())
         postQoe(); qoeItem = null
         GlobalScope.launch { runCatching { a.stopPlayback(d.itemId, pos) } }
     }
@@ -1707,6 +1791,7 @@ private class Receiver {
         val a = api ?: return
         if (!sessionOpen) return
         sessionOpen = false
+        finishFrozen(nowMs())
         postQoe(); qoeItem = null
         val pos = positionMs
         if (d.itemId == byItemId) runCatching { a.stopPlayback(d.itemId, pos) }

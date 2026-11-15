@@ -478,6 +478,10 @@ class TvApiClient(
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
     }
 
+    /** DEB-4637 — the current master's rungs for a frozen Cast restream ceiling. */
+    suspend fun hlsRungBandwidths(masterUrl: String): List<Long> =
+        HlsWarm.variants(client.get(masterUrl).also { it.assertSuccess() }.bodyAsText(), masterUrl).map { it.bandwidth }
+
     /**
      * DEB-3103 (FR-6) — fetches the master, the rung the stream starts on and that rung's [segments] segments at [positionMs] (the one
      * holding the position and the next, plus the rung's init segment: DEB-3549 — not the film's first two, which would restart our
