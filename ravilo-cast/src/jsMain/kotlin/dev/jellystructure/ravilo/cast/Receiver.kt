@@ -56,6 +56,7 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.PlaybackQoeReport
+import dev.jellystructure.shared.tv.TicketSubtitles
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import dev.jellystructure.shared.tv.RECEIVER_PAUSED_BEAT_MS
@@ -88,6 +89,9 @@ import kotlinx.serialization.json.Json
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLImageElement
 import org.w3c.dom.events.KeyboardEvent
+import org.w3c.dom.url.URL
+import org.w3c.files.Blob
+import org.w3c.files.BlobPropertyBag
 import kotlin.js.Promise
 
 /**
@@ -175,6 +179,13 @@ private class Receiver {
     private var oursAskedAgainFor: String? = null
     private var jellyfinAskedFor: String? = null
     private var recoverJob: Job? = null
+    // DEB-4692 (DEB-2205 FR-6) — this item's own subtitle paths (absolute), the copies of them this receiver fetched itself
+    // with its token (absolute URL → `blob:`), the item they belong to, and the fetch of the track being shown.
+    private var ownSubtitleUrls: Set<String> = emptySet()
+    private val subtitleCopies = mutableMapOf<String, String>()
+    private var subtitleCopiesItem: String? = null
+    private val subtitleAsked = mutableSetOf<String>()
+    private var subtitleJob: Job? = null
     private var recoveryFrom = -1L
     private var recoveryReason = ""
     private var recoveryRung: Pair<Int?, Long?> = null to null
@@ -724,14 +735,26 @@ private class Receiver {
         request.media.streamType = messages.StreamType.BUFFERED
         val tracks = js("[]")
         var defaultSub: Int? = null
+        // DEB-4692 — a new item drops the copies of the last one's subtitles; a restream of the same item keeps them.
+        if (subtitleCopiesItem != data.itemId) {
+            subtitleJob?.cancel(); subtitleJob = null
+            subtitleCopies.values.forEach { runCatching { URL.revokeObjectURL(it) } }
+            subtitleCopies.clear(); subtitleAsked.clear()
+            subtitleCopiesItem = data.itemId
+        }
+        val textSubs = receiverSubtitles(t).filter { it.deliveryMethod != "encode" }
+        // DEB-4692 (DEB-2205 FR-6) — a track on this server's `/api/tv/` needs the device token, which CAF cannot attach by
+        // itself: it is absolute here (a bare path would be read against the receiver's own page), and the request handlers
+        // installed in [startQoe] add the token, or hand CAF the copy this receiver already fetched.
+        ownSubtitleUrls = textSubs.mapNotNull { s -> absolute(s.url)?.takeIf { TicketSubtitles.bearer(it, serverUrl, token) != null } }.toSet()
         // receiverSubtitles() lists text first, so a text track's position — and its CAF id — is what
         // it always was; the appended burn-in candidates get no CAF Track (there is no file to load).
-        receiverSubtitles(t).filter { it.deliveryMethod != "encode" }.forEachIndexed { i, sub ->
+        textSubs.forEachIndexed { i, sub ->
             val id = 100 + i
             val track = js("new cast.framework.messages.Track(0, 'TEXT')")
             track.trackId = id
             track.type = messages.TrackType.TEXT
-            track.trackContentId = sub.url
+            track.trackContentId = absolute(sub.url)?.let { subtitleCopies[it] ?: it } ?: sub.url
             track.trackContentType = "text/vtt"
             track.subtype = if (sub.forced) messages.TextTrackType.FORCED else messages.TextTrackType.SUBTITLES
             track.language = sub.language
@@ -757,6 +780,8 @@ private class Receiver {
         positionMs = data.positionMs ?: t.startPositionMs
         paused = keepPaused
         sendStatus()
+        // DEB-4692 (DEB-2205 FR-6) — the track shown from the start is fetched in the background too; the picture never waits.
+        fetchSubtitle(defaultSub?.minus(100) ?: -1)
         return request
     }
 
@@ -1461,9 +1486,63 @@ private class Receiver {
             sc.manifest.retryParameters = retry
             cfg.shakaConfig = sc
             // 309 (FR-309-13) — count segment fetches: an estimate resting on fewer than 3 is Shaka's own guess.
-            cfg.segmentRequestHandler = { _: dynamic -> qoeSegments++ }
+            // DEB-4692 — Shaka fetches a sideloaded text track through this handler too; that one is not a segment.
+            cfg.segmentRequestHandler = { info: dynamic -> if (!authorizeSubtitle(info)) qoeSegments++ }
             playerManager.setPlaybackConfig(cfg)
         }.onFailure { note("no initialBandwidth on this framework: ${it.message}") }
+        // DEB-4692 — CAF's own player (MPL) asks for a caption file through this one; Shaka ignores it (CAF's reference:
+        // "Not supported by Shaka Player"), which is why the segment handler above does the same. Set on its own, so a
+        // framework that refuses it costs only this.
+        runCatching {
+            val cfg: dynamic = playerManager.getPlaybackConfig() ?: js("new cast.framework.PlaybackConfig()")
+            cfg.captionsRequestHandler = { info: dynamic -> authorizeSubtitle(info); Unit }
+            playerManager.setPlaybackConfig(cfg)
+        }.onFailure { note("DEB-4692: no captionsRequestHandler on this framework: ${it.message}") }
+    }
+
+    /**
+     * DEB-4692 (DEB-2205 FR-6) — a CAF request for one of this item's own subtitle paths ([ownSubtitleUrls]): the copy this
+     * receiver already fetched if there is one, else the server's file with the device token, as every other call of this
+     * receiver sends it. True = it was one of them. Any other request is left exactly as it was.
+     */
+    private fun authorizeSubtitle(info: dynamic): Boolean {
+        val url = info?.url as? String ?: return false
+        val to = TicketSubtitles.castRequest(url, ownSubtitleUrls, subtitleCopies, serverUrl, token) ?: return false
+        subtitleAsked += url
+        info.url = to.url
+        if (to.bearer != null) {
+            if (info.headers == null) info.headers = js("({})")
+            info.headers["Authorization"] = "Bearer ${to.bearer}"
+        }
+        return true
+    }
+
+    /**
+     * DEB-4692 (DEB-2205 FR-6: "A request for a track not yet extracted … answers 202 with Retry-After. The client retries in
+     * the background and shows the subtitle when it arrives. It never waits on it.") — text track [position] of this item,
+     * fetched by the receiver itself with its token ([TicketSubtitles.fetch]). CAF never asks twice, so a track whose first
+     * answer was a 202 — or that CAF asked for without going through [authorizeSubtitle] — is shown again from the copy once
+     * it has arrived. Another pick, or another item, cancels it. Off (-1), a sidecar, or a track already copied: nothing.
+     */
+    private fun fetchSubtitle(position: Int) {
+        subtitleJob?.cancel(); subtitleJob = null
+        val a = api ?: return
+        val item = subtitleCopiesItem ?: return
+        val sub = receiverSubtitles(ticket).filter { it.deliveryMethod != "encode" }.getOrNull(position) ?: return
+        val url = absolute(sub.url)?.takeIf { it in ownSubtitleUrls && it !in subtitleCopies } ?: return
+        subtitleJob = GlobalScope.launch {
+            val got = TicketSubtitles.fetch({ a.subtitleAttempt(url) }, { nowMs() }) { delay(it) }
+            if (subtitleCopiesItem != item) return@launch
+            if (got == null) { note("DEB-4692: subtitle $position never arrived"); return@launch }
+            val copy = URL.createObjectURL(Blob(arrayOf(got.text), BlobPropertyBag(type = "text/vtt")))
+            subtitleCopies[url] = copy
+            val reshow = TicketSubtitles.castReshows(got, cafAsked = url in subtitleAsked)
+            note("DEB-4692: subtitle $position arrived (${got.text.length} chars${if (got.waited) ", after a wait" else ""})${if (reshow) ", shown again" else ""}")
+            if (!reshow || activeTextPosition() != position) return@launch
+            runCatching { val shown: dynamic = playerManager.getTextTracksManager().getTrackById(100 + position); if (shown != null) shown.trackContentId = copy }
+            setActiveText(-1)
+            setActiveText(position)
+        }
     }
 
     /** DEB-3105 (FR-5) — the buffering view, drawn only if the wait is still going after [CastRecovery.DRAW_AFTER_MS]. */
@@ -1837,7 +1916,7 @@ private class Receiver {
                 is ReceiverSubPick.Burn -> reload(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1)
                 is ReceiverSubPick.Text ->
                     if (pick.unburnFirst) reload(-1, ticket?.audioStreamIndex, thenShow = step.index)
-                    else { setActiveText(step.index); sendStatus() }
+                    else { setActiveText(step.index); fetchSubtitle(step.index); sendStatus() }
             }
         }
     }
