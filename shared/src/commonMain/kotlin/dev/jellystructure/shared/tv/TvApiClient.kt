@@ -1191,6 +1191,28 @@ class TvApiClient(
         return runCatching { json.decodeFromString<Map<String, Long>>(body)["rev"] }.getOrNull()
     }
 
+    /**
+     * DEB-4692 (DEB-2205 FR-6) — one attempt at a ticket subtitle [url] ([SubTrack.url]): a path resolved against
+     * [baseUrl] and sent with the device token, an absolute sidecar URL sent as it is (see [TicketSubtitles.bearer]).
+     * Never throws but for cancellation; [TicketSubtitles.fetch] does the retrying.
+     */
+    suspend fun subtitleAttempt(url: String): SubtitleAttempt {
+        val absolute = TicketSubtitles.absolute(url, baseUrl) ?: return SubtitleAttempt.Failed("no address for a subtitle path")
+        val bearer = TicketSubtitles.bearer(absolute, baseUrl, deviceToken())
+        return try {
+            val r = client.get(absolute) {
+                if (bearer != null) { identify(); headers { append(HttpHeaders.Authorization, "Bearer $bearer") } }
+            }
+            when {
+                r.status == HttpStatusCode.Accepted -> SubtitleAttempt.NotReady(TicketSubtitles.retryAfterMs(r.headers[HttpHeaders.RetryAfter]))
+                r.status.isSuccess() -> SubtitleAttempt.Body(r.bodyAsText())
+                else -> SubtitleAttempt.Failed("HTTP ${r.status.value}")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) {
+            SubtitleAttempt.Failed(e.message ?: e::class.simpleName ?: "error")
+        }
+    }
+
     // ─── Live events (R33) ───────────────────────────────────────────────────
 
     /**
