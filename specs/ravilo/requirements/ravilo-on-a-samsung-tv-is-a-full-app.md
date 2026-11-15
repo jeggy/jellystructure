@@ -35,13 +35,11 @@ Task: DEB-4654
     full Ravilo on those TVs is a separate question that this spec does not open.
   - Development and QA happen on the Tizen TV emulator (DEB-4653), which runs **Tizen 10.0**. The owner
     tests the real TV once the app is in good shape (FR-16).
-- **Constitution.** The Ravilo constitution (Technology Mandates; principles 7 and 8) makes Compose
-  Multiplatform and `:ravilo-ui` the only home for Ravilo screens. A hand-written DOM client with its
-  own Home, Browse and detail screens is an alternative to that mandate. **No build piece starts until
-  the owner has amended it** (DEB-4654's card, question 1). The amendment this spec assumes:
-  - one Kotlin/JS DOM client, only for TVs whose web engine cannot run the Wasm build;
-  - the client's screens are the list in this spec, not parity;
-  - it still uses `shared` for every DTO and route, and `ravilo-i18n` for every string.
+- **Constitution.** The Ravilo constitution (Technology Mandates; principles 7 and 8) made Compose
+  Multiplatform and `:ravilo-ui` the only home for Ravilo screens. The owner allowed this client as the
+  one exception on 2026-11-15 (*Owner decisions* below), and the constitution now says so: one
+  Kotlin/JS DOM client, only for TVs that cannot run the Wasm build, with this spec's list rather than
+  parity, and `shared` and `ravilo-i18n` for every route, DTO and string.
 
 ## Decisions taken here
 
@@ -174,7 +172,7 @@ FR-5, redrawn in DOM.
   - A refused start says why in R237's words, with no *from your phone*. The two strings that say
     *Try again from your phone* get TV-remote variants in `ravilo-i18n`.
 
-**FR-10 · A phone can still send a title to it.** *(Subject to the owner's answer to card question 2.)*
+**FR-10 · A phone can still send a title to it.** *(Owner, 2026-11-15: keep it.)*
 
 - While a profile is signed in, the app keeps R264's events socket (FR-R264-1, FR-R264-5) under that
   profile's token. A phone's *Play on* list therefore shows it, the same way it shows an Android TV.
@@ -281,7 +279,7 @@ carries a table of its own.
 - **Downloads.**
 - Compose, WebAssembly, or a store submission. The store stays R272's manual step.
 - **Parity.** A TV feature specced for Android TV does not reach Tizen unless that spec, or an
-  amendment here, says so (card question 3).
+  amendment here, says so (owner, 2026-11-15).
 
 ## Build order
 
@@ -303,14 +301,14 @@ with its Playwright spec and its QA ticket.
 
 After 8: QA's full pass on the emulator, then the owner's real-TV test (FR-16).
 
-## Open questions — on DEB-4654's owner card
+## Owner decisions, 2026-11-15 (DEB-4654's card)
 
-1. **The constitution** (see *Scope*). Recommended: amend it for exactly one DOM client on pre-WasmGC
-   TVs, with screens limited to this spec's list.
-2. **Keep a phone sending to it** (FR-10)? Recommended: keep it. It is shipped code and almost free.
-   *No casting* is read as *the TV casts to nothing*.
-3. **A fixed feature list, not parity?** Recommended: yes. Tizen gets only what this spec lists, plus
-   explicit amendments, so a TV change does not double in cost.
+1. **Old Samsung TVs may have their own screens:** *"Yes, old Samsung TVs only."* The Ravilo
+   constitution carries the exception.
+2. **A phone can still send a show to the signed-in TV:** *"Yes, keep it."* FR-10 stands. *No casting*
+   means the TV casts to nothing.
+3. **New TV features reach the Samsung app only when asked for:** *"Yes, a fixed list."* This spec's
+   list plus explicit amendments, never parity.
 
 ## Amendment 2026-11-15 (DEB-4653's measurement) — the bundle must parse on Chromium 63
 

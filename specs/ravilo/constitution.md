@@ -94,6 +94,17 @@ in common code and run on both.
     minified DEX. `speed-profile` alone is insufficient.
   - See `research-reports/ravilo-tv-navigation-jank-aot-2026-06-27.md`.
 
+### The one exception: Ravilo on old Samsung TVs (owner, 2026-11-15, DEB-4654)
+Samsung TVs whose web engine cannot run the Wasm build (Tizen 5.0 runs Chromium 63; WasmGC needs 119)
+get **one** hand-written Kotlin/JS DOM client, `ravilo-screen`, with screens of its own. The owner
+allowed it on DEB-4654's card: *"Yes, old Samsung TVs only."* The exception is fenced:
+- **Only that client and only those TVs.** No other Ravilo target gets screens outside `:ravilo-ui`.
+- **A fixed feature list, not parity** (the same card). The client carries only what
+  `specs/ravilo/requirements/ravilo-on-a-samsung-tv-is-a-full-app.md` lists, plus explicit amendments.
+  A TV feature specced for Android TV does not reach it unless its spec says so.
+- **The wire and the words stay shared.** Every route and DTO comes from `:shared`, and every string
+  from `:ravilo-i18n`. The client has no table of its own and no DTO of its own.
+
 ### Player engine & licensing — forked from `jellyfin-androidtv` (GPL)
 Ravilo's **Android** player is **not** a from-scratch Media3 integration. The official
 `jellyfin-androidtv` player is the best-tested playback stack in the ecosystem, so Ravilo **forks its
@@ -292,7 +303,7 @@ Ravilo shares jellystructure's **brand DNA** but is its own TV skin:
    only; the two WASM bundles (DOM admin, canvas Ravilo) coexist and never merge.
 8. **Shared-first UI** — screens/theme/components/focus live in `:ravilo-ui` common code; no shared
    screen depends on an Android-only Compose artifact; platform modules add only `actual`s and entry
-   points.
+   points. The one exception is the old-Samsung-TV client above (owner, 2026-11-15).
 9. **Non-admin Jellyfin users are allowed** in Ravilo (it is a viewer app), unlike the admin web
    console.
 10. **Android player = forked `jellyfin-androidtv` engine, GPL-contained.** The Android `actual` is
