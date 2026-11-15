@@ -206,6 +206,31 @@ This applies to an HLS play, ours or Jellyfin's.
 4. Each recovery is a stop (FR-1, cause `recovery`) and is logged in one line, for example
    `recovery: froze on 2160p@20000k (hevc) with 9 s buffered → ours 1080p@8000k h264 (DEB-2205 FR-5)`.
 
+> *Amendment 2026-11-15 (DEB-4636) — the Cast receiver measures FR-1's frozen stop and makes FR-5's recovery.*
+> On 2026-11-15 a cast froze 36 s into an episode and stayed on the receiver's buffering view for good. That was the third
+> episode of a shuffle on our encoder: two rungs, a ~4 Mb/s path, two whole episodes played clean before it. The clock stopped
+> with the 40 s buffer full, so Shaka stopped fetching. No error was raised, so DEB-3105's restream recovery (which runs only
+> on an error) never ran. The receiver reports progress only while its clock moves, so the server saw only silence: the encoder
+> idled out after 60 s, the stop watchdog ended the play after 90 s, and the receiver's page stayed open and answered pings.
+> "Where they apply" in this spec's scope is made explicit for `ravilo-cast`:
+> - **The measure (FR-1).** The receiver counts a `frozen_with_buffer` stop exactly as the 2026-10-23 slice-3 amendment defines
+>   it: position not advancing for ≥ 1 s while the viewer wants it playing (not paused, not seeking, not in a recovery), after
+>   the item's first frame, with ≥ 3 s buffered ahead of the playhead (the video element's `buffered` range, as `ReceiverAbr`
+>   reads it). It goes in `frozen_count` / `frozen_ms` and in `stalls_json` with `cause: frozen_with_buffer`, the buffer ahead
+>   and the rung. A frozen stop is not a rebuffer, and 309's record ignores it, as on Android.
+> - **The recovery (FR-5.2).** A frozen stop that reaches **5 s** calls the receiver's existing restream recovery at the
+>   current position, with `recoveryReason = "frozen"`. The value is already on the wire (DEB-3103), so nothing is added. The
+>   ladder decision is the existing `castRecoveryStep`, unchanged: our encoder again first, Jellyfin second, then the error
+>   screen. The restream's capabilities carry FR-5.2's ceiling (`max_video_bitrate`, in that item's units) one rung below the
+>   frozen rung when the master lists one. On the lowest rung it asks for the same rung. Nothing is asked above the frozen rung.
+> - **The backstop.** A position that has not advanced for **30 s** while the viewer wants it playing, whatever the buffer
+>   says, calls the same recovery with `recoveryReason = "encoder_stuck"`. That covers a clock that stops with the buffer
+>   empty and no request failing. 30 s is above Shaka's 20 s request timeout, so a slow segment that is still arriving gets
+>   its first try. A Shaka error that comes first keeps today's path.
+> - **The evidence (FR-8).** The stop and the recovery each leave their entry, and the QoE report is posted when the recovery
+>   starts as well as when it finishes. A freeze that never recovers therefore still reaches the server's `playback_qoe` row.
+> - Music and a live station are untouched: DEB-3400 owns a song that stops moving.
+
 ### FR-6 — A subtitle never holds the picture, and is always the track it says (amends 179)
 
 - **Only the shown subtitle is loaded.** The ticket still lists every text track (the picker needs them), but the
@@ -389,6 +414,12 @@ This applies to an HLS play, ours or Jellyfin's.
    its QoE row with `encoder = 'direct'` and no `recovery` entry, writes no `stalled_bps`, and the next episode starts
    on the file. On prod after the release carrying it: direct plays on the household TVs that move to a ladder fall
    from 20 of 59 (3–8 Nov) to the few that a real shortfall explains.
+9. **A frozen cast picks itself up** (2026-11-15, DEB-4636). The receiver's decision is unit-tested in `CastRecoveryTest`: frozen
+   at 5 s with ≥ 3 s buffered, the backstop at 30 s, never while paused, seeking or recovering, never before the first frame. On a
+   Chromecast, a cast on our encoder whose receiver clock is held still with buffer in hand (QA: a debug hook that holds the
+   element's clock without pausing it; a plain `pause()` is a viewer pause and does not count) is playing again
+   within ~10 s at the same place. Its QoE row carries `frozen_count ≥ 1`, a `frozen_with_buffer` entry and a `recovery`
+   entry with `reason: frozen`.
 
 ## Non-goals
 
