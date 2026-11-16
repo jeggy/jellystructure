@@ -327,3 +327,13 @@ therefore never been able to start on the owner's TV.** FR-13 changes:
 - Both land in build piece 1 (DEB-4656), **before** any screen. The same fix makes today's receiver start on
   Tizen 5.0, so it is worth having even if the owner's card stops the full app.
 
+
+## Amendment 2026-11-16 (DEB-4719) — REST from the widget does need a CORS exception on Tizen 5.0
+
+The *No wire change* decision says *"REST from a widget needs no CORS exception (247)"*. On the 5.0 emulator that
+is false. Every POST the widget makes (sign-in by both routes, `playback/start`) gets the CORS plugin's empty 403,
+because Chromium 63 puts the page's origin on a POST. GETs are unaffected. The fix is server-side only and is
+specified in 247's *Amendment 2026-11-16* (FR-247-4): `/api/tv/**` except `/api/tv/admin/**`, and `/api/remote/**`,
+admit `file://`. It is not a wire change: no route, field or DTO moves. Every piece of this spec that signs in or
+plays is untestable on 5.0 until FR-247-4 is built. 247's open question 1, carried under *On the owner's TV* above,
+is now answered on the 5.0 emulator by FR-247-4's acceptance step 1, ahead of the TV.

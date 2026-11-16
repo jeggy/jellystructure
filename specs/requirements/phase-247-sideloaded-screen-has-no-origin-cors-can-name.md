@@ -4,7 +4,7 @@
 
 Backend CORS for the sideloaded Tizen widget (`ravilo-screen`), plus the e2e tests that pin it. FR-247-1 and
 FR-247-2 built 2026-09-19; FR-247-3 built 2026-09-25 for the one route that needed it, measured on the
-Tizen 10.0 TV emulator and against the real binary. **Amended by DEB-4654** — see *Amendment 2026-11-15* at
+Tizen 10.0 TV emulator and against the real binary. **Amended by DEB-4654 and DEB-4719** — see the amendments at
 the foot.
 
 **Open question 1 answered 2026-09-25 on the Tizen 10.0 TV emulator — in two halves, and the first answer
@@ -201,3 +201,85 @@ but it opens no other socket, so **this phase's FRs and non-goals stand unchange
   FR-16). If the set sends `Origin: null` on the handshake, the events route needs a different answer.
   Browsing and playing from the TV would still work; a phone sending to it would not.
 
+
+## Amendment 2026-11-16 (DEB-4719) — on Tizen 5.0 a widget's POST carries an Origin
+
+**Measured** by Turið on DEB-4704, 2026-11-16: Tizen 5.0 TV emulator (`ravilo-tv-5`, Chromium 63), `.wgt`
+built from `e377880b`, against prod `v1.67-35-gf1bded57`.
+
+- Every POST from the widget got an empty **403**: `/api/tv/login`, `/api/tv/signin/code` and
+  `/api/tv/playback/start`. An empty 403 is the CORS plugin's refusal (the table above). `AuthPlugin`'s
+  refusals carry a JSON body.
+- Every GET with the device token got **200** from the same page, including `/api/tv/subtitles/…`.
+- By curl, `Origin: file://` and `Origin: null` both got 403. With no `Origin`, the request reached the route
+  and got its own 400 or 401.
+
+So open question 1's *"REST needs no exception"* holds on 10.0 only. On 5.0 the runtime still lets the widget
+past the browser's CORS. That part is inferred, not measured: an authenticated GET would otherwise be
+preflighted and refused, and it is not. But Chromium 63 puts the document's origin on every non-GET request,
+and the server's CORS plugin refuses it. On the owner's set, sign-in and every play from the TV are refused.
+DEB-4654's *"REST from a widget needs no CORS exception (247)"* is false there.
+
+**Not yet measured: the value the page itself sends.** The curl runs prove that both candidates are refused.
+They do not show which one the page sends, and the page-side capture was not kept. The 5.0 events handshake
+(open question 1) was never reached either, because the screen could not sign in. **Step 1 of FR-247-4's
+acceptance measures both before anything else is verified.** The expected answer is `file://`, for two
+reasons. It is what the same runtime family sent on 10.0's handshake. And Tizen's web runtime gives a widget
+universal file access, under which Chromium writes a `file:` document's origin as `file://`, not `null`. That
+is an expectation, not a fact.
+
+**FR-247-4 — Every token-only route admits the widget's origin, and every cookie route keeps refusing it.**
+
+- **Scope: the routes `AuthPlugin` authenticates by device token or API key and never by a cookie, plus the
+  open paths beneath them.**
+  - `/api/tv/**`, except `/api/tv/admin/**`, which is cookie-authenticated and keeps the shared policy.
+  - `/api/remote/**`. The widget POSTs `/api/remote/play` for the next episode (`Screen.kt`, `playNext`).
+    That branch accepts an API key or a device token and nothing else: no token, no request.
+  - `/api/tv/events` moves into this scope. `/api/remote/events` now admits the widget too. This replaces
+    FR-247-3's *"`/api/remote/events` is untouched"* and the first non-goal's *"or to the policy on any route
+    but `/api/tv/events`"*. Both of those routes read only a token.
+- **Unchanged, still the shared policy:** `/ws`, `/api/tv/admin/**`, `/api/auth/**`, the SSO routes, and every
+  other `/api/**` route. `/api/health`, the setup probe, is a GET, and on 5.0 a GET carries no `Origin`.
+- **A prefix, not a named list.** The 247 reasoning holds: a route that reads no cookie gains nothing from an
+  origin gate. That property belongs to the `AuthPlugin` branch, and the branch is chosen by prefix. A named
+  list would go stale the first time the full app adds a POST (My List, played state). That POST would then
+  403 on the owner's set and nowhere in CI. In return the prefix carries one rule: **a route under these
+  prefixes that ever reads a cookie re-installs the shared policy**, as `/api/tv/admin/**` does.
+- **The origin is `file://` exactly**: FR-247-3's `TIZEN_WIDGET_ORIGIN`. `null` stays refused everywhere. If
+  step 1 measures `null`, the build stops and the security call below is taken first.
+- **One policy, restated.** FR-247-3's events policy becomes the widget policy: the shared policy plus the one
+  origin, still in `server/CorsPolicy.kt`. It is installed over both prefixes, and `/api/tv/admin` re-installs
+  the shared policy, because a child's CORS replaces its parent's (measured 2026-09-25). Today the routes are
+  registered as `post("/tv/login")` under `route("/api")`. How the install reaches them is the build's
+  choice; the requirement is the outcome.
+- **Tests.** `CorsPolicyTest` in a real in-process application:
+  - `file://` is admitted on a POST to `/api/tv/login`, `/api/tv/signin/code`, `/api/tv/playback/start` and
+    `/api/remote/play`, and on the `/api/tv/events` handshake. Admitted means no 403; the route's own answer
+    comes back.
+  - `file://` is refused with 403 on an `/api/tv/admin/` route, on `/ws`, on a cookie `/api/` route and on
+    `/api/auth/login`.
+  - `null` and `https://evil.example.com` are refused on all of them.
+  - An allow-listed dev origin is still admitted on all of them.
+
+  `ravilo-screen-cors.spec.ts` asks the same questions with real requests and handshakes against the real
+  binary.
+
+**If 5.0 sends `null` (the security answer, for Tróndur and not the owner; the Tizen screen is in no prod
+image).** 247 refused `null` on a token-only route as a precaution, not because of a named attack: a page that
+forges `null` can only use credentials it already holds, since these routes read no cookie. On the wider
+scope it gains exactly one thing: **the viewer's network address**. A hostile page could make each visitor's
+browser send `/api/tv/login` (or `/api/tv/account/password`) password guesses and read the answers, spreading
+`LoginRateLimiter`'s per-address window across its visitors. The fresh codes that `/api/tv/signin/code` and
+`/api/tv/screen/code` answer are no gain: one curl gets the same code. **Recommendation, if it comes to that:**
+admit `null` on the scope except the two routes that take a password, and on such a set the Tizen screen signs
+in by code only.
+
+**Acceptance (FR-247-4)**, on the Tizen 5.0 emulator first:
+
+1. **Measure before verifying.** Point the installed widget at a listener on the host, as on 2026-09-25, and
+   record the `Origin` header of one POST (`/api/tv/signin/code`) and of the `/api/tv/events` handshake. Write
+   both values on the task. This closes open question 1 for 5.0.
+2. Against a build with FR-247-4, the widget signs in by both routes, plays an item, and holds its events
+   socket. A phone's play reaches it, and so does the next episode (`/api/remote/play`).
+3. A curl matrix against the same build, with `file://`, `null` and `https://evil.example.com` × a POST
+   route, `/ws` and an admin route. `file://` passes only on the POST route. Everything else gets 403.
