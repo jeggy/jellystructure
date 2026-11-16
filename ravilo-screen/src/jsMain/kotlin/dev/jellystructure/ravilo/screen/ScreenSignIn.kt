@@ -1,7 +1,6 @@
 package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.ravilo.i18n.t
-import dev.jellystructure.ravilo.receiver.ReceiverStrings
 import dev.jellystructure.shared.qr.QrEncoder
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.TvApiClient
@@ -40,7 +39,7 @@ internal class ScreenSignIn(
     private var generation = 0
     private var signingIn = false
 
-    private fun label(key: String, vars: Map<String, String> = emptyMap()) = t(key, ReceiverStrings.lang, vars)
+    private fun label(key: String, vars: Map<String, String> = emptyMap()) = t(key, ScreenLanguage.lang, vars)
 
     fun open(withProfiles: Boolean) {
         hasProfiles = withProfiles

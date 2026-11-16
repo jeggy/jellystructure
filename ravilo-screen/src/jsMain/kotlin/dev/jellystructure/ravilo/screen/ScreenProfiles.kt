@@ -1,7 +1,6 @@
 package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.ravilo.i18n.t
-import dev.jellystructure.ravilo.receiver.ReceiverStrings
 import dev.jellystructure.shared.tv.PairResult
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
@@ -48,6 +47,15 @@ internal class ScreenProfileStore {
         persist()
         if (localStorage.getItem(ACTIVE_PROFILE_KEY) == userId) setActive(null)
     }
+    companion object {
+        /** DEB-4663 (FR-11) — a new server address signs every profile out: their tokens belong to the old one. */
+        fun forgetAll() {
+            localStorage.removeItem(PROFILES_KEY)
+            localStorage.removeItem(ACTIVE_PROFILE_KEY)
+            localStorage.removeItem(LEGACY_TOKENS_KEY)
+        }
+    }
+
     private fun persist() = localStorage.setItem(PROFILES_KEY, profileJson.encodeToString(all))
 
     /** R264 persisted only userId → token and every such token was kind=screen. Drop before any boot route. */
@@ -65,10 +73,11 @@ internal class ScreenProfiles(
     private val onAdd: () -> Unit,
     private val onSwitch: () -> Unit,
     private val onSignOut: () -> Unit,
+    private val onSettings: () -> Unit = {},
 ) {
     private val picker get() = document.getElementById("profile-picker") as HTMLElement
     private val menu get() = document.getElementById("profile-menu") as HTMLElement
-    private fun label(key: String) = t(key, ReceiverStrings.lang)
+    private fun label(key: String) = t(key, ScreenLanguage.lang)
     private var targets: List<HTMLElement> = emptyList()
     private var selected = 0
 
@@ -93,7 +102,7 @@ internal class ScreenProfiles(
         targets = listOf(
             button(label("nav.my_list")) {},
             button(label("profile.switch")) { onSwitch() },
-            button(label("nav.settings")) {},
+            button(label("nav.settings")) { onSettings() },
             button(label("profile.sign_out")) { onSignOut() },
         )
         targets.forEach { body.appendChild(it) }

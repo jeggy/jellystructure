@@ -1,6 +1,5 @@
 package dev.jellystructure.ravilo.screen
 
-import dev.jellystructure.ravilo.receiver.ReceiverStrings
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import io.ktor.client.request.get
@@ -29,11 +28,13 @@ internal suspend fun runServerSetup(): String {
     val input = document.getElementById("setupHost") as HTMLInputElement
     val hint = document.getElementById("setupHint") as HTMLElement
     val button = document.getElementById("setupConnect") as HTMLElement
-    document.getElementById("setupTitle")?.textContent = ReceiverStrings.t("receiver.setup_title")
-    button.textContent = ReceiverStrings.t("receiver.setup_connect")
-    hint.textContent = ReceiverStrings.t("receiver.setup_hint")
+    document.getElementById("setupTitle")?.textContent = ScreenLanguage.t("receiver.setup_title")
+    button.textContent = ScreenLanguage.t("receiver.setup_connect")
+    hint.textContent = ScreenLanguage.t("receiver.setup_hint")
     // FR-R269-7 — a hold-Back reopen prefills the address that was just working, never a blank field.
-    localStorage.getItem(SETUP_PREFILL_KEY)?.let { input.value = it.removePrefix("https://").removePrefix("http://") }
+    // DEB-4663 — an `http://` address keeps its scheme: stripped, it would be re-read as `https://` and
+    // look like a new address, which signs every profile out.
+    localStorage.getItem(SETUP_PREFILL_KEY)?.let { input.value = it.removePrefix("https://") }
     localStorage.removeItem(SETUP_PREFILL_KEY)
     // The idle screen is `on` in the static markup (so a set with a server never flashes black); with
     // no server yet it would sit under setup, both "on" at once (seen in the emulator's DOM).
@@ -48,12 +49,12 @@ internal suspend fun runServerSetup(): String {
         if (host.isBlank()) return
         val hasScheme = host.startsWith("http://", ignoreCase = true) || host.startsWith("https://", ignoreCase = true)
         val url = (if (hasScheme) host else "https://$host").trimEnd('/')
-        hint.textContent = ReceiverStrings.t("receiver.setup_trying")
+        hint.textContent = ScreenLanguage.t("receiver.setup_trying")
         val ok = runCatching {
             val r = probeClient.get("$url/api/health")
             r.status.isSuccess() && r.bodyAsText().contains("\"status\":\"ok\"")
         }.getOrDefault(false)
-        if (ok) resolved.complete(url) else hint.textContent = ReceiverStrings.t("receiver.setup_not_found")
+        if (ok) resolved.complete(url) else hint.textContent = ScreenLanguage.t("receiver.setup_not_found")
     }
     button.addEventListener("click", { GlobalScope.launch { tryConnect() } })
     input.addEventListener("keydown", { e -> if ((e as KeyboardEvent).key == "Enter") GlobalScope.launch { tryConnect() } })
@@ -63,3 +64,7 @@ internal suspend fun runServerSetup(): String {
     root.classList.remove("on")
     return url
 }
+
+/** Two typings of one address: scheme-and-host compare without case or a trailing slash. */
+internal fun sameServer(a: String, b: String): Boolean =
+    a.trim().trimEnd('/').lowercase() == b.trim().trimEnd('/').lowercase()

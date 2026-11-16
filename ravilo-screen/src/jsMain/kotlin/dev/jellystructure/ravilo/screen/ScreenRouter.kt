@@ -1,7 +1,5 @@
 package dev.jellystructure.ravilo.screen
 
-import dev.jellystructure.ravilo.i18n.t
-import dev.jellystructure.ravilo.receiver.ReceiverStrings
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
@@ -15,7 +13,11 @@ internal data class ScreenRouteEntry(
 )
 
 /** The DOM shell stays mounted while R264's player covers it. */
-internal class ScreenShell(private val onProfileMenu: () -> Unit = {}) {
+internal class ScreenShell(
+    private val serverUrl: String = "",
+    private val onChangeServer: () -> Unit = {},
+    private val onProfileMenu: () -> Unit = {},
+) {
     private val root get() = document.getElementById("shell") as HTMLElement
     private val body get() = document.getElementById("shell-body") as HTMLElement
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
@@ -46,6 +48,16 @@ internal class ScreenShell(private val onProfileMenu: () -> Unit = {}) {
         root.classList.remove("on")
     }
 
+    /** DEB-4663 (FR-11) — Settings is a route like Movies: Back pops to where the viewer came from. */
+    fun openSettings() {
+        if (!visible || player) return
+        if (entries.last().name != ScreenSettings.ROUTE) {
+            entries.add(ScreenRouteEntry(ScreenSettings.ROUTE, ScreenSettings.firstFocusId(), mutableMapOf("bar" to "nav-profile")))
+        }
+        root.classList.add("on")
+        render()
+    }
+
     fun returnFromPlayer() {
         if (!visible) return
         if (player && entries.last().name == "player") entries.removeAt(entries.lastIndex)
@@ -74,21 +86,25 @@ internal class ScreenShell(private val onProfileMenu: () -> Unit = {}) {
 
     private fun render() {
         val current = entries.last()
-        body.textContent = ""
-        val placeholder = document.createElement("div") as HTMLElement
-        placeholder.id = "shell-page-target"
-        placeholder.className = "shell-target shell-placeholder"
-        placeholder.setAttribute("data-row", "body")
-        placeholder.setAttribute("tabindex", "-1")
-        placeholder.textContent = t("nav.${current.name}", ReceiverStrings.lang)
-        body.appendChild(placeholder)
-        renderScreenNav(current.name, ReceiverStrings.lang)
+        if (current.name == ScreenSettings.ROUTE) {
+            ScreenSettings.render(body, serverUrl, onLanguage = { render() }, onChangeServer = onChangeServer)
+        } else {
+            body.textContent = ""
+            val placeholder = document.createElement("div") as HTMLElement
+            placeholder.id = "shell-page-target"
+            placeholder.className = "shell-target shell-placeholder"
+            placeholder.setAttribute("data-row", "body")
+            placeholder.setAttribute("tabindex", "-1")
+            placeholder.textContent = ScreenLanguage.t("nav.${current.name}")
+            body.appendChild(placeholder)
+        }
+        renderScreenNav(current.name, ScreenLanguage.lang)
         focus.refocus()
     }
 
     private fun activate() {
         val focused = entries.last().focusId
-        if (!focused.startsWith("nav-")) return
+        if (!focused.startsWith("nav-")) { document.getElementById(focused)?.let { (it as HTMLElement).click() }; return }
         val destination = focused.removePrefix("nav-")
         if (destination == "profile") { onProfileMenu(); return }
         if (entries.last().name == destination) {

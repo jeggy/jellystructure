@@ -97,4 +97,26 @@ class RaviloStringsTest {
             assertFalse(text.contains("AE"), "$lang wrote the AE digraph in player.up_next: '$text'")
         }
     }
+
+    /**
+     * DEB-4663 (FR-11, FR-12) — the Tizen app's Settings: every key it adds is written in all three
+     * shipped languages, not left to the English fallback.
+     */
+    @Test
+    fun the_tizen_settings_keys_exist_in_all_three_languages() {
+        val keys = listOf(
+            "settings.language_tv", "settings.server", "settings.change_server",
+            "settings.server_signs_out", "settings.app_version", "settings.server_version",
+        )
+        val english = keys.map { t(it, "en") }
+        for (lang in listOf("en", "da", "fo")) {
+            for ((i, key) in keys.withIndex()) {
+                val text = t(key, lang)
+                assertTrue(text != key, "$key has no string in $lang")
+                if (lang != "en" && key != "settings.server") {
+                    assertTrue(text != english[i], "$key is still English in $lang")
+                }
+            }
+        }
+    }
 }

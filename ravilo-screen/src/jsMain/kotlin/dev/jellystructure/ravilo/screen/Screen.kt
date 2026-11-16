@@ -1,7 +1,5 @@
 package dev.jellystructure.ravilo.screen
 
-import dev.jellystructure.ravilo.i18n.LastLanguage
-import dev.jellystructure.ravilo.receiver.ReceiverStrings
 import dev.jellystructure.ravilo.receiver.audioTracksOf
 import dev.jellystructure.ravilo.receiver.hms
 import dev.jellystructure.ravilo.receiver.nowMs
@@ -68,7 +66,7 @@ private const val PICKER_ROWS = 9
 
 private class Screen(private val serverUrl: String) {
     private val backend = detectMediaBackend()
-    private val shell = ScreenShell { openProfileMenu() }
+    private val shell = ScreenShell(serverUrl, ::reopenServerSetup) { openProfileMenu() }
     private val deviceId = loadOrCreateDeviceId()
     private val profiles = ScreenProfileStore()
     private val legacyTokens = profiles.takeLegacyTokens()
@@ -82,7 +80,7 @@ private class Screen(private val serverUrl: String) {
     )
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired) { showPicker() }
-    private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut)
+    private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut, ::openSettings)
     private var eventsJob: Job? = null
     private var config: RaviloConfig? = null
     private var itemId: String? = null
@@ -163,9 +161,8 @@ private class Screen(private val serverUrl: String) {
         if (legacyTokens.isNotEmpty()) GlobalScope.launch {
             for (token in legacyTokens) runCatching { api.unpair(token) }
         }
-        // R279 — idle already drew in the remembered language (ReceiverStrings seeds itself from it),
-        // so the pairing screen is never English in a Danish house just because nothing has loaded
-        // yet. If this set is already enrolled, the active viewer's own setting supersedes it.
+        // R279 — idle already drew in the set's own language ([ScreenLanguage] is resolved before any screen),
+        // so the pairing screen is never English in a Danish house just because nothing has loaded yet.
         if (activeUserId != null) GlobalScope.launch { adoptLanguageOfActiveUser() }
         startEvents()
         GlobalScope.launch { tickLoop() }
@@ -179,7 +176,7 @@ private class Screen(private val serverUrl: String) {
         segments = null; nextId = null; nextTitle = null; nextKicker = null   // R264
         hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
         showSubtitle(-1)
-        el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
+        el("idle-sentence").textContent = ScreenLanguage.t("cast.ready")
         // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
         // a TV is pointed at a server that has since moved.
         document.getElementById("idle-server")?.textContent = serverUrl.removePrefix("https://").removePrefix("http://")
@@ -216,6 +213,12 @@ private class Screen(private val serverUrl: String) {
 
     private fun openProfileMenu() = profileUi.showMenu()
 
+    /** DEB-4663 (FR-11) — the profile menu's Settings. */
+    private fun openSettings() {
+        profileUi.hide()
+        shell.openSettings()
+    }
+
     private fun signOut() {
         val userId = activeUserId ?: return
         val token = tokens[userId]
@@ -246,24 +249,17 @@ private class Screen(private val serverUrl: String) {
     }
 
     /**
-     * R279 — draws this set in the language of whichever viewer it is currently acting for.
+     * The active viewer's config, fetched whenever the viewer changes (autoplay-next reads it).
      *
-     * A Tizen receiver holds a token per (device, user), so "the user" changes: whoever last sent it
-     * something to play is who it is acting for, and [onPlayItem] moves `activeUserId` accordingly.
-     * The config used to be fetched exactly once, on the first pairing, so a household's second
-     * viewer got the first one's language forever.
-     *
-     * Re-renders whatever is on screen now, since idle is a long-lived screen that would otherwise
-     * keep the previous language until something else redrew it.
+     * R279 drew the set in the viewer's own `uiLanguage` here. DEB-4663 (FR-11) gives the Tizen app its own
+     * language setting — the TV's, or one the viewer picked on this TV — so the viewer's server-side
+     * language no longer moves it.
      */
     private suspend fun adoptLanguageOfActiveUser() {
         val requestedUser = activeUserId ?: return
         val fresh = runCatching { api.getConfig() }.getOrNull() ?: return
         if (activeUserId != requestedUser) return
         config = fresh
-        val before = ReceiverStrings.lang
-        ReceiverStrings.adopt(fresh.uiLanguage)
-        if (ReceiverStrings.lang != before && !loaded) idle()
     }
 
     // ── events socket: reconnect with backoff (FR-R264-6) ──
@@ -321,14 +317,14 @@ private class Screen(private val serverUrl: String) {
         loaded = false
         el("loading-title").textContent = env.title.orEmpty()
         el("loading-kicker").textContent = env.kicker.orEmpty()
-        el("loading-label").textContent = ReceiverStrings.t("loading")
+        el("loading-label").textContent = ScreenLanguage.t("loading")
         shell.showPlayer()
         show("loading")
         // R237 (FR-R237-5) — one "Still trying…" line if the start runs past ~5 s, nothing else.
         val generation = ++loadGeneration
         GlobalScope.launch {
             delay(5_000)
-            if (generation == loadGeneration && !loaded) el("loading-label").textContent = ReceiverStrings.t("loading.still_trying")
+            if (generation == loadGeneration && !loaded) el("loading-label").textContent = ScreenLanguage.t("loading.still_trying")
         }
         val t = negotiate(env.jellyfinId) ?: return
         ticket = t
@@ -354,11 +350,11 @@ private class Screen(private val serverUrl: String) {
             if (http != null && http.status == 503) {
                 val wait = http.retryAfterSeconds ?: 5
                 if (busySinceMs == null) busySinceMs = nowMs()
-                el("busy-t").textContent = ReceiverStrings.t("srv.busy")
-                el("busy-s").textContent = ReceiverStrings.t("srv.busy_sub")
+                el("busy-t").textContent = ScreenLanguage.t("srv.busy")
+                el("busy-s").textContent = ScreenLanguage.t("srv.busy_sub")
                 show("busy")
                 repeat(wait) {
-                    el("busy-wait").textContent = ReceiverStrings.t("cast.waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
+                    el("busy-wait").textContent = ScreenLanguage.t("cast.waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
                     delay(1_000)
                 }
                 continue
@@ -391,8 +387,8 @@ private class Screen(private val serverUrl: String) {
         }
         backend.close()
         hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
-        el("failed-t").textContent = ReceiverStrings.t(title)
-        el("failed-s").textContent = ReceiverStrings.t(body)
+        el("failed-t").textContent = ScreenLanguage.t(title)
+        el("failed-s").textContent = ScreenLanguage.t(body)
         show("failed")
         loaded = false; playing = false
         sendStatus()
@@ -509,7 +505,7 @@ private class Screen(private val serverUrl: String) {
             if (due && !nextUpShown && !pickerOpen) showNextUp()
             if (nextUpShown) {
                 val left = ((nextUpDeadline - nowMs()) / 1000).toInt().coerceAtLeast(0)
-                if (autoplay()) el("nu-c").textContent = ReceiverStrings.t("receiver.starts_in", left)
+                if (autoplay()) el("nu-c").textContent = ScreenLanguage.t("receiver.starts_in", left)
                 if (autoplay() && nowMs() >= nextUpDeadline) playNext()
             }
         }
@@ -519,7 +515,7 @@ private class Screen(private val serverUrl: String) {
 
     private fun showSkip() {
         skipShown = true
-        el("skip").textContent = ReceiverStrings.t("player.skip_intro")
+        el("skip").textContent = ScreenLanguage.t("player.skip_intro")
         el("skip").classList.add("on")
     }
     private fun hideSkip() { skipShown = false; el("skip").classList.remove("on") }
@@ -536,9 +532,9 @@ private class Screen(private val serverUrl: String) {
     private fun showNextUp() {
         nextUpShown = true
         nextUpDeadline = nowMs() + NEXT_UP_SECS * 1000L
-        el("nu-k").textContent = ReceiverStrings.t("player.up_next")
+        el("nu-k").textContent = ScreenLanguage.t("player.up_next")
         el("nu-t").textContent = listOfNotNull(nextKicker, nextTitle).joinToString(" · ")
-        el("nu-c").textContent = if (autoplay()) ReceiverStrings.t("receiver.starts_in", NEXT_UP_SECS) else ReceiverStrings.t("player.next")
+        el("nu-c").textContent = if (autoplay()) ScreenLanguage.t("receiver.starts_in", NEXT_UP_SECS) else ScreenLanguage.t("player.next")
         el("nextup").classList.add("on")
         sendStatus()
     }
@@ -588,7 +584,7 @@ private class Screen(private val serverUrl: String) {
 
     private fun currentRows(): List<PickerRow> = pickerRows(
         ticket, pickerTab, pickerGroup, selectedSub,
-        t = { ReceiverStrings.t(it) }, tn = { k, n -> ReceiverStrings.t(k, n) },
+        t = { ScreenLanguage.t(it) }, tn = { k, n -> ScreenLanguage.t(k, n) },
     )
 
     private fun renderPicker() {
@@ -597,20 +593,20 @@ private class Screen(private val serverUrl: String) {
         if (pickerFocus < pickerTop) pickerTop = pickerFocus
         if (pickerFocus >= pickerTop + PICKER_ROWS) pickerTop = pickerFocus - PICKER_ROWS + 1
         val group = pickerGroup
-        el("pk-head").textContent = if (group == null) ReceiverStrings.t("player.audio_subs")
+        el("pk-head").textContent = if (group == null) ScreenLanguage.t("player.audio_subs")
             else groupTitle()
         val tabs = el("pk-tabs")
         tabs.innerHTML = ""
         if (group == null) {
             for ((tab, key) in listOf(PickerTab.SUBTITLES to "player.tab_subtitles", PickerTab.AUDIO to "player.tab_audio")) {
                 val b = document.createElement("b") as HTMLElement
-                b.textContent = ReceiverStrings.t(key)
+                b.textContent = ScreenLanguage.t(key)
                 if (tab == pickerTab) b.className = "on"
                 tabs.appendChild(b)
             }
         } else {
             val b = document.createElement("b") as HTMLElement
-            b.textContent = "◀ " + ReceiverStrings.t("player.back")
+            b.textContent = "◀ " + ScreenLanguage.t("player.back")
             tabs.appendChild(b)
         }
         val list = el("pk-rows")
@@ -644,7 +640,7 @@ private class Screen(private val serverUrl: String) {
         val first = groups.getOrNull(g)?.versions?.firstOrNull()?.flatIndex ?: return ""
         val (label, lang) = if (pickerTab == PickerTab.SUBTITLES) receiverSubtitles(ticket).getOrNull(first).let { it?.label to it?.language }
             else ticket?.audio?.getOrNull(first).let { it?.label to it?.language }
-        return groupName(label, lang, ReceiverStrings.t("player.unnamed"))
+        return groupName(label, lang, ScreenLanguage.t("player.unnamed"))
     }
 
     private fun onPickerKey(e: KeyboardEvent) {
@@ -793,7 +789,7 @@ private class Screen(private val serverUrl: String) {
         el("ov-fill").style.width = "${(frac * 100).toInt()}%"
         el("ov-time").textContent = "${hms(pos)} / ${hms(dur)}"
         el("ov-pz").textContent = if (playing) "❚❚" else "▶"
-        el("ov-hint").textContent = "↓  " + ReceiverStrings.t("player.audio_subs")
+        el("ov-hint").textContent = "↓  " + ScreenLanguage.t("player.audio_subs")
         el("overlay").classList.add("on")
         overlayJob?.cancel()
         overlayJob = GlobalScope.launch { delay(3_000); if (playing) el("overlay").classList.remove("on") }
@@ -939,18 +935,19 @@ private fun randomHex(length: Int): String {
 
 
 fun main() {
-    // R279 + FR-R269-9 — the ladder for a set with no user signed in: what this set last drew in,
-    // then the TV's own reported language (the standard Web API, not a Tizen-specific systeminfo
-    // call — works identically wherever this bundle runs), then English. The remembered language
-    // leads because a set that has been used before knows more about the household than the TV's
-    // factory locale does; R269's rung is what is left for a set out of its box, which is the only
-    // case the setup screen it was written for can occur in.
-    ReceiverStrings.adopt(LastLanguage.read(), window.navigator.language)
+    // DEB-4663 (FR-11) — the language is the one Settings picked on this TV, else the TV's own
+    // (`navigator.language`, the standard Web API: no Tizen-specific systeminfo call), else English.
+    // It is resolved before any screen, setup included.
+    ScreenLanguage.start(window.navigator.language)
     window.addEventListener("load", {
         GlobalScope.launch {
             runCatching {
                 val stored = localStorage.getItem(SERVER_URL_KEY)?.trim()?.takeIf { it.isNotBlank() }
+                // FR-R269-7 / DEB-4663 — a reopened setup screen leaves the address that was working behind it.
+                val previous = localStorage.getItem(SETUP_PREFILL_KEY)
                 val serverUrl = stored ?: runServerSetup()
+                // FR-11 — a new address signs every profile out: their tokens belong to the old server.
+                if (stored == null && previous != null && !sameServer(previous, serverUrl)) ScreenProfileStore.forgetAll()
                 Screen(serverUrl).start()
             }.onFailure { console.error("Ravilo screen failed to start: ${it.message}") }
         }
