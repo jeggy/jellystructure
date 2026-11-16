@@ -117,3 +117,59 @@ test("a sideloaded screen pointed at the real backend gets stuck on setup (phase
 
   expect(pageErrors).toEqual([]);
 });
+
+test("the remote drives the setup screen: focus on open, Up/Down, OK (DEB-4817, DEB-4654 FR-4)", async ({ page }) => {
+  test.setTimeout(30_000);
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => pageErrors.push(err.message));
+  const probes: string[] = [];
+  page.on("request", (req) => {
+    if (req.url().endsWith("/api/health")) probes.push(req.url());
+  });
+  const focusedId = () => page.evaluate(() => document.activeElement?.id ?? "");
+  // Tizen 5's Chromium 56 may leave `key` empty for the remote, so the keys are also sent by key code only.
+  const remoteKey = (keyCode: number) =>
+    page.evaluate((code) => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { keyCode: code, bubbles: true } as KeyboardEventInit));
+    }, keyCode);
+
+  await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+
+  // The field is focused on open, with a ring a viewer can see across the room.
+  await expect.poll(focusedId).toBe("setupHost");
+  expect(await page.locator("#setupHost").evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
+
+  // OK on the field is Tizen's (it raises the IME): it never probes.
+  await page.keyboard.press("Enter");
+  await remoteKey(13);
+  expect(probes).toEqual([]);
+
+  await page.keyboard.press("ArrowDown");
+  expect(await focusedId()).toBe("setupConnect");
+  expect(await page.locator("#setupConnect").evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
+  await page.keyboard.press("ArrowUp");
+  expect(await focusedId()).toBe("setupHost");
+  await remoteKey(40);
+  expect(await focusedId()).toBe("setupConnect");
+  await remoteKey(38);
+  expect(await focusedId()).toBe("setupHost");
+
+  // OK on Forbind probes once, by key and by key code; a refusal keeps the text and returns to the field.
+  await page.locator("#setupHost").fill("http://127.0.0.1:9");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => probes.length, { timeout: 15_000 }).toBe(1);
+  await expect(page.locator("#setupHint")).toHaveText(SETUP_NOT_FOUND_EN, { timeout: 15_000 });
+  await expect(page.locator("#setupHost")).toHaveValue("http://127.0.0.1:9");
+  expect(await focusedId()).toBe("setupHost");
+
+  await remoteKey(40);
+  await remoteKey(13);
+  await expect.poll(() => probes.length, { timeout: 15_000 }).toBe(2);
+  await expect(page.locator("#setupHint")).toHaveText(SETUP_NOT_FOUND_EN, { timeout: 15_000 });
+  expect(await focusedId()).toBe("setupHost");
+
+  expect(pageErrors).toEqual([]);
+});
