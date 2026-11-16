@@ -74,6 +74,22 @@ class ProcessingSchedulesTest {
     }
 
     @Test
+    fun `the old word for Monday and Tuesday at 04-00 depends on the pinned now across the Monday window`() {
+        fun word(at: Long) = ProcessingCarryOver.settle(
+            AppConfig(
+                processing = ProcessingConfig().let { it.copy(audiobooks = it.audiobooks.copy(schedule = "0 4 * * 1,2")) },
+                general = GeneralConfig(timezone = "UTC"),
+            ),
+            at,
+        ).processing!!.audiobooks.interval
+        val mon0448 = 1_794_804_480L   // 2026-11-16 (Monday) 04:48:00 UTC, when ci / unit failed
+        assertEquals("weekly", word(mon0448), "the next two fires are Tuesday and next Monday, 6 days apart")
+        assertEquals("weekly", word(mon0448 - 48 * 60L + 24 * 3600L - 61L), "Tuesday 03:58:59, still before the Tuesday fire")
+        assertEquals("daily", word(mon0448 + 24 * 3600L + 3600L), "Tuesday 05:48 — the next two fires are Monday and Tuesday")
+        assertEquals("daily", word(now), "Thursday")
+    }
+
+    @Test
     fun `Music on Monday and Tuesday at 04-00 is due after the missed fire once and not again until the next`() {
         val c = cfg(ProcessingConfig().let { it.copy(music = it.music.copy(schedule = "0 4 * * 1,2"), audiobooks = it.audiobooks.copy(enabled = false)) })
         fun due(last: Long?, at: Long = now) = ProcessingFeatures.MUSIC in ProcessingSchedule.dueFeatures(c, at, { if (it == ProcessingFeatures.MUSIC) last else null }, { null })
