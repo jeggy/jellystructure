@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -16,8 +17,13 @@ internal data class ScreenRouteEntry(
     val rowFocus: MutableMap<String, String> = mutableMapOf(),
     val channelId: String? = null,
     val title: String? = null,
+    val mediaId: String? = null,
+    val mediaKind: MediaKind = MediaKind.MOVIE,
     var feed: HomeFeed? = null,
 )
+
+/** What the title's page hands the player when OK plays it (FR-9). DEB-4660's page adds the episode's context here. */
+internal data class ScreenPlayRequest(val id: String, val kind: MediaKind, val title: String)
 
 /** The DOM shell stays mounted while R264's player covers it. */
 internal class ScreenShell(
@@ -25,6 +31,7 @@ internal class ScreenShell(
     private val serverUrl: String,
     private val onChangeServer: () -> Unit = {},
     private val onProfileMenu: () -> Unit = {},
+    private val onPlay: (ScreenPlayRequest) -> Unit = {},
 ) {
     private val root get() = document.getElementById("shell") as HTMLElement
     private val body get() = document.getElementById("shell-body") as HTMLElement
@@ -51,6 +58,8 @@ internal class ScreenShell(
             render()
         }
     }
+
+    fun isPlayer() = player
 
     fun showPlayer() {
         if (!visible) return
@@ -133,6 +142,8 @@ internal class ScreenShell(
     private fun activate() {
         val current = entries.last()
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
+        // The title page's stand-in (until DEB-4660): OK plays the title, which resumes from the server's playstate.
+        if (current.name == "detail") { current.mediaId?.let { onPlay(ScreenPlayRequest(it, current.mediaKind, current.title.orEmpty())); return } }
         val channelId = element.getAttribute("data-channel-id")
         val mediaId = element.getAttribute("data-media-id")
         if (channelId != null) {
@@ -142,7 +153,8 @@ internal class ScreenShell(
             return
         }
         if (mediaId != null) {
-            entries.add(ScreenRouteEntry("detail", "shell-page-target", title = element.textContent ?: ""))
+            entries.add(ScreenRouteEntry("detail", "shell-page-target", title = element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: "", mediaId = mediaId,
+                mediaKind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE))
             render()
             return
         }

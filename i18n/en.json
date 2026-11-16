@@ -493,6 +493,7 @@
   "cast.play_here": {"text": "Play on this phone", "note": "R299 — opens the same title in the phone's own player."},
   "cast.no_server": "Can’t reach your Ravilo server",
   "cast.no_server_sub": "Check that the server is on and try again from your phone.",
+  "cast.no_server_sub_tv": {"text": "Check that the server is on and try again.", "note": "DEB-4661 (FR-9) — cast.no_server_sub for a title started with the TV's own remote: no phone in the sentence."},
   "srv.busy": "The server is busy right now",
   "srv.busy_sub": "It will start as soon as it can.",
   "cast.waiting": "waiting {n} s",
@@ -622,6 +623,10 @@
   "receiver.failed_sub": {
     "text": "Try again from your phone.",
     "note": "R264 — under receiver.failed (and under a title that is gone): the TV has no menu, so the phone is where to try again."
+  },
+  "receiver.failed_sub_tv": {
+    "text": "Press Back and try again.",
+    "note": "DEB-4661 (FR-9) — receiver.failed_sub for a title the viewer started with the TV's own remote: the failure sentence has no phone in it."
   },
   "acq.in_library": {
     "text": "✓ In Library",

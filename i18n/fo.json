@@ -472,6 +472,7 @@
   "cast.play_here": "Spæl á hesi telefonini",
   "cast.no_server": "Kann ikki ná Ravilo-ambætaranum",
   "cast.no_server_sub": "Kanna um ambætarin er á, og royn aftur frá telefonini.",
+  "cast.no_server_sub_tv": "Kanna um ambætarin er á, og royn aftur.",
   "srv.busy": "Ambætarin hevur mikið at gera nú",
   "srv.busy_sub": "Byrjar, so skjótt sum gjørligt.",
   "cast.waiting": "bíðar {n} s",
@@ -560,6 +561,7 @@
   "receiver.setup_not_found": "Eingin Ravilo-ambætari er á hasi adressuni",
   "receiver.failed": "Tað byrjaði ikki",
   "receiver.failed_sub": "Royn aftur frá telefonini.",
+  "receiver.failed_sub_tv": "Trýst á Aftur og royn aftur.",
   "acq.in_library": {
     "text": "✓ Í savninum",
     "note": "Draft Faroese — review before release."

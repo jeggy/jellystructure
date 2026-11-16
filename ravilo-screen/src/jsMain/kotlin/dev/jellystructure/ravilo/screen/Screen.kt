@@ -5,6 +5,7 @@ import dev.jellystructure.ravilo.receiver.hms
 import dev.jellystructure.ravilo.receiver.nowMs
 import dev.jellystructure.ravilo.receiver.subtitleTracksOf
 import dev.jellystructure.shared.tv.CastTrack
+import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.NavigateEnvelope
 import dev.jellystructure.shared.tv.NEXT_UP_NO_MARKER_MS
 import dev.jellystructure.shared.tv.PairResult
@@ -38,6 +39,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -77,7 +79,7 @@ private class Screen(private val serverUrl: String) {
         deviceToken = { activeUserId?.let(tokens::get) },
         platform = "tizen",
     )
-    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup) { openProfileMenu() }
+    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired) { showPicker() }
     private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut, ::openSettings)
@@ -129,6 +131,10 @@ private class Screen(private val serverUrl: String) {
     private var pickerFocus = 0
     private var pickerTop = 0
     private var loadGeneration = 0
+    // DEB-4661 (FR-9) — a start made with this TV's remote (the Play button, or the next-up card's `remotePlay` on this
+    // very device), so a refusal never says *from your phone*. [tvNextItem] is the item the TV asked its own backend for.
+    private var tvNextItem: String? = null
+    private var startedFromTv = false
 
     // ── screens ──
     private fun el(id: String) = document.getElementById(id) as HTMLElement
@@ -172,6 +178,7 @@ private class Screen(private val serverUrl: String) {
 
     private fun idle() {
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
+        startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
         segments = null; nextId = null; nextTitle = null; nextKicker = null   // R264
         hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
@@ -301,6 +308,16 @@ private class Screen(private val serverUrl: String) {
         // The socket belongs to the selected viewer. A queued event from an older socket cannot
         // switch this session to another viewer's token after the picker changes profiles.
         if (env.sessionUserId != null && env.sessionUserId != activeUserId) return
+        val fromTv = env.jellyfinId == tvNextItem
+        tvNextItem = null
+        beginPlay(env, fromTv)
+    }
+
+    /** One start, whoever asked: a phone's push (FR-10), the next-up card's round trip, or this TV's own Play (FR-9). */
+    private suspend fun beginPlay(env: PlayItemEnvelope, fromTv: Boolean) {
+        // FR-10 — a phone's push takes over whatever page the viewer is on (the shell keeps it mounted underneath).
+        profileUi.hide()
+        startedFromTv = fromTv
         itemId = env.jellyfinId
         title = env.title
         // R303 (FR-R303-2/5/7) — the push carries the S·E kicker, the series' name and the logo; the
@@ -326,7 +343,12 @@ private class Screen(private val serverUrl: String) {
             delay(5_000)
             if (generation == loadGeneration && !loaded) el("loading-label").textContent = ScreenLanguage.t("loading.still_trying")
         }
-        val t = negotiate(env.jellyfinId) ?: return
+        val t = negotiate(env.jellyfinId, generation) ?: return
+        if (generation != loadGeneration) {
+            // Back (or a newer play) came in while the start was being negotiated: the server opened a session for it.
+            GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
+            return
+        }
         ticket = t
         selectedAudio = receiverSelectedAudio(t)
         // R285 — positions in receiverSubtitles(), the list the remote is shown; this used to index
@@ -341,10 +363,11 @@ private class Screen(private val serverUrl: String) {
 
     /** Busy (Phase 182's 503 + Retry-After) waits and retries; unreachable shows the no-server screen —
      *  same shape as [dev.jellystructure.ravilo.cast.Receiver]'s own negotiate(). */
-    private suspend fun negotiate(itemId: String): StreamTicket? {
+    private suspend fun negotiate(itemId: String, generation: Int): StreamTicket? {
         val caps = backend.capabilities()
         while (true) {
             val r = runCatching { api.startPlayback(itemId, caps) }
+            if (generation != loadGeneration) return r.getOrNull()
             val e = r.exceptionOrNull() ?: run { busySinceMs = null; return r.getOrNull() }
             val http = e as? TvApiError.Http
             if (http != null && http.status == 503) {
@@ -354,6 +377,7 @@ private class Screen(private val serverUrl: String) {
                 el("busy-s").textContent = ScreenLanguage.t("srv.busy_sub")
                 show("busy")
                 repeat(wait) {
+                    if (generation != loadGeneration) return null
                     el("busy-wait").textContent = ScreenLanguage.t("cast.waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
                     delay(1_000)
                 }
@@ -381,9 +405,9 @@ private class Screen(private val serverUrl: String) {
         val (title, body) = when (status) {
             401 -> "error.play.reauth.title" to "error.play.reauth.body"
             403 -> "error.play.forbidden.title" to "error.play.forbidden.body"
-            404, 410 -> "error.play.gone.title" to "receiver.failed_sub"
+            404, 410 -> "error.play.gone.title" to retryKey()
             0 -> "error.play.unreachable.title" to "error.play.unreachable.body"
-            else -> "receiver.failed" to "receiver.failed_sub"
+            else -> "receiver.failed" to retryKey()
         }
         backend.close()
         hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
@@ -394,6 +418,40 @@ private class Screen(private val serverUrl: String) {
         sendStatus()
         val generation = loadGeneration
         GlobalScope.launch { delay(10_000); if (generation == loadGeneration && !loaded) idle() }
+    }
+
+    /** FR-9 — a start the viewer made with this TV's remote is retried with this TV's remote. */
+    private fun retryKey() = if (startedFromTv) "receiver.failed_sub_tv" else "receiver.failed_sub"
+
+    /**
+     * DEB-4661 (FR-9) — Play on the TV. The same backend round trip as auto-advance: this set asks
+     * `POST /api/remote/play` to play [id] on itself, and the push that comes back is the whole of what a play
+     * needs (title, logo, segments, the episode after) and resumes from the server's playstate.
+     */
+    private fun playFromTv(request: ScreenPlayRequest) {
+        if (loaded || shell.isPlayer()) return
+        val generation = ++loadGeneration
+        shell.showPlayer()
+        el("loading-title").textContent = request.title
+        el("loading-kicker").textContent = ""
+        el("loading-label").textContent = ScreenLanguage.t("loading")
+        show("loading")
+        GlobalScope.launch {
+            // What a phone's push would have carried, read here for a movie; an episode's context (its series, the one
+            // after it) is the title page's to hand over (DEB-4660). A detail that does not come is a play without them.
+            val detail = if (request.kind == MediaKind.MOVIE) withTimeoutOrNull(3_000) { runCatching { api.getMovie(request.id) }.getOrNull() } else null
+            if (generation != loadGeneration) return@launch
+            beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = request.id, kind = request.kind.name.lowercase(), title = request.title,
+                logoUrl = detail?.logoUrl, logoInk = detail?.logoInk, segments = detail?.segments), fromTv = true)
+        }
+    }
+
+    /** Back on a start that has not begun (loading, busy, refused): give up on it and return to the page it came from. */
+    private fun cancelStart() {
+        ++loadGeneration
+        backend.close()
+        idle()
+        sendStatus()
     }
 
     private fun onPlaystateCommand(env: PlaystateCommandEnvelope) {
@@ -559,9 +617,10 @@ private class Screen(private val serverUrl: String) {
         // R384 — a title that finished under the countdown is stopped at its length (the player may say 0 once ended).
         val pos = if (finishedUnderNextUp) backend.durationMs() else if (loaded) backend.positionMs() else 0L
         hideNextUp(); hideSkip(); nextId = null
+        tvNextItem = id
         GlobalScope.launch {
             if (current != null) runCatching { api.stopPlayback(current, pos) }
-            runCatching { api.remotePlay(deviceId, id, 0) }.onFailure { failPlay(0) }
+            runCatching { api.remotePlay(deviceId, id, 0) }.onFailure { tvNextItem = null; startedFromTv = true; failPlay(0) }
         }
     }
 
@@ -727,6 +786,8 @@ private class Screen(private val serverUrl: String) {
                 if (backHeldSince == since) { backHeldSince = null; reopenServerSetup() }
             }
         }
+        // DEB-4661 (FR-9) — Back on a start that has not begun: loading, busy, or refused.
+        if (!loaded && shell.isPlayer() && isBack(e)) { cancelStart(); return }
         if (!loaded && signIn.handleKey(e)) return
         if (!loaded && profileUi.handleKey(e)) return
         if (!loaded && shell.handleKey(e)) return

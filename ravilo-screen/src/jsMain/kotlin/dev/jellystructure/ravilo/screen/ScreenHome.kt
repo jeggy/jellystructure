@@ -19,6 +19,7 @@ internal class ScreenHome(private val serverUrl: String) {
         feed.heroes.forEachIndexed { index, hero ->
             val target = target("home-hero-$index", "heroes", "hero")
             target.setAttribute("data-media-id", hero.item.id)
+            target.setAttribute("data-media-kind", hero.item.kind.name.lowercase())
             target.style.height = "${feed.heroHeightPct.coerceIn(40, 100)}vh"
             image(hero.backdropUrl)?.let { target.appendChild(it) }
             val copy = node("div", "hero-copy")
@@ -60,6 +61,7 @@ internal class ScreenHome(private val serverUrl: String) {
                 val target = target("home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", "tile")
                 target.classList.add("tile-${shape.name.lowercase()}")
                 target.setAttribute("data-media-id", card.id)
+                target.setAttribute("data-media-kind", card.kind.name.lowercase())
                 val art = node("div", "tile-art")
                 val artUrl = if (shape == TileShape.LANDSCAPE) card.backdropUrl ?: card.posterUrl
                     else card.posterUrl ?: card.backdropUrl

@@ -400,3 +400,27 @@ its POSTs carry no `Origin`.
   it stripped, a household on an `http://` server who pressed Connect unchanged would have read as a new
   address and been signed out. Any reopened setup, including R269's hold on Back, follows the same rule. When DEB-4719's
   *code-only* fact lands, a new address clears it too (it is "stored beside the server address").
+
+## Amendment 2026-11-16 (DEB-4661) — what FR-9 and FR-10 mean before the title's page exists
+
+- **Play is the TV's own `startPlayback`.** FR-9's *Play calls `startPlayback`* is taken literally: the TV negotiates
+  the start itself (`hls_only`, the AVPlay/`canPlayType` probes) and resumes from the ticket's `start_position_ms`. It
+  does not ask the backend to push a play to itself first, because `POST /api/remote/play` is refused on Tizen 5.0
+  (the *Next episode* note in DEB-4719's second amendment). The player is the one a phone's `play_item` drives; only
+  where the title's facts come from differs. For a **movie** the TV reads them from `GET /api/tv/movie/{id}` (its
+  segment markers and logo), waiting at most 3 s. A detail that does not come is a play without Skip Intro and a logo,
+  never a refused one.
+- **An episode's context belongs to FR-7's page.** The series, the episode after it and its S·E line are what the title's
+  page (DEB-4660) knows. Until it exists, the stand-in page a tile opens plays the item it names, a tile for a series
+  has nothing to play, and a start made on the TV carries no *next up*. A phone's push, and a next-up round trip
+  already running, keep theirs. The page hands the player a `ScreenPlayRequest`; DEB-4660 adds the episode fields to it.
+- **Back on a start that has not begun** (loading, the busy wait, a refusal) gives it up at once and returns to the page
+  it came from, in R237's words for nothing: it is not an error. A start that the server opened a session for in the
+  meantime is stopped at 0, and the late ticket never opens a stream.
+- **The two *Try again from your phone* strings** (`receiver.failed_sub`, `cast.no_server_sub`) keep their keys for a
+  start a phone made. A start the TV made says `receiver.failed_sub_tv` (*Press Back and try again.*) and
+  `cast.no_server_sub_tv` (*Check that the server is on and try again.*). Only the first is reachable today:
+  `ravilo-screen` has no screen that shows the second since the pairing idle screen left.
+- **FR-10 needs no new code.** A `play_item`, `playstate_command` or `player_command` already acts as in the receiver, and
+  the shell stays mounted under the player, so the end of a phone's play returns to the page and the focused tile the
+  viewer was on. The Playwright spec pins it.

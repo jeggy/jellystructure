@@ -472,6 +472,7 @@
   "cast.play_here": "Afspil på denne telefon",
   "cast.no_server": "Kan ikke nå din Ravilo-server",
   "cast.no_server_sub": "Tjek at serveren er tændt, og prøv igen fra din telefon.",
+  "cast.no_server_sub_tv": "Tjek at serveren er tændt, og prøv igen.",
   "srv.busy": "Serveren er travl lige nu",
   "srv.busy_sub": "Den starter, så snart den kan.",
   "cast.waiting": "venter {n} s",
@@ -560,6 +561,7 @@
   "receiver.setup_not_found": "Der er ingen Ravilo-server på den adresse",
   "receiver.failed": "Det kunne ikke starte",
   "receiver.failed_sub": "Prøv igen fra telefonen.",
+  "receiver.failed_sub_tv": "Tryk Tilbage og prøv igen.",
   "acq.in_library": {
     "text": "✓ I biblioteket",
     "note": "Draft Danish — review before release."

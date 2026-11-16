@@ -1,0 +1,218 @@
+import { test, expect, type Page } from "@playwright/test";
+import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall } from "./helpers/screen-cast";
+
+// DEB-4661 (DEB-4654 FR-9, FR-10) — the Tizen app plays from its own remote, and a phone can still send a title to it.
+// Driven through the REAL ravilo-screen.js bundle with the fake AVPlay of phase 248. The backend is stood in for by
+// page.route, and the events socket by a fake that the test pushes frames into: this file proves what the TV does with
+// the answers it gets (resume, progress, stop, auto-advance, Back, the refusal copy), not what the server says. The
+// server's own routes have their own specs.
+
+const SCREEN_URL = process.env.RAVILO_SCREEN_CAST_URL ?? "http://localhost:8092";
+const API = "http://app:9505";
+
+const card = (id: string, title: string) => ({
+  id, kind: "MOVIE", title, year: 2024, genre: null, rating: null,
+  poster_url: `/api/tv/image/${id}-poster`, backdrop_url: `/api/tv/image/${id}-backdrop`,
+});
+const feed = {
+  heroes: [], channels: [],
+  rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: [card("ep-1", "Paper Moon")] }],
+  tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
+};
+const ticket = (itemId: string, startMs: number) => ({
+  jellyfin_base_url: API, access_token: "", item_id: itemId, container: "ts", direct_play: false,
+  hls_url: `${API}/hls/${itemId}/master.m3u8`, start_position_ms: startMs, expires_at: 9_999_999_999,
+});
+const playItem = (id: string, extra: object = {}) => ({ type: "play_item", jellyfin_id: id, kind: "movie", title: "Paper Moon", ...extra });
+
+type Seen = { progress: any[]; stops: any[]; starts: any[]; remotePlays: any[]; statuses: any[] };
+
+/** A fake events socket the test pushes frames into, installed before the bundle runs. */
+function fakeSocketInitScript() {
+  const sockets: any[] = [];
+  (window as any).__pushEvent = (frame: object) => {
+    for (const s of sockets) if (s.readyState === 1) s.emit("message", new MessageEvent("message", { data: JSON.stringify(frame) }));
+  };
+  (window as any).__socketCount = () => sockets.filter((s) => s.readyState === 1).length;
+  class FakeSocket extends EventTarget {
+    static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+    url: string; readyState = 0; binaryType = "blob"; protocol = ""; extensions = ""; bufferedAmount = 0;
+    onopen: any = null; onmessage: any = null; onclose: any = null; onerror: any = null;
+    constructor(url: string) {
+      super();
+      this.url = url;
+      sockets.push(this);
+      setTimeout(() => { this.readyState = 1; this.emit("open", new Event("open")); }, 0);
+    }
+    emit(type: string, ev: Event) { this.dispatchEvent(ev); (this as any)["on" + type]?.(ev); }
+    send() {}
+    close() { this.readyState = 3; this.emit("close", new Event("close")); }
+  }
+  (window as any).WebSocket = FakeSocket;
+}
+
+async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ status: number; body: object }> } = {}): Promise<Seen> {
+  const seen: Seen = { progress: [], stops: [], starts: [], remotePlays: [], statuses: [] };
+  await page.addInitScript(fakeAvPlayInitScript);
+  await page.addInitScript(fakeSocketInitScript);
+  await page.addInitScript(() => {
+    localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+    localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+  });
+  const json = (route: any, status: number, body: object) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  await page.route(`${API}/**`, async (route) => {
+    const req = route.request();
+    const path = new URL(req.url()).pathname;
+    const body = req.postData() ? JSON.parse(req.postData()!) : null;
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+    if (path === "/api/tv/home") return json(route, 200, feed);
+    if (path === "/api/tv/playback/start") {
+      seen.starts.push(body);
+      const answer = opts.start ? await opts.start(body.item_id) : { status: 200, body: ticket(body.item_id, 42_000) };
+      return json(route, answer.status, answer.body);
+    }
+    if (path === "/api/tv/playback/progress") { seen.progress.push({ ...body, at: Date.now() }); return route.fulfill({ status: 204 }); }
+    if (path === "/api/tv/playback/stop") { seen.stops.push(body); return route.fulfill({ status: 204 }); }
+    if (path === "/api/tv/playback/status") { seen.statuses.push(body); return route.fulfill({ status: 204 }); }
+    if (path === "/api/remote/play") {
+      seen.remotePlays.push(body);
+      // The backend's answer to a play aimed at this very device: the same push a phone's play makes.
+      await route.fulfill({ status: 202 });
+      await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem(body.jellyfin_item_id));
+      return;
+    }
+    // A movie's detail: where its intro is, and its logo. An episode's id is not one, so it gets the 404 below.
+    if (path === "/api/tv/movie/ep-1") return json(route, 200, {
+      card: card("ep-1", "Paper Moon"), synopsis: null, runtime: 90, cast: [], related: [],
+      logo_url: "/api/tv/image/ep-1-logo", segments: { intro_start_ms: 40_000, intro_end_ms: 50_000 },
+    });
+    if (path.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
+    return json(route, 404, {});
+  });
+  await page.goto(SCREEN_URL);
+  await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__socketCount())).toBeGreaterThan(0);
+  return seen;
+}
+
+const shellOn = (page: Page) => expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+const shellOff = (page: Page) => expect(page.locator("#shell")).not.toHaveClass(/\bon\b/);
+
+test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", () => {
+  test("FR-9: OK on a title starts it, resumes from the server, reports every 10 s, stops and returns on Back", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+
+    await page.keyboard.press("Enter");                      // the title's page
+    await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+    await expect(page.locator("#shell-body")).not.toContainText(/cast|play on/i);
+    await page.keyboard.press("Enter");                      // Play
+
+    // Same negotiation as the receiver (hls_only), asked by the TV itself: no round trip through /api/remote/play, which
+    // a Tizen 5.0 widget is refused (DEB-4719).
+    const opened = await waitForAvplayCall(page, "open");
+    expect(String(opened.call[1])).toContain("/hls/ep-1/");
+    expect(seen.remotePlays).toHaveLength(0);
+    expect(seen.starts).toHaveLength(1);
+    expect(seen.starts[0].item_id).toBe("ep-1");
+    expect(seen.starts[0].start_position_ms ?? 0).toBe(0);   // the server's playstate decides where it resumes
+    expect(JSON.stringify(seen.starts[0])).toContain("\"hls_only\":true");
+    await shellOff(page);
+
+    // Resumes from the server's playstate: the ticket said 42 s.
+    const seek = await waitForAvplayCall(page, "seekTo", opened.index);
+    expect(seek.call[1]).toBe(42_000);
+    await waitForAvplayCall(page, "play", opened.index);
+    // The movie's own segment markers, read for a start the TV made: Skip Intro is offered inside the intro (40–50 s).
+    await expect(page.locator("#skip")).toHaveClass(/\bon\b/, { timeout: 5_000 });
+
+    // Progress every 10 s, from the resume point on.
+    await expect.poll(() => seen.progress.length, { timeout: 25_000, intervals: [500] }).toBeGreaterThanOrEqual(1);
+    expect(seen.progress[0]).toMatchObject({ item_id: "ep-1" });
+    expect(seen.progress[0].is_paused ?? false).toBe(false);
+    expect(seen.progress[0].position_ms).toBeGreaterThanOrEqual(42_000);
+
+    // Back: with the chrome up it hides it, with nothing up it stops. A stop on exit, at the position it reached.
+    for (let i = 0; i < 3 && !(await page.locator("#shell").evaluate((e) => e.classList.contains("on"))); i++) await page.keyboard.press("Escape");
+    await shellOn(page);
+    expect(seen.stops).toHaveLength(1);
+    expect(seen.stops[0]).toMatchObject({ item_id: "ep-1" });
+    expect(seen.stops[0].position_ms).toBeGreaterThanOrEqual(42_000);
+
+    // The page it was started from, with focus on the item that played; Back again is the tile.
+    await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  });
+
+  test("FR-9: the next-up countdown plays the next episode on the TV itself, through its own device", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page);
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-1", {
+      next_id: "ep-2", next_title: "Second Reel", next_kicker: "S1 · E2",
+      segments: { credits_start_ms: 43_000 },
+    }));
+    await waitForAvplayCall(page, "play");
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#nu-t")).toContainText("Second Reel");
+    await expect.poll(() => seen.remotePlays.length, { timeout: 20_000 }).toBe(1);
+    expect(seen.remotePlays[0]).toMatchObject({ jellyfin_item_id: "ep-2" });
+    expect(String(seen.remotePlays[0].device_id)).toMatch(/^screen-/);
+    // The item it leaves is stopped first, so the progress the viewer made is kept; then the push for ep-2 starts.
+    expect(seen.stops[0]).toMatchObject({ item_id: "ep-1" });
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 10_000 }).toEqual(["ep-1", "ep-2"]);
+  });
+
+  test("FR-10: a phone's play takes over the page the viewer is on, and the end returns to it", async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press("ArrowDown").catch(() => {});
+    const focusedBefore = await page.locator("#shell-body .shell-target.focused").getAttribute("id");
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-1"));
+    await waitForAvplayCall(page, "play");
+    await shellOff(page);
+    // The phone's own remote: Stop, in the capitalised wire shape.
+    await page.evaluate(() => (window as any).__pushEvent({ type: "playstate_command", command: "Stop" }));
+    await shellOn(page);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator("#shell-body .shell-target.focused")).toHaveAttribute("id", focusedBefore!);
+    // FR-10: nothing on the TV sends to another device.
+    await expect(page.locator("#shell")).not.toContainText(/play on|cast/i);
+  });
+
+  test("FR-9: a refused start from the TV says why without \"from your phone\"; one from a phone still does", async ({ page }) => {
+    test.setTimeout(60_000);
+    await boot(page, { start: async () => ({ status: 500, body: {} }) });
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#failed-t")).toHaveText("That didn’t start");
+    await expect(page.locator("#failed-s")).toHaveText("Press Back and try again.");
+    await expect(page.locator("#failed-s")).not.toContainText(/phone/i);
+    // Back leaves the refusal at once and lands on the page the start came from.
+    await page.keyboard.press("Escape");
+    await shellOn(page);
+    await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-9"));
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#failed-s")).toHaveText("Try again from your phone.");
+  });
+
+  test("FR-9: Back while a start is still being negotiated gives it up, and the late answer never plays", async ({ page }) => {
+    test.setTimeout(60_000);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const seen = await boot(page, { start: async (id) => { await held; return { status: 200, body: ticket(id, 0) }; } });
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#loading")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await page.keyboard.press("Escape");
+    await shellOn(page);
+    release();
+    // The server did open a session for it: it is closed again, and the player never opens a stream.
+    await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.stops[0]).toMatchObject({ item_id: "ep-1" });
+    expect((await avplayCalls(page)).some((c) => c[0] === "open")).toBe(false);
+  });
+});
