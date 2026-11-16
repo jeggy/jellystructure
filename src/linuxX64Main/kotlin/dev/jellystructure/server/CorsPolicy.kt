@@ -2,6 +2,9 @@ package dev.jellystructure.server
 
 import io.ktor.http.HttpMethod
 import io.ktor.server.plugins.cors.CORSConfig
+import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.route
 
 /**
  * Phase 247 (FR-247-3) — the origin Tizen's web runtime sends on a WebSocket handshake from a packaged
@@ -44,19 +47,36 @@ internal fun CORSConfig.jellystructurePolicy(extraOrigins: List<String>) {
 }
 
 /**
- * Phase 247 (FR-247-3) — `/api/tv/events` only: the shared policy, plus the Tizen widget's origin.
+ * Phase 247 (FR-247-3, FR-247-4) — the widget policy: the shared policy, plus the Tizen widget's origin.
  *
- * A packaged Tizen widget's WebSocket handshake carries `Origin: file://`, which the shared policy
- * refuses with a 403 — so a paired Samsung TV could never receive a `play_item`. This route reads only a
- * device token (query or `Authorization`), never a cookie, so an origin on it gates nothing a caller
- * could not already do with the token; the cookie-authenticated admin `/ws` keeps the shared policy.
+ * A packaged Tizen widget's WebSocket handshake (10.0) and every non-GET request (5.0, Chromium 63) carry
+ * `Origin: file://`, which the shared policy refuses with a 403 — so a paired Samsung TV could never receive
+ * a `play_item` and could never sign in. The routes it is installed over read only a device token or an API
+ * key (AuthPlugin's token branches), never a cookie, so an origin on them gates nothing a caller could not
+ * already do with the token; the cookie-authenticated admin `/ws` and the admin routes under `/api/tv/admin` keep the shared policy.
  *
  * The shared policy is restated rather than inherited because a child route's CORS REPLACES its
- * parent's (measured) — without it this route would silently drop CORS_ALLOWED_ORIGINS.
+ * parent's (measured) — without it these routes would silently drop CORS_ALLOWED_ORIGINS.
  */
-internal fun CORSConfig.tvEventsPolicy(extraOrigins: List<String>) {
+internal fun CORSConfig.tizenWidgetPolicy(extraOrigins: List<String>) {
     jellystructurePolicy(extraOrigins)
     allowOrigins { it == TIZEN_WIDGET_ORIGIN }
+}
+
+/**
+ * Phase 247 (FR-247-4) — installs both policies the way the server wants them: the shared one at [this] (the
+ * routing root), the widget policy over `/api/tv` and `/api/remote`, and the shared one again on `/api/tv/admin`,
+ * which authenticates by cookie. A route that ever reads a cookie under `/api/tv` or `/api/remote` re-installs
+ * the shared policy the way `/api/tv/admin` does. Called before the `/api` routes are registered so the nodes
+ * exist first; the routes then join them by path.
+ */
+internal fun Route.installCorsPolicies(extraOrigins: List<String>) {
+    install(CORS) { jellystructurePolicy(extraOrigins) }
+    route("/api/tv") {
+        install(CORS) { tizenWidgetPolicy(extraOrigins) }
+        route("/admin") { install(CORS) { jellystructurePolicy(extraOrigins) } }
+    }
+    route("/api/remote") { install(CORS) { tizenWidgetPolicy(extraOrigins) } }
 }
 
 /** CORS_ALLOWED_ORIGINS, parsed once for both policies. */

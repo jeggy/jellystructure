@@ -95,7 +95,6 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.autohead.AutoHeadResponse
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.path
 import io.ktor.server.response.cacheControl
@@ -324,8 +323,8 @@ fun startServer(
                 call.respond(status, mapOf("error" to "method not allowed"))
             }
         }
-        // Phase 247 (FR-247-3) — CORS is installed at the routing root (below), not here: Ktor refuses a
-        // route-scoped install beside an application-level one, and `/api/tv/events` needs its own. The
+        // Phase 247 (FR-247-3, FR-247-4) — CORS is installed at the routing root (below), not here: Ktor refuses a
+        // route-scoped install beside an application-level one, and the token-only routes need their own. The
         // policy and its history (finding M1) live in CorsPolicy.kt.
         val corsOrigins = corsAllowedOrigins()
 
@@ -445,7 +444,7 @@ fun startServer(
         }
 
         routing {
-            install(CORS) { jellystructurePolicy(corsOrigins) }
+            installCorsPolicies(corsOrigins)   // Phase 247 (FR-247-4) — the root policy, and the widget policy over the token-only routes
             route("/api") {
                 get("/health") {
                     // Phase 118 (FR C.4) — FD count on the lightweight probe too, so a monitoring
@@ -781,9 +780,9 @@ fun startServer(
 
             // R33 — per-user live config push. Device token comes via query param (browsers can't set
             // a handshake header); this path is exempt from the bearer-gate AuthPlugin and validates here.
-            // Phase 247 (FR-247-3) — its own CORS: a Tizen widget's handshake carries `Origin: file://`.
+            // Phase 247 (FR-247-3, FR-247-4) — a Tizen widget's handshake carries `Origin: file://`; /api/tv's widget
+            // policy (installCorsPolicies) covers this route.
             route("/api/tv/events") {
-                install(CORS) { tvEventsPolicy(corsOrigins) }
                 webSocket {
                     // Phase 118 (FR C.5), superseded by Phase 129's global Setup-phase shed intercept above
                     // — a shed 503 is sent before the WS upgrade ever reaches this handler, so there's

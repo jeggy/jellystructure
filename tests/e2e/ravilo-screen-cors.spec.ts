@@ -124,3 +124,44 @@ test.describe("CORS — a sideloaded screen's events socket (FR-247-3)", () => {
     });
   }
 });
+
+// Phase 247 (FR-247-4) — measured on the Tizen 5.0 TV emulator 2026-11-16 (DEB-4704): Chromium 63 puts the
+// page's origin on every non-GET request, so each widget POST got the CORS plugin's empty 403. Every
+// token-only route (`/api/tv/**` except `/api/tv/admin/**`, and `/api/remote/**`) now admits `file://`. The
+// routes below are asked with no credential on purpose: "admitted" means the route's own answer (a 400 or
+// 401 with a JSON body) instead of the CORS plugin's empty 403, and nothing more.
+test.describe("CORS — a Tizen 5.0 widget's POST (FR-247-4)", () => {
+  const post = (request: import("@playwright/test").APIRequestContext, path: string, origin?: string) =>
+    request.post(path, { data: {}, headers: origin ? { Origin: origin } : {} });
+
+  const tokenOnly = ["/api/tv/login", "/api/tv/signin/code", "/api/tv/playback/start", "/api/remote/play"];
+  const cookieRoutes = ["/api/tv/admin/config", "/api/auth/login", "/api/scan/cancel"];
+
+  for (const path of tokenOnly) {
+    test(`file:// reaches ${path} (the route answers, not the CORS plugin)`, async ({ request }) => {
+      const control = await post(request, path);
+      const widget = await post(request, path, "file://");
+      expect(widget.status()).toBe(control.status());
+      expect(widget.status()).not.toBe(403);
+      expect(widget.headers()["access-control-allow-origin"]).toBe("file://");
+    });
+  }
+
+  for (const path of cookieRoutes) {
+    test(`file:// is refused on ${path}`, async ({ request }) => {
+      const res = await post(request, path, "file://");
+      expect(res.status()).toBe(403);
+      expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
+    });
+  }
+
+  for (const origin of ["null", "https://evil.example.com"]) {
+    for (const path of [...tokenOnly, ...cookieRoutes]) {
+      test(`${origin} is refused on ${path}`, async ({ request }) => {
+        const res = await post(request, path, origin);
+        expect(res.status()).toBe(403);
+        expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
+      });
+    }
+  }
+});
