@@ -381,3 +381,22 @@ its POSTs carry no `Origin`.
   `/api/tv/` route; it is not part of DEB-4719.
 - **Build.** This is client-side, in `ravilo-screen`, and lands after FR-247-5 and DEB-4727. CI covers it with a
   Playwright cell where the mocked password route answers an empty 403.
+
+## Amendment 2026-11-16 (DEB-4663) — what FR-11 and FR-12 mean on the code that exists
+
+- **FR-12's premise.** The player's strings were never in `ravilo-receiver-core`: `ReceiverStrings` is a language
+  holder over `ravilo-i18n`'s table, and every player key (`player.*`, `pl.*`, `receiver.*`) already lives in
+  `i18n/*.json`. What moves is the dependency. The full app reads its language from its own `ScreenLanguage`, which holds
+  only *which* language is drawn, and calls `ravilo-i18n`'s `t` for every string. `ReceiverStrings` is no longer used
+  by `ravilo-screen`; it stays for the Chromecast receiver. Nothing in `ravilo-screen` is a table.
+- **The language ladder changes (R279).** R279 drew the receiver in the signed-in viewer's server-side `uiLanguage`.
+  The full app does not: its language is the one Settings picked on this TV, else the TV's own `navigator.language`,
+  else English. *Follow the TV* is the default and the first choice, ahead of English, Dansk and Føroyskt (the table's
+  own order). A viewer's server-side language no longer moves the TV.
+- **Server version.** *About* reads the server's version from `GET /api/health`'s `version` (224, FR-224-1), an
+  unauthenticated route the setup probe already uses. No wire change. A failed read shows `—`.
+- **A new address, precisely.** Setup compares the address the viewer typed with the one that was working, ignoring
+  case and a trailing slash; a different one removes every stored profile. The prefill keeps an `http://` scheme: with
+  it stripped, a household on an `http://` server who pressed Connect unchanged would have read as a new
+  address and been signed out. Any reopened setup, including R269's hold on Back, follows the same rule. When DEB-4719's
+  *code-only* fact lands, a new address clears it too (it is "stored beside the server address").
