@@ -123,6 +123,10 @@ test.describe("CORS — a sideloaded screen's events socket (FR-247-3)", () => {
   });
 
   // FR-247-5 admits `null` on the events route (token-only); the cookie-authenticated admin socket still refuses it.
+  test("null upgrades the events socket", async () => {
+    expect(await handshake(events, "null")).toBe(101);
+  });
+
   test("null is refused on the admin socket", async () => {
     expect(await handshake("/ws", "null")).toBe(403);
   });
@@ -131,63 +135,44 @@ test.describe("CORS — a sideloaded screen's events socket (FR-247-3)", () => {
 // Phase 247 (FR-247-4, FR-247-5) — measured on the Tizen 5.0 TV emulator 2026-11-16 (DEB-4704, DEB-4721): Chromium 63
 // puts the page's origin on every non-GET fetch, and writes a `file:` document's origin as `null` there (as `file://`
 // on a WebSocket handshake). `file://` is admitted on every token-only route (`/api/tv` except `/api/tv/admin`, and
-// `/api/remote`); `null` only on `/api/tv` minus `/api/tv/admin` and the two password routes. The routes are asked with
-// no credential on purpose: "admitted" means the route's own answer (a 400 or 401 with a JSON body) instead of the CORS
-// plugin's empty 403, and nothing more.
+// `/api/remote`); `null` only on `/api/tv` minus `/api/tv/admin` and the two password routes.
+//
+// Asked here only on OPEN paths, with no credential: AuthPlugin answers a credential-less request to any other route
+// with its own 401 before the route's CORS plugin is consulted (measured in CI, 8e0d90a6), so on those routes a real
+// request cannot tell "admitted" from "refused". `CorsPolicyTest` asks every route, with the real wiring. Here,
+// "admitted" means the route's own answer (a 400 or 401 with a JSON body) instead of the CORS plugin's empty 403.
 test.describe("CORS — a Tizen 5.0 widget's POST (FR-247-4, FR-247-5)", () => {
   const post = (request: import("@playwright/test").APIRequestContext, path: string, origin?: string) =>
     request.post(path, { data: {}, headers: origin ? { Origin: origin } : {} });
 
-  const nullRoutes = ["/api/tv/signin/code", "/api/tv/playback/start"];
-  const passwordRoutes = ["/api/tv/login", "/api/tv/account/password"];
-  const fileRoutes = [...nullRoutes, ...passwordRoutes, "/api/remote/play"];
-  const cookieRoutes = ["/api/tv/admin/config", "/api/auth/login", "/api/scan/cancel"];
+  const admits = (origin: string, paths: string[]) => {
+    for (const path of paths) {
+      test(`${origin} reaches ${path} (the route answers, not the CORS plugin)`, async ({ request }) => {
+        const control = await post(request, path);
+        const widget = await post(request, path, origin);
+        expect(widget.status()).toBe(control.status());
+        expect(widget.status()).not.toBe(403);
+        expect(widget.headers()["access-control-allow-origin"]).toBe(origin);
+      });
+    }
+  };
+  const refuses = (origin: string, paths: string[]) => {
+    for (const path of paths) {
+      test(`${origin} is refused on ${path}`, async ({ request }) => {
+        const res = await post(request, path, origin);
+        expect(res.status()).toBe(403);
+        expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
+      });
+    }
+  };
 
-  for (const path of fileRoutes) {
-    test(`file:// reaches ${path} (the route answers, not the CORS plugin)`, async ({ request }) => {
-      const control = await post(request, path);
-      const widget = await post(request, path, "file://");
-      expect(widget.status()).toBe(control.status());
-      expect(widget.status()).not.toBe(403);
-      expect(widget.headers()["access-control-allow-origin"]).toBe("file://");
-    });
-  }
-
-  for (const path of nullRoutes) {
-    test(`null reaches ${path}`, async ({ request }) => {
-      const control = await post(request, path);
-      const widget = await post(request, path, "null");
-      expect(widget.status()).toBe(control.status());
-      expect(widget.status()).not.toBe(403);
-      expect(widget.headers()["access-control-allow-origin"]).toBe("null");
-    });
-  }
-
-  for (const path of [...passwordRoutes, "/api/remote/play", ...cookieRoutes]) {
-    test(`null is refused on ${path}`, async ({ request }) => {
-      const res = await post(request, path, "null");
-      expect(res.status()).toBe(403);
-      expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
-    });
-  }
-
-  for (const path of cookieRoutes) {
-    test(`file:// is refused on ${path}`, async ({ request }) => {
-      const res = await post(request, path, "file://");
-      expect(res.status()).toBe(403);
-      expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
-    });
-  }
-
-  for (const path of [...fileRoutes, ...cookieRoutes]) {
-    test(`https://evil.example.com is refused on ${path}`, async ({ request }) => {
-      const res = await post(request, path, "https://evil.example.com");
-      expect(res.status()).toBe(403);
-      expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
-    });
-  }
-
-  test("null is admitted on the events handshake's policy (the browser sends file://; both are accepted)", async () => {
-    expect(await handshake("/api/tv/events?token=not-a-device-token", "null")).toBe(101);
-  });
+  // Open paths on each side of the line: screen/code takes `null`; login is a password route. Never an ADMITTED call to
+  // `/api/tv/signin/code`: it mints a code, ten a minute per IP, and the specs after this one need that allowance (the
+  // first run of this matrix spent it and `ravilo-screen-tracks.spec.ts` got no code). A refused call never reaches the
+  // handler, so refusals may name it.
+  admits("file://", ["/api/tv/screen/code", "/api/tv/login"]);
+  admits("null", ["/api/tv/screen/code"]);
+  refuses("null", ["/api/tv/login", "/api/auth/login"]);
+  refuses("file://", ["/api/auth/login"]);
+  refuses("https://evil.example.com", ["/api/tv/signin/code", "/api/tv/screen/code", "/api/tv/login", "/api/auth/login"]);
 });

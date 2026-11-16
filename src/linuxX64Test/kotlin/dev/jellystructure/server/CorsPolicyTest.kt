@@ -108,6 +108,32 @@ class CorsPolicyTest {
         assertRefused(client.get("/ws") { header(HttpHeaders.Origin, "null") }, "null /ws")
     }
 
+    // The admin SPA and Ravilo Web call their own server, and a browser puts the page's own origin on a same-origin POST.
+    @Test
+    fun `a same-origin request is never refused by a policy`() = testApplication {
+        wired()
+        for (path in filePosts + cookiePosts) assertEquals(200, post(path, "http://localhost").status.value, path)
+        for (path in listOf("/api/tv/events", "/ws", "/api/tv/home")) {
+            assertEquals(200, client.get(path) { header(HttpHeaders.Origin, "http://localhost") }.status.value, path)
+        }
+    }
+
+    // What a browser really sends before a JSON POST with custom headers (the e2e screen is a listed cross-origin page).
+    @Test
+    fun `a browser preflight with request headers from a listed origin is answered on every route`() = testApplication {
+        wired()
+        for (path in filePosts + cookiePosts + "/api/tv/home") {
+            val r = client.options(path) {
+                header(HttpHeaders.Origin, "http://$devOrigin")
+                header(HttpHeaders.AccessControlRequestMethod, "POST")
+                header(HttpHeaders.AccessControlRequestHeaders, "content-type,authorization,x-ravilo-platform,x-ravilo-version")
+            }
+            assertEquals(200, r.status.value, path)
+            assertEquals("http://$devOrigin", r.headers[HttpHeaders.AccessControlAllowOrigin], path)
+            assertEquals("true", r.headers[HttpHeaders.AccessControlAllowCredentials], path)
+        }
+    }
+
     @Test
     fun `a foreign origin reaches nothing`() = testApplication {
         wired()
