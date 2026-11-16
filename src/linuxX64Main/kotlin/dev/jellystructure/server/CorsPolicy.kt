@@ -64,17 +64,38 @@ internal fun CORSConfig.tizenWidgetPolicy(extraOrigins: List<String>) {
 }
 
 /**
- * Phase 247 (FR-247-4) — installs both policies the way the server wants them: the shared one at [this] (the
- * routing root), the widget policy over `/api/tv` and `/api/remote`, and the shared one again on `/api/tv/admin`,
- * which authenticates by cookie. A route that ever reads a cookie under `/api/tv` or `/api/remote` re-installs
- * the shared policy the way `/api/tv/admin` does. Called before the `/api` routes are registered so the nodes
- * exist first; the routes then join them by path.
+ * Phase 247 (FR-247-5) — an origin Chromium 63 (Tizen 5.0) sends on a fetch/XHR POST from a packaged widget, measured
+ * on the 5.0 emulator 2026-11-16 (DEB-4721): the literal `null`, where its WebSocket handshake sends [TIZEN_WIDGET_ORIGIN].
+ * Any web page can forge it (a sandboxed iframe), so it is admitted only on routes that read no cookie — see
+ * [tizenWidgetNullPolicy] — and the condition is pinned by `CorsPolicyTest`.
+ */
+internal const val OPAQUE_ORIGIN = "null"
+
+/**
+ * Phase 247 (FR-247-5) — the widget policy, plus [OPAQUE_ORIGIN]. Over `/api/tv` only, never over a route that takes a
+ * password or reads a cookie: a page that forges `null` could otherwise spread password guesses across the per-address
+ * rate limit of its visitors. `/api/remote` stays on [tizenWidgetPolicy].
+ */
+internal fun CORSConfig.tizenWidgetNullPolicy(extraOrigins: List<String>) {
+    jellystructurePolicy(extraOrigins)
+    allowOrigins { it == TIZEN_WIDGET_ORIGIN || it == OPAQUE_ORIGIN }
+}
+
+/**
+ * Phase 247 (FR-247-4, FR-247-5) — installs the policies the way the server wants them: the shared one at [this] (the
+ * routing root); over `/api/tv` the `null` policy, with `/api/tv/admin` back on the shared one (it authenticates by
+ * cookie) and `/api/tv/login` and `/api/tv/account/password` (the two that take a password) on the `file://`-only widget
+ * policy; and the `file://`-only widget policy over `/api/remote`. A route that ever reads a cookie under `/api/tv`
+ * re-installs a narrower policy the way these do. Called before the `/api` routes are registered so the nodes exist
+ * first; the routes then join them by path.
  */
 internal fun Route.installCorsPolicies(extraOrigins: List<String>) {
     install(CORS) { jellystructurePolicy(extraOrigins) }
     route("/api/tv") {
-        install(CORS) { tizenWidgetPolicy(extraOrigins) }
+        install(CORS) { tizenWidgetNullPolicy(extraOrigins) }
         route("/admin") { install(CORS) { jellystructurePolicy(extraOrigins) } }
+        route("/login") { install(CORS) { tizenWidgetPolicy(extraOrigins) } }
+        route("/account/password") { install(CORS) { tizenWidgetPolicy(extraOrigins) } }
     }
     route("/api/remote") { install(CORS) { tizenWidgetPolicy(extraOrigins) } }
 }

@@ -42,8 +42,8 @@ test.describe("CORS — a sideloaded screen's origin", () => {
     expect(pre.status()).not.toBe(200);
   });
 
-  test("Origin: null preflight is refused for an authenticated TV route (screen pairing)", async ({ request }) => {
-    const pre = await request.fetch("/api/tv/screen/code", {
+  test("Origin: null preflight is refused for a password route (FR-247-5)", async ({ request }) => {
+    const pre = await request.fetch("/api/tv/login", {
       method: "OPTIONS",
       headers: {
         Origin: "null",
@@ -117,33 +117,57 @@ test.describe("CORS — a sideloaded screen's events socket (FR-247-3)", () => {
     expect(await handshake("/ws", "file://")).toBe(403);
   });
 
-  for (const origin of ["null", "https://evil.example.com"]) {
-    test(`${origin} is refused on both sockets`, async () => {
-      expect(await handshake(events, origin)).toBe(403);
-      expect(await handshake("/ws", origin)).toBe(403);
-    });
-  }
+  test("https://evil.example.com is refused on both sockets", async () => {
+    expect(await handshake(events, "https://evil.example.com")).toBe(403);
+    expect(await handshake("/ws", "https://evil.example.com")).toBe(403);
+  });
+
+  // FR-247-5 admits `null` on the events route (token-only); the cookie-authenticated admin socket still refuses it.
+  test("null is refused on the admin socket", async () => {
+    expect(await handshake("/ws", "null")).toBe(403);
+  });
 });
 
-// Phase 247 (FR-247-4) — measured on the Tizen 5.0 TV emulator 2026-11-16 (DEB-4704): Chromium 63 puts the
-// page's origin on every non-GET request, so each widget POST got the CORS plugin's empty 403. Every
-// token-only route (`/api/tv/**` except `/api/tv/admin/**`, and `/api/remote/**`) now admits `file://`. The
-// routes below are asked with no credential on purpose: "admitted" means the route's own answer (a 400 or
-// 401 with a JSON body) instead of the CORS plugin's empty 403, and nothing more.
-test.describe("CORS — a Tizen 5.0 widget's POST (FR-247-4)", () => {
+// Phase 247 (FR-247-4, FR-247-5) — measured on the Tizen 5.0 TV emulator 2026-11-16 (DEB-4704, DEB-4721): Chromium 63
+// puts the page's origin on every non-GET fetch, and writes a `file:` document's origin as `null` there (as `file://`
+// on a WebSocket handshake). `file://` is admitted on every token-only route (`/api/tv` except `/api/tv/admin`, and
+// `/api/remote`); `null` only on `/api/tv` minus `/api/tv/admin` and the two password routes. The routes are asked with
+// no credential on purpose: "admitted" means the route's own answer (a 400 or 401 with a JSON body) instead of the CORS
+// plugin's empty 403, and nothing more.
+test.describe("CORS — a Tizen 5.0 widget's POST (FR-247-4, FR-247-5)", () => {
   const post = (request: import("@playwright/test").APIRequestContext, path: string, origin?: string) =>
     request.post(path, { data: {}, headers: origin ? { Origin: origin } : {} });
 
-  const tokenOnly = ["/api/tv/login", "/api/tv/signin/code", "/api/tv/playback/start", "/api/remote/play"];
+  const nullRoutes = ["/api/tv/signin/code", "/api/tv/playback/start"];
+  const passwordRoutes = ["/api/tv/login", "/api/tv/account/password"];
+  const fileRoutes = [...nullRoutes, ...passwordRoutes, "/api/remote/play"];
   const cookieRoutes = ["/api/tv/admin/config", "/api/auth/login", "/api/scan/cancel"];
 
-  for (const path of tokenOnly) {
+  for (const path of fileRoutes) {
     test(`file:// reaches ${path} (the route answers, not the CORS plugin)`, async ({ request }) => {
       const control = await post(request, path);
       const widget = await post(request, path, "file://");
       expect(widget.status()).toBe(control.status());
       expect(widget.status()).not.toBe(403);
       expect(widget.headers()["access-control-allow-origin"]).toBe("file://");
+    });
+  }
+
+  for (const path of nullRoutes) {
+    test(`null reaches ${path}`, async ({ request }) => {
+      const control = await post(request, path);
+      const widget = await post(request, path, "null");
+      expect(widget.status()).toBe(control.status());
+      expect(widget.status()).not.toBe(403);
+      expect(widget.headers()["access-control-allow-origin"]).toBe("null");
+    });
+  }
+
+  for (const path of [...passwordRoutes, "/api/remote/play", ...cookieRoutes]) {
+    test(`null is refused on ${path}`, async ({ request }) => {
+      const res = await post(request, path, "null");
+      expect(res.status()).toBe(403);
+      expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
     });
   }
 
@@ -155,13 +179,15 @@ test.describe("CORS — a Tizen 5.0 widget's POST (FR-247-4)", () => {
     });
   }
 
-  for (const origin of ["null", "https://evil.example.com"]) {
-    for (const path of [...tokenOnly, ...cookieRoutes]) {
-      test(`${origin} is refused on ${path}`, async ({ request }) => {
-        const res = await post(request, path, origin);
-        expect(res.status()).toBe(403);
-        expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
-      });
-    }
+  for (const path of [...fileRoutes, ...cookieRoutes]) {
+    test(`https://evil.example.com is refused on ${path}`, async ({ request }) => {
+      const res = await post(request, path, "https://evil.example.com");
+      expect(res.status()).toBe(403);
+      expect(res.headers()["access-control-allow-origin"]).toBeUndefined();
+    });
   }
+
+  test("null is admitted on the events handshake's policy (the browser sends file://; both are accepted)", async () => {
+    expect(await handshake("/api/tv/events?token=not-a-device-token", "null")).toBe(101);
+  });
 });
