@@ -231,6 +231,55 @@ This applies to an HLS play, ours or Jellyfin's.
 >   starts as well as when it finishes. A freeze that never recovers therefore still reaches the server's `playback_qoe` row.
 > - Music and a live station are untouched: DEB-3400 owns a song that stops moving.
 
+> *Amendment 2026-11-16 (DEB-4768) — the Cast receiver's QA clock hold, so acceptance 9 can run on a Chromecast.*
+> QA found on 2026-11-16 (DEB-4641) that there is no way to stop the receiver's clock on a real device. The Streamer runs the
+> published receiver, so remote DevTools (port 9222) is closed. The media namespace's `SET_PLAYBACK_RATE` is clamped to 0.5–2.0.
+> A `pause()` is a viewer pause. This is the Cast counterpart of the Android `DEBUG_FREEZE_RENDER` flag (slice-3 amendment).
+> - **Where it lives.** The hold ships **in the receiver that prod already serves** at `/cast/` under the published app id.
+>   It is **disarmed** unless the LOAD asks for it. A second bundle would need a second receiver URL, and so a second app id in
+>   the Cast console. It would also need the Streamer registered as a dev device. All of that is the owner's console, and the
+>   hold itself would be the same `playbackRate` write either way. QA gets the hold with the first prod image that carries it.
+>   No device, console or app-id change is needed.
+> - **Arming.** `CastLoadData` gains an optional `qa_hold: Boolean = false`. No Ravilo sender sets it. A receiver older than
+>   the field ignores it, and an installed sender never sends it, so the wire stays compatible both ways. A LOAD with
+>   `qa_hold: true` arms the hold for that cast. The receiver's own next loads (the next episode, a recovery restream) carry
+>   `CastLoadData` forward, so they stay armed. A LOAD from a sender without the flag disarms it. So does a stream transfer or a
+>   resumed session (`castTransferState`, `castResumedLoad`): those start disarmed. **A normal viewer's receiver is never
+>   armed.** On a disarmed receiver the commands below are dropped exactly like an unknown command type. They change nothing,
+>   answer nothing and log nothing. The decision whether a command is accepted is a pure function in `:shared`, next to
+>   `castChannelStep`.
+> - **The commands**, on the existing `CAST_NAMESPACE` (`urn:x-cast:dev.jellystructure.ravilo`), as `CastCommand.type`:
+>   - `qa_hold` sets the video element's `playbackRate` to `0`. It does not call `pause()`, send a CAF PAUSE, seek, change
+>     `defaultPlaybackRate`, or change the receiver's `paused` or `qoeSeeking`. So `paused` stays `false`, `seeking` stays `false`,
+>     CAF's player state stays as it was (not `PAUSED`, not `IDLE`), and `currentTime` stops. The player keeps fetching to its
+>     buffering goal, so the buffer ahead keeps growing. While held, the receiver writes `0` again every 1 s, in case the
+>     player library puts the rate back on its own. It is accepted at any point after the LOAD, before the first frame
+>     included, because that is one of the cases where the watch must not fire.
+>   - `qa_release` sets `playbackRate` back to the rate it had before the hold.
+>   - `qa_probe` asks for a reading and changes nothing.
+>   - **The hold ends on its own** at the next load of the element, whatever caused it. The HTML load algorithm resets
+>     `playbackRate` to `defaultPlaybackRate`, and the receiver clears its held state there too, so a recovery restream starts
+>     unheld. It also ends on a viewer pause, seek or stop, when the receiver goes idle, and **60 s** after it started. A
+>     forgotten hold never leaves a picture stuck.
+> - **The reading.** On `qa_hold`, `qa_release` and `qa_probe`, and every 1 s while held, the receiver answers **only the sender
+>   that asked** (that message's `senderId`, never a broadcast). The answer is `{type: "qa_clock", held, paused, seeking,
+>   player_state, current_time_ms, buffered_ahead_ms, playback_rate, at}`. `buffered_ahead_ms` is `ReceiverAbr.bufferedAheadMs()`,
+>   the same reading the watch uses. A Ravilo sender never receives it, because it never asks. Every hold and every end of one
+>   also writes one `note` line on `CAST_LOG_NAMESPACE`: `qa_hold at <pos> ms, <ahead> ms ahead`, `qa_release (<why>)`.
+> - **No lasting effect.** The stop and the recovery are recorded exactly like a real freeze, so QA reads the receiver's real
+>   path. They do not change what the server learns, because a `frozen_with_buffer` entry feeds no `stalled_bps` (slice-3
+>   amendment) and no decode ceiling (FR-3). Its QoE row belongs to QA's throwaway viewer, so it can be told apart from a viewer's.
+> - **How QA uses it.** No phone, no sender app and no `.debug` APK:
+>   1. Use a throwaway local viewer, as for any playback QA. `POST /api/tv/login` gives its device token, and
+>      `POST /api/tv/cast/handoff` with that token gives a `code`.
+>   2. From a host-side Cast client, launch the published receiver app on the Chromecast. Send a media-namespace LOAD whose
+>      `customData` is the `CastLoadData` a Ravilo sender builds (`server_url`, `code`, `item_id`, `title`) plus `qa_hold: true`.
+>   3. Once `qa_probe` shows ≥ 3 s ahead, send `qa_hold`. Then read `qa_clock`, the log notes and the QoE row.
+>   4. Send `qa_hold` again on the restreamed stream to drive FR-5.2's second and third steps.
+> - **Not covered:** a hold with **less than 3 s** buffered (the 30 s backstop). The player keeps filling its buffer while
+>   held, so a low-buffer hold cannot be produced on purpose. The backstop stays proven by `CastRecoveryTest` alone. The hold
+>   does not starve the network, and it adds nothing to Android, which keeps its own flag.
+
 ### FR-6 — A subtitle never holds the picture, and is always the track it says (amends 179)
 
 - **Only the shown subtitle is loaded.** The ticket still lists every text track (the picker needs them), but the
@@ -416,10 +465,12 @@ This applies to an HLS play, ours or Jellyfin's.
    from 20 of 59 (3–8 Nov) to the few that a real shortfall explains.
 9. **A frozen cast picks itself up** (2026-11-15, DEB-4636). The receiver's decision is unit-tested in `CastRecoveryTest`: frozen
    at 5 s with ≥ 3 s buffered, the backstop at 30 s, never while paused, seeking or recovering, never before the first frame. On a
-   Chromecast, a cast on our encoder whose receiver clock is held still with buffer in hand (QA: a debug hook that holds the
-   element's clock without pausing it; a plain `pause()` is a viewer pause and does not count) is playing again
-   within ~10 s at the same place. Its QoE row carries `frozen_count ≥ 1`, a `frozen_with_buffer` entry and a `recovery`
-   entry with `reason: frozen`.
+   Chromecast, a cast on our encoder whose receiver clock is held still with buffer in hand (QA: the `qa_hold` command of
+   FR-5's 2026-11-16 amendment, with `qa_clock` reading `paused: false`, `seeking: false` and ≥ 3 s ahead; a plain `pause()` is
+   a viewer pause and does not count) is playing again within ~10 s at the same place. Its QoE row carries
+   `frozen_count ≥ 1`, a `frozen_with_buffer` entry and a `recovery` entry with `reason: frozen`. A `qa_hold` sent to a cast
+   whose LOAD did not carry `qa_hold: true` changes nothing, and `qa_clock` never answers it. The 30 s backstop is proven by
+   `CastRecoveryTest` only.
 
 ## Non-goals
 
