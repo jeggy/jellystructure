@@ -38,6 +38,33 @@ test("the Tizen receiver starts without globalThis (FR-13)", async ({ page }) =>
   expect(pageErrors).toEqual([]);
 });
 
+test("the Tizen widget sends its setup probe without AbortController (DEB-4727, FR-13)", async ({ page }) => {
+  test.setTimeout(30_000);
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => pageErrors.push(err.message));
+  // Chromium 63 has no AbortController (66). Removed before any page script runs, so abort-polyfill.js is
+  // what has to supply it; without it the Ktor fetch engine throws and no request ever leaves the page.
+  await page.addInitScript(() => {
+    if (!Reflect.deleteProperty(window, "AbortController") || !Reflect.deleteProperty(window, "AbortSignal")) {
+      throw new Error("Could not simulate Chromium 63 without AbortController");
+    }
+  });
+  const probes: string[] = [];
+  page.on("request", (req) => {
+    if (req.url().endsWith("/api/health")) probes.push(req.method());
+  });
+
+  await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+  await page.locator("#setupHost").fill(APP_URL_FROM_SCREEN);
+  await page.locator("#setupConnect").click();
+
+  await expect.poll(() => probes.length, { timeout: 15_000 }).toBeGreaterThan(0);
+  expect(await page.evaluate(() => typeof window.AbortController)).toBe("function");
+  expect(pageErrors).toEqual([]);
+});
+
 test("a sideloaded screen pointed at the real backend gets stuck on setup (phase 247)", async ({ page }) => {
   test.setTimeout(30_000); // hard backstop — this must never hang the job (see ravilo-web.spec.ts)
 

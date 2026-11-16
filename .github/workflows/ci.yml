@@ -43,6 +43,8 @@ jobs:
         run: ./scripts/check-css-scoping.sh
       - name: Tizen Chromium 63 CSS and planted feature regression (DEB-4656)
         run: ./scripts/check-tizen-engine.sh && ./scripts/check-tizen-engine.sh --selftest
+      - name: Tizen 5.0 AbortController polyfill and its guard (DEB-4727)
+        run: ./scripts/check-tizen-abort.sh && ./scripts/check-tizen-abort.sh --selftest
       - name: Design-sync-fragile CSS
         run: ./scripts/check-mobile-css.sh
       - name: Only the caller's own cancellation is rethrown (phase 310)
@@ -326,6 +328,7 @@ jobs:
           bundle_container=$(docker compose -f docker-compose.test.yml ps -aq ravilo-screen)
           docker cp "$bundle_container:/srv/ravilo-screen.js" /tmp/ravilo-screen.js
           ./scripts/check-tizen-bundle.sh /tmp/ravilo-screen.js
+          ./scripts/check-tizen-abort.sh /tmp/ravilo-screen.js
           docker buildx prune -f
           echo "Disk space before starting stack:"
           df -h /

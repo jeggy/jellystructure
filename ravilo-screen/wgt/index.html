@@ -54,6 +54,8 @@
     // Kotlin/JS and its dependencies use globalThis at runtime. Chromium 63 predates it.
     if (typeof globalThis === 'undefined') window.globalThis = window;
   </script>
+  <!-- DEB-4727 — AbortController is missing before Chromium 66; the bundle's fetch engine needs it. -->
+  <script src="abort-polyfill.js"></script>
   <script src="ravilo-screen.js"></script>
 </body>
 </html>
