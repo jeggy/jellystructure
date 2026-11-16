@@ -1040,7 +1040,7 @@ private fun SettingsContent(
                             if (isActive) colors.accent else colors.surfaceVariant,
                             RoundedCornerShape(10.dp),
                         )
-                        .chipFocusRing(focused, isActive, RoundedCornerShape(10.dp), colors.focusRing, colors.onAccent)
+                        .chipFocusRing(focused, isActive, RoundedCornerShape(10.dp), colors)
                         .dpadFocusable(
                             focusRequester = skinFRs!![i],
                             onFocused = { focused = true },
@@ -1080,7 +1080,7 @@ private fun SettingsContent(
             Box(
                 modifier = Modifier
                     .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
-                    .chipFocusRing(focused, isActive, RoundedCornerShape(10.dp), colors.focusRing, colors.onAccent)
+                    .chipFocusRing(focused, isActive, RoundedCornerShape(10.dp), colors)
                     .dpadFocusable(
                         focusRequester = langFRs[i],
                         onFocused = { focused = true },
@@ -1516,7 +1516,7 @@ private fun ThemePill(
             // Always a border, clear when there is no ring to draw. A modifier that comes and goes ahead of the focus
             // target re-creates it: the pill a D-pad had just picked became the active one, lost its ring's modifier
             // and with it the focus — no ring anywhere on the TV until the next key press (bedroom TV, 2026-09-30).
-            .chipFocusRing(focused, active, RoundedCornerShape(10.dp), colors.focusRing, colors.onAccent)
+            .chipFocusRing(focused, active, RoundedCornerShape(10.dp), colors)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },

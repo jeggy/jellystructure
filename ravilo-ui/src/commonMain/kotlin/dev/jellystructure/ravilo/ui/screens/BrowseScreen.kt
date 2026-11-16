@@ -431,7 +431,7 @@ private fun GenreChips(
                         if (isActive) colors.accent else colors.surfaceVariant,
                         chipShape,
                     )
-                    .chipFocusRing(focused, isActive, chipShape, colors.focusRing, colors.onAccent)
+                    .chipFocusRing(focused, isActive, chipShape, colors)
                     .dpadFocusable(
                         focusRequester = if (i == 0) firstChipFR else null,
                         onFocused = { focused = true },

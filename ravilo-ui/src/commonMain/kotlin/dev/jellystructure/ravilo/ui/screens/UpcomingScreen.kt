@@ -281,7 +281,7 @@ private fun FilterChips(active: UpcomingFilter, onFilterChange: (UpcomingFilter)
                     // Bug fix: the active chip's solid accent background hid focus entirely (only the
                     // inactive branch above got a focus treatment) — a border shows regardless of active
                     // state, so you can always tell which chip has D-pad focus.
-                    .chipFocusRing(focused, isActive, RoundedCornerShape(20.dp), colors.focusRing, colors.onAccent)
+                    .chipFocusRing(focused, isActive, RoundedCornerShape(20.dp), colors)
                     .dpadFocusable(
                         focusRequester = frs[i],
                         onFocused = { focused = true },

@@ -12,6 +12,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
@@ -19,7 +20,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.jellystructure.ravilo.ui.theme.AuroraColors
+import dev.jellystructure.ravilo.ui.theme.DaylightColors
+import dev.jellystructure.ravilo.ui.theme.GraphiteColors
 import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
+import dev.jellystructure.ravilo.ui.theme.MidnightColors
+import dev.jellystructure.ravilo.ui.theme.NoirColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -125,10 +131,10 @@ class FocusRingTest {
 
     /** DEB-4276 — a selected chip is accent-filled and the theme's ring is that accent's family: it must still show. */
     @Test fun `a selected focused chip draws the on-accent ring over its accent fill`() = runComposeUiTest {
-        val accent = Color(0xFF4F8EF0)
+        val accent = GraphiteColors.accent
         mainClock.autoAdvance = false
         setContent {
-            Box(Modifier.testTag(tag).size(40.dp).background(accent).chipFocusRing(true, true, RectangleShape, accent, Color.White))
+            Box(Modifier.testTag(tag).size(40.dp).background(accent).chipFocusRing(true, true, RectangleShape, GraphiteColors))
         }
         mainClock.advanceTimeByFrame()
         val ring = onNodeWithTag(tag).captureToImage().toPixelMap().let { it[1, 20] }
@@ -139,10 +145,30 @@ class FocusRingTest {
     @Test fun `an unselected focused chip keeps the theme ring`() = runComposeUiTest {
         mainClock.autoAdvance = false
         setContent {
-            Box(Modifier.testTag(tag).size(40.dp).background(Color.Black).chipFocusRing(true, false, RectangleShape, Color.Red, Color.White))
+            Box(Modifier.testTag(tag).size(40.dp).background(Color.Black).chipFocusRing(true, false, RectangleShape, GraphiteColors.copy(focusRing = Color.Red)))
         }
         mainClock.advanceTimeByFrame()
         val ring = onNodeWithTag(tag).captureToImage().toPixelMap().let { it[1, 20] }
         assertEquals(1f, ring.red, 0.01f); assertEquals(0f, ring.green, 0.01f)
+    }
+
+    /** DEB-4723 — Noir's on-accent ink is the page's own colour, so the selected ring takes the light text ink. */
+    @Test fun `a selected focused chip on Noir draws a ring that contrasts with the page`() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            Box(Modifier.testTag(tag).size(40.dp).background(NoirColors.accent).chipFocusRing(true, true, RectangleShape, NoirColors))
+        }
+        mainClock.advanceTimeByFrame()
+        val ring = onNodeWithTag(tag).captureToImage().toPixelMap().let { it[1, 20] }
+        assertTrue(ring.luminance() > 0.5f, "ring $ring must be light, not the near-black on-accent ink")
+        assertTrue(ring.luminance() > NoirColors.background.luminance() + 0.4f)
+    }
+
+    @Test fun `the ring ink is on-accent where it stands out from the page and text where it does not`() {
+        assertEquals(AuroraColors.onAccent, selectedChipRingInk(AuroraColors))
+        assertEquals(MidnightColors.onAccent, selectedChipRingInk(MidnightColors))
+        assertEquals(GraphiteColors.onAccent, selectedChipRingInk(GraphiteColors))
+        assertEquals(NoirColors.text, selectedChipRingInk(NoirColors))
+        assertEquals(DaylightColors.text, selectedChipRingInk(DaylightColors))
     }
 }

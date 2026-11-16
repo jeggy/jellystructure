@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
 import androidx.compose.ui.node.DrawModifierNode
@@ -34,6 +35,7 @@ import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
+import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -78,11 +80,30 @@ fun Modifier.focusRing(
 /**
  * DEB-4276 — the ring of a chip that can be the selected one. A selected chip is filled with the accent, and
  * [focusRing]'s colour is the accent's own family (identical in Graphite and Daylight), so a ring in it vanishes on
- * the fill: a selected chip takes [onAccent], the ink it already uses on that fill, and an unselected one the
- * theme's ring. The modifier is always in the chain and never moves (R338).
+ * the fill: a selected chip takes [selectedChipRingInk], an unselected one the theme's ring. The modifier is
+ * always in the chain and never moves (R338).
  */
-fun Modifier.chipFocusRing(focused: Boolean, selected: Boolean, shape: Shape, ring: Color, onAccent: Color): Modifier =
-    focusRing(focused, shape, if (selected) onAccent else ring, 2.dp)
+fun Modifier.chipFocusRing(focused: Boolean, selected: Boolean, shape: Shape, colors: RaviloColors): Modifier =
+    focusRing(focused, shape, if (selected) selectedChipRingInk(colors) else colors.focusRing, 2.dp)
+
+/** WCAG's floor for a non-text indicator against what it sits next to. */
+private const val RING_MIN_CONTRAST = 3f
+
+private fun contrast(a: Color, b: Color): Float {
+    val la = a.luminance() + 0.05f
+    val lb = b.luminance() + 0.05f
+    return if (la > lb) la / lb else lb / la
+}
+
+/**
+ * The ring ink of a selected, focused chip. The ring sits on the chip's edge, so its outer side meets the page:
+ * [RaviloColors.onAccent] is the ink the chip already uses on its fill and is kept whenever it stands out from the
+ * page (Aurora, Midnight, Graphite: white on dark). Where it does not — Noir's near-black on a near-black page,
+ * Daylight's white on a white page — the ring would read as the chip merely shrinking, so it takes
+ * [RaviloColors.text], which contrasts with the page by construction and with the accent fill (DEB-4723).
+ */
+internal fun selectedChipRingInk(colors: RaviloColors): Color =
+    if (contrast(colors.onAccent, colors.background) >= RING_MIN_CONTRAST) colors.onAccent else colors.text
 
 private data class FocusRingElement(
     val focused: Boolean,

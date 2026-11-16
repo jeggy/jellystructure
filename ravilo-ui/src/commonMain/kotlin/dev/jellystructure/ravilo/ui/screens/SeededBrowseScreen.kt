@@ -768,7 +768,7 @@ private fun FacetBar(
             Box(
                 Modifier
                     .background(chipBg, chipShape)
-                    .chipFocusRing(focused, active, chipShape, colors.focusRing, colors.onAccent)
+                    .chipFocusRing(focused, active, chipShape, colors)
                     .onGloballyPositioned { store.chipX[key.name] = it.positionInRoot().x }
                     .dpadFocusable(
                         focusRequester = facetChipFRs[key],
