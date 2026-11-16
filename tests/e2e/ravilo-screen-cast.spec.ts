@@ -4,7 +4,7 @@ import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall, scannedItemId } f
 // Phase 248 — the phone -> backend -> Samsung TV path (236/R264/R265) is the owner's most important
 // use case and the owner rarely has a real Samsung TV to test on. This drives the ACTUAL
 // ravilo-screen.js bundle through a full cast, with a fake `webapis.avplay` standing in for the one
-// thing CI genuinely cannot have (Samsung's own video pipeline) — everything else (pairing, the events
+// thing CI genuinely cannot have (Samsung's own video pipeline) — everything else (sign-in, the events
 // socket, TvApiClient, the receiver's own state machine, ravilo-receiver-core) is the real, shipped
 // code. See ravilo-screen-cors.spec.ts / ravilo-screen.spec.ts (phase 247) for the CORS-refusal
 // coverage this spec deliberately does not touch: the `ravilo-screen-cast` origin alias below is added
@@ -32,7 +32,7 @@ const JF_USER = process.env.JELLYFIN_USER ?? "admin";
 const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
 
 test.describe("Phase 248 — casting to a screen, driven through the real bundle", () => {
-  test("pair, play, pause, seek and stop all reach the real ravilo-screen code", async ({ page, request }) => {
+  test("sign in, play, pause, seek and stop all reach the real ravilo-screen code", async ({ page, request }) => {
     test.setTimeout(120_000); // generous — a shared, busy backend's own scan decides most of this
 
     await page.addInitScript(fakeAvPlayInitScript);
@@ -46,15 +46,14 @@ test.describe("Phase 248 — casting to a screen, driven through the real bundle
     await page.locator("#setupConnect").click();
     // Screen.kt's idle() runs immediately once setup succeeds — explicit "on", not the static-markup
     // default 247's spec had to work around (see that phase's dev notes on this exact gotcha).
-    await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#signin")).toHaveClass(/\bon\b/, { timeout: 15_000 });
     await expect(page.locator("#setup")).not.toHaveClass(/\bon\b/);
 
-    // ── 2. A real pairing code appears; a fake phone (raw HTTP, same shape as screens.spec.ts) claims it. ──
-    // pairingLoop() mints the code over a real network round trip after idle() has already rendered
-    // (with an empty code) — auto-retrying expect, not a single read, or this races the mint.
-    const codeLocator = page.locator("#idle-code");
+    // ── 2. The TV mints a sign-in code; a signed-in phone approves it. ──
+    // The mint is asynchronous, so wait for the code before approving it.
+    const codeLocator = page.locator("#signin-code");
     await expect(codeLocator).not.toHaveText("", { timeout: 10_000 });
-    const code = await codeLocator.textContent();
+    const code = (await codeLocator.textContent())?.replace(/\s/g, "");
 
     const R252 = { "x-ravilo-platform": "phone", "x-ravilo-version": "9.99" };
     const phoneLogin = await request.post("/api/tv/login", {
@@ -64,25 +63,24 @@ test.describe("Phase 248 — casting to a screen, driven through the real bundle
     expect(phoneLogin.status(), await phoneLogin.text()).toBe(200);
     const phoneToken = (await phoneLogin.json()).device_token as string;
 
-    const pairRes = await request.post("/api/remote/pair", {
+    const pairRes = await request.post("/api/tv/signin/approve", {
       headers: { authorization: `Bearer ${phoneToken}` },
       data: { code },
     });
-    expect(pairRes.status(), await pairRes.text()).toBe(200);
+    expect(pairRes.status(), await pairRes.text()).toBe(204);
 
-    // The receiver's own pairingLoop() picks up its token, but eventLoop() (a SEPARATE coroutine) is
-    // what actually opens the /api/tv/events socket tvEventBus.isConnected() checks — /api/remote/play
-    // 409s "device_offline" until that socket is up, which is a real, independent race from pairing.
+    // Polling collects the TV's own token, then eventLoop() opens /api/tv/events. Remote play
+    // returns device_offline until that socket is up, independently of successful sign-in.
     await expect
       .poll(async () => {
         const res = await request.get("/api/remote/devices", { headers: { authorization: `Bearer ${phoneToken}` } });
         const devices = await res.json();
-        return devices.some((d: any) => d.kind === "screen" && d.online === true);
+        return devices.some((d: any) => d.kind === "tv" && d.platform === "tizen" && d.online === true);
       }, { timeout: 15_000 })
       .toBe(true);
 
     const devices = await (await request.get("/api/remote/devices", { headers: { authorization: `Bearer ${phoneToken}` } })).json();
-    const screenDeviceId = devices.find((d: any) => d.kind === "screen").device_id as string;
+    const screenDeviceId = devices.find((d: any) => d.kind === "tv" && d.platform === "tizen" && d.online).device_id as string;
 
     // ── 3. A real, scanned library item — never a fake id (requireVisible() checks jellystructure's
     //    own MediaStore, not the mock Jellyfin, so an unscanned id would 403 at the receiver). This

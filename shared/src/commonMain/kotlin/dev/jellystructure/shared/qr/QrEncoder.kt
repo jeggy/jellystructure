@@ -1,4 +1,4 @@
-package dev.jellystructure.ravilo.ui.qr
+package dev.jellystructure.shared.qr
 
 /**
  * DEB-2233 (FR-5) — a QR encoder in plain Kotlin: byte mode, error-correction level M, versions 1–40, no platform

@@ -15,13 +15,21 @@ internal data class ScreenRouteEntry(
 )
 
 /** The DOM shell stays mounted while R264's player covers it. */
-internal class ScreenShell {
+internal class ScreenShell(private val onProfileMenu: () -> Unit = {}) {
     private val root get() = document.getElementById("shell") as HTMLElement
     private val body get() = document.getElementById("shell-body") as HTMLElement
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
     private val focus = ScreenFocus({ root }, { entries.last() })
     private var visible = false
     private var player = false
+
+    fun hide() { visible = false; root.classList.remove("on") }
+
+    fun resetHome() {
+        entries.clear(); entries.add(ScreenRouteEntry("home", "shell-page-target"))
+        player = false
+        showHome()
+    }
 
     fun showHome() {
         visible = true
@@ -82,6 +90,7 @@ internal class ScreenShell {
         val focused = entries.last().focusId
         if (!focused.startsWith("nav-")) return
         val destination = focused.removePrefix("nav-")
+        if (destination == "profile") { onProfileMenu(); return }
         if (entries.last().name == destination) {
             focus.focus(body.firstChild as HTMLElement)
             return

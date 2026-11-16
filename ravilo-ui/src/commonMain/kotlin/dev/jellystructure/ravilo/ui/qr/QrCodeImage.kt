@@ -1,4 +1,5 @@
 package dev.jellystructure.ravilo.ui.qr
+import dev.jellystructure.shared.qr.QrEncoder
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable

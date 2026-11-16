@@ -105,3 +105,34 @@
     #overlay .row > * + * { margin-left: 22px; }
     #pk-tabs b + b { margin-left: 10px; }
     .pkr > * + * { margin-left: 14px; }
+
+    /* DEB-4657 FR-2/FR-3 — DOM sign-in and profiles, inside the Chromium 63 CSS floor. */
+    .auth-screen { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 6; display: none; background: var(--bg); color: var(--ink); }
+    .auth-screen.on { display: block; }
+    .auth-brand { position: absolute; left: 48px; top: 28px; font-weight: 700; font-size: 25px; }
+    .auth-center { position: absolute; left: 9%; right: 9%; top: 50%; transform: translateY(-50%); text-align: center; }
+    .auth-center h1 { font-size: 34px; margin: 0 0 28px; }
+    .auth-code-layout { display: flex; align-items: center; justify-content: center; }
+    #signin-qr { flex: none; margin-right: 36px; background: #fff; border-radius: 10px; overflow: hidden; }
+    #signin-qr canvas { display: block; }
+    .auth-code-copy { text-align: left; }
+    .auth-label { color: var(--ink-soft); text-transform: uppercase; font-size: 15px; letter-spacing: 1px; }
+    #signin-code { font-family: ui-monospace, monospace; font-size: 76px; font-weight: 700; letter-spacing: 7px; }
+    .auth-tv { color: var(--ink-soft); font-size: 18px; margin-top: 16px; }
+    .auth-tv strong { color: var(--ink); margin-left: 12px; }
+    .auth-button, .profile-choice { background: rgba(255,255,255,.08); color: var(--ink); border: 2px solid transparent; border-radius: 11px; padding: 14px 24px; font: inherit; font-size: 22px; cursor: pointer; }
+    .auth-button:focus, .profile-choice:focus, .profile-choice.focused { outline: none; border-color: var(--ring); background: rgba(255,255,255,.16); }
+    #signin-password-instead { margin-top: 30px; }
+    #signin-retry { display: none; margin-top: 30px; margin-left: 12px; }
+    .auth-hint { color: var(--ink-soft); font-size: 18px; margin-top: 24px; min-height: 24px; }
+    #signin-form { display: none; max-width: 540px; margin: 0 auto; text-align: left; }
+    #signin-form label { display: block; margin: 18px 0 7px; font-size: 18px; }
+    #signin-form input { box-sizing: border-box; width: 100%; padding: 14px 18px; font: inherit; font-size: 24px; border: 2px solid rgba(255,255,255,.2); border-radius: 10px; color: var(--ink); background: rgba(255,255,255,.07); }
+    #signin-form input:focus { outline: none; border-color: var(--ring); }
+    .auth-actions { display: flex; justify-content: center; margin-top: 24px; }
+    .auth-actions button + button { margin-left: 14px; }
+    .profile-choices { display: flex; justify-content: center; flex-wrap: wrap; }
+    .profile-choice { min-width: 165px; min-height: 130px; margin: 12px; }
+    #profile-menu { background: rgba(10,12,19,.96); }
+    #profile-menu .profile-choices { flex-direction: column; align-items: center; }
+    #profile-menu .profile-choice { min-height: 0; width: 310px; text-align: left; }

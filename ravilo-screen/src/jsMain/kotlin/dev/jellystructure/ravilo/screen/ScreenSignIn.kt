@@ -1,0 +1,206 @@
+package dev.jellystructure.ravilo.screen
+
+import dev.jellystructure.ravilo.i18n.t
+import dev.jellystructure.ravilo.receiver.ReceiverStrings
+import dev.jellystructure.shared.qr.QrEncoder
+import dev.jellystructure.shared.tv.PairResult
+import dev.jellystructure.shared.tv.TvApiClient
+import dev.jellystructure.shared.tv.TvApiError
+import dev.jellystructure.shared.tv.TvSignInPoll
+import kotlinx.browser.document
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLCanvasElement
+import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.events.KeyboardEvent
+
+/** DEB-4657 FR-2: the two open sign-in routes and the password fallback, drawn in DOM. */
+internal class ScreenSignIn(
+    private val api: TvApiClient,
+    private val deviceId: String,
+    private val deviceName: String,
+    private val onSignedIn: (PairResult) -> Unit,
+    private val onBack: () -> Unit,
+) {
+    private val root get() = document.getElementById("signin") as HTMLElement
+    private val message get() = document.getElementById(if (showingPassword) "signin-password-message" else "signin-message") as HTMLElement
+    private val code get() = document.getElementById("signin-code") as HTMLElement
+    private val qr get() = document.getElementById("signin-qr") as HTMLElement
+    private val passwordButton get() = document.getElementById("signin-password-instead") as HTMLElement
+    private val retryButton get() = document.getElementById("signin-retry") as HTMLElement
+    private val username get() = document.getElementById("signin-username") as HTMLInputElement
+    private val password get() = document.getElementById("signin-password") as HTMLInputElement
+    private val form get() = document.getElementById("signin-form") as HTMLElement
+    private var job: Job? = null
+    private var showingPassword = false
+    private var hasProfiles = false
+    private var generation = 0
+    private var signingIn = false
+
+    private fun label(key: String, vars: Map<String, String> = emptyMap()) = t(key, ReceiverStrings.lang, vars)
+
+    fun open(withProfiles: Boolean) {
+        hasProfiles = withProfiles
+        root.classList.add("on")
+        document.getElementById("signin-title")?.textContent = label("tvsignin.title")
+        document.getElementById("signin-code-label")?.textContent = label("tvsignin.code_label")
+        document.getElementById("signin-tv-label")?.textContent = label("tvsignin.this_tv")
+        document.getElementById("signin-tv-name")?.textContent = deviceName
+        passwordButton.textContent = label("tvsignin.password_instead")
+        retryButton.textContent = label("action.retry")
+        document.getElementById("signin-username-label")?.textContent = label("login.username")
+        document.getElementById("signin-password-label")?.textContent = label("login.password")
+        document.getElementById("signin-submit")?.textContent = label("login.sign_in")
+        document.getElementById("signin-cancel")?.textContent = label("profile.cancel")
+        document.getElementById("signin-back")?.textContent = label("tvsignin.back_to_profiles")
+        (document.getElementById("signin-back") as HTMLElement).style.display = if (withProfiles) "block" else "none"
+        passwordButton.onclick = { openPassword() }
+        retryButton.onclick = { openCode() }
+        (document.getElementById("signin-submit") as HTMLElement).onclick = { submitPassword() }
+        (document.getElementById("signin-cancel") as HTMLElement).onclick = { openCode() }
+        openCode()
+    }
+
+    fun hide() { generation++; job?.cancel(); job = null; signingIn = false; root.classList.remove("on") }
+    fun isOpen(): Boolean = root.classList.contains("on")
+
+    private fun openCode() {
+        generation++
+        job?.cancel()
+        signingIn = false
+        (document.getElementById("signin-submit") as HTMLElement).removeAttribute("disabled")
+        showingPassword = false
+        form.style.display = "none"
+        (document.getElementById("signin-code-view") as HTMLElement).style.display = "block"
+        retryButton.style.display = "none"
+        code.textContent = ""
+        qr.textContent = ""
+        message.textContent = ""
+        passwordButton.focus()
+        job = GlobalScope.launch { codeLoop() }
+    }
+
+    private suspend fun codeLoop() {
+        val requestGeneration = generation
+        while (requestGeneration == generation) {
+            val minted = runCatching { api.signInCode(deviceId, deviceName) }.getOrNull()
+            if (requestGeneration != generation) return
+            if (minted == null) { unreachable(); return }
+            if (!minted.available) { openPassword(); return }
+            val value = minted.code ?: run { unreachable(); return }
+            val secret = minted.secret ?: run { unreachable(); return }
+            code.textContent = if (value.length > 3) value.take(3) + " " + value.drop(3) else value
+            message.textContent = label(if (minted.linkUrl == null) "tvsignin.how_noqr" else "tvsignin.how")
+            drawQr(minted.linkUrl)
+            var failures = 0
+            while (requestGeneration == generation) {
+                delay(3_000)
+                // An expired code is re-minted without showing an error or an empty code.
+                if (minted.expiresAt?.let { (js("Date.now()") as Double) >= it.toDouble() } == true) break
+                val poll = try { api.signInPoll(value, secret) } catch (e: Exception) {
+                    if (requestGeneration != generation) return
+                    if (++failures == 5) { unreachable(); return }
+                    continue
+                }
+                if (requestGeneration != generation) return
+                failures = 0
+                when (poll) {
+                    is TvSignInPoll.Waiting -> {
+                        val name = poll.approverName
+                        message.textContent = if (poll.approving && name != null)
+                            label("tvsignin.approving", mapOf("name" to name))
+                        else label(if (minted.linkUrl == null) "tvsignin.how_noqr" else "tvsignin.how")
+                    }
+                    is TvSignInPoll.Done -> { hide(); onSignedIn(poll.result); return }
+                    TvSignInPoll.Invalid -> break
+                }
+            }
+        }
+    }
+
+    private fun unreachable() {
+        message.textContent = label("login.error_unreachable")
+        retryButton.style.display = "inline-block"
+        retryButton.focus()
+    }
+
+    private fun openPassword() {
+        generation++
+        job?.cancel(); job = null
+        showingPassword = true
+        (document.getElementById("signin-code-view") as HTMLElement).style.display = "none"
+        form.style.display = "block"
+        message.textContent = ""
+        password.value = ""
+        username.focus()
+    }
+
+    private fun submitPassword() {
+        if (signingIn) return
+        val user = username.value.trim()
+        val pass = password.value
+        if (user.isEmpty() || pass.isEmpty()) { message.textContent = label("login.error_required"); return }
+        message.textContent = label("login.signing_in")
+        signingIn = true
+        val requestGeneration = generation
+        (document.getElementById("signin-submit") as HTMLElement).setAttribute("disabled", "true")
+        job = GlobalScope.launch {
+            val result = runCatching { api.login(user, pass, deviceId, deviceName) }
+            if (requestGeneration != generation) return@launch
+            signingIn = false
+            (document.getElementById("signin-submit") as HTMLElement).removeAttribute("disabled")
+            result.fold(
+                onSuccess = { hide(); onSignedIn(it) },
+                onFailure = {
+                    message.textContent = label(if ((it as? TvApiError.Http)?.status == 401) "login.error_invalid" else "login.error_unreachable")
+                    password.value = ""
+                    password.focus()
+                },
+            )
+        }
+    }
+
+    fun handleKey(event: KeyboardEvent): Boolean {
+        if (!isOpen()) return false
+        if (isBackKey(event)) {
+            if (showingPassword) openCode() else if (hasProfiles) { hide(); onBack() } else return false
+            event.preventDefault(); return true
+        }
+        if (event.key == "Enter" && showingPassword && (document.activeElement == username || document.activeElement == password)) {
+            submitPassword(); event.preventDefault(); return true
+        }
+        if (event.key == "ArrowDown" || event.key == "ArrowUp" ||
+            ((event.key == "ArrowLeft" || event.key == "ArrowRight") && document.activeElement != username && document.activeElement != password)) {
+            val items = if (showingPassword) listOf(username, password,
+                document.getElementById("signin-submit") as HTMLElement,
+                document.getElementById("signin-cancel") as HTMLElement)
+            else listOf(passwordButton, retryButton).filter { it.style.display != "none" }
+            val current = items.indexOf(document.activeElement)
+            val step = if (event.key == "ArrowDown" || event.key == "ArrowRight") 1 else -1
+            items[(current + step + items.size) % items.size].focus()
+            event.preventDefault(); return true
+        }
+        return false
+    }
+
+    private fun drawQr(link: String?) {
+        qr.textContent = ""
+        if (link == null) { qr.style.display = "none"; return }
+        val matrix = runCatching { QrEncoder.encode(link) }.getOrNull() ?: return
+        val canvas = document.createElement("canvas") as HTMLCanvasElement
+        val module = 6
+        canvas.width = (matrix.size + 8) * module
+        canvas.height = canvas.width
+        val context = canvas.getContext("2d")!!.asDynamic()
+        context.fillStyle = "#fff"
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.fillStyle = "#000"
+        for (y in 0 until matrix.size) for (x in 0 until matrix.size)
+            if (matrix.isDark(x, y)) context.fillRect((x + 4) * module, (y + 4) * module, module, module)
+        qr.style.display = "block"
+        qr.appendChild(canvas)
+    }
+}

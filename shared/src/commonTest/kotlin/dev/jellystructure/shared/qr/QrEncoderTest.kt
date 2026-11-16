@@ -1,4 +1,4 @@
-package dev.jellystructure.ravilo.ui.qr
+package dev.jellystructure.shared.qr
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -21,6 +21,9 @@ const VERIFIED_AGAINST = { version: "12.1.0", date: "2026-09-20" };
 // `AuthenticateByName` mints exactly this string, and config-test/config.toml pre-sets it as
 // `jellyfin_token`, so every backend call already carries it.
 const VALID_TOKEN = "mock-access-token";
+const QA_TOKEN = "mock-qa-viewer-token";
+const quickCodes = new Map();
+const quickSecrets = new Map();
 
 /**
  * Phase 241 (FR-241-1/2/3) — does this request carry a valid credential?
@@ -38,7 +41,7 @@ function credentialOf(headers) {
   if (!auth.startsWith("MediaBrowser ")) return "absent";
   const m = /\bToken="([^"]*)"/.exec(auth);
   if (!m || !m[1]) return "absent";
-  return m[1] === VALID_TOKEN ? "valid" : "wrong";
+  return m[1] === VALID_TOKEN || m[1] === QA_TOKEN ? "valid" : "wrong";
 }
 
 // FR-241-2's carve-outs. `AuthenticateByName` is how a credential is obtained in the first place.
@@ -53,7 +56,7 @@ function credentialOf(headers) {
 // inline (both are genuinely anonymous on 12.1: 206 video/mp4 and 200 respectively). Putting one
 // behind the guard instead would make this mock STRICTER than the real server, which fails in the
 // opposite direction and hides a regression just as well.
-const ANONYMOUS_ROUTES = new Set(["/Users/AuthenticateByName", "/System/Info/Public", "/__mock/last-playback-info", "/__mock/stats"]);
+const ANONYMOUS_ROUTES = new Set(["/Users/AuthenticateByName", "/Users/AuthenticateWithQuickConnect", "/QuickConnect/Enabled", "/QuickConnect/Initiate", "/System/Info/Public", "/__mock/last-playback-info", "/__mock/stats"]);
 // Test-only introspection (R297/R299's receiver spec): the last DeviceProfile the backend negotiated
 // with, and how many playback stops it reported. Not part of Jellyfin's API — the `__mock/` prefix
 // says so. Anonymous because the spec's Playwright request context carries no Jellyfin credential.
@@ -195,13 +198,45 @@ const server = http.createServer(async (req, res) => {
     }
     let creds = {};
     try { creds = JSON.parse(body); } catch {}
-    if (creds.Username !== ADMIN_USER || creds.Pw !== ADMIN_PASS) {
-      return send(res, 401, { message: "Invalid credentials" });
-    }
+    const admin = creds.Username === ADMIN_USER && creds.Pw === ADMIN_PASS;
+    const qa = creds.Username === "qa-viewer" && creds.Pw === "qa-password";
+    if (!admin && !qa) return send(res, 401, { message: "Invalid credentials" });
     return send(res, 200, {
-      User: { Id: "user-id-1", Name: ADMIN_USER, Policy: { IsAdministrator: true } },
-      AccessToken: "mock-access-token",
+      User: { Id: admin ? "user-id-1" : "user-id-2", Name: admin ? ADMIN_USER : "qa-viewer", Policy: { IsAdministrator: admin } },
+      AccessToken: admin ? VALID_TOKEN : QA_TOKEN,
       ServerId: "mock-server-id",
+    });
+  }
+
+  // DEB-4657: Quick Connect's four calls let the full Tizen sign-in run against this mock.
+  if (method === "GET" && path === "/QuickConnect/Enabled") return sendText(res, 200, "application/json", "true");
+  if (method === "POST" && path === "/QuickConnect/Initiate") {
+    const code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    const secret = crypto.randomBytes(16).toString("hex");
+    quickCodes.set(code, { secret, user: null });
+    quickSecrets.set(secret, code);
+    return send(res, 200, { Secret: secret, Code: code, Authenticated: false });
+  }
+  if (method === "POST" && path === "/QuickConnect/Authorize") {
+    const code = url.searchParams.get("code");
+    const pending = quickCodes.get(code);
+    if (!pending) return send(res, 404, { message: "Code not found" });
+    const auth = String(req.headers["authorization"] || "");
+    const token = /\bToken="([^"]*)"/.exec(auth)?.[1];
+    pending.user = token === VALID_TOKEN ? "admin" : token === QA_TOKEN ? "qa-viewer" : null;
+    return pending.user ? sendText(res, 200, "application/json", "true") : send(res, 401, { message: "Invalid token" });
+  }
+  if (method === "POST" && path === "/Users/AuthenticateWithQuickConnect") {
+    let body = {};
+    try { body = JSON.parse(await readBody(req)); } catch {}
+    const code = quickSecrets.get(body.Secret);
+    const pending = quickCodes.get(code);
+    if (!pending?.user) return send(res, 401, { message: "Code not authorized" });
+    quickCodes.delete(code); quickSecrets.delete(body.Secret);
+    const admin = pending.user === "admin";
+    return send(res, 200, {
+      User: { Id: admin ? "user-id-1" : "user-id-2", Name: pending.user, Policy: { IsAdministrator: admin } },
+      AccessToken: admin ? VALID_TOKEN : QA_TOKEN, ServerId: "mock-server-id",
     });
   }
 
@@ -305,7 +340,9 @@ const server = http.createServer(async (req, res) => {
 
   // GET /Users/Me  (optional, called by some auth flows)
   if (method === "GET" && path === "/Users/Me") {
-    return send(res, 200, { Id: "user-id-1", Name: ADMIN_USER, Policy: { IsAdministrator: true } });
+    const token = /\bToken="([^"]*)"/.exec(String(req.headers["authorization"] || ""))?.[1];
+    const admin = token !== QA_TOKEN;
+    return send(res, 200, { Id: admin ? "user-id-1" : "user-id-2", Name: admin ? ADMIN_USER : "qa-viewer", Policy: { IsAdministrator: admin } });
   }
 
   // GET /LiveTv/Info and /LiveTv/Channels — jellystructure's LiveTvService.sync() calls both

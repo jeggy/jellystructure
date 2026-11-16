@@ -21,7 +21,7 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
     const pageErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
 
-    const { phoneToken, screenId } = await bootAndPair(page, request);
+    const { phoneToken, screenId } = await bootAndSignIn(page, request);
     const auth = { authorization: `Bearer ${phoneToken}` };
     const nowPlaying = async () => (await (await request.get(`/api/remote/devices/${screenId}`, { headers: auth })).json())?.now_playing ?? {};
 
@@ -101,7 +101,7 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
   test("a title that cannot start says why, in one sentence, and goes back to idle", async ({ page, request }) => {
     test.setTimeout(120_000);
     await page.addInitScript(fakeAvPlayInitScript);
-    const { phoneToken, screenId } = await bootAndPair(page, request, "e2e-player-phone-r264-b");
+    const { phoneToken, screenId } = await bootAndSignIn(page, request, "e2e-player-phone-r264-b");
     const auth = { authorization: `Bearer ${phoneToken}` };
     // An id this library does not hold: the push goes out, the start is refused.
     const play = await request.post("/api/remote/play", { headers: auth, data: { device_id: screenId, jellyfin_item_id: "00000000000000000000000000000000", start_position_ms: 0 } });
@@ -113,14 +113,14 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
   });
 });
 
-async function bootAndPair(page: Page, request: APIRequestContext, phoneDevice = "e2e-player-phone-r264"): Promise<{ phoneToken: string; screenId: string }> {
+async function bootAndSignIn(page: Page, request: APIRequestContext, phoneDevice = "e2e-player-phone-r264"): Promise<{ phoneToken: string; screenId: string }> {
   await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
   await page.locator("#setupHost").fill(process.env.APP_URL_FROM_SCREEN ?? "http://app:9505");
   await page.locator("#setupConnect").click();
-  await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 15_000 });
-  const codeLocator = page.locator("#idle-code");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+  const codeLocator = page.locator("#signin-code");
   await expect(codeLocator).not.toHaveText("", { timeout: 10_000 });
-  const code = await codeLocator.textContent();
+  const code = (await codeLocator.textContent())?.replace(/\s/g, "");
 
   const login = await request.post("/api/tv/login", {
     data: { username: JF_USER, password: JF_PASS, device_id: phoneDevice, device_name: "E2E Player Phone" },
@@ -130,17 +130,17 @@ async function bootAndPair(page: Page, request: APIRequestContext, phoneDevice =
   const phoneToken = (await login.json()).device_token as string;
   const auth = { authorization: `Bearer ${phoneToken}` };
   const screenIds = async (): Promise<string[]> =>
-    ((await (await request.get("/api/remote/devices", { headers: auth })).json()) as any[]).filter((d) => d.kind === "screen").map((d) => d.device_id);
+    ((await (await request.get("/api/remote/devices", { headers: auth })).json()) as any[]).filter((d) => d.kind === "tv" && d.platform === "tizen").map((d) => d.device_id);
   const before = new Set(await screenIds());
 
-  const pair = await request.post("/api/remote/pair", { headers: auth, data: { code } });
-  expect(pair.status(), await pair.text()).toBe(200);
+  const pair = await request.post("/api/tv/signin/approve", { headers: auth, data: { code } });
+  expect(pair.status(), await pair.text()).toBe(204);
 
   let screenId = "";
   await expect
     .poll(async () => {
       const devices = (await (await request.get("/api/remote/devices", { headers: auth })).json()) as any[];
-      const mine = devices.find((d) => d.kind === "screen" && !before.has(d.device_id) && d.online === true);
+      const mine = devices.find((d) => d.kind === "tv" && d.platform === "tizen" && !before.has(d.device_id) && d.online === true);
       screenId = mine?.device_id ?? "";
       return screenId !== "";
     }, { timeout: 15_000 })

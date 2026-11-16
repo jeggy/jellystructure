@@ -40,7 +40,7 @@ test.describe("R285 — audio and subtitles on the TV receiver, driven through t
     const pageErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
 
-    const { phoneToken, screenId } = await bootAndPair(page, request);
+    const { phoneToken, screenId } = await bootAndSignIn(page, request);
     const auth = { authorization: `Bearer ${phoneToken}` };
     const status = async (): Promise<Status> =>
       (await (await request.get(`/api/remote/devices/${screenId}`, { headers: auth })).json())?.now_playing ?? {};
@@ -149,17 +149,17 @@ test.describe("R285 — audio and subtitles on the TV receiver, driven through t
   });
 });
 
-/** Boots the real bundle, completes R269's setup, and pairs it to a fresh fake phone. The screen is
- *  identified by the device list's DIFFERENCE across the pairing — this stack also holds phase 248's
+/** Boots the real bundle, completes R269's setup, and signs it in from a fresh phone. The screen is
+ *  identified by the device list's DIFFERENCE across sign-in — this stack also holds phase 248's
  *  screen, paired by the same Jellyfin user and named the same. */
-async function bootAndPair(page: Page, request: APIRequestContext): Promise<{ phoneToken: string; screenId: string }> {
+async function bootAndSignIn(page: Page, request: APIRequestContext): Promise<{ phoneToken: string; screenId: string }> {
   await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
   await page.locator("#setupHost").fill(process.env.APP_URL_FROM_SCREEN ?? "http://app:9505");
   await page.locator("#setupConnect").click();
-  await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 15_000 });
-  const codeLocator = page.locator("#idle-code");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+  const codeLocator = page.locator("#signin-code");
   await expect(codeLocator).not.toHaveText("", { timeout: 10_000 });
-  const code = await codeLocator.textContent();
+  const code = (await codeLocator.textContent())?.replace(/\s/g, "");
 
   const login = await request.post("/api/tv/login", {
     data: { username: JF_USER, password: JF_PASS, device_id: "e2e-tracks-phone-r285", device_name: "E2E Tracks Phone" },
@@ -169,17 +169,17 @@ async function bootAndPair(page: Page, request: APIRequestContext): Promise<{ ph
   const phoneToken = (await login.json()).device_token as string;
   const auth = { authorization: `Bearer ${phoneToken}` };
   const screenIds = async (): Promise<string[]> =>
-    ((await (await request.get("/api/remote/devices", { headers: auth })).json()) as any[]).filter((d) => d.kind === "screen").map((d) => d.device_id);
+    ((await (await request.get("/api/remote/devices", { headers: auth })).json()) as any[]).filter((d) => d.kind === "tv" && d.platform === "tizen").map((d) => d.device_id);
   const before = new Set(await screenIds());
 
-  const pair = await request.post("/api/remote/pair", { headers: auth, data: { code } });
-  expect(pair.status(), await pair.text()).toBe(200);
+  const pair = await request.post("/api/tv/signin/approve", { headers: auth, data: { code } });
+  expect(pair.status(), await pair.text()).toBe(204);
 
   let screenId = "";
   await expect
     .poll(async () => {
       const devices = (await (await request.get("/api/remote/devices", { headers: auth })).json()) as any[];
-      const mine = devices.find((d) => d.kind === "screen" && !before.has(d.device_id) && d.online === true);
+      const mine = devices.find((d) => d.kind === "tv" && d.platform === "tizen" && !before.has(d.device_id) && d.online === true);
       screenId = mine?.device_id ?? "";
       return screenId !== "";
     }, { timeout: 15_000 })

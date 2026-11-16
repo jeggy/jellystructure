@@ -40,9 +40,6 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -57,15 +54,11 @@ import kotlin.random.Random
  * R264's push-driven player and DEB-4656's shell entry point. The player still follows `play_item`
  * events and reports `ended`; [ScreenShell] owns browsing routes and restores them after playback.
  */
-private val json = Json { ignoreUnknownKeys = true }
-
 private const val DEVICE_ID_KEY = "ravilo.screen.deviceId"
-private const val TOKENS_KEY = "ravilo.screen.tokens"
 internal const val SERVER_URL_KEY = "ravilo.screen.serverUrl"
 internal const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
 private const val PROGRESS_EVERY_MS = 10_000L
 private const val STATUS_EVERY_MS = 5_000L
-private const val PAIR_POLL_MS = 3_000L
 private const val RECONNECT_BASE_MS = 2_000L
 private const val RECONNECT_MAX_MS = 30_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
@@ -75,20 +68,22 @@ private const val PICKER_ROWS = 9
 
 private class Screen(private val serverUrl: String) {
     private val backend = detectMediaBackend()
-    private val shell = ScreenShell()
+    private val shell = ScreenShell { openProfileMenu() }
     private val deviceId = loadOrCreateDeviceId()
-    // FR-236-4 — a screen can hold one device token PER PAIRED USER (a device token is always
-    // per (device, user) in this codebase); `activeUserId` picks which one authenticates outbound calls,
-    // switched whenever a play_item names a session_user_id.
-    private val tokens = loadTokens().toMutableMap()
-    private var activeUserId: String? = tokens.keys.firstOrNull()
+    private val profiles = ScreenProfileStore()
+    private val legacyTokens = profiles.takeLegacyTokens()
+    private val tokens = profiles.profiles().associate { it.userId to it.token }.toMutableMap()
+    private var activeUserId: String? = profiles.profiles().singleOrNull()?.userId
     private val api = TvApiClient(
         client = HttpClient(Js) { install(WebSockets) },
         baseUrl = serverUrl,
-        deviceToken = { tokens[activeUserId] ?: tokens.values.firstOrNull() },
-        platform = "screen",
+        deviceToken = { activeUserId?.let(tokens::get) },
+        platform = "tizen",
     )
 
+    private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired) { showPicker() }
+    private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut)
+    private var eventsJob: Job? = null
     private var config: RaviloConfig? = null
     private var itemId: String? = null
     private var title: String? = null
@@ -161,13 +156,18 @@ private class Screen(private val serverUrl: String) {
             override fun onError(detail: String) { console.error("Ravilo screen: backend error: $detail"); failPlay(null) }
         })
         idle()
-        if (activeUserId != null) shell.showHome()
+        if (activeUserId != null) {
+            profiles.setActive(activeUserId)
+            shell.showHome()
+        } else if (profiles.profiles().isNotEmpty()) showPicker() else showSignIn()
+        if (legacyTokens.isNotEmpty()) GlobalScope.launch {
+            for (token in legacyTokens) runCatching { api.unpair(token) }
+        }
         // R279 — idle already drew in the remembered language (ReceiverStrings seeds itself from it),
         // so the pairing screen is never English in a Danish house just because nothing has loaded
         // yet. If this set is already enrolled, the active viewer's own setting supersedes it.
         if (activeUserId != null) GlobalScope.launch { adoptLanguageOfActiveUser() }
-        GlobalScope.launch { pairingLoop() }
-        GlobalScope.launch { eventLoop() }
+        startEvents()
         GlobalScope.launch { tickLoop() }
         GlobalScope.launch { cueLoop() }
         GlobalScope.launch { segmentLoop() }
@@ -187,38 +187,62 @@ private class Screen(private val serverUrl: String) {
         shell.returnFromPlayer()
     }
 
-    // ── pairing: mints a code and polls it while idle. Per the dev review, this keeps running on idle
-    // even once a token exists, so a second household member can pair the same screen. R269 (FR-R269-5)
-    // — a stored-but-unreachable server is its own state (the noserver screen, retrying), never confused
-    // with "no address at all" (that's runServerSetup(), never reached once an address is stored). ──
-    private suspend fun pairingLoop() {
-        while (true) {
-            if (loaded) { delay(2_000); continue }
-            val minted = runCatching { api.screenCode(deviceId, deviceName(), "tizen") }.getOrNull()
-            if (minted == null) {
-                el("noserver-t").textContent = ReceiverStrings.t("cast.no_server")
-                el("noserver-s").textContent = ReceiverStrings.t("cast.no_server_sub")
-                show("noserver")
-                delay(5_000)
-                continue
-            }
-            el("idle-code").textContent = minted.code
-            idle()
-            while (nowMs() < minted.expiresAt) {
-                if (loaded) break
-                val result = runCatching { api.screenClaim(minted.code, minted.claimSecret) }.getOrNull()
-                if (result != null) { onPaired(result); break }
-                delay(PAIR_POLL_MS)
-            }
-        }
+    // ── DEB-4657 FR-1–FR-3: sign-in and one active viewer ──
+    private fun showSignIn() {
+        activeUserId = null
+        eventsJob?.cancel(); eventsJob = null
+        shell.hide()
+        profileUi.hide()
+        signIn.open(profiles.profiles().isNotEmpty())
+    }
+
+    private fun showPicker() {
+        activeUserId = null
+        eventsJob?.cancel(); eventsJob = null
+        signIn.hide()
+        shell.hide()
+        profileUi.showPicker()
+    }
+
+    private fun selectProfile(profile: ScreenProfile) {
+        activeUserId = profile.userId
+        profiles.setActive(profile.userId)
+        profileUi.hide()
+        signIn.hide()
+        shell.resetHome()
+        GlobalScope.launch { adoptLanguageOfActiveUser() }
+        startEvents()
+    }
+
+    private fun openProfileMenu() = profileUi.showMenu()
+
+    private fun signOut() {
+        val userId = activeUserId ?: return
+        val token = tokens[userId]
+        profileUi.hide()
+        eventsJob?.cancel(); eventsJob = null
+        activeUserId = null
+        tokens.remove(userId)
+        profiles.remove(userId)
+        // A local sign-out must complete even when the server is unreachable.
+        if (token != null) GlobalScope.launch { runCatching { api.unpair(token) } }
+        if (profiles.profiles().isEmpty()) showSignIn() else showPicker()
     }
 
     private fun onPaired(pr: PairResult) {
+        profiles.add(pr)
         tokens[pr.session.userId] = pr.deviceToken
-        if (activeUserId == null) activeUserId = pr.session.userId
-        saveTokens()
+        activeUserId = pr.session.userId
+        signIn.hide()
+        profileUi.hide()
+        shell.resetHome()
         GlobalScope.launch { adoptLanguageOfActiveUser() }
-        shell.showHome()
+        startEvents()
+    }
+
+    private fun startEvents() {
+        eventsJob?.cancel()
+        eventsJob = activeUserId?.let { GlobalScope.launch { eventLoop() } }
     }
 
     /**
@@ -233,7 +257,9 @@ private class Screen(private val serverUrl: String) {
      * keep the previous language until something else redrew it.
      */
     private suspend fun adoptLanguageOfActiveUser() {
+        val requestedUser = activeUserId ?: return
         val fresh = runCatching { api.getConfig() }.getOrNull() ?: return
+        if (activeUserId != requestedUser) return
         config = fresh
         val before = ReceiverStrings.lang
         ReceiverStrings.adopt(fresh.uiLanguage)
@@ -276,11 +302,9 @@ private class Screen(private val serverUrl: String) {
 
     // ── backend → screen ──
     private suspend fun onPlayItem(env: PlayItemEnvelope) {
-        val previousUser = activeUserId
-        env.sessionUserId?.let { if (tokens.containsKey(it)) activeUserId = it }
-        // R279 — a play names the viewer this set is acting for; their language, not the first
-        // viewer who ever paired with it.
-        if (activeUserId != previousUser) adoptLanguageOfActiveUser()
+        // The socket belongs to the selected viewer. A queued event from an older socket cannot
+        // switch this session to another viewer's token after the picker changes profiles.
+        if (env.sessionUserId != null && env.sessionUserId != activeUserId) return
         itemId = env.jellyfinId
         title = env.title
         // R303 (FR-R303-2/5/7) — the push carries the S·E kicker, the series' name and the logo; the
@@ -340,7 +364,10 @@ private class Screen(private val serverUrl: String) {
                 continue
             }
             if (http != null && http.status == 401) {
-                tokens.remove(activeUserId); activeUserId = tokens.keys.firstOrNull(); saveTokens()
+                activeUserId?.let { profiles.remove(it); tokens.remove(it) }
+                activeUserId = null
+                eventsJob?.cancel(); eventsJob = null
+                if (profiles.profiles().isEmpty()) showSignIn() else showPicker()
             }
             failPlay(http?.status ?: 0)
             return null
@@ -695,6 +722,17 @@ private class Screen(private val serverUrl: String) {
     // ── remote control: Tizen's registered keys arrive as ordinary keydown events (same names as
     // TizenKeys.REQUIRED) alongside a normal D-pad's KeyboardEvent.key vocabulary. ──
     private fun onKey(e: KeyboardEvent) {
+        // R269 FR-R269-7 also applies while the password form is showing. A short Back still
+        // returns to the code; holding it for three seconds reopens server setup.
+        if (isBack(e) && signIn.isOpen() && !e.repeat && backHeldSince == null) {
+            val since = nowMs(); backHeldSince = since
+            GlobalScope.launch {
+                delay(3_000)
+                if (backHeldSince == since) { backHeldSince = null; reopenServerSetup() }
+            }
+        }
+        if (!loaded && signIn.handleKey(e)) return
+        if (!loaded && profileUi.handleKey(e)) return
         if (!loaded && shell.handleKey(e)) return
         // R269 (FR-R269-7) — the only way back to server setup: hold Back on IDLE for three seconds.
         // Tracked outside the `!loaded` guard below since idle is exactly where loaded is false, and
@@ -877,7 +915,7 @@ private class Screen(private val serverUrl: String) {
         GlobalScope.launch { runCatching { api.postScreenStatus(status) } }
     }
 
-    private fun deviceName(): String = "Tizen TV"
+    private fun deviceName(): String = "Samsung TV"
 
     private fun loadOrCreateDeviceId(): String {
         localStorage.getItem(DEVICE_ID_KEY)?.let { return it }
@@ -886,14 +924,7 @@ private class Screen(private val serverUrl: String) {
         return id
     }
 
-    private fun loadTokens(): Map<String, String> {
-        val raw = localStorage.getItem(TOKENS_KEY) ?: return emptyMap()
-        return runCatching { json.decodeFromString<Map<String, String>>(raw) }.getOrDefault(emptyMap())
-    }
 
-    private fun saveTokens() {
-        localStorage.setItem(TOKENS_KEY, json.encodeToString(tokens))
-    }
 }
 
 /** [dev.jellystructure.ravilo.receiver.audioTracksOf]/[subtitleTracksOf] build [CastTrack]s (the Cast

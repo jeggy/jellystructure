@@ -18,6 +18,27 @@
 
   <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence"></div><div id="idle-code"></div><div id="idle-server"></div></section>
   <section id="setup" class="screen"><div class="mark"></div><div id="setupTitle" class="title" style="margin-bottom:18px"></div><input id="setupHost" type="text" autocomplete="off" spellcheck="false" placeholder="ravilo.example.com"><button id="setupConnect"></button><div id="setupHint"></div></section>
+  <section id="signin" class="auth-screen">
+    <div class="auth-brand">Ravilo</div>
+    <div class="auth-center">
+      <h1 id="signin-title"></h1>
+      <div id="signin-code-view">
+        <div class="auth-code-layout"><div id="signin-qr"></div><div class="auth-code-copy">
+          <div id="signin-code-label" class="auth-label"></div>
+          <div id="signin-code"></div>
+          <div id="signin-message" class="auth-hint" aria-live="polite"></div>
+          <div class="auth-tv"><span id="signin-tv-label"></span> <strong id="signin-tv-name"></strong></div>
+        </div></div>
+        <button id="signin-password-instead" class="auth-button"></button>
+        <button id="signin-retry" class="auth-button"></button>
+        <div id="signin-back" class="auth-hint"></div>
+      </div>
+      <div id="signin-form"><label id="signin-username-label" for="signin-username"></label><input id="signin-username" type="text" autocomplete="username"><label id="signin-password-label" for="signin-password"></label><input id="signin-password" type="password" autocomplete="current-password"><div class="auth-actions"><button id="signin-submit" class="auth-button"></button><button id="signin-cancel" class="auth-button"></button></div></div>
+      <div id="signin-password-message" class="auth-hint" aria-live="polite"></div>
+    </div>
+  </section>
+  <section id="profile-picker" class="auth-screen"><div class="auth-brand">Ravilo</div><div class="auth-center"><h1 id="profile-picker-title"></h1><div id="profile-picker-body" class="profile-choices"></div></div></section>
+  <section id="profile-menu" class="auth-screen"><div class="auth-center"><h1 id="profile-menu-title"></h1><div id="profile-menu-body" class="profile-choices"></div></div></section>
   <section id="loading" class="screen"><div class="pulse"><i></i><i></i><i></i></div><div id="loading-kicker" class="kicker"></div><div id="loading-title" class="title"></div><div class="sweep"><i></i></div><div id="loading-label" class="sub"></div></section>
   <section id="buffering" class="screen"><div class="spinner"></div></section>
   <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>

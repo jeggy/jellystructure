@@ -9,7 +9,7 @@ test("Tizen shell moves spatially across the bar and Back restores each page's f
   page.on("pageerror", error => errors.push(error.message));
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
-    localStorage.setItem("ravilo.screen.tokens", JSON.stringify({ viewer: "test-token" }));
+    localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
     (window as any).__exitCalls = 0;
     window.close = () => { (window as any).__exitCalls++; };
   });
@@ -47,7 +47,7 @@ test("Tizen shell moves spatially across the bar and Back restores each page's f
 test("Back on Home moves to the bar before exiting; all five bar targets are reachable", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
-    localStorage.setItem("ravilo.screen.tokens", JSON.stringify({ viewer: "test-token" }));
+    localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
     (window as any).__exitCalls = 0;
     window.close = () => { (window as any).__exitCalls++; };
   });
@@ -67,7 +67,7 @@ test("Back on Home moves to the bar before exiting; all five bar targets are rea
 test("a row re-enters at its last tile and scrolls it into view", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
-    localStorage.setItem("ravilo.screen.tokens", JSON.stringify({ viewer: "test-token" }));
+    localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
   });
   await page.goto(SCREEN_URL);
   const focused = page.locator("#shell .shell-target.focused");
