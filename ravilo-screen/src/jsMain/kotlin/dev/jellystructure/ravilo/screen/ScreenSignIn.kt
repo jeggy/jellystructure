@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.ravilo.i18n.t
+import dev.jellystructure.ravilo.receiver.nowMs
 import dev.jellystructure.shared.qr.QrEncoder
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.TvApiClient
@@ -16,6 +17,8 @@ import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.KeyboardEvent
+
+private const val STRAY_OK_MS = 1_000L
 
 /** DEB-4657 FR-2: the two open sign-in routes and the password fallback, drawn in DOM. */
 internal class ScreenSignIn(
@@ -42,6 +45,7 @@ internal class ScreenSignIn(
     private var hasProfiles = false
     private var generation = 0
     private var signingIn = false
+    private var openedAt = 0L
 
     private fun label(key: String, vars: Map<String, String> = emptyMap()) = t(key, ScreenLanguage.lang, vars)
 
@@ -61,11 +65,17 @@ internal class ScreenSignIn(
         document.getElementById("signin-cancel")?.textContent = label("profile.cancel")
         document.getElementById("signin-back")?.textContent = label("tvsignin.back_to_profiles")
         (document.getElementById("signin-back") as HTMLElement).style.display = if (withProfiles) "block" else "none"
-        passwordButton.onclick = { openPassword() }
+        // DEB-4831 — the OK press that confirmed the address (or its key-up, or Tizen's own click) can still be on its way
+        // when this screen opens with *password instead* focused; it must not read as a choice of the password form.
+        passwordButton.onclick = {
+            if (nowMs() - openedAt >= STRAY_OK_MS) openPassword("chosen")
+            else console.log("Ravilo screen: sign-in: ignored an OK within ${STRAY_OK_MS}ms of opening")
+        }
         codeOnlyButton.onclick = { openCode() }
         retryButton.onclick = { openCode() }
         (document.getElementById("signin-submit") as HTMLElement).onclick = { submitPassword() }
         (document.getElementById("signin-cancel") as HTMLElement).onclick = { openCode() }
+        openedAt = nowMs()
         openCode()
     }
 
@@ -104,7 +114,7 @@ internal class ScreenSignIn(
                     retryButton.textContent = label("tvsignin.try_again")
                     retryButton.style.display = "inline-block"
                     retryButton.focus()
-                } else openPassword()
+                } else openPassword("code unavailable")
                 return
             }
             val value = minted.code ?: run { unreachable(); return }
@@ -144,8 +154,9 @@ internal class ScreenSignIn(
         retryButton.focus()
     }
 
-    private fun openPassword() {
+    private fun openPassword(reason: String) {
         if (isCodeOnly()) return
+        console.log("Ravilo screen: sign-in: password form opened ($reason)")
         generation++
         job?.cancel(); job = null
         showingPassword = true

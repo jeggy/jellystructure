@@ -51,8 +51,17 @@ test("Tizen code sign-in approves in another browser context and opens Home (DEB
   expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles"))).toContain("admin");
 });
 
+test("Tizen sign-in stays on the code when the OK that opened it arrives late (DEB-4831; restores DEB-4654 FR-2)", async ({ page }) => {
+  await boot(page);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin-code")).not.toBeEmpty();
+  await expect(page.locator("#signin-form")).toBeHidden();
+  await expect(page.locator("#signin-code-view")).toBeVisible();
+});
+
 test("Tizen password sign-in keeps username after a wrong password (DEB-4657 FR-2)", async ({ page }) => {
   await boot(page);
+  await page.waitForTimeout(1_200); // an OK in the first second is the press that opened this screen (DEB-4831)
   await page.keyboard.press("Enter");
   await expect(page.locator("#signin-username")).toBeFocused();
   await page.locator("#signin-username").fill("admin");
