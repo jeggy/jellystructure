@@ -104,6 +104,82 @@ test("Tizen opens password directly when code sign-in is unavailable (DEB-4657 F
   await expect(page.locator("#signin-code")).toBeHidden();
 });
 
+test("Tizen remembers an empty password 403 and signs in by code (DEB-4813 FR-2)", async ({ page }) => {
+  await page.route("**/api/tv/login", route => route.fulfill({
+    status: 403, body: "", headers: { "access-control-allow-origin": "*" },
+  }));
+  await boot(page);
+  await page.locator("#signin-password-instead").click();
+  await page.locator("#signin-username").fill("qa-viewer");
+  await page.locator("#signin-password").fill("example-password");
+  await page.locator("#signin-submit").click();
+  await expect(page.locator("#signin-form")).toBeHidden();
+  await expect(page.locator("#signin-code-only-message")).toHaveText(
+    "This TV can't sign in with a password. Use the code with Ravilo on your phone.");
+  await expect(page.locator("#signin-code-only-button")).toHaveText("Use the code instead");
+  await expect(page.locator("#signin-code-only-button")).toBeFocused();
+  await expect(page.locator("#signin-password-message")).toBeEmpty();
+  await page.locator("#signin-code-only-button").click();
+  await expect(page.locator("#signin-code")).toBeFocused();
+  await expect(page.locator("#signin-password-instead")).toBeHidden();
+  await page.reload();
+  await expect(page.locator("#signin-code")).toBeFocused();
+  await expect(page.locator("#signin-password-instead")).toBeHidden();
+});
+
+test("Tizen retries a code when it is unavailable on a code-only install (DEB-4813 FR-2)", async ({ page }) => {
+  let requests = 0;
+  await page.addInitScript(() => localStorage.setItem("ravilo.screen.codeOnlyServer", "http://app:9505"));
+  await page.route("**/api/tv/signin/code", route => {
+    requests++;
+    return route.fulfill({ status: 200, contentType: "application/json", body: '{"available":false}' });
+  });
+  await boot(page);
+  await expect(page.locator("#signin-form")).toBeHidden();
+  await expect(page.locator("#signin-message")).toHaveText(
+    "Sign-in with a code is turned off on this server, and this TV can only sign in with a code. Ask whoever runs the server to turn it on.");
+  await expect(page.locator("#signin-retry")).toHaveText("Try again");
+  await expect(page.locator("#signin-retry")).toBeFocused();
+  await page.locator("#signin-retry").click();
+  await expect.poll(() => requests).toBe(2);
+  await expect(page.locator("#signin-form")).toBeHidden();
+});
+
+test("Tizen keeps a JSON password 403 distinct from an empty refusal (DEB-4813 FR-2)", async ({ page }) => {
+  await page.route("**/api/tv/login", route => route.fulfill({
+    status: 403, contentType: "application/json", body: '{"error":"account_blocked"}',
+    headers: { "access-control-allow-origin": "*" },
+  }));
+  await boot(page);
+  await page.locator("#signin-password-instead").click();
+  await page.locator("#signin-username").fill("qa-viewer");
+  await page.locator("#signin-password").fill("example-password");
+  await page.locator("#signin-submit").click();
+  await expect(page.locator("#signin-form")).toBeVisible();
+  await expect(page.locator("#signin-code-only")).toBeHidden();
+  expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.codeOnlyServer"))).toBeNull();
+});
+
+test("Tizen Add user preserves code-only sign-in (DEB-4813 FR-3)", async ({ page, browser }) => {
+  await page.addInitScript(() => localStorage.setItem("ravilo.screen.codeOnlyServer", "http://app:9505"));
+  await boot(page);
+  await signInByCode(page, browser);
+  await openProfileMenu(page);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+  await expect(page.locator("#signin-code")).toBeFocused();
+  await expect(page.locator("#signin-password-instead")).toBeHidden();
+});
+
+test("Tizen forgets code-only sign-in when the server address changes (DEB-4813 FR-2)", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("ravilo.screen.codeOnlyServer", "https://old.example.test"));
+  await boot(page);
+  await expect(page.locator("#signin-password-instead")).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.codeOnlyServer"))).toBeNull();
+});
+
 test("Tizen drops old receiver tokens before sign-in (DEB-4657 FR-1)", async ({ page }) => {
   let revoked = false;
   await page.route("**/api/tv/pair/unpair", route => {

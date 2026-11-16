@@ -7,6 +7,7 @@ import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import dev.jellystructure.shared.tv.TvSignInPoll
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,8 +34,11 @@ internal class ScreenSignIn(
     private val username get() = document.getElementById("signin-username") as HTMLInputElement
     private val password get() = document.getElementById("signin-password") as HTMLInputElement
     private val form get() = document.getElementById("signin-form") as HTMLElement
+    private val codeOnlyView get() = document.getElementById("signin-code-only") as HTMLElement
+    private val codeOnlyButton get() = document.getElementById("signin-code-only-button") as HTMLElement
     private var job: Job? = null
     private var showingPassword = false
+    private var showingCodeOnlyMessage = false
     private var hasProfiles = false
     private var generation = 0
     private var signingIn = false
@@ -49,6 +53,7 @@ internal class ScreenSignIn(
         document.getElementById("signin-tv-label")?.textContent = label("tvsignin.this_tv")
         document.getElementById("signin-tv-name")?.textContent = deviceName
         passwordButton.textContent = label("tvsignin.password_instead")
+        codeOnlyButton.textContent = label("tvsignin.use_code_instead")
         retryButton.textContent = label("action.retry")
         document.getElementById("signin-username-label")?.textContent = label("login.username")
         document.getElementById("signin-password-label")?.textContent = label("login.password")
@@ -57,6 +62,7 @@ internal class ScreenSignIn(
         document.getElementById("signin-back")?.textContent = label("tvsignin.back_to_profiles")
         (document.getElementById("signin-back") as HTMLElement).style.display = if (withProfiles) "block" else "none"
         passwordButton.onclick = { openPassword() }
+        codeOnlyButton.onclick = { openCode() }
         retryButton.onclick = { openCode() }
         (document.getElementById("signin-submit") as HTMLElement).onclick = { submitPassword() }
         (document.getElementById("signin-cancel") as HTMLElement).onclick = { openCode() }
@@ -72,13 +78,17 @@ internal class ScreenSignIn(
         signingIn = false
         (document.getElementById("signin-submit") as HTMLElement).removeAttribute("disabled")
         showingPassword = false
+        showingCodeOnlyMessage = false
         form.style.display = "none"
+        codeOnlyView.style.display = "none"
         (document.getElementById("signin-code-view") as HTMLElement).style.display = "block"
+        passwordButton.style.display = if (isCodeOnly()) "none" else "inline-block"
         retryButton.style.display = "none"
+        retryButton.textContent = label("action.retry")
         code.textContent = ""
         qr.textContent = ""
         message.textContent = ""
-        passwordButton.focus()
+        if (isCodeOnly()) code.focus() else passwordButton.focus()
         job = GlobalScope.launch { codeLoop() }
     }
 
@@ -88,7 +98,15 @@ internal class ScreenSignIn(
             val minted = runCatching { api.signInCode(deviceId, deviceName) }.getOrNull()
             if (requestGeneration != generation) return
             if (minted == null) { unreachable(); return }
-            if (!minted.available) { openPassword(); return }
+            if (!minted.available) {
+                if (isCodeOnly()) {
+                    message.textContent = label("tvsignin.code_unavailable_code_only")
+                    retryButton.textContent = label("tvsignin.try_again")
+                    retryButton.style.display = "inline-block"
+                    retryButton.focus()
+                } else openPassword()
+                return
+            }
             val value = minted.code ?: run { unreachable(); return }
             val secret = minted.secret ?: run { unreachable(); return }
             code.textContent = if (value.length > 3) value.take(3) + " " + value.drop(3) else value
@@ -127,10 +145,13 @@ internal class ScreenSignIn(
     }
 
     private fun openPassword() {
+        if (isCodeOnly()) return
         generation++
         job?.cancel(); job = null
         showingPassword = true
+        showingCodeOnlyMessage = false
         (document.getElementById("signin-code-view") as HTMLElement).style.display = "none"
+        codeOnlyView.style.display = "none"
         form.style.display = "block"
         message.textContent = ""
         password.value = ""
@@ -154,7 +175,13 @@ internal class ScreenSignIn(
             result.fold(
                 onSuccess = { hide(); onSignedIn(it) },
                 onFailure = {
-                    message.textContent = label(if ((it as? TvApiError.Http)?.status == 401) "login.error_invalid" else "login.error_unreachable")
+                    val http = it as? TvApiError.Http
+                    if (http?.status == 403 && http.message.isEmpty()) {
+                        localStorage.setItem(CODE_ONLY_SERVER_KEY, api.baseUrl)
+                        showCodeOnlyMessage()
+                        return@fold
+                    }
+                    message.textContent = label(if (http?.status == 401) "login.error_invalid" else "login.error_unreachable")
                     password.value = ""
                     password.focus()
                 },
@@ -162,10 +189,23 @@ internal class ScreenSignIn(
         }
     }
 
+    private fun isCodeOnly() = localStorage.getItem(CODE_ONLY_SERVER_KEY)?.let { sameServer(it, api.baseUrl) } == true
+
+    private fun showCodeOnlyMessage() {
+        showingPassword = false
+        showingCodeOnlyMessage = true
+        form.style.display = "none"
+        codeOnlyView.style.display = "block"
+        (document.getElementById("signin-code-only-message") as HTMLElement).textContent = label("tvsignin.password_unavailable")
+        (document.getElementById("signin-password-message") as HTMLElement).textContent = ""
+        password.value = ""
+        codeOnlyButton.focus()
+    }
+
     fun handleKey(event: KeyboardEvent): Boolean {
         if (!isOpen()) return false
         if (isBackKey(event)) {
-            if (showingPassword) openCode() else if (hasProfiles) { hide(); onBack() } else return false
+            if (showingPassword || showingCodeOnlyMessage) openCode() else if (hasProfiles) { hide(); onBack() } else return false
             event.preventDefault(); return true
         }
         if (event.key == "Enter" && showingPassword && (document.activeElement == username || document.activeElement == password)) {
@@ -173,10 +213,12 @@ internal class ScreenSignIn(
         }
         if (event.key == "ArrowDown" || event.key == "ArrowUp" ||
             ((event.key == "ArrowLeft" || event.key == "ArrowRight") && document.activeElement != username && document.activeElement != password)) {
-            val items = if (showingPassword) listOf(username, password,
+            val items = if (showingCodeOnlyMessage) listOf(codeOnlyButton)
+            else if (showingPassword) listOf(username, password,
                 document.getElementById("signin-submit") as HTMLElement,
                 document.getElementById("signin-cancel") as HTMLElement)
             else listOf(passwordButton, retryButton).filter { it.style.display != "none" }
+            if (items.isEmpty()) return false
             val current = items.indexOf(document.activeElement)
             val step = if (event.key == "ArrowDown" || event.key == "ArrowRight") 1 else -1
             items[(current + step + items.size) % items.size].focus()

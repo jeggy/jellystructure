@@ -56,6 +56,7 @@ import kotlin.random.Random
  */
 private const val DEVICE_ID_KEY = "ravilo.screen.deviceId"
 internal const val SERVER_URL_KEY = "ravilo.screen.serverUrl"
+internal const val CODE_ONLY_SERVER_KEY = "ravilo.screen.codeOnlyServer"
 internal const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
 private const val PROGRESS_EVERY_MS = 10_000L
 private const val STATUS_EVERY_MS = 5_000L
@@ -1007,6 +1008,8 @@ fun main() {
                 // FR-R269-7 / DEB-4663 — a reopened setup screen leaves the address that was working behind it.
                 val previous = localStorage.getItem(SETUP_PREFILL_KEY)
                 val serverUrl = stored ?: runServerSetup()
+                if (localStorage.getItem(CODE_ONLY_SERVER_KEY)?.let { !sameServer(it, serverUrl) } == true)
+                    localStorage.removeItem(CODE_ONLY_SERVER_KEY)
                 // FR-11 — a new address signs every profile out: their tokens belong to the old server.
                 if (stored == null && previous != null && !sameServer(previous, serverUrl)) ScreenProfileStore.forgetAll()
                 Screen(serverUrl).start()

@@ -137,6 +137,8 @@
     #signin-retry { display: none; margin-top: 30px; margin-left: 12px; }
     .auth-hint { color: var(--ink-soft); font-size: 18px; margin-top: 24px; min-height: 24px; }
     #signin-form { display: none; max-width: 540px; margin: 0 auto; text-align: left; }
+    #signin-code-only { display: none; max-width: 620px; margin: 0 auto; }
+    #signin-code-only-button { margin-top: 24px; }
     #signin-form label { display: block; margin: 18px 0 7px; font-size: 18px; }
     #signin-form input { box-sizing: border-box; width: 100%; padding: 14px 18px; font: inherit; font-size: 24px; border: 2px solid rgba(255,255,255,.2); border-radius: 10px; color: var(--ink); background: rgba(255,255,255,.07); }
     #signin-form input:focus { outline: none; border-color: var(--ring); }
