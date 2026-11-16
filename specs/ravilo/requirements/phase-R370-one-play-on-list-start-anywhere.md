@@ -1,9 +1,12 @@
 # Phase R370 — One *Play on…* list: start on any place, join or start new
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: the backend can't load a Cast device, so only the Android and desktop apps start on one, and the app's own discovery is half the list; books never cast). **Phase 3 of 6** (see R368). Depends on
-R368 and R369. Designs: `Playback Sessions - Directions.html` §B3 (one *Play on…* list) and §B6 (join-or-new moments).
+Written 2026-10-03 (design-authored) and dev-reviewed 2026-10-04 (see the end: the backend can't load a Cast device,
+so only the Android and desktop apps start on one, and the app's own discovery is half the list; books never cast).
+Phase 3 of R368's six. Depends on R368 and R369. Designs: `Playback Sessions - Directions.html` §B3 (one *Play on…*
+list) and §B6 (join-or-new moments). Amended 2026-10-12 (DEB-781, FR-R370-7/8) and 2026-11-16 (DEB-4765,
+FR-R370-9/10).
 
 ## Requirements
 
@@ -512,3 +515,68 @@ still ends on the last-item card.
   instead of the series. Read from code, not device-verified. Fixing it properly needs an additive `series_id` on
   the push (the envelope carries `series_name` but no series id), which is R181's call and a wire addition, so it is
   **out of scope for this amendment** and does not travel with the fix above.
+
+## Amendment 2026-11-16 — a push over a playing player stacks a second player (DEB-4765)
+
+QA saw this on DEB-4434 (Android TV, `.debug` `1.67-35-gf1bded57`) in 2 of 8 plays. Both times a `POST
+/api/remote/play` landed on the TV app's player while it was playing a **different** item:
+
+- An episode posted over another one froze on its last frame: no *UP NEXT* card, no autoplay, no close.
+- A series' last episode posted over another episode showed its last-item card, then the player **loaded the old item
+  again**.
+
+Plays posted onto a fresh app, or onto Home, were correct. The Play on… sheet and the `session_load` hand-over both
+use the same collector, so a viewer can hit this. Two separate defects, both read from code on `main` `848238a0`:
+
+1. **The push road stacks players.** The `live_play_item` collector (`RaviloApp.kt`, the `else` branch under
+   R155's profile guard) always calls `push(Dest.Player(…))`. Over a playing player the stack becomes
+   `[…, Player(A), Player(B)]`. `AnimatedContent` keys on the destination's class, so B plays inside A's composed
+   `PlayerScreen`. When B's end closes the player (DEB-3950, R182 amendment FR-1) or the viewer presses Back,
+   `pop()` lands on `Player(A)` and A starts again. Cast Connect already gets this right: it pops a playing player
+   before it pushes (FR-R266-4, the `CastConnectInbox` collector in the same file). The push road never did.
+2. **An advance latch outlives its item.** `PlayerBookkeeping.advanceRequestedForItemId` is set by `advanceNext()`
+   and never cleared when the player moves on. Because the screen is reused across items, an item that already
+   advanced once in this screen and is played again reads `advanceAlreadyRequested` at its end
+   (`PlayerScreenState.pollTick`). Then the early card, the end-of-file card, the autoplay and the end close are all
+   skipped, and the picture freezes. In the QA run the posted episode had auto-advanced earlier in the same screen.
+   **This half needs no push.** A viewer reaches it from the series page: E1 autoplays into E2, the viewer presses
+   *Previous episode* (or picks E1 in the episode rail), and E1's end then does nothing. The latch's siblings
+   `endCloseRequestedForItemId` and `prefetchedForItemId` go stale the same way. A stale prefetch latch means a
+   replayed item never prepares its next one.
+
+Neither defect is the season-crossing logic (FR-R375-8/9), which passed on the same run.
+
+**FR-R370-9 — a push over the app's own player replaces it.** A `play_item` or `session_load` of a film or episode
+that arrives while the top of the app's stack is a `Dest.Player` takes that entry's place (`replaceTop`). It is not
+stacked above it.
+
+- Leaving the outgoing item is a leave, exactly as on Back. Its store closes, reports its stop and keeps its resume
+  point. This is FR-R370-4's *"the current session there ends at its position"* and FR-R266-4's *"the interrupted
+  viewer's position is saved first"*.
+- Back from the new item, or the new item's end closing the player, lands where Back from the replaced player would
+  have landed. The replaced item never plays again by itself.
+- With any other page on top, the push is unchanged: the player is pushed over that page.
+- Out of scope: a `kind = series` push, which opens the series page; a push of the item that is already playing; and a
+  push over the TV's music *Now playing*.
+- **No wire change.**
+
+**FR-R370-10 — every item the player starts is a fresh play for its per-item latches.** When the player starts an
+item (its `itemId` changes, so `startItem` runs), it clears the three latches that mean *"this play of the item has
+already done X"*: the advance request, the end close and the next-episode prefetch. This holds on every road: a push,
+auto-advance, *Previous episode*, an episode-rail pick, or a return to the item after FR-R370-9's replace.
+
+- A navigation that fails leaves `itemId` unchanged, so `startItem` does not run and the latch holds. The auto-advance
+  retry-loop fix's rule, *"exactly one advance attempt per episode"*, is untouched.
+
+**Acceptance (devices, on the QA queue, not verified here).** On an Android TV, using a multi-season series and a
+per-run throwaway local `qa-…` user:
+
+1. From the series page, play an episode to its end and let it autoplay into the next one. Press *Previous episode*.
+   Let the first episode end again. *UP NEXT* shows and autoplay advances (FR-R370-10).
+2. While an episode plays, post `/api/remote/play` of a **different** series' last episode, starting near its end. Its
+   last-item card shows, then the player closes to the page that was under the old player. The old item never
+   loads again (FR-R370-9).
+3. Play an episode that auto-advances. While the next one plays, post `/api/remote/play` of the first episode, near
+   its end. *UP NEXT* shows and autoplay advances (FR-R370-9 and FR-R370-10 together, which is QA's 2026-11-16 case).
+4. While anything plays, post `/api/remote/play` of a film. One Back press from the film lands on the page under the
+   old player, never on the old player.
