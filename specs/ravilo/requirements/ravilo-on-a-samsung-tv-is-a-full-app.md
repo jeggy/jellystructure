@@ -121,7 +121,8 @@ FR-5, redrawn in DOM.
 - It draws `heroes`, then the channel buttons, then `rows`, using the feed's `tile_shape` and
   `hero_height_pct`.
 - Continue Watching is whichever row the server sends. The client never builds a row of its own.
-- A row kind the app does not know is skipped, and the rest of Home draws (R318).
+- A row kind the app does not know draws as a plain `CUSTOM` row, and the rest of Home draws (R318
+  FR-R318-1; amended 2026-11-16, see below).
 - **Live TV is not in v1.** `live_tv_home` is treated as absent.
 - A channel button opens that channel's feed (`getChannel`) with the same renderer.
 - `focus_detail` is honoured as `none`. The focus-detail panel comes later.
@@ -337,3 +338,15 @@ specified in 247's *Amendment 2026-11-16* (FR-247-4): `/api/tv/**` except `/api/
 admit `file://`. It is not a wire change: no route, field or DTO moves. Every piece of this spec that signs in or
 plays is untestable on 5.0 until FR-247-4 is built. 247's open question 1, carried under *On the owner's TV* above,
 is now answered on the 5.0 emulator by FR-247-4's acceptance step 1, ahead of the TV.
+
+
+## Amendment 2026-11-16 (DEB-4658) — an unknown row kind draws as `CUSTOM`, as R318 says
+
+FR-5 said an unknown row `kind` *"is skipped"* and cited R318 for it. R318 says the opposite. FR-R318-1 decodes
+an unknown `Row.kind` as `CUSTOM`, *"a plain content row"*, and its acceptance test asks for *"a `CUSTOM` row, the
+rest of the feed intact"*. `shared`'s `RaviloWireJson` does exactly that, so after decoding the Tizen app cannot
+tell an unknown kind from a real `CUSTOM` row. Skipping the row would also make the TV disagree with every other
+Ravilo client. FR-5 now follows R318: an unknown kind draws as a plain row, with the server's title and the
+same tiles and focus as any other row. Only an element that fails to decode at all is dropped (R318's *"a list
+with one unknown element → the rest of the list"*), and the rest of Home draws. Nothing on the wire changes.
+Found by Gunnar on DEB-4658, before any code was written.
