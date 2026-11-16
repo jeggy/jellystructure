@@ -424,3 +424,21 @@ its POSTs carry no `Origin`.
 - **FR-10 needs no new code.** A `play_item`, `playstate_command` or `player_command` already acts as in the receiver, and
   the shell stays mounted under the player, so the end of a phone's play returns to the page and the focused tile the
   viewer was on. The Playwright spec pins it.
+
+## Amendment 2026-11-16 (DEB-4818) — the launcher icon and the on-screen mark are the real Ravilo mark
+
+The owner's first real-Samsung install (Tizen 5.0, v1.69) showed no Ravilo logo in two places. FR-15's *same `.wgt`*
+shipped R264's 128×128 placeholder as `icon.png`, and the screens drew `.mark` as a CSS gradient square.
+
+- **FR-17 · The launcher tile is the Android TV launcher art.** `ravilo-screen/wgt/icon.png` is a 512×423 PNG
+  (Samsung's TV icon size), the centre crop of `design/ravilo/assets/store/ic_launcher-512.png` on its own `#000B25`
+  background. `config.xml` keeps pointing at `icon.png`.
+- **FR-18 · `.mark` is an image packed in the `.wgt`.** Every screen that carries `.mark` (idle, setup, no-server, busy,
+  failed) draws `ravilo-mark.svg`, a copy of `design/ravilo/assets/brand/ravilo-mark.svg`, from the widget itself. It is
+  never fetched from a server, because the setup screen shows before one is known. The 64 px box and the layout
+  do not change. The sign-in screen's `Ravilo` word is text, not `.mark`, and stays.
+- **Proof.** `scripts/check-tizen-assets.sh` (CI, with `--selftest`) fails when `icon.png` is not 512×423, when
+  `config.xml` names a missing icon, or when `index.html` names a `.mark` image that is not in the widget. A Playwright
+  assertion in `ravilo-screen.spec.ts` loads the setup screen and requires its mark to be an `<img>` with
+  `naturalWidth > 0`. How the tile looks on the Samsung launcher cannot be covered automatically: it goes to QA, on the
+  5.0 emulator and then the real TV.

@@ -4,7 +4,8 @@
     .screen { position: fixed; top: 0; right: 0; bottom: 0; left: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; z-index: 1; }
     .screen.on { display: flex; }
     #idle, #loading, #noserver, #busy { background: #000; }
-    .mark { width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, #AA5CC3, #00A4DC); box-shadow: 0 0 48px rgba(0,164,220,.35); margin-bottom: 26px; }
+    /* DEB-4818 — the real mark, packed in the .wgt (no fetch: the setup screen shows before a server is known). */
+    .mark { display: block; width: 64px; height: 64px; margin-bottom: 26px; }
     .sentence { font-size: 30px; color: var(--ink-soft); font-weight: 500; }
     .kicker { font-size: 18px; letter-spacing: 3px; color: var(--accent2); font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
     .title { font-size: 44px; font-weight: 700; letter-spacing: -.8px; }

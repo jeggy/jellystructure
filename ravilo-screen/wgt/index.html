@@ -16,8 +16,8 @@
   <video id="video" playsinline></video>
   <div id="cues" aria-live="off"></div>
 
-  <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence"></div><div id="idle-code"></div><div id="idle-server"></div></section>
-  <section id="setup" class="screen"><div class="mark"></div><div id="setupTitle" class="title" style="margin-bottom:18px"></div><input id="setupHost" type="text" autocomplete="off" spellcheck="false" placeholder="ravilo.example.com"><button id="setupConnect"></button><div id="setupHint"></div></section>
+  <section id="idle" class="screen on"><img class="mark" src="ravilo-mark.svg" alt=""><div id="idle-sentence" class="sentence"></div><div id="idle-code"></div><div id="idle-server"></div></section>
+  <section id="setup" class="screen"><img class="mark" src="ravilo-mark.svg" alt=""><div id="setupTitle" class="title" style="margin-bottom:18px"></div><input id="setupHost" type="text" autocomplete="off" spellcheck="false" placeholder="ravilo.example.com"><button id="setupConnect"></button><div id="setupHint"></div></section>
   <section id="signin" class="auth-screen">
     <div class="auth-brand">Ravilo</div>
     <div class="auth-center">
@@ -42,9 +42,9 @@
   <section id="profile-menu" class="auth-screen"><div class="auth-center"><h1 id="profile-menu-title"></h1><div id="profile-menu-body" class="profile-choices"></div></div></section>
   <section id="loading" class="screen"><div class="pulse"><i></i><i></i><i></i></div><div id="loading-kicker" class="kicker"></div><div id="loading-title" class="title"></div><div class="sweep"><i></i></div><div id="loading-label" class="sub"></div></section>
   <section id="buffering" class="screen"><div class="spinner"></div></section>
-  <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
-  <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
-  <section id="failed" class="screen"><div class="mark"></div><div id="failed-t" class="title"></div><div id="failed-s" class="sub"></div></section>
+  <section id="noserver" class="screen"><img class="mark" src="ravilo-mark.svg" alt=""><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
+  <section id="busy" class="screen"><img class="mark" src="ravilo-mark.svg" alt=""><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
+  <section id="failed" class="screen"><img class="mark" src="ravilo-mark.svg" alt=""><div id="failed-t" class="title"></div><div id="failed-s" class="sub"></div></section>
   <section id="shell" aria-label="Ravilo"><div class="shell-bar"><div class="shell-brand">Ravilo</div><nav class="shell-nav"><div id="nav-home" class="shell-target" data-row="bar" tabindex="-1"></div><div id="nav-movies" class="shell-target" data-row="bar" tabindex="-1"></div><div id="nav-series" class="shell-target" data-row="bar" tabindex="-1"></div><div id="nav-search" class="shell-target" data-row="bar" tabindex="-1"></div></nav><div id="nav-profile" class="shell-target" data-row="bar" tabindex="-1"></div></div><main id="shell-body"></main></section>
   <div id="overlay"><div id="ov-ident"><img id="ov-logo" alt=""><div id="ov-showname"></div></div><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div><div class="row"><div id="ov-hint"></div><div id="ov-pz"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
   <div id="skip"></div>

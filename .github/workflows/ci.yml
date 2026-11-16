@@ -45,6 +45,8 @@ jobs:
         run: ./scripts/check-tizen-engine.sh && ./scripts/check-tizen-engine.sh --selftest
       - name: Tizen 5.0 AbortController polyfill and its guard (DEB-4727)
         run: ./scripts/check-tizen-abort.sh && ./scripts/check-tizen-abort.sh --selftest
+      - name: Tizen widget icon and packed mark, and their guard (DEB-4818)
+        run: ./scripts/check-tizen-assets.sh && ./scripts/check-tizen-assets.sh --selftest
       - name: Design-sync-fragile CSS
         run: ./scripts/check-mobile-css.sh
       - name: Only the caller's own cancellation is rethrown (phase 310)

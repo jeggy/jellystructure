@@ -38,6 +38,23 @@ test("the Tizen receiver starts without globalThis (FR-13)", async ({ page }) =>
   expect(pageErrors).toEqual([]);
 });
 
+test("the setup screen draws the real Ravilo mark from the widget (DEB-4818, FR-18)", async ({ page }) => {
+  test.setTimeout(30_000);
+
+  const requests: string[] = [];
+  page.on("request", (req) => requests.push(req.url()));
+
+  await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+
+  // An <img> that decoded, not a CSS gradient box: naturalWidth stays 0 for a missing or broken file.
+  const mark = page.locator("#setup img.mark");
+  await expect(mark).toBeVisible();
+  await expect.poll(() => mark.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  // Packed in the widget: served from the screen's own origin, never from a server the household typed.
+  expect(new URL(await mark.evaluate((el) => (el as HTMLImageElement).src)).origin).toBe(new URL(SCREEN_URL).origin);
+});
+
 test("the Tizen widget sends its setup probe without AbortController (DEB-4727, FR-13)", async ({ page }) => {
   test.setTimeout(30_000);
 
