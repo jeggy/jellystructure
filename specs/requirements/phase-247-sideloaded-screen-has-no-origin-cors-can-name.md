@@ -283,3 +283,68 @@ in by code only.
    socket. A phone's play reaches it, and so does the next episode (`/api/remote/play`).
 3. A curl matrix against the same build, with `file://`, `null` and `https://evil.example.com` × a POST
    route, `/ws` and an admin route. `file://` passes only on the POST route. Everything else gets 403.
+
+## Amendment 2026-11-16, second (DEB-4719) — the 5.0 POST sends `null`, and `null` is admitted on the token routes
+
+**Measured** by Óluva on DEB-4721, 2026-11-16. Tizen 5.0 TV emulator `ravilo-tv-5`, `ravilo-screen` from `e377880b`,
+document `file:///index.html`, captured by a listener on the host:
+
+```
+POST: Origin: null      (the widget's own POST /api/tv/signin/code; no preflight)
+handshake: Origin: file://   (/api/tv/events)
+GET: no Origin header   (the setup probe, /api/health)
+```
+
+The same page sends two values. Chromium 63 writes a `file:` document's origin as `null` on a fetch or XHR POST, and
+as `file://` on a WebSocket handshake. **Open question 1 is closed for 5.0.** The handshake sends what 10.0 sends,
+so FR-247-3 holds on the owner's set. The first amendment's expectation (*"`file://`, not `null`"*) holds for the
+handshake and is wrong for the POST. FR-247-4 as built (`8e0d90a6`) is correct and stays, but on its own it unblocks
+nothing on 5.0.
+
+**Tróndur's security call** (on DEB-4719, 2026-11-16; not an owner question, because `ravilo-screen` is in no prod
+image). It replaces the first amendment's *"`null` stays refused everywhere"* and narrows the recommendation made
+there.
+
+**FR-247-5 — `null` is admitted on the token-only TV routes, except the two that take a password.**
+
+- **Scope: `/api/tv/**`**, minus `/api/tv/admin/**`, `/api/tv/login` and `/api/tv/account/password`. Those three keep
+  FR-247-4's widget policy: `file://` is admitted and `null` is refused.
+- **`/api/remote/**` does not admit `null`.** The widget's next episode (`POST /api/remote/play`) is therefore refused
+  on 5.0, which is accepted (see the full-app spec's amendment of the same date). FR-247-4's `file://` stays there.
+- **Why it is safe, and the condition it rests on.** None of these routes accepts a cookie as a credential. So a
+  page that forges `null` (a sandboxed iframe) can only use credentials it already holds. What such a page *would*
+  gain is the visitor's network address. On the two password routes, that would spread password guesses across
+  `LoginRateLimiter`'s per-address window, so those two stay out. The fresh codes that `/api/tv/signin/code` and
+  `/api/tv/screen/code` answer are no gain, since one curl gets the same code.
+- **The condition is pinned by a test, not by this prose.** On every route that admits `null`, a request carrying
+  only a valid `js_session` cookie is treated exactly as one with no credentials:
+  - 401 on a device-token route;
+  - the anonymous answer on an open path (`/api/tv/signin/code`, `/api/tv/image/…`).
+
+  The test walks the routes the server actually registers under the `null` scope, not a hand-kept list. A route
+  added under `/api/tv` that ever reads the cookie therefore fails the build instead of silently inheriting `null`.
+  Such a route re-installs the widget policy, as the two password routes do.
+- **Still refused everywhere:** `https://evil.example.com`, `file://evil`, and any origin that is not `file://`,
+  `null` (in scope) or `CORS_ALLOWED_ORIGINS`. `/ws`, `/api/auth/**`, the SSO routes and every cookie `/api/**`
+  route keep the shared policy.
+- **Tests.** `CorsPolicyTest` and `ravilo-screen-cors.spec.ts` gain a `null` row across signin/code, playback/start,
+  the events handshake, `/api/tv/login`, `/api/tv/account/password`, an `/api/tv/admin/` route, `/ws`,
+  `/api/remote/play` and `/api/auth/login`:
+  - admitted on signin/code, playback/start and the events handshake (on the handshake the browser sends
+    `file://`, but the policy admits `null` there too);
+  - an empty 403 on every other cell.
+
+  The cookie-only test above comes on top. FR-247-4's `file://` cells are unchanged.
+
+**Acceptance (FR-247-5), on the Tizen 5.0 emulator:**
+
+1. With `AbortController` fixed (DEB-4727; without it no request leaves the page), the widget signs in **by code**,
+   plays an item it chose itself, holds its events socket, and plays what a phone sends it.
+2. Password sign-in on the 5.0 set shows the full-app spec's code-only message, not "Couldn't reach the server".
+3. The curl matrix against the same build: `Origin` ∈ {`file://`, `null`, `https://evil.example.com`} × {POST
+   `/api/tv/signin/code`, POST `/api/tv/login`, `/ws`, an `/api/tv/admin/` route, POST `/api/remote/play`}.
+   - `file://` passes on signin/code, login and remote/play.
+   - `null` passes on signin/code only.
+   - Every other cell gets the empty 403.
+4. A cookie-only request (an admin `js_session`, no bearer) to a device-token `/api/tv/` route sent with
+   `Origin: null` answers 401.

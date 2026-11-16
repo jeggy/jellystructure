@@ -350,3 +350,34 @@ Ravilo client. FR-5 now follows R318: an unknown kind draws as a plain row, with
 same tiles and focus as any other row. Only an element that fails to decode at all is dropped (R318's *"a list
 with one unknown element → the rest of the list"*), and the rest of Home draws. Nothing on the wire changes.
 Found by Gunnar on DEB-4658, before any code was written.
+
+## Amendment 2026-11-16, second (DEB-4719) — on Tizen 5.0 the screen signs in by code only
+
+The page sends `Origin: null` on a POST (DEB-4721). 247's FR-247-5 admits `null` on the TV's token routes, but not
+on the two that take a password (`/api/tv/login`, `/api/tv/account/password`) and not on `/api/remote/**` (Tróndur's
+call, 2026-11-16). On a set like the owner's that changes FR-2 and a part of FR-3. **On Tizen 10.0 nothing changes**:
+its POSTs carry no `Origin`.
+
+- **How the screen knows.** A password POST that answers **403 with an empty body** is the CORS refusal. A route's
+  own 403 always carries a JSON body. The screen treats that one answer as "this TV cannot sign in with a password":
+  - it never shows it as a wrong password, and never as "Couldn't reach the server";
+  - it remembers the fact for this install (stored beside the server address, cleared when the address changes);
+  - from then on it hides *Sign in with a password instead* on the code screen, so the code is focused first.
+
+  No user-agent or version sniffing: the server's answer is the fact.
+- **The message**, shown in place of the password form, with focus on its one button *Use the code instead*:
+  *"This TV can't sign in with a password. Use the code with Ravilo on your phone."* New copy, in every language
+  the screen already carries.
+- **When the code is unavailable** (`available: false`, FR-2's last rule) and the install is known to be code-only,
+  the screen does not open the password form. It says *"Sign-in with a code is turned off on this server, and this
+  TV can only sign in with a code. Ask whoever runs the server to turn it on."* and offers *Try again*, which asks for
+  a code afresh. On an install that has not learned it yet, FR-2's rule stands: the password form opens, the first
+  submit gets the empty 403, and this message follows.
+- **FR-3, Add user**, takes the same path. A second viewer is added by code.
+- **Change password** (`/api/tv/account/password`, if the screen offers it) answers the same way and shows *"This TV
+  can't change a password. Change it with Ravilo on your phone."*
+- **Next episode.** `POST /api/remote/play` is refused on 5.0. The next-up countdown's play fails with
+  the existing play-failure handling. **Accepted for v1.** A later amendment may move the screen's next episode to a
+  `/api/tv/` route; it is not part of DEB-4719.
+- **Build.** This is client-side, in `ravilo-screen`, and lands after FR-247-5 and DEB-4727. CI covers it with a
+  Playwright cell where the mocked password route answers an empty 403.
