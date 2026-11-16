@@ -6,12 +6,14 @@ import org.w3c.dom.HTMLElement
 internal class ScreenFocus(
     private val root: () -> HTMLElement,
     private val route: () -> ScreenRouteEntry,
+    private val onFocus: (HTMLElement) -> Unit = {},
 ) {
     fun refocus() {
         val current = route()
         val visible = targets()
         val target = visible.firstOrNull { it.id == current.focusId }
             ?: visible.firstOrNull { it.id == "shell-page-target" }
+            ?: visible.firstOrNull { it.getAttribute("data-row") != "bar" }
             ?: visible.firstOrNull()
         if (target != null) focus(target)
     }
@@ -23,6 +25,7 @@ internal class ScreenFocus(
         element.getAttribute("data-row")?.let { current.rowFocus[it] = element.id }
         element.focus()
         element.scrollIntoView(false)
+        onFocus(element)
     }
 
     fun move(dx: Int, dy: Int) {

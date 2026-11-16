@@ -1,7 +1,11 @@
 package dev.jellystructure.ravilo.screen
 
+import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.browser.document
 import kotlinx.browser.window
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.events.KeyboardEvent
 
@@ -10,25 +14,32 @@ internal data class ScreenRouteEntry(
     val name: String,
     var focusId: String,
     val rowFocus: MutableMap<String, String> = mutableMapOf(),
+    val channelId: String? = null,
+    val title: String? = null,
+    var feed: HomeFeed? = null,
 )
 
 /** The DOM shell stays mounted while R264's player covers it. */
 internal class ScreenShell(
-    private val serverUrl: String = "",
+    private val api: TvApiClient,
+    private val serverUrl: String,
     private val onChangeServer: () -> Unit = {},
     private val onProfileMenu: () -> Unit = {},
 ) {
     private val root get() = document.getElementById("shell") as HTMLElement
     private val body get() = document.getElementById("shell-body") as HTMLElement
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
-    private val focus = ScreenFocus({ root }, { entries.last() })
+    private val home = ScreenHome(serverUrl)
+    private val focus = ScreenFocus({ root }, { entries.last() }) { home.updateImages(it.id) }
     private var visible = false
     private var player = false
+    private var loadGeneration = 0
 
-    fun hide() { visible = false; root.classList.remove("on") }
+    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on") }
 
     fun resetHome() {
         entries.clear(); entries.add(ScreenRouteEntry("home", "shell-page-target"))
+        ++loadGeneration
         player = false
         showHome()
     }
@@ -81,7 +92,6 @@ internal class ScreenShell(
         return true
     }
 
-    /** Later pieces replace the placeholder with server-owned content and call this after rendering. */
     fun refocus() = focus.refocus()
 
     private fun render() {
@@ -90,25 +100,58 @@ internal class ScreenShell(
             ScreenSettings.render(body, serverUrl, onLanguage = { render() }, onChangeServer = onChangeServer)
         } else {
             body.textContent = ""
-            val placeholder = document.createElement("div") as HTMLElement
-            placeholder.id = "shell-page-target"
-            placeholder.className = "shell-target shell-placeholder"
-            placeholder.setAttribute("data-row", "body")
-            placeholder.setAttribute("tabindex", "-1")
-            placeholder.textContent = ScreenLanguage.t("nav.${current.name}")
-            body.appendChild(placeholder)
+            val feed = current.feed
+            if (feed != null) {
+                home.render(feed, body, ScreenLanguage.lang)
+            } else {
+                val placeholder = document.createElement("div") as HTMLElement
+                placeholder.id = "shell-page-target"
+                placeholder.className = "shell-target shell-placeholder"
+                placeholder.setAttribute("data-row", "body")
+                placeholder.setAttribute("tabindex", "-1")
+                placeholder.textContent = current.title ?: ScreenLanguage.t("nav.${current.name}")
+                body.appendChild(placeholder)
+            }
         }
-        renderScreenNav(current.name, ScreenLanguage.lang)
+        renderScreenNav(if (current.name == "channel" || current.name == "detail") "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
+        if ((current.name == "home" || current.name == "channel") && current.feed == null) loadFeed(current)
+    }
+
+    private fun loadFeed(entry: ScreenRouteEntry) {
+        val generation = ++loadGeneration
+        GlobalScope.launch {
+            val result = runCatching { entry.channelId?.let { api.getChannel(it) } ?: api.getHome() }
+            if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
+            result.getOrNull()?.let {
+                entry.feed = it
+                render()
+            }
+        }
     }
 
     private fun activate() {
-        val focused = entries.last().focusId
-        if (!focused.startsWith("nav-")) { document.getElementById(focused)?.let { (it as HTMLElement).click() }; return }
+        val current = entries.last()
+        val element = document.getElementById(current.focusId) as? HTMLElement ?: return
+        val channelId = element.getAttribute("data-channel-id")
+        val mediaId = element.getAttribute("data-media-id")
+        if (channelId != null) {
+            entries.add(ScreenRouteEntry("channel", "shell-page-target", channelId = channelId,
+                title = element.textContent ?: ""))
+            render()
+            return
+        }
+        if (mediaId != null) {
+            entries.add(ScreenRouteEntry("detail", "shell-page-target", title = element.textContent ?: ""))
+            render()
+            return
+        }
+        val focused = current.focusId
+        if (!focused.startsWith("nav-")) { element.click(); return }
         val destination = focused.removePrefix("nav-")
         if (destination == "profile") { onProfileMenu(); return }
-        if (entries.last().name == destination) {
-            focus.focus(body.firstChild as HTMLElement)
+        if (current.name == destination) {
+            (body.querySelector(".shell-target") as? HTMLElement)?.let(focus::focus)
             return
         }
         entries.add(ScreenRouteEntry(destination, "shell-page-target", mutableMapOf("bar" to focused)))
@@ -118,6 +161,7 @@ internal class ScreenShell(
     private fun back() {
         val current = entries.last()
         if (entries.size > 1) {
+            ++loadGeneration
             entries.removeAt(entries.lastIndex)
             render()
             return

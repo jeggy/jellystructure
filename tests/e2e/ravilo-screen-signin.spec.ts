@@ -47,7 +47,7 @@ test("Tizen code sign-in approves in another browser context and opens Home (DEB
   await expect(page.locator("#signin-password-instead")).toBeFocused();
   await expect(page.locator("#signin-tv-name")).toHaveText("Samsung TV");
   await signInByCode(page, browser);
-  await expect(page.locator("#shell-body")).toHaveText("Home");
+  await expect(page.locator("#shell-body .home-feed")).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles"))).toContain("admin");
 });
 

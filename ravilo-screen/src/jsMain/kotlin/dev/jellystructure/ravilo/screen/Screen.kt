@@ -66,7 +66,6 @@ private const val PICKER_ROWS = 9
 
 private class Screen(private val serverUrl: String) {
     private val backend = detectMediaBackend()
-    private val shell = ScreenShell(serverUrl, ::reopenServerSetup) { openProfileMenu() }
     private val deviceId = loadOrCreateDeviceId()
     private val profiles = ScreenProfileStore()
     private val legacyTokens = profiles.takeLegacyTokens()
@@ -78,6 +77,7 @@ private class Screen(private val serverUrl: String) {
         deviceToken = { activeUserId?.let(tokens::get) },
         platform = "tizen",
     )
+    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup) { openProfileMenu() }
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired) { showPicker() }
     private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut, ::openSettings)
