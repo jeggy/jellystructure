@@ -18,7 +18,8 @@ class ProcessingSchedulesTest {
     private val utc = TimeZone.UTC
     // 2026-11-12 (Thursday) 12:00:00 UTC
     private val now = 1_794_484_800L
-    private fun cfg(p: ProcessingConfig) = ProcessingCarryOver.settle(AppConfig(processing = p, general = GeneralConfig(timezone = "UTC")))
+    // `now` is passed in: the old word is read off the next two fires, which depend on the weekday it is run on.
+    private fun cfg(p: ProcessingConfig) = ProcessingCarryOver.settle(AppConfig(processing = p, general = GeneralConfig(timezone = "UTC")), now)
 
     @Test
     fun `a word becomes a schedule at the time of the last run or 04-00 and Monday with none`() {

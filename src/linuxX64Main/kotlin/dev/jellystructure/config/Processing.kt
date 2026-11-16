@@ -460,9 +460,9 @@ object ProcessingCarryOver {
      * finds a pipeline that does what the features say. The seed markers are set so that image does not seed back what a
      * feature turned off. Idempotent.
      */
-    fun settle(cfg: AppConfig): AppConfig {
+    fun settle(cfg: AppConfig, nowSec: Long = nowEpochSec()): AppConfig {
         val first = cfg.processing == null
-        val processing = (cfg.processing ?: derive(cfg)).withLegacyWords(ScheduleZone.resolve(cfg.general.timezone), nowEpochSec())
+        val processing = (cfg.processing ?: derive(cfg)).withLegacyWords(ScheduleZone.resolve(cfg.general.timezone), nowSec)
         var out = cfg.copy(processing = processing)
         if (first && notifyWasOn(cfg) && !cfg.behavior.notifyOnScanDone) out = out.copy(behavior = out.behavior.copy(notifyOnScanDone = true))
         return out.copy(
