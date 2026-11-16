@@ -46,6 +46,9 @@ object TicketSubtitles {
     /** `Retry-After: 5` (delta-seconds) in ms; an HTTP-date, or nothing, is null (the default wait is used). */
     fun retryAfterMs(header: String?): Long? = header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.let { it * 1000 }
 
+    /** DEB-4792 — a WebVTT file with no cue: what CAF is handed for a track the receiver draws itself, so nothing is drawn twice. */
+    const val EMPTY_VTT = "WEBVTT\n\n"
+
     /** A track that arrived, and whether it had to be waited for (the first answer was not the file). */
     data class Arrival(val text: String, val waited: Boolean)
 
@@ -55,7 +58,7 @@ object TicketSubtitles {
     /**
      * DEB-4692 — CAF's request for [url], seen by the receiver's request handler: null for anything that is not one of
      * this item's own subtitle paths ([own]), which is left exactly as it was (a segment, a sidecar). One of them goes to
-     * the copy the receiver already fetched ([copies], absolute URL → `blob:`), else to the server with the device token.
+     * the `blob:` the receiver hands CAF for a track it draws itself ([copies], absolute URL → an empty file), else to the server with the device token.
      */
     fun castRequest(url: String, own: Set<String>, copies: Map<String, String>, base: String, token: String?): CastRequest? {
         if (url !in own) return null
@@ -64,9 +67,10 @@ object TicketSubtitles {
     }
 
     /**
-     * DEB-4692 — CAF never asks for a text track twice, so a track the receiver fetched itself is shown again from its copy
-     * when CAF's own request cannot have had the file: the first answer was a 202 ([Arrival.waited]), or CAF never asked
-     * through the handler that adds the token ([cafAsked] false).
+     * DEB-4692 — CAF never asks for a text track twice, so when CAF's own request cannot have had the file — the first
+     * answer was a 202 ([Arrival.waited]), or CAF never asked through the handler that adds the token ([cafAsked] false) —
+     * the receiver has to show the track it fetched itself. DEB-4792: it draws the cues itself ([parseVtt]); handing CAF a
+     * `blob:` copy of the file drew nothing on a real Chromecast.
      */
     fun castReshows(arrival: Arrival, cafAsked: Boolean): Boolean = arrival.waited || !cafAsked
 

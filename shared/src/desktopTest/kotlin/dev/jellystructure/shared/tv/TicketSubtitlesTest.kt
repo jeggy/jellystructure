@@ -47,6 +47,20 @@ class TicketSubtitlesTest {
     @Test fun a_track_caf_had_at_once_is_left_as_it_is() =
         assertEquals(false, TicketSubtitles.castReshows(TicketSubtitles.Arrival("x", waited = false), cafAsked = true))
 
+    @Test fun the_empty_copy_has_no_cue() = assertEquals(emptyList(), parseVtt(TicketSubtitles.EMPTY_VTT))
+
+    // DEB-4792 — the sequence QA saw on a Chromecast: the first ask is a 202, the file comes on the retry. The receiver
+    // must draw it itself: the arrival says so, and the cue is the one due at that time.
+    @Test fun a_202_then_the_file_is_drawn_by_the_receiver() {
+        val vtt = "WEBVTT\n\n00:01:49.000 --> 00:01:52.000\nA line\n"
+        val answers = listOf(SubtitleAttempt.NotReady(2_000), SubtitleAttempt.Body(vtt))
+        val (arrival, calls) = run(Clock()) { answers[it] }
+        assertEquals(2, calls)
+        assertEquals(true, TicketSubtitles.castReshows(arrival!!, cafAsked = true))
+        assertEquals("A line", activeCueText(parseVtt(arrival.text), 110_000))
+        assertNull(activeCueText(parseVtt(arrival.text), 113_000))
+    }
+
     // ── the retry loop ────────────────────────────────────────────────────────────────────────────
     private class Clock { var now = 0L; val sleeps = mutableListOf<Long>() }
 

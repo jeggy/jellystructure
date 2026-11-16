@@ -53,6 +53,9 @@
     #msg-h { font-size: 1.5vw; font-weight: 700; margin-bottom: .3vw; }
     #msg-h:empty { display: none; }
     #msg-t { font-size: 1.5vw; line-height: 1.35; color: var(--ink-soft); }
+    /* DEB-4792 — a subtitle cue the receiver draws itself (a track CAF never drew): low and centred, white with an outline, over the picture. */
+    #subtitle { position: fixed; left: 8vw; right: 8vw; bottom: 7vh; display: none; text-align: center; white-space: pre-line; font-size: 3vw; line-height: 1.25; font-family: sans-serif; color: #fff; text-shadow: -1px -1px 0 rgba(0,0,0,.8), 1px -1px 0 rgba(0,0,0,.8), -1px 1px 0 rgba(0,0,0,.8), 1px 1px 0 rgba(0,0,0,.8), 0 0 .5vw rgba(0,0,0,.8); z-index: 10; pointer-events: none; }
+    #subtitle.on { display: block; }
     .wait { font-size: 20px; color: var(--ink-dim); margin-top: 10px; }
     /* 286 (FR-286-5) — Now playing on a display: cover · title · artist · album · year, a hairline progress with
        times, and one quiet "Next" line. No on-screen controls: the display's own remote works (the transport row
@@ -101,6 +104,7 @@
   <div id="np-tr"><div class="g" id="np-tr-g"><i></i><i></i></div><span id="np-tr-t"></span></div>
   <div id="overlay"><div class="row"><div class="glyph"><i></i><i></i></div><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
   <div id="nextup"><div id="nu-k" class="k"></div><div id="nu-t" class="t"></div><div id="nu-c" class="c"></div></div>
+  <div id="subtitle"></div>
   <div id="msg"><div id="msg-h"></div><div id="msg-t"></div></div>
 
   <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
