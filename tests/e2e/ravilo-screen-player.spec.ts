@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
+import { fakeAvPlayInitScript, ownSignInBucket, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
 
 // R264 (FR-R264-3/4) — the receiver-only TV app is a whole player driven by the TV remote, not only by the
 // phone: the transport on the remote's own keys, the two-level audio & subtitles picker on the TV, and one
@@ -126,6 +126,7 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
 });
 
 async function bootAndSignIn(page: Page, request: APIRequestContext, phoneDevice = "e2e-player-phone-r264"): Promise<{ phoneToken: string; screenId: string }> {
+  await ownSignInBucket(page);
   await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
   await page.locator("#setupHost").fill(process.env.APP_URL_FROM_SCREEN ?? "http://app:9505");
   await page.locator("#setupConnect").click();

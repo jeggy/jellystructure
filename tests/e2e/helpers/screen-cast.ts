@@ -108,3 +108,14 @@ export async function scannedItemId(request: APIRequestContext, phoneToken: stri
   expect(id, `${title} was not found via /api/tv/search`).toBeTruthy();
   return id!;
 }
+
+/** Gives this page its own bucket in the backend's sign-in limits. `/api/tv/signin/code` allows 10 mints a minute and
+ *  `/poll` 40, each per client IP (TvSignInLimits keyed by LoginRateLimiter.clientKey, which prefers X-Forwarded-For), and
+ *  every spec in this stack comes from one IP: ravilo-screen-signin.spec.ts alone starts a dozen screens in half a minute,
+ *  so the next spec's mint was refused, the screen stopped on Retry and its code stayed empty (DEB-4856). `fallback`, not
+ *  `continue`, so a test's own mock of the same route still answers first. Call before `page.goto`. */
+export async function ownSignInBucket(page: Page): Promise<void> {
+  const client = `10.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${1 + Math.floor(Math.random() * 254)}`;
+  await page.route(/\/api\/tv\/signin\/(code|poll)$/, (route) =>
+    route.fallback({ headers: { ...route.request().headers(), "x-forwarded-for": client } }));
+}

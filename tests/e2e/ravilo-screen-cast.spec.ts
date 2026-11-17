@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
+import { fakeAvPlayInitScript, ownSignInBucket, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
 
 // Phase 248 — the phone -> backend -> Samsung TV path (236/R264/R265) is the owner's most important
 // use case and the owner rarely has a real Samsung TV to test on. This drives the ACTUAL
@@ -41,6 +41,7 @@ test.describe("Phase 248 — casting to a screen, driven through the real bundle
     page.on("pageerror", (err) => pageErrors.push(err.message));
 
     // ── 1. The screen boots, completes R269's setup screen against the real backend. ────────────
+    await ownSignInBucket(page);
     await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
     await page.locator("#setupHost").fill(process.env.APP_URL_FROM_SCREEN ?? "http://app:9505");
     await page.locator("#setupConnect").click();

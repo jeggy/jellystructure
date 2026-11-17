@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
+import { fakeAvPlayInitScript, ownSignInBucket, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
 
 // R285 in CI (2026-09-24) — audio and subtitles on the Samsung TV receiver, driven through the REAL
 // ravilo-screen.js bundle. The owner has no Samsung TV, so this is the only place R285 runs at all.
@@ -156,6 +156,7 @@ test.describe("R285 — audio and subtitles on the TV receiver, driven through t
  *  identified by the device list's DIFFERENCE across sign-in — this stack also holds phase 248's
  *  screen, paired by the same Jellyfin user and named the same. */
 async function bootAndSignIn(page: Page, request: APIRequestContext): Promise<{ phoneToken: string; screenId: string }> {
+  await ownSignInBucket(page);
   await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
   await page.locator("#setupHost").fill(process.env.APP_URL_FROM_SCREEN ?? "http://app:9505");
   await page.locator("#setupConnect").click();

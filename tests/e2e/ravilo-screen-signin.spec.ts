@@ -1,4 +1,5 @@
 import { test, expect, Browser } from "@playwright/test";
+import { ownSignInBucket } from "./helpers/screen-cast";
 
 const SCREEN_URL = process.env.RAVILO_SCREEN_CAST_URL ?? "http://localhost:8092";
 const APP_URL = process.env.APP_URL ?? "http://localhost:9505";
@@ -22,6 +23,7 @@ async function approveFromSecondContext(browser: Browser, code: string, username
 }
 
 async function boot(page: import("@playwright/test").Page) {
+  await ownSignInBucket(page);
   await page.addInitScript(() => localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505"));
   await page.goto(SCREEN_URL);
   await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
