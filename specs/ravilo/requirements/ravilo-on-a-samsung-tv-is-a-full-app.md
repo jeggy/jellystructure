@@ -442,3 +442,15 @@ shipped R264's 128×128 placeholder as `icon.png`, and the screens drew `.mark` 
   assertion in `ravilo-screen.spec.ts` loads the setup screen and requires its mark to be an `<img>` with
   `naturalWidth > 0`. How the tile looks on the Samsung launcher cannot be covered automatically: it goes to QA, on the
   5.0 emulator and then the real TV.
+
+## Amendment 2026-11-17 (DEB-4833) — every brand spot carries the mark
+
+DEB-4818 named only the `.mark` screens. On the real Samsung the owner found the other brand spots still plain white
+text: the shell bar's top-left `Ravilo` and the sign-in and profile-picker `Ravilo` words.
+
+- **FR-18 (extended) · every brand spot is the packed mark plus the wordmark.** `.shell-brand` and `.auth-brand` draw
+  `ravilo-mark.svg` from the widget (`<img class="brand-mark">`, 44 px in the 92 px shell bar, 36 px on the auth screens)
+  followed by the `Ravilo` word, as the Android TV top bar does. This replaces the last sentence of FR-18 above.
+- **Proof.** `ravilo-screen.spec.ts` requires an `<img>` with `naturalWidth > 0` in `#shell .shell-brand`, `#signin
+  .auth-brand` and `#profile-picker .auth-brand`; `check-tizen-assets.sh` also covers `brand-mark` images. How it looks on
+  the Samsung bar goes to QA with the preview `.wgt`.

@@ -91,7 +91,9 @@
     #shell { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 5; display: none; background: var(--bg); color: var(--ink); }
     #shell.on { display: block; }
     .shell-bar { height: 92px; display: flex; align-items: center; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.55), transparent); }
-    .shell-brand { font-size: 30px; font-weight: 700; margin-right: 48px; }
+    .shell-brand { display: flex; align-items: center; font-size: 30px; font-weight: 700; margin-right: 48px; }
+    /* DEB-4833 FR-18 — every brand spot carries the packed mark before the wordmark, as the Android TV top bar does. */
+    .brand-mark { display: block; width: 44px; height: 44px; margin-right: 14px; }
     .shell-nav { display: flex; align-items: center; }
     .shell-target { outline: none; cursor: pointer; }
     .shell-nav .shell-target { padding: 9px 20px; border-radius: 11px; color: var(--ink-soft); font-size: 21px; margin-right: 8px; }
@@ -122,7 +124,8 @@
     /* DEB-4657 FR-2/FR-3 — DOM sign-in and profiles, inside the Chromium 63 CSS floor. */
     .auth-screen { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 6; display: none; background: var(--bg); color: var(--ink); }
     .auth-screen.on { display: block; }
-    .auth-brand { position: absolute; left: 48px; top: 28px; font-weight: 700; font-size: 25px; }
+    .auth-brand { position: absolute; left: 48px; top: 28px; display: flex; align-items: center; font-weight: 700; font-size: 25px; }
+    .auth-brand .brand-mark { width: 36px; height: 36px; margin-right: 12px; }
     .auth-center { position: absolute; left: 9%; right: 9%; top: 50%; transform: translateY(-50%); text-align: center; }
     .auth-center h1 { font-size: 34px; margin: 0 0 28px; }
     .auth-code-layout { display: flex; align-items: center; justify-content: center; }

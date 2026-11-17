@@ -37,7 +37,7 @@ check_wgt() {
   fi
   # Every <img class="mark" src="…"> must name a file packed beside index.html.
   local marks
-  marks=$(grep -o '<img class="mark" src="[^"]*"' "$dir/index.html" | sed 's|.*src="||; s|"$||' || true)
+  marks=$(grep -oE '<img class="(brand-)?mark" src="[^"]*"' "$dir/index.html" | sed 's|.*src="||; s|"$||' || true)
   if [[ -z $marks ]]; then
     echo "$dir/index.html has no <img class=\"mark\">: the setup screen would draw no Ravilo logo" >&2
     return 1

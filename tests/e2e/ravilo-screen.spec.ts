@@ -55,6 +55,20 @@ test("the setup screen draws the real Ravilo mark from the widget (DEB-4818, FR-
   expect(new URL(await mark.evaluate((el) => (el as HTMLImageElement).src)).origin).toBe(new URL(SCREEN_URL).origin);
 });
 
+test("the shell bar and the auth screens carry the packed Ravilo mark, not plain text (DEB-4833, FR-18)", async ({ page }) => {
+  test.setTimeout(30_000);
+
+  await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+
+  // These screens are hidden until a session exists; an <img> loads regardless, so naturalWidth proves the file decoded.
+  for (const selector of ["#shell .shell-brand img", "#signin .auth-brand img", "#profile-picker .auth-brand img"]) {
+    const img = page.locator(selector);
+    await expect(img).toHaveCount(1);
+    await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth), { message: selector }).toBeGreaterThan(0);
+  }
+});
+
 test("the Tizen widget sends its setup probe without AbortController (DEB-4727, FR-13)", async ({ page }) => {
   test.setTimeout(30_000);
 
