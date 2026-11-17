@@ -9,6 +9,11 @@
       "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-android-1.70.apk",
       "size": 13718979
     },
+    "linux": {
+      "name": "ravilo-linux-1.70.flatpak",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-linux-1.70.flatpak",
+      "size": 73185720
+    },
     "mac": {
       "name": "ravilo-mac-1.70.dmg",
       "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-mac-1.70.dmg",
