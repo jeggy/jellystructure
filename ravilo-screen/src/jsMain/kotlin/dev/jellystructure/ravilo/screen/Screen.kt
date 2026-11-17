@@ -367,7 +367,15 @@ private class Screen(private val serverUrl: String) {
         loaded = true
         playing = false
         lastProgressAt = nowMs()
-        backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs)
+        val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs) }
+        if (opened.isFailure) {
+            // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
+            // length of whatever was open before (which marked the episode watched), and the viewer is told once.
+            console.error("Ravilo screen: open failed: ${opened.exceptionOrNull()}")
+            GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
+            failPlay(null)
+            return
+        }
         sendStatus()
     }
 
@@ -781,6 +789,7 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun onFinished() {
+        if (!loaded) return   // DEB-4874 — an end that is not of a stream this screen has open stops nothing at its length
         // R264 (FR-R264-3) — the household plays on. R384 (FR-R384-4) — the countdown runs its whole length over the last
         // frame (put up now when the last second was never seen), and playNext() follows it, with the stop at the end;
         // the end used to play the next episode at once, cutting a countdown that started 1 s before it to one tick.

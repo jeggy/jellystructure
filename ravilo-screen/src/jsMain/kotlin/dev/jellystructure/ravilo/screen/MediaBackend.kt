@@ -66,6 +66,9 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     private var listener: MediaBackendListener? = null
 
     override fun open(hlsUrl: String, startPositionMs: Long) {
+        // DEB-4874 — `avplay.open` is only legal from NONE: over a stream that is still open (the episode the next-up card leaves,
+        // whoever started it) it throws PLAYER_ERROR_INVALID_STATE. Leave AVPlay closed first, so every start is safe, not one path.
+        runCatching { WebApisGlobal.avplay.close() }
         // DEB-4845 — AVPlay draws on a plane behind the page; an opaque page background (html, body) hides it,
         // which is a black picture with sound. The class lets the page through for as long as a stream is open.
         document.documentElement?.classList?.add(AVPLAY_ON)

@@ -10,7 +10,7 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 // deterministic signal FR-248-3 asks for).
 export function fakeAvPlayInitScript() {
   (window as any).__avplayCalls = [];
-  let state = "IDLE";
+  let state = "NONE";
   let posMs = 0;
   let ticking: any = null;
   let listener: any = {};
@@ -18,6 +18,13 @@ export function fakeAvPlayInitScript() {
     avplay: {
       open(url: string) {
         (window as any).__avplayCalls.push(["open", url]);
+        // DEB-4874 — the device's rule: open() is only legal from NONE (nothing open, or after close()). Over an open stream the
+        // real AVPlay throws PLAYER_ERROR_INVALID_STATE, and Chromium would otherwise never show the app doing that.
+        if (state !== "NONE") {
+          const e: any = new Error("PLAYER_ERROR_INVALID_STATE");
+          e.name = "InvalidStateError";
+          throw e;
+        }
         state = "IDLE";
       },
       setDisplayRect(...args: number[]) {

@@ -529,3 +529,21 @@ the server*; `POST /api/remote/play` answered 403 and no start for the next epis
   needs; DEB-4719's refusal of a Tizen 5.0 widget is the same as before for that path.
 - **Proof.** `ravilo-screen-play-from-tv.spec.ts` plays a series' episode with `/api/remote/play` answering 403 and asserts
   the next episode's start, no call to the route, and the following card. A real 5.0 set goes to QA (DEB-4860).
+
+## Amendment 2026-11-17 (DEB-4874) — a start over an open stream closes it first
+
+QA on the Tizen 5.0 and 10.0 emulators (DEB-4867): every start made while a stream was open — the next-up card's (countdown and OK),
+on a start the TV made and on a phone's push alike — threw `PLAYER_ERROR_INVALID_STATE` from `webapis.avplay.open`, so the next
+episode never played; on 5.0 the 403 of DEB-4865's old path had hidden it. Restores FR-9's *the title plays* and FR-10's *a phone's
+play takes over*.
+
+- **`AvPlayBackend.open` leaves AVPlay closed first.** `open()` is legal only from `NONE`, so the backend closes whatever is open
+  before it opens: every start path is safe, not only the next-up one.
+- **A start that does not open has played nothing.** The screen shows the failure line once, closes the server's session for the item
+  at position 0, and never reports a stop at a length. Before, the stream that was still open ran to its end under the new item
+  and the stop at *its* length marked the episode that never played **watched**. A stream's end is also ignored while no
+  stream is loaded.
+- **Proof.** The fake AVPlay of `helpers/screen-cast.ts` now throws `InvalidStateError` on `open()` from anything but `NONE`, as the
+  device does. `ravilo-screen-play-from-tv.spec.ts` starts a second item over an open stream (a close sits between the opens, no
+  failure shows) and fails an `open()` (the failure line, one stop at 0, none at a length). The emulators go to QA with the preview
+  `.wgt`: re-run DEB-4867's table on 5.0 and 10.0.

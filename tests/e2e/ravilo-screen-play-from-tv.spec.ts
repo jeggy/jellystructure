@@ -208,6 +208,36 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect(page.locator("#nu-t")).toContainText("Third Reel");
   });
 
+  test("DEB-4874: a start made over an open stream closes it first — the fake AVPlay throws INVALID_STATE on an open() over one, as the device does", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-1"));
+    const first = await waitForAvplayCall(page, "play");
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-2", { title: "Second Reel" }));   // a phone's push, mid-stream
+    const second = await waitForAvplayCall(page, "open", first.index + 1);
+    expect(String(second.call[1])).toContain("/hls/ep-2/");
+    await waitForAvplayCall(page, "play", second.index);
+    // A close sits between the two opens, and nothing about the second start failed.
+    const names = (await avplayCalls(page)).map((c) => c[0]);
+    expect(names.slice(first.index, second.index)).toContain("close");
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+    expect(seen.starts.map((s) => s.item_id)).toEqual(["ep-1", "ep-2"]);
+  });
+
+  test("DEB-4874: a start whose open() fails says so and reports no stop at a length — the episode that never played is not marked watched", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-1"));
+    await waitForAvplayCall(page, "play");
+    await page.evaluate(() => { (window as any).webapis.avplay.open = () => { throw new Error("PLAYER_ERROR_INVALID_STATE"); }; });
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-2", { title: "Second Reel" }));
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    // ep-2's session is closed at 0; nothing is ever reported for it at the 60 s the fake stream is long.
+    await expect.poll(() => seen.stops.filter((s) => s.item_id === "ep-2").map((s) => s.position_ms)).toEqual([0]);
+    await page.waitForTimeout(2_000);
+    expect(seen.stops.filter((s) => s.item_id === "ep-2" && s.position_ms > 0)).toEqual([]);
+  });
+
   test("FR-10: a phone's play takes over the page the viewer is on, and the end returns to it", async ({ page }) => {
     await boot(page);
     await page.keyboard.press("ArrowDown").catch(() => {});
