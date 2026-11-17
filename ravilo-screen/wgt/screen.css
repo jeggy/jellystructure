@@ -187,3 +187,41 @@
     .hero-badge { display: inline-block; margin-top: 14px; padding: 6px 12px; border-radius: 7px; background: rgba(0,0,0,.62); font-size: 17px; }
     .tile-progress { height: 4px; background: rgba(255,255,255,.28); margin-top: 6px; }
     .tile-progress-fill { height: 100%; background: var(--accent-2); }
+
+    /* DEB-4660 FR-7 — a title's page. Margins, never flex gap (FR-13). */
+    .detail { position: relative; min-height: 100%; }
+    .detail-backdrop { position: absolute; top: -18px; right: -72px; left: -72px; height: 62vh; overflow: hidden; background: #161922; }
+    .detail-backdrop img { width: 100%; height: 100%; object-fit: cover; }
+    .detail-backdrop:after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(0deg, var(--bg) 4%, rgba(10,12,19,.55) 60%, rgba(10,12,19,.85)); }
+    .detail-head { position: relative; z-index: 1; padding-top: 7vh; text-shadow: 0 2px 8px #000; }
+    .detail-head > .detail-overview, .detail-head > .detail-meta { max-width: 62%; }
+    .detail-logo { display: block; max-width: 520px; max-height: 160px; object-fit: contain; object-position: left bottom; }
+    #shell-body .detail-title { font-size: 56px; line-height: 1.1; margin: 0; }
+    #shell-body .detail-title.hidden { display: none; }
+    .detail-meta { display: flex; align-items: center; margin-top: 18px; font-size: 22px; color: var(--ink-soft); }
+    .detail-meta > * + * { margin-left: 18px; }
+    .detail-badge { display: inline-flex; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; overflow: hidden; font-size: 17px; font-weight: 800; }
+    .detail-badge-region { padding: 3px 9px; background: rgba(255,255,255,.12); color: var(--ink-soft); }
+    .detail-badge-code { padding: 3px 11px; background: #3a4150; color: #fff; }
+    .detail-badge-code[data-tier="1"] { background: #2f8f4e; }
+    .detail-badge-code[data-tier="2"] { background: #d9b32a; color: #1c1600; }
+    .detail-badge-code[data-tier="3"] { background: #d9722a; }
+    .detail-badge-code[data-tier="4"] { background: #c23a3a; }
+    .detail-overview { font-size: 21px; line-height: 1.45; color: var(--ink-soft); margin: 18px 0 0; max-height: 6.1em; overflow: hidden; }
+    .detail-actions { display: flex; margin-top: 28px; }   /* one row: Left and Right only move within a row */
+    .detail-btn { font-size: 23px; font-weight: 650; padding: 14px 30px; margin: 0 14px 12px 0; border-radius: 11px; background: rgba(255,255,255,.12); color: var(--ink); text-shadow: none; }
+    .detail-btn.primary { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
+    .detail-btn.cur { box-shadow: inset 0 0 0 2px var(--accent); }
+    .detail-btn.focused { box-shadow: 0 0 0 4px var(--ring); background: rgba(255,255,255,.22); }
+    .detail-btn.primary.focused { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .detail-episodes { position: relative; z-index: 1; margin-top: 30px; }
+    .detail-seasons { display: flex; flex-wrap: wrap; padding: 5px; }
+    .detail-rail { display: flex; overflow-x: auto; padding: 5px; }
+    .detail-rail > * + * { margin-left: 18px; }
+    .detail-ep { box-sizing: border-box; flex: 0 0 288px; min-width: 0; }
+    .detail-ep-art { position: relative; width: 100%; height: 162px; border-radius: 11px; background: #202431; overflow: hidden; }
+    .detail-ep-art img { width: 100%; height: 100%; object-fit: cover; }
+    .detail-ep-art .tile-progress { position: absolute; left: 0; right: 0; bottom: 0; margin-top: 0; }
+    .detail-ep-check { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; line-height: 30px; border-radius: 50%; text-align: center; background: var(--accent); font-size: 19px; font-weight: 700; }
+    .detail-ep-code { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: var(--accent-2); padding: 10px 2px 0; }
+    .detail-ep.focused .detail-ep-art { box-shadow: 0 0 0 4px var(--ring); }

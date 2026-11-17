@@ -477,3 +477,21 @@ because its tile was a movie.
 - **Proof.** A Playwright case in `ravilo-screen-play-from-tv.spec.ts` presses OK on a series tile and requires the
   start to name the episode, never the series; `:shared:desktopTest` covers the episode choice. A real-device play of a
   series' episode goes to QA with the preview `.wgt`.
+
+## Amendment 2026-11-17 (DEB-4660) — what FR-7 means on the code that exists
+
+FR-7's page replaces the stand-in that DEB-4661 and DEB-4832 described. Nothing in FR-7's text changes; these are the decisions it left to the piece.
+
+- **OK on a movie or series tile opens the page** (`getMovie` or `getSeries`, then `getPlaystate` for the title and every episode). The page draws once both have answered, so the first label is the right one. A title the server does not have says *This isn't here any more*, a refusal says *Not available on this profile*, anything else the unreachable line. Back leaves; the failure is not retried by a redraw.
+- **The movie's actions.**
+  - The primary button reads *Resume · N min left* from the playstate's `resume_ms` and the movie's runtime (R279's `action.resume_mins_left`, as ravilo-ui does), plain *Resume* when the runtime understates the file, *Play Again* on a watched title and *Play* otherwise. FR-7's ‹time› is that time left.
+  - *Start over* shows only with a resume point and starts with `start_position_ms: 0` and `start_over: true`. Resume sends no position: the server's playstate decides where it starts, as it does for every start.
+  - My List reads `+ My List` or `− My List`, and the watched button `Mark Watched` or `✓ Watched`.
+- **The series' actions.** The primary button, My List and the season strip. FR-7 lists *Mark watched* for the movie only, so a series has none in v1.
+  - The primary episode is ravilo-ui's `primaryEpisodeId` with the server's answer checked: a newest-first series' newest episode; on a finished series the episode the server names for a re-watch, else the first counted one as *Start over · S01E01* (when the series says it can clear, R343) or *Play · S01E01*; otherwise the Continue Watching episode, one in progress, the first unwatched counted episode. It never offers a watched episode (owner, 10-29).
+  - The label is *Resume · S01E02* once anything has been watched or started, else *Play · S01E02*.
+  - The strip shows from two seasons, opens on the season that holds the primary episode, and a pill switches by OK. A multi-episode file is one tile.
+- **Write-through is the server's answer.** `setFavorite` and `setPlayed` return the new state, which replaces the old one. A refused write (a 404, a network failure) leaves the button as it was, and a second OK is ignored while one is in flight.
+- **The page hands the player its facts.** `ScreenPlayRequest` carries a `ScreenPlayContext`: a movie's logo and Skip Intro markers (so the 3 s `getMovie` wait in DEB-4661's amendment now applies only to a play with no page behind it), and an episode's S·E line, its series' name and logo, its own markers and the counted episode after it. A series' own tile id is never started.
+- **DEB-4832's stand-in is gone.** `playSeriesFromTv` and its 5 s wait are removed: the page chooses the episode, and a series whose detail does not come shows the failure line instead of the generic refusal. `pickSeriesPlay` stays in `shared` with its test.
+- **Proof.** `ravilo-screen-detail.spec.ts` covers the Resume label, Start over, the My List and watched write-throughs (including a refusal), the next-up episode, a finished series, a season switch, an episode tile and the way back from a play. `ravilo-screen-play-from-tv.spec.ts` now goes through the page. The page on a real TV (key codes, focus on a 55-inch panel, artwork) goes to QA with the preview `.wgt`.

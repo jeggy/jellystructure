@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.screen
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
+import dev.jellystructure.shared.tv.TvSegmentMarkers
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.GlobalScope
@@ -20,10 +21,33 @@ internal data class ScreenRouteEntry(
     val mediaId: String? = null,
     val mediaKind: MediaKind = MediaKind.MOVIE,
     var feed: HomeFeed? = null,
+    val detail: ScreenDetail? = null,
 )
 
-/** What the title's page hands the player when OK plays it (FR-9). DEB-4660's page adds the episode's context here. */
-internal data class ScreenPlayRequest(val id: String, val kind: MediaKind, val title: String)
+/**
+ * What the title's page already knows about a play — the part of a phone's push the TV would otherwise ask for (DEB-4660, FR-7).
+ * [kind] is `movie` or `episode`; an episode carries its S·E line, its series' name and logo, and the episode after it.
+ */
+internal data class ScreenPlayContext(
+    val kind: String,
+    val kicker: String? = null,
+    val seriesName: String? = null,
+    val logoUrl: String? = null,
+    val logoInk: String? = null,
+    val segments: TvSegmentMarkers? = null,
+    val nextId: String? = null,
+    val nextTitle: String? = null,
+    val nextKicker: String? = null,
+)
+
+/** What the title's page hands the player when OK plays it (FR-9). [startOver] plays from 0; [context] is the page's own facts. */
+internal data class ScreenPlayRequest(
+    val id: String,
+    val kind: MediaKind,
+    val title: String,
+    val startOver: Boolean = false,
+    val context: ScreenPlayContext? = null,
+)
 
 /** The DOM shell stays mounted while R264's player covers it. */
 internal class ScreenShell(
@@ -107,6 +131,10 @@ internal class ScreenShell(
         val current = entries.last()
         if (current.name == ScreenSettings.ROUTE) {
             ScreenSettings.render(body, serverUrl, onLanguage = { render() }, onChangeServer = onChangeServer)
+        } else if (current.detail != null) {
+            // DEB-4660 — focus lands on the primary action once the page has drawn, not on the loading placeholder.
+            if (current.detail.ready && current.focusId == "shell-page-target") current.focusId = current.detail.primaryFocusId
+            current.detail.render(body)
         } else {
             body.textContent = ""
             val feed = current.feed
@@ -125,6 +153,7 @@ internal class ScreenShell(
         renderScreenNav(if (current.name == "channel" || current.name == "detail") "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
         if ((current.name == "home" || current.name == "channel") && current.feed == null) loadFeed(current)
+        current.detail?.load()
     }
 
     private fun loadFeed(entry: ScreenRouteEntry) {
@@ -139,11 +168,17 @@ internal class ScreenShell(
         }
     }
 
+    /** A title's page has something new to draw (its facts arrived, or a write-through answered): redraw it if it is still the route. */
+    private fun detailChanged(page: ScreenDetail) {
+        if (!visible || player || entries.lastOrNull()?.detail !== page) return
+        render()
+    }
+
     private fun activate() {
         val current = entries.last()
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
-        // The title page's stand-in (until DEB-4660): OK plays the title, which resumes from the server's playstate.
-        if (current.name == "detail") { current.mediaId?.let { onPlay(ScreenPlayRequest(it, current.mediaKind, current.title.orEmpty())); return } }
+        // DEB-4660 (FR-7) — on a title's page OK is the page's own: its actions, a season pill, an episode.
+        if (current.detail != null && !current.focusId.startsWith("nav-")) { current.detail.activate(element); return }
         val channelId = element.getAttribute("data-channel-id")
         val mediaId = element.getAttribute("data-media-id")
         if (channelId != null) {
@@ -153,8 +188,10 @@ internal class ScreenShell(
             return
         }
         if (mediaId != null) {
-            entries.add(ScreenRouteEntry("detail", "shell-page-target", title = element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: "", mediaId = mediaId,
-                mediaKind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE))
+            val title = element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
+            val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
+            val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = onPlay)
+            entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
             render()
             return
         }

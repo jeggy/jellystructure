@@ -120,7 +120,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
 
     await page.keyboard.press("Enter");                      // the title's page
-    await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
     await expect(page.locator("#shell-body")).not.toContainText(/cast|play on/i);
     await page.keyboard.press("Enter");                      // Play
 
@@ -156,7 +156,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     expect(seen.stops[0].position_ms).toBeGreaterThanOrEqual(42_000);
 
     // The page it was started from, with focus on the item that played; Back again is the tile.
-    await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
     await page.keyboard.press("Escape");
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
   });
@@ -199,6 +199,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     test.setTimeout(60_000);
     await boot(page, { start: async () => ({ status: 500, body: {} }) });
     await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toBeVisible();   // the page has drawn: OK is now Play
     await page.keyboard.press("Enter");
     await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
     await expect(page.locator("#failed-t")).toHaveText("That didn’t start");
@@ -207,7 +208,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     // Back leaves the refusal at once and lands on the page the start came from.
     await page.keyboard.press("Escape");
     await shellOn(page);
-    await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
 
     await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-9"));
     await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
@@ -220,6 +221,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     const held = new Promise<void>((resolve) => { release = resolve; });
     const seen = await boot(page, { start: async (id) => { await held; return { status: 200, body: ticket(id, 0) }; } });
     await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toBeVisible();   // the page has drawn: OK is now Play
     await page.keyboard.press("Enter");
     await expect(page.locator("#loading")).toHaveClass(/\bon\b/, { timeout: 10_000 });
     await page.keyboard.press("Escape");
@@ -234,8 +236,8 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
   test("DEB-4832: OK on a series' tile plays an episode, never the series id", async ({ page }) => {
     test.setTimeout(60_000);
     const seen = await boot(page, { series: seriesDetail, continueEpisode: "s1e2" });
-    await page.keyboard.press("Enter");                      // the stand-in page
-    await expect(page.locator("#shell-body")).toHaveText("Paper Series");
+    await page.keyboard.press("Enter");                      // the series' page (DEB-4660)
+    await expect(page.locator(".detail-title")).toHaveText("Paper Series");
     await page.keyboard.press("Enter");                      // Play
     const opened = await waitForAvplayCall(page, "open");
     expect(String(opened.call[1])).toContain("/hls/s1e2/");
@@ -250,18 +252,19 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     test.setTimeout(60_000);
     const seen = await boot(page, { series: seriesDetail });
     await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toBeVisible();   // the page has drawn: OK is now Play
     await page.keyboard.press("Enter");
     await waitForAvplayCall(page, "open");
     expect(seen.starts.map((s) => s.item_id)).toEqual(["s1e1"]);
   });
 
-  test("DEB-4832: a series whose detail does not come is refused in the TV's words, without a start", async ({ page }) => {
+  test("DEB-4832: a series whose detail does not come says so on its page and never starts the series id", async ({ page }) => {
     test.setTimeout(60_000);
     const seen = await boot(page, { series: null });
     await page.keyboard.press("Enter");
+    await expect(page.locator("#shell-body")).toHaveText("This isn't here any more");
     await page.keyboard.press("Enter");
-    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
-    await expect(page.locator("#failed-s")).toHaveText("Press Back and try again.");
     expect(seen.starts).toHaveLength(0);
+    expect((await avplayCalls(page)).some((c) => c[0] === "open")).toBe(false);
   });
 });
