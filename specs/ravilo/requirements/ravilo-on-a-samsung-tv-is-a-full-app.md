@@ -648,3 +648,21 @@ sizes of what will replace them. It holds no text at all: no heading standing in
   - **On the TV:** how the flags read and the pulse looks on the 55-inch panel goes to QA with the preview `.wgt`, on the 5.0
     emulator first.
 - **No wire change.** No route, field or DTO moves. The flags are already in both detail DTOs.
+
+## Amendment 2026-11-17 (DEB-4900) — the launcher tile is the wide Ravilo banner, not the square mark
+
+Owner, DEB-799 (2026-11-17): on the Samsung home bar the Ravilo tile is a square picture of the mark, while every other
+app's tile is wide with its name beside it. This amends **FR-17**, whose text above (*the centre crop of
+`ic_launcher-512.png`*) no longer holds; the rest of FR-17 stands.
+
+- **FR-17 (amended) · The launcher tile is the Android TV banner.** `ravilo-screen/wgt/icon.png` stays a **512×423**
+  PNG (Samsung's TV icon size; Tizen's `config.xml` takes one `<icon>` file and ignores `width`/`height`, so there is
+  no second, wider icon to name) and `config.xml` keeps pointing at `icon.png`. Its picture is
+  `design/ravilo/assets/store/tv-banner-1280x720.png`: the mark on the left, the *Ravilo* wordmark and its gradient
+  underline beside it, on the banner's own `#000B25` ground. The banner's tagline is not on the tile. The banner is
+  cropped to 871×720 around the mark and wordmark and scaled to 512×423 **without distortion** (0.588 both ways), then
+  nudged 20 px down so the group sits at the tile's optical centre.
+- **Proof.** `scripts/check-tizen-assets.sh` already fails on any other size, so it needs no change. Whether the tile
+  reads as wide on the Smart Hub bar cannot be covered automatically: it goes to QA with the signed preview `.wgt`, on
+  the owner's Tizen 5.0 TV. If that tile still shows letterboxed, the 512×423 canvas is the limit and the next step is
+  a Samsung-side question, not a different file.
