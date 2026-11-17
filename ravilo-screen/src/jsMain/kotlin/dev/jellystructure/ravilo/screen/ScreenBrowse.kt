@@ -15,6 +15,8 @@ internal class ScreenBrowse(val kind: String, private val tiles: ScreenHome) {
     var loading = false
     var complete = false
         private set
+    /** DEB-4893 (FR-20) — the first page failed to load: the page shows the failure and Retry, not a skeleton that never ends. */
+    var failed = false
     private var total = 0
 
     fun append(result: SearchResults) {
@@ -29,23 +31,21 @@ internal class ScreenBrowse(val kind: String, private val tiles: ScreenHome) {
         return page > 0 && !loading && !complete && index >= cards.size - 12
     }
 
-    fun render(mount: HTMLElement) {
+    fun render(mount: HTMLElement, fade: Boolean = false) {
         mount.textContent = ""
         val pageNode = node("div", "browse-page")
         val key = if (kind == "mylist") "nav.my_list" else "nav.${if (kind == "movie") "movies" else "series"}"
         pageNode.appendChild(node("h1", "browse-heading").also { it.textContent = ScreenLanguage.t(key) })
         if (page == 0) {
-            pageNode.appendChild(node("div", "shell-target shell-placeholder").also {
-                it.id = "shell-page-target"
-                it.setAttribute("data-row", "body")
-                it.setAttribute("tabindex", "-1")
-                it.textContent = ScreenLanguage.t(key)
-            })
+            // FR-20 — the real heading stays (it is the page's title, not a stand-in); under it a skeleton, or the failure and Retry.
+            pageNode.appendChild(if (failed) ScreenSkeleton.failure() else ScreenSkeleton.grid())
         } else {
-            pageNode.appendChild(node("p", "browse-count").also {
+            val count = node("p", "browse-count").also {
                 it.textContent = if (total == 1) ScreenLanguage.t("browse.title_one")
                     else t("browse.titles", ScreenLanguage.lang, mapOf("count" to total.toString()))
-            })
+            }
+            pageNode.appendChild(count)
+            if (fade) ScreenSkeleton.fadeIn(count)
             if (kind == "mylist" && total == 0) {
                 pageNode.appendChild(node("p", "browse-empty").also {
                     it.textContent = t("browse.mylist_empty_hint", ScreenLanguage.lang,
@@ -53,6 +53,7 @@ internal class ScreenBrowse(val kind: String, private val tiles: ScreenHome) {
                 })
             }
             val grid = node("div", "browse-grid")
+            if (fade) ScreenSkeleton.fadeIn(grid)
             cards.forEachIndexed { index, card ->
                 grid.appendChild(tiles.tile(card, "browse-tile-$index", "browse-row-${index / 6}", TileShape.POSTER))
             }

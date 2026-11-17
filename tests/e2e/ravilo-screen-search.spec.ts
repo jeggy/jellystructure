@@ -74,7 +74,7 @@ test("a result opens its page and Back redraws the same search without asking ag
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#shell-body")).toHaveText("Story birch");
+  await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("Couldn't reach the server");   // the page opened; its facts are not mocked (FR-20: loading is a wordless skeleton)
   await page.keyboard.press("Escape");
   await expect(page.locator("#search-tile-1.focused")).toBeVisible();
   await expect(page.locator("#search-input")).toHaveValue("st");

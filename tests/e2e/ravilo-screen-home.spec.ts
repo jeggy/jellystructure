@@ -62,7 +62,8 @@ test("Tizen Home draws server order, unknown kind as CUSTOM, and opens a channel
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#shell-body")).toHaveText("Paper Moon");
+  // The title's page opened (its facts are not mocked, so it ends in DEB-4660's failure line; the loading state is a skeleton with no words, FR-20).
+  await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("Couldn't reach the server");
   await page.keyboard.press("Escape");
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
 });

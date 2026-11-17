@@ -331,6 +331,9 @@ jobs:
           docker cp "$bundle_container:/srv/ravilo-screen.js" /tmp/ravilo-screen.js
           ./scripts/check-tizen-bundle.sh /tmp/ravilo-screen.js
           ./scripts/check-tizen-abort.sh /tmp/ravilo-screen.js
+          # DEB-4893: the image Playwright serves packs a flag for every language the title page can draw.
+          mkdir -p /tmp/ravilo-screen-wgt && docker cp "$bundle_container:/srv/." /tmp/ravilo-screen-wgt
+          ./scripts/check-tizen-assets.sh --packed /tmp/ravilo-screen-wgt
           docker buildx prune -f
           echo "Disk space before starting stack:"
           df -h /

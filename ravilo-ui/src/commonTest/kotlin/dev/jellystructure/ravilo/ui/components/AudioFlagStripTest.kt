@@ -126,4 +126,10 @@ class AudioFlagStripTest {
         assertEquals(0, none.shownFlags.size); assertEquals(7, none.extra)
         assertEquals(true, none.hasAnyLanguage)
     }
+
+    // DEB-4889 (FR-19) — the table moved to :shared keyed by country code; every code it names still has a drawable here.
+    @Test
+    fun everyCountryCodeInTheSharedTableHasADrawable() {
+        assertEquals(emptySet(), flagCountriesWithoutDrawable())
+    }
 }

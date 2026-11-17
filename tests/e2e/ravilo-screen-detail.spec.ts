@@ -285,3 +285,75 @@ test.describe("DEB-4660 — a title's page on the Samsung TV (FR-7)", () => {
     await expect(page.locator(".detail-title")).toHaveText("Paper Series");
   });
 });
+
+// DEB-4893 (DEB-4889 FR-19) — Android TV's audio and subtitle flag line, redrawn in DOM from the packed flags/<cc>.png.
+test.describe("DEB-4889 FR-19 — a title's page shows its audio and subtitle languages as flags", () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+  const flags = (page: Page, group: number) => page.locator(".detail-langs .lang-group").nth(group).locator("img.lang-flag");
+  const loaded = (img: ReturnType<Page["locator"]>) => img.evaluateAll((els) => els.map((e) => (e as HTMLImageElement).naturalWidth));
+
+  test("three audio flags, five subtitle flags and +2 for the seven subtitle languages (one has no flag), under the meta line", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail,
+      audio_languages: ["en", "dan", "fo"],
+      subtitle_languages: ["en", "da", "fr", "de", "es", "it", "tam"] } });
+    await openPage(page);
+    await expect(page.locator(".detail-langs")).toHaveCount(1);
+    await expect(page.locator(".detail-langs .lang-label")).toHaveText(["AUDIO", "SUBTITLES"]);
+    await expect(page.locator(".detail-langs .lang-dot")).toHaveText("·");
+    await expect(flags(page, 0)).toHaveCount(3);
+    await expect(flags(page, 1)).toHaveCount(5);
+    await expect(page.locator(".detail-langs .lang-more")).toHaveText(["+2"]);   // the sixth and seventh languages, the unmapped one included
+    // The flags are packed in the widget (flags/<cc>.png), so each one really decoded.
+    await expect.poll(async () => (await loaded(flags(page, 0))).every((w) => w > 0)).toBe(true);
+    await expect.poll(async () => (await loaded(flags(page, 1))).every((w) => w > 0)).toBe(true);
+    expect(await flags(page, 0).evaluateAll((els) => els.map((e) => (e as HTMLImageElement).getAttribute("src")))).toEqual(["flags/gb.png", "flags/dk.png", "flags/fo.png"]);
+    // Between the meta line and the overview, and not a stop for the D-pad.
+    expect(await page.locator(".detail-meta + .detail-langs + .detail-overview").count()).toBe(1);
+    await expect(page.locator(".detail-langs .shell-target")).toHaveCount(0);
+    const size = await flags(page, 0).first().evaluate((el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return [r.width, r.height, s.borderTopLeftRadius, s.borderTopWidth]; });
+    expect(size).toEqual([39, 27, "3px", "1px"]);
+  });
+
+  test("five and five flags with both +N fit the header's column and never clip", async ({ page }) => {
+    const many = ["en", "da", "fr", "de", "es", "it", "pt", "nl"];
+    await boot(page, { movie: { ...movieDetail, audio_languages: many, subtitle_languages: many } });
+    await openPage(page);
+    await expect(flags(page, 0)).toHaveCount(5);
+    await expect(flags(page, 1)).toHaveCount(5);
+    await expect(page.locator(".detail-langs .lang-more")).toHaveText(["+3", "+3"]);
+    const fit = await page.evaluate(() => {
+      const line = document.querySelector(".detail-langs") as HTMLElement;
+      const rect = line.getBoundingClientRect();
+      const last = Array.from(line.querySelectorAll(".lang-more")).pop()!.getBoundingClientRect();
+      const column = (document.querySelector(".detail-head") as HTMLElement).getBoundingClientRect().width * 0.62;
+      return { overflow: line.scrollWidth - line.clientWidth, lastRight: last.right, lineRight: rect.right, lineWidth: rect.width, column };
+    });
+    expect(fit.overflow).toBeLessThanOrEqual(0);
+    expect(fit.lastRight).toBeLessThanOrEqual(fit.lineRight);
+    expect(fit.lineWidth).toBeLessThanOrEqual(fit.column + 1);
+  });
+
+  test("a group of only unmapped languages still shows its label and +N, and an empty group is left out", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail, audio_languages: [], subtitle_languages: ["tam", "tel"] } });
+    await openPage(page);
+    await expect(page.locator(".detail-langs .lang-label")).toHaveText(["SUBTITLES"]);
+    await expect(page.locator(".detail-langs img.lang-flag")).toHaveCount(0);
+    await expect(page.locator(".detail-langs .lang-more")).toHaveText(["+2"]);
+    await expect(page.locator(".detail-langs .lang-dot")).toHaveCount(0);
+  });
+
+  test("a series shows the line too; with no languages there is no line and no space for one", async ({ page }) => {
+    await boot(page, { series: seriesDetail({ audio_languages: ["en"], subtitle_languages: ["da"] }) });
+    await openPage(page);
+    await expect(page.locator(".detail-langs .lang-label")).toHaveText(["AUDIO", "SUBTITLES"]);
+    await expect(flags(page, 0)).toHaveCount(1);
+    await expect(flags(page, 1)).toHaveCount(1);
+  });
+
+  test("a title with no languages has no line", async ({ page }) => {
+    await boot(page, { series: seriesDetail() });
+    await openPage(page);
+    await expect(page.locator(".detail-langs")).toHaveCount(0);
+    await expect(page.locator(".detail-meta + .detail-overview")).toHaveCount(1);
+  });
+});

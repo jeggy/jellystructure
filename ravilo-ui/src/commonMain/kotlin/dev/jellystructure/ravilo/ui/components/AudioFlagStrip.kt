@@ -27,85 +27,45 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.Sora
 import jellystructure.ravilo_ui.generated.resources.Res
-import dev.jellystructure.ravilo.ui.seams.canonicalLanguage
+import dev.jellystructure.shared.tv.FLAG_STRIP_MAX
+import dev.jellystructure.shared.tv.LANG_FLAG_CC
+import dev.jellystructure.shared.tv.flagCountryFor
 import jellystructure.ravilo_ui.generated.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
-// ISO 639-1 (2-letter) AND ISO 639-2/B + /T (3-letter) → flag drawable.
-// ffprobe and Jellyfin MediaStreams use 3-letter codes; include both so lookup never silently fails.
-// Phase 139 — made internal (was private) so RequestLanguagePicker can reuse it for request-language
-// flags (RequestLanguageIntent.flag is deliberately the same ISO-639-1 vocabulary, not a country code).
-internal val LANG_CC: Map<String, DrawableResource> = mapOf(
-    "en" to Res.drawable.flag_gb, "eng" to Res.drawable.flag_gb,
-    "fr" to Res.drawable.flag_fr, "fra" to Res.drawable.flag_fr, "fre" to Res.drawable.flag_fr,
-    "de" to Res.drawable.flag_de, "deu" to Res.drawable.flag_de, "ger" to Res.drawable.flag_de,
-    "es" to Res.drawable.flag_es, "spa" to Res.drawable.flag_es,
-    "da" to Res.drawable.flag_dk, "dan" to Res.drawable.flag_dk,
-    "fo" to Res.drawable.flag_fo, "fao" to Res.drawable.flag_fo,
-    "is" to Res.drawable.flag_is, "isl" to Res.drawable.flag_is, "ice" to Res.drawable.flag_is,
-    "no" to Res.drawable.flag_no, "nor" to Res.drawable.flag_no, "nob" to Res.drawable.flag_no, "nno" to Res.drawable.flag_no,
-    "sv" to Res.drawable.flag_se, "swe" to Res.drawable.flag_se,
-    "fi" to Res.drawable.flag_fi, "fin" to Res.drawable.flag_fi,
-    "nl" to Res.drawable.flag_nl, "nld" to Res.drawable.flag_nl, "dut" to Res.drawable.flag_nl,
-    "it" to Res.drawable.flag_it, "ita" to Res.drawable.flag_it,
-    "pt" to Res.drawable.flag_pt, "por" to Res.drawable.flag_pt,
-    "pl" to Res.drawable.flag_pl, "pol" to Res.drawable.flag_pl,
-    "ru" to Res.drawable.flag_ru, "rus" to Res.drawable.flag_ru,
-    "ja" to Res.drawable.flag_jp, "jpn" to Res.drawable.flag_jp,
-    "ko" to Res.drawable.flag_kr, "kor" to Res.drawable.flag_kr,
-    "zh" to Res.drawable.flag_cn, "zho" to Res.drawable.flag_cn, "chi" to Res.drawable.flag_cn,
-    "ar" to Res.drawable.flag_sa, "ara" to Res.drawable.flag_sa,
-    "hi" to Res.drawable.flag_in, "hin" to Res.drawable.flag_in,
-    "cs" to Res.drawable.flag_cz, "ces" to Res.drawable.flag_cz, "cze" to Res.drawable.flag_cz,
-    "tr" to Res.drawable.flag_tr, "tur" to Res.drawable.flag_tr,
-    "uk" to Res.drawable.flag_ua, "ukr" to Res.drawable.flag_ua,
-    "el" to Res.drawable.flag_gr, "ell" to Res.drawable.flag_gr, "gre" to Res.drawable.flag_gr,
-    "hu" to Res.drawable.flag_hu, "hun" to Res.drawable.flag_hu,
-    "ro" to Res.drawable.flag_ro, "ron" to Res.drawable.flag_ro, "rum" to Res.drawable.flag_ro,
-    "sk" to Res.drawable.flag_sk, "slk" to Res.drawable.flag_sk, "slo" to Res.drawable.flag_sk,
-    "hr" to Res.drawable.flag_hr, "hrv" to Res.drawable.flag_hr,
-    "he" to Res.drawable.flag_il, "heb" to Res.drawable.flag_il,
-    "th" to Res.drawable.flag_th, "tha" to Res.drawable.flag_th,
-    "vi" to Res.drawable.flag_vn, "vie" to Res.drawable.flag_vn,
-    // Phase R239 (FR-R239-3) — added 2026-09-12: flags now exist for these; Tamil/Telugu are
-    // deliberately still absent — no ISO-3166 country flag fits them, and India already maps to
-    // Hindi's flag_in, so reusing it for Tamil/Telugu would collapse three DISTINCT languages onto one
-    // flag_in drawable, undercounting them via this file's own `.distinct()` dedup — exactly the
-    // FR-R239-1 miscount this phase exists to prevent. They stay in the honest "+N" unmapped count.
-    //
-    // CLOSED 2026-09-13, permanently — do not revisit without a product decision overriding this.
-    // Candidate images were reviewed and rejected: no legitimate single flag exists (Tamil
-    // Nadu/Andhra Pradesh/Telangana have no official state flags), and one submitted candidate for
-    // Tamil was the flag of a proscribed militant organization — entirely unsuitable regardless of the
-    // undercount problem above. "No flag" is the final, intended rendering for these two languages.
-    "sr" to Res.drawable.flag_rs, "srp" to Res.drawable.flag_rs,
-    "bg" to Res.drawable.flag_bg, "bul" to Res.drawable.flag_bg,
-    "id" to Res.drawable.flag_id, "ind" to Res.drawable.flag_id,
-    "ms" to Res.drawable.flag_my, "msa" to Res.drawable.flag_my, "may" to Res.drawable.flag_my,
-    "sl" to Res.drawable.flag_si, "slv" to Res.drawable.flag_si,
-    "et" to Res.drawable.flag_ee, "est" to Res.drawable.flag_ee,
-    "lv" to Res.drawable.flag_lv, "lav" to Res.drawable.flag_lv,
-    "lt" to Res.drawable.flag_lt, "lit" to Res.drawable.flag_lt,
-    "tl" to Res.drawable.flag_ph, "fil" to Res.drawable.flag_ph,
-    // R239 amendment (2026-09-13) — Catalonia's flag (Senyera) is a single, uncontested regional flag
-    // unlike Tamil/Telugu's situation above, so Catalan gets its own dedicated drawable (flag_ct), not
-    // a borrowed one.
-    "ca" to Res.drawable.flag_ct, "cat" to Res.drawable.flag_ct,
+// DEB-4889 (FR-19) — the language → flag table and the counting rule live in `:shared` (LanguageFlags.kt), keyed by the flag
+// file's country code, so the Samsung app draws from the same table. This file keeps only country code → drawable.
+// Phase 139 — LANG_CC stays internal so RequestLanguagePicker can reuse it for request-language flags
+// (RequestLanguageIntent.flag is deliberately the same ISO-639-1 vocabulary, not a country code).
+private val FLAG_DRAWABLES: Map<String, DrawableResource> = mapOf(
+    "bg" to Res.drawable.flag_bg, "cn" to Res.drawable.flag_cn, "ct" to Res.drawable.flag_ct,
+    "cz" to Res.drawable.flag_cz, "de" to Res.drawable.flag_de, "dk" to Res.drawable.flag_dk,
+    "ee" to Res.drawable.flag_ee, "es" to Res.drawable.flag_es, "fi" to Res.drawable.flag_fi,
+    "fo" to Res.drawable.flag_fo, "fr" to Res.drawable.flag_fr, "gb" to Res.drawable.flag_gb,
+    "gr" to Res.drawable.flag_gr, "hr" to Res.drawable.flag_hr, "hu" to Res.drawable.flag_hu,
+    "id" to Res.drawable.flag_id, "il" to Res.drawable.flag_il, "in" to Res.drawable.flag_in,
+    "is" to Res.drawable.flag_is, "it" to Res.drawable.flag_it, "jp" to Res.drawable.flag_jp,
+    "kr" to Res.drawable.flag_kr, "lt" to Res.drawable.flag_lt, "lv" to Res.drawable.flag_lv,
+    "my" to Res.drawable.flag_my, "nl" to Res.drawable.flag_nl, "no" to Res.drawable.flag_no,
+    "ph" to Res.drawable.flag_ph, "pl" to Res.drawable.flag_pl, "pt" to Res.drawable.flag_pt,
+    "ro" to Res.drawable.flag_ro, "rs" to Res.drawable.flag_rs, "ru" to Res.drawable.flag_ru,
+    "sa" to Res.drawable.flag_sa, "se" to Res.drawable.flag_se, "si" to Res.drawable.flag_si,
+    "sk" to Res.drawable.flag_sk, "th" to Res.drawable.flag_th, "tr" to Res.drawable.flag_tr,
+    "ua" to Res.drawable.flag_ua, "vn" to Res.drawable.flag_vn,
 )
 
-/** R247 (FR-R247-5) — every flag lookup goes through [canonicalLanguage] first, so `hbs-srp` finds
- *  `flag_rs` and `gre`/`ell`/`el` all find the same drawable; the raw lower-cased key is the fallback
- *  for a code the canonicaliser does not know but the map happens to. */
-internal fun flagFor(code: String?): DrawableResource? {
-    if (code.isNullOrBlank()) return null
-    return canonicalLanguage(code)?.let { LANG_CC[it] } ?: LANG_CC[code.trim().lowercase()]
-}
+internal val LANG_CC: Map<String, DrawableResource> = LANG_FLAG_CC.mapNotNull { (code, cc) -> FLAG_DRAWABLES[cc]?.let { code to it } }.toMap()
 
-private const val FLAG_MAX = 5
+/** R247 (FR-R247-5) — see [flagCountryFor]: every flag lookup canonicalises first. */
+internal fun flagFor(code: String?): DrawableResource? = flagCountryFor(code)?.let { FLAG_DRAWABLES[it] }
 
-/** Pure result of counting [AudioFlagStrip]'s inputs — extracted so FR-R239-1/2's counting rules are
- *  unit-testable without a Composable. */
+/** The country codes the table names that have no drawable here — empty, and a test says so. */
+internal fun flagCountriesWithoutDrawable(): Set<String> = LANG_FLAG_CC.values.toSet() - FLAG_DRAWABLES.keys
+
+private const val FLAG_MAX = FLAG_STRIP_MAX
+
+/** Pure result of counting [AudioFlagStrip]'s inputs, as drawables — the counting itself is `:shared`'s [countFlagStrip]. */
 internal data class FlagStripCounts(
     val shownFlags: List<DrawableResource>,
     val extra: Int,
@@ -117,18 +77,8 @@ internal data class FlagStripCounts(
 
 /** Phase R239 (FR-R239-1) — counts every language the group has, not every flag it can draw. */
 internal fun countFlagStrip(languages: List<String>, maxFlags: Int = FLAG_MAX): FlagStripCounts {
-    // R247 (FR-R247-2) — identity is the canonical code, so `da`+`dan` or `sr`+`hbs-srp` are one
-    // language whether or not a flag exists for it.
-    val keys = languages.map { canonicalLanguage(it) ?: it.lowercase() }
-    // Deduplicate mapped languages by FLAG (same language, different alias, e.g. nor/nob/nno →
-    // flag_no, should show once); an unmapped language is deduplicated by its canonical code.
-    // Undercounting true duplicates there is the safe failure mode; over-counting (claiming fewer
-    // languages than exist) is the one FR-R239-1 forbids.
-    val mappedFlags = keys.mapNotNull { flagFor(it) }.distinct()
-    val unmappedCount = keys.filter { flagFor(it) == null }.distinct().size
-    val totalDistinct = mappedFlags.size + unmappedCount
-    val shown = mappedFlags.take(maxFlags.coerceIn(0, FLAG_MAX))
-    return FlagStripCounts(shown, totalDistinct - shown.size)
+    val counts = dev.jellystructure.shared.tv.countFlagStrip(languages, maxFlags)
+    return FlagStripCounts(counts.shown.mapNotNull { FLAG_DRAWABLES[it] }, counts.extra)
 }
 
 /**

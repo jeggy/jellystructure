@@ -9,6 +9,7 @@ import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
+import dev.jellystructure.shared.tv.countFlagStrip
 import dev.jellystructure.shared.tv.episodeCode
 import kotlinx.browser.document
 import kotlinx.coroutines.GlobalScope
@@ -174,18 +175,23 @@ internal class ScreenDetail(
 
     // ── Drawing ───────────────────────────────────────────────────────────────
 
-    fun render(mount: HTMLElement) {
+    fun render(mount: HTMLElement, fade: Boolean = false) {
         mount.textContent = ""
         val m = movie
         val s = series
         if (m == null && s == null) {
+            val f = failure
+            if (f == null) {
+                // DEB-4893 (FR-20) — a title's page that is still loading draws a skeleton, never a word.
+                mount.appendChild(ScreenSkeleton.detail())
+                return
+            }
+            // DEB-4660's failure lines stay.
             val placeholder = node("div", "shell-target shell-placeholder")
             placeholder.id = "shell-page-target"
             placeholder.setAttribute("data-row", "body")
             placeholder.setAttribute("tabindex", "-1")
-            val f = failure
             placeholder.textContent = when {
-                f == null -> fallbackTitle
                 f == 404 || f == 410 -> t("error.load.gone.title", ScreenLanguage.lang)
                 f == 403 -> t("error.load.forbidden.title", ScreenLanguage.lang)
                 else -> t("error.play.unreachable.title", ScreenLanguage.lang)
@@ -195,9 +201,10 @@ internal class ScreenDetail(
         }
         val card = m?.card ?: s!!.card
         val page = node("div", "detail")
+        if (fade) ScreenSkeleton.fadeIn(page)
         card.backdropUrl?.let(::image)?.let { img ->
             val backdrop = node("div", "detail-backdrop")
-            backdrop.appendChild(img)
+            backdrop.appendChild(ScreenSkeleton.fadeOnLoad(img))
             page.appendChild(backdrop)
         }
         val head = node("div", "detail-head")
@@ -213,11 +220,38 @@ internal class ScreenDetail(
         if (m != null && m.runtime > 0) meta.appendChild(label("span", "detail-fact", t("up.runtime_min", ScreenLanguage.lang, m.runtime)))
         (m?.ratingBadge ?: s?.ratingBadge)?.let { meta.appendChild(badge(it)) }
         head.appendChild(meta)
+        languageLine(m?.audioLanguages ?: s?.audioLanguages.orEmpty(), m?.subtitleLanguages ?: s?.subtitleLanguages.orEmpty())?.let { head.appendChild(it) }
         (m?.synopsis ?: s?.synopsis)?.takeIf { it.isNotBlank() }?.let { head.appendChild(label("p", "detail-overview", it)) }
         head.appendChild(actions(m, s))
         page.appendChild(head)
         if (s != null) page.appendChild(episodes(s))
         mount.appendChild(page)
+    }
+
+    /**
+     * DEB-4893 (DEB-4889, FR-19) — Android TV's `AudioSubtitleFlagLine`: `AUDIO` flags · `SUBTITLES` flags, counted by `:shared`'s
+     * [countFlagStrip] (canonical codes, five flags a group, every other language an honest `+N`). Null — no line, no space —
+     * when neither group has a language. The flags are PNGs packed in the widget as `flags/<cc>.png`, never fetched from the server.
+     */
+    private fun languageLine(audio: List<String>, subtitles: List<String>): HTMLElement? {
+        val groups = listOf("fd.audio" to audio, "fd.subs" to subtitles).map { (key, languages) -> key to countFlagStrip(languages) }
+            .filter { it.second.hasAnyLanguage }
+        if (groups.isEmpty()) return null
+        val line = node("div", "detail-langs")
+        groups.forEachIndexed { index, (key, counts) ->
+            if (index > 0) line.appendChild(label("span", "lang-dot", "·"))
+            val group = node("span", "lang-group")
+            group.appendChild(label("span", "lang-label", t(key, ScreenLanguage.lang)))
+            counts.shown.forEach { cc ->
+                val flag = node("img", "lang-flag")
+                flag.setAttribute("src", "flags/$cc.png")
+                flag.setAttribute("alt", "")
+                group.appendChild(flag)
+            }
+            if (counts.extra > 0) group.appendChild(label("span", "lang-more", "+${counts.extra}"))
+            line.appendChild(group)
+        }
+        return line
     }
 
     private fun actions(m: MovieDetail?, s: SeriesDetail?): HTMLElement {

@@ -22,7 +22,7 @@ internal class ScreenHome(private val serverUrl: String) {
             target.setAttribute("data-media-id", hero.item.id)
             target.setAttribute("data-media-kind", hero.item.kind.name.lowercase())
             target.style.height = "${feed.heroHeightPct.coerceIn(40, 100)}vh"
-            image(hero.backdropUrl)?.let { target.appendChild(it) }
+            image(hero.backdropUrl)?.let { target.appendChild(ScreenSkeleton.fadeOnLoad(it)) }
             val copy = node("div", "hero-copy")
             hero.taglineKicker?.takeIf { it.isNotBlank() }?.let { copy.appendChild(label("div", "hero-kicker", it)) }
             val logo = hero.logoUrl?.let(::image)

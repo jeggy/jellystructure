@@ -28,6 +28,7 @@ cast-receiver/ravilo-cast.js.map
 # R264 — same story: `./gradlew :ravilo-screen:syncScreenReceiver` builds this, never committed
 ravilo-screen/wgt/ravilo-screen.js
 ravilo-screen/wgt/ravilo-screen.js.map
+ravilo-screen/wgt/flags/
 
 # Tests
 tests/test-results

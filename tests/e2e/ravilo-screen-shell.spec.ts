@@ -23,6 +23,8 @@ test("Tizen shell moves spatially across the bar and Back restores each page's f
   await expect(focused).toHaveAttribute("id", "shell-page-target");
 
   await page.keyboard.press("ArrowUp");
+  await expect(focused).toHaveAttribute("data-row", "bar");   // Up from the full-width hero block lands on the bar item nearest its centre
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowLeft");
   await expect(focused).toHaveAttribute("id", "nav-home");
   await page.keyboard.press("ArrowRight");
   await expect(focused).toHaveAttribute("id", "nav-movies");
@@ -39,7 +41,7 @@ test("Tizen shell moves spatially across the bar and Back restores each page's f
   await expect(page.locator("#shell-body .browse-heading")).toHaveText("Movies");
   await expect(focused).toHaveAttribute("id", "nav-series");
   await page.keyboard.press("Escape");
-  await expect(page.locator("#shell-body")).toHaveText("Home");
+  await expect(page.locator("#shell-body > .skeleton-home, #shell-body > .load-failure")).toHaveCount(1);   // Home: its feed is not mocked (FR-20)
   await expect(focused).toHaveAttribute("id", "nav-movies");
   await page.keyboard.press("Escape");
   expect(await page.evaluate(() => (window as any).__exitCalls)).toBe(1);

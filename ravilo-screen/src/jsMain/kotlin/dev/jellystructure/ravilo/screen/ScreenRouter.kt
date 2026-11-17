@@ -24,6 +24,10 @@ internal data class ScreenRouteEntry(
     val detail: ScreenDetail? = null,
     val browse: ScreenBrowse? = null,
     val search: ScreenSearch? = null,
+    /** DEB-4893 (FR-20) — the page last drew a skeleton: the content that replaces it fades in; a page drawn from held data does not. */
+    var skeleton: Boolean = false,
+    /** DEB-4893 (FR-20) — the feed's load failed: the page shows the failure and Retry instead of loading again by itself. */
+    var failed: Boolean = false,
 )
 
 /**
@@ -167,11 +171,14 @@ internal class ScreenShell(
         if (current.name == ScreenSettings.ROUTE) {
             ScreenSettings.render(body, serverUrl, onLanguage = { render() }, onChangeServer = onChangeServer)
         } else if (current.detail != null) {
-            // DEB-4660 — focus lands on the primary action once the page has drawn, not on the loading placeholder.
+            // DEB-4660 — focus lands on the primary action once the page has drawn, not on the loading skeleton.
             if (current.detail.ready && current.focusId == "shell-page-target") current.focusId = current.detail.primaryFocusId
-            current.detail.render(body)
+            // FR-20 — the page that replaces a skeleton fades in; one redrawn from what the route holds (a write-through, a season) does not.
+            current.detail.render(body, fade = current.skeleton && current.detail.ready)
+            current.skeleton = !current.detail.ready
         } else if (current.browse != null) {
-            current.browse.render(body)
+            current.browse.render(body, fade = current.skeleton && current.browse.page > 0)
+            current.skeleton = current.browse.page == 0
         } else if (current.search != null) {
             current.search.render(body)
         } else {
@@ -179,21 +186,20 @@ internal class ScreenShell(
             val feed = current.feed
             if (feed != null) {
                 home.render(feed, body, ScreenLanguage.lang)
+                if (current.skeleton) ScreenSkeleton.fadeIn(body.firstElementChild as? HTMLElement)
+                current.skeleton = false
+            } else if (current.failed) {
+                body.appendChild(ScreenSkeleton.failure())
             } else {
-                val placeholder = document.createElement("div") as HTMLElement
-                placeholder.id = "shell-page-target"
-                placeholder.className = "shell-target shell-placeholder"
-                placeholder.setAttribute("data-row", "body")
-                placeholder.setAttribute("tabindex", "-1")
-                placeholder.textContent = current.title ?: ScreenLanguage.t("nav.${current.name}")
-                body.appendChild(placeholder)
+                body.appendChild(ScreenSkeleton.home())
+                current.skeleton = true
             }
         }
         renderScreenNav(if (current.name == "channel" || current.name == "detail") "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
-        if ((current.name == "home" || current.name == "channel") && current.feed == null) loadFeed(current)
+        if ((current.name == "home" || current.name == "channel") && current.feed == null && !current.failed) loadFeed(current)
         current.detail?.load()
-        if (current.browse != null && current.browse.page == 0 && !current.browse.loading) loadBrowse(current)
+        if (current.browse != null && current.browse.page == 0 && !current.browse.loading && !current.browse.failed) loadBrowse(current)
     }
 
     private fun loadBrowse(entry: ScreenRouteEntry) {
@@ -205,8 +211,13 @@ internal class ScreenShell(
             val result = runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }
             browse.loading = false
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
-            result.getOrNull()?.let {
-                browse.append(it)
+            val page = result.getOrNull()
+            if (page != null) {
+                browse.append(page)
+                render()
+            } else if (browse.page == 0) {
+                // DEB-4893 (FR-20) — a grid's first page that fails says so; the skeleton never pulses forever.
+                browse.failed = true
                 render()
             }
         }
@@ -217,11 +228,17 @@ internal class ScreenShell(
         GlobalScope.launch {
             val result = runCatching { entry.channelId?.let { api.getChannel(it) } ?: api.getHome() }
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
-            result.getOrNull()?.let {
-                entry.feed = it
-                render()
-            }
+            val feed = result.getOrNull()
+            if (feed != null) entry.feed = feed else entry.failed = true
+            render()
         }
+    }
+
+    /** DEB-4893 (FR-20) — Retry on a failed page loads it again under the skeleton. */
+    private fun retry(entry: ScreenRouteEntry) {
+        entry.failed = false
+        entry.browse?.failed = false
+        render()
     }
 
     /** The results under the search field changed: if the focused tile went with them, focus falls back to the field. */
@@ -242,6 +259,7 @@ internal class ScreenShell(
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
         // DEB-4660 (FR-7) — on a title's page OK is the page's own: its actions, a season pill, an episode.
         if (current.detail != null && !current.focusId.startsWith("nav-")) { current.detail.activate(element); return }
+        if (element.getAttribute("data-action") == "retry") { retry(current); return }
         val channelId = element.getAttribute("data-channel-id")
         val mediaId = element.getAttribute("data-media-id")
         if (channelId != null) {

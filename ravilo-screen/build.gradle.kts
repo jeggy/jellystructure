@@ -41,5 +41,12 @@ tasks.register<Copy>("syncScreenReceiver") {
     group = "application"
     dependsOn("jsBrowserProductionWebpack")
     from(layout.buildDirectory.dir("kotlin-webpack/js/productionExecutable")) { include("ravilo-screen.js") }
+    // DEB-4893 (DEB-4889 FR-19) — the title page's language flags are ravilo-ui's flag_<cc>.png, packed as flags/<cc>.png from that
+    // one source; no second set is committed. scripts/check-tizen-assets.sh --packed proves every flag the language table names is here.
+    from(rootProject.layout.projectDirectory.dir("ravilo-ui/src/commonMain/composeResources/drawable")) {
+        include("flag_*.png")
+        rename("flag_(.*)", "$1")
+        into("flags")
+    }
     into(rootProject.layout.projectDirectory.dir("ravilo-screen/wgt"))
 }

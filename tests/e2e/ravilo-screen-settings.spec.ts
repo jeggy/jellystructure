@@ -45,7 +45,7 @@ test("Settings opens from the profile menu and Back returns to Home (DEB-4663 FR
   await expect(page.locator("#set-title")).toHaveText("Settings");
   await expect(page.locator("#shell .shell-target.focused")).toHaveAttribute("id", "set-lang-tv");
   await page.keyboard.press("Escape");
-  await expect(page.locator("#shell-body")).toHaveText("Home");
+  await expect(page.locator("#shell-body > .skeleton-home, #shell-body > .load-failure")).toHaveCount(1);   // Home: its feed is not mocked (FR-20: a skeleton, then the failure)
 });
 
 test("a language switch changes the bar's labels and is remembered (DEB-4663 FR-11)", async ({ page }) => {

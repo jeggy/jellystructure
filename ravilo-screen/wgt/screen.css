@@ -241,3 +241,57 @@
     .search-field { box-sizing: border-box; display: block; width: 100%; margin-top: 18px; padding: 14px 20px; font: inherit; font-size: 28px; color: var(--ink); background: rgba(255,255,255,.08); border: 2px solid transparent; border-radius: 12px; outline: none; }
     .search-field.focused { box-shadow: 0 0 0 4px var(--ring); background: rgba(255,255,255,.16); }
     .search-hint { color: var(--ink-soft); font-size: 19px; }
+
+    /* DEB-4893 (DEB-4889 FR-19) — a title's page shows its audio and subtitle languages as flags: Android TV's
+       AudioSubtitleFlagLine at this page's scale. Margins between siblings, never flex gap (FR-13). The line is facts, not a target. */
+    .detail-langs { display: flex; align-items: center; margin-top: 18px; max-width: 62%; }
+    .detail-langs > * + * { margin-left: 18px; }
+    .lang-group { display: flex; align-items: center; flex: none; }
+    .lang-group > * + * { margin-left: 9px; }
+    .lang-label { font-size: 14px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,.55); }
+    .lang-flag { box-sizing: border-box; display: block; width: 39px; height: 27px; border-radius: 3px; border: 1px solid rgba(255,255,255,.18); object-fit: cover; }
+    .lang-more { font-size: 15px; font-weight: 600; color: rgba(255,255,255,.7); }
+    .lang-dot { flex: none; font-size: 14px; color: rgba(255,255,255,.35); }
+    .detail-langs + .detail-overview { margin-top: 14px; }
+
+    /* DEB-4893 (DEB-4889 FR-20) — every page that loads draws a skeleton, never a word: grey blocks in the places and sizes of
+       what replaces them. The whole skeleton is ONE element whose opacity pulses (FR-14: opacity only, one layer, no per-block
+       shimmer). Blocks are #202431; the hero and the backdrop are #161922. */
+    .skeleton { animation: skel-pulse 1.2s ease-in-out infinite; }
+    @keyframes skel-pulse { 0% { opacity: 1; } 50% { opacity: .55; } 100% { opacity: 1; } }
+    .skel-block, .skel-bar { background: #202431; }
+    .skel-bar { border-radius: 7px; }
+    .skel-hero { box-sizing: border-box; border-radius: 14px; background: #161922; }
+    .skel-hero.focused { box-shadow: 0 0 0 4px var(--ring); }
+    .skel-heading { width: 240px; height: 26px; margin-bottom: 18px; }
+    .skel-rail { display: flex; overflow: hidden; padding: 5px; }
+    .skel-rail > * + * { margin-left: 18px; }
+    .skel-rail .home-tile { flex: 0 0 176px; }
+    .skel-caption { width: 130px; height: 18px; margin: 10px 2px 2px; }
+    .skel-count { width: 200px; height: 22px; margin-top: 8px; }
+    .skeleton-grid .browse-grid { overflow: hidden; height: calc(100vh - 290px); }
+    .skel-backdrop { background: #161922; }
+    .skel-title { width: 560px; height: 56px; }
+    .skel-meta { width: 320px; height: 22px; margin-top: 18px; }
+    .skel-overview { width: 62%; margin-top: 18px; }
+    .skel-line { height: 21px; }
+    .skel-line + .skel-line { margin-top: 10px; }
+    .skel-line-long { width: 80%; }
+    .skel-line-short { width: 60%; }
+    /* A skeleton button is a real .detail-btn, so it has its height; the zero-width space gives it one line of text height with no text. */
+    .skel-btn { border-radius: 11px; background: #202431; box-shadow: none; padding-left: 0; padding-right: 0; }
+    .skel-btn::before { content: "\200b"; }
+    .skel-btn-primary { width: 240px; }
+    .skel-btn-second { width: 200px; }
+    .skel-btn.focused, .detail-btn.skel-btn.focused { background: #202431; box-shadow: 0 0 0 4px var(--ring); }
+
+    /* A load that failed replaces the skeleton: the page's own type, a title, a body line, one focused Retry. */
+    .load-failure { padding-top: 40px; }
+    #shell-body .load-failure-title { font-size: 36px; font-weight: 700; color: var(--ink); margin: 0 0 12px; }
+    .load-failure-body { font-size: 22px; color: var(--ink-soft); margin: 0 0 28px; }
+
+    /* Content that replaces a skeleton fades in over 220 ms; a hero or backdrop image fades in over its surface block (opacity only). */
+    .arrive { animation: arrive-fade .22s ease-out; }
+    @keyframes arrive-fade { from { opacity: 0; } to { opacity: 1; } }
+    .img-fade { opacity: 0; transition: opacity .22s ease-out; }
+    .img-fade.loaded { opacity: 1; }
