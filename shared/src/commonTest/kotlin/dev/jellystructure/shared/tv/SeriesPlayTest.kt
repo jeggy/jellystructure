@@ -25,7 +25,7 @@ class SeriesPlayTest {
     )
 
     @Test
-    fun `a series nobody has started plays its first counted episode, never a special`() {
+    fun `a series nobody has started plays its first counted episode and never a special`() {
         val pick = assertNotNull(pickSeriesPlay(show, null))
         assertEquals("a1", pick.episode.id)
         assertEquals("S01E01", pick.kicker())
@@ -33,7 +33,7 @@ class SeriesPlayTest {
     }
 
     @Test
-    fun `the episode the series' Continue Watching entry names wins, with the one after it in the next season`() {
+    fun `the episode the series Continue Watching entry names wins with the one after it in the next season`() {
         val pick = assertNotNull(pickSeriesPlay(show, "a2"))
         assertEquals("a2", pick.episode.id)
         assertEquals(1, pick.season)
@@ -47,7 +47,7 @@ class SeriesPlayTest {
     }
 
     @Test
-    fun `the last episode has no next, and a special has none either`() {
+    fun `the last episode has no next and a special has none either`() {
         assertNull(pickSeriesPlay(show, "b2")?.next)
         assertNull(pickSeriesPlay(show, "sp")?.next)
         assertEquals("S00E01", pickSeriesPlay(show, "sp")?.kicker())
@@ -61,7 +61,7 @@ class SeriesPlayTest {
     }
 
     @Test
-    fun `a multi-episode file is one entry with its range, and next is the file after it`() {
+    fun `a multi-episode file is one entry with its range and next is the file after it`() {
         val d = detail(season(1, ep("f", 1), ep("f", 2), ep("f", 3), ep("g", 4)))
         val pick = assertNotNull(pickSeriesPlay(d, null))
         assertEquals("f", pick.episode.id)
