@@ -48,19 +48,28 @@ interface MediaBackendListener {
     fun onError(detail: String) {}
 }
 
+/**
+ * DEB-4866 (DEB-4654 FR-9) — our own encoder's ticket carries a server-relative `hls_url` (`/api/tv/stream/<id>/master.m3u8`);
+ * Jellyfin's is absolute. The widget is not served from the backend, so a bare path has no origin to resolve against and
+ * AVPlay answers `PLAYER_ERROR_INVALID_URI` at `prepareAsync()` (hls.js and a `<video>` would resolve it against the
+ * widget's own origin). An absolute URL passes through unchanged.
+ */
+fun resolveStreamUrl(serverUrl: String, url: String): String =
+    if (url.startsWith("/") && !url.startsWith("//")) serverUrl.trimEnd('/') + url else url
+
 /** The class on `<html>` that makes the page transparent over AVPlay's video plane (screen.css). */
 const val AVPLAY_ON = "avplay-on"
 
 /** Tizen — required wherever `<video>` has no real HLS/DASH (webapis.avplay renders on its own hardware
  *  plane, behind the DOM; R264 open question 1 is whether HTML can still draw on top of it). */
-class AvPlayBackend : MediaBackend {
+class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     private var listener: MediaBackendListener? = null
 
     override fun open(hlsUrl: String, startPositionMs: Long) {
         // DEB-4845 — AVPlay draws on a plane behind the page; an opaque page background (html, body) hides it,
         // which is a black picture with sound. The class lets the page through for as long as a stream is open.
         document.documentElement?.classList?.add(AVPLAY_ON)
-        WebApisGlobal.avplay.open(hlsUrl)
+        WebApisGlobal.avplay.open(resolveStreamUrl(serverUrl, hlsUrl))
         // The app's own coordinate space (the page viewport, 1920x1080 on the widget's default), not the panel's
         // pixels: a 4K set reports 3840x2160 in window.screen.
         WebApisGlobal.avplay.setDisplayRect(0, 0, window.innerWidth.takeIf { it > 0 } ?: window.screen.width, window.innerHeight.takeIf { it > 0 } ?: window.screen.height)
@@ -105,19 +114,20 @@ class AvPlayBackend : MediaBackend {
 /** webOS / any newer TV browser with real MSE-HLS support — the same `<video>` + hls.js path
  *  ravilo-web's own player uses (FR-235-9's vendored hls.js), self-hosted for the same "no CDN on a TV
  *  with an unreliable network path" reasoning. */
-class HtmlVideoBackend(private val video: HTMLVideoElement) : MediaBackend {
+class HtmlVideoBackend(private val video: HTMLVideoElement, private val serverUrl: String) : MediaBackend {
     private var listener: MediaBackendListener? = null
     private var hls: dynamic = null
 
     override fun open(hlsUrl: String, startPositionMs: Long) {
+        val url = resolveStreamUrl(serverUrl, hlsUrl)
         val canNative = (video.asDynamic().canPlayType("application/vnd.apple.mpegurl") as String).isNotBlank()
         if (canNative) {
-            video.src = hlsUrl
+            video.src = url
         } else {
             val hlsCtor: dynamic = js("window.Hls")
             if (hlsCtor != null && (hlsCtor.isSupported() as Boolean)) {
                 hls = hlsCtor.Constructor()
-                hls.loadSource(hlsUrl)
+                hls.loadSource(url)
                 hls.attachMedia(video)
             } else {
                 listener?.onError("no HLS support (neither native nor hls.js)")
@@ -178,7 +188,7 @@ class HtmlVideoBackend(private val video: HTMLVideoElement) : MediaBackend {
 
 /** R264 (FR-R264-8) — Tizen ships AVPlay; a webOS/other build falls back to `<video>`+hls.js. Detected
  *  once at boot, not per-play — a receiver's hardware doesn't change mid-session. */
-fun detectMediaBackend(): MediaBackend {
+fun detectMediaBackend(serverUrl: String): MediaBackend {
     val hasAvPlay = runCatching { js("typeof webapis !== 'undefined' && !!webapis.avplay") as Boolean }.getOrDefault(false)
-    return if (hasAvPlay) AvPlayBackend() else HtmlVideoBackend(document.getElementById("video") as HTMLVideoElement)
+    return if (hasAvPlay) AvPlayBackend(serverUrl) else HtmlVideoBackend(document.getElementById("video") as HTMLVideoElement, serverUrl)
 }
