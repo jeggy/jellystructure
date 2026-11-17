@@ -47,11 +47,23 @@ Android never lets an app turn its own accessibility service on. So there are tw
 - **The crash guard steps aside instead of showing a "safe mode".** The stock home is never disabled. So if Ravilo
   keeps closing, the hook stops and the Google TV home is what's left (FR-8). Nothing new has to be drawn or kept
   working offline for this case.
-- **No pinned apps in the first version.** Apps is one A–Z list of the TV's own apps (FR-11). That list is a fact
-  about the TV, not a viewer setting, so the question of where pins are stored doesn't come up yet.
+- **Pins are kept on the TV, not in jellystructure** (owner's answer below). The list of installed apps is a fact
+  about the TV, and the owner chose to keep the pins with it.
 - **No "kids profile" app hiding.** jellystructure has no kids concept (owner, 2026-10-17). The Apps list is the same
   for every profile on the TV.
 - **Sony is not a test target** (owner, 2026-11-17). The Streamer is. Nothing hides the setting on other Google TVs.
+
+## Owner's answers (2026-11-17, DEB-4909 card `eb3ce3bd`)
+
+- **The constitution amendment:** yes. It is in `specs/ravilo/constitution.md`, under Vision.
+- **Apps:** *"Pinning now, stored on each TV. But with an additional see all apps button, which then shows all the
+  apps in A-Z or when last used (if not too much work)"*. See FR-11, FR-14 and FR-15. "When last used" is Ravilo's
+  own record of what it opened. Android's usage history across all apps needs a special permission that the viewer
+  grants in Android settings, which is not "not too much work" (FR-15).
+- **Play:** the Play build carries the hook. The release that first carries it needs Play Console's accessibility
+  declaration, and FR-2's screen is the in-app disclosure that declaration asks for.
+- **QA:** QA may switch Ravilo's accessibility setting on and off on the Streamer for this work's tests, and leaves
+  both switches off at the end. This covers the QA tickets of this spec's build slices and nothing else.
 
 ## Requirements
 
@@ -93,7 +105,7 @@ then shows FR-2's one-step state.
 It is labelled with the stock home's own name as Android reports it (on the Streamer, Google TV's). Opening it is not
 undone by the hook. The stock home stays until the viewer opens something else from it. The next time the stock home
 comes forward after that, Ravilo takes it again. In the first build slice the entry sits in the Home screen section
-of Settings. FR-12 adds it to Apps.
+of Settings. FR-11 adds it to Apps.
 
 ### What the hook may and may not do
 
@@ -122,8 +134,8 @@ Android shows on its accessibility page. No string names Jellyfin (Ravilo consti
 
 ### Apps, Android settings and the stock home from Ravilo
 
-FR-10 to FR-13 have a surface. The design round on this task draws them: where the Apps entry sits in the TV header,
-the Apps screen, and the exits on the sign-in and can't-reach-the-server screens.
+FR-10 to FR-15 have a surface. The design round on this task draws them: where the Apps entry sits in the TV header,
+the Apps screen, All apps in both orders, the pin menu, and the exits on the sign-in and can't-reach-the-server screens.
 
 **FR-10 · An Apps entry.** While the hook is on (FR-3), Ravilo's TV header has an **Apps** entry. With the hook off,
 the entry is not there.
@@ -132,27 +144,46 @@ the entry is not there.
 
 1. **Android settings.** It opens `Settings.ACTION_SETTINGS`.
 2. **The stock home** (FR-5).
-3. **Every app on the TV that has a TV launcher entry** (`MAIN` + `LEANBACK_LAUNCHER`), A–Z by its label, each with
-   its TV banner, or its icon and label where it has none. Ravilo itself is left out. Selecting one opens it with its
-   leanback launch intent.
+3. **The pinned apps**, in the order the viewer set (FR-14).
+4. **See all apps**, which opens All apps (FR-15).
 
-The list is read from the TV each time Apps opens, so an app installed or removed shows up without a restart. It works
-with no network and with nobody signed in: nothing in it comes from jellystructure. The manifest gains the `<queries>`
-entry Android 11+ needs to see those apps.
+An app means one with a TV launcher entry (`MAIN` + `LEANBACK_LAUNCHER`), shown with its TV banner, or with its icon
+and label where it has none. Ravilo itself is never listed. Selecting an app opens it with its leanback launch intent.
+The apps are read from the TV each time Apps or All apps opens, so an app installed or removed shows up without a
+restart. Both screens work with no network and with nobody signed in, because nothing in them comes from jellystructure.
+The manifest gains the `<queries>` entry Android 11+ needs to see those apps. On a TV with no pins yet, Apps shows
+items 1, 2 and 4 only.
 
 **FR-12 · No dead end while the hook is on.** On every screen Ravilo can show in place of Home (sign-in, profile
 picker, server setup, and the screen that says Ravilo can't reach the server), Apps is reachable in one press. So
 Android's Wi-Fi settings are always reachable, and so is the stock home.
 
-**FR-13 · Shared UI.** Apps is a `:ravilo-ui` screen. Only reading the app list and launching an app, Android settings
-or the stock home are Android `actual`s. Other platforms get no-op `actual`s and never show the entry.
+**FR-13 · Shared UI.** Apps and All apps are `:ravilo-ui` screens. Only reading the app list, launching an app,
+Android settings or the stock home, and storing the pins and the last-opened record are Android `actual`s. Other platforms get no-op `actual`s and never show the entry.
+
+**FR-14 · Pins, kept on the TV.**
+
+- From All apps, the viewer can pin an app. From Apps, the viewer can unpin a pinned app or move it left or right.
+  The way in is the menu or long press the design round draws.
+- New pins go at the end.
+- The pins are stored on the TV only, shared by every profile on it, kept across Ravilo updates, and never sent to
+  jellystructure.
+- A pinned app that is uninstalled drops out of Apps. If it is installed again it is not pinned.
+
+**FR-15 · All apps, A–Z or recently opened.** All apps lists every app on the TV (FR-11), pinned ones included and
+marked as pinned. It has two orders, and the screen remembers the last one used:
+
+- **A–Z** by label. This is the default.
+- **Recently opened.** Apps Ravilo opened, newest first, then every other app A–Z. Ravilo keeps a record on the TV of
+  when it last opened each app, from Apps or All apps. Ravilo does not ask for Android's usage-access permission:
+  an app opened some other way (voice, the stock home, a Cast) doesn't move up.
 
 ## Out of scope
 
 - **Disabling the stock home over ADB** (the DEB-4906 fallback), and any HOME entry in Ravilo. These come back only as
   an amendment if FR-3 fails on the Streamer.
-- **Pinning or reordering apps**, and showing other apps' "continue watching". The second needs a system permission
-  Ravilo can't have.
+- Showing other apps' "continue watching". It needs a system permission Ravilo can't have.
+- Android's usage history across all apps (FR-15 uses Ravilo's own record instead).
 - **Switching HDMI inputs** from Ravilo. The remote's Input button keeps working.
 - **Notifications and Google TV's quick-settings panel.** They stay on the stock home, one press away (FR-5).
 - **Hiding apps per viewer.**
@@ -164,7 +195,9 @@ Automated, in CI:
 - `:ravilo-ui:desktopTest`: FR-1's section shows only where the platform says it is a TV. The FR-2 states: Android's
   switch off shows the one-step state and never *On*. FR-3's Home-inside-Ravilo goes to the top of Home, and Back at
   the top of Home does nothing with the hook on and exits with it off. FR-10's entry exists only with the hook on.
-  FR-11's ordering is: settings, stock home, then apps A–Z with Ravilo left out. FR-12: Apps can be reached from
+  FR-11's ordering (settings, stock home, pins, See all apps) with Ravilo left out. FR-14's pin, unpin, move, and
+  an uninstalled pin dropping out, against a fake app list and a fake store. FR-15's two orders with an injected
+  clock, and the remembered order. FR-12: Apps can be reached from
   sign-in and from the can't-reach screen.
 - Also `:ravilo-ui:desktopTest`, as plain Kotlin in common code: FR-6's decision of what counts as the stock home's
   home screen, given a sequence of window changes, including FR-5's pass-through. FR-8's
@@ -173,6 +206,6 @@ Automated, in CI:
   is disabled by default with `canRetrieveWindowContent` false.
 
 On a device, because a real accessibility service, a real Home key and a real boot can't run in CI: QA on the
-**Google TV Streamer (via Kambi Mac)** only. Its test plan covers FR-2 to FR-8 and FR-11 to FR-12. QA turns Android's
-accessibility switch for Ravilo on and off on the Streamer only with the owner's OK on the QA task, and leaves both
-switches off at the end. The Sony TVs are not tested.
+**Google TV Streamer (via Kambi Mac)** only. Board row `google-tv-streamer-via-mac`. Its test plan covers FR-2 to FR-8 and FR-11 to FR-15. The owner
+has allowed QA to switch Ravilo's accessibility setting on and off on the Streamer for these tests (DEB-4909 card).
+QA leaves both switches off at the end. The Sony TVs are not tested.

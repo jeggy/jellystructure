@@ -27,6 +27,17 @@ and artwork on disk also owns *what the TV shows and how it is arranged*, per Je
 
 One sentence: **jellystructure decides; Ravilo displays (on TV and in the browser); Jellyfin streams.**
 
+### On an Android TV, Ravilo may also be the TV's home screen
+*Amended 2026-11-17 (owner, DEB-4909 card `eb3ce3bd`); spec
+`requirements/ravilo-can-be-the-tvs-home-screen.md`.*
+- It is turned on per TV, only after Android's own accessibility switch for Ravilo is on, and it can
+  be turned off at once.
+- Ravilo then also lists the TV's apps and opens them, Android's settings and the stock home. The
+  apps a viewer pins there are kept on that TV.
+- That part is the TV's own. It never comes from or goes to jellystructure, and it works with no
+  server. It is not a catalog row, so Invariants 3 and 4 do not govern it.
+- Ravilo never turns its own accessibility switch on and never disables another app.
+
 ---
 
 ## Control plane vs. data plane (the central split)
