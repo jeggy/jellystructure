@@ -105,6 +105,12 @@ internal class ScreenShell(
 
     fun isPlayer() = player
 
+    /** DEB-4925 (FR-22) — back from a long absence: a fresh Home, abandoning the stack and every load in flight. Nothing while another screen (sign-in, picker, setup) is up. */
+    fun refreshAfterAway() {
+        if (!visible || player) return
+        resetHome()
+    }
+
     fun showPlayer() {
         if (!visible) return
         if (!player) entries.add(ScreenRouteEntry("player", ""))

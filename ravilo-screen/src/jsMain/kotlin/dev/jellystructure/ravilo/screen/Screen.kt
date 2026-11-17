@@ -61,6 +61,8 @@ internal const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
 private const val PROGRESS_EVERY_MS = 10_000L
 private const val STATUS_EVERY_MS = 5_000L
 private const val RECONNECT_BASE_MS = 2_000L
+/** DEB-4925 (FR-22) — away this long, the shell comes back to a freshly loaded Home. */
+private const val LONG_AWAY_MS = 5 * 60_000L
 private const val RECONNECT_MAX_MS = 30_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
 private const val NEXT_UP_SECS = 10
@@ -152,6 +154,7 @@ private class Screen(private val serverUrl: String) {
         // R269 (FR-R269-7) — releasing Back before three seconds cancels the hold; a plain tap must
         // never reopen setup.
         window.addEventListener("keyup", { e -> if (isBack(e as KeyboardEvent)) backHeldSince = null })
+        document.addEventListener("visibilitychange", { onVisibility(document.asDynamic().hidden == true) })
         backend.setListener(object : MediaBackendListener {
             override fun onBufferingStart() { buffering = true; if (loaded) show("buffering"); sendStatus() }
             override fun onBufferingComplete() { buffering = false; if (loaded) show(); sendStatus() }
@@ -826,6 +829,26 @@ private class Screen(private val serverUrl: String) {
     }
 
     private var backHeldSince: Long? = null
+
+    // ── DEB-4925 (FR-22): leaving the app and coming back ──
+    private var awaySince: Long? = null
+
+    /** Tizen fires `visibilitychange` when the viewer goes to another app and again on the way back. A second hide or return is a no-op. */
+    private fun onVisibility(hidden: Boolean) {
+        if (hidden) {
+            if (awaySince != null) return
+            awaySince = nowMs()
+            // AVPlay's plane does not survive the app being sent away: end the stream as Back would, the return is a fresh start.
+            if (loaded) stopAndIdle() else if (shell.isPlayer()) cancelStart()
+            return
+        }
+        val since = awaySince ?: return
+        awaySince = null
+        startEvents()
+        if (activeUserId != null) GlobalScope.launch { adoptLanguageOfActiveUser() }
+        if (nowMs() - since >= LONG_AWAY_MS) shell.refreshAfterAway()
+        else shell.refocus()
+    }
 
     // ── remote control: Tizen's registered keys arrive as ordinary keydown events (same names as
     // TizenKeys.REQUIRED) alongside a normal D-pad's KeyboardEvent.key vocabulary. ──
