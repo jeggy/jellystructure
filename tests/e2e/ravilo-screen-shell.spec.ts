@@ -7,6 +7,9 @@ const SCREEN_URL = process.env.RAVILO_SCREEN_CAST_URL ?? "http://localhost:8092"
 test("Tizen shell moves spatially across the bar and Back restores each page's focus (DEB-4656 FR-4)", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/tv/browse?**", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ query: "", items: [{ id: "sample", kind: "MOVIE", title: "Paper Lantern",
+      year: 2024, genre: null, rating: null, poster_url: null, backdrop_url: null }], total: 1 }) }));
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
     localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
@@ -24,16 +27,16 @@ test("Tizen shell moves spatially across the bar and Back restores each page's f
   await page.keyboard.press("ArrowRight");
   await expect(focused).toHaveAttribute("id", "nav-movies");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#shell-body")).toHaveText("Movies");
-  await expect(focused).toHaveAttribute("id", "shell-page-target");
+  await expect(page.locator("#shell-body .browse-heading")).toHaveText("Movies");
+  await expect(focused).toHaveAttribute("id", "browse-tile-0");
   await page.keyboard.press("ArrowUp");
   await expect(focused).toHaveAttribute("id", "nav-movies");
   await page.keyboard.press("ArrowRight");
   await expect(focused).toHaveAttribute("id", "nav-series");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#shell-body")).toHaveText("Series");
+  await expect(page.locator("#shell-body .browse-heading")).toHaveText("Series");
   await page.keyboard.press("Escape");
-  await expect(page.locator("#shell-body")).toHaveText("Movies");
+  await expect(page.locator("#shell-body .browse-heading")).toHaveText("Movies");
   await expect(focused).toHaveAttribute("id", "nav-series");
   await page.keyboard.press("Escape");
   await expect(page.locator("#shell-body")).toHaveText("Home");

@@ -231,3 +231,9 @@
     .detail-ep-check { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; line-height: 30px; border-radius: 50%; text-align: center; background: var(--accent); font-size: 19px; font-weight: 700; }
     .detail-ep-code { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: var(--accent-2); padding: 10px 2px 0; }
     .detail-ep.focused .detail-ep-art { box-shadow: 0 0 0 4px var(--ring); }
+    /* DEB-4659 FR-6 — six-column TV browse grid, using Home's tile treatment. */
+    .browse-page { padding-bottom: 80px; }
+    .browse-heading { margin-top: 30px; }
+    .browse-count, .browse-empty { color: var(--ink-soft); font-size: 19px; }
+    .browse-grid { display: flex; flex-wrap: wrap; margin: 18px -9px 0; }
+    .browse-grid .home-tile { flex: 0 0 calc(16.666% - 18px); margin: 0 9px 30px; }

@@ -74,6 +74,7 @@ internal class ScreenProfiles(
     private val onSwitch: () -> Unit,
     private val onSignOut: () -> Unit,
     private val onSettings: () -> Unit = {},
+    private val onMyList: () -> Unit = {},
 ) {
     private val picker get() = document.getElementById("profile-picker") as HTMLElement
     private val menu get() = document.getElementById("profile-menu") as HTMLElement
@@ -100,7 +101,7 @@ internal class ScreenProfiles(
         val current = store.get(store.activeId())
         (document.getElementById("profile-menu-title") as HTMLElement).textContent = current?.displayName ?: label("nav.profile")
         targets = listOf(
-            button(label("nav.my_list")) {},
+            button(label("nav.my_list")) { onMyList() },
             button(label("profile.switch")) { onSwitch() },
             button(label("nav.settings")) { onSettings() },
             button(label("profile.sign_out")) { onSignOut() },

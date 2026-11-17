@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.ravilo.i18n.t
 import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TileShape
 import kotlinx.browser.document
@@ -58,24 +59,8 @@ internal class ScreenHome(private val serverUrl: String) {
             val rail = node("div", "home-rail")
             val shape = if (row.kind == RowKind.CONTINUE) TileShape.LANDSCAPE else feed.tileShape
             row.items.forEachIndexed { tileIndex, card ->
-                val target = target("home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", "tile")
-                target.classList.add("tile-${shape.name.lowercase()}")
-                target.setAttribute("data-media-id", card.id)
-                target.setAttribute("data-media-kind", card.kind.name.lowercase())
-                val art = node("div", "tile-art")
-                val artUrl = if (shape == TileShape.LANDSCAPE) card.backdropUrl ?: card.posterUrl
-                    else card.posterUrl ?: card.backdropUrl
-                artUrl?.let { art.setAttribute("data-art-url", absoluteUrl(it)) }
-                target.appendChild(art)
-                if (row.kind == RowKind.CONTINUE) card.progressPct?.let { progress ->
-                    val track = node("div", "tile-progress")
-                    val fill = node("div", "tile-progress-fill")
-                    fill.style.width = "${progress.coerceIn(0f, 1f) * 100f}%"
-                    track.appendChild(fill)
-                    target.appendChild(track)
-                }
-                target.appendChild(label("div", "tile-title", card.title))
-                rail.appendChild(target)
+                rail.appendChild(tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
+                    row.kind == RowKind.CONTINUE))
             }
             section.appendChild(rail)
             home.appendChild(section)
@@ -93,8 +78,7 @@ internal class ScreenHome(private val serverUrl: String) {
         var images = 0
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
-            val section = holder.parentElement?.parentElement?.parentElement as? HTMLElement ?: continue
-            val rect = section.getBoundingClientRect()
+            val rect = holder.getBoundingClientRect()
             val near = rect.top <= focusRect.bottom + screenHeight && rect.bottom >= focusRect.top - screenHeight
             val url = holder.getAttribute("data-art-url")
             if (near && url != null && images < 60) {
@@ -102,6 +86,28 @@ internal class ScreenHome(private val serverUrl: String) {
                 if (holder.firstChild == null) image(url)?.let { holder.appendChild(it) }
             } else if (holder.firstChild != null) holder.textContent = ""
         }
+    }
+
+    /** Shared by Home rows and FR-6's browse grid. */
+    fun tile(card: MediaCard, id: String, row: String, shape: TileShape, showProgress: Boolean = false): HTMLElement {
+        val target = target(id, row, "tile")
+        target.classList.add("tile-${shape.name.lowercase()}")
+        target.setAttribute("data-media-id", card.id)
+        target.setAttribute("data-media-kind", card.kind.name.lowercase())
+        val art = node("div", "tile-art")
+        val artUrl = if (shape == TileShape.LANDSCAPE) card.backdropUrl ?: card.posterUrl
+            else card.posterUrl ?: card.backdropUrl
+        artUrl?.let { art.setAttribute("data-art-url", absoluteUrl(it)) }
+        target.appendChild(art)
+        if (showProgress) card.progressPct?.let { progress ->
+            val track = node("div", "tile-progress")
+            val fill = node("div", "tile-progress-fill")
+            fill.style.width = "${progress.coerceIn(0f, 1f) * 100f}%"
+            track.appendChild(fill)
+            target.appendChild(track)
+        }
+        target.appendChild(label("div", "tile-title", card.title))
+        return target
     }
 
     private fun image(url: String): HTMLElement? {

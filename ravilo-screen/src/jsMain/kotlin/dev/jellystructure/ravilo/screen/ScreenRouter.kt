@@ -22,6 +22,7 @@ internal data class ScreenRouteEntry(
     val mediaKind: MediaKind = MediaKind.MOVIE,
     var feed: HomeFeed? = null,
     val detail: ScreenDetail? = null,
+    val browse: ScreenBrowse? = null,
 )
 
 /**
@@ -61,7 +62,11 @@ internal class ScreenShell(
     private val body get() = document.getElementById("shell-body") as HTMLElement
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
     private val home = ScreenHome(serverUrl)
-    private val focus = ScreenFocus({ root }, { entries.last() }) { home.updateImages(it.id) }
+    private val focus = ScreenFocus({ root }, { entries.last() }) {
+        home.updateImages(it.id)
+        val entry = entries.last()
+        if (entry.browse?.nearEnd(it.id) == true) loadBrowse(entry)
+    }
     private var visible = false
     private var player = false
     private var loadGeneration = 0
@@ -102,6 +107,12 @@ internal class ScreenShell(
         render()
     }
 
+    fun openMyList() {
+        if (!visible || player) return
+        entries.add(ScreenRouteEntry("mylist", "nav-profile", browse = ScreenBrowse("mylist", home)))
+        render()
+    }
+
     fun returnFromPlayer() {
         if (!visible) return
         if (player && entries.last().name == "player") entries.removeAt(entries.lastIndex)
@@ -117,7 +128,13 @@ internal class ScreenShell(
             event.key == "Enter" -> activate()
             event.key == "ArrowLeft" -> focus.move(-1, 0)
             event.key == "ArrowRight" -> focus.move(1, 0)
-            event.key == "ArrowUp" -> focus.move(0, -1)
+            event.key == "ArrowUp" -> {
+                val current = entries.last()
+                if (current.browse != null && current.focusId.startsWith("browse-tile-")) {
+                    val tab = if (current.name == "mylist") "profile" else current.name
+                    focus.focus(document.getElementById("nav-$tab") as HTMLElement)
+                } else focus.move(0, -1)
+            }
             event.key == "ArrowDown" -> focus.move(0, 1)
             else -> return false
         }
@@ -135,6 +152,8 @@ internal class ScreenShell(
             // DEB-4660 — focus lands on the primary action once the page has drawn, not on the loading placeholder.
             if (current.detail.ready && current.focusId == "shell-page-target") current.focusId = current.detail.primaryFocusId
             current.detail.render(body)
+        } else if (current.browse != null) {
+            current.browse.render(body)
         } else {
             body.textContent = ""
             val feed = current.feed
@@ -154,6 +173,23 @@ internal class ScreenShell(
         focus.refocus()
         if ((current.name == "home" || current.name == "channel") && current.feed == null) loadFeed(current)
         current.detail?.load()
+        if (current.browse != null && current.browse.page == 0 && !current.browse.loading) loadBrowse(current)
+    }
+
+    private fun loadBrowse(entry: ScreenRouteEntry) {
+        val browse = entry.browse ?: return
+        if (browse.loading || browse.complete) return
+        browse.loading = true
+        val generation = loadGeneration
+        GlobalScope.launch {
+            val result = runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }
+            browse.loading = false
+            if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
+            result.getOrNull()?.let {
+                browse.append(it)
+                render()
+            }
+        }
     }
 
     private fun loadFeed(entry: ScreenRouteEntry) {
@@ -203,7 +239,12 @@ internal class ScreenShell(
             (body.querySelector(".shell-target") as? HTMLElement)?.let(focus::focus)
             return
         }
-        entries.add(ScreenRouteEntry(destination, "shell-page-target", mutableMapOf("bar" to focused)))
+        val browse = when (destination) {
+            "movies" -> ScreenBrowse("movie", home)
+            "series" -> ScreenBrowse("series", home)
+            else -> null
+        }
+        entries.add(ScreenRouteEntry(destination, "shell-page-target", mutableMapOf("bar" to focused), browse = browse))
         render()
     }
 

@@ -83,7 +83,8 @@ private class Screen(private val serverUrl: String) {
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired) { showPicker() }
-    private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut, ::openSettings)
+    private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut,
+        ::openSettings, ::openMyList)
     private var eventsJob: Job? = null
     private var config: RaviloConfig? = null
     private var itemId: String? = null
@@ -220,6 +221,11 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun openProfileMenu() = profileUi.showMenu()
+
+    private fun openMyList() {
+        profileUi.hide()
+        shell.openMyList()
+    }
 
     /** DEB-4663 (FR-11) — the profile menu's Settings. */
     private fun openSettings() {
