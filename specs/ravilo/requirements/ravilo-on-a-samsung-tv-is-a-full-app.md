@@ -738,3 +738,50 @@ the canvas was the limit, and the fix is a wider canvas.
   points at `icon.png`.
 - **Proof.** `scripts/check-tizen-assets.sh` now fails on any size but 512×288 (its self-test moves with it). Whether the
   tile reads as wide on the bar goes to QA with the signed preview `.wgt`, on the owner's TV.
+
+## Amendment 2026-11-17 (DEB-4932) — an episode's audio and subtitle choice carries to the next one
+
+Owner, DEB-4932: *"Tizen tv doesn't remember audio changed for one episode when starting the next episode."* FR-9 makes the TV's
+player R264's, and R264 is a receiver: the phone that pushed a title had already chosen its tracks, so the receiver never
+needed a memory of its own. Since FR-9 the TV starts titles itself, and nothing on it remembers anything. Every start
+(`negotiate` in `Screen.kt`) calls `startPlayback` with no `audio_language`, so the server plays the file's default track, and
+the subtitle is whatever the ticket flags as default. A pick is kept only until the stream changes. R181's promise
+(FR-RV-TRK1-4 to FR-RV-TRK1-6: *"the language never silently resets mid-binge"*) was never made for this app. It is made here
+as FR-23, on R181's model.
+
+**FR-23 · The TV remembers the viewer's audio and subtitle choice, per profile, on the set.**
+
+- **What is remembered.** R181's `RememberedChoice`, unchanged: audio language and version signature, subtitle language and
+  version signature, or subtitles *Off* as a real choice. There are two tiers, as in R181: one per **series** (a film is its own
+  bucket) and one **global**. Each tier is per signed-in profile (`activeUserId`). It is stored in the TV's `localStorage` only.
+  Nothing goes to the backend, as R181's non-goal says, and a profile's memory is deleted when the profile is removed
+  (`ScreenProfiles.remove` / `clear`).
+- **What writes it.** Every audio or subtitle pick while a title plays writes both tiers: the TV's own picker
+  (`PickerAction.Audio` / `.Subtitle`) and a phone remote's `set_audio` / `set_subtitle`. Choosing *Off* writes *Off*. The track
+  the player picked by itself at a start writes nothing.
+- **The series key.** `ScreenPlayContext` gains the series id. A title's page and the next-up card already know it (DEB-4660,
+  DEB-4865). A phone's push carries no series id, so its start reads, and its picks write, the global tier only. There is no
+  wire change: `PlayItemEnvelope` stays as it is.
+- **Audio at a start.** Every start, whether Play, the next-up card or a phone's push, sends the remembered `audio_language` and
+  `audio_variant` with `startPlayback`. It sends the series tier's choice, or the global tier's when the series has none. These
+  are the existing `PlaybackStartRequest` fields Android TV already sends. The server resolves them with R291's shared
+  `resolveAudioChoice`, so the stream starts in that language with no second request. If the ticket shows the series language
+  is not in this file but the global language is, the player switches to the global language once, the way a pick does
+  (`applyAudio`). If neither language is in the file, the file's default track plays, as it does today.
+- **Subtitles at a start.** The subtitle is resolved against `receiverSubtitles(ticket)` with R181's tier order and R235's
+  rules: the series tier, then the global tier, then today's default. A remembered *Off* shows none. A match that is a text track
+  is shown at once. A match that is only a picture subtitle is burned in, exactly as a manual pick does (`applySubtitle`). The
+  rules are the ones `ravilo-ui`'s `resolveTrackChoice` already uses (the tier walk, `sameLanguage`, and the PLAIN-over-SDH and
+  forced rules). They move into `shared` with no change in behaviour, the same move FR-19 and FR-21 made, so the Samsung app
+  never carries a second copy. `PlayerScreenTrackResolutionTest` stays green.
+- **No wire change, no server change.**
+- **Proof.**
+  - `ravilo-screen-play-from-tv.spec.ts` plays a series episode whose ticket has English (default) and Danish audio, picks
+    Danish, and lets the next-up card start the next episode. It asserts that the next `playback/start` body carries
+    `audio_language: "dan"` and that the second ticket's Danish track is the one shown as selected.
+  - The same for a subtitle: pick Danish on one episode, and the next episode shows Danish. Pick *Off* on one episode, and the
+    next episode shows none, even where the file flags a default subtitle.
+  - A second profile on the same set starts the same episode on the file's default.
+  - The shared rule gains a `:shared:desktopTest` beside the moved code.
+  - Whether a binge keeps its language on the real set goes to QA with the preview `.wgt` (two episodes in a row, on the
+    UE55RU7445).
