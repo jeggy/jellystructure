@@ -67,8 +67,8 @@ check_wgt() {
     return 1
   fi
   size=$(png_size "$dir/$icon")
-  if [[ $size != 512x423 ]]; then
-    echo "$dir/$icon is $size; Samsung's TV launcher icon is 512x423" >&2
+  if [[ $size != 512x288 ]]; then
+    echo "$dir/$icon is $size; the Smart Hub tile takes the icon's own shape, so the launcher icon is the 16:9 512x288" >&2
     return 1
   fi
   # Every <img class="mark" src="…"> must name a file packed beside index.html.
@@ -91,7 +91,7 @@ if [[ ${1:-} == --selftest ]]; then
   png_header 128 128 > "$fixture/icon.png"
   printf '<img class="mark" src="mark.svg" alt="">\n' > "$fixture/index.html"
   if check_wgt "$fixture" 2>/dev/null; then echo 'Tizen assets guard accepted a 128x128 icon' >&2; exit 1; fi
-  png_header 512 423 > "$fixture/icon.png"
+  png_header 512 288 > "$fixture/icon.png"
   if check_wgt "$fixture" 2>/dev/null; then echo 'Tizen assets guard accepted a mark that is not packed' >&2; exit 1; fi
   printf '<div class="mark"></div>\n' > "$fixture/index.html"
   if check_wgt "$fixture" 2>/dev/null; then echo 'Tizen assets guard accepted a mark that is not an image' >&2; exit 1; fi
@@ -125,4 +125,4 @@ check_wgt "$root/ravilo-screen/wgt"
 check_sources "$sources" "$table"
 # A built widget (syncScreenReceiver has run) must carry them too.
 [[ ! -d $root/ravilo-screen/wgt/flags ]] || check_flags "$root/ravilo-screen/wgt" "$table"
-echo "Tizen widget carries the 512x423 icon, a packed Ravilo mark and a flag for every language the table names"
+echo "Tizen widget carries the 512x288 icon, a packed Ravilo mark and a flag for every language the table names"

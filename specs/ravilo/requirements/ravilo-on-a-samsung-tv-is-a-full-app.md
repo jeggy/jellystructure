@@ -723,3 +723,18 @@ leaves the cause to be confirmed on the set (the QA ticket asks for it).
   threshold and asserts a freshly loaded Home and a new events socket. Whether this is what the owner saw is **not** proved
   by CI: Tizen 5.0's real `visibilitychange`, AVPlay across a 20-minute absence and a resume from another app go to QA on the
   Samsung with a preview `.wgt`.
+
+## Amendment 2026-11-17 (DEB-4924) — the launcher tile is 16:9, because the Smart Hub bar draws the icon at its own shape
+
+Owner, DEB-4918 (2026-11-17), real UE55RU7445 (Tizen 5.0), two photos of the home bar with the DEB-4900 tile beside the
+stock tiles: Internet and Chromecast are about 1.7:1 (16:9), and Ravilo's 512×423 tile is about 1.24:1. The bar does
+not letterbox or stretch an icon into a fixed slot; it draws it at the icon's own aspect. This **supersedes the
+512×423 size in FR-17 as amended by DEB-4900**, and the "Samsung-side question" that amendment reserved is answered:
+the canvas was the limit, and the fix is a wider canvas.
+
+- **FR-17 (amended again) · The launcher tile is a 512×288 (16:9) PNG.** `ravilo-screen/wgt/icon.png` is the Android TV
+  banner (`design/ravilo/assets/store/tv-banner-1280x720.png`) cropped to 848×477 around the mark and wordmark
+  (x 240–1088, y 88–565, which keeps the tagline out) and scaled to 512×288 without distortion. `config.xml` still
+  points at `icon.png`.
+- **Proof.** `scripts/check-tizen-assets.sh` now fails on any size but 512×288 (its self-test moves with it). Whether the
+  tile reads as wide on the bar goes to QA with the signed preview `.wgt`, on the owner's TV.
