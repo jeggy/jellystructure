@@ -75,16 +75,27 @@ internal class ScreenHome(private val serverUrl: String) {
         val focusRect = focus.getBoundingClientRect()
         val screenHeight = mount.clientHeight.toDouble().coerceAtLeast(1.0)
         val holders = mount.getElementsByClassName("tile-art")
-        var images = 0
+        val focusX = (focusRect.left + focusRect.right) / 2
+        val focusY = (focusRect.top + focusRect.bottom) / 2
+        val candidates = mutableListOf<Pair<HTMLElement, Double>>()
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
             val rect = holder.getBoundingClientRect()
             val near = rect.top <= focusRect.bottom + screenHeight && rect.bottom >= focusRect.top - screenHeight
-            val url = holder.getAttribute("data-art-url")
-            if (near && url != null && images < 60) {
-                images++
-                if (holder.firstChild == null) image(url)?.let { holder.appendChild(it) }
-            } else if (holder.firstChild != null) holder.textContent = ""
+            if (near && holder.getAttribute("data-art-url") != null) {
+                val dx = (rect.left + rect.right) / 2 - focusX
+                val dy = (rect.top + rect.bottom) / 2 - focusY
+                candidates.add(holder to dx * dx + dy * dy)
+            }
+        }
+        val selected = candidates.sortedBy { it.second }.take(60).map { it.first }.toSet()
+        for (index in 0 until holders.length) {
+            val holder = holders.item(index) as? HTMLElement ?: continue
+            if (holder in selected) {
+                if (holder.firstChild == null) holder.getAttribute("data-art-url")?.let(::image)?.let { holder.appendChild(it) }
+            } else if (holder.firstChild != null) {
+                holder.textContent = ""
+            }
         }
     }
 

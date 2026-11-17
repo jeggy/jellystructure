@@ -83,3 +83,16 @@ test("Tizen Home delays distant artwork and keeps at most 60 tile images (DEB-46
   expect(await page.locator("#shell-body [data-row=\"row-9\"] img[src]").count()).toBeGreaterThan(0);
   expect(await sourced.count()).toBeLessThanOrEqual(60);
 });
+
+test("Tizen Home gives deep focused artwork priority in dense rows (DEB-4729, DEB-4658 FR-14)", async ({ page }) => {
+  const rows = Array.from({ length: 20 }, (_, row) => ({
+    id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
+    items: Array.from({ length: 30 }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
+  }));
+  await boot(page, { heroes: homeFeed.heroes, channels: [], rows, tile_shape: "POSTER", hero_height_pct: 48 });
+  for (let i = 0; i < rows.length; i++) await page.keyboard.press("ArrowDown");
+  const focused = page.locator("#shell-body .home-tile.focused");
+  await expect(focused).toHaveAttribute("data-row", "row-19");
+  await expect(focused.locator(".tile-art img[src]")).toHaveCount(1);
+  expect(await page.locator("#shell-body .tile-art img[src]").count()).toBeLessThanOrEqual(60);
+});
