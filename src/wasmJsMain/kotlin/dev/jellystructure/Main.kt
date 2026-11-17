@@ -21,6 +21,7 @@ import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderLiveTv
 import dev.jellystructure.ui.renderRaviloConfig
 import dev.jellystructure.ui.renderRaviloUsers
+import dev.jellystructure.ui.renderSamsungTvRequests
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.renderSubtitles
@@ -121,6 +122,7 @@ object App {
             path.startsWith("/suggestions") -> renderSuggestionsRoute(container, scope, query)  // Phase 274; DEB-1253 (FR-4) asks which home first
             path == "/ai" -> renderAiPage(container, scope, query)  // DEB-1253
             path == "/subtitles" -> renderSubtitles(container, scope, query)  // Phase 302: ?fit=<group>
+            path.startsWith("/samsung-tv-requests") -> renderSamsungTvRequests(container, scope)
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
             path.startsWith("/livetv") -> renderLiveTv(container, scope)

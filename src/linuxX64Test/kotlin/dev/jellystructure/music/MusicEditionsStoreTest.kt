@@ -85,6 +85,7 @@ class MusicEditionsStoreTest {
         raw.execute(null, "DROP TABLE IF EXISTS file_timeline", 0)
         // …and DEB-3704's 100 creates music_js_tag (its index goes with it).
         raw.execute(null, "DROP TABLE IF EXISTS music_js_tag", 0)
+        raw.execute(null, "DROP TABLE IF EXISTS samsung_tv_requests", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

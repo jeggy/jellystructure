@@ -68,6 +68,7 @@ private val BASE_NAV: List<NavEntry> = listOf(
     NavLink("/livetv", "Live TV", "livetv"),
     NavLink("/ravilo?tab=requests", "Requests", "requests"),
     NavLink("/ravilo-users", "Users & devices", "users"),
+    NavLink("/samsung-tv-requests", samsungText("title"), "tv"),
     NavLink("/ravilo?tab=preferences", "Preferences", "prefs"),
 )
 

@@ -1,0 +1,65 @@
+-- DEB-4842 (FR-1) — a viewer request for one Samsung TV. Keep this CREATE TABLE and 101.sqm identical.
+CREATE TABLE samsung_tv_requests (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    duid TEXT NOT NULL,
+    model TEXT NOT NULL,
+    tizen_version TEXT NOT NULL,
+    name TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    decided_by TEXT,
+    decision_note TEXT,
+    ready_from_release TEXT,
+    ready_wgt_url TEXT,
+    UNIQUE(account_id, duid)
+);
+
+requestById:
+SELECT * FROM samsung_tv_requests WHERE id = :id;
+
+requestForAccountAndDuid:
+SELECT * FROM samsung_tv_requests WHERE account_id = :account_id AND duid = :duid;
+
+requestsForAccount:
+SELECT * FROM samsung_tv_requests WHERE account_id = :account_id ORDER BY created_at DESC, id DESC;
+
+allRequests:
+SELECT * FROM samsung_tv_requests ORDER BY created_at DESC, id DESC;
+
+activeCount:
+SELECT COUNT(*) FROM samsung_tv_requests WHERE account_id = :account_id AND state IN ('REQUESTED', 'APPROVED', 'READY');
+
+insertRequest:
+INSERT INTO samsung_tv_requests(account_id, duid, model, tizen_version, name, state, created_at)
+VALUES (:account_id, :duid, :model, :tizen_version, :name, 'REQUESTED', :created_at);
+
+lastInsertId:
+SELECT last_insert_rowid();
+
+reopenRequest:
+UPDATE samsung_tv_requests SET model = :model, tizen_version = :tizen_version, name = :name,
+    state = 'REQUESTED', created_at = :created_at, decided_at = NULL, decided_by = NULL,
+    decision_note = NULL, ready_from_release = NULL, ready_wgt_url = NULL
+WHERE id = :id AND state IN ('WITHDRAWN', 'REJECTED');
+
+decideRequest:
+UPDATE samsung_tv_requests SET state = :state, decided_at = :decided_at, decided_by = :decided_by,
+    decision_note = :decision_note, ready_from_release = NULL, ready_wgt_url = NULL
+WHERE id = :id AND state = 'REQUESTED';
+
+withdrawRequest:
+UPDATE samsung_tv_requests SET state = 'WITHDRAWN', ready_from_release = NULL, ready_wgt_url = NULL
+WHERE id = :id AND account_id = :account_id AND state IN ('REQUESTED', 'REJECTED');
+
+markReady:
+UPDATE samsung_tv_requests SET state = 'READY', ready_from_release = :ready_from_release, ready_wgt_url = :ready_wgt_url
+WHERE id = :id AND state IN ('APPROVED', 'READY');
+
+markApproved:
+UPDATE samsung_tv_requests SET state = 'APPROVED', ready_from_release = NULL, ready_wgt_url = NULL
+WHERE id = :id AND state IN ('APPROVED', 'READY');
+
+changes:
+SELECT changes();

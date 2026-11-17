@@ -828,6 +828,14 @@ fun main() = runBlocking {
     liveTvService.onLiveChanged = { sessionPublisher.adminChanged() }
     dev.jellystructure.tv.LiveViewing.anyActive = { liveTvService.anyLiveActive() }
     dev.jellystructure.tv.LiveViewing.names = { liveTvService.liveDeviceNames() }
+    val samsungRequests = dev.jellystructure.samsung.SamsungTvRequests(db)
+    val samsungRelease = dev.jellystructure.samsung.SamsungTvRelease(samsungRequests)
+    rootScope.launch {
+        while (true) {
+            samsungRelease.refresh()
+            delay(3_600_000L)
+        }
+    }
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
@@ -847,6 +855,8 @@ fun main() = runBlocking {
         musicPipeline = musicPipeline,
         sessionPublisher = sessionPublisher,
         supportService = supportService,
+        samsungRequests = samsungRequests,
+        samsungRelease = samsungRelease,
         processingRuns = processingRuns,
         autofetch = autofetchRuntime,
     )

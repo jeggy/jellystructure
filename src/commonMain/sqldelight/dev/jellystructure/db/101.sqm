@@ -1,0 +1,17 @@
+-- DEB-4842 (FR-1) — a viewer request for one Samsung TV. Keep this CREATE TABLE and 101.sqm identical.
+CREATE TABLE samsung_tv_requests (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    duid TEXT NOT NULL,
+    model TEXT NOT NULL,
+    tizen_version TEXT NOT NULL,
+    name TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    decided_by TEXT,
+    decision_note TEXT,
+    ready_from_release TEXT,
+    ready_wgt_url TEXT,
+    UNIQUE(account_id, duid)
+);

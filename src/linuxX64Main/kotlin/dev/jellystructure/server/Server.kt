@@ -23,6 +23,7 @@ import dev.jellystructure.server.routes.processingRoutes
 import dev.jellystructure.server.routes.looseFilmRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.supportRoutes
+import dev.jellystructure.server.routes.samsungTvRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
 import dev.jellystructure.server.routes.musicRoutes
@@ -223,6 +224,8 @@ fun startServer(
     sessionPublisher: dev.jellystructure.tv.SessionPublisher? = null,
     // 320 — the support lane; null in contexts that build none. Its routes answer 404/409 while unavailable (FR-320-1).
     supportService: dev.jellystructure.support.SupportService? = null,
+    samsungRequests: dev.jellystructure.samsung.SamsungTvRequests? = null,
+    samsungRelease: dev.jellystructure.samsung.SamsungTvRelease? = null,
     // DEB-1664 (FR-9) — when each processing feature last ran.
     processingRuns: dev.jellystructure.media.ProcessingRuns? = null,
     // DEB-2476 (DEB-2474, FR-12) — Auto-fetch's engine and routes; null in contexts that build none.
@@ -704,6 +707,7 @@ fun startServer(
                     seerrDiscoverService?.suggestions = s
                     suggestionsRoutes(s)
                 }
+                if (samsungRequests != null && samsungRelease != null) samsungTvRoutes(samsungRequests, samsungRelease, deviceService)
                 supportService?.let { supportRoutes(it, configStore) }   // Phase 320 — /api/tv/support/** and /api/support/**
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 channelLogoAdminRoutes(channelLogoStore, dev.jellystructure.tv.ChannelLogoUsage(raviloConfigService, liveTvService, configStore, jellyfinClient))   // DEB-1788

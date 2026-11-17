@@ -20,7 +20,8 @@ internal object WgtCertificate {
     private const val MAX_PACKAGE = 20 * 1024 * 1024
     private const val MAX_SIGNATURE = 256 * 1024
     private val certificate = Regex("<X509Certificate\\s*>([A-Za-z0-9+/=\\s]+)</X509Certificate>")
-    private val duid = Regex("URN:tizen:deviceid=([A-Z0-9]{13})")
+    private const val DUID_URI = "URN:tizen:deviceid="
+    private val duid = Regex("[A-Z0-9]{8,32}")
 
     /** Null means the package/signature was invalid; an empty set is a valid certificate with no device ids. */
     fun deviceIds(packageBytes: ByteArray): Set<String>? {
@@ -29,7 +30,18 @@ internal object WgtCertificate {
         val encoded = certificate.find(xml)?.groupValues?.get(1) ?: return null
         val der = decodeBase64(encoded) ?: return null
         if (der.size < 4 || der[0] != 0x30.toByte()) return null
-        return duid.findAll(der.decodeToString()).map { it.groupValues[1] }.toSet()
+        // The device URI is an ASN.1 GeneralName (tag 0x86) with its own length. Scanning decoded DER
+        // text can swallow a following ASCII tag byte (the first real certificate ends in 0x30), so
+        // take exactly the URI's declared bytes, then validate the DUID suffix.
+        val ids = mutableSetOf<String>()
+        for (at in 0 until der.size - 2) {
+            if (der[at] != 0x86.toByte()) continue
+            val length = der[at + 1].toInt() and 255
+            if (length !in (DUID_URI.length + 8)..(DUID_URI.length + 32) || at + 2 + length > der.size) continue
+            val uri = der.copyOfRange(at + 2, at + 2 + length).decodeToString()
+            if (uri.startsWith(DUID_URI)) uri.removePrefix(DUID_URI).takeIf { it.matches(duid) }?.let(ids::add)
+        }
+        return ids
     }
 
     /** Uses the central directory: signed WGTs may have a data descriptor after each local file header. */
