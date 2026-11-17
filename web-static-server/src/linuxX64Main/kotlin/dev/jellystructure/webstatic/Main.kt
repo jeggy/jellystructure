@@ -249,13 +249,14 @@ private fun contentTypeFor(path: String): ContentType = when (path.substringAfte
 // emitted string stays byte-for-byte what it always was, preserving the comparison above. It exists
 // only for this module's OTHER caller — the ravilo-screen test-stack container (247/248) — whose mock
 // backend talks plain http, which browsers refuse under connect-src without an explicit http: scheme.
+// DEB-4893: it opens img-src to http: too, so the widget's hero and backdrop images from that mock can load.
 // ravilo-screen is never served over http in production at all (its only real distribution is the
 // packaged .wgt), so this changes nothing about ravilo-web's or the backend's real security posture.
 internal fun cspHeader(allowHttpConnect: Boolean): String =
     "default-src 'self'; " +
         "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; " +
         "style-src 'self' 'unsafe-inline'; " +
-        "img-src 'self' data: blob: https:; " +
+        "img-src 'self' data: blob: https:${if (allowHttpConnect) " http:" else ""}; " +
         "font-src 'self' data:; " +
         "connect-src 'self' ws: wss: https:${if (allowHttpConnect) " http:" else ""}; " +
         "media-src 'self' blob: https:; " +
