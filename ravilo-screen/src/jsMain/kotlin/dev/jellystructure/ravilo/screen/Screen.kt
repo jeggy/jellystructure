@@ -68,7 +68,7 @@ private const val NEXT_UP_SECS = 10
 private const val PICKER_ROWS = 9
 
 private class Screen(private val serverUrl: String) {
-    private val backend = detectMediaBackend()
+    private val backend = detectMediaBackend(serverUrl)
     private val deviceId = loadOrCreateDeviceId()
     private val profiles = ScreenProfileStore()
     private val legacyTokens = profiles.takeLegacyTokens()
@@ -137,6 +137,8 @@ private class Screen(private val serverUrl: String) {
     // very device), so a refusal never says *from your phone*. [tvNextItem] is the item the TV asked its own backend for.
     private var tvNextItem: String? = null
     private var startedFromTv = false
+    // DEB-4865 — the episodes the title's page said follow the one playing (the first is [nextId]); empty for a phone's push.
+    private var following: List<ScreenFollowing> = emptyList()
 
     // ── screens ──
     private fun el(id: String) = document.getElementById(id) as HTMLElement
@@ -182,7 +184,7 @@ private class Screen(private val serverUrl: String) {
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
-        segments = null; nextId = null; nextTitle = null; nextKicker = null   // R264
+        segments = null; nextId = null; nextTitle = null; nextKicker = null; following = emptyList()   // R264
         hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
         showSubtitle(-1)
         el("idle-sentence").textContent = ScreenLanguage.t("cast.ready")
@@ -317,6 +319,7 @@ private class Screen(private val serverUrl: String) {
         if (env.sessionUserId != null && env.sessionUserId != activeUserId) return
         val fromTv = env.jellyfinId == tvNextItem
         tvNextItem = null
+        following = emptyList()
         beginPlay(env, fromTv)
     }
 
@@ -446,6 +449,7 @@ private class Screen(private val serverUrl: String) {
             // DEB-4660 — the title's page hands over what it already read (the movie's logo and markers, an episode's series, S·E
             // line and the episode after it), so nothing is fetched twice and nothing is missing from the start.
             request.context?.let { c ->
+                following = c.following
                 beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = request.id, kind = c.kind, title = request.title, kicker = c.kicker,
                     seriesName = c.seriesName, logoUrl = c.logoUrl, logoInk = c.logoInk, segments = c.segments,
                     nextId = c.nextId, nextTitle = c.nextTitle, nextKicker = c.nextKicker), fromTv = true, startOver = request.startOver)
@@ -453,6 +457,7 @@ private class Screen(private val serverUrl: String) {
             }
             // A request with no page behind it reads what a phone's push would have carried. A detail that does not come is a
             // play without Skip Intro and a logo.
+            following = emptyList()
             val detail = if (request.kind == MediaKind.MOVIE) withTimeoutOrNull(3_000) { runCatching { api.getMovie(request.id) }.getOrNull() } else null
             if (generation != loadGeneration) return@launch
             beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = request.id, kind = request.kind.name.lowercase(), title = request.title,
@@ -620,17 +625,32 @@ private class Screen(private val serverUrl: String) {
     }
 
     /**
-     * The next episode, through the backend like any other play: this set asks `POST /api/remote/play` to
-     * play [nextId] on itself (any device token may; the target is its own), and the push that comes back
-     * is the whole of what a play needs — title, logo, segments and the episode after that. The item it
-     * leaves is stopped at its position first, so the progress the viewer made is kept.
+     * The next episode. A start the TV made itself knows the episodes after this one (the title's page handed them over,
+     * [following]) and starts the next the way [playFromTv] starts any title: it negotiates for itself, because
+     * `POST /api/remote/play` is refused to a Tizen 5.0 widget (DEB-4719, DEB-4865). A start with no such list — a
+     * phone's push — asks `POST /api/remote/play` to play [nextId] on this set, and the push that comes back is the whole
+     * of what a play needs. The item it leaves is stopped at its position first, so the progress the viewer made is kept.
      */
     private fun playNext() {
         val id = nextId ?: return
         val current = itemId
         // R384 — a title that finished under the countdown is stopped at its length (the player may say 0 once ended).
         val pos = if (finishedUnderNextUp) backend.durationMs() else if (loaded) backend.positionMs() else 0L
+        val queue = following
+        val known = queue.firstOrNull()?.takeIf { it.id == id }
         hideNextUp(); hideSkip(); nextId = null
+        if (known != null) {
+            val series = seriesName; val logo = logoUrl; val ink = logoInk
+            GlobalScope.launch {
+                if (current != null) runCatching { api.stopPlayback(current, pos) }
+                val after = queue.getOrNull(1)
+                following = queue.drop(1)
+                beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = known.id, kind = "episode", title = known.title, kicker = known.kicker,
+                    seriesName = series, logoUrl = logo, logoInk = ink, segments = known.segments,
+                    nextId = after?.id, nextTitle = after?.title, nextKicker = after?.kicker), fromTv = true)
+            }
+            return
+        }
         tvNextItem = id
         GlobalScope.launch {
             if (current != null) runCatching { api.stopPlayback(current, pos) }

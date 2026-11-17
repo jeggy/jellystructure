@@ -154,11 +154,13 @@ internal class ScreenDetail(
         val s = series ?: return
         val counted = countedEpisodes(s)
         val at = counted.indexOfFirst { it.second.id == episode.id }
-        val next = if (s.newestFirst || at < 0) null else counted.drop(at + 1).firstOrNull { it.second.id != episode.id }
+        val after = if (s.newestFirst || at < 0) emptyList() else counted.drop(at + 1).filter { it.second.id != episode.id }.distinctBy { it.second.id }
+        val next = after.firstOrNull()
         onPlay(ScreenPlayRequest(episode.id, MediaKind.MOVIE, episode.title, startOver = startOver,
             context = ScreenPlayContext("episode", kicker = episodeCode(seasonIndex, episode.episodeNumber, lastPart), seriesName = s.card.title,
                 logoUrl = s.logoUrl, logoInk = s.logoInk, segments = episode.segments,
-                nextId = next?.second?.id, nextTitle = next?.second?.title, nextKicker = next?.let { episodeCode(it.first, it.second.episodeNumber) })))
+                nextId = next?.second?.id, nextTitle = next?.second?.title, nextKicker = next?.let { episodeCode(it.first, it.second.episodeNumber) },
+                following = after.map { ScreenFollowing(it.second.id, it.second.title, episodeCode(it.first, it.second.episodeNumber), it.second.segments) })))
     }
 
     private fun countedEpisodes(s: SeriesDetail) = s.seasons.filter { it.index >= 1 }.sortedBy { it.index }

@@ -39,6 +39,16 @@ internal data class ScreenPlayContext(
     val nextId: String? = null,
     val nextTitle: String? = null,
     val nextKicker: String? = null,
+    /** DEB-4865 — the counted episodes after [nextId], in order, so the next-up card can start the next one on the TV itself. */
+    val following: List<ScreenFollowing> = emptyList(),
+)
+
+/** One episode the TV can play next without asking the backend to push it: what a phone's `play_item` would have carried. */
+internal data class ScreenFollowing(
+    val id: String,
+    val title: String,
+    val kicker: String,
+    val segments: TvSegmentMarkers? = null,
 )
 
 /** What the title's page hands the player when OK plays it (FR-9). [startOver] plays from 0; [context] is the page's own facts. */

@@ -513,3 +513,19 @@ Restores FR-9's *the title plays*.
 - **Proof.** `ravilo-screen-player.spec.ts` asserts, with the fake AVPlay, that during a stream `html` and `body` are
   transparent, `#video` is hidden and `setDisplayRect` is the viewport, and that the class is gone after Back. Chromium
   cannot show Samsung's plane, so the picture itself goes to QA with the preview `.wgt` (it is the one check CI cannot make).
+
+## Amendment 2026-11-17 (DEB-4865) — the next episode starts on the TV itself
+
+QA on the Tizen 5.0 emulator (DEB-4841): an episode ran to the end under the next-up card and the TV showed *Couldn't reach
+the server*; `POST /api/remote/play` answered 403 and no start for the next episode reached the server. This replaces the
+*Next episode* note in DEB-4719's second amendment (*accepted for v1*), which is no longer accepted.
+
+- **A start the TV made knows the episodes after it.** The page that handed the player the episode (DEB-4660) also hands over
+  the counted episodes that follow, each with its title, S·E line and segment markers.
+- **The next-up card, by countdown or OK, starts the next episode the way FR-9's Play does.** The item it leaves is
+  stopped at its position, the TV negotiates the start itself (`hls_only`), and the card on the new episode names the one
+  after it. `POST /api/remote/play` is not asked.
+- **A start with no such list** (a phone's push) keeps asking `/api/remote/play`, whose push is the whole of what a play
+  needs; DEB-4719's refusal of a Tizen 5.0 widget is the same as before for that path.
+- **Proof.** `ravilo-screen-play-from-tv.spec.ts` plays a series' episode with `/api/remote/play` answering 403 and asserts
+  the next episode's start, no call to the route, and the following card. A real 5.0 set goes to QA (DEB-4860).

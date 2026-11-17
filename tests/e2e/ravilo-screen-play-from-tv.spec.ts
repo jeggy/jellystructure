@@ -61,7 +61,7 @@ const seriesDetail = {
   ],
 };
 
-async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ status: number; body: object }>; series?: object | null; continueEpisode?: string } = {}): Promise<Seen> {
+async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ status: number; body: object }>; series?: object | null; continueEpisode?: string; refuseRemotePlay?: boolean } = {}): Promise<Seen> {
   const seen: Seen = { progress: [], stops: [], starts: [], remotePlays: [], statuses: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(fakeSocketInitScript);
@@ -91,6 +91,7 @@ async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ st
     if (path === "/api/tv/playback/status") { seen.statuses.push(body); return route.fulfill({ status: 204 }); }
     if (path === "/api/remote/play") {
       seen.remotePlays.push(body);
+      if (opts.refuseRemotePlay) return route.fulfill({ status: 403, contentType: "application/json", body: "{}" });   // what a Tizen 5.0 widget gets (DEB-4719)
       // The backend's answer to a play aimed at this very device: the same push a phone's play makes.
       await route.fulfill({ status: 202 });
       await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem(body.jellyfin_item_id));
@@ -179,6 +180,34 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 10_000 }).toEqual(["ep-1", "ep-2"]);
   });
 
+  test("DEB-4865: a TV-started episode's next-up card plays the next one on the TV, though /api/remote/play is refused", async ({ page }) => {
+    test.setTimeout(90_000);
+    const withCredits = (e: object, segments: object) => ({ ...e, segments });
+    const detail = {
+      ...seriesDetail,
+      seasons: [{ index: 1, name: "Season 1", episodes: [
+        withCredits(episode("s1e1", 1, "Opening Reel"), { credits_start_ms: 43_000 }),
+        withCredits(episode("s1e2", 2, "Second Reel"), { credits_start_ms: 43_000 }),
+        episode("s1e3", 3, "Third Reel"),
+      ] }],
+    };
+    const seen = await boot(page, { series: detail, refuseRemotePlay: true });
+    await page.keyboard.press("Enter");                      // the series' page
+    await expect(page.locator("#detail-play")).toBeVisible();
+    await page.keyboard.press("Enter");                      // Play: s1e1, with s1e2 and s1e3 after it
+    await waitForAvplayCall(page, "play");
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#nu-t")).toContainText("Second Reel");
+    // The countdown starts s1e2 itself: a start for it reaches the server, the refused route is never asked, and no failure shows.
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 20_000 }).toEqual(["s1e1", "s1e2"]);
+    expect(seen.remotePlays).toHaveLength(0);
+    expect(seen.stops[0]).toMatchObject({ item_id: "s1e1" });
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+    // And the card on s1e2 names the episode after it, the way a phone's push would have.
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#nu-t")).toContainText("Third Reel");
+  });
+
   test("FR-10: a phone's play takes over the page the viewer is on, and the end returns to it", async ({ page }) => {
     await boot(page);
     await page.keyboard.press("ArrowDown").catch(() => {});
@@ -234,6 +263,17 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(1);
     expect(seen.stops[0]).toMatchObject({ item_id: "ep-1" });
     expect((await avplayCalls(page)).some((c) => c[0] === "open")).toBe(false);
+  });
+
+  test("DEB-4866: a title on our own encoder (a server-relative hls_url) reaches AVPlay as an absolute URL", async ({ page }) => {
+    test.setTimeout(60_000);
+    // What the backend's encoder path hands out: a path, not a URL. A bare path is PLAYER_ERROR_INVALID_URI on a Tizen set.
+    await boot(page, { start: async (id) => ({ status: 200, body: { ...ticket(id, 0), hls_url: `/api/tv/stream/${id}/master.m3u8` } }) });
+    await page.keyboard.press("Enter");                      // the title's page
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
+    await page.keyboard.press("Enter");                      // Play
+    const opened = await waitForAvplayCall(page, "open");
+    expect(String(opened.call[1])).toBe(`${API}/api/tv/stream/ep-1/master.m3u8`);
   });
 
   test("DEB-4832: OK on a series' tile plays an episode, never the series id", async ({ page }) => {
