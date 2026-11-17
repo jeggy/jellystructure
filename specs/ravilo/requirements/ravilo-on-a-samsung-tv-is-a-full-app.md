@@ -666,3 +666,33 @@ app's tile is wide with its name beside it. This amends **FR-17**, whose text ab
   reads as wide on the Smart Hub bar cannot be covered automatically: it goes to QA with the signed preview `.wgt`, on
   the owner's Tizen 5.0 TV. If that tile still shows letterboxed, the 512×423 canvas is the limit and the next step is
   a Samsung-side question, not a different file.
+
+## Amendment 2026-11-17 (DEB-4899) — the audio and subtitles picker leads with the language and its flag
+
+Owner, DEB-799 (2026-11-17, photo from the UE55RU7445): *"There is no flags and only unusable text for the audio tracks and
+sometimes the subtitles take as well."* The Lyd tab read `E-AC-3 Atmos 5.1`, `E-AC-3 5.1` ×4: five different languages, told
+apart by nothing, and the focused row was light grey on a white pill. FR-9 says the TV's picker is R264's two-level picker,
+which is R180's and R195's, and R180 (FR-RV-ASP1-1) leads a row with the language's own name. The Samsung picker named a row
+from the start of the track's label, which for these files is the codec, because it had no language-name table (R264's doc
+comment: *"a receiver has no language-name table of its own"*). That is a miss against FR-9 and R264, but the flag, the second
+line and the focus colours are not written down anywhere for this app, so they are FR-21 here.
+
+**FR-21 · A picker row is the language's flag and own name, then what the track is.** Android TV's picker, redrawn in DOM.
+
+- **The name** is the language's own name from `shared` (`endonymOf`: `dan` → *Dansk*, `deu` → *Deutsch*), the table
+  `ravilo-ui` already reads. It moves from `ravilo-ui`'s `LanguageIdentity.kt` into `shared` with no change in behaviour,
+  the same move FR-19 made for the flag table, and `ravilo-ui` keeps thin readers of it. Only a code the table does not know
+  falls back to the label's first words and then the code.
+- **The flag** leads the row: the packed `flags/<cc>.png` of FR-19, 36×25 px, drawn for Audio and Subtitles level 1 rows
+  (not *Off*, not *Subtitle size*, not a language with no flag). One table, never a second.
+- **The second line** is what the label says beyond the language (*Dolby Digital 5.1* from *Dansk - Dolby Digital 5.1*), and
+  for audio the track's codec and channels when the label says nothing else; then Android TV's badge words
+  (*Signs only*, *Sound described*, *Describes action*, *Commentary*). A row for a language with several versions shows
+  `N versions ›` and opens level 2 as before, where each row is its version's own title, else *Version n*.
+- **The focused row is readable.** Near-black text (`#05070c`, 700) on the light pill, and a second line of `#2a2f3d`, so
+  the contrast is above 12:1 for the name and above 7:1 for the second line. No translucent tint of the pill.
+- **Proof.** `ravilo-screen-play-from-tv.spec.ts` plays a title whose ticket has five E-AC-3 5.1 tracks in five languages and
+  a second English version, and asserts the names, five flags with `naturalWidth > 0`, the second lines, level 2's two
+  versions and both focus contrasts; `:shared:desktopTest` gains `LanguageNamesTest`, and `LanguageIdentityTest` stays green.
+  How it reads from the sofa goes to QA with the preview `.wgt`.
+- **No wire change.** The ticket already carries `language`, `label`, `codec` and `channels` for every track.
