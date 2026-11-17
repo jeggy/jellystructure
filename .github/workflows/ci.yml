@@ -51,6 +51,8 @@ jobs:
         run: ./scripts/check-mobile-css.sh
       - name: Only the caller's own cancellation is rethrown (phase 310)
         run: ./scripts/check-cancellation-rethrow.sh
+      - name: Test names compile on Kotlin/Native (DEB-4942)
+        run: ./scripts/check-native-names.sh && ./scripts/check-native-names.sh --selftest
       - name: No raw withTimeoutOrNull creeps back (phase 310)
         run: ./scripts/check-timeouts.sh
       - name: No inline event handler in the admin (CSP blocks it, DEB-1670)
