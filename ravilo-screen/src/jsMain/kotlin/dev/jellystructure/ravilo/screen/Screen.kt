@@ -12,7 +12,9 @@ import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.PlayItemEnvelope
 import dev.jellystructure.shared.tv.PlayerCommandEnvelope
 import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
+import dev.jellystructure.shared.tv.RaviloWireJson
 import dev.jellystructure.shared.tv.RememberedChoice
+import dev.jellystructure.shared.tv.SessionLoadEnvelope
 import dev.jellystructure.shared.tv.TrackInput
 import dev.jellystructure.shared.tv.rememberPick
 import dev.jellystructure.shared.tv.rememberedAudioIndex
@@ -45,7 +47,9 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -298,6 +302,8 @@ private class Screen(private val serverUrl: String) {
                     onPlaystateCommand = { env -> onPlaystateCommand(env) },
                     onPlayerCommand = { env -> onPlayerCommand(env) },
                     onNavigate = { env -> onNavigate(env) },
+                    onSessionDirective = { type, text -> onSessionDirective(type, text) },
+                    outgoing = outgoing,
                 )
             }
             delay(backoff)
@@ -321,6 +327,30 @@ private class Screen(private val serverUrl: String) {
     }
 
     // ── backend → screen ──
+    /** Frames this app sends on the events socket: today only `session_load_failed`. */
+    private val outgoing = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /**
+     * DEB-4808 (FR-10) — a phone's *Play on* list starts a session on this TV (R370), and the backend answers it with a
+     * `session_load` to the socket, not a `play_item`. A film or an episode starts as a push would (the session joins on the
+     * item the TV then reports); a kind this app does not play is refused on the session, never dropped, or the server's
+     * watchdog ends it `failed` 10 s later with nothing said (R380, FR-R380-11).
+     */
+    private suspend fun onSessionDirective(type: String, text: String) {
+        if (type != "session_load") return
+        val env = runCatching { RaviloWireJson.decodeFromString(SessionLoadEnvelope.serializer(), text) }.getOrNull() ?: return
+        val id = env.items.getOrNull(env.index) ?: env.items.firstOrNull() ?: return
+        if (env.kind != "film" && env.kind != "episode") {
+            outgoing.tryEmit(
+                "{\"type\":\"session_load_failed\",\"id\":${JsonPrimitive(env.sessionId)},\"kind\":${JsonPrimitive(env.kind)}}",
+            )
+            return
+        }
+        val detail = if (env.kind == "film") withTimeoutOrNull(3_000) { runCatching { api.getMovie(id) }.getOrNull() } else null
+        onPlayItem(PlayItemEnvelope(type = "play_item", jellyfinId = id, kind = if (env.kind == "film") "movie" else "episode",
+            title = env.title, startPositionMs = env.startMs, logoUrl = detail?.logoUrl, logoInk = detail?.logoInk, segments = detail?.segments))
+    }
+
     private suspend fun onPlayItem(env: PlayItemEnvelope) {
         // The socket belongs to the selected viewer. A queued event from an older socket cannot
         // switch this session to another viewer's token after the picker changes profiles.

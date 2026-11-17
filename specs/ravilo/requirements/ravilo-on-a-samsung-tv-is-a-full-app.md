@@ -837,3 +837,26 @@ supersedes FR-11's last bullet and R269's FR-R269-7 for this app.**
   - The could-not-reach state: Down from *Retry* reaches *Wrong server?*.
   - **FR-16's real-TV list gains one item.** On the owner's set, *Wrong server?* opens setup from the Samsung remote. Whether a
     long Back on the real set also leaves the app is recorded but not fought.
+
+## Amendment 2026-11-17 (DEB-4808) — a phone's *Play on* reaches the TV as a `session_load`, and the TV plays it
+
+Found by QA on the Tizen 5.0 emulator (DEB-4808, step 6): *Samsung TV* was listed in Ravilo Web's *Play on*, a send made the backend log
+`start film on screen-… → session_load`, and the TV never followed with a `playback start`. FR-10 said a phone's `play_item` acts as in
+the receiver, but the *Play on* list does not push a `play_item`: it starts a session (R370), and the backend sends the place a
+`session_load` (R380, FR-R380-11). The Tizen app had no handler for it, so it was dropped and the session ended `failed` after 10 s.
+This restores FR-10's *A phone can still send a title to it*; it is not a new behaviour.
+
+- **A `session_load` of a film or an episode starts as a `play_item` does.** The item is `items[index]`, the start is `start_ms`,
+  the title is the envelope's. A film also reads `GET /api/tv/movie/{id}` for its logo and Skip Intro markers, waiting at most 3 s;
+  a detail that does not come is a play without them. The session joins on the item the TV then reports, so the TV sends no
+  session id. Everything after the start is FR-9's: progress, Stop from the phone, the page and tile the viewer was on.
+- **An episode started this way carries no *next up* and no S·E line** (the envelope has neither); DEB-4660's page owns an episode's
+  context, as in the 2026-11-16 amendment.
+- **Any other kind is refused, not dropped.** A `session_load` of `music` or `audiobook` is answered on the socket with
+  `{"type":"session_load_failed","id":<session>,"kind":<kind>}`, as every Ravilo app does (FR-R380-11), and nothing starts.
+- **No wire change.** The envelope and the refusal frame already exist; the app declares nothing new on its socket (`plays=` absent
+  reads as `video`).
+- **Proof.** `ravilo-screen-play-from-tv.spec.ts`: a `session_load` of a film starts it (one `/api/tv/playback/start`, no
+  `/api/remote/play`), Stop from the phone returns to the page; a `session_load` of a song sends `session_load_failed` and starts nothing.
+- **Not covered by CI, so it stays with the QA ticket:** that the TV is offered at all on Tizen 10.0 (DEB-4808 found *Samsung TV*
+  missing from Ravilo Web's list there while its socket was connected), and the stop-returns-to-the-same-focus half on a real emulator.

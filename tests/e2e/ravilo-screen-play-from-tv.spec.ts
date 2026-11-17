@@ -23,6 +23,8 @@ const ticket = (itemId: string, startMs: number) => ({
   jellyfin_base_url: API, access_token: "", item_id: itemId, container: "ts", direct_play: false,
   hls_url: `${API}/hls/${itemId}/master.m3u8`, start_position_ms: startMs, expires_at: 9_999_999_999,
 });
+const sessionLoad = (kind: string, id: string, extra: object = {}) =>
+  ({ type: "session_load", session_id: "ps-1", kind, items: [id], index: 0, start_ms: 0, title: "Paper Moon", ...extra });
 const playItem = (id: string, extra: object = {}) => ({ type: "play_item", jellyfin_id: id, kind: "movie", title: "Paper Moon", ...extra });
 
 type Seen = { progress: any[]; stops: any[]; starts: any[]; remotePlays: any[]; statuses: any[]; restreams: any[] };
@@ -45,7 +47,7 @@ function fakeSocketInitScript() {
       setTimeout(() => { this.readyState = 1; this.emit("open", new Event("open")); }, 0);
     }
     emit(type: string, ev: Event) { this.dispatchEvent(ev); (this as any)["on" + type]?.(ev); }
-    send() {}
+    send(data: string) { ((window as any).__sent ??= []).push(data); }
     close() { this.readyState = 3; this.emit("close", new Event("close")); }
   }
   (window as any).WebSocket = FakeSocket;
@@ -266,6 +268,27 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect(page.locator("#shell-body .shell-target.focused")).toHaveAttribute("id", focusedBefore!);
     // FR-10: nothing on the TV sends to another device.
     await expect(page.locator("#shell")).not.toContainText(/play on|cast/i);
+  });
+
+  test("DEB-4808 (FR-10): a phone's Play on reaches the TV as a session_load, and the film starts as a push does", async ({ page }) => {
+    const seen = await boot(page);
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), sessionLoad("film", "ep-1", { start_ms: 30_000 }));
+    await waitForAvplayCall(page, "play");
+    await shellOff(page);
+    expect(seen.starts.map((b) => b.item_id)).toEqual(["ep-1"]);
+    expect(seen.remotePlays).toEqual([]);
+    await page.evaluate(() => (window as any).__pushEvent({ type: "playstate_command", command: "Stop" }));
+    await shellOn(page);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+  });
+
+  test("DEB-4808 (FR-10): a session_load of a kind the TV does not play is refused on the session, and nothing starts", async ({ page }) => {
+    const seen = await boot(page);
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), sessionLoad("music", "song-1"));
+    await expect.poll(() => page.evaluate(() => ((window as any).__sent ?? []).map((f: string) => JSON.parse(f))))
+      .toContainEqual({ type: "session_load_failed", id: "ps-1", kind: "music" });
+    expect(seen.starts).toEqual([]);
+    await shellOn(page);
   });
 
   test("FR-9: a refused start from the TV says why without \"from your phone\"; one from a phone still does", async ({ page }) => {
