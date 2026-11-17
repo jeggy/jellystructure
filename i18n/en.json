@@ -1401,5 +1401,20 @@
   "download.resume": "Resume",
   "settings.downloads": "Downloads",
   "settings.wifi_only": "Wi-Fi only",
-  "settings.wifi_only_sub": "Only download while this phone is on Wi-Fi."
+  "settings.wifi_only_sub": "Only download while this phone is on Wi-Fi.",
+  "home_hook.title": {"text": "Home screen", "note": "DEB-4910 (FR-1) — the TV-only Settings section."},
+  "home_hook.use": {"text": "Use Ravilo as home screen", "note": "DEB-4910 (FR-1) — the switch. TV only, kept on the TV, not per viewer."},
+  "home_hook.state_on": "Home, start-up and waking the TV open Ravilo.",
+  "home_hook.state_off": "The TV's own home screen opens, as usual.",
+  "home_hook.state_needs_android": {"text": "One step is still needed in Android settings.", "note": "DEB-4910 (FR-2) — shown instead of On while Android's accessibility switch for Ravilo is off."},
+  "home_hook.state_paused": {"text": "Paused: Ravilo closed unexpectedly, so the TV's own home screen is back. Turn this off and on again to try once more.", "note": "DEB-4910 (FR-8)."},
+  "home_hook.open_android": "Open Android settings",
+  "home_hook.stock_home_fallback": {"text": "The TV's home screen", "note": "DEB-4910 (FR-5) — only when Android gives no name for the TV's own home screen; otherwise the row is labelled with that name."},
+  "home_hook.stock_home_sub": "Opens it and lets it stay until you open something else.",
+  "home_hook.disclosure_title": {"text": "Let Ravilo notice the TV's home screen", "note": "DEB-4910 (FR-2) — the screen shown before Android's own warning. It is also the in-app disclosure Google Play asks for."},
+  "home_hook.disclosure_body": "To open Ravilo when you press Home, Ravilo uses an Android accessibility service. It only notices when the TV's own home screen appears, so that Ravilo can open instead. It does not read anything on the screen and nothing you type.",
+  "home_hook.disclosure_next": "Next, Android asks you to turn Ravilo on in its accessibility settings. You can turn it off there, or here, at any time.",
+  "home_hook.disclosure_continue": "Continue to Android settings",
+  "home_hook.disclosure_cancel": "Not now",
+  "home_hook.service_description": {"text": "Opens Ravilo when the TV's home screen appears. It does not read the screen or anything you type.", "note": "DEB-4910 (FR-9) — the line Android shows on its accessibility page. Mirrored in ravilo-ui's Android resources (values/strings.xml, values-da, values-fo); a test fails if they drift."}
 }

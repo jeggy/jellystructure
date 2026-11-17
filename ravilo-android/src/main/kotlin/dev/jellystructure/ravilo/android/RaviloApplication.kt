@@ -22,5 +22,7 @@ class RaviloApplication : Application() {
             TvDeviceName.value = runCatching { Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         }
         CastConnectReceiver.init(this)
+        // DEB-4910 (FR-8) — TV only: how the last process ended is read here, before the hook's service or any activity runs.
+        dev.jellystructure.ravilo.ui.homehook.installHomeHook(this)
     }
 }

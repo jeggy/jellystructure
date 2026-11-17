@@ -59,6 +59,10 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         CastConnectReceiver.handleIntent(intent)
+        // DEB-4910 (FR-3) — the hook brought Ravilo up while it was already running: Home inside Ravilo lands on the top of Home.
+        if (intent.getBooleanExtra(dev.jellystructure.ravilo.ui.homehook.EXTRA_FROM_HOME_HOOK, false)) {
+            dev.jellystructure.ravilo.ui.homehook.HomeHook.requestHome()
+        }
     }
 
     // R266 (FR-R266-2) — the receiver lives while the app is on screen and is stopped with it: never held across a
@@ -66,12 +70,14 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         CastConnectReceiver.start()
+        dev.jellystructure.ravilo.ui.homehook.HomeHook.activityForeground(true)   // DEB-4910 (FR-8)
     }
 
     override fun onStop() {
         // R380 (found live 2026-10-09) — Home ends music the server started on this TV too, not only a Cast LOAD's.
         dev.jellystructure.ravilo.ui.seams.TvCastChannel.appLeftScreen()
         CastConnectReceiver.stop()
+        dev.jellystructure.ravilo.ui.homehook.HomeHook.activityForeground(false)  // DEB-4910 (FR-8) — a clean leave, not a close
         super.onStop()
     }
 }

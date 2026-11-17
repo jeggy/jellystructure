@@ -1326,5 +1326,20 @@
   "download.resume": "Halt fram",
   "settings.downloads": "Niðurtøk",
   "settings.wifi_only": "Bert Wi-Fi",
-  "settings.wifi_only_sub": "Tak bert niður, tá hendan telefonin er á Wi-Fi."
+  "settings.wifi_only_sub": "Tak bert niður, tá hendan telefonin er á Wi-Fi.",
+  "home_hook.title": "Heimaskíggi",
+  "home_hook.use": "Brúka Ravilo sum heimaskíggja",
+  "home_hook.state_on": "Heim-knappurin, uppstart og tá sjónvarpið vaknar opna Ravilo.",
+  "home_hook.state_off": "Egni heimaskíggi sjónvarpsins opnast sum vanligt.",
+  "home_hook.state_needs_android": "Eitt stig manglar enn í stillingunum hjá Android.",
+  "home_hook.state_paused": "Steðgað: Ravilo lukkaðist óvæntað, so egni heimaskíggi sjónvarpsins er aftur. Sløkk og tendra aftur fyri at royna eina ferð afturat.",
+  "home_hook.open_android": "Opna stillingarnar hjá Android",
+  "home_hook.stock_home_fallback": "Heimaskíggi sjónvarpsins",
+  "home_hook.stock_home_sub": "Opnar hann og letur hann standa, til tú opnar okkurt annað.",
+  "home_hook.disclosure_title": "Lat Ravilo varnast heimaskíggja sjónvarpsins",
+  "home_hook.disclosure_body": "Fyri at opna Ravilo, tá tú trýstir á Heim, brúkar Ravilo eina atkomutænastu hjá Android. Hon varnast bert, tá egni heimaskíggi sjónvarpsins kemur fram, so Ravilo kann opna í staðin. Hon les einki á skíggjanum og einki, tú skrivar.",
+  "home_hook.disclosure_next": "Síðani biður Android teg tendra Ravilo í atkomustillingunum hjá sær. Tú kanst sløkkja tað hartil ella her hvørja løtu.",
+  "home_hook.disclosure_continue": "Hald fram til stillingarnar hjá Android",
+  "home_hook.disclosure_cancel": "Ikki nú",
+  "home_hook.service_description": "Opnar Ravilo, tá heimaskíggi sjónvarpsins kemur fram. Hon les ikki skíggjan ella nakað, tú skrivar."
 }

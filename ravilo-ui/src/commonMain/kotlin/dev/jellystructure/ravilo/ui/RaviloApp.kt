@@ -57,6 +57,10 @@ import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocusFor
 import dev.jellystructure.ravilo.ui.focus.keyboardMode
 import dev.jellystructure.ravilo.ui.focus.BackToTopRegistry
 import dev.jellystructure.ravilo.ui.focus.LocalBackToTop
+import dev.jellystructure.ravilo.ui.homehook.HomeHook
+import dev.jellystructure.ravilo.ui.homehook.HomeRequestAction
+import dev.jellystructure.ravilo.ui.homehook.backAtHomeRootLeavesApp
+import dev.jellystructure.ravilo.ui.homehook.homeRequestAction
 import dev.jellystructure.ravilo.i18n.resolveAndRememberLanguage
 import dev.jellystructure.ravilo.ui.screens.installDeviceLanguageStore
 import dev.jellystructure.ravilo.ui.screens.BrowseKind
@@ -1826,6 +1830,21 @@ fun RaviloApp(
         // R275 (FR-R275-5) — where a page declares its own top, for the one Back handler that a phone's
         // system Back actually reaches. Empty on the TV, which keeps the key-event path.
         val backToTop = remember { BackToTopRegistry() }
+        // DEB-4910 (FR-3) — the hook brought Ravilo up while it was already running (Home pressed inside Ravilo): land on the top of
+        // Home, focus on its first target. A player, the Now playing page and every overlay are closed as Back would close them.
+        // Sign-in and the profile picker have no Home to go to and stay as they are.
+        LaunchedEffect(Unit) {
+            HomeHook.homeRequests.collect {
+                profileMenuOpen = false
+                trackSheet = null
+                val top = stack.last()
+                when (homeRequestAction(stack.size, top is Dest.Home || top is Dest.MusicListen, top is Dest.Login || top is Dest.ProfilePicker)) {
+                    HomeRequestAction.Ignore -> {}
+                    HomeRequestAction.ScrollToTop -> if (!backToTop.consumeBack()) reselectTick++
+                    HomeRequestAction.ResetToHome -> resetTo(homeDest(destDisplayName(top)))
+                }
+            }
+        }
         val castSender = rememberCastSender(apiClient)
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
@@ -2322,7 +2341,8 @@ fun RaviloApp(
                 dest is Dest.TvNowPlaying -> hideTvNowPlaying()   // R380 — hide, never leave the app
                 stack.size > 1 -> pop()
                 backGoesHome -> resetTo(homeDest(destDisplayName(dest)))   // R321 — Listen is music mode's Home
-                atHomeRoot -> exitApp()
+                // DEB-4910 (FR-3/FR-4) — with the hook acting, leaving would only bring it back: Back at the top of Home does nothing.
+                atHomeRoot -> if (backAtHomeRootLeavesApp(HomeHook.active())) exitApp()
             }
         }
         // R261 (FR-R261-3/5, dev review item 4) — safe-area padding used to be applied here, wrapping
@@ -2366,7 +2386,7 @@ fun RaviloApp(
                         // remote's physical Back key (a real Compose KeyEvent, handled here rather than
                         // through PlatformBackHandler's system-gesture bridge).
                         (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && atHomeRoot ->
-                            { exitApp(); true }
+                            { if (backAtHomeRootLeavesApp(HomeHook.active())) exitApp(); true }   // DEB-4910 (FR-3) — see the handler above
                         else -> false
                     }
                 }

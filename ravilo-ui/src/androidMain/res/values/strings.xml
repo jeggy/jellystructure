@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEB-4910 (FR-9) — mirrors i18n/en.json "home_hook.service_description", which is the source: Android reads the service
+     description from a resource, not from the JSON. HomeHookManifestTest fails if the two drift. -->
+<resources>
+    <string name="ravilo_home_hook_service_description">Opens Ravilo when the TV\'s home screen appears. It does not read the screen or anything you type.</string>
+</resources>

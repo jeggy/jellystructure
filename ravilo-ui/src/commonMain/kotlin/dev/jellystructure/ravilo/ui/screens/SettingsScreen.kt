@@ -46,7 +46,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import dev.jellystructure.ravilo.ui.homehook.HomeHook
+import dev.jellystructure.ravilo.ui.homehook.HomeHookState
+import dev.jellystructure.ravilo.ui.homehook.HomeHookToggle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -235,6 +239,8 @@ fun SettingsScreen(
     var showSignOutConfirm by remember { mutableStateOf(false) }
     // R263 (FR-R263-8) — the only way back to the install card once dismissed.
     var showInstallCard by remember { mutableStateOf(false) }
+    // DEB-4910 (FR-2) — the plain-words screen before Android's own accessibility warning.
+    var showHomeHookDisclosure by remember { mutableStateOf(false) }
 
     // R33: silently re-pull settings when the user's config changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -317,6 +323,7 @@ fun SettingsScreen(
                     onChangePassword = onChangePassword,
                     onSignInTv = onSignInTv,
                     onInstallRavilo = { showInstallCard = true },
+                    onHomeHookDisclosure = { showHomeHookDisclosure = true },
                     // Desktop layout draws no Back here (the toolbar has it), so the first section has nothing above it.
                     topFR = if (deskLayout) null else backFR,
                     firstFR = firstFR,
@@ -333,6 +340,12 @@ fun SettingsScreen(
                     InstallCardIfEligible(forceShow = true, onDismiss = { showInstallCard = false })
                 }
             }
+        }
+        if (showHomeHookDisclosure) {
+            HomeHookDisclosure(
+                onContinue = { showHomeHookDisclosure = false; HomeHook.controller?.continueToAndroid() },
+                onCancel = { showHomeHookDisclosure = false },
+            )
         }
         // R337 — the desktop's toolbar (Back, Play on…) in place of the page's own Back.
         if (deskLayout) dev.jellystructure.ravilo.ui.components.AppBar()
@@ -362,6 +375,68 @@ fun SettingsScreen(
                         scope.launch { store.signOutActiveSession(); onSignOut() }
                     },
                 )
+            }
+        }
+    }
+}
+
+/**
+ * DEB-4910 (FR-2) — the plain-words screen that comes before Android's own accessibility warning, and the in-app disclosure
+ * Google Play asks for. It says what the hook does and, as plainly, what it does not read. Focus lands on *Continue*; Back is *Not now*.
+ */
+@Composable
+internal fun HomeHookDisclosure(onContinue: () -> Unit, onCancel: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val continueFR = remember { FocusRequester() }
+    val cancelFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { continueFR.requestFocus() } }
+    Box(
+        modifier = Modifier.fillMaxSize().background(colors.overlay).keepsFocusInside(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 640.dp)
+                .background(colors.surface, RoundedCornerShape(14.dp))
+                .padding(32.dp),
+        ) {
+            Text(str("home_hook.disclosure_title"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Text(str("home_hook.disclosure_body"), color = colors.text, fontSize = 15.sp)
+            Spacer(Modifier.height(10.dp))
+            Text(str("home_hook.disclosure_next"), color = colors.textSecondary, fontSize = 14.sp)
+            Spacer(Modifier.height(28.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                var continueFocused by rememberFocusVisual()
+                Box(
+                    modifier = Modifier
+                        .background(colors.accent, RoundedCornerShape(8.dp))
+                        .focusRing(continueFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
+                        .dpadFocusable(
+                            focusRequester = continueFR,
+                            onFocused = { continueFocused = true },
+                            onBlurred = { continueFocused = false },
+                            onRight = { runCatching { cancelFR.requestFocus() } },
+                            onSelect = onContinue,
+                            onBack = onCancel,
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) { Text(str("home_hook.disclosure_continue"), color = colors.onAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                var cancelFocused by rememberFocusVisual()
+                Box(
+                    modifier = Modifier
+                        .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                        .focusRing(cancelFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
+                        .dpadFocusable(
+                            focusRequester = cancelFR,
+                            onFocused = { cancelFocused = true },
+                            onBlurred = { cancelFocused = false },
+                            onLeft = { runCatching { continueFR.requestFocus() } },
+                            onSelect = onCancel,
+                            onBack = onCancel,
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) { Text(str("home_hook.disclosure_cancel"), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
     }
@@ -981,6 +1056,8 @@ private fun SettingsContent(
     // R263 (FR-R263-8) — "re-surfaced only from Settings → Install Ravilo"; absent entirely off the
     // web (isWebPlatform), never a greyed/inert row.
     onInstallRavilo: () -> Unit = {},
+    // DEB-4910 (FR-2) — opens the plain-words screen that comes before Android's accessibility settings.
+    onHomeHookDisclosure: () -> Unit = {},
     // R350 re-test (FR-R350-16) — Back above the first section (null: nothing drawn above it), and the requester the
     // first section's first control wears, so Back's Down lands there.
     topFR: FocusRequester? = null,
@@ -1003,6 +1080,17 @@ private fun SettingsContent(
     val goTop: (() -> Unit)? = topFR?.let { fr -> { runCatching { fr.requestFocus() }; Unit } }
     val progressFR = remember { FocusRequester() }
     val autoplayFR = remember { FocusRequester() }
+    // DEB-4910 (FR-1) — TV only: the Home screen section sits between Playback and Account. The state is read once per composition
+    // and again each time the screen comes back on (the viewer returns from Android's settings: FR-2 shows the true state).
+    val hhController = HomeHook.controller.takeIf { HomeHook.sectionShows() }
+    var hhTick by remember { mutableIntStateOf(0) }
+    val hhOnScreen = dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen()
+    LaunchedEffect(hhOnScreen) { hhTick++ }
+    val hhState = remember(hhTick, hhController) { hhController?.state() ?: HomeHookState.Off }
+    val hhToggleFR = remember { FocusRequester() }
+    val hhActionFR = remember { FocusRequester() }
+    val hhHasAction = hhState == HomeHookState.On || hhState == HomeHookState.NeedsAndroidStep
+    val aboveAccountFR = if (hhController == null) autoplayFR else if (hhHasAction) hhActionFR else hhToggleFR
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
     val signInTvFR = remember { FocusRequester() }
@@ -1012,12 +1100,12 @@ private fun SettingsContent(
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     // DEB-2233 (FR-6) — *Sign in a TV* sits after the password place and before Install: password → Sign in a TV → Install → Sign out.
     val hasSignInTv = onSignInTv != null
-    val aboveSignInTvFR = if (pwRow.focusable) changePwFR else autoplayFR
+    val aboveSignInTvFR = if (pwRow.focusable) changePwFR else aboveAccountFR
     val belowSignInTvFR = if (isWebPlatform) installFR else signOutFR
     val belowPasswordFR = if (hasSignInTv) signInTvFR else if (isWebPlatform) installFR else signOutFR
     val belowAutoplayFR = if (pwRow.focusable) changePwFR else belowPasswordFR
-    val aboveInstallFR = if (hasSignInTv) signInTvFR else if (pwRow.focusable) changePwFR else autoplayFR
-    val aboveSignOutFR = if (isWebPlatform) installFR else if (hasSignInTv) signInTvFR else if (pwRow.focusable) changePwFR else autoplayFR
+    val aboveInstallFR = if (hasSignInTv) signInTvFR else if (pwRow.focusable) changePwFR else aboveAccountFR
+    val aboveSignOutFR = if (isWebPlatform) installFR else if (hasSignInTv) signInTvFR else if (pwRow.focusable) changePwFR else aboveAccountFR
 
     // R338 — the theme settings, when the server has them (FR-R338-5); an older server keeps the three skins below.
     val themeEntryFR = if (themesFirst) firstFR else remember { FocusRequester() }
@@ -1124,7 +1212,7 @@ private fun SettingsContent(
         focusRequester = autoplayFR,
         onToggle = { store.saveAutoplayNext(!config.autoplayNext) },
         onUp = { progressFR.requestFocus() },
-        onDown = { belowAutoplayFR.requestFocus() },
+        onDown = { (if (hhController != null) hhToggleFR else belowAutoplayFR).requestFocus() },
     )
     // R322 (FR-R322-9, J6's lean) — Settings ▸ Listening: *Even out volume*, on by default. Wherever music plays
     // and the device is not a TV: the phone, and (R329) the Mac.
@@ -1185,6 +1273,65 @@ private fun SettingsContent(
     // R350 re-test (FR-R350-16) — no focus grab here any more: this put the Playback toggle under the viewer's OK on
     // arrival. SettingsScreen keeps focus on ‹ Back, at the top.
 
+    // DEB-4910 (FR-1–FR-5, FR-8) — Home screen: one switch, what it is doing, and the one thing it can still need. TV only.
+    if (hhController != null) {
+        Spacer(Modifier.height(32.dp))
+        SectionHeader(str("home_hook.title"))
+        Spacer(Modifier.height(12.dp))
+        ToggleRow(
+            label = str("home_hook.use"),
+            checked = hhState == HomeHookState.On,   // FR-2 — never On while Android's switch is off
+            focusRequester = hhToggleFR,
+            onToggle = {
+                if (hhController.toggle() == HomeHookToggle.NeedsDisclosure) onHomeHookDisclosure()
+                hhTick++
+            },
+            onUp = { autoplayFR.requestFocus() },
+            onDown = { (if (hhHasAction) hhActionFR else belowAutoplayFR).requestFocus() },
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            str(when (hhState) {
+                HomeHookState.Off -> "home_hook.state_off"
+                HomeHookState.NeedsAndroidStep -> "home_hook.state_needs_android"
+                HomeHookState.Paused -> "home_hook.state_paused"
+                HomeHookState.On -> "home_hook.state_on"
+            }),
+            color = colors.textSecondary, fontSize = 13.sp,
+        )
+        if (hhHasAction) {
+            Spacer(Modifier.height(12.dp))
+            var actionFocused by rememberFocusVisual()
+            val stockLabel = remember(hhTick) { hhController.stockHomeLabel() }
+            Box(
+                modifier = Modifier
+                    .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                    .focusRing(actionFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
+                    .dpadFocusable(
+                        focusRequester = hhActionFR,
+                        onFocused = { actionFocused = true },
+                        onBlurred = { actionFocused = false },
+                        onUp = { hhToggleFR.requestFocus() },
+                        onDown = { belowAutoplayFR.requestFocus() },
+                        // FR-2: the one step Android still needs, through the same plain-words screen. FR-5: the stock home.
+                        onSelect = { if (hhState == HomeHookState.On) hhController.openStockHome() else onHomeHookDisclosure() },
+                    )
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (hhState == HomeHookState.On) {
+                    Column {
+                        // FR-5 — labelled with the stock home's own name as Android reports it.
+                        Text(stockLabel ?: str("home_hook.stock_home_fallback"), color = colors.text, fontSize = 14.sp)
+                        Text(str("home_hook.stock_home_sub"), color = colors.textSecondary, fontSize = 12.sp)
+                    }
+                } else {
+                    Text(str("home_hook.open_android"), color = colors.text, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+
     Spacer(Modifier.height(32.dp))
 
     // Account
@@ -1204,7 +1351,7 @@ private fun SettingsContent(
                     focusRequester = changePwFR,
                     onFocused = { changePwFocused = true },
                     onBlurred = { changePwFocused = false },
-                    onUp = { autoplayFR.requestFocus() },
+                    onUp = { aboveAccountFR.requestFocus() },
                     onDown = { belowPasswordFR.requestFocus() },
                     // FR-6a — the page is opened and nothing is awaited; no screen of ours opens.
                     onSelect = { if (pwRow is PasswordRow.Link) uriHandler.openUri(pwRow.url) else onChangePassword() },

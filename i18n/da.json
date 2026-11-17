@@ -1326,5 +1326,20 @@
   "download.resume": "Fortsæt",
   "settings.downloads": "Downloads",
   "settings.wifi_only": "Kun Wi-Fi",
-  "settings.wifi_only_sub": "Hent kun, når denne telefon er på Wi-Fi."
+  "settings.wifi_only_sub": "Hent kun, når denne telefon er på Wi-Fi.",
+  "home_hook.title": "Startskærm",
+  "home_hook.use": "Brug Ravilo som startskærm",
+  "home_hook.state_on": "Hjem-knappen, opstart og når tv'et vågner åbner Ravilo.",
+  "home_hook.state_off": "Tv'ets egen startskærm åbner som sædvanligt.",
+  "home_hook.state_needs_android": "Et trin mangler stadig i Androids indstillinger.",
+  "home_hook.state_paused": "På pause: Ravilo lukkede uventet, så tv'ets egen startskærm er tilbage. Slå det fra og til igen for at prøve en gang til.",
+  "home_hook.open_android": "Åbn Androids indstillinger",
+  "home_hook.stock_home_fallback": "Tv'ets startskærm",
+  "home_hook.stock_home_sub": "Åbner den og lader den blive, til du åbner noget andet.",
+  "home_hook.disclosure_title": "Lad Ravilo opdage tv'ets startskærm",
+  "home_hook.disclosure_body": "For at åbne Ravilo, når du trykker på Hjem, bruger Ravilo en tilgængelighedstjeneste i Android. Den opdager kun, når tv'ets egen startskærm kommer frem, så Ravilo kan åbne i stedet. Den læser intet på skærmen og intet, du skriver.",
+  "home_hook.disclosure_next": "Derefter beder Android dig slå Ravilo til i sine tilgængelighedsindstillinger. Du kan til enhver tid slå det fra der eller her.",
+  "home_hook.disclosure_continue": "Fortsæt til Androids indstillinger",
+  "home_hook.disclosure_cancel": "Ikke nu",
+  "home_hook.service_description": "Åbner Ravilo, når tv'ets startskærm kommer frem. Den læser ikke skærmen eller noget, du skriver."
 }
