@@ -663,3 +663,58 @@ no count reads `download.wait_busy`. None names Jellyfin, a person, a title or a
 acceptance 19 and 20 need every card full, or the encoder off, and on a server with viewers either one sends their next plays to Jellyfin's
 transcoder. The route's test fills the cards and the phone's controller test reads the answers; a pass on a live server is for an hour
 with nobody watching.
+
+## Amendment 2026-11-17: a series folds to one row, and an episode row shows its still (DEB-4891)
+
+The owner, on DEB-4891: *"The downloads page is missing still images and for series it would be nice with a collapse, so it's easy to
+navigate what is available offline instead of scrolling through a bunch of episodes."* Two things, and only the second is an amendment.
+
+**FR-9, restored, not amended: an episode row shows its still.** The slice 5 amendment above already says it: *"online it draws the
+server's"*. The build draws the server's poster for a film and a series header, and draws an episode's saved still offline, but online an
+episode row draws no picture at all, only the colour and the number. That is the bug. Every episode row on the page, in the *Series* list
+and in the *Downloading* block, draws:
+- **online,** the episode's own `still_url` from the series page the phone saved beside the download (FR-7's `item` payload, the
+  `GET /api/tv/series/{id}` body, refreshed on reconnect by FR-13). Downloads saved before this change have that page already, so they
+  get their still with no new download;
+- **offline,** the saved `still` file, as today;
+- **with neither,** the colour and the episode number, as today.
+
+The number stays on top of the picture, as it does today. No wire change: the route already sends the still in the page and in the ticket's
+`artwork`.
+
+**FR-9, amended: a series folds to one row** (owner: *"a collapse"*).
+- **Folded by default.** Each series in the *Series* list opens as its header only: the poster, the title, the season line with the episode
+  count, and the series' size, exactly as the header is drawn today. No season heading and no episode row shows under it.
+- **One tap unfolds it.** A tap anywhere on the header, except the delete control, unfolds the series into today's card: its season
+  headings, then its episodes in order. Another tap folds it again. Unfolding one series leaves the others as they are.
+- **The chevron.** The header shows the shipped `ChevronGlyph`, pointing down when folded and up when unfolded, 20 dp, in the secondary text
+  colour. It sits between the text and the delete control, which keeps its place and its 44 dp target. Nothing else on the card moves.
+- **How long a series stays open.** For as long as the app runs, by series. Playing an episode and coming Back, or leaving the page and
+  coming back to it, finds the same series open. Starting the app again finds every series folded. Nothing is saved to disk.
+- **Selecting (FR-10).** A tap on the header keeps doing what it does today in select mode: it selects or clears every episode of the series,
+  folded or not. In select mode the chevron is its own 44 dp target and only folds or unfolds. Long-press on an episode starts selecting, as
+  today, which needs the series open.
+- **Deleting (FR-10).** The header's delete and its confirm do not change. A series that loses its last episode leaves the list, as today. An
+  episode that finishes downloading joins its series' total without unfolding it.
+- **Unchanged.** The *Films* list, the *Downloading* block (a queue, so it stays one row per download), the storage bar, the order of
+  everything (the slice 4 amendment) and the offline page. Seasons do not fold on their own inside an open series: a series is the unit the
+  owner asked for, and a second level costs a tap on every visit.
+- **Screen readers.** The header carries Compose's expand and collapse semantics and its state, so TalkBack reads it as collapsed or
+  expanded in the phone's own language. No visible string is added.
+- **No design round.** The folded state is the header already drawn in `78228352`, with one shipped glyph added. If the owner wants the
+  folded row to look different from the header, that is a round, asked for on DEB-4891.
+
+**Acceptance, added.**
+- **25.** Online, with two episodes of one series downloaded, each episode row shows that episode's still with its number on top. The same
+  episodes in flight mode show the saved stills. An episode the server has no still for shows the colour and the number.
+- **26.** With two series downloaded, one of them with several episodes over two seasons, the page opens with each series as one row: the
+  poster, the title, its season line with the episode count, and the size, and no episode below it. A tap shows its seasons and episodes. A second tap
+  hides them. The other series does not move.
+- **27.** Unfold a series, play one of its episodes, and press Back: the series is still open. Close the app completely and open it again:
+  every series is folded.
+- **28.** In select mode, a tap on a folded series' header selects all its episodes, and *Delete · {size}* names the series' size. A tap on
+  its chevron unfolds it and changes no selection.
+- **29.** TalkBack on a folded header reads the series and that it is collapsed, and offers to expand it.
+
+**Proven in CI:** 25 to 28 in `DownloadsScreenTest` (`:ravilo-ui:desktopTest`), with a fake saved page and saved files. **QA on the
+Pixel:** 25 online and in flight mode, 27, and 29.
