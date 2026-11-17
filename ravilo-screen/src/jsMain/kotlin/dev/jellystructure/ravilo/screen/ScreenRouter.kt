@@ -23,6 +23,7 @@ internal data class ScreenRouteEntry(
     var feed: HomeFeed? = null,
     val detail: ScreenDetail? = null,
     val browse: ScreenBrowse? = null,
+    val search: ScreenSearch? = null,
 )
 
 /**
@@ -133,7 +134,14 @@ internal class ScreenShell(
 
     fun handleKey(event: KeyboardEvent): Boolean {
         if (!visible || player) return false
+        // DEB-4662 (FR-8) — in the search field the keys that type or move the caret are the field's own: taken here
+        // (so a held Backspace is not the three-second Back that reopens server setup) and left un-prevented.
+        val inField = entries.last().focusId == ScreenSearch.FIELD_ID && entries.last().search != null
+        if (inField && (event.key == "Backspace" || event.key == "Enter" || event.key == "ArrowLeft" || event.key == "ArrowRight")) return true
         when {
+            inField && event.key == "ArrowDown" -> {
+                (document.getElementById("${ScreenSearch.TILE_PREFIX}0") as? HTMLElement)?.let(focus::focus)
+            }
             isBackKey(event) -> back()
             event.key == "Enter" -> activate()
             event.key == "ArrowLeft" -> focus.move(-1, 0)
@@ -164,6 +172,8 @@ internal class ScreenShell(
             current.detail.render(body)
         } else if (current.browse != null) {
             current.browse.render(body)
+        } else if (current.search != null) {
+            current.search.render(body)
         } else {
             body.textContent = ""
             val feed = current.feed
@@ -214,6 +224,13 @@ internal class ScreenShell(
         }
     }
 
+    /** The results under the search field changed: if the focused tile went with them, focus falls back to the field. */
+    private fun searchChanged() {
+        val current = entries.lastOrNull() ?: return
+        if (!visible || player || current.search == null) return
+        if (current.focusId.startsWith(ScreenSearch.TILE_PREFIX)) focus.refocus()
+    }
+
     /** A title's page has something new to draw (its facts arrived, or a write-through answered): redraw it if it is still the route. */
     private fun detailChanged(page: ScreenDetail) {
         if (!visible || player || entries.lastOrNull()?.detail !== page) return
@@ -254,12 +271,19 @@ internal class ScreenShell(
             "series" -> ScreenBrowse("series", home)
             else -> null
         }
-        entries.add(ScreenRouteEntry(destination, "shell-page-target", mutableMapOf("bar" to focused), browse = browse))
+        val search = if (destination == "search") ScreenSearch(api, home, onResults = ::searchChanged) else null
+        entries.add(ScreenRouteEntry(destination, if (search != null) ScreenSearch.FIELD_ID else "shell-page-target",
+            mutableMapOf("bar" to focused), browse = browse, search = search))
         render()
     }
 
     private fun back() {
         val current = entries.last()
+        // DEB-4662 (FR-8) — Back from the results returns to the field; the typed text is still in it.
+        if (current.search != null && current.focusId.startsWith(ScreenSearch.TILE_PREFIX)) {
+            (document.getElementById(ScreenSearch.FIELD_ID) as? HTMLElement)?.let(focus::focus)
+            return
+        }
         if (entries.size > 1) {
             ++loadGeneration
             entries.removeAt(entries.lastIndex)

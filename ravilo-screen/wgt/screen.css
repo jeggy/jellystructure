@@ -237,3 +237,7 @@
     .browse-count, .browse-empty { color: var(--ink-soft); font-size: 19px; }
     .browse-grid { display: flex; flex-wrap: wrap; margin: 18px -9px 0; }
     .browse-grid .home-tile { flex: 0 0 calc(16.666% - 18px); margin: 0 9px 30px; }
+    /* DEB-4662 FR-8 — the search field is a real input; the results reuse the browse grid. */
+    .search-field { box-sizing: border-box; display: block; width: 100%; margin-top: 18px; padding: 14px 20px; font: inherit; font-size: 28px; color: var(--ink); background: rgba(255,255,255,.08); border: 2px solid transparent; border-radius: 12px; outline: none; }
+    .search-field.focused { box-shadow: 0 0 0 4px var(--ring); background: rgba(255,255,255,.16); }
+    .search-hint { color: var(--ink-soft); font-size: 19px; }
