@@ -1,0 +1,242 @@
+/* Ravilo as the TV's home screen — the round's own rules.
+ *
+ * `../../ravilo/ravilo.css` is LINKED, not copied (PROCESS.md step 3), so every token, every one of
+ * the five TV skins and all three families in the pictures are the production ones. None of its
+ * component classes are reused: `.appbar` there is 92 px — a 46 dp drawing of a 60 dp bar — and
+ * building this round's baseline on it would make every measurement in it wrong. Everything here is
+ * `ha-` prefixed, so a collision in either direction is impossible (round 9 paid for the lesson).
+ *
+ * NO NUMBER LIVES IN THIS FILE. Every px is written inline by apps.js out of apps-data.js.
+ */
+
+/* ravilo.css locks the page to one scaled stage; a sheet of frames needs the page back. */
+html, body { height: auto; overflow: visible; background: #e9eaee; }
+body { font-family: 'Sora', sans-serif; }
+
+/* ---- the canvas (PROCESS.md: dark ink on the light backdrop) ----------------- */
+.ha-sheet { padding: 28px 28px 64px; }
+/* An integer margin and `width: fit-content`. A block section takes the sheet's whole content
+ * width, and a text canvas lays out to a fractional height, which pushes every frame after it onto
+ * a fractional y that Playwright rounds outwards — that is how the slim-header round's first render
+ * produced 1920 x 1081 TV pictures with a 4 px strip of backdrop down the right edge. Both
+ * annotation canvases are placed last in the sheet for the same reason. */
+.ha-frame { background: #e9eaee; margin-bottom: 40px; }
+.ha-only { padding: 0; width: fit-content; }
+.ha-only .ha-tv { display: block; }
+.ha-spec-frame { width: 1920px; }
+
+.ha-h { font-family: 'Space Grotesk', sans-serif; color: #12141b; font-size: 22px; font-weight: 700;
+  letter-spacing: -.2px; margin: 0 0 4px; }
+.ha-sub { color: #262a35; font-size: 14px; line-height: 1.45; margin: 0 0 14px; max-width: 1180px; }
+.ha-sub b { color: #12141b; }
+.ha-sub code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
+.ha-cap { color: #262a35; font-size: 13px; font-weight: 600; padding: 8px 0 6px; }
+.ha-tag { display: inline-block; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px;
+  font-weight: 600; letter-spacing: .3px; color: #12141b; background: #d3d6de;
+  border: 1px solid #b9bdc8; border-radius: 6px; padding: 2px 7px; margin: 0 6px 0 0; }
+.ha-tag.rec { background: #cdebdd; border-color: #8fc9ad; }
+.ha-tag.no { background: #f0d8d8; border-color: #cda3a3; }
+.ha-band { background: #e9eaee; padding: 12px 16px 14px; width: 1920px; }
+.ha-band .ha-h { font-size: 19px; margin-bottom: 2px; }
+.ha-band .ha-sub { margin: 0; font-size: 13px; }
+.ha-stack { display: flex; flex-direction: column; gap: 0; width: 1920px; }
+
+/* ---- the TV stage: 1920 x 1080, every child sized in px written by the JS ---- */
+.ha-tv { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+  background: var(--bg); color: var(--ink);
+  /* `onAccent` — the ink ON an accent fill (Colors.kt). ravilo.css has no token for it, and the
+   * first render used `--bg`, which drew the focused Search and Apps glyphs near-BLACK on the
+   * purple fill in aurora and midnight. It ships WHITE in every skin but noir, whose accent is
+   * amber. Only the pictures showed it; nothing mechanical could. */
+  --ha-on-accent: #fff; }
+.ha-tv[data-skin="noir"] { --ha-on-accent: #08070a; }
+.ha-tv * { box-sizing: border-box; }
+
+/* ---- the app bar ------------------------------------------------------------ */
+.ha-bar { position: absolute; left: 0; right: 0; top: 0; z-index: 40;
+  display: flex; align-items: center; }
+/* R62 / R352 — the vignette rides on top of both the transparent and the solid state. */
+.ha-bar::before { content: ''; position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+/* AppBar.kt scrolled: `colors.surface` at 0.95 — the SURFACE, not the page colour. `--bg-2` is
+ * ravilo.css's surface step; using `--bg` here drew a bar that was invisible against its own page. */
+.ha-bar.solid { background: var(--bg-2); }
+.ha-bar > * { position: relative; z-index: 1; }
+
+.ha-brand { display: flex; align-items: center; flex: none; }
+.ha-brand svg { display: block; flex: none; filter: drop-shadow(0 0 12px var(--ring-glow)); }
+.ha-wm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: var(--ink);
+  line-height: 1; white-space: nowrap; }
+
+.ha-nav { display: flex; align-items: center; flex: none; }
+.ha-navitem { font-family: 'Sora', sans-serif; color: var(--ink-soft); line-height: 1.3;
+  white-space: nowrap; }
+.ha-navitem.cur { color: var(--ink); font-weight: 600; }
+/* AppBar.kt: a nav item's focus is the INVERTED FILL, never a ring. SKILL-house names this as one
+ * of the system's two established treatments; direction B's pill therefore has to use it too. */
+.ha-navitem.focused { background: var(--ink); color: var(--bg); font-weight: 600; }
+
+.ha-right { margin-left: auto; display: flex; align-items: center; flex: none; }
+.ha-clock { font-family: 'Sora', sans-serif; color: var(--ink-soft); line-height: 1;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.ha-circle { border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  flex: none; position: relative; }
+.ha-circle svg { display: block; }
+.ha-ic { color: var(--ink); }
+.ha-ic.focused { background: var(--accent); color: var(--ha-on-accent); }
+.ha-av { background: var(--grad); color: #fff; font-family: 'Sora', sans-serif; font-weight: 700;
+  line-height: 1; }
+/* DEB-2597 (FR-2) — the avatar's focus is the RING ONLY; the face keeps the viewer's own colour.
+ * It does not invert the way Search does. */
+
+/* A bar pill — SurprisePill's shape, and direction B's Apps pill when drawn as an action rather
+ * than a tab. Its hairline at rest is what stops it reading as a tab. */
+.ha-pill { display: flex; align-items: center; flex: none; font-family: 'Sora', sans-serif;
+  font-weight: 600; color: var(--ink); white-space: nowrap;
+  border-style: solid; border-color: rgba(174,180,203,.4); }
+.ha-pill svg { display: block; flex: none; }
+.ha-pill.focused { background: var(--ink); color: var(--bg); border-color: transparent; }
+/* TvMusicPill: no hairline, a `--ink` fill at 0.10, and a title that ellipsises at 110 dp. */
+.ha-musicpill { background: rgba(243,244,251,.10); border: 0; }
+.ha-musicpill .cover { display: block; flex: none; }
+.ha-musicpill .ttl { display: block; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-weight: 600; }
+
+/* ---- hero + content rows (Home behind the bar) ------------------------------ */
+.ha-hero { position: absolute; left: 0; right: 0; top: 0; overflow: hidden; }
+.ha-hero-bg { position: absolute; inset: 0; }
+/* A key light on the right. The corpus gradient alone sits at 12-42 % lightness and under the
+ * production `--hero-tint` reads as a flat dark panel — which hides the one thing a transparent bar
+ * is transparent OVER. */
+.ha-hero-bg::after { content: ''; position: absolute; inset: 0;
+  background: radial-gradient(78% 92% at 72% 34%, rgba(255,255,255,.26), rgba(255,255,255,.06) 46%, transparent 72%); }
+.ha-hero-scrim { position: absolute; inset: 0; background: var(--hero-tint), var(--hero-floor); }
+.ha-hero-body { position: absolute; z-index: 3; }
+.ha-kicker { display: inline-flex; align-items: center; font-weight: 700; text-transform: uppercase;
+  color: var(--accent-2); line-height: 1; }
+.ha-tagline { color: var(--ink-soft); font-weight: 500; line-height: 1; }
+.ha-hero-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; line-height: 1;
+  letter-spacing: -1.5px; text-shadow: 0 2px 18px rgba(0,0,0,.7); }
+.ha-meta { display: flex; align-items: center; color: var(--ink-soft); line-height: 1.2; }
+.ha-meta .chip { background: var(--chip); color: var(--ink); font-weight: 500; }
+.ha-syn { color: var(--ink-soft); line-height: 1.45; }
+.ha-actions { display: flex; align-items: center; }
+
+.ha-page { position: absolute; left: 0; right: 0; }
+.ha-rowhead { display: flex; align-items: center; justify-content: space-between; }
+.ha-rowtitle { font-family: 'Space Grotesk', sans-serif; font-weight: 600; color: var(--ink);
+  line-height: 1.25; white-space: nowrap; }
+.ha-seeall { font-family: 'Sora', sans-serif; font-weight: 500; color: var(--accent); line-height: 1.25; }
+/* A row is a LazyRow: nowrap, nothing shrinks, and the screen's own overflow clips it. Enough tiles
+ * that the track always runs off the right edge, as it does on the device. */
+.ha-track { display: flex; align-items: flex-start; flex-wrap: nowrap; }
+.ha-track > * { flex: none; }
+.ha-tile { flex: none; position: relative; }
+.ha-art { position: relative; overflow: hidden; }
+.ha-art .ini { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: rgba(255,255,255,.26); }
+.ha-tile .lab { color: var(--ink-soft); font-weight: 500; line-height: 1.3; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.ha-tile .sub { color: var(--ink-dim); line-height: 1.3; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.ha-pbar { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.45); }
+.ha-pbar > i { display: block; height: 100%; background: var(--accent); }
+
+/* ---- the page head, DiscoverScreen's, reused rather than invented ----------- */
+.ha-ptitle { font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: var(--ink);
+  line-height: 1.2; }
+.ha-psub { color: var(--ink-soft); line-height: 1.35; }
+.ha-pnote { color: var(--ink-dim); line-height: 1.35; }
+
+/* ---- the Apps grid --------------------------------------------------------- */
+.ha-grid { display: flex; flex-wrap: wrap; align-content: flex-start; }
+.ha-app { position: relative; }
+/* Tile.kt's focus treatment, unchanged: a 3 dp `--ring` outline, scale 1.07 and a lift shadow.
+ * SKILL-house allows exactly two treatments and this is the tile one. */
+.ha-app.focused { z-index: 5; }
+.ha-app.focused .ha-plate { outline-style: solid; outline-color: var(--ring); }
+.ha-app .ha-plate { position: relative; overflow: hidden; display: flex; align-items: center;
+  justify-content: center; }
+/* A banner's own name, in white type on the flat plate. Centred, two lines at most, because a
+ * banner is 16:9 and a long name on one line is 7 sp of unreadable. */
+.ha-plate .nm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: #fff;
+  text-align: center; line-height: 1.12; letter-spacing: -.2px; }
+/* FR-11's icon-and-label fallback, inside the banner's own cell: the neutral rounded square
+ * Android draws for an app with no TV banner, and the app's name under it. Deliberately NOT a
+ * coloured plate — the point of the fallback is that the TV has no artwork to show, and inventing
+ * a colour for it would draw a banner the TV does not have. */
+/* The hairline matters. `--card` on `--bg` is a 4 % step, and in the first render the two fallback
+ * cells read as HOLES in the grid rather than as cells — the two apps Android has no banner for
+ * looked like two apps that had failed to load. */
+.ha-plate.fb { background: var(--card); border-style: solid; border-color: var(--line); }
+.ha-plate .sq { display: flex; align-items: center; justify-content: center; flex: none;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; }
+.ha-plate .fblab { font-family: 'Sora', sans-serif; font-weight: 500; color: var(--ink);
+  line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+/* The two fixed entries. Card, not plate: they are not apps and they are not the TV's artwork. */
+.ha-plate.fixed { background: var(--card-2); border-style: solid; border-color: var(--line); }
+.ha-plate.fixed svg { display: block; }
+
+/* ---- the Apps list (direction C) ------------------------------------------- */
+.ha-list { display: flex; }
+.ha-listcol { display: flex; flex-direction: column; }
+.ha-lrow { display: flex; align-items: center; position: relative; }
+.ha-lrow .ico { display: flex; align-items: center; justify-content: center; flex: none;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: #fff; }
+.ha-lrow .ico svg { display: block; }
+.ha-lrow .nm { font-family: 'Sora', sans-serif; font-weight: 500; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A list row is a chip, not a tile, so it takes the system's OTHER established treatment: the
+ * inverted fill. A 3 dp ring around an 864 dp row reads as a box, not as focus. */
+.ha-lrow.focused { background: var(--ink); }
+.ha-lrow.focused .nm { color: var(--bg); font-weight: 600; }
+
+/* ---- sign-in and can't-reach (TvSignInScreen) ------------------------------ */
+.ha-si { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ha-si-brand { display: flex; align-items: center; flex: none; }
+.ha-si-body { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
+.ha-si-row { display: flex; align-items: center; }
+.ha-qr { background: #fff; overflow: hidden; flex: none; }
+.ha-qr svg { display: block; width: 100%; height: 100%; }
+.ha-si-col { display: flex; flex-direction: column; }
+.ha-si-title { font-family: 'Sora', sans-serif; font-weight: 600; color: var(--ink); line-height: 1.2; }
+.ha-si-klabel { color: var(--ink-soft); text-transform: uppercase; line-height: 1; }
+.ha-si-code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700;
+  color: var(--ink); line-height: 1.05; white-space: nowrap; }
+.ha-si-how { color: var(--ink-soft); }
+.ha-chip { display: inline-flex; align-items: center; background: var(--card); align-self: flex-start; }
+.ha-chip .k { color: var(--ink-dim); text-transform: uppercase; line-height: 1; }
+.ha-chip .v { color: var(--ink); font-weight: 600; line-height: 1; }
+.ha-si-err { display: flex; flex-direction: column; align-items: center; }
+.ha-si-errline { font-family: 'Sora', sans-serif; font-weight: 600; color: var(--ink); text-align: center; }
+.ha-si-foot { display: flex; align-items: center; flex: none; }
+.ha-backhint { color: var(--ink-dim); }
+
+/* ---- RaviloButton --------------------------------------------------------- */
+.ha-btn { display: inline-flex; align-items: center; justify-content: center; position: relative;
+  font-family: 'Sora', sans-serif; font-weight: 600; white-space: nowrap; }
+.ha-btn svg { display: block; flex: none; }
+/* accentDim, the resting primary fill: the accent under a flat darkening plate rather than a
+ * filter, which would take the label down with it. */
+.ha-btn.pri { background: var(--accent); color: #fff; }
+.ha-btn.pri.rest { box-shadow: inset 0 0 0 999px rgba(10,12,19,.40); }
+.ha-btn.ghost { color: var(--ink-soft); border-style: solid; border-color: rgba(255,255,255,.26); }
+.ha-btn.ghost.focused { color: var(--ink); border-color: var(--accent); }
+
+/* ---- the measured specimen canvases --------------------------------------- */
+.ha-spec { background: #e9eaee; }
+.ha-spec > .ha-h, .ha-spec > .ha-sub, .ha-spec .ha-cap, .ha-spec .ha-dims, .ha-spec .ha-pair {
+  padding-left: 18px; padding-right: 18px; }
+/* The strips are full-bleed 1920 px — they are the bar at 1:1; only the prose is inset. */
+.ha-spec-strip { position: relative; width: 1920px; background: #0e111b; }
+.ha-spec-strip .ha-bar { position: absolute; }
+.ha-dims { display: flex; flex-wrap: wrap; gap: 0 18px; padding-top: 9px; padding-bottom: 22px; }
+.ha-dim { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #262a35;
+  white-space: nowrap; }
+.ha-dim b { color: #12141b; font-weight: 700; }
+.ha-dim.ok b { color: #0b5e3a; }
+.ha-dim.bad b { color: #8c2b2b; }
+.ha-pair { display: flex; gap: 24px; align-items: flex-start; }
+.ha-crop { background: var(--bg); color: var(--ink); overflow: hidden; position: relative; }

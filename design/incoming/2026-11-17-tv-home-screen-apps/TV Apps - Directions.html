@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo as the TV's home screen — the Apps entry, the Apps screen, and the exits</title>
+<style>
+  /* Self-contained and offline. No hosted font, no network reference of any kind: the three
+     families are the repo's own, and where they are absent the stack falls back cleanly. */
+  :root { --ink: #12141b; --ink2: #262a35; --dim: #4a4f5e; --line: #c9ccd5; --bg: #f2f3f6;
+          --rec: #0b5e3a; --recbg: #cdebdd; --no: #8c2b2b; --nobg: #f0d8d8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink2);
+         font-family: 'Sora', system-ui, sans-serif; font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 28px 96px; }
+  h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; color: var(--ink);
+               letter-spacing: -.01em; line-height: 1.15; margin: 0; }
+  h1 { font-size: 32px; }
+  h2 { font-size: 23px; margin: 48px 0 6px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 26px 0 4px; }
+  p { margin: 10px 0; }
+  .lede { font-size: 17px; color: var(--ink2); margin-top: 10px; }
+  code, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  td.n { font-family: 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
+  .tag { display: inline-block; font-family: 'JetBrains Mono', ui-monospace, monospace;
+         font-size: 11px; font-weight: 600; color: var(--ink); background: #d3d6de;
+         border: 1px solid #b9bdc8; border-radius: 6px; padding: 2px 7px; margin-right: 6px; }
+  .tag.rec { background: var(--recbg); border-color: #8fc9ad; }
+  .tag.no { background: var(--nobg); border-color: #cda3a3; }
+  ul, ol { margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+  .note { background: #e7e9ef; border-left: 3px solid #9aa0b0; padding: 10px 14px; margin: 14px 0; }
+  .ask { background: #fdf4dd; border-left: 3px solid #d9a92b; padding: 10px 14px; margin: 14px 0; }
+  b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Ravilo as the TV's home screen</h1>
+<p class="lede">Where the <b>Apps</b> entry sits in the TV header, what the <b>Apps</b> screen looks
+like, and how Apps is reached from the two screens Ravilo can show in place of Home. Android TV
+only, 960&nbsp;×&nbsp;540&nbsp;dp on the 1920&nbsp;×&nbsp;1080 stage, D-pad, Aurora skin unless a
+frame says otherwise. Drawn 2026-11-17. Forty-three PNGs in <code>png/</code>.</p>
+
+<h2>What is fixed</h2>
+<p>None of this was decided by this round. It is the shipped product and the spec, and every
+direction below is built on top of it unchanged.</p>
+<table>
+  <tr><th>Thing</th><th>What it is, and where it comes from</th></tr>
+  <tr><td>The bar's two styles</td><td><b>Standard</b> 60&nbsp;dp and <b>Slim</b> 48&nbsp;dp, chosen
+    by the server (<code>AppBarGeometry</code>, DEB-3967 FR-9). The entry is drawn in both; neither
+    is "the" bar.</td></tr>
+  <tr><td>The right cluster's order</td><td>Cast · the now-playing pill · Surprise&nbsp;me · Search ·
+    clock · avatar (<code>AppBar.kt</code>). Every one of the first three is optional.</td></tr>
+  <tr><td>Focus, two treatments only</td><td>A tile takes a 3&nbsp;dp <code>--ring</code> outline plus
+    <code>scale(1.07)</code> and a lift; a chip, a nav item or a pill takes the <b>inverted fill</b>.
+    A third treatment would need a reason.</td></tr>
+  <tr><td>The circles' focus ring</td><td>2&nbsp;dp held 2&nbsp;dp clear of the fill, outer edge
+    4&nbsp;dp out — <code>BAR_RING_OUTSET</code>, <b>both bars</b>.</td></tr>
+  <tr><td>The gutter</td><td>48&nbsp;dp (<code>screenPadH</code>). Overscan safety, not spacing: it
+    does not move.</td></tr>
+  <tr><td>The sign-in screen</td><td><code>TvSignInScreen.kt</code> in full — a 46&nbsp;dp brand row, the
+    body centred, and a <b>84&nbsp;dp footer row</b> that already holds the focusable buttons. Its
+    <i>can't reach the server</i> state is the same screen with a different body.</td></tr>
+  <tr><td>FR-11's three cases</td><td>Android settings, then the stock home, then every app A–Z
+    <b>with its banner, or its icon and label where it has none</b>. Not "banner and label".</td></tr>
+</table>
+
+<h2>Where the entry sits — three directions</h2>
+
+<h3><span class="tag rec">RECOMMENDED</span>A2 — a labelled <i>Apps</i> pill in the right cluster</h3>
+<p>The brief offered two; this is a third, and it is the recommendation. It takes <b>A's position</b>
+— the right cluster, immediately before Search — and <b>B's label</b>, in the shape the bar already
+has: <code>SurprisePill</code>'s, which is <code>navCorner&nbsp;+&nbsp;6</code> radius, a 1&nbsp;dp
+hairline at rest, <code>navPadH&nbsp;+&nbsp;2</code> by <code>navPadV</code>, a 7&nbsp;dp gap and the
+label at <code>navType</code> SemiBold.</p>
+<p>It exists because the slim-header round settled the identical question the other way round for
+<i>Surprise me</i>: a glyph-only circle "says nothing", and a labelled pill in the right cluster
+does not read as a fifth tab. Drawing A and B without A2 would have handed the owner a choice the
+house has already made once, in the opposite direction.</p>
+<p><b>Frames:</b> <code>A2-standard-at-rest</code>, <code>A2-standard-home-apps-focused</code>,
+<code>A2-slim-home-apps-focused</code>, and the three-way <code>compare-A-vs-B-standard</code>.</p>
+
+<h3><span class="tag">A</span>A round button beside Search <span class="mono">— the brief's lean</span></h3>
+<p>The same circle Search uses, with a four-rounded-square glyph. Cheapest in width (58&nbsp;dp more
+bar than today, against A2's 110) and the quietest at rest.</p>
+<p><b>Its cost is that a bare glyph does not say what it opens.</b> The counter-argument, and it is a
+real one: four squares in a 2&nbsp;×&nbsp;2 grid is a near-universal convention for "apps" in a way
+that a sparkle is not — which is exactly why <i>Surprise me</i> needed its word and this might not.
+The glyph is deliberately four squares and not nine dots: nine dots in a 22&nbsp;dp circle puts each
+dot under 4&nbsp;dp, which at three metres is a smudge.</p>
+
+<h3><span class="tag no">NOT RECOMMENDED</span>B — an <i>Apps</i> pill at the end of the nav pills</h3>
+<p>Drawn as the brief asked, in a tab's own padding, corner, weight and inverted-fill focus — because
+anything else there would be a third treatment inside a row of four that already has one.</p>
+<p><b>The at-rest frame is what decides it.</b> In <code>B-standard-at-rest</code>, <i>Apps</i> is
+indistinguishable from <i>Movies</i>, <i>Series</i> and <i>Music</i>: it reads as a fifth section of
+Ravilo's library rather than as the way out of Ravilo. In <code>bar-geometry</code> the focused Apps
+pill and the focused <i>Home</i> tab are visibly the same object.</p>
+<p>B does buy one thing the other two cannot: a place in the bar's "where am I" row, so the Apps
+screen can mark itself in the bar (<code>B-grid6-apps-first-view</code>). A and A2 have nothing in
+the bar that can say "you are in Apps", and rely on the page's own title. <b>B2</b>
+(<code>B2-slim-home-apps-focused</code>) is B with the glyph before the label; it helps a little and
+does not change the verdict.</p>
+
+<h3>Does it fit? — measured, not estimated</h3>
+<p><code>bar-width-arithmetic</code> measures each combination in the browser after layout. In the
+ordinary case there is room for any of the three:</p>
+<table>
+  <tr><th>Bar</th><th>Content</th><th>Left of 960&nbsp;dp</th></tr>
+  <tr><td>Standard, hook off (today)</td><td class="n">700 dp</td><td class="n">260</td></tr>
+  <tr><td>Standard + A</td><td class="n">758 dp</td><td class="n">202</td></tr>
+  <tr><td>Standard + A2</td><td class="n">810 dp</td><td class="n">150</td></tr>
+  <tr><td>Standard + B</td><td class="n">777 dp</td><td class="n">183</td></tr>
+  <tr><td>Slim + everything at once, <b>no Apps</b></td><td class="n">991 dp</td><td class="n">−31</td></tr>
+  <tr><td>Slim + everything at once + A</td><td class="n">1037 dp</td><td class="n">−77</td></tr>
+  <tr><td>Slim + everything at once + B</td><td class="n">1059 dp</td><td class="n">−99</td></tr>
+</table>
+<p><b>The overflow in the last three rows is not this round's.</b> With Cast, the now-playing pill and
+<i>Surprise me</i> all present the bar is already 31&nbsp;dp over before anything is added, and the
+row clips at the right edge — so the avatar goes first, then the clock, then Search
+(<code>A-slim-crowded</code>, <code>B-slim-crowded</code>). Apps makes an existing defect worse; it
+does not create it. <b>Raising that is Bárður's, not this round's.</b></p>
+
+<h2>The Apps screen — three layouts</h2>
+<p>Eighteen entries: Android settings, Google TV, and sixteen apps A–Z. The space a layout has is the
+screen minus the bar, the 24&nbsp;dp <code>DiscoverScreen</code> gap and the page head:
+<b>408&nbsp;dp</b> under a Slim bar, <b>396&nbsp;dp</b> under a Standard one. Everything here is
+arithmetic from <code>apps-data.js</code>; <code>layout-arithmetic</code> prints it.</p>
+<table>
+  <tr><th></th><th>Cell</th><th>Rows</th><th>Visible without scrolling</th></tr>
+  <tr><td><span class="tag">GRID 5</span>the brief's lean</td><td class="n">160 × 90 dp</td>
+      <td class="n">4</td><td class="n">15 of 18</td></tr>
+  <tr><td><span class="tag rec">GRID 6</span>recommended</td><td class="n">130.7 × 73.5 dp</td>
+      <td class="n">3</td><td class="n">18 of 18</td></tr>
+  <tr><td><span class="tag">LIST C</span>icon and label, 3 columns</td><td class="n">56 dp rows</td>
+      <td class="n">6</td><td class="n">18 of 18</td></tr>
+</table>
+<p><b>Six across is recommended, and the reason is not density.</b> Three rows of six is every entry
+on one screen: nothing below the fold, no scroll position to remember, and no viewer who has to
+discover that Apps scrolls at all. Five across pushes Twitch, VLC and YouTube under the edge from the
+very first frame (<code>compare-grid5-vs-grid6</code>).</p>
+<div class="note"><b>And the caveat, because it is contingent and not a property of the design.</b>
+Sixteen apps is the brief's stand-in count. A TV with twenty-five apps needs five rows at six across
+and scrolls anyway; six across then still halves the scrolling, but "everything in one view" stops
+being true. The empty band under the third row in <code>grid6-apps-first-view</code> is where app
+nineteen goes.</div>
+<p><b>Direction C, the list, is a genuine contender and not a straw man.</b> Every name is in Sora at
+19&nbsp;sp with nothing ellipsised and nothing depending on a banner being legible — which is the one
+honest worry about any banner grid, since a real TV banner is whatever the app shipped and many carry
+no readable word at all. It also shows all eighteen. It costs the artwork, and with it most of the
+way a viewer recognises an app at three metres without reading. A <b>single-column</b> list was ruled
+out by arithmetic before it was drawn: at a 10-foot row height it shows 5 of 18 and scrolls three
+times, giving up the only thing a list is meant to win.</p>
+
+<h3>What is in a cell, and what is not</h3>
+<ul>
+  <li><b>No label under a banner.</b> FR-11 says a banner <i>or</i> an icon and a label. The first
+    render put a label under all eighteen and every banner tile then said its own name twice.</li>
+  <li><b>The fallback's icon and label sit inside the banner's own cell</b>, so every cell stays
+    exactly 16:9 and the rows stay rows (<i>Downloader</i>, <i>VLC</i>).</li>
+  <li><b>The fallback cell carries the shipped hairline.</b> <code>--card</code> on <code>--bg</code>
+    is a 4&nbsp;% step and without it the two apps Android has no banner for read as two apps that had
+    failed to load.</li>
+  <li><b>The two fixed entries are a card, not a coloured plate</b> — <code>--card-2</code> under the
+    hairline, the surface Ravilo already uses for "a control, not content" — with the glyph and the
+    label together, because a bare gear is not a name.</li>
+  <li><b>Focus is the tile treatment, ring and scale and lift.</b> The lift is load-bearing rather than
+    decorative: a banner's colour belongs to the app, and in <b>noir</b> the ring is amber, so a
+    focused orange plate lost its ring until the lift went back on.</li>
+</ul>
+
+<h2>The exits — FR-12</h2>
+<p><b>The footer row that FR-12 needs already exists.</b> <code>TvSignInScreen</code> has an 84&nbsp;dp
+row holding <i>Retry</i> (in the error state) and <i>Sign in with a password instead</i>. Apps joins it
+as a third ghost button with the same glyph as the header entry and the same word. One control, one
+name, through the whole flow.</p>
+<p>The same answer serves the profile picker and server setup, which share the shape, and it is
+independent of which header direction wins — so the exits are not blocked on that decision.</p>
+<div class="ask"><b>Two questions for the owner, both drawn both ways.</b>
+<ol>
+  <li><b>Does Apps come before or after the password button on the can't-reach screen?</b> Signing in
+    with a password cannot work while the server is unreachable, and Apps is the only control on that
+    screen that reaches Wi-Fi. Drawn as <code>cantreach-apps-focused</code> (after) and
+    <code>cantreach-apps-second</code> (before, straight after Retry).</li>
+  <li><b>Does the can't-reach screen keep Retry as its arrival focus?</b> My lean is yes — Retry is
+    the way out of the error and Apps is one Right press away (<code>cantreach-retry-focused</code>).
+    This is a behaviour question, not a drawing one.</li>
+</ol></div>
+
+<h2>The first tile's label</h2>
+<p>The brief leans <i>TV settings</i> over <i>Android settings</i>, because Ravilo has its own
+Settings and the viewer needs to know this is not it. <b>In English the decision is not a fit</b> —
+both sit in either cell. <code>first-tile-label</code> is the 1:1 crop.</p>
+<p><b>In Faroese neither fits a six-across cell.</b> <i>Sjónvarpsstillingar</i> is nineteen characters
+and one word, so it cannot even wrap; <i>Android-stillingar</i> is eighteen and also ellipsises.
+131&nbsp;dp holds about fourteen characters at 13&nbsp;sp. So <b>the label choice does not rescue six
+across</b>, and the two are not independent decisions. At five across both fit whole.</p>
+<p>A third way, not drawn and offered as an option: let the two fixed tiles' label wrap to two lines.
+<i>Android-stillingar</i> would break at its hyphen and fit; <i>Sjónvarpsstillingar</i> still would
+not.</p>
+
+<h2>Every state drawn, and the ones skipped</h2>
+<table>
+  <tr><th>State</th><th>Frame</th></tr>
+  <tr><td>Entry focused, both bars, all three directions</td><td class="mono">A-/A2-/B-{standard,slim}-home-apps-focused</td></tr>
+  <tr><td>Entry at rest — the frame the decision turns on</td><td class="mono">A-/A2-/B-standard-at-rest, compare-A-vs-B-standard</td></tr>
+  <tr><td>FR-10's other half: hook off, no entry</td><td class="mono">hook-off-standard-at-rest</td></tr>
+  <tr><td>The bar transparent over the hero</td><td class="mono">A-standard-home-hero</td></tr>
+  <tr><td>Apps, first view, all three layouts</td><td class="mono">grid5-/grid6-/list-apps-first-view</td></tr>
+  <tr><td>Netflix focused, last row and the VLC fallback in frame</td><td class="mono">grid5-apps-netflix-scrolled, grid6-apps-netflix, list-apps-netflix</td></tr>
+  <tr><td>Apps marked in the bar (B only)</td><td class="mono">B-grid6-apps-first-view</td></tr>
+  <tr><td>Danish and Faroese</td><td class="mono">grid6-apps-da, grid6-apps-fo, signin-apps-fo, cantreach-apps-da, B-fo-shipped-tabs</td></tr>
+  <tr><td>The longest string</td><td class="mono">grid6-apps-fo, first-tile-label</td></tr>
+  <tr><td>Skins</td><td class="mono">grid6-apps-noir, grid6-apps-midnight</td></tr>
+  <tr><td>Empty — nothing else installed</td><td class="mono">grid6-apps-nothing-else</td></tr>
+  <tr><td>Offline / nobody signed in</td><td class="mono">grid6-apps-signed-out, and both can't-reach frames</td></tr>
+  <tr><td>Sign-in and can't-reach, with and without the exit</td><td class="mono">signin-*, cantreach-*</td></tr>
+  <tr><td>Width under pressure</td><td class="mono">A-/B-slim-crowded, B-standard-shipped-tabs, bar-width-arithmetic</td></tr>
+</table>
+<p><b>Skipped, and why:</b> a <b>loading</b> state. FR-11's list is read off the TV's own
+<code>PackageManager</code> each time Apps opens — it is local, it is not a network call, and nothing
+in Apps comes from jellystructure. A skeleton would be drawing a wait that does not happen. If the
+build finds the query slow enough to see on the Streamer, that is a new frame and a one-line
+amendment, not a redesign.</p>
+
+<h2>Decided in the drawing, and why</h2>
+<table>
+  <tr><th>Decision</th><th>Why</th></tr>
+  <tr><td>A's position is <b>immediately before Search</b></td><td>The right cluster is where the bar
+    keeps its actions, and nothing that already ships moves to make room.</td></tr>
+  <tr><td>The Apps glyph is <b>four rounded squares</b></td><td>Nine dots do not survive 22&nbsp;dp at
+    three metres. Squares are also the one shape Ravilo's own content never uses, so the glyph cannot
+    be read as a grid of posters.</td></tr>
+  <tr><td>Grid cells are <b>8&nbsp;dp</b> radius</td><td>The 12&nbsp;dp content-tile radius eats a
+    banner's own corner artwork; 6&nbsp;dp reads as square.</td></tr>
+  <tr><td>A list row takes the <b>inverted fill alone</b></td><td>It is a chip, not a tile. The first
+    render drew the fill and a ring, which a D-pad user reads as two targets.</td></tr>
+  <tr><td>The signed-out Apps screen reuses the <b>sign-in screen's 46&nbsp;dp brand row</b></td><td>A
+    signed-out TV has no app bar, and a second brand row would be a second design.</td></tr>
+  <tr><td>Column-major order in the list</td><td>Down each column is the alphabet, which is the axis a
+    D-pad user holds.</td></tr>
+</table>
+
+<h2>New strings</h2>
+<p>English is the source. Danish and Faroese are <b>drafts wanting a native read</b>; every other
+string in every frame is the shipped <code>i18n/*.json</code> value, quoted.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Danish</th><th>Faroese</th></tr>
+  <tr><td class="mono">nav.apps</td><td>Apps</td><td>Apps</td><td>Appir</td></tr>
+  <tr><td class="mono">apps.subtitle</td><td>Open another app, the TV's settings, or Google TV.</td>
+      <td>Åbn en anden app, TV'ets indstillinger eller Google TV.</td>
+      <td>Lat upp eina aðra app, stillingarnar á sjónvarpinum ella Google TV.</td></tr>
+  <tr><td class="mono">apps.tv_settings</td><td>TV settings</td><td>TV-indstillinger</td>
+      <td>Sjónvarpsstillingar</td></tr>
+  <tr><td class="mono">apps.android_settings <span class="mono">(the alternative)</span></td>
+      <td>Android settings</td><td>Android-indstillinger</td><td>Android-stillingar</td></tr>
+  <tr><td class="mono">apps.nothing_else</td><td>Nothing else is installed on this TV.</td>
+      <td>Der er ikke installeret andet på dette TV.</td>
+      <td>Einki annað er innlagt á hesum sjónvarpinum.</td></tr>
+  <tr><td class="mono">apps.back_to_signin</td><td>Back returns to sign-in</td>
+      <td>Tilbage fører til login</td><td>Aftur fer til innritan</td></tr>
+  <tr><td class="mono">tvsignin.server</td><td>Server</td><td>Server</td><td>Ambætari</td></tr>
+</table>
+<p>The key names are a suggestion for whoever writes them; naming them is not this seat's. Two
+Faroese notes for the translator: <i>Appir</i> is the plural of <code>app</code>, which
+<code>i18n/lexicon/fo.txt</code> holds only in the singular; and <i>Sjónvarpsstillingar</i> is a new
+compound.</p>
+
+<h2>Canvas and render notes</h2>
+<ul>
+  <li><code>frames.html</code> <b>links</b> <code>../../ravilo/ravilo.css</code> rather than copying
+    it, so every token, skin and family in the pictures is the production one. Every class here is
+    <code>ha-</code> prefixed, so nothing can collide in either direction.</li>
+  <li><b>No CSP <code>&lt;meta&gt;</code>, and none is needed.</b> DEB-2922 made
+    <code>render-design.sh</code> answer <code>ravilo.css</code>'s Google Fonts <code>@import</code>
+    from <code>design/app/fonts/</code>. The brief's note about a <code>file:</code>-only CSP is
+    stale.</li>
+  <li>No <code>content-visibility</code>, no <code>backdrop-filter</code>, no large blur, no infinite
+    animations. Two production fills are drawn flat and said so: <code>accentDim</code> (the resting
+    primary button) is the accent under a darkening plate rather than a filter, and the ghost button's
+    border is <code>rgba(255,255,255,.26)</code>.</li>
+  <li>Every SVG id is minted from a counter — forty-three frames each carry their own brand mark.</li>
+  <li><code>apps-qr.js</code> and <code>verify-qr.py</code> are <b>verbatim copies</b> of the TV
+    sign-in round's, so the sign-in frames carry a real code rather than a drawn one. The round's
+    string decodes back exactly; <b>a physical scan is still owed</b>, as it was there.</li>
+  <li>Render: <code>scripts/render-design.sh --html
+    design/incoming/2026-11-17-tv-home-screen-apps/frames.html --viewport 1980x1200 --all .ha-frame
+    --prefix tv-apps-</code></li>
+</ul>
+
+</div>
+</body>
+</html>

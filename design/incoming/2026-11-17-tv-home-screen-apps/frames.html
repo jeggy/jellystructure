@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ravilo as the TV's home screen — the Apps entry, the Apps screen, and the exits</title>
+<!-- PROCESS.md step 3: link the shipped stylesheet, never copy it. ravilo.css supplies the
+     production tokens, the five TV skins and the three self-hosted families.
+
+     NO CSP <meta> HERE, and none is needed. The brief calls the Google Fonts @import in
+     design/ravilo/*.css a "known lane bug" wanting a file:-only CSP; DEB-2922 fixed that in
+     scripts/render-design.sh, which answers the @import from design/app/fonts/ and says so in
+     --help. The brief's note is stale — see REPORT.md. -->
+<link rel="stylesheet" href="../../ravilo/ravilo.css">
+<link rel="stylesheet" href="apps.css">
+</head>
+<body>
+<div class="ha-sheet" id="sheet"></div>
+<script src="apps-qr.js"></script>
+<script src="apps-data.js"></script>
+<script src="apps.js"></script>
+</body>
+</html>
