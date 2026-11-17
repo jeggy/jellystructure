@@ -45,6 +45,7 @@ internal class ScreenProfileStore {
     fun remove(userId: String) {
         all.removeAll { it.userId == userId }
         persist()
+        ScreenTrackMemory.clear(userId)   // DEB-4932 (FR-23) — a removed profile's remembered tracks go with it
         if (localStorage.getItem(ACTIVE_PROFILE_KEY) == userId) setActive(null)
     }
     companion object {
@@ -53,6 +54,7 @@ internal class ScreenProfileStore {
             localStorage.removeItem(PROFILES_KEY)
             localStorage.removeItem(ACTIVE_PROFILE_KEY)
             localStorage.removeItem(LEGACY_TOKENS_KEY)
+            ScreenTrackMemory.clearAll()
         }
     }
 

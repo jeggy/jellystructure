@@ -25,7 +25,7 @@ const ticket = (itemId: string, startMs: number) => ({
 });
 const playItem = (id: string, extra: object = {}) => ({ type: "play_item", jellyfin_id: id, kind: "movie", title: "Paper Moon", ...extra });
 
-type Seen = { progress: any[]; stops: any[]; starts: any[]; remotePlays: any[]; statuses: any[] };
+type Seen = { progress: any[]; stops: any[]; starts: any[]; remotePlays: any[]; statuses: any[]; restreams: any[] };
 
 /** A fake events socket the test pushes frames into, installed before the bundle runs. */
 function fakeSocketInitScript() {
@@ -61,10 +61,19 @@ const seriesDetail = {
   ],
 };
 
-async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ status: number; body: object }>; series?: object | null; continueEpisode?: string; refuseRemotePlay?: boolean } = {}): Promise<Seen> {
-  const seen: Seen = { progress: [], stops: [], starts: [], remotePlays: [], statuses: [] };
+async function boot(page: Page, opts: {
+  start?: (itemId: string, body?: any) => Promise<{ status: number; body: object }>; series?: object | null; continueEpisode?: string; refuseRemotePlay?: boolean;
+  /** DEB-4932 — what the server answers a restream with (a track switch or a burn-in); unset = the route does not exist (404). */
+  restream?: (body: any) => object;
+  /** DEB-4932 — extra localStorage entries, set before the bundle runs. */
+  storage?: Record<string, string>;
+} = {}): Promise<Seen> {
+  const seen: Seen = { progress: [], stops: [], starts: [], remotePlays: [], statuses: [], restreams: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(fakeSocketInitScript);
+  await page.addInitScript((storage) => {
+    for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
+  }, opts.storage ?? {});
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
     localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
@@ -83,9 +92,14 @@ async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ st
       ? { "series-1": { resume_ms: 0, played: false, played_pct: 0, continue_episode_id: opts.continueEpisode } } : {});
     if (path === "/api/tv/playback/start") {
       seen.starts.push(body);
-      const answer = opts.start ? await opts.start(body.item_id) : { status: 200, body: ticket(body.item_id, 42_000) };
+      const answer = opts.start ? await opts.start(body.item_id, body) : { status: 200, body: ticket(body.item_id, 42_000) };
       return json(route, answer.status, answer.body);
     }
+    if (path === "/api/tv/playback/restream") {
+      seen.restreams.push(body);
+      return opts.restream ? json(route, 200, opts.restream(body)) : json(route, 404, {});
+    }
+    if (path.startsWith("/api/tv/subtitle/")) return route.fulfill({ status: 200, contentType: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 99:00.000\nHej\n" });
     if (path === "/api/tv/playback/progress") { seen.progress.push({ ...body, at: Date.now() }); return route.fulfill({ status: 204 }); }
     if (path === "/api/tv/playback/stop") { seen.stops.push(body); return route.fulfill({ status: 204 }); }
     if (path === "/api/tv/playback/status") { seen.statuses.push(body); return route.fulfill({ status: 204 }); }
@@ -410,5 +424,179 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await page.keyboard.press("Enter");
     await expect(page.locator("#pk-head")).toHaveText("English");
     expect(await names()).toEqual(["E-AC-3 5.1", "Commentary"]);
+  });
+});
+
+// DEB-4932 (DEB-4801 FR-23) — the TV remembers a viewer's audio and subtitle pick per profile and series, and a next episode
+// starts in it. Same harness as above: the real bundle, the fake AVPlay, the server stood in for by page.route — so what is
+// asserted is what the TV asks the server for (the `audio_language` of a start, the stream of a restream) and what it shows.
+test.describe("DEB-4932 — the TV starts an episode in the audio and subtitle the viewer last chose", () => {
+  const aTrack = (index: number, language: string, label: string, isDefault = false) =>
+    ({ index, language, label, codec: "eac3", channels: 6, is_default: isDefault, external: false });
+  const sTrack = (index: number, language: string, label: string, isDefault = false, forced = false) =>
+    ({ index, language, label, forced, is_default: isDefault, url: `/api/tv/subtitle/${index}.vtt`, delivery_method: "external" });
+  const withCredits = (e: object) => ({ ...e, segments: { credits_start_ms: 43_000 } });
+  const binge = {
+    ...seriesDetail,
+    seasons: [{ index: 1, name: "Season 1", episodes: [
+      withCredits(episode("s1e1", 1, "Opening Reel")), withCredits(episode("s1e2", 2, "Second Reel")), episode("s1e3", 3, "Third Reel"),
+    ] }],
+  };
+  /** English (the file's default) and Danish audio, an English (default) and a Danish text subtitle. The server honours `audio_language`. */
+  const bingeTicket = (itemId: string, body: any) => {
+    const dan = body?.audio_language === "dan";
+    return {
+      ...ticket(itemId, itemId === "s1e1" ? 42_000 : 0),
+      audio: [aTrack(1, "eng", "English", true), aTrack(2, "dan", "Dansk")], audio_stream_index: dan ? 2 : 1,
+      subtitles: [sTrack(3, "eng", "English", true), sTrack(4, "dan", "Dansk")],
+    };
+  };
+  const bingeServer = {
+    series: binge, refuseRemotePlay: true,
+    start: async (itemId: string, body: any) => ({ status: 200, body: bingeTicket(itemId, body) }),
+    restream: (body: any) => ({ ...ticket(body.item_id, body.position_ms), audio: bingeTicket(body.item_id, {}).audio, subtitles: bingeTicket(body.item_id, {}).subtitles, audio_stream_index: body.audio_stream_index }),
+  };
+  const selectedRows = (page: Page) => page.locator("#pk-rows .pkr.sel .l");
+
+  /** The series' page, then Play: the first counted episode. */
+  async function playSeries(page: Page) {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toBeVisible();
+    await page.keyboard.press("Enter");
+  }
+
+  /** Series page → Play s1e1 → its picker on [tab] (the Audio tab is one ArrowRight away). */
+  async function playFirstAndOpenPicker(page: Page, audioTab: boolean) {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toBeVisible();
+    await page.keyboard.press("Enter");
+    await waitForAvplayCall(page, "open");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
+    if (audioTab) await page.keyboard.press("ArrowRight");
+  }
+  /** Let the countdown start the next episode, and wait until it is open in AVPlay. */
+  async function advanceToNext(page: Page, seen: Seen) {
+    const opensBefore = (await avplayCalls(page)).filter((c) => c[0] === "open").length;
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 30_000 }).toEqual(["s1e1", "s1e2"]);
+    await expect.poll(async () => (await avplayCalls(page)).filter((c) => c[0] === "open").length, { timeout: 15_000 }).toBeGreaterThan(opensBefore);
+  }
+  const openPickerOn = async (page: Page, audioTab: boolean) => {
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
+    if (audioTab) await page.keyboard.press("ArrowRight");
+  };
+
+  test("FR-23: a Danish audio pick on one episode starts the next episode in Danish, and the picker shows it selected", async ({ page }) => {
+    test.setTimeout(120_000);
+    const seen = await boot(page, bingeServer);
+    await playFirstAndOpenPicker(page, true);
+    expect(seen.starts[0].audio_language ?? null, "nothing is remembered yet: the first start asks for no language").toBeNull();
+    await expect(selectedRows(page)).toContainText(["English"]);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");                      // Dansk: a pick, and a restream to it
+    await expect.poll(() => seen.restreams.length).toBe(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "s1e1", audio_stream_index: 2 });
+
+    await advanceToNext(page, seen);
+    expect(seen.starts[1], "the next episode's start asks for the remembered language").toMatchObject({ item_id: "s1e2", audio_language: "dan" });
+    await openPickerOn(page, true);
+    await expect(selectedRows(page)).toContainText(["Dansk"]);
+    expect(seen.restreams, "the ticket already carried Danish: no second restream").toHaveLength(1);
+  });
+
+  test("FR-23: a Danish subtitle pick carries to the next episode over the file's English default", async ({ page }) => {
+    test.setTimeout(120_000);
+    const seen = await boot(page, bingeServer);
+    await playFirstAndOpenPicker(page, false);
+    await expect(selectedRows(page)).toContainText(["English"]);   // the file's default, as today
+    await page.keyboard.press("ArrowDown");                      // → Dansk (Off, English, Dansk)
+    await page.keyboard.press("Enter");
+    await advanceToNext(page, seen);
+    await openPickerOn(page, false);
+    await expect(selectedRows(page)).toContainText(["Dansk"]);
+    expect(seen.restreams, "a text subtitle is drawn, never restreamed").toHaveLength(0);
+  });
+
+  test("FR-23: Off is a choice — the next episode shows no subtitle even where the file flags a default one", async ({ page }) => {
+    test.setTimeout(120_000);
+    const seen = await boot(page, bingeServer);
+    await playFirstAndOpenPicker(page, false);
+    await expect(selectedRows(page)).toContainText(["English"]);
+    await page.keyboard.press("ArrowUp");                        // → Off
+    await page.keyboard.press("Enter");
+    await advanceToNext(page, seen);
+    await openPickerOn(page, false);
+    await expect(selectedRows(page)).toContainText(["Off"]);
+  });
+
+  test("FR-23: a picture subtitle that matches is burned in once, before the stream opens", async ({ page }) => {
+    test.setTimeout(120_000);
+    const pgs = (index: number, language: string, label: string) => ({ index, language, label, forced: false, is_default: false, url: null, delivery_method: "encode" });
+    const seen = await boot(page, {
+      series: binge, refuseRemotePlay: true,
+      storage: { "ravilo.screen.tracks.viewer": JSON.stringify({ global: { sub: "dan" }, series: {} }) },
+      start: async (itemId) => ({ status: 200, body: { ...ticket(itemId, 42_000), audio: [aTrack(1, "eng", "English", true)], subtitles: [pgs(5, "dan", "Dansk")] } }),
+      restream: (body) => ({ ...ticket(body.item_id, body.position_ms), audio: [aTrack(1, "eng", "English", true)], subtitles: [pgs(5, "dan", "Dansk")], burned_subtitle_index: body.subtitle_stream_index, audio_stream_index: 1 }),
+    });
+    await playSeries(page);
+    await waitForAvplayCall(page, "open");
+    expect(seen.restreams).toHaveLength(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "s1e1", subtitle_stream_index: 5, position_ms: 42_000 });
+    expect((await avplayCalls(page)).filter((c) => c[0] === "open"), "one open, on the restreamed stream").toHaveLength(1);
+  });
+
+  test("FR-23: the series' choice wins over the global one; a phone's push has no series and uses the global one", async ({ page }) => {
+    test.setTimeout(120_000);
+    const seen = await boot(page, {
+      ...bingeServer,
+      storage: { "ravilo.screen.tracks.viewer": JSON.stringify({ global: { audio: "dan" }, series: { "series-1": { audio: "eng" } } }) },
+    });
+    await playSeries(page);                          // Play from the series' page: its own choice, English
+    await waitForAvplayCall(page, "open");
+    expect(seen.starts[0]).toMatchObject({ item_id: "s1e1", audio_language: "eng" });
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-1"));   // a phone's push: no series id
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 15_000 }).toEqual(["s1e1", "ep-1"]);
+    expect(seen.starts[1]).toMatchObject({ item_id: "ep-1", audio_language: "dan" });
+  });
+
+  test("FR-23: a series language that is not in this file falls to the global one, with one switch", async ({ page }) => {
+    test.setTimeout(120_000);
+    const seen = await boot(page, {
+      ...bingeServer,
+      storage: { "ravilo.screen.tracks.viewer": JSON.stringify({ global: { audio: "dan" }, series: { "series-1": { audio: "swe" } } }) },
+    });
+    await playSeries(page);
+    await waitForAvplayCall(page, "open");
+    expect(seen.starts[0]).toMatchObject({ audio_language: "swe" });
+    expect(seen.restreams, "the file has no Swedish, so the global Danish is switched to, once").toHaveLength(1);
+    expect(seen.restreams[0]).toMatchObject({ audio_stream_index: 2 });
+  });
+
+  test("FR-23: another profile's choice is not this profile's, and a removed profile's memory goes with it", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, {
+      ...bingeServer,
+      storage: { "ravilo.screen.tracks.someone-else": JSON.stringify({ global: { audio: "dan" }, series: {} }) },
+    });
+    await playSeries(page);
+    await waitForAvplayCall(page, "open");
+    expect(seen.starts[0].audio_language ?? null, "viewer has chosen nothing: the file's default").toBeNull();
+    await page.keyboard.press("ArrowDown");                      // the picker, on Subtitles: English is selected
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");                          // a pick by `viewer`: Dansk
+    expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.viewer"))).toContain("dan");
+    expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.someone-else")), "the other profile's entry is untouched").toContain("dan");
+  });
+
+  test("FR-23: a profile the server signs out takes its remembered choice with it", async ({ page }) => {
+    test.setTimeout(60_000);
+    await boot(page, {
+      series: binge,
+      start: async () => ({ status: 401, body: {} }),
+      storage: { "ravilo.screen.tracks.viewer": JSON.stringify({ global: { audio: "dan" }, series: {} }) },
+    });
+    await playSeries(page);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.viewer"))).toBeNull();
   });
 });

@@ -3046,21 +3046,13 @@ internal fun subPickAction(pickIsEncode: Boolean, pickStreamIndex: Int?, burnedI
 
 /** R196 (FR-RV-TRK2-4) — result of [resolveTrackChoice]: the flat index to hand to
  *  `RaviloPlayer.selectAudioTrack`/`selectSubtitleTrack` (subtitle `-1` = off). */
-internal data class TrackSelectionResult(val audioIndex: Int, val subIndex: Int)
+internal typealias TrackSelectionResult = dev.jellystructure.shared.tv.TrackSelectionResult
 
 /**
- * R181/R195/R196 (FR-RV-TRK1, FR-RV §5.4, FR-RV-TRK2-4) — the pure, unit-testable core of
- * [PlayerScreen]'s `resolveTrackSelection()`. Layered resolution: per-series remembered choice (exact
- * variant signature first, then the language's first version) → learned global choice (same) → the
- * source's own default track → first track / forced / off. Each tier's lookup returns null when it
- * can't be satisfied in THIS title (e.g. a remembered language absent from this file's tracks), falling
- * through to the next via `?:` rather than a hard-coded index. Matches by language, never by ExoPlayer
- * track index (indices differ across episodes/files).
- *
- * Extracted from the composable specifically so the R196 regression — a call site inside a
- * `LaunchedEffect(Unit)` poll loop that only ever sees a composition-old group list — has a test that
- * can actually catch a recurrence. R246 closed the residue of that bug for good: this function takes
- * the TRACK LISTS only and derives the groups itself, so there is no group parameter left to be stale.
+ * R181/R195/R196 (FR-RV-TRK1, FR-RV §5.4, FR-RV-TRK2-4) — the player's track resolution. DEB-4932 (FR-23) moved the rule
+ * itself (the tier walk, `sameLanguage`, the PLAIN-over-SDH and forced rules) to `:shared`'s `resolveTrackChoice`, with no
+ * change in behaviour, so the Samsung app never carries a second copy; this maps the player's track lists onto it.
+ * `PlayerScreenTrackResolutionTest` is the guard that the move changed nothing.
  *
  * Scope note (unchanged since R181): only matches against native/external [subtitleTracks], never
  * PGS/encode burn-in subs — a remembered language that exists only as a PGS track in this file falls
@@ -3071,82 +3063,11 @@ internal fun resolveTrackChoice(
     globalChoice: RememberedChoice?,
     audioTracks: List<PlayerAudioTrack>,
     subtitleTracks: List<PlayerSubtitleTrack>,
-): TrackSelectionResult {
-    // R246 (FR-R246-1) — the groups are derived HERE, from the lists this call is handed, through the
-    // same buildLanguageGroups the picker uses. R196 left the composable responsible for supplying
-    // live groups; on the tick the tracks arrive the freshest composed groups were still the previous
-    // composition's (empty, or the outgoing episode's), and every remembered tier returned null —
-    // exactly the source-default selections the 2026-09-16 sweep saw. Badges are display-only and
-    // play no part in resolution, so none are built.
-    val audioGroups = buildLanguageGroups(audioTracks.map { PickerEntryInput(it.language, it.label, forced = false, isDefault = it.isDefault, badges = emptyList()) })
-    val subGroups = buildLanguageGroups(subtitleTracks.map { PickerEntryInput(it.language, it.label, forced = it.forced, isDefault = it.isDefault, badges = emptyList()) })
-    // Phase 210/R241 — a remembered language must match even when this file tags it at a different
-    // ISO-639 granularity than the file the choice was learned from. Confirmed against real production
-    // data ("It's Always Rainy in Pittsburgh", 182 episodes/16 seasons of mixed release sources):
-    // some seasons tag subtitle languages as 3-letter ("dan", "eng"), others as 2-letter ("da", "en") —
-    // a plain `.equals(lang, ignoreCase = true)` never matches "da" against a remembered "dan", so the
-    // remembered tier silently misses on the very next episode and falls through to the source's own
-    // (often unrelated) default track — reported live as "it remembers on this episode, not the next."
-    // R247 (FR-R247-2) — the comparison is the seam's `sameLanguage()` (canonical identity), no
-    // longer a local `languageName(a) == languageName(b)` that missed every language the table lacked.
-
-    // R235 (FR-R235-1/4) — within a language group, automatic selection (no exact remembered variant
-    // match) must never land on a signs-only/commentary/audio-description version when a PLAIN one
-    // exists in the same group: those exist to supplement a soundtrack the viewer already understands,
-    // not to substitute for one they don't. An explicit remembered signature (bySignature) still wins
-    // outright — this only changes what an UNMATCHED memory or a fresh pick falls through to.
-    fun tierAudio(choice: RememberedChoice?): Int? {
-        val lang = choice?.audioLanguage ?: return null
-        val group = audioGroups.firstOrNull { sameLanguage(it.language, lang) } ?: return null
-        val bySignature = choice.audioVariant?.let { sig -> group.versions.firstOrNull { it.signature() == sig } }
-        return (bySignature ?: group.versions.firstOrNull { it.kind == VariantKind.PLAIN } ?: group.versions.firstOrNull())?.flatIndex
-    }
-    val audioIdx = tierAudio(seriesChoice) ?: tierAudio(globalChoice)
-        ?: run {
-            // FR-R235-2's same fix one tab over: the source's own "default" flag is a packaging habit,
-            // not an instruction — a commentary/audio-description track marked default must still lose
-            // to a plain track in the same language when one exists.
-            val def = audioTracks.firstOrNull { it.isDefault } ?: return@run null
-            val defKind = variantKind(def.label, forced = false)
-            if (defKind == VariantKind.PLAIN) def.index
-            else audioTracks.firstOrNull { it.language.equals(def.language, ignoreCase = true) && variantKind(it.label, forced = false) == VariantKind.PLAIN }?.index
-                ?: def.index
-        }
-        ?: audioTracks.firstOrNull()?.index
-        ?: 0
-
-    fun tierSub(choice: RememberedChoice?): Int? = when {
-        choice == null -> null
-        choice.subtitlesOff -> -1
-        else -> {
-            val lang = choice.subtitleLanguage ?: return null
-            val group = subGroups.firstOrNull { sameLanguage(it.language, lang) } ?: return null
-            val native = group.versions.filter { it.flatIndex < subtitleTracks.size }
-            val bySignature = choice.subtitleVariant?.let { sig -> native.firstOrNull { it.signature() == sig } }
-            // Phase 210/R241 — same R235 invariant as tierAudio above, missing here until now: an
-            // unmatched remembered variant must prefer a PLAIN version over SDH/forced in the same
-            // language, not whichever sorts first in stream order (real library data shows some
-            // seasons carry a duplicate plain+SDH English pair the other seasons don't).
-            val nonForced = native.filter { !it.forced }
-            (bySignature ?: nonForced.firstOrNull { it.kind == VariantKind.PLAIN } ?: nonForced.firstOrNull() ?: native.firstOrNull())?.flatIndex
-        }
-    }
-    val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
-        ?: run {
-            // FR-R235-2 — the reported bug exactly: Kulsort S07E03's forced Danish track is ALSO
-            // flagged the file's default, so `isDefault` alone picked signs-only over the full "Dansk
-            // (CC)" track sitting right beside it. The forced flag is checked first because "default"
-            // here is the misleading one — a non-forced track never needs this override.
-            val def = subtitleTracks.firstOrNull { it.isDefault } ?: return@run null
-            if (!def.forced) def.index
-            else subtitleTracks.firstOrNull { !it.forced && it.language.equals(def.language, ignoreCase = true) }?.index
-                ?: def.index
-        }
-        ?: subtitleTracks.firstOrNull { it.forced }?.index
-        ?: -1
-
-    return TrackSelectionResult(audioIdx, subIdx)
-}
+): TrackSelectionResult = dev.jellystructure.shared.tv.resolveTrackChoice(
+    seriesChoice, globalChoice,
+    audioTracks.map { dev.jellystructure.shared.tv.TrackInput(it.index, it.language, it.label, isDefault = it.isDefault) },
+    subtitleTracks.map { dev.jellystructure.shared.tv.TrackInput(it.index, it.language, it.label, forced = it.forced, isDefault = it.isDefault) },
+)
 
 /**
  * R195 §3 — groups a flat per-track list into one row per language. [entries] is index-aligned with

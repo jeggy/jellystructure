@@ -37,6 +37,8 @@ internal data class ScreenRouteEntry(
 internal data class ScreenPlayContext(
     val kind: String,
     val kicker: String? = null,
+    /** DEB-4932 (FR-23) — the series' own id, the key of the remembered audio and subtitle tier; null for a film. */
+    val seriesId: String? = null,
     val seriesName: String? = null,
     val logoUrl: String? = null,
     val logoInk: String? = null,

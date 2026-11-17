@@ -487,13 +487,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         val profileId = MultiTokenStore.getActive()?.userId ?: return
         val seriesKey = inputs.seriesId ?: itemId
         val existing = PlaybackPrefsStore.getSeriesChoice(profileId, seriesKey) ?: PlaybackPrefsStore.getGlobalChoice(profileId)
-        val choice = RememberedChoice(
-            audioLanguage = newAudioLanguage ?: existing?.audioLanguage,
-            subtitleLanguage = if (newSubtitlesOff == true) null else (newSubtitleLanguage ?: existing?.subtitleLanguage),
-            subtitlesOff = newSubtitlesOff ?: existing?.subtitlesOff ?: false,
-            audioVariant = if (newAudioLanguage != null) newAudioVariant else existing?.audioVariant,
-            subtitleVariant = if (newSubtitlesOff == true) null else if (newSubtitleLanguage != null) newSubtitleVariant else existing?.subtitleVariant,
-        )
+        val choice = dev.jellystructure.shared.tv.rememberPick(existing, newAudioLanguage, newSubtitleLanguage, newSubtitlesOff, newAudioVariant, newSubtitleVariant)
         PlaybackPrefsStore.setSeriesChoice(profileId, seriesKey, choice)
         PlaybackPrefsStore.setGlobalChoice(profileId, choice)
     }

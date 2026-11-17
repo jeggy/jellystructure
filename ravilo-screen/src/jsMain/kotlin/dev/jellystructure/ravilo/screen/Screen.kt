@@ -12,6 +12,12 @@ import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.PlayItemEnvelope
 import dev.jellystructure.shared.tv.PlayerCommandEnvelope
 import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
+import dev.jellystructure.shared.tv.RememberedChoice
+import dev.jellystructure.shared.tv.TrackInput
+import dev.jellystructure.shared.tv.rememberPick
+import dev.jellystructure.shared.tv.rememberedAudioIndex
+import dev.jellystructure.shared.tv.rememberedSubtitleIndex
+import dev.jellystructure.shared.tv.variantSignatureAt
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.ScreenStatus
 import dev.jellystructure.shared.tv.ScreenTrack
@@ -95,6 +101,8 @@ private class Screen(private val serverUrl: String) {
     private var artUrl: String? = null
     // R303 (FR-R303-2/7) — from the play push, never fetched: the film's or SERIES' logo + ink, the series' name.
     private var seriesName: String? = null
+    // DEB-4932 (FR-23) — the series this start belongs to, the key of the remembered-track tier; null for a film and for a phone's push.
+    private var seriesId: String? = null
     private var logoUrl: String? = null
     private var logoInk: String? = null
     private var loaded = false
@@ -323,15 +331,17 @@ private class Screen(private val serverUrl: String) {
         val fromTv = env.jellyfinId == tvNextItem
         tvNextItem = null
         following = emptyList()
-        beginPlay(env, fromTv)
+        // The next-up card's round trip (a start this TV asked for) stays in the series it left; a phone's push has no series id.
+        beginPlay(env, fromTv, series = if (fromTv) seriesId else null)
     }
 
     /** One start, whoever asked: a phone's push (FR-10), the next-up card's round trip, or this TV's own Play (FR-9). */
-    private suspend fun beginPlay(env: PlayItemEnvelope, fromTv: Boolean, startOver: Boolean = false) {
+    private suspend fun beginPlay(env: PlayItemEnvelope, fromTv: Boolean, startOver: Boolean = false, series: String? = null) {
         // FR-10 — a phone's push takes over whatever page the viewer is on (the shell keeps it mounted underneath).
         profileUi.hide()
         startedFromTv = fromTv
         itemId = env.jellyfinId
+        seriesId = series
         title = env.title
         // R303 (FR-R303-2/5/7) — the push carries the S·E kicker, the series' name and the logo; the
         // receiver used to show a bare title (or none: an episode's title was not even resolved).
@@ -356,17 +366,25 @@ private class Screen(private val serverUrl: String) {
             delay(5_000)
             if (generation == loadGeneration && !loaded) el("loading-label").textContent = ScreenLanguage.t("loading.still_trying")
         }
-        val t = negotiate(env.jellyfinId, generation, startOver) ?: return
+        val negotiated = negotiate(env.jellyfinId, generation, startOver) ?: return
         if (generation != loadGeneration) {
             // Back (or a newer play) came in while the start was being negotiated: the server opened a session for it.
             GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
             return
         }
+        // FR-23 — what this profile last chose, applied before the stream opens (a restream here costs no reopen).
+        val startAt = env.startPositionMs.takeIf { it > 0 } ?: negotiated.startPositionMs
+        val remembered = withRemembered(env.jellyfinId, negotiated, startAt)
+        if (generation != loadGeneration) {
+            GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
+            return
+        }
+        val t = remembered.ticket
         ticket = t
         selectedAudio = receiverSelectedAudio(t)
         // R285 — positions in receiverSubtitles(), the list the remote is shown; this used to index
         // the ticket's raw list, which stops matching the moment a ticket interleaves PGS and text.
-        showSubtitle(receiverSubtitles(t).indexOfFirst { it.isDefault && it.url != null })
+        showSubtitle(if (t.burnedSubtitleIndex != null) -1 else remembered.subtitle)
         loaded = true
         playing = false
         lastProgressAt = nowMs()
@@ -382,12 +400,62 @@ private class Screen(private val serverUrl: String) {
         sendStatus()
     }
 
+    /** FR-23 — the tier a start asks the server to honour: the series' choice when it has an audio language, else the global one. */
+    private fun rememberedAudio(): RememberedChoice? {
+        val user = activeUserId ?: return null
+        return seriesId?.let { ScreenTrackMemory.series(user, it) }?.takeIf { it.audioLanguage != null }
+            ?: ScreenTrackMemory.global(user)?.takeIf { it.audioLanguage != null }
+    }
+
+    /** The ticket's own lists as the shared rule reads them: positions in [StreamTicket.audio] and in [receiverSubtitles]. */
+    private fun audioInputs(t: StreamTicket) = t.audio.mapIndexed { i, a -> TrackInput(i, a.language, a.label, isDefault = a.isDefault) }
+    private fun subtitleInputs(t: StreamTicket) = receiverSubtitles(t).mapIndexed { i, s -> TrackInput(i, s.language, s.label, s.forced, s.isDefault) }
+
+    /** What a start ends up with once the profile's remembered choice is applied: the ticket to play and the text subtitle to draw (-1 = none). */
+    private class RememberedStart(val ticket: StreamTicket, val subtitle: Int)
+
+    /**
+     * DEB-4932 (FR-23) — apply this profile's remembered audio and subtitle to a fresh [t]. Audio went out with the start, so the
+     * ticket normally already carries it; it is switched here only when the series language is not in this file but the global
+     * one is. A subtitle is resolved with R181's tier order ([rememberedSubtitleIndex]): *Off* shows none, text is drawn, a
+     * picture subtitle is burned in. Anything that needs a different stream is one restream, made before the stream opens. With
+     * nothing remembered (or nothing matching), the start is exactly what it was: the file's default.
+     */
+    private suspend fun withRemembered(id: String, t: StreamTicket, startAt: Long): RememberedStart {
+        val default = receiverSubtitles(t).indexOfFirst { it.isDefault && it.url != null }
+        val user = activeUserId ?: return RememberedStart(t, default)
+        val series = seriesId?.let { ScreenTrackMemory.series(user, it) }
+        val global = ScreenTrackMemory.global(user)
+        val audioPos = (rememberedAudioIndex(series, audioInputs(t)) ?: rememberedAudioIndex(global, audioInputs(t)))
+            ?.takeIf { it != receiverSelectedAudio(t) }
+        val subPos = rememberedSubtitleIndex(series, subtitleInputs(t)) ?: rememberedSubtitleIndex(global, subtitleInputs(t))
+        val pick = subPos?.let { receiverSubPick(t, it) }
+        val burn = (pick as? ReceiverSubPick.Burn)?.streamIndex
+        // A text pick (or Off) with a burn-in already on the stream needs the burn-in cut out; so does anything else that asks for a restream.
+        val unburn = subPos != null && burn == null && t.burnedSubtitleIndex != null
+        val text = when {
+            subPos == null -> default
+            pick is ReceiverSubPick.Text && pick.url != null -> subPos
+            else -> -1
+        }
+        if (audioPos == null && burn == null && !unburn) return RememberedStart(t, text)
+        val audioStream = audioPos?.let { t.audio[it].index } ?: t.audioStreamIndex
+        val subStream = burn ?: if (unburn) -1 else (t.burnedSubtitleIndex ?: -1)
+        val next = runCatching { api.restream(id, subStream, startAt, backend.capabilities(), audioStream) }.getOrNull()
+            ?: return RememberedStart(t, text)   // the restream did not come: the stream the start gave is still a good one
+        return RememberedStart(next, text)
+    }
+
     /** Busy (Phase 182's 503 + Retry-After) waits and retries; unreachable shows the no-server screen —
      *  same shape as [dev.jellystructure.ravilo.cast.Receiver]'s own negotiate(). */
     private suspend fun negotiate(itemId: String, generation: Int, startOver: Boolean = false): StreamTicket? {
         val caps = backend.capabilities()
         while (true) {
-            val r = runCatching { api.startPlayback(itemId, caps, startPositionMs = if (startOver) 0L else null, startOver = startOver) }
+            // FR-23 — the remembered audio rides the start's own fields, so the stream is cut in that language with no second request.
+            val audio = rememberedAudio()
+            val r = runCatching {
+                api.startPlayback(itemId, caps, startPositionMs = if (startOver) 0L else null, audioLanguage = audio?.audioLanguage, audioVariant = audio?.audioVariant, startOver = startOver)
+            }
             if (generation != loadGeneration) return r.getOrNull()
             val e = r.exceptionOrNull() ?: run { busySinceMs = null; return r.getOrNull() }
             val http = e as? TvApiError.Http
@@ -463,7 +531,7 @@ private class Screen(private val serverUrl: String) {
                 following = c.following
                 beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = request.id, kind = c.kind, title = request.title, kicker = c.kicker,
                     seriesName = c.seriesName, logoUrl = c.logoUrl, logoInk = c.logoInk, segments = c.segments,
-                    nextId = c.nextId, nextTitle = c.nextTitle, nextKicker = c.nextKicker), fromTv = true, startOver = request.startOver)
+                    nextId = c.nextId, nextTitle = c.nextTitle, nextKicker = c.nextKicker), fromTv = true, startOver = request.startOver, series = c.seriesId)
                 return@launch
             }
             // A request with no page behind it reads what a phone's push would have carried. A detail that does not come is a
@@ -553,20 +621,42 @@ private class Screen(private val serverUrl: String) {
     /** R285 (FR-R285-2) — audio is a restream; shared by the phone's command and the TV's own picker. */
     private fun applyAudio(idx: Int) {
         val wanted = ticket?.audio?.getOrNull(idx) ?: return
+        rememberAudioPick(idx)
         if (wanted.index == ticket?.audioStreamIndex) return
         GlobalScope.launch { restream(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
     }
 
     /** R285 — text is drawn here, a picture subtitle is a burn-in restream. False when nothing changed
      *  now (nothing to do, or a restream that reports its own status when it lands). */
-    private fun applySubtitle(idx: Int): Boolean =
-        when (val pick = receiverSubPick(ticket, idx)) {
+    private fun applySubtitle(idx: Int): Boolean {
+        rememberSubtitlePick(idx)
+        return when (val pick = receiverSubPick(ticket, idx)) {
             ReceiverSubPick.Nothing -> false
             is ReceiverSubPick.Burn -> { GlobalScope.launch { restream(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1) }; false }
             is ReceiverSubPick.Text ->
                 if (pick.unburnFirst) { GlobalScope.launch { restream(-1, ticket?.audioStreamIndex, thenShow = idx) }; false }
                 else { showSubtitle(idx); true }
         }
+    }
+
+    /** FR-23 — a pick (the TV's picker or a phone's `set_audio`) writes the series tier and the global one; a start with no series writes the global tier only. */
+    private fun rememberAudioPick(idx: Int) {
+        val t = ticket ?: return
+        val user = activeUserId ?: return
+        val language = t.audio.getOrNull(idx)?.language ?: return
+        val variant = variantSignatureAt(audioInputs(t), idx)
+        ScreenTrackMemory.remember(user, seriesId) { rememberPick(it, newAudioLanguage = language, newAudioVariant = variant) }
+    }
+
+    /** FR-23 — *Off* is remembered as Off. A track with no language cannot be matched in another file, so it remembers nothing. */
+    private fun rememberSubtitlePick(idx: Int) {
+        val t = ticket ?: return
+        val user = activeUserId ?: return
+        if (idx < 0) { ScreenTrackMemory.remember(user, seriesId) { rememberPick(it, newSubtitlesOff = true) }; return }
+        val language = receiverSubtitles(t).getOrNull(idx)?.language ?: return
+        val variant = variantSignatureAt(subtitleInputs(t), idx)
+        ScreenTrackMemory.remember(user, seriesId) { rememberPick(it, newSubtitleLanguage = language, newSubtitleVariant = variant, newSubtitlesOff = false) }
+    }
 
     // ── R264 (FR-R264-3): Skip Intro, next-up and auto-advance ──
 
@@ -651,14 +741,14 @@ private class Screen(private val serverUrl: String) {
         val known = queue.firstOrNull()?.takeIf { it.id == id }
         hideNextUp(); hideSkip(); nextId = null
         if (known != null) {
-            val series = seriesName; val logo = logoUrl; val ink = logoInk
+            val series = seriesName; val logo = logoUrl; val ink = logoInk; val seriesKey = seriesId
             GlobalScope.launch {
                 if (current != null) runCatching { api.stopPlayback(current, pos) }
                 val after = queue.getOrNull(1)
                 following = queue.drop(1)
                 beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = known.id, kind = "episode", title = known.title, kicker = known.kicker,
                     seriesName = series, logoUrl = logo, logoInk = ink, segments = known.segments,
-                    nextId = after?.id, nextTitle = after?.title, nextKicker = after?.kicker), fromTv = true)
+                    nextId = after?.id, nextTitle = after?.title, nextKicker = after?.kicker), fromTv = true, series = seriesKey)
             }
             return
         }
