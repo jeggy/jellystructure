@@ -90,7 +90,7 @@ private class Screen(private val serverUrl: String) {
     )
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
-    private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired) { showPicker() }
+    private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
     private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut,
         ::openSettings, ::openMyList)
     private var eventsJob: Job? = null
@@ -159,9 +159,6 @@ private class Screen(private val serverUrl: String) {
     fun start() {
         registerTvKeys()
         window.addEventListener("keydown", { e -> onKey(e as KeyboardEvent) })
-        // R269 (FR-R269-7) — releasing Back before three seconds cancels the hold; a plain tap must
-        // never reopen setup.
-        window.addEventListener("keyup", { e -> if (isBack(e as KeyboardEvent)) backHeldSince = null })
         document.addEventListener("visibilitychange", { onVisibility(document.asDynamic().hidden == true) })
         backend.setListener(object : MediaBackendListener {
             override fun onBufferingStart() { buffering = true; if (loaded) show("buffering"); sendStatus() }
@@ -918,8 +915,6 @@ private class Screen(private val serverUrl: String) {
         }
     }
 
-    private var backHeldSince: Long? = null
-
     // ── DEB-4925 (FR-22): leaving the app and coming back ──
     private var awaySince: Long? = null
 
@@ -943,33 +938,11 @@ private class Screen(private val serverUrl: String) {
     // ── remote control: Tizen's registered keys arrive as ordinary keydown events (same names as
     // TizenKeys.REQUIRED) alongside a normal D-pad's KeyboardEvent.key vocabulary. ──
     private fun onKey(e: KeyboardEvent) {
-        // R269 FR-R269-7 also applies while the password form is showing. A short Back still
-        // returns to the code; holding it for three seconds reopens server setup.
-        if (isBack(e) && signIn.isOpen() && !e.repeat && backHeldSince == null) {
-            val since = nowMs(); backHeldSince = since
-            GlobalScope.launch {
-                delay(3_000)
-                if (backHeldSince == since) { backHeldSince = null; reopenServerSetup() }
-            }
-        }
         // DEB-4661 (FR-9) — Back on a start that has not begun: loading, busy, or refused.
         if (!loaded && shell.isPlayer() && isBack(e)) { cancelStart(); return }
         if (!loaded && signIn.handleKey(e)) return
         if (!loaded && profileUi.handleKey(e)) return
         if (!loaded && shell.handleKey(e)) return
-        // R269 (FR-R269-7) — the only way back to server setup: hold Back on IDLE for three seconds.
-        // Tracked outside the `!loaded` guard below since idle is exactly where loaded is false, and
-        // outside the `when` since it needs the key-repeat/-up pair, not a single keydown.
-        if (isBack(e) && !loaded) {
-            if (!e.repeat && backHeldSince == null) {
-                val since = nowMs(); backHeldSince = since
-                GlobalScope.launch {
-                    delay(3_000)
-                    if (backHeldSince == since) { backHeldSince = null; reopenServerSetup() }
-                }
-            }
-            return
-        }
         if (!loaded) return
         // R264 (FR-R264-3/4) — the TV remote drives the whole player; every action ends in a status report,
         // so the phone's remote shows a TV-remote pause within one push. Precedence: the picker, then the
@@ -997,10 +970,10 @@ private class Screen(private val serverUrl: String) {
      *  `Backspace` on a desktop browser, `Exit` for the Exit key this app registers. */
     private fun isBack(e: KeyboardEvent): Boolean = isBackKey(e)
 
-    /** R269 (FR-R269-7) — no live teardown of this running instance: store the current address as the
-     *  setup screen's prefill, drop the stored one, and reload — `main()`'s normal "no address stored"
-     *  path then shows setup with today's address already in the field. The simplest correct
-     *  implementation of a hold that should be rare enough to never need to be fast. */
+    /** DEB-4947 (FR-11) — Settings ▸ Change server and the sign-in screen's *Wrong server?* both land here. No live
+     *  teardown of this running instance: store the current address as the setup screen's prefill, drop the stored
+     *  one, and reload — `main()`'s normal "no address stored" path then shows setup with today's address already
+     *  in the field. */
     private fun reopenServerSetup() {
         localStorage.setItem(SETUP_PREFILL_KEY, serverUrl)
         localStorage.removeItem(SERVER_URL_KEY)
@@ -1170,7 +1143,7 @@ fun main() {
         GlobalScope.launch {
             runCatching {
                 val stored = localStorage.getItem(SERVER_URL_KEY)?.trim()?.takeIf { it.isNotBlank() }
-                // FR-R269-7 / DEB-4663 — a reopened setup screen leaves the address that was working behind it.
+                // DEB-4947 / DEB-4663 — a reopened setup screen leaves the address that was working behind it.
                 val previous = localStorage.getItem(SETUP_PREFILL_KEY)
                 val serverUrl = stored ?: runServerSetup()
                 if (localStorage.getItem(CODE_ONLY_SERVER_KEY)?.let { !sameServer(it, serverUrl) } == true)

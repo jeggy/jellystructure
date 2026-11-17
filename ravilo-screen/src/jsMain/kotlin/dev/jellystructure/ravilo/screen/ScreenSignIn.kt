@@ -27,6 +27,7 @@ internal class ScreenSignIn(
     private val deviceName: String,
     private val onSignedIn: (PairResult) -> Unit,
     private val onBack: () -> Unit,
+    private val onChangeServer: () -> Unit,
 ) {
     private val root get() = document.getElementById("signin") as HTMLElement
     private val message get() = document.getElementById(if (showingPassword) "signin-password-message" else "signin-message") as HTMLElement
@@ -39,6 +40,7 @@ internal class ScreenSignIn(
     private val form get() = document.getElementById("signin-form") as HTMLElement
     private val codeOnlyView get() = document.getElementById("signin-code-only") as HTMLElement
     private val codeOnlyButton get() = document.getElementById("signin-code-only-button") as HTMLElement
+    private val changeServerButton get() = document.getElementById("signin-change-server") as HTMLElement
     private var job: Job? = null
     private var showingPassword = false
     private var showingCodeOnlyMessage = false
@@ -75,6 +77,10 @@ internal class ScreenSignIn(
         retryButton.onclick = { openCode() }
         (document.getElementById("signin-submit") as HTMLElement).onclick = { submitPassword() }
         (document.getElementById("signin-cancel") as HTMLElement).onclick = { openCode() }
+        // DEB-4947 (FR-11) — the way back to setup, in every view of this screen; its host line is the server being signed in to.
+        changeServerButton.textContent = label("login.change_server")
+        document.getElementById("signin-server")?.textContent = api.baseUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+        changeServerButton.onclick = { onChangeServer() }
         openedAt = nowMs()
         openCode()
     }
@@ -229,10 +235,18 @@ internal class ScreenSignIn(
                 document.getElementById("signin-submit") as HTMLElement,
                 document.getElementById("signin-cancel") as HTMLElement)
             else listOf(passwordButton, retryButton).filter { it.style.display != "none" }
-            if (items.isEmpty()) return false
-            val current = items.indexOf(document.activeElement)
             val step = if (event.key == "ArrowDown" || event.key == "ArrowRight") 1 else -1
-            items[(current + step + items.size) % items.size].focus()
+            // DEB-4947 (FR-11) — *Wrong server?* is the last stop: Down from the item above reaches it, Down from it goes
+            // nowhere, and it is never where focus starts or where Up from the first item wraps to.
+            val onChange = document.activeElement == changeServerButton
+            if (onChange) {
+                if (step < 0) items.lastOrNull()?.focus()
+            } else {
+                val current = items.indexOf(document.activeElement)
+                if (step > 0 && (items.isEmpty() || current == items.lastIndex)) changeServerButton.focus()
+                else if (items.isEmpty()) return false
+                else items[(current + step + items.size) % items.size].focus()
+            }
             event.preventDefault(); return true
         }
         return false

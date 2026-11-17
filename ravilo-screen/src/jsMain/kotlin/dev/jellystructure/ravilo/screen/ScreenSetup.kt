@@ -32,7 +32,7 @@ internal suspend fun runServerSetup(): String {
     document.getElementById("setupTitle")?.textContent = ScreenLanguage.t("receiver.setup_title")
     button.textContent = ScreenLanguage.t("receiver.setup_connect")
     hint.textContent = ScreenLanguage.t("receiver.setup_hint")
-    // FR-R269-7 — a hold-Back reopen prefills the address that was just working, never a blank field.
+    // FR-R269-7 / DEB-4947 — a reopen (Settings, or Wrong server? on sign-in) prefills the address that was just working, never a blank field.
     // DEB-4663 — an `http://` address keeps its scheme: stripped, it would be re-read as `https://` and
     // look like a new address, which signs every profile out.
     localStorage.getItem(SETUP_PREFILL_KEY)?.let { input.value = it.removePrefix("https://") }

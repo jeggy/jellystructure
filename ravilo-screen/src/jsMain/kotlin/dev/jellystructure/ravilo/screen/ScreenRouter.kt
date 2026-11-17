@@ -147,7 +147,7 @@ internal class ScreenShell(
     fun handleKey(event: KeyboardEvent): Boolean {
         if (!visible || player) return false
         // DEB-4662 (FR-8) — in the search field the keys that type or move the caret are the field's own: taken here
-        // (so a held Backspace is not the three-second Back that reopens server setup) and left un-prevented.
+        // (so Backspace there is not a Back out of the search) and left un-prevented.
         val inField = entries.last().focusId == ScreenSearch.FIELD_ID && entries.last().search != null
         if (inField && (event.key == "Backspace" || event.key == "Enter" || event.key == "ArrowLeft" || event.key == "ArrowRight")) return true
         when {

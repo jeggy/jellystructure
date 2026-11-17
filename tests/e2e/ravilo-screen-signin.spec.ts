@@ -227,3 +227,102 @@ test("Tizen draws the sign-in link as a QR matrix (DEB-4657 FR-2)", async ({ pag
   expect(painted.quietWhite).toBe(true); // Four-module quiet zone.
   expect(painted.darkModules).toBe(true); // Black modules.
 });
+
+// DEB-4947 (FR-11) — Wrong server? is the way back to setup; holding Back is not.
+const PROFILES = "ravilo.screen.profiles";
+const SERVER = "http://app:9505";
+const OTHER = "http://other-server.invalid";
+
+/** Seeds once, so the reload that Wrong server? triggers sees what the app itself stored by then. */
+async function bootSeeded(page: import("@playwright/test").Page, profiles: unknown[] = []) {
+  await ownSignInBucket(page);
+  await page.addInitScript(([server, key, list]) => {
+    if (sessionStorage.getItem("__seeded")) return;
+    sessionStorage.setItem("__seeded", "1");
+    localStorage.setItem("ravilo.screen.serverUrl", server as string);
+    if ((list as unknown[]).length) localStorage.setItem(key as string, JSON.stringify(list));
+  }, [SERVER, PROFILES, profiles] as const);
+  await page.goto(SCREEN_URL);
+}
+
+async function mockOtherServer(page: import("@playwright/test").Page) {
+  await page.route(`${OTHER}/**`, route => route.request().url() === `${OTHER}/api/health`
+    ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: '{"status":"ok","version":"9.9"}' })
+    : route.abort());
+}
+
+test("Tizen sign-in reaches Wrong server? with Down, opens setup prefilled, and a held Back does nothing (DEB-4947 FR-11)", async ({ page }) => {
+  await bootSeeded(page);
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+  await expect(page.locator("#signin-password-instead")).toBeFocused();
+  await expect(page.locator("#signin-change-server")).toHaveText("Wrong server?");
+  await expect(page.locator("#signin-server")).toHaveText("app:9505");
+  await page.keyboard.down("Escape");
+  for (let i = 0; i < 6; i++) { await page.waitForTimeout(600); await page.keyboard.down("Escape"); }
+  await page.keyboard.up("Escape");
+  await expect(page.locator("#setup")).not.toHaveClass(/\bon\b/);
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#signin-change-server")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#signin-change-server")).toBeFocused(); // Down from it goes nowhere.
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+  await expect(page.locator("#setupHost")).toHaveValue(SERVER);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+});
+
+test("Tizen sign-in's Wrong server? is also on the password form (DEB-4947 FR-11)", async ({ page }) => {
+  await bootSeeded(page);
+  await page.waitForTimeout(1_200); // an OK in the first second is the press that opened this screen (DEB-4831)
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin-username")).toBeFocused();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown"); // username, password, Sign in, Cancel, then it.
+  await expect(page.locator("#signin-change-server")).toBeFocused();
+});
+
+test("Tizen Add user shows Wrong server?; the same address keeps the profile, another leaves none (DEB-4947 FR-11)", async ({ page }) => {
+  await mockOtherServer(page);
+  await bootSeeded(page, [{ userId: "viewer", displayName: "Test Viewer", token: "token-viewer" }]);
+  await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+  await openProfileMenu(page);
+  await page.keyboard.press("Enter"); // Switch profile.
+  await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+  await page.keyboard.press("ArrowRight"); // Add user.
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+  await expect(page.locator("#signin-change-server")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#signin-change-server")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#setupHost")).toHaveValue(SERVER);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#shell")).toHaveClass(/\bon\b/); // One profile: the app opens on it again.
+  const kept = JSON.parse((await page.evaluate(key => localStorage.getItem(key), PROFILES))!) as unknown[];
+  expect(kept).toHaveLength(1);
+  await openProfileMenu(page); // Add user again, then to setup with a different address.
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+  await page.locator("#signin-change-server").click();
+  await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+  await page.locator("#setupHost").fill(OTHER);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+  expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.serverUrl"))).toBe(OTHER);
+  expect(await page.evaluate(key => localStorage.getItem(key), PROFILES)).toBeNull();
+});
+
+test("Tizen sign-in's could-not-reach state reaches Wrong server? from Retry (DEB-4947 FR-11)", async ({ page }) => {
+  await page.route("**/api/tv/signin/code", route => route.abort());
+  await bootSeeded(page);
+  await expect(page.locator("#signin-retry")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#signin-change-server")).toBeFocused();
+});

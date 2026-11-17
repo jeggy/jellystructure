@@ -149,6 +149,8 @@
     .auth-button, .profile-choice { background: rgba(255,255,255,.08); color: var(--ink); border: 2px solid transparent; border-radius: 11px; padding: 14px 24px; font: inherit; font-size: 22px; cursor: pointer; }
     .auth-button:focus, .profile-choice:focus, .profile-choice.focused { outline: none; border-color: var(--ring); background: rgba(255,255,255,.16); }
     #signin-password-instead { margin-top: 30px; }
+    #signin-wrong-server { margin-top: 40px; }
+    #signin-server { color: var(--ink-soft); font-size: 16px; margin-top: 10px; }
     #signin-retry { display: none; margin-top: 30px; margin-left: 12px; }
     .auth-hint { color: var(--ink-soft); font-size: 18px; margin-top: 24px; min-height: 24px; }
     #signin-form { display: none; max-width: 540px; margin: 0 auto; text-align: left; }
