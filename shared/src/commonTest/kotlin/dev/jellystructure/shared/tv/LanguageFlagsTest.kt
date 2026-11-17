@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
  */
 class LanguageFlagsTest {
     @Test
-    fun `a code finds its flag through the canonical language, aliases and BCP-47 forms alike`() {
+    fun `a code finds its flag through the canonical language with aliases and BCP-47 forms alike`() {
         assertEquals("gb", flagCountryFor("en"))
         assertEquals("gb", flagCountryFor("ENG"))
         assertEquals("dk", flagCountryFor("dan"))
