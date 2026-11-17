@@ -126,6 +126,7 @@ FR-5, redrawn in DOM.
 - **Live TV is not in v1.** `live_tv_home` is treated as absent.
 - A channel button opens that channel's feed (`getChannel`) with the same renderer.
 - `focus_detail` is honoured as `none`. The focus-detail panel comes later.
+- While the feed loads, Home draws FR-20's skeleton (amended 2026-11-17, DEB-4889, see below).
 
 **FR-6 · Movies, Series and My List are grids.**
 
@@ -134,6 +135,7 @@ FR-5, redrawn in DOM.
 - A grid loads the next page as focus nears its end.
 - My List with nothing in it shows the Android TV empty line.
 - **No filter or facet UI in v1.**
+- A grid's first page loads under FR-20's skeleton (amended 2026-11-17, DEB-4889, see below).
 
 **FR-7 · A title's page.**
 
@@ -149,6 +151,8 @@ FR-5, redrawn in DOM.
 - Played state and My List change through `setPlayed` and `setFavorite`. The page re-reads the server's
   answer and does not flip the button on its own (the constitution's server-owned state).
 - **No people row in v1.** The cast list comes later, with person pages.
+- The header carries the audio and subtitle language flags (FR-19), and the page draws FR-20's skeleton while it
+  loads (both amended 2026-11-17, DEB-4889, see below).
 
 **FR-8 · Search.**
 
@@ -547,3 +551,100 @@ play takes over*.
   device does. `ravilo-screen-play-from-tv.spec.ts` starts a second item over an open stream (a close sits between the opens, no
   failure shows) and fails an `open()` (the failure line, one stop at 0, none at a length). The emulators go to QA with the preview
   `.wgt`: re-run DEB-4867's table on 5.0 and 10.0.
+
+## Amendment 2026-11-17 (DEB-4889) — language flags on a title's page, and real loading states
+Task: DEB-4889
+
+The owner, testing v1.70 on the UE55RU7445 (DEB-799, 09:20Z): *"Missing is the language and subtitles flags on the details
+page"* and *"The loading states are very ugly. Home page just says 'Home' while loading and the details page just show the
+description with big font while loading."* Both are new promises, so they are FR-19 and FR-20 here. Android TV already draws
+both, so there is no design round: the Samsung page redraws what Android TV shows, at this page's scale.
+
+What the code does today:
+- `ScreenDetail.render` draws no language line at all. `MovieDetail` and `SeriesDetail` already carry `audio_languages` and
+  `subtitle_languages`, so the data is on the wire and decoded.
+- While anything loads, Home, a channel's feed, a grid and a title's page draw `.shell-placeholder`. That is one 48 px bold
+  line of text with a focus ring: *Home*, *Movies*, or the tile's title.
+- A Home feed that fails to load is ignored (`result.getOrNull()?.let`), so that line stays on screen for good.
+
+**FR-19 · A title's page shows its audio and subtitle languages as flags.** This is Android TV's `AudioSubtitleFlagLine`
+(R134, R239, R247), redrawn in DOM.
+
+- **Where.** One line in the header, under the meta line and above the overview, on a movie's page and a series' page alike.
+  It reads `AUDIO` and its flags, a `·`, then `SUBTITLES` and its flags, using the existing `fd.audio` and `fd.subs` keys
+  (FR-12).
+- **What it counts** is Android TV's rule, unchanged:
+  - Each code is canonicalised first (R247, `canonicalLanguage` in `shared`), so `da` and `dan` are one language.
+  - A group shows at most five flags. Every other language goes into an honest `+N`, and that includes a language that has
+    no flag (FR-R239-1).
+  - A group whose languages all lack a flag still shows its label and `+N`, so it never looks like a title with none
+    (FR-R239-2). A group with no languages is left out. When both groups are empty, there is no line and no space is held
+    for one.
+  - Tamil and Telugu stay without a flag (R239's closed decision).
+- **One table, not two.** The language → flag table and the counting rule move from `ravilo-ui`'s `AudioFlagStrip.kt`
+  (`LANG_CC`, `flagFor`, `countFlagStrip`) into `shared` (`commonMain`), keyed by the flag file's country code (`gb`, `fo`,
+  …). There is no change in behaviour, the same move FR-2 made for `QrEncoder`. `ravilo-ui` keeps only the country code →
+  drawable lookup, and `AudioFlagStripTest` stays green. The Samsung app never carries a table of its own.
+- **The flag images** are `ravilo-ui`'s 41 `flag_*.png` drawables, packed into the `.wgt` as `flags/<cc>.png` from that one
+  source at build time, so no second set is committed. A flag is never fetched from the server. They are about 200 KB in
+  total and sit outside FR-14's bundle budget. A page loads at most ten of them.
+- **Size, at this page's scale.** Each flag is 39×27 px with 3 px corners and a 1 px border at 18 % white. The label is
+  14 px semibold, letter-spaced 1 px, at 55 % white. `+N` is 15 px semibold at 70 % white. Flags sit 9 px apart and the two
+  groups 18 px apart. Use `margin-left` between siblings, never flex `gap` (FR-13). Five plus five with both `+N`s fits in
+  the header's 62 % column at 1920×1080. If a build ever finds it does not, the larger group gives up a flag to its `+N`
+  until the line fits, the same as Android TV. It never clips.
+- **Not focusable.** The line is facts, and the D-pad passes over it.
+
+**FR-20 · Every page that loads draws a skeleton, never a word.** This is Android TV's `HomeLoadingShell` and
+`DetailLoadingShell`, and the grids' `TileShimmerGrid` (DEB-4091). The skeleton is grey blocks in the places and at the
+sizes of what will replace them. It holds no text at all: no heading standing in for a page, and no title in large type.
+`.shell-placeholder` is no longer used for loading.
+
+- **Home and a channel's feed** (FR-5):
+  - a hero block the full width of the page and 56 vh tall, the default of the feed's `hero_height_pct`;
+  - then two rows. Each row is a heading bar 240×26 px, then poster blocks at `.home-tile`'s size (176×265 px, 11 px
+    corners), each with a caption bar 130×18 px under it. A row holds as many blocks as fill the width.
+- **A title's page** (FR-7):
+  - the backdrop block in `.detail-backdrop`'s place and size, with its existing bottom gradient;
+  - in the header: a title bar 560×56 px, a meta bar 320×22 px, two overview bars at 80 % and 60 % of the 62 % column,
+    21 px tall;
+  - two button blocks at `.detail-btn`'s height, 240 px and 200 px wide, with 11 px corners.
+
+  Android TV's shell is the same for a movie and a series, so the series' strip has no skeleton.
+- **Movies, Series and My List** (FR-6): the page's real heading stays, because it is the page's title and not a stand-in.
+  Under it are a count bar 200×22 px and the grid's six columns of poster blocks, as many rows as fill the screen.
+- **How it looks.**
+  - The blocks are the surface colours the page already uses: `#202431` for tiles, bars and buttons, and `#161922` for the
+    backdrop and the hero.
+  - The whole skeleton is one element whose opacity eases from 1 to 0.55 and back over 1.2 s, for as long as it is on
+    screen. That keeps FR-14's *opacity and transform only* and gives a 2019 set one animated layer, not one per block.
+  - Android TV's moving gradient is not copied, because it would need a per-block animation or a mask.
+- **Focus.** The block where focus will land is the focus target and carries the normal ring: the hero on Home, the first
+  poster on a grid, the primary button on a title's page. It keeps today's `shell-page-target` id, so the router's handover
+  to the real target (DEB-4660) and Back and Up behave as they do now. OK on a block does nothing.
+- **When content arrives**, the skeleton is removed in the same frame and the content fades in from 0 to 1 opacity over
+  220 ms (DEB-2204 FR-5). A page drawn from what the route already holds does neither. That covers Back to Home, and a
+  title's page redrawn after a write-through or a season switch.
+- **A backdrop or hero image** fades in over 220 ms when it loads, on top of its surface block. A slow image therefore never
+  leaves a bare black area.
+- **A load that fails replaces the skeleton. It never pulses forever.**
+  - A title's page keeps DEB-4660's failure lines.
+  - Home, a channel's feed and a grid's first page show *Couldn't reach the server* (`error.play.unreachable.title`) and its
+    body line, with one focused *Retry* button (`action.retry`) that loads again under the skeleton.
+  - The failure is drawn as a title and a body line in the page's type, never as a 48 px bare line.
+  - Today, a Home feed that fails to load is never reported to the viewer at all.
+- **Proof.**
+  - **Flags:** `ravilo-screen-detail.spec.ts` gains a movie whose mock detail has three audio languages and seven subtitle
+    languages, one of them unmapped. It asserts three flag `<img>`s with `naturalWidth > 0`, five subtitle flags and `+2`,
+    and the `fd.*` labels. A series with no languages has no line. The moved counting rule keeps `AudioFlagStripTest` and
+    gains a `:shared:desktopTest`.
+  - **The packed flags:** `check-tizen-assets.sh` fails when a country code in `shared`'s table has no `flags/<cc>.png` in
+    the widget.
+  - **Skeletons:** the home, detail and browse specs hold the mock's answer back and assert the skeleton is present, holds
+    no text, and has the ring on its focus block. Released, they assert the content draws, focus moves to the real target,
+    and the skeleton is gone.
+  - **Failure:** a 500 on the feed shows the failure and *Retry*, and *Retry* loads the feed.
+  - **CSS:** `check-tizen-engine.sh` stays green.
+  - **On the TV:** how the flags read and the pulse looks on the 55-inch panel goes to QA with the preview `.wgt`, on the 5.0
+    emulator first.
+- **No wire change.** No route, field or DTO moves. The flags are already in both detail DTOs.
