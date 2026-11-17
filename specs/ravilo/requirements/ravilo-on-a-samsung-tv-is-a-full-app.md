@@ -454,3 +454,26 @@ text: the shell bar's top-left `Ravilo` and the sign-in and profile-picker `Ravi
 - **Proof.** `ravilo-screen.spec.ts` requires an `<img>` with `naturalWidth > 0` in `#shell .shell-brand`, `#signin
   .auth-brand` and `#profile-picker .auth-brand`; `check-tizen-assets.sh` also covers `brand-mark` images. How it looks on
   the Samsung bar goes to QA with the preview `.wgt`.
+
+## Amendment 2026-11-17 (DEB-4832) — a series' tile plays its episode, not the series
+
+The owner's first real-TV play (Tizen 5.0) ended in *That didn't start*. DEB-4661's amendment said *a tile for a series
+has nothing to play*, but the stand-in page sent the tile's id to `startPlayback` whatever its kind. A series id is not
+playable: Jellyfin answers `PlaybackInfo` with a 400, and the TV showed the generic refusal. The emulator run passed
+because its tile was a movie.
+
+- **A series' stand-in page plays the episode the title's page would.** This replaces *a tile for a series has nothing
+  to play* in the DEB-4661 amendment above. OK reads `GET /api/tv/series/{id}` and the series' own entry from
+  `GET /api/tv/playstate`, and plays, in this order: a newest-first series' newest counted episode; the episode that
+  entry's `continue_episode_id` names (in progress, or next up); the first counted episode. *Counted* is
+  R346's: season 1 or later, with a Jellyfin item. The TV does not derive progress itself: the server names the
+  episode, and the first-episode fallback is what the series' page plays for a series nobody has started.
+- **The player gets the episode's context.** The start carries the episode's title, the `S01E02` kicker, the series' name
+  and logo, and the counted episode after it as the next-up card, as a phone's push would. Skip Intro and Skip
+  Credits markers are the episode's, which the series route does not carry: a series' start made on the TV has none until
+  DEB-4660's page.
+- **A series whose detail does not arrive in 5 s, or has no episode to play,** says *That didn't start* with the TV
+  wording, like any refused start. It never reaches `startPlayback` with the series id.
+- **Proof.** A Playwright case in `ravilo-screen-play-from-tv.spec.ts` presses OK on a series tile and requires the
+  start to name the episode, never the series; `:shared:desktopTest` covers the episode choice. A real-device play of a
+  series' episode goes to QA with the preview `.wgt`.

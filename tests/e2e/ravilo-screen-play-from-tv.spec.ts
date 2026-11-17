@@ -51,7 +51,17 @@ function fakeSocketInitScript() {
   (window as any).WebSocket = FakeSocket;
 }
 
-async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ status: number; body: object }> } = {}): Promise<Seen> {
+const seriesCard = { ...card("series-1", "Paper Series"), kind: "SERIES" };
+const episode = (id: string, n: number, title: string) => ({ id, episode_number: n, title, runtime: 40, overview: null, still_url: null });
+const seriesDetail = {
+  card: seriesCard, synopsis: null, cast: [], related: [], logo_url: "/api/tv/image/series-1-logo",
+  seasons: [
+    { index: 0, name: "Specials", episodes: [episode("sp-1", 1, "Behind the Reel")] },
+    { index: 1, name: "Season 1", episodes: [episode("s1e1", 1, "Opening Reel"), episode("s1e2", 2, "Second Reel")] },
+  ],
+};
+
+async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ status: number; body: object }>; series?: object | null; continueEpisode?: string } = {}): Promise<Seen> {
   const seen: Seen = { progress: [], stops: [], starts: [], remotePlays: [], statuses: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(fakeSocketInitScript);
@@ -65,7 +75,12 @@ async function boot(page: Page, opts: { start?: (itemId: string) => Promise<{ st
     const path = new URL(req.url()).pathname;
     const body = req.postData() ? JSON.parse(req.postData()!) : null;
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
-    if (path === "/api/tv/home") return json(route, 200, feed);
+    if (path === "/api/tv/home") return json(route, 200, opts.series === undefined ? feed
+      : { ...feed, rows: [{ ...feed.rows[0], items: [seriesCard] }] });
+    // DEB-4832 — a series' detail, and the series' own entry in the playstate (its Continue Watching episode).
+    if (path === "/api/tv/series/series-1") return opts.series ? json(route, 200, opts.series) : json(route, 404, {});
+    if (path === "/api/tv/playstate") return json(route, 200, opts.continueEpisode
+      ? { "series-1": { resume_ms: 0, played: false, played_pct: 0, continue_episode_id: opts.continueEpisode } } : {});
     if (path === "/api/tv/playback/start") {
       seen.starts.push(body);
       const answer = opts.start ? await opts.start(body.item_id) : { status: 200, body: ticket(body.item_id, 42_000) };
@@ -214,5 +229,39 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(1);
     expect(seen.stops[0]).toMatchObject({ item_id: "ep-1" });
     expect((await avplayCalls(page)).some((c) => c[0] === "open")).toBe(false);
+  });
+
+  test("DEB-4832: OK on a series' tile plays an episode, never the series id", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { series: seriesDetail, continueEpisode: "s1e2" });
+    await page.keyboard.press("Enter");                      // the stand-in page
+    await expect(page.locator("#shell-body")).toHaveText("Paper Series");
+    await page.keyboard.press("Enter");                      // Play
+    const opened = await waitForAvplayCall(page, "open");
+    expect(String(opened.call[1])).toContain("/hls/s1e2/");
+    expect(seen.starts.map((s) => s.item_id)).toEqual(["s1e2"]);   // Continue Watching's episode, not "series-1"
+    await waitForAvplayCall(page, "play", opened.index);
+    await page.keyboard.press("Enter");                      // the overlay (pause) shows the episode's own line
+    await expect(page.locator("#ov-kicker")).toHaveText("S01E02");
+    await expect(page.locator("#ov-showname")).toHaveText("Paper Series");
+  });
+
+  test("DEB-4832: a series nobody started plays its first counted episode", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { series: seriesDetail });
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await waitForAvplayCall(page, "open");
+    expect(seen.starts.map((s) => s.item_id)).toEqual(["s1e1"]);
+  });
+
+  test("DEB-4832: a series whose detail does not come is refused in the TV's words, without a start", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { series: null });
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await expect(page.locator("#failed-s")).toHaveText("Press Back and try again.");
+    expect(seen.starts).toHaveLength(0);
   });
 });
