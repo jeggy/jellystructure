@@ -42,7 +42,7 @@ internal class ScreenFocus(
             val y = rect.top + rect.height / 2 - fy
             (dx == 0 || x * dx > 0) && (dy == 0 || y * dy > 0)
         }
-        val candidates = if (dx != 0) directional.filter { it.getAttribute("data-row") == currentRow } else directional
+        val candidates = if (dx != 0) directional.filter { it.getAttribute("data-row") == currentRow } else nearestBand(directional, fy)
         val rows = route().rowFocus
         candidates.minByOrNull { candidate ->
             val rect = candidate.getBoundingClientRect()
@@ -55,6 +55,21 @@ internal class ScreenFocus(
         }?.let(::focus)
     }
 
+    /**
+     * Up/Down visits the next band of targets, never one beyond it (DEB-4888): the old nearest-by-distance pick weighed
+     * the sideways gap double, so a short Continue Watching rail far from the focused avatar lost to a long rail below it
+     * and the row was skipped. The band is the targets sharing the nearest vertical centre; the pick within it is the
+     * remembered tile, else the nearest across.
+     */
+    private fun nearestBand(directional: List<HTMLElement>, fy: Double): List<HTMLElement> {
+        fun gap(element: HTMLElement): Double {
+            val rect = element.getBoundingClientRect()
+            return kotlin.math.abs(rect.top + rect.height / 2 - fy)
+        }
+        val nearest = directional.minOfOrNull(::gap) ?: return directional
+        return directional.filter { gap(it) <= nearest + BAND_TOLERANCE_PX }
+    }
+
     private fun targets(): List<HTMLElement> {
         val nodes = root().getElementsByClassName("shell-target")
         val result = mutableListOf<HTMLElement>()
@@ -64,5 +79,9 @@ internal class ScreenFocus(
             if (rect.width > 0 && rect.height > 0) result.add(element)
         }
         return result
+    }
+
+    private companion object {
+        const val BAND_TOLERANCE_PX = 24.0
     }
 }

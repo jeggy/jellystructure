@@ -96,3 +96,33 @@ test("Tizen Home gives deep focused artwork priority in dense rows (DEB-4729, DE
   await expect(focused.locator(".tile-art img[src]")).toHaveCount(1);
   expect(await page.locator("#shell-body .tile-art img[src]").count()).toBeLessThanOrEqual(60);
 });
+
+test("Tizen Up/Down visits a one-tile Continue Watching row before the long row below it, and Up returns (DEB-4888, DEB-4654 FR-4)", async ({ page }) => {
+  // Home lands on the hero, which is centred; the one-tile Continue row sits far to its left. The old nearest-distance
+  // pick weighed the sideways gap double and went straight past the short row to a tile of the long one.
+  const feed = {
+    heroes: homeFeed.heroes, channels: [],
+    rows: [
+      { id: "continue", title: "Keep Watching", kind: "CONTINUE", items: [card("continue-a", "Blue Orchard")] },
+      { id: "long", title: "Long Shelf", kind: "CUSTOM",
+        items: Array.from({ length: 14 }, (_, tile) => card(`long-${tile}`, `Story ${tile}`)) },
+      { id: "after", title: "After Shelf", kind: "CUSTOM", items: [card("after-a", "Tail Light")] },
+    ],
+    tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
+  };
+  await boot(page, feed);
+  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#shell-body .home-tile.focused")).toHaveAttribute("data-row", "row-1");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#home-row-2-tile-0")).toHaveClass(/focused/);
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#shell-body .home-tile.focused")).toHaveAttribute("data-row", "row-1");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+});
