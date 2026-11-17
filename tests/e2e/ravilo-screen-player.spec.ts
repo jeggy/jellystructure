@@ -32,6 +32,15 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
     await waitForAvplayCall(page, "play", opened.index);
     await expect.poll(async () => (await nowPlaying()).loaded, { timeout: 15_000 }).toBe(true);
 
+    // ── DEB-4845: AVPlay's plane is BEHIND the page — an opaque html/body hid it (black picture, sound). ──
+    // Chromium cannot show Samsung's plane, so the test asserts the cause: nothing opaque is left over it.
+    await expect(page.locator("html")).toHaveClass(/\bavplay-on\b/);
+    const bg = await page.evaluate(() => [document.documentElement, document.body].map((e) => getComputedStyle(e).backgroundColor));
+    expect(bg, "html and body must be transparent while AVPlay plays").toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    await expect(page.locator("#video")).toBeHidden();
+    const rect = (await avplayCalls(page)).find((c) => c[0] === "setDisplayRect")!;
+    expect(rect.slice(1), "the display rect is the page's own viewport").toEqual([0, 0, await page.evaluate(() => window.innerWidth), await page.evaluate(() => window.innerHeight)]);
+
     // ── Transport: OK pauses (and the chrome shows), ← seeks back, → seeks forward. ──────────────────
     const before = (await avplayCalls(page)).length;
     await page.keyboard.press("Enter");
@@ -94,6 +103,7 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
     await expect(page.locator("#overlay")).not.toHaveClass(/\bon\b/);
     await page.keyboard.press("Escape");               // stops
     await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await expect(page.locator("html")).not.toHaveClass(/\bavplay-on\b/);   // the page is opaque again off the stream
 
     expect(pageErrors, pageErrors.join("\n")).toEqual([]);
   });

@@ -495,3 +495,21 @@ FR-7's page replaces the stand-in that DEB-4661 and DEB-4832 described. Nothing 
 - **The page hands the player its facts.** `ScreenPlayRequest` carries a `ScreenPlayContext`: a movie's logo and Skip Intro markers (so the 3 s `getMovie` wait in DEB-4661's amendment now applies only to a play with no page behind it), and an episode's S·E line, its series' name and logo, its own markers and the counted episode after it. A series' own tile id is never started.
 - **DEB-4832's stand-in is gone.** `playSeriesFromTv` and its 5 s wait are removed: the page chooses the episode, and a series whose detail does not come shows the failure line instead of the generic refusal. `pickSeriesPlay` stays in `shared` with its test.
 - **Proof.** `ravilo-screen-detail.spec.ts` covers the Resume label, Start over, the My List and watched write-throughs (including a refusal), the next-up episode, a finished series, a season switch, an episode tile and the way back from a play. `ravilo-screen-play-from-tv.spec.ts` now goes through the page. The page on a real TV (key codes, focus on a 55-inch panel, artwork) goes to QA with the preview `.wgt`.
+
+## Amendment 2026-11-17 (DEB-4845) — a stream shows its picture: the page is see-through over AVPlay
+
+The owner's first real-TV play that started (Tizen 5.0, `ravilo-tizen-a91fce22.wgt`) was *all black*. The server side was
+healthy: the TV's start at 00:56Z negotiated an HLS transcode (h264 SDR, AAC/AC3, 1080p) and handed out the ticket.
+Restores FR-9's *the title plays*.
+
+- **AVPlay draws on a plane behind the page.** `html`, `body` and `#video` were opaque `#000`, so the page covered the
+  plane: sound, no picture. While `AvPlayBackend` has a stream open, `<html>` carries `avplay-on`; `screen.css` makes
+  `html` and `body` transparent under it and hides the `<video>` the AVPlay path never uses. `close()` removes the class,
+  so every other screen keeps its own opaque background.
+- **The 2019 sets' AVPlay surface.** `index.html` carries `<object id="av-player" type="application/avplayer">`, which
+  Tizen 5.0 documents as the element AVPlay draws through; newer sets ignore it.
+- **The display rect is the page's viewport**, not `window.screen`: a 4K panel reports 3840×2160 there while the widget's
+  coordinate space is 1920×1080.
+- **Proof.** `ravilo-screen-player.spec.ts` asserts, with the fake AVPlay, that during a stream `html` and `body` are
+  transparent, `#video` is hidden and `setDisplayRect` is the viewport, and that the class is gone after Back. Chromium
+  cannot show Samsung's plane, so the picture itself goes to QA with the preview `.wgt` (it is the one check CI cannot make).

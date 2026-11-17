@@ -48,14 +48,22 @@ interface MediaBackendListener {
     fun onError(detail: String) {}
 }
 
+/** The class on `<html>` that makes the page transparent over AVPlay's video plane (screen.css). */
+const val AVPLAY_ON = "avplay-on"
+
 /** Tizen — required wherever `<video>` has no real HLS/DASH (webapis.avplay renders on its own hardware
  *  plane, behind the DOM; R264 open question 1 is whether HTML can still draw on top of it). */
 class AvPlayBackend : MediaBackend {
     private var listener: MediaBackendListener? = null
 
     override fun open(hlsUrl: String, startPositionMs: Long) {
+        // DEB-4845 — AVPlay draws on a plane behind the page; an opaque page background (html, body) hides it,
+        // which is a black picture with sound. The class lets the page through for as long as a stream is open.
+        document.documentElement?.classList?.add(AVPLAY_ON)
         WebApisGlobal.avplay.open(hlsUrl)
-        WebApisGlobal.avplay.setDisplayRect(0, 0, window.screen.width, window.screen.height)
+        // The app's own coordinate space (the page viewport, 1920x1080 on the widget's default), not the panel's
+        // pixels: a 4K set reports 3840x2160 in window.screen.
+        WebApisGlobal.avplay.setDisplayRect(0, 0, window.innerWidth.takeIf { it > 0 } ?: window.screen.width, window.innerHeight.takeIf { it > 0 } ?: window.screen.height)
         WebApisGlobal.avplay.setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN")
         WebApisGlobal.avplay.setListener(avPlayListener(
             onBufferingStart = { listener?.onBufferingStart() },
@@ -72,7 +80,10 @@ class AvPlayBackend : MediaBackend {
     override fun play() { runCatching { WebApisGlobal.avplay.play() }; listener?.onPlaying() }
     override fun pause() { runCatching { WebApisGlobal.avplay.pause() }; listener?.onPaused() }
     override fun seekTo(ms: Long) { runCatching { WebApisGlobal.avplay.seekTo(ms.toInt()) } }
-    override fun close() { runCatching { WebApisGlobal.avplay.close() } }
+    override fun close() {
+        runCatching { WebApisGlobal.avplay.close() }
+        document.documentElement?.classList?.remove(AVPLAY_ON)
+    }
     override fun state(): String = runCatching { WebApisGlobal.avplay.getState() }.getOrDefault("NONE")
     override fun positionMs(): Long = runCatching { WebApisGlobal.avplay.getCurrentTime().toLong() }.getOrDefault(0L)
     override fun durationMs(): Long = runCatching { WebApisGlobal.avplay.getDuration().toLong() }.getOrDefault(0L)

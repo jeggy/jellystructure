@@ -1,6 +1,12 @@
     :root { --ink: #fff; --ink-soft: rgba(255,255,255,.72); --ink-dim: rgba(255,255,255,.45); --accent: #7b6ef0; --accent2: #00a4dc; --accent-2: #3fb6f5; --bg: #0a0c13; --ring: #8e82ff; }
     html, body { margin: 0; height: 100%; background: #000; color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
     #video { position: fixed; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; background: #000; object-fit: contain; z-index: 0; }
+    /* DEB-4845 — AVPlay draws on a plane BEHIND the page, so while a stream is open the page itself must be see-through:
+       an opaque html/body (or the <video> the AVPlay path never uses) is a black picture with sound. The chrome
+       above it keeps its own gradients; the full screens (loading, failed, shell) are hidden while a stream plays. */
+    html.avplay-on, html.avplay-on body { background: transparent; }
+    html.avplay-on #video { display: none; }
+    #av-player { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
     .screen { position: fixed; top: 0; right: 0; bottom: 0; left: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; z-index: 1; }
     .screen.on { display: flex; }
     #idle, #loading, #noserver, #busy { background: #000; }

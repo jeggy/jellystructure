@@ -14,6 +14,8 @@
        shared string table, in the household's own language. Nothing here carries English:
        a Danish household used to see "Ready to play from your phone" for the first frame. -->
   <video id="video" playsinline></video>
+  <!-- DEB-4845 — the surface Tizen's AVPlay draws through on the 2019 sets (Tizen 5.0); newer sets ignore it. -->
+  <object id="av-player" type="application/avplayer"></object>
   <div id="cues" aria-live="off"></div>
 
   <section id="idle" class="screen on"><img class="mark" src="ravilo-mark.svg" alt=""><div id="idle-sentence" class="sentence"></div><div id="idle-code"></div><div id="idle-server"></div></section>
