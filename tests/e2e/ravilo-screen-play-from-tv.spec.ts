@@ -340,4 +340,75 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     expect(seen.starts).toHaveLength(0);
     expect((await avplayCalls(page)).some((c) => c[0] === "open")).toBe(false);
   });
+
+  // DEB-4899 (amends DEB-4654 FR-9) — the audio and subtitles picker leads with the language, as Android TV's does: its flag and its
+  // own name, then the codec and channels. The owner's photo of the UE55RU7445 was five rows reading "E-AC-3 5.1", with the focused
+  // one light grey on a white pill. Five same-codec tracks in five languages, and a sixth that is a second English version.
+  test("DEB-4899: the picker names each track by its language with its flag, and the focused row is readable", async ({ page }) => {
+    test.setTimeout(90_000);
+    const track = (index: number, language: string, label: string, isDefault = false) =>
+      ({ index, language, label, codec: "eac3", channels: 6, is_default: isDefault, external: false });
+    const sub = (index: number, language: string, label: string, forced = false) =>
+      ({ index, language, label, forced, is_default: false, url: `/api/tv/subtitle/${index}.vtt`, delivery_method: "external" });
+    await boot(page, {
+      start: async (itemId) => ({
+        status: 200,
+        body: {
+          ...ticket(itemId, 0),
+          audio: [
+            track(1, "dan", "E-AC-3 Atmos 5.1", true), track(2, "eng", "E-AC-3 5.1"), track(3, "deu", "E-AC-3 5.1"),
+            track(4, "swe", "E-AC-3 5.1"), track(5, "nor", "E-AC-3 5.1"), track(6, "eng", "Commentary"),
+          ],
+          subtitles: [sub(7, "dan", "Dansk"), sub(8, "fra", "Français - SDH"), sub(9, "eng", "English forced", true)],
+        },
+      }),
+    });
+    await page.keyboard.press("Enter");                      // the title's page
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
+    await page.keyboard.press("Enter");                      // Play
+    await waitForAvplayCall(page, "open");
+
+    await page.keyboard.press("ArrowDown");                  // the picker, on Subtitles
+    await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
+    const rows = page.locator("#pk-rows .pkr");
+    const names = () => rows.evaluateAll((els) => els.map((e) => (e.querySelector(".l")?.firstChild as Text | null)?.textContent ?? ""));
+    expect((await names()).slice(0, 4), "Off, then every subtitle language by name").toEqual(["Off", "Dansk", "Français", "English"]);
+    await expect(rows.nth(2).locator("i")).toHaveText("SDH · Sound described");
+
+    await page.keyboard.press("ArrowRight");                 // the Audio tab
+    await expect(page.locator("#pk-tabs b.on")).toHaveCount(1);
+    await expect(rows).toHaveCount(5);                       // one row per language
+    expect(await names()).toEqual(["Dansk", "English", "Deutsch", "Svenska", "Norsk"]);
+    const flags = await rows.evaluateAll((els) => els.map((e) => {
+      const img = e.querySelector("img.pkr-flag") as HTMLImageElement | null;
+      return img ? { src: img.getAttribute("src"), loaded: img.naturalWidth > 0 } : null;
+    }));
+    expect(flags, "each flag is the packed PNG, and it loaded").toEqual(["dk", "gb", "de", "se", "no"].map((cc) => ({ src: `flags/${cc}.png`, loaded: true })));
+
+    await expect(rows.nth(0).locator("i")).toHaveText("E-AC-3 Atmos 5.1");   // the secondary line
+    await expect(rows.nth(2).locator("i")).toHaveText("E-AC-3 5.1");
+    await expect(rows.nth(1).locator(".rt")).toContainText("2");             // English has two versions: it opens a second level
+
+    // The focused row is dark text on the light pill with real contrast; the 2019 set showed light grey on white.
+    const contrast = await page.evaluate(() => {
+      const lum = (css: string) => {
+        const [r, g, b] = (css.match(/[\d.]+/g) ?? []).slice(0, 3).map((v) => {
+          const c = Number(v) / 255;
+          return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+      const foc = document.querySelector("#pk-rows .pkr.foc") as HTMLElement;
+      const back = getComputedStyle(foc).backgroundColor;
+      return { label: ratio(getComputedStyle(foc).color, back), second: ratio(getComputedStyle(foc.querySelector("i")!).color, back) };
+    });
+    expect(contrast.label, "the focused row's label").toBeGreaterThanOrEqual(12);
+    expect(contrast.second, "the focused row's second line").toBeGreaterThanOrEqual(7);
+
+    await page.keyboard.press("ArrowDown");                  // English → its two versions, told apart
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#pk-head")).toHaveText("English");
+    expect(await names()).toEqual(["E-AC-3 5.1", "Commentary"]);
+  });
 });

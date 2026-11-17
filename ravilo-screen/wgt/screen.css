@@ -87,8 +87,12 @@
     .pkr .l i { font-style: normal; font-size: 17px; color: var(--ink-dim); margin-top: 4px; }
     .pkr .rt { margin-left: auto; font-size: 20px; color: var(--ink-dim); white-space: nowrap; }
     .pkr.sel .rt::before { content: "✓ "; }
-    .pkr.foc { background: var(--ink); color: #0a0c13; border-radius: 12px; }
-    .pkr.foc .l i, .pkr.foc .rt { color: rgba(10,12,19,.6); }
+    /* DEB-4899 — the focused row read light grey on a white pill on the 2019 set (DEB-799's photo): near-black, heavier text and
+       a secondary line dark enough to read, never a translucent tint of the pill. The flag keeps its border on the light pill. */
+    .pkr.foc { background: var(--ink); color: #05070c; font-weight: 700; border-radius: 12px; }
+    .pkr.foc .l i, .pkr.foc .rt { color: #2a2f3d; font-weight: 600; }
+    .pkr-flag { box-sizing: border-box; display: block; flex: none; width: 36px; height: 25px; border-radius: 3px; border: 1px solid rgba(255,255,255,.18); object-fit: cover; }
+    .pkr.foc .pkr-flag { border-color: rgba(10,12,19,.35); }
     .pksz b { width: 54px; height: 44px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); font-size: 20px; font-weight: 700; margin-left: 8px; }
     .pksz b.on { background: linear-gradient(120deg, var(--accent), var(--accent2)); color: #fff; }
     #failed { background: rgba(4,5,9,.94); }

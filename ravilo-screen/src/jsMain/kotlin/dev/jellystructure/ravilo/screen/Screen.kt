@@ -715,6 +715,7 @@ private class Screen(private val serverUrl: String) {
         rows.drop(pickerTop).take(PICKER_ROWS).forEachIndexed { i, r ->
             val row = document.createElement("div") as HTMLElement
             row.className = "pkr" + (if (r.selected) " sel" else "") + (if (pickerTop + i == pickerFocus) " foc" else "")
+            r.flag?.let { row.appendChild(pickerFlag(it)) }   // DEB-4899 — Android TV's picker leads with the language's flag
             val left = document.createElement("div") as HTMLElement
             left.className = "l"
             left.appendChild(document.createTextNode(r.label))   // text only: a track title is untrusted input
@@ -733,6 +734,15 @@ private class Screen(private val serverUrl: String) {
             row.appendChild(right)
             list.appendChild(row)
         }
+    }
+
+    /** DEB-4899 — a packed `flags/<cc>.png` (the title page's FR-19 flags), never fetched from the server. */
+    private fun pickerFlag(cc: String): HTMLElement {
+        val img = document.createElement("img") as HTMLElement
+        img.className = "pkr-flag"
+        img.setAttribute("src", "flags/$cc.png")
+        img.setAttribute("alt", "")
+        return img
     }
 
     private fun groupTitle(): String {
