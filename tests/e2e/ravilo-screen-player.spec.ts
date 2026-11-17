@@ -55,6 +55,8 @@ test.describe("R264 — the TV remote drives the receiver's own player", () => {
     await page.keyboard.press("ArrowDown");
     const picker = page.locator("#picker");
     await expect(picker).toHaveClass(/\bon\b/);
+    await expect(picker, "the picker stays visible over AVPlay (DEB-4845)").toBeVisible();
+    await expect(page.locator("html")).toHaveClass(/\bavplay-on\b/);
     const rows = page.locator("#pk-rows .pkr");
     await expect(rows.first()).toContainText(/\S/);
     const subtitleRows = await rows.count();

@@ -74,6 +74,9 @@ test.describe("R285 — audio and subtitles on the TV receiver, driven through t
     await command({ command: "set_subtitle", index: 0 });
     await expect(cues).toHaveClass(/\bon\b/, { timeout: 10_000 });
     await expect(cues).toHaveText("Mock subtitle line");
+    // DEB-4845: the page is see-through over AVPlay (avplay-on) — the drawn subtitle must stay visible over it.
+    await expect(page.locator("html")).toHaveClass(/\bavplay-on\b/);
+    await expect(cues).toBeVisible();
     await expect.poll(async () => (await status()).selected_sub ?? -1).toBe(0);
     expect((await avplayCalls(page)).slice(from).some((c) => c[0] === "open"), "a text subtitle must not restream").toBe(false);
 
