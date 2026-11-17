@@ -224,6 +224,9 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect(page.locator("#detail-play")).toBeVisible();   // the page has drawn: OK is now Play
     await page.keyboard.press("Enter");
     await expect(page.locator("#loading")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    // The loading screen is drawn before the start leaves the page; a Back ahead of it opens no session, so there is
+    // nothing to close. This test is about the one that was already asked for and is still being answered.
+    await expect.poll(() => seen.starts.length, { timeout: 10_000 }).toBe(1);
     await page.keyboard.press("Escape");
     await shellOn(page);
     release();

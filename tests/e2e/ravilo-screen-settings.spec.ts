@@ -108,7 +108,8 @@ test("Change server opens setup prefilled; the same address keeps every profile 
   await page.keyboard.press("Enter");
   await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
   await expect(page.locator("#setupHost")).toHaveValue(SERVER);
-  await page.locator("#setupHost").press("Enter");
+  await page.keyboard.press("ArrowDown");                     // OK on the field is Tizen's (the IME); the button probes (DEB-4817)
+  await page.keyboard.press("Enter");
   await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
   const kept = JSON.parse((await page.evaluate(key => localStorage.getItem(key), PROFILES))!) as unknown[];
   expect(kept).toHaveLength(2);
@@ -126,7 +127,8 @@ test("a new address signs every profile out (DEB-4663 FR-11)", async ({ page }) 
   await page.keyboard.press("Enter");
   await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
   await page.locator("#setupHost").fill(other);
-  await page.locator("#setupHost").press("Enter");
+  await page.keyboard.press("ArrowDown");                     // OK on the field is Tizen's (the IME); the button probes (DEB-4817)
+  await page.keyboard.press("Enter");
   await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
   expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.serverUrl"))).toBe(other);
   expect(await page.evaluate(key => localStorage.getItem(key), PROFILES)).toBeNull();

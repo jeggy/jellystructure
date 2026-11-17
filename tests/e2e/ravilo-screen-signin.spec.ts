@@ -118,6 +118,7 @@ test("Tizen remembers an empty password 403 and signs in by code (DEB-4813 FR-2)
     status: 403, body: "", headers: { "access-control-allow-origin": "*" },
   }));
   await boot(page);
+  await page.waitForTimeout(1_200); // an OK in the first second is the press that opened this screen (DEB-4831)
   await page.locator("#signin-password-instead").click();
   await page.locator("#signin-username").fill("qa-viewer");
   await page.locator("#signin-password").fill("example-password");
@@ -160,6 +161,7 @@ test("Tizen keeps a JSON password 403 distinct from an empty refusal (DEB-4813 F
     headers: { "access-control-allow-origin": "*" },
   }));
   await boot(page);
+  await page.waitForTimeout(1_200); // an OK in the first second is the press that opened this screen (DEB-4831)
   await page.locator("#signin-password-instead").click();
   await page.locator("#signin-username").fill("qa-viewer");
   await page.locator("#signin-password").fill("example-password");
