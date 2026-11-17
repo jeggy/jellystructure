@@ -785,3 +785,55 @@ as FR-23, on R181's model.
   - The shared rule gains a `:shared:desktopTest` beside the moved code.
   - Whether a binge keeps its language on the real set goes to QA with the preview `.wgt` (two episodes in a row, on the
     UE55RU7445).
+
+## Amendment 2026-11-17 (DEB-4947) — the way back to setup is *Wrong server?* on the sign-in screen, not a hold on Back
+
+QA on DEB-4790 (v1.70, Tizen 5.0 and 10.0 emulators) tried to get back to setup from the sign-in screen with no stored profile.
+They held Back for 3.6 s, and the app left to the TV home at 1.6 s on 5.0 and 2.4 s on 10.0. Setup never opened. A page-level key
+logger (capture phase) saw no Back `keydown` or `keyup` at all, only `pagehide`. A short Back reaches the page normally. So the
+runtime takes a long Back for itself before the page sees it, and FR-11's three-second hold can never fire. That matters: with no
+stored profile, Settings sits behind sign-in, so a household whose server has moved has no way back to setup short of a reinstall.
+
+R269's owner decision (2026-09-18) turned down a visible *Change server* item for one reason: *"this app has no navigation"*. The
+full app has navigation, and it already shows *Change server* in Settings (FR-11). Android TV's sign-in already ends in a *Wrong
+server?* link (R225, `LoginScreen`), and FR-2 says this screen is the Android TV one. Tróndur routed this on DEB-4947. **This
+supersedes FR-11's last bullet and R269's FR-R269-7 for this app.**
+
+**FR-11 (amended) · The sign-in screen ends in *Wrong server?*, and the hold on Back goes.**
+
+- **Where.** *Wrong server?* is the last focusable item on the sign-in screen, in each of its views: the code, the password form,
+  DEB-4719's code-only message, and the could-not-reach state. Under it is one quiet line with the server's host, without the
+  scheme. It works like Android TV's `ServerIndicator` and R269's FR-R269-6, and it is not focusable.
+- **Copy.** The existing key `login.change_server`, which Android TV already uses, in all three languages. No new key.
+- **What it does.** Exactly what Settings ▸ *Change server* does, by the same code path (`reopenServerSetup`). It opens R269's
+  setup screen with the address prefilled and runs the same probe. DEB-4663's rule for a new address applies:
+  - A different address (case and a trailing slash ignored) removes every stored profile and the code-only fact.
+  - The unchanged address removes nothing.
+- **Focus.** Down from the item above it reaches it, and Down from it goes nowhere. It is never focused first. When the screen
+  opens, focus goes where FR-2 and DEB-4719 put it: *Sign in with a password instead*, or the code on a code-only install, or
+  *Retry* in the could-not-reach state.
+- **With profiles too.** It also shows when *Add user* (FR-3) opened the screen, as Android TV shows it beside *Cancel*. A short
+  Back there still returns to the profiles. An accidental press costs nothing, because Connect on the prefilled address keeps
+  every profile.
+- **The hold goes.** Both hold paths in `Screen.kt` are removed: the sign-in one, and the R264 idle one, whose screen no longer
+  exists (FR-1). `backHeldSince` and its `keyup` listener go with them. A Back of any length on the sign-in screen now does what a
+  short Back does today. When the TV takes a long Back to leave the app, that is the platform's behaviour, and the app does not
+  try to stop it.
+- **For any future hold logic** (from QA, DEB-4790): on Tizen 5.0 a held key arrives as a stream of fresh `keydown`s about 108 ms
+  apart, each with `KeyboardEvent.repeat === false`. A guard like `!e.repeat` therefore cannot tell a hold from repeated presses.
+  A long Back never reaches the page at all, on either emulator. Nothing in this app may depend on a held Back.
+- **R269's receiver hold (FR-R269-7) needs no row of its own.** The idle receiver screen it lived on is gone (FR-1), the `.wgt`
+  is this app (FR-15), and the Chromecast receiver has no setup screen (R269, *Why the Chromecast receiver never needed this*).
+  R269 has a matching amendment.
+- **No wire change, no server change.**
+- **Proof.**
+  - `ravilo-screen-signin.spec.ts`, with a server stored and no profile:
+    - Down from *Sign in with a password instead* reaches *Wrong server?*, and the host line shows the server.
+    - Enter opens setup with the address prefilled, and Connect on it returns to sign-in.
+    - Holding `Escape` for 3.5 s does not open setup.
+  - The same spec, with one profile stored, through *Add user*:
+    - *Wrong server?* then Connect on the same address keeps the profile in `ravilo.screen.tokens`.
+    - A different reachable address leaves no profile.
+  - The could-not-reach state: Down from *Retry* reaches *Wrong server?*.
+  - **FR-16's real-TV list gains one item.** On the owner's set, *Wrong server?* opens setup from the Samsung remote. Whether a
+    long Back on the real set also leaves the app is recorded but not fought.

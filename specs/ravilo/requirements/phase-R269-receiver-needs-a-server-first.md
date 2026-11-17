@@ -244,3 +244,17 @@ phase's setup screen, probe, copy and storage are unchanged and still run first.
 - **FR-R269-7's hold on Back stays**, as the way out of a sign-in screen pointed at a server that has gone.
 - **The IME assumption** (dev review item 5) is carried to the owner's real-TV test (the full app's FR-16).
 
+
+## Amendment 2026-11-17 (DEB-4947) — the hold on Back is gone; the way back is a visible *Wrong server?*
+
+QA on DEB-4790 found that on both Tizen emulators the runtime takes a long Back itself and leaves the app, and the page never
+receives it, so FR-R269-7's three-second hold cannot fire. The 2026-09-18 owner decision turned down a visible item only because
+*"this app has no navigation"*, and the full app has navigation.
+
+- **FR-R269-7 is superseded** by the full app's FR-11 as amended on 2026-11-17
+  (`specs/ravilo/requirements/ravilo-on-a-samsung-tv-is-a-full-app.md`). The sign-in screen ends in *Wrong server?*, which opens
+  this setup screen with the address prefilled. Settings ▸ *Change server* stays. No hold on Back reopens setup any more.
+- The *Amendment 2026-11-15* bullet *"FR-R269-7's hold on Back stays"* is withdrawn with it.
+- The receiver's own idle-screen hold needs no row of its own: that idle screen is gone (the full app's FR-1), and the Chromecast
+  receiver has no setup screen.
+- Open question 2's fallback, *a two-key combination*, is not taken up. A visible item is the answer.
