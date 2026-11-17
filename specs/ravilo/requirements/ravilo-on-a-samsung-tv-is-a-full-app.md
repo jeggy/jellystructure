@@ -696,3 +696,30 @@ line and the focus colours are not written down anywhere for this app, so they a
   versions and both focus contrasts; `:shared:desktopTest` gains `LanguageNamesTest`, and `LanguageIdentityTest` stays green.
   How it reads from the sofa goes to QA with the preview `.wgt`.
 - **No wire change.** The ticket already carries `language`, `label`, `codec` and `channels` for every track.
+
+## Amendment 2026-11-17 (DEB-4925) — leaving Ravilo and coming back
+
+Owner on DEB-4918, real UE55RU7445 (Tizen 5.0), preview `ravilo-tizen-af0f22dc.wgt`: with Ravilo left open and another app in
+use for a longer while, going back showed an app that took no key at all; a long press of Back force-closed it. *"the app was just
+stuck after the comeback and couldn't navigate or anything."* How long, which other app and whether a film was running are not
+known. The app has no reaction to its page being hidden and shown again, so the amendment fixes what is certain to be missing and
+leaves the cause to be confirmed on the set (the QA ticket asks for it).
+
+**FR-22 · Hiding the app ends a stream the way Back does; coming back starts from a live app.** Tizen fires the page's
+`visibilitychange` when the viewer leaves for another app, the home screen or another input, and again when they return.
+- **Hidden with a stream open or starting** (playing, paused, buffering, or loading/busy before the first frame): the screen stops
+  it exactly as the remote's Back does, once — the stop report with the position (the resume record), AVPlay closed, `avplay-on`
+  removed, the idle screen, the status report. AVPlay's native plane does not survive the app being sent away and is not
+  restored; the return is a fresh start from the resume point, never an automatic one. A hidden page with no stream changes nothing.
+- **Visible again:** the events socket is dropped and opened afresh (a socket that sat through a long suspend is dead, and its
+  reconnect backoff may be at its ceiling), the active viewer's config is read again, and focus is put back on the page's
+  target. When the app was away for **5 minutes or more** and the TV shell is the screen (not sign-in, the profile picker or
+  server setup), the shell goes back to a freshly loaded Home — the stack and every request still in flight from before the
+  suspend are abandoned, so no skeleton waits on a connection the TV no longer has.
+- A hide that follows a hide, or a return that follows a return, does nothing the second time.
+- **No wire change.** The stop is the existing `playback/stop`; nothing is added to a DTO.
+- **Proof.** `ravilo-screen-lifecycle.spec.ts` plays a title on the fake AVPlay, fires a hidden `visibilitychange` and asserts
+  one `close`, one stop reported with a position, the idle screen and `html` without `avplay-on`; then returns after the time
+  threshold and asserts a freshly loaded Home and a new events socket. Whether this is what the owner saw is **not** proved
+  by CI: Tizen 5.0's real `visibilitychange`, AVPlay across a 20-minute absence and a resume from another app go to QA on the
+  Samsung with a preview `.wgt`.
