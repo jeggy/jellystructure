@@ -178,6 +178,24 @@ marked as pinned. It has two orders, and the screen remembers the last one used:
   when it last opened each app, from Apps or All apps. Ravilo does not ask for Android's usage-access permission:
   an app opened some other way (voice, the stock home, a Cast) doesn't move up.
 
+## Amendments
+
+**2026-11-17 (DEB-4910, building FR-1–FR-9).** Two gaps in FR-5/FR-7/FR-8 that only show once the hook is written.
+
+- **FR-5 against FR-7: how the hook learns the viewer opened something else.** With the service hearing the stock home's
+  package only, nothing tells it that the viewer left the stock home for another app, so the next Home press would be let
+  through as if it were still the same visit. While FR-5's pass-through is on, and only then, the service therefore also
+  hears window changes of other packages. It uses nothing but the package name of the first one, and the filter goes back
+  to the stock home's package at that moment. Ravilo's own windows are never "something else". FR-7's other limits stand:
+  no window content, no gestures, nothing kept.
+- **FR-8: what an unexpected close is.** A Ravilo the hook brought up that was on screen when its process ended: it
+  crashed, hung until Android ended it, or was killed on screen. Ravilo marks itself on screen only while a hook launch is
+  less than five minutes old, and clears the mark when it leaves the screen for any reason, so the viewer's own use, Home
+  and Android ending a Ravilo that sat in the background are never closes. The close counts when the process comes back
+  within five minutes of that hook launch (the service is rebound at once after a crash). Two counted closes within five
+  minutes of each other pause the hook. The setting's one press from *paused* is the "off and on again": it clears the
+  pause and the count.
+
 ## Out of scope
 
 - **Disabling the stock home over ADB** (the DEB-4906 fallback), and any HOME entry in Ravilo. These come back only as
