@@ -181,6 +181,8 @@ class Investigator(
     /** Everything one run keeps between turns. */
     private class Run(val id: String, val url: String, val site: String, val tmdbId: Int?, val pageOnly: Boolean, val fetcherId: String?, val ignoreRobots: Boolean, val startedAt: Long) {
         var requests = 0
+        /** DEB-4884 (FR-5.11) — the saved recipe's proof has marked *Read the page*; the model's `fetch` leaves that text alone. */
+        var pageMarkedBySaved = false
         /** DEB-3613 (FR-3.6) — a session is stored for the site: the model is told so, in one line, and never the session. */
         var sessionSet = false
         /** A lane refusal for `robots.txt` is what the investigation is ending on (FR-10.7). */
@@ -449,7 +451,10 @@ class Investigator(
         RecipeValidator.validate(recipe, r.pageOnly).firstOrNull()?.let { return failed(it) }
         val lane = lanes.forSite(r.site, r.ignoreRobots, signedIn = true, proving = true)
         val pr = proof.prove(recipe, r.pageOnly, r.tmdbId, lane) { r.signInRefused = true }
-        if (pr.items.isNotEmpty()) setDone(r, STEP_PAGE, "${pr.items.size} items read by the saved recipe from ${Urls.host(r.url).orEmpty()}")
+        if (pr.items.isNotEmpty()) {
+            setDone(r, STEP_PAGE, "${pr.items.size} items read by the saved recipe from ${Urls.host(r.url).orEmpty()}")
+            r.pageMarkedBySaved = true
+        }
         // The lane refused for `robots.txt`, or the site is stopped or asked us to slow down: the model's own `fetch` would be refused the same way, so it ends here as it would there (FR-10.7).
         // A listing that `robots.txt` newly forbids stops the site (FR-2.5), and that stop is the refusal for it too (FR-10.7).
         if (pr.robotsRefused || (pr.blocked as? LaneOutcome.Stopped)?.reason?.contains("robots.txt") == true) r.robotsRefused = true
@@ -655,7 +660,7 @@ class Investigator(
             is LaneOutcome.Ok -> {
                 val body = o.reply.body
                 collectHosts(r, body)
-                setDone(r, STEP_PAGE, "${r.requests} request${if (r.requests == 1) "" else "s"} read from ${Urls.host(r.url).orEmpty()}")
+                if (!r.pageMarkedBySaved) setDone(r, STEP_PAGE, "${r.requests} request${if (r.requests == 1) "" else "s"} read from ${Urls.host(r.url).orEmpty()}")
                 startStep(r, STEP_VIDEOS)
                 // DEB-3643 (FR-5.7) — a script is passed through as text; the HTML reduction does not run on it.
                 ToolAnswer(if (PageText.isScript(url, o.reply.headers)) PageText.cut(body.trim(), ANSWER_CHARS) else PageText.reduce(body, ANSWER_CHARS, o.reply.finalUrl ?: url))

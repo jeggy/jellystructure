@@ -89,6 +89,20 @@ class InvestigationSavedRecipeTest {
     }
 
     @Test
+    fun `the models first fetch leaves the saved recipes mark on Read the page alone`() {
+        val f = runBlocking { h.saveDagbok() }
+        ai.tool("fetch", """{"url":"${h.dagbokUrl}"}""")
+        ai.answer(series)
+        val out = run(f.id, f.recipeJson)
+
+        assertEquals("review", out.view.state, out.view.reason)
+        assertEquals(1, out.view.requests)
+        val page = out.view.steps[0]
+        assertEquals("done", page.state)
+        assertEquals("12 items read by the saved recipe from ${Urls.host(h.dagbokUrl).orEmpty()}", page.text)
+    }
+
+    @Test
     fun `a saved recipe whose manifest no longer answers has the media checks reason in the first message`() {
         val f = runBlocking { h.saveDagbok() }
         ai.answer(series)
