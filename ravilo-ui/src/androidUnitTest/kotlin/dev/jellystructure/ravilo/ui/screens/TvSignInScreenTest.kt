@@ -115,6 +115,42 @@ class TvSignInScreenTest {
         rule.onNodeWithTag(TvSignInTags.PASSWORD).assertIsDisplayed()
     }
 
+    // DEB-4912 (FR-12) — with the hook on, Apps is one press from the sign-in screen; with it off the footer is today's.
+    @Test
+    fun `the sign-in screen has an Apps button while the hook is on and none while it is off`() {
+        var opened = 0
+        val api = client(codeBody("https://ravilo.example.net/tv?c=K7P4QX"))
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        rule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalOpenApps provides { opened++ }) {
+                TvSignInScreen(apiClient = api, onSignedIn = {}) { LoginScreen(store = LoginStore(api), onSignedIn = {}) }
+            }
+        }
+        rule.waitUntil(5_000) { rule.onAllNodesWithTagCount(TvSignInTags.CODE) > 0 }
+        rule.onNodeWithTag(TvSignInTags.PASSWORD).assertIsFocused()   // the first target does not move
+        rule.onNodeWithTag(TvSignInTags.APPS).assertIsDisplayed().performClick()
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun `the sign-in screen has no Apps button when the frame gives it no action`() {
+        render(client(codeBody("https://ravilo.example.net/tv?c=K7P4QX")))
+        assertEquals(0, rule.onAllNodesWithTagCount(TvSignInTags.APPS))
+    }
+
+    @Test
+    fun `an unreachable server keeps retry as the first focus and offers Apps after the password button`() {
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        rule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalOpenApps provides {}) {
+                TvSignInScreen(apiClient = fakeTvApiClient { null }, onSignedIn = {}) { }
+            }
+        }
+        rule.waitUntil(5_000) { rule.onAllNodesWithTagCount(TvSignInTags.RETRY) > 0 }
+        rule.onNodeWithTag(TvSignInTags.RETRY).assertIsFocused()
+        rule.onNodeWithTag(TvSignInTags.APPS).assertIsDisplayed()
+    }
+
     @Test
     fun `add user says Back returns to the profiles and Back goes there`() {
         render(client(codeBody("https://ravilo.example.net/tv?c=K7P4QX")), onBack = { backed++ })

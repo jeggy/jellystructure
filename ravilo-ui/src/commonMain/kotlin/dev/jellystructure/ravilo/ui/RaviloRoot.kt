@@ -114,8 +114,16 @@ fun RaviloRoot() {
     var lastAddress by remember { mutableStateOf("") }
 
     if (baseUrl.isEmpty()) {
+        // DEB-4912 (FR-12) — no server yet, so no navigation stack either: Apps opens in place of the setup screen and Back returns to it.
+        var appsOpen by remember { mutableStateOf(false) }
+        val appsModel = dev.jellystructure.ravilo.ui.apps.TvApps.model
+        val reachable = androidx.compose.runtime.remember(appsOpen) { dev.jellystructure.ravilo.ui.apps.TvApps.reachable() }
+        androidx.compose.runtime.CompositionLocalProvider(
+            dev.jellystructure.ravilo.ui.components.LocalOpenApps provides (if (reachable && !appsOpen) { { appsOpen = true } } else null),
+        ) {
         androidx.compose.foundation.layout.Box {
-            ServerSetupScreen(
+            if (appsOpen && appsModel != null) dev.jellystructure.ravilo.ui.apps.AppsFlow(appsModel, onExit = { appsOpen = false }, topBar = null)
+            else ServerSetupScreen(
                 notice = if (signedOutEveryone) str("toast.signed_out_all") else null,
                 initialAddress = lastAddress,
                 onUrlSaved = { url ->
@@ -128,6 +136,7 @@ fun RaviloRoot() {
             // be neither moved nor closed (seen in the Fedora container, 2026-09-30). Nothing on any other platform.
             dev.jellystructure.ravilo.ui.seams.DesktopTitleStrip()
             dev.jellystructure.ravilo.ui.seams.DesktopWindowFrame()
+        }
         }
         return
     }

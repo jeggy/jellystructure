@@ -8,6 +8,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.HOME" />
         </intent>
+        <!-- DEB-4912 (FR-11) — Apps lists the TV's own apps, the ones with a TV launcher entry. Android 11+ hides them unless this is declared. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
     </queries>
 
     <application>

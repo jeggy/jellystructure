@@ -123,4 +123,6 @@ fun installHomeHook(context: Context) {
     if (!tv) return
     HomeHook.install(AndroidHomeHookPlatform(app), PrefsHomeHookStore(app)) { kotlinx.datetime.Clock.System.now().toEpochMilliseconds() }
     HomeHook.processStarted()
+    // DEB-4912 (FR-13) — Apps is registered where the hook is, on a TV only; every other platform has no entry.
+    dev.jellystructure.ravilo.ui.apps.installTvApps(app)
 }

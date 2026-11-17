@@ -60,6 +60,7 @@ object TvSignInTags {
     const val APPROVING = "tv-signin-approving"
     const val PASSWORD = "tv-signin-password"
     const val RETRY = "tv-signin-retry"
+    const val APPS = "tv-signin-apps"
 }
 
 /**
@@ -161,6 +162,14 @@ fun TvSignInScreen(
                     modifier = Modifier.testTag(TvSignInTags.PASSWORD).then(backKey),
                     onSelect = { passwordOpen = true },
                 )
+                // DEB-4912 (FR-12) — with the hook on, Apps is one press away, so Android's Wi-Fi settings and the stock home are never out of reach.
+                dev.jellystructure.ravilo.ui.components.LocalOpenApps.current?.let { openApps ->
+                    RaviloButton(
+                        label = str("nav.apps"), style = ButtonStyle.GHOST,
+                        modifier = Modifier.testTag(TvSignInTags.APPS).then(backKey),
+                        onSelect = openApps,
+                    )
+                }
                 if (onBack != null) Text(str("tvsignin.back_to_profiles"), color = colors.textDim, fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp))
             }
         }

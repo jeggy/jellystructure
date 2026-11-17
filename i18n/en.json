@@ -1416,5 +1416,20 @@
   "home_hook.disclosure_next": "Next, Android asks you to turn Ravilo on in its accessibility settings. You can turn it off there, or here, at any time.",
   "home_hook.disclosure_continue": "Continue to Android settings",
   "home_hook.disclosure_cancel": "Not now",
-  "home_hook.service_description": {"text": "Opens Ravilo when the TV's home screen appears. It does not read the screen or anything you type.", "note": "DEB-4910 (FR-9) — the line Android shows on its accessibility page. Mirrored in ravilo-ui's Android resources (values/strings.xml, values-da, values-fo); a test fails if they drift."}
+  "home_hook.service_description": {"text": "Opens Ravilo when the TV's home screen appears. It does not read the screen or anything you type.", "note": "DEB-4910 (FR-9) — the line Android shows on its accessibility page. Mirrored in ravilo-ui's Android resources (values/strings.xml, values-da, values-fo); a test fails if they drift."},
+  "nav.apps": "Apps",
+  "apps.subtitle": "Open another app, the TV's settings, or the TV's own home screen.",
+  "apps.tv_settings": "TV settings",
+  "apps.see_all": "See all apps",
+  "apps.all_title": "All apps",
+  "apps.all_subtitle": "Press and hold an app to pin it to Apps.",
+  "apps.pinned_subtitle": "Press and hold a pinned app to move or unpin it.",
+  "apps.order_recent": "Recently opened",
+  "apps.pin": "Pin to Apps",
+  "apps.unpin": "Unpin",
+  "apps.move_left": "Move left",
+  "apps.move_right": "Move right",
+  "apps.pinned_mark": "Pinned",
+  "apps.nothing_else": "Nothing else is installed on this TV.",
+  "apps.back_to_signin": "Back returns to sign-in"
 }

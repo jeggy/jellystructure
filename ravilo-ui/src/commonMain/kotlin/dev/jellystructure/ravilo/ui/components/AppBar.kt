@@ -178,6 +178,10 @@ fun AppBar(
     // only on a TV whose server sends `surprise_me`; null draws nothing, and the focus walk skips it.
     val onSurprise = LocalSurpriseMe.current
     val surpriseFR = remember { FocusRequester() }
+    // DEB-4912 (FR-10) — Apps, between Surprise me and Search, only while the TV's home-screen hook is on. The frame provides the
+    // action; null draws nothing and the focus walk skips it.
+    val onApps = LocalOpenApps.current
+    val appsFR = remember { FocusRequester() }
 
     // Bug fix: on a narrow/portrait screen the nav items + search + clock + avatar don't all fit and
     // used to just clip off the edge. horizontalScroll can't coexist with the weight(1f) spacer below
@@ -310,6 +314,7 @@ fun AppBar(
                                 if (i < items.lastIndex) allFRs[i + 1].requestFocus()
                                 else if (pillShown) pillFR.requestFocus()
                                 else if (onSurprise != null) surpriseFR.requestFocus()
+                                else if (onApps != null) appsFR.requestFocus()
                                 else if (onSearch != null) searchFR.requestFocus()
                                 else if (onProfile != null) avatarFR.requestFocus()
                             },
@@ -334,7 +339,7 @@ fun AppBar(
                             focusRequester = pillFR,
                             onFocused = { pillFocused = true },
                             onLeft = { allFRs.last().requestFocus() },
-                            onRight = { if (onSurprise != null) surpriseFR.requestFocus() else if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
+                            onRight = { if (onSurprise != null) surpriseFR.requestFocus() else if (onApps != null) appsFR.requestFocus() else if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
                             onDown = onDown,
                             onSelect = openNowPlaying,
                         ),
@@ -344,16 +349,25 @@ fun AppBar(
                 SurprisePill(
                     focusRequester = surpriseFR,
                     onLeft = { if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
-                    onRight = { if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
+                    onRight = { if (onApps != null) appsFR.requestFocus() else if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
                     onDown = onDown,
                     onSelect = onSurprise,
+                )
+            }
+            if (onApps != null) {
+                AppsPill(
+                    focusRequester = appsFR,
+                    onLeft = { if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
+                    onRight = { if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
+                    onDown = onDown,
+                    onSelect = onApps,
                 )
             }
             // R52 right cluster: search icon · clock · avatar (gaps from the Row's spacedBy).
             if (onSearch != null) {
                 SearchIcon(
                     focusRequester = searchFR,
-                    onLeft = { if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
+                    onLeft = { if (onApps != null) appsFR.requestFocus() else if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onRight = { if (onProfile != null) avatarFR.requestFocus() },
                     onDown = onDown,
                     onSelect = onSearch,
@@ -363,7 +377,7 @@ fun AppBar(
             if (onProfile != null) {
                 ProfileAvatar(
                     focusRequester = avatarFR,
-                    onLeft = { if (onSearch != null) searchFR.requestFocus() else if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
+                    onLeft = { if (onSearch != null) searchFR.requestFocus() else if (onApps != null) appsFR.requestFocus() else if (onSurprise != null) surpriseFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onDown = onDown,
                     onSelect = onProfile,
                 )

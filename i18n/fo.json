@@ -1341,5 +1341,20 @@
   "home_hook.disclosure_next": "Síðani biður Android teg tendra Ravilo í atkomustillingunum hjá sær. Tú kanst sløkkja tað hartil ella her hvørja løtu.",
   "home_hook.disclosure_continue": "Hald fram til stillingarnar hjá Android",
   "home_hook.disclosure_cancel": "Ikki nú",
-  "home_hook.service_description": "Opnar Ravilo, tá heimaskíggi sjónvarpsins kemur fram. Hon les ikki skíggjan ella nakað, tú skrivar."
+  "home_hook.service_description": "Opnar Ravilo, tá heimaskíggi sjónvarpsins kemur fram. Hon les ikki skíggjan ella nakað, tú skrivar.",
+  "nav.apps": "Appir",
+  "apps.subtitle": "Lat upp eina aðra app, stillingarnar hjá sjónvarpinum ella heimaskíggjan hjá sjónvarpinum.",
+  "apps.tv_settings": "Sjónvarpsstillingar",
+  "apps.see_all": "Vís allar appir",
+  "apps.all_title": "Allar appir",
+  "apps.all_subtitle": "Halt eini app niðri fyri at festa hana í Appum.",
+  "apps.pinned_subtitle": "Halt eini festari app niðri fyri at flyta hana ella loysa hana.",
+  "apps.order_recent": "Nýliga opnað",
+  "apps.pin": "Fest í Appum",
+  "apps.unpin": "Loys",
+  "apps.move_left": "Flyt til vinstru",
+  "apps.move_right": "Flyt til høgru",
+  "apps.pinned_mark": "Fest",
+  "apps.nothing_else": "Einki annað er innlagt á hesum sjónvarpinum.",
+  "apps.back_to_signin": "Aftur fer til innritan"
 }

@@ -196,6 +196,24 @@ marked as pinned. It has two orders, and the screen remembers the last one used:
   minutes of each other pause the hook. The setting's one press from *paused* is the "off and on again": it clears the
   pause and the count.
 
+**2026-11-17 (DEB-4912, building FR-10–FR-15).** The design round (DEB-4911) drew FR-10–FR-13 but not the pin mark, the pin menu or
+the order switch (it ran from the brief before pins were added), and no owner pick for the open decisions had been written into this
+file when the build started. The build takes the round's recommendation or the brief's lean for each, so that a pick changes layout
+only and never logic. Each is one place in the code.
+
+- **FR-10: where the entry sits.** Direction A2 of the round: a labelled *Apps* pill in the bar's right cluster, immediately before
+  Search, in the shape *Surprise me* has. It is also not drawn on Apps and All apps themselves.
+- **FR-11: layout and the first tile.** Six tiles across at 16:9. The first tile is labelled *TV settings* (the brief's lean). Its
+  subtitle names the stock home generically (*the TV's own home screen*), because the stock home's own name is the tile's label and
+  differs between TVs; a bare *Google TV* in the sentence would be wrong on any other.
+- **FR-14: the way in to the pin menu.** *Press and hold* Select on a tile, or the Menu key where a remote has one (the Google TV
+  Streamer's remote has none). The menu offers *Pin to Apps* (or *Unpin*) in All apps, and *Move left*, *Move right* and *Unpin* on
+  a pinned app in Apps. A hold is Android's own key auto-repeat, so Ravilo asks for no timing of its own.
+- **FR-15: the order switch.** Two pills at the top of All apps, *A–Z* and *Recently opened*, the selected one filled. A pinned app
+  carries a small *Pinned* mark on its tile.
+- **FR-12: server setup and the can't-reach screen.** Server setup has no navigation stack, so Apps opens in place of it and Back
+  returns to it. On the can't-reach screen Apps comes after Retry, which keeps the arrival focus (the round's open lean).
+
 ## Out of scope
 
 - **Disabling the stock home over ADB** (the DEB-4906 fallback), and any HOME entry in Ravilo. These come back only as

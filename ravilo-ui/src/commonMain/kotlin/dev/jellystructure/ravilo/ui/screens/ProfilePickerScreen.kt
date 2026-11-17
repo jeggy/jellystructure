@@ -150,12 +150,15 @@ fun ProfilePickerScreen(
                         horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                         verticalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
-                        val extras = if (showSettings) 2 else 1   // Add user (+ Settings)
-                        val frs = remember(s.sessions.size, showSettings) {
+                        // DEB-4912 (FR-12) — with the hook on, Apps is one tile away from the picker: Wi-Fi and the stock home stay reachable.
+                        val openApps = dev.jellystructure.ravilo.ui.components.LocalOpenApps.current
+                        val extras = 1 + (if (showSettings) 1 else 0) + (if (openApps != null) 1 else 0)   // Add user (+ Settings) (+ Apps)
+                        val frs = remember(s.sessions.size, showSettings, openApps != null) {
                             List(s.sessions.size + extras) { FocusRequester() }
                         }
                         val addIdx = s.sessions.size
                         val settingsIdx = addIdx + 1
+                        val appsIdx = if (showSettings) settingsIdx + 1 else addIdx + 1
                         LaunchedEffect(Unit) { runCatching { frs.firstOrNull()?.requestFocus() } }
 
                         s.sessions.forEachIndexed { i, session ->
@@ -172,7 +175,7 @@ fun ProfilePickerScreen(
                         AddUserTile(
                             focusRequester = frs[addIdx],
                             onLeft  = { if (s.sessions.isNotEmpty()) frs[s.sessions.lastIndex].requestFocus() },
-                            onRight = { if (showSettings) frs[settingsIdx].requestFocus() },
+                            onRight = { if (showSettings) frs[settingsIdx].requestFocus() else if (openApps != null) frs[appsIdx].requestFocus() },
                             onSelect = { store.showAddUser() },
                         )
 
@@ -183,7 +186,18 @@ fun ProfilePickerScreen(
                                 label = str("nav.settings"),
                                 focusRequester = frs[settingsIdx],
                                 onLeft  = { frs[addIdx].requestFocus() },
+                                onRight = { if (openApps != null) frs[appsIdx].requestFocus() },
                                 onSelect = onSettings,
+                            )
+                        }
+
+                        if (openApps != null) {
+                            ActionTile(
+                                glyph = { tint -> dev.jellystructure.ravilo.ui.components.AppsGlyph(tint, androidx.compose.ui.Modifier.size(30.dp)) },
+                                label = str("nav.apps"),
+                                focusRequester = frs[appsIdx],
+                                onLeft  = { frs[appsIdx - 1].requestFocus() },
+                                onSelect = openApps,
                             )
                         }
                     }

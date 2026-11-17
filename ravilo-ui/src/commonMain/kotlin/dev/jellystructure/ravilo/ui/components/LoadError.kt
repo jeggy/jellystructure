@@ -169,6 +169,8 @@ fun LoadErrorState(
     extraAction: (@Composable (primary: FocusRequester, secondary: FocusRequester) -> Unit)? = null,
     /** DEB-4072 (DEB-3995 FR-11) — *Watch your downloads*, above Retry, on an unreachable server: only where the viewer has downloads. Null draws today's surface. */
     onWatchDownloads: (() -> Unit)? = null,
+    /** DEB-4912 (FR-12) — *Apps* under Retry on the can't-reach screen, while the TV's home-screen hook is on ([LocalOpenApps] is non-null). Only Home asks for it. */
+    offerApps: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val title = loadErrorTitleKey(kind)
@@ -191,7 +193,14 @@ fun LoadErrorState(
     LaunchedEffect(kind) { runCatching { primaryFR.requestFocus() } }
     // The chain has to close both ways. The first cut of this drew Home's Sign out with an Up back to
     // Retry and gave Retry no Down — so the second action was reachable only by never leaving it.
-    val onDown: (() -> Unit)? = if (extraAction != null) ({ runCatching { secondaryFR.requestFocus() }; Unit }) else null
+    val openApps = LocalOpenApps.current.takeIf { offerApps && kind == LoadErrorKind.UNREACHABLE }
+    val appsFR = remember { FocusRequester() }
+    // Down from the last button of the chain: Apps when it is there, otherwise the caller's own second action.
+    val onDown: (() -> Unit)? = when {
+        openApps != null -> ({ runCatching { appsFR.requestFocus() }; Unit })
+        extraAction != null -> ({ runCatching { secondaryFR.requestFocus() }; Unit })
+        else -> null
+    }
 
     Box(modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -231,6 +240,14 @@ fun LoadErrorState(
                         onUp = { runCatching { primaryFR.requestFocus() }; Unit },
                     )
                 }
+            }
+            if (openApps != null) {
+                Spacer(Modifier.height(12.dp))
+                RaviloButton(
+                    str("nav.apps"), focusRequester = appsFR, style = ButtonStyle.GHOST, onSelect = openApps,
+                    onUp = { runCatching { (if (watchThenRetry || macRetry) macRetryFR else primaryFR).requestFocus() }; Unit },
+                    onDown = if (extraAction != null) ({ runCatching { secondaryFR.requestFocus() }; Unit }) else null,
+                )
             }
             if (extraAction != null) {
                 Spacer(Modifier.height(12.dp))

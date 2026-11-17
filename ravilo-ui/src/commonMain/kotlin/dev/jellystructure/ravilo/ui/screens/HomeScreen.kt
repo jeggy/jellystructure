@@ -957,6 +957,7 @@ private fun HomeErrorState(
         onRetry = onRetry,
         onSignIn = onSignOut,
         onWatchDownloads = onWatchDownloads,
+        offerApps = true,   // DEB-4912 (FR-12) — Apps under Retry while the hook is on
         extraAction = { primaryFR, signOutFR ->
             Box(
                 modifier = Modifier

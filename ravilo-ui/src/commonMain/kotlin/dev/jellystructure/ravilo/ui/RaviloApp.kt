@@ -418,6 +418,8 @@ internal sealed class Dest {
     // null is the first message of a ticket not yet filed; [seed] is the thread the 201 that filed it returned.
     /** DEB-4071 (DEB-3995 FR-9) — the phone's Downloads page, reached from Profile's Account card. Draws nothing on a device with no download controller. */
     data class Downloads(val displayName: String) : Dest()
+    /** DEB-4912 (FR-11) — Apps and, inside it, All apps. [signedOut] is a screen opened from sign-in, the profile picker or server setup: no bar, and Back says where it goes (FR-12). */
+    data class Apps(val displayName: String, val signedOut: Boolean = false) : Dest()
     data class SupportList(val displayName: String) : Dest()
     data class SupportThread(val displayName: String, val number: Long?, val seed: dev.jellystructure.shared.tv.SupportThread? = null) : Dest()
 
@@ -425,6 +427,7 @@ internal sealed class Dest {
     fun toRoute(): String = when (this) {
         is Login          -> "/login"
         is ProfilePicker  -> "/profiles"
+        is Apps           -> "/apps"   // a TV screen: Ravilo Web never shows it, so nothing links here
         is Home           -> "/home"
         is ChannelView    -> "/channel/${channel.id}"
         is Browse         -> "/browse/${kind.name.lowercase()}"
@@ -1148,6 +1151,7 @@ fun RaviloApp(
             is Dest.AudiobookDetail -> d.displayName; is Dest.AudiobookAuthor -> d.displayName   // R323
             is Dest.SupportList -> d.displayName; is Dest.SupportThread -> d.displayName   // DEB-1501
             is Dest.Downloads -> d.displayName   // DEB-4071
+            is Dest.Apps -> d.displayName   // DEB-4912
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -1838,6 +1842,8 @@ fun RaviloApp(
                 profileMenuOpen = false
                 trackSheet = null
                 val top = stack.last()
+                // DEB-4912 (FR-12) — Apps opened from sign-in, the picker or server setup has no Home to go to either: Home returns to the screen it came from.
+                if (top is Dest.Apps && top.signedOut) { pop(); return@collect }
                 when (homeRequestAction(stack.size, top is Dest.Home || top is Dest.MusicListen, top is Dest.Login || top is Dest.ProfilePicker)) {
                     HomeRequestAction.Ignore -> {}
                     HomeRequestAction.ScrollToTop -> if (!backToTop.consumeBack()) reselectTick++
@@ -2254,6 +2260,7 @@ fun RaviloApp(
         fun miniBarOver(d: Dest) = castActive != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.Remote &&
             castMiniBarVisible(castLinkNow, castStatusNow)
         val currentDisplayNameForCast = destDisplayName(dest)
+        val appsReachable = remember(dest, windowInfo.isWindowFocused) { dev.jellystructure.ravilo.ui.apps.TvApps.reachable() }
         // R245 (FR-R245-4) / R265 (FR-R265-6) — the in-player hand-off, for a screen exactly as for a
         // Chromecast: CastController.cast() posts straight to a linked screen (no hand-off code) and only
         // mints one when the Chromecast is the side that connected, so the hand-off needs no gate beyond
@@ -2264,6 +2271,11 @@ fun RaviloApp(
             // DEB-3984 (FR-12/13) — the bar's Surprise me pill: a TV, on a server that sends `surprise_me`.
             dev.jellystructure.ravilo.ui.downloads.LocalDownloads provides (if (downloadsEnabled) downloadsController else null),
             dev.jellystructure.ravilo.ui.downloads.LocalDownloadedIds provides downloadedIdSet,   // DEB-4071 (FR-8)
+            // DEB-4912 (FR-10/FR-12) — Apps: a TV with the hook on. Read on each page and each time the window regains focus, because the
+            // viewer may have switched the hook in Android's settings in between. Not offered on Apps itself.
+            dev.jellystructure.ravilo.ui.components.LocalOpenApps provides (if (appsReachable && dest !is Dest.Apps) { ->
+                push(Dest.Apps(destDisplayName(dest), signedOut = dest is Dest.Login || dest is Dest.ProfilePicker))
+            } else null),
             dev.jellystructure.ravilo.ui.components.LocalSurpriseMe provides (if (isTvPlatform && surpriseMe) { -> askSurprise(emptyList(), replace = false) } else null),
             dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying provides (if (isTvPlatform) { -> if (dest !is Dest.TvNowPlaying) push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty())) } else null),
             LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
@@ -3459,6 +3471,34 @@ fun RaviloApp(
             }
 
             // DEB-4071 (DEB-3995 FR-9, FR-10, FR-12) — the Downloads page. A device with no download surface has nothing to show: back to Profile.
+            is Dest.Apps -> {
+                val appsModel = dev.jellystructure.ravilo.ui.apps.TvApps.model
+                if (appsModel == null) LaunchedEffect(Unit) { pop() }
+                else dev.jellystructure.ravilo.ui.apps.AppsFlow(
+                    model = appsModel,
+                    onExit = null,   // Back on Apps is the stack's own pop
+                    // FR-12 — with nobody signed in there is no bar: the screen draws sign-in's brand row and says where Back goes.
+                    topBar = if (dest.signedOut) null else { navFR, onDown ->
+                        dev.jellystructure.ravilo.ui.components.AppBar(
+                            navItems = dev.jellystructure.ravilo.ui.screens.raviloNavItems(),
+                            activeNav = -1,
+                            navFR = navFR,
+                            onDown = onDown,
+                            onProfile = { openProfile() },
+                            onSearch = { push(Dest.Search(dest.displayName)) },
+                            onNavSelect = { idx ->
+                                when (raviloNavTarget(idx)) {
+                                    RaviloNavTarget.HOME -> resetTo(homeDest(dest.displayName))
+                                    RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                                    RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                                    RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+
             is Dest.Downloads -> {
                 // DEB-4072 (FR-11) — offline, the phone's own downloads are reachable whatever the config last said.
                 val dc = downloadsController?.takeIf { downloadsEnabled || (serverOffline && it.hasPlayableDownloads()) }

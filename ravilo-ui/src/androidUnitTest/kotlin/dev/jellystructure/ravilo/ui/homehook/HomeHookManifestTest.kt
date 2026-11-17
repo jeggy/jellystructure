@@ -114,5 +114,18 @@ class HomeHookManifestTest {
         }
     }
 
+    // DEB-4912 (FR-11) — Android 11+ shows an app only what a <queries> entry names, so Apps needs the TV-launcher one, and the stock-home one stays.
+    @Test fun theManifestQueriesTheTvLauncherAndTheStockHome() {
+        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(File("src/androidMain/AndroidManifest.xml"))
+        val queries = doc.getElementsByTagName("queries").item(0) as Element
+        val intents = queries.getElementsByTagName("intent")
+        val categories = (0 until intents.length).flatMap { i ->
+            val cats = (intents.item(i) as Element).getElementsByTagName("category")
+            (0 until cats.length).map { (cats.item(it) as Element).getAttribute("android:name") }
+        }
+        assertTrue("android.intent.category.LEANBACK_LAUNCHER" in categories, "Apps cannot see the TV's apps without this query")
+        assertTrue("android.intent.category.HOME" in categories)
+    }
+
     @Test fun theServiceClassResolves() { assertNotNull(Class.forName("dev.jellystructure.ravilo.ui.homehook.RaviloHomeHookService")) }
 }

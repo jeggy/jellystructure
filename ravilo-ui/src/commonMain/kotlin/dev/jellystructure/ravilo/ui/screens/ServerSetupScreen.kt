@@ -56,6 +56,8 @@ object ServerSetupTags {
     /** The text field inside it, focusable only once OK has been pressed on [ADDRESS]. */
     const val ADDRESS_FIELD = "setup-address-field"
     const val CONNECT = "setup-connect"
+    /** DEB-4912 (FR-12) — the way to Apps, drawn only while the TV's home-screen hook is on. */
+    const val APPS = "setup-apps"
 }
 
 /** R349 (FR-R349-8) — how a saved server URL reads back in the address field: `https://` is what R226 infers, so it
@@ -85,6 +87,9 @@ fun ServerSetupScreen(
     val canConnect = host.isNotBlank()
 
     val connectFR = remember { FocusRequester() }
+    // DEB-4912 (FR-12) — with the TV's home-screen hook on, Apps is one press away from here: Wi-Fi settings and the stock home stay reachable.
+    val openApps = dev.jellystructure.ravilo.ui.components.LocalOpenApps.current
+    val appsFR = remember { FocusRequester() }
     val addressFR = remember { FocusRequester() }
     val fieldFR = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -206,6 +211,7 @@ fun ServerSetupScreen(
                         onBlurred = { connectFocused = false },
                         onSelect = { if (canConnect) onUrlSaved(fullUrl) },
                         onUp = { addressFR.requestFocus() },   // R349 (FR-R349-3)
+                        onDown = if (openApps != null) ({ appsFR.requestFocus() }) else null,   // DEB-4912 (FR-12)
                     )
                     .padding(vertical = 16.dp),
                 contentAlignment = Alignment.Center,
@@ -217,6 +223,27 @@ fun ServerSetupScreen(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
+            }
+            if (openApps != null) {
+                var appsFocused by rememberFocusVisual()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                        .focusRing(appsFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
+                        .testTag(ServerSetupTags.APPS)
+                        .dpadFocusable(
+                            focusRequester = appsFR,
+                            onFocused = { appsFocused = true },
+                            onBlurred = { appsFocused = false },
+                            onSelect = openApps,
+                            onUp = { connectFR.requestFocus() },
+                        )
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(str("nav.apps"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
