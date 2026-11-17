@@ -90,6 +90,9 @@ test.describe.serial("A Custom collection's rows in one order (editor)", () => {
   // FR-5 — no drag, no write: saving leaves `order` empty.
   test("saving without a drag leaves the order empty", async () => {
     await page.click("#ch-ed-save");
+    // The fixture's order is already empty, so the poll alone is satisfied before the Save lands; the editor is
+    // replaced by the layout page once the save completes, and the next test must not start under a re-render.
+    await expect(page.locator("#ch-ed-save")).toHaveCount(0, { timeout: 15_000 });
     await expect.poll(async () => (await storedRows(page))?.order ?? [], { timeout: 15_000 }).toEqual([]);
     expect((await storedRows(page)).items.map((r: any) => r.id)).toEqual(["row-a", "row-b"]);
   });
@@ -97,7 +100,18 @@ test.describe.serial("A Custom collection's rows in one order (editor)", () => {
   // FR-4 / FR-5 / FR-6 — drag Newly Added below a filter row, Save, reload, reopen: the order holds.
   test("a drag writes the whole order and it reads back after a reload", async () => {
     await openCollection(page);
-    await page.locator("#ch-rows-list > .cfg-row", { hasText: "Newly Added" }).dragTo(page.locator("#ch-rows-list > .cfg-row").nth(2));
+    // Let the coverage box swap its taller result in before measuring, so the list does not shift under the drag.
+    await expect(page.locator("#ch-rows-coverage")).not.toContainText("Checking coverage", { timeout: 15_000 });
+    // Explicit steps instead of dragTo: both rows in view before the button goes down, and dragover gets two moves.
+    // Not wrapped in a retry — a retried drag would hide a real FR-4 regression.
+    const src = page.locator("#ch-rows-list > .cfg-row", { hasText: "Newly Added" });
+    const dst = page.locator("#ch-rows-list > .cfg-row").nth(2);
+    await dst.scrollIntoViewIfNeeded();
+    await src.hover();
+    await page.mouse.down();
+    await dst.hover();
+    await dst.hover({ position: { x: 20, y: 10 } });
+    await page.mouse.up();
     expect(await labels()).toEqual(["Continue Watching", "Alpha row", "Newly Added", "Bravo row"]);
     await page.click("#ch-ed-save");
     await expect.poll(async () => (await storedRows(page))?.order, { timeout: 15_000 })
