@@ -1094,7 +1094,9 @@ again with no buffering event. The report said `rebuffer_count 0` and nothing re
 is not known yet. Either way, a stall that depends on AVPlay's word goes unseen, so the app watches the position itself. This
 is the Cast receiver's frozen-picture rule (DEB-2205, DEB-4637), made for AVPlay.
 
-**FR-28 · A position that stops moving while playing is a stall, and a long one restreams.**
+**FR-32 · A position that stops moving while playing is a stall, and a long one restreams.** *(Numbered FR-28 when
+first committed, in `f1a25a91d`, which repeated DEB-5025's FR-28. A citation of "DEB-5024, FR-28" from that commit or from
+DEB-5079 means this FR.)*
 
 - **What counts as stopped.** The app reads `getCurrentTime()` every 500 ms while AVPlay is `PLAYING` and the app has not paused,
   sought or restreamed in the last 2 s. If the position has not advanced for **1 s or more**, and no `onbufferingstart` is
@@ -1131,3 +1133,40 @@ is the Cast receiver's frozen-picture rule (DEB-2205, DEB-4637), made for AVPlay
   with our encoder's rungs under the bound.
 - **Proof (QA).** Rerun DEB-5067's copy-stream freeze on the emulator. Within 6 s of the freeze there is one restream, then
   our ladder and a moving position, and the item's row shows the stall. The real set is judged by the owner.
+
+## Amendment 2026-11-19, third (DEB-5078) — a start our encoder refuses is asked once more, out of sight
+
+On the emulator (DEB-5067) a film's first start went to our ladder. ffmpeg exited before its first segment: the log said
+`ffmpeg exit 59904`, which is a wait status for exit code 234, ffmpeg's EINVAL. The server marked the file for Jellyfin for
+6 h (DEB-3093 FR-2), AVPlay's `prepareAsync` answered *Unknown error*, and the app drew *That didn't start*. The viewer's
+second start played Jellyfin's copy. The server's half works, because the refusal is recorded before the player sees the
+failure, so the next ticket for that file is Jellyfin's. What is missing is the second ask. Android and the Cast receiver
+make it on their own (DEB-3093 FR-6), and the Samsung app makes none. Why ffmpeg refused this file is not known: its
+`ffmpeg.log` went with the job's folder. DEB-3093 FR-8's 2026-11-19 note makes the next refusal keep its reason.
+
+**FR-33 · A start that fails on our encoder before its first picture is asked once more.**
+
+- **The trigger.** The ticket's `encoder` is `ours`, and AVPlay's `onerror`, or an `open()` that throws, arrives before
+  FR-25's first frame.
+- **What the app does.** It closes the failed attempt as today: FR-25's report with `start_failure_status`, and the server's
+  session stopped at 0 (DEB-4874). Then it calls `POST /api/tv/playback/start` once more for the same item, with the same start
+  position and FR-23's remembered audio, and opens the answer. All of this happens under the loading view already showing,
+  with no error, no shutter and no second *Still trying…*. The server answers with Jellyfin's stream when the file was
+  refused, and with our encoder again otherwise.
+- **What it does not do.** A second failure shows today's *That didn't start*, whichever encoder served it. These keep today's
+  behaviour, with no second ask:
+  - a ticket whose `encoder` is not `ours`;
+  - an error after the first frame;
+  - Back, or a newer start, during the second ask.
+- **Each attempt reports as its own start.** Each has its own play session and its own `playback_qoe` row, so the failure
+  stays visible to the server.
+- **No wire change, no backend change.** `StreamTicket.encoder` and the start route already exist.
+- **Proof (CI).** In `ravilo-screen-player.spec.ts`, the fake AVPlay fails `prepareAsync` on a ticket with `encoder: "ours"`.
+  The test asserts:
+  - exactly one more `/api/tv/playback/start`, no error screen, and the second ticket plays;
+  - a second failure shows the error;
+  - a ticket with no `encoder` fails straight to the error;
+  - an `onerror` after the first frame makes no second start.
+- **Proof (QA).** On `tizen-emulator`, a file our encoder refuses plays from the first OK. The backend log shows the refusal
+  and then Jellyfin's stream on the second ticket. The QA row names the file, which has to be one not refused in the 6 h
+  before. The real set is judged by the owner.

@@ -233,6 +233,16 @@ Restores DEB-2205's FR-8 on the roads that skip it.
     the release build, where `DebugLoadLogger` is not bound. The abandon line stays as it is, so one abandon writes it and then the
     `abandon` pick. FR-5's in-place cap replaces the selection, so it writes no pick line: its own `recovery:` line and the picture line
     say it.
+- *2026-11-19, DEB-5078 — a refusal keeps its reason.* This is the backend, and the log only: no field and no wire change. A
+  file ffmpeg refused (FR-2) went to Jellyfin for 6 h with a reason nobody could read afterwards. The line pointed at the job's
+  `ffmpeg.log`, and the folder went when the job did. The line also printed `pclose`'s wait status (`exit 59904`) where the
+  exit code (234) was meant. From now on:
+  - `ffmpeg exit` and `ffmpeg refused this file (…, exit n)` print the exit code, or `signal n` for a process a signal ended.
+  - A refusal also logs the last 20 non-empty lines of that job's `ffmpeg.log`, with no progress lines, before its folder can
+    go. Those lines can hold a source's path, so they are written to the server log only: never to a report, a response or a
+    QoE field.
+  - The proof is a `linuxX64Test`. It checks that the wait-status decoding gives `234` for `59904` and `signal 9` for `9`, and
+    that a refused job's log tail is logged.
 
 ### FR-9 — The other clients
 
