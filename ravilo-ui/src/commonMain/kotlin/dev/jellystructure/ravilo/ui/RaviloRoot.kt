@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.ravilo.ui.screens.ServerSetupScreen
+import dev.jellystructure.ravilo.ui.screens.serverUrlFromAddress
 import dev.jellystructure.shared.tv.TvApiClient
 
 /** Platform-specific: creates the HttpClient configured for the given target. */
@@ -104,9 +105,16 @@ expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 @Composable
 expect fun rememberExitAction(): () -> Unit
 
+/** DEB-5002 (FR-3) — repair an old saved address on its first startup read. */
+internal fun cleanSavedBaseUrl(saved: String, persist: (String) -> Unit): String {
+    val clean = serverUrlFromAddress(saved).orEmpty()
+    if (clean != saved) persist(clean)
+    return clean
+}
+
 @Composable
 fun RaviloRoot() {
-    var baseUrl by remember { mutableStateOf(raviloBaseUrl()) }
+    var baseUrl by remember { mutableStateOf(cleanSavedBaseUrl(raviloBaseUrl(), ::saveBaseUrl)) }
     // R340 (FR-R340-3) — "Everyone on this TV" lands here, and the setup screen says what just happened.
     var signedOutEveryone by remember { mutableStateOf(false) }
     // R349 (FR-R349-8) — the address in use before *Wrong server?*, offered back in the setup field (kept in memory

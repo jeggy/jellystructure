@@ -67,6 +67,18 @@ internal fun addressForEditing(url: String): String {
     return if (trimmed.startsWith("https://", ignoreCase = true)) trimmed.substring("https://".length) else trimmed
 }
 
+/**
+ * DEB-5002 (FR-1, FR-2) — remove invisible characters around an address before
+ * checking its scheme. A typed HTTP scheme remains the LAN escape hatch.
+ */
+internal fun serverUrlFromAddress(text: String): String? {
+    val address = text.trim { it.isWhitespace() || it in "\u200B\u200C\u200D\u2060\uFEFF" }.trimEnd('/')
+    if (address.isEmpty()) return null
+    val hasScheme = address.startsWith("http://", ignoreCase = true) ||
+        address.startsWith("https://", ignoreCase = true)
+    return if (hasScheme) address else "https://$address"
+}
+
 @Composable
 fun ServerSetupScreen(
     onUrlSaved: (String) -> Unit,
@@ -80,11 +92,8 @@ fun ServerSetupScreen(
     val colors = RaviloTheme.colors
     var host by remember { mutableStateOf(addressForEditing(initialAddress)) }
 
-    // R226 — a typed scheme always wins outright (the one escape hatch for a plain-HTTP LAN box);
-    // otherwise https:// is inferred, since virtually every real deployment sits behind TLS.
-    val hasScheme = host.startsWith("http://", ignoreCase = true) || host.startsWith("https://", ignoreCase = true)
-    val fullUrl = if (hasScheme) host else "https://$host"
-    val canConnect = host.isNotBlank()
+    val fullUrl = serverUrlFromAddress(host)
+    val canConnect = fullUrl != null
 
     val connectFR = remember { FocusRequester() }
     // DEB-4912 (FR-12) — with the TV's home-screen hook on, Apps is one press away from here: Wi-Fi settings and the stock home stay reachable.
@@ -100,7 +109,7 @@ fun ServerSetupScreen(
     var addressHasFocus by rememberFocusVisual()
     LaunchedEffect(editing) { if (editing) runCatching { fieldFR.requestFocus() } }
     // A visible focus on arrival: Connect when an address is already there, else the address.
-    LaunchedEffect(Unit) { runCatching { if (host.isNotBlank()) connectFR.requestFocus() else addressFR.requestFocus() } }
+    LaunchedEffect(Unit) { runCatching { if (canConnect) connectFR.requestFocus() else addressFR.requestFocus() } }
 
     // R349 (FR-R349-1) — scrolls inside what the system keyboard leaves; centred as before while it all fits.
     // This screen is drawn outside RaviloApp, so it pads itself by the keyboard (and the system bars).
@@ -170,7 +179,7 @@ fun ServerSetupScreen(
                     imeAction = ImeAction.Go,
                 ),
                 keyboardActions = KeyboardActions(
-                    onGo = { if (canConnect) onUrlSaved(fullUrl) },
+                    onGo = { fullUrl?.let(onUrlSaved) },
                 ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = colors.surfaceVariant,
@@ -209,7 +218,7 @@ fun ServerSetupScreen(
                         focusRequester = connectFR,
                         onFocused = { connectFocused = true },
                         onBlurred = { connectFocused = false },
-                        onSelect = { if (canConnect) onUrlSaved(fullUrl) },
+                        onSelect = { fullUrl?.let(onUrlSaved) },
                         onUp = { addressFR.requestFocus() },   // R349 (FR-R349-3)
                         onDown = if (openApps != null) ({ appsFR.requestFocus() }) else null,   // DEB-4912 (FR-12)
                     )
