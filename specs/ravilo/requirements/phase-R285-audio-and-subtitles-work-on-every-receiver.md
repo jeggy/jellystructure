@@ -4,7 +4,18 @@
 > Read 253's table first: on the TV app **no subtitle has ever been drawn**, and neither receiver
 > offers PGS or a working audio switch.
 
-**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **no receiver hardware touched.** `:ravilo-receiver-core`, `:ravilo-screen`, `:ravilo-cast` and the Android sender compile clean; `ReceiverSubtitlesTest` 18/18 (parser + list order + pick rule live in `:shared`, the only place a test can reach them). The parser was additionally run once over *Honeyman*'s real Danish VTT from the live Jellyfin — **741/741 cues, æ/ø/å intact** (not committed: copyrighted text) — and that same request confirmed Jellyfin answers the subtitle URL with `Access-Control-Allow-Origin: *`, so the TV app's cross-origin fetch is allowed. **Found while wiring it, and fixed:** phase 236 defines `set_audio` / `set_subtitle {index|null}` / `set_subtitle_size` / `skip`, `RemoteRoutes` forwards exactly those, and the TV app matched `audio_track` / `subtitle_track` / `sub_size` / `seek_relative` — so **no phone has ever changed a track or a caption size on the TV app**; it now answers to the spec's names (old ones kept as aliases). Chromecast: the `audio`/`subtitle` commands `CastCommand`'s own doc named were handled nowhere; `selectedAudio` was the constant `0` and `selectedSub` "whichever track is flagged default". ⚠ Unverified and only hardware can say: that HTML draws over AVPlay on the RU7440 (R264's standing question), CAF's `getTextTracksManager()` calls, and a self-issued `playerManager.load()` mid-session.
+## Scope
+
+Touches `:ravilo-receiver-core`, `:ravilo-screen`, `:ravilo-cast` and the Android sender; the
+parser, list order and pick rule live in `:shared` (`ReceiverSubtitlesTest`), the only place a test
+can reach them. Jellyfin answers the subtitle URL with `Access-Control-Allow-Origin: *`, so the TV
+app's cross-origin fetch is allowed. **Found while wiring it, and fixed:** phase 236 defines
+`set_audio` / `set_subtitle {index|null}` / `set_subtitle_size` / `skip`, `RemoteRoutes` forwards
+exactly those, and the TV app matched `audio_track` / `subtitle_track` / `sub_size` /
+`seek_relative` — so no phone had ever changed a track or a caption size on the TV app; it answers
+to the spec's names, the old ones kept as aliases. On Chromecast the `audio`/`subtitle` commands
+`CastCommand`'s own doc named were handled nowhere; `selectedAudio` was the constant `0` and
+`selectedSub` "whichever track is flagged default".
 
 ## Requirements
 
@@ -31,6 +42,35 @@ tags stripped, malformed blocks skipped.
 CAF keeps sideloading text tracks. A PGS or audio pick reloads the media with the restreamed URL at
 the current position; a burn-in load activates no text track.
 
+**Amended 2026-11-19 (DEB-4994) — the Cast receiver draws every text subtitle itself.** The first
+sentence above is superseded. A viewer cast a series episode from the phone to a TV's built-in Cast
+on 2026-11-17. Both of its embedded text tracks had been extracted weeks before, so the server
+would have answered with the file at once. Still no subtitle showed, and none of several picks from
+the phone's remote changed anything. The cause in the code: a text-to-text pick on the phone's Cast
+link is CAF's own `EDIT_TRACKS_INFO` (`CastSenderAndroid.selectSubtitle`, the Mac's the same), which
+the receiver never sees. So the receiver's own fetch-and-draw (DEB-4792) runs only for the track
+shown at load, and for a pick sent as our `subtitle` command. Every other pick depends on CAF
+drawing a sideloaded VTT. That has been seen to work only on a Google TV Streamer with a
+pre-extracted track (DEB-4704), and seen to fail from a `blob:` copy on a real Chromecast (DEB-4792).
+Drawing on Cast now has one path, the one FR-R285-3 gives the TV app:
+
+- **a.** The receiver draws the active text track in its own `#subtitle` layer, from the player's
+  clock, at the viewer's `sub_size`. It fetches the file itself with its device token (DEB-2205 FR-6:
+  a 202 is retried in the background, and the picture never waits).
+- **b.** "The active track" is whatever CAF's text-track manager says is active
+  (`getActiveIds()`), read on the drawing tick. A pick reaches the layer by whichever path it took:
+  our `subtitle` command, the phone's or the Mac's `EDIT_TRACKS_INFO`, an older sender, or the
+  platform's own caption control. No sender has to change, and an installed phone keeps working
+  unchanged.
+- **c.** CAF still gets one `TEXT` Track per text subtitle, with the same ids (`100+i`), names and
+  languages, so the senders' lists, the burn-in rule (a listed subtitle with no CAF Track) and the
+  platform caption list are unchanged. Every Track points at an empty VTT, so CAF never draws a
+  second copy.
+- **d.** Off, a burn-in (R282's invariant) and a new item clear the layer. A restream of the same item
+  keeps the files already fetched.
+
+No wire change: no message, field or id is added, removed or retyped.
+
 ### FR-R285-5 — HEVC over HLS only where the device says yes
 Chromecast sets `hlsHevc` from the `canDisplayType('video/mp4', hev1…)` probe it already runs.
 `ravilo-screen` leaves it **false**: whether the RU7440's AVPlay takes fMP4-HEVC HLS is a hardware
@@ -43,3 +83,11 @@ question, and a wrong yes is a black screen on titles that play today. Named, no
 - Unit: VTT parser; list ordering; the pick-decision helper. JS compile of all three modules.
 - ⚠ **No receiver hardware here.** Whether HTML draws over AVPlay on the RU7440 is the same open
   question R264 already carries for the receiver's own chrome — this phase inherits it.
+- DEB-4994 (FR-R285-4 amendment), on a device. Cast an episode with two text tracks from the
+  phone's app, not from a script, because the phone's own `EDIT_TRACKS_INFO` is the path under test.
+  Run it on the TV's built-in Cast where the report came from, and on a Chromecast or Streamer:
+  - The default track shows from the start.
+  - A pick of the other track from the phone's remote shows that track within a few seconds.
+  - Off clears the layer, and re-picking the first track shows it again.
+  - A cold (never extracted) track still shows after its 202.
+  - Exactly one copy of each cue is drawn.
