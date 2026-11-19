@@ -900,7 +900,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         bk.watchState = PlayerWatch(
             positionMs, isPlaying, isBuffering || isSeeking, hasRenderedFirstFrame,
             if (bufferedMs > 0) (bufferedMs - positionMs).coerceAtLeast(0) else -1L, videoOutputRecovering,
-            durationMs,
+            durationMs, player.seekCount,
         )
         audioTracks = sessionAudioTracks(bk.sessionAudio, bk.sessionAudioIndex, player.audioTracks)
         subtitleTracks = player.subtitleTracks

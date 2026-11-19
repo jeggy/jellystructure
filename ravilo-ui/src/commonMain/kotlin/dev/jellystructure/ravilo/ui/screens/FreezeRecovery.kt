@@ -23,6 +23,8 @@ data class PlayerWatch(
     val recovering: Boolean = false,
     /** The file's length, 0 where the player does not know it (DEB-3956: FR-4 reads it to tell the end of the file from a shortfall). */
     val durationMs: Long = 0L,
+    /** DEB-5055 (FR-4): the viewer's seeks in this stream, counted; 0 where the platform does not count them. FR-4 reads it changing. */
+    val seeks: Long = 0L,
 )
 
 /** FR-1 — a stop is a position that does not move for this long while the player intends to play. */

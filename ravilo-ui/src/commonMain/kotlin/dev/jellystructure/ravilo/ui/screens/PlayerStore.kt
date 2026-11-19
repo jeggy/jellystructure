@@ -1161,7 +1161,7 @@ class PlayerStore(
             (snap.bandwidthSamples ?: 0) >= HANDOVER_ESTIMATE_MIN_SAMPLES && (snap.bandwidthBytes ?: 0L) >= HANDOVER_ESTIMATE_MIN_BYTES
         }
         val decision = handoverRule?.observe(nowMs, w.positionMs, w.bufferedAheadMs, estimate, w.firstFrame && w.wantsToPlay && !w.recovering,
-            w.durationMs)
+            w.durationMs, w.seeks, w.waiting)
             ?: return false
         return when (decision) {
             is HandoverDecision.Immediate -> { handOverNow(item, t, w, streamBps, decision.reason, snap, nowMs); true }

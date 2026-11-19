@@ -133,18 +133,31 @@ internal class DirectPlayHandover(private val streamBps: Long, private val scale
     /** The buffer this device holds in time: the spec's 50 s where it holds 30 s or more, else the scaled reference. */
     private val targetMs = if (scale >= 1.0) DIRECT_BUFFER_TARGET_MS else (DIRECT_BUFFER_REFERENCE_MS * scale).toLong()
     private var fired = false
+    /** DEB-5055 — the viewer's seek count the last tick saw (null before the first), and whether a seek is still landing. */
+    private var lastSeeks: Long? = null
+    private var seekLanding = false
 
-    fun reset() { ahead.clear(); ahead6.clear(); fired = false }
+    fun reset() { ahead.clear(); ahead6.clear(); fired = false; lastSeeks = null; seekLanding = false }
 
     /**
-     * [playing]: first frame out, the viewer wants it playing, not seeking. [estimateBps]: the player's bandwidth estimate where it
+     * [playing]: first frame out, the viewer wants it playing (a seek is read through [seeks] and [waiting]). [estimateBps]: the player's bandwidth estimate where it
      * rests on enough transfers (see [HANDOVER_ESTIMATE_MIN_SAMPLES]); null where it is still guessing. [durationMs]: the file's
      * length, 0 where the player does not know it (DEB-3956, FR-4 2026-11-08: the end of the file is not a shortfall).
+     * [seeks]/[waiting] (DEB-5055, FR-4 2026-11-19): a viewer's seek is not a shortfall. When [seeks] changes both windows start again
+     * and no sample is taken until the first tick with [waiting] false (the player is at the new position); the buffer from before
+     * a seek is never compared with the buffer after it. A wait no seek began is read as before.
      */
     fun observe(
         nowMs: Long, positionMs: Long, bufferAheadMs: Long, estimateBps: Long?, playing: Boolean, durationMs: Long = 0L,
+        seeks: Long = 0L, waiting: Boolean = false,
     ): HandoverDecision? {
         if (fired || streamBps <= 0) return null
+        if (lastSeeks != null && lastSeeks != seeks) { ahead.clear(); ahead6.clear(); seekLanding = true }
+        lastSeeks = seeks
+        if (seekLanding) {
+            if (waiting) return null
+            seekLanding = false
+        }
         if (!playing || bufferAheadMs < 0) { ahead.clear(); ahead6.clear(); return null }
         ahead.addLast(Sample(nowMs, bufferAheadMs))
         while (ahead.size > 1 && ahead[1].atMs <= nowMs - HANDOVER_FALLING_FOR_MS) ahead.removeFirst()

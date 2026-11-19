@@ -305,6 +305,7 @@ actual class RaviloPlayer actual constructor() {
     // R306 (FR-R306-3) — a fatal engine error on THIS load; reset by every load and engine release.
     @Volatile private var _playbackFailed = false
     @Volatile private var _isSeeking = false
+    @Volatile private var _seekCount = 0L
 
     private val qoeListener = object : AnalyticsListener {
         override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
@@ -331,7 +332,7 @@ actual class RaviloPlayer actual constructor() {
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) _isSeeking = true
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) { _isSeeking = true; _seekCount += 1 }
         }
         override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: androidx.media3.common.PlaybackException) {
             // R379 (FR-R379-2) — a platform decoder failed: once, restart the item on an engine that prefers FFmpeg
@@ -807,6 +808,7 @@ actual class RaviloPlayer actual constructor() {
     actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
     actual val isBuffering: Boolean get() = _isBuffering
     actual val isSeeking: Boolean get() = _isSeeking
+    actual val seekCount: Long get() = _seekCount
     actual val soundBlockedByBrowser: Boolean get() = false   // R376 — no autoplay rule on Android
 
     /** One picker row: the engine audio group, and the ticket entry it is (null for a group no entry claims). */

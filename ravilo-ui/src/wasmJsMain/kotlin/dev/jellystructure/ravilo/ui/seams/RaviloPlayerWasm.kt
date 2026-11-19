@@ -293,6 +293,7 @@ actual class RaviloPlayer actual constructor() {
     actual val hasRenderedFirstFrame: Boolean get() { sync(); return events.firstFrame }
     actual val isBuffering: Boolean get() { sync(); return events.buffering }
     actual val isSeeking: Boolean get() { sync(); return events.seeking }
+    actual val seekCount: Long get() = 0L
     actual val soundBlockedByBrowser: Boolean get() { sync(); return events.soundBlocked }
 
     /**

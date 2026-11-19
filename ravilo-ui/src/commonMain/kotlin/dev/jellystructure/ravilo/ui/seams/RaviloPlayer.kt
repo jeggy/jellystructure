@@ -140,6 +140,10 @@ expect class RaviloPlayer() {
      *  the Android actual's single `qoeListener`. */
     val isSeeking: Boolean
 
+    /** DEB-5055 (FR-4) — how many viewer seeks this player has taken (Media3's `DISCONTINUITY_REASON_SEEK`): only ever up, so a
+     *  reader tells a seek from the count changing. Android only; 0 elsewhere (honest "nothing observed"). */
+    val seekCount: Long
+
     /**
      * R376 (2026-10-08, found on Safari) — true while a browser refused to play with sound because the play did not
      * come from a real click, tap or key (Safari's autoplay rule: a play pushed by the server, or started after an

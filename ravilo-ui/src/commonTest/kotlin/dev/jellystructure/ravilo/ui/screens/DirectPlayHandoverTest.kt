@@ -301,4 +301,59 @@ class DirectPlayHandoverTest {
         assertTrue(handoverStale(120_000, 40_000, 45_000), "far forward")
         assertFalse(handoverStale(47_000, 40_000, 45_000), "a ticket that arrives just after H still switches")
     }
+
+    // ── DEB-5055 (FR-4, 2026-11-19) — a viewer's seek is not a shortfall ──
+
+    /** 50 s ahead, playing, for 5 s: the buffer from before a seek. */
+    private fun beforeASeek(r: DirectPlayHandover): Long {
+        var t = 0L
+        repeat(10) { t += 500; assertNull(r.observe(t, 60_000 + t, 50_000, null, playing = true)) }
+        return t
+    }
+
+    @Test fun `a seek inside the buffer is not a fall`() {
+        val r = rule()
+        var t = beforeASeek(r)
+        var ahead = 10_000L
+        repeat(40) {
+            t += 500; ahead += 500
+            assertNull(r.observe(t, 30_000 + t, ahead, null, playing = true, seeks = 1), "at $t")
+        }
+    }
+
+    @Test fun `a seek outside the buffer is not a fall`() {
+        val r = rule()
+        var t = beforeASeek(r)
+        repeat(4) { t += 500; assertNull(r.observe(t, 300_000, 0, null, playing = true, seeks = 1, waiting = true)) }
+        var ahead = 2_000L
+        repeat(40) {
+            t += 500; ahead += 500
+            assertNull(r.observe(t, 300_000 + t, ahead, null, playing = true, seeks = 1, waiting = false), "at $t")
+        }
+    }
+
+    @Test fun `a real shortfall after a seek still fires`() {
+        val r = rule()
+        var t = beforeASeek(r)
+        assertNull(r.observe(t + 500, 300_000, 0, null, playing = true, seeks = 1, waiting = true))
+        t += 500
+        val landed = t + 500
+        var ahead = 12_500L; var decision: HandoverDecision? = null
+        repeat(8) {
+            t += 500; ahead -= 500
+            if (decision == null) decision = r.observe(t, 300_000 + t, ahead, null, playing = true, seeks = 1)
+        }
+        assertEquals("falling", assertIs<HandoverDecision.Ahead>(decision).reason)
+        assertTrue(t - landed <= 3_500L, "within 3.5 s of landing, was ${t - landed}")
+    }
+
+    @Test fun `a wait no seek began is read as today`() {
+        val r = rule()
+        var t = 0L; var ahead = 14_000L; var decision: HandoverDecision? = null
+        repeat(10) {
+            t += 500; ahead -= 500
+            if (decision == null) decision = r.observe(t, 60_000 + t, ahead, null, playing = true, seeks = 2, waiting = true)
+        }
+        assertEquals("falling", assertIs<HandoverDecision.Ahead>(decision).reason)
+    }
 }
