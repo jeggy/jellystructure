@@ -1041,3 +1041,45 @@ picker is reached through **Audio & subtitles**. This is Android TV's model, and
   - the controls hide 3.6 s after the last key while playing and stay while paused;
   - Back hides, then stops.
 - Then the Tizen 5.0 emulator and the owner's set, on the QA queue.
+
+## Amendment 2026-11-19 (DEB-5047) — a title's page reads its state again when you come back to it
+
+Owner, DEB-5047: *"it's also missing the whole showing current state of each episodes within a series details page. And also
+the button says "Spæl · S15E01" even though I have seen this episodes and the next bunch ones."*
+
+What the evidence says, read on 2026-11-19:
+- **The report itself is a profile, not the page.** The set is signed in as one household profile only, and that profile has
+  never played the series. Every play of it on prod is under another profile, on a phone and on the Android TV boxes. The
+  series' seasons in the library start at 15, so a page with no state for the profile offers the first counted episode, *Play ·
+  S15E01*, with no ✓ and no bar. That is FR-7 and DEB-4660's amendment doing what they say. The cure is the profile menu's
+  *Switch profile* → *Add user* (FR-3, FR-4), and no code changes for it.
+- **The page already draws each episode's state.** An episode tile carries a ✓ when watched and a progress bar when started,
+  from the same `getPlaystate` answer Android TV uses (DEB-4660).
+- **But it reads that state once.** `ScreenDetail.load()` returns early when the page is ready, `returnFromPlayer()` only
+  redraws, and the events socket's `onEvent` ignores `home_changed` and `playstate_changed`. Watch an episode on the TV, press
+  Back, and the page still shows the state from before the play: the old ✓s, the old bar, the old *Play · S…E…*. A fresh page
+  only comes after FR-22's five minutes away (DEB-4925). Android TV re-reads on re-entry and on the push (FR-R351-7), so the
+  owner's *"also missing"* is right for any play made on the TV itself.
+
+**FR-31 · A title's page reads its state again whenever it can have changed.** This is Android TV's FR-R351-7 on the Samsung's
+page, unchanged:
+- **When.** The page reads `getPlaystate` again for the title and, on a series, for the series and every episode:
+  - when it is shown again after the player (`returnFromPlayer`), whichever way the play ended: Back, the end of the last
+    episode, a failure;
+  - when the events socket pushes `home_changed` or `playstate_changed` while the page is in the router's stack (on screen or
+    under the player), so a play another device made, or a write a phone made, reaches the page.
+- **What it keeps.** The read never empties what the page shows. Old values stay until new ones arrive. A failed read, or one
+  that answers an empty map, keeps them, as Android TV's stores do. One read runs at a time per page; a push that arrives during
+  one asks for one more read after it, never a queue.
+- **What it redraws.** The primary button's word and episode (FR-7, DEB-4660), each episode tile's ✓ and bar, a movie's
+  *Resume · N min left* and *Start over*, and My List and the watched button. The redraw keeps focus where it was (the tile that
+  played, per FR-9), and it keeps the season pill the viewer is on. The page does not jump to the season of the new primary
+  episode under the viewer.
+- **No skeleton.** A re-read draws over the page as it stands (FR-20's *a page drawn from what the route already holds*).
+- **No wire change.** `getPlaystate` and both events exist, and no new string is needed.
+- **Proof.** `ravilo-screen-detail.spec.ts` gains these cases:
+  - Back from a play whose mock playstate now marks the episode watched shows its ✓, and the primary button names the next one.
+  - A `home_changed` pushed while the page is open redraws it without moving focus.
+  - A re-read that answers 500, or `{}`, leaves every ✓ and the button as they were.
+  - A push during a read gives one more read after it, not two in parallel.
+  After the tests, the page goes to the Tizen 5.0 emulator on the QA queue, then to the owner's set.
