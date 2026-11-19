@@ -58,6 +58,8 @@ external interface AvPlayObject {
     fun getDuration(): Int
     fun setListener(listener: AvPlayListener)
     fun setStreamingProperty(type: String, value: String)
+    /** DEB-5024 (FR-25) — `"CURRENT_BANDWIDTH"` and `"AVAILABLE_BITRATE"` answer a string (or nothing) on a set that has them. */
+    fun getStreamingProperty(type: String): dynamic
     /** Samsung docs: `"AUDIO"` | `"TEXT"` | `"VIDEO"`. Returns the container's own enumerated tracks —
      *  index alignment with the `StreamTicket.audio`/`.subtitles` Jellyfin metadata is a best-effort
      *  assumption (both are container-stream-order), unverified against real hardware (see this
@@ -79,6 +81,8 @@ external interface AvPlayListener {
     var onstreamcompleted: (() -> Unit)?
     var oncurrentplaytime: ((Int) -> Unit)?
     var onerror: ((dynamic) -> Unit)?
+    /** DEB-5024 (FR-25) — `onevent(eventType, eventData)`: `PLAYER_MSG_BITRATE_CHANGE`, `PLAYER_MSG_RESOLUTION_CHANGED`, … */
+    var onevent: ((dynamic, dynamic) -> Unit)?
 }
 
 fun avPlayListener(
@@ -87,12 +91,14 @@ fun avPlayListener(
     onStreamCompleted: () -> Unit = {},
     onCurrentPlayTime: (Int) -> Unit = {},
     onError: (dynamic) -> Unit = {},
+    onEvent: (dynamic, dynamic) -> Unit = { _, _ -> },
 ): AvPlayListener = js("({})").unsafeCast<AvPlayListener>().apply {
     onbufferingstart = onBufferingStart
     onbufferingcomplete = onBufferingComplete
     onstreamcompleted = onStreamCompleted
     oncurrentplaytime = onCurrentPlayTime
     onerror = onError
+    onevent = onEvent
 }
 
 /** Remote-key names this app registers/handles — Tizen's `tizen.tvinputdevice` key-name vocabulary

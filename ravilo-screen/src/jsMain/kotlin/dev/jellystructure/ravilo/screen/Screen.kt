@@ -92,6 +92,8 @@ private class Screen(private val serverUrl: String) {
         deviceToken = { activeUserId?.let(tokens::get) },
         platform = "tizen",
     )
+    /** DEB-5024 (FR-25) — what each item went through, posted through the shared client's QoE call (it never throws). */
+    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps) { report -> GlobalScope.launch { api.postPlaybackQoe(report) } }
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
@@ -165,15 +167,22 @@ private class Screen(private val serverUrl: String) {
         window.addEventListener("keydown", { e -> onKey(e as KeyboardEvent) })
         document.addEventListener("visibilitychange", { onVisibility(document.asDynamic().hidden == true) })
         backend.setListener(object : MediaBackendListener {
-            override fun onBufferingStart() { buffering = true; if (loaded) show("buffering"); sendStatus() }
-            override fun onBufferingComplete() { buffering = false; if (loaded) show(); sendStatus() }
+            override fun onBufferingStart() { buffering = true; qoe.bufferingStarted(backend.positionMs()); if (loaded) show("buffering"); sendStatus() }
+            override fun onBufferingComplete() { buffering = false; qoe.bufferingCompleted(); if (loaded) show(); sendStatus() }
             override fun onPlaying() {
                 if (pauseOnNextPlaying) { pauseOnNextPlaying = false; backend.pause(); return }
-                playing = true; buffering = false; loaded = true; show(); sendStatus()
+                playing = true; buffering = false; loaded = true; qoe.paused(false); show(); sendStatus()
             }
-            override fun onPaused() { playing = false; flashOverlay(); sendStatus() }
+            override fun onPaused() { playing = false; qoe.paused(true); flashOverlay(); sendStatus() }
+            override fun onPlayTime(ms: Long) = qoe.playTime(ms)
+            override fun onPlayerEvent(type: String, data: String?) = qoe.playerEvent(type, data)
+            override fun onViewerAction() = qoe.viewerAction()
             override fun onStreamCompleted() { onFinished() }
-            override fun onError(detail: String) { console.error("Ravilo screen: backend error: $detail"); failPlay(null) }
+            override fun onError(detail: String) {
+                console.error("Ravilo screen: backend error: $detail")
+                qoe.end(failure = HTTP_STATUS.find(detail)?.value?.toIntOrNull() ?: -1)   // FR-25 — a start that never reached a picture
+                failPlay(null)
+            }
         })
         idle()
         if (activeUserId != null) {
@@ -193,6 +202,7 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun idle() {
+        qoe.end()   // FR-25 — the item's final report, whichever way it ended (Back, stop, the stream's end, hiding the app)
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
@@ -357,6 +367,9 @@ private class Screen(private val serverUrl: String) {
         if (env.sessionUserId != null && env.sessionUserId != activeUserId) return
         val fromTv = env.jellyfinId == tvNextItem
         tvNextItem = null
+        // DEB-5024 (FR-24) — a start from another app skips the title's page, where the speed test runs: run it here (the server
+        // answers 204 when this TV was measured within 24 h; nothing waits on it).
+        if (!fromTv) GlobalScope.launch { api.probe() }
         following = emptyList()
         // The next-up card's round trip (a start this TV asked for) stays in the series it left; a phone's push has no series id.
         beginPlay(env, fromTv, series = if (fromTv) seriesId else null)
@@ -387,6 +400,7 @@ private class Screen(private val serverUrl: String) {
         el("loading-label").textContent = ScreenLanguage.t("loading")
         shell.showPlayer()
         show("loading")
+        qoe.end()   // FR-25 — an item still open when another starts (a phone's push over a playing title) ends first
         // R237 (FR-R237-5) — one "Still trying…" line if the start runs past ~5 s, nothing else.
         val generation = ++loadGeneration
         GlobalScope.launch {
@@ -415,11 +429,13 @@ private class Screen(private val serverUrl: String) {
         loaded = true
         playing = false
         lastProgressAt = nowMs()
+        qoe.beginItem(env.jellyfinId, t.startVariantBps, t.directPlay, backend.capabilities().linkKind)
         val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs) }
         if (opened.isFailure) {
             // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
             // length of whatever was open before (which marked the episode watched), and the viewer is told once.
             console.error("Ravilo screen: open failed: ${opened.exceptionOrNull()}")
+            qoe.end(failure = -1)
             GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
             failPlay(null)
             return
@@ -1069,6 +1085,7 @@ private class Screen(private val serverUrl: String) {
         showSubtitle(if (t.burnedSubtitleIndex != null) -1 else thenShow)   // never draw over a burn-in
         pauseOnNextPlaying = !wasPlaying
         backend.close()
+        qoe.restreamed()   // FR-25 — the same item again: its counts stay, its own start is not a stall
         backend.open(t.hlsUrl ?: "", pos)
         sendStatus()
     }
@@ -1157,6 +1174,9 @@ private class Screen(private val serverUrl: String) {
  *  wire shape, carrying a `trackId` CAF needs); a screen's own status wire shape is [ScreenTrack] — same
  *  fields minus `trackId`, since ScreenStatus's `selected_audio`/`selected_sub` already select by index. */
 private fun CastTrack.toScreenTrack() = ScreenTrack(index = index, label = label, language = language, forced = forced, isDefault = isDefault)
+
+/** FR-25 — an HTTP status inside AVPlay's error text, when it carries one. */
+private val HTTP_STATUS = Regex("""\b[45]\d\d\b""")
 
 private fun randomHex(length: Int): String {
     val chars = "0123456789abcdef"

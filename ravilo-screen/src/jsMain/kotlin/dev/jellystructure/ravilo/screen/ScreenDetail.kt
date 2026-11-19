@@ -90,6 +90,9 @@ internal class ScreenDetail(
     fun load() {
         if (loading || ready || failure != null) return   // a failed page is not retried by every redraw; leaving it and coming back is
         loading = true
+        // DEB-5024 (FR-24) — Android TV's DetailPrewarm moment: measure this TV's path while the viewer reads the page. The server
+        // answers 204 when it was measured within 24 h, so opening more pages costs nothing; nothing waits on it.
+        GlobalScope.launch { api.probe() }
         GlobalScope.launch {
             if (kind == MediaKind.SERIES) {
                 val result = runCatching { api.getSeries(id) }

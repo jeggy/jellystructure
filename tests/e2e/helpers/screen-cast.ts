@@ -14,6 +14,17 @@ export function fakeAvPlayInitScript() {
   let posMs = 0;
   let ticking: any = null;
   let listener: any = {};
+  // DEB-5024 — AVPlay's buffering, its `onevent` and its two streaming properties, driven by the test (`window.__avplay`): the
+  // fake never buffers on its own, so a test says exactly when a wait begins and ends. While buffering, the position stands still.
+  let buffering = false;
+  const properties: Record<string, string | undefined> = {};
+  (window as any).__avplay = {
+    bufferStart() { buffering = true; listener.onbufferingstart?.(); },
+    bufferComplete() { buffering = false; listener.onbufferingcomplete?.(); },
+    event(type: string, data?: unknown) { listener.onevent?.(type, data); },
+    setProperty(name: string, value: string | undefined) { properties[name] = value; },
+    failPrepareWith: undefined as string | undefined,
+  };
   (window as any).webapis = {
     avplay: {
       open(url: string) {
@@ -36,15 +47,21 @@ export function fakeAvPlayInitScript() {
       setListener(l: any) {
         listener = l;
       },
-      prepareAsync(onSuccess: () => void, _onError: (e: unknown) => void) {
+      prepareAsync(onSuccess: () => void, onError: (e: unknown) => void) {
         (window as any).__avplayCalls.push(["prepareAsync"]);
+        const failure = (window as any).__avplay.failPrepareWith;
+        if (failure) { setTimeout(() => onError(failure), 10); return; }
         state = "READY";
         setTimeout(() => { try { onSuccess(); } catch { /* Kotlin's own callback, not ours to swallow */ } }, 10);
       },
       play() {
         (window as any).__avplayCalls.push(["play"]);
         state = "PLAYING";
-        if (!ticking) ticking = setInterval(() => { posMs += 250; }, 250);
+        if (!ticking) ticking = setInterval(() => {
+          if (buffering) return;
+          posMs += 250;
+          listener.oncurrentplaytime?.(posMs);
+        }, 250);
       },
       pause() {
         (window as any).__avplayCalls.push(["pause"]);
@@ -65,6 +82,7 @@ export function fakeAvPlayInitScript() {
         if (ticking) { clearInterval(ticking); ticking = null; }
         state = "NONE";
         posMs = 0;
+        buffering = false;
       },
       getState() { return state; },
       getCurrentTime() { return posMs; },
@@ -73,7 +91,10 @@ export function fakeAvPlayInitScript() {
       setSelectTrack(type: string, index: number) {
         (window as any).__avplayCalls.push(["setSelectTrack", type, index]);
       },
-      setStreamingProperty() {},
+      setStreamingProperty(type: string, value: string) {
+        (window as any).__avplayCalls.push(["setStreamingProperty", type, value]);
+      },
+      getStreamingProperty(type: string) { return properties[type]; },
     },
   };
 }

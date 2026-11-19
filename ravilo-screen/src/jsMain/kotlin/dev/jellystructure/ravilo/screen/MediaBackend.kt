@@ -37,6 +37,8 @@ interface MediaBackend {
      *  container-embedded selection is wired here for now. */
     fun selectAudioTrack(index: Int) {}
     fun selectSubtitleTrack(index: Int) {}
+    /** DEB-5024 (FR-25) — the bitrate of the rung playing now, when the player answers a number (AVPlay's `CURRENT_BANDWIDTH`). */
+    fun currentBandwidthBps(): Long? = null
 }
 
 interface MediaBackendListener {
@@ -46,6 +48,12 @@ interface MediaBackendListener {
     fun onPaused() {}
     fun onStreamCompleted() {}
     fun onError(detail: String) {}
+    /** DEB-5024 (FR-25) — the playhead moved: AVPlay's `oncurrentplaytime`, `<video>`'s `timeupdate`. */
+    fun onPlayTime(ms: Long) {}
+    /** DEB-5024 (FR-25) — a rung switch the player reported (`onevent`'s type and data). */
+    fun onPlayerEvent(type: String, data: String?) {}
+    /** DEB-5024 (FR-25) — the viewer's own seek, pause or resume: the wait right after it is theirs, not a stall. */
+    fun onViewerAction() {}
 }
 
 /**
@@ -81,7 +89,9 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
             onBufferingStart = { listener?.onBufferingStart() },
             onBufferingComplete = { listener?.onBufferingComplete() },
             onStreamCompleted = { listener?.onStreamCompleted() },
+            onCurrentPlayTime = { ms -> listener?.onPlayTime(ms.toLong()) },
             onError = { e -> listener?.onError(e.toString()) },
+            onEvent = { type, data -> listener?.onPlayerEvent(type.toString(), if (data == null || data == undefined) null else data.toString()) },
         ))
         WebApisGlobal.avplay.prepareAsync(
             { if (startPositionMs > 0) WebApisGlobal.avplay.seekTo(startPositionMs.toInt()); WebApisGlobal.avplay.play(); listener?.onPlaying() },
@@ -89,9 +99,9 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         )
     }
 
-    override fun play() { runCatching { WebApisGlobal.avplay.play() }; listener?.onPlaying() }
-    override fun pause() { runCatching { WebApisGlobal.avplay.pause() }; listener?.onPaused() }
-    override fun seekTo(ms: Long) { runCatching { WebApisGlobal.avplay.seekTo(ms.toInt()) } }
+    override fun play() { listener?.onViewerAction(); runCatching { WebApisGlobal.avplay.play() }; listener?.onPlaying() }
+    override fun pause() { listener?.onViewerAction(); runCatching { WebApisGlobal.avplay.pause() }; listener?.onPaused() }
+    override fun seekTo(ms: Long) { listener?.onViewerAction(); runCatching { WebApisGlobal.avplay.seekTo(ms.toInt()) } }
     override fun close() {
         runCatching { WebApisGlobal.avplay.close() }
         document.documentElement?.classList?.remove(AVPLAY_ON)
@@ -109,6 +119,11 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         hlsOnly = true,
         linkKind = "unknown",
     )
+
+    override fun currentBandwidthBps(): Long? = runCatching {
+        val v: dynamic = WebApisGlobal.avplay.getStreamingProperty("CURRENT_BANDWIDTH")
+        if (v == null || v == undefined) null else v.toString().trim().toLongOrNull()?.takeIf { it > 0 }
+    }.getOrNull()
 
     override fun selectAudioTrack(index: Int) { runCatching { WebApisGlobal.avplay.setSelectTrack("AUDIO", index) } }
     override fun selectSubtitleTrack(index: Int) { runCatching { WebApisGlobal.avplay.setSelectTrack("TEXT", index) } }
@@ -140,6 +155,7 @@ class HtmlVideoBackend(private val video: HTMLVideoElement, private val serverUr
         video.addEventListener("waiting", { listener?.onBufferingStart() })
         video.addEventListener("playing", { listener?.onBufferingComplete(); listener?.onPlaying() })
         video.addEventListener("pause", { listener?.onPaused() })
+        video.addEventListener("timeupdate", { listener?.onPlayTime(positionMs()) })
         video.addEventListener("ended", { listener?.onStreamCompleted() })
         video.addEventListener("error", { _: Event -> listener?.onError((video.error.asDynamic()?.message as? String) ?: "video element error") })
         video.addEventListener("loadedmetadata", {
