@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall } from "./helpers/screen-cast";
+import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall, openPickerFromChrome } from "./helpers/screen-cast";
 
 // DEB-4661 (DEB-4654 FR-9, FR-10) — the Tizen app plays from its own remote, and a phone can still send a title to it.
 // Driven through the REAL ravilo-screen.js bundle with the fake AVPlay of phase 248. The backend is stood in for by
@@ -224,6 +224,35 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect(page.locator("#nu-t")).toContainText("Third Reel");
   });
 
+  test("DEB-5025 (FR-28, FR-29): Next is on the control bar only when the next episode is known, and OK on it starts that episode", async ({ page }) => {
+    test.setTimeout(90_000);
+    const detail = {
+      ...seriesDetail,
+      seasons: [{ index: 1, name: "Season 1", episodes: [episode("s1e1", 1, "Opening Reel"), episode("s1e2", 2, "Second Reel"), episode("s1e3", 3, "Third Reel")] }],
+    };
+    const seen = await boot(page, { series: detail, refuseRemotePlay: true, start: async (itemId) => ({ status: 200, body: ticket(itemId, 0) }) });
+    await page.keyboard.press("Enter");                      // the series' page
+    await expect(page.locator("#detail-play")).toBeVisible();
+    await page.keyboard.press("Enter");                      // Play: s1e1, with s1e2 and s1e3 after it
+    await waitForAvplayCall(page, "play");
+    await page.keyboard.press("ArrowDown");                  // hidden: ↓ only reveals
+    await expect(page.locator("#overlay")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#ov-play")).toHaveClass(/\bfoc\b/);
+    await expect(page.locator("#ov-next")).toBeVisible();
+    await expect(page.locator("#ov-next")).toContainText(">>");
+    await page.keyboard.press("ArrowRight");                 // +30s
+    await page.keyboard.press("ArrowRight");                 // Audio & subtitles
+    await page.keyboard.press("ArrowRight");                 // Next
+    await expect(page.locator("#ov-next")).toHaveClass(/\bfoc\b/);
+    await page.keyboard.press("ArrowRight");                 // the end of the order: nothing
+    await expect(page.locator("#ov-next")).toHaveClass(/\bfoc\b/);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 10_000 }).toEqual(["s1e1", "s1e2"]);
+    expect(seen.stops[0]).toMatchObject({ item_id: "s1e1" });
+    await waitForAvplayCall(page, "play", (await avplayCalls(page)).filter((c) => c[0] === "open").length);
+    await expect(page.locator("#overlay"), "a new episode starts with the controls hidden").not.toHaveClass(/\bon\b/);
+  });
+
   test("DEB-4874: a start made over an open stream closes it first — the fake AVPlay throws INVALID_STATE on an open() over one, as the device does", async ({ page }) => {
     test.setTimeout(60_000);
     const seen = await boot(page);
@@ -405,7 +434,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await page.keyboard.press("Enter");                      // Play
     await waitForAvplayCall(page, "open");
 
-    await page.keyboard.press("ArrowDown");                  // the picker, on Subtitles
+    await openPickerFromChrome(page);                        // Audio & subtitles → the picker, on Subtitles
     await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
     const rows = page.locator("#pk-rows .pkr");
     const names = () => rows.evaluateAll((els) => els.map((e) => (e.querySelector(".l")?.firstChild as Text | null)?.textContent ?? ""));
@@ -494,7 +523,7 @@ test.describe("DEB-4932 — the TV starts an episode in the audio and subtitle t
     await expect(page.locator("#detail-play")).toBeVisible();
     await page.keyboard.press("Enter");
     await waitForAvplayCall(page, "open");
-    await page.keyboard.press("ArrowDown");
+    await openPickerFromChrome(page);
     await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
     if (audioTab) await page.keyboard.press("ArrowRight");
   }
@@ -505,7 +534,7 @@ test.describe("DEB-4932 — the TV starts an episode in the audio and subtitle t
     await expect.poll(async () => (await avplayCalls(page)).filter((c) => c[0] === "open").length, { timeout: 15_000 }).toBeGreaterThan(opensBefore);
   }
   const openPickerOn = async (page: Page, audioTab: boolean) => {
-    await page.keyboard.press("ArrowDown");
+    await openPickerFromChrome(page);
     await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
     if (audioTab) await page.keyboard.press("ArrowRight");
   };
@@ -605,7 +634,7 @@ test.describe("DEB-4932 — the TV starts an episode in the audio and subtitle t
     await playSeries(page);
     await waitForAvplayCall(page, "open");
     expect(seen.starts[0].audio_language ?? null, "viewer has chosen nothing: the file's default").toBeNull();
-    await page.keyboard.press("ArrowDown");                      // the picker, on Subtitles: English is selected
+    await openPickerFromChrome(page);                            // the picker, on Subtitles: English is selected
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");                          // a pick by `viewer`: Dansk
     expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.viewer"))).toContain("dan");

@@ -99,6 +99,16 @@ export function fakeAvPlayInitScript() {
   };
 }
 
+/** DEB-5025 (FR-29) — open the audio & subtitles picker the way Android TV's model reaches it: reveal the controls (↓ only reveals),
+ *  walk the row to Audio & subtitles, OK. ↓ no longer opens it directly. */
+export async function openPickerFromChrome(page: Page) {
+  const up = () => page.locator("#overlay").evaluate((e) => e.classList.contains("on"));
+  const at = (id: string) => page.locator(`#${id}`).evaluate((e) => e.classList.contains("foc"));
+  if (!(await up())) await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 6 && !(await at("ov-tracks")); i++) await page.keyboard.press((await at("ov-next")) ? "ArrowLeft" : "ArrowRight");
+  await page.keyboard.press("Enter");
+}
+
 export async function avplayCalls(page: Page): Promise<Array<[string, ...unknown[]]>> {
   return page.evaluate(() => (window as any).__avplayCalls ?? []);
 }

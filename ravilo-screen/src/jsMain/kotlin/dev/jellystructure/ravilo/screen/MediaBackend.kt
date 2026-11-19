@@ -28,6 +28,9 @@ interface MediaBackend {
     fun state(): String
     fun positionMs(): Long
     fun durationMs(): Long
+    /** DEB-5025 (FR-28) — how far ahead of the playhead the player holds picture, for the seek bar's lighter part. AVPlay
+     *  answers no position (only a fill percentage), so by default nothing is buffered beyond the playhead. */
+    fun bufferedMs(): Long = positionMs()
     fun setListener(listener: MediaBackendListener)
     /** Real capability probe — an old Tizen stick reports true HEVC/HDR support dishonestly less often
      *  than a browser's `canPlayType` does, but both are asked the same way (R245's own FR-R245-13 note). */
@@ -187,6 +190,12 @@ class HtmlVideoBackend(private val video: HTMLVideoElement, private val serverUr
     }
     override fun positionMs(): Long = (video.currentTime * 1000).toLong()
     override fun durationMs(): Long = (video.duration.takeIf { !it.isNaN() } ?: 0.0).let { (it * 1000).toLong() }
+    override fun bufferedMs(): Long = runCatching {
+        val ranges = video.buffered
+        val at = video.currentTime
+        for (i in 0 until ranges.length) if (at >= ranges.start(i) && at <= ranges.end(i)) return@runCatching (ranges.end(i) * 1000).toLong()
+        positionMs()
+    }.getOrDefault(positionMs())
     override fun setListener(listener: MediaBackendListener) { this.listener = listener }
 
     override fun selectAudioTrack(index: Int) {

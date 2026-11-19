@@ -130,7 +130,14 @@ private class Screen(private val serverUrl: String) {
     // R285 (FR-R285-2) — a restream reopens the stream, and AVPlay/<video> start playing on open; a
     // viewer who changed a track while paused stays paused.
     private var pauseOnNextPlaying = false
+    // DEB-5025 (FR-28, FR-29) — Android TV's control bar: up or hidden, the control focused (it survives a hide), a scrub in
+    // progress (null = none), the control the Skip Intro pill was reached from, and when the last key woke it.
     private var overlayJob: Job? = null
+    private var chromeUp = false
+    private var chromeFocus = ChromeFocus.PLAY
+    private var scrubMs: Long? = null
+    private var skipReturn: ChromeFocus? = null
+    private var chromeWakeAt = 0L
     // R264 (FR-R264-3) — what the push said about the title: its intro/credits and what plays next.
     private var segments: TvSegmentMarkers? = null
     private var nextId: String? = null
@@ -173,7 +180,7 @@ private class Screen(private val serverUrl: String) {
                 if (pauseOnNextPlaying) { pauseOnNextPlaying = false; backend.pause(); return }
                 playing = true; buffering = false; loaded = true; qoe.paused(false); show(); sendStatus()
             }
-            override fun onPaused() { playing = false; qoe.paused(true); flashOverlay(); sendStatus() }
+            override fun onPaused() { playing = false; qoe.paused(true); showChrome(); sendStatus() }
             override fun onPlayTime(ms: Long) = qoe.playTime(ms)
             override fun onPlayerEvent(type: String, data: String?) = qoe.playerEvent(type, data)
             override fun onViewerAction() = qoe.viewerAction()
@@ -207,7 +214,7 @@ private class Screen(private val serverUrl: String) {
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
         segments = null; nextId = null; nextTitle = null; nextKicker = null; following = emptyList()   // R264
-        hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
+        hideSkip(); hideNextUp(); closePicker(); hideChrome(); chromeFocus = ChromeFocus.PLAY
         showSubtitle(-1)
         el("idle-sentence").textContent = ScreenLanguage.t("cast.ready")
         // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
@@ -393,7 +400,7 @@ private class Screen(private val serverUrl: String) {
         segments = env.segments
         nextId = env.nextId; nextTitle = env.nextTitle; nextKicker = env.nextKicker
         nextUpCancelled = false; finishedUnderNextUp = false
-        hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
+        hideSkip(); hideNextUp(); closePicker(); hideChrome(); chromeFocus = ChromeFocus.PLAY   // FR-29 — a start focuses Play
         loaded = false
         el("loading-title").textContent = env.title.orEmpty()
         el("loading-kicker").textContent = env.kicker.orEmpty()
@@ -542,7 +549,7 @@ private class Screen(private val serverUrl: String) {
             else -> "receiver.failed" to retryKey()
         }
         backend.close()
-        hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
+        hideSkip(); hideNextUp(); closePicker(); hideChrome()
         el("failed-t").textContent = ScreenLanguage.t(title)
         el("failed-s").textContent = ScreenLanguage.t(body)
         show("failed")
@@ -606,7 +613,7 @@ private class Screen(private val serverUrl: String) {
             "stop" -> { stopAndIdle(); return }
             "pause" -> backend.pause()
             "unpause" -> backend.play()
-            "seek" -> env.seekPositionMs?.let { backend.seekTo(it); flashOverlay() }
+            "seek" -> env.seekPositionMs?.let { backend.seekTo(it); showChrome() }
         }
         sendStatus()
     }
@@ -624,12 +631,12 @@ private class Screen(private val serverUrl: String) {
             "seek" -> {
                 val pos = args?.get("position_ms")?.jsonPrimitive?.longOrNull ?: return
                 backend.seekTo(pos.coerceAtLeast(0))
-                flashOverlay()
+                showChrome()
             }
             "skip", "seek_relative" -> {   // R285 — 236's name is `skip {delta_ms}`; see the note on "set_audio" below
                 val delta = args?.get("delta_ms")?.jsonPrimitive?.longOrNull ?: return
                 backend.seekTo((backend.positionMs() + delta).coerceAtLeast(0))
-                flashOverlay()
+                showChrome()
             }
             // R285 (FR-R285-2) — an HLS stream carries ONE audio track and no picture subtitles, so
             // `backend.selectAudioTrack/selectSubtitleTrack` had nothing to select: both commands were
@@ -739,14 +746,18 @@ private class Screen(private val serverUrl: String) {
         el("skip").textContent = ScreenLanguage.t("player.skip_intro")
         el("skip").classList.add("on")
     }
-    private fun hideSkip() { skipShown = false; el("skip").classList.remove("on") }
+    private fun hideSkip() {
+        skipShown = false
+        el("skip").classList.remove("on", "foc")
+        if (chromeFocus == ChromeFocus.SKIP) chromeFocus = skipReturn ?: ChromeFocus.PLAY
+    }
 
     /** FR-R264-4 — from either remote: to the end of the intro, never past it. */
     private fun skipIntro() {
         val end = segments?.introEndMs ?: return
         backend.seekTo(end)
         hideSkip()
-        flashOverlay()
+        showChrome()
         sendStatus()
     }
 
@@ -812,7 +823,6 @@ private class Screen(private val serverUrl: String) {
         pickerFocus = currentRows().indexOfFirst { it.selected }.coerceAtLeast(0)
         pickerTop = 0
         hideSkip()
-        el("overlay").classList.remove("on")
         renderPicker()
         el("picker").classList.add("on")
     }
@@ -993,23 +1003,101 @@ private class Screen(private val serverUrl: String) {
         // R264 (FR-R264-3/4) — the TV remote drives the whole player; every action ends in a status report,
         // so the phone's remote shows a TV-remote pause within one push. Precedence: the picker, then the
         // next-up card, then Skip Intro, then the transport.
-        if (pickerOpen) { onPickerKey(e); return }
+        if (pickerOpen) { onPickerKey(e); if (!pickerOpen) showChrome(); return }   // FR-29 — closing it leaves the controls up, on Audio & subtitles
         if (nextUpShown && (e.key == "Enter" || isBack(e))) { if (e.key == "Enter") playNext() else cancelNextUp(); sendStatus(); return }
-        if (skipShown && e.key == "Enter") { skipIntro(); return }
-        when {
-            e.key == "Enter" || e.key == "MediaPlayPause" -> { if (playing) backend.pause() else backend.play(); flashOverlay() }
-            e.key == "MediaPlay" -> backend.play()
-            e.key == "MediaPause" -> backend.pause()
-            e.key == "MediaStop" -> stopAndIdle()
-            e.key == "ArrowLeft" || e.key == "MediaRewind" -> { backend.seekTo((backend.positionMs() - 10_000).coerceAtLeast(0)); flashOverlay() }
-            e.key == "ArrowRight" || e.key == "MediaFastForward" -> { backend.seekTo(backend.positionMs() + 30_000); flashOverlay() }
-            e.key == "ArrowDown" -> openPicker()
-            e.key == "ArrowUp" -> flashOverlay()
-            // R112's two steps: Back with the chrome up hides it; Back with nothing up stops (R180 teardown).
-            isBack(e) -> if (el("overlay").classList.contains("on")) { overlayJob?.cancel(); el("overlay").classList.remove("on") } else stopAndIdle()
-            else -> return
-        }
+        if (skipShown && e.key == "Enter" && (!chromeUp || chromeFocus == ChromeFocus.SKIP)) { skipIntro(); return }
+        if (!onTransportKey(e)) return
         sendStatus()
+    }
+
+    /**
+     * DEB-5025 (FR-29) — Android TV's key model (`PlayerScreenState.dpad*`, R178, R251, R350 FR-R350-7, R363, R44, R112) on the
+     * Samsung's remote. Returns false for a key it does not use. With the controls hidden OK plays or pauses and shows them on
+     * Play; ←/→/↑ act on the first press from the remembered control; ↓ only reveals. Media keys act whatever is focused.
+     */
+    private fun onTransportKey(e: KeyboardEvent): Boolean {
+        val hidden = !chromeUp
+        when {
+            e.key == "MediaPlayPause" -> { togglePlay(); showChrome() }
+            e.key == "MediaPlay" -> { backend.play(); showChrome() }
+            e.key == "MediaPause" -> { backend.pause(); showChrome() }
+            e.key == "MediaStop" -> stopAndIdle()
+            e.key == "MediaRewind" -> { seekBy(-SKIP_BACK_MS); showChrome() }
+            e.key == "MediaFastForward" -> { seekBy(SKIP_FWD_MS); showChrome() }
+            e.key == "MediaTrackNext" -> if (nextId != null) playNext() else showChrome()
+            e.key == "Enter" -> when {
+                hidden -> { chromeFocus = ChromeFocus.PLAY; scrubMs = null; togglePlay(); showChrome() }   // R178, R350: OK acted as Play
+                chromeFocus == ChromeFocus.NEXT -> playNext()
+                else -> { actOnFocus(); showChrome() }
+            }
+            e.key == "ArrowLeft" || e.key == "ArrowRight" -> { moveAcross(if (e.key == "ArrowLeft") -1 else 1); showChrome() }
+            e.key == "ArrowUp" -> {
+                if (hidden && skipShown) { chromeFocus = ChromeFocus.SKIP; skipReturn = null }   // R363 FR-3 — Up that wakes the controls inside the intro offers the skip first
+                else when (chromeFocus) {
+                    ChromeFocus.BAR, ChromeFocus.TRACKS, ChromeFocus.NEXT -> {
+                        if (skipShown) { skipReturn = chromeFocus; scrubMs = null; chromeFocus = ChromeFocus.SKIP }
+                        else if (chromeFocus != ChromeFocus.BAR) chromeFocus = ChromeFocus.BAR
+                    }
+                    ChromeFocus.SKIP -> {}
+                    else -> chromeFocus = ChromeFocus.BAR
+                }
+                showChrome()
+            }
+            e.key == "ArrowDown" -> {
+                if (!hidden) when (chromeFocus) {   // ↓ from the row does nothing: this app has no episode rail
+                    ChromeFocus.BAR -> { commitScrub(); chromeFocus = ChromeFocus.PLAY }
+                    ChromeFocus.SKIP -> chromeFocus = skipReturn ?: ChromeFocus.PLAY
+                    else -> {}
+                }
+                showChrome()
+            }
+            // R112's steps: Back closes a scrub, then hides the controls, then stops (R180 teardown). The picker's Back is its own.
+            isBack(e) -> when {
+                scrubMs != null -> { scrubMs = null; showChrome() }
+                chromeUp -> hideChrome()
+                else -> stopAndIdle()
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    private fun togglePlay() { if (playing) backend.pause() else backend.play() }
+    private fun seekBy(deltaMs: Long) { backend.seekTo((backend.positionMs() + deltaMs).coerceAtLeast(0)) }
+
+    private fun commitScrub() {
+        val target = scrubMs ?: return
+        scrubMs = null
+        backend.seekTo(target)
+    }
+
+    /** ←/→ (dir −1/+1): on the seek bar a scrub step, anywhere else one control along the order; the pill is not in the order. */
+    private fun moveAcross(dir: Int) {
+        when (chromeFocus) {
+            ChromeFocus.BAR -> {
+                val dur = backend.durationMs()
+                if (dur > 0) scrubMs = ((scrubMs ?: backend.positionMs()) + dir * scrubStepMs(dur)).coerceIn(0, dur)
+            }
+            ChromeFocus.SKIP -> {}
+            else -> {
+                val order = chromeOrder(nextId != null)
+                val at = order.indexOf(chromeFocus)
+                if (at >= 0) chromeFocus = order[(at + dir).coerceIn(0, order.lastIndex)]
+            }
+        }
+    }
+
+    /** OK on the focused control (Next is [onTransportKey]'s: it leaves the player's item). */
+    private fun actOnFocus() {
+        when (chromeFocus) {
+            ChromeFocus.BAR -> if (scrubMs != null) commitScrub() else scrubMs = backend.positionMs()
+            ChromeFocus.BACK10 -> seekBy(-SKIP_BACK_MS)
+            ChromeFocus.PLAY -> togglePlay()
+            ChromeFocus.FWD30 -> seekBy(SKIP_FWD_MS)
+            ChromeFocus.TRACKS -> openPicker()
+            ChromeFocus.SKIP -> skipIntro()
+            ChromeFocus.NEXT -> {}
+        }
     }
 
     /** A remote's Back arrives under several names: `XF86Back` (key code 10009) on a Tizen set, `Escape`/
@@ -1026,19 +1114,60 @@ private class Screen(private val serverUrl: String) {
         window.location.reload()
     }
 
-    private fun flashOverlay() {
-        val pos = backend.positionMs(); val dur = backend.durationMs()
-        el("ov-kicker").textContent = kicker.orEmpty()
-        el("ov-title").textContent = title.orEmpty()
-        paintIdent()
-        val frac = if (dur > 0) (pos.toDouble() / dur).coerceIn(0.0, 1.0) else 0.0
-        el("ov-fill").style.width = "${(frac * 100).toInt()}%"
-        el("ov-time").textContent = "${hms(pos)} / ${hms(dur)}"
-        el("ov-pz").textContent = if (playing) "❚❚" else "▶"
-        el("ov-hint").textContent = "↓  " + ScreenLanguage.t("player.audio_subs")
+    /** FR-28/FR-29 — put the controls up (or keep them) and start the 3.6 s again. A phone's pause, seek or track command comes here too. */
+    private fun showChrome() {
+        chromeWakeAt = nowMs()
+        paintChrome(full = true)
+        chromeUp = true
         el("overlay").classList.add("on")
-        overlayJob?.cancel()
-        overlayJob = GlobalScope.launch { delay(3_000); if (playing) el("overlay").classList.remove("on") }
+        if (overlayJob?.isActive == true) return
+        overlayJob = GlobalScope.launch {
+            while (chromeUp) {
+                delay(200)
+                // Playing, with no picker and no scrub: hide 3.6 s after the last key. Otherwise hold, and count from the release.
+                if (!playing || pickerOpen || scrubMs != null) chromeWakeAt = nowMs()
+                else if (nowMs() - chromeWakeAt >= CHROME_HIDE_MS) { hideChrome(); return@launch }
+                paintChrome(full = false)
+            }
+        }
+    }
+
+    /** Hiding never moves the focus (R178): the next key acts from the control last focused. */
+    private fun hideChrome() {
+        chromeUp = false
+        scrubMs = null
+        el("overlay").classList.remove("on")
+        el("skip").classList.remove("foc")
+    }
+
+    private fun setText(id: String, text: String) { val n = el(id); if (n.textContent != text) n.textContent = text }
+
+    /** [full] is a key's repaint (the lines and every label); a tick only moves the bar and the glyph. */
+    private fun paintChrome(full: Boolean) {
+        val pos = backend.positionMs(); val dur = backend.durationMs()
+        if (full) {
+            setText("ov-kicker", kicker.orEmpty())
+            setText("ov-title", title.orEmpty())
+            setText("ov-back", "◀ " + ScreenLanguage.t("player.back"))
+            setText("ov-b10", "−10s")
+            setText("ov-f30", "+30s")
+            setText("ov-tracks", ScreenLanguage.t("player.audio_subs"))
+            setText("ov-next", if (nextId != null) ">> " + ScreenLanguage.t("player.next") else "")
+            paintIdent()
+            for (c in ChromeFocus.values()) el(c.id).classList.toggle("foc", c == chromeFocus && (chromeFocus != ChromeFocus.NEXT || nextId != null))
+        }
+        setText("ov-play", if (playing) "❚❚" else "▶")
+        fun pct(ms: Long) = if (dur > 0) "${(ms.toDouble() / dur * 100).coerceIn(0.0, 100.0)}%" else "0%"
+        setText("ov-elapsed", hms(pos))
+        setText("ov-total", hms(dur))
+        el("ov-fill").style.width = pct(pos)
+        el("ov-buf").style.width = pct(backend.bufferedMs())
+        val scrub = scrubMs
+        val seek = el("ov-seek")
+        seek.classList.toggle("scrub", scrub != null)
+        val at = pct(scrub ?: pos)
+        el("ov-thumb").style.left = at
+        if (scrub != null) { el("ov-scrub").style.left = at; setText("ov-scrub", hms(scrub)) }
     }
 
     /**

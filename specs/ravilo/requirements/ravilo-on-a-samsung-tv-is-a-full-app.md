@@ -1002,7 +1002,8 @@ Intro's window, the next-up card, the waiting moments, failure copy, Back's two 
 - **Focus** is the app's focus ring (`--ring`, as on Home's tiles). On Android TV it is the same ring on the same controls.
 - Pixel values are CSS px on the app's 1920×1080 canvas, which is the same scale `screen.css` already uses. Android TV's dp values are
   carried over 1:1 and multiplied by the canvas scale `screen.css` applies to its other chrome. If the builder finds that scale is not 1,
-  the build multiplies by it and says which factor it used.
+  the build multiplies by it and says which factor it used. (Built with the factor **2**: Android TV's window is 960 × 540 dp and this canvas is
+  1920 × 1080 px, so the 230 dp top scrim is 460 px, the 40 dp buttons are 80 px, and so on. The bundle's CSS says the same.)
 - The styling goes into `ravilo-screen/wgt/screen.css`, which is this app's production CSS. It is not a `design/` file, and no round is drawn.
 
 **FR-29 · The keys are Android TV's** (R178, R251, R350 FR-R350-7, R363, R44, R112):
@@ -1034,10 +1035,10 @@ picker is reached through **Audio & subtitles**. This is Android TV's model, and
 **Proof.**
 - `ravilo-screen-player.spec.ts` (fake AVPlay, keyboard events) gains these cases:
   - OK on a hidden chrome pauses and shows the controls with Play focused;
-  - → twice then OK on a playing title seeks +30 s (focus moved Play → +30s, then OK acted);
+  - → then OK on a playing title seeks +30 s (the first → acts from the hidden controls and moves focus Play → +30s, as FR-29 says; then OK acts);
   - with focus on the seek bar, ← scrubs and OK commits one seek;
   - OK on Audio & subtitles opens the picker;
-  - Next shows only with a known next episode and starts it;
+  - Next shows only with a known next episode and starts it (in `ravilo-screen-play-from-tv.spec.ts`, whose mocked series has one; the player spec's film has none, and asserts Next is absent);
   - the controls hide 3.6 s after the last key while playing and stay while paused;
   - Back hides, then stops.
 - Then the Tizen 5.0 emulator and the owner's set, on the QA queue.

@@ -49,7 +49,17 @@
   <section id="busy" class="screen"><img class="mark" src="ravilo-mark.svg" alt=""><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
   <section id="failed" class="screen"><img class="mark" src="ravilo-mark.svg" alt=""><div id="failed-t" class="title"></div><div id="failed-s" class="sub"></div></section>
   <section id="shell" aria-label="Ravilo"><div class="shell-bar"><div class="shell-brand"><img class="brand-mark" src="ravilo-mark.svg" alt=""><span>Ravilo</span></div><nav class="shell-nav"><div id="nav-home" class="shell-target" data-row="bar" tabindex="-1"></div><div id="nav-movies" class="shell-target" data-row="bar" tabindex="-1"></div><div id="nav-series" class="shell-target" data-row="bar" tabindex="-1"></div><div id="nav-search" class="shell-target" data-row="bar" tabindex="-1"></div></nav><div id="nav-profile" class="shell-target" data-row="bar" tabindex="-1"></div></div><main id="shell-body"></main></section>
-  <div id="overlay"><div id="ov-ident"><img id="ov-logo" alt=""><div id="ov-showname"></div></div><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div><div class="row"><div id="ov-hint"></div><div id="ov-pz"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
+  <!-- DEB-5025 (FR-28) — Android TV's control bar, built once and shown or hidden by class: a top band (Back, R303's ident) and a
+       bottom band (kicker, title, the seek bar and the transport row). The labels and glyphs are filled by the bundle. -->
+  <div id="overlay">
+    <div id="ov-top"><div id="ov-back"></div><div id="ov-ident"><img id="ov-logo" alt=""><div id="ov-showname"></div></div></div>
+    <div id="ov-bottom">
+      <div id="ov-kicker"></div>
+      <div id="ov-title"></div>
+      <div id="ov-seek" class="oc"><div id="ov-times"><span id="ov-elapsed"></span><span id="ov-total"></span></div><div id="ov-track"><i id="ov-buf"></i><i id="ov-fill"></i><b id="ov-thumb"></b><em id="ov-scrub"></em></div></div>
+      <div id="ov-row"><div id="ov-b10" class="oc ov-skipbtn"></div><div id="ov-play" class="oc"></div><div id="ov-f30" class="oc ov-skipbtn"></div><div id="ov-gap"></div><div id="ov-tracks" class="oc ov-trackbtn"></div><div id="ov-next" class="oc ov-trackbtn"></div></div>
+    </div>
+  </div>
   <div id="skip"></div>
   <div id="nextup"><div id="nu-k" class="k"></div><div id="nu-t" class="t"></div><div id="nu-c" class="c"></div></div>
   <div id="picker"><div id="pk-head"></div><div id="pk-tabs"></div><div id="pk-rows"></div></div>

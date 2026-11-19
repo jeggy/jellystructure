@@ -86,7 +86,8 @@ test.describe("DEB-5024 FR-25 — the TV reports what each item went through", (
     await openAndPlay(page);
 
     // A seek's wait is the viewer's own: no report, no count.
-    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");      // DEB-5025: the first press moves focus Play → +30s; OK seeks
+    await page.keyboard.press("Enter");
     await waitForAvplayCall(page, "seekTo");
     await ap.wait(1_500);
     await page.waitForTimeout(500);

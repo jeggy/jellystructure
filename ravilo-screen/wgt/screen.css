@@ -42,14 +42,43 @@
     #cues.on { display: block; }
     #cues.size-s { font-size: 36px; }
     #cues.size-l { font-size: 58px; }
-    #overlay { position: fixed; left: 0; right: 0; bottom: 0; padding: 40px 64px 48px; background: linear-gradient(transparent, rgba(0,0,0,.78)); display: none; z-index: 2; }
+    /* DEB-5025 (FR-28) — Android TV's control bar. Its dp are carried over at the canvas scale of 2 (this 1920 px canvas is a
+       960 x 540 dp TV window), the same scale the Compose chrome has on a 1080p set. Built once, shown by .on, nothing re-laid per key. */
+    #overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; display: none; z-index: 2; pointer-events: none; }
     #overlay.on { display: block; }
-    #overlay .row { display: flex; align-items: center;  }
-    #overlay .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 18px 0 10px; }
-    #overlay .bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
-    #overlay .time { color: var(--ink-dim); font-size: 20px; }
+    #ov-top { position: absolute; top: 0; left: 0; right: 0; height: 460px; background: linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,0)); }
+    #ov-top > * { position: absolute; }
+    #ov-back { top: 0; left: 96px; height: 136px; display: flex; align-items: center; font-size: 30px; font-weight: 700; color: var(--ink-soft); }
+    #ov-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 560px; box-sizing: border-box; padding: 24px 96px 32px; display: flex; flex-direction: column; justify-content: flex-end; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.78)); }
+    #ov-kicker { font-size: 22px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--accent2); margin-bottom: 8px; }
+    #ov-kicker:empty { display: none; }
+    #ov-title { font-size: 40px; font-weight: 700; letter-spacing: -1px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 16px; }
+    #ov-seek { position: relative; height: 112px; border-radius: 12px; }
+    #ov-times { display: flex; justify-content: space-between; font-size: 24px; color: var(--ink-soft); padding-top: 4px; }
+    #ov-track { position: absolute; left: 0; right: 0; bottom: 20px; height: 16px; border-radius: 8px; background: rgba(255,255,255,.22); }
+    #ov-seek.foc #ov-track { height: 24px; bottom: 16px; border-radius: 12px; }
+    #ov-track i { position: absolute; top: 0; left: 0; height: 100%; width: 0; border-radius: inherit; }
+    #ov-buf { background: rgba(255,255,255,.34); }
+    #ov-fill { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    #ov-thumb { display: none; position: absolute; top: 50%; left: 0; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 4px var(--ring); }
+    #ov-seek.foc #ov-thumb { display: block; }
+    #ov-scrub { display: none; position: absolute; bottom: 60px; left: 0; padding: 4px 14px; border-radius: 10px; background: var(--ink); color: #0a0c13; font-size: 24px; font-weight: 700; font-style: normal; transform: translateX(-50%); }
+    #ov-seek.scrub #ov-scrub { display: block; }
+    #ov-row { display: flex; align-items: center; margin-top: 12px; }
+    #ov-row > * + * { margin-left: 20px; }
+    #ov-gap { flex: 1; }
+    .ov-skipbtn, .ov-trackbtn { height: 80px; box-sizing: border-box; display: flex; align-items: center; border-radius: 20px; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.22); font-family: monospace; font-size: 28px; font-weight: 700; color: rgba(255,255,255,.85); }
+    .ov-skipbtn { padding: 0 24px; }
+    .ov-trackbtn { padding: 0 28px; }
+    #ov-next:empty { display: none; }
+    #ov-play { width: 88px; height: 88px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--ink); color: #0a0c13; font-size: 34px; font-weight: 700; }
+    .oc.foc { box-shadow: 0 0 0 4px var(--ring); }
+    #ov-seek.oc.foc { box-shadow: none; }
+    .ov-skipbtn.foc, .ov-trackbtn.foc, #ov-play.foc { color: #fff; transform: scale(1.06); }
+    #ov-play.foc { transform: scale(1.136); }
+    #skip.foc { box-shadow: 0 0 0 4px var(--ring); }
     /* R303 — what is playing, top right; it lives inside #overlay so it rides the same show/hide. */
-    #ov-ident { position: fixed; top: 40px; right: 64px; display: none; align-items: center; justify-content: flex-end; max-width: 440px; }
+    #ov-ident { top: 24px; right: 96px; display: none; align-items: center; justify-content: flex-end; max-width: 440px; }
     #ov-ident.logo, #ov-ident.name { display: flex; }
     #ov-logo { display: none; max-width: 400px; max-height: 84px; width: auto; height: auto; object-fit: contain; filter: drop-shadow(0 2px 14px rgba(0,0,0,.55)); }
     #ov-ident.logo #ov-logo { display: block; }
@@ -65,11 +94,9 @@
     /* R264 (FR-R264-3/4) — a whole player driven by the TV remote: play/pause on the chrome, a hint for
        the picker, Skip Intro, the next-up card, the two-level picker and one plain failure sentence.
        Layout follows design/ravilo/Ravilo Receiver App.html. */
-    #overlay .row { justify-content: space-between; }
-    #ov-hint { font-size: 20px; color: var(--ink-dim); white-space: nowrap; }
-    #ov-pz { width: 64px; height: 64px; border-radius: 50%; flex: none; background: var(--ink); color: #0a0c13; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; }
     #skip { position: fixed; right: 64px; bottom: 150px; z-index: 3; display: none; padding: 18px 34px; border-radius: 999px; background: var(--ink); color: #0a0c13; font-size: 24px; font-weight: 700; }
     #skip.on { display: block; }
+    #overlay.on ~ #skip, #overlay.on ~ #nextup { bottom: 430px; }
     #nextup { position: fixed; right: 64px; bottom: 150px; z-index: 3; display: none; width: 480px; border-radius: 16px; background: rgba(10,12,19,.94); border: 1px solid rgba(255,255,255,.16); padding: 22px 26px 24px; text-align: left; }
     #nextup.on { display: block; }
     #nextup .k { font-size: 16px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent2); }
@@ -127,7 +154,6 @@
     .set-version { font-size: 24px; margin-bottom: 8px; }
     .set-version b { font-weight: 600; margin-left: 18px; }
     .pulse i + i { margin-left: 14px; }
-    #overlay .row > * + * { margin-left: 22px; }
     #pk-tabs b + b { margin-left: 10px; }
     .pkr > * + * { margin-left: 14px; }
 
