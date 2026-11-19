@@ -33,7 +33,14 @@ const ticket = (itemId: string) => ({
   hls_url: `${API}/hls/${itemId}/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999,
 });
 
-type Seen = { starts: any[]; favorites: any[]; played: any[] };
+type Seen = {
+  starts: any[]; favorites: any[]; played: any[];
+  // DEB-5050 (FR-31) — what the page asked `getPlaystate` (one entry per request, the `ids` it sent), what the mock answers next
+  // (swap `playstate` / `playstateStatus` between reads), a gate a test holds a read on, and the events socket's push.
+  reads: string[][]; inFlight: number; maxInFlight: number;
+  playstate: Record<string, object>; playstateStatus: number; gate: Promise<void> | null;
+  push: (message: object) => void;
+};
 type Opts = {
   home?: object; movie?: object | null; series?: object | null; playstate?: Record<string, object>;
   favorite?: (body: any) => Promise<{ status: number; body?: object }>;
@@ -42,7 +49,14 @@ type Opts = {
 
 /** Home with one tile (the movie or the series); OK on it is the page. */
 async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
-  const seen: Seen = { starts: [], favorites: [], played: [] };
+  const sockets: any[] = [];
+  const seen: Seen = {
+    starts: [], favorites: [], played: [], reads: [], inFlight: 0, maxInFlight: 0,
+    playstate: opts.playstate ?? {}, playstateStatus: 200, gate: null,
+    push: (message) => sockets.forEach((ws) => ws.send(JSON.stringify(message))),
+  };
+  // The events socket is accepted and says nothing until a test pushes.
+  await page.routeWebSocket(/\/api\/tv\/events/, (ws) => { sockets.push(ws); });
   const tile = opts.series !== undefined ? card("sr1", "Paper Series", "SERIES") : card("m1", "Paper Moon");
   const feed = { heroes: [], channels: [], rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: [tile] }],
     tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" };
@@ -60,7 +74,12 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
     if (path === "/api/tv/home") return json(route, 200, opts.home ?? feed);
     if (path === "/api/tv/movie/m1") return opts.movie === null ? json(route, 404) : json(route, 200, opts.movie ?? movieDetail);
     if (path === "/api/tv/series/sr1") return opts.series ? json(route, 200, opts.series) : json(route, 404);
-    if (path === "/api/tv/playstate") return json(route, 200, opts.playstate ?? {});
+    if (path === "/api/tv/playstate") {
+      seen.reads.push((new URL(req.url()).searchParams.get("ids") ?? "").split(","));
+      seen.maxInFlight = Math.max(seen.maxInFlight, ++seen.inFlight);
+      try { await seen.gate; } finally { seen.inFlight--; }
+      return json(route, seen.playstateStatus, seen.playstateStatus === 200 ? seen.playstate : {});
+    }
     if (path === "/api/tv/favorite") {
       seen.favorites.push(body);
       const answer = opts.favorite ? await opts.favorite(body) : { status: 200, body: state({ favorite: body.favorite }) };
@@ -283,6 +302,114 @@ test.describe("DEB-4660 — a title's page on the Samsung TV (FR-7)", () => {
     await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
     await expect(label(page, "detail-play")).toHaveClass(/focused/);
     await expect(page.locator(".detail-title")).toHaveText("Paper Series");
+  });
+});
+
+// DEB-5050 (DEB-5047, FR-31) — Android TV's FR-R351-7 on the Samsung's title page: it reads the playstate again after a play and
+// when the events socket says something changed, keeps what it has when the read fails, and never reads in parallel.
+test.describe("DEB-5047 FR-31 — a title's page reads its state again", () => {
+  const nth = (page: Page, i: number) => page.locator(`#detail-ep-${i}`);
+
+  test("Back from a play whose playstate now marks the episode watched shows its ✓, and the button names the next episode", async ({ page }) => {
+    const seen = await boot(page, { series: seriesDetail(), playstate: {} });
+    await openPage(page);
+    await expect(label(page, "detail-play")).toHaveText("Play · S01E01");
+    await expect(page.locator(".detail-ep-check")).toHaveCount(0);
+    expect(seen.reads).toHaveLength(1);
+
+    await page.keyboard.press("Enter");
+    await waitForAvplayCall(page, "open");
+    // The viewer watched S01E01 on the TV: the server's playstate now says so.
+    seen.playstate = { sr1: state({ continue_episode_id: "s1e2" }), s1e1: state({ played: true }) };
+    for (let i = 0; i < 3 && !(await page.locator("#shell").evaluate((e) => e.classList.contains("on"))); i++) await page.keyboard.press("Escape");
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+
+    await expect(nth(page, 0).locator(".detail-ep-check")).toHaveText("✓");
+    await expect(label(page, "detail-play")).toHaveText("Resume · S01E02");
+    await expect(label(page, "detail-play")).toHaveClass(/focused/);
+    expect(seen.reads).toHaveLength(2);
+    expect(seen.reads[1]).toEqual(["sr1", "s1e1", "s1e2", "s1e3", "s2e1"]);       // the series and every episode
+  });
+
+  test("a home_changed push while the page is open redraws it without moving focus or the season pill", async ({ page }) => {
+    const seen = await boot(page, { series: seriesDetail(), playstate: {} });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");                                         // Play -> the season strip
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");                                             // Season 2
+    await expect(page.locator("#detail-season-2")).toHaveClass(/cur/);
+    await expect(page.locator("#detail-season-2")).toHaveClass(/focused/);
+    const before = seen.reads.length;
+    // FR-31 — a re-read draws over the page as it stands: no skeleton is ever added from here on.
+    await page.evaluate(() => {
+      (window as any).__skeletons = 0;
+      new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => {
+        if (n instanceof HTMLElement && (n.matches(".skeleton") || n.querySelector(".skeleton"))) (window as any).__skeletons++;
+      }))).observe(document.getElementById("shell-body")!, { childList: true, subtree: true });
+    });
+
+    // A phone marked the whole of season 1 watched.
+    seen.playstate = { sr1: state({ continue_episode_id: "s2e1" }), s1e1: state({ played: true }), s1e2: state({ played: true }), s1e3: state({ played: true }) };
+    seen.push({ type: "home_changed", rev: 7 });
+    await expect(label(page, "detail-play")).toHaveText("Resume · S02E01");
+    expect(seen.reads.length).toBe(before + 1);
+    await expect(page.locator("#detail-season-2")).toHaveClass(/focused/);          // focus did not move
+    await expect(page.locator("#detail-season-2")).toHaveClass(/cur/);              // the page did not jump to the new primary's season
+    await expect(page.locator(".detail-ep .tile-title")).toHaveText(["Return Reel"]);
+
+    // `playstate_changed` asks for a read too.
+    seen.playstate = { ...seen.playstate, s2e1: state({ played: true }) };
+    seen.push({ type: "playstate_changed", patch: {} });
+    await expect(page.locator("#detail-ep-0 .detail-ep-check")).toHaveText("✓");
+    expect(seen.reads.length).toBe(before + 2);
+    expect(await page.evaluate(() => (window as any).__skeletons)).toBe(0);
+  });
+
+  test("a re-read that answers 500, or {}, leaves every ✓ and the button as they were", async ({ page }) => {
+    const seen = await boot(page, {
+      series: seriesDetail(),
+      playstate: { sr1: state({ continue_episode_id: "s1e2" }), s1e1: state({ played: true }) },
+    });
+    await openPage(page);
+    await expect(label(page, "detail-play")).toHaveText("Resume · S01E02");
+    await expect(nth(page, 0).locator(".detail-ep-check")).toHaveText("✓");
+
+    seen.playstateStatus = 500;
+    seen.push({ type: "home_changed", rev: 1 });
+    await expect.poll(() => seen.reads.length).toBe(2);
+    seen.playstateStatus = 200;
+    seen.playstate = {};
+    seen.push({ type: "home_changed", rev: 2 });
+    await expect.poll(() => seen.reads.length).toBe(3);
+
+    await expect(label(page, "detail-play")).toHaveText("Resume · S01E02");
+    await expect(nth(page, 0).locator(".detail-ep-check")).toHaveText("✓");
+    await expect(label(page, "detail-play")).toHaveClass(/focused/);
+  });
+
+  test("a push during a read causes one more read after it, not two in parallel", async ({ page }) => {
+    const seen = await boot(page, { series: seriesDetail(), playstate: {} });
+    await openPage(page);
+    expect(seen.reads).toHaveLength(1);
+
+    let release: () => void = () => {};
+    seen.gate = new Promise<void>((resolve) => { release = resolve; });
+    seen.push({ type: "home_changed", rev: 1 });
+    await expect.poll(() => seen.reads.length).toBe(2);                              // the read is in flight, held
+    seen.push({ type: "home_changed", rev: 2 });                                     // three more pushes while it is
+    seen.push({ type: "playstate_changed", patch: {} });
+    seen.push({ type: "home_changed", rev: 3 });
+    await page.waitForTimeout(400);
+    expect(seen.reads).toHaveLength(2);                                              // nothing started beside it
+
+    seen.playstate = { sr1: state({ continue_episode_id: "s1e2" }), s1e1: state({ played: true }) };
+    seen.gate = null;
+    release();
+    await expect(label(page, "detail-play")).toHaveText("Resume · S01E02");
+    await expect.poll(() => seen.reads.length).toBe(3);                              // exactly one more
+    await page.waitForTimeout(400);
+    expect(seen.reads).toHaveLength(3);
+    expect(seen.maxInFlight).toBe(1);
   });
 });
 

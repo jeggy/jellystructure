@@ -81,6 +81,8 @@ internal class ScreenDetail(
     private var busy = false
     private var failure: Int? = null
     private var season = Int.MIN_VALUE
+    private var reading = false
+    private var readAgain = false
 
     val ready get() = movie != null || series != null
 
@@ -113,6 +115,29 @@ internal class ScreenDetail(
             }
             loading = false
             onChange(this@ScreenDetail)
+            if (readAgain) { readAgain = false; refresh() }
+        }
+    }
+
+    /**
+     * DEB-5050 (DEB-5047, FR-31) — Android TV's FR-R351-7: the page reads `getPlaystate` again for the title (a series: the series and
+     * every episode) because it can have changed — it is shown again after the player, or the events socket pushed `home_changed` or
+     * `playstate_changed`. The old values stay until new ones arrive; a failed read, or one that answers `{}`, keeps them. One read at
+     * a time: a call during one asks for exactly one more after it, never a queue. Nothing is drawn but [onChange]'s plain redraw,
+     * so focus and the season pill stay where they were and no skeleton appears. A page still loading reads once it has loaded.
+     */
+    fun refresh() {
+        if (!ready) { if (loading) readAgain = true; return }
+        if (reading) { readAgain = true; return }
+        reading = true
+        GlobalScope.launch {
+            do {
+                readAgain = false
+                val ids = series?.let { s -> (listOf(id) + s.seasons.flatMap { sn -> sn.episodes.map { it.id } }).distinct() } ?: listOf(id)
+                val fresh = runCatching { api.getPlaystate(ids) }.getOrNull()
+                if (!fresh.isNullOrEmpty()) { overlay = fresh; onChange(this@ScreenDetail) }
+            } while (readAgain)
+            reading = false
         }
     }
 

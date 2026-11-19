@@ -141,7 +141,14 @@ internal class ScreenShell(
         if (player && entries.last().name == "player") entries.removeAt(entries.lastIndex)
         player = false
         root.classList.add("on")
+        // DEB-5050 (FR-31) — whichever way the play ended, the page under the player reads its state again; it draws what it holds now.
+        entries.lastOrNull()?.detail?.refresh()
         render()
+    }
+
+    /** DEB-5050 (FR-31) — `home_changed` or `playstate_changed` on the events socket: every title's page in the stack reads again, under the player too. */
+    fun stateChanged() {
+        entries.forEach { it.detail?.refresh() }
     }
 
     fun handleKey(event: KeyboardEvent): Boolean {

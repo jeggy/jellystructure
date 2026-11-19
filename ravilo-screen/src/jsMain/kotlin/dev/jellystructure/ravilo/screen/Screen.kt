@@ -315,6 +315,8 @@ private class Screen(private val serverUrl: String) {
                 api.connectEvents(
                     onOpen = { backoff = RECONNECT_BASE_MS; if (loaded) sendStatus() },
                     onEvent = {},
+                    onHomeChanged = { shell.stateChanged() },
+                    onPlaystateChanged = { shell.stateChanged() },
                     onPlayItem = { env -> onPlayItem(env) },
                     onPlaystateCommand = { env -> onPlaystateCommand(env) },
                     onPlayerCommand = { env -> onPlayerCommand(env) },
