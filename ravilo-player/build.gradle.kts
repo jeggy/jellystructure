@@ -48,3 +48,25 @@ dependencies {
     testImplementation("androidx.media3:media3-test-utils-robolectric:1.8.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
 }
+
+// DEB-4745 — Robolectric fetched this jar from Maven Central at test time and CI's runner lost that race
+// (429, then FileNotFoundException on the .pom/.sha512). Gradle resolves and caches it with the other
+// dependencies instead, and Robolectric reads it from a local directory in offline mode.
+val robolectricAndroidAll = listOf("14-robolectric-10818077-i7", "15-robolectric-12650502-i7").map { v ->
+    // One configuration per jar: they are one module, and a single configuration would keep only the newest.
+    configurations.create("robolectricAndroidAll_" + v.substringBefore('-')) {
+        isCanBeConsumed = false
+        isTransitive = false
+        dependencies.add(project.dependencies.create("org.robolectric:android-all-instrumented:$v"))
+    }
+}
+val robolectricAndroidAllDir = layout.buildDirectory.dir("robolectric-android-all")
+val syncRobolectricAndroidAll by tasks.registering(Sync::class) {
+    robolectricAndroidAll.forEach { from(it) }
+    into(robolectricAndroidAllDir)
+}
+tasks.withType<Test>().configureEach {
+    dependsOn(syncRobolectricAndroidAll)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricAndroidAllDir.get().asFile.absolutePath)
+}
