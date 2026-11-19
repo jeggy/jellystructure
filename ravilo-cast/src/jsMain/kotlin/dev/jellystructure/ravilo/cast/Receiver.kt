@@ -14,6 +14,9 @@ import dev.jellystructure.shared.tv.castChannelStep
 import dev.jellystructure.shared.tv.CastDecodeProbe
 import dev.jellystructure.shared.tv.CastRecovery
 import dev.jellystructure.shared.tv.CastRecoveryStep
+import dev.jellystructure.shared.tv.CastQoeCounters
+import dev.jellystructure.shared.tv.castShouldAskForLadder
+import dev.jellystructure.shared.tv.castStartFailureStatus
 import dev.jellystructure.shared.tv.CastFrozenAction
 import dev.jellystructure.shared.tv.castFrozenAction
 import dev.jellystructure.shared.tv.castFrozenVideoCap
@@ -155,12 +158,10 @@ private class Receiver {
     private var qoeItem: String? = null
     private var qoeDirect = false
     private var qoePlayed = false
+    private var qoeEverPlayed = false
     private var qoeSeeking = false
-    private var qoeRebuffers = 0
-    private var qoeRebufferMs = 0L
+    private val qoeCounts = CastQoeCounters()
     private var qoeRebufferFrom = -1L
-    private var qoeFrozenCount = 0
-    private var qoeFrozenMs = 0L
     private var qoeFrozenFrom = -1L
     private var qoeFrozenPosition = 0L
     private var qoeFrozenAhead = 0L
@@ -173,8 +174,12 @@ private class Receiver {
     private var qoeLoadAt = 0L                       // 309a0 — when this item's load began
     private var qoeFirstFrameMs: Long? = null
     private var qoeSegments = 0                       // 309 (FR-309-13) — segment fetches since the load
-    private var qoeDown = 0
-    private var qoeUp = 0
+    private var qoeStartFailureStatus: Int? = null
+    private var qoeStalledBps: Long? = null
+    private var ladderAskedFor: String? = null
+    private var qoeRebufferPosition = 0L
+    private var qoeRebufferAhead = 0L
+    private var qoeRebufferRung: Pair<Int?, Long?> = null to null
     // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
     // very next LOAD the receiver issues to itself. (burn-in index or -1, audio index, then-show text position)
     private var pendingRestream: Triple<Int, Int?, Int>? = null
@@ -203,11 +208,9 @@ private class Receiver {
     private var recoveryFrom = -1L
     private var recoveryReason = ""
     private var recoveryRung: Pair<Int?, Long?> = null to null
-    private val qoeStalls = mutableListOf<QoeStall>()
     private var bufferingDrawJob: Job? = null
     private var notOursFor: String? = null
     private var recoveryAfterFirstFrameMs = 0L
-    private var recoveryKeptFirstFrame: Long? = null
     // R291 (FR-R291-4) — the audio rendition made active in place on this stream, as a position in the ticket's
     // audio list; -1 until one is (and after every load), when the stream's own carried track is what plays.
     // An in-place switch leaves the ticket's `audio_stream_index` on the muxed track, so this is the only record.
@@ -373,6 +376,11 @@ private class Receiver {
             // DEB-3105 (FR-9) — a stream that had played is asked for again first ([recover]); the rest end as before.
             if (loading == 0 && (playerManager.getPlayerState() as String) == "IDLE" && current != null) {
                 if (castShouldRecover(music, radio != null, false, qoePlayed, true) && recover()) return@addEventListener
+                // Shaka BAD_HTTP_STATUS (1001) carries the response status in data[1].
+                val shaka: dynamic = ev.error
+                val status = if (shaka != null && (shaka.code as? Number)?.toInt() == 1001 && shaka.data != null)
+                    (shaka.data[1] as? Number)?.toInt() else null
+                qoeStartFailureStatus = castStartFailureStatus(qoeEverPlayed, status)
                 stopSession(); failed()
             }
         }
@@ -1471,14 +1479,15 @@ private class Receiver {
      */
     private fun startQoe(itemId: String, t: StreamTicket) {
         finishFrozen(nowMs())
-        // A restream of the same film (R285: a subtitle or audio change) keeps the session's counts.
+        // A same-item restream keeps the recovery attempt, but each LOAD has its own QoE counters.
         if (qoeItem != itemId) {
-            if (qoeItem != null) postQoe()
-            qoeRebuffers = 0; qoeRebufferMs = 0L; qoeDown = 0; qoeUp = 0
-            qoeStalls.clear(); recoveryFrom = -1L
-            qoeFrozenCount = 0; qoeFrozenMs = 0L; qoeFrozenFrom = -1L; frozenCapVideo = null
+            ladderAskedFor = null; recoveryFrom = -1L; frozenCapVideo = null; qoeEverPlayed = false
         }
+        if (qoeItem != null) postQoe()
+        qoeCounts.reset()
+        qoeFrozenFrom = -1L
         qoeItem = itemId; qoeDirect = t.directPlay; qoePlayed = false; qoeSeeking = false; qoeRebufferFrom = -1L; qoeVariantBps = null
+        qoeStartFailureStatus = null; qoeStalledBps = null
         frozenLastPosition = positionMs; frozenLastMoveAt = nowMs(); frozenMasterRungs = emptyList()
         absolute(t.hlsUrl)?.let { url -> GlobalScope.launch {
             val rungs = runCatching { api?.hlsRungBandwidths(url) }.getOrNull().orEmpty()
@@ -1646,7 +1655,7 @@ private class Receiver {
                 qoeFrozenFrom = frozenLastMoveAt; qoeFrozenPosition = pos; qoeFrozenAhead = ahead
                 qoeFrozenRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to
                     (qoeVariantBps ?: (stats?.streamBandwidth as? Number)?.toLong())
-                qoeFrozenCount++
+                qoeCounts.frozenCount++
                 qoeRebufferFrom = -1L  // a picture with buffer is not a delivery rebuffer
             }
         }
@@ -1661,9 +1670,9 @@ private class Receiver {
     private fun finishFrozen(now: Long) {
         if (qoeFrozenFrom < 0) return
         val duration = (now - qoeFrozenFrom).coerceAtLeast(1_000L)
-        qoeFrozenMs += duration
+        qoeCounts.frozenMs += duration
         val after = (qoeFrozenFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
-        qoeStalls += QoeStall(
+        qoeCounts.stalls += QoeStall(
             afterFirstFrameMs = after, positionMs = qoeFrozenPosition, bufferedMs = qoeFrozenAhead,
             durationMs = duration, phase = if (after < 10_000L) "start" else "mid", cause = QoeStallCause.FROZEN_WITH_BUFFER,
             bufferAheadMs = qoeFrozenAhead, variantBps = qoeFrozenRung.second,
@@ -1686,9 +1695,14 @@ private class Receiver {
         val t = ticket ?: return false
         val a = api ?: return false
         val ours = t.encoder == "ours" && !t.directPlay
-        val step = castRecoveryStep(ours, oursAskedAgainFor == d.itemId, jellyfinAskedFor == d.itemId)
+        // A delivery stall asks for a new ladder even when the failed path was Jellyfin's single stream.
+        val toLadder = reason == "stall_to_ladder"
+        val step = if (toLadder) CastRecoveryStep.OURS_AGAIN
+            else castRecoveryStep(ours, oursAskedAgainFor == d.itemId, jellyfinAskedFor == d.itemId)
         if (step == CastRecoveryStep.GIVE_UP) return false
-        if (step == CastRecoveryStep.JELLYFIN) { jellyfinAskedFor = d.itemId; notOursFor = d.itemId } else oursAskedAgainFor = d.itemId
+        if (toLadder) ladderAskedFor = d.itemId
+        else if (step == CastRecoveryStep.JELLYFIN) { jellyfinAskedFor = d.itemId; notOursFor = d.itemId }
+        else oursAskedAgainFor = d.itemId
         val at = positionMs
         val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
         recoveryFrom = nowMs(); recoveryReason = reason
@@ -1697,20 +1711,21 @@ private class Receiver {
             val cap = castFrozenVideoCap(frozenMasterRungs, recoveryRung.second ?: t.startVariantBps, capabilities().maxVideoBitrate)
             frozenCapVideo = frozenCapVideo?.let { minOf(it, cap) } ?: cap
         }
-        recoveryKeptFirstFrame = qoeFirstFrameMs
         recoveryAfterFirstFrameMs = (recoveryFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
         note("DEB-4637 FR-5: recovery $reason at ${at}ms — asking ${if (step == CastRecoveryStep.JELLYFIN) "Jellyfin" else "our encoder"} for it again")
-        postQoe()
+        // The QoE route writes stalledBps before it replies. The ladder ask waits for that write.
+        val qoePost = postQoe()
         val sub = t.burnedSubtitleIndex ?: -1
         val audio = t.audioStreamIndex
         val then = activeTextPosition()
         recoverJob = GlobalScope.launch {
+            if (toLadder) qoePost?.join()
             val draw = launch { delay(CastRecovery.DRAW_AFTER_MS); show("buffering") }
             var misses = 0
             while (true) {
                 val got = try {
                     val caps = capabilities().let { c -> frozenCapVideo?.let { c.copy(maxVideoBitrate = it) } ?: c }
-                    val nt = a.restream(d.itemId, sub, at, caps, audio, notOurEncoder = d.itemId == notOursFor)
+                    val nt = a.restream(d.itemId, sub, at, caps, audio, notOurEncoder = !toLadder && d.itemId == notOursFor)
                     if (!nt.directPlay) absolute(nt.hlsUrl)?.let { a.warmHlsStart(it, nt.startVariantBps, at) }
                     nt
                 } catch (e: CancellationException) { throw e } catch (e: Throwable) { note("DEB-3105 FR-9: the replacement failed (${e.message})"); null }
@@ -1739,10 +1754,9 @@ private class Receiver {
         if (recoveryFrom < 0 || recoverJob?.isActive == true) return
         val duration = (nowMs() - recoveryFrom).coerceAtLeast(0)
         recoveryFrom = -1L
-        qoeFirstFrameMs = recoveryKeptFirstFrame   // the recovery's own load is not this item's first frame
         note("DEB-3105 FR-9: recovered ($recoveryReason) after $duration ms")
         if (duration < 1_000L) return
-        qoeStalls += QoeStall(
+        qoeCounts.stalls += QoeStall(
             afterFirstFrameMs = recoveryAfterFirstFrameMs, positionMs = positionMs, bufferedMs = 0, durationMs = duration,
             phase = if (recoveryAfterFirstFrameMs < 10_000L) "start" else "mid", variantBps = qoeVariantBps, cause = QoeStallCause.RECOVERY,
             bufferAheadMs = 0, rungHeight = recoveryRung.first, rungBps = recoveryRung.second, reason = recoveryReason,
@@ -1754,11 +1768,39 @@ private class Receiver {
     private fun qoeState(st: String) {
         if (qoeItem == null || music) return
         when (st) {
-            "BUFFERING" -> if (qoePlayed && !qoeSeeking && qoeRebufferFrom < 0) qoeRebufferFrom = nowMs()
+            "BUFFERING" -> if (qoePlayed && !qoeSeeking && qoeRebufferFrom < 0 && qoeFrozenFrom < 0) {
+                qoeRebufferFrom = nowMs()
+                qoeRebufferPosition = positionMs
+                qoeRebufferAhead = ReceiverAbr.bufferedAheadMs()
+                val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
+                qoeRebufferRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to
+                    (qoeVariantBps ?: (stats?.streamBandwidth as? Number)?.toLong())
+            }
             "PLAYING" -> {
-                if (qoeRebufferFrom >= 0) { qoeRebuffers++; qoeRebufferMs += (nowMs() - qoeRebufferFrom).coerceAtLeast(0); qoeRebufferFrom = -1L }
+                if (qoeRebufferFrom >= 0) {
+                    val duration = (nowMs() - qoeRebufferFrom).coerceAtLeast(0)
+                    if (qoeFrozenFrom < 0) {
+                        qoeCounts.rebuffers++; qoeCounts.rebufferMs += duration
+                    }
+                    if (duration >= 1_000L && qoeFrozenFrom < 0) {
+                        val after = (qoeRebufferFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
+                        qoeCounts.stalls += QoeStall(
+                            afterFirstFrameMs = after, positionMs = qoeRebufferPosition, bufferedMs = qoeRebufferAhead,
+                            durationMs = duration, phase = if (after < 10_000L) "start" else "mid",
+                            cause = QoeStallCause.BUFFER_EMPTY, bufferAheadMs = qoeRebufferAhead,
+                            variantBps = qoeRebufferRung.second, rungHeight = qoeRebufferRung.first, rungBps = qoeRebufferRung.second,
+                        )
+                        val playingBps = qoeRebufferRung.second ?: ticket?.startVariantBps ?: frozenMasterRungs.singleOrNull()
+                        val ask = castShouldAskForLadder(frozenMasterRungs, playingBps, qoeCounts.stalls, ladderAskedFor == qoeItem)
+                        // The existing handover fact is written synchronously by the QoE route, including for a video copy.
+                        if (ask) qoeStalledBps = playingBps?.takeIf { it > 0 }
+                        postQoe()
+                        if (ask) recover("stall_to_ladder")
+                    }
+                    qoeRebufferFrom = -1L
+                }
                 if (!qoePlayed && qoeFirstFrameMs == null && qoeLoadAt > 0) qoeFirstFrameMs = (nowMs() - qoeLoadAt).coerceAtLeast(0)   // 309a0
-                qoePlayed = true; qoeSeeking = false
+                qoePlayed = true; qoeEverPlayed = true; qoeSeeking = false
                 finishRecovery()
             }
             else -> if (st == "PAUSED") qoeRebufferFrom = -1L
@@ -1770,36 +1812,39 @@ private class Receiver {
         if (qoeItem == null || music) return
         val bps = totalBitrate?.toLong()?.takeIf { it > 0 } ?: return
         val was = qoeVariantBps
-        if (was != null && bps != was) { if (bps < was) qoeDown++ else qoeUp++ }
+        if (was != null && bps != was) { if (bps < was) qoeCounts.down++ else qoeCounts.up++ }
         qoeVariantBps = bps
         if (was != null && bps != was) postQoe()
     }
 
     /** 308 (FR-308-5) — the receiver reports like every other player: at a switch and when its stream ends. */
-    private fun postQoe() {
-        val item = qoeItem ?: return
-        val a = api ?: return
+    private fun postQoe(): Job? {
+        val item = qoeItem ?: return null
+        val a = api ?: return null
         val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
         fun num(v: dynamic): Double? = (v as? Number)?.toDouble()?.takeIf { !it.isNaN() && it > 0 }
         val report = PlaybackQoeReport(
             itemId = item,
             droppedFrames = num(stats?.droppedFrames)?.toInt() ?: 0,
-            rebufferCount = qoeRebuffers,
-            rebufferMs = qoeRebufferMs,
-            frozenCount = qoeFrozenCount,
-            frozenMs = qoeFrozenMs,
+            rebufferCount = qoeCounts.rebuffers,
+            rebufferMs = qoeCounts.rebufferMs,
+            frozenCount = qoeCounts.frozenCount,
+            frozenMs = qoeCounts.frozenMs,
             // 309 (FR-309-13) — no estimate until it rests on 3 segment fetches (before that it is Shaka's default).
             bandwidthEstimateBps = num(stats?.estimatedBandwidth)?.toLong()?.takeIf { qoeSegments >= 3 },
             bandwidthSamples = qoeSegments,
             firstFrameMs = qoeFirstFrameMs,
             directPlay = qoeDirect,
-            variantSwitchesDown = qoeDown,
-            variantSwitchesUp = qoeUp,
+            variantSwitchesDown = qoeCounts.down,
+            variantSwitchesUp = qoeCounts.up,
             variantBandwidthBps = qoeVariantBps ?: num(stats?.streamBandwidth)?.toLong(),
             variantHeight = num(stats?.height)?.toInt(),
-            stalls = qoeStalls.toList(),   // DEB-3105 (FR-8) — a recovery that stopped the picture for a second or more
+            stalls = qoeCounts.stalls.takeLast(20),
+            perItem = true,
+            startFailureStatus = qoeStartFailureStatus,
+            stalledBps = qoeStalledBps,
         )
-        GlobalScope.launch { runCatching { a.postPlaybackQoe(report) } }
+        return GlobalScope.launch { runCatching { a.postPlaybackQoe(report) } }
     }
 
     private fun nextEpisode(): CastEpisode? {

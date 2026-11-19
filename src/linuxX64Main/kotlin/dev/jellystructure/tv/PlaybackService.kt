@@ -2162,6 +2162,11 @@ class PlaybackService(
      * authenticated device id regardless).
      */
     fun recordQoe(device: DeviceData, report: PlaybackQoeReport) {
+        report.startFailureStatus?.let { status ->
+            kotlinx.coroutines.runBlocking {
+                Logger.info("playback: start failed device=${device.deviceId} item=${report.itemId} status=$status segments=${report.bandwidthSamples ?: 0} (DEB-4569 FR-6)", "tv")
+            }
+        }
         val playKey = qoeKeyOf(device, report.itemId) ?: playSessionIdFor(device, report.itemId)
         // DEB-3187 (FR-7) — read before record() rewrites the row, or it always reads as now.
         val previousReportAt = playbackQoeStore.updatedAtOf(device.deviceId, report.itemId, playKey)

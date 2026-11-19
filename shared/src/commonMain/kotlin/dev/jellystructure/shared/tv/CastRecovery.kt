@@ -91,3 +91,36 @@ fun castFrozenVideoCap(rungsBps: List<Long>, frozenBps: Long?, deviceMaxVideo: I
     val video = RestreamStepper.videoBpsOf(target)?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: return deviceMaxVideo
     return if (deviceMaxVideo > 0) minOf(deviceMaxVideo, video) else video
 }
+
+
+/** DEB-4543 FR-3 — counters and stops belong to one LOAD, including a restream of the same item. */
+class CastQoeCounters {
+    var rebuffers = 0
+    var rebufferMs = 0L
+    var down = 0
+    var up = 0
+    var frozenCount = 0
+    var frozenMs = 0L
+    val stalls = mutableListOf<QoeStall>()
+
+    fun reset() {
+        rebuffers = 0; rebufferMs = 0L; down = 0; up = 0
+        frozenCount = 0; frozenMs = 0L; stalls.clear()
+    }
+}
+
+/** DEB-4543 FR-4 — only delivery stalls on a rung with no lower choice can ask for a ladder, once per item. */
+fun castShouldAskForLadder(masterRungsBps: List<Long>, playingBps: Long?, stalls: List<QoeStall>, alreadyAsked: Boolean): Boolean {
+    if (alreadyAsked || masterRungsBps.isEmpty()) return false
+    val playing = playingBps ?: masterRungsBps.singleOrNull() ?: return false
+    if (masterRungsBps.any { it > 0 && it < playing }) return false
+    val delivery = stalls.filter { it.cause == QoeStallCause.BUFFER_EMPTY && it.durationMs >= 1_000L }
+    val last = delivery.lastOrNull() ?: return false
+    return last.durationMs >= 4_000L || delivery.dropLast(1).any {
+        last.afterFirstFrameMs - it.afterFirstFrameMs in 0L..120_000L
+    }
+}
+
+/** DEB-4543 FR-6 — a failed load names its HTTP status when Shaka has one, otherwise -1. */
+fun castStartFailureStatus(firstFrameSeen: Boolean, httpStatus: Int?): Int? =
+    if (firstFrameSeen) null else (httpStatus?.takeIf { it in 100..599 } ?: -1)

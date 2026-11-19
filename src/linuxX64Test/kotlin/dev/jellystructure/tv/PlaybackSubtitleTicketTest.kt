@@ -7,6 +7,9 @@ import dev.jellystructure.db.createDatabase
 import dev.jellystructure.media.FileStamp
 import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.ActivityLog
+import dev.jellystructure.log.Logger
+import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Track
@@ -122,6 +125,21 @@ class PlaybackSubtitleTicketTest {
         val eng = ticket.subtitles.first { it.index == 3 }
         assertTrue(eng.url!!.contains("/Subtitles/3/0/Stream.vtt"), eng.url)
         assertNull(eng.containerIndex)
+    }
+
+    @Test
+    fun `a failed start logs its status and segment count once`() = rig("failure-log") { service, _, scope ->
+        val activity = ActivityLog("/tmp/jellystructure-test-deb4543-log-${getpid()}.json", WsBroadcaster(), scope)
+        val previous = Logger.activityLog
+        Logger.activityLog = activity
+        try {
+            val tv = device("tv-failure")
+            service.startPlayback(tv, "film-subs", ClientCapabilities())
+            service.recordQoe(tv, PlaybackQoeReport(itemId = "film-subs", perItem = true, startFailureStatus = 503, bandwidthSamples = 3))
+            service.recordQoe(tv, PlaybackQoeReport(itemId = "film-subs", perItem = true, bandwidthSamples = 4))
+            val lines = activity.list(1, 100, "tv", "INFO").entries.map { it.message }.filter { "(DEB-4569 FR-6)" in it }
+            assertEquals(listOf("playback: start failed device=${tv.deviceId} item=film-subs status=503 segments=3 (DEB-4569 FR-6)"), lines)
+        } finally { Logger.activityLog = previous }
     }
 
     @Test

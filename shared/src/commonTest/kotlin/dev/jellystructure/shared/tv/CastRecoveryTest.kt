@@ -77,5 +77,53 @@ class CastRecoveryTest {
         assertEquals(20_000, retry.timeoutMs)
     }
 
+    private fun stall(at: Long, duration: Long = 1_000L, cause: String = QoeStallCause.BUFFER_EMPTY) = QoeStall(
+        afterFirstFrameMs = at, positionMs = at, bufferedMs = 0, durationMs = duration,
+        phase = "mid", cause = cause,
+    )
+
+    @Test fun `two delivery stalls inside two minutes ask once for a missing lower rung`() {
+        val first = stall(20_000)
+        val second = stall(139_000)
+        assertFalse(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(first), false))
+        assertTrue(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(first, second), false))
+        assertFalse(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(first, second), true), "same-stream answer does not trigger another ask")
+        assertFalse(castShouldAskForLadder(listOf(1_000_000, 2_000_000), 2_000_000, listOf(first, second), false), "Shaka has a lower rung")
+    }
+
+    @Test fun `stalls three minutes apart do not ask and one four second stall does`() {
+        assertFalse(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(stall(20_000), stall(200_000)), false))
+        assertTrue(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(stall(20_000, 4_000)), false))
+    }
+
+    @Test fun `a frozen stop with buffer does not count toward a delivery recovery`() {
+        val frozen = stall(10_000, 5_000, QoeStallCause.FROZEN_WITH_BUFFER)
+        val delivery = stall(20_000)
+        assertFalse(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(frozen, delivery), false))
+        assertTrue(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(frozen, delivery, stall(30_000)), false))
+    }
+
+    @Test fun `each LOAD starts fresh QoE counters and stalls`() {
+        val counts = CastQoeCounters().apply {
+            rebuffers = 2; rebufferMs = 5_000; down = 1; up = 3
+            frozenCount = 1; frozenMs = 4_000; stalls += stall(20_000)
+        }
+        counts.reset()
+        assertEquals(0, counts.rebuffers)
+        assertEquals(0L, counts.rebufferMs)
+        assertEquals(0, counts.down)
+        assertEquals(0, counts.up)
+        assertEquals(0, counts.frozenCount)
+        assertEquals(0L, counts.frozenMs)
+        assertTrue(counts.stalls.isEmpty())
+    }
+
+    @Test fun `a failed start reports an HTTP status or minus one only before first frame`() {
+        assertEquals(503, castStartFailureStatus(false, 503))
+        assertEquals(-1, castStartFailureStatus(false, null))
+        assertEquals(-1, castStartFailureStatus(false, 0))
+        assertNull(castStartFailureStatus(true, 503))
+    }
+
     private object Math { fun pow2(n: Int, base: Double): Double { var r = 1.0; repeat(n) { r *= base }; return r } }
 }
