@@ -19,10 +19,11 @@ const ticket = {
   hls_url: `${API}/hls/m1/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999, start_variant_bps: START_VARIANT_BPS,
 };
 
-type Seen = { qoe: any[]; probes: string[] };
+type Seen = { qoe: any[]; probes: string[]; starts: any[]; restreams: any[] };
 
-async function boot(page: Page): Promise<Seen> {
-  const seen: Seen = { qoe: [], probes: [] };
+/** `restreamAnswer`: what /api/tv/playback/restream answers with (default: the same single stream, as the server's DEB-4541 FR-1 would not). */
+async function boot(page: Page, restreamAnswer: object = ticket, startTicket: object = ticket): Promise<Seen> {
+  const seen: Seen = { qoe: [], probes: [], starts: [], restreams: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
@@ -38,7 +39,8 @@ async function boot(page: Page): Promise<Seen> {
     if (path === "/api/tv/playstate") return json(route, 200, {});
     if (path === "/api/tv/probe") { seen.probes.push(req.method()); return route.fulfill({ status: 204 }); }   // measured within 24 h
     if (path === "/api/tv/playback/qoe") { seen.qoe.push(JSON.parse(req.postData()!)); return route.fulfill({ status: 204 }); }
-    if (path === "/api/tv/playback/start") return json(route, 200, ticket);
+    if (path === "/api/tv/playback/start") { seen.starts.push(JSON.parse(req.postData() ?? "{}")); return json(route, 200, startTicket); }
+    if (path === "/api/tv/playback/restream") { seen.restreams.push(JSON.parse(req.postData() ?? "{}")); return json(route, 200, restreamAnswer); }
     if (path.startsWith("/api/tv/playback/")) return route.fulfill({ status: 204 });
     if (path.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
     return json(route, 404);
@@ -174,5 +176,86 @@ test.describe("DEB-5024 FR-24 — the TV measures its path", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator("#detail-play")).toHaveClass(/focused/);
     await expect.poll(() => seen.probes, { timeout: 10_000 }).toEqual(["GET"]);
+  });
+});
+
+test.describe("DEB-5024 FR-26 — the TV negotiates as an adaptive player", () => {
+  test("the start declares hls_adaptive, and ADAPTIVE_INFO is set before prepareAsync when the ticket has a start rung", async ({ page }) => {
+    const seen = await boot(page);
+    await openAndPlay(page);
+    expect(seen.starts).toHaveLength(1);
+    expect(JSON.stringify(seen.starts[0])).toContain('"hls_adaptive":true');
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    const info = calls.findIndex((c) => c[0] === "setStreamingProperty" && c[1] === "ADAPTIVE_INFO");
+    const prepare = calls.findIndex((c) => c[0] === "prepareAsync");
+    expect(calls[info]).toEqual(["setStreamingProperty", "ADAPTIVE_INFO", `STARTBITRATE=${START_VARIANT_BPS}`]);
+    expect(info).toBeGreaterThanOrEqual(0);
+    expect(info).toBeLessThan(prepare);
+  });
+
+  test("a ticket with no start rung sets no ADAPTIVE_INFO", async ({ page }) => {
+    const { start_variant_bps: _drop, ...bare } = ticket;
+    await boot(page, bare, bare);
+    await openAndPlay(page);
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    expect(calls.filter((c) => c[0] === "setStreamingProperty")).toEqual([]);
+  });
+});
+
+test.describe("DEB-5024 FR-27 — a stall with no lower rung asks for one", () => {
+  test("two stalls on a single-rung stream make exactly one restream; a same-stream answer makes no second", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    const ap = avplay(page);
+    await openAndPlay(page);
+    await ap.property("AVAILABLE_BITRATE", "4000000");
+    await ap.property("CURRENT_BANDWIDTH", "4000000");
+
+    await ap.wait(1_500);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams, "one short stall is not yet the trigger").toHaveLength(0);
+
+    await ap.wait(1_500);   // the second stall inside 2 minutes
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+    // FR-25's report went out first, with both stalls in it.
+    expect(seen.qoe.length).toBeGreaterThanOrEqual(2);
+    expect(seen.qoe[1]).toMatchObject({ item_id: "m1", per_item: true, rebuffer_count: 2 });
+    // The answer opens as any restream does: AVPlay closed, then opened again.
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    expect(calls.filter((c) => c[0] === "open")).toHaveLength(2);
+    expect(calls.filter((c) => c[0] === "close").length).toBeGreaterThanOrEqual(1);
+    await waitForAvplayCall(page, "play", calls.map((c) => c[0]).lastIndexOf("open"));
+
+    // The answer was the same single stream: more stalls, no second ask.
+    await page.waitForTimeout(1_000);
+    await ap.wait(1_500);
+    await ap.wait(1_500);
+    await page.waitForTimeout(1_000);
+    expect(seen.restreams).toHaveLength(1);
+  });
+
+  test("one stall of 4 s or more asks at once; with a lower rung in the master it does not ask", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    const ap = avplay(page);
+    await openAndPlay(page);
+    await ap.property("AVAILABLE_BITRATE", "4000000,1500000,600000");
+    await ap.property("CURRENT_BANDWIDTH", "4000000");
+    await ap.wait(4_200);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    await page.waitForTimeout(500);
+    expect(seen.restreams, "a lower rung exists: AVPlay steps down on its own").toHaveLength(0);
+
+    await ap.property("CURRENT_BANDWIDTH", "600000");   // now on the lowest
+    await ap.wait(4_200);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+  });
+
+  test("when AVPlay does not answer AVAILABLE_BITRATE there is no lower rung", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await openAndPlay(page);
+    await avplay(page).wait(4_200);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
   });
 });

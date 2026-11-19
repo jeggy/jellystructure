@@ -12,6 +12,10 @@ private const val START_PHASE_MS = 10_000L
 private const val VIEWER_WAIT_WINDOW_MS = 3_000L
 /** AVPlay fires a bitrate and a resolution change for one rung switch; two inside this window are one switch. */
 private const val SWITCH_MERGE_MS = 1_500L
+/** DEB-5024 (FR-27) — a second stall this soon after the first, on the lowest rung, asks for a lower one. */
+private const val REPEAT_STALL_MS = 120_000L
+/** DEB-5024 (FR-27) — one stall this long, on the lowest rung, asks for a lower one. */
+private const val LONG_STALL_MS = 4_000L
 /** R381 — the report carries the item's newest 20. */
 private const val MAX_STALLS = 20
 
@@ -25,11 +29,17 @@ private const val MAX_STALLS = 20
  * - The **first frame** is the first moving play time while no wait is open; a wait before it is the start, never a stall.
  * - A wait after it that lasts [STALL_MIN_MS] or more is a stall, unless a seek, a pause or a resume explains it.
  * - A report goes out when a stall ends, at a rung switch, and at [end]. A failed post is the post's own business ([post]).
+ * - **FR-27:** once per item, a stall ends with [askLowerRung] when the playing rung is the lowest and it was a second stall
+ *   within 2 minutes or one of 4 s or more. The report goes out first.
  */
 internal class ScreenQoe(
     private val clock: () -> Long,
     /** AVPlay's `CURRENT_BANDWIDTH` when it answers a number, otherwise null. */
     private val currentBandwidthBps: () -> Long?,
+    /** FR-27 — true when nothing in the master is below the rung playing now (AVPlay's `AVAILABLE_BITRATE`; no answer = true). */
+    private val onLowestRung: () -> Boolean,
+    /** FR-27 — restream this item at its position, to be answered with a ladder. */
+    private val askLowerRung: () -> Unit,
     private val post: (PlaybackQoeReport) -> Unit,
 ) {
     // ── this session (kept apart from the item's own) ──
@@ -49,6 +59,8 @@ internal class ScreenQoe(
     private var variantBps: Long? = null
     private var lastSwitchAtMs = -1L
     private var firstFrameMs: Long? = null
+    private var lastStallEndMs = -1L
+    private var askedLowerRung = false
 
     // ── this load (one stream of the item) ──
     private var loadAtMs = 0L
@@ -75,6 +87,7 @@ internal class ScreenQoe(
         variantBps = startVariantBps
         lastSwitchAtMs = -1L
         firstFrameMs = null
+        lastStallEndMs = -1L; askedLowerRung = false
         resetLoad()
     }
 
@@ -109,7 +122,17 @@ internal class ScreenQoe(
 
     fun bufferingCompleted() {
         if (itemId == null || waitStartMs < 0) return
-        if (closeWait(clock())) postReport(null)
+        val now = clock()
+        val previousEnd = lastStallEndMs
+        val length = now - waitStartMs
+        if (!closeWait(now)) return
+        lastStallEndMs = now
+        postReport(null)
+        val repeated = previousEnd >= 0 && now - previousEnd <= REPEAT_STALL_MS
+        if (!askedLowerRung && (repeated || length >= LONG_STALL_MS) && onLowestRung()) {
+            askedLowerRung = true
+            askLowerRung()
+        }
     }
 
     /** AVPlay's `oncurrentplaytime`: the first value that moves while nothing is waiting is the first frame. */

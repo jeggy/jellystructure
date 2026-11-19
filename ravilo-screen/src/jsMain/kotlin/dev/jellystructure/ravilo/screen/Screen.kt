@@ -93,7 +93,7 @@ private class Screen(private val serverUrl: String) {
         platform = "tizen",
     )
     /** DEB-5024 (FR-25) — what each item went through, posted through the shared client's QoE call (it never throws). */
-    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps) { report -> GlobalScope.launch { api.postPlaybackQoe(report) } }
+    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung) { report -> GlobalScope.launch { api.postPlaybackQoe(report) } }
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
@@ -430,7 +430,7 @@ private class Screen(private val serverUrl: String) {
         playing = false
         lastProgressAt = nowMs()
         qoe.beginItem(env.jellyfinId, t.startVariantBps, t.directPlay, backend.capabilities().linkKind)
-        val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs) }
+        val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs, t.startVariantBps) }
         if (opened.isFailure) {
             // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
             // length of whatever was open before (which marked the episode watched), and the viewer is told once.
@@ -1086,8 +1086,22 @@ private class Screen(private val serverUrl: String) {
         pauseOnNextPlaying = !wasPlaying
         backend.close()
         qoe.restreamed()   // FR-25 — the same item again: its counts stay, its own start is not a stall
-        backend.open(t.hlsUrl ?: "", pos)
+        backend.open(t.hlsUrl ?: "", pos, t.startVariantBps)
         sendStatus()
+    }
+
+    /** DEB-5024 (FR-27) — no rung in the master is below the one playing; no answer from AVPlay counts as none. */
+    private fun onLowestRung(): Boolean {
+        val rungs = backend.availableBitratesBps()
+        if (rungs.isEmpty()) return true
+        val playing = backend.currentBandwidthBps() ?: return false
+        return playing <= rungs.min()
+    }
+
+    /** DEB-5024 (FR-27) — the same stream, at its position, asked for again so the server answers with its ladder; once per item. */
+    private fun askForLowerRung() {
+        val t = ticket
+        GlobalScope.launch { restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub) }
     }
 
     /** FR-R285-3 — draw text subtitle [index] of [receiverSubtitles] (anything else = none). */

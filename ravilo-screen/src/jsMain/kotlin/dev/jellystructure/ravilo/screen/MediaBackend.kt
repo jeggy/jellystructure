@@ -17,7 +17,8 @@ import org.w3c.dom.events.Event
  * which one it's driving.
  */
 interface MediaBackend {
-    fun open(hlsUrl: String, startPositionMs: Long)
+    /** [startVariantBps] is the ticket's own start rung (DEB-5024 FR-26): AVPlay is told to begin there, before it prepares. */
+    fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long? = null)
     fun play()
     fun pause()
     fun seekTo(ms: Long)
@@ -39,6 +40,8 @@ interface MediaBackend {
     fun selectSubtitleTrack(index: Int) {}
     /** DEB-5024 (FR-25) — the bitrate of the rung playing now, when the player answers a number (AVPlay's `CURRENT_BANDWIDTH`). */
     fun currentBandwidthBps(): Long? = null
+    /** DEB-5024 (FR-27) — the bitrates of the master's rungs, when the player answers (AVPlay's `AVAILABLE_BITRATE`); empty = unknown. */
+    fun availableBitratesBps(): List<Long> = emptyList()
 }
 
 interface MediaBackendListener {
@@ -73,7 +76,7 @@ const val AVPLAY_ON = "avplay-on"
 class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     private var listener: MediaBackendListener? = null
 
-    override fun open(hlsUrl: String, startPositionMs: Long) {
+    override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?) {
         // DEB-4874 — `avplay.open` is only legal from NONE: over a stream that is still open (the episode the next-up card leaves,
         // whoever started it) it throws PLAYER_ERROR_INVALID_STATE. Leave AVPlay closed first, so every start is safe, not one path.
         runCatching { WebApisGlobal.avplay.close() }
@@ -93,6 +96,8 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
             onError = { e -> listener?.onError(e.toString()) },
             onEvent = { type, data -> listener?.onPlayerEvent(type.toString(), if (data == null || data == undefined) null else data.toString()) },
         ))
+        // DEB-5024 (FR-26) — the first picture comes from the server's start rung, not from AVPlay's own guess.
+        if (startVariantBps != null && startVariantBps > 0) runCatching { WebApisGlobal.avplay.setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=$startVariantBps") }
         WebApisGlobal.avplay.prepareAsync(
             { if (startPositionMs > 0) WebApisGlobal.avplay.seekTo(startPositionMs.toInt()); WebApisGlobal.avplay.play(); listener?.onPlaying() },
             { e -> listener?.onError(e.toString()) },
@@ -117,8 +122,14 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         audioCodecs = listOf("aac", "ac3", "eac3"),
         maxAudioChannels = 6,
         hlsOnly = true,
+        hlsAdaptive = true,   // DEB-5024 (FR-26) — AVPlay plays a multi-variant master and picks its own rung
         linkKind = "unknown",
     )
+
+    override fun availableBitratesBps(): List<Long> = runCatching {
+        val v: dynamic = WebApisGlobal.avplay.getStreamingProperty("AVAILABLE_BITRATE")
+        if (v == null || v == undefined) emptyList() else Regex("\\d+").findAll(v.toString()).mapNotNull { it.value.toLongOrNull() }.filter { it > 0 }.toList()
+    }.getOrDefault(emptyList())
 
     override fun currentBandwidthBps(): Long? = runCatching {
         val v: dynamic = WebApisGlobal.avplay.getStreamingProperty("CURRENT_BANDWIDTH")
@@ -136,7 +147,7 @@ class HtmlVideoBackend(private val video: HTMLVideoElement, private val serverUr
     private var listener: MediaBackendListener? = null
     private var hls: dynamic = null
 
-    override fun open(hlsUrl: String, startPositionMs: Long) {
+    override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?) {
         val url = resolveStreamUrl(serverUrl, hlsUrl)
         val canNative = (video.asDynamic().canPlayType("application/vnd.apple.mpegurl") as String).isNotBlank()
         if (canNative) {
@@ -200,6 +211,7 @@ class HtmlVideoBackend(private val video: HTMLVideoElement, private val serverUr
             audioCodecs = listOf("aac", "mp3"),
             maxAudioChannels = 6,
             hlsOnly = true,
+            hlsAdaptive = true,   // DEB-5024 (FR-26) — hls.js adapts too
             linkKind = "unknown",
         )
     }
