@@ -860,3 +860,117 @@ This restores FR-10's *A phone can still send a title to it*; it is not a new be
   `/api/remote/play`), Stop from the phone returns to the page; a `session_load` of a song sends `session_load_failed` and starts nothing.
 - **Not covered by CI, so it stays with the QA ticket:** that the TV is offered at all on Tizen 10.0 (DEB-4808 found *Samsung TV*
   missing from Ravilo Web's list there while its socket was connected), and the stop-returns-to-the-same-focus half on a real emulator.
+
+## Amendment 2026-11-19 (DEB-5024) — a picture that cannot keep up steps down instead of stopping
+
+Owner, DEB-5024: *"The video is often buffering on tizen tv."* The trade-off is settled (DEB-3093): lower the quality before
+ever stopping the picture.
+
+**What prod shows.** The household's Samsung made 53 starts from 2026-11-16 to 11-19, from outside the house. Every one logged
+`takes no record → cap none` and `no ladder: adaptive=false reencodes=false`. Jellyfin copied the picture into a single-variant
+stream at the file's own bitrate, from 1.8 to 9.7 Mb/s (most near 5.5). No Samsung has ever written a `playback_qoe` row. A stall
+is therefore invisible to the server, and a stall cannot be told from a pause. Between 10 and 25 s of wall time went missing from
+each short episode, and up to 2 minutes from some plays. This is DEB-4541's class (one stream, nothing lower to fall to, and a
+server that learns nothing), and neither that spec nor 308 reaches this app:
+
+1. **The TV says it does not adapt.** `AvPlayBackend` declares `hls_only` but leaves `hls_adaptive` false. FR-9 says the TV
+   negotiates *"with the same negotiation as the receiver"*, and the receiver declares `hls_adaptive = true`. So every master
+   the TV gets has one rung: our encoder cuts its plan to one rung (`startRungFor`), Jellyfin's ladder is skipped, the 8 Mb/s
+   no-record cap does not apply, and DEB-4541 FR-1 (a video copy goes to our ladder) is keyed on `hls_adaptive`.
+2. **The TV reports nothing.** FR-R264-1 says the app *"reports QoE and start samples like any TV"*. That part was never built.
+   `onbufferingstart` only draws the buffering view and sends `ScreenStatus`. There is no QoE post and no speed probe, and
+   there is no `device_stream_record` row.
+3. **A stall with nothing below it repeats.** Nothing on the TV asks for a lower picture.
+
+FR-24 and FR-25 restore FR-R264-1 (FR-25 in DEB-4541 FR-3's shape), FR-26 restores FR-9, and FR-27 is DEB-4541 FR-4 made for
+AVPlay. This
+amendment makes no backend change, no wire change and no new field. An installed `.wgt` that predates it keeps negotiating as
+today.
+
+*Not part of this, already fixed:* 8 of the 53 plays restreamed about 16 s in for an audio pick
+(`PlaybackInfo(restream, no burn-in) … audio=2`). The set runs a build from before FR-23 (DEB-4932), and FR-23 sends the
+remembered audio with the start. A current `.wgt` on the set removes that stop.
+
+**FR-24 · The TV measures its path, as Android TV does.** The app calls `TvApiClient.probe()` (309, FR-309-3) in two places.
+The first is when a title's page opens; that is Android TV's `DetailPrewarm` moment. The second is when a phone's `play_item`
+or `session_load` starts a film or an episode, as `RaviloApp` does for a start from another app. It is fire-and-forget:
+nothing waits on it. The server answers 204 when the TV was measured within 24 h, so a binge makes no extra probes. The result
+lands in `device_stream_record` through the existing `/api/tv/probe/result`. From then on, 309's take caps the TV's negotiation
+like any other device's.
+
+**FR-25 · The TV reports what each item went through.** The app posts `PlaybackQoeReport` through the shared client's
+existing QoE call, in the Android/receiver shape (DEB-4541 FR-3):
+
+- `per_item = true`. Every count is this item's own and resets at each `open()` (R381, FR-R381-1).
+- `first_frame_ms` runs from `open()` to the first `onbufferingcomplete` followed by a moving `oncurrentplaytime`.
+  `start_variant_bps` is the ticket's own.
+- Every wait after the first frame that lasts **1 s or more**, from `onbufferingstart` to `onbufferingcomplete`, counts in
+  `rebuffer_count` and `rebuffer_ms`. Each one is also a `QoeStall` entry with these fields:
+  - its position, its length and `after_first_frame_ms`;
+  - `buffered_ms = 0`, because AVPlay does not expose it;
+  - `phase`: `start` within 10 s of the first frame, otherwise `mid`;
+  - `cause = buffer_empty`;
+  - `variant_bps`: AVPlay's `getStreamingProperty("CURRENT_BANDWIDTH")` when it answers a number, otherwise omitted.
+
+  A wait the viewer caused (a seek, a pause, an audio or subtitle restream) is not a stall.
+- A rung switch counts in `variant_switches_down` and `variant_switches_up` when AVPlay's `onevent` reports a bitrate or
+  resolution change (`PLAYER_MSG_BITRATE_CHANGE`, `PLAYER_MSG_RESOLUTION_CHANGED`). A set that never fires them reports 0.
+- `encoder`, `direct_play = false` and `link_kind = "unknown"` come from the ticket and the capabilities, as today.
+- A report is posted when a stall ends, at a rung switch, and when the item ends (stop, Back, hiding the app under FR-22, the
+  end of the stream). A stall therefore reaches 309's record within seconds, and so does DEB-3093 FR-7's hold. A failed post
+  is dropped: it is never retried and never shown.
+- A start that never reaches a picture sets `start_failure_status`, as DEB-4541 FR-6 does on the receiver: the HTTP status
+  when AVPlay's `onerror` carries one, and `-1` otherwise.
+
+**FR-26 · The TV negotiates as an adaptive player.** `AvPlayBackend`'s capabilities set `hls_adaptive = true`, which is the
+receiver's negotiation as FR-9 says. `hls_hevc`, the codec probes and `hls_only` are unchanged. AVPlay plays a multi-variant
+HLS master and picks its own rung, and our master already lists the start rung first (`EncoderPlan`, the master's order). When
+the ticket carries `start_variant_bps`, the app also calls `setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=<bps>")`
+before `prepareAsync`, so the first picture comes from 309's start rung, not from AVPlay's guess. With the backend as it stands
+and DEB-4541 FR-1/FR-2 (DEB-4542) live, this means:
+
+- a video copy on a path that is not proven goes to our ladder, with the floor rungs first;
+- a re-encode gets every rung, not one;
+- a TV with no record is capped at 8 Mb/s.
+
+`HtmlVideoBackend` (hls.js, the non-Tizen fallback) declares the same flag, because hls.js adapts too.
+
+**FR-27 · A stall with no lower rung asks for one.** This is DEB-4541 FR-4's rule on AVPlay. The trigger is a second stall
+within 2 minutes, or one stall of 4 s or more, while the playing rung is the lowest in the master. The rungs are known from
+`getStreamingProperty("AVAILABLE_BITRATE")`; when that does not answer, the playing stream counts as having no lower rung. On
+that trigger the app does three things:
+
+1. It posts FR-25's report first, so the server sees the stall and its hold.
+2. It restreams at its position through the existing `/api/tv/playback/restream`.
+3. It opens the answer as it opens any restream, closing AVPlay first, as in the DEB-4874 amendment.
+
+The server's DEB-4541 FR-1 answers the hold with our ladder. If the answer is the same single stream again, the app does not
+ask again for that item. The restream is one short stop instead of a train of them, at most once per item, and the buffering
+view (R218) covers it.
+
+**Proof (CI).** `ravilo-screen-player.spec.ts` (or a new `ravilo-screen-qoe.spec.ts`) uses the fake AVPlay from
+`helpers/screen-cast.ts`, extended to fire `onbufferingstart`/`onbufferingcomplete`, `onevent` bitrate changes and the two
+streaming properties. It asserts:
+
+- the start body carries `hls_adaptive: true`;
+- a ticket with `start_variant_bps` sets `ADAPTIVE_INFO` before `prepareAsync`;
+- a 2 s wait after the first frame posts one report with `per_item: true`, one `mid` stall and `rebuffer_count: 1`, while a
+  seek's wait posts none;
+- a stop posts the item's final report, and the next item's report starts from zero;
+- two stalls on a single-rung stream make exactly one `/api/tv/playback/restream`, and a same-stream answer makes no second;
+- a title's page opening calls `GET /api/tv/probe`.
+
+**Proof (QA, after a `.wgt` carrying this and DEB-4542 on prod).** QA runs these on the `tizen-emulator` row, with a
+server-side cap on the emulator's traffic (the QA cap technique) and **an uncapped control leg** of the same H.264 file. The
+file must be one Jellyfin answers with a video copy.
+
+1. **Uncapped:** a first picture, no stall. The device has a `device_stream_record` row with `measured_bps`, and a
+   `playback_qoe` row with `per_item = 1`.
+2. **Capped at 1.5 Mb/s from the start:** `video copy → our ladder` in the log, a floor rung in the master, and no stall of 2 s
+   or more after the first minute over 10 minutes.
+3. **Uncapped start, then a 0.8 Mb/s cap mid-play:** a step down (`variant_switches_down ≥ 1`, or the FR-27 restream), and no
+   more than one stall in the 5 minutes after the cap.
+
+The owner judges the real set himself, as agreed on 2026-11-15. *Field read, 14 days after the release reaches the household's
+set:* the set's `playback_qoe` rows give stalls per play for the first time, and the wall time lost per episode, read from
+Jellyfin's start/stop lines as in this amendment's baseline, falls below 5 %. A count going the wrong way is a finding against FR-26 or FR-27.
