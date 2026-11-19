@@ -1084,3 +1084,50 @@ page, unchanged:
   - A re-read that answers 500, or `{}`, leaves every ✓ and the button as they were.
   - A push during a read gives one more read after it, not two in parallel.
   After the tests, the page goes to the Tizen 5.0 emulator on the QA queue, then to the owner's set.
+
+## Amendment 2026-11-19, second (DEB-5024) — a picture that stops without saying so is a stall
+
+QA on the Tizen 5.0 emulator (DEB-5067, finding DEB-5078) found that AVPlay does not always raise the events FR-25 and FR-27
+count. On a Jellyfin copy stream the position froze about 25 s in while `getState()` stayed `PLAYING`, and it held for 4
+minutes with no `onbufferingstart`. Under a 0.3 Mb/s cap on our ladder the position fell 60 s behind real time over 5 minutes,
+again with no buffering event. The report said `rebuffer_count 0` and nothing restreamed. Whether the real set behaves the same
+is not known yet. Either way, a stall that depends on AVPlay's word goes unseen, so the app watches the position itself. This
+is the Cast receiver's frozen-picture rule (DEB-2205, DEB-4637), made for AVPlay.
+
+**FR-28 · A position that stops moving while playing is a stall, and a long one restreams.**
+
+- **What counts as stopped.** The app reads `getCurrentTime()` every 500 ms while AVPlay is `PLAYING` and the app has not paused,
+  sought or restreamed in the last 2 s. If the position has not advanced for **1 s or more**, and no `onbufferingstart` is
+  open, that is a stall. It ends when the position moves again.
+- **How it is reported.** It is an FR-25 stall like any other: the same counts, the same `QoeStall` entry, and a report posted
+  when it ends. Its `cause` is chosen as follows:
+  - `buffer_empty` when `getStreamingProperty("CURRENT_BANDWIDTH")` at its start is below the playing rung's bitrate (the
+    path could not carry it). This kind counts toward 309's take.
+  - `frozen_with_buffer` otherwise, also counted in `frozen_count` and `frozen_ms`. This kind does not count toward the take,
+    as `StallRule` already says.
+
+  A stall FR-25 already saw through `onbufferingstart` is not counted a second time.
+- **It feeds FR-27.** Both kinds count toward FR-27's trigger (a second stall within 2 minutes, or one of 4 s or more), so a
+  thin path on the lowest rung still asks for a lower one.
+- **A freeze of 5 s restreams.** A stall that reaches **5 s** with the position still not moving (either cause) restreams at
+  the position through `/api/tv/playback/restream`. That happens immediately, without waiting for FR-27's count, and at most
+  once per item. The request carries `below_bandwidth_bps` set to the playing rung's bitrate. For a Jellyfin copy that is the
+  copy's own bitrate, from `AVAILABLE_BITRATE` or the ticket. The server's DEB-2205 FR-5.2 then answers with our encoder's
+  rungs below it, never the stream that froze. The entry is a `recovery` with reason `frozen`, and the buffering view (R218)
+  covers it.
+- **If the restream freezes too.** A second 5 s freeze on the same item does not restream again. The app keeps the buffering
+  view and reports the stall when it ends.
+- **No wire change.** Every field and the request bound already exist.
+- **Proof (CI).** Add to `ravilo-screen-qoe.spec.ts`. The fake AVPlay holds `getCurrentTime()` while `PLAYING` and fires no
+  buffering event. The tests assert:
+  - a 2 s hold posts one `mid` stall;
+  - with `CURRENT_BANDWIDTH` above the rung, the stall's cause is `frozen_with_buffer` and `frozen_count` is 1;
+  - with `CURRENT_BANDWIDTH` below the rung, the cause is `buffer_empty`;
+  - a 5 s hold makes exactly one `/api/tv/playback/restream` with `below_bandwidth_bps` set to the rung, and a second hold
+    makes none;
+  - a pause, a seek and an audio restream make no stall.
+
+  A `PlaybackService` test checks that a restream with `below_bandwidth_bps` set on a play that was a Jellyfin copy answers
+  with our encoder's rungs under the bound.
+- **Proof (QA).** Rerun DEB-5067's copy-stream freeze on the emulator. Within 6 s of the freeze there is one restream, then
+  our ladder and a moving position, and the item's row shows the stall. The real set is judged by the owner.
