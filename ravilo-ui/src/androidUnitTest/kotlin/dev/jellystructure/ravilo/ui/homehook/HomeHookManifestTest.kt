@@ -29,6 +29,9 @@ class HomeHookManifestTest {
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
     private val service get() = ComponentName(ctx, RaviloHomeHookService::class.java)
 
+    // installHomeHook registers the process-wide hook (and Apps); without this the Settings tests that run after it would draw the Home screen section.
+    @org.junit.After fun forgetTheHook() { HomeHook.resetForTest() }
+
     // DEB-5061 — installHomeHook sets the process-wide HomeHook; leaving it set adds the Home screen row to every later Settings test in the JVM.
     @After fun uninstallTheHook() = HomeHook.uninstallForTest()
 

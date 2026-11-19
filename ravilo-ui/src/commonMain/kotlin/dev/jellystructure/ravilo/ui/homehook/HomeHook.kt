@@ -228,6 +228,9 @@ object HomeHook {
     /** Tests only: a test that installs the hook must take it away again, or every later screen test in the JVM sees a TV with the hook. */
     internal fun uninstallForTest() { platformField = null; controllerField = null; guardField = null }
 
+    /** Tests only: forgets what [install] registered, so a test that wired the hook cannot leak it into the next one in the same JVM. */
+    fun resetForTest() { platformField = null; controllerField = null; guardField = null }
+
     /** FR-8 — the process started: a Ravilo the hook brought up that was on screen when the last one ended counts as a close. */
     fun processStarted() { guardField?.processStarted() }
 
