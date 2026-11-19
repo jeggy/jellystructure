@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The server-setup screen&rsquo;s hidden-character warning and fix button &mdash; frames</title>
+<!--
+  PROCESS.md step 3: link the shipped stylesheet, never copy it. The round's own CSS always comes
+  LAST, so it extends the shipped system and never precedes it.
+
+  NO CSP <meta> HERE, and none is needed. DEB-2922 taught scripts/render-design.sh to answer the
+  Google Fonts @import in design/ravilo/*.css from design/app/fonts/, and it says so in --help.
+
+  THE SET DECIDES WHICH SHIPPED TOKEN FILE IS LOADED, and that is not a convenience. The TV, the
+  phone and the desktop are three different files that name their tokens the SAME way (--bg, --ink,
+  --card, --accent). Loading two of them into one document would let one answer for the other, and
+  the picture would be of a system that does not exist.
+
+      ?set=tv        design/ravilo/ravilo.css              the 1920x1080 stage and the TV skins
+      ?set=phone     design/ravilo/mobile/ravilo-phone.css the Pixel 9 bezel and the phone themes
+      ?set=desktop   design/ravilo/desktop-directions.css  the .win chrome and its token sets
+      ?set=canvas    none                                  the comparison and anatomy frames
+
+  Two of those three carry no font link of their own (only ravilo.css @imports one), so
+  setup-marks.css re-declares the three families against design/app/fonts/ for every set. Local
+  files, no network reference, in the renderer or in a browser opened by hand.
+
+      &lang=en|da|fo    &skin=aurora|midnight|noir|graphite|daylight    &glyphs=pilcrow|spec
+
+  A variant renders FEWER frames than the base; which is which is in setup-frames.js's BUILD table,
+  so that file and REPORT.md's render commands cannot disagree about what exists.
+-->
+<script>
+  (function () {
+    var set = new URLSearchParams(location.search).get('set') || 'phone';
+    var css = function (h) { document.write('<link rel="stylesheet" href="' + h + '">'); };
+    if (set === 'tv') css('../../ravilo/ravilo.css');
+    else if (set === 'phone') css('../../ravilo/mobile/ravilo-phone.css');
+    else if (set === 'desktop') css('../../ravilo/desktop-directions.css');
+    /* canvas loads none: its frames are the round's own comparison blocks, and the component on
+       them sits on a plate that declares the Aurora values it needs. */
+  })();
+</script>
+<link rel="stylesheet" href="setup-marks.css">
+</head>
+<body>
+<div class="sh-sheet" id="sheet"></div>
+<script src="setup-data.js"></script>
+<script src="setup-frames.js"></script>
+</body>
+</html>
