@@ -1,12 +1,14 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.classifyLoadFailure
 import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.lazy.LazyListState
 import dev.jellystructure.ravilo.ui.focus.FocusDetailController
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.TvApiClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +25,21 @@ private const val LIVE_TV_REFRESH_MS = 60_000L
 
 private fun HomeFeed.deduped() = copy(rows = rows.map { r -> r.copy(items = r.items.distinctBy { it.id }) })
 
+/**
+ * DEB-5062 (DEB-4912, FR-12) — how long a Home that has never loaded may sit on the Loading shimmer. The shimmer has no
+ * control and no Apps, so it is a dead end while the hook is on; the can't-reach screen has both. [attemptsBeforeError]
+ * tries with the backoff between them (1 s, 2 s, …) are the visible part — with the clients' 10 s request bound,
+ * about 33 s at worst — and then [quietRetryMs] is the pace of the tries that go on behind the can't-reach screen, so
+ * it clears by itself once the network is back. [seededAttempts] is the quiet first load under a cached feed, where
+ * nothing is blocked and the long backoff stays.
+ */
+data class HomeLoadPolicy(
+    val attemptsBeforeError: Int = 3,
+    val quietRetryMs: Long = 5_000L,
+    val firstDelayMs: Long = 1_000L,
+    val seededAttempts: Int = 10,
+)
+
 sealed class HomeState {
     data object Loading : HomeState()
     data class Loaded(val feed: HomeFeed) : HomeState()
@@ -34,8 +51,9 @@ class HomeStore(
     private val apiClient: TvApiClient,
     // R212 — a cached feed to show immediately instead of the Loading shimmer; see loadSeeded().
     private val seedFeed: HomeFeed? = null,
+    private val policy: HomeLoadPolicy = HomeLoadPolicy(),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(seedFeed?.let { HomeState.Loaded(it) } ?: HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
     // R212 — true while a seeded/stale snapshot is shown and the background refresh has exhausted
@@ -124,14 +142,18 @@ class HomeStore(
     /**
      * Bug fix: the error screen showed up too often for blips that would have cleared on their own
      * (flaky TV wifi, backend mid-restart). Retry with exponential backoff — 1 s, 2 s, 4 s, 8 s,
-     * 16 s, ... doubling each time — for up to 10 attempts. Applies [HomeState.Loaded] + live-TV
-     * setup on any success and returns null; returns the last error message if every attempt failed,
+     * 16 s, ... doubling each time — up to [attempts] attempts, or for ever when [attempts] is null, at
+     * [maxDelayMs] between tries at most. Applies [HomeState.Loaded] + live-TV
+     * setup on any success and returns null; returns the last error if every attempt failed,
      * leaving the caller to decide what that means (a visible Error vs a quiet staleness flag).
      */
-    private suspend fun retryGetHome(): Throwable? {
+    private suspend fun retryGetHome(attempts: Int?, maxDelayMs: Long = Long.MAX_VALUE): Throwable? {
         var lastErr: Throwable? = null
-        var delayMs = 1_000L
-        repeat(10) { attempt ->
+        var delayMs = policy.firstDelayMs
+        var attempt = 0
+        while (attempts == null || attempt < attempts) {
+            // R293 (FR-R293-2) — a backgrounded Ravilo makes no requests of its own, the quiet retries included.
+            if (attempts == null) while (!onScreen) delay(1_000)
             val result = runCatching { apiClient.getHome() }
             if (result.isSuccess) {
                 val feed = result.getOrThrow().deduped()
@@ -140,10 +162,15 @@ class HomeStore(
                 setUpLiveTvPolling(feed)
                 return null
             }
+            // A cancelled load (a Retry press, a new load()) is not a failed one.
+            if (result.exceptionOrNull() is CancellationException) throw result.exceptionOrNull()!!
             lastErr = result.exceptionOrNull()
-            if (attempt < 9) {
+            attempt++
+            // A verdict (a 401, a 404) is not something asking again changes; the quiet retries stop at it.
+            if (attempts == null && !classifyLoadFailure(lastErr).retryable) return lastErr
+            if (attempts == null || attempt < attempts) {
                 delay(delayMs)
-                delayMs *= 2
+                delayMs = (delayMs * 2).coerceAtMost(maxDelayMs)
             }
         }
         return lastErr
@@ -153,8 +180,13 @@ class HomeStore(
         loadJob?.cancel()
         _state.value = HomeState.Loading
         loadJob = scope.launch {
-            val err = retryGetHome()
-            if (err != null) _state.value = HomeState.Error(err.message ?: "", loadErrorKindOf(err))
+            val err = retryGetHome(policy.attemptsBeforeError)
+            if (err != null) {
+                // DEB-5062 — the can't-reach screen (Retry first, Apps after it), then keep asking quietly: it
+                // flips to Loaded by itself when the server answers. A Retry press cancels this job and starts afresh.
+                _state.value = HomeState.Error(err.message ?: "", loadErrorKindOf(err))
+                retryGetHome(attempts = null, maxDelayMs = policy.quietRetryMs)
+            }
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
@@ -167,7 +199,7 @@ class HomeStore(
      *  next time either one succeeds — no separate retry loop needed here. */
     private fun loadSeeded() {
         loadJob = scope.launch {
-            if (retryGetHome() != null) _showingStaleContent.value = true
+            if (retryGetHome(policy.seededAttempts) != null) _showingStaleContent.value = true
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()

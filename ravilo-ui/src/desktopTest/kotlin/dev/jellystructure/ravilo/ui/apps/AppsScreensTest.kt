@@ -5,6 +5,13 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -67,6 +74,16 @@ class AppsScreensTest {
         onNodeWithText("Retry").assertIsDisplayed()
         onNodeWithText("Apps").assertIsDisplayed().performClick()
         assertEquals(1, opened)
+    }
+
+    // DEB-5062 (FR-12) — the focus order QA could not reach on the Streamer: Retry keeps the arrival focus, Apps is one Down after it.
+    @Test fun `the cant-reach screen focuses Retry first and Apps after it`() = runComposeUiTest {
+        setContent { CompositionLocalProvider(LocalOpenApps provides {}) { LoadErrorState(LoadErrorKind.UNREACHABLE, onRetry = {}, offerApps = true) } }
+        waitForIdle()
+        onNode(isFocused() and hasAnyDescendant(hasText("Retry")) or (isFocused() and hasText("Retry")), useUnmergedTree = true).assertExists()
+        onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitForIdle()
+        onNode(isFocused() and hasAnyDescendant(hasText("Apps")) or (isFocused() and hasText("Apps")), useUnmergedTree = true).assertExists()
     }
 
     @Test fun `the cant-reach screen is today's screen while the hook is off`() = runComposeUiTest {
