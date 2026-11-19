@@ -974,3 +974,70 @@ file must be one Jellyfin answers with a video copy.
 The owner judges the real set himself, as agreed on 2026-11-15. *Field read, 14 days after the release reaches the household's
 set:* the set's `playback_qoe` rows give stalls per play for the first time, and the wall time lost per episode, read from
 Jellyfin's start/stop lines as in this amendment's baseline, falls below 5 %. A count going the wrong way is a finding against FR-26 or FR-27.
+
+## Amendment 2026-11-19 (DEB-5025) — the player has Android TV's controls
+
+Owner on DEB-5025, 2026-11-19: *"No controls for the tizen tv"*. His answer on that row's card: the controls were missing **on the TV while
+watching**, and the fix is Android TV's control bar. Then he wrote: *"shouldn't require design round. as it should be using the same designs as
+the android tv is using. We just want that as well on the tizen tv app"*. So there is **no design round**. The look and the key model are
+Android TV's `PlayerChrome` (`ravilo-ui`, `PlayerScreen.kt` and `PlayerScreenState.kt`) as they are on `main` today, rebuilt in DOM/CSS. The
+values below are copied from that code, so the builder does not have to read it.
+
+**What changes.** Today the Samsung player (R264 FR-R264-3) has no buttons. A key press flashes a strip for 3 s: kicker, title, progress
+bar, time and a ▶/❚❚ glyph. OK pauses, ←/→ seek −10 s/+30 s, ↓ opens the picker and ↑ shows the strip. **This amends FR-R264-3's key
+bullets and FR-9's player for this app.** Everything else FR-R264-3 to FR-R264-7 promise stands. That covers the picker's contents, Skip
+Intro's window, the next-up card, the waiting moments, failure copy, Back's two steps, status reports and the 2019 sets' see-through page.
+
+**FR-28 · The controls are Android TV's.** While a stream plays, the chrome is the following, top to bottom:
+- **Top band.** A scrim, a 230 px gradient from black at 72 % to transparent. In it, a 68 px row with 48 px side padding: a **Back** control
+  at the left and, at the right, the ident R303 already draws (`#ov-ident`: logo, plate or series name).
+- **Bottom band.** A scrim, a 280 px gradient from transparent to black at 78 %. In it, a column with 48 px side padding, 12 px top and 16 px
+  bottom. From the top:
+  - the kicker (upper case, the secondary accent `--accent2`, 11 px bold, 1.5 px tracking), then 4 px;
+  - the title (white, 20 px bold, −0.5 px tracking, one line with an ellipsis), then 8 px;
+  - the **seek bar**: elapsed time left, total time right, the played part in the accent gradient and the buffered part lighter. A focused
+    bar shows a thumb; a scrub shows the target time over it;
+  - 6 px, then the **transport row**, spaced 10 px: **−10s · Play/Pause · +30s**, a flexible gap, then **Audio & subtitles**
+    (`player.audio_subs`) and, only when the next episode is known (`nextId`), **>> Next** (`player.next`).
+- **Focus** is the app's focus ring (`--ring`, as on Home's tiles). On Android TV it is the same ring on the same controls.
+- Pixel values are CSS px on the app's 1920×1080 canvas, which is the same scale `screen.css` already uses. Android TV's dp values are
+  carried over 1:1 and multiplied by the canvas scale `screen.css` applies to its other chrome. If the builder finds that scale is not 1,
+  the build multiplies by it and says which factor it used.
+- The styling goes into `ravilo-screen/wgt/screen.css`, which is this app's production CSS. It is not a `design/` file, and no round is drawn.
+
+**FR-29 · The keys are Android TV's** (R178, R251, R350 FR-R350-7, R363, R44, R112):
+- **Focus order** along the row: seek bar · −10s · Play · +30s · Audio & subtitles · Next. Back is not in the order (it is reached by the
+  remote's Back key). Left or Right at an end of the order does nothing.
+- **With the controls up:** ←/→ move focus. On the seek bar ←/→ **scrub** by `min(10 s, max(5 s, 1.2 % of the duration))`, and OK or ↓
+  commits the scrub. ↓ from the seek bar goes to Play. ↓ from the row does nothing, because the Samsung has no episode rail. ↑ from the row
+  goes to the seek bar, except that ↑ from the seek bar, Audio & subtitles or Next reaches the Skip Intro pill while it is shown (R363
+  FR-R363-1). OK acts on the focused control: −10s and +30s seek, Play toggles, Audio & subtitles opens the picker that ↓ opens today, and
+  Next starts the next episode as the next-up card's *Play* does (`playNext()`).
+- **With the controls hidden:** OK **plays or pauses and shows the controls with focus on Play** (R178). Inside the intro with the pill
+  shown, OK still skips it, as today. ← and → act on the **first** press from the control last focused: they move focus or scrub, and they
+  do not seek −10/+30 unless that control is the seek bar (R350). ↑ acts the same way, and shows the pill first inside the intro (R363
+  FR-R363-3). ↓ only shows the controls. Hiding never moves focus. A start focuses Play.
+- **Media keys act whatever is focused, hidden or not** (R44): play/pause, play, pause, rewind −10 s, fast-forward +30 s, stop, and the
+  remote's next key starting the next episode when one is known.
+- **Back:** with the picker or a scrub open, Back closes it. With the controls up, Back hides them. With nothing up, Back stops (R112, as
+  today).
+- **Hide:** the controls hide **3.6 s** after the last key while playing. They stay up while paused and while the picker is open. A phone's
+  pause, seek or track command shows them as the flash does today.
+
+**FR-30 · What the strip was is gone, not kept beside it.** The 3 s flash (`flashOverlay`) and its `↓ Audio & subtitles` hint are
+replaced by FR-28's chrome, and every place that called the flash now shows the controls. `↓` no longer opens the picker directly: the
+picker is reached through **Audio & subtitles**. This is Android TV's model, and the owner asked for the same.
+- No wire change. No new string: `player.audio_subs` and `player.next` exist, and −10s, +30s and >> are glyphs, as on Android TV.
+- **Engine floor.** FR-13 still holds: Chromium 63, no CSS newer than the shell already uses. The chrome is built once at player start and
+  shown or hidden by class, so a 2019 set re-lays nothing per key.
+
+**Proof.**
+- `ravilo-screen-player.spec.ts` (fake AVPlay, keyboard events) gains these cases:
+  - OK on a hidden chrome pauses and shows the controls with Play focused;
+  - → twice then OK on a playing title seeks +30 s (focus moved Play → +30s, then OK acted);
+  - with focus on the seek bar, ← scrubs and OK commits one seek;
+  - OK on Audio & subtitles opens the picker;
+  - Next shows only with a known next episode and starts it;
+  - the controls hide 3.6 s after the last key while playing and stay while paused;
+  - Back hides, then stops.
+- Then the Tizen 5.0 emulator and the owner's set, on the QA queue.
