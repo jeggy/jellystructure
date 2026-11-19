@@ -40,4 +40,19 @@ class AppBarTitleSlotTest {
         assertEquals(without, with, "every tab keeps its x with a title in the bar")
         assertTrue(label != null && label > with.last(), "the label sits after the last tab")
     }
+
+    /** DEB-4273 — the TV's bar shape: 1920 dp, the Apps pill on, search and profile present. With no Surprise me the label has room. */
+    @Test
+    fun `on a 1920 dp bar with Apps on the label still gets width and the right cluster stays on screen`() = runComposeUiTest {
+        setContent {
+            androidx.compose.runtime.CompositionLocalProvider(LocalOpenApps provides {}) {
+                Box(Modifier.size(1920.dp, 200.dp)) { AppBar(navItems = tabs, title = "A Collection Name", onSearch = {}, onProfile = {}) }
+            }
+        }
+        waitForIdle()
+        val label = onNodeWithText("· A Collection Name").fetchSemanticsNode().boundsInRoot
+        assertTrue(label.width > 0f, "the label has a non-zero width ($label)")
+        val apps = onNodeWithText("Apps", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(apps.right <= 1920f * density.density + 1f, "Apps is inside the bar ($apps)")
+    }
 }

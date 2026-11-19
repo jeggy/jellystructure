@@ -80,6 +80,8 @@ class HomeStore(
         focusRowIndex = rowIndex.coerceAtLeast(0)
         focusItemIndex = itemIndex.coerceAtLeast(0)
     }
+    /** DEB-4273 — a press that opened nothing (Surprise me's `204`, or a failure) leaves no place to return to. */
+    fun clearReturn() { focusRowKey = null; focusItemKey = null }
     // R49/Phase 136 — server-decided Request-segment gating (now: is Seerr connected/enabled).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()

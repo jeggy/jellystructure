@@ -549,7 +549,7 @@ fun RaviloApp(
     var uiScalePct by remember { mutableStateOf(initialSnapshot?.uiScalePct ?: 100) }
     // DEB-3967 (FR-8) — Header style, seeded the same way so a cold start draws the bar at its saved height.
     var headerStyle by remember { mutableStateOf(initialSnapshot?.headerStyle ?: "standard") }
-    // DEB-3984 (FR-13) — the server has GET /api/tv/surprise. Not in the snapshot: until the first config answer there is no pill.
+    // DEB-3984 (FR-13) — the server has GET /api/tv/surprise. Not in the snapshot: until the first config answer there is no button.
     var surpriseMe by remember { mutableStateOf(false) }
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
     var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
@@ -1171,6 +1171,8 @@ fun RaviloApp(
                 val answer = runCatching { apiClient.surprise(shown) }
                 surpriseAsking = false
                 val a = answer.getOrNull() ?: run {
+                    // DEB-4273 — Home remembered the button for the Back-return when it was pressed; nothing opened, so forget it.
+                    if (!replace) storeRegistry.values.filterIsInstance<HomeStore>().forEach { it.clearReturn() }
                     if (answer.isSuccess) dev.jellystructure.ravilo.ui.music.MusicToasts.show(surpriseNone)
                     return@launch
                 }
@@ -2268,7 +2270,6 @@ fun RaviloApp(
         // household with no way to move a playing title to the TV).
         CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive,
             // R380 (FR-R380-6) — the TV app bar's now-playing pill opens Now playing.
-            // DEB-3984 (FR-12/13) — the bar's Surprise me pill: a TV, on a server that sends `surprise_me`.
             dev.jellystructure.ravilo.ui.downloads.LocalDownloads provides (if (downloadsEnabled) downloadsController else null),
             dev.jellystructure.ravilo.ui.downloads.LocalDownloadedIds provides downloadedIdSet,   // DEB-4071 (FR-8)
             // DEB-4912 (FR-10/FR-12) — Apps: a TV with the hook on. Read on each page and each time the window regains focus, because the
@@ -2276,6 +2277,7 @@ fun RaviloApp(
             dev.jellystructure.ravilo.ui.components.LocalOpenApps provides (if (appsReachable && dest !is Dest.Apps) { ->
                 push(Dest.Apps(destDisplayName(dest), signedOut = dest is Dest.Login || dest is Dest.ProfilePicker))
             } else null),
+            // DEB-3984 (FR-12/13), DEB-4273 — Home's closing Surprise me button: a TV, on a server that sends `surprise_me`.
             dev.jellystructure.ravilo.ui.components.LocalSurpriseMe provides (if (isTvPlatform && surpriseMe) { -> askSurprise(emptyList(), replace = false) } else null),
             dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying provides (if (isTvPlatform) { -> if (dest !is Dest.TvNowPlaying) push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty())) } else null),
             LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->

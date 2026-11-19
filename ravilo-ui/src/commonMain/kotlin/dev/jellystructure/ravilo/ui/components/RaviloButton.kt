@@ -44,6 +44,8 @@ fun RaviloButton(
     focusRequester: FocusRequester? = null,
     style: ButtonStyle = ButtonStyle.PRIMARY,
     modifier: Modifier = Modifier,
+    // DEB-4273 — drawn 8 dp before the label, in the label's ink; none by default, so every existing button is unchanged.
+    leading: (@Composable (tint: Color) -> Unit)? = null,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
@@ -88,8 +90,8 @@ fun RaviloButton(
                     .semantics { focusRingShown = focused },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = if (primary) colors.background else colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = sora,
-                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, softWrap = false)
+                val ink = if (primary) colors.background else colors.text
+                ButtonLabel(label, ink, 13.5.sp, sora, leading)
             }
         }
         return
@@ -141,24 +143,42 @@ fun RaviloButton(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = when {
+        ButtonLabel(
+            label,
+            when {
                 style == ButtonStyle.PRIMARY -> colors.onAccent
                 focused -> colors.text
                 else -> colors.textSecondary
             },
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = sora,
-            // Bug fix: an unbounded label inside a Row that runs short on remaining width (e.g. a
-            // sibling with a very long, uncapped title) collapsed into a one-character-per-line,
-            // near-unreadable sliver instead of overflowing gracefully — a button label must never
-            // wrap; degrade to an ellipsis, never a vertical stack of letters.
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            softWrap = false,
+            15.sp, sora, leading,
         )
     }
+    }
+}
+
+/** The label, with [leading] (if any) 8 dp before it in the same ink. */
+@Composable
+private fun ButtonLabel(label: String, ink: Color, size: androidx.compose.ui.unit.TextUnit, family: androidx.compose.ui.text.font.FontFamily, leading: (@Composable (Color) -> Unit)?) {
+    @Composable fun text() = Text(
+        text = label,
+        color = ink,
+        fontSize = size,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = family,
+        // Bug fix: an unbounded label inside a Row that runs short on remaining width (e.g. a
+        // sibling with a very long, uncapped title) collapsed into a one-character-per-line,
+        // near-unreadable sliver instead of overflowing gracefully — a button label must never
+        // wrap; degrade to an ellipsis, never a vertical stack of letters.
+        maxLines = 1,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        softWrap = false,
+    )
+    if (leading == null) { text(); return }
+    androidx.compose.foundation.layout.Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+    ) {
+        leading(ink)
+        text()
     }
 }

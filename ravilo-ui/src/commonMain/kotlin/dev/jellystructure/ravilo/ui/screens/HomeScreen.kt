@@ -48,6 +48,12 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import dev.jellystructure.ravilo.ui.focus.scrollThenFocus
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -70,7 +76,11 @@ import dev.jellystructure.ravilo.ui.components.FocusDetailLine
 import dev.jellystructure.ravilo.ui.components.FocusDetailPanel
 import dev.jellystructure.ravilo.ui.components.focusDetailPanelWidthFor
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
+import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
+import dev.jellystructure.ravilo.ui.components.LocalSurpriseMe
+import dev.jellystructure.ravilo.ui.components.RaviloButton
+import dev.jellystructure.ravilo.ui.components.SparkleGlyph
 import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.rowHeadingCount
@@ -111,6 +121,9 @@ import androidx.compose.runtime.withFrameNanos
 object HomeTags {
     const val LOADED = "home-loaded"
 }
+
+/** DEB-4273 — the closing Surprise me button's place in Home's row order (its row key and its one tile's key), for the return rule. */
+internal const val SURPRISE_ROW_KEY = "surprise_me"
 
 @Composable
 fun HomeScreen(
@@ -220,6 +233,9 @@ private fun HomeLoaded(
     // same idiom as heroFR/navBarFR below.
     val onNowIsFirstRow = !hasChannels && onNowRowIndex.coerceIn(0, feed.rows.size) == 0 && liveTvChannels.isNotEmpty()
     val firstRowFR = remember { FocusRequester() }
+    // DEB-4273 (FR-12) — a Loaded Home with no row to draw still ends with the button, so it takes the first-row bridge: Down
+    // from the hero (or the bar, with no hero) lands on it as it would on a first row. Otherwise it keeps a requester of its own.
+    val surpriseOwnFR = remember { FocusRequester() }
 
     // Native focus traversal handles movement between rows and within a row. Only the app-bar
     // overlay and the hero→first-row jump need explicit bridges (neither is a reliable spatial
@@ -260,13 +276,31 @@ private fun HomeLoaded(
     // R361 — the page's rows in order (channels, the content rows with On Now at its place), as the return
     // resolver sees them, and the LazyColumn's own item keys in the same order (plus the hero).
     val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
+    // DEB-4273 (FR-12, FR-13) — Surprise me closes Home: a TV whose server sends `surprise_me` (the frame provides the action,
+    // null otherwise). It is the last place on the page, so the return rule sees it as a one-tile row after every other.
+    val onSurprise = LocalSurpriseMe.current
     val rowOrder: List<Pair<String, List<String>>> = buildList {
         if (hasChannels) add("channels" to feed.channels.map { it.id })
         feed.rows.take(clampedOnNowIndex).forEach { add(it.id to it.items.map { c -> c.id }) }
         if (liveTvChannels.isNotEmpty()) add("on_now" to liveTvChannels.map { it.channelId })
         feed.rows.drop(clampedOnNowIndex).forEach { add(it.id to it.items.map { c -> c.id }) }
+        if (onSurprise != null) add(SURPRISE_ROW_KEY to listOf(SURPRISE_ROW_KEY))
     }
     val rowIndexOf: (String) -> Int = { key -> rowOrder.indexOfFirst { it.first == key } }
+    // DEB-4273 (FR-12) — Down from ANY tile of the last row lands on the button, whichever column the tile is in: the button sits at
+    // the left gutter, and a tile far to the right is outside its beam, so the native search is not trusted with it. The key
+    // bubbles up from a tile that left Down alone; the last row catches it here.
+    val lastRowKey = rowOrder.lastOrNull { it.first != SURPRISE_ROW_KEY && it.second.isNotEmpty() }?.first
+    val surpriseLazyIndex = (if (hasHero) 1 else 0) + rowIndexOf(SURPRISE_ROW_KEY)
+    val surpriseFR = if (rowOrder.none { it.first != SURPRISE_ROW_KEY && it.second.isNotEmpty() }) firstRowFR else surpriseOwnFR
+    val downToSurprise: (String) -> Modifier = { rowKey ->
+        if (onSurprise == null || rowKey != lastRowKey) Modifier
+        else Modifier.onKeyEvent { ev ->
+            if (ev.key != Key.DirectionDown) return@onKeyEvent false
+            if (ev.type == KeyEventType.KeyDown) scope.launch { scrollThenFocus(listState, surpriseLazyIndex, surpriseFR) { focusManager.moveFocus(FocusDirection.Down) } }
+            true
+        }
+    }
 
     // R361 (FR-R361-1/5, dev review item 4) — a Back-return is resolved ONCE, against the rows about to be laid
     // out, before they compose: the same tile if it survives, else its neighbour, else the row now in its place.
@@ -281,6 +315,8 @@ private fun HomeLoaded(
     val onRowRestored: () -> Unit = { pendingRestore = null }
     // The row the viewer was last focused in (key, tile index) — for a row that vanishes while it holds focus.
     var lastFocus by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    // DEB-4273 — the tile (row key, tile key) Surprise me was reached from, for Up.
+    var surpriseFrom by remember { mutableStateOf<Pair<String, String>?>(null) }
     var contentFocused by remember { mutableStateOf(false) }
     val rowsHadFocusAtSwap = contentFocused
 
@@ -437,7 +473,7 @@ private fun HomeLoaded(
             item(key = "channels") {
                 Spacer(Modifier.height(24.dp))
                 // Phase R240 — the channel rail is outside Home content rows (spec non-goal list).
-                Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
+                Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }.then(downToSurprise("channels"))) {
                 StaticContentRow(
                     title = str("section.channels"),
                     items = feed.channels,
@@ -471,7 +507,7 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
             val row = feed.rows[ri]
-            HeadingClearOfAppBar(listState) {
+            HeadingClearOfAppBar(listState, downToSurprise(row.id)) {
                 ContentRowItem(row, feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null,
                     returnTo = RowReturn(rowIndexOf(row.id), pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey, onRowRestored,
                         onItemFocused = { i -> lastFocus = row.id to i }, onEmptied = { rowGoneWhileFocused(row.id, rowOrder) }))
@@ -482,7 +518,7 @@ private fun HomeLoaded(
                 Spacer(Modifier.height(raviloRowGap))
                 // Phase R240 — On Now isn't a Home content row either (spec non-goal list).
                 HeadingClearOfAppBar(listState) {
-                Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
+                Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }.then(downToSurprise("on_now"))) {
                     OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null,
                         returnTo = RowReturn(rowIndexOf("on_now"), pendingRestore?.takeIf { it.rowKey == "on_now" }?.itemKey, onRowRestored,
                             onItemFocused = { i -> lastFocus = "on_now" to i }, onEmptied = { rowGoneWhileFocused("on_now", rowOrder) }))
@@ -493,10 +529,55 @@ private fun HomeLoaded(
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
             val row = feed.rows[clampedOnNowIndex + i]
-            HeadingClearOfAppBar(listState) {
+            HeadingClearOfAppBar(listState, downToSurprise(row.id)) {
                 ContentRowItem(row, feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null,
                     returnTo = RowReturn(rowIndexOf(row.id), pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey, onRowRestored,
                         onItemFocused = { idx -> lastFocus = row.id to idx }, onEmptied = { rowGoneWhileFocused(row.id, rowOrder) }))
+            }
+        }
+        // DEB-4273 (FR-12) — Surprise me, the last thing on Home: one ghost button one row gap below the last row, on the rows' side
+        // gutter, no heading. With the gate off there is no item, so no gap.
+        if (onSurprise != null) {
+            item(key = SURPRISE_ROW_KEY) {
+                Spacer(Modifier.height(raviloRowGap))
+                val surpriseRestore = pendingRestore?.takeIf { it.rowKey == SURPRISE_ROW_KEY }
+                // R139/R361 — the return from the page Surprise me opened (after any number of Another one): spent once focused.
+                LaunchedEffect(surpriseRestore) {
+                    if (surpriseRestore == null) return@LaunchedEffect
+                    surpriseFR.requestFocusAwaiting()
+                    onRowRestored()
+                }
+                Box(Modifier.padding(start = RaviloDimens.screenPadH)) {
+                    RaviloButton(
+                        label = str("nav.surprise"),
+                        style = ButtonStyle.GHOST,
+                        focusRequester = surpriseFR,
+                        leading = { tint -> SparkleGlyph(tint, Modifier.size(17.dp)) },
+                        onFocused = {
+                            // Not a Home content row (R240/R242): the focus line and backdrop clear, as for On now. Remember the tile
+                            // the viewer came down from, for Up.
+                            store.focusDetail.clear()
+                            lastFocus?.takeIf { it.first != SURPRISE_ROW_KEY }?.let { (rowKey, idx) ->
+                                rowOrder.firstOrNull { it.first == rowKey }?.second?.getOrNull(idx)?.let { surpriseFrom = rowKey to it }
+                            }
+                            lastFocus = SURPRISE_ROW_KEY to 0
+                        },
+                        // Up returns to the tile of the last row they came down from, or that row's first tile if it is gone; with
+                        // no row above, the native search finds the hero or the bar.
+                        onUp = surpriseUp@{
+                            val last = rowOrder.lastOrNull { it.first != SURPRISE_ROW_KEY && it.second.isNotEmpty() }
+                            if (last == null) { focusManager.moveFocus(FocusDirection.Up); return@surpriseUp }
+                            val from = surpriseFrom?.takeIf { it.first == last.first }
+                            val key = from?.second?.takeIf { it in last.second } ?: last.second.first()
+                            pendingRestore = ReturnTarget(last.first, key)
+                        },
+                        onLeft = {}, onRight = {}, onDown = {},   // nothing beyond it
+                        onSelect = {
+                            store.rememberReturn(SURPRISE_ROW_KEY, SURPRISE_ROW_KEY, rowIndexOf(SURPRISE_ROW_KEY), 0)
+                            onSurprise()
+                        },
+                    )
+                }
             }
         }
     }
@@ -778,7 +859,7 @@ private fun ContentRowItem(
  * measured, removed) — but the focused row is never disposed. Wrap a row's content in this.
  */
 @Composable
-private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.LazyListState, content: @Composable () -> Unit) {
+private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.LazyListState, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     var hasFocus by remember { mutableStateOf(false) }
     var topPx by remember { mutableStateOf(0f) }
     var footPx by remember { mutableStateOf(0f) }
@@ -795,7 +876,7 @@ private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.Laz
         )
         if (up < 0f) runCatching { listState.animateScrollBy(up) }
     }
-    val measured = Modifier
+    val measured = modifier
         .onFocusChanged { hasFocus = it.hasFocus }
         .onGloballyPositioned { c -> topPx = c.positionInWindow().y; footPx = topPx + c.size.height }
     // R337 — a row is its gap and then the row. In a Box the two overlap and the gap is lost: a computer's rows sat on
