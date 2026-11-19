@@ -214,6 +214,46 @@ only and never logic. Each is one place in the code.
 - **FR-12: server setup and the can't-reach screen.** Server setup has no navigation stack, so Apps opens in place of it and Back
   returns to it. On the can't-reach screen Apps comes after Retry, which keeps the arrival focus (the round's open lean).
 
+**2026-11-19 (DEB-5061, found by QA on DEB-4952).** On the Streamer (Android 14), a fresh install could not finish FR-2.
+Ravilo enabled its service component when *Continue* was pressed, but Android's accessibility page did not list Ravilo,
+and Android discarded the service from `enabled_accessibility_services`, until the package was next updated. Android
+14's accessibility manager reads its list of installed services again only when an app on the TV is installed, updated
+or removed, and at boot. It ignores a change to one component's enabled state: `AccessibilityManagerService` does not
+override `PackageMonitor.onPackageChanged` on 14, and does from Android 15. A manifest value that differs by form factor
+does not get round this. The package parser resolves manifest resources with no UI mode set (`DefaultSplitAssetLoader`),
+so a `values-television` override of `android:enabled` never applies at install, on any device. FR-2 and FR-7 change
+as follows.
+
+- **FR-7, last bullet, now reads:** *On a phone the service is never listed in Android's accessibility settings. The
+  manifest declares the component disabled. Ravilo enables it each time it starts on a TV, using FR-1's TV test, before
+  any screen shows. No other device ever enables it.* So a TV lists Ravilo on Android's accessibility page, switched
+  off, from the first app install, update or restart after Ravilo's first start, whether or not the viewer ever uses
+  this setting. Android's switch is still the viewer's alone (FR-7's first bullet).
+- **FR-2 gains an earlier state: Android does not list Ravilo yet.** Ravilo reads this each time from Android's own
+  list of installed accessibility services (`AccessibilityManager.getInstalledAccessibilityServiceList`), and keeps no
+  memory of it, the same way it reads Android's switch. In this state the plain-words screen says the TV needs one
+  restart before Android shows Ravilo in its accessibility settings, and where to restart it (*Settings → System →
+  Restart* on Google TV). Its button opens Android's settings (`Settings.ACTION_SETTINGS`), not the accessibility page,
+  which would not list Ravilo yet. Ravilo's setting shows this state, and never *On*, until Android lists the service.
+  After that it shows FR-2's one-step state as before. Any app install or update on the TV also clears it, so most TVs
+  never show it. On Android 15 and later the enabled component is picked up at once, so only a TV on Android 14 or
+  older shows the state, and only before its first app install, update or restart since Ravilo first started.
+- **FR-2, *on Ravilo's own page where the TV supports it*, stands.** The Streamer has no such page:
+  `ACCESSIBILITY_DETAILS_SETTINGS` does not resolve, and its accessibility page opens at the top. So when Android lists
+  Ravilo, the plain-words screen also tells the viewer to find *Ravilo* on that page.
+- **FR-9 covers the new words:** the restart state and the "find Ravilo" line, in `en`, `da` and `fo`.
+- **TVs already running the hook.** No Play release carries it yet (v1.70 predates the hook). A TV whose component was
+  enabled by FR-2's old button keeps it, because the enabled state survives updates, and behaves as above.
+- **Verification, added.** `:ravilo-ui:testDebugUnitTest` (Robolectric): with `@Config(qualifiers = "television")`,
+  `installHomeHook` leaves the service component enabled. With a phone configuration it leaves the component disabled,
+  and FR-7's manifest test still finds it disabled by default. `:ravilo-ui:desktopTest`: when the platform's list lacks
+  Ravilo, the state is the restart state and never *On*, and its button opens Android's settings. Once the list has
+  Ravilo, the one-step state shows as before. On the Streamer (QA): uninstall Ravilo, then do a fresh install (not
+  `install -r`) and start Ravilo once. `dumpsys accessibility` must not list Ravilo yet, and the setting must show the
+  restart state. After *Settings → System → Restart*, the accessibility page must list Ravilo, and turning Android's
+  switch on must return Ravilo's setting to *On* with no second press. On a phone: after a fresh install and one
+  start, Ravilo must not be on the accessibility list, and its component must still be disabled.
+
 ## Out of scope
 
 - **Disabling the stock home over ADB** (the DEB-4906 fallback), and any HOME entry in Ravilo. These come back only as
