@@ -28,7 +28,7 @@ class HomeHookManifestTest {
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
     private val service get() = ComponentName(ctx, RaviloHomeHookService::class.java)
 
-    // FR-7 — a phone never lists the service: it is disabled until Ravilo enables it itself, on a TV.
+    // FR-7 — a phone never lists the service: the manifest declares it disabled, and Ravilo enables it itself at every start on a TV only.
     @Test fun theServiceIsDisabledByDefault() {
         // Asking for it without MATCH_DISABLED_COMPONENTS throws: that is the disabled default seen from outside.
         assertFailsWith<PackageManager.NameNotFoundException> { ctx.packageManager.getServiceInfo(service, PackageManager.GET_META_DATA) }
@@ -36,6 +36,23 @@ class HomeHookManifestTest {
         assertFalse(info.enabled, "the manifest must declare android:enabled=false")
         assertEquals("android.permission.BIND_ACCESSIBILITY_SERVICE", info.permission)
         assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, ctx.packageManager.getComponentEnabledSetting(service))
+    }
+
+    // DEB-5061 (FR-7) — a TV enables the component at start, before any screen shows; Android's accessibility manager lists it from its next package event.
+    @Test @Config(sdk = [34], qualifiers = "television")
+    fun aTvEnablesTheServiceAtStart() {
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, ctx.packageManager.getComponentEnabledSetting(service))
+        installHomeHook(ctx)
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_ENABLED, ctx.packageManager.getComponentEnabledSetting(service))
+        installHomeHook(ctx)   // every start: the second leaves it enabled
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_ENABLED, ctx.packageManager.getComponentEnabledSetting(service))
+    }
+
+    // DEB-5061 (FR-7) — a phone's start leaves the component disabled, so Android never lists it there.
+    @Test fun aPhoneLeavesTheServiceDisabled() {
+        installHomeHook(ctx)
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, ctx.packageManager.getComponentEnabledSetting(service))
+        assertFailsWith<PackageManager.NameNotFoundException> { ctx.packageManager.getServiceInfo(service, PackageManager.GET_META_DATA) }
     }
 
     // FR-7 — window changes only: no window content, no gestures, no touch exploration.
@@ -104,7 +121,8 @@ class HomeHookManifestTest {
     // FR-9 — all three languages, and no string names Jellyfin (the Ravilo constitution's invariant 12).
     @Test fun everyStringIsInAllThreeLanguagesAndNamesNoJellyfin() {
         val keys = org.json.JSONObject(File("../i18n/en.json").readText()).keys().asSequence().filter { it.startsWith("home_hook.") }.toList()
-        assertTrue(keys.size >= 10)
+        assertTrue(keys.size >= 13)
+        for (k in listOf("home_hook.state_needs_restart", "home_hook.disclosure_restart", "home_hook.disclosure_find")) assertTrue(k in keys, "en.json lacks $k")
         for (lang in listOf("en", "da", "fo")) {
             val json = org.json.JSONObject(File("../i18n/$lang.json").readText())
             for (k in keys) {

@@ -14,10 +14,13 @@ private class FakeStore : HomeHookStore {
     override var closes: List<Long> = emptyList()
 }
 
-private class FakePlatform(var androidOn: Boolean = false, var label: String? = "Google TV") : HomeHookPlatform {
+private class FakePlatform(var androidOn: Boolean = false, var label: String? = "Google TV", var lists: Boolean = true) : HomeHookPlatform {
     var opened = 0
+    var settingsOpened = 0
     var stockOpened = 0
     override fun androidSwitchOn() = androidOn
+    override fun androidListsService() = lists
+    override fun openAndroidSettings() { settingsOpened++ }
     override fun openAndroidAccessibilitySettings() { opened++ }
     override fun stockHomeLabel() = label
     override fun openStockHome() { stockOpened++ }
@@ -39,6 +42,14 @@ class HomeHookStateTest {
         assertEquals(HomeHookState.NeedsAndroidStep, homeHookState(true, false, false))
         assertEquals(HomeHookState.NeedsAndroidStep, homeHookState(true, false, true))
         assertEquals(HomeHookState.On, homeHookState(true, true, false))
+    }
+
+    // DEB-5061 (FR-2) — Android does not list the service yet: the restart state, ranked ahead of the one-step state, never On.
+    @Test fun neverOnWhileAndroidDoesNotListTheService() {
+        assertEquals(HomeHookState.Off, homeHookState(false, false, false, androidLists = false))
+        assertEquals(HomeHookState.NeedsRestart, homeHookState(true, false, false, androidLists = false))
+        assertEquals(HomeHookState.NeedsRestart, homeHookState(true, false, true, androidLists = false))
+        assertEquals(HomeHookState.NeedsAndroidStep, homeHookState(true, false, false, androidLists = true))
     }
 
     @Test fun pausedShowsOnlyWhenBothSwitchesAreOn() = assertEquals(HomeHookState.Paused, homeHookState(true, true, true))
@@ -79,6 +90,42 @@ class HomeHookControllerTest {
         assertFalse(controller.active())
         controller.continueToAndroid()
         assertEquals(1, platform.opened)
+    }
+
+    // DEB-5061 (FR-2) — Android does not list Ravilo yet: the restart state, and the button opens Android's settings, not the accessibility page.
+    @Test fun notListedShowsTheRestartStateAndOpensAndroidSettings() {
+        platform.lists = false
+        assertEquals(HomeHookToggle.NeedsDisclosure, controller.toggle())
+        assertEquals(HomeHookState.NeedsRestart, controller.state())
+        assertFalse(controller.shownOn())
+        assertFalse(controller.active())
+        assertTrue(controller.needsRestart())
+        controller.continueToAndroid()
+        assertEquals(1, platform.settingsOpened)
+        assertEquals(0, platform.opened)
+    }
+
+    // DEB-5061 (FR-2) — after the restart Android lists Ravilo: the one-step state as before, and the accessibility page opens.
+    @Test fun onceListedTheOneStepStateShowsAsBefore() {
+        platform.lists = false
+        controller.toggle()
+        platform.lists = true
+        assertEquals(HomeHookState.NeedsAndroidStep, controller.state())
+        assertFalse(controller.needsRestart())
+        controller.continueToAndroid()
+        assertEquals(1, platform.opened)
+        assertEquals(0, platform.settingsOpened)
+        // and Android's switch on returns the setting to On with no second press
+        platform.androidOn = true
+        assertEquals(HomeHookState.On, controller.state())
+    }
+
+    // DEB-5061 (FR-2) — pressing the setting again in the restart state asks for the plain-words screen again.
+    @Test fun pressingAgainInTheRestartStateAsksForTheScreenAgain() {
+        platform.lists = false
+        controller.toggle()
+        assertEquals(HomeHookToggle.NeedsDisclosure, controller.toggle())
+        assertTrue(store.enabled)
     }
 
     // FR-2 — the viewer comes back with Android's switch on: the setting shows the true state, with no second press.

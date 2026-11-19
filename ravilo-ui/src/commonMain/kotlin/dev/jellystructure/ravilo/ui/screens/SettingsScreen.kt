@@ -343,6 +343,7 @@ fun SettingsScreen(
         }
         if (showHomeHookDisclosure) {
             HomeHookDisclosure(
+                needsRestart = HomeHook.controller?.needsRestart() == true,
                 onContinue = { showHomeHookDisclosure = false; HomeHook.controller?.continueToAndroid() },
                 onCancel = { showHomeHookDisclosure = false },
             )
@@ -385,7 +386,7 @@ fun SettingsScreen(
  * Google Play asks for. It says what the hook does and, as plainly, what it does not read. Focus lands on *Continue*; Back is *Not now*.
  */
 @Composable
-internal fun HomeHookDisclosure(onContinue: () -> Unit, onCancel: () -> Unit) {
+internal fun HomeHookDisclosure(needsRestart: Boolean = false, onContinue: () -> Unit, onCancel: () -> Unit) {
     val colors = RaviloTheme.colors
     val continueFR = remember { FocusRequester() }
     val cancelFR = remember { FocusRequester() }
@@ -404,7 +405,14 @@ internal fun HomeHookDisclosure(onContinue: () -> Unit, onCancel: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             Text(str("home_hook.disclosure_body"), color = colors.text, fontSize = 15.sp)
             Spacer(Modifier.height(10.dp))
-            Text(str("home_hook.disclosure_next"), color = colors.textSecondary, fontSize = 14.sp)
+            // DEB-5061 (FR-2) — Android does not list Ravilo yet: one restart first. Once it does, the next step names where to look.
+            if (needsRestart) {
+                Text(str("home_hook.disclosure_restart"), color = colors.textSecondary, fontSize = 14.sp)
+            } else {
+                Text(str("home_hook.disclosure_next"), color = colors.textSecondary, fontSize = 14.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(str("home_hook.disclosure_find"), color = colors.textSecondary, fontSize = 14.sp)
+            }
             Spacer(Modifier.height(28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 var continueFocused by rememberFocusVisual()
@@ -1089,7 +1097,7 @@ private fun SettingsContent(
     val hhState = remember(hhTick, hhController) { hhController?.state() ?: HomeHookState.Off }
     val hhToggleFR = remember { FocusRequester() }
     val hhActionFR = remember { FocusRequester() }
-    val hhHasAction = hhState == HomeHookState.On || hhState == HomeHookState.NeedsAndroidStep
+    val hhHasAction = hhState == HomeHookState.On || hhState == HomeHookState.NeedsAndroidStep || hhState == HomeHookState.NeedsRestart
     val aboveAccountFR = if (hhController == null) autoplayFR else if (hhHasAction) hhActionFR else hhToggleFR
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
@@ -1293,6 +1301,7 @@ private fun SettingsContent(
         Text(
             str(when (hhState) {
                 HomeHookState.Off -> "home_hook.state_off"
+                HomeHookState.NeedsRestart -> "home_hook.state_needs_restart"
                 HomeHookState.NeedsAndroidStep -> "home_hook.state_needs_android"
                 HomeHookState.Paused -> "home_hook.state_paused"
                 HomeHookState.On -> "home_hook.state_on"

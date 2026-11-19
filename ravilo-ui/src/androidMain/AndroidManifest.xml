@@ -16,8 +16,10 @@
     </queries>
 
     <application>
-        <!-- DEB-4910 (FR-7) — the home-screen hook. DISABLED by default: Ravilo enables this component itself only when the
-             viewer turns on "Use Ravilo as home screen" on a TV, so a phone never lists it in Android's accessibility settings. -->
+        <!-- DEB-4910 (FR-7) — the home-screen hook. DISABLED by default so a phone never lists it in Android's accessibility
+             settings. Ravilo enables this component itself at every start on a TV (installHomeHook; DEB-5061): a manifest value
+             cannot be made TV-only, because the package parser resolves it with no UI mode, and Android 14 lists a service
+             enabled later only from the next app install, update or restart. -->
         <service
             android:name="dev.jellystructure.ravilo.ui.homehook.RaviloHomeHookService"
             android:enabled="false"

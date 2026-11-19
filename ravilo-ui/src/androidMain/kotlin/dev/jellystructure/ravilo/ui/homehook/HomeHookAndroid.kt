@@ -81,9 +81,20 @@ class AndroidHomeHookPlatform(context: Context) : HomeHookPlatform {
         }
     }
 
+    /** DEB-5061 (FR-2) — Android's list of installed services, on or off; it holds a component only once the manager has re-read its packages. */
+    override fun androidListsService(): Boolean {
+        val am = app.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return false
+        return am.installedAccessibilityServiceList.any {
+            val si = it.resolveInfo?.serviceInfo
+            si != null && si.packageName == component.packageName && si.name == component.className
+        }
+    }
+
+    override fun openAndroidSettings() {
+        runCatching { app.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
     override fun openAndroidAccessibilitySettings() {
-        // FR-7 — a phone never lists the service: the component stays disabled until this runs, on a TV.
-        app.packageManager.setComponentEnabledSetting(component, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
         val onRavilosPage = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
             .putExtra(Intent.EXTRA_COMPONENT_NAME, component.flattenToShortString())
             .putExtra("android.intent.extra.COMPONENT_NAME", component.flattenToShortString())
@@ -113,6 +124,21 @@ class AndroidHomeHookPlatform(context: Context) : HomeHookPlatform {
 }
 
 /**
+ * DEB-5061 (FR-7) — the manifest declares the service disabled, so a phone never lists it; a TV enables it at every start, here, so
+ * that Android's accessibility manager has it on its list from its next package event on (it ignores a component-only change until
+ * then on Android 14 and older). Not on the press of *Continue*: by then it is a restart too late.
+ */
+internal fun enableHomeHookService(context: Context) {
+    val pm = context.packageManager
+    val component = ComponentName(context, RaviloHomeHookService::class.java)
+    runCatching {
+        if (pm.getComponentEnabledSetting(component) != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+            pm.setComponentEnabledSetting(component, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+        }
+    }
+}
+
+/**
  * Wires the hook on an Android TV and does nothing on a phone (FR-1, FR-7). Called from `Application.onCreate`, so the guard
  * has looked at how the last process ended before any activity or the service runs.
  */
@@ -121,6 +147,7 @@ fun installHomeHook(context: Context) {
     val tv = (app.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
         android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     if (!tv) return
+    enableHomeHookService(app)
     HomeHook.install(AndroidHomeHookPlatform(app), PrefsHomeHookStore(app)) { kotlinx.datetime.Clock.System.now().toEpochMilliseconds() }
     HomeHook.processStarted()
     // DEB-4912 (FR-13) — Apps is registered where the hook is, on a TV only; every other platform has no entry.

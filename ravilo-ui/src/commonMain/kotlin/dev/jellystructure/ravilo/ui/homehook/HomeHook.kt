@@ -16,8 +16,18 @@ interface HomeHookPlatform {
     /** Android's accessibility switch for Ravilo — the true state, read each time, never remembered. */
     fun androidSwitchOn(): Boolean
 
-    /** FR-2 — enables Ravilo's own service component (a phone never lists it), then opens Android's accessibility settings. */
+    /**
+     * DEB-5061 (FR-2) — whether Android's accessibility manager lists Ravilo's service at all, on or off. Read each time from Android's
+     * own list of installed services: on Android 14 and older it does not list a component enabled after its package was parsed
+     * until the next app install, update or removal, or a boot.
+     */
+    fun androidListsService(): Boolean
+
+    /** FR-2 — opens Android's accessibility settings (Ravilo's own page there, where the TV has one). The component is enabled at start (FR-7), not here. */
     fun openAndroidAccessibilitySettings()
+
+    /** DEB-5061 (FR-2) — opens Android's settings, for the restart state: the accessibility page would not list Ravilo yet. */
+    fun openAndroidSettings()
 
     /** FR-5 — the stock home's own label as Android reports it; null when it cannot be found. */
     fun stockHomeLabel(): String?
@@ -49,6 +59,9 @@ enum class HomeHookState {
     /** Ravilo's switch is off. */
     Off,
 
+    /** DEB-5061 (FR-2) — Ravilo's switch is on and Android does not list Ravilo's service yet: one restart first, never shown as On. */
+    NeedsRestart,
+
     /** Ravilo's switch is on and Android's is off: never shown as On (FR-2). */
     NeedsAndroidStep,
 
@@ -60,8 +73,9 @@ enum class HomeHookState {
 }
 
 /** FR-2 / FR-4 / FR-8 — one function, so the section and the Back rule cannot disagree about it. */
-fun homeHookState(raviloSwitch: Boolean, androidSwitch: Boolean, paused: Boolean): HomeHookState = when {
+fun homeHookState(raviloSwitch: Boolean, androidSwitch: Boolean, paused: Boolean, androidLists: Boolean = true): HomeHookState = when {
     !raviloSwitch -> HomeHookState.Off
+    !androidSwitch && !androidLists -> HomeHookState.NeedsRestart
     !androidSwitch -> HomeHookState.NeedsAndroidStep
     paused -> HomeHookState.Paused
     else -> HomeHookState.On
@@ -74,7 +88,11 @@ fun homeScreenSectionShows(isTv: Boolean, platform: HomeHookPlatform?): Boolean 
 enum class HomeHookToggle { TurnedOff, TurnedOn, NeedsDisclosure }
 
 class HomeHookController(private val store: HomeHookStore, private val platform: HomeHookPlatform) {
-    fun state(): HomeHookState = homeHookState(store.enabled, platform.androidSwitchOn(), store.paused)
+    fun state(): HomeHookState {
+        val androidOn = platform.androidSwitchOn()
+        // Android's switch on means Android lists the service: the list is only asked while the switch is off.
+        return homeHookState(store.enabled, androidOn, store.paused, androidOn || platform.androidListsService())
+    }
 
     /** True only while the hook is acting: Back at the top of Home then does nothing (FR-3). */
     fun active(): Boolean = state() == HomeHookState.On
@@ -89,7 +107,7 @@ class HomeHookController(private val store: HomeHookStore, private val platform:
     fun toggle(): HomeHookToggle = when (state()) {
         HomeHookState.On -> { store.enabled = false; HomeHookToggle.TurnedOff }
         HomeHookState.Paused -> { store.paused = false; store.closes = emptyList(); HomeHookToggle.TurnedOn }
-        HomeHookState.Off, HomeHookState.NeedsAndroidStep -> {
+        HomeHookState.Off, HomeHookState.NeedsRestart, HomeHookState.NeedsAndroidStep -> {
             store.enabled = true
             store.paused = false
             store.closes = emptyList()
@@ -97,8 +115,11 @@ class HomeHookController(private val store: HomeHookStore, private val platform:
         }
     }
 
-    /** FR-2 — the disclosure screen's button. */
-    fun continueToAndroid() = platform.openAndroidAccessibilitySettings()
+    /** DEB-5061 (FR-2) — whether the plain-words screen asks for the restart first; read each time it is drawn. */
+    fun needsRestart(): Boolean = !platform.androidSwitchOn() && !platform.androidListsService()
+
+    /** FR-2 — the disclosure screen's button: Android's accessibility page once Android lists Ravilo, Android's settings before that. */
+    fun continueToAndroid() = if (needsRestart()) platform.openAndroidSettings() else platform.openAndroidAccessibilitySettings()
 
     fun stockHomeLabel(): String? = platform.stockHomeLabel()
 
