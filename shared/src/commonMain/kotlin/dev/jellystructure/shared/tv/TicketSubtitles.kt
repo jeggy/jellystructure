@@ -66,13 +66,34 @@ object TicketSubtitles {
         return CastRequest(url, bearer(url, base, token))
     }
 
+    /** DEB-4994 (FR-R285-4) — what the receiver's drawing tick does about the track CAF says is active. */
+    sealed interface DrawStep {
+        /** Nothing is to be drawn: Off, a burn-in, or a position with no file. */
+        data object Clear : DrawStep
+        /** Not fetched and not being fetched: start fetching [url]. Nothing is drawn until it arrives. */
+        data class Fetch(val url: String) : DrawStep
+        /** Fetched: draw the cues of [url] at the player's clock. */
+        data class Draw(val url: String) : DrawStep
+        /** Being fetched, or the fetch gave up: nothing is drawn and nothing new is started. */
+        data object Wait : DrawStep
+    }
+
     /**
-     * DEB-4692 — CAF never asks for a text track twice, so when CAF's own request cannot have had the file — the first
-     * answer was a 202 ([Arrival.waited]), or CAF never asked through the handler that adds the token ([cafAsked] false) —
-     * the receiver has to show the track it fetched itself. DEB-4792: it draws the cues itself ([parseVtt]); handing CAF a
-     * `blob:` copy of the file drew nothing on a real Chromecast.
+     * DEB-4994 (FR-R285-4 b) — the receiver draws every text subtitle itself, whichever way the pick arrived, so the
+     * track is simply the one CAF's text-track manager reports as [activePosition] (-1 = none) on the tick. [urls] is
+     * the item's text subtitles by position (null = no address); [cached] the URLs whose cues are parsed, [loading]
+     * those being fetched, [gaveUp] those whose fetch ended without a file. A burn-in ([burnedIn]) is the only
+     * subtitle (R282): nothing is drawn.
      */
-    fun castReshows(arrival: Arrival, cafAsked: Boolean): Boolean = arrival.waited || !cafAsked
+    fun drawStep(activePosition: Int, burnedIn: Boolean, urls: List<String?>, cached: Set<String>, loading: Set<String>, gaveUp: Set<String>): DrawStep {
+        if (burnedIn) return DrawStep.Clear
+        val url = urls.getOrNull(activePosition) ?: return DrawStep.Clear
+        return when (url) {
+            in cached -> DrawStep.Draw(url)
+            in loading, in gaveUp -> DrawStep.Wait
+            else -> DrawStep.Fetch(url)
+        }
+    }
 
     /**
      * DEB-2205 (FR-6) — "the client retries in the background and shows the subtitle when it arrives. It never waits on

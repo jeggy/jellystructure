@@ -40,12 +40,28 @@ class TicketSubtitlesTest {
         assertNull(TicketSubtitles.castRequest("https://jf.example.org/Videos/x/Subtitles/3/Stream.vtt?api_key=k", setOf(ownUrl), emptyMap(), base, "tok"))
     }
 
-    @Test fun a_track_that_was_waited_for_is_shown_again() =
-        assertEquals(true, TicketSubtitles.castReshows(TicketSubtitles.Arrival("x", waited = true), cafAsked = true))
-    @Test fun a_track_caf_never_asked_for_with_the_token_is_shown_again() =
-        assertEquals(true, TicketSubtitles.castReshows(TicketSubtitles.Arrival("x", waited = false), cafAsked = false))
-    @Test fun a_track_caf_had_at_once_is_left_as_it_is() =
-        assertEquals(false, TicketSubtitles.castReshows(TicketSubtitles.Arrival("x", waited = false), cafAsked = true))
+    // ── DEB-4994 (FR-R285-4) — which track the receiver's drawing tick fetches and draws ───────────
+    private val urls = listOf<String?>("$base/a", "$base/b", null)
+    private fun step(active: Int, burned: Boolean = false, cached: Set<String> = emptySet(), loading: Set<String> = emptySet(), gaveUp: Set<String> = emptySet()) =
+        TicketSubtitles.drawStep(active, burned, urls, cached, loading, gaveUp)
+
+    @Test fun off_draws_nothing() = assertEquals(TicketSubtitles.DrawStep.Clear, step(-1, cached = setOf("$base/a")))
+    @Test fun a_burn_in_draws_nothing_whatever_is_active() = assertEquals(TicketSubtitles.DrawStep.Clear, step(0, burned = true, cached = setOf("$base/a")))
+    @Test fun a_position_with_no_file_draws_nothing() {
+        assertEquals(TicketSubtitles.DrawStep.Clear, step(2))
+        assertEquals(TicketSubtitles.DrawStep.Clear, step(7))
+    }
+    @Test fun the_active_track_not_yet_fetched_is_fetched_whichever_pick_made_it_active() =
+        assertEquals(TicketSubtitles.DrawStep.Fetch("$base/b"), step(1, cached = setOf("$base/a")))
+    @Test fun the_active_track_in_flight_is_waited_for_not_fetched_again() =
+        assertEquals(TicketSubtitles.DrawStep.Wait, step(1, loading = setOf("$base/b")))
+    @Test fun a_track_whose_fetch_gave_up_is_not_fetched_again_on_every_tick() =
+        assertEquals(TicketSubtitles.DrawStep.Wait, step(1, gaveUp = setOf("$base/b")))
+    @Test fun a_fetched_track_is_drawn_and_the_other_one_is_not() {
+        val cached = setOf("$base/a", "$base/b")
+        assertEquals(TicketSubtitles.DrawStep.Draw("$base/a"), step(0, cached = cached))
+        assertEquals(TicketSubtitles.DrawStep.Draw("$base/b"), step(1, cached = cached))
+    }
 
     @Test fun the_empty_copy_has_no_cue() = assertEquals(emptyList(), parseVtt(TicketSubtitles.EMPTY_VTT))
 
@@ -56,7 +72,7 @@ class TicketSubtitlesTest {
         val answers = listOf(SubtitleAttempt.NotReady(2_000), SubtitleAttempt.Body(vtt))
         val (arrival, calls) = run(Clock()) { answers[it] }
         assertEquals(2, calls)
-        assertEquals(true, TicketSubtitles.castReshows(arrival!!, cafAsked = true))
+        assertEquals(true, arrival!!.waited)
         assertEquals("A line", activeCueText(parseVtt(arrival.text), 110_000))
         assertNull(activeCueText(parseVtt(arrival.text), 113_000))
     }

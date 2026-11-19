@@ -185,16 +185,17 @@ private class Receiver {
     private var oursAskedAgainFor: String? = null
     private var jellyfinAskedFor: String? = null
     private var recoverJob: Job? = null
-    // DEB-4692 (DEB-2205 FR-6) — this item's own subtitle paths (absolute), the copies of them this receiver fetched itself
-    // with its token (absolute URL → `blob:`), the item they belong to, and the fetch of the track being shown.
+    // DEB-4692 (DEB-2205 FR-6) — this item's own subtitle paths (absolute), what CAF is handed for each of them (absolute URL →
+    // the empty file's `blob:`, DEB-4994), and the item they belong to.
     private var ownSubtitleUrls: Set<String> = emptySet()
     private val subtitleCopies = mutableMapOf<String, String>()
     private var subtitleCopiesItem: String? = null
-    private val subtitleAsked = mutableSetOf<String>()
-    private var subtitleJob: Job? = null
-    // DEB-4792 — the tracks this receiver draws itself (CAF never drew a cue of them): absolute URL → cues; and the draw loop.
+    // DEB-4994 (FR-R285-4) — the receiver draws every text subtitle itself: absolute URL → parsed cues, the fetches in
+    // flight, the ones that ended without a file, the one empty file every CAF Track points at, and the drawing loop.
     private val subtitleCues = mutableMapOf<String, List<VttCue>>()
-    private val subtitleFetched = mutableSetOf<String>()
+    private val subtitleLoading = mutableMapOf<String, Job>()
+    private val subtitleGaveUp = mutableSetOf<String>()
+    private var emptySubtitleUrl: String? = null
     private var cueJob: Job? = null
     private var recoveryFrom = -1L
     private var recoveryReason = ""
@@ -747,25 +748,27 @@ private class Receiver {
         var defaultSub: Int? = null
         // DEB-4692 — a new item drops the copies of the last one's subtitles; a restream of the same item keeps them.
         if (subtitleCopiesItem != data.itemId) {
-            subtitleJob?.cancel(); subtitleJob = null
+            subtitleLoading.values.forEach { it.cancel() }; subtitleLoading.clear()
             stopCues()
-            subtitleCopies.values.forEach { runCatching { URL.revokeObjectURL(it) } }
-            subtitleCopies.clear(); subtitleAsked.clear(); subtitleCues.clear(); subtitleFetched.clear()
+            subtitleCopies.clear(); subtitleCues.clear(); subtitleGaveUp.clear()
             subtitleCopiesItem = data.itemId
         }
         val textSubs = receiverSubtitles(t).filter { it.deliveryMethod != "encode" }
         // DEB-4692 (DEB-2205 FR-6) — a track on this server's `/api/tv/` needs the device token, which CAF cannot attach by
         // itself: it is absolute here (a bare path would be read against the receiver's own page), and the request handlers
-        // installed in [startQoe] add the token, or hand CAF the copy this receiver already fetched.
+        // installed in [startQoe] add the token, or hand CAF the empty file (DEB-4994: the receiver draws every track itself).
         ownSubtitleUrls = textSubs.mapNotNull { s -> absolute(s.url)?.takeIf { TicketSubtitles.bearer(it, serverUrl, token) != null } }.toSet()
         // receiverSubtitles() lists text first, so a text track's position — and its CAF id — is what
         // it always was; the appended burn-in candidates get no CAF Track (there is no file to load).
+        val emptyUrl = emptySubtitleUrl ?: URL.createObjectURL(Blob(arrayOf(TicketSubtitles.EMPTY_VTT), BlobPropertyBag(type = "text/vtt"))).also { emptySubtitleUrl = it }
+        ownSubtitleUrls.forEach { subtitleCopies[it] = emptyUrl }
         textSubs.forEachIndexed { i, sub ->
             val id = 100 + i
             val track = js("new cast.framework.messages.Track(0, 'TEXT')")
             track.trackId = id
             track.type = messages.TrackType.TEXT
-            track.trackContentId = absolute(sub.url)?.let { subtitleCopies[it] ?: it } ?: sub.url
+            // DEB-4994 (FR-R285-4 c) — CAF keeps the Track (id, name, language) and is handed an empty file: the receiver draws.
+            track.trackContentId = emptyUrl
             track.trackContentType = "text/vtt"
             track.subtype = if (sub.forced) messages.TextTrackType.FORCED else messages.TextTrackType.SUBTITLES
             track.language = sub.language
@@ -791,8 +794,8 @@ private class Receiver {
         positionMs = data.positionMs ?: t.startPositionMs
         paused = keepPaused
         sendStatus()
-        // DEB-4692 (DEB-2205 FR-6) — the track shown from the start is fetched in the background too; the picture never waits.
-        fetchSubtitle(defaultSub?.minus(100) ?: -1)
+        // DEB-4692 (DEB-2205 FR-6) — the track shown, from the start and after any pick, is fetched in the background; the picture never waits.
+        startSubtitleLoop(data.itemId)
         return request
     }
 
@@ -1519,7 +1522,6 @@ private class Receiver {
     private fun authorizeSubtitle(info: dynamic): Boolean {
         val url = info?.url as? String ?: return false
         val to = TicketSubtitles.castRequest(url, ownSubtitleUrls, subtitleCopies, serverUrl, token) ?: return false
-        subtitleAsked += url
         info.url = to.url
         if (to.bearer != null) {
             if (info.headers == null) info.headers = js("({})")
@@ -1529,57 +1531,55 @@ private class Receiver {
     }
 
     /**
-     * DEB-4692 (DEB-2205 FR-6: "A request for a track not yet extracted … answers 202 with Retry-After. The client retries in
-     * the background and shows the subtitle when it arrives. It never waits on it.") — text track [position] of this item,
-     * fetched by the receiver itself with its token ([TicketSubtitles.fetch]). CAF never asks twice, so a track whose first
-     * answer was a 202 — or that CAF asked for without going through [authorizeSubtitle] — has nothing for CAF to show.
-     * DEB-4792: pointing CAF at a `blob:` copy and toggling the track drew nothing on a real Chromecast, so such a track is
-     * drawn by the receiver itself ([startCues]) and CAF is handed an empty file for it. Another pick, or another item,
-     * cancels it. Off (-1), a sidecar, or a track already fetched: nothing new is fetched.
+     * DEB-4994 (FR-R285-4) — the one place a text subtitle is drawn, whichever way the pick arrived: our `subtitle` command,
+     * a phone's or a Mac's CAF `EDIT_TRACKS_INFO`, an older sender, the platform's caption control. Four times a second it
+     * reads the track CAF's text-track manager says is active ([activeTextPosition]) and asks [TicketSubtitles.drawStep] what
+     * to do: fetch its file ([fetchSubtitle]), draw the cue due at the player's clock, or draw nothing. A restream of the
+     * same item starts the loop again and keeps the files already fetched; a new item, another load, or the end of the play
+     * stops it and clears the layer.
      */
-    private fun fetchSubtitle(position: Int) {
-        subtitleJob?.cancel(); subtitleJob = null
-        stopCues()
-        val a = api ?: return
-        val item = subtitleCopiesItem ?: return
-        val sub = receiverSubtitles(ticket).filter { it.deliveryMethod != "encode" }.getOrNull(position) ?: return
-        val url = absolute(sub.url)?.takeIf { it in ownSubtitleUrls } ?: return
-        subtitleCues[url]?.let { startCues(position, it); return }
-        if (url in subtitleFetched) return
-        subtitleJob = GlobalScope.launch {
-            val got = TicketSubtitles.fetch({ a.subtitleAttempt(url) }, { nowMs() }) { delay(it) }
-            if (subtitleCopiesItem != item) return@launch
-            if (got == null) { note("DEB-4692: subtitle $position never arrived"); return@launch }
-            subtitleFetched += url
-            val reshow = TicketSubtitles.castReshows(got, cafAsked = url in subtitleAsked)
-            val cues = if (reshow) parseVtt(got.text) else emptyList()
-            note("DEB-4692: subtitle $position arrived (${got.text.length} chars${if (got.waited) ", after a wait" else ""})${if (reshow) ", drawn by the receiver (${cues.size} cues)" else ""}")
-            if (!reshow) return@launch
-            subtitleCues[url] = cues
-            subtitleCopies[url] = URL.createObjectURL(Blob(arrayOf(TicketSubtitles.EMPTY_VTT), BlobPropertyBag(type = "text/vtt")))
-            if (activeTextPosition() == position) startCues(position, cues)
-        }
-    }
-
-    /**
-     * DEB-4792 — draws [cues] of text track [position] in the page's `#subtitle` from the player's own time, four times a
-     * second, for as long as that track is the one showing: Off, another track and a new item stop it ([stopCues]).
-     */
-    private fun startCues(position: Int, cues: List<VttCue>) {
-        stopCues()
-        val item = subtitleCopiesItem
-        note("DEB-4792: the receiver draws subtitle $position (${cues.size} cues)")
+    private fun startSubtitleLoop(item: String) {
+        cueJob?.cancel(); cueJob = null
         cueJob = GlobalScope.launch {
             var shown: Pair<String?, String>? = null
-            while (subtitleCopiesItem == item && current != null) {
-                val text = if (activeTextPosition() == position) {
-                    val sec = runCatching { (playerManager.getCurrentTimeSec() as Number).toDouble() }.getOrNull()
-                    sec?.let { activeCueText(cues, (it * 1000).toLong()) }
-                } else null
+            var lastPosition = -2
+            while (subtitleCopiesItem == item && current?.itemId == item) {
+                val urls = receiverSubtitles(ticket).filter { it.deliveryMethod != "encode" }.map { absolute(it.url) }
+                val position = activeTextPosition()
+                // A pick that comes back to a track whose fetch gave up tries it again.
+                if (position != lastPosition) { lastPosition = position; urls.getOrNull(position)?.let { subtitleGaveUp -= it } }
+                var text: String? = null
+                when (val step = TicketSubtitles.drawStep(position, ticket?.burnedSubtitleIndex != null, urls, subtitleCues.keys, subtitleLoading.keys, subtitleGaveUp)) {
+                    is TicketSubtitles.DrawStep.Fetch -> fetchSubtitle(step.url, position, item)
+                    is TicketSubtitles.DrawStep.Draw -> {
+                        val sec = runCatching { (playerManager.getCurrentTimeSec() as Number).toDouble() }.getOrNull()
+                        text = sec?.let { activeCueText(subtitleCues[step.url].orEmpty(), (it * 1000).toLong()) }
+                    }
+                    TicketSubtitles.DrawStep.Clear, TicketSubtitles.DrawStep.Wait -> Unit
+                }
                 if (text to subSize != shown) { shown = text to subSize; paintCue(text) }
                 delay(CUE_TICK_MS)
             }
             paintCue(null)
+        }
+    }
+
+    /**
+     * DEB-4692 (DEB-2205 FR-6: "A request for a track not yet extracted … answers 202 with Retry-After. The client retries in
+     * the background and shows the subtitle when it arrives. It never waits on it.") — the file at [url] (text track
+     * [position] of [item]), fetched by the receiver itself with its token ([TicketSubtitles.fetch]) and parsed into
+     * [subtitleCues]; the loop draws it from the next tick. A new item cancels it.
+     */
+    private fun fetchSubtitle(url: String, position: Int, item: String) {
+        val a = api ?: return
+        subtitleLoading[url] = GlobalScope.launch {
+            val got = TicketSubtitles.fetch({ a.subtitleAttempt(url) }, { nowMs() }) { delay(it) }
+            if (subtitleCopiesItem != item) return@launch
+            subtitleLoading.remove(url)
+            if (got == null) { subtitleGaveUp += url; note("DEB-4692: subtitle $position never arrived"); return@launch }
+            val cues = parseVtt(got.text)
+            note("DEB-4994: subtitle $position arrived (${got.text.length} chars${if (got.waited) ", after a wait" else ""}), drawn by the receiver (${cues.size} cues)")
+            subtitleCues[url] = cues
         }
     }
 
@@ -1966,7 +1966,7 @@ private class Receiver {
                 is ReceiverSubPick.Burn -> reload(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1)
                 is ReceiverSubPick.Text ->
                     if (pick.unburnFirst) reload(-1, ticket?.audioStreamIndex, thenShow = step.index)
-                    else { setActiveText(step.index); fetchSubtitle(step.index); sendStatus() }
+                    else { setActiveText(step.index); sendStatus() }
             }
         }
     }
