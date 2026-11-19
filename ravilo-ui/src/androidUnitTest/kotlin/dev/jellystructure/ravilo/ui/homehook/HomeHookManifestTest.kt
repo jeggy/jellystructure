@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import dev.jellystructure.ravilo.ui.R
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -27,6 +28,9 @@ import kotlin.test.assertTrue
 class HomeHookManifestTest {
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
     private val service get() = ComponentName(ctx, RaviloHomeHookService::class.java)
+
+    // DEB-5061 — installHomeHook sets the process-wide HomeHook; leaving it set adds the Home screen row to every later Settings test in the JVM.
+    @After fun uninstallTheHook() = HomeHook.uninstallForTest()
 
     // FR-7 — a phone never lists the service: the manifest declares it disabled, and Ravilo enables it itself at every start on a TV only.
     @Test fun theServiceIsDisabledByDefault() {
