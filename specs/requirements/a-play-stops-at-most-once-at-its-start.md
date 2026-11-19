@@ -160,6 +160,27 @@ and a Danish sidecar `.srt` added later.
 > were mostly this too, not the estimate. On the same two TVs in that week, 33 of 35 moves had our encoder make 1 or 2
 > segments, which is the file's last seconds. The estimate rule stands on the uncapped stue TV play it cites.
 
+> *Amendment 2026-11-19 (DEB-5055, the field read for acceptance 8):* **a viewer's seek is not a shortfall.** A seek
+> starts both of the rule's windows again: the 3 s of falling and the 6 s of no gain. Each reads only the ticks after the
+> seek has landed, which means the player is at the new position and no longer waiting. The buffer from before a seek
+> is never compared with the buffer after it. A wait that no seek began is read as written above.
+> - **Why.** A seek moves the playhead away from what was buffered, so the buffer ahead drops at once. For a seek
+>   outside the buffer, it drops to nothing. The windows still held the buffer from before the seek and read that
+>   drop as a fall. FR-1 already says the wait after a seek is the viewer's, and FR-3's signals start again at a seek.
+>   This amendment makes FR-4 do the same.
+> - **Measured on prod, 12–19 Nov,** on the two household TVs on 1.64 or later: 3 of 116 direct starts moved to our
+>   encoder.
+>   - All 3 came after a seek, and none of the 111 plays without a seek moved.
+>   - Their final estimates read 122–230 Mb/s, and no stop came before any of them.
+>   - One switched at H with 52 s buffered, and our encoder made 673 segments for a play the path was carrying.
+>   - The other two switched behind the picture in under 1 s. By FR-1 that is not a stop, so it leaves no
+>     `stalls_json` entry.
+>   - The 11-08 read's one unexplained mid-film move, with 50.9 s buffered at the switch, fits the same pattern.
+> - **What still fires.** A seek into a path that cannot carry the file is caught like any other play: the buffer
+>   falls for 3 s after the seek has landed, or FR-309-8's stall path takes it. A non-household TV's moves after a
+>   seek in the same week were `handover_now` with 3 s or less buffered, on estimates under the file's bitrate, so they
+>   were real shortfalls.
+
 - A direct play watches its buffer in **seconds ahead**. It is sized in seconds rather than bytes:
   - Media3's `DefaultLoadControl` gets `setPrioritizeTimeOverSizeThresholds(true)`;
   - a target buffer of **≥ 30 s**, bounded by the device's memory class (`ActivityManager.getMemoryClass()` × 0.25
