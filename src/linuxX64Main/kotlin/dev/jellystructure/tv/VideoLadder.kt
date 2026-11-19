@@ -90,6 +90,30 @@ internal fun reencodesVideo(
     return sourceRangeType != null && ranges.isNotEmpty() && sourceRangeType.lowercase() !in ranges
 }
 
+/** DEB-4541 (FR-1) — a path is proven for a video copy when its take is at least this many times the copy's stream bitrate. */
+internal const val COPY_PROOF_FACTOR = 2
+
+/** DEB-4541 (FR-1) — where a transcode that copies the picture goes: [toLadder] says our encoder, [text] is the decision's log words. */
+internal data class VideoCopyRoute(val toLadder: Boolean, val text: String)
+
+/**
+ * DEB-4541 (FR-1) — a video copy to a player that adapts goes to our ladder unless the path is proven: the device's [takeBps] (309,
+ * under any stall cap) is at least [COPY_PROOF_FACTOR] × [copyBps] (the source's video plus the negotiated audio) and no stall hold is
+ * live ([stallHold]). Unproven means no record, a take under twice the copy, or a hold. An unknown [copyBps] proves nothing.
+ */
+internal fun videoCopyRoute(takeBps: Long?, copyBps: Long?, stallHold: Boolean): VideoCopyRoute {
+    val copy = copyBps?.takeIf { it > 0 }
+    val proven = !stallHold && takeBps != null && copy != null && takeBps >= COPY_PROOF_FACTOR * copy
+    if (proven) return VideoCopyRoute(false, "video copy kept (take ${takeBps / 1000}k ≥ $COPY_PROOF_FACTOR × copy ${copy / 1000}k)")
+    val why = when {
+        stallHold -> "stall hold"
+        takeBps == null -> "no record"
+        copy == null -> "take ${takeBps / 1000}k, copy bitrate unknown"
+        else -> "take ${takeBps / 1000}k < $COPY_PROOF_FACTOR × copy ${copy / 1000}k"
+    }
+    return VideoCopyRoute(true, "video copy → our ladder ($why)")
+}
+
 /**
  * DEB-3338 (FR-313-18) — is the source larger than the URL's own size cap? Found on a Mac (2026-11-01): a 3840×2160 HEVC
  * film under `MaxWidth=1920&MaxHeight=1080` with only audio and container reasons, which Jellyfin re-encodes (`h264_nvenc`,

@@ -32,6 +32,44 @@ class EncoderPlanTest {
         assertTrue(hevc.size <= ENCODER_MAX_RUNGS)
     }
 
+    // DEB-4541 (FR-2) — the floor rungs.
+    @Test fun `a 576p H264 source with no record gets its rungs and both floor rungs`() {
+        val r = encoderRungs(EncoderCodec.H264, 1024, 576, 2_400_000, null, floorFirst = floorFirst(null, false))
+        assertEquals(listOf(480, 480, 360, 240), r.map { it.boxHeight })
+        assertEquals(listOf(2_000_000L, 1_500_000L, 800_000L, 400_000L), r.map { it.videoBps })
+    }
+
+    @Test fun `HEVC floor rungs are 600k and 300k`() {
+        val r = encoderRungs(EncoderCodec.HEVC, 1024, 576, 2_400_000, null, floorFirst = true)
+        assertEquals(listOf(600_000L, 300_000L), r.takeLast(2).map { it.videoBps })
+    }
+
+    @Test fun `a thin path keeps the top then 240p and 360p inside four and drops from just under the top`() {
+        val r = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(3_000_000, false))
+        assertEquals(listOf(2160, 480, 360, 240), r.map { it.boxHeight })
+        val hold = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(50_000_000, stallHold = true))
+        assertEquals(listOf(2160, 480, 360, 240), hold.map { it.boxHeight })
+    }
+
+    @Test fun `a fast path with no hold gets today four rungs and a floor rung only fills a free slot`() {
+        assertTrue(!floorFirst(50_000_000, false))
+        assertEquals(listOf(2160, 1080, 720, 480), encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = false).map { it.boxHeight })
+        // 1080p H.264 at 6 Mb/s has 1080 / 720 / 480 today: 360p is the fourth.
+        val three = encoderRungs(EncoderCodec.H264, 1920, 1080, 6_000_000, null, floorFirst = false)
+        assertEquals(listOf(1080, 720, 480, 360), three.map { it.boxHeight })
+    }
+
+    @Test fun `a floor rung must sit clearly below the rung above it`() {
+        // A 700 kb/s source: 480p cannot be listed under it at 1.5 Mb/s, and 360p at 800k is above the top, so only 240p at 400k fits.
+        val r = encoderRungs(EncoderCodec.H264, 1024, 576, 700_000, null, floorFirst = true)
+        assertEquals(listOf(700_000L, 400_000L), r.map { it.videoBps })
+    }
+
+    @Test fun `held_by names the floor rungs`() {
+        assertEquals("floor_rungs", heldByReasons(4, 4, 0, 0, adaptive = true, noRecord = false, stallCapped = false, floorRungs = true))
+        assertEquals("cannot_climb", heldByReasons(4, 4, 0, 0, adaptive = false, noRecord = false, stallCapped = false, floorRungs = true))
+    }
+
     @Test fun `a cropped 4K film fills the 2160p box by width and keeps its aspect`() {
         val r = encoderRungs(EncoderCodec.HEVC, scope2_4.width, scope2_4.height, scope2_4.videoBps, null)
         assertEquals(2160, r[0].boxHeight)

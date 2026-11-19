@@ -154,6 +154,8 @@ class Encoder(
         stallCapped: Boolean = false,
         /** DEB-3338 (FR-313-18) — the tallest box the top rung may use: set when the play reaches us only by the size-cap rule. */
         boxLimit: Int? = null,
+        /** DEB-4541 (FR-2) — a live stall hold for this device: with no record or a take under 6 Mb/s, the floor rungs come first under the four-rung limit. */
+        stallHold: Boolean = false,
         /** DEB-3642 (FR-2) — the file's streams that hold no packet (its current packet timeline): none of them is mapped, offered or carried. */
         emptyStreams: Set<Int> = emptySet(),
         /** DEB-4256 (DEB-3995 FR-6) — a download stream's plan: the cards are tried in the reverse of a play's order, so the card plays prefer keeps its room. */
@@ -189,7 +191,8 @@ class Encoder(
             audioRenditionFor(pos, order[pos], family, a.codec, a.channels, caps.maxAudioChannels, audioBps[a.index], a.language, a.label, pos == carried)
         }
         val audioPeak = encAudio.maxOfOrNull { audioBitrate(it) } ?: 0L
-        var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling, boxLimit = boxLimit)
+        var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling, boxLimit = boxLimit,
+            floorFirst = floorFirst(takeBps, stallHold))
         if (belowBandwidthBps != null) rungs = rungsBelowBandwidth(rungs, audioPeak, belowBandwidthBps)
         // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that
         // climbs) the 720p 4 Mbps rung, else (a player that can't climb) the top.
@@ -209,7 +212,7 @@ class Encoder(
         }
         val heldBy = heldByReasons(
             plannedRungs = plannedRungs, keptRungs = rungs.size, plannedStart = plannedStart, keptStart = start, adaptive = caps.hlsAdaptive,
-            noRecord = noRecord, stallCapped = stallCapped,
+            noRecord = noRecord, stallCapped = stallCapped, floorRungs = rungs.any { it.boxHeight < 480 },
         )
         val plan = EncoderPlan(
             source = source, codec = codec, mux = encoderMuxFor(deviceKind, platform),

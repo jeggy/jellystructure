@@ -43,6 +43,40 @@ class VideoLadderTest {
     private fun streamInfs(m: String) = m.lines().filter { it.startsWith("#EXT-X-STREAM-INF:") }
     private fun uris(m: String) = m.lines().filter { it.startsWith("http") }
 
+    // DEB-4541 (FR-1) — a video copy to a player that adapts goes to our ladder unless the path is proven.
+    @Test
+    fun `a video copy with no record goes to our ladder`() {
+        val r = videoCopyRoute(takeBps = null, copyBps = 2_600_000, stallHold = false)
+        assertTrue(r.toLadder)
+        assertEquals("video copy → our ladder (no record)", r.text)
+    }
+
+    @Test
+    fun `a take under twice the copy goes to our ladder`() {
+        val r = videoCopyRoute(takeBps = 3_260_000, copyBps = 2_600_000, stallHold = false)
+        assertTrue(r.toLadder)
+        assertEquals("video copy → our ladder (take 3260k < 2 × copy 2600k)", r.text)
+    }
+
+    @Test
+    fun `a take of twice the copy with no hold keeps Jellyfin's copy`() {
+        val r = videoCopyRoute(takeBps = 5_200_000, copyBps = 2_600_000, stallHold = false)
+        assertFalse(r.toLadder)
+        assertEquals("video copy kept (take 5200k ≥ 2 × copy 2600k)", r.text)
+    }
+
+    @Test
+    fun `a live stall hold sends even a fast device to our ladder`() {
+        val r = videoCopyRoute(takeBps = 50_000_000, copyBps = 2_600_000, stallHold = true)
+        assertTrue(r.toLadder)
+        assertEquals("video copy → our ladder (stall hold)", r.text)
+    }
+
+    @Test
+    fun `an unknown copy bitrate proves nothing`() {
+        assertTrue(videoCopyRoute(takeBps = 50_000_000, copyBps = null, stallHold = false).toLadder)
+    }
+
     @Test
     fun `the ladder is the top plus every rung of the table under it`() = runBlocking {
         val s = service()

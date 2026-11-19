@@ -73,15 +73,36 @@ internal fun maxBoxHeight(codec: EncoderCodec): Int = if (codec == EncoderCodec.
 /** At most this many rungs per play (FR-313-3); FR-313-8's budget may lower it. */
 const val ENCODER_MAX_RUNGS = 4
 
+/** DEB-4541 (FR-2) — the floor rungs under 308's table: a picture height and the video bitrate it gets in each codec family. */
+internal data class FloorRung(val height: Int, val h264Bps: Long, val hevcBps: Long)
+
+/** DEB-4541 (FR-2) — 360p and 240p, top first. Listed only when clearly below the rung above them and no taller than it. */
+internal val FLOOR_RUNGS: List<FloorRung> = listOf(
+    FloorRung(360, 800_000L, 600_000L),
+    FloorRung(240, 400_000L, 300_000L),
+)
+
+/** DEB-4541 (FR-2) — a take under this (or no record, or a live stall hold) is a path not known to be fast: the floor rungs come first. */
+internal const val FLOOR_FIRST_TAKE_BPS = 6_000_000L
+
+/** DEB-4541 (FR-2) — true when the floor rungs take their slots before the middle rungs do: a path that is not known to be fast. */
+internal fun floorFirst(takeBps: Long?, stallHold: Boolean): Boolean = stallHold || takeBps == null || takeBps < FLOOR_FIRST_TAKE_BPS
+
 /**
  * FR-313-3 — the rungs one play gets, top first: the top at the source's size (capped by the family's largest box),
  * its bitrate capped by its output size, the source's own bitrate and the device's decode ceiling × 0.9; then 308's
  * [LADDER] rungs below it that are clearly lower and no taller. At most [maxRungs].
+ *
+ * DEB-4541 (FR-2) — then the [FLOOR_RUNGS] under those. With [floorFirst] (a path not known to be fast) the limit keeps the top, then 240p,
+ * then 360p, and fills what is left from the lowest of the middle rungs up, so the rungs dropped are the ones just under the top. Without it
+ * the limit keeps today's rungs and a floor rung fills a slot only when one is free.
  */
 internal fun encoderRungs(
     codec: EncoderCodec, srcW: Int, srcH: Int, srcBps: Long?, ceilingBps: Long?, maxRungs: Int = ENCODER_MAX_RUNGS,
     /** DEB-3338 (FR-313-18) — a box the device's declared ceiling holds the top rung under (null: the family's largest). */
     boxLimit: Int? = null,
+    /** DEB-4541 (FR-2) — the floor rungs go first under the limit (see above). */
+    floorFirst: Boolean = false,
 ): List<EncoderRung> {
     // The largest box the family allows that the source fills in at least one dimension (3840×1600 fills 2160p's width).
     val topBox = listOf(2160, 1440, 1080, 720, 480).firstOrNull { it <= maxBoxHeight(codec) && it <= (boxLimit ?: Int.MAX_VALUE) && (srcW >= boxWidth(it) || srcH >= it) } ?: 480
@@ -89,8 +110,9 @@ internal fun encoderRungs(
     val topBps = caps.min()
     val (tw, th) = fitInBox(srcW, srcH, topBox)
     val out = mutableListOf(EncoderRung(topBox, tw, th, topBps))
+    val limit = if (floorFirst) Int.MAX_VALUE else maxRungs
     for (r in LADDER) {
-        if (out.size >= maxRungs) break
+        if (out.size >= limit) break
         val last = out.last()
         // A lower rung is also capped by what its own size needs in this family (an HEVC 1080p rung never gets 12 Mbps).
         val bps = minOf(r.videoBps, topCapBps(codec, r.height))
@@ -99,7 +121,20 @@ internal fun encoderRungs(
         val (w, h) = fitInBox(srcW, srcH, r.height)
         out += EncoderRung(r.height, w, h, bps)
     }
-    return out
+    val middle = out.drop(1)
+    val floors = mutableListOf<EncoderRung>()
+    var above = out.last()
+    for (f in FLOOR_RUNGS) {
+        val bps = if (codec == EncoderCodec.HEVC) f.hevcBps else f.h264Bps
+        if (f.height > above.boxHeight || bps >= above.videoBps * 0.8) continue
+        if (ceilingBps != null && ceilingBps > 0 && bps > ceilingBps * 0.9) continue
+        val (w, h) = fitInBox(srcW, srcH, f.height)
+        floors += EncoderRung(f.height, w, h, bps).also { above = it }
+    }
+    if (!floorFirst) return out + floors.take((maxRungs - out.size).coerceAtLeast(0))
+    val keep = (maxRungs - 1).coerceAtLeast(0)
+    val keptFloors = floors.takeLast(keep)
+    return listOf(out[0]) + middle.takeLast((keep - keptFloors.size).coerceAtLeast(0)) + keptFloors
 }
 
 /**
@@ -117,10 +152,11 @@ internal fun trimRungs(rungs: List<EncoderRung>, start: Int, keep: Int): List<En
  * DEB-3104 (FR-7) — what keeps a play below the source's rung, for the encoder summary's `held_by`:
  * `stall_cap` (a recent stall's cap holds the start under what the device has measured), `no_record` (a device with no record starts
  * on 720p), `cannot_climb` (a player that does not adapt gets one rung), `trimmed_ladder` (no free slot: fewer rungs than planned, so
- * the top rung or the one above the start is not there to climb to). Null when none applies.
+ * the top rung or the one above the start is not there to climb to), `floor_rungs` (DEB-4541 FR-5: the ladder has a 360p or 240p rung). Null when none applies.
  */
 internal fun heldByReasons(
     plannedRungs: Int, keptRungs: Int, plannedStart: Int, keptStart: Int, adaptive: Boolean, noRecord: Boolean, stallCapped: Boolean,
+    floorRungs: Boolean = false,
 ): String? {
     val why = buildList {
         if (!adaptive && plannedRungs > 1) add("cannot_climb")
@@ -128,6 +164,8 @@ internal fun heldByReasons(
         if (adaptive && noRecord && plannedStart > 0) add("no_record")
         // Trimmed: fewer rungs than planned. Harmless only when the top rung survived and the start rung is the top.
         if (adaptive && keptRungs < plannedRungs && (plannedStart > 0 || keptStart > 0)) add("trimmed_ladder")
+        // DEB-4541 (FR-5) — a floor rung (360p / 240p) is in the ladder: the play can fall under 480p.
+        if (adaptive && floorRungs) add("floor_rungs")
     }
     return why.takeIf { it.isNotEmpty() }?.joinToString(",")
 }

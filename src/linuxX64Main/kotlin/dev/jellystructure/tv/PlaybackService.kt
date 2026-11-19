@@ -710,6 +710,13 @@ class PlaybackService(
         return heldByStallCap(recordOf(device), nowMs() / 1000, q?.first, q?.second)
     }
 
+    /** DEB-4541 (FR-1, FR-2) — a stall hold (DEB-3093 FR-7) is live for [device]: a recent stall's cap, not yet lifted by a newer measurement's own take. */
+    private fun stallHoldOf(device: DeviceData?): Boolean {
+        device ?: return false
+        val q = qoeMeasurementOf(device.deviceId)
+        return stallCapOf(recordOf(device), nowMs() / 1000, q?.first, q?.second) != null
+    }
+
     /** DEB-2205 — the record is read, changed and written whole: one writer at a time, or a hand-over's facts could be overwritten by a fold that read the row first. */
     private val recordMutex = Mutex()
 
@@ -846,7 +853,17 @@ class PlaybackService(
         // Phase 313 (FR-313-10/-12) — our own encoder serves the transcode when it can: one job, every rung, no
         // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
         val reencodes = reencodesVideo(master, sourceVideoCodec, sourceVideoRange, sourceWidth, sourceHeight)
-        if (reencodes) {
+        // DEB-4541 (FR-1) — a copied picture goes to our ladder too, for a player that adapts, unless its path is proven.
+        val stallHold = stallHoldOf(device)
+        var copyToLadder = false
+        if (!reencodes && capabilities.hlsAdaptive && !notOurEncoder && configStore.current.encoder.enabled) {
+            val copyAudioBps = queryParam(master, "AudioBitrate")?.toLongOrNull() ?: ticket.audioStreamIndex?.let { audioBps[it] } ?: 192_000L
+            val copyVideoBps = sourceVideoBps ?: localFile?.tracks?.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }?.videoBitrate?.toLong()
+            val route = videoCopyRoute(take, copyVideoBps?.let { it + copyAudioBps }, stallHold)
+            Logger.info("playback: item=$jellyfinId ${route.text} (DEB-4541 FR-1)", "tv")
+            copyToLadder = route.toLadder
+        }
+        if (reencodes || copyToLadder) {
             val file = localFile ?: localFileOf(jellyfinId)
             // DEB-3338 (FR-313-18) — a play that reaches us only because the source is larger than the URL's size cap, on a device
             // that declared a picture ceiling, gets no rung above it; a device that declared none gets its family's rungs.
@@ -861,7 +878,7 @@ class PlaybackService(
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
-                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit, emptyStreams = ghosts)
+                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit, stallHold = stallHold, emptyStreams = ghosts)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -1624,7 +1641,12 @@ class PlaybackService(
         if (source.supportsDirectPlay || source.transcodingUrl == null) return dev.jellystructure.shared.tv.PrewarmResult("direct")
         val master = source.transcodingUrl
         val video = source.mediaStreams.firstOrNull { it.type.equals("Video", ignoreCase = true) }
-        if (!reencodesVideo(master, video?.codec, video?.videoRangeType, video?.width, video?.height)) return none("the picture is copied (no encode to warm)")
+        if (!reencodesVideo(master, video?.codec, video?.videoRangeType, video?.width, video?.height)) {
+            // DEB-4541 (FR-1) — a copied picture the play would send to our ladder is warmed like any other; a proven path keeps Jellyfin's copy.
+            val copyAudioBps = queryParam(master, "AudioBitrate")?.toLongOrNull() ?: 192_000L
+            val copy = source.videoBitrate()?.let { it + copyAudioBps }
+            if (!caps.hlsAdaptive || !videoCopyRoute(take, copy, stallHoldOf(target)).toLadder) return none("the picture is copied (no encode to warm)")
+        }
         val file = localFileOf(jellyfinId) ?: return none("file not on this server's disk")
         val subs = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false, hlsSubtitles = caps.hlsOnly && caps.hlsSubtitles)
         val ticketLike = StreamTicket(jellyfinBaseUrl = jellyfinBase, accessToken = "", itemId = jellyfinId, container = "mkv", directPlay = false,
@@ -1634,7 +1656,7 @@ class PlaybackService(
         val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.encoderMs, file.tracks, audio, carriedAudioIndex(master, askedAudio),
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType, emptyStreams = ghosts.empty,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
-            audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target),
+            audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target), stallHold = stallHoldOf(target),
             boxLimit = sizeCapRungBox(master, video?.codec, video?.videoRangeType, video?.width, video?.height, caps.maxH264Width, caps.maxH264Height))
         plan ?: return none(why)
         encoder.prewarm(plan, target.deviceId, jellyfinId, (startPositionMs / ENCODER_SEGMENT_MS).toInt(), nowMs() + PREWARM_TTL_MS)
