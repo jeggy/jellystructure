@@ -135,7 +135,7 @@ test.describe("CORS — a sideloaded screen's events socket (FR-247-3)", () => {
 // Phase 247 (FR-247-4, FR-247-5) — measured on the Tizen 5.0 TV emulator 2026-11-16 (DEB-4704, DEB-4721): Chromium 63
 // puts the page's origin on every non-GET fetch, and writes a `file:` document's origin as `null` there (as `file://`
 // on a WebSocket handshake). `file://` is admitted on every token-only route (`/api/tv` except `/api/tv/admin`, and
-// `/api/remote`); `null` only on `/api/tv` minus `/api/tv/admin` and the two password routes.
+// `/api/remote`); `null` on `/api/tv` minus `/api/tv/admin` and the two password routes, and on `/api/remote` (FR-247-6, DEB-5129).
 //
 // Asked here only on OPEN paths, with no credential: AuthPlugin answers a credential-less request to any other route
 // with its own 401 before the route's CORS plugin is consulted (measured in CI, 8e0d90a6), so on those routes a real

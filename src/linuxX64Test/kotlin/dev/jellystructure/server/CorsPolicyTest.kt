@@ -27,11 +27,11 @@ import kotlin.test.assertNull
 import platform.posix.getpid
 
 /**
- * Phase 247 (FR-247-3, FR-247-4, FR-247-5) — the CORS policies, wired by `installCorsPolicies` exactly as Server.kt
+ * Phase 247 (FR-247-3, FR-247-4, FR-247-5, FR-247-6) — the CORS policies, wired by `installCorsPolicies` exactly as Server.kt
  * wires them, over routes registered the way Server.kt registers them (flat `"/tv/…"` paths under `route("/api")`,
  * after the policies). A Tizen widget's handshake (10.0, 5.0) carries `Origin: file://` and a 5.0 POST carries
  * `Origin: null` (measured on the 5.0 emulator, DEB-4721); `file://` must reach the token-only routes, `null` only
- * `/api/tv` minus the admin and password routes, and neither anything else. (WebSockets cannot run in a native test
+ * `/api/tv` minus the admin and password routes, plus `/api/remote` (FR-247-6, DEB-5129), and neither anything else. (WebSockets cannot run in a native test
  * client, so the events route answers a plain GET here; the handshake itself is asserted against the real binary in
  * `tests/e2e/ravilo-screen-cors.spec.ts`.)
  */
@@ -43,10 +43,10 @@ class CorsPolicyTest {
         listOf(dbPath, "$dbPath-wal", "$dbPath-shm").forEach { runCatching { platform.posix.remove(it) } }
     }
 
-    // What FR-247-5 admits `null` on, and what it admits `file://` on.
-    private val nullPosts = listOf("/api/tv/signin/code", "/api/tv/playback/start")
+    // What FR-247-5 and FR-247-6 admit `null` on, and what it admits `file://` on.
+    private val nullPosts = listOf("/api/tv/signin/code", "/api/tv/playback/start", "/api/remote/play")
     private val passwordPosts = listOf("/api/tv/login", "/api/tv/account/password")
-    private val filePosts = nullPosts + passwordPosts + "/api/remote/play"
+    private val filePosts = nullPosts + passwordPosts
     private val cookiePosts = listOf("/api/tv/admin/config", "/api/auth/login", "/api/scan/cancel")
 
     private fun ApplicationTestBuilder.wired() = application {
@@ -98,13 +98,13 @@ class CorsPolicyTest {
     }
 
     @Test
-    fun `null reaches the token-only TV routes and the events handshake and nothing else`() = testApplication {
+    fun `null reaches the token-only TV and remote routes and the events handshake and nothing else`() = testApplication {
         wired()
         for (path in nullPosts) assertAdmitted(post(path, "null"), "null", "null $path")
         for (path in listOf("/api/tv/events", "/api/tv/home")) {
             assertAdmitted(client.get(path) { header(HttpHeaders.Origin, "null") }, "null", "null $path")
         }
-        for (path in passwordPosts + "/api/remote/play" + cookiePosts) assertRefused(post(path, "null"), "null $path")
+        for (path in passwordPosts + cookiePosts) assertRefused(post(path, "null"), "null $path")
         assertRefused(client.get("/ws") { header(HttpHeaders.Origin, "null") }, "null /ws")
     }
 
@@ -188,6 +188,7 @@ class CorsPolicyTest {
                 route("/api") {
                     post("/tv/signin/code") { call.respondText("anonymous") }
                     post("/tv/playback/start") { call.respondText("start") }
+                    post("/remote/play") { call.respondText("play") }
                     get("/tv/home") { call.respondText("home") }
                 }
                 route("/api/tv/events") { get { call.respondText("events") } }
@@ -203,7 +204,9 @@ class CorsPolicyTest {
             assertEquals(bare.status.value, withCookie.status.value, path)
             assertEquals(bare.bodyAsText(), withCookie.bodyAsText(), path)
         }
-        val start = client.post("/api/tv/playback/start") { header(HttpHeaders.Origin, "null"); header(HttpHeaders.Cookie, cookie) }
-        assertEquals(401, start.status.value)
+        for (path in listOf("/api/tv/playback/start", "/api/remote/play")) {
+            val r = client.post(path) { header(HttpHeaders.Origin, "null"); header(HttpHeaders.Cookie, cookie) }
+            assertEquals(401, r.status.value, path)
+        }
     }
 }
