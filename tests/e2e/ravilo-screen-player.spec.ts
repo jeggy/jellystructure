@@ -235,6 +235,50 @@ test.describe("DEB-5025 (FR-28–FR-30) — the Samsung player has Android TV's 
     await expect(page.locator("#overlay"), "the controls hold behind the picker").toHaveClass(/\bon\b/);
   });
 
+  // DEB-5124 (DEB-5025, FR-29) — QA DEB-5076: a Tizen remote's media keys arrive as XF86* names and key codes. Playwright cannot
+  // type those names, so the page gets the events a Tizen webview would raise.
+  const tizenKey = (page: Page, key: string, keyCode: number) =>
+    page.evaluate(([k, c]) => { window.dispatchEvent(new KeyboardEvent("keydown", { key: k as string, keyCode: c as number, bubbles: true })); }, [key, keyCode]);
+
+  test("Tizen's media-key names and key codes act with focus on Audio & subtitles", async ({ page, request }) => {
+    test.setTimeout(150_000);
+    await playing(page, request, "e2e-player-phone-5124-a");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#ov-tracks")).toHaveClass(/\bfoc\b/);
+    let from = (await avplayCalls(page)).length;
+    await tizenKey(page, "XF86PlayBack", 10252);
+    await waitForAvplayCall(page, "pause", from);
+    from = (await avplayCalls(page)).length;
+    await tizenKey(page, "XF86AudioPlay", 415);
+    await waitForAvplayCall(page, "play", from);
+    from = (await avplayCalls(page)).length;
+    await tizenKey(page, "XF86AudioPause", 19);
+    await waitForAvplayCall(page, "pause", from);
+    from = (await avplayCalls(page)).length;
+    await tizenKey(page, "Unidentified", 417);               // the fast-forward key code, whatever its name
+    const seek = await waitForAvplayCall(page, "seekTo", from);
+    expect(Number(seek.call[1])).toBeGreaterThanOrEqual(30_000);
+    await expect(page.locator("#ov-tracks"), "media keys leave the focus where it was").toHaveClass(/\bfoc\b/);
+  });
+
+  test("the focused Play keeps its glyph visible, and captions rise above the bar while it is up", async ({ page, request }) => {
+    test.setTimeout(150_000);
+    await playing(page, request, "e2e-player-phone-5124-b");
+    await page.evaluate(() => { document.getElementById("cues")!.classList.add("on"); document.getElementById("cues")!.textContent = "A caption"; });
+    const cues = page.locator("#cues");
+    const floor = (await cues.boundingBox())!;
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#ov-play")).toHaveClass(/\bfoc\b/);
+    const colours = await page.locator("#ov-play").evaluate((n) => { const s = getComputedStyle(n); return [s.color, s.backgroundColor]; });
+    expect(colours[0], "the glyph is not drawn in the disc's own colour").not.toEqual(colours[1]);
+    const barTop = (await page.locator("#ov-bottom").boundingBox())!.y;
+    await expect.poll(async () => { const b = await cues.boundingBox(); return b ? b.y + b.height : Infinity; }).toBeLessThanOrEqual(barTop);
+    await expect(page.locator("#overlay")).not.toHaveClass(/\bon\b/, { timeout: 6_000 });
+    await expect.poll(async () => { const b = await cues.boundingBox(); return b ? b.y + b.height : 0; }).toBeCloseTo(floor.y + floor.height, 0);
+  });
+
   test("the controls hide 3.6 s after the last key while playing, and stay while paused; Back hides, then stops", async ({ page, request }) => {
     test.setTimeout(150_000);
     await playing(page, request, "e2e-player-phone-5025-e");

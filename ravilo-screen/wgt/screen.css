@@ -40,6 +40,8 @@
             white-space: pre-line; color: #fff; font-weight: 600; line-height: 1.25; font-size: 46px; pointer-events: none;
             text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 8px rgba(0,0,0,.9); }
     #cues.on { display: block; }
+    /* DEB-5025 (FR-28, FR-R251-4) — while the controls show, the captions sit above the bar's bottom band (#ov-bottom, 560 px). */
+    #cues.lift { bottom: 560px; }
     #cues.size-s { font-size: 36px; }
     #cues.size-l { font-size: 58px; }
     /* DEB-5025 (FR-28) — Android TV's control bar. Its dp are carried over at the canvas scale of 2 (this 1920 px canvas is a
@@ -74,7 +76,7 @@
     #ov-play { width: 88px; height: 88px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--ink); color: #0a0c13; font-size: 34px; font-weight: 700; }
     .oc.foc { box-shadow: 0 0 0 4px var(--ring); }
     #ov-seek.oc.foc { box-shadow: none; }
-    .ov-skipbtn.foc, .ov-trackbtn.foc, #ov-play.foc { color: #fff; transform: scale(1.06); }
+    .ov-skipbtn.foc, .ov-trackbtn.foc { color: #fff; transform: scale(1.06); }
     #ov-play.foc { transform: scale(1.136); }
     #skip.foc { box-shadow: 0 0 0 4px var(--ring); }
     /* R303 — what is playing, top right; it lives inside #overlay so it rides the same show/hide. */

@@ -1017,15 +1017,18 @@ private class Screen(private val serverUrl: String) {
      * Samsung's remote. Returns false for a key it does not use. With the controls hidden OK plays or pauses and shows them on
      * Play; ←/→/↑ act on the first press from the remembered control; ↓ only reveals. Media keys act whatever is focused.
      */
+    private fun isKey(e: KeyboardEvent, standard: String, tizen: String, code: Int): Boolean =
+        e.key == standard || e.key == tizen || e.keyCode == code
+
     private fun onTransportKey(e: KeyboardEvent): Boolean {
         val hidden = !chromeUp
         when {
-            e.key == "MediaPlayPause" -> { togglePlay(); showChrome() }
-            e.key == "MediaPlay" -> { backend.play(); showChrome() }
-            e.key == "MediaPause" -> { backend.pause(); showChrome() }
-            e.key == "MediaStop" -> stopAndIdle()
-            e.key == "MediaRewind" -> { seekBy(-SKIP_BACK_MS); showChrome() }
-            e.key == "MediaFastForward" -> { seekBy(SKIP_FWD_MS); showChrome() }
+            isKey(e, "MediaPlayPause", "XF86PlayBack", 10252) -> { togglePlay(); showChrome() }
+            isKey(e, "MediaPlay", "XF86AudioPlay", 415) -> { backend.play(); showChrome() }
+            isKey(e, "MediaPause", "XF86AudioPause", 19) -> { backend.pause(); showChrome() }
+            isKey(e, "MediaStop", "XF86AudioStop", 413) -> stopAndIdle()
+            isKey(e, "MediaRewind", "XF86AudioRewind", 412) -> { seekBy(-SKIP_BACK_MS); showChrome() }
+            e.key == "MediaFastForward" || e.keyCode == 417 -> { seekBy(SKIP_FWD_MS); showChrome() }   // 417 is Tizen's fast-forward, whatever name it arrives under
             e.key == "MediaTrackNext" -> if (nextId != null) playNext() else showChrome()
             e.key == "Enter" -> when {
                 hidden -> { chromeFocus = ChromeFocus.PLAY; scrubMs = null; togglePlay(); showChrome() }   // R178, R350: OK acted as Play
@@ -1122,6 +1125,7 @@ private class Screen(private val serverUrl: String) {
         paintChrome(full = true)
         chromeUp = true
         el("overlay").classList.add("on")
+        el("cues").classList.add("lift")
         if (overlayJob?.isActive == true) return
         overlayJob = GlobalScope.launch {
             while (chromeUp) {
@@ -1139,6 +1143,7 @@ private class Screen(private val serverUrl: String) {
         chromeUp = false
         scrubMs = null
         el("overlay").classList.remove("on")
+        el("cues").classList.remove("lift")
         el("skip").classList.remove("foc")
     }
 
