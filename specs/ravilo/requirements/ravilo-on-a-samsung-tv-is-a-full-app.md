@@ -1202,3 +1202,12 @@ behaviour the amendment left out, and is added here.
   show, the drawn subtitles (`#cues`) sit above the bottom band. When the bar hides, they return to their usual floor.
 - **Per FR-29, these stay as they are:** Left from −10s reaches the seek bar (it is first in the order), and a new item, Next's included,
   focuses Play.
+
+## Amendment 2026-11-20 (DEB-5129) — a phone's push gets its next episode on 5.0 too
+
+QA on the Tizen 5.0 emulator (DEB-5125): Next and the next-up card dropped the set to Home when the start had come from a
+phone's push. That is the path DEB-4865 left on `POST /api/remote/play`, and `/api/remote/play` refused the 5.0 POST's
+`Origin: null`. Phase 247's DEB-5129 amendment (FR-247-6) admits `null` on `/api/remote/**`. This replaces DEB-4865's
+*"DEB-4719's refusal of a Tizen 5.0 widget is the same as before for that path"*: on 5.0, a phone's push now plays its
+next episode by the same round trip as on 10.0. No client change. DEB-4865's TV-made path is unchanged and still never
+asks the route. A password sign-in on 5.0 is still refused (DEB-4719's code-only message stands).

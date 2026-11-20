@@ -4,8 +4,8 @@
 
 Backend CORS for the sideloaded Tizen widget (`ravilo-screen`), plus the e2e tests that pin it. FR-247-1 and
 FR-247-2 built 2026-09-19; FR-247-3 built 2026-09-25 for the one route that needed it, measured on the
-Tizen 10.0 TV emulator and against the real binary. **Amended by DEB-4654 and DEB-4719** — see the amendments at
-the foot.
+Tizen 10.0 TV emulator and against the real binary. **Amended by DEB-4654, DEB-4719 and DEB-5129** — see the amendments
+at the foot.
 
 **Open question 1 answered 2026-09-25 on the Tizen 10.0 TV emulator — in two halves, and the first answer
 was half wrong.** The widget runs at `file://`. Once its `config.xml` declares
@@ -348,3 +348,63 @@ there.
    - Every other cell gets the empty 403.
 4. A cookie-only request (an admin `js_session`, no bearer) to a device-token `/api/tv/` route sent with
    `Origin: null` answers 401.
+
+## Amendment 2026-11-20 (DEB-5129) — `null` is admitted on `/api/remote/**` too
+
+**Found** by Turið's QA on DEB-5125, Tizen 5.0 emulator `ravilo-tv-5`, `.wgt` 1.70.100 from `0fe2282de`, against prod.
+On a start a phone pushed, the control bar's **Next** (and the next-up card) stops the item and then gets an empty
+**403** from `POST /api/remote/play`; nothing plays and the viewer lands on Home. From the host with the same device
+token: `Origin: null` → 403, `Origin: file://` → past CORS. This is the refusal the second DEB-4719 amendment chose
+(*"`/api/remote/**` does not admit `null`"*). DEB-4865 moved only a start the TV made itself off that route, so a
+phone's push still goes through it. That is also why DEB-5076 saw Next work on 5.0: its start came from the TV, and
+the TV's own path never calls `/api/remote/play`.
+
+**Tróndur's call** (on DEB-5129, 2026-11-20). It replaces the second DEB-4719 amendment's *"`/api/remote/**` does not
+admit `null`"* bullet.
+
+**FR-247-6 — `/api/remote/**` admits `null`, the same way FR-247-5's `/api/tv` scope does.**
+
+- **Scope:** every route under `/api/remote`. `CorsPolicy.kt` installs `tizenWidgetNullPolicy` there in place of
+  `tizenWidgetPolicy`. `/api/tv/login`, `/api/tv/account/password` and `/api/tv/admin/**` are unchanged: `null` is
+  still refused on all three.
+- **FR-247-5's condition holds there. Checked route by route at `0fe2282de`.** AuthPlugin's `/api/remote/` branch takes
+  only a `Bearer` (or `X-JS-Api-Key`) API key or device token, and answers 401 to anything else. It never falls through
+  to the cookie branch. `/api/remote/events` is an open path that validates `token` or `api_key` from the query string
+  or a `Bearer` header inside the route. No route takes a password or reads `js_session`, and none of them has a
+  per-address rate limiter. The six routes are: `GET /devices`, `GET /devices/{device_id}`, `POST /play`,
+  `POST /command`, `POST /pair` (a device token only, and the claim code is checked only after it), and
+  `DELETE /devices/{device_id}/sessions/me`, plus the `/events` socket. So a page that forges `null` can use only a
+  credential it already holds. The network address it borrows from its visitor gains it nothing it could not get with
+  that credential from anywhere: the most it changes is the *nearby* flag on the device list.
+  `/api/settings/api-keys` is not under `/api/remote` and keeps the shared policy.
+- **A route added under `/api/remote` that ever reads the cookie or takes a password** re-installs the `file://`-only
+  widget policy, the way the two `/api/tv` password routes do. The test below is what catches it.
+- **No wire change and no client change.** The screen's `playNext()` already calls `/api/remote/play` for a phone's push.
+  It starts working on 5.0 once the server admits the origin. An installed `.wgt` needs no update.
+- **Tests.**
+  - `CorsPolicyTest`:
+    - `/api/remote/play` moves from the `null`-refused list into the `null`-admitted list (`nullPosts`). The test must
+      assert both that `null` is admitted on `/api/remote/play` and that it is still refused on `/api/tv/login`,
+      `/api/tv/account/password` and `/api/tv/admin/config`, with no `Access-Control-Allow-Origin` header.
+    - The cookie-only walk (*"a cookie alone is no credential on any route that admits null"*) gains
+      `/api/remote/play`, with AuthPlugin wired with a device-token validator that rejects everything. A request that
+      carries only an admin `js_session` and `Origin: null` answers exactly what a bare request does: 401.
+    - The `file://` cells and the foreign-origin cells are unchanged.
+  - `ravilo-screen-cors.spec.ts`: no new admitted cell. `/api/remote/play` is not an open path, so a credential-less
+    request gets AuthPlugin's 401 before CORS can be seen there. That is the reason the file already gives.
+  - `ravilo-screen-play-from-tv.spec.ts`'s DEB-4865 case keeps mocking `/api/remote/play` as a 403. It proves that the TV's own
+    path never asks the route, which stays true.
+
+**Acceptance (FR-247-6):**
+
+1. `CorsPolicyTest` is green with the pins above.
+2. The curl matrix from the second DEB-4719 amendment changes in one cell: `null` now passes on `POST /api/remote/play`
+   (a device token and an unknown `device_id` answer 404 `device not found`, not the empty 403). `null` is still the
+   empty 403 on `/api/tv/login`, an `/api/tv/admin/` route and `/ws`.
+3. On the Tizen 5.0 emulator, Turið re-runs DEB-5125's Next and next-up legs on a start a phone pushed, against a
+   backend with the fix. The next episode plays and the set does not drop to Home. Samsung Next is not called working
+   until this passes.
+
+**Not in this amendment:** a password sign-in from a 5.0 set stays refused (`/api/tv/login` and
+`/api/tv/account/password` keep `file://` only), and the screen still stores *code-only* for that server. Whether that
+should change is a separate security-versus-UX question, on its own row.
