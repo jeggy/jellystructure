@@ -1133,6 +1133,22 @@ DEB-5079 means this FR.)*
   with our encoder's rungs under the bound.
 - **Proof (QA).** Rerun DEB-5067's copy-stream freeze on the emulator. Within 6 s of the freeze there is one restream, then
   our ladder and a moving position, and the item's row shows the stall. The real set is judged by the owner.
+- *2026-11-20, DEB-5080 (Munin) — why a Jellyfin copy may freeze on AVPlay. Plausible, not proven; no behaviour changes
+  here.* For the frozen session, Jellyfin's ffmpeg cut 6 s MPEG-TS segments with the video copied, `-copyts`, and
+  `-avoid_negative_ts disabled`. Jellyfin writes `main.m3u8` itself, as a fixed 6 s per `#EXTINF` entry. A copy can be cut only at
+  the source's keyframes, so with a GOP longer than 6 s the real segments drift from what the playlist announces. By ~25 s
+  (segment 4) the drift can be seconds. This is Jellyfin's known copy-HLS timing defect (jellyfin/jellyfin#17966), and a
+  Tizen 5.0 player that stops asking for segments while it reports progress is jellyfin-tizen#410. Throttling (on, 180 s delay)
+  and segment deletion (720 s kept) do not explain it: ffmpeg was ~4 minutes ahead when the player stopped asking. FR-32
+  turns such a freeze into one 5 s restream onto our ladder, which re-encodes with forced keyframes. So it is the cure in
+  either case, and nothing more is specified now.
+  - **What would change that.** If the owner's set freezes on copy streams after FR-32 ships, *or* QA's rerun finds the
+    source's keyframes further apart than 6 s around the freeze (ffprobe the first ~40 s of the file), the next step is an
+    amendment that stops a Samsung from taking a Jellyfin **video copy** over HLS at all. DEB-4541 FR-1 would send it to our
+    ladder whatever the take, at the cost of a GPU session per Samsung play. That is a trade-off for the owner, asked then
+    and not before.
+  - Jellyfin's log said the audio was copied, while the start URL asked for AAC. That has no bearing on the freeze. It is
+    recorded only so that nobody reads the URL as proof of what was sent.
 
 ## Amendment 2026-11-19, third (DEB-5078) — a start our encoder refuses is asked once more, out of sight
 
