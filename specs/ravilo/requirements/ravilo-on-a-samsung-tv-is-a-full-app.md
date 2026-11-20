@@ -1186,3 +1186,19 @@ make it on their own (DEB-3093 FR-6), and the Samsung app makes none. Why ffmpeg
 - **Proof (QA).** On `tizen-emulator`, a file our encoder refuses plays from the first OK. The backend log shows the refusal
   and then Jellyfin's stream on the second ticket. The QA row names the file, which has to be one not refused in the 6 h
   before. The real set is judged by the owner.
+
+### Addition 2026-11-20 (DEB-5025, QA DEB-5076): three gaps the emulator found
+
+DEB-5076 ran FR-28 to FR-30 on the Tizen 5.0 emulator (`ee0fa1a13`). Two results fail what the amendment already says. One is Android TV
+behaviour the amendment left out, and is added here.
+- **Media keys arrive under Tizen's names** (fails FR-29's *media keys act whatever is focused*). The page receives `XF86PlayBack`
+  (10252), `XF86AudioPlay` (415), `XF86AudioPause` (19), `XF86AudioRewind` (412), `XF86AudioNext` (417) and `XF86AudioStop`
+  (413), not `MediaPlayPause`, `MediaPlay` and the rest. Each key is matched by its Tizen name or its key code as well as by the standard
+  name. Key code 417 is Tizen's fast-forward, whatever name it arrives under, so it seeks +30 s. Next episode stays on the bar. What
+  the owner's set sends is recorded on its QA row.
+- **The focused Play button shows its glyph** (fails FR-28's *Focus is the app's focus ring*). The focused disc draws its ▶/❚❚ in the dark
+  ink on the white disc, with the ring around it. It never goes white on white.
+- **Captions rise above the bar while it is up** (R251 FR-R251-4, which Android TV does and FR-28 did not carry over). While the controls
+  show, the drawn subtitles (`#cues`) sit above the bottom band. When the bar hides, they return to their usual floor.
+- **Per FR-29, these stay as they are:** Left from −10s reaches the seek bar (it is first in the order), and a new item, Next's included,
+  focuses Play.
