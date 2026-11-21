@@ -100,8 +100,12 @@ internal data class VideoCopyRoute(val toLadder: Boolean, val text: String)
  * DEB-4541 (FR-1) — a video copy to a player that adapts goes to our ladder unless the path is proven: the device's [takeBps] (309,
  * under any stall cap) is at least [COPY_PROOF_FACTOR] × [copyBps] (the source's video plus the negotiated audio) and no stall hold is
  * live ([stallHold]). Unproven means no record, a take under twice the copy, or a hold. An unknown [copyBps] proves nothing.
+ *
+ * DEB-5024 (FR-32) — a restream that asks for a bound ([belowBandwidthBps]: the stream that froze) never keeps the copy, whatever the
+ * take says: the copy is the stream that froze, and the player has just shown the path cannot be trusted with it.
  */
-internal fun videoCopyRoute(takeBps: Long?, copyBps: Long?, stallHold: Boolean): VideoCopyRoute {
+internal fun videoCopyRoute(takeBps: Long?, copyBps: Long?, stallHold: Boolean, belowBandwidthBps: Long? = null): VideoCopyRoute {
+    if (belowBandwidthBps != null) return VideoCopyRoute(true, "video copy → our ladder (a freeze recovery under ${belowBandwidthBps / 1000}k)")
     val copy = copyBps?.takeIf { it > 0 }
     val proven = !stallHold && takeBps != null && copy != null && takeBps >= COPY_PROOF_FACTOR * copy
     if (proven) return VideoCopyRoute(false, "video copy kept (take ${takeBps / 1000}k ≥ $COPY_PROOF_FACTOR × copy ${copy / 1000}k)")

@@ -859,7 +859,7 @@ class PlaybackService(
         if (!reencodes && capabilities.hlsAdaptive && !notOurEncoder && configStore.current.encoder.enabled) {
             val copyAudioBps = queryParam(master, "AudioBitrate")?.toLongOrNull() ?: ticket.audioStreamIndex?.let { audioBps[it] } ?: 192_000L
             val copyVideoBps = sourceVideoBps ?: localFile?.tracks?.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }?.videoBitrate?.toLong()
-            val route = videoCopyRoute(take, copyVideoBps?.let { it + copyAudioBps }, stallHold)
+            val route = videoCopyRoute(take, copyVideoBps?.let { it + copyAudioBps }, stallHold, belowBandwidthBps)
             Logger.info("playback: item=$jellyfinId ${route.text} (DEB-4541 FR-1)", "tv")
             copyToLadder = route.toLadder
         }

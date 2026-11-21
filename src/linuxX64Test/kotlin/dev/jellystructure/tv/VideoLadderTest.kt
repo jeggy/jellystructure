@@ -73,6 +73,15 @@ class VideoLadderTest {
     }
 
     @Test
+    fun `a freeze recovery never keeps the copy that froze whatever the take proves`() {
+        // DEB-5024 (FR-32) — a path proven at 20× the copy still froze on it: the restream's bound sends it to our ladder.
+        val r = videoCopyRoute(takeBps = 50_000_000, copyBps = 2_600_000, stallHold = false, belowBandwidthBps = 2_800_000)
+        assertTrue(r.toLadder)
+        assertEquals("video copy → our ladder (a freeze recovery under 2800k)", r.text)
+        assertFalse(videoCopyRoute(takeBps = 50_000_000, copyBps = 2_600_000, stallHold = false).toLadder, "and without the bound the proven copy stays")
+    }
+
+    @Test
     fun `an unknown copy bitrate proves nothing`() {
         assertTrue(videoCopyRoute(takeBps = 50_000_000, copyBps = null, stallHold = false).toLadder)
     }
