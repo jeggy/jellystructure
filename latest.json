@@ -1,28 +1,28 @@
 {
-  "version": "1.70",
-  "tag": "v1.70",
-  "published_at": "2026-11-17T04:44:26Z",
-  "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.70",
+  "version": "1.71",
+  "tag": "v1.71",
+  "published_at": "2026-11-21T03:05:17Z",
+  "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.71",
   "assets": {
     "android": {
-      "name": "ravilo-android-1.70.apk",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-android-1.70.apk",
-      "size": 13718979
+      "name": "ravilo-android-1.71.apk",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.71/ravilo-android-1.71.apk",
+      "size": 13771135
     },
     "linux": {
-      "name": "ravilo-linux-1.70.flatpak",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-linux-1.70.flatpak",
-      "size": 73185720
+      "name": "ravilo-linux-1.71.flatpak",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.71/ravilo-linux-1.71.flatpak",
+      "size": 73449792
     },
     "mac": {
-      "name": "ravilo-mac-1.70.dmg",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-mac-1.70.dmg",
-      "size": 94498739
+      "name": "ravilo-mac-1.71.dmg",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.71/ravilo-mac-1.71.dmg",
+      "size": 94797209
     },
     "tizen": {
-      "name": "ravilo-tizen-1.70.wgt",
-      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-tizen-1.70.wgt",
-      "size": 424994
+      "name": "ravilo-tizen-1.71.wgt",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.71/ravilo-tizen-1.71.wgt",
+      "size": 595761
     }
   }
 }
