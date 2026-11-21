@@ -17,10 +17,15 @@ export function fakeAvPlayInitScript() {
   // DEB-5024 — AVPlay's buffering, its `onevent` and its two streaming properties, driven by the test (`window.__avplay`): the
   // fake never buffers on its own, so a test says exactly when a wait begins and ends. While buffering, the position stands still.
   let buffering = false;
+  // DEB-5024 (FR-32) — AVPlay can hold its position while `getState()` still says PLAYING and fire no event at all (DEB-5067):
+  // `hold()` is that, `release()` lets it move again. A stream that is closed or opened again moves, as a new stream does.
+  let held = false;
   const properties: Record<string, string | undefined> = {};
   (window as any).__avplay = {
     bufferStart() { buffering = true; listener.onbufferingstart?.(); },
     bufferComplete() { buffering = false; listener.onbufferingcomplete?.(); },
+    hold() { held = true; },
+    release() { held = false; },
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },
     failPrepareWith: undefined as string | undefined,
@@ -58,7 +63,7 @@ export function fakeAvPlayInitScript() {
         (window as any).__avplayCalls.push(["play"]);
         state = "PLAYING";
         if (!ticking) ticking = setInterval(() => {
-          if (buffering) return;
+          if (buffering || held) return;
           posMs += 250;
           listener.oncurrentplaytime?.(posMs);
         }, 250);
@@ -83,6 +88,7 @@ export function fakeAvPlayInitScript() {
         state = "NONE";
         posMs = 0;
         buffering = false;
+        held = false;
       },
       getState() { return state; },
       getCurrentTime() { return posMs; },

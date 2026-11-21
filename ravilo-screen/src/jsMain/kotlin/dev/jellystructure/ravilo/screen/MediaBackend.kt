@@ -45,6 +45,8 @@ interface MediaBackend {
     fun currentBandwidthBps(): Long? = null
     /** DEB-5024 (FR-27) — the bitrates of the master's rungs, when the player answers (AVPlay's `AVAILABLE_BITRATE`); empty = unknown. */
     fun availableBitratesBps(): List<Long> = emptyList()
+    /** DEB-5024 (FR-32) — true where the player can hold a position and say nothing (AVPlay): the app reads the position itself. `<video>` fires `waiting`. */
+    val watchesPosition: Boolean get() = false
 }
 
 interface MediaBackendListener {
@@ -114,6 +116,7 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         runCatching { WebApisGlobal.avplay.close() }
         document.documentElement?.classList?.remove(AVPLAY_ON)
     }
+    override val watchesPosition: Boolean get() = true
     override fun state(): String = runCatching { WebApisGlobal.avplay.getState() }.getOrDefault("NONE")
     override fun positionMs(): Long = runCatching { WebApisGlobal.avplay.getCurrentTime().toLong() }.getOrDefault(0L)
     override fun durationMs(): Long = runCatching { WebApisGlobal.avplay.getDuration().toLong() }.getOrDefault(0L)

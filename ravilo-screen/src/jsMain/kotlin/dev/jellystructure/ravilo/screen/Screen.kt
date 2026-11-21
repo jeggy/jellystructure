@@ -93,7 +93,7 @@ private class Screen(private val serverUrl: String) {
         platform = "tizen",
     )
     /** DEB-5024 (FR-25) — what each item went through, posted through the shared client's QoE call (it never throws). */
-    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung) { report -> GlobalScope.launch { api.postPlaybackQoe(report) } }
+    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung, backend::availableBitratesBps, ::askAfterFreeze, ::showFrozen) { report -> GlobalScope.launch { api.postPlaybackQoe(report) } }
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
@@ -206,6 +206,7 @@ private class Screen(private val serverUrl: String) {
         GlobalScope.launch { tickLoop() }
         GlobalScope.launch { cueLoop() }
         GlobalScope.launch { segmentLoop() }
+        if (backend.watchesPosition) GlobalScope.launch { positionLoop() }
     }
 
     private fun idle() {
@@ -1210,11 +1211,12 @@ private class Screen(private val serverUrl: String) {
      * burned in (negative = none) and [audioIndex] carried. Keeps play/pause. A failure leaves the
      * running stream alone — a track change that did not happen is better than a player that stopped.
      */
-    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int) {
+    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null) {
         val id = itemId ?: return
         val pos = backend.positionMs()
         val wasPlaying = playing
-        val t = runCatching { api.restream(id, subIndex, pos, backend.capabilities(), audioIndex) }.getOrNull() ?: run { sendStatus(); return }
+        val t = runCatching { api.restream(id, subIndex, pos, backend.capabilities(), audioIndex, belowBandwidthBps = belowBandwidthBps) }.getOrNull()
+            ?: run { if (loaded && !buffering) show(); sendStatus(); return }   // FR-32 — a freeze's buffering view must not outlive a restream that never came
         if (itemId != id) return                       // the viewer moved on while we were negotiating
         ticket = t
         selectedAudio = receiverSelectedAudio(t)
@@ -1238,6 +1240,30 @@ private class Screen(private val serverUrl: String) {
     private fun askForLowerRung() {
         val t = ticket
         GlobalScope.launch { restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub) }
+    }
+
+    /**
+     * DEB-5024 (FR-32) — a freeze of 5 s: the same stream, at its position, asked for again under the bitrate that froze, so the
+     * server answers with our encoder's rungs below it and never the stream that froze. Once per item (the QoE state decides).
+     */
+    private fun askAfterFreeze(belowBandwidthBps: Long?) {
+        val t = ticket
+        GlobalScope.launch { restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub, belowBandwidthBps = belowBandwidthBps) }
+    }
+
+    /** DEB-5024 (FR-32) — a freeze is on screen: the buffering view (R218) covers it until the position moves or a new stream plays. */
+    private fun showFrozen(on: Boolean) {
+        if (!loaded) return
+        if (on) show("buffering") else if (!buffering) show()
+    }
+
+    /** DEB-5024 (FR-32) — AVPlay's position every 500 ms: a position that stops while it says PLAYING is a stall nobody announced. */
+    private suspend fun positionLoop() {
+        while (true) {
+            delay(500)
+            if (!loaded) continue
+            qoe.watchPosition(backend.positionMs(), playing && backend.state() == "PLAYING")
+        }
     }
 
     /** FR-R285-3 — draw text subtitle [index] of [receiverSubtitles] (anything else = none). */
