@@ -718,3 +718,11 @@ The number stays on top of the picture, as it does today. No wire change: the ro
 
 **Proven in CI:** 25 to 28 in `DownloadsScreenTest` (`:ravilo-ui:desktopTest`), with a fake saved page and saved files. **QA on the
 Pixel:** 25 online and in flight mode, 27, and 29.
+
+## Amendment 2026-11-22: a season the admin has named is headed by that name (DEB-5321)
+
+[An admin names a season](an-admin-names-a-season.md) (FR-8) changes the *Headings* rule of the 2026-11-10 slice 4
+amendment, for one case. When the admin has named a season, a series line that names that season shows the admin's
+name. So does that season's header. The name is taken from `Season.custom_name` when the episode is queued, and is kept
+on the record, because Downloads works offline. A season with no admin name, and every record written before this
+amendment, still reads `detail.season` + the number. No new string.

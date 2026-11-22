@@ -485,3 +485,14 @@ there is a press (R354 FR-R354-4).
   the chrome stays. Press Play on the phone's notification card: the chrome hides about 4 s later. Repeat with Play
   from the phone's mini bar and remote, and with Play from the Jellyfin dashboard (the session road): each one still
   hides.
+
+## Amendment (2026-11-22, DEB-5321) — a season the admin has named
+
+[An admin names a season](an-admin-names-a-season.md) (FR-7) lets an admin give a season a name of their own, sent as
+`Season.custom_name`. FR-R350-6 now reads:
+
+- When the season has an admin's name, the rail's header is that name, as written, in every language.
+- Otherwise the header is unchanged: `detail.season` + the number, and the season's own name for Specials.
+
+This holds on the phone's episode sheet too. Jellyfin's season name still does not reach the header for a numbered
+season, so an unnamed season keeps reading in the viewer's language.
