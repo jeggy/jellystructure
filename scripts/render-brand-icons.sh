@@ -6,7 +6,8 @@
 #
 #   admin  src/wasmJsMain/resources/favicon.ico (16/32/48) + apple-touch-icon.png (180)      — from favicon.svg (291)
 #   web    ravilo-web/…/favicon.ico (16/32) from favicon.svg (the bare jellyfish) + apple-touch-icon-180.png (R341)
-#   mac    ravilo-desktop/icons/ravilo.icns + ravilo.png (512) + the byte-identical window icon ravilo-icon.png (R341)
+#   mac    ravilo-desktop/icons/ravilo.icns + ravilo.png (512) + the byte-identical window icon ravilo-icon.png (R341),
+#          and the Flatpak's hicolor set ravilo-desktop/linux/icons/<n>x<n>/ (32…512) + scalable/ .svg (R333 FR-R333-7)
 #   dock   ravilo-desktop/icons/dock/music-*.png — R342's running music icon (M7b), every style, 512 + 32 px
 #
 # Each SVG is rasterised by headless Chromium (software only: --headless --disable-gpu; never a window, never Xvfb),
@@ -169,7 +170,7 @@ def write_icns(path, by_size):
 def mac():
     print("mac (R341)")
     defs = GRAD + GLOW
-    by_size = {n: render(on_template(n, defs, FILMS_TILE), n) for n in (16, 32, 64, 128, 256, 512, 1024)}
+    by_size = {n: render(on_template(n, defs, FILMS_TILE), n) for n in (16, 32, 48, 64, 128, 256, 512, 1024)}
     write_icns("ravilo-desktop/icons/ravilo.icns", by_size)
     save_png(by_size[512], "ravilo-desktop/icons/ravilo.png")
     # Dev review 4: the window and About icon is the same file, byte for byte.
@@ -177,6 +178,16 @@ def mac():
          open("ravilo-desktop/src/desktopMain/resources/ravilo-icon.png", "wb") as b:
         b.write(a.read())
     print("  wrote ravilo-desktop/src/desktopMain/resources/ravilo-icon.png (= icons/ravilo.png)")
+    # FR-R333-7: the Flatpak's hicolor set — the same document at 32…512 px (the 512 is icons/ravilo.png again) and that
+    # document as the scalable SVG, so a theme lookup at any size finds a file made for it.
+    out = "ravilo-desktop/linux/icons"
+    for n in (32, 48, 64, 128, 256):
+        save_png(by_size[n], f"{out}/{n}x{n}/net.jebster.Ravilo.png")
+    save_png(by_size[512], f"{out}/512x512/net.jebster.Ravilo.png")
+    os.makedirs(f"{out}/scalable", exist_ok=True)
+    with open(f"{out}/scalable/net.jebster.Ravilo.svg", "w") as f:
+        f.write(on_template(512, defs, FILMS_TILE) + "\n")
+    print("  wrote", f"{out}/scalable/net.jebster.Ravilo.svg")
 
 # ─── R342 — the running music icon (M7b), per macOS icon style ───────────────────────────────────────────────────────
 # design/ravilo/Desktop - Music App Icon.html, app(): the films icon with a circle cut out of the jellyfish at (78, 78),
