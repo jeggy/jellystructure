@@ -11,6 +11,7 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaSegmentRow
 import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.seasonNameFor
 import dev.jellystructure.media.validSegmentKeys
 import dev.jellystructure.media.PipelineStepOps
 import dev.jellystructure.media.SegmentKind
@@ -747,12 +748,12 @@ private fun computeStats(rows: List<SegmentEpisodeRow>): SegmentStats = SegmentS
     locked = rows.count { r -> r.segments.any { it.locked } },
 )
 
-private fun seasonSheet(item: MediaItem, season: Int, segmentStore: MediaSegmentStore): SegmentSheetResponse {
+internal fun seasonSheet(item: MediaItem, season: Int, segmentStore: MediaSegmentStore): SegmentSheetResponse {
     val eps = DuplicateEpisodes.deduped(item.episodes)
         .filter { (it.seasonNumber ?: 0) == season }
         .sortedBy { it.episodeNumber ?: 0 }
     val rows = markOutliers(eps.map { episodeRow(item.id, null, it, segmentStore) })
-    val seasonName = item.seasonNames[season] ?: "Season $season"
+    val seasonName = seasonNameFor(item, season).name  // DEB-5321 (FR-2)
     return SegmentSheetResponse(
         itemId = item.id, title = item.title, seasonNumber = season, seasonName = seasonName, kind = "tv",
         episodes = rows, consensus = computeConsensus(rows), stats = computeStats(rows),

@@ -10,6 +10,8 @@ import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.SegmentKind
+import dev.jellystructure.media.SeasonNameSource
+import dev.jellystructure.media.seasonNameFor
 import dev.jellystructure.media.visibleTo
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -149,7 +151,7 @@ class DetailService(
             val eps: List<Episode> = uniqueEpisodes
                 .filter { (it.seasonNumber ?: 0) == seasonNum }
                 .sortedBy { it.episodeNumber ?: 0 }
-            val seasonName = item.seasonNames[seasonNum] ?: "Season $seasonNum"
+            val named = seasonNameFor(item, seasonNum)  // DEB-5321 (FR-2)
             val tvEpisodes = eps.map { ep ->
                 // R133: episode still from jellystructure's on-disk <base>-thumb.jpg (series id + filename).
                 // Bug fix (Phase 149): episodes sharing a file also share filename — pass episodeNumber
@@ -191,7 +193,8 @@ class DetailService(
             // the file's Jellyfin id (Phase 152's path match), and all of them must reach the client.
             Season(
                 index = seasonNum,
-                name = seasonName,
+                name = named.name,
+                customName = named.name.takeIf { named.source == SeasonNameSource.ADMIN },  // DEB-5321 (FR-3)
                 episodes = tvEpisodes.oneIdPerFile(),
                 // R194: null (not a URL that would 404) when this season has no poster on disk, so the
                 // client can do a plain `season.posterUrl ?: card.posterUrl` fallback — same pattern as

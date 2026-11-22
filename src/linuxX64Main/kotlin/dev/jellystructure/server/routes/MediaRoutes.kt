@@ -408,6 +408,7 @@ fun Route.mediaRoutes(
             }
 
             episodeOrderRoutes(store, mediaHistory)  // DEB-2916 (FR-2) — PUT /api/media/{id}/episode-order
+            seasonNameRoutes(store, mediaHistory)  // DEB-5321 (FR-4) — PUT /api/media/{id}/season-names/{season}
 
             // DELETE /api/media/{id} — permanently remove an item that's no longer in Jellyfin (the
             // Phase 95 "missing_from_source" triage's "review & remove if intended" action). Refuses

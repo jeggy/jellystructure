@@ -900,6 +900,7 @@ class MediaStore(
         // exactly like the artwork lock and the TMDB match lock do.
         merged = preserveMetadataLanguage(merged, old)
         merged = preserveNewestFirst(merged, old)  // DEB-2916 (FR-1)
+        merged = preserveSeasonNameOverrides(merged, old)  // DEB-5321 (FR-1)
         // Phase 251 (FR-251-2): the Scanner reads Jellyfin's LIST shape, which on 12.1 does not carry
         // LockData/LockedFields at all — so a fresh scan item always says "nothing is locked", and
         // without this guard every scan would write that over whatever was really recorded.
@@ -960,6 +961,8 @@ class MediaStore(
         // DEB-2916 (FR-1): false on exactly the route that CHANGES newestFirst (`PUT …/episode-order`) — the same
         // contract as [respectMetadataLanguageLock].
         respectNewestFirst: Boolean = true,
+        // DEB-5321 (FR-1): false on exactly the route that CHANGES the admin's season names (`PUT …/season-names/{season}`).
+        respectSeasonNameOverrides: Boolean = true,
         respectJsTags: Boolean = true,
         // Phase 251 (FR-251-2) — defaults to TRUE, i.e. carry the stored lock state forward, because
         // almost every caller here builds its item from Jellyfin's list shape, which on 12.1 cannot
@@ -983,6 +986,7 @@ class MediaStore(
         if (respectTmdbMatchLock) merged = preserveTmdbMatchLock(merged, existing)
         if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
         if (respectNewestFirst) merged = preserveNewestFirst(merged, existing)
+        if (respectSeasonNameOverrides) merged = preserveSeasonNameOverrides(merged, existing)
         if (respectJsTags) merged = preserveJsTags(merged, existing, jsTagStore.nameSet())
         if (respectJellyfinLocks) merged = preserveJellyfinLockState(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))

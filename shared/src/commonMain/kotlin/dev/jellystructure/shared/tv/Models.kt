@@ -870,6 +870,8 @@ data class Season(
     /** R194 — this season's own poster URL. The client 404s through to the series' own [MediaCard.posterUrl]
      *  when this season has none on disk (never guaranteed non-null/non-404, unlike other image URLs here). */
     @SerialName("poster_url") val posterUrl: String? = null,
+    /** DEB-5321 (FR-3): the admin's own name for this season, null when there is none. [name] already carries it. */
+    @SerialName("custom_name") val customName: String? = null,
 )
 
 @Serializable

@@ -282,6 +282,11 @@ data class MediaItem(
     val runtime: Int? = null,
     /** R82: Season display names keyed by season number. Absent seasons fall back to "Season N". */
     val seasonNames: Map<Int, String> = emptyMap(),
+    /**
+     * DEB-5321 (FR-1): the admin's own season names, keyed by jellystructure's season number (`Episode.seasonNumber ?: 0`).
+     * Apart from [seasonNames] (Jellyfin's, rebuilt by every full scan); no scan writes this one.
+     */
+    val seasonNameOverrides: Map<Int, String> = emptyMap(),
     // R149: Sonarr-sourced series status + next-airing (null = not yet enriched or Sonarr not configured).
     val sonarrStatus: String? = null,         // "continuing" | "ended"
     val sonarrNextAiringDate: String? = null, // yyyy-MM-dd (UTC-pinned date from Sonarr)

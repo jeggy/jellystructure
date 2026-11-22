@@ -12,6 +12,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.put
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -46,6 +47,8 @@ internal fun mediaItemWithEpisodeOrder(store: MediaStore, item: MediaItem): Json
     return JsonObject(base + mapOf(
         "newest_first" to JsonPrimitive(order.newestFirst),
         "newest_first_source" to JsonPrimitive(order.newestFirstSource),
+        // DEB-5321 (FR-5): one entry per season with an episode, for the Episodes tab to render as it is.
+        "season_names" to Json.encodeToJsonElement(ListSerializer(SeasonNameEntry.serializer()), seasonNamesOf(item)),
     ))
 }
 
