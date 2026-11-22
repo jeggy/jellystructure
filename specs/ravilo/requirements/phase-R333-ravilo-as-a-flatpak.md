@@ -4,11 +4,9 @@
 > (`research-reports/ravilo-linux-flatpak-2026-09-29.md`) and two decisions the same evening: the app id is
 > **`net.jebster.Ravilo`**, and *"I want to do all changes outside this repo manually unless I tell you specifically."*
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-09-29; `flatpak-builder` built it in a Fedora container, it installed and ran on that
-desktop; the two remaining lint findings are the screenshot URL of a commit not yet pushed** (§Build notes). Written 2026-09-29 (dev-authored) from the research report's §2–§4. Number verified
-free: `origin/main` `2c36a521` and local `main` top at R332.
+Written 2026-09-29 (dev-authored) from the research report's §2–§4.
 
 **First of two:** **R333** (this — the Flatpak, built offline the way Flathub builds) → **R334** (the `.flatpak` on
 every GitHub release, and Flathub). The Linux **player** is a later phase of its own (the report's mpv lean); until it
@@ -172,3 +170,54 @@ precondition falling rather than the result.
 **Still owed:** the lint re-run showing both findings gone, and HiDPI on a real display (a device test — no device on
 the board has a HiDPI Linux display, so that half may stand as a limitation rather than an owed test; decide it when
 the lint re-run lands).
+
+## Amendment 2026-11-22 — the icon at every size a desktop looks for (DEB-5246)
+
+> Owner, DEB-5246, 2026-11-22: after installing the Flatpak, no Ravilo icon showed *"on the launcher in the task bar
+> etc"*. Asked where: *everywhere — app menu and taskbar*, on **KDE Plasma**, *"but make it work both in gnome and
+> kde"*.
+
+**What was measured** (v1.71's release `ravilo-linux-1.71.flatpak`, imported into a throwaway Fedora 42 container;
+nothing was installed on a device):
+
+- The bundle exports what FR-R333-4 promises and nothing more. It has the desktop file (`Icon=net.jebster.Ravilo`,
+  `StartupWMClass=dev-jellystructure-ravilo-desktop-MainKt`), the metainfo, and **one** theme icon,
+  `hicolor/512x512/apps/net.jebster.Ravilo.png`. `flatpak-builder` adds appstream icons at 64 and 128 px, but those are
+  for software centres; no desktop shell reads them.
+- Run from the bundle under Xvfb with a window manager, the window is one taskbar client. Its WM_CLASS is the desktop
+  file's `StartupWMClass`, and it sets `_NET_WM_ICON` (96×96). The second top-level window, class `Ravilo`, is GDK's
+  leader window, which is never mapped. Open question 2's lean still holds.
+- With the export directory on `XDG_DATA_DIRS`, KDE's `kiconfinder6` and GTK 3's icon theme both resolve
+  `net.jebster.Ravilo` to the 512 px file at every size asked. Without it, neither finds anything.
+
+So the 512-only icon resolves in a clean session, but not on the owner's Plasma, and the cause on that machine is not
+measurable from here. Every Flathub app ships its icon at the common sizes as well, and nearly all of them ship an SVG.
+That puts the icon in directories that every icon cache and theme index already lists, so no desktop has to fall back
+across sizes to find it. FR-R333-4's *"the icon is the existing 512×512 PNG"* and §Out of scope's *"an SVG icon"*
+are superseded by:
+
+**FR-R333-7 — The icon is installed at every common size, and as an SVG.** The Flatpak installs
+`net.jebster.Ravilo` into `hicolor` as a PNG at **32, 48, 64, 128, 256 and 512 px**
+(`/app/share/icons/hicolor/<n>x<n>/apps/net.jebster.Ravilo.png`), plus
+`/app/share/icons/hicolor/scalable/apps/net.jebster.Ravilo.svg`.
+- Every size is R341's Mac/Linux icon (FR-R341-1/2), the same drawing as today's 512: the about-66 % mark with its
+  glow on the flat `#000B25` tile. The Linux icon keeps its tile at every size (owner, R341). The bare small jellyfish
+  of FR-R341-3 is the web tab's, not this.
+- `scripts/render-brand-icons.sh` renders each PNG from the same SVG document it already renders `ravilo.png` from, and
+  writes that document as the scalable SVG. The files are committed under `ravilo-desktop/linux/icons/`. The 512 stays
+  byte-identical to `ravilo-desktop/icons/ravilo.png`.
+- The manifest installs each file with its own line. The desktop file's `Icon=` is unchanged. Nothing outside the
+  Flatpak changes: not the Mac's `.icns`, not the window icon.
+
+**Acceptance (FR-R333-7):**
+1. The built bundle's `/export/share/icons/hicolor/` holds all six PNG sizes and `scalable/apps/…svg`, each the size
+   its directory names (`ostree ls` after `flatpak build-import-bundle`, as measured above).
+2. `flatpak-builder-lint` stays clean on the manifest and the appstream.
+3. In a clean container with the bundle's export on `XDG_DATA_DIRS`, `kiconfinder6` and GTK's icon theme each resolve
+   `net.jebster.Ravilo` to the scalable SVG or a PNG that is not the 512.
+4. The owner installs the next release's `.flatpak` on the KDE Plasma machine. The app menu entry and the running
+   window's taskbar entry both show the Ravilo icon. No QA device runs KDE Plasma or GNOME (this host has no desktop
+   session), so that test is the owner's, and GNOME's proof is acceptance 3.
+
+If acceptance 4 still shows no icon, the cause is that session's icon cache or `XDG_DATA_DIRS`, not the package.
+That goes back to DEB-5246 as a note to the owner, not as more code.
