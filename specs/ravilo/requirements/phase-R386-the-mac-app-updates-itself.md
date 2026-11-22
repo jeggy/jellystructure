@@ -487,3 +487,52 @@ in scope. Resuming after an ordinary quit stays out of scope.
    - **an ordinary *Quit Ravilo*** during music: music comes back **paused**, as before;
    - for each, the two `update: resume` lines in `ravilo.log`.
 
+
+## Amendment (2026-11-22): a missing appcast is *not yet*, and the app asks again in a quarter of an hour (DEB-5277)
+
+Written by Bárður, on Tróndur's ask off DEB-3660. This amendment replaces FR-R386-3's paragraph *"A release from before
+this phase has no `appcast.xml`. A 404 on `v<S>/appcast.xml` therefore means nothing to offer, never an error."* and the
+*"a 404 appcast"* case of acceptance 1. The rest of FR-R386-3's table is unchanged.
+
+**Why the old rule is wrong now.** It was written for the releases before this phase, which have no appcast. No Mac can
+reach those any more: an app that has the update block is 1.52 or later, so S > A never names one, and L is always the
+newest release. The 404s that do happen are all *not yet*:
+
+- **The hour after a tag.** GitHub's *latest* moves to the new release when it is tagged, and `publish.yml` attaches
+  `appcast.xml` only when its `mac` job finishes. On v1.63 that took about 57 minutes. On v1.65 it took until a failed
+  `mac / build` was re-run (DEB-4362). During that time L is a 404 for every Mac. If prod's floor moves first, `v<S>` is
+  a 404 too.
+- **A release whose publish run failed and was never re-run.** v1.54, v1.55 and v1.68 carry no assets at all; each was
+  superseded by the next tag. While such a release is the newest one, L is a 404 (after v1.68 that lasted about 15 hours,
+  until v1.69). While the server runs a build that floors to one of them (`v1.68-N-g…`), `v<S>` is a 404.
+
+The old rule read each of these as **Up to date** and waited 24 hours. That is wrong twice: the block says a thing that
+is not known, and the release that lands an hour later is not seen until the next day.
+
+**FR-R386-3, the 404 paragraph, replaced.** An appcast that answers **404**, or that answers 200 but names no plain
+release, is **not yet published**. It is not a decision:
+
+- **The app asks again a quarter of an hour later**, as it does after a failure. It keeps asking at that interval until
+  the appcast reads as a release, GitHub is unreachable (which is *Offline*, as before), or the server's floor changes.
+- **The block keeps the last decision**, and *Checked …* keeps that decision's time. A check that came to *not yet*
+  did not finish, so it does not move the time. Where there is no earlier decision, or the earlier one was *Offline*,
+  the block shows **Up to date** with the last finished check's time, or with no time line when there has never been
+  one.
+- **No new state and no new string.** *Offline*'s wording (*"Ravilo checks again when this Mac is back online"*) would
+  be false here, because the Mac is online, so it is not used. Nothing drawn changes, and no design round is needed.
+- Sparkle is not asked on a *not yet*. It is asked only when `v<S>/appcast.xml` reads as a release, as before.
+
+The quarter-hour retry costs one `/api/health` and one appcast request per Mac per 15 minutes while it lasts. It ends by
+itself when the next release is published or prod's floor moves, which the release gate does on release day
+(DEB-3648).
+
+**Acceptance 1, the 404 case, replaced.** `UpdatePlanTest`: a 404, and a 200 that names no plain release, on either
+appcast, plan as *not yet*, and never as *Up to date*. `UpdateCheckTest`, or a pure function that `UpdateCheck` calls: a
+*not yet* schedules the next check 15 minutes later, keeps the last decision and its time, and shows *Up to date*
+without a time when there is no earlier decision.
+
+**Out of scope, decided on DEB-3660:** moving the server floor automatically, and reordering `publish.yml` so that
+*latest* moves only after the assets land.
+
+**This pays off one release after it ships.** An installed Mac keeps the old reading until it has updated to the build
+that carries this.
