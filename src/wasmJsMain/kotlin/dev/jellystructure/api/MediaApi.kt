@@ -434,6 +434,37 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<dev.jellystructure.ui.EpisodeOrderState>() else null
     }.getOrNull()
 
+    // DEB-5321 (FR-5, FR-6) — a series' season names: one entry per season, the name as the server resolves it and
+    // where it came from. The GET is the item's own; the PUT stores the admin's name (empty clears) and answers with
+    // the same list, or with the server's reason in `error`.
+    suspend fun seasonNames(id: String): List<dev.jellystructure.ui.SeasonNameState>? = runCatching {
+        val seasonNames = httpClient.get("/api/media/$id").body<kotlinx.serialization.json.JsonObject>()["season_names"]
+            ?: return@runCatching null
+        KJson { ignoreUnknownKeys = true }.decodeFromJsonElement(ListSerializer(dev.jellystructure.ui.SeasonNameState.serializer()), seasonNames)
+    }.getOrNull()
+
+    sealed interface SeasonNameSave {
+        data class Saved(val names: List<dev.jellystructure.ui.SeasonNameState>) : SeasonNameSave
+        data class Refused(val message: String) : SeasonNameSave
+    }
+
+    suspend fun setSeasonName(id: String, season: Int, name: String): SeasonNameSave = try {
+        val response = httpClient.put("/api/media/$id/season-names/$season") {
+            setBody(kotlinx.serialization.json.buildJsonObject { put("name", kotlinx.serialization.json.JsonPrimitive(name)) }.toString())
+            contentType(ContentType.Application.Json)
+        }
+        if (response.status == HttpStatusCode.OK) {
+            SeasonNameSave.Saved(KJson { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(dev.jellystructure.ui.SeasonNameState.serializer()), response.bodyAsText()))
+        } else {
+            val reason = runCatching { KJson.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull()
+            SeasonNameSave.Refused(reason ?: "The server refused the name (${response.status.value}).")
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        SeasonNameSave.Refused("Could not reach the server.")
+    }
+
     @Serializable
     data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
 

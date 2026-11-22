@@ -1211,6 +1211,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
     scope.launch { loadDrift(item.id, scope) }
     if (isTvShow) scope.launch { loadEpisodeOrder(item.id, scope) }   // DEB-2916 (FR-17)
+    if (isTvShow) scope.launch { MediaApi.seasonNames(item.id)?.let { applySeasonNames(item.id, it, scope) } }   // DEB-5321 (FR-6)
     scope.launch { loadMkvHealth(item, scope) }
     scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadTrackCoverage(item) }   // Phase 255
@@ -1519,6 +1520,57 @@ private fun paintEpisodeOrder(mediaId: String, order: EpisodeOrderState?, scope:
     }
 }
 
+// DEB-5321 (FR-6) — paints the server's season names into the Episodes tab: the picker's options and its label, and
+// each block's heading. Nothing is held between paints; every name here came from the answer being applied, and a
+// save repaints from its own answer.
+private fun applySeasonNames(mediaId: String, names: List<SeasonNameState>, scope: CoroutineScope) {
+    val current = (document.querySelector(".sp-opt.cur") as? HTMLElement)?.getAttribute("data-season-sel")
+    for (state in names) {
+        val sel = state.season.toString()
+        (document.querySelector(".sp-opt[data-season-sel=\"$sel\"] .nm") as? HTMLElement)?.textContent = state.name
+        if (sel == current) {
+            document.getElementById("season-title")?.textContent = state.name
+            document.getElementById("sp-btn")?.firstChild?.let { if (it.nodeType == 3.toShort()) it.nodeValue = "${state.name} " }
+        }
+        paintSeasonHead(mediaId, state, scope, editing = false)
+    }
+}
+
+private fun paintSeasonHead(
+    mediaId: String, state: SeasonNameState, scope: CoroutineScope,
+    editing: Boolean, typed: String = seasonRenameStart(state), error: String? = null,
+) {
+    val mount = document.querySelector(".sn-mount[data-season-name=\"${state.season}\"]") as? HTMLElement ?: return
+    mount.innerHTML = seasonHeadHtml(state, editing, typed, error)
+    (mount.querySelector(".sn-rename") as? HTMLElement)?.addEventListener("click") {
+        paintSeasonHead(mediaId, state, scope, editing = true)
+        (mount.querySelector(".sn-input") as? HTMLInputElement)?.focus()
+    }
+    val input = mount.querySelector(".sn-input") as? HTMLInputElement ?: return
+    (mount.querySelector(".sn-cancel") as? HTMLElement)?.addEventListener("click") {
+        paintSeasonHead(mediaId, state, scope, editing = false)
+    }
+    val save = mount.querySelector(".sn-save") as? HTMLElement
+    val doSave = {
+        val typedNow = input.value
+        save?.setAttribute("disabled", "")
+        scope.launch {
+            when (val answer = MediaApi.setSeasonName(mediaId, state.season, typedNow)) {
+                is MediaApi.SeasonNameSave.Saved -> applySeasonNames(mediaId, answer.names, scope)
+                is MediaApi.SeasonNameSave.Refused -> paintSeasonHead(mediaId, state, scope, editing = true, typed = typedNow, error = answer.message)
+            }
+        }
+        Unit
+    }
+    save?.addEventListener("click") { doSave() }
+    input.addEventListener("keydown") { ev ->
+        when ((ev as? KeyboardEvent)?.key) {
+            "Enter" -> doSave()
+            "Escape" -> paintSeasonHead(mediaId, state, scope, editing = false)
+        }
+    }
+}
+
 private fun buildEpisodesTab(item: MediaItem): String {
     if (item.episodes.isEmpty()) {
         return """<div class="card"><span class="muted tiny">No episode data available — run a scan to populate.</span> <button id="rescan-episodes-btn" class="btn sm ghost" style="margin-left:8px;">Re-probe episode files ↻</button></div>"""
@@ -1642,7 +1694,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
             val hidden = if (seasonKeys.size > 1 && season != firstSeasonKey) "display:none;" else ""
             """<div class="ep-season-block" data-season-block="${seasonSelKey(season)}" style="margin-bottom:20px;$hidden">
                  <div class="row center" style="margin-bottom:8px;">
-                   <h4 style="margin:0;">${seasonLabel.esc()}</h4>
+                   ${if (season != null) seasonHeadMountHtml(season) else """<h4 style="margin:0;">${seasonLabel.esc()}</h4>"""}
                    <span class="chip" style="margin-left:8px;font-size:.75rem;">${eps.size} ep</span>
                    <span class="chip" style="margin-left:6px;font-size:.75rem;" title="This season's size on disk">${formatSize(item.seasonSizeBytes(season))}</span>
                    $issueSummary
