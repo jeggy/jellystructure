@@ -1501,6 +1501,32 @@ class TvApiClient(
         return SupportSendResult.Sent(json.decodeFromString<SupportThread>(r.bodyAsText()))
     }
 
+    // ─── DEB-4843 — the viewer's Samsung TV install requests (DEB-4842 FR-2) ─────────────────────────────
+
+    /** `GET /api/tv/samsung-requests` — this viewer's requests, newest first. */
+    suspend fun samsungTvRequests(): List<SamsungTvRequest> {
+        val r = client.get("$baseUrl/api/tv/samsung-requests") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<SamsungTvRequestList>(r.bodyAsText()).requests
+    }
+
+    /** `POST /api/tv/samsung-requests` — 201 for a new request, 200 for the active one that already exists. */
+    suspend fun samsungTvRequest(body: SamsungTvRequestCreate): SamsungTvRequest {
+        val r = client.post("$baseUrl/api/tv/samsung-requests") {
+            auth()
+            jsonBody(json.encodeToString(SamsungTvRequestCreate.serializer(), body))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<SamsungTvRequest>(r.bodyAsText())
+    }
+
+    /** `DELETE /api/tv/samsung-requests/{id}` — withdraws a Requested row; the server's row comes back. */
+    suspend fun samsungTvWithdraw(id: Long): SamsungTvRequest {
+        val r = client.delete("$baseUrl/api/tv/samsung-requests/$id") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<SamsungTvRequest>(r.bodyAsText())
+    }
+
     private fun HttpRequestBuilder.wsAuth(token: String) {
         if (!WS_TOKEN_IN_QUERY) headers { append(HttpHeaders.Authorization, "Bearer $token") }
     }

@@ -100,6 +100,8 @@ fun ProfileScreen(
     passwordRow: PasswordRow = PasswordRow.Form,
     /** DEB-2233 (FR-6) — *Sign in a TV*, after the password row; null (no row at all) where a TV cannot be signed in from. */
     onSignInTv: (() -> Unit)? = null,
+    /** DEB-4843 (FR-1) — *Samsung TV · Experimental*, between Sign in a TV and Settings; null (no row at all) off an Android phone. */
+    onSamsungTv: (() -> Unit)? = null,
     onSettings: () -> Unit,
     /** DEB-1501 (FR-1) — opens My tickets; null (no row at all) while the support lane is closed, and on every TV. */
     onSupport: (() -> Unit)? = null,
@@ -256,6 +258,7 @@ fun ProfileScreen(
                     is PasswordRow.Hidden -> {}
                 }
                 if (onSignInTv != null) { ProfileRow(str("tvcode.row"), null, onSignInTv, modifier = Modifier.testTag(TvApproveTags.ROW)); RowDivider() }
+                if (onSamsungTv != null) { ProfileRow(str("samsungtv.row"), null, onSamsungTv, badge = str("samsungtv.experimental"), modifier = Modifier.testTag(PROFILE_SAMSUNG_TV_TAG)); RowDivider() }
                 // Dev review item 2 — the phone's Settings still holds skin, autoplay, tile shape and more;
                 // a row rather than a deleted screen.
                 ProfileRow(str("nav.settings"), null, onSettings, dot = dev.jellystructure.ravilo.ui.components.updateDotShows())
@@ -349,7 +352,7 @@ fun AppLanguageScreen(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false, modifier: Modifier = Modifier, trailing: String? = null) {
+private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: Boolean = false, external: Boolean = false, modifier: Modifier = Modifier, trailing: String? = null, badge: String? = null) {
     val colors = RaviloTheme.colors
     Row(
         modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -358,7 +361,12 @@ private fun ProfileRow(label: String, value: String?, onClick: () -> Unit, dot: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(label, color = colors.text, fontSize = 15.sp, fontFamily = Sora)
+            if (badge != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, color = colors.text, fontSize = 15.sp, fontFamily = Sora)
+                Spacer(Modifier.width(8.dp))
+                Text(badge.uppercase(), color = EXPERIMENTAL_GREEN, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 0.8.sp,
+                    modifier = Modifier.background(EXPERIMENTAL_GREEN.copy(alpha = 0.16f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+            } else Text(label, color = colors.text, fontSize = 15.sp, fontFamily = Sora)
             if (value != null) Text(value, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
         }
         // DEB-4071 (DEB-3995 FR-8) — Downloads' size, bold, at the row's end before the chevron.
@@ -384,6 +392,7 @@ private fun SheetButton(label: String, primary: Boolean, onClick: () -> Unit) {
 }
 
 private val DANGER = Color(0xFFF5667A)
+private val EXPERIMENTAL_GREEN = Color(0xFF2FA866)   // DEB-4843 — the Experimental badge
 private val AVATAR = 76.dp
 private val TILE_WIDTH = 112.dp
 private const val MY_LIST_ROW_SIZE = 12
@@ -393,6 +402,7 @@ class ProfileDownloads(val bytes: Long, val onOpen: () -> Unit)
 
 /** The Downloads row of the Account card. */
 internal const val PROFILE_DOWNLOADS_TAG = "profile-downloads"
+internal const val PROFILE_SAMSUNG_TV_TAG = "profile-samsung-tv"   // DEB-4843 (FR-1)
 
 /** The *Account* heading — what FR-R304-7's test reads to see whether anything above it moved. */
 internal const val PROFILE_ACCOUNT_TAG = "profile-account"

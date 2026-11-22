@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import dev.jellystructure.ravilo.ui.screens.themeSettings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -160,6 +161,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
 import dev.jellystructure.ravilo.ui.screens.passwordRow
+import dev.jellystructure.ravilo.ui.samsungtv.asSamsungBackend
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.NavigateEnvelope
 import dev.jellystructure.shared.tv.PlayItemEnvelope
@@ -389,6 +391,8 @@ internal sealed class Dest {
     data class ChangePassword(val displayName: String) : Dest()
     // DEB-2233 (FR-6) — *Sign in a TV*, on the phone, Ravilo Web and the desktop. [code] came in a link (`/tv?c=` or the App Link).
     data class SignInTv(val displayName: String, val code: String? = null) : Dest()
+    // DEB-4843 (FR-1) — the experimental Samsung TV install guide; the Android phone only.
+    data class SamsungTv(val displayName: String) : Dest()
     // Phase R177 — a deliberate sibling to Player (see LiveTvPlayerStore's doc comment): live channels
     // have no resume position and need Jellyfin's explicit open/close handshake, so this is its own
     // destination rather than a branch of Dest.Player. Never reached from raviloNavItems (no top-nav
@@ -428,6 +432,7 @@ internal sealed class Dest {
         is Login          -> "/login"
         is ProfilePicker  -> "/profiles"
         is Apps           -> "/apps"   // a TV screen: Ravilo Web never shows it, so nothing links here
+        is SamsungTv      -> "/profile"   // DEB-4843 — Android phone only; a refresh lands on Profile
         is Home           -> "/home"
         is ChannelView    -> "/channel/${channel.id}"
         is Browse         -> "/browse/${kind.name.lowercase()}"
@@ -1143,7 +1148,7 @@ fun RaviloApp(
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.Remote -> d.displayName
             is Dest.TvNowPlaying -> d.displayName   // R380
-            is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName; is Dest.SignInTv -> d.displayName
+            is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName; is Dest.SignInTv -> d.displayName; is Dest.SamsungTv -> d.displayName
             is Dest.Profile -> d.displayName; is Dest.AppLanguage -> d.displayName   // R304
             is Dest.MusicListen -> d.displayName; is Dest.MusicBrowse -> d.displayName; is Dest.MusicPlaying -> d.displayName   // R321
             is Dest.MusicQueue -> d.displayName; is Dest.AlbumDetail -> d.displayName; is Dest.ArtistDetail -> d.displayName
@@ -1471,7 +1476,7 @@ fun RaviloApp(
             d is Dest.Browse && d.kind != BrowseKind.MY_LIST -> BottomNavItem.LIBRARY
             d is Dest.Search -> BottomNavItem.SEARCH
             d is Dest.Discover -> BottomNavItem.DISCOVER
-            d is Dest.Profile || d is Dest.Downloads -> BottomNavItem.PROFILE   // R304 (FR-R304-1) — a page, so it takes the pill; DEB-4071: Downloads is Profile's child
+            d is Dest.Profile || d is Dest.Downloads || d is Dest.SamsungTv -> BottomNavItem.PROFILE   // R304 (FR-R304-1) — a page, so it takes the pill; DEB-4071: Downloads is Profile's child
             d is Dest.MusicListen -> BottomNavItem.LISTEN   // R321 (FR-R321-4)
             d is Dest.MusicBrowse -> BottomNavItem.BROWSE
             d is Dest.MusicPlaying -> BottomNavItem.PLAYING
@@ -3309,6 +3314,8 @@ fun RaviloApp(
                     onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
                     passwordRow = passwordRow,
                     onSignInTv = { push(Dest.SignInTv(dest.displayName)) },   // DEB-2233 (FR-6)
+                    // DEB-4843 (FR-1) — *Samsung TV · Experimental*, after Sign in a TV; null (no row) off an Android phone.
+                    onSamsungTv = if (dev.jellystructure.ravilo.ui.samsungtv.platformSamsungTv() != null) ({ push(Dest.SamsungTv(dest.displayName)) }) else null,
                     onSettings = { push(Dest.Settings(dest.displayName)) },
                     // DEB-4071 (FR-8) — *Downloads · {size}* in the Account card: this profile's total, opening the page. Only where downloads are on.
                     downloads = downloadsController?.takeIf { downloadsEnabled }?.let { dc ->
@@ -3499,6 +3506,16 @@ fun RaviloApp(
                         )
                     },
                 )
+            }
+
+            is Dest.SamsungTv -> {
+                val platform = remember { dev.jellystructure.ravilo.ui.samsungtv.platformSamsungTv() }
+                if (platform == null) LaunchedEffect(Unit) { replaceTop(Dest.Profile(dest.displayName)) }
+                else {
+                    val scope = rememberCoroutineScope()
+                    val guide = remember(apiClient) { dev.jellystructure.ravilo.ui.samsungtv.SamsungGuide(platform, apiClient.asSamsungBackend(), scope) }
+                    dev.jellystructure.ravilo.ui.samsungtv.SamsungGuideScreen(guide = guide, onBack = { pop() })
+                }
             }
 
             is Dest.Downloads -> {
