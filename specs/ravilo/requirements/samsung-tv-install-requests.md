@@ -39,3 +39,26 @@ An admin row extends the viewer row with `requester_name`, `account_id`, and `de
 ## Amendment — 2026-11-17 (Sjúrður protocol and migration review)
 
 The approved wire uses snake_case names with `@SerialName` in `:shared`, and state remains an open string. `samsung_tv_requests` uses `UNIQUE(account_id, duid)` and is created in the next free `.sqm` and byte-identically in `SamsungTvRequests.sq`; both migration replay tests drop it before replay. All decisions, withdrawals and release reconciliation are guarded SQL writes with `changes()` checks. FR-2/FR-3 now fix validation limits, the ten-active-request cap, Rejected DELETE idempotence, release/certificate status shapes, and the verified GitHub-only asset URL. Release polling is at most hourly with ETag revalidation. These clarify the owner-approved behavior; no existing DTO or route is changed.
+
+## Amendment — 2026-11-23 (DEB-5409): a TV the current release already covers is Ready at once
+
+On DEB-5356 the owner approved his own set, whose DUID `URN:tizen:deviceid=` already carried in the current release. His phone then read *Approved, waiting for release* until the next hourly FR-4 check. His words (15:48Z): *"no need for this state … as this device is already approved."* The server already holds the device ids of the last verified release in memory (`SamsungTvRelease`'s verified tag, URL and covered set). This amendment uses them at the moment of the write, without waiting for the next poll.
+
+**FR-7 · The last verified release decides at create and at approval.**
+- **At create.** A new or reopened request (FR-1) whose DUID is in the last verified latest release's covered set is written straight to `READY`. The write sets that release's tag and verified `wgt_url`, `decided_at` now, and `decided_by` `certificate`. That DUID is already in a certificate only the owner issues, so there is no decision for him to make again.
+- **At approval.** An APPROVE of a covered DUID writes `READY` with the same fields, in the one guarded `UPDATE … WHERE id=? AND state='REQUESTED'` of FR-3.
+- **On every reconciliation.** FR-4's reconciliation also promotes a `REQUESTED` row whose DUID a new latest release covers. Its guard becomes `WHERE id=? AND state IN ('REQUESTED','APPROVED','READY')`, so a concurrent withdrawal still wins.
+- **When nothing is verified yet** (startup before the first check, or a failed check), every path behaves as before FR-7: Requested waits for a decision, and Approved waits for the next check.
+- **Demotion is unchanged.** A Ready row whose DUID a later release drops goes back to `APPROVED`, whether the owner or the certificate approved it.
+- The covered set is never written to the database or the log (FR-1's rule on DUIDs).
+
+**FR-8 · The admin page.** A row Ready by `certificate` shows *In the current release* as its decision, in place of an approver's name. `samsung_requests.state_approved` (*Approved, waiting for release*) keeps its meaning, but only a TV that is not covered yet can still show it. Approve and Reject on a Requested row are unchanged.
+
+**Verification.** `:linuxX64Test`, against the frozen v1.70 fixture:
+- a create of `EXCKEBBVWCGFC` answers `READY` with the fixture's tag and URL;
+- a create of an uncovered DUID answers `REQUESTED`;
+- an APPROVE of a covered Requested row answers `READY`;
+- a reconciliation promotes a covered Requested row and leaves a Withdrawn one untouched;
+- with no verified release, create and approve behave as before.
+
+**No wire change.** The states, fields and routes are FR-2's and FR-3's. Every installed phone from v1.72 decodes `READY` already, and `decided_by` is an existing admin string.

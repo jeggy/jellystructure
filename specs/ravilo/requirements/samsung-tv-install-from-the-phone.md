@@ -34,3 +34,51 @@ Android phone build only. Not a TV, not iPhone, not the desktops, not the web.
 **FR-8 · Copy.** Every string is a key in `i18n/en.json`, `da.json` and `fo.json` under `samsungtv.*`, through `ravilo-i18n`; no string names Jellyfin. The English draft follows the plan's copy table.
 
 **FR-9 · Verification.** `:ravilo-ui:desktopTest` covers the sdb framing and sequencing against a fake TV (one command per connection, lenient DUID parse, push chunking, error paths), the subnet and REST parsing, the guide's state machine (every transition, every auto-check branch, the returning-user shortcut) and the `.wgt` certificate check against a frozen fixture. `:ravilo-ui:testDebugUnitTest` covers the row's position and absence. Not coverable automatically, and so on the QA ticket — the `shell 0 …` service string and the sync framing are written from the ADB protocol and the 2019 TV's measured quirks, and the first real answer from a TV or the emulator may differ: real TCP to the TV's `sdbd`, the Wi-Fi address, the scan on a real network, and the install itself — on the Pixel 7 against the Tizen 10 emulator (DEB-4844), then the owner on his real TV. **Design gate:** screenshots of every guide screen, light and dark, are shown to the owner on this task and signed off before the work is merged to `main`. The Tizen 10 emulator's clock moved past 2027-11-16 — does the installed app still launch — is recorded here by QA.
+
+## Amendment — 2026-11-23 (DEB-5409): no waiting state for a TV already covered, and one screen that shows where every TV stands
+
+The owner ran scan → request → approve himself on the real Samsung on DEB-5356 (15:51Z): *"It worked. But let's make it more nice looking after the device has been approved. So it's clear that we find 1-2 TVs on this network and that the one TV has already been approved. So we can see it's current version and what the latest version is."* Three minutes earlier, of the screen his approved TV showed: *"'Approved, waiting for release' no need for this state … as this device is already approved."* His TV was already in the distributor certificate. It showed *Approved* only because the server compares approved rows with the release on its hourly check. The server half of the fix is the amendment of the same date in `samsung-tv-install-requests.md`: a TV the current release already covers goes straight to Ready. This amendment is the phone half.
+
+**What it changes.**
+- **FR-2, intro line 4** becomes *install it on the TV from this phone once approved*. It no longer mentions a new release, because for most TVs there is no wait.
+- **FR-6.** *Approved* stays as a screen state, but only for a TV the current release does not cover yet. Its body says Ravilo for this TV comes with the next release. An Approved or Ready row no longer opens a screen of its own: it opens the overview (FR-10). Requested and Rejected open as before.
+- **FR-7.** The Done screen's *Done* goes back to the overview, which now shows the version just installed.
+
+**FR-10 · The overview: the TVs on this Wi-Fi, and where each one stands.** When the viewer has at least one Approved or Ready request, opening the guide (and *Done* after an install) shows one screen, *Your Samsung TVs*. It renders these, in this order:
+1. **Finding the TVs.** The screen starts the FR-2 scan of the phone's own subnet by itself and says *Looking for TVs on this Wi-Fi…* until the scan ends. Without a Wi-Fi address it says FR-2's sentence and shows only the server rows (item 4).
+2. **One card per TV found**, at most a handful. Each card shows the TV's friendly name and model, with a badge from the viewer's request for that TV:
+   - *Approved*, green, for Approved or Ready;
+   - *Waiting for approval* for Requested;
+   - *Not approved* for Rejected;
+   - *Not set up* when the viewer has no request for that TV.
+3. **The approved TV's card** has two lines more: *On the TV: 1.70* (FR-11) and *Latest: 1.71*. *Latest* is the row's `ready_from_release`, which the server keeps at the newest release covering the TV. A Ready card's one primary button depends on what the TV has:
+   - *Install on TV* when Ravilo is not on it, or its version is not known;
+   - *Update to 1.71* when the TV's version is older;
+   - no button, the line *Up to date*, and a quiet *Reinstall* link when the versions are equal.
+
+   Every button runs FR-7 unchanged, including its FR-4 checks and its DUID check. An Approved (not yet covered) card shows *Comes with the next Ravilo release* in place of *Latest* and has no button. A *Not set up* card has a quiet *Set up this TV* link, which opens FR-3 step 1 for that TV (a new request under DEB-4842's ten-row cap). A *Not approved* card shows the owner's note, if any, and *Ask again*.
+4. **A request whose TV the scan did not find** gets a card from the server row: name and model, its badge, *Not found on this Wi-Fi*, and no version and no button. Below the list, one quiet line says how many TVs were found, with *Search again*.
+
+**Which TV a request belongs to.** A found TV matches a request when its `modelName` and `name` are equal to the row's `model` and `name`. Both came from that TV's own `:8001/api/v2/` answer when the request was sent. When two found TVs match the same row, for example two sets of one model that both keep the factory name, the phone does not guess. Neither card gets the badge. The row gets its own card (item 4) with *Install on TV*, and FR-7's DUID check picks the right TV. A TV renamed since the request appears as *Not set up*, next to its row's *Not found on this Wi-Fi* card. That is accepted, because the install still checks the DUID. The phone never infers a state: badges come from the last `GET /api/tv/samsung-requests`, versions from the TV.
+
+**FR-11 · The installed version is read from the TV.** During the scan the phone asks each TV that answered FR-2 for `GET http://<ip>:8001/api/v2/applications/RaviloScrn.RaviloScrn`, with the same short timeout. The answer is one of three:
+- a JSON object with a `version` gives the installed version (`1.71.0` is shown as `1.71`);
+- `404`, or a JSON object with `code` 404, means *not installed*;
+- anything else means *not known*.
+
+When the TV's answer is *not known*, the phone uses the release tag it installed on that DUID itself last, which it keeps in local preferences per DUID after a successful FR-7. Without that, the version stays *not known*, and the line reads *On the TV: —*. The release workflow stamps the `.wgt`'s `config.xml` version as `MAJOR.MINOR.0` from the tag (`deploy-tizen-tv.yml`). Versions compare as major and minor only, so `v1.71` and `1.71.0` are equal. Whether a 2019 set and the Tizen 10 emulator answer this route without pairing has not been measured. If they do not, the feature still works on the fallback, but a set installed from a computer shows *—* until the phone has installed on it once. This needs no Developer Mode and adds no request to our server.
+
+**FR-12 · Design and verification.** The overview uses parts the guide already has: the Pick list's TV rows, the Profile row's badge, and the one primary button. FR-9's design gate covers it: before the work merges to `main`, the owner signs off screenshots on DEB-5409 in light and dark, at a large font, in `da` and `fo`. These states are covered by `GuideScreenshotsTest`:
+- one TV, approved and up to date;
+- one TV approved with an update waiting, next to a second TV marked *Not set up*;
+- an approved TV not yet in a release;
+- an approved TV not found on this Wi-Fi;
+- no Wi-Fi.
+
+`:ravilo-ui:desktopTest` covers:
+- the match rule, including the two-identical-TVs case and a renamed TV;
+- the three FR-11 answers and the local fallback;
+- the version comparison (`v1.71` against `1.70.0`, `1.71.0` and a version that is not known);
+- `open()` landing on the overview for Approved and Ready, and on the old screens for Requested and Rejected.
+
+QA on DEB-5409's ticket: the real Samsung and the Tizen 10 emulator answer FR-11's route (record the raw answer for an installed and a missing app), and the owner's set shows *Approved* and the right two versions. **No wire change.** The phone reads fields the viewer route already returns. An installed v1.72 phone keeps its old screens and simply sees Ready sooner.
