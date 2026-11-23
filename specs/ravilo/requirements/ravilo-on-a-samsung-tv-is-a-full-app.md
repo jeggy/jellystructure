@@ -1277,7 +1277,7 @@ sent to our ladder, start warm. FR-37 is about the time AVPlay itself takes, whi
   on Android.
 - **Leaving.** Back or Home, a phone's push over the page, or hiding the app (FR-22) posts `cancelPrewarm` for that item
   **at once**. Leaving by Play does not cancel. The app knows it left for Play, so Android's 1.5 s grace is not needed. A
-  page whose target changes, such as a season switch that moves the primary episode or a write-through from FR-31, cancels the
+  page whose target changes, such as an FR-31 re-read that moves the primary episode, cancels the
   old item and starts the 2 s again for the new one.
 - **No wire change, no backend change.** `prewarmPlayback`/`cancelPrewarm` are in `TvApiClient` today, and the server's 309
   budget already drops warm jobs before a play's.
@@ -1313,7 +1313,7 @@ whole of the next-up half of the ask.
 - a page held 2 s posts one `/api/tv/playback/prewarm` for Play's target with the start's capabilities;
 - a `warm` answer is re-posted at 30 s, and a `none` answer is not;
 - Back posts `/prewarm/cancel` for that item, while Play does not;
-- a season switch that moves the primary episode cancels the old item and warms the new one.
+- an FR-31 re-read that moves the primary episode cancels the old item and warms the new one.
 
 In `ravilo-screen-player.spec.ts`:
 
@@ -1328,3 +1328,31 @@ and `play adopted the prewarm` on Play. Leaving with Back shows `prewarm cancell
 the log shows a prewarm for it, and the advance adopts it. QA compares `first_frame_ms` against the same start with the prewarm
 cancelled, and FR-37's three spans go on the row. *Field read, 14 days after the `.wgt` reaches the household's set:*
 the wall time lost per episode, read as in DEB-5024's baseline, against this amendment's 5.8 s.
+
+## Amendment 2026-11-23, third (DEB-5394) — what the builds and QA taught FR-35 to FR-37
+
+The builds landed as `3ddab56d7` (FR-35, FR-36) and `a020fd639` (FR-37). QA on the Tizen 5.0 emulator (DEB-5399) passed FR-35
+and FR-36. A warm start's `first_frame_ms` had a median of 2053 ms over 6 starts, against 2622 ms over 3 cold ones. Three things change:
+
+- **FR-35's re-target comes from an FR-31 re-read, not a season switch.** The primary episode (`seriesPrimary`) never depends
+  on the season pill, so a season switch moves nothing. The wording above is corrected. The test is the FR-31 re-read.
+- **FR-36: a seek while the card shows keeps the warm job.** QA sought back past the credits marker with the card up. The
+  warm job was cancelled, but the card stayed and its countdown ran on, so the next episode started cold. The rule is now:
+  - a seek back before the trigger drops the warm job only when **no card shows**;
+  - while the card shows, only the card's own cancel (Back on the card, or the phone's *cancel*) drops it, along with Back, a
+    stop, Home, hiding the app and a start of another item, as before.
+- **FR-36: the seek-back drop is judged from the seek's target, never from a position sample.** A forward seek that made
+  AVPlay re-prepare cancelled the warm job and posted it again 1.7 s later. The position probably reads 0 while AVPlay
+  re-prepares. A seek forward, a restream or a re-prepare never cancels. This brings the code into line with FR-36's *"a seek back"*.
+- **FR-37: no start buffer is set.** DEB-5408 measured 30 starts on the emulator: a Jellyfin copy and our ladder, 5 each with
+  no call, n = 2 and n = 4. Neither n shortened `open()` to prepared. The medians were 2152 / 2284 / 2229 ms on the copy and
+  1805 / 1862 / 1955 ms on the ladder, with no start stall in any of them. Following FR-37's own rule, the app makes no
+  `setBufferingParam` call. The `start-spans` console line stays, so the household set's spans can be read later.
+  Prepared-to-first-frame read a flat 1010–1041 ms on the VM. That is its playtime tick, and it tells nothing there.
+
+**Proof (CI)**, in `ravilo-screen-player.spec.ts`:
+- a seek back before the marker while the card shows posts no cancel, and the countdown's start adopts the warm job;
+- the same seek with no card shows posts the cancel;
+- a forward seek that re-prepares posts no cancel and no second prewarm.
+
+No wire change.
