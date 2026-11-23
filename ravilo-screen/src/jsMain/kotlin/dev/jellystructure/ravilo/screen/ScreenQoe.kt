@@ -22,6 +22,10 @@ private const val FROZEN_RESTREAM_MS = 5_000L
 private const val POSITION_QUIET_MS = 2_000L
 /** DEB-5024 (FR-32) — after a freeze asks for a restream the watch waits this long for the answer to open; a failed ask resumes it, and the once-per-item flag stops a second. */
 private const val RESTREAM_ANSWER_WAIT_MS = 10_000L
+/** DEB-5024 (FR-34) — the sliding window of wall time against position that a crawling play is measured over. */
+private const val CRAWL_WINDOW_MS = 10_000L
+/** DEB-5024 (FR-34) — a window whose position advanced less than this share (percent) of its wall time is one stall. */
+private const val CRAWL_MIN_ADVANCE_PCT = 70L
 /** R381 — the report carries the item's newest 20. */
 private const val MAX_STALLS = 20
 
@@ -40,6 +44,8 @@ private const val MAX_STALLS = 20
  * - **FR-32:** AVPlay does not always say when it stalls, so [watchPosition] reads the position itself. One that has not moved
  *   for 1 s while playing is a stall of its own (`buffer_empty` when the path was under the rung, else `frozen_with_buffer`),
  *   and at 5 s it is [askFrozenRestream]ed, once per item, with the rung as the bound.
+ * - **FR-34:** a play that moves, but under 70 % of real time over a 10 s window, is one `buffer_empty` stall of the shortfall
+ *   (wall − advance). It counts toward FR-27's trigger and never restreams by itself.
  */
 internal class ScreenQoe(
     private val clock: () -> Long,
@@ -98,6 +104,9 @@ internal class ScreenQoe(
     private var watchPositionMs = -1L
     private var watchSinceMs = -1L
     private var quietUntilMs = -1L
+    // FR-34 — the crawl window: when it opened and the position then (-1 = no window open).
+    private var crawlSinceMs = -1L
+    private var crawlPositionMs = 0L
     private var frozenStartMs = -1L
     private var frozenPositionMs = 0L
     private var frozenCause = QoeStallCause.FROZEN_WITH_BUFFER
@@ -140,6 +149,7 @@ internal class ScreenQoe(
         paused = false
         waitStartMs = -1L
         watchPositionMs = -1L; frozenStartMs = -1L; quietUntilMs = -1L
+        crawlSinceMs = -1L
     }
 
     /** A seek, or a play or a pause the viewer made: the wait that follows within moments is theirs, not a stall. */
@@ -157,6 +167,7 @@ internal class ScreenQoe(
         val now = clock()
         if (frozenStartMs >= 0) endFrozen(now, count = false, ladder = false, hideView = false)   // AVPlay says it waits: its wait is the one counted
         watchPositionMs = -1L
+        crawlSinceMs = -1L
         waitStartMs = now
         waitPositionMs = positionMs
         waitVariantBps = currentBandwidthBps()
@@ -194,8 +205,10 @@ internal class ScreenQoe(
         if (!avPlaying || paused || firstFrameAtMs < 0 || waitStartMs >= 0 || now < quietUntilMs) {
             if (frozenStartMs >= 0) endFrozen(now, count = waitStartMs < 0, ladder = false, hideView = true)
             watchPositionMs = -1L
+            crawlSinceMs = -1L
             return
         }
+        if (frozenStartMs < 0) watchCrawl(now, positionMs) else crawlSinceMs = -1L
         if (watchPositionMs < 0 || positionMs != watchPositionMs) {
             if (frozenStartMs >= 0) endFrozen(now, count = true, ladder = true, hideView = true)   // it moved again
             watchPositionMs = positionMs; watchSinceMs = now
@@ -206,6 +219,31 @@ internal class ScreenQoe(
             startFrozen(positionMs, watchSinceMs)
         }
         if (!frozenRestreamed && now - frozenStartMs >= FROZEN_RESTREAM_MS) restreamFrozen(now)
+    }
+
+    /**
+     * FR-34 — a window of [CRAWL_WINDOW_MS] of play, none of it paused, seeked, restreamed or inside a stall (the caller resets
+     * it on each of those). Under [CRAWL_MIN_ADVANCE_PCT] of real time it is one stall, and the window starts over.
+     */
+    private fun watchCrawl(now: Long, positionMs: Long) {
+        if (crawlSinceMs < 0) { crawlSinceMs = now; crawlPositionMs = positionMs; return }
+        val wall = now - crawlSinceMs
+        if (wall < CRAWL_WINDOW_MS) return
+        val advance = positionMs - crawlPositionMs
+        val startMs = crawlSinceMs
+        val startPositionMs = crawlPositionMs
+        crawlSinceMs = now; crawlPositionMs = positionMs
+        if (advance < 0 || advance * 100 >= wall * CRAWL_MIN_ADVANCE_PCT) return   // a jump back is a seek nobody announced, not a crawl
+        val length = wall - advance
+        val previousEnd = lastStallEndMs
+        val after = startMs - firstFrameAtMs
+        rebufferCount++; rebufferMs += length
+        sessionRebufferCount++; sessionRebufferMs += length
+        addStall(QoeStall(
+            afterFirstFrameMs = after, positionMs = startPositionMs, bufferedMs = 0, durationMs = length,
+            phase = phaseOf(after), variantBps = currentBandwidthBps(), cause = QoeStallCause.BUFFER_EMPTY,
+        ))
+        stallEnded(now, length, previousEnd, ladder = true)
     }
 
     /** The rung playing now: the one the last switch (or the ticket's start) named, else the master's top, else what AVPlay measures. */

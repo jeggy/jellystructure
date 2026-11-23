@@ -86,6 +86,18 @@ const avplay = (page: Page) => ({
     await page.waitForTimeout(ms);
     await page.evaluate(() => (window as any).__avplay.release());
   },
+  /** DEB-5024 (FR-34) — for [ms], AVPlay holds its position for 0.6 s of every second: about 0.4 s of play per second, in holds under FR-32's 1 s. */
+  crawl: (ms: number) => page.evaluate((total) => new Promise<void>((done) => {
+    const av = (window as any).__avplay;
+    const end = Date.now() + total;
+    const cycle = () => {
+      if (Date.now() >= end) { av.release(); done(); return; }
+      av.hold();
+      setTimeout(() => { av.release(); setTimeout(cycle, 400); }, 600);
+    };
+    cycle();
+  }), ms),
+  rate: (r: number) => page.evaluate((v) => (window as any).__avplay.setRate(v), r),
 });
 
 test.describe("DEB-5024 FR-25 — the TV reports what each item went through", () => {
@@ -399,5 +411,51 @@ test.describe("DEB-5024 FR-32 — a position that stops while playing is a stall
 
     expect(seen.restreams, "the audio pick is the one restream").toHaveLength(1);
     expect(seen.qoe, "no stall, so no report").toEqual([]);
+  });
+});
+
+test.describe("DEB-5024 FR-34 — play that falls behind real time is a stall", () => {
+  test("0.4 s of play per second, in 0.6 s holds, is a `buffer_empty` stall of about 6 s per 10 s window, and no frozen one", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page);
+    const ap = avplay(page);
+    await openAndPlay(page);
+    await page.waitForTimeout(3_000);
+    await ap.crawl(20_000);
+    await expect.poll(() => seen.qoe.at(-1)?.stalls?.length ?? 0, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+    const last = seen.qoe.at(-1);
+    const stalls = last.stalls.filter((s: any) => s.cause === "buffer_empty");
+    expect(stalls.slice(0, 2)).toHaveLength(2);
+    for (const stall of stalls.slice(0, 2)) {
+      // 10 s of wall, 4 s of advance = 6 s; the fake's 250 ms ticks make a 0.4 s release one or two ticks, so 4 s to 6 s of advance
+      expect(stall.duration_ms).toBeGreaterThanOrEqual(4_000);
+      expect(stall.duration_ms).toBeLessThanOrEqual(7_500);
+    }
+    expect(last.rebuffer_count).toBeGreaterThanOrEqual(2);
+    expect(last.rebuffer_ms).toBeGreaterThanOrEqual(9_000);
+    expect(last.frozen_count ?? 0, "a hold under a second is not a freeze").toBe(0);
+  });
+
+  test("a stream at 0.9× posts nothing", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    const ap = avplay(page);
+    await openAndPlay(page);
+    await ap.rate(0.9);
+    await page.waitForTimeout(23_000);
+    expect(seen.qoe, "90 % of real time is above the 70 % line").toEqual([]);
+  });
+
+  test("a pause inside the window posts nothing", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await openAndPlay(page);
+    await page.waitForTimeout(3_000);
+    await page.keyboard.press("Enter");                    // pause
+    await expect(page.locator("#overlay")).toHaveClass(/\bon\b/);
+    await page.waitForTimeout(5_000);                      // half a window of no advance
+    await page.keyboard.press("Enter");                    // play again
+    await page.waitForTimeout(14_000);
+    expect(seen.qoe, "the pause and the 2 s after it are not counted").toEqual([]);
   });
 });

@@ -20,12 +20,15 @@ export function fakeAvPlayInitScript() {
   // DEB-5024 (FR-32) — AVPlay can hold its position while `getState()` still says PLAYING and fire no event at all (DEB-5067):
   // `hold()` is that, `release()` lets it move again. A stream that is closed or opened again moves, as a new stream does.
   let held = false;
+  // DEB-5024 (FR-34) — how fast the playhead moves against wall time (1 = real time); `setRate(0.9)` is a stream that slips behind.
+  let rate = 1;
   const properties: Record<string, string | undefined> = {};
   (window as any).__avplay = {
     bufferStart() { buffering = true; listener.onbufferingstart?.(); },
     bufferComplete() { buffering = false; listener.onbufferingcomplete?.(); },
     hold() { held = true; },
     release() { held = false; },
+    setRate(r: number) { rate = r; },
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },
     failPrepareWith: undefined as string | undefined,
@@ -64,7 +67,7 @@ export function fakeAvPlayInitScript() {
         state = "PLAYING";
         if (!ticking) ticking = setInterval(() => {
           if (buffering || held) return;
-          posMs += 250;
+          posMs += Math.round(250 * rate);
           listener.oncurrentplaytime?.(posMs);
         }, 250);
       },
