@@ -87,6 +87,7 @@ internal fun GuideBody(screen: GuideScreen, guide: SamsungGuide) {
             null, "samsungtv.intro.title", art = Art.TV,
             body = if (s.wifi) "samsungtv.intro.body" else "samsungtv.intro.nowifi",
             cta = if (s.wifi) "samsungtv.intro.start" else "samsungtv.retry", onCta = { if (s.wifi) guide.find() else guide.open() },
+            outline = if (s.wifi) listOf("samsungtv.intro.s1", "samsungtv.intro.s2", "samsungtv.intro.s3", "samsungtv.intro.s4") else null,
         )
         is GuideScreen.Pick -> Page(
             null, if (s.tvs.size == 1) "samsungtv.found.title" else "samsungtv.found.pick", art = Art.TV,
@@ -165,6 +166,7 @@ private fun Page(
     trouble: String? = null,
     quiet: String? = null,
     onQuiet: () -> Unit = {},
+    outline: List<String>? = null,
     extra: (@Composable () -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -182,6 +184,20 @@ private fun Page(
     }
     val text = bodyText ?: body?.let { str(it) }
     if (text != null) Text(rich(text, colors.text), color = colors.textSecondary, fontSize = 16.sp, lineHeight = 23.sp, fontFamily = Sora, textAlign = TextAlign.Center)
+    if (outline != null) {
+        Spacer(Modifier.height(18.dp))
+        Column(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            outline.forEachIndexed { i, key ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Box(Modifier.size(22.dp).background(colors.accent, CircleShape), contentAlignment = Alignment.Center) {
+                        Text("${i + 1}", color = colors.onAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
+                    }
+                    Spacer(Modifier.size(10.dp))
+                    Text(str(key), color = colors.text, fontSize = 14.sp, lineHeight = 19.sp, fontFamily = Sora)
+                }
+            }
+        }
+    }
     extra?.let { Spacer(Modifier.height(18.dp)); it() }
     if (hint != null) { Spacer(Modifier.height(14.dp)); Text(rich(str(hint), colors.text), color = colors.textDim, fontSize = 13.5.sp, lineHeight = 19.sp, fontFamily = Sora, textAlign = TextAlign.Center) }
     Spacer(Modifier.height(28.dp))
