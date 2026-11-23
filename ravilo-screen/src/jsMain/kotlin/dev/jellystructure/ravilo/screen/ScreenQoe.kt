@@ -349,7 +349,7 @@ internal class ScreenQoe(
     private fun logStartSpans() {
         val sinceOpen = openToPreparedMs
         val toFirstFrame = if (preparedAtMs >= 0) (firstFrameAtMs - preparedAtMs).toString() else "-"
-        console.log("Ravilo screen: start-spans item=$itemId request=${startRequestMs ?: "-"} open_to_prepared=${sinceOpen ?: "-"} prepared_to_first_frame=$toFirstFrame buffer_s=${avPlayBufferSeconds() ?: "-"}")
+        console.log("Ravilo screen: start-spans item=$itemId request=${startRequestMs ?: "-"} open_to_prepared=${sinceOpen ?: "-"} prepared_to_first_frame=$toFirstFrame")
     }
 
     /** `onevent`: a bitrate or resolution change is a rung switch; its direction is the playing bitrate against the last known. */

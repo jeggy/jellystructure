@@ -3,7 +3,6 @@ package dev.jellystructure.ravilo.screen
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
 import kotlinx.browser.document
-import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import org.w3c.dom.HTMLVideoElement
 import org.w3c.dom.events.Event
@@ -77,12 +76,6 @@ interface MediaBackendListener {
 fun resolveStreamUrl(serverUrl: String, url: String): String =
     if (url.startsWith("/") && !url.startsWith("//")) serverUrl.trimEnd('/') + url else url
 
-/** DEB-5394 (FR-37) — the debug key the measurement sets from the console: whole seconds, absent or not a positive number = no call. */
-internal const val AVPLAY_BUFFER_KEY = "ravilo.screen.debug.avplayBufferSeconds"
-
-internal fun avPlayBufferSeconds(): Int? =
-    runCatching { localStorage.getItem(AVPLAY_BUFFER_KEY)?.trim()?.toIntOrNull() }.getOrNull()?.takeIf { it > 0 }
-
 /** The class on `<html>` that makes the page transparent over AVPlay's video plane (screen.css). */
 const val AVPLAY_ON = "avplay-on"
 
@@ -114,13 +107,6 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         ))
         // DEB-5024 (FR-26) — the first picture comes from the server's start rung, not from AVPlay's own guess.
         if (startVariantBps != null && startVariantBps > 0) runCatching { WebApisGlobal.avplay.setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=$startVariantBps") }
-        // DEB-5394 (FR-37) — a debug start buffer, in seconds: an absent key makes no call, which is AVPlay's own choice. A set that refuses it plays on.
-        avPlayBufferSeconds()?.let { n ->
-            runCatching {
-                WebApisGlobal.avplay.setBufferingParam("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", n)
-                WebApisGlobal.avplay.setBufferingParam("PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", n)
-            }
-        }
         WebApisGlobal.avplay.prepareAsync(
             {
                 listener?.onPrepared((Date.now() - openedAtMs).toLong())

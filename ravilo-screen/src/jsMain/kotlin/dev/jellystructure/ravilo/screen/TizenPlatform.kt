@@ -58,8 +58,6 @@ external interface AvPlayObject {
     fun getDuration(): Int
     fun setListener(listener: AvPlayListener)
     fun setStreamingProperty(type: String, value: String)
-    /** DEB-5394 (FR-37) — legal from IDLE (after `open`, before `prepareAsync`): `"PLAYER_BUFFER_FOR_PLAY"` | `"PLAYER_BUFFER_FOR_RESUME"`, `"PLAYER_BUFFER_SIZE_IN_SECOND"`, seconds. */
-    fun setBufferingParam(option: String, unit: String, amount: Int)
     /** DEB-5024 (FR-25) — `"CURRENT_BANDWIDTH"` and `"AVAILABLE_BITRATE"` answer a string (or nothing) on a set that has them. */
     fun getStreamingProperty(type: String): dynamic
     /** Samsung docs: `"AUDIO"` | `"TEXT"` | `"VIDEO"`. Returns the container's own enumerated tracks —
