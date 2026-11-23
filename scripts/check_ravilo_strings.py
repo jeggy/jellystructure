@@ -37,11 +37,13 @@ BRANCH_LITERAL = re.compile(r'(?:\)\s*|\belse\s+)(?=")')
 #   camelCase        Compose's animate*AsState(label = "tileScale") — a debug name, not text
 #   IMDb             a brand, like Ravilo
 #   YouTube/Vimeo    brands: where a trailer is hosted
+#   dotted.key       an i18n key handed on to a composable that calls str() itself (SamsungGuideScreen's hint = "samsungtv.step1.hint")
 #   E · / E          what is left of "E${n} · ${title}" once the interpolations are removed
 ALLOW = re.compile(
     r'^(?:Ravilo[\s\u00b7]*|IMDb|YouTube|Vimeo|OK'
     r'|[-+\u2212]?\d+\s?s'
     r'|[a-z][a-zA-Z0-9]*'
+    r'|[a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9_]+)+'
     r'|E[\s\u00b7]*'
     r')$'
 )
