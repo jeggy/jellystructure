@@ -309,11 +309,12 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
   const API = "http://app:9505";
   const SEGMENTS = { credits_start_ms: 80_000 };
 
-  type Seen = { prewarms: any[]; cancels: any[]; starts: any[]; stops: any[] };
+  type Seen = { prewarms: any[]; cancels: any[]; starts: any[]; stops: any[]; push: (message: object) => void };
 
   /** A two-episode series; the first plays from its page with the second as `nextId`. [segments]: the first episode's markers. */
   async function playingFirst(page: Page, segments: object | null, autoplayNext = true): Promise<Seen> {
-    const seen: Seen = { prewarms: [], cancels: [], starts: [], stops: [] };
+    const sockets: any[] = [];
+    const seen: Seen = { prewarms: [], cancels: [], starts: [], stops: [], push: (message) => sockets.forEach((ws) => ws.send(JSON.stringify(message))) };
     const card = { id: "sr1", kind: "SERIES", title: "Paper Series", year: 2024, genre: null, rating: null, poster_url: "/api/tv/image/sr1-poster", backdrop_url: "/api/tv/image/sr1-backdrop" };
     const episode = (id: string, n: number, title: string, extra: object = {}) => ({ id, episode_number: n, title, runtime: 40, overview: null, still_url: `/api/tv/image/${id}-still`, ...extra });
     const series = { card, synopsis: "x", cast: [], related: [], logo_url: null,
@@ -325,7 +326,7 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
       localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
       (window as any).__avplay.setDuration(120_000);
     });
-    await page.routeWebSocket(/\/api\/tv\/events/, () => {});
+    await page.routeWebSocket(/\/api\/tv\/events/, (ws) => { sockets.push(ws); });   // accepted, silent until a test pushes the phone's command
     const json = (route: any, status: number, body: object = {}) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     await page.route(`${API}/**`, async (route) => {
       const req = route.request();
@@ -398,6 +399,50 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
     await expect.poll(() => seen.cancels).toEqual([{ item_id: "e2" }]);
     await jump(page, 65_000);
     await expect.poll(() => seen.prewarms).toHaveLength(2);
+  });
+
+  const seeks = (page: Page) => page.evaluate(() => (window as any).__avplayCalls.filter((c: any[]) => c[0] === "seekTo").map((c: any[]) => c[1]));
+
+  test("a seek back before the marker while the card shows posts no cancel, and the countdown's start adopts the warm job", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await playingFirst(page, SEGMENTS);
+    await jump(page, 81_000);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await expect.poll(() => seen.prewarms).toHaveLength(1);
+    // The card owns OK and Back on the remote, so the seek comes as the phone's absolute seek, to 70 s: under the 80 s marker.
+    seen.push({ type: "player_command", command: "seek", args: { position_ms: 70_000 } });
+    await expect.poll(() => seeks(page)).toEqual([70_000]);
+    await settle(page);
+    expect(seen.cancels, "the card is up: the seek drops nothing").toEqual([]);
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 20_000 }).toEqual(["e1", "e2"]);
+    await settle(page);
+    expect(seen.cancels, "the countdown's start is the adoption").toEqual([]);
+    expect(seen.prewarms, "and nothing is warmed a second time").toHaveLength(1);
+  });
+
+  test("the same seek back with no card showing posts the cancel", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, null);    // no marker: the warm is at 60 s, the card in the last second
+    await jump(page, 62_000);
+    await expect.poll(() => seen.prewarms).toHaveLength(1);
+    await expect(page.locator("#nextup")).not.toHaveClass(/\bon\b/);
+    seen.push({ type: "player_command", command: "seek", args: { position_ms: 40_000 } });
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "e2" }]);
+  });
+
+  test("a forward seek that re-prepares posts no cancel and no second prewarm", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, null);
+    await jump(page, 62_000);
+    await expect.poll(() => seen.prewarms).toHaveLength(1);
+    await page.evaluate(() => (window as any).__avplay.zeroAfterSeek(3_000));   // AVPlay reads 0 while it re-prepares
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#ov-f30")).toHaveClass(/\bfoc\b/);
+    await page.keyboard.press("Enter");             // +30 s
+    await expect.poll(() => page.evaluate(() => (window as any).__avplayCalls.filter((c: any[]) => c[0] === "seekTo").length)).toBe(1);
+    await page.waitForTimeout(4_500);               // the zero window and a few ticks after it
+    expect(seen.cancels, "a forward seek never cancels").toEqual([]);
+    expect(seen.prewarms, "so there is no second prewarm").toHaveLength(1);
   });
 
   test("the countdown starting nextId posts no cancel, with autoplay on", async ({ page }) => {

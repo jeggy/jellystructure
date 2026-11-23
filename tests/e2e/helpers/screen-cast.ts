@@ -25,6 +25,10 @@ export function fakeAvPlayInitScript() {
   // DEB-5396 — the stream's length (the default stays 60 s) and a playhead the test moves to as natural play would, with no `seekTo`
   // call recorded: `setDuration(ms)` before a start, `jump(ms)` while it plays.
   let durationMs = 60_000;
+  // DEB-5394 (FR-36) — AVPlay re-preparing after a seek reads position 0 for a moment: `zeroAfterSeek(ms)` makes `getCurrentTime` say 0
+  // for that long after each `seekTo`, as QA saw it on the set.
+  let zeroAfterSeekMs = 0;
+  let seekedAt = 0;
   const properties: Record<string, string | undefined> = {};
   (window as any).__avplay = {
     bufferStart() { buffering = true; listener.onbufferingstart?.(); },
@@ -34,6 +38,7 @@ export function fakeAvPlayInitScript() {
     setRate(r: number) { rate = r; },
     setDuration(ms: number) { durationMs = ms; },
     jump(ms: number) { posMs = ms; },
+    zeroAfterSeek(ms: number) { zeroAfterSeekMs = ms; },
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },
     failPrepareWith: undefined as string | undefined,
@@ -88,6 +93,7 @@ export function fakeAvPlayInitScript() {
       seekTo(ms: number, onSuccess?: () => void) {
         (window as any).__avplayCalls.push(["seekTo", ms]);
         posMs = ms;
+        seekedAt = Date.now();
         onSuccess?.();
       },
       close() {
@@ -99,7 +105,7 @@ export function fakeAvPlayInitScript() {
         held = false;
       },
       getState() { return state; },
-      getCurrentTime() { return posMs; },
+      getCurrentTime() { return Date.now() - seekedAt < zeroAfterSeekMs ? 0 : posMs; },
       getDuration() { return durationMs; },
       getTotalTrackInfo() { return []; },
       setSelectTrack(type: string, index: number) {

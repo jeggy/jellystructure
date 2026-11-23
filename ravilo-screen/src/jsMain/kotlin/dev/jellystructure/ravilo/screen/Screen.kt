@@ -639,7 +639,7 @@ private class Screen(private val serverUrl: String) {
             "stop" -> { stopAndIdle(); return }
             "pause" -> backend.pause()
             "unpause" -> backend.play()
-            "seek" -> env.seekPositionMs?.let { backend.seekTo(it); showChrome() }
+            "seek" -> env.seekPositionMs?.let { seekTo(it); showChrome() }
         }
         sendStatus()
     }
@@ -656,12 +656,12 @@ private class Screen(private val serverUrl: String) {
             // 248's cast e2e test, which drives this exact real sender/receiver pair for the first time.
             "seek" -> {
                 val pos = args?.get("position_ms")?.jsonPrimitive?.longOrNull ?: return
-                backend.seekTo(pos.coerceAtLeast(0))
+                seekTo(pos.coerceAtLeast(0))
                 showChrome()
             }
             "skip", "seek_relative" -> {   // R285 — 236's name is `skip {delta_ms}`; see the note on "set_audio" below
                 val delta = args?.get("delta_ms")?.jsonPrimitive?.longOrNull ?: return
-                backend.seekTo((backend.positionMs() + delta).coerceAtLeast(0))
+                seekTo((backend.positionMs() + delta).coerceAtLeast(0), forward = delta >= 0)
                 showChrome()
             }
             // R285 (FR-R285-2) — an HLS stream carries ONE audio track and no picture subtitles, so
@@ -751,9 +751,10 @@ private class Screen(private val serverUrl: String) {
             if (nextId == null || nextUpCancelled) continue
             val creditsAt = seg?.creditsStartMs?.takeIf { seg.stinger == null }
             // DEB-5396 (FR-36) — the next episode's encode starts at the credits, or 60 s before the end with no trusted marker (earlier
-            // than the card, and the same with autoplay off). A position back before that drops it; the loop re-posts it every 30 s.
-            val warmAt = creditsAt?.let { trustedCreditsStartMs(it, dur) } ?: if (dur > 0) dur - NEXT_WARM_LEAD_MS else null
-            if (warmAt != null && pos >= warmAt) nextId?.let { nextWarm.warm(it, seriesId) } else nextWarm.cancel()
+            // than the card, and the same with autoplay off). The loop re-posts it every 30 s.
+            // The position never drops it: a seek back does, from its target ([dropWarmForSeek]), and a re-prepare reads 0 for a moment.
+            val warmAt = nextWarmAtMs()
+            if (warmAt != null && pos >= warmAt) nextId?.let { nextWarm.warm(it, seriesId) }
             val due = when {
                 creditsAt != null -> pos >= creditsAt
                 // R384 (FR-R384-4) — no marker: the last second (it was 20 s); the countdown runs on past the end.
@@ -770,6 +771,31 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun autoplay(): Boolean = config?.autoplayNext != false
+
+    /** DEB-5396 (FR-36) — where the next episode's warm starts: the trusted credits marker, else 60 s before the end; null while the length is unknown. */
+    private fun nextWarmAtMs(): Long? {
+        val seg = segments
+        val creditsAt = seg?.creditsStartMs?.takeIf { seg.stinger == null }
+        val dur = backend.durationMs()
+        return creditsAt?.let { trustedCreditsStartMs(it, dur) } ?: if (dur > 0) dur - NEXT_WARM_LEAD_MS else null
+    }
+
+    /**
+     * DEB-5394 (FR-36) — a seek to [targetMs]: the warm job is dropped when the seek lands before the trigger, and only when no card shows
+     * (the card's countdown starts the next episode, and a dropped job would make that start cold). It is judged from the target alone: the
+     * warm is held only from the trigger on, so a seek forward cannot land before it, and a re-prepare or a restream never gets here.
+     */
+    private fun dropWarmForSeek(targetMs: Long) {
+        if (nextWarm.item == null || nextUpShown) return
+        val warmAt = nextWarmAtMs() ?: return
+        if (targetMs < warmAt) nextWarm.cancel()
+    }
+
+    /** Every seek the viewer or the phone asks for ends here; [forward] is a relative seek known to go forward, which never drops the warm job. */
+    private fun seekTo(targetMs: Long, forward: Boolean = false) {
+        if (!forward) dropWarmForSeek(targetMs)
+        backend.seekTo(targetMs)
+    }
 
     private fun showSkip() {
         skipShown = true
@@ -1099,12 +1125,12 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun togglePlay() { if (playing) backend.pause() else backend.play() }
-    private fun seekBy(deltaMs: Long) { backend.seekTo((backend.positionMs() + deltaMs).coerceAtLeast(0)) }
+    private fun seekBy(deltaMs: Long) { seekTo((backend.positionMs() + deltaMs).coerceAtLeast(0), forward = deltaMs >= 0) }
 
     private fun commitScrub() {
         val target = scrubMs ?: return
         scrubMs = null
-        backend.seekTo(target)
+        seekTo(target)
     }
 
     /** ←/→ (dir −1/+1): on the seek bar a scrub step, anywhere else one control along the order; the pill is not in the order. */
